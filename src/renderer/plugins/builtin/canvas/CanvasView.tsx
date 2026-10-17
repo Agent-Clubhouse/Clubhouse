@@ -16,6 +16,7 @@ import { StatusDot } from '../../../chrome/sidebar/AgentRow';
 import type { AgentDot } from '../../../chrome/sidebar/treeModel';
 import { sanitizeSvg } from '../../../utils/sanitize-svg';
 import { AGENT_ICON } from './canvas-icons';
+import { Tooltip } from '../../../components/Tooltip';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -644,37 +645,41 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
             </div>
 
             <div className="flex items-center gap-0.5 flex-shrink-0 pr-2">
-              <button
-                className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
-                  anchorView.autoCollapse
-                    ? 'text-ctp-text bg-surface-0'
-                    : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUpdate({ autoCollapse: !anchorView.autoCollapse } as Partial<AnchorCanvasViewType>);
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                title={anchorView.autoCollapse ? 'Stay expanded' : 'Auto-collapse when not hovered'}
-                data-testid="canvas-anchor-collapse-toggle"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <polyline points="4 7 9 12 4 17" />
-                  <polyline points="20 7 15 12 20 17" />
-                </svg>
-              </button>
-              <button
-                className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
-                onClick={(e) => { e.stopPropagation(); onClose(); }}
-                onMouseDown={(e) => e.stopPropagation()}
-                title="Remove anchor"
-                data-testid="canvas-view-close"
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
+              <Tooltip content={anchorView.autoCollapse ? 'Stay expanded' : 'Auto-collapse when not hovered'}>
+                <button
+                  className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
+                    anchorView.autoCollapse
+                      ? 'text-ctp-text bg-surface-0'
+                      : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate({ autoCollapse: !anchorView.autoCollapse } as Partial<AnchorCanvasViewType>);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  aria-label={anchorView.autoCollapse ? 'Stay expanded' : 'Auto-collapse when not hovered'}
+                  data-testid="canvas-anchor-collapse-toggle"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <polyline points="4 7 9 12 4 17" />
+                    <polyline points="20 7 15 12 20 17" />
+                  </svg>
+                </button>
+              </Tooltip>
+              <Tooltip content="Remove anchor">
+                <button
+                  className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
+                  onClick={(e) => { e.stopPropagation(); onClose(); }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  aria-label="Remove anchor"
+                  data-testid="canvas-view-close"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </Tooltip>
             </div>
           </>
         )}
@@ -787,22 +792,24 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
           {/* MCP Link button (agent views with assigned agent, when MCP enabled) */}
           {mcpEnabled && view.type === 'agent' && (view as AgentCanvasViewType).agentId && (
             <div className="relative">
-              <button
-                className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
-                  linkDropdownOpen
-                    ? 'text-ctp-text bg-surface-0'
-                    : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
-                }`}
-                onClick={(e) => { e.stopPropagation(); setLinkDropdownOpen(!linkDropdownOpen); }}
-                onMouseDown={(e) => e.stopPropagation()}
-                title="Link to widget"
-                data-testid="canvas-view-link"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                </svg>
-              </button>
+              <Tooltip content="Link to widget">
+                <button
+                  className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
+                    linkDropdownOpen
+                      ? 'text-ctp-text bg-surface-0'
+                      : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
+                  }`}
+                  onClick={(e) => { e.stopPropagation(); setLinkDropdownOpen(!linkDropdownOpen); }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  aria-label="Link to widget"
+                  data-testid="canvas-view-link"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                  </svg>
+                </button>
+              </Tooltip>
               {linkDropdownOpen && allViews && (
                 <LinkDropdown
                   agentView={view as AgentCanvasViewType}
@@ -814,75 +821,83 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
           )}
           {/* MCP Wire drag button (agent views with assigned agent, when MCP enabled) */}
           {mcpEnabled && view.type === 'agent' && (view as AgentCanvasViewType).agentId && onStartWireDrag && (
-            <button
-              className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                onStartWireDrag(view as AgentCanvasViewType);
-              }}
-              title="Drag to connect"
-              data-testid="canvas-view-wire"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <circle cx="5" cy="12" r="3" />
-                <circle cx="19" cy="12" r="3" />
-                <line x1="8" y1="12" x2="16" y2="12" />
-              </svg>
-            </button>
+            <Tooltip content="Drag to connect">
+              <button
+                className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onStartWireDrag(view as AgentCanvasViewType);
+                }}
+                aria-label="Drag to connect"
+                data-testid="canvas-view-wire"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="5" cy="12" r="3" />
+                  <circle cx="19" cy="12" r="3" />
+                  <line x1="8" y1="12" x2="16" y2="12" />
+                </svg>
+              </button>
+            </Tooltip>
           )}
           {isAgentRunning && (
+            <Tooltip content="Sleep agent">
+              <button
+                className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
+                onClick={(e) => { e.stopPropagation(); handleSleep(); }}
+                aria-label="Sleep agent"
+                data-testid="canvas-view-sleep"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip content="Center on this view">
             <button
               className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
-              onClick={(e) => { e.stopPropagation(); handleSleep(); }}
-              title="Sleep agent"
-              data-testid="canvas-view-sleep"
+              onClick={(e) => { e.stopPropagation(); onCenterView(); }}
+              aria-label="Center on this view"
+              data-testid="canvas-view-center"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                <circle cx="12" cy="12" r="3" />
+                <line x1="12" y1="2" x2="12" y2="6" />
+                <line x1="12" y1="18" x2="12" y2="22" />
+                <line x1="2" y1="12" x2="6" y2="12" />
+                <line x1="18" y1="12" x2="22" y2="12" />
               </svg>
             </button>
-          )}
-          <button
-            className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
-            onClick={(e) => { e.stopPropagation(); onCenterView(); }}
-            title="Center on this view"
-            data-testid="canvas-view-center"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <circle cx="12" cy="12" r="3" />
-              <line x1="12" y1="2" x2="12" y2="6" />
-              <line x1="12" y1="18" x2="12" y2="22" />
-              <line x1="2" y1="12" x2="6" y2="12" />
-              <line x1="18" y1="12" x2="22" y2="12" />
-            </svg>
-          </button>
-          <button
-            className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
-              isZoomed
-                ? 'text-ctp-text bg-surface-0'
-                : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
-            }`}
-            onClick={(e) => { e.stopPropagation(); onZoomView(); }}
-            title={isZoomed ? 'Restore view' : 'Zoom view'}
-            data-testid="canvas-view-zoom"
-          >
-            {isZoomed ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <polyline points="4 14 10 14 10 20" />
-                <polyline points="20 10 14 10 14 4" />
-                <line x1="14" y1="10" x2="21" y2="3" />
-                <line x1="3" y1="21" x2="10" y2="14" />
-              </svg>
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <polyline points="15 3 21 3 21 9" />
-                <polyline points="9 21 3 21 3 15" />
-                <line x1="21" y1="3" x2="14" y2="10" />
-                <line x1="3" y1="21" x2="10" y2="14" />
-              </svg>
-            )}
-          </button>
+          </Tooltip>
+          <Tooltip content={isZoomed ? 'Restore view' : 'Zoom view'}>
+            <button
+              className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
+                isZoomed
+                  ? 'text-ctp-text bg-surface-0'
+                  : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
+              }`}
+              onClick={(e) => { e.stopPropagation(); onZoomView(); }}
+              aria-label={isZoomed ? 'Restore view' : 'Zoom view'}
+              data-testid="canvas-view-zoom"
+            >
+              {isZoomed ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <polyline points="4 14 10 14 10 20" />
+                  <polyline points="20 10 14 10 14 4" />
+                  <line x1="14" y1="10" x2="21" y2="3" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+              )}
+            </button>
+          </Tooltip>
           {/* Pin to controls bar button (plugin widgets with pinnableToControls: true) */}
           {view.type === 'plugin' && (() => {
             const pluginView = view as PluginCanvasViewType;
@@ -890,35 +905,39 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
             if (!registered?.declaration.pinnableToControls) return null;
             const isPinned = !!(view.metadata as CanvasWidgetMetadata).__pinnedToControls;
             return (
-              <button
-                className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
-                  isPinned
-                    ? 'text-ctp-text bg-surface-0'
-                    : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
-                }`}
-                onClick={(e) => { e.stopPropagation(); handleUpdateMetadata({ __pinnedToControls: !isPinned }); }}
-                title={isPinned ? 'Unpin from toolbar' : 'Pin to toolbar'}
-                data-testid="canvas-view-pin"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                  <circle cx="12" cy="5" r="3" />
-                  <rect x="11" y="8" width="2" height="8" />
-                  <polygon points="12 16 8 20 16 20" />
-                </svg>
-              </button>
+              <Tooltip content={isPinned ? 'Unpin from toolbar' : 'Pin to toolbar'}>
+                <button
+                  className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
+                    isPinned
+                      ? 'text-ctp-text bg-surface-0'
+                      : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
+                  }`}
+                  onClick={(e) => { e.stopPropagation(); handleUpdateMetadata({ __pinnedToControls: !isPinned }); }}
+                  aria-label={isPinned ? 'Unpin from toolbar' : 'Pin to toolbar'}
+                  data-testid="canvas-view-pin"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                    <circle cx="12" cy="5" r="3" />
+                    <rect x="11" y="8" width="2" height="8" />
+                    <polygon points="12 16 8 20 16 20" />
+                  </svg>
+                </button>
+              </Tooltip>
             );
           })()}
-          <button
-            className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
-            onClick={(e) => { e.stopPropagation(); onClose(); }}
-            title="Close view"
-            data-testid="canvas-view-close"
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          <Tooltip content="Close view">
+            <button
+              className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
+              onClick={(e) => { e.stopPropagation(); onClose(); }}
+              aria-label="Close view"
+              data-testid="canvas-view-close"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </Tooltip>
         </div>
       </div>
 

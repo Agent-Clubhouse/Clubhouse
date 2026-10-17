@@ -13,6 +13,7 @@ import { AgentCanvasView } from './AgentCanvasView';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
 import { buildProjectContext } from './CanvasView';
 import type { AgentInfo } from '../../../../shared/plugin-types';
+import { Button } from '../../../components/Button';
 
 interface ZoomedViewOverlayProps {
   view: CanvasView;
@@ -47,14 +48,9 @@ export function ZoomedViewOverlay({
             return ctx ? <span className="text-xs text-ctp-overlay1 truncate flex-shrink-0">{ctx}</span> : null;
           })()}
           <span className="flex-1" />
-          <button
-            type="button"
-            className="h-7 px-2.5 rounded-md border border-surface-1 text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
-            onClick={onClose}
-            data-testid="canvas-zoom-restore"
-          >
+          <Button kind="ghost" onClick={onClose} data-testid="canvas-zoom-restore">
             Restore
-          </button>
+          </Button>
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto" onWheel={(e) => e.stopPropagation()}>

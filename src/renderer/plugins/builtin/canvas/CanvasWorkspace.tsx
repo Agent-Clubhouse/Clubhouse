@@ -11,7 +11,6 @@ import { useZoneContainment, getViewThemeOverride } from './zone-containment';
 import { CanvasViewComponent } from './CanvasView';
 import { CanvasControls } from './CanvasControls';
 import { CanvasContextMenu } from './CanvasContextMenu';
-import { MenuPortal } from './MenuPortal';
 import { CanvasAttentionIndicators } from './CanvasAttentionIndicators';
 import { useCanvasAttention, computeOffScreenIndicators } from './canvas-attention';
 import { WireOverlay } from './WireOverlay';
@@ -39,6 +38,24 @@ import { useCanvasContextMenu } from './useCanvasContextMenu';
 import { ZoomedViewOverlay } from './ZoomedViewOverlay';
 import { PinnedWidgetBar } from './PinnedWidgetBar';
 import { CANVAS_Z } from './canvas-chrome';
+import { PopupMenu } from '../../../components/PopupMenu';
+
+const LayoutCenterIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+const CenterIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <circle cx="12" cy="12" r="3" />
+    <line x1="12" y1="2" x2="12" y2="6" />
+    <line x1="12" y1="18" x2="12" y2="22" />
+    <line x1="2" y1="12" x2="6" y2="12" />
+    <line x1="18" y1="12" x2="22" y2="12" />
+  </svg>
+);
 
 interface CanvasWorkspaceProps {
   views: CanvasView[];
@@ -469,13 +486,12 @@ export function CanvasWorkspace({
   const {
     contextMenu,
     viewContextMenu,
-    viewMenuRef,
     handleContextMenu,
     handleContextMenuAction,
     handleDismissContextMenu,
     handleViewContextMenu,
     handleSetLayoutCenter,
-    handleDismissViewContextMenu: _handleDismissViewContextMenu,
+    handleDismissViewContextMenu,
     handleCenterViewFromMenu,
   } = useCanvasContextMenu({
     viewport,
@@ -596,7 +612,9 @@ export function CanvasWorkspace({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full overflow-hidden select-none bg-ctp-crust focus:outline-none"
+      // `isolate` keeps every canvas layer (up to 100000) inside the pane, so
+      // body-level modals, menus and tooltips always sit above the board.
+      className="relative isolate w-full h-full overflow-hidden select-none bg-ctp-crust focus:outline-none"
       tabIndex={-1}
       style={dotGridStyle}
       onMouseDown={handleMouseDown}
@@ -873,45 +891,27 @@ export function CanvasWorkspace({
 
       {/* View context menu */}
       {viewContextMenu && (
-        <MenuPortal>
-          <div
-            ref={viewMenuRef}
-            role="menu"
-            className="fixed z-canvas-overlay min-w-[200px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1"
-            style={{ left: viewContextMenu.x, top: viewContextMenu.y }}
-            data-testid="view-context-menu"
-          >
-            <button
-              className="w-full h-7 flex items-center gap-2 px-3 text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text transition-colors text-left"
-              onClick={() => handleSetLayoutCenter(viewContextMenu.viewId)}
-              data-testid="view-context-menu-set-layout-center"
-            >
-              <span className="w-4 flex-shrink-0 flex items-center justify-center text-ctp-overlay1">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              </span>
-              {layoutCenterId === viewContextMenu.viewId ? 'Remove as layout center' : 'Set as layout center'}
-            </button>
-            <button
-              className="w-full h-7 flex items-center gap-2 px-3 text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text transition-colors text-left"
-              onClick={() => handleCenterViewFromMenu(viewContextMenu.viewId, handleCenterView)}
-              data-testid="view-context-menu-center-view"
-            >
-              <span className="w-4 flex-shrink-0 flex items-center justify-center text-ctp-overlay1">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="3" />
-                  <line x1="12" y1="2" x2="12" y2="6" />
-                  <line x1="12" y1="18" x2="12" y2="22" />
-                  <line x1="2" y1="12" x2="6" y2="12" />
-                  <line x1="18" y1="12" x2="22" y2="12" />
-                </svg>
-              </span>
-              Center in viewport
-            </button>
-          </div>
-        </MenuPortal>
+        <PopupMenu
+          label="Card"
+          testId="view-context-menu"
+          position={{ x: viewContextMenu.x, y: viewContextMenu.y }}
+          minWidth={200}
+          onClose={handleDismissViewContextMenu}
+          items={[
+            {
+              id: 'set-layout-center',
+              label: layoutCenterId === viewContextMenu.viewId ? 'Remove as layout center' : 'Set as layout center',
+              icon: LayoutCenterIcon,
+              onSelect: () => handleSetLayoutCenter(viewContextMenu.viewId),
+            },
+            {
+              id: 'center-view',
+              label: 'Center in viewport',
+              icon: CenterIcon,
+              onSelect: () => handleCenterViewFromMenu(viewContextMenu.viewId, handleCenterView),
+            },
+          ]}
+        />
       )}
 
       {/* Wire config popover */}

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { CanvasView } from './canvas-types';
+import { Tooltip } from '../../../components/Tooltip';
 
 interface CanvasSearchProps {
   views: CanvasView[];
@@ -156,17 +157,19 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
 
   if (!isOpen) {
     return (
-      <button
-        onClick={handleToggle}
-        className={btnClass}
-        title="Search views (⌘F)"
-        data-testid="canvas-search-toggle"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-      </button>
+      <Tooltip content="Search views (⌘F)">
+        <button
+          onClick={handleToggle}
+          className={btnClass}
+          aria-label="Search views (⌘F)"
+          data-testid="canvas-search-toggle"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+      </Tooltip>
     );
   }
 
@@ -198,17 +201,19 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
             {((selectedIndex - 1 + filteredViews.length) % filteredViews.length) + 1} / {filteredViews.length}
           </span>
         )}
-        <button
-          onClick={handleToggle}
-          className={btnClass}
-          title="Close search"
-          data-testid="canvas-search-close"
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+        <Tooltip content="Close search">
+          <button
+            onClick={handleToggle}
+            className={btnClass}
+            aria-label="Close search"
+            data-testid="canvas-search-close"
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </Tooltip>
       </div>
 
       {/* Results dropdown */}

@@ -1,6 +1,8 @@
 import React, { useCallback, useState, useRef, useEffect } from 'react';
 import type { CanvasInstance } from './canvas-types';
-import { PopupMenu, type MenuItem } from '../../../chrome/sidebar/ProjectMenu';
+import { PopupMenu, type MenuEntry } from '../../../components/PopupMenu';
+import { Button } from '../../../components/Button';
+import { Tooltip } from '../../../components/Tooltip';
 import { PopOutIcon } from '../../../features/agents/useAgentRowActions';
 
 interface CanvasTabBarProps {
@@ -40,7 +42,7 @@ export function CanvasTabBar({
   const [addMenuAt, setAddMenuAt] = useState<{ x: number; y: number } | null>(null);
   const activeCanvas = canvases.find((c) => c.id === activeCanvasId);
 
-  const addItems: MenuItem[] = [
+  const addItems: MenuEntry[] = [
     { id: 'new', label: 'New canvas', onSelect: onAddCanvas },
     { id: 'from-blueprint', label: 'From blueprint', onSelect: () => onAddFromBlueprint?.() },
   ];
@@ -66,8 +68,9 @@ export function CanvasTabBar({
           />
         ))}
       </div>
-      <button
-        type="button"
+      <Button
+        kind="ghost"
+        icon={PlusIcon}
         // Keep the menu's outside-click handler from closing it before this click toggles it.
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => {
@@ -78,27 +81,25 @@ export function CanvasTabBar({
         }}
         aria-haspopup={onAddFromBlueprint ? 'menu' : undefined}
         aria-expanded={onAddFromBlueprint ? !!addMenuAt : undefined}
-        className="ml-1.5 flex-shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-surface-1 text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text transition-colors cursor-pointer"
+        className="ml-1.5"
         data-testid="canvas-add-button"
       >
-        {PlusIcon}
         New canvas
-      </button>
+      </Button>
       {addMenuAt && (
         <PopupMenu items={addItems} position={addMenuAt} label="New canvas" testId="canvas-add" onClose={() => setAddMenuAt(null)} />
       )}
       <span className="flex-1" />
       {onPopOutCanvas && activeCanvas && (
-        <button
-          type="button"
-          onClick={() => onPopOutCanvas(activeCanvas.id, activeCanvas.name)}
-          className="flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text transition-colors cursor-pointer"
-          title="Pop out canvas"
-          aria-label="Pop out canvas"
-          data-testid="canvas-tab-popout"
-        >
-          <PopOutIcon />
-        </button>
+        <Tooltip content="Pop out canvas">
+          <Button
+            kind="quiet"
+            icon={<PopOutIcon />}
+            onClick={() => onPopOutCanvas(activeCanvas.id, activeCanvas.name)}
+            aria-label="Pop out canvas"
+            data-testid="canvas-tab-popout"
+          />
+        </Tooltip>
       )}
     </div>
   );
@@ -159,11 +160,11 @@ function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename, onP
     setContextMenu({ x: e.clientX, y: e.clientY });
   }, []);
 
-  const menuItems: MenuItem[] = [
+  const menuItems: MenuEntry[] = [
     { id: 'rename', label: 'Rename', onSelect: startRename },
     ...(onPopOut ? [{ id: 'popout', label: 'Pop out', onSelect: onPopOut }] : []),
     ...(onExportBlueprint ? [{ id: 'export-blueprint', label: 'Export as blueprint', onSelect: onExportBlueprint }] : []),
-    ...(canClose ? [{ id: 'close', label: 'Close canvas', onSelect: onRemove }] : []),
+    ...(canClose ? [{ id: 'close', label: 'Close canvas', danger: true, onSelect: onRemove }] : []),
   ];
 
   return (
@@ -201,7 +202,6 @@ function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename, onP
             className={`w-4 h-4 -mr-1 flex-shrink-0 flex items-center justify-center rounded text-ctp-overlay1 hover:bg-surface-1 hover:text-ctp-text ${
               active ? '' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
             }`}
-            title="Close canvas"
             aria-label={`Close ${canvas.name}`}
             data-testid="canvas-tab-close"
           >

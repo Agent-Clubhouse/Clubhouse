@@ -180,16 +180,10 @@ describe('useCanvasContextMenu', () => {
     expect(source).toContain('export function useCanvasContextMenu');
   });
 
-  it('calls useDismissibleLayer for view context menu', () => {
-    expect(source).toContain('useDismissibleLayer');
+  // The view menu renders on the shared PopupMenu, which dismisses on an
+  // outside click or Esc and keeps itself on screen.
+  it('exposes a dismiss handler for the view context menu', () => {
     expect(source).toContain('handleDismissViewContextMenu');
-  });
-
-  it('clamps view context menu position via useLayoutEffect', () => {
-    expect(source).toContain('useLayoutEffect');
-    expect(source).toContain('clampMenuPosition');
-    expect(source).toContain('window.innerWidth');
-    expect(source).toContain('window.innerHeight');
   });
 
   it('handleContextMenu checks e.target === e.currentTarget to avoid child events', () => {

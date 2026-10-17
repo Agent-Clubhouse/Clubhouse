@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import type { CanvasViewType } from './canvas-types';
 import {
   getRegisteredWidgetTypes,
@@ -6,8 +6,7 @@ import {
   type RegisteredCanvasWidget,
 } from '../../canvas-widget-registry';
 import { usePluginStore } from '../../plugin-store';
-import { MenuPortal } from './MenuPortal';
-import { useDismissibleLayer } from './useDismissibleLayer';
+import { PopupMenu, type MenuEntry } from '../../../components/PopupMenu';
 import { sanitizeSvg } from '../../../utils/sanitize-svg';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { AGENT_ICON, ANCHOR_ICON, ZONE_ICON } from './canvas-icons';
@@ -42,11 +41,12 @@ const LAYOUT_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }>
   { type: 'zone', label: 'Zone', icon: ZONE_ICON },
 ];
 
-const ROW = 'w-full h-7 flex items-center gap-2 px-3 text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text transition-colors text-left';
-const ICON = 'w-4 flex-shrink-0 flex items-center justify-center text-ctp-overlay1 [&_svg]:w-3.5 [&_svg]:h-3.5';
+/** An SVG string as a menu icon node. */
+function svgIcon(svg: string) {
+  return <span className="flex" dangerouslySetInnerHTML={{ __html: sanitizeSvg(svg) }} />;
+}
 
 export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMenuProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
   const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
   const plugins = usePluginStore((s) => s.plugins);
   const appEnabled = usePluginStore((s) => s.appEnabled);
@@ -66,7 +66,13 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
     if (manifest?.requiresMcp && !mcpEnabled) return false;
     return true;
   });
-  useDismissibleLayer({ layerRef: menuRef, onDismiss });
+  // The shared menu closes on an outside click or Esc; a canvas menu also
+  // closes when the window loses focus, as before.
+  useEffect(() => {
+    window.addEventListener('blur', onDismiss);
+    return () => window.removeEventListener('blur', onDismiss);
+  }, [onDismiss]);
+
 
   const handleBuiltinSelect = useCallback((type: CanvasViewType) => {
     onSelect({ kind: 'builtin', type });
@@ -82,54 +88,33 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
     });
   }, [onSelect]);
 
-  const builtinRow = ({ type, label, icon }: { type: CanvasViewType; label: string; icon: string }) => (
-    <button
-      key={type}
-      type="button"
-      role="menuitem"
-      className={ROW}
-      onClick={(e) => { e.stopPropagation(); handleBuiltinSelect(type); }}
-      data-testid={`canvas-context-menu-${type}`}
-    >
-      <span className={ICON} dangerouslySetInnerHTML={{ __html: sanitizeSvg(icon) }} />
-      {label}
-    </button>
-  );
+  const builtinItem = ({ type, label, icon }: { type: CanvasViewType; label: string; icon: string }): MenuEntry => ({
+    id: type,
+    label,
+    icon: svgIcon(icon),
+    onSelect: () => handleBuiltinSelect(type),
+  });
+
+  const items: MenuEntry[] = [
+    builtinItem(AGENT_ITEM),
+    ...visibleWidgets.map((widget): MenuEntry => ({
+      id: widget.qualifiedType,
+      label: sentenceCase(widget.declaration.label),
+      icon: widget.declaration.icon ? svgIcon(widget.declaration.icon) : <span>+</span>,
+      onSelect: () => handlePluginSelect(widget),
+    })),
+    { id: 'separator-layout', separator: true },
+    ...LAYOUT_ITEMS.map(builtinItem),
+  ];
 
   return (
-    <MenuPortal>
-      <div
-        ref={menuRef}
-        role="menu"
-        aria-label="Add to canvas"
-        className="fixed z-canvas-overlay min-w-[200px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1"
-        style={{ left: x, top: y }}
-        data-testid="canvas-context-menu"
-      >
-        {builtinRow(AGENT_ITEM)}
-
-        {/* Plugin-provided widgets */}
-        {visibleWidgets.map((widget) => (
-          <button
-            key={widget.qualifiedType}
-            type="button"
-            role="menuitem"
-            className={ROW}
-            onClick={(e) => { e.stopPropagation(); handlePluginSelect(widget); }}
-            data-testid={`canvas-context-menu-${widget.qualifiedType}`}
-          >
-            <span className={ICON}>
-              {widget.declaration.icon
-                ? <span className="flex" dangerouslySetInnerHTML={{ __html: sanitizeSvg(widget.declaration.icon) }} />
-                : '+'}
-            </span>
-            {sentenceCase(widget.declaration.label)}
-          </button>
-        ))}
-
-        <div className="border-t border-surface-0 my-1" role="separator" />
-        {LAYOUT_ITEMS.map(builtinRow)}
-      </div>
-    </MenuPortal>
+    <PopupMenu
+      items={items}
+      position={{ x, y }}
+      label="Add to canvas"
+      testId="canvas-context-menu"
+      minWidth={200}
+      onClose={onDismiss}
+    />
   );
 }

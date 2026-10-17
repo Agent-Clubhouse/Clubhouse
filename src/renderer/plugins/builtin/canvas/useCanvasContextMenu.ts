@@ -5,11 +5,10 @@
  * and selection re-render cycles.
  */
 
-import { useState, useCallback, useLayoutEffect, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import type { CanvasViewType, Viewport } from './canvas-types';
 import type { ContextMenuSelection } from './CanvasContextMenu';
-import { screenToCanvas, clampMenuPosition } from './canvas-operations';
-import { useDismissibleLayer } from './useDismissibleLayer';
+import { screenToCanvas } from './canvas-operations';
 
 export interface CanvasContextMenuState {
   x: number;
@@ -36,7 +35,6 @@ export interface CanvasContextMenuOptions {
 export interface CanvasContextMenuResult {
   contextMenu: CanvasContextMenuState | null;
   viewContextMenu: ViewContextMenuState | null;
-  viewMenuRef: React.RefObject<HTMLDivElement>;
   handleContextMenu: (e: React.MouseEvent) => void;
   handleContextMenuAction: (selection: ContextMenuSelection) => void;
   handleDismissContextMenu: () => void;
@@ -56,7 +54,6 @@ export function useCanvasContextMenu({
 }: CanvasContextMenuOptions): CanvasContextMenuResult {
   const [contextMenu, setContextMenu] = useState<CanvasContextMenuState | null>(null);
   const [viewContextMenu, setViewContextMenu] = useState<ViewContextMenuState | null>(null);
-  const viewMenuRef = useRef<HTMLDivElement>(null!);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     if (e.target !== e.currentTarget) return;
@@ -103,34 +100,9 @@ export function useCanvasContextMenu({
     setViewContextMenu(null);
   }, []);
 
-  useDismissibleLayer({
-    layerRef: viewMenuRef,
-    onDismiss: handleDismissViewContextMenu,
-    enabled: !!viewContextMenu,
-  });
-
-  // Clamp view context menu to viewport bounds after the menu element is rendered and measured.
-  // We update state (not the DOM directly) so React controls the final position consistently
-  // across re-renders. Direct el.style mutations would be silently reset whenever React
-  // reconciles the same JSX style prop from a parent re-render.
-  useLayoutEffect(() => {
-    const el = viewMenuRef.current;
-    if (!el || !viewContextMenu) return;
-    const rect = el.getBoundingClientRect();
-    const clamped = clampMenuPosition(
-      viewContextMenu.x, viewContextMenu.y,
-      rect.width, rect.height,
-      window.innerWidth, window.innerHeight,
-    );
-    if (clamped.x !== viewContextMenu.x || clamped.y !== viewContextMenu.y) {
-      setViewContextMenu({ ...viewContextMenu, x: clamped.x, y: clamped.y });
-    }
-  }, [viewContextMenu]);
-
   return {
     contextMenu,
     viewContextMenu,
-    viewMenuRef,
     handleContextMenu,
     handleContextMenuAction,
     handleDismissContextMenu,

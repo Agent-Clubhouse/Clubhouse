@@ -16,6 +16,7 @@ import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjec
 import { useUIStore } from '../../../stores/uiStore';
 import { showApprovalDialog, showConfirmDialog } from '../../PluginDialog';
 import { WireToolPermissionsDialog } from '../canvas/WireToolPermissionsDialog';
+import { Button } from '../../../components/Button';
 import {
   GROUP_PROJECT_DEFAULT_DISABLED_TOOLS_VERSION,
   GROUP_PROJECT_CORE_TOOL_SUFFIXES,
@@ -149,14 +150,9 @@ function CreationForm({
         className="w-full h-7 px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text placeholder:text-ctp-overlay1 focus-ring"
         autoFocus
       />
-      <button
-        type="button"
-        onClick={handleCreate}
-        disabled={!name.trim() || creating}
-        className="self-start h-7 px-2.5 rounded-md border border-ctp-accent bg-ctp-accent text-xs font-medium text-ctp-crust enabled:hover:bg-ctp-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      >
+      <Button kind="primary" onClick={handleCreate} disabled={!name.trim() || creating} className="self-start">
         {creating ? 'Creating…' : 'Create'}
-      </button>
+      </Button>
       {error && (
         <div role="alert" className="text-xs text-ctp-error">
           {error}

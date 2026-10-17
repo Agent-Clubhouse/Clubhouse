@@ -2,11 +2,12 @@
  * WireToolPermissionsDialog — popout dialog for toggling individual tools on/off per wire.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { Toggle } from '../../../components/Toggle';
 import { GROUP_PROJECT_TOOL_SUFFIXES } from '../../../../shared/group-project-permissions';
-import { BUTTON, CANVAS_Z } from './canvas-chrome';
+import { Modal } from '../../../components/Modal';
+import { Button } from '../../../components/Button';
 
 /** Known tool suffixes for each target kind. */
 const TOOL_SUFFIXES: Record<string, string[]> = {
@@ -68,23 +69,11 @@ interface WireToolPermissionsDialogProps {
 
 export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireToolPermissionsDialogProps) {
   const suffixes = TOOL_SUFFIXES[binding.targetKind] || [];
-  const backdropRef = useRef<HTMLDivElement>(null);
 
   // Initialize from existing disabledTools
   const [disabled, setDisabled] = useState<Set<string>>(() => {
     return new Set(binding.disabledTools || []);
   });
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
 
   const handleToggle = (suffix: string, enabled: boolean) => {
     setDisabled((prev) => {
@@ -103,17 +92,6 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
     onClose();
   };
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (e.target === backdropRef.current) {
-      onClose();
-    }
-  };
-
-  const handleBackdropMouseDown = (e: React.MouseEvent) => {
-    e.stopPropagation();
-  };
-
   const disabledCount = disabled.size;
   const enabledCount = suffixes.length - disabledCount;
 
@@ -121,88 +99,57 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
   const handleDisableAll = () => setDisabled(new Set(suffixes));
 
   return (
-    <div
-      ref={backdropRef}
-      className="fixed inset-0 bg-black/50 flex items-center justify-center"
-      style={{ zIndex: CANVAS_Z.dialog }}
-      onMouseDown={handleBackdropMouseDown}
-      onClick={handleBackdropClick}
-      data-testid="wire-tool-permissions-dialog"
-    >
-      <div role="dialog" aria-modal="true" aria-label="Tool permissions" className="bg-ctp-mantle border border-surface-1 rounded-lg shadow-2xl w-[360px] max-h-[80vh] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-surface-0">
-          <div className="text-[13px] text-ctp-text font-medium">Tool permissions</div>
-          <div className="text-xs text-ctp-overlay1 truncate">{binding.label}</div>
+    // React bubbles portal events through this tree; keep a mousedown in the
+    // dialog from reaching the canvas workspace and its wire popover.
+    <div onMouseDown={(e) => e.stopPropagation()}>
+      <Modal
+        open
+        onClose={onClose}
+        title="Tool permissions"
+        backdropTestId="wire-tool-permissions-dialog"
+        padding="none"
+        footer={
+          <>
+            <span className="mr-auto text-xs text-ctp-overlay1">
+              {enabledCount} of {suffixes.length} on
+            </span>
+            <Button kind="quiet" onClick={onClose} data-testid="wire-permissions-cancel">Cancel</Button>
+            <Button kind="primary" onClick={handleSave} data-testid="wire-permissions-save">Save</Button>
+          </>
+        }
+      >
+        <div className="px-4 pt-3 text-xs text-ctp-overlay1 truncate">{binding.label}</div>
+        <div className="px-3 py-2 flex gap-1">
+          <Button kind="quiet" onClick={handleEnableAll} data-testid="wire-permissions-enable-all">Turn all on</Button>
+          <Button kind="quiet" onClick={handleDisableAll} data-testid="wire-permissions-disable-all">Turn all off</Button>
         </div>
-
-        {/* Bulk actions */}
-        <div className="px-3 pt-2 flex gap-1">
-          <button
-            onClick={handleEnableAll}
-            className={BUTTON.quiet}
-            data-testid="wire-permissions-enable-all"
-          >
-            Turn all on
-          </button>
-          <button
-            onClick={handleDisableAll}
-            className={BUTTON.quiet}
-            data-testid="wire-permissions-disable-all"
-          >
-            Turn all off
-          </button>
-        </div>
-
-        {/* Tool list */}
-        <div className="px-4 py-2 flex-1 overflow-y-auto space-y-0.5">
-          {suffixes.map((suffix) => {
-            const isEnabled = !disabled.has(suffix);
-            return (
-              <div
-                key={suffix}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-0 transition-colors"
-                data-testid={`wire-permission-${suffix}`}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className={`text-[13px] ${isEnabled ? 'text-ctp-text' : 'text-ctp-subtext0'}`}>
-                    {toolLabel(suffix)}
-                  </div>
-                  {TOOL_HINTS[suffix] && (
-                    <div className="text-xs text-ctp-overlay1 truncate">
-                      {TOOL_HINTS[suffix]}
-                    </div>
-                  )}
+      {/* Tool list */}
+      <div className="px-2 pb-2 space-y-0.5">
+        {suffixes.map((suffix) => {
+          const isEnabled = !disabled.has(suffix);
+          return (
+            <div
+              key={suffix}
+              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-0 transition-colors"
+              data-testid={`wire-permission-${suffix}`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className={`text-[13px] ${isEnabled ? 'text-ctp-text' : 'text-ctp-subtext0'}`}>
+                  {toolLabel(suffix)}
                 </div>
-                <Toggle checked={isEnabled} onChange={(val) => handleToggle(suffix, val)} />
+                {TOOL_HINTS[suffix] && (
+                  <div className="text-xs text-ctp-overlay1 truncate">
+                    {TOOL_HINTS[suffix]}
+                  </div>
+                )}
               </div>
-            );
-          })}
-        </div>
-
-        {/* Footer */}
-        <div className="px-4 py-3 border-t border-surface-0 flex items-center justify-between">
-          <span className="text-xs text-ctp-overlay1">
-            {enabledCount} of {suffixes.length} on
-          </span>
-          <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              className={BUTTON.quiet}
-              data-testid="wire-permissions-cancel"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              className={BUTTON.primary}
-              data-testid="wire-permissions-save"
-            >
-              Save
-            </button>
-          </div>
-        </div>
+              <Toggle checked={isEnabled} onChange={(val) => handleToggle(suffix, val)} ariaLabel={toolLabel(suffix)} />
+            </div>
+          );
+        })}
       </div>
+
+      </Modal>
     </div>
   );
 }
