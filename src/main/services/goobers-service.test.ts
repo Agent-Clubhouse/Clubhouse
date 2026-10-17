@@ -987,8 +987,9 @@ describe('GoobersService — address-watch race, M21', () => {
     const service = new GoobersService(settings);
 
     service.subscribe();
-    await flush();
-    expect(service.isWatchingAddressFileForTests).toBe(true);
+    await vi.waitFor(() => {
+      expect(service.isWatchingAddressFileForTests).toBe(true);
+    }, { timeout: 2_000 });
     expect(service.isPollingForTests).toBe(false);
 
     // The file appears — but the daemon is captured mid-startup, not yet
@@ -1095,7 +1096,9 @@ describe('GoobersService — daemon-start-unknown (M17)', () => {
     const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
     const service = new GoobersService(settings);
     service.subscribe();
-    await flush();
+    await vi.waitFor(() => {
+      expect(service.getBinaryPathForTests()).toBe(binaryPath);
+    }, { timeout: 2_000 });
 
     vi.mocked(startDaemon).mockResolvedValueOnce({
       ok: false,
@@ -1499,9 +1502,9 @@ describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => 
     vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
 
     service.subscribe();
-    await flush();
-
-    expect(service.getState().lastError?.code).toBe('auth-required');
+    await vi.waitFor(() => {
+      expect(service.getState().lastError?.code).toBe('auth-required');
+    }, { timeout: 2_000 });
     expect(service.getState().daemon.state).toBe('running'); // §14.1 — /readyz already confirmed this
     expect(service.isPollingForTests).toBe(false);
     expect(service.isWatchingAddressFileForTests).toBe(false);
@@ -1515,8 +1518,9 @@ describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => 
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
     service.subscribe();
-    await flush();
-    expect(service.isPollingForTests).toBe(true); // connected fine — polling started normally
+    await vi.waitFor(() => {
+      expect(service.isPollingForTests).toBe(true);
+    }, { timeout: 2_000 });
 
     // Simulate the next 5s tick observing a 401, by directly driving the same
     // private sequence the poll interval calls (refreshConnectionOnce then
@@ -1643,8 +1647,9 @@ describe('GoobersService — 503 recovering (M20)', () => {
     // then crashes and comes back up recovering, not a fresh connect.
     vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
     service.subscribe();
-    await flush();
-    expect(service.isPollingForTests).toBe(true);
+    await vi.waitFor(() => {
+      expect(service.isPollingForTests).toBe(true);
+    }, { timeout: 2_000 });
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(recoveringSnapshot());
     const svc = service as unknown as {
@@ -1674,7 +1679,9 @@ describe('GoobersService — 503 recovering (M20)', () => {
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
     service.subscribe();
-    await flush();
+    await vi.waitFor(() => {
+      expect(service.isPollingForTests).toBe(true);
+    }, { timeout: 2_000 });
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(recoveringSnapshot());
     const svc = service as unknown as {
@@ -1708,8 +1715,10 @@ describe('GoobersService — 503 recovering (M20)', () => {
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(recoveringSnapshot());
     service.subscribe();
-    await flush();
-    expect(service.getState().lastError?.code).toBe('recovering');
+    // Real file validation must finish before daemon control is exercised.
+    await vi.waitFor(() => {
+      expect(service.getState().lastError?.code).toBe('recovering');
+    }, { timeout: 2_000 });
 
     vi.mocked(stopDaemon).mockResolvedValueOnce({ ok: true });
     const stopResult = await service.daemonStop();
