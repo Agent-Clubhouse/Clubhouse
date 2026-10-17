@@ -43,6 +43,7 @@ const codexCapabilities: ChatCapabilities = {
   // turn/start carries model, effort, approval and sandbox overrides, so all
   // of these apply from the next turn without restarting the process.
   modelSwitch: 'per_turn',
+  effortSwitch: 'per_turn',
   liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
   login: 'terminal',
   // thread/start takes developerInstructions.

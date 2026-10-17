@@ -459,6 +459,7 @@ describe('codex driver helpers', () => {
       limits: true,
       images: true,
       modelSwitch: 'per_turn',
+      effortSwitch: 'per_turn',
       liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
       login: 'terminal',
       systemPrompt: true,
