@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ATTR,
+  countBucket,
   allAttributeKeys,
   EVENTS,
   getAttributeSpec,
@@ -86,6 +87,31 @@ const SAMPLES: Record<keyof typeof ATTR, { good: TelAttr; key: string }> = {
   tapBroadcast: { good: ATTR.tapBroadcast(true), key: 'clubhouse.tap.broadcast' },
   targetsCount: { good: ATTR.targetsCount(3), key: 'clubhouse.targets.count' },
   deliveryResult: { good: ATTR.deliveryResult('unsupported_runtime'), key: 'clubhouse.delivery.result' },
+  // Workspace (Phase 5)
+  gitOp: { good: ATTR.gitOp('push'), key: 'clubhouse.git.op' },
+  gitTimedOut: { good: ATTR.gitTimedOut(true), key: 'clubhouse.git.timed_out' },
+  gitStatusFileCount: { good: ATTR.gitStatusFileCount('10-99'), key: 'clubhouse.git.status.file_count_bucket' },
+  fileOp: { good: ATTR.fileOp('read_tree'), key: 'clubhouse.file.op' },
+  fileResult: { good: ATTR.fileResult('error'), key: 'clubhouse.file.result' },
+  treeNodeCount: { good: ATTR.treeNodeCount('>=10000'), key: 'clubhouse.tree.node_count_bucket' },
+  treeHitCap: { good: ATTR.treeHitCap(true), key: 'clubhouse.tree.hit_cap' },
+  searchEngine: { good: ATTR.searchEngine('rg'), key: 'clubhouse.search.engine' },
+  searchTruncated: { good: ATTR.searchTruncated(false), key: 'clubhouse.search.truncated' },
+  searchMatchCount: { good: ATTR.searchMatchCount('0'), key: 'clubhouse.search.match_count_bucket' },
+  searchRegex: { good: ATTR.searchRegex(true), key: 'clubhouse.search.regex' },
+  searchCaseSensitive: { good: ATTR.searchCaseSensitive(false), key: 'clubhouse.search.case_sensitive' },
+  searchWholeWord: { good: ATTR.searchWholeWord(false), key: 'clubhouse.search.whole_word' },
+  editorBucket: { good: ATTR.editorBucket('cursor'), key: 'clubhouse.editor.bucket' },
+  pluginRef: { good: ATTR.pluginRef('canvas'), key: 'clubhouse.plugin.ref' },
+  pluginIdHash: { good: ATTR.pluginIdHash('my-community-plugin'), key: 'clubhouse.plugin.id_hash' },
+  pluginOrigin: { good: ATTR.pluginOrigin('marketplace'), key: 'clubhouse.plugin.origin' },
+  pluginScope: { good: ATTR.pluginScope('dual'), key: 'clubhouse.plugin.scope' },
+  pluginApiVersion: { good: ATTR.pluginApiVersion('0.9'), key: 'clubhouse.plugin.api_version' },
+  attempt: { good: ATTR.attempt(2), key: 'clubhouse.attempt' },
+  pluginProtocolResult: { good: ATTR.pluginProtocolResult('denied'), key: 'clubhouse.plugin.protocol.result' },
+  canvasLoadResult: { good: ATTR.canvasLoadResult('recovered_from_backup'), key: 'clubhouse.canvas.load.result' },
+  canvasCount: { good: ATTR.canvasCount(3), key: 'clubhouse.canvas.count' },
+  canvasViewCount: { good: ATTR.canvasViewCount('1-9'), key: 'clubhouse.canvas.view.count_bucket' },
 };
 
 describe('telemetry attribute registry', () => {
@@ -128,15 +154,25 @@ describe('telemetry attribute registry', () => {
         "clubhouse.agent.uses_worktree",
         "clubhouse.annex.client",
         "clubhouse.annex.server",
+        "clubhouse.attempt",
         "clubhouse.binary.lookup_tier",
         "clubhouse.blocked.flow",
+        "clubhouse.canvas.count",
+        "clubhouse.canvas.load.result",
+        "clubhouse.canvas.view.count_bucket",
         "clubhouse.child_process.gone_reason",
         "clubhouse.child_process.type",
         "clubhouse.clubhouse_mode",
         "clubhouse.delivery.result",
+        "clubhouse.editor.bucket",
         "clubhouse.error.boundary",
         "clubhouse.exception.handled",
         "clubhouse.exception.origin",
+        "clubhouse.file.op",
+        "clubhouse.file.result",
+        "clubhouse.git.op",
+        "clubhouse.git.status.file_count_bucket",
+        "clubhouse.git.timed_out",
         "clubhouse.hook.kind",
         "clubhouse.hooks.enabled",
         "clubhouse.http.class",
@@ -157,12 +193,24 @@ describe('telemetry attribute registry', () => {
         "clubhouse.persist.guard_reason",
         "clubhouse.persist.result",
         "clubhouse.persist.store",
+        "clubhouse.plugin.api_version",
+        "clubhouse.plugin.id_hash",
+        "clubhouse.plugin.origin",
+        "clubhouse.plugin.protocol.result",
+        "clubhouse.plugin.ref",
+        "clubhouse.plugin.scope",
         "clubhouse.process",
         "clubhouse.process.type",
         "clubhouse.profile.active",
         "clubhouse.projects.count",
         "clubhouse.renderer.gone_reason",
         "clubhouse.safe_mode.trigger",
+        "clubhouse.search.case_sensitive",
+        "clubhouse.search.engine",
+        "clubhouse.search.match_count_bucket",
+        "clubhouse.search.regex",
+        "clubhouse.search.truncated",
+        "clubhouse.search.whole_word",
         "clubhouse.shutdown.previous",
         "clubhouse.shutdown.step",
         "clubhouse.size_bucket",
@@ -174,6 +222,8 @@ describe('telemetry attribute registry', () => {
         "clubhouse.theme.kind",
         "clubhouse.tool.bucket",
         "clubhouse.tool.result",
+        "clubhouse.tree.hit_cap",
+        "clubhouse.tree.node_count_bucket",
         "clubhouse.ui.action",
         "clubhouse.ui.feature",
         "clubhouse.ui.surface",
@@ -221,5 +271,24 @@ describe('telemetry attribute registry', () => {
     expect(levelAllows('standard', 'standard')).toBe(true);
     expect(levelAllows('standard', 'detailed')).toBe(false);
     expect(levelAllows('detailed', 'detailed')).toBe(true);
+  });
+
+  it('buckets counts coarsely', () => {
+    expect([0, 1, 9, 10, 99, 100, 999, 1000, 9999, 10_000, NaN].map(countBucket)).toEqual([
+      '0', '1-9', '1-9', '10-99', '10-99', '100-999', '100-999', '1000-9999', '1000-9999', '>=10000', '0',
+    ]);
+  });
+
+  it('declares a span for every user-initiated git operation', () => {
+    for (const op of ['checkout', 'stage', 'unstage', 'stage_all', 'unstage_all', 'discard', 'commit', 'push', 'pull',
+      'create_branch', 'stash', 'stash_pop', 'diff', 'show_commit', 'worktree_list']) {
+      expect(isKnownSpan(`clubhouse.git.${op}`), op).toBe(true);
+    }
+  });
+
+  it('sends plugin API versions as strings, never truncated', () => {
+    expect(ATTR.pluginApiVersion('0.8').value).toBe('0.8');
+    expect(ATTR.pluginApiVersion('0.9').value).toBe('0.9');
+    expect(ATTR.pluginApiVersion('7.5').value).toBe('other');
   });
 });

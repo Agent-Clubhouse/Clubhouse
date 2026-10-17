@@ -28,6 +28,7 @@ import type { ThreadReadResponse } from './generated/v2/ThreadReadResponse';
 import type { ThreadResumeResponse } from './generated/v2/ThreadResumeResponse';
 import type { ThreadStartResponse } from './generated/v2/ThreadStartResponse';
 import type { ToolRequestUserInputResponse } from './generated/v2/ToolRequestUserInputResponse';
+import type { ReviewStartResponse } from './generated/v2/ReviewStartResponse';
 import type { TurnInterruptResponse } from './generated/v2/TurnInterruptResponse';
 import type { TurnStartResponse } from './generated/v2/TurnStartResponse';
 import type { TurnSteerResponse } from './generated/v2/TurnSteerResponse';
@@ -45,6 +46,8 @@ export type { RequestId } from './generated/RequestId';
 export type { AskForApproval } from './generated/v2/AskForApproval';
 export type { SandboxMode } from './generated/v2/SandboxMode';
 export type { SandboxPolicy } from './generated/v2/SandboxPolicy';
+export type { ReviewTarget } from './generated/v2/ReviewTarget';
+export type { ReviewStartResponse } from './generated/v2/ReviewStartResponse';
 export type { Thread } from './generated/v2/Thread';
 export type { ThreadItem } from './generated/v2/ThreadItem';
 export type { ThreadStatus } from './generated/v2/ThreadStatus';
@@ -88,6 +91,7 @@ export interface CodexResponseMap {
   'turn/steer': TurnSteerResponse;
   'turn/interrupt': TurnInterruptResponse;
   'account/rateLimits/read': GetAccountRateLimitsResponse;
+  'review/start': ReviewStartResponse;
 }
 
 /** Result of a client request; `unknown` for methods not yet in CodexResponseMap. */
