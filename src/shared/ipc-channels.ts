@@ -154,6 +154,10 @@ export const IPC = {
     GET_RUNTIME_SETTINGS: 'chat:get-runtime-settings',
     SAVE_RUNTIME_SETTINGS: 'chat:save-runtime-settings',
     GET_AGENT_RUNTIME: 'chat:get-agent-runtime',
+    LIST_CHECKPOINTS: 'chat:list-checkpoints',
+    GET_CHANGES: 'chat:get-changes',
+    REVERT_TURN: 'chat:revert-turn',
+    UNDO_REVERT: 'chat:undo-revert',
     /** Main → Renderer: an agent didn't get the chat it asked for (driver or terminal fallback). */
     RUNTIME_NOTICE: 'chat:runtime-notice',
   },

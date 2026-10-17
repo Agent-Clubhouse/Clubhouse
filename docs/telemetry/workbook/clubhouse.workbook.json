@@ -125,6 +125,14 @@
             "style": "link"
           },
           {
+            "id": "annex",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Annex",
+            "subTarget": "annex",
+            "style": "link"
+          },
+          {
             "id": "chat",
             "cellValue": "selectedTab",
             "linkTarget": "parameter",
@@ -1120,6 +1128,197 @@
         "value": "agents"
       },
       "name": "tab-agents"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Annex (spec \u00a74.12, \u00a712 H9): pairing, connects by address family, reconnects and disconnects, identity regenerations, and the satellite's event stream. Satellite and controller rows come from different installs; `clubhouse.annex.role` tells them apart. REST route timings need the Detailed level."
+            },
+            "name": "text-annex"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.pair\"\n| summarize attempts = sum(itemCount) by role = tostring(customDimensions[\"clubhouse.annex.role\"]), result = tostring(customDimensions[\"clubhouse.annex.pair.result\"])\n| order by attempts desc",
+              "size": 0,
+              "title": "Pairing results",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Pairing results"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.connect\"\n| extend family = tostring(customDimensions[\"clubhouse.net.addr_family\"])\n| summarize connects = sum(itemCount), failed = sumif(itemCount, success == false), p95_s = round(percentile(duration, 95) / 1000, 2) by family\n| extend failure_pct = round(100.0 * failed / connects, 1)",
+              "size": 0,
+              "title": "Connects by address family",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Connects by address family"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.annex.connect\", \"clubhouse.annex.discover\") and success == false\n| summarize failures = sum(itemCount), installs = dcount(user_Id) by name, error = tostring(customDimensions[\"error.type\"]), family = tostring(customDimensions[\"clubhouse.net.addr_family\"])\n| order by failures desc",
+              "size": 0,
+              "title": "Connect and discovery failures",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Connect and discovery failures"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.annex.identity.regenerated\", \"clubhouse.annex.tls_fallback\")\n| summarize count = sum(itemCount), installs = dcount(user_Id) by name, reason = tostring(customDimensions[\"clubhouse.annex.identity.reason\"])",
+              "size": 0,
+              "title": "Identity regenerations and TLS fallbacks",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Identity regenerations and TLS fallbacks"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.annex.reconnects\", \"clubhouse.annex.reconnect.delay\")\n| extend attempt = tostring(customDimensions[\"clubhouse.attempt_bucket\"])\n| summarize reconnects = sumif(value, name == \"clubhouse.annex.reconnects\"), avg_delay_s = round(sumif(valueSum, name == \"clubhouse.annex.reconnect.delay\") / sumif(valueCount, name == \"clubhouse.annex.reconnect.delay\"), 1) by attempt\n| order by attempt asc",
+              "size": 0,
+              "title": "Reconnects by attempt",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Reconnects by attempt"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.disconnects\"\n| summarize disconnects = sum(value) by reason = tostring(customDimensions[\"clubhouse.annex.disconnect.reason\"])\n| order by disconnects desc",
+              "size": 0,
+              "title": "Disconnects by reason",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Disconnects by reason"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.heartbeat.rtt\"\n| summarize avg_ms = round(1000 * sum(valueSum) / sum(valueCount), 1), max_ms = round(1000 * max(valueMax), 1) by bin(timestamp, 1h)",
+              "size": 0,
+              "title": "Heartbeat round trip (ms)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Heartbeat round trip (ms)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.control.denied\"\n| summarize denied = sum(value), installs = dcount(user_Id) by channel = tostring(customDimensions[\"clubhouse.annex.control.channel\"])",
+              "size": 0,
+              "title": "Control requests denied (no mTLS)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Control requests denied (no mTLS)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.remote_spawn\"\n| summarize sends = sum(itemCount), failed = sumif(itemCount, success == false) by action = tostring(customDimensions[\"clubhouse.annex.remote.action\"]), error = tostring(customDimensions[\"error.type\"])",
+              "size": 0,
+              "title": "Remote spawns",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Remote spawns"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.annex.events\", \"clubhouse.annex.events.bytes\", \"clubhouse.annex.send_failures\")\n| extend type = tostring(customDimensions[\"clubhouse.annex.event.type\"])\n| summarize events = sumif(value, name == \"clubhouse.annex.events\"), mb = round(sumif(value, name == \"clubhouse.annex.events.bytes\") / 1048576, 2), send_failures = sumif(value, name == \"clubhouse.annex.send_failures\") by type\n| order by mb desc",
+              "size": 0,
+              "title": "Event stream by type",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Event stream by type"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.clients\"\n| summarize clients = max(valueMax) by bin(timestamp, 1h), kind = tostring(customDimensions[\"clubhouse.annex.client.kind\"])",
+              "size": 0,
+              "title": "Connected clients by kind",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Connected clients by kind"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let build = customMetrics | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.annex.snapshot.build.duration\" | summarize n = sum(valueCount), avg_ms = round(1000 * sum(valueSum) / sum(valueCount), 1) | extend item = \"snapshot build\";\nlet replays = customMetrics | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.annex.replays\" | summarize n = sum(value), avg_ms = real(null) by item = strcat(\"replay: \", tostring(customDimensions[\"clubhouse.annex.replay.result\"]));\nunion build, replays",
+              "size": 0,
+              "title": "Snapshot build and replays",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Snapshot build and replays"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.rest\"\n| extend route = tostring(customDimensions[\"clubhouse.annex.route\"]), http = tostring(customDimensions[\"clubhouse.http.class\"])\n| summarize requests = sum(itemCount), server_errors = sumif(itemCount, http == \"5xx\"), p95_ms = round(percentile(duration, 95), 0) by route\n| order by requests desc",
+              "size": 0,
+              "title": "REST routes (Detailed level)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "REST routes (Detailed level)"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "annex"
+      },
+      "name": "tab-annex"
     },
     {
       "type": 12,

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -27,7 +27,8 @@ vi.mock('../util/shell', () => ({
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { execSync, execFileSync } from 'child_process';
-import { findBinaryInPath, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile, validateWrapperConfig, clearBinaryCache } from './shared';
+import { app } from 'electron';
+import { findBinaryInPath, testBinaryOverride, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile, validateWrapperConfig, clearBinaryCache } from './shared';
 import type { LaunchWrapperConfig } from '../../shared/types';
 
 describe('shared orchestrator utilities', () => {
@@ -38,6 +39,44 @@ describe('shared orchestrator utilities', () => {
     vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
     vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
     vi.mocked(execFileSync).mockImplementation(() => { throw new Error('not found'); });
+  });
+
+  describe('testBinaryOverride (CLUBHOUSE_TEST_CLI_BINARIES)', () => {
+    const fake = path.join(os.tmpdir(), 'fake-bin', 'claude');
+    afterEach(() => {
+      delete process.env.CLUBHOUSE_TEST_CLI_BINARIES;
+      (app as { isPackaged: boolean }).isPackaged = false;
+    });
+
+    it('is undefined when the variable is unset or the provider is not listed', () => {
+      expect(testBinaryOverride('claude-code')).toBeUndefined();
+      process.env.CLUBHOUSE_TEST_CLI_BINARIES = JSON.stringify({ 'codex-cli': fake });
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      expect(testBinaryOverride('claude-code')).toBeUndefined();
+    });
+
+    it('returns the listed binary when it exists', () => {
+      process.env.CLUBHOUSE_TEST_CLI_BINARIES = JSON.stringify({ 'claude-code': fake });
+      vi.mocked(fs.existsSync).mockImplementation((p) => p === fake);
+      expect(testBinaryOverride('claude-code')).toBe(fake);
+    });
+
+    it('throws instead of falling back when the listed binary is missing', () => {
+      process.env.CLUBHOUSE_TEST_CLI_BINARIES = JSON.stringify({ 'claude-code': fake });
+      expect(() => testBinaryOverride('claude-code')).toThrow(/Could not find the claude-code test binary/);
+    });
+
+    it('throws on malformed JSON', () => {
+      process.env.CLUBHOUSE_TEST_CLI_BINARIES = '{nope';
+      expect(() => testBinaryOverride('claude-code')).toThrow(/not valid JSON/);
+    });
+
+    it('is ignored in packaged builds', () => {
+      process.env.CLUBHOUSE_TEST_CLI_BINARIES = JSON.stringify({ 'claude-code': fake });
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      (app as { isPackaged: boolean }).isPackaged = true;
+      expect(testBinaryOverride('claude-code')).toBeUndefined();
+    });
   });
 
   describe('findBinaryInPath', () => {

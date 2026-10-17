@@ -137,6 +137,17 @@ describe('BaseProvider', () => {
       const { binary } = await provider.buildSpawnCommand({ cwd: '/p' });
       expect(binary).toContain('test-cli');
     });
+
+    it('prefers the CLUBHOUSE_TEST_CLI_BINARIES override over a binary at a well-known path', () => {
+      const fake = 'fake-bin-dir/test-cli';
+      vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === fake || isBinaryPath(String(p)));
+      process.env.CLUBHOUSE_TEST_CLI_BINARIES = JSON.stringify({ 'test-provider': fake });
+      try {
+        expect(provider.getBinaryPath()).toBe(fake);
+      } finally {
+        delete process.env.CLUBHOUSE_TEST_CLI_BINARIES;
+      }
+    });
   });
 
   describe('checkAvailability', () => {
