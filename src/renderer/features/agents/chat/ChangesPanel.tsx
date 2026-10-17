@@ -11,6 +11,9 @@ import { DiffCard } from './ToolBlocks';
 import { FileIcon, XIcon } from './icons';
 
 type Scope = 'turn' | 'session';
+/** Which in-page confirmation is showing: the revert itself, or overwriting files edited after the turn. */
+type Confirm = 'revert' | 'force' | null;
+type Outcome = { kind: 'revert' | 'undo'; result: RevertResult };
 
 export interface ChangesPanelProps {
   agentId: string;
@@ -35,8 +38,8 @@ export function ChangesPanel({ agentId, sessionId, refreshKey, onClose }: Change
   const [changes, setChanges] = useState<ChangesResult | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [patch, setPatch] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const [revert, setRevert] = useState<RevertResult | null>(null);
+  const [confirm, setConfirm] = useState<Confirm>(null);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -82,14 +85,20 @@ export function ChangesPanel({ agentId, sessionId, refreshKey, onClose }: Change
     return () => { cancelled = true; };
   }, [agentId, target, selected, refreshKey]);
 
-  const doRevert = async (force: boolean) => {
+  // A new turn makes the previous result and confirmation stale.
+  const lastTurnId = lastTurn?.turnId;
+  useEffect(() => { setOutcome(null); setConfirm(null); }, [lastTurnId]);
+
+  const run = async (kind: Outcome['kind'], force = false) => {
     if (!lastTurn) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await window.clubhouse.chat.revertTurn(agentId, lastTurn.turnId, force);
-      setRevert(result);
-      setConfirming(false);
+      const result = kind === 'undo'
+        ? await window.clubhouse.chat.undoRevert(agentId, lastTurn.turnId)
+        : await window.clubhouse.chat.revertTurn(agentId, lastTurn.turnId, force);
+      setOutcome({ kind, result });
+      setConfirm(null);
       await load();
       const refreshed = await window.clubhouse.chat.getChanges(agentId, { turnId: lastTurn.turnId });
       setChanges(refreshed);
@@ -103,6 +112,8 @@ export function ChangesPanel({ agentId, sessionId, refreshKey, onClose }: Change
   const files = changes?.files ?? [];
   const { added, removed } = totals(files);
   const canRevert = scope === 'turn' && !!lastTurn?.end && files.length > 0;
+  const result = outcome?.result;
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
   return (
     <aside className="w-[400px] flex-shrink-0 border-l border-surface-0 bg-ctp-mantle flex flex-col min-h-0" data-testid="chat-changes-panel">
@@ -114,7 +125,7 @@ export function ChangesPanel({ agentId, sessionId, refreshKey, onClose }: Change
               key={s}
               type="button"
               aria-pressed={scope === s}
-              onClick={() => { setScope(s); setRevert(null); setConfirming(false); }}
+              onClick={() => { setScope(s); setOutcome(null); setConfirm(null); }}
               className={`px-2 py-0.5 rounded ${scope === s ? 'bg-ctp-base text-ctp-text' : 'text-ctp-overlay1'}`}
             >
               {s === 'turn' ? 'Last turn' : 'Session'}
@@ -173,33 +184,84 @@ export function ChangesPanel({ agentId, sessionId, refreshKey, onClose }: Change
         {changes?.live && scope === 'turn' && (
           <p className="text-[11.5px] text-ctp-overlay1">This turn is still running; showing changes so far.</p>
         )}
-        {revert && (
-          <p className="text-[12px] text-ctp-subtext0" data-testid="chat-changes-revert-result">
-            Reverted {revert.reverted.length} {revert.reverted.length === 1 ? 'file' : 'files'}.
-            {revert.conflicts.length > 0 && (
-              <> {revert.conflicts.length} changed after the turn and {revert.conflicts.length === 1 ? 'was' : 'were'} left alone: {revert.conflicts.join(', ')}.{' '}
-                <button type="button" className="underline text-ctp-peach" onClick={() => { void doRevert(true); }} disabled={busy}>Revert those too</button>
-              </>
-            )}
+        {changes?.skippedLarge?.length ? (
+          <p className="text-[11.5px] text-ctp-overlay1" data-testid="chat-changes-skipped-large">
+            Not tracked (over 10 MB, untracked): {changes.skippedLarge.join(', ')}. Revert leaves them alone.
           </p>
+        ) : null}
+        {result && (
+          <div className="text-[12px] text-ctp-subtext0 flex flex-col gap-1" data-testid="chat-changes-revert-result">
+            <span>
+              {outcome?.kind === 'undo'
+                ? `Undid the revert: restored ${plural(result.reverted.length, 'file', 'files')}.`
+                : `Reverted ${plural(result.reverted.length, 'file', 'files')}.`}
+            </span>
+            {result.conflicts.length > 0 && (
+              <span>
+                {outcome?.kind === 'undo'
+                  ? `${plural(result.conflicts.length, 'file', 'files')} changed after the revert and ${result.conflicts.length === 1 ? 'was' : 'were'} left alone: `
+                  : `${plural(result.conflicts.length, 'file', 'files')} changed after the turn and ${result.conflicts.length === 1 ? 'was' : 'were'} left alone: `}
+                {result.conflicts.join(', ')}.{' '}
+                {outcome?.kind === 'revert' && confirm !== 'force' && (
+                  <button type="button" className="underline text-ctp-peach" onClick={() => setConfirm('force')} disabled={busy}>Overwrite those too…</button>
+                )}
+              </span>
+            )}
+            {result.skipped.length > 0 && (
+              <span data-testid="chat-changes-revert-skipped">
+                {plural(result.skipped.length, 'file was', 'files were')} left alone because {result.skipped.length === 1 ? 'its' : 'their'} current state can&apos;t be backed up (large, ignored, a folder or behind a link): {result.skipped.join(', ')}.
+              </span>
+            )}
+          </div>
         )}
         {error && <p className="text-[12px] text-ctp-red" role="alert">{error}</p>}
-        {confirming ? (
-          <div className="flex items-center gap-2 text-[12px] text-ctp-subtext0" data-testid="chat-changes-confirm">
-            <span>Restore {files.length} {files.length === 1 ? 'file' : 'files'} to before the last turn?</span>
-            <button type="button" className="h-7 px-2.5 rounded-md bg-ctp-red text-ctp-crust font-medium" disabled={busy} onClick={() => { void doRevert(false); }}>Revert</button>
-            <button type="button" className="h-7 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1" onClick={() => setConfirming(false)}>Cancel</button>
+        {confirm === 'revert' && (
+          <div className="flex flex-col gap-2 text-[12px] text-ctp-subtext0" data-testid="chat-changes-confirm">
+            <span>Restore {plural(files.length, 'file', 'files')} to before the last turn? Current versions are backed up first, so you can undo.</span>
+            {lastTurn?.shared && (
+              <span className="text-ctp-peach" data-testid="chat-changes-shared-warning">
+                Another agent was working in this folder during this turn. Its edits to these files are reverted too.
+              </span>
+            )}
+            <span className="flex items-center gap-2">
+              <button type="button" className="h-7 px-2.5 rounded-md bg-ctp-red text-ctp-crust font-medium" disabled={busy} onClick={() => { void run('revert'); }}>Revert</button>
+              <button type="button" className="h-7 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1" onClick={() => setConfirm(null)}>Cancel</button>
+            </span>
           </div>
-        ) : (
-          <button
-            type="button"
-            disabled={!canRevert || busy}
-            onClick={() => { setRevert(null); setConfirming(true); }}
-            className="self-start h-7 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] font-medium disabled:opacity-40"
-            title={scope === 'session' ? 'Revert works one turn at a time' : !lastTurn?.end ? 'Available when the turn finishes' : undefined}
-          >
-            Revert last turn
-          </button>
+        )}
+        {confirm === 'force' && result && (
+          <div className="flex flex-col gap-2 text-[12px] text-ctp-subtext0" data-testid="chat-changes-force-confirm">
+            <span>
+              Overwrite {plural(result.conflicts.length, 'file', 'files')} changed after the turn, by you or something else? Their current versions are backed up first; Undo revert brings them back.
+            </span>
+            <span className="flex items-center gap-2">
+              <button type="button" className="h-7 px-2.5 rounded-md bg-ctp-red text-ctp-crust font-medium" disabled={busy} onClick={() => { void run('revert', true); }}>Overwrite</button>
+              <button type="button" className="h-7 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1" onClick={() => setConfirm(null)}>Cancel</button>
+            </span>
+          </div>
+        )}
+        {confirm === null && (
+          <span className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!canRevert || busy}
+              onClick={() => { setOutcome(null); setConfirm('revert'); }}
+              className="h-7 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] font-medium disabled:opacity-40"
+              title={scope === 'session' ? 'Revert works one turn at a time' : !lastTurn?.end ? 'Available when the turn finishes' : undefined}
+            >
+              Revert last turn
+            </button>
+            {scope === 'turn' && lastTurn?.undoable && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => { void run('undo'); }}
+                className="h-7 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] font-medium disabled:opacity-40"
+              >
+                Undo revert
+              </button>
+            )}
+          </span>
         )}
       </div>
     </aside>

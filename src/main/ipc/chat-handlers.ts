@@ -9,7 +9,7 @@ import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRunti
 import { PERMISSION_LEVELS } from '../../shared/chat';
 import { getAgentRuntime, isChatAgent, readChatTranscript, onChatEvent, resolveChatDriver } from '../services/agent-runtime';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
-import { handleChatEventForCheckpoints, listTurns, getChanges, revertTurn, type ChangesScope } from '../services/agent-runtime/checkpoint-tracker';
+import { handleChatEventForCheckpoints, listTurns, getChanges, revertTurn, undoRevert, type ChangesScope } from '../services/agent-runtime/checkpoint-tracker';
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -133,7 +133,13 @@ export function registerChatHandlers(): void {
 
   ipcMain.handle(IPC.CHAT.REVERT_TURN, withValidatedArgs(
     [stringArg(), stringArg(), booleanArg({ optional: true })],
+    // revertTurn refuses while this agent or another in its worktree is mid-turn.
     async (_event, agentId, turnId, force) => revertTurn(agentId, turnId, force === true),
+  ));
+
+  ipcMain.handle(IPC.CHAT.UNDO_REVERT, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, agentId, turnId) => undoRevert(agentId, turnId),
   ));
 
 }

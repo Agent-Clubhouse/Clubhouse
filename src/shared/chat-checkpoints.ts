@@ -9,6 +9,10 @@ export interface CheckpointTurn {
   start: string;
   /** Checkpoint commit at turn end; absent while the turn runs. */
   end?: string;
+  /** Another agent worked in the same worktree during this turn, so its edits are in this turn's changes too. */
+  shared?: boolean;
+  /** A revert of this turn can be undone. */
+  undoable?: boolean;
 }
 
 export type ChangeStatus = 'added' | 'modified' | 'deleted' | 'renamed';
@@ -30,10 +34,16 @@ export interface ChangesResult {
   patch?: string;
   /** True when comparing against the working tree (turn still running, or a session view). */
   live?: boolean;
+  /** Untracked files too large to checkpoint; they don't show here and a revert never touches them. */
+  skippedLarge?: string[];
 }
 
 export interface RevertResult {
   reverted: string[];
   /** Files changed again after the turn ended; left alone unless forced. */
   conflicts: string[];
+  /** Files left alone even when forced, because their current state can't be backed up (large, ignored, a directory or behind a link). */
+  skipped: string[];
+  /** The change can be undone. */
+  undoable?: boolean;
 }

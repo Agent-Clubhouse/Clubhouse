@@ -503,7 +503,8 @@ vi.stubGlobal('clubhouse', {
     getAgentRuntime: async () => ({ chat: false, chatAvailable: false }),
     listCheckpoints: async () => [],
     getChanges: async () => ({ available: false, files: [] }),
-    revertTurn: async () => ({ reverted: [], conflicts: [] }),
+    revertTurn: async () => ({ reverted: [], conflicts: [], skipped: [] }),
+    undoRevert: async () => ({ reverted: [], conflicts: [], skipped: [] }),
     onEvent: () => noop,
   },
   window: {

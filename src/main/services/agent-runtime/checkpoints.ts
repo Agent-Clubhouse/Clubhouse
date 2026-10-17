@@ -2,21 +2,43 @@
  * Clubhouse-owned git checkpoints (docs/structured-chat-research.md, "Changes
  * panel"). A checkpoint is a commit of the whole working tree, including
  * untracked files that aren't ignored, stored under a hidden ref
- * `refs/clubhouse/checkpoints/...`. It is built with a temporary index file,
- * so the user's index, HEAD, branch and working tree are never touched.
+ * `refs/clubhouse/checkpoints/...`. It is built with a temporary index file
+ * seeded from a copy of the user's index, so the user's index, HEAD, branch
+ * and working tree are never touched. Untracked files over
+ * MAX_UNTRACKED_BYTES are left out and noted in the commit message.
+ *
+ * Every function takes the repository root (`git rev-parse --show-toplevel`),
+ * because git reports paths relative to it.
  *
  * Revert works the same for every provider: restore the files a turn changed
- * to their state at turn start, refusing any file that has changed again since
- * the turn ended unless forced.
+ * to their state at turn start. It first snapshots the current tree as a
+ * backup, refuses files that changed again since the turn ended (unless
+ * forced) and never touches a path whose current contents the backup can't
+ * hold (large or ignored files, directories, anything behind a non-directory).
+ * Files are written by `git checkout-index` from a temporary index, so
+ * symlinks, file modes, LFS and other filters and line endings come back the
+ * way git would check them out. If writing fails, the backup is restored.
+ *
+ * The refs are ordinary refs: `git push --mirror` pushes refs/clubhouse/*
+ * along with everything else. Plain `git push` and `git push --all` don't.
  */
 
 import { execFile } from 'child_process';
+import type { Stats } from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import type { ChangeStatus, ChangedFile, RevertResult } from '../../../shared/chat-checkpoints';
+export type { ChangeStatus, ChangedFile, RevertResult };
 
 export const CHECKPOINT_REF_PREFIX = 'refs/clubhouse/checkpoints';
+export const PENDING_REF_PREFIX = 'refs/clubhouse/pending';
+/** Untracked files larger than this aren't checkpointed, so a revert never touches them. */
+export const MAX_UNTRACKED_BYTES = 10 * 1024 * 1024;
+/** Upper bound for one git command, so a hung process can't block a repository's queue forever. */
+const GIT_TIMEOUT_MS = 120_000;
+const SKIPPED_PREFIX = 'Skipped-large: ';
 
 /** Identity for checkpoint commits, so they work without user git config. */
 const COMMIT_ENV = {
@@ -25,37 +47,46 @@ const COMMIT_ENV = {
   GIT_COMMITTER_NAME: 'Clubhouse',
   GIT_COMMITTER_EMAIL: 'checkpoints@clubhouse.invalid',
 };
+/** Paths passed to these commands are file names, never patterns. */
+const LITERAL = { GIT_LITERAL_PATHSPECS: '1' };
 
-function git(cwd: string, args: string[], env?: Record<string, string>, encoding: 'utf-8' | 'buffer' = 'utf-8'): Promise<string> {
+interface GitOptions {
+  env?: Record<string, string>;
+  /** Written to stdin. */
+  input?: string;
+}
+
+function git(cwd: string, args: string[], opts: GitOptions = {}): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', args, {
+    const child = execFile('git', args, {
       cwd,
-      env: { ...process.env, ...env, GIT_TERMINAL_PROMPT: '0' },
+      env: { ...process.env, ...opts.env, GIT_TERMINAL_PROMPT: '0' },
       maxBuffer: 64 * 1024 * 1024,
-      encoding: encoding === 'buffer' ? 'buffer' : 'utf-8',
+      encoding: 'utf-8',
+      timeout: GIT_TIMEOUT_MS,
       windowsHide: true,
-    }, (err, stdout) => {
-      if (err) reject(err);
-      else resolve(typeof stdout === 'string' ? stdout : stdout.toString('utf-8'));
+    }, (err, stdout, stderr) => {
+      if (err) reject(new Error(`git ${args[0]} failed: ${(stderr || err.message).trim()}`));
+      else resolve(stdout);
     });
+    if (opts.input !== undefined) child.stdin?.end(opts.input);
   });
 }
 
-function gitBuffer(cwd: string, args: string[]): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd, encoding: 'buffer', maxBuffer: 256 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
-      if (err) reject(err);
-      else resolve(stdout as Buffer);
-    });
-  });
+function splitZ(raw: string): string[] {
+  return raw.split('\0').filter(Boolean);
+}
+
+function tempIndexPath(): string {
+  return path.join(os.tmpdir(), `clubhouse-checkpoint-${randomUUID()}.index`);
 }
 
 /** Serialize git work per repository so checkpoints and reverts never interleave. */
 const repoChains = new Map<string, Promise<unknown>>();
-function inRepo<T>(cwd: string, fn: () => Promise<T>): Promise<T> {
-  const prev = repoChains.get(cwd) ?? Promise.resolve();
+function inRepo<T>(root: string, fn: () => Promise<T>): Promise<T> {
+  const prev = repoChains.get(root) ?? Promise.resolve();
   const next = prev.catch((): void => undefined).then(fn);
-  repoChains.set(cwd, next);
+  repoChains.set(root, next);
   return next;
 }
 
@@ -67,53 +98,159 @@ export async function isGitWorkTree(cwd: string): Promise<boolean> {
   }
 }
 
-/** Ref names may not contain spaces, colons, etc.; Clubhouse ids are already safe but sanitize anyway. */
-export function checkpointRef(agentId: string, sessionId: string, turnId: string, phase: 'start' | 'end'): string {
-  const seg = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, '_');
-  return `${CHECKPOINT_REF_PREFIX}/${seg(agentId)}/${seg(sessionId)}/${seg(turnId)}/${phase}`;
+/** Top of the work tree containing `cwd`, or undefined outside one. */
+export async function repoRoot(cwd: string): Promise<string | undefined> {
+  try {
+    return (await git(cwd, ['rev-parse', '--show-toplevel'])).trim() || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
-/** Tree of the current working tree (tracked + untracked, minus ignored) via a throwaway index. */
-async function snapshotTree(cwd: string): Promise<string> {
-  const indexFile = path.join(os.tmpdir(), `clubhouse-checkpoint-${randomUUID()}.index`);
+export type CheckpointPhase = 'start' | 'end' | 'shared' | 'pre-revert' | 'post-revert';
+const PHASE_ORDER: Record<CheckpointPhase, number> = { start: 0, end: 1, shared: 2, 'pre-revert': 3, 'post-revert': 4 };
+
+function refSegment(s: string): string {
+  return s.replace(/[^A-Za-z0-9._-]/g, '_');
+}
+
+/** Ref names may not contain spaces, colons, etc.; Clubhouse ids are already safe but sanitize anyway. */
+export function checkpointRef(agentId: string, sessionId: string, turnId: string, phase: CheckpointPhase): string {
+  return `${CHECKPOINT_REF_PREFIX}/${refSegment(agentId)}/${refSegment(sessionId)}/${refSegment(turnId)}/${phase}`;
+}
+
+/** Holds the snapshot taken just before a prompt until the turn's id is known. */
+export function pendingRef(agentId: string): string {
+  return `${PENDING_REF_PREFIX}/${refSegment(agentId)}`;
+}
+
+async function lstatOrNull(file: string): Promise<Stats | null> {
+  try {
+    return await fsp.lstat(file);
+  } catch {
+    return null;
+  }
+}
+
+/** Seed a temporary index from a copy of the user's, so `add -A` only rehashes what changed. */
+async function seedIndex(root: string, indexFile: string): Promise<void> {
+  try {
+    const userIndex = path.resolve(root, (await git(root, ['rev-parse', '--git-path', 'index'])).trim());
+    const st = await fsp.stat(userIndex);
+    await fsp.copyFile(userIndex, indexFile);
+    // Keep the index's mtime: git re-hashes entries modified at or after it
+    // ("racily clean"), and a fresh mtime would hide same-size edits made in
+    // the same second as the user's last index write.
+    await fsp.utimes(indexFile, st.atime, st.mtime);
+    return;
+  } catch {
+    // No index yet: fall back to HEAD.
+  }
+  await seedFromHead(root, indexFile);
+}
+
+async function seedFromHead(root: string, indexFile: string): Promise<void> {
+  await fsp.rm(indexFile, { force: true });
+  try {
+    await git(root, ['read-tree', 'HEAD'], { env: { GIT_INDEX_FILE: indexFile } });
+  } catch {
+    // Unborn branch: start from an empty index.
+  }
+}
+
+/** Untracked, non-ignored files over the size cap. */
+async function largeUntracked(root: string, env: Record<string, string>): Promise<string[]> {
+  const files = splitZ(await git(root, ['ls-files', '-z', '--others', '--exclude-standard'], { env }));
+  const large: string[] = [];
+  for (let i = 0; i < files.length; i += 64) {
+    const batch = files.slice(i, i + 64);
+    const stats = await Promise.all(batch.map((f) => lstatOrNull(path.join(root, f))));
+    stats.forEach((st, j) => { if (st?.isFile() && st.size > MAX_UNTRACKED_BYTES) large.push(batch[j]); });
+  }
+  return large;
+}
+
+async function addAll(root: string, env: Record<string, string>, skipped: string[]): Promise<void> {
+  if (!skipped.length) {
+    await git(root, ['add', '-A', '--', '.'], { env });
+    return;
+  }
+  const specs = ['.', ...skipped.map((p) => `:(exclude,literal)${p}`)];
+  await git(root, ['add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'], { env, input: specs.join('\0') });
+}
+
+/** Tree of the current working tree (tracked + untracked, minus ignored and large untracked files). */
+async function snapshotTree(root: string): Promise<{ tree: string; skipped: string[] }> {
+  const indexFile = tempIndexPath();
   const env = { GIT_INDEX_FILE: indexFile };
   try {
-    // Seed from HEAD when there is one so unchanged files are cheap to hash.
+    await seedIndex(root, indexFile);
+    let skipped: string[];
     try {
-      await git(cwd, ['read-tree', 'HEAD'], env);
+      skipped = await largeUntracked(root, env);
+      await addAll(root, env, skipped);
     } catch {
-      // Unborn branch: start from an empty index.
+      // A copied index git can't use here (unusual extensions): start over from HEAD.
+      await seedFromHead(root, indexFile);
+      skipped = await largeUntracked(root, env);
+      await addAll(root, env, skipped);
     }
-    await git(cwd, ['add', '-A', '--', '.'], env);
-    return (await git(cwd, ['write-tree'], env)).trim();
+    return { tree: (await git(root, ['write-tree'], { env })).trim(), skipped };
   } finally {
     await fsp.rm(indexFile, { force: true });
   }
 }
 
+async function commitSnapshot(root: string, message: string): Promise<string> {
+  const { tree, skipped } = await snapshotTree(root);
+  let parentArgs: string[] = [];
+  try {
+    parentArgs = ['-p', (await git(root, ['rev-parse', '--verify', 'HEAD'])).trim()];
+  } catch {
+    // No HEAD yet.
+  }
+  const body = skipped.length ? `\n\n${skipped.map((p) => SKIPPED_PREFIX + JSON.stringify(p)).join('\n')}\n` : '\n';
+  return (await git(root, ['commit-tree', tree, ...parentArgs, '-F', '-'], { env: COMMIT_ENV, input: message + body })).trim();
+}
+
 /** Create a checkpoint commit of the working tree and point `ref` at it. Returns the commit sha. */
-export function createCheckpoint(cwd: string, ref: string, message: string): Promise<string> {
-  return inRepo(cwd, async () => {
-    const tree = await snapshotTree(cwd);
-    let parentArgs: string[] = [];
-    try {
-      parentArgs = ['-p', (await git(cwd, ['rev-parse', '--verify', 'HEAD'])).trim()];
-    } catch {
-      // No HEAD yet.
-    }
-    const commit = (await git(cwd, ['commit-tree', tree, ...parentArgs, '-m', message], COMMIT_ENV)).trim();
-    await git(cwd, ['update-ref', ref, commit]);
+export function createCheckpoint(root: string, ref: string, message: string): Promise<string> {
+  return inRepo(root, async () => {
+    const commit = await commitSnapshot(root, message);
+    await git(root, ['update-ref', ref, commit]);
     return commit;
   });
 }
 
 /** Point `ref` at an existing checkpoint commit. */
-export function pointRef(cwd: string, ref: string, commit: string): Promise<void> {
-  return inRepo(cwd, async () => { await git(cwd, ['update-ref', ref, commit]); });
+export function pointRef(root: string, ref: string, commit: string): Promise<void> {
+  return inRepo(root, async () => { await git(root, ['update-ref', ref, commit]); });
 }
 
-import type { ChangeStatus, ChangedFile, RevertResult } from '../../../shared/chat-checkpoints';
-export type { ChangeStatus, ChangedFile, RevertResult };
+export function deleteRef(root: string, ref: string): Promise<void> {
+  return inRepo(root, async () => {
+    try {
+      await git(root, ['update-ref', '-d', ref]);
+    } catch {
+      // Already gone.
+    }
+  });
+}
+
+/** Large untracked files a checkpoint left out. */
+export async function readSkipped(root: string, commit: string): Promise<string[]> {
+  const body = await git(root, ['show', '-s', '--format=%B', commit]);
+  const out: string[] = [];
+  for (const line of body.split('\n')) {
+    if (!line.startsWith(SKIPPED_PREFIX)) continue;
+    try {
+      out.push(JSON.parse(line.slice(SKIPPED_PREFIX.length)) as string);
+    } catch {
+      // Not ours.
+    }
+  }
+  return out;
+}
 
 /** Parse `git diff --numstat -z -M` output, which lists renames as "a\tb\t\0old\0new\0". */
 function parseNumstat(raw: string, nameStatus: Map<string, ChangeStatus>): ChangedFile[] {
@@ -163,71 +300,213 @@ function parseNameStatus(raw: string): Map<string, ChangeStatus> {
   return map;
 }
 
+/** Plain, machine-readable diff output whatever the user's diff config says. */
+const DIFF_FLAGS = ['--no-ext-diff', '--no-textconv', '--no-color'];
+
 /** Files changed between two checkpoints (or a checkpoint and the current working tree when `to` is omitted). */
-export function diffFiles(cwd: string, from: string, to?: string): Promise<ChangedFile[]> {
-  return inRepo(cwd, async () => {
-    const target = to ?? await snapshotTree(cwd);
+export function diffFiles(root: string, from: string, to?: string): Promise<ChangedFile[]> {
+  return inRepo(root, async () => {
+    const target = to ?? (await snapshotTree(root)).tree;
     const [numstat, nameStatus] = await Promise.all([
-      git(cwd, ['diff', '--numstat', '-z', '-M', from, target]),
-      git(cwd, ['diff', '--name-status', '-z', '-M', from, target]),
+      git(root, ['diff', ...DIFF_FLAGS, '--numstat', '-z', '-M', from, target]),
+      git(root, ['diff', ...DIFF_FLAGS, '--name-status', '-z', '-M', from, target]),
     ]);
     return parseNumstat(numstat, parseNameStatus(nameStatus));
   });
 }
 
 /** Unified diff for one file between two checkpoints (or vs the working tree). */
-export function diffPatch(cwd: string, from: string, to: string | undefined, filePath: string): Promise<string> {
-  return inRepo(cwd, async () => {
-    const target = to ?? await snapshotTree(cwd);
-    return git(cwd, ['diff', '-M', from, target, '--', filePath]);
+export function diffPatch(root: string, from: string, to: string | undefined, filePath: string): Promise<string> {
+  return inRepo(root, async () => {
+    const target = to ?? (await snapshotTree(root)).tree;
+    return git(root, ['diff', ...DIFF_FLAGS, '--src-prefix=a/', '--dst-prefix=b/', '-M', from, target, '--', filePath], { env: LITERAL });
   });
 }
 
-async function blobOf(cwd: string, commit: string, filePath: string): Promise<string | null> {
+/** Paths that differ between two commits, renames split into delete + add. */
+async function changedPaths(root: string, from: string, to: string): Promise<string[]> {
+  return splitZ(await git(root, ['diff', ...DIFF_FLAGS, '--name-only', '-z', '--no-renames', from, to]));
+}
+
+/** Which of `paths` are files (or links) in `commit`. */
+async function presentIn(root: string, commit: string, paths: string[]): Promise<Set<string>> {
+  const present = new Set<string>();
+  for (let i = 0; i < paths.length; i += 200) {
+    const chunk = paths.slice(i, i + 200);
+    const raw = await git(root, ['ls-tree', '-r', '-z', '--name-only', '--full-tree', commit, '--', ...chunk], { env: LITERAL });
+    for (const p of splitZ(raw)) present.add(p);
+  }
+  return present;
+}
+
+async function sameTree(root: string, a: string, b: string): Promise<boolean> {
   try {
-    return (await git(cwd, ['rev-parse', '--verify', '--quiet', `${commit}:${filePath}`])).trim() || null;
+    const [ta, tb] = await Promise.all([
+      git(root, ['rev-parse', '--verify', '--quiet', `${a}^{tree}`]),
+      git(root, ['rev-parse', '--verify', '--quiet', `${b}^{tree}`]),
+    ]);
+    return ta.trim() !== '' && ta.trim() === tb.trim();
   } catch {
-    return null;
+    return false;
   }
 }
 
-async function workingBlob(cwd: string, filePath: string): Promise<string | null> {
-  try {
-    await fsp.access(path.join(cwd, filePath));
-  } catch {
-    return null;
+/**
+ * Whether restoring `filePath` could destroy something the backup doesn't
+ * hold: 'unsafe' for a leading component that isn't a real directory (git
+ * would replace it, and deleting through it would follow a link) or a file
+ * the backup left out (ignored or too large); 'dir' for a directory at the
+ * path, which is only safe if the revert itself empties it.
+ */
+async function protection(root: string, filePath: string, inBackup: boolean): Promise<'ok' | 'dir' | 'unsafe'> {
+  const parts = filePath.split('/');
+  let dir = root;
+  for (const part of parts.slice(0, -1)) {
+    dir = path.join(dir, part);
+    const st = await lstatOrNull(dir);
+    if (!st) return 'ok';
+    if (!st.isDirectory()) return 'unsafe';
   }
-  return (await git(cwd, ['hash-object', '--', filePath])).trim();
+  const st = await lstatOrNull(path.join(root, filePath));
+  if (!st) return 'ok';
+  if (st.isDirectory()) return 'dir';
+  return inBackup ? 'ok' : 'unsafe';
 }
 
+/** Everything under `dir` (relative to root), not following links; undefined past `limit` entries. */
+async function filesUnder(root: string, dir: string, limit = 1000): Promise<string[] | undefined> {
+  const out: string[] = [];
+  const queue = [dir];
+  while (queue.length) {
+    const current = queue.shift() as string;
+    for (const entry of await fsp.readdir(path.join(root, current), { withFileTypes: true })) {
+      const rel = `${current}/${entry.name}`;
+      if (entry.isDirectory()) queue.push(rel);
+      else out.push(rel);
+      if (out.length + queue.length > limit) return undefined;
+    }
+  }
+  return out;
+}
+
+/** True when `filePath`, a parent of it or something under it is in `changed`. */
+function overlaps(filePath: string, changed: Set<string>, changedDirs: Set<string>): boolean {
+  if (changed.has(filePath) || changedDirs.has(filePath)) return true;
+  for (let i = filePath.indexOf('/'); i !== -1; i = filePath.indexOf('/', i + 1)) {
+    if (changed.has(filePath.slice(0, i))) return true;
+  }
+  return false;
+}
+
+function parentDirs(paths: Iterable<string>): Set<string> {
+  const dirs = new Set<string>();
+  for (const p of paths) {
+    for (let i = p.indexOf('/'); i !== -1; i = p.indexOf('/', i + 1)) dirs.add(p.slice(0, i));
+  }
+  return dirs;
+}
+
+/** Delete one file or link, never following a link in its leading path, then prune emptied directories. */
+async function removePath(root: string, filePath: string): Promise<void> {
+  if ((await protection(root, filePath, true)) !== 'ok') throw new Error(`Refusing to delete ${filePath}: its path changed`);
+  await fsp.rm(path.join(root, filePath), { force: true });
+  let dir = path.dirname(filePath);
+  while (dir && dir !== '.') {
+    try {
+      await fsp.rmdir(path.join(root, dir));
+    } catch {
+      break;
+    }
+    dir = path.dirname(dir);
+  }
+}
+
+/** Make `paths` in the working tree match `commit`: check out the ones it has, delete the rest. */
+async function restorePaths(root: string, commit: string, paths: string[], present: Set<string>): Promise<void> {
+  for (const p of paths) if (!present.has(p)) await removePath(root, p);
+  const write = paths.filter((p) => present.has(p));
+  if (!write.length) return;
+  const indexFile = tempIndexPath();
+  const env = { GIT_INDEX_FILE: indexFile };
+  try {
+    await git(root, ['read-tree', commit], { env });
+    await git(root, ['checkout-index', '-f', '-z', '--stdin'], { env, input: write.join('\0') });
+  } finally {
+    await fsp.rm(indexFile, { force: true });
+  }
+}
+
+export interface RevertOptions {
+  /** Also overwrite files that changed after `end`; the backup still holds them. */
+  force?: boolean;
+  /**
+   * Refs to point at the backup taken before the revert and the tree after it,
+   * so it can be undone. A later revert that starts from the previous one's
+   * `after` keeps the original `before`, so one undo covers both.
+   */
+  backupRefs?: { before: string; after: string };
+}
+
+export interface RevertOutcome extends RevertResult {
+  /** Backup of the working tree just before the revert. */
+  before?: string;
+  /** Working tree just after it. */
+  after?: string;
+}
 
 /**
  * Restore the files changed between `start` and `end` to their `start` state.
- * A file that no longer matches `end` was edited afterwards; it's reported as
- * a conflict and skipped unless `force` is set.
+ * Undoing a revert is the same operation with `start` = its backup and
+ * `end` = the tree after it.
  */
-export function revertChanges(cwd: string, start: string, end: string, force = false): Promise<RevertResult> {
-  return inRepo(cwd, async () => {
-    const nameStatus = parseNameStatus(await git(cwd, ['diff', '--name-status', '-z', '--no-renames', start, end]));
-    const reverted: string[] = [];
+export function revertChanges(root: string, start: string, end: string, opts: RevertOptions = {}): Promise<RevertOutcome> {
+  return inRepo(root, async (): Promise<RevertOutcome> => {
+    const paths = await changedPaths(root, start, end);
+    if (!paths.length) return { reverted: [], conflicts: [], skipped: [] };
+
+    // Validate everything before writing anything.
+    const before = await commitSnapshot(root, 'Clubhouse checkpoint: before revert');
+    const changedSince = new Set(await changedPaths(root, end, before));
+    const changedSinceDirs = parentDirs(changedSince);
+    const [inBefore, inStart] = await Promise.all([presentIn(root, before, paths), presentIn(root, start, paths)]);
+    const apply: string[] = [];
     const conflicts: string[] = [];
-    for (const filePath of nameStatus.keys()) {
-      const [endBlob, current] = await Promise.all([blobOf(cwd, end, filePath), workingBlob(cwd, filePath)]);
-      if (!force && endBlob !== current) {
-        conflicts.push(filePath);
-        continue;
-      }
-      const absolute = path.join(cwd, filePath);
-      const startBlob = await blobOf(cwd, start, filePath);
-      if (startBlob) {
-        await fsp.mkdir(path.dirname(absolute), { recursive: true });
-        await fsp.writeFile(absolute, await gitBuffer(cwd, ['cat-file', 'blob', startBlob]));
-      } else {
-        await fsp.rm(absolute, { force: true });
-      }
-      reverted.push(filePath);
+    const skipped: string[] = [];
+    const dirs: string[] = [];
+    for (const p of paths) {
+      const state = await protection(root, p, inBefore.has(p));
+      if (state === 'unsafe') { skipped.push(p); continue; }
+      if (overlaps(p, changedSince, changedSinceDirs) && !opts.force) { conflicts.push(p); continue; }
+      if (state === 'dir') dirs.push(p);
+      else apply.push(p);
     }
-    return { reverted, conflicts };
+    // A directory where a file goes back is fine when the revert deletes everything in it.
+    const deleted = new Set(apply.filter((p) => !inStart.has(p)));
+    for (const dir of dirs) {
+      const inside = await filesUnder(root, dir);
+      if (inside?.every((f) => deleted.has(f))) apply.push(dir);
+      else skipped.push(dir);
+    }
+    if (!apply.length) return { reverted: [], conflicts, skipped };
+
+    if (opts.backupRefs && !(await sameTree(root, opts.backupRefs.after, before))) {
+      await git(root, ['update-ref', opts.backupRefs.before, before]);
+    }
+    try {
+      await restorePaths(root, start, apply, inStart);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      try {
+        await restorePaths(root, before, apply, inBefore);
+      } catch (rollbackErr) {
+        const rollback = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
+        throw new Error(`Revert failed (${reason}) and so did restoring the backup (${rollback}). Your files are saved in checkpoint ${before}.`);
+      }
+      throw new Error(`Revert failed and nothing was changed: ${reason}`);
+    }
+    const after = await commitSnapshot(root, 'Clubhouse checkpoint: after revert');
+    if (opts.backupRefs) await git(root, ['update-ref', opts.backupRefs.after, after]);
+    return { reverted: apply, conflicts, skipped, before, after };
   });
 }
 
@@ -236,16 +515,16 @@ export interface CheckpointRefInfo {
   commit: string;
   sessionId: string;
   turnId: string;
-  phase: 'start' | 'end';
+  phase: CheckpointPhase;
   createdAt: number;
 }
 
 /** All checkpoint refs for an agent, oldest first. */
-export async function listCheckpointRefs(cwd: string, agentId: string): Promise<CheckpointRefInfo[]> {
-  const prefix = `${CHECKPOINT_REF_PREFIX}/${agentId.replace(/[^A-Za-z0-9._-]/g, '_')}/`;
+export async function listCheckpointRefs(root: string, agentId: string): Promise<CheckpointRefInfo[]> {
+  const prefix = `${CHECKPOINT_REF_PREFIX}/${refSegment(agentId)}/`;
   let raw: string;
   try {
-    raw = await git(cwd, ['for-each-ref', '--sort=creatordate', '--format=%(refname)%09%(objectname)%09%(creatordate:unix)', prefix]);
+    raw = await git(root, ['for-each-ref', '--sort=creatordate', '--format=%(refname)%09%(objectname)%09%(creatordate:unix)', prefix]);
   } catch {
     return [];
   }
@@ -254,24 +533,24 @@ export async function listCheckpointRefs(cwd: string, agentId: string): Promise<
     if (!line) continue;
     const [ref, commit, unix] = line.split('\t');
     const rest = ref.slice(prefix.length).split('/');
-    if (rest.length !== 3 || (rest[2] !== 'start' && rest[2] !== 'end')) continue;
-    out.push({ ref, commit, sessionId: rest[0], turnId: rest[1], phase: rest[2], createdAt: Number(unix) * 1000 });
+    if (rest.length !== 3 || !(rest[2] in PHASE_ORDER)) continue;
+    out.push({ ref, commit, sessionId: rest[0], turnId: rest[1], phase: rest[2] as CheckpointPhase, createdAt: Number(unix) * 1000 });
   }
-  // Ref dates have one-second resolution; within a second keep git's order but put a turn's start before its end.
+  // Ref dates have one-second resolution; within a second keep git's order but order a turn's own refs by phase.
   return out
     .map((r, i) => ({ r, i }))
-    .sort((x, y) => x.r.createdAt - y.r.createdAt || (x.r.turnId === y.r.turnId ? (x.r.phase === 'start' ? -1 : 1) : x.i - y.i))
+    .sort((x, y) => x.r.createdAt - y.r.createdAt || (x.r.turnId === y.r.turnId ? PHASE_ORDER[x.r.phase] - PHASE_ORDER[y.r.phase] : x.i - y.i))
     .map(({ r }) => r);
 }
 
 /** Delete an agent's oldest checkpoint refs beyond `keepTurns` turns. */
-export async function pruneCheckpoints(cwd: string, agentId: string, keepTurns: number): Promise<number> {
-  const refs = await listCheckpointRefs(cwd, agentId);
+export async function pruneCheckpoints(root: string, agentId: string, keepTurns: number): Promise<number> {
+  const refs = await listCheckpointRefs(root, agentId);
   const turns = [...new Set(refs.map((r) => `${r.sessionId}/${r.turnId}`))];
   const drop = new Set(turns.slice(0, Math.max(0, turns.length - keepTurns)));
   const doomed = refs.filter((r) => drop.has(`${r.sessionId}/${r.turnId}`));
-  await inRepo(cwd, async () => {
-    for (const r of doomed) await git(cwd, ['update-ref', '-d', r.ref]);
+  await inRepo(root, async () => {
+    for (const r of doomed) await git(root, ['update-ref', '-d', r.ref]);
   });
   return doomed.length;
 }

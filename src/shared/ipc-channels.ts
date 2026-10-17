@@ -156,6 +156,7 @@ export const IPC = {
     LIST_CHECKPOINTS: 'chat:list-checkpoints',
     GET_CHANGES: 'chat:get-changes',
     REVERT_TURN: 'chat:revert-turn',
+    UNDO_REVERT: 'chat:undo-revert',
   },
   FILE: {
     READ_TREE: 'file:read-tree',

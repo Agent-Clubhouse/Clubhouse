@@ -22,7 +22,8 @@ beforeEach(() => {
   chat = window.clubhouse.chat;
   chat.listCheckpoints = vi.fn(async () => turns);
   chat.getChanges = vi.fn(async (_agentId: string, _scope: unknown, filePath?: string) => (filePath ? { ...turnChanges, patch: PATCH } : turnChanges));
-  chat.revertTurn = vi.fn(async () => ({ reverted: ['src/new.ts'], conflicts: ['src/app.ts'] }));
+  chat.revertTurn = vi.fn(async () => ({ reverted: ['src/new.ts'], conflicts: ['src/app.ts'], skipped: [], undoable: true }));
+  chat.undoRevert = vi.fn(async () => ({ reverted: ['src/new.ts'], conflicts: [], skipped: [] }));
 });
 
 function renderPanel() {
@@ -48,18 +49,62 @@ describe('ChangesPanel', () => {
     expect(screen.getByRole('button', { name: 'Revert last turn' })).toBeDisabled();
   });
 
-  it('confirms before reverting, reports conflicts and offers to force', async () => {
+  it('confirms before reverting, reports conflicts and asks again before overwriting them', async () => {
     renderPanel();
     await screen.findByText('src/app.ts');
     fireEvent.click(screen.getByRole('button', { name: 'Revert last turn' }));
     expect(screen.getByTestId('chat-changes-confirm')).toHaveTextContent('Restore 2 files to before the last turn?');
+    expect(screen.queryByTestId('chat-changes-shared-warning')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Revert' }));
     await waitFor(() => expect(chat.revertTurn).toHaveBeenCalledWith('agent-1', 't1', false));
     const result = await screen.findByTestId('chat-changes-revert-result');
     expect(result).toHaveTextContent('Reverted 1 file.');
     expect(result).toHaveTextContent('src/app.ts');
-    fireEvent.click(screen.getByRole('button', { name: 'Revert those too' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Overwrite those too…' }));
+    expect(chat.revertTurn).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('chat-changes-force-confirm')).toHaveTextContent('Overwrite 1 file changed after the turn');
+    fireEvent.click(screen.getByRole('button', { name: 'Overwrite' }));
     await waitFor(() => expect(chat.revertTurn).toHaveBeenCalledWith('agent-1', 't1', true));
+  });
+
+  it('can cancel the overwrite confirmation', async () => {
+    renderPanel();
+    await screen.findByText('src/app.ts');
+    fireEvent.click(screen.getByRole('button', { name: 'Revert last turn' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Revert' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Overwrite those too…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByTestId('chat-changes-force-confirm')).toBeNull();
+    expect(chat.revertTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns before reverting a turn another agent shared', async () => {
+    chat.listCheckpoints = vi.fn(async () => [{ ...turns[0], shared: true }]);
+    renderPanel();
+    await screen.findByText('src/app.ts');
+    fireEvent.click(screen.getByRole('button', { name: 'Revert last turn' }));
+    expect(screen.getByTestId('chat-changes-shared-warning')).toHaveTextContent('Another agent was working in this folder');
+  });
+
+  it('reports files left alone and large untracked files', async () => {
+    chat.getChanges = vi.fn(async () => ({ ...turnChanges, skippedLarge: ['video.mov'] }));
+    chat.revertTurn = vi.fn(async () => ({ reverted: ['src/app.ts'], conflicts: [], skipped: ['dist/out.js'] }));
+    renderPanel();
+    await screen.findByText('src/app.ts');
+    expect(screen.getByTestId('chat-changes-skipped-large')).toHaveTextContent('video.mov');
+    fireEvent.click(screen.getByRole('button', { name: 'Revert last turn' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Revert' }));
+    expect(await screen.findByTestId('chat-changes-revert-skipped')).toHaveTextContent('dist/out.js');
+  });
+
+  it('offers to undo a revert', async () => {
+    chat.listCheckpoints = vi.fn(async () => [{ ...turns[0], undoable: true }]);
+    renderPanel();
+    await screen.findByText('src/app.ts');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo revert' }));
+    await waitFor(() => expect(chat.undoRevert).toHaveBeenCalledWith('agent-1', 't1'));
+    expect(await screen.findByTestId('chat-changes-revert-result')).toHaveTextContent('Undid the revert: restored 1 file.');
   });
 
   it('explains when the agent is not in a git repository', async () => {

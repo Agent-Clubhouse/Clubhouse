@@ -31,6 +31,8 @@ export const chat = {
       ipcRenderer.invoke(IPC.CHAT.GET_CHANGES, agentId, scope, filePath),
     revertTurn: (agentId: string, turnId: string, force?: boolean): Promise<RevertResult> =>
       ipcRenderer.invoke(IPC.CHAT.REVERT_TURN, agentId, turnId, force),
+    undoRevert: (agentId: string, turnId: string): Promise<RevertResult> =>
+      ipcRenderer.invoke(IPC.CHAT.UNDO_REVERT, agentId, turnId),
     onEvent: (callback: (event: ChatEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, chatEvent: ChatEvent) => callback(chatEvent);
       ipcRenderer.on(IPC.CHAT.EVENT, listener);

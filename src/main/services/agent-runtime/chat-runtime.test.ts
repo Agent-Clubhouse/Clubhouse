@@ -397,6 +397,28 @@ describe('ChatAgentRuntime', () => {
     expect(order).toEqual(['checkpoint', 'send:prompt', 'send:steer']);
   });
 
+  it('sends the prompt anyway when the pre-prompt hook runs past its 5 s bound', async () => {
+    const driver = new FakeChatDriver();
+    const beforePrompt = vi.fn(() => new Promise<void>(() => {}));
+    const { runtime } = makeRuntime(driver, { beforePrompt });
+    await runtime.start();
+    const sent: string[] = [];
+    const realSend = driver.last.send.bind(driver.last);
+    driver.last.send = async (content, delivery) => { sent.push(delivery); return realSend(content, delivery); };
+
+    vi.useFakeTimers();
+    try {
+      const sending = runtime.sendMessage('first', { source: 'user' });
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(sent).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      await sending;
+      expect(sent).toEqual(['prompt']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('rejects actions once ended', async () => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);
