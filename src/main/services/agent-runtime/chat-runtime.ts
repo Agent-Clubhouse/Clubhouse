@@ -365,17 +365,24 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   /**
-   * Tear down silently after a failed start: close the CLI, cancel timers and
-   * mirrored permissions, and never call onEnded or emit session_ended, so
-   * the caller can fall back to the terminal on the same agent id.
+   * Tear down after a failed start: close the CLI and cancel timers and
+   * mirrored permissions. It never calls onEnded (no untrack, no exit
+   * broadcast), so the caller can fall back to the terminal on the same agent
+   * id. If a session had started, it ends with reason 'fallback', so
+   * consumers (the renderer, telemetry) don't keep it open.
    */
   async abandon(): Promise<void> {
+    if (this.ended) return;
     this.ended = true;
     this.clearIdleTimer();
     this.settleAllPermissions();
     const session = this.session;
     this.session = undefined;
-    if (session) await session.close().catch((): void => undefined);
+    if (session) {
+      await this.emit({ type: 'session_ended', data: { reason: 'fallback', message: 'Chat start failed; using the terminal' } });
+      await this.emitChain;
+      await session.close().catch((): void => undefined);
+    }
   }
 
   async stop(): Promise<void> {

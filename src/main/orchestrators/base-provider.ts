@@ -10,7 +10,7 @@ import type {
   SpawnOpts,
   SpawnCommandResult,
 } from './types';
-import { findBinaryInPath } from './shared';
+import { findBinaryInPath, testBinaryOverride } from './shared';
 import { getShellEnvironment } from '../util/shell';
 
 const execFileAsync = promisify(execFile);
@@ -94,9 +94,9 @@ export abstract class BaseProvider implements OrchestratorProvider {
 
   // ── Common implementations ────────────────────────────────────────────
 
-  /** Find the CLI binary using well-known paths and PATH scan */
+  /** Find the CLI binary using well-known paths and PATH scan (or the test override, in unpackaged builds). */
   protected findBinary(): string {
-    return findBinaryInPath(this.binaryNames, this.getExtraBinaryPaths());
+    return testBinaryOverride(this.id) ?? findBinaryInPath(this.binaryNames, this.getExtraBinaryPaths());
   }
 
   /** Absolute path of the user's installed CLI. Used by chat drivers, which never bundle a binary. */

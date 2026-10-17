@@ -592,3 +592,33 @@ describe('reduceChatEvent: turn footers and diagnostics', () => {
     expect(s.items).toEqual([]);
   });
 });
+
+describe('picker lists on session_info', () => {
+  it('replaces models, efforts and level names when present, keeps them when absent, clears on empty', () => {
+    const ev = makeEmitter();
+    let state = fold([
+      sessionStarted(ev),
+      ev('session_info', { models: [{ id: 'a', label: 'A', costHint: '1x' }], efforts: ['low', 'high'], levelNames: { ask: 'Agent' } }),
+      ev('session_info', { cliVersion: '1.0.98' }),
+    ]);
+    expect(state.models).toEqual([{ id: 'a', label: 'A', costHint: '1x' }]);
+    expect(state.efforts).toEqual(['low', 'high']);
+    expect(state.levelNames).toEqual({ ask: 'Agent' });
+    state = fold([ev('session_info', { models: [], efforts: [] })], state);
+    expect(state.models).toEqual([]);
+    expect(state.efforts).toEqual([]);
+    expect(state.levelNames).toEqual({ ask: 'Agent' });
+  });
+
+  it('clears the previous session\'s picker lists on session_started', () => {
+    const ev = makeEmitter();
+    const state = fold([
+      sessionStarted(ev),
+      ev('session_info', { models: [{ id: 'a', label: 'A' }], efforts: ['low'], levelNames: { ask: 'Agent' } }),
+      sessionStarted(ev),
+    ]);
+    expect(state.models).toEqual([]);
+    expect(state.efforts).toEqual([]);
+    expect(state.levelNames).toEqual({});
+  });
+});

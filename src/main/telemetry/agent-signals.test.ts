@@ -47,7 +47,8 @@ describe('agent signals', () => {
   it('records the permission span and wait', () => {
     recordPermission({ startMs: Date.now() - 1500, orchestrator: 'claude-code', toolName: 'Edit', decision: 'ask', timedOut: true });
     expect(rt.replaySpan).toHaveBeenCalledWith(expect.objectContaining({ name: 'clubhouse.agent.permission', outcome: 'timeout' }));
-    expect(rt.count).toHaveBeenCalledWith('clubhouse.agent.permission.wait', expect.any(Number), [ATTR.permissionDecision('ask'), ATTR.permissionResult('timeout')]);
+    expect(rt.count).toHaveBeenCalledWith('clubhouse.agent.permission.wait', expect.any(Number), [ATTR.permissionDecision('ask'), ATTR.permissionResult('timeout'), ATTR.permissionPath('hook')]);
+    expect(vi.mocked(rt.replaySpan).mock.calls[0][0].attrs).toContainEqual(ATTR.permissionPath('hook'));
   });
 
   it('names Clubhouse MCP tools by suffix only, never the full name', () => {

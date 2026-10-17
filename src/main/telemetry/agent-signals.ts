@@ -61,10 +61,10 @@ export function recordPermission(opts: {
     name: 'clubhouse.agent.permission',
     startMs: opts.startMs,
     endMs,
-    attrs: [ATTR.orchestrator(orchestrator), ATTR.toolBucket(toolBucket(opts.toolName)), decision, result],
+    attrs: [ATTR.orchestrator(orchestrator), ATTR.toolBucket(toolBucket(opts.toolName)), decision, result, ATTR.permissionPath('hook')],
     outcome: opts.timedOut ? 'timeout' : 'ok',
   });
-  tel.count('clubhouse.agent.permission.wait', (endMs - opts.startMs) / 1000, [decision, result]);
+  tel.count('clubhouse.agent.permission.wait', (endMs - opts.startMs) / 1000, [decision, result, ATTR.permissionPath('hook')]);
 }
 
 // --- Clubhouse MCP --------------------------------------------------------------

@@ -6,7 +6,7 @@ vi.mock('child_process', () => ({
 }));
 
 import { spawn } from 'child_process';
-import { AcpSession, CLUBHOUSE_ACP_CLIENT_CAPABILITIES, GENERIC_ACP_PROFILE, type AcpSessionEvent, type AcpSessionOpts } from './acp-session';
+import { AcpSession, CLUBHOUSE_ACP_CLIENT_CAPABILITIES, GENERIC_ACP_PROFILE, SESSION_CLOSE_TIMEOUT_MS, type AcpSessionEvent, type AcpSessionOpts } from './acp-session';
 import { RpcError } from './acp-client';
 import { selectAcpProfile } from './copilot-acp';
 import {
@@ -248,6 +248,26 @@ describe('AcpSession as a generic ACP driver', () => {
     expect(updates(events)[0].replay).toBe(false);
     expect(session.getState().modes?.currentModeId).toBe('code');
     expect(replayer.errors).toEqual([]);
+  });
+
+  it('close() kills an agent that never answers session/close after a short wait, not the full RPC timeout', async () => {
+    const { session, proc } = setup([
+      ...genericStart({ sessionCapabilities: { close: {} } }),
+      ...genericNew(),
+      out(3, 'session/close'), // sent, never answered
+    ], { rpcTimeoutMs: 60_000 });
+    await session.start();
+    await session.newSession({ cwd: CWD });
+
+    vi.useFakeTimers();
+    try {
+      const closed = session.close();
+      await vi.advanceTimersByTimeAsync(SESSION_CLOSE_TIMEOUT_MS);
+      await closed;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(proc.kill).toHaveBeenCalled();
   });
 
   it('leaves no state behind when a load replays history and then fails', async () => {

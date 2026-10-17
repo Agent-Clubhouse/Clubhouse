@@ -117,6 +117,19 @@ export const ERROR_TYPES = [
   'redirect_blocked',
   'apply_spawn_failed',
   'apply_failed',
+  // Chat turns (§4.4 chat turns): chat's closed ChatErrorCode set (src/shared/chat/events.ts)
+  'max_tokens',
+  'refusal',
+  'rpc_timeout',
+  'process_exited',
+  'spawn_failed',
+  'unhandled_server_request',
+  'protocol_error',
+  'driver_stream_failed',
+  'auth_required',
+  'rate_limited',
+  'context_overflow',
+  'tool_failed',
   // Agents (§4.4, Phase 4)
   'mcp_tool_error',
   'mcp_tool_threw',
@@ -335,6 +348,26 @@ export const ATTR = {
     'external_change_merged', 'records_dropped', 'unreadable',
   ]),
   persistGuardReason: enumAttr('clubhouse.persist.guard_reason', ['not_hydrated', 'verify_empty']),
+
+  // Chat (§4.4 chat turns, §9.1): mapped from the chat event bus. Numbers and
+  // closed enums only; never message text, tool inputs or paths.
+  /** The chat transport, from the driver's `session_started` (research §7). */
+  chatDriver: enumAttr('clubhouse.chat.driver', [
+    'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_acp', 'copilot_sdk', 'acp',
+  ]),
+  turnEndReason: enumAttr('clubhouse.turn.end_reason', ['complete', 'error', 'cancelled', 'timeout']),
+  turnToolCalls: intAttr('clubhouse.turn.tool_calls'),
+  /** Attributes are integers, so the span carries milliseconds; the histogram is in seconds. */
+  turnTimeToFirstTokenMs: intAttr('clubhouse.turn.time_to_first_token_ms'),
+  genAiInputTokens: intAttr('gen_ai.usage.input_tokens'),
+  genAiOutputTokens: intAttr('gen_ai.usage.output_tokens'),
+  genAiTokenType: enumAttr('gen_ai.token.type', ['input', 'output']),
+  /** The cost is an API-price estimate (e.g. Claude on a subscription), not a bill. */
+  costEstimate: boolAttr('clubhouse.cost.estimate'),
+  /** What kind of native message a driver didn't recognize (protocol drift, §12 H2). */
+  chatProtocolKind: enumAttr('clubhouse.chat.protocol.kind', ['request', 'notification', 'field']),
+  permissionPath: enumAttr('clubhouse.permission.path', ['hook', 'chat']),
+  permissionSource: enumAttr('clubhouse.permission.source', ['desktop', 'annex']),
 
   // Agents (§4.4, Phase 4)
   agentExitClass: enumAttr('clubhouse.agent.exit.class', [
@@ -576,6 +609,9 @@ export const SPANS = {
   'clubhouse.update.check': { level: 'standard', root: true },
   'clubhouse.update.download': { level: 'standard', root: true },
   'clubhouse.update.apply': { level: 'standard', root: true },
+  // Chat (§4.4 chat turns)
+  /** One chat turn, turn_started to turn_ended on the chat bus. */
+  'clubhouse.agent.turn': { level: 'standard', root: true },
   // Agents (§4.4, Phase 4)
   /** One agent process, spawn to exit (PTY or headless). Exported when it ends. */
   'clubhouse.agent.run': { level: 'standard', root: true },
@@ -784,6 +820,37 @@ export const METRICS = {
     description: 'Time a flush waited on an in-flight write before writing newer state',
     attributes: ['clubhouse.persist.store'],
   },
+  // Chat (§4.4 chat turns, §12 H2)
+  'clubhouse.agent.turn.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Chat turn length, turn_started to turn_ended',
+    attributes: ['clubhouse.chat.driver', 'clubhouse.orchestrator', 'clubhouse.turn.end_reason'],
+  },
+  'clubhouse.agent.turn.time_to_first_token': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Chat turn start to the first streamed reply or thinking text',
+    attributes: ['clubhouse.chat.driver'],
+  },
+  'clubhouse.agent.tokens': {
+    kind: 'counter', unit: '{token}', level: 'standard',
+    description: 'Tokens used by chat turns, by type',
+    attributes: ['clubhouse.chat.driver', 'clubhouse.orchestrator', 'gen_ai.token.type'],
+  },
+  'clubhouse.agent.cost': {
+    kind: 'counter', unit: 'USD', level: 'standard',
+    description: 'Cost of chat turns where the provider reports one (estimates flagged)',
+    attributes: ['clubhouse.chat.driver', 'clubhouse.orchestrator', 'clubhouse.cost.estimate'],
+  },
+  'clubhouse.chat.protocol.unknown': {
+    kind: 'counter', unit: '{message}', level: 'errors',
+    description: 'Native protocol messages, items or fields a chat driver did not recognize (CLI drift)',
+    attributes: ['clubhouse.chat.driver', 'clubhouse.chat.protocol.kind'],
+  },
+  'clubhouse.agent.turn.stalled': {
+    kind: 'counter', unit: '{turn}', level: 'errors',
+    description: 'Chat turns with no event for 5 minutes while not waiting on the user',
+    attributes: ['clubhouse.chat.driver'],
+  },
   'clubhouse.agent.runs': {
     kind: 'counter', unit: '{run}', level: 'standard',
     description: 'Agent runs that ended, by kind, runtime, orchestrator and exit class',
@@ -827,7 +894,7 @@ export const METRICS = {
   'clubhouse.agent.permission.wait': {
     kind: 'histogram', unit: 's', level: 'standard',
     description: 'Time a permission request waited for a decision',
-    attributes: ['clubhouse.permission.decision', 'clubhouse.permission.result'],
+    attributes: ['clubhouse.permission.decision', 'clubhouse.permission.result', 'clubhouse.permission.path'],
   },
   'clubhouse.mcp.tool_calls': {
     kind: 'counter', unit: '{call}', level: 'standard',
