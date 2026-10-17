@@ -158,6 +158,7 @@ const SAMPLES: Record<keyof typeof ATTR, { good: TelAttr; key: string }> = {
   goobersStreamMode: { good: ATTR.goobersStreamMode('polling'), key: 'clubhouse.goobers.stream.mode' },
   goobersModel: { good: ATTR.goobersModel('run'), key: 'clubhouse.goobers.model' },
   sseTerminalReason: { good: ATTR.sseTerminalReason('schema-changed'), key: 'clubhouse.sse.terminal_reason' },
+  configFormat: { good: ATTR.configFormat('toml'), key: 'clubhouse.config.format' },
 };
 
 describe('telemetry attribute registry', () => {
@@ -226,6 +227,7 @@ describe('telemetry attribute registry', () => {
         "clubhouse.child_process.gone_reason",
         "clubhouse.child_process.type",
         "clubhouse.clubhouse_mode",
+        "clubhouse.config.format",
         "clubhouse.cost.estimate",
         "clubhouse.delivery.result",
         "clubhouse.editor.bucket",

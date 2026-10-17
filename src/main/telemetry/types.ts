@@ -33,6 +33,18 @@ export interface FlowExtras<T> {
   classify?: (result: Awaited<T>) => Classification;
 }
 
+/** Bridged appLog records keep their level (spec §6.6); events default to info. */
+export type EventSeverity = 'info' | 'warn' | 'error' | 'fatal';
+
+export interface EventOptions {
+  severity?: EventSeverity;
+}
+
+export interface TraceIds {
+  traceId: string;
+  spanId: string;
+}
+
 export interface ExceptionOptions {
   origin: 'main' | 'renderer' | 'plugin';
   handled: boolean;
@@ -73,8 +85,10 @@ export interface TelemetryRuntime {
   flow<T>(name: SpanName, opts: FlowOptions, fn: (span: SpanHandle) => T, extras?: FlowExtras<T>): T;
   step<T>(name: SpanName, fn: (span: SpanHandle) => T, opts?: FlowOptions): T;
   count(name: MetricName, value: number, attrs?: TelAttr[]): void;
-  event(name: EventName, attrs?: TelAttr[]): void;
+  event(name: EventName, attrs?: TelAttr[], opts?: EventOptions): void;
   exception(error: unknown, opts: ExceptionOptions): void;
+  /** The active span's ids, for correlating local log lines with exported traces. */
+  activeTraceIds(): TraceIds | undefined;
   replaySpan(span: ReplaySpan): void;
   replayTree(tree: ReplayTree): void;
   /** W3C `traceparent` of the active recording span, for Annex propagation (spec §7). */
