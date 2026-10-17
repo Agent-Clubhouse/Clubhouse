@@ -67,6 +67,7 @@ export interface ProjectGroupProps {
   onNewAgent?: (projectId: string) => void;
   draggable?: boolean;
   onSelectAgent: (agent: Agent) => void;
+  onOpenTerminal?: (agent: Agent) => void;
   onSelectCompleted: (projectId: string, completedId: string) => void;
   onDismissCompleted: (projectId: string, completedId: string) => void;
   onClearCompleted: (projectId: string) => void;
@@ -87,7 +88,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     project, iconUrl, agents, detailed, completed, collapsed, pinned, sleepingOpen, finishedOpen,
     activeProjectId, activeAgentId, headerSelected, selectedCompletedId,
     onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onNewAgent,
-    onSelectAgent, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator, draggable = true,
+    onSelectAgent, onOpenTerminal, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator, draggable = true,
   } = props;
   const label = project.displayName || project.name;
   const groups = groupProjectAgents(agents);
@@ -100,6 +101,9 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
       key={agent.id}
       agent={agent}
       dot={agentDot(agent, detailed[agent.id])}
+      detailed={detailed[agent.id]}
+      projectPath={project.path}
+      onOpenTerminal={onOpenTerminal}
       active={agent.id === activeAgentId && isActiveProject}
       indent={indent}
       onSelect={onSelectAgent}

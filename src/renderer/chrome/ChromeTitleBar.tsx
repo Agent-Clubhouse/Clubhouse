@@ -5,7 +5,7 @@ import { usePluginStore } from '../plugins/plugin-store';
 import { Badge } from '../components/Badge';
 import { useChromeStore } from './chromeStore';
 import { useProjectTabs, useTabBadge, type TabEntry } from './useProjectTabs';
-import { getChromeSurface, reportChromeFeature, reportChromeSurface, type ChromeSurface } from './telemetry';
+import { holdChromeSurface, reportChromeFeature } from './telemetry';
 import { computeOverflow } from './titlebar/overflow';
 import { titleBarPadding } from './titlebar/platform';
 import { useClickOutside } from './sidebar/useClickOutside';
@@ -109,13 +109,7 @@ function MoreMenu({ tabs, projectId, onSelect, buttonRef }: {
   useClickOutside(ref, open, close);
 
   // While the menu is open it is where the user is (spec §8).
-  const previousSurface = useRef<ChromeSurface | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    previousSurface.current = getChromeSurface();
-    reportChromeSurface('more_menu');
-    return () => { if (previousSurface.current) reportChromeSurface(previousSurface.current); };
-  }, [open]);
+  useEffect(() => (open ? holdChromeSurface('more_menu') : undefined), [open]);
 
   return (
     <div ref={ref} className="relative no-drag flex-shrink-0">

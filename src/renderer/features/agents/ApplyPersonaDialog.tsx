@@ -28,9 +28,11 @@ export function ApplyPersonaDialog() {
   const agents = useAgentStore((s) => s.agents);
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
   const { projects, activeProjectId } = useProjectStore();
-  const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const agent = applyPersonaDialogAgent ? agents[applyPersonaDialogAgent] : null;
+  // The agent's own project: the new chrome's tree opens this dialog for agents
+  // outside the active project. The active project is the fallback.
+  const activeProject = projects.find((p) => p.id === (agent?.projectId ?? activeProjectId)) ?? projects.find((p) => p.id === activeProjectId);
 
   const [personas, setPersonas] = useState<PersonaOption[]>([]);
   const [selectedId, setSelectedId] = useState('');

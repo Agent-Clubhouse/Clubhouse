@@ -37,6 +37,15 @@ export function viewForTab(explorerTab: string): TelemetryView {
 }
 
 let currentSurface: ChromeSurface = 'sidebar_agents';
+/** The surface of the view itself, under any popups. */
+let baseSurface: ChromeSurface = 'sidebar_agents';
+/** Popups that are open, oldest first; the newest one is where the user is. */
+const heldSurfaces: Array<{ surface: ChromeSurface }> = [];
+
+function applySurface(): void {
+  currentSurface = heldSurfaces[heldSurfaces.length - 1]?.surface ?? baseSurface;
+  setTelemetrySurface(currentSurface);
+}
 
 export function reportChromeView(explorerTab: string): void {
   setTelemetryView(viewForTab(explorerTab));
@@ -44,8 +53,24 @@ export function reportChromeView(explorerTab: string): void {
 
 /** Also feeds long-frame metrics and render-error reports (spec §8). */
 export function reportChromeSurface(surface: ChromeSurface): void {
-  currentSurface = surface;
-  setTelemetrySurface(surface);
+  baseSurface = surface;
+  applySurface();
+}
+
+/**
+ * A popup's surface while it is open (host menu, More menu, row menu, hover
+ * card). Returns the release. With several open, the newest wins, and closing
+ * them in any order lands back on the right surface.
+ */
+export function holdChromeSurface(surface: ChromeSurface): () => void {
+  const entry = { surface };
+  heldSurfaces.push(entry);
+  applySurface();
+  return () => {
+    const i = heldSurfaces.indexOf(entry);
+    if (i !== -1) heldSurfaces.splice(i, 1);
+    applySurface();
+  };
 }
 
 /** The start page and first run are panes of their own: `clubhouse.view` is `other` (spec §8). */

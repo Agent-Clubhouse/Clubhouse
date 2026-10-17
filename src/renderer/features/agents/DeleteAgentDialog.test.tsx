@@ -149,4 +149,46 @@ describe('DeleteAgentDialog', () => {
     fireEvent.click(backdrop!);
     expect(mockCloseDeleteDialog).toHaveBeenCalled();
   });
+
+  describe('agents outside the active project (the new chrome tree)', () => {
+    it('reads and deletes the worktree in the agent’s own project', async () => {
+      resetStores();
+      useProjectStore.setState({
+        projects: [
+          { id: 'proj-1', name: 'my-project', path: '/home/user/project', color: 'indigo' },
+          { id: 'proj-2', name: 'other', path: '/home/user/other', color: 'blue' },
+        ] as never,
+        activeProjectId: 'proj-1',
+      });
+      useAgentStore.setState({
+        deleteDialogAgent: 'agent-2',
+        agents: { 'agent-2': { id: 'agent-2', projectId: 'proj-2', name: 'calm-otter', kind: 'durable', status: 'sleeping', color: 'blue', worktreePath: '/home/user/other/.clubhouse/agents/calm-otter' } },
+      } as never);
+      render(<DeleteAgentDialog />);
+      await waitFor(() => screen.getByText(/Delete calm-otter/));
+      expect(window.clubhouse.agent.getWorktreeStatus).toHaveBeenCalledWith('/home/user/other', 'agent-2');
+      fireEvent.click(screen.getByText('Leave files'));
+      await waitFor(() => expect(mockExecuteDelete).toHaveBeenCalledWith('unregister', '/home/user/other'));
+    });
+
+    it('deletes a satellite’s agent on its satellite, whichever project is active', async () => {
+      const { useRemoteProjectStore, namespacedAgentId, namespacedProjectId } = await import('../../stores/remoteProjectStore');
+      const { useAnnexClientStore } = await import('../../stores/annexClientStore');
+      const ra = namespacedAgentId('sat-1', 'bold-owl');
+      const requestWorktreeStatus = vi.fn().mockResolvedValue({ isValid: true, uncommittedFiles: [], unpushedCommits: [], hasRemote: true });
+      const sendAgentDeleteDurable = vi.fn().mockResolvedValue({ ok: true, message: '' });
+      useAnnexClientStore.setState({ requestWorktreeStatus, sendAgentDeleteDurable } as never);
+      useRemoteProjectStore.setState({
+        remoteAgents: { [ra]: { id: ra, projectId: namespacedProjectId('sat-1', 'site'), name: 'bold-owl', kind: 'durable', status: 'sleeping', color: 'blue', worktreePath: '/srv/site/wt' } as never },
+      });
+      useProjectStore.setState({ activeProjectId: null });
+      useAgentStore.setState({ deleteDialogAgent: ra });
+      render(<DeleteAgentDialog />);
+      await waitFor(() => screen.getByText(/Delete bold-owl/));
+      expect(requestWorktreeStatus).toHaveBeenCalledWith('sat-1', 'site', 'bold-owl');
+      fireEvent.click(screen.getByText('Leave files'));
+      await waitFor(() => expect(sendAgentDeleteDurable).toHaveBeenCalledWith('sat-1', 'site', 'bold-owl', 'unregister'));
+      expect(mockExecuteDelete).not.toHaveBeenCalled();
+    });
+  });
 });

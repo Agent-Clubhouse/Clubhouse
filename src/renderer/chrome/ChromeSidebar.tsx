@@ -329,6 +329,20 @@ export function ChromeSidebar() {
     reportChromeFeature('agent_select');
   }, [openAgent]);
 
+  // A string key rather than the whole projectEnabled record (selector-safety
+  // guard): the sidebar re-renders only when the set of Terminal projects changes.
+  const terminalProjectKey = usePluginStore((s) => Object.entries(s.projectEnabled)
+    .filter(([, ids]) => ids.includes('terminal')).map(([id]) => id).sort().join('\n'));
+  const terminalProjectIds = useMemo(
+    () => new Set(terminalProjectKey ? terminalProjectKey.split('\n') : []),
+    [terminalProjectKey],
+  );
+  // The hover card's Open terminal: the agent, on the Terminal tab (its scope).
+  const openTerminal = useCallback((agent: Agent) => {
+    openAgent(agent, false);
+    useUIStore.getState().setExplorerTab('plugin:terminal', agent.projectId);
+  }, [openAgent]);
+
   const selectNeedsYou = useCallback((agent: Agent) => {
     // needs_you_remote_select: the agent runs on a satellite, whichever host is shown.
     const remote = hostOf(agent.projectId) !== null;
@@ -469,6 +483,8 @@ export function ChromeSidebar() {
           onSelectProject={selectProject}
           onNewAgent={isRemoteHost ? undefined : onNewAgent}
           onSelectAgent={selectAgent}
+          onOpenTerminal={isRemoteHost ? undefined : openTerminal}
+          terminalProjectIds={terminalProjectIds}
           onSelectCompleted={selectCompleted}
           onDismissCompleted={dismissCompleted}
           onClearCompleted={clearCompleted}

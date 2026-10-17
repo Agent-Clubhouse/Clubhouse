@@ -121,4 +121,22 @@ describe('chrome telemetry', () => {
     // The exception carries the class name only, never the message.
     expect(JSON.stringify(items[1])).not.toContain('bad');
   });
+
+  it('restores the view surface when popups close in any order', async () => {
+    const { holdChromeSurface, reportChromeSurface, getChromeSurface } = await import('./telemetry');
+    reportChromeSurface('sidebar_list');
+    const releaseCard = holdChromeSurface('hover_card');
+    const releaseMenu = holdChromeSurface('row_menu');
+    expect(getChromeSurface()).toBe('row_menu');
+    releaseCard();
+    expect(getChromeSurface()).toBe('row_menu');
+    releaseMenu();
+    expect(getChromeSurface()).toBe('sidebar_list');
+    // The view can change under an open popup.
+    const release = holdChromeSurface('more_menu');
+    reportChromeSurface('sidebar_agents');
+    expect(getChromeSurface()).toBe('more_menu');
+    release();
+    expect(getChromeSurface()).toBe('sidebar_agents');
+  });
 });

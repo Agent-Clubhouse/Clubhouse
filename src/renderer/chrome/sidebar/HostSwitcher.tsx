@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SatelliteConnection, SatelliteState } from '../../stores/annexClientStore';
-import { getChromeSurface, reportChromeSurface, type ChromeSurface } from '../telemetry';
+import { holdChromeSurface } from '../telemetry';
 import { useClickOutside } from './useClickOutside';
 
 /**
@@ -68,13 +68,7 @@ export function HostSwitcher({ satellites, activeHostId, needsByHost, onSwitch, 
   };
 
   // While the menu is open it is where the user is (spec §8).
-  const previousSurface = useRef<ChromeSurface | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    previousSurface.current = getChromeSurface();
-    reportChromeSurface('host_menu');
-    return () => { if (previousSurface.current) reportChromeSurface(previousSurface.current); };
-  }, [open]);
+  useEffect(() => (open ? holdChromeSurface('host_menu') : undefined), [open]);
 
   if (satellites.length === 0) return null;
 
