@@ -33,6 +33,7 @@ import { syncPluginThemes, PluginThemeSummary } from '../services/plugin-theme-s
 import { consumePendingProtocolAction } from '../services/protocol-service';
 import { flushBeforeExit } from '../telemetry/facade';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
+import { newChromeEnabled, usesTitleBarOverlay } from '../window-chrome';
 
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
 const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
@@ -148,7 +149,8 @@ export function registerAppHandlers(): void {
     },
   ));
 
-  // Update the Windows title bar overlay colors on ALL windows when the theme changes
+  // Update the title bar overlay colors on ALL windows when the theme changes
+  // (Windows, and Linux in the new layout: window-chrome.ts)
   ipcMain.handle(IPC.APP.UPDATE_TITLE_BAR_OVERLAY, withValidatedArgs(
     [objectArg<{ color: string; symbolColor: string }>({
       validate: (v, name) => {
@@ -157,7 +159,7 @@ export function registerAppHandlers(): void {
       },
     })],
     (_event, colors) => {
-      if (process.platform !== 'win32') return;
+      if (!usesTitleBarOverlay(process.platform, newChromeEnabled())) return;
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) {
           win.setTitleBarOverlay({

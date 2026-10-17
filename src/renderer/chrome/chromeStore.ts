@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { reportChromeActionFailed } from './telemetry';
 import { isNewChromeEnabled } from './chromeFlag';
 import { useAgentStore } from '../stores/agentStore';
+import { touchMru } from './titlebar/overflow';
 
 /**
  * State for the new chrome shell. Persisted under its own key so the legacy
@@ -29,6 +30,8 @@ interface PersistedChromeState {
   collapsedProjectIds?: string[];
   /** Keys of the form `${projectId}:${fold}` that the user expanded. Folds start closed. */
   expandedFolds?: string[];
+  /** Per project, title-bar tab ids by most recent use: the More menu's order. */
+  tabMru?: Record<string, string[]>;
 }
 
 export interface ChromeState {
@@ -48,6 +51,9 @@ export interface ChromeState {
   pinnedProjectIds: string[];
   collapsedProjectIds: string[];
   expandedFolds: string[];
+  tabMru: Record<string, string[]>;
+  /** Record a tab opened in a project, for the More menu's order. */
+  touchTab: (projectId: string, tabId: string) => void;
   resizeSidebar: (delta: number) => void;
   setSidebarWidth: (width: number) => void;
   toggleSidebar: () => void;
@@ -65,7 +71,7 @@ export interface ChromeState {
 }
 
 type PersistedFields = Pick<ChromeState,
-  'sidebarWidth' | 'sidebarCollapsed' | 'lastProjectId' | 'pinnedProjectIds' | 'collapsedProjectIds' | 'expandedFolds'>;
+  'sidebarWidth' | 'sidebarCollapsed' | 'lastProjectId' | 'pinnedProjectIds' | 'collapsedProjectIds' | 'expandedFolds' | 'tabMru'>;
 
 const DEFAULTS: PersistedFields = {
   sidebarWidth: SIDEBAR_DEFAULT,
@@ -74,12 +80,18 @@ const DEFAULTS: PersistedFields = {
   pinnedProjectIds: [],
   collapsedProjectIds: [],
   expandedFolds: [],
+  tabMru: {},
 };
 
 export const foldKey = (projectId: string, fold: ProjectFold) => `${projectId}:${fold}`;
 
 const stringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+
+const stringArrayRecord = (value: unknown): Record<string, string[]> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, stringArray(v)]));
+};
 
 export function clampSidebarWidth(width: number): number {
   if (!Number.isFinite(width)) return SIDEBAR_DEFAULT;
@@ -99,6 +111,7 @@ export function loadChromeState(): PersistedFields {
       pinnedProjectIds: stringArray(parsed.pinnedProjectIds),
       collapsedProjectIds: stringArray(parsed.collapsedProjectIds),
       expandedFolds: stringArray(parsed.expandedFolds),
+      tabMru: stringArrayRecord(parsed.tabMru),
     };
   } catch {
     // telemetry-exempt: read at module load, before telemetry is connected; corrupt state falls back to defaults
@@ -115,6 +128,7 @@ function persistChromeState(state: PersistedFields): void {
     pinnedProjectIds: state.pinnedProjectIds,
     collapsedProjectIds: state.collapsedProjectIds,
     expandedFolds: state.expandedFolds,
+    tabMru: state.tabMru,
   };
   try {
     localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify(payload));
@@ -155,6 +169,13 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       const next = clampSidebarWidth(sidebarWidth + delta);
       if (next === sidebarWidth) return;
       set({ sidebarWidth: next });
+      schedulePersist();
+    },
+
+    touchTab: (projectId, tabId) => {
+      const current = get().tabMru[projectId] ?? [];
+      if (current[0] === tabId) return;
+      set({ tabMru: { ...get().tabMru, [projectId]: touchMru(current, tabId) } });
       schedulePersist();
     },
 
@@ -218,6 +239,7 @@ export const useChromeStore = create<ChromeState>((set, get) => {
         ...s.collapsedProjectIds,
         ...s.expandedFolds.map((key) => key.slice(0, key.lastIndexOf(':'))),
         ...(s.lastProjectId ? [s.lastProjectId] : []),
+        ...Object.keys(s.tabMru),
       ];
       get().forgetProjects([...new Set(stored.filter((id) => id.startsWith(prefix)))]);
     },
@@ -231,6 +253,7 @@ export const useChromeStore = create<ChromeState>((set, get) => {
         collapsedProjectIds: s.collapsedProjectIds.filter((id) => !gone.has(id)),
         expandedFolds: s.expandedFolds.filter((key) => !gone.has(key.slice(0, key.lastIndexOf(':')))),
         lastProjectId: s.lastProjectId && gone.has(s.lastProjectId) ? null : s.lastProjectId,
+        tabMru: Object.fromEntries(Object.entries(s.tabMru).filter(([id]) => !gone.has(id))),
       });
       schedulePersist();
     },

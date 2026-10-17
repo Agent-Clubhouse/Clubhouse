@@ -390,6 +390,32 @@ describe('app-handlers', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
+  it('UPDATE_TITLE_BAR_OVERLAY recolors Linux windows only in the new layout', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const { resetNewChromeCacheForTests } = await import('../window-chrome');
+    const experimental = await import('../services/experimental-settings');
+    const handler = handleHandlers.get(IPC.APP.UPDATE_TITLE_BAR_OVERLAY)!;
+    const mockSetOverlay = vi.fn();
+    try {
+      resetNewChromeCacheForTests();
+      vi.mocked(experimental.getSettings).mockReturnValue({} as never);
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ isDestroyed: () => false, setTitleBarOverlay: mockSetOverlay } as any]);
+      await handler({}, { color: '#000', symbolColor: '#fff' });
+      expect(mockSetOverlay).not.toHaveBeenCalled();
+
+      resetNewChromeCacheForTests();
+      vi.mocked(experimental.getSettings).mockReturnValue({ newChrome: true } as never);
+      await handler({}, { color: '#000', symbolColor: '#fff' });
+      expect(mockSetOverlay).toHaveBeenCalledWith({ color: '#000', symbolColor: '#fff' });
+    } finally {
+      resetNewChromeCacheForTests();
+      vi.mocked(experimental.getSettings).mockReturnValue({} as never);
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
+
   it('UPDATE_TITLE_BAR_OVERLAY skips destroyed windows', async () => {
     const originalPlatform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'win32' });

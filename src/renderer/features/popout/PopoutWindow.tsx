@@ -5,6 +5,8 @@ import { initChatEventListener } from '../../stores/chatStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { PopoutAgentView } from './PopoutAgentView';
 import { PopoutCanvasView } from './PopoutCanvasView';
+import { isNewChromeEnabled } from '../../chrome/chromeFlag';
+import { PopoutTitleBar } from '../../chrome/titlebar/PopoutTitleBar';
 import type { Agent, AgentHookEvent } from '../../../shared/types';
 
 /**
@@ -141,6 +143,10 @@ function useAgentStateSync() {
 export function PopoutWindow() {
   const loadTheme = useThemeStore((s) => s.loadTheme);
   const ready = useAgentStateSync();
+  const agentName = useAgentStore((s) => {
+    const id = window.clubhouse.window?.getPopoutParams()?.agentId;
+    return id ? s.agents[id]?.name : undefined;
+  });
 
   useEffect(() => {
     loadTheme();
@@ -160,11 +166,15 @@ export function PopoutWindow() {
   return (
     <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col" data-testid="popout-window">
       {/* Title bar drag region */}
-      <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center" data-testid="popout-title-bar">
-        <span className="text-xs text-ctp-subtext0 select-none" data-testid="popout-title">
-          {params.type === 'agent' ? 'Agent' : 'Canvas'} — Pop-out
-        </span>
-      </div>
+      {isNewChromeEnabled() ? (
+        <PopoutTitleBar title={params.type === 'agent' ? (agentName || 'Agent') : 'Canvas'} />
+      ) : (
+        <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center" data-testid="popout-title-bar">
+          <span className="text-xs text-ctp-subtext0 select-none" data-testid="popout-title">
+            {params.type === 'agent' ? 'Agent' : 'Canvas'} — Pop-out
+          </span>
+        </div>
+      )}
       {/* Content */}
       <div className="flex-1 min-h-0">
         {!ready ? (

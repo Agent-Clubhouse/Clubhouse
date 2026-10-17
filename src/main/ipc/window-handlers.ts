@@ -6,6 +6,8 @@ import { getThemeColorsForTitleBar } from '../title-bar-colors';
 import { appLog } from '../services/log-service';
 import { applyWindowSecurityGuards } from '../window-security-guards';
 import { withValidatedArgs, stringArg, numberArg, objectArg } from './validation';
+import { newChromeEnabled, titleBarOptions } from '../window-chrome';
+import { NEW_CHROME_ARG } from '../../shared/chrome-flag';
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -158,7 +160,6 @@ export function registerWindowHandlers(): void {
     (_event, params) => {
     popoutOpened(params.type);
     const themeColors = getThemeColors();
-    const isWin = process.platform === 'win32';
 
     const additionalArguments = [
       `--popout-type=${params.type}`,
@@ -166,6 +167,8 @@ export function registerWindowHandlers(): void {
     if (params.agentId) additionalArguments.push(`--popout-agent-id=${params.agentId}`);
     if (params.canvasId) additionalArguments.push(`--popout-canvas-id=${params.canvasId}`);
     if (params.projectId) additionalArguments.push(`--popout-project-id=${params.projectId}`);
+    // Popouts get the same layout as the main window, for their bare title bar.
+    if (newChromeEnabled()) additionalArguments.push(NEW_CHROME_ARG);
 
     const win = new BrowserWindow({
       width: 800,
@@ -174,16 +177,7 @@ export function registerWindowHandlers(): void {
       minHeight: 300,
       title: params.title || `Clubhouse — ${params.type === 'agent' ? 'Agent' : 'Canvas'}`,
       show: false,
-      ...(isWin
-        ? {
-            titleBarStyle: 'hidden',
-            titleBarOverlay: {
-              color: themeColors.mantle,
-              symbolColor: themeColors.text,
-              height: 38,
-            },
-          }
-        : { titleBarStyle: 'hiddenInset' as const }),
+      ...titleBarOptions(process.platform, newChromeEnabled(), themeColors),
       backgroundColor: themeColors.bg,
       webPreferences: {
         preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
