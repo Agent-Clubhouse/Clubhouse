@@ -129,9 +129,16 @@ interface ChatHeaderProps {
   /** Toggle for the Changes panel; omitted hides the button. */
   onToggleChanges?: () => void;
   changesOpen?: boolean;
+  /** Toggle for the agent map, with its subagent count; omitted hides the button. */
+  onToggleAgentMap?: () => void;
+  agentMapOpen?: boolean;
+  subagentCount?: number;
+  /** DOM ids tying the toggle to the panel it controls. */
+  agentMapPanelId?: string;
+  agentMapToggleId?: string;
 }
 
-export function ChatHeader({ agent, state, providerName, onSwitchToTerminal, switching, onToggleChanges, changesOpen }: ChatHeaderProps) {
+export function ChatHeader({ agent, state, providerName, onSwitchToTerminal, switching, onToggleChanges, changesOpen, onToggleAgentMap, agentMapOpen, subagentCount, agentMapPanelId, agentMapToggleId }: ChatHeaderProps) {
   const caps = state.capabilities;
   const limits = caps?.limits ? state.usage.limits : [];
   const context = caps && caps.usage !== 'none' ? state.usage.context : null;
@@ -162,6 +169,20 @@ export function ChatHeader({ agent, state, providerName, onSwitchToTerminal, swi
             data-testid="chat-changes-toggle"
           >
             Changes
+          </button>
+        )}
+        {onToggleAgentMap && (
+          <button
+            type="button"
+            id={agentMapToggleId}
+            onClick={onToggleAgentMap}
+            aria-pressed={!!agentMapOpen}
+            aria-controls={agentMapPanelId}
+            aria-expanded={!!agentMapOpen}
+            className={`h-[26px] px-2.5 rounded-md text-[11.5px] tabular-nums ${agentMapOpen ? 'bg-surface-1 text-ctp-text' : 'bg-surface-0 text-ctp-overlay1 hover:text-ctp-text'}`}
+            data-testid="chat-agent-map-toggle"
+          >
+            Agents{subagentCount ? ` ${subagentCount}` : ''}
           </button>
         )}
         {onSwitchToTerminal && <RuntimeSwitch value="chat" onChange={onSwitchToTerminal} disabled={switching} />}

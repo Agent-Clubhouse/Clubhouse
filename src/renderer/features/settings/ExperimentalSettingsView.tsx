@@ -27,6 +27,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Chat',
     description: 'Talk to Claude Code, Codex and Copilot agents in a native chat view. The terminal stays available for every provider.',
   },
+  {
+    id: 'telemetry',
+    label: 'Telemetry export',
+    description: 'Send anonymized diagnostics to your own Application Insights resource or OTLP collector. Set it up in Settings, Logging, under Telemetry export.',
+  },
 ];
 
 export function ExperimentalSettingsView() {

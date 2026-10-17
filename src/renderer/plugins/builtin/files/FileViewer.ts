@@ -6,6 +6,7 @@ import { TabBar } from './TabBar';
 import { MonacoEditor, disposeModel, updateSavedContent, getModelContent } from './MonacoEditor';
 import { MarkdownPreview } from './MarkdownPreview';
 import { BINARY_EXTENSIONS, IMAGE_EXTENSIONS, EXT_TO_LANG } from './file-icons';
+import { tel } from '../../../telemetry';
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -398,6 +399,9 @@ export function FileViewer({ api }: { api: PluginAPI }) {
           // External change: reload content and update Monaco's saved baseline
           const cached = _fileCache.get(evt.path);
           if (!cached || (cached.fileType !== 'text' && cached.fileType !== 'markdown')) continue;
+
+          // Unsaved edits now sit on top of a file that changed on disk.
+          if (tab.isDirty) tel.event('clubhouse.editor.save_conflict');
 
           const newContent = await api.files.readFile(evt.path);
           cached.content = newContent;

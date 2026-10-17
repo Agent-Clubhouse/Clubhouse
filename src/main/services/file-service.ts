@@ -13,6 +13,8 @@ export interface ReadTreeOptions {
   maxFiles?: number;
   /** AbortSignal to cancel an in-progress tree read. */
   signal?: AbortSignal;
+  /** Filled in when the read finishes: node count and whether maxFiles cut it short. */
+  stats?: { nodeCount: number; hitCap: boolean };
 }
 
 interface ReadTreeState {
@@ -70,7 +72,12 @@ export async function readTree(dirPath: string, options?: ReadTreeOptions): Prom
   const includeHidden = options?.includeHidden ?? false;
   const maxFiles = options?.maxFiles ?? DEFAULT_MAX_FILES;
   const state: ReadTreeState = { count: 0, maxFiles, signal: options?.signal };
-  return readTreeInternal(dirPath, includeHidden, depth, state);
+  const tree = await readTreeInternal(dirPath, includeHidden, depth, state);
+  if (options?.stats) {
+    options.stats.nodeCount = state.count;
+    options.stats.hitCap = state.count >= maxFiles;
+  }
+  return tree;
 }
 
 export async function readFile(filePath: string): Promise<string> {
