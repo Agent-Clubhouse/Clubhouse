@@ -11,6 +11,7 @@ import { getProjectCanvasStore, getKnownProjectIds, useAppCanvasStore } from '..
 import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import { CommandItem, SETTINGS_PAGES } from './command-registry';
+import { openNewQuickAgent } from '../../chrome/startPage';
 
 /** Canvas metadata loaded from storage for non-active projects */
 interface CrossProjectCanvas {
@@ -378,7 +379,7 @@ export function useCommandSource(): CommandItem[] {
       category: 'Actions',
       shortcut: getShortcut(shortcuts, 'new-quick-agent'),
       keywords: ['agent', 'mission', 'quick'],
-      execute: () => { useUIStore.getState().openQuickAgentDialog(); },
+      execute: () => openNewQuickAgent(),
     });
     items.push({
       id: 'action:add-project',

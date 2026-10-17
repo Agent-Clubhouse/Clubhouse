@@ -320,7 +320,7 @@ To keep churn down, the new shell **keeps today's test IDs wherever the element 
 
 | Test ID | Element in the new shell |
 |---|---|
-| `nav-add-project` | Add project (sidebar project menu and first run) |
+| `nav-add-project` | Add project in the sidebar, also shown during first run (the first-run pane's own button is `first-run-choose`) |
 | `nav-settings`, `nav-help` | Footer Settings and Help |
 | `title-bar` | Title bar root |
 | `agent-item-<agentId>` | Sidebar agent row (not a new `agent-row-*` id) |
@@ -363,7 +363,7 @@ Twenty-five E2E files use the old IDs, counting helpers and fixtures. All of the
   - `agent-hover-card`
   - `finished-quick-<projectId>`, `sleeping-fold-<projectId>`
   - `title-more` (tabs keep `explorer-tab-<tabId>`)
-  - `list-breadcrumb`, `settings-nav`, `start-page`, `first-run`
+  - `list-breadcrumb`, `settings-nav`, `start-page`, `first-run`, `first-run-choose`
 - Known flake: the canvas golden-path right-click spec on macOS and Windows CI. Re-run before investigating.
 - Manual QA on real hardware for anything drag-related (project and agent reorder, tab pinning out of the More menu). Synthetic input does not reproduce native macOS drag behavior.
 - Linux overlay manual QA on GNOME (Wayland and X11) and KDE.

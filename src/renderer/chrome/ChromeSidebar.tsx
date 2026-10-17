@@ -289,11 +289,12 @@ export function ChromeSidebar() {
   }, [openAgent]);
 
   const selectCompleted = useCallback((projectId: string, completedId: string) => {
+    setProjectScope(null);
     if (useProjectStore.getState().activeProjectId !== projectId) setActiveProject(projectId);
     setExplorerTab('agents', projectId);
     setActiveAgent(null, projectId);
     useQuickAgentStore.getState().selectCompleted(completedId);
-  }, [setActiveProject, setExplorerTab, setActiveAgent]);
+  }, [setProjectScope, setActiveProject, setExplorerTab, setActiveAgent]);
 
   const dismissCompleted = useCallback((projectId: string, completedId: string) => {
     useQuickAgentStore.getState().dismissCompleted(projectId, completedId);
