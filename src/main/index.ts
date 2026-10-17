@@ -54,7 +54,7 @@ import { installIpcTelemetry } from './telemetry/ipc-telemetry';
 import { getAgentOrchestrator } from './services/agent-registry';
 import { NEW_CHROME_ARG } from '../shared/chrome-flag';
 import { newChromeEnabled, titleBarOptions } from './window-chrome';
-import { shutdownFeedback, startFeedbackIfEnabled } from './services/framebriar';
+import { shutdownFeedback, startFeedback } from './services/framebriar';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
 // workers indefinitely, starving every fs.promises operation after an agent
@@ -361,8 +361,8 @@ app.on('ready', () => {
 
   createWindow();
 
-  // Framebriar screenshot feedback (experimental): restores enrollment and resumes queued reports.
-  startFeedbackIfEnabled();
+  // Framebriar screenshot feedback: restores enrollment and resumes queued reports.
+  startFeedback();
 
   // Start periodic update checks (respects user's autoUpdate setting).
   // Skipped for unpackaged builds (dev / E2E) so a mid-run "update ready"

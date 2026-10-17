@@ -1,7 +1,6 @@
 /**
- * IPC for Framebriar screenshot feedback (src/main/services/framebriar). Everything is
- * gated on the experimental Feedback switch; with it off, status reports a stopped service
- * and every action is refused. The renderer is not a trust boundary: only Clubhouse's own
+ * IPC for Framebriar screenshot feedback (src/main/services/framebriar). Once quit begins,
+ * status reports a stopped service and every action is refused. The renderer is not a trust boundary: only Clubhouse's own
  * windows may call (not webview-hosted plugin pages), notes and scene are untrusted text
  * (the SDK also redacts and bounds them), and capture is always the calling window's own
  * contents, never the desktop.
@@ -29,7 +28,7 @@ function callerWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow {
 
 function requireEnabled(event: Electron.IpcMainInvokeEvent): BrowserWindow {
   const win = callerWindow(event);
-  if (!isFeedbackEnabled()) throw new Error('Feedback is turned off (Settings › Experimental › Feedback)');
+  if (!isFeedbackEnabled()) throw new Error('Clubhouse is quitting');
   return win;
 }
 

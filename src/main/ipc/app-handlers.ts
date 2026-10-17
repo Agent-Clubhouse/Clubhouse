@@ -34,7 +34,6 @@ import { consumePendingProtocolAction } from '../services/protocol-service';
 import { flushBeforeExit } from '../telemetry/facade';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
 import { newChromeEnabled, usesTitleBarOverlay } from '../window-chrome';
-import { applyFeedbackSwitch } from '../services/framebriar';
 
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
 const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
@@ -453,8 +452,6 @@ export function registerAppHandlers(): void {
     async (_event, settings) => {
       await experimentalSettings.saveSettings(settings);
       settingsChanged('experimental');
-      // Feedback stops as soon as its switch goes off (no restart needed).
-      await applyFeedbackSwitch();
     },
   ));
 

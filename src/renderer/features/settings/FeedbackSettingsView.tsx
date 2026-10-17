@@ -44,11 +44,11 @@ const STATE_TEXT: Record<string, string> = {
 
 /**
  * Settings › Feedback: connect with an invitation (the only thing needed: no URL or key),
- * see the connection and its expiry, disconnect. Behind the experimental Feedback switch.
+ * see the connection and its expiry, disconnect.
  */
 export function FeedbackSettingsView() {
-  const enabled = useFeedbackStore((s) => s.enabled);
   const status = useFeedbackStore((s) => s.status);
+  const loaded = useFeedbackStore((s) => s.loaded);
   const init = useFeedbackStore((s) => s.init);
   const setStatus = useFeedbackStore((s) => s.setStatus);
   const [busy, setBusy] = useState(false);
@@ -58,11 +58,11 @@ export function FeedbackSettingsView() {
 
   useEffect(() => { void init(); }, [init]);
 
-  if (!enabled || !status) {
+  if (!status) {
     return (
       <div className="h-full overflow-y-auto bg-ctp-base p-6" data-testid="feedback-settings">
         <h2 className="text-lg font-semibold text-ctp-text mb-1">Feedback</h2>
-        <p className="text-sm text-ctp-subtext0">Turn on Feedback in Settings, Experimental to send screenshot feedback.</p>
+        <p className="text-sm text-ctp-subtext0">{loaded ? 'Feedback isn\'t available right now.' : 'Loading…'}</p>
       </div>
     );
   }

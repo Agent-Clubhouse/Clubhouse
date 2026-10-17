@@ -5,9 +5,6 @@ vi.mock('electron', () => ({
   net: { isOnline: () => true },
   safeStorage: {},
 }));
-const flags = vi.hoisted(() => ({ feedback: true, preview: true }));
-vi.mock('../experimental-settings', () => ({ getSettings: () => ({ feedback: flags.feedback }) }));
-vi.mock('../preview-eligible', () => ({ isPreviewEligible: () => flags.preview }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 const broadcast = vi.hoisted(() => vi.fn());
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: broadcast }));
@@ -30,7 +27,7 @@ vi.mock('./feedback-service', () => ({
 }));
 
 import { IPC } from '../../../shared/ipc-channels';
-import { applyFeedbackSwitch, getFeedbackService, isFeedbackEnabled, resetFeedbackService, shutdownFeedback } from './index';
+import { getFeedbackService, isFeedbackEnabled, resetFeedbackService, shutdownFeedback, startFeedback } from './index';
 import { getFramebriarTelemetrySource, onFramebriarConnectionChanged, setFramebriarTelemetrySource } from '../../telemetry/destinations/framebriar-source';
 
 beforeEach(() => {
@@ -39,39 +36,23 @@ beforeEach(() => {
   broadcast.mockClear();
   fake.connected = false;
   setFramebriarTelemetrySource(null);
-  flags.feedback = true;
-  flags.preview = true;
 });
 
 describe('feedback wiring', () => {
-  it('is enabled only with the switch on in a preview-eligible build', () => {
+  it('is always available until quit, with no switch', () => {
     expect(isFeedbackEnabled()).toBe(true);
-    flags.preview = false;
-    expect(isFeedbackEnabled()).toBe(false);
-    flags.preview = true;
-    flags.feedback = false;
-    expect(isFeedbackEnabled()).toBe(false);
+  });
+
+  it('starts with the app', () => {
+    startFeedback();
+    expect(created).toHaveLength(1);
+    expect((created[0] as unknown as { start: ReturnType<typeof vi.fn> }).start).toHaveBeenCalledTimes(1);
   });
 
   it('broadcasts status changes to every window', () => {
     getFeedbackService();
     created[0].listeners[0]({ connected: true });
     expect(broadcast).toHaveBeenCalledWith(IPC.FEEDBACK.STATUS_CHANGED, { connected: true });
-  });
-
-  it('stops the service when the switch goes off at runtime, and starts a fresh one when it comes back', async () => {
-    const first = getFeedbackService();
-    await applyFeedbackSwitch();
-    expect(created[0].shutdown).not.toHaveBeenCalled();
-
-    flags.feedback = false;
-    await applyFeedbackSwitch();
-    expect(created[0].shutdown).toHaveBeenCalledTimes(1);
-    expect(broadcast).toHaveBeenCalledWith(IPC.FEEDBACK.STATUS_CHANGED, null);
-
-    flags.feedback = true;
-    expect(getFeedbackService()).not.toBe(first);
-    expect(created).toHaveLength(2);
   });
 
   it('cannot be started again after quit', async () => {
@@ -102,13 +83,12 @@ describe('feedback wiring', () => {
     off();
   });
 
-  it('drops the telemetry source when Feedback stops, and tells telemetry', async () => {
+  it('drops the telemetry source when Feedback stops at quit, and tells telemetry', async () => {
     getFeedbackService();
     fake.connected = true;
     const changed = vi.fn();
     const off = onFramebriarConnectionChanged(changed);
-    flags.feedback = false;
-    await applyFeedbackSwitch();
+    await shutdownFeedback();
     expect(getFramebriarTelemetrySource()).toBeNull();
     expect(changed).toHaveBeenCalledTimes(1);
     off();

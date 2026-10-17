@@ -1,16 +1,12 @@
 /**
- * App wiring for Framebriar feedback: one FeedbackService at a time, running only while
- * the experimental Feedback switch is on. Turning the switch off stops it (enrollment and
- * queued reports stay on disk); turning it on again starts a fresh one on first use.
- * After quit begins nothing can start it again.
+ * App wiring for Framebriar feedback: one FeedbackService, started with the app. It stays
+ * idle until the user connects an invitation in Settings, Feedback; the Feedback button
+ * appears only once capture is allowed. After quit begins nothing can start it again.
  */
 
 import * as path from 'path';
 import { app, net, safeStorage } from 'electron';
-import { FEEDBACK_EXPERIMENTAL_FLAG } from '../../../shared/feedback-types';
 import { IPC } from '../../../shared/ipc-channels';
-import * as experimentalSettings from '../experimental-settings';
-import { isPreviewEligible } from '../preview-eligible';
 import { appLog } from '../log-service';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { FeedbackService } from './feedback-service';
@@ -19,9 +15,9 @@ import { notifyFramebriarConnectionChanged, setFramebriarTelemetrySource } from 
 let service: FeedbackService | null = null;
 let quitting = false;
 
-/** Same gate as the other experimental features: the switch counts only in preview-eligible builds. */
+/** Feedback is always available until quit begins. */
 export function isFeedbackEnabled(): boolean {
-  return !quitting && isPreviewEligible() && experimentalSettings.getSettings()[FEEDBACK_EXPERIMENTAL_FLAG] === true;
+  return !quitting;
 }
 
 export function getFeedbackService(): FeedbackService {
@@ -51,7 +47,7 @@ export function getFeedbackService(): FeedbackService {
 }
 
 /** Called after the main window exists (app ready: Linux safeStorage backends load late). */
-export function startFeedbackIfEnabled(): void {
+export function startFeedback(): void {
   if (!isFeedbackEnabled()) return;
   getFeedbackService().start().catch((err) => {
     appLog('core:feedback', 'warn', 'Feedback start failed', {
@@ -68,18 +64,6 @@ async function stopService(): Promise<void> {
   // Telemetry drops the Framebriar destination along with Feedback.
   if (s?.telemetryConnected) notifyFramebriarConnectionChanged();
   await s?.shutdown();
-}
-
-/**
- * The Experimental settings were saved: stop Feedback if its switch is now off. Turning it
- * on needs nothing here; the next status request starts it.
- */
-export async function applyFeedbackSwitch(): Promise<void> {
-  if (service && !isFeedbackEnabled()) {
-    await stopService();
-    // Windows drop the button and notices at once.
-    broadcastToAllWindows(IPC.FEEDBACK.STATUS_CHANGED, null);
-  }
 }
 
 /** App quit: stop for good, so a late IPC call can't start a new service. */

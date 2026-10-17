@@ -13,10 +13,10 @@ beforeEach(() => {
 afterEach(() => resetFeedbackStore());
 
 describe('FeedbackSettingsView', () => {
-  it('points to the Experimental switch when Feedback is off', () => {
+  it('says Feedback is unavailable when main reports no status', () => {
     setFeedback(false);
     render(<FeedbackSettingsView />);
-    expect(screen.getByTestId('feedback-settings').textContent).toMatch(/Turn on Feedback in Settings, Experimental/);
+    expect(screen.getByTestId('feedback-settings').textContent).toMatch(/isn't available right now/);
     expect(screen.queryByLabelText('Invitation')).toBeNull();
   });
 

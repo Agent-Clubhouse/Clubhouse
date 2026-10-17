@@ -21,12 +21,11 @@ function FeedbackIcon({ size }: { size: number }) {
 }
 
 /**
- * Feedback: screenshot this Clubhouse window, then review and send. Shown only with the
- * experimental Feedback switch on and when Framebriar says feedback can be captured. A
+ * Feedback: screenshot this Clubhouse window, then review and send. Shown only once an
+ * invitation is connected and Framebriar says feedback can be captured. A
  * marker stays on the button while a notice or unsent feedback is pending.
  */
 export function FeedbackButton({ variant, expanded = false }: Props) {
-  const enabled = useFeedbackStore((s) => s.enabled);
   const canCapture = useFeedbackStore((s) => s.status?.canCapture === true);
   const notice = useFeedbackStore((s) => s.status?.notice ?? null);
   const pending = useFeedbackStore((s) => s.status?.outbox.pending ?? 0);
@@ -39,7 +38,7 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
   // A review in progress stays open even if capture eligibility flips mid-Send
   // (e.g. access expires), so the draft isn't orphaned.
   const dialog = draft ? <FeedbackReviewDialog draft={draft} onClose={() => setDraft(null)} /> : null;
-  if (!enabled || !canCapture) return dialog;
+  if (!canCapture) return dialog;
 
   const open = async () => {
     if (capturing) return;

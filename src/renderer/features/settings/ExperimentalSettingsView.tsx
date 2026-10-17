@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
-import { FEEDBACK_EXPERIMENTAL_FLAG } from '../../../shared/feedback-types';
-import { useFeedbackStore } from '../../stores/feedbackStore';
 
 /** Feature definitions for the experimental settings page. */
 const EXPERIMENTAL_FEATURES: Array<{
@@ -34,11 +32,6 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Telemetry export',
     description: 'Send anonymized diagnostics to your own Application Insights resource or OTLP collector. Set it up in Settings, Logging, under Telemetry export.',
   },
-  {
-    id: FEEDBACK_EXPERIMENTAL_FLAG,
-    label: 'Feedback',
-    description: 'Send screenshot feedback about Clubhouse to its developer through Framebriar. Needs an invitation: set it up in Settings, Feedback.',
-  },
 ];
 
 export function ExperimentalSettingsView() {
@@ -56,8 +49,6 @@ export function ExperimentalSettingsView() {
     const updated = { ...settings, [id]: enabled };
     setSettings(updated);
     await window.clubhouse.app.saveExperimentalSettings(updated);
-    // Feedback starts and stops without a restart: the Settings page and button follow the switch.
-    if (id === FEEDBACK_EXPERIMENTAL_FLAG) void useFeedbackStore.getState().refresh();
   };
 
   const handleRestart = () => {
