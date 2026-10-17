@@ -68,9 +68,13 @@ export function withSessionId(exporters: DestinationExporters, sessionId: string
   return { spanExporter: spans, logExporter: logs, metricExporter: metrics };
 }
 
-type Authorize = (signal: TelemetrySignal) => Promise<boolean>;
+/** Why a batch was refused (the error's `code`, shown in export health and the local log). */
+export type FramebriarGateReason = 'not-connected' | 'session-changed' | 'no-token' | 'check-failed';
+/** true to send, or why not. */
+type Authorize = (signal: TelemetrySignal) => Promise<true | false | FramebriarGateReason>;
 
-const notConnected = (cb: (r: ExportResult) => void) => cb({ code: ExportResultCode.FAILED, error: new Error(FRAMEBRIAR_NOT_CONNECTED) });
+const notConnected = (cb: (r: ExportResult) => void, reason: FramebriarGateReason) =>
+  cb({ code: ExportResultCode.FAILED, error: Object.assign(new Error(FRAMEBRIAR_NOT_CONNECTED), { code: reason }) });
 
 /** Exports only after `authorize` passes for that signal; otherwise fails the batch without sending it. */
 export function gated(exporters: DestinationExporters, authorize: Authorize): DestinationExporters {
@@ -78,8 +82,8 @@ export function gated(exporters: DestinationExporters, authorize: Authorize): De
   const run = <T>(signal: TelemetrySignal, send: (items: T, cb: (r: ExportResult) => void) => void) =>
     (items: T, cb: (r: ExportResult) => void) => {
       authorize(signal).then(
-        (ok) => (ok ? send(items, cb) : notConnected(cb)),
-        () => notConnected(cb),
+        (ok) => (ok === true ? send(items, cb) : notConnected(cb, ok || 'not-connected')),
+        () => notConnected(cb, 'check-failed'),
       );
     };
   return {
@@ -109,9 +113,10 @@ export function framebriarAuthorizer(config: FramebriarTelemetryExport, live: ()
   // Only a batch that passed the check is ever sent, so the last checked headers are current.
   const authorize: Authorize = async (signal) => {
     const now = live();
-    if (!now || now.host !== config.host || now.sessionId !== config.sessionId) return false;
+    if (!now) return 'not-connected';
+    if (now.host !== config.host || now.sessionId !== config.sessionId) return 'session-changed';
     const headers = await now.options(signal).headers();
-    if (!headers.authorization) return false;
+    if (!headers.authorization) return 'no-token';
     checked[signal] = headers;
     return true;
   };

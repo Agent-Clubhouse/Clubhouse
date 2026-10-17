@@ -8,6 +8,9 @@
  *   fallback, so a missing keyring shows as `storage-unavailable`.
  * - Capture is the Clubhouse window's own contents (webContents.capturePage), never the desktop.
  * - Framebriar telemetry is off; Clubhouse's OpenTelemetry pipeline stays separate.
+ * - Diagnostics go to the local log (`core:feedback`): access and outbox transitions, and
+ *   each connect, capture and send with its outcome. Invitations, tokens, notes and
+ *   screenshots are never logged; only states, counts, sizes, durations and report ids.
  */
 
 import { randomUUID } from 'crypto';
@@ -35,6 +38,24 @@ const MAX_PNG_BYTES = 8 * 1024 * 1024;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 /** Scene codes the renderer may report; anything else becomes 'app'. */
 const SCENE = /^[a-z][a-z0-9-]{0,39}$/;
+/** The SDK only sends invitations of this shape; anything else fails before any request. */
+const INVITATION = /^[A-Za-z0-9_-]{43}$/;
+/** The SDK gives up on an access request after 10 s; a connect this slow likely timed out. */
+export const LIKELY_TIMEOUT_MS = 9_500;
+
+/** Access states that need the user (or a retry) before feedback can be delivered. */
+const ACCESS_PROBLEMS = new Set(['offline', 'expired', 'access-required', 'connection-uncertain', 'storage-unavailable', 'migration-required']);
+/** In-between states, logged at debug only. */
+const ACCESS_TRANSIENT = new Set(['checking', 'connecting', 'disconnecting']);
+
+export type FeedbackLogLevel = 'debug' | 'info' | 'warn' | 'error';
+/** Local diagnostics sink (appLog in the app). Never pass secrets or user text in meta. */
+export type FeedbackLog = (level: FeedbackLogLevel, msg: string, meta?: Record<string, unknown>) => void;
+
+const errorMeta = (err: unknown): Record<string, unknown> => ({
+  error: err instanceof Error ? err.message : String(err),
+  ...(typeof (err as { code?: unknown })?.code === 'string' ? { code: (err as { code: string }).code } : {}),
+});
 
 export interface FeedbackServiceDeps {
   safeStorage: SafeStorageLike;
@@ -44,6 +65,8 @@ export interface FeedbackServiceDeps {
   /** For tests: the SDK factory (defaults to the vendored createFramebriar). */
   create?: typeof createFramebriar;
   now?: () => number;
+  /** Local diagnostics; defaults to none. */
+  log?: FeedbackLog;
 }
 
 const DISCONNECTED_ACCESS: FramebriarAccessView = Object.freeze({
@@ -107,9 +130,13 @@ export class FeedbackService {
   private readonly received: string[] = [];
   private readonly listeners = new Set<(status: FeedbackStatus) => void>();
   private readonly now: () => number;
+  private readonly log: FeedbackLog;
+  private lastAccess: FramebriarAccessView | null = null;
+  private lastOutbox: FramebriarOutboxView | null = null;
 
   constructor(private readonly deps: FeedbackServiceDeps) {
     this.now = deps.now ?? Date.now;
+    this.log = deps.log ?? (() => {});
   }
 
   /** Subscribe to status changes (access, outbox, receipts). */
@@ -134,14 +161,20 @@ export class FeedbackService {
         // windows capturing at once can never get each other's screenshot.
         capture: () => Promise.resolve(null),
         isOnline: this.deps.isOnline,
-        onAccessChange: () => this.emit(),
-        onOutboxChange: () => this.emit(),
+        onAccessChange: (view) => { this.noteAccess(view); this.emit(); },
+        onOutboxChange: (view) => { this.noteOutbox(view); this.emit(); },
         onReceipt: (receipt) => this.noteReceipt(receipt),
       });
       this.fb = fb;
+      const t0 = this.now();
       await fb.start();
+      const { state, notice, outbox } = this.status();
+      this.log('info', 'Feedback started', { state, notice, pending: outbox.pending, blocked: outbox.blocked, durationMs: this.now() - t0 });
       this.emit();
-    })().finally(() => { this.starting = null; });
+    })().catch((err) => {
+      this.log('warn', 'Feedback start failed', errorMeta(err));
+      throw err;
+    }).finally(() => { this.starting = null; });
     return this.starting;
   }
 
@@ -164,14 +197,35 @@ export class FeedbackService {
   /** Redeem an invitation. Never retried automatically; the caller clears its field at once. */
   async connect(invitation: string): Promise<{ connected: boolean; status: FeedbackStatus }> {
     await this.start();
-    const connected = await this.sdk().access.connect(invitation.trim());
-    return { connected, status: this.status() };
+    const access = this.sdk().access;
+    const trimmed = invitation.trim();
+    const before = access.status().state;
+    this.log('info', 'Feedback connect started', { from: before });
+    const t0 = this.now();
+    let connected: boolean;
+    try {
+      connected = await access.connect(trimmed);
+    } catch (err) {
+      this.log('error', 'Feedback connect threw', { ...errorMeta(err), durationMs: this.now() - t0 });
+      throw err;
+    }
+    const durationMs = this.now() - t0;
+    const status = this.status();
+    if (connected) {
+      this.log('info', 'Feedback connected', { durationMs, expiresAt: status.expiresAt });
+    } else {
+      this.log('warn', 'Feedback connect failed', {
+        durationMs, state: status.state, notice: status.notice, reason: connectFailureReason(trimmed, before, status.state, status.notice, durationMs),
+      });
+    }
+    return { connected, status };
   }
 
   /** Forget locally (queued feedback stays and is delivered after a later enrollment) and revoke. */
   async disconnect(): Promise<{ forgotten: boolean; revoked: boolean | null; status: FeedbackStatus }> {
     await this.start();
     const result = await this.sdk().access.disconnect();
+    this.log(result.forgotten ? 'info' : 'warn', 'Feedback disconnect', { forgotten: result.forgotten, revoked: result.revoked });
     return { ...result, status: this.status() };
   }
 
@@ -180,6 +234,17 @@ export class FeedbackService {
    * preview. `grab` must capture only Clubhouse's own window contents.
    */
   async captureDraft(grab: () => Promise<Buffer | null>): Promise<FeedbackCaptureResult> {
+    try {
+      const result = await this.captureDraftInner(grab);
+      this.log('info', 'Feedback screenshot captured', { draftId: result.draftId, hasScreenshot: result.preview !== null, drafts: this.drafts.size });
+      return result;
+    } catch (err) {
+      this.log('warn', 'Feedback capture failed', errorMeta(err));
+      throw err;
+    }
+  }
+
+  private async captureDraftInner(grab: () => Promise<Buffer | null>): Promise<FeedbackCaptureResult> {
     await this.start();
     this.pruneDrafts();
     // open() checks eligibility and records the moment (and trace) feedback opened.
@@ -192,6 +257,7 @@ export class FeedbackService {
       throw Object.assign(new Error('Screenshot capture failed'), { code: 'capture-failed' });
     }
     if (png && png.length > MAX_PNG_BYTES) {
+      this.log('debug', 'Feedback screenshot too large', { bytes: png.length, maxBytes: MAX_PNG_BYTES });
       throw Object.assign(new Error('The screenshot is too large to send (8 MiB at most)'), { code: 'invalid-media' });
     }
     if (png && (png.length <= PNG_SIGNATURE.length || !png.subarray(0, 8).equals(PNG_SIGNATURE))) {
@@ -213,6 +279,18 @@ export class FeedbackService {
    * locally; delivery and its receipt ("Received") come later.
    */
   async send(input: FeedbackSendInput): Promise<FeedbackSendResult> {
+    const meta = { draftId: input.draftId ?? null, includeScreenshot: input.includeScreenshot, notesLength: input.notes?.length ?? 0 };
+    try {
+      const result = await this.sendInner(input);
+      this.log('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state: this.fb?.access.status().state });
+      return result;
+    } catch (err) {
+      this.log('warn', 'Feedback send failed', { ...meta, ...errorMeta(err) });
+      throw err;
+    }
+  }
+
+  private async sendInner(input: FeedbackSendInput): Promise<FeedbackSendResult> {
     await this.start();
     const fb = this.sdk();
     const draft = input.draftId ? this.drafts.get(input.draftId) : undefined;
@@ -236,7 +314,7 @@ export class FeedbackService {
   }
 
   cancel(draftId: string): void {
-    this.drafts.delete(draftId);
+    if (this.drafts.delete(draftId)) this.log('debug', 'Feedback draft cancelled', { draftId });
   }
 
   /**
@@ -269,6 +347,7 @@ export class FeedbackService {
     this.listeners.clear();
     const fb = this.fb;
     this.fb = null;
+    if (fb) this.log('info', 'Feedback stopping', { pending: fb.outbox.status().items });
     await fb?.shutdown();
   }
 
@@ -277,8 +356,36 @@ export class FeedbackService {
     return this.fb;
   }
 
+  /** Logs access transitions: problems at warn, so a failure is never silent. */
+  private noteAccess(view: FramebriarAccessView): void {
+    const prev = this.lastAccess;
+    this.lastAccess = view;
+    if (prev && prev.state === view.state && prev.notice === view.notice) return;
+    const level: FeedbackLogLevel = ACCESS_PROBLEMS.has(view.state) ? 'warn' : ACCESS_TRANSIENT.has(view.state) ? 'debug' : 'info';
+    this.log(level, `Feedback access: ${view.state}`, {
+      from: prev?.state ?? null, notice: view.notice, enrolled: view.enrolled, expiresAt: view.expiresAt,
+    });
+  }
+
+  /** Logs outbox transitions: queue changes, deliveries, and reports that can't be delivered. */
+  private noteOutbox(view: FramebriarOutboxView): void {
+    const prev = this.lastOutbox;
+    this.lastOutbox = view;
+    const meta = { pending: view.items, blocked: view.blocked, bytes: view.bytes };
+    if (!prev || prev.state !== view.state) {
+      this.log(view.state === 'storage-unavailable' ? 'warn' : 'info', `Feedback outbox: ${view.state}`, { from: prev?.state ?? null, ...meta });
+      return;
+    }
+    if (view.blocked > prev.blocked) {
+      this.log('warn', 'Feedback report can\'t be delivered and stays on this computer', meta);
+    } else if (view.items !== prev.items || view.blocked !== prev.blocked) {
+      this.log('debug', view.items > prev.items ? 'Feedback report queued' : 'Feedback report left the outbox', meta);
+    }
+  }
+
   private noteReceipt(receipt: FramebriarReceipt): void {
     if (!receipt?.id) return;
+    this.log('info', 'Feedback delivered', { id: receipt.id, status: receipt.status ?? null });
     const i = this.received.indexOf(receipt.id);
     if (i >= 0) this.received.splice(i, 1);
     this.received.unshift(receipt.id);
@@ -298,4 +405,20 @@ export class FeedbackService {
       try { fn(status); } catch { /* telemetry-exempt: a status listener can't affect enrollment */ }
     }
   }
+}
+
+/**
+ * Best guess at why a connect returned false, for the log (the SDK reports only false).
+ * Exported for tests.
+ */
+export function connectFailureReason(invitation: string, before: string, state: string, notice: string | null, durationMs: number): string {
+  if (!INVITATION.test(invitation)) return `invitation-malformed (length ${invitation.length}); nothing was sent`;
+  if (before === 'connecting' || before === 'disconnecting') return 'another connect or disconnect was in progress; nothing was sent';
+  if (state === 'storage-unavailable') return 'secure storage failed while saving the enrollment';
+  if (notice === 'access-required') return 'server refused the invitation (expired, revoked, used up, or not for this app)';
+  if (notice === 'connection-uncertain' && durationMs >= LIKELY_TIMEOUT_MS) {
+    return 'request likely timed out (the SDK waits 10 s); the server may still have accepted the invitation, so retry the same one';
+  }
+  if (notice === 'connection-uncertain') return 'request failed or the response was rejected; the server may still have accepted the invitation';
+  return 'unknown';
 }

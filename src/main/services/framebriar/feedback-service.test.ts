@@ -4,7 +4,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFramebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
 import type { Framebriar, FramebriarAccessView, FramebriarOutboxView } from '../../vendor/framebriar/adapters/node/index.mjs';
-import { FeedbackService, sdkVersion, toFeedbackStatus } from './feedback-service';
+import { connectFailureReason, FeedbackService, sdkVersion, toFeedbackStatus } from './feedback-service';
 
 const ACCESS: FramebriarAccessView = { state: 'connected', connected: true, enrolled: true, canCapture: true, notice: null, expiresAt: '2026-11-15T00:00:00.000Z' };
 const OUTBOX: FramebriarOutboxView = { state: 'available', items: 2, bytes: 1234, maxItems: 10, maxBytes: 33554432, blocked: 1, retention: 'until-delivered-or-cleared' };
@@ -196,6 +196,128 @@ describe('FeedbackService (fake SDK)', () => {
     expect(seen.at(-1)).toEqual(['a', 'b']);
   });
 
+  describe('diagnostics log', () => {
+    const INVITE = 'A'.repeat(43);
+    type Entry = [string, string, Record<string, unknown> | undefined];
+
+    function logged(create: ReturnType<typeof fakeSdk>['create'], clock = { t: 0 }) {
+      const entries: Entry[] = [];
+      const s = new FeedbackService({
+        safeStorage, dataDir: '/data', appVersion: '0.42.0', isOnline: () => true, create: create as never,
+        now: () => clock.t, log: (level, msg, meta) => entries.push([level, msg, meta]),
+      });
+      return { s, entries, clock, find: (msg: string | RegExp) => entries.find(([, m]) => (typeof msg === 'string' ? m === msg : msg.test(m))) };
+    }
+
+    it('logs a connect that timed out with the likely cause, never the invitation', async () => {
+      const { create, fb } = fakeSdk();
+      const { s, entries, clock, find } = logged(create);
+      let access = { ...ACCESS, state: 'disconnected' as const, connected: false, enrolled: false, canCapture: false };
+      fb.access.status = () => access as never;
+      fb.access.connect.mockImplementationOnce(async () => {
+        clock.t += 10_050;
+        access = { ...access, state: 'connection-uncertain' as never, notice: 'connection-uncertain' };
+        return false;
+      });
+      expect((await s.connect(`  ${INVITE}  `)).connected).toBe(false);
+      expect(find('Feedback connect started')?.[2]).toEqual({ from: 'disconnected' });
+      const [level, , meta] = find('Feedback connect failed')!;
+      expect(level).toBe('warn');
+      expect(meta).toMatchObject({ durationMs: 10_050, state: 'connection-uncertain', notice: 'connection-uncertain' });
+      expect(meta!.reason).toMatch(/timed out.*retry the same one/);
+      expect(JSON.stringify(entries)).not.toContain(INVITE);
+    });
+
+    it('logs a successful connect and a disconnect', async () => {
+      const { create } = fakeSdk();
+      const { s, find } = logged(create);
+      await s.connect(INVITE);
+      expect(find('Feedback connected')).toEqual(['info', 'Feedback connected', { durationMs: 0, expiresAt: ACCESS.expiresAt }]);
+      await s.disconnect();
+      expect(find('Feedback disconnect')).toEqual(['info', 'Feedback disconnect', { forgotten: true, revoked: true }]);
+    });
+
+    it('logs a connect that threw, and rethrows', async () => {
+      const { create, fb } = fakeSdk();
+      const { s, find } = logged(create);
+      fb.access.connect.mockRejectedValueOnce(new Error('keychain locked'));
+      await expect(s.connect(INVITE)).rejects.toThrow('keychain locked');
+      expect(find('Feedback connect threw')).toEqual(['error', 'Feedback connect threw', { error: 'keychain locked', durationMs: 0 }]);
+    });
+
+    it('logs start, and a start that failed', async () => {
+      const ok = fakeSdk();
+      const started = logged(ok.create);
+      await started.s.start();
+      expect(started.find('Feedback started')).toEqual(['info', 'Feedback started', { state: 'connected', notice: null, pending: 2, blocked: 1, durationMs: 0 }]);
+
+      const bad = fakeSdk();
+      bad.fb.start.mockRejectedValueOnce(Object.assign(new Error('locked'), { code: 'busy' }));
+      const failed = logged(bad.create);
+      await expect(failed.s.start()).rejects.toThrow('locked');
+      expect(failed.find('Feedback start failed')).toEqual(['warn', 'Feedback start failed', { error: 'locked', code: 'busy' }]);
+    });
+
+    it('logs access transitions once each, problems at warn and in-between states at debug', async () => {
+      const { create, opts } = fakeSdk();
+      const { s, entries } = logged(create);
+      await s.start();
+      const view = (state: string, notice: string | null = null) => ({ ...ACCESS, state, notice, connected: state === 'connected' }) as FramebriarAccessView;
+      opts().onAccessChange!(view('checking'));
+      opts().onAccessChange!(view('connected'));
+      opts().onAccessChange!(view('connected'));
+      opts().onAccessChange!(view('offline'));
+      opts().onAccessChange!(view('access-required', 'access-required'));
+      const access = entries.filter(([, m]) => m.startsWith('Feedback access:')).map(([l, m, meta]) => [l, m, meta?.from]);
+      expect(access).toEqual([
+        ['debug', 'Feedback access: checking', null],
+        ['info', 'Feedback access: connected', 'checking'],
+        ['warn', 'Feedback access: offline', 'connected'],
+        ['warn', 'Feedback access: access-required', 'offline'],
+      ]);
+    });
+
+    it('logs the outbox: state, queueing, delivery, blocked reports and receipts', async () => {
+      const { create, opts } = fakeSdk();
+      const { s, entries } = logged(create);
+      await s.start();
+      const box = (over: Partial<FramebriarOutboxView>) => ({ ...OUTBOX, items: 0, blocked: 0, ...over });
+      opts().onOutboxChange!(box({ state: 'available' }));
+      opts().onOutboxChange!(box({ items: 1 }));
+      opts().onOutboxChange!(box({ items: 0 }));
+      opts().onOutboxChange!(box({ items: 1, blocked: 1 }));
+      opts().onOutboxChange!(box({ state: 'storage-unavailable', items: 1, blocked: 1 }));
+      opts().onReceipt!({ id: 'rep-9', status: 'accepted' });
+      expect(entries.map(([l, m]) => [l, m])).toEqual(expect.arrayContaining([
+        ['info', 'Feedback outbox: available'],
+        ['debug', 'Feedback report queued'],
+        ['debug', 'Feedback report left the outbox'],
+        ['warn', 'Feedback report can\'t be delivered and stays on this computer'],
+        ['warn', 'Feedback outbox: storage-unavailable'],
+        ['info', 'Feedback delivered'],
+      ]));
+      expect(entries.find(([, m]) => m === 'Feedback delivered')?.[2]).toEqual({ id: 'rep-9', status: 'accepted' });
+    });
+
+    it('logs capture and send outcomes with sizes, never the notes', async () => {
+      const { create, fb } = fakeSdk();
+      const { s, entries, find } = logged(create);
+      const draft = await s.captureDraft(async () => PNG);
+      expect(find('Feedback screenshot captured')).toEqual(['info', 'Feedback screenshot captured', { draftId: draft.draftId, hasScreenshot: true, drafts: 1 }]);
+      await expect(s.captureDraft(async () => { throw new Error('gpu'); })).rejects.toThrow();
+      expect(find('Feedback capture failed')).toEqual(['warn', 'Feedback capture failed', { error: 'Screenshot capture failed', code: 'capture-failed' }]);
+
+      await s.send({ draftId: draft.draftId, notes: 'secret words', includeScreenshot: true });
+      expect(find('Feedback saved for delivery')?.[2]).toEqual({
+        draftId: draft.draftId, includeScreenshot: true, notesLength: 12, id: 'rep-1', status: 'saved-local', state: 'connected',
+      });
+      fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
+      await expect(s.send({ notes: 'more secret words', includeScreenshot: false })).rejects.toThrow();
+      expect(find('Feedback send failed')?.[2]).toMatchObject({ error: 'Local feedback storage is full', code: 'storage-full', notesLength: 17 });
+      expect(JSON.stringify(entries)).not.toMatch(/secret words/);
+    });
+  });
+
   it('shuts the SDK down once', async () => {
     const { create, fb } = fakeSdk();
     const s = service(create);
@@ -315,5 +437,21 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
     } finally {
       await s.shutdown();
     }
+  });
+});
+
+describe('connectFailureReason', () => {
+  const INVITE = 'A'.repeat(43);
+  it('says nothing was sent for a malformed invitation or a busy connect', () => {
+    expect(connectFailureReason('short', 'disconnected', 'disconnected', null, 0)).toBe('invitation-malformed (length 5); nothing was sent');
+    expect(connectFailureReason(INVITE, 'connecting', 'connecting', null, 0)).toMatch(/in progress; nothing was sent/);
+  });
+
+  it('separates refusal, storage failure, timeout and other uncertain outcomes', () => {
+    expect(connectFailureReason(INVITE, 'disconnected', 'access-required', 'access-required', 300)).toMatch(/server refused/);
+    expect(connectFailureReason(INVITE, 'disconnected', 'storage-unavailable', null, 300)).toMatch(/secure storage/);
+    expect(connectFailureReason(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 9_999)).toMatch(/timed out/);
+    expect(connectFailureReason(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 800)).toMatch(/^request failed/);
+    expect(connectFailureReason(INVITE, 'disconnected', 'disconnected', null, 800)).toBe('unknown');
   });
 });

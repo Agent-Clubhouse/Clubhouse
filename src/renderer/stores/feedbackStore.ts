@@ -9,7 +9,7 @@ import { useToastStore } from './toastStore';
 export const FEEDBACK_NOTICE_TEXT: Record<FeedbackNotice, string> = {
   expired: 'Your feedback access expired. Paste a new invitation in Settings, Feedback.',
   'access-required': 'Feedback access was revoked or isn\'t allowed any more. Paste a new invitation in Settings, Feedback.',
-  'connection-uncertain': 'Clubhouse couldn\'t confirm the feedback connection. Paste the invitation again in Settings, Feedback.',
+  'connection-uncertain': 'Clubhouse couldn\'t confirm the feedback connection. The server may still have accepted it, so paste the same invitation again in Settings, Feedback.',
   'migration-required': 'Feedback needs to be set up again. Paste a new invitation in Settings, Feedback.',
 };
 
