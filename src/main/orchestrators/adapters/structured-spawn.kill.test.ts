@@ -134,6 +134,17 @@ describe('killStructuredChild', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
+  it('leaves stdin alone with endStdin: false (a caller that does not own it)', async () => {
+    setPlatform('win32');
+    const child = fakeChild();
+    taskkillFinishes(null);
+
+    await killStructuredChild(asChild(child), { endStdin: false });
+
+    expect(child.stdin.end).not.toHaveBeenCalled();
+    expect(mockExecFile).toHaveBeenCalled();
+  });
+
   it('tolerates a stdin that throws on end', async () => {
     setPlatform('darwin');
     const child = fakeChild();

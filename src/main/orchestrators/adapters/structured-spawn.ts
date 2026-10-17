@@ -68,8 +68,8 @@ export const TASKKILL_TIMEOUT_MS = 5_000;
 /**
  * Stop a structured-spawn child and everything it started.
  *
- * - Ends stdin first: these CLIs exit on EOF, and it reaches a grandchild
- *   reading the same pipe.
+ * - Ends stdin first (unless `endStdin: false`): these CLIs exit on EOF,
+ *   and it reaches a grandchild reading the same pipe.
  * - On Windows, kills the whole tree with `taskkill /PID <pid> /T /F`. A
  *   `.cmd` shim runs through cmd.exe, so `child.kill()` alone stops only
  *   cmd.exe and leaves the real CLI (node, or a native binary under it)
@@ -79,11 +79,15 @@ export const TASKKILL_TIMEOUT_MS = 5_000;
  *
  * Resolves once the kill has been delivered; callers may ignore the promise.
  */
-export function killStructuredChild(child: ChildProcess): Promise<void> {
-  try {
-    child.stdin?.end();
-  } catch {
-    // Already closed; nothing to flush.
+export function killStructuredChild(child: ChildProcess, opts: { endStdin?: boolean } = {}): Promise<void> {
+  // A caller that doesn't own stdin (the Agent SDK writes to it) passes
+  // endStdin: false, so a later write by its owner can't hit write-after-end.
+  if (opts.endStdin !== false) {
+    try {
+      child.stdin?.end();
+    } catch {
+      // Already closed; nothing to flush.
+    }
   }
   if (hasExited(child)) return Promise.resolve();
 
