@@ -225,6 +225,18 @@ describe('agentLifecycleSlice – killAgent', () => {
     // Should not throw
     await slice.killAgent('ghost-agent', PROJECT_PATH);
   });
+
+  it('forwards waitForExit to the main process', async () => {
+    const { slice } = createTestStore({
+      agents: {
+        'da-1': { id: 'da-1', projectId: PROJECT_ID, name: 'Durable', kind: 'durable', status: 'running', color: 'gray' } as any,
+      },
+    });
+
+    await slice.killAgent('da-1', PROJECT_PATH, { waitForExit: true });
+
+    expect((window as any).clubhouse.agent.killAgent).toHaveBeenCalledWith('da-1', PROJECT_PATH, true);
+  });
 });
 
 describe('agentLifecycleSlice – state transition guards', () => {

@@ -82,7 +82,8 @@ export interface AgentLifecycleSlice {
     resume: boolean,
     mission?: string,
   ) => Promise<string>;
-  killAgent: (id: string, projectPath?: string) => Promise<void>;
+  /** `waitForExit`: resolve once the process exited and its session id is saved (restart-with-resume). */
+  killAgent: (id: string, projectPath?: string, opts?: { waitForExit?: boolean }) => Promise<void>;
   deleteDurableAgent: (id: string, projectPath: string) => Promise<void>;
   /** Register a placeholder agent in 'creating' state while worktree is set up. Returns temp ID. */
   registerCreatingAgent: (

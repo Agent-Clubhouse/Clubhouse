@@ -250,6 +250,7 @@ import {
   expandHome,
 } from './agent-system';
 import * as os from 'os';
+import { broadcastAgentExit } from './agent-exit-broadcast';
 
 describe('agent-system', () => {
   beforeEach(() => {
@@ -703,6 +704,89 @@ describe('agent-system', () => {
     it('calls gracefulKill with provider exit command', async () => {
       await killAgent('agent-1', '/project');
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/exit\r');
+    });
+
+    describe('waitForExit (restart with resume)', () => {
+      async function spawnDurable() {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+        return mockPtySpawn.mock.calls[0][5] as (id: string, code: number, buffer?: string) => void;
+      }
+
+      it('resolves only after the PTY exited and its session id was persisted', async () => {
+        const onExit = await spawnDurable();
+        let persist!: () => void;
+        mockAddSessionEntry.mockReturnValueOnce(new Promise<void>((r) => { persist = r; }));
+        mockPtyIsRunning.mockReturnValueOnce(true);
+
+        let settled = false;
+        const killed = killAgent('agent-1', '/project', undefined, 'user', { waitForExit: true }).then(() => { settled = true; });
+        await vi.waitFor(() => expect(mockPtyGracefulKill).toHaveBeenCalled());
+        expect(settled).toBe(false);
+
+        // pty-manager order on a normal exit: exit callback, then broadcast.
+        onExit('agent-1', 0);
+        broadcastAgentExit('agent-1', 0);
+        await Promise.resolve();
+        expect(settled).toBe(false); // session entry not written yet
+
+        persist();
+        await killed;
+        expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: expect.any(String) }));
+      });
+
+      it('also waits for the capture when the exit callback runs after the broadcast (SIGKILL path)', async () => {
+        const onExit = await spawnDurable();
+        let persist!: () => void;
+        mockAddSessionEntry.mockReturnValueOnce(new Promise<void>((r) => { persist = r; }));
+        mockPtyIsRunning.mockReturnValueOnce(true);
+
+        let settled = false;
+        const killed = killAgent('agent-1', '/project', undefined, 'user', { waitForExit: true }).then(() => { settled = true; });
+        await vi.waitFor(() => expect(mockPtyGracefulKill).toHaveBeenCalled());
+
+        broadcastAgentExit('agent-1', 1, '');
+        onExit('agent-1', 1, '');
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(settled).toBe(false);
+
+        persist();
+        await killed;
+      });
+
+      it('ignores exits of other agents', async () => {
+        await spawnDurable();
+        mockPtyIsRunning.mockReturnValueOnce(true);
+        let settled = false;
+        const killed = killAgent('agent-1', '/project', undefined, 'user', { waitForExit: true }).then(() => { settled = true; });
+        await vi.waitFor(() => expect(mockPtyGracefulKill).toHaveBeenCalled());
+
+        broadcastAgentExit('someone-else', 0);
+        await Promise.resolve();
+        expect(settled).toBe(false);
+
+        broadcastAgentExit('agent-1', 0);
+        await killed;
+      });
+
+      it('gives up after the timeout so a lost exit cannot wedge the switch', async () => {
+        await spawnDurable();
+        mockPtyIsRunning.mockReturnValueOnce(true);
+        vi.useFakeTimers();
+        try {
+          const killed = killAgent('agent-1', '/project', undefined, 'user', { waitForExit: true });
+          await vi.advanceTimersByTimeAsync(12_000);
+          await killed;
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('returns at once when no PTY is running', async () => {
+        mockPtyIsRunning.mockReturnValueOnce(false);
+        await killAgent('agent-1', '/project', undefined, 'user', { waitForExit: true });
+        expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/exit\r');
+      });
     });
 
     it('uses orchestrator from agentOrchestratorMap set at spawn time', async () => {

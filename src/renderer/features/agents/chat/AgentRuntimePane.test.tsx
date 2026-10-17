@@ -142,7 +142,8 @@ describe('AgentRuntimePane', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
     await waitFor(() => expect(spawnDurableAgent).toHaveBeenCalled());
     expect(updateDurableConfig).toHaveBeenCalledWith('/work/clubhouse', FIXTURE_AGENT_ID, { runtimeMode: 'terminal' });
-    expect(killAgent).toHaveBeenCalledWith(FIXTURE_AGENT_ID, '/work/clubhouse');
+    // Waits for the exit so the respawn resumes the session the old process just saved.
+    expect(killAgent).toHaveBeenCalledWith(FIXTURE_AGENT_ID, '/work/clubhouse', { waitForExit: true });
     expect(spawnDurableAgent).toHaveBeenCalledWith('proj-1', '/work/clubhouse', config, true);
     // Choosing Terminal is explicit: the "Agents now open in Chat" tip is never needed again.
     expect(localStorage.getItem(CHAT_DEFAULT_TIP_KEY)).toBe('chose_terminal');

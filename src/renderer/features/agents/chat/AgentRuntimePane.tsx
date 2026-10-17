@@ -23,8 +23,11 @@ import { RuntimeSwitch } from './ChatHeader';
 import type { ChatViewContext } from './ChatView';
 import { isRunningState } from './view-model';
 import { noteExplicitTerminalChoice } from './chat-default-tip';
+import { rendererLog } from '../../../plugins/renderer-logger';
 
 const ChatView = lazy(() => import('./ChatView'));
+
+const SWITCH_LOG_NS = 'ui:chat:switch';
 
 let flagPromise: Promise<boolean> | null = null;
 /** The resolved flag, so panes mounted after the first load render the right view at once. */
@@ -94,16 +97,26 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
 
 /** Restart a durable agent in the other runtime, resuming its CLI session. */
 export async function switchAgentRuntime(agent: Agent, mode: AgentRuntimeMode): Promise<void> {
-  const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
-  if (!project) throw new Error('Project not found');
-  const api = window.clubhouse.agent;
-  await api.updateDurableConfig(project.path, agent.id, { runtimeMode: mode });
-  if (mode === 'terminal') noteExplicitTerminalChoice();
-  const store = useAgentStore.getState();
-  await store.killAgent(agent.id, project.path);
-  const config = await api.getDurableConfig(project.path, agent.id);
-  if (!config) throw new Error('Agent config not found');
-  await store.spawnDurableAgent(project.id, project.path, config, !!config.lastSessionId);
+  const meta = { agentId: agent.id, to: mode };
+  rendererLog(SWITCH_LOG_NS, 'info', 'Runtime switch requested', { meta });
+  try {
+    const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
+    if (!project) throw new Error('Project not found');
+    const api = window.clubhouse.agent;
+    await api.updateDurableConfig(project.path, agent.id, { runtimeMode: mode });
+    if (mode === 'terminal') noteExplicitTerminalChoice();
+    const store = useAgentStore.getState();
+    // Wait for the exit: the old process saves its session id as it exits,
+    // and the respawn must resume that session, not the previous one.
+    await store.killAgent(agent.id, project.path, { waitForExit: true });
+    const config = await api.getDurableConfig(project.path, agent.id);
+    if (!config) throw new Error('Agent config not found');
+    rendererLog(SWITCH_LOG_NS, 'info', 'Runtime switch: respawning', { meta: { ...meta, resumeSessionId: config.lastSessionId ?? null } });
+    await store.spawnDurableAgent(project.id, project.path, config, !!config.lastSessionId);
+  } catch (err) {
+    rendererLog(SWITCH_LOG_NS, 'error', 'Runtime switch failed', { meta: { ...meta, error: err instanceof Error ? err.message : String(err) } });
+    throw err;
+  }
 }
 
 interface Props {

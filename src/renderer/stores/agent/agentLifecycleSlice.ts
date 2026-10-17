@@ -207,7 +207,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
       return agentId;
     },
 
-    killAgent: async (id, projectPath) => {
+    killAgent: async (id, projectPath, opts) => {
       const agent = get().agents[id];
       if (!agent) return;
 
@@ -225,7 +225,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         })();
 
       if (resolvedPath) {
-        await window.clubhouse.agent.killAgent(id, resolvedPath);
+        await window.clubhouse.agent.killAgent(id, resolvedPath, opts?.waitForExit);
       } else {
         // Last resort fallback
         await window.clubhouse.pty.kill(id);
