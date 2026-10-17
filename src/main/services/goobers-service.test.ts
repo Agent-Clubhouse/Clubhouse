@@ -1098,6 +1098,7 @@ describe('GoobersService — daemon-start-unknown (M17)', () => {
     service.subscribe();
     await vi.waitFor(() => {
       expect(service.getBinaryPathForTests()).toBe(binaryPath);
+      expect(service.getState().daemon.state).toBe('not-running');
     }, { timeout: 2_000 });
 
     vi.mocked(startDaemon).mockResolvedValueOnce({
