@@ -609,7 +609,7 @@ export function useCommandSource(): CommandItem[] {
         id: `host:${sat.id}`,
         label: `Switch to ${sat.alias}`,
         category: CATEGORY.hosts,
-      icon: 'host',
+        icon: 'host',
         detail: sat.state === 'connected' ? 'Connected' : 'Offline',
         execute: () => { switchHost(sat.id); reportChromeFeature('host_switch'); },
       });

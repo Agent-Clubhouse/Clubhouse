@@ -8,6 +8,7 @@ import { fuzzyFilter, FuzzyFilterItem } from './fuzzy-match';
 import { CATEGORY, CommandItem } from './command-registry';
 import { HELP_SECTIONS } from '../help/help-content';
 import { searchHelpTopics } from '../help/help-search';
+import { pushModal, removeModal } from '../../components/layers';
 
 const LISTBOX_ID = 'command-palette-results';
 /** Help answers the same question as the palette, so a few topics join the results. */
@@ -65,11 +66,15 @@ export function CommandPalette() {
   const allCommands = useCommandSource();
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Focus goes back where it was when the palette closes.
+  // Focus goes back where it was when the palette closes. While open the
+  // palette is the top layer, so a Modal under it leaves Tab and Esc alone (layers.ts).
   useEffect(() => {
     if (!isOpen) return;
+    const token = Symbol('command-palette');
+    pushModal(token);
     const previous = document.activeElement as HTMLElement | null;
     return () => {
+      removeModal(token);
       if (previous?.isConnected && (document.activeElement === document.body || dialogRef.current?.contains(document.activeElement))) {
         previous.focus();
       }
@@ -131,12 +136,15 @@ export function CommandPalette() {
   // window-level listeners (e.g. the global shortcut dispatcher in App).
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
+      // A menu over the palette handled this Esc (layers.ts): one press, one layer.
+      if (e.defaultPrevented) return;
       e.preventDefault();
       e.stopPropagation();
       close();
     } else if (e.key === 'Tab') {
       // The search field is the dialog's only stop; rows are reached with the arrows.
       e.preventDefault();
+      e.stopPropagation();
       dialogRef.current?.querySelector('input')?.focus();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();

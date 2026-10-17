@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act, createEvent } from '@testing-library/react';
+import { Modal } from '../../components/Modal';
 import { CommandPalette } from './CommandPalette';
 import { useCommandPaletteStore } from '../../stores/commandPaletteStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -123,6 +124,32 @@ describe('CommandPalette', () => {
     const input = screen.getByRole('combobox');
     fireEvent.keyDown(input, { key: 'Tab' });
     expect(input).toHaveFocus();
+  });
+
+  it('keeps Tab in the palette when it is open over a Modal', () => {
+    render(
+      <>
+        <Modal open onClose={() => {}} title="Under"><button type="button">Inside modal</button></Modal>
+        <CommandPalette />
+      </>,
+    );
+    act(() => useCommandPaletteStore.setState({ isOpen: true }));
+    const input = screen.getByRole('combobox');
+    expect(input).toHaveFocus();
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(input).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(screen.getByText('Inside modal')).not.toHaveFocus();
+  });
+
+  it('leaves an Esc that a menu above already handled', () => {
+    useCommandPaletteStore.setState({ isOpen: true });
+    render(<CommandPalette />);
+    const input = screen.getByRole('combobox');
+    const event = createEvent.keyDown(input, { key: 'Escape' });
+    event.preventDefault();
+    fireEvent(input, event);
+    expect(useCommandPaletteStore.getState().isOpen).toBe(true);
   });
 
   it('groups in sentence case, with prefix hints in the footer', () => {
