@@ -40,7 +40,8 @@ function renderFixture(p: FixtureProvider, scenario: Parameters<typeof chatFixtu
 }
 
 beforeEach(() => {
-  useChatDraftStore.setState({ drafts: {} });
+  useChatDraftStore.setState({ drafts: {}, attachments: {} });
+  window.clubhouse.getPathForFile = () => '';
 });
 
 /** Append events after a fixture, continuing its seq. */
@@ -336,6 +337,91 @@ describe('ChatView composer', () => {
     renderState(withCommands('codex'));
     type('/co');
     expect(screen.queryByTestId('chat-slash-menu')).not.toBeInTheDocument();
+  });
+});
+
+describe('ChatView attachments', () => {
+  const png = () => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'shot.png', { type: 'image/png' });
+  const paste = (files: File[]) => fireEvent.paste(screen.getByLabelText('Message'), { clipboardData: { files } });
+
+  it('attaches a pasted image inline with a preview and sends it with the text', async () => {
+    const { actions } = renderFixture('claude', 'conversation');
+    paste([png()]);
+    const chip = await screen.findByTestId('chat-attachment');
+    expect(chip).toHaveTextContent('shot.png');
+    expect(chip.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/png;base64,/);
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'What is wrong here?' } });
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+    expect(actions.send).toHaveBeenCalledWith('What is wrong here?', 'auto', [
+      { type: 'image', mimeType: 'image/png', data: expect.any(String) },
+    ]);
+    expect(screen.queryByTestId('chat-attachment')).not.toBeInTheDocument();
+  });
+
+  it('sends attachments without text, and attaches dropped files by path', async () => {
+    window.clubhouse.getPathForFile = (f: File) => `/work/repo/${f.name}`;
+    const { actions } = renderFixture('claude', 'conversation');
+    const notes = new File(['# notes'], 'notes.md', { type: 'text/markdown' });
+    fireEvent.drop(screen.getByTestId('chat-composer'), { dataTransfer: { files: [notes, png()], types: ['Files'] } });
+    await waitFor(() => expect(screen.getAllByTestId('chat-attachment')).toHaveLength(2));
+    expect(screen.getByTestId('chat-send')).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId('chat-send'));
+    expect(actions.send).toHaveBeenCalledWith('', 'auto', [
+      { type: 'file', path: '/work/repo/notes.md' },
+      { type: 'image', mimeType: 'image/png', path: '/work/repo/shot.png' },
+    ]);
+  });
+
+  it('sends images on disk as file paths when the agent cannot take images', async () => {
+    window.clubhouse.getPathForFile = (f: File) => `/work/repo/${f.name}`;
+    const state = fold(chatFixture('claude', 'conversation'));
+    const { actions } = renderState({ ...state, capabilities: { ...state.capabilities!, images: false } });
+    fireEvent.change(screen.getByTestId('chat-attach-input'), { target: { files: [png()] } });
+    await screen.findByTestId('chat-attachment');
+    fireEvent.click(screen.getByTestId('chat-send'));
+    expect(actions.send).toHaveBeenCalledWith('', 'auto', [{ type: 'file', path: '/work/repo/shot.png' }]);
+  });
+
+  it('explains why a pasted image cannot be attached when the agent cannot take images', async () => {
+    const state = fold(chatFixture('claude', 'conversation'));
+    renderState({ ...state, capabilities: { ...state.capabilities!, images: false } });
+    paste([png()]);
+    expect(await screen.findByTestId('chat-attach-error')).toHaveTextContent("can't take pasted images");
+    expect(screen.queryByTestId('chat-attachment')).not.toBeInTheDocument();
+  });
+
+  it('removes an attachment', async () => {
+    renderFixture('claude', 'conversation');
+    paste([png()]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove shot.png' }));
+    expect(screen.queryByTestId('chat-attachment')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-send')).toBeDisabled();
+  });
+
+  it('puts the text and attachments back when the message is not sent', async () => {
+    const actions = makeActions();
+    actions.send.mockResolvedValueOnce(null as never);
+    renderFixture('claude', 'conversation', actions);
+    paste([png()]);
+    await screen.findByTestId('chat-attachment');
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'look' } });
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+    expect(await screen.findByTestId('chat-attachment')).toHaveTextContent('shot.png');
+    expect(screen.getByLabelText('Message')).toHaveValue('look');
+  });
+
+  it('shows attachments on sent messages', () => {
+    const events = extend(chatFixture('claude', 'conversation'), {
+      type: 'user_message',
+      data: {
+        messageId: 'm-att', source: 'user', delivery: 'prompt',
+        content: [{ type: 'image', mimeType: 'image/png', path: '/tmp/x/shot.png' }, { type: 'file', path: '/work/repo/notes.md' }],
+      },
+    });
+    renderState(fold(events));
+    const chips = screen.getAllByTestId('chat-user-attachments').at(-1)!;
+    expect(chips).toHaveTextContent('shot.png');
+    expect(chips).toHaveTextContent('notes.md');
   });
 });
 

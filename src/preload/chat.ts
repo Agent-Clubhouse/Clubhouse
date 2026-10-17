@@ -1,13 +1,13 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { ChatAgentRuntimeInfo, ChatEvent, ChatQuestionAnswers, ChatRuntimeSettings, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult } from '../shared/chat';
+import type { ChatAgentRuntimeInfo, ChatEvent, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult } from '../shared/chat';
 
 export const chat = {
   chat: {
     readTranscript: (agentId: string, tail?: number): Promise<ChatEvent[]> =>
       ipcRenderer.invoke(IPC.CHAT.READ_TRANSCRIPT, agentId, tail),
-    sendMessage: (agentId: string, text: string, delivery?: 'auto' | MessageDelivery): Promise<RuntimeSendResult> =>
-      ipcRenderer.invoke(IPC.CHAT.SEND_MESSAGE, agentId, text, delivery),
+    sendMessage: (agentId: string, text: string, delivery?: 'auto' | MessageDelivery, attachments?: ContentBlock[]): Promise<RuntimeSendResult> =>
+      ipcRenderer.invoke(IPC.CHAT.SEND_MESSAGE, agentId, text, delivery, attachments),
     interrupt: (agentId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.INTERRUPT, agentId),
     respondPermission: (agentId: string, requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> =>

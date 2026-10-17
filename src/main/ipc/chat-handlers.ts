@@ -12,7 +12,8 @@ import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, stringArg, numberArg, objectArg } from './validation';
+import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg } from './validation';
+import { prepareAttachments } from '../services/agent-runtime/chat-attachments';
 
 function requireChatRuntime(agentId: string) {
   const runtime = getAgentRuntime(agentId);
@@ -46,11 +47,14 @@ export function registerChatHandlers(): void {
   ));
 
   ipcMain.handle(IPC.CHAT.SEND_MESSAGE, withValidatedArgs(
-    [stringArg(), stringArg({ minLength: 1 }), stringArg({ optional: true })],
-    async (_event, agentId, text, delivery) => {
+    [stringArg(), stringArg(), stringArg({ optional: true }), arrayArg(objectArg<object>(), { optional: true })],
+    async (_event, agentId, text, delivery, attachments) => {
       const requested = delivery && DELIVERIES.has(delivery) ? (delivery as 'auto' | MessageDelivery) : 'auto';
-      const content: ContentBlock[] = [{ type: 'text', text }];
-      return requireChatRuntime(agentId).sendMessage(content, { source: 'user', delivery: requested });
+      const runtime = requireChatRuntime(agentId);
+      const attached = attachments?.length ? await prepareAttachments(agentId, attachments, runtime.getCapabilities?.()) : [];
+      const content: ContentBlock[] = [...(text.trim() ? [{ type: 'text' as const, text }] : []), ...attached];
+      if (!content.length) throw new Error('Nothing to send');
+      return runtime.sendMessage(content, { source: 'user', delivery: requested });
     },
   ));
 
