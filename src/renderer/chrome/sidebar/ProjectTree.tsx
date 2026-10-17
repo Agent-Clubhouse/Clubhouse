@@ -29,6 +29,9 @@ export interface ProjectTreeProps {
   onSelectProject: (projectId: string) => void;
   onNewAgent?: (projectId: string) => void;
   onSelectAgent: (agent: Agent) => void;
+  onOpenTerminal?: (agent: Agent) => void;
+  /** Projects with the Terminal tab enabled; the hover card offers Open terminal only there. */
+  terminalProjectIds?: ReadonlySet<string>;
   onSelectCompleted: (projectId: string, completedId: string) => void;
   onDismissCompleted: (projectId: string, completedId: string) => void;
   onClearCompleted: (projectId: string) => void;
@@ -122,6 +125,7 @@ export function ProjectTree(props: ProjectTreeProps) {
       onNewAgent={props.onNewAgent}
       draggable={!!onReorder}
       onSelectAgent={props.onSelectAgent}
+      onOpenTerminal={props.terminalProjectIds?.has(project.id) ? props.onOpenTerminal : undefined}
       onSelectCompleted={props.onSelectCompleted}
       onDismissCompleted={props.onDismissCompleted}
       onClearCompleted={props.onClearCompleted}

@@ -319,6 +319,7 @@ export const ATTR = {
     'start_page_start', 'completed_open', 'first_run_add', 'first_run_drop',
     'host_switch', 'host_retry', 'host_settings_open', 'needs_you_remote_select',
     'more_menu_open', 'more_menu_pick',
+    'row_menu_open', 'hover_card_action',
   ]),
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [
