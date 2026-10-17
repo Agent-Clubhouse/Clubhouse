@@ -12,6 +12,19 @@
  * The known-bad list is the remote kill switch: entries can arrive with the
  * update manifest (`chatCliDenylist`) and are persisted, so a bad CLI release
  * can be routed to the terminal without an app release.
+ *
+ * For manifest publishers:
+ * - The manifest is trusted at the same level as the update payload it
+ *   describes: fetched over HTTPS and unsigned (the payload's sha256 lives in
+ *   the same manifest).
+ * - Omitting `chatCliDenylist` keeps the saved list; only `[]` clears it.
+ *   Anything that isn't an array is ignored.
+ * - The stable and preview manifests are read separately; the one the update
+ *   check picks (the newer of the two on the preview channel) is applied, so
+ *   put an entry in both.
+ * - Every `versions[]`, `range.from` and `range.to` must be a plain
+ *   `x.y.z[-prerelease]` version. An entry with anything else is dropped
+ *   whole, so a typo can't match every version.
  */
 
 import type { ChatDriverId } from '../../../shared/chat';
@@ -63,70 +76,136 @@ export function cliLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider;
 }
 
-/** First `x.y.z` (with an optional prerelease tag) in a CLI's version text, e.g. "2.1.300 (Claude Code)". */
-export function parseCliVersion(raw: string | undefined): string | undefined {
-  return raw ? /(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/.exec(raw)?.[1] : undefined;
+const VERSION_RE = /(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?/;
+const EXACT_VERSION_RE = new RegExp(`^${VERSION_RE.source}$`);
+
+/** Drop leading zeros so "02.1.0" and "2.1.0" match; keep the prerelease; drop build metadata. */
+function normalize(m: RegExpExecArray): string {
+  return `${Number(m[1])}.${Number(m[2])}.${Number(m[3])}${m[4] ? `-${m[4]}` : ''}`;
 }
 
-/** Numeric x.y.z comparison; a prerelease sorts before its release. */
+/**
+ * First `x.y.z[-prerelease]` in a CLI's version text, e.g. "2.1.300 (Claude
+ * Code)" → "2.1.300". Build metadata (`+…`) is dropped.
+ */
+export function parseCliVersion(raw: string | undefined): string | undefined {
+  const m = raw ? VERSION_RE.exec(raw) : null;
+  return m ? normalize(m) : undefined;
+}
+
+/** A value that is exactly one version (for denylist entries), normalized; undefined otherwise. */
+export function parseExactVersion(raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || raw.length > MAX_VERSION_LENGTH) return undefined;
+  const m = EXACT_VERSION_RE.exec(raw.trim());
+  return m ? normalize(m) : undefined;
+}
+
+/** SemVer precedence: numeric core, a prerelease before its release, identifiers numeric where numeric. */
 export function compareCliVersions(a: string, b: string): number {
   const split = (v: string) => {
-    const [core, pre] = v.split('-', 2);
-    return { nums: core.split('.').map((n) => Number(n) || 0), pre };
+    const [core, ...rest] = v.split('+', 1)[0].split('-');
+    return { nums: core.split('.').map((n) => Number(n) || 0), pre: rest.length ? rest.join('-').split('.') : undefined };
   };
   const x = split(a);
   const y = split(b);
-  for (let i = 0; i < Math.max(x.nums.length, y.nums.length); i++) {
+  for (let i = 0; i < 3; i++) {
     const d = (x.nums[i] ?? 0) - (y.nums[i] ?? 0);
     if (d !== 0) return d < 0 ? -1 : 1;
   }
-  if (x.pre === y.pre) return 0;
-  if (x.pre === undefined) return 1;
-  if (y.pre === undefined) return -1;
-  return x.pre < y.pre ? -1 : 1;
+  if (!x.pre && !y.pre) return 0;
+  if (!x.pre) return 1;
+  if (!y.pre) return -1;
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
+    const p = x.pre[i];
+    const q = y.pre[i];
+    if (p === undefined) return -1;
+    if (q === undefined) return 1;
+    if (p === q) continue;
+    const pn = /^\d+$/.test(p);
+    const qn = /^\d+$/.test(q);
+    if (pn && qn) return Number(p) < Number(q) ? -1 : 1;
+    if (pn !== qn) return pn ? -1 : 1;
+    return p < q ? -1 : 1;
+  }
+  return 0;
 }
 
 // ── Remote denylist (update manifest kill switch) ──────────────────────────
 
 const remoteStore = createSettingsStore<{ entries: CliDenylistEntry[] }>('chat-cli-denylist.json', { entries: [] });
 
-const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === 'string');
+export const MAX_DENYLIST_ENTRIES = 100;
+export const MAX_VERSIONS_PER_ENTRY = 200;
+const MAX_VERSION_LENGTH = 64;
+const MAX_ID_LENGTH = 64;
+const MAX_REASON_LENGTH = 300;
 
-/** Keep only well-formed entries; a malformed manifest must not disable the list. */
+const isShortString = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
+
+/** One entry, or undefined when any part is malformed: a bad entry is dropped whole, never widened. */
+function sanitizeEntry(e: unknown): CliDenylistEntry | undefined {
+  if (typeof e !== 'object' || e === null || Array.isArray(e)) return undefined;
+  const r = e as Record<string, unknown>;
+  if (!isShortString(r.reason, MAX_REASON_LENGTH)) return undefined;
+  if (r.driver !== undefined && !isShortString(r.driver, MAX_ID_LENGTH)) return undefined;
+  if (r.provider !== undefined && !isShortString(r.provider, MAX_ID_LENGTH)) return undefined;
+  if (r.driver === undefined && r.provider === undefined) return undefined;
+
+  let versions: string[] | undefined;
+  if (r.versions !== undefined) {
+    if (!Array.isArray(r.versions) || r.versions.length > MAX_VERSIONS_PER_ENTRY) return undefined;
+    versions = [];
+    for (const v of r.versions) {
+      const parsed = parseExactVersion(v);
+      if (!parsed) return undefined;
+      versions.push(parsed);
+    }
+  }
+
+  let range: CliDenylistEntry['range'];
+  if (r.range !== undefined) {
+    if (typeof r.range !== 'object' || r.range === null || Array.isArray(r.range)) return undefined;
+    const raw = r.range as Record<string, unknown>;
+    const from = raw.from === undefined ? undefined : parseExactVersion(raw.from);
+    const to = raw.to === undefined ? undefined : parseExactVersion(raw.to);
+    if ((raw.from !== undefined && !from) || (raw.to !== undefined && !to)) return undefined;
+    // An open range on both ends would match every version.
+    if (!from && !to) return undefined;
+    range = { ...(from && { from }), ...(to && { to }) };
+  }
+  if (!versions?.length && !range) return undefined;
+
+  return {
+    ...(r.driver !== undefined && { driver: r.driver as ChatDriverId }),
+    ...(r.provider !== undefined && { provider: r.provider as string }),
+    ...(versions?.length && { versions }),
+    ...(range && { range }),
+    reason: r.reason,
+  };
+}
+
+/** Keep only well-formed entries, up to the caps. Non-arrays yield []. */
 export function sanitizeDenylist(raw: unknown): CliDenylistEntry[] {
   if (!Array.isArray(raw)) return [];
   const out: CliDenylistEntry[] = [];
-  for (const e of raw) {
-    if (typeof e !== 'object' || e === null) continue;
-    const r = e as Record<string, unknown>;
-    if (typeof r.reason !== 'string' || !r.reason) continue;
-    if (r.driver !== undefined && typeof r.driver !== 'string') continue;
-    if (r.provider !== undefined && typeof r.provider !== 'string') continue;
-    if (r.driver === undefined && r.provider === undefined) continue;
-    const versions = isStringArray(r.versions) ? r.versions : undefined;
-    const rangeRaw = typeof r.range === 'object' && r.range !== null ? r.range as Record<string, unknown> : undefined;
-    const range = rangeRaw && (typeof rangeRaw.from === 'string' || typeof rangeRaw.to === 'string')
-      ? { ...(typeof rangeRaw.from === 'string' && { from: rangeRaw.from }), ...(typeof rangeRaw.to === 'string' && { to: rangeRaw.to }) }
-      : undefined;
-    if (!versions?.length && !range) continue;
-    out.push({
-      ...(r.driver !== undefined && { driver: r.driver as ChatDriverId }),
-      ...(r.provider !== undefined && { provider: r.provider as string }),
-      ...(versions?.length && { versions }),
-      ...(range && { range }),
-      reason: r.reason,
-    });
+  for (const e of raw.slice(0, MAX_DENYLIST_ENTRIES)) {
+    const entry = sanitizeEntry(e);
+    if (entry) out.push(entry);
   }
   return out;
 }
 
 /**
  * Replace the remote denylist with what the latest update manifest carries.
- * A manifest without the field leaves the saved list alone (older manifests).
+ * Only an array replaces it: a missing field, `null` or any other value
+ * keeps the saved list, so a manifest without the field (or a broken one)
+ * can't lift a block. Nothing is written when the list is unchanged.
  */
 export async function applyRemoteCliDenylist(raw: unknown): Promise<void> {
-  if (raw === undefined) return;
-  await remoteStore.save({ entries: sanitizeDenylist(raw) });
+  if (!Array.isArray(raw)) return;
+  const entries = sanitizeDenylist(raw);
+  if (JSON.stringify(entries) === JSON.stringify(remoteStore.get().entries)) return;
+  await remoteStore.save({ entries });
 }
 
 export function getCliDenylist(): CliDenylistEntry[] {
@@ -152,7 +231,7 @@ export interface CliVersionPolicy {
 function denylistMatch(entry: CliDenylistEntry, driver: ChatDriverId, provider: string, version: string): boolean {
   if (entry.driver !== undefined && entry.driver !== driver) return false;
   if (entry.driver === undefined && entry.provider !== provider) return false;
-  if (entry.versions?.some((v) => parseCliVersion(v) === version)) return true;
+  if (entry.versions?.some((v) => parseExactVersion(v) === version)) return true;
   if (entry.range) {
     const { from, to } = entry.range;
     return (!from || compareCliVersions(version, from) >= 0) && (!to || compareCliVersions(version, to) <= 0);

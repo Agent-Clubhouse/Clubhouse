@@ -1,22 +1,27 @@
 /**
  * Per-driver health for automatic Chat → Terminal fallback
- * (docs/structured-chat-research.md §7.1).
+ * (docs/structured-chat-research.md §7.1). Everything here lives for the
+ * main process only and is keyed by driver + binary + profile env, so one
+ * broken install or profile doesn't pause the driver for the others.
  *
- * - Handshake probes are cached per driver and binary (re-probed when the
- *   binary changes on disk), so the zero-token handshake runs once per CLI
- *   install rather than on every wake.
- * - A driver whose handshake or session start fails repeatedly is paused for
- *   a while: agents skip it (to the next driver, or the terminal) instead of
- *   paying for another failing start each time. One success clears it; after
- *   the pause, the next attempt is let through.
+ * - Handshake probes are cached per key (re-probed when the binary changes
+ *   on disk), so the zero-token handshake runs once per CLI install rather
+ *   than on every wake. Concurrent callers share one in-flight probe, so a
+ *   burst of agents waking at launch costs one probe and, if it fails, one
+ *   failure.
+ * - Handshake and spawn-level failures pause a key after a few in a row:
+ *   agents skip it (to the next driver, or the terminal) instead of paying
+ *   for another failing start each time. One success clears it; after the
+ *   pause, the next attempt is let through.
  */
 
+import { createHash } from 'crypto';
 import * as fs from 'fs';
-import { MINIMAL_CHAT_CAPABILITIES, type ChatDriver, type ChatDriverId, type ChatDriverProbe } from '../../../shared/chat';
+import { MINIMAL_CHAT_CAPABILITIES, type ChatDriver, type ChatDriverProbe } from '../../../shared/chat';
 
-/** Consecutive failures that pause a driver. */
+/** Consecutive failures that pause a driver key. */
 export const DRIVER_FAILURE_THRESHOLD = 3;
-/** How long a paused driver is skipped before it gets another try. */
+/** How long a paused key is skipped before it gets another try. */
 export const DRIVER_PAUSE_MS = 30 * 60_000;
 
 interface Health {
@@ -25,21 +30,30 @@ interface Health {
   lastReason?: string;
 }
 
-const health = new Map<ChatDriverId, Health>();
+const health = new Map<string, Health>();
 const probes = new Map<string, { mtimeMs: number; probe: ChatDriverProbe }>();
+const inFlight = new Map<string, Promise<ChatDriverProbe>>();
 
-export function recordDriverFailure(id: ChatDriverId, reason: string, now = Date.now()): void {
-  const h = health.get(id) ?? { consecutiveFailures: 0, lastFailureAt: 0 };
-  health.set(id, { consecutiveFailures: h.consecutiveFailures + 1, lastFailureAt: now, lastReason: reason });
+/** Health and probe-cache key: driver, binary and the profile env it runs with. */
+export function driverHealthKey(driver: Pick<ChatDriver, 'id'>, binaryPath: string, env?: Record<string, string>): string {
+  const envHash = env && Object.keys(env).length
+    ? createHash('sha1').update(JSON.stringify(Object.entries(env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))).digest('hex').slice(0, 12)
+    : '-';
+  return `${driver.id}\0${binaryPath}\0${envHash}`;
 }
 
-export function recordDriverSuccess(id: ChatDriverId): void {
-  health.delete(id);
+export function recordDriverFailure(key: string, reason: string, now = Date.now()): void {
+  const h = health.get(key) ?? { consecutiveFailures: 0, lastFailureAt: 0 };
+  health.set(key, { consecutiveFailures: h.consecutiveFailures + 1, lastFailureAt: now, lastReason: reason });
 }
 
-/** The reason a driver is paused, or undefined when it may be tried. */
-export function driverPausedReason(id: ChatDriverId, now = Date.now()): string | undefined {
-  const h = health.get(id);
+export function recordDriverSuccess(key: string): void {
+  health.delete(key);
+}
+
+/** The reason a key is paused, or undefined when it may be tried. */
+export function driverPausedReason(key: string, now = Date.now()): string | undefined {
+  const h = health.get(key);
   if (!h || h.consecutiveFailures < DRIVER_FAILURE_THRESHOLD) return undefined;
   if (now - h.lastFailureAt >= DRIVER_PAUSE_MS) return undefined;
   return h.lastReason ?? 'repeated failures';
@@ -53,27 +67,38 @@ function binaryMtime(binaryPath: string): number | undefined {
   }
 }
 
+async function runProbe(driver: ChatDriver, binaryPath: string, env: Record<string, string> | undefined): Promise<ChatDriverProbe> {
+  try {
+    return await driver.probe(binaryPath, env);
+  } catch (err) { // telemetry-exempt: a throwing probe is a failed handshake, recorded by the caller and reported by chat-spawn
+    return { handshakeOk: false, capabilities: MINIMAL_CHAT_CAPABILITIES, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /**
- * The driver's handshake probe, cached while the binary is unchanged. Failed
- * probes are not cached and count as driver failures.
+ * The driver's handshake probe, cached while the binary is unchanged.
+ * Concurrent calls for one key share a probe; a failed probe is not cached
+ * and counts one failure for the key.
  */
-export async function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record<string, string>): Promise<ChatDriverProbe> {
-  const key = `${driver.id}\0${binaryPath}`;
+export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record<string, string>): Promise<ChatDriverProbe> {
+  const key = driverHealthKey(driver, binaryPath, env);
   const mtimeMs = binaryMtime(binaryPath);
   const cached = probes.get(key);
-  if (cached && mtimeMs !== undefined && cached.mtimeMs === mtimeMs) return cached.probe;
-  let probe: ChatDriverProbe;
-  try {
-    probe = await driver.probe(binaryPath, env);
-  } catch (err) { // telemetry-exempt: a throwing probe is a failed handshake, recorded below and reported by chat-spawn
-    probe = { handshakeOk: false, capabilities: MINIMAL_CHAT_CAPABILITIES, error: err instanceof Error ? err.message : String(err) };
-  }
-  if (probe.handshakeOk) {
-    if (mtimeMs !== undefined) probes.set(key, { mtimeMs, probe });
-  } else {
-    probes.delete(key);
-    recordDriverFailure(driver.id, `handshake failed: ${probe.error ?? 'unknown error'}`);
-  }
+  if (cached && mtimeMs !== undefined && cached.mtimeMs === mtimeMs) return Promise.resolve(cached.probe);
+  const pending = inFlight.get(key);
+  if (pending) return pending;
+
+  const probe = runProbe(driver, binaryPath, env).then((result) => {
+    inFlight.delete(key);
+    if (result.handshakeOk) {
+      if (mtimeMs !== undefined) probes.set(key, { mtimeMs, probe: result });
+    } else {
+      probes.delete(key);
+      recordDriverFailure(key, `handshake failed: ${result.error ?? 'unknown error'}`);
+    }
+    return result;
+  });
+  inFlight.set(key, probe);
   return probe;
 }
 
@@ -81,4 +106,5 @@ export async function probeDriver(driver: ChatDriver, binaryPath: string, env?: 
 export function clearDriverHealth(): void {
   health.clear();
   probes.clear();
+  inFlight.clear();
 }

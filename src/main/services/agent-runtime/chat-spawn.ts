@@ -28,7 +28,7 @@ import type { ChatDriver } from '../../../shared/chat';
 import { IPC } from '../../../shared/ipc-channels';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { listChatDrivers, resolveChatDriver } from './chat-drivers';
-import { driverPausedReason, probeDriver, recordDriverFailure, recordDriverSuccess } from './chat-driver-health';
+import { driverHealthKey, driverPausedReason, probeDriver, recordDriverFailure, recordDriverSuccess } from './chat-driver-health';
 import { cliLabel, evaluateCliVersion } from './chat-version-policy';
 import { ChatAgentRuntime } from './chat-runtime';
 import { registerChatRuntime, unregisterChatRuntime } from './index';
@@ -113,8 +113,8 @@ interface DriverCheck {
 }
 
 /** Paused after repeated failures, handshake, then version policy. Never spends tokens. */
-async function checkDriver(driver: ChatDriver, binaryPath: string, env?: Record<string, string>): Promise<DriverCheck> {
-  const paused = driverPausedReason(driver.id);
+async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, env?: Record<string, string>): Promise<DriverCheck> {
+  const paused = driverPausedReason(key);
   if (paused) return { ok: false, reason: `${driverLabel(driver)} chat is paused after repeated failures (${paused})`, notices: [] };
   const probe = await probeDriver(driver, binaryPath, env);
   if (!probe.handshakeOk) {
@@ -169,74 +169,89 @@ export async function tryStartChatAgent(
     return false;
   }
 
-  const skipped: string[] = [];
-  const usable: Array<{ driver: ChatDriver; notices: ChatRuntimeNotice[] }> = [];
-  for (const driver of candidates) {
-    const check = await checkDriver(driver, binaryPath, profileEnv);
-    if (check.ok) usable.push({ driver, notices: check.notices });
-    else skipped.push(check.reason ?? `${driverLabel(driver)} is unavailable`);
-  }
-  if (usable.length === 0) {
-    notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the terminal: ${skipped.join('; ')}` });
-    return false;
-  }
-
-  const nonce = randomUUID();
-  agentRegistry.setNonce(params.agentId, nonce);
-  agentRegistry.setRuntime(params.agentId, 'chat');
-
-  // Clubhouse MCP bridge + project servers, as for terminal agents.
-  const mcpEnabled = isMcpEnabled(params.projectPath, durableConfig?.mcpOverride);
-  const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
-  if (mcpEnabled) configPipeline.snapshotFile(params.agentId, mcpJsonPath);
-  let mcpPort = 0;
-  try {
-    mcpPort = await waitMcpBridgeReady();
-    await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, nonce, provider.conventions);
-  } catch (err) {
-    appLog('core:mcp', 'warn', 'MCP bridge injection skipped for chat agent', {
-      meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
-    });
-  }
-  const mcpServers = {
-    ...(mcpEnabled ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined) : {}),
-    ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId, nonce) } : {}),
-  };
-
-  const env: Record<string, string> = {
-    ...profileEnv,
-    CLUBHOUSE_AGENT_ID: params.agentId,
-    CLUBHOUSE_HOOK_NONCE: nonce,
-    ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
-  };
-
   const level = levelForFreeAgent(params.freeAgentMode, params.permissionMode);
   const resumeNativeSessionId = params.resume ? params.sessionId : undefined;
-  const continued = resumeNativeSessionId ? await findChatSessionFor(params.agentId, resumeNativeSessionId) : undefined;
+  let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; continued?: { sessionId: string; lastSeq: number } } | undefined;
 
-  for (const { driver, notices } of usable) {
-    const fellBack = skipped.length > 0;
-    const startNotices: ChatRuntimeNotice[] = [
-      ...(fellBack ? [{ level: 'warn' as const, code: 'fallback', message: `Using ${driverLabel(driver)}: ${skipped.join('; ')}` }] : []),
-      ...notices,
-    ];
-    const error = await startChatRuntime(driver, startNotices);
-    if (!error) {
-      recordDriverSuccess(driver.id);
-      if (fellBack) notifyFallback(params.agentId, startNotices[0]);
+  // Probe lazily, in order, and stop at the first usable driver: the
+  // preferred driver working means no other driver is probed or reported.
+  const skipped: string[] = [];
+  for (const [index, driver] of candidates.entries()) {
+    const key = driverHealthKey(driver, binaryPath, profileEnv);
+    const check = await checkDriver(driver, key, binaryPath, profileEnv);
+    if (!check.ok) {
+      skipped.push(check.reason ?? `${driverLabel(driver)} is unavailable`);
+      continue;
+    }
+    prepared ??= await prepare();
+    const fallbackNotice: ChatRuntimeNotice | undefined = index > 0
+      ? { level: 'warn', code: 'fallback', message: `Using ${driverLabel(driver)}: ${skipped.join('; ')}` }
+      : undefined;
+    const outcome = await startChatRuntime(driver, [...(fallbackNotice ? [fallbackNotice] : []), ...check.notices], prepared);
+    if (!('error' in outcome)) {
+      recordDriverSuccess(key);
+      if (fallbackNotice) notifyFallback(params.agentId, fallbackNotice);
       return true;
     }
-    recordDriverFailure(driver.id, `session start failed: ${error}`);
-    skipped.push(`${driverLabel(driver)} failed to start: ${error}`);
+    if (outcome.sessionStarted) {
+      // The CLI may already have the mission: don't hand it to another driver.
+      skipped.push(`${driverLabel(driver)} failed after its session started: ${outcome.error}`);
+      break;
+    }
+    // A stale resume id fails every driver alike; it says nothing about this one's health.
+    if (!resumeNativeSessionId) recordDriverFailure(key, `session start failed: ${outcome.error}`);
+    skipped.push(`${driverLabel(driver)} failed to start: ${outcome.error}`);
   }
 
-  agentRegistry.setRuntime(params.agentId, 'pty');
-  configPipeline.restoreForAgent(params.agentId);
+  if (prepared) {
+    agentRegistry.setRuntime(params.agentId, 'pty');
+    configPipeline.restoreForAgent(params.agentId);
+  }
   notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the terminal: ${skipped.join('; ')}` });
   return false;
 
-  /** Start the agent on one driver. Resolves to undefined on success, or the error message. */
-  async function startChatRuntime(driver: ChatDriver, startNotices: ChatRuntimeNotice[]): Promise<string | undefined> {
+  /** Nonce, Clubhouse MCP bridge + project servers and env: once, before the first start attempt. */
+  async function prepare(): Promise<NonNullable<typeof prepared>> {
+    const nonce = randomUUID();
+    agentRegistry.setNonce(params.agentId, nonce);
+    agentRegistry.setRuntime(params.agentId, 'chat');
+
+    const mcpEnabled = isMcpEnabled(params.projectPath, durableConfig?.mcpOverride);
+    const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
+    if (mcpEnabled) configPipeline.snapshotFile(params.agentId, mcpJsonPath);
+    let mcpPort = 0;
+    try {
+      mcpPort = await waitMcpBridgeReady();
+      await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, nonce, provider.conventions);
+    } catch (err) {
+      appLog('core:mcp', 'warn', 'MCP bridge injection skipped for chat agent', {
+        meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    const mcpServers = {
+      ...(mcpEnabled ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined) : {}),
+      ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId, nonce) } : {}),
+    };
+    const env: Record<string, string> = {
+      ...profileEnv,
+      CLUBHOUSE_AGENT_ID: params.agentId,
+      CLUBHOUSE_HOOK_NONCE: nonce,
+      ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
+    };
+    const continued = resumeNativeSessionId ? await findChatSessionFor(params.agentId, resumeNativeSessionId) : undefined;
+    return { env, mcpServers, continued };
+  }
+
+  /**
+   * Start the agent on one driver. `sessionStarted` says whether the driver
+   * session was up before the failure (then the mission may have reached it).
+   */
+  async function startChatRuntime(
+    driver: ChatDriver,
+    startNotices: ChatRuntimeNotice[],
+    { env, mcpServers, continued }: NonNullable<typeof prepared>,
+  ): Promise<{ ok: true } | { ok: false; error: string; sessionStarted: boolean }> {
+    let sessionStarted = false;
     const cleanup = (reason: SessionEndReason, exitCode: number) => {
       configPipeline.restoreForAgent(params.agentId);
       unregisterChatRuntime(params.agentId, runtime);
@@ -257,7 +272,8 @@ export async function tryStartChatAgent(
       sessionId: continued?.sessionId,
       lastSeq: continued?.lastSeq,
       startNotices,
-      startSession: (resumeId) => driver.start({
+      startSession: async (resumeId) => {
+        const session = await driver.start({
         agentId: params.agentId,
         provider: provider.id,
         cwd: params.cwd,
@@ -270,7 +286,10 @@ export async function tryStartChatAgent(
         resumeNativeSessionId: resumeId,
         mcpServers,
         ...(params.extraArgs?.length ? { extraArgs: params.extraArgs } : {}),
-      }),
+        });
+        sessionStarted = true;
+        return session;
+      },
       onNativeSessionId: (id) => {
         void updateSessionId(params.projectPath, params.agentId, id).catch((err) => {
           appLog('core:chat', 'warn', 'Failed to persist native session id', {
@@ -288,15 +307,15 @@ export async function tryStartChatAgent(
     registerChatRuntime(runtime);
     try {
       await runtime.start(params.mission);
-      return undefined;
+      return { ok: true };
     } catch (err) {
       // Close the chat CLI without firing onEnded: a fallback reuses this
       // agent id, and a late untrack/exit broadcast would hit it.
       await runtime.abandon();
       unregisterChatRuntime(params.agentId, runtime);
       const message = err instanceof Error ? err.message : String(err);
-      appLog('core:chat', 'warn', 'Chat start failed', { meta: { agentId: params.agentId, driver: driver.id, error: message } });
-      return message;
+      appLog('core:chat', 'warn', 'Chat start failed', { meta: { agentId: params.agentId, driver: driver.id, error: message, sessionStarted } });
+      return { ok: false, error: message, sessionStarted };
     }
   }
 }

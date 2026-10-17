@@ -215,6 +215,51 @@ describe('chat spawn', () => {
       expect(toasts().at(-1)?.message).toMatch(/^Using Claude Code \(stream-json\): Claude Code \(Agent SDK\) chat is paused after repeated failures/);
     });
 
+    it('does not probe or report later drivers when the preferred one works', async () => {
+      const { sdk, stream } = drivers();
+      let streamProbes = 0;
+      stream.probe = async () => { streamProbes++; return { handshakeOk: false, capabilities: stream.capabilities, error: 'broken' }; };
+      for (let i = 0; i < 3; i++) {
+        expect(await tryStartChatAgent({ ...params, agentId: `ok${i}` }, provider, undefined, undefined, null)).toBe(true);
+      }
+      expect(sdk.sessions).toHaveLength(3);
+      expect(streamProbes).toBe(0);
+      expect(toasts()).toEqual([]);
+      expect(notices()).toEqual([]);
+    });
+
+    it('never hands the mission to another driver once a session has started', async () => {
+      const { sdk, stream } = drivers();
+      let sdkStarts = 0;
+      const realStart = sdk.start.bind(sdk);
+      sdk.start = async (opts) => {
+        sdkStarts++;
+        const session = await realStart(opts);
+        session.send = async () => { throw new Error('stdin closed'); };
+        return session;
+      };
+      for (let i = 0; i <= DRIVER_FAILURE_THRESHOLD; i++) {
+        expect(await tryStartChatAgent({ ...params, agentId: `m${i}` }, provider, undefined, undefined, null)).toBe(false);
+      }
+      expect(stream.sessions).toHaveLength(0);
+      // A failure after the session started isn't counted against the driver.
+      expect(sdkStarts).toBe(DRIVER_FAILURE_THRESHOLD + 1);
+      expect(toasts().at(-1)?.message).toBe('Opened in the terminal: Claude Code (Agent SDK) failed after its session started: stdin closed');
+    });
+
+    it('does not pause a driver for failed resumes', async () => {
+      const { sdk, stream } = drivers();
+      let sdkStarts = 0;
+      sdk.start = async () => { sdkStarts++; throw new Error('No conversation found with session ID: stale'); };
+      stream.start = sdk.start;
+      const resume = { ...params, mission: undefined, resume: true, sessionId: 'stale' };
+      for (let i = 0; i <= DRIVER_FAILURE_THRESHOLD; i++) {
+        expect(await tryStartChatAgent({ ...resume, agentId: `r${i}` }, provider, undefined, undefined, null)).toBe(false);
+      }
+      // Both drivers were tried on every attempt: none was paused.
+      expect(sdkStarts).toBe(2 * (DRIVER_FAILURE_THRESHOLD + 1));
+    });
+
     it('falls back to the terminal and restores config when every start fails', async () => {
       const { sdk, stream } = drivers();
       sdk.start = async () => { throw new Error('a'); };
