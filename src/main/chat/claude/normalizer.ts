@@ -146,6 +146,8 @@ export class ClaudeNormalizer {
     if (subtype === 'permission_denied') {
       return [{ kind: 'permission_denied', toolName: str(msg.tool_name), raw: msg }];
     }
+    // A running estimate of thinking progress, not billed usage; turn_ended carries the real token counts.
+    if (subtype === 'thinking_tokens') return [];
     if (subtype && SUBAGENT_PHASES[subtype]) {
       return [{ kind: 'subagent', phase: SUBAGENT_PHASES[subtype], taskId: str(msg.task_id) ?? '', raw: msg }];
     }
