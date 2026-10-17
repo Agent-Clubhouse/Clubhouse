@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { SkillEntry } from '../../../shared/types';
 import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
+import { Button } from '../../components/Button';
+import { useReportDirty } from './agentSettingsPages';
 
 interface Props {
   worktreePath: string;
@@ -10,15 +12,20 @@ interface Props {
   pathLabel?: string;
   /** The page title already names the section (agent settings pages in the new chrome). */
   hideTitle?: boolean;
+  /** Whether an open editor holds unsaved edits. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** Items in the list, for the sidebar. */
+  onCountChange?: (count: number) => void;
 }
 
 type View = 'list' | 'create' | 'edit';
 
-export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, hideTitle }: Props) {
+export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, hideTitle, onDirtyChange, onCountChange }: Props) {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [view, setView] = useState<View>('list');
   const [editingSkill, setEditingSkill] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState('');
+  const [editorInitial, setEditorInitial] = useState('');
   const [skillName, setSkillName] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -28,25 +35,31 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
     try {
       const list = await window.clubhouse.agentSettings.listSkills(worktreePath, projectPath);
       setSkills(list);
+      onCountChange?.(list.length);
     } catch {
       setSkills([]);
     }
-  }, [worktreePath, projectPath]);
+  }, [worktreePath, projectPath, onCountChange]);
 
   useEffect(() => {
     loadSkills();
   }, [loadSkills, refreshKey]);
 
+  const editorDirty = view !== 'list' && (editorContent !== editorInitial || (view === 'create' && skillName.trim() !== ''));
+  useReportDirty(onDirtyChange, editorDirty);
+
   const handleCreate = () => {
     setView('create');
     setSkillName('');
     setEditorContent('# Skill Name\n\nDescribe what this skill does.\n');
+    setEditorInitial('# Skill Name\n\nDescribe what this skill does.\n');
   };
 
   const handleEdit = async (name: string) => {
     const content = await window.clubhouse.agentSettings.readSkillContent(worktreePath, name, projectPath);
     setEditingSkill(name);
     setEditorContent(content);
+    setEditorInitial(content);
     setView('edit');
   };
 
@@ -90,23 +103,19 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
             {isCreate ? 'New skill' : `Edit: ${editingSkill}`}
           </h3>
           <div className="flex gap-2">
-            <button
+            <Button
+              kind="quiet"
               onClick={() => { setView('list'); setEditingSkill(null); }}
-              className="h-7 px-2.5 rounded-md text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
+              kind="primary"
               onClick={isCreate ? handleSaveNew : handleSaveEdit}
               disabled={saving || (isCreate && !skillName.trim())}
-              className={`h-7 px-2.5 rounded-md text-xs font-medium transition-colors ${
-                saving || (isCreate && !skillName.trim())
-                  ? 'bg-surface-0 text-ctp-overlay0 cursor-default'
-                  : 'bg-ctp-accent text-ctp-crust hover:bg-ctp-accent/85 cursor-pointer'
-              }`}
             >
               {saving ? 'Saving…' : 'Save'}
-            </button>
+            </Button>
           </div>
         </div>
         {isCreate && (
@@ -137,13 +146,13 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
           {!hideTitle && <h3 className="text-[13px] font-semibold text-ctp-text">Skills</h3>}
           <span className="text-xs text-ctp-overlay1 font-mono">{pathLabel || '.claude/skills/'}</span>
         </div>
-        <button
+        <Button
+          kind="ghost"
           onClick={handleCreate}
           disabled={disabled}
-          className="h-7 px-2.5 rounded-md border border-surface-1 text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           New skill
-        </button>
+        </Button>
       </div>
 
       {skills.length === 0 ? (
@@ -163,46 +172,44 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
                 {skill.name}
               </button>
               <div className="flex gap-1 flex-shrink-0 ml-2">
-                <button
+                <Button
+                  kind="quiet"
                   onClick={() => handleEdit(skill.name)}
                   disabled={disabled}
-                  className={`p-1 transition-colors ${
-                    disabled
-                      ? 'text-ctp-subtext0/30 cursor-not-allowed'
-                      : 'text-ctp-subtext0 hover:text-ctp-accent cursor-pointer'
-                  }`}
                   title="Edit skill"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
-                </button>
-                <button
+                  aria-label="Edit skill"
+                  icon={(
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  )}
+                />
+                <Button
+                  kind="quiet"
                   onClick={() => handleOpenFolder(skill.path)}
-                  className="text-ctp-subtext0 hover:text-ctp-text p-1 cursor-pointer transition-colors"
                   title="Open in file manager"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                  </svg>
-                </button>
-                <button
+                  aria-label="Open in file manager"
+                  icon={(
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                  )}
+                />
+                <Button
+                  kind="quiet"
                   onClick={() => setDeleteTarget(skill.name)}
                   disabled={disabled}
-                  className={`p-1 transition-colors ${
-                    disabled
-                      ? 'text-ctp-subtext0/30 cursor-not-allowed'
-                      : 'text-ctp-subtext0 hover:text-ctp-error cursor-pointer'
-                  }`}
                   title="Delete skill"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 6h18" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                </button>
+                  aria-label="Delete skill"
+                  icon={(
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 6h18" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  )}
+                />
               </div>
             </div>
           ))}
@@ -222,18 +229,18 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
               This will permanently delete the skill directory and cannot be undone.
             </p>
             <div className="flex justify-end gap-2">
-              <button
+              <Button
+                kind="quiet"
                 onClick={() => setDeleteTarget(null)}
-                className="text-xs px-3 py-1.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                kind="danger-solid"
                 onClick={() => handleDelete(deleteTarget)}
-                className="text-xs px-3 py-1.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30 cursor-pointer transition-colors border border-ctp-error/30"
               >
                 Delete
-              </button>
+              </Button>
             </div>
           </div>
         </div>

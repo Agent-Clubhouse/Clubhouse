@@ -1,11 +1,12 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { AgentSettingsView } from './AgentSettingsView';
-import { useAgentSettingsPages } from './agentSettingsPages';
+import { useAgentSettingsPages, requestCloseAgentSettings } from './agentSettingsPages';
+import { useToastStore } from '../../stores/toastStore';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import type { Agent, MaterializationPreview } from '../../../shared/types';
 
@@ -29,8 +30,12 @@ vi.mock('../../components/ImageCropDialog', () => ({
   ImageCropDialog: () => <div data-testid="image-crop-dialog" />,
 }));
 
+let skillsProps: any;
 vi.mock('./SkillsSection', () => ({
-  SkillsSection: (props: any) => <div data-testid="skills-section" data-disabled={String(props.disabled)} />,
+  SkillsSection: (props: any) => {
+    skillsProps = props;
+    return <div data-testid="skills-section" data-disabled={String(props.disabled)} />;
+  },
 }));
 
 let capturedOnCreateFromPluginTemplate: ((entry: any) => void) | undefined;
@@ -41,8 +46,12 @@ vi.mock('./AgentTemplatesSection', () => ({
   },
 }));
 
+let mcpProps: any;
 vi.mock('./McpJsonSection', () => ({
-  McpJsonSection: (props: any) => <div data-testid="mcp-json-section" data-disabled={String(props.disabled)} />,
+  McpJsonSection: (props: any) => {
+    mcpProps = props;
+    return <div data-testid="mcp-json-section" data-disabled={String(props.disabled)} />;
+  },
 }));
 
 let _capturedTemplateOnCreate: ((config: any) => void) | undefined;
@@ -303,7 +312,7 @@ describe('AgentSettingsView', () => {
 
     it('renders free agent mode as a switch', () => {
       renderSettings();
-      expect(screen.getByRole('switch', { name: 'Free agent mode' })).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'Free Agent Mode' })).toBeInTheDocument();
     });
 
     it('does not render a Structured Mode toggle, even with the legacy experimental flag set', async () => {
@@ -750,24 +759,36 @@ describe('AgentSettingsView', () => {
   describe('new chrome pages', () => {
     beforeEach(() => {
       useChromeFlagStore.setState({ enabled: true });
+      useToastStore.setState({ toasts: [] });
     });
     afterEach(() => {
       useChromeFlagStore.setState({ enabled: false });
     });
 
+    const visiblePage = () => screen.getAllByTestId(/^agent-settings-page-/).filter((el) => !el.hidden);
+
     it('has no header and opens on General', () => {
       renderSettings();
       expect(screen.queryByTitle('Back')).not.toBeInTheDocument();
-      expect(screen.getByTestId('agent-settings-page-general')).toBeInTheDocument();
+      expect(visiblePage().map((el) => el.dataset.testid)).toEqual(['agent-settings-page-general']);
       expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument();
-      expect(screen.queryByTestId('skills-section')).not.toBeInTheDocument();
     });
 
-    it('shows the page the sidebar selects', async () => {
+    it('shows the page the sidebar selects and keeps the others mounted but hidden', async () => {
       renderSettings();
       act(() => useAgentSettingsPages.getState().setPage('skills'));
-      expect(await screen.findByTestId('skills-section')).toBeInTheDocument();
-      expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+      expect(visiblePage().map((el) => el.dataset.testid)).toEqual(['agent-settings-page-skills']);
+      expect(screen.getByTestId('skills-section')).toBeVisible();
+      expect(screen.getByLabelText('Name')).not.toBeVisible();
+    });
+
+    it('keeps edits when switching pages', async () => {
+      renderSettings();
+      act(() => useAgentSettingsPages.getState().setPage('instructions'));
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Kept' } });
+      act(() => useAgentSettingsPages.getState().setPage('general'));
+      act(() => useAgentSettingsPages.getState().setPage('instructions'));
+      expect(screen.getByLabelText('Instructions')).toHaveValue('Kept');
     });
 
     it('resets to General when another agent opens', () => {
@@ -778,11 +799,8 @@ describe('AgentSettingsView', () => {
 
     it('collects text edits in one save bar and marks the dirty pages', async () => {
       renderSettings();
-      act(() => useAgentSettingsPages.getState().setPage('instructions'));
-      const editor = await screen.findByLabelText('Instructions');
-      fireEvent.change(editor, { target: { value: 'New instructions' } });
-      act(() => useAgentSettingsPages.getState().setPage('permissions'));
-      fireEvent.change(await screen.findByLabelText('Allowed tools, one per line'), { target: { value: 'Read(**)\nEdit(**)' } });
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'New instructions' } });
+      fireEvent.change(await screen.findByLabelText('Allowed tools, one per line', { selector: '#agent-settings-perm-allow' }), { target: { value: 'Read(**)\nEdit(**)' } });
 
       const bar = screen.getByTestId('agent-settings-save-bar');
       expect(bar).toHaveTextContent('Unsaved changes to instructions and permissions');
@@ -801,9 +819,24 @@ describe('AgentSettingsView', () => {
       expect(useAgentSettingsPages.getState().dirtyPages).toEqual([]);
     });
 
+    it('keeps going after a failed save, says which saved, and leaves the bar usable', async () => {
+      window.clubhouse.agentSettings.saveInstructions = vi.fn().mockRejectedValue(new Error('EACCES'));
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Nope' } });
+      fireEvent.change(await screen.findByLabelText('Allowed tools, one per line', { selector: '#agent-settings-perm-allow' }), { target: { value: 'Edit(**)' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(window.clubhouse.agentSettings.savePermissions).toHaveBeenCalled());
+      await waitFor(() => {
+        expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual(["Saved permissions. Couldn't save instructions."]);
+      });
+      expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('Unsaved changes to instructions');
+      expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Discard' })).not.toBeDisabled();
+    });
+
     it('discards text edits back to what was loaded', async () => {
       renderSettings();
-      act(() => useAgentSettingsPages.getState().setPage('instructions'));
       const editor = await screen.findByLabelText('Instructions');
       fireEvent.change(editor, { target: { value: 'Scratch' } });
       fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
@@ -812,9 +845,32 @@ describe('AgentSettingsView', () => {
       expect(window.clubhouse.agentSettings.saveInstructions).not.toHaveBeenCalled();
     });
 
+    it('saves and discards .mcp.json edits through the bar', async () => {
+      renderSettings();
+      await screen.findByTestId('mcp-json-section');
+      const handle = { save: vi.fn().mockResolvedValue(undefined), discard: vi.fn() };
+      act(() => {
+        mcpProps.onRegisterSave(handle);
+        mcpProps.onDirtyChange(true);
+      });
+      expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('Unsaved changes to MCP servers');
+      expect(useAgentSettingsPages.getState().dirtyPages).toEqual(['mcp']);
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(handle.save).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+      expect(handle.discard).toHaveBeenCalled();
+    });
+
+    it('marks a page with an open skill editor without adding it to the bar', async () => {
+      renderSettings();
+      await screen.findByTestId('skills-section');
+      act(() => skillsProps.onDirtyChange(true));
+      expect(useAgentSettingsPages.getState().dirtyPages).toEqual(['skills']);
+      expect(screen.queryByTestId('agent-settings-save-bar')).not.toBeInTheDocument();
+    });
+
     it('saves quick agent defaults from the save bar', async () => {
       renderSettings();
-      act(() => useAgentSettingsPages.getState().setPage('quick'));
       fireEvent.change(await screen.findByLabelText('Extra instructions'), { target: { value: 'Be brief.' } });
       expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('quick agent defaults');
       fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -823,6 +879,50 @@ describe('AgentSettingsView', () => {
           '/project', 'agent-1', { quickAgentDefaults: { systemPrompt: 'Be brief.' } },
         );
       });
+    });
+
+    it('asks before leaving with unsaved edits', async () => {
+      const closeAgentSettings = vi.fn();
+      useAgentStore.setState({ closeAgentSettings });
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Unsaved' } });
+
+      act(() => requestCloseAgentSettings());
+      expect(closeAgentSettings).not.toHaveBeenCalled();
+      expect(await screen.findByText('Leave with unsaved changes?')).toBeInTheDocument();
+      expect(screen.getByText('Your changes to instructions will be lost.')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('confirm-destructive-cancel'));
+      expect(closeAgentSettings).not.toHaveBeenCalled();
+
+      act(() => requestCloseAgentSettings());
+      fireEvent.click(await screen.findByTestId('confirm-destructive-confirm'));
+      expect(closeAgentSettings).toHaveBeenCalled();
+    });
+
+    it('closes at once when nothing is unsaved', () => {
+      const closeAgentSettings = vi.fn();
+      useAgentStore.setState({ closeAgentSettings });
+      renderSettings();
+      act(() => requestCloseAgentSettings());
+      expect(closeAgentSettings).toHaveBeenCalled();
+    });
+
+    it('discards edits to managed files when local overrides are turned off', async () => {
+      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ clubhouseModeOverride: true });
+      renderSettings();
+      const toggle = await screen.findByRole('switch', { name: 'Local overrides' });
+      await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Unsaved' } });
+      fireEvent.change(screen.getByLabelText('Extra instructions'), { target: { value: 'Kept' } });
+
+      fireEvent.click(toggle);
+      await waitFor(() => expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('Unsaved changes to quick agent defaults'));
+      expect(screen.getByTestId('agent-settings-save-bar')).not.toHaveTextContent('instructions and');
+      expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual([
+        'Discarded unsaved changes to instructions. Clubhouse Mode manages them now.',
+      ]);
     });
 
     it('shows the launch wrapper states as plain words', async () => {
@@ -841,8 +941,9 @@ describe('AgentSettingsView', () => {
       useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
       renderSettings();
       act(() => useAgentSettingsPages.getState().setPage('skills'));
-      expect(await screen.findByTestId('agent-settings-managed')).toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: /Turn on local overrides in General/ }));
+      const page = screen.getByTestId('agent-settings-page-skills');
+      expect(within(page).getByTestId('agent-settings-managed')).toBeInTheDocument();
+      fireEvent.click(within(page).getByRole('button', { name: /Turn on local overrides in General/ }));
       expect(useAgentSettingsPages.getState().page).toBe('general');
     });
 
@@ -854,14 +955,21 @@ describe('AgentSettingsView', () => {
       expect(screen.getByTestId('utility-terminal')).toBeInTheDocument();
     });
 
-    it('publishes counts for the list pages', async () => {
-      window.clubhouse.agentSettings.listSkills = vi.fn().mockResolvedValue([{ name: 'a' }, { name: 'b' }]);
-      window.clubhouse.agentSettings.listAgentTemplateFiles = vi.fn().mockResolvedValue([{ name: 'r' }]);
-      window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockResolvedValue('{"mcpServers":{"x":{},"y":{},"z":{}}}');
+    it('takes sidebar counts from the sections and clears them under Clubhouse Mode', async () => {
       renderSettings();
-      await waitFor(() => {
-        expect(useAgentSettingsPages.getState().counts).toEqual({ skills: 2, definitions: 1, mcp: 3 });
+      await screen.findByTestId('skills-section');
+      act(() => {
+        skillsProps.onCountChange(2);
+        mcpProps.onCountChange(3);
       });
+      expect(useAgentSettingsPages.getState().counts).toEqual({ skills: 2, mcp: 3 });
+    });
+
+    it('clears counts when Clubhouse Mode manages the agent', () => {
+      useAgentSettingsPages.getState().setCount('skills', 4);
+      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
+      renderSettings();
+      expect(useAgentSettingsPages.getState().counts).toEqual({});
     });
   });
 

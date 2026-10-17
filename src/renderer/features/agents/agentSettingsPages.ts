@@ -1,3 +1,4 @@
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { create } from 'zustand';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -27,29 +28,31 @@ export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; labe
   { page: 'quick', label: 'Quick agents' },
 ];
 
-/** Pages whose text edits wait for the save bar. */
-export type AgentSettingsTextPage = 'instructions' | 'permissions' | 'quick';
-
 interface AgentSettingsPagesState {
   page: AgentSettingsPage;
-  /** Pages with unsaved text edits, in page order. */
-  dirtyPages: AgentSettingsTextPage[];
+  /** Pages with unsaved edits, in page order. The sidebar marks them. */
+  dirtyPages: AgentSettingsPage[];
   /** Items on the list pages, for the sidebar. Missing until loaded. */
   counts: Partial<Record<AgentSettingsPage, number>>;
   shellOpen: boolean;
+  /** Someone asked to leave settings while edits were unsaved; the view asks to confirm. */
+  leavePending: boolean;
   setPage: (page: AgentSettingsPage) => void;
-  setDirtyPages: (pages: AgentSettingsTextPage[]) => void;
+  setDirtyPages: (pages: AgentSettingsPage[]) => void;
   setCount: (page: AgentSettingsPage, count: number) => void;
+  clearCounts: () => void;
   setShellOpen: (open: boolean) => void;
+  setLeavePending: (pending: boolean) => void;
   /** Back to General with nothing dirty, for a newly opened agent. */
   reset: () => void;
 }
 
-const INITIAL: Pick<AgentSettingsPagesState, 'page' | 'dirtyPages' | 'counts' | 'shellOpen'> = {
+const INITIAL: Pick<AgentSettingsPagesState, 'page' | 'dirtyPages' | 'counts' | 'shellOpen' | 'leavePending'> = {
   page: 'general',
   dirtyPages: [],
   counts: {},
   shellOpen: false,
+  leavePending: false,
 };
 
 export const useAgentSettingsPages = create<AgentSettingsPagesState>((set, get) => ({
@@ -64,9 +67,59 @@ export const useAgentSettingsPages = create<AgentSettingsPagesState>((set, get) 
     if (get().counts[page] === count) return;
     set((s) => ({ counts: { ...s.counts, [page]: count } }));
   },
+  clearCounts: () => {
+    if (Object.keys(get().counts).length > 0) set({ counts: {} });
+  },
   setShellOpen: (shellOpen) => set({ shellOpen }),
+  setLeavePending: (leavePending) => set({ leavePending }),
   reset: () => set(INITIAL),
 }));
+
+/**
+ * Close agent settings, or ask first when edits are unsaved. The sidebar's
+ * back crumb, Esc and the classic Back button all come through here.
+ */
+export function requestCloseAgentSettings(): void {
+  if (useAgentSettingsPages.getState().dirtyPages.length > 0) {
+    useAgentSettingsPages.getState().setLeavePending(true);
+    return;
+  }
+  useAgentStore.getState().closeAgentSettings();
+}
+
+/** What a section hands the save bar so the bar can save or discard its edits. */
+export interface SaveHandle {
+  save: () => Promise<void>;
+  discard: () => void;
+}
+
+/**
+ * For a section that can join the pane's one save bar: registers stable
+ * save/discard functions that always call the section's latest ones.
+ */
+export function useSaveBarSlot(
+  register: ((handle: SaveHandle | null) => void) | undefined,
+  save: () => Promise<void>,
+  discard: () => void,
+): void {
+  const latest = useRef({ save, discard });
+  useLayoutEffect(() => {
+    latest.current = { save, discard };
+  });
+  useEffect(() => {
+    if (!register) return;
+    register({ save: () => latest.current.save(), discard: () => latest.current.discard() });
+    return () => register(null);
+  }, [register]);
+}
+
+/** Tells the parent whether a section holds unsaved edits, and clears that when it unmounts. */
+export function useReportDirty(onDirtyChange: ((dirty: boolean) => void) | undefined, dirty: boolean): void {
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [onDirtyChange, dirty]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+}
 
 /**
  * The agent whose settings fill the pane, or null. Mirrors MainContentView:

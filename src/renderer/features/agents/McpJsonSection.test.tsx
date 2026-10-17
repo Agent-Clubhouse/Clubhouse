@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { McpJsonSection } from './McpJsonSection';
 
@@ -157,5 +157,41 @@ describe('McpJsonSection', () => {
     renderSection();
 
     expect(await screen.findByText(warning)).toBeInTheDocument();
+  });
+
+  describe('in the agent settings save bar', () => {
+    it('drops its own Save, reports dirty and the server count, and saves through the handle', async () => {
+      window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockResolvedValue('{"mcpServers":{"a":{},"b":{}}}');
+      const onRegisterSave = vi.fn();
+      const onDirtyChange = vi.fn();
+      const onCountChange = vi.fn();
+      renderSection({ onRegisterSave, onDirtyChange, onCountChange });
+      await screen.findByText('MCP servers');
+      expect(screen.queryByText('Save')).not.toBeInTheDocument();
+      expect(onCountChange).toHaveBeenCalledWith(2);
+
+      fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{"mcpServers":{"a":{}}}' } });
+      expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+      const handle = onRegisterSave.mock.calls[0][0];
+      await act(() => handle.save());
+      expect(window.clubhouse.agentSettings.writeMcpRawJson).toHaveBeenCalledWith('/project', '{"mcpServers":{"a":{}}}', undefined);
+      expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+      expect(onCountChange).toHaveBeenLastCalledWith(1);
+    });
+
+    it('rejects when the write fails or the JSON is invalid, so the bar can say so', async () => {
+      window.clubhouse.agentSettings.writeMcpRawJson = vi.fn().mockResolvedValue({ ok: false, error: 'Permission denied' });
+      const onRegisterSave = vi.fn();
+      renderSection({ onRegisterSave });
+      await screen.findByText('MCP servers');
+      const handle = onRegisterSave.mock.calls[0][0];
+
+      fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{"mcpServers":{}} ' } });
+      await expect(act(() => handle.save())).rejects.toThrow('Permission denied');
+
+      fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{bad' } });
+      await expect(act(() => handle.save())).rejects.toThrow();
+    });
   });
 });

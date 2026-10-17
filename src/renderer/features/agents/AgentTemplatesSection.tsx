@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { AgentTemplateEntry } from '../../../shared/types';
 import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
+import { Button } from '../../components/Button';
+import { useReportDirty } from './agentSettingsPages';
 import {
   getPluginAgentTemplatesByPlugin,
   onTemplateRegistryChange,
@@ -16,16 +18,21 @@ interface Props {
   pathLabel?: string;
   /** The page title already names the section (agent settings pages in the new chrome). */
   hideTitle?: boolean;
+  /** Whether an open editor holds unsaved edits. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** Items in the list, for the sidebar. */
+  onCountChange?: (count: number) => void;
   onCreateFromPluginTemplate?: (template: RegisteredPluginAgentTemplate) => void;
 }
 
 type View = 'list' | 'create' | 'edit';
 
-export function AgentTemplatesSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, hideTitle, onCreateFromPluginTemplate }: Props) {
+export function AgentTemplatesSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, hideTitle, onDirtyChange, onCountChange, onCreateFromPluginTemplate }: Props) {
   const [templates, setTemplates] = useState<AgentTemplateEntry[]>([]);
   const [view, setView] = useState<View>('list');
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState('');
+  const [editorInitial, setEditorInitial] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -40,14 +47,18 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
     try {
       const list = await window.clubhouse.agentSettings.listAgentTemplateFiles(worktreePath, projectPath);
       setTemplates(list);
+      onCountChange?.(list.length);
     } catch {
       setTemplates([]);
     }
-  }, [worktreePath, projectPath]);
+  }, [worktreePath, projectPath, onCountChange]);
 
   useEffect(() => {
     loadTemplates();
   }, [loadTemplates, refreshKey]);
+
+  const editorDirty = view !== 'list' && (editorContent !== editorInitial || (view === 'create' && templateName.trim() !== ''));
+  useReportDirty(onDirtyChange, editorDirty);
 
   // Subscribe to plugin template registry changes
   useEffect(() => {
@@ -61,12 +72,14 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
     setView('create');
     setTemplateName('');
     setEditorContent('# Agent Name\n\nDescribe what this agent does and its capabilities.\n');
+    setEditorInitial('# Agent Name\n\nDescribe what this agent does and its capabilities.\n');
   };
 
   const handleEdit = async (name: string) => {
     const content = await window.clubhouse.agentSettings.readAgentTemplateContent(worktreePath, name, projectPath);
     setEditingTemplate(name);
     setEditorContent(content);
+    setEditorInitial(content);
     setView('edit');
   };
 
@@ -110,23 +123,19 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
             {isCreate ? 'New agent definition' : `Edit: ${editingTemplate}`}
           </h3>
           <div className="flex gap-2">
-            <button
+            <Button
+              kind="quiet"
               onClick={() => { setView('list'); setEditingTemplate(null); }}
-              className="h-7 px-2.5 rounded-md text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
+              kind="primary"
               onClick={isCreate ? handleSaveNew : handleSaveEdit}
               disabled={saving || (isCreate && !templateName.trim())}
-              className={`h-7 px-2.5 rounded-md text-xs font-medium transition-colors ${
-                saving || (isCreate && !templateName.trim())
-                  ? 'bg-surface-0 text-ctp-overlay0 cursor-default'
-                  : 'bg-ctp-accent text-ctp-crust hover:bg-ctp-accent/85 cursor-pointer'
-              }`}
             >
               {saving ? 'Saving…' : 'Save'}
-            </button>
+            </Button>
           </div>
         </div>
         {isCreate && (
@@ -159,13 +168,13 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
           {!hideTitle && <h3 className="text-[13px] font-semibold text-ctp-text">Agent definitions</h3>}
           <span className="text-xs text-ctp-overlay1 font-mono">{pathLabel || '.claude/agents/'}</span>
         </div>
-        <button
+        <Button
+          kind="ghost"
           onClick={handleCreate}
           disabled={disabled}
-          className="h-7 px-2.5 rounded-md border border-surface-1 text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           New definition
-        </button>
+        </Button>
       </div>
 
       {/* Built-in (filesystem) templates */}
@@ -189,31 +198,31 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
                 {tpl.name}
               </button>
               <div className="flex gap-1 flex-shrink-0 ml-2">
-                <button
+                <Button
+                  kind="quiet"
                   onClick={() => handleOpenFolder(tpl.path)}
-                  className="text-ctp-subtext0 hover:text-ctp-text p-1 cursor-pointer transition-colors"
                   title="Open in file manager"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                  </svg>
-                </button>
-                <button
+                  aria-label="Open in file manager"
+                  icon={(
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                  )}
+                />
+                <Button
+                  kind="quiet"
                   onClick={() => setDeleteTarget(tpl.name)}
                   disabled={disabled}
-                  className={`p-1 transition-colors ${
-                    disabled
-                      ? 'text-ctp-subtext0/30 cursor-not-allowed'
-                      : 'text-ctp-subtext0 hover:text-ctp-error cursor-pointer'
-                  }`}
                   title="Delete agent definition"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 6h18" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                </button>
+                  aria-label="Delete agent definition"
+                  icon={(
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 6h18" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  )}
+                />
               </div>
             </div>
           ))}
@@ -252,18 +261,14 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
                       )}
                     </div>
                   </div>
-                  <button
+                  <Button
+                    kind="ghost"
                     onClick={() => onCreateFromPluginTemplate?.(entry)}
                     disabled={disabled}
-                    className={`text-xs px-2 py-1 rounded transition-colors flex-shrink-0 ml-2 ${
-                      disabled
-                        ? 'bg-surface-0 text-ctp-overlay0 cursor-not-allowed'
-                        : 'border border-surface-1 text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer'
-                    }`}
                     title="Create agent from this template"
                   >
                     Create
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
@@ -284,18 +289,18 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
               This will permanently delete the agent definition and cannot be undone.
             </p>
             <div className="flex justify-end gap-2">
-              <button
+              <Button
+                kind="quiet"
                 onClick={() => setDeleteTarget(null)}
-                className="text-xs px-3 py-1.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                kind="danger-solid"
                 onClick={() => handleDelete(deleteTarget)}
-                className="text-xs px-3 py-1.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30 cursor-pointer transition-colors border border-ctp-error/30"
               >
                 Delete
-              </button>
+              </Button>
             </div>
           </div>
         </div>

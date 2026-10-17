@@ -24,12 +24,16 @@ import { PERSONA_TEMPLATES } from '../personas';
 import type { AgentRuntimeMode } from '../../../shared/chat';
 import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
+import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
+import { useToastStore } from '../../stores/toastStore';
+import { reportChromeActionFailed } from '../../chrome/telemetry';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import {
   AGENT_SETTINGS_PAGES,
   useAgentSettingsPages,
   type AgentSettingsPage,
-  type AgentSettingsTextPage,
+  requestCloseAgentSettings,
+  type SaveHandle,
 } from './agentSettingsPages';
 import { Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
 
@@ -484,6 +488,16 @@ export function AgentSettingsView({ agent }: Props) {
 
   const handleClubhouseOverrideChange = async (enabled: boolean) => {
     if (!projectPath) return;
+    if (!enabled) {
+      // Clubhouse Mode takes these files over, so unsaved edits to them can't be saved any more.
+      const managed = barItems.filter((i) => i.key === 'instructions' || i.key === 'mcp' || i.key === 'permissions');
+      const openEditors = [sectionDirty.skills && 'skills', sectionDirty.definitions && 'agent definitions'].filter(Boolean) as string[];
+      for (const item of managed) item.discard();
+      const dropped = [...managed.map((i) => i.name), ...openEditors];
+      if (dropped.length > 0) {
+        useToastStore.getState().addToast(`Discarded unsaved changes to ${joinNames(dropped)}. Clubhouse Mode manages them now.`, 'info');
+      }
+    }
     setClubhouseModeOverride(enabled);
     await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { clubhouseModeOverride: enabled });
   };
@@ -719,10 +733,13 @@ export function AgentSettingsView({ agent }: Props) {
     const writePath = worktreePath || projectPath;
     if (!writePath || !projectPath) return;
     setInstructionsSaving(true);
-    await window.clubhouse.agentSettings.saveInstructions(writePath, instructions, projectPath);
-    setInstructionsBase(instructions);
-    setInstructionsDirty(false);
-    setInstructionsSaving(false);
+    try {
+      await window.clubhouse.agentSettings.saveInstructions(writePath, instructions, projectPath);
+      setInstructionsBase(instructions);
+      setInstructionsDirty(false);
+    } finally {
+      setInstructionsSaving(false);
+    }
   };
 
   const handleSavePermissions = async () => {
@@ -731,13 +748,16 @@ export function AgentSettingsView({ agent }: Props) {
     setPermSaving(true);
     const allow = permAllow.split('\n').map((l) => l.trim()).filter(Boolean);
     const deny = permDeny.split('\n').map((l) => l.trim()).filter(Boolean);
-    await window.clubhouse.agentSettings.savePermissions(writePath, {
-      allow: allow.length > 0 ? allow : undefined,
-      deny: deny.length > 0 ? deny : undefined,
-    }, projectPath);
-    setPermBase({ allow: permAllow, deny: permDeny });
-    setPermDirty(false);
-    setPermSaving(false);
+    try {
+      await window.clubhouse.agentSettings.savePermissions(writePath, {
+        allow: allow.length > 0 ? allow : undefined,
+        deny: deny.length > 0 ? deny : undefined,
+      }, projectPath);
+      setPermBase({ allow: permAllow, deny: permDeny });
+      setPermDirty(false);
+    } finally {
+      setPermSaving(false);
+    }
   };
 
   const handleOpenAgentRoot = () => {
@@ -771,45 +791,105 @@ export function AgentSettingsView({ agent }: Props) {
     const resolvedQadModel = qadDefaultModel === 'custom' ? qadCustomModel.trim() : qadDefaultModel;
     if (resolvedQadModel && resolvedQadModel !== 'default') defaults.defaultModel = resolvedQadModel;
     if (qadFreeAgentMode) defaults.freeAgentMode = true;
-    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { quickAgentDefaults: defaults });
-    setQadBase({
-      systemPrompt: qadSystemPrompt,
-      allowedTools: qadAllowedTools,
-      savedModel: resolvedQadModel && resolvedQadModel !== 'default' ? resolvedQadModel : '',
-      freeAgentMode: qadFreeAgentMode,
-    });
-    setQadDirty(false);
-    setQadSaving(false);
+    try {
+      await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { quickAgentDefaults: defaults });
+      setQadBase({
+        systemPrompt: qadSystemPrompt,
+        allowedTools: qadAllowedTools,
+        savedModel: resolvedQadModel && resolvedQadModel !== 'default' ? resolvedQadModel : '',
+        freeAgentMode: qadFreeAgentMode,
+      });
+      setQadDirty(false);
+    } finally {
+      setQadSaving(false);
+    }
   };
 
-  // ── One save bar for text edits ────────────────────────────────
+  // ── One save bar ───────────────────────────────────────────────
+  //
+  // Text edits on this view (instructions, permissions, quick agent defaults)
+  // and the sections that join the bar (.mcp.json, wildcards) save and discard
+  // together. Skills and agent definition editors keep their own Save and
+  // Cancel, but their open edits still mark the page and guard leaving.
+
+  const [sectionDirty, setSectionDirty] = useState<Record<SectionKey, boolean>>(NO_SECTION_DIRTY);
+  const sectionHandles = useRef<Partial<Record<BarSectionKey, SaveHandle>>>({});
+  const sectionCallbacks = useMemo(() => {
+    const dirty = (key: SectionKey) => (d: boolean) => setSectionDirty((prev) => (prev[key] === d ? prev : { ...prev, [key]: d }));
+    const register = (key: BarSectionKey) => (handle: SaveHandle | null) => {
+      if (handle) sectionHandles.current[key] = handle;
+      else delete sectionHandles.current[key];
+    };
+    const count = (p: AgentSettingsPage) => (n: number) => setCount(p, n);
+    return {
+      mcpDirty: dirty('mcp'), wildcardsDirty: dirty('wildcards'), skillsDirty: dirty('skills'), definitionsDirty: dirty('definitions'),
+      mcpRegister: register('mcp'), wildcardsRegister: register('wildcards'),
+      skillsCount: count('skills'), definitionsCount: count('definitions'), mcpCount: count('mcp'),
+    };
+  }, [setCount]);
+
+  /** What the bar saves and discards, in page order. */
+  const barItems: BarItem[] = [];
+  if (sectionDirty.wildcards) barItems.push({ key: 'wildcards', name: 'wildcards', save: () => sectionHandles.current.wildcards?.save() ?? Promise.resolve(), discard: () => sectionHandles.current.wildcards?.discard() });
+  if (instructionsDirty) barItems.push({ key: 'instructions', name: 'instructions', save: handleSaveInstructions, discard: () => discardInstructions() });
+  if (sectionDirty.mcp) barItems.push({ key: 'mcp', name: 'MCP servers', save: () => sectionHandles.current.mcp?.save() ?? Promise.resolve(), discard: () => sectionHandles.current.mcp?.discard() });
+  if (permDirty) barItems.push({ key: 'permissions', name: 'permissions', save: handleSavePermissions, discard: () => discardPermissions() });
+  if (qadDirty) barItems.push({ key: 'quick', name: 'quick agent defaults', save: handleSaveQad, discard: () => discardQad() });
 
   const dirtyPages = useMemo(() => {
-    const pages: AgentSettingsTextPage[] = [];
-    if (instructionsDirty) pages.push('instructions');
-    if (permDirty) pages.push('permissions');
-    if (qadDirty) pages.push('quick');
-    return pages;
-  }, [instructionsDirty, permDirty, qadDirty]);
+    const dirty = new Set<AgentSettingsPage>();
+    if (sectionDirty.wildcards) dirty.add('general');
+    if (instructionsDirty) dirty.add('instructions');
+    if (sectionDirty.skills) dirty.add('skills');
+    if (sectionDirty.definitions) dirty.add('definitions');
+    if (sectionDirty.mcp) dirty.add('mcp');
+    if (permDirty) dirty.add('permissions');
+    if (qadDirty) dirty.add('quick');
+    return AGENT_SETTINGS_PAGES.map((p) => p.page).filter((p) => dirty.has(p));
+  }, [sectionDirty, instructionsDirty, permDirty, qadDirty]);
 
   useEffect(() => {
     setDirtyPages(dirtyPages);
   }, [dirtyPages, setDirtyPages]);
 
-  const saving = instructionsSaving || permSaving || qadSaving;
+  const [savingAll, setSavingAll] = useState(false);
+  const saving = savingAll || instructionsSaving || permSaving || qadSaving;
 
+  /** Saves every item; one failure doesn't stop the rest, and the toast says which saved. */
   const handleSaveAll = async () => {
-    if (instructionsDirty) await handleSaveInstructions();
-    if (permDirty) await handleSavePermissions();
-    if (qadDirty) await handleSaveQad();
+    setSavingAll(true);
+    const saved: string[] = [];
+    const failed: string[] = [];
+    for (const item of barItems) {
+      try {
+        await item.save();
+        saved.push(item.name);
+      } catch (err) {
+        failed.push(item.name);
+        reportChromeActionFailed('agent_settings_save', err);
+      }
+    }
+    setSavingAll(false);
+    if (failed.length > 0) {
+      useToastStore.getState().addToast(
+        saved.length > 0
+          ? `Saved ${joinNames(saved)}. Couldn't save ${joinNames(failed)}.`
+          : `Couldn't save ${joinNames(failed)}.`,
+        'error',
+      );
+    }
   };
 
-  const handleDiscard = () => {
+  const discardInstructions = () => {
     setInstructions(instructionsBase);
     setInstructionsDirty(false);
+  };
+  const discardPermissions = () => {
     setPermAllow(permBase.allow);
     setPermDeny(permBase.deny);
     setPermDirty(false);
+  };
+  const discardQad = () => {
     setQadSystemPrompt(qadBase.systemPrompt);
     setQadAllowedTools(qadBase.allowedTools);
     setQadFreeAgentMode(qadBase.freeAgentMode);
@@ -824,30 +904,25 @@ export function AgentSettingsView({ agent }: Props) {
     setQadDirty(false);
   };
 
-  // ── Sidebar counts (new chrome) ────────────────────────────────
+  const handleDiscard = () => {
+    for (const item of barItems) item.discard();
+  };
 
+  // ── Leaving with unsaved edits ─────────────────────────────────
+
+  const leavePending = useAgentSettingsPages((s) => s.leavePending);
+  const setLeavePending = useAgentSettingsPages((s) => s.setLeavePending);
+  const dirtyPageNames = dirtyPages.map((p) => AGENT_SETTINGS_PAGES.find((x) => x.page === p)?.label ?? p);
+
+  // ── Sidebar counts ─────────────────────────────────────────────
+  //
+  // The sections report their own counts as they load and change. Clubhouse
+  // Mode hides those sections, so their counts no longer apply.
+
+  const clearCounts = useAgentSettingsPages((s) => s.clearCounts);
   useEffect(() => {
-    if (!pageMode || !worktreePath || isManagedByClubhouse) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const [skills, definitions, mcpRaw] = await Promise.all([
-          window.clubhouse.agentSettings.listSkills(worktreePath, projectPath),
-          window.clubhouse.agentSettings.listAgentTemplateFiles(worktreePath, projectPath),
-          window.clubhouse.agentSettings.readMcpRawJson(worktreePath, projectPath),
-        ]);
-        if (cancelled) return;
-        setCount('skills', skills.length);
-        setCount('definitions', definitions.length);
-        const servers = (JSON.parse(mcpRaw) as { mcpServers?: Record<string, unknown> }).mcpServers;
-        setCount('mcp', servers && typeof servers === 'object' ? Object.keys(servers).length : 0);
-      } catch {
-        // telemetry-exempt: the sidebar counts are optional; the pages report their own load failures
-      }
-    })();
-    return () => { cancelled = true; };
-    // Re-count when a page changes, so edits on the Skills page show on return.
-  }, [pageMode, worktreePath, projectPath, isManagedByClubhouse, refreshKey, page, setCount]);
+    if (isManagedByClubhouse) clearCounts();
+  }, [isManagedByClubhouse, clearCounts]);
 
   // ── Pieces ─────────────────────────────────────────────────────
 
@@ -1045,7 +1120,7 @@ export function AgentSettingsView({ agent }: Props) {
         </select>
       </Field>
       <Field
-        label="Free agent mode"
+        label="Free Agent Mode"
         help={freeAgentMode && permissionsSupported
           ? <span className="text-ctp-error">This agent runs with full access and no tool approvals.</span>
           : freeAgentModeHelp}
@@ -1055,7 +1130,7 @@ export function AgentSettingsView({ agent }: Props) {
           checked={freeAgentMode}
           onChange={handleFreeAgentModeChange}
           disabled={isRunning || !permissionsSupported}
-          aria-label="Free agent mode"
+          aria-label="Free Agent Mode"
         />
       </Field>
 
@@ -1086,6 +1161,8 @@ export function AgentSettingsView({ agent }: Props) {
                 agentId={agent.id}
                 disabled={isRunning}
                 refreshKey={refreshKey}
+                onDirtyChange={sectionCallbacks.wildcardsDirty}
+                onRegisterSave={sectionCallbacks.wildcardsRegister}
               />
             </div>
           )}
@@ -1203,6 +1280,8 @@ export function AgentSettingsView({ agent }: Props) {
       refreshKey={refreshKey}
       pathLabel={skillsPathLabel}
       hideTitle={pageMode}
+      onDirtyChange={sectionCallbacks.skillsDirty}
+      onCountChange={sectionCallbacks.skillsCount}
     />
   );
 
@@ -1215,6 +1294,8 @@ export function AgentSettingsView({ agent }: Props) {
       pathLabel={agentTemplatesPathLabel}
       onCreateFromPluginTemplate={handleCreateFromPluginTemplate}
       hideTitle={pageMode}
+      onDirtyChange={sectionCallbacks.definitionsDirty}
+      onCountChange={sectionCallbacks.definitionsCount}
     />
   );
 
@@ -1227,6 +1308,9 @@ export function AgentSettingsView({ agent }: Props) {
         refreshKey={refreshKey}
         pathLabel={mcpPathLabel}
         hideTitle={pageMode}
+        onDirtyChange={sectionCallbacks.mcpDirty}
+        onRegisterSave={sectionCallbacks.mcpRegister}
+        onCountChange={sectionCallbacks.mcpCount}
       />
       {mcpLoaded && mcpCatalog.length > 0 && (
         <div data-testid="agent-settings-launch-wrapper">
@@ -1305,14 +1389,14 @@ export function AgentSettingsView({ agent }: Props) {
         </select>
       </Field>
       <Field
-        label="Free agent mode"
+        label="Free Agent Mode"
         help={permissionsSupported ? 'Quick agents skip permission prompts.' : `Not supported by ${orchestratorName}.`}
       >
         <Toggle
           checked={qadFreeAgentMode}
           onChange={(v) => { setQadFreeAgentMode(v); setQadDirty(true); }}
           disabled={isRunning || !permissionsSupported}
-          aria-label="Quick agent free agent mode"
+          aria-label="Quick agent Free Agent Mode"
         />
       </Field>
       <div className="h-2.5" />
@@ -1354,7 +1438,6 @@ export function AgentSettingsView({ agent }: Props) {
 
   let body: React.ReactNode;
   if (pageMode) {
-    const title = AGENT_SETTINGS_PAGES.find((p) => p.page === page)?.label ?? 'General';
     const sub: Record<AgentSettingsPage, React.ReactNode> = {
       general: `How ${agent.name} looks and what it runs on`,
       instructions: <><span className="font-mono">{instructionsFileLabel}</span> in the agent worktree</>,
@@ -1364,7 +1447,6 @@ export function AgentSettingsView({ agent }: Props) {
       permissions: <span className="font-mono">{permissionsPathLabel}</span>,
       quick: `Defaults for quick agents ${agent.name} starts`,
     };
-    const managedPage = isManagedByClubhouse && page !== 'general' && page !== 'quick';
     const content: Record<AgentSettingsPage, React.ReactNode> = {
       general,
       instructions: instructionsEditor,
@@ -1374,12 +1456,17 @@ export function AgentSettingsView({ agent }: Props) {
       permissions: permissionsEditor,
       quick: quickDefaults,
     };
-    body = (
-      <div data-testid={`agent-settings-page-${page}`}>
-        <PageTitle title={title} sub={sub[page]} right={reloadButton} />
-        {managedPage ? managedNote : content[page]}
-      </div>
-    );
+    // Every page stays mounted and only the selected one shows, so edits held
+    // inside a page (an open skill editor, .mcp.json) survive a page switch.
+    body = AGENT_SETTINGS_PAGES.map(({ page: p, label }) => {
+      const managed = isManagedByClubhouse && p !== 'general' && p !== 'quick';
+      return (
+        <div key={p} data-testid={`agent-settings-page-${p}`} hidden={p !== page}>
+          <PageTitle title={label} sub={sub[p]} right={p === page ? reloadButton : undefined} />
+          {managed ? managedNote : content[p]}
+        </div>
+      );
+    });
   } else {
     body = (
       <>
@@ -1401,7 +1488,6 @@ export function AgentSettingsView({ agent }: Props) {
     );
   }
 
-  const dirtyNames = dirtyPages.map((p) => DIRTY_PAGE_NAME[p]);
 
   return (
     <div data-testid="agent-settings" className="h-full flex flex-col bg-ctp-base overflow-hidden">
@@ -1410,7 +1496,7 @@ export function AgentSettingsView({ agent }: Props) {
         <div className="h-10 flex items-center gap-2.5 px-4 border-b border-surface-0 flex-shrink-0">
           <button
             type="button"
-            onClick={closeAgentSettings}
+            onClick={requestCloseAgentSettings}
             className="w-7 h-7 -ml-1.5 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
             title="Back"
             aria-label="Back"
@@ -1434,13 +1520,13 @@ export function AgentSettingsView({ agent }: Props) {
         </div>
       </div>
 
-      {dirtyPages.length > 0 && (
+      {barItems.length > 0 && (
         <div
           data-testid="agent-settings-save-bar"
           className={`h-12 flex-shrink-0 flex items-center gap-2 pr-6 border-t border-surface-0 bg-ctp-mantle text-[13px] ${pageMode ? 'pl-10' : 'pl-6'}`}
         >
           <span className="w-2 h-2 rounded-full flex-shrink-0 bg-ctp-warning" aria-hidden="true" />
-          <span className="text-ctp-text truncate">Unsaved changes to {joinNames(dirtyNames)}</span>
+          <span className="text-ctp-text truncate">Unsaved changes to {joinNames(barItems.map((i) => i.name))}</span>
           <div className="ml-auto flex items-center gap-1.5">
             <Button kind="quiet" onClick={handleDiscard} disabled={saving}>
               Discard
@@ -1487,6 +1573,18 @@ export function AgentSettingsView({ agent }: Props) {
         />
       )}
 
+      <ConfirmDestructiveAction
+        open={leavePending}
+        title="Leave with unsaved changes?"
+        description={`Your changes to ${joinNames(dirtyPageNames.map((n) => (n.startsWith('MCP') ? n : n.toLowerCase())))} will be lost.`}
+        confirmLabel="Leave"
+        onCancel={() => setLeavePending(false)}
+        onConfirm={() => {
+          setLeavePending(false);
+          closeAgentSettings();
+        }}
+      />
+
       {pendingPluginTemplate && (
         <TemplateConfigDialog
           persona={{
@@ -1505,11 +1603,19 @@ export function AgentSettingsView({ agent }: Props) {
   );
 }
 
-const DIRTY_PAGE_NAME: Record<AgentSettingsTextPage, string> = {
-  instructions: 'instructions',
-  permissions: 'permissions',
-  quick: 'quick agent defaults',
-};
+/** Sections that hold their own edits. */
+type SectionKey = 'mcp' | 'wildcards' | 'skills' | 'definitions';
+/** Sections whose edits the save bar saves. */
+type BarSectionKey = 'mcp' | 'wildcards';
+const NO_SECTION_DIRTY: Record<SectionKey, boolean> = { mcp: false, wildcards: false, skills: false, definitions: false };
+
+interface BarItem {
+  key: 'wildcards' | 'instructions' | 'mcp' | 'permissions' | 'quick';
+  /** How the bar and its toast name it. */
+  name: string;
+  save: () => Promise<void>;
+  discard: () => void;
+}
 
 /** "a", "a and b", "a, b and c". */
 function joinNames(names: string[]): string {

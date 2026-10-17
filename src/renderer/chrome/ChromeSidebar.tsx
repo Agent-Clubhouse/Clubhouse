@@ -16,6 +16,7 @@ import { NeedsYou, NeedsYouStrip } from './sidebar/NeedsYou';
 import { ListBody } from './sidebar/ListBody';
 import { SettingsNav } from './sidebar/SettingsNav';
 import { AgentSettingsNav } from './sidebar/AgentSettingsNav';
+import { requestCloseAgentSettings } from '../features/agents/agentSettingsPages';
 import { SidebarBreadcrumb } from './sidebar/SidebarBreadcrumb';
 import { useSidebarMode } from './listTabs';
 import { SCOPE_FOLLOWING_TABS } from './scope';
@@ -422,7 +423,7 @@ export function ChromeSidebar() {
   // The breadcrumb, or Esc inside the sidebar, returns from a list or Settings to Agents (spec §4.6).
   const backToAgents = () => {
     if (mode === 'settings') useUIStore.getState().toggleSettings();
-    else if (mode === 'agent-settings') useAgentStore.getState().closeAgentSettings();
+    else if (mode === 'agent-settings') requestCloseAgentSettings();
     else setExplorerTab('agents', activeProjectId ?? undefined);
   };
   const agentSettingsName = useAgentStore((s) => (mode === 'agent-settings' && s.activeAgentId ? s.agents[s.activeAgentId]?.name : undefined));

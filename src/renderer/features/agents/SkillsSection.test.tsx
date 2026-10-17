@@ -214,4 +214,24 @@ describe('SkillsSection', () => {
       expect(window.clubhouse.file.showInFolder).toHaveBeenCalledWith('/project/.claude/skills/mission');
     });
   });
+
+  describe('reporting to agent settings', () => {
+    it('reports the count and whether an open editor has edits', async () => {
+      const onDirtyChange = vi.fn();
+      const onCountChange = vi.fn();
+      renderSkills({ onDirtyChange, onCountChange });
+      await screen.findByText('mission');
+      expect(onCountChange).toHaveBeenCalledWith(2);
+      expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+
+      fireEvent.click(screen.getByText('mission'));
+      await screen.findByText('Edit: mission');
+      expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+      fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '# Changed' } });
+      expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+      fireEvent.click(screen.getByText('Cancel'));
+      await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+    });
+  });
 });

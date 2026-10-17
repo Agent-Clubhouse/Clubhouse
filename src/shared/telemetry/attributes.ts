@@ -327,6 +327,7 @@ export const ATTR = {
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [
     'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save', 'agent_create', 'agent_start', 'shortcut_save', 'reorder_agents',
+    'agent_settings_save',
   ]),
   // App lifecycle (§4.1, Phase 3b)
   shutdownStep: enumAttr('clubhouse.shutdown.step', [

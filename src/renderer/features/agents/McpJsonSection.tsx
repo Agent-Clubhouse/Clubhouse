@@ -1,5 +1,18 @@
 import { useEffect, useState, useCallback } from 'react';
 import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
+import { Button } from '../../components/Button';
+import { useReportDirty, useSaveBarSlot, type SaveHandle } from './agentSettingsPages';
+
+/** Servers in an .mcp.json text, or undefined when it doesn't parse. */
+function countServers(raw: string): number | undefined {
+  try {
+    const servers = (JSON.parse(raw) as { mcpServers?: unknown }).mcpServers;
+    return servers && typeof servers === 'object' ? Object.keys(servers).length : 0;
+  } catch {
+    // telemetry-exempt: invalid JSON is shown in the editor; it only means no count
+    return undefined;
+  }
+}
 
 interface Props {
   worktreePath: string;
@@ -9,9 +22,15 @@ interface Props {
   pathLabel?: string;
   /** The page title already names the section (agent settings pages in the new chrome). */
   hideTitle?: boolean;
+  /** Whether the editor holds unsaved edits. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** Joins the agent settings save bar; the section then drops its own Save button. */
+  onRegisterSave?: (handle: SaveHandle | null) => void;
+  /** Servers in the saved file, for the sidebar. */
+  onCountChange?: (count: number) => void;
 }
 
-export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, hideTitle }: Props) {
+export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, hideTitle, onDirtyChange, onRegisterSave, onCountChange }: Props) {
   const [content, setContent] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -27,6 +46,8 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
         window.clubhouse.agentSettings.getMcpShadowWarning(worktreePath, projectPath),
       ]);
       setContent(raw);
+      const count = countServers(raw);
+      if (count !== undefined) onCountChange?.(count);
       setWarning(shadowWarning ?? null);
       setLoaded(true);
       setDirty(false);
@@ -38,7 +59,7 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
       setDirty(false);
       setError(err instanceof Error ? err.message : 'Failed to read MCP config');
     }
-  }, [worktreePath, projectPath]);
+  }, [worktreePath, projectPath, onCountChange]);
 
   useEffect(() => {
     loadContent();
@@ -56,18 +77,33 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
     }
   };
 
+  /** Throws when the file can't be written, so the save bar can say so. */
   const handleSave = async () => {
     if (!worktreePath || !dirty) return;
+    if (countServers(content) === undefined) throw new Error(error || 'Invalid JSON');
     setSaving(true);
-    const result = await window.clubhouse.agentSettings.writeMcpRawJson(worktreePath, content, projectPath);
-    if (result.ok) {
+    try {
+      const result = await window.clubhouse.agentSettings.writeMcpRawJson(worktreePath, content, projectPath);
+      if (!result.ok) {
+        setError(result.error || 'Failed to save');
+        throw new Error(result.error || 'Failed to save');
+      }
       setDirty(false);
       setError(null);
-    } else {
-      setError(result.error || 'Failed to save');
+      const count = countServers(content);
+      if (count !== undefined) onCountChange?.(count);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
+
+  // The section's own Save button keeps its old behaviour: failures show under the editor.
+  const handleOwnSave = () => {
+    handleSave().catch(() => { /* telemetry-exempt: the error is shown under the editor */ });
+  };
+
+  useReportDirty(onDirtyChange, dirty);
+  useSaveBarSlot(onRegisterSave, handleSave, () => { void loadContent(); });
 
   if (!loaded) return null;
 
@@ -78,19 +114,11 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
           {!hideTitle && <h3 className="text-[13px] font-semibold text-ctp-text">MCP servers</h3>}
           <span className="text-xs text-ctp-overlay1 font-mono">{pathLabel || '.mcp.json'}</span>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={disabled || !dirty || saving || !!error}
-          className={`h-7 px-2.5 rounded-md text-xs font-medium transition-colors ${
-            disabled
-              ? 'bg-surface-0 text-ctp-overlay0 cursor-not-allowed'
-              : dirty && !error
-                ? 'bg-ctp-accent text-ctp-crust hover:bg-ctp-accent/85 cursor-pointer'
-                : 'bg-surface-0 text-ctp-overlay0 cursor-default'
-          }`}
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+        {!onRegisterSave && (
+          <Button kind={dirty && !error ? 'primary' : 'ghost'} onClick={handleOwnSave} disabled={disabled || !dirty || saving || !!error}>
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+        )}
       </div>
 
       <SettingsMonacoEditor
