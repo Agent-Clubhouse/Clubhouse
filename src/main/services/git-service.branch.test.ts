@@ -262,6 +262,25 @@ describe('git branch against main', { timeout: 30_000 }, () => {
     expect(open).toHaveBeenCalledTimes(2);
   });
 
+  it('opens the pull request of the branch\'s upstream remote, not origin\'s', async () => {
+    git('remote', 'add', 'origin', 'https://github.com/upstream-org/Clubhouse.git');
+    git('remote', 'add', 'fork', 'git@github.com:me/Clubhouse.git');
+    git('checkout', '-q', '-b', 'agent/work');
+    git('config', 'branch.agent/work.remote', 'fork');
+    const open = vi.fn(async () => {});
+    // The URL getPullRequestInfo builds is the fork's; main must accept it.
+    expect(await openPullRequest(repo, 'https://github.com/me/Clubhouse/compare/main...agent%2Fwork?expand=1', open)).toMatchObject({ ok: true });
+    expect(await openPullRequest(repo, 'https://github.com/upstream-org/Clubhouse/pull/3', open)).toMatchObject({ ok: false });
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the normalized URL it checked, not the raw string', async () => {
+    git('remote', 'add', 'origin', 'git@github.com:Agent-Clubhouse/Clubhouse.git');
+    const open = vi.fn(async (_u: string) => {});
+    await openPullRequest(repo, 'https://GITHUB.com/Agent-Clubhouse/Clubhouse/pull/12', open);
+    expect(open).toHaveBeenCalledWith('https://github.com/Agent-Clubhouse/Clubhouse/pull/12');
+  });
+
   it('reads GitHub remotes only from github.com itself', () => {
     expect(githubRepoOf('ssh://git@github.com/a/b.git')).toBe('a/b');
     expect(githubRepoOf('https://token@github.com/a/b')).toBe('a/b');

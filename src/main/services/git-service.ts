@@ -842,14 +842,24 @@ export function githubRepoOf(remoteUrl: string): string | null {
  * ("owner/repo"), the only pages the review opens.
  */
 export function isPullRequestUrlFor(url: string, repo: string): boolean {
+  return pullRequestHref(url, repo) !== null;
+}
+
+/** The normalized href of a GitHub pull request or compare page of `repo`, or null for anything else. */
+function pullRequestHref(url: string, repo: string): string | null {
   let u: URL;
-  try { u = new URL(url); } catch { return false; }
-  if (u.protocol !== 'https:' || u.hostname !== 'github.com' || u.username || u.password || u.port) return false;
+  try {
+    u = new URL(url);
+  } catch {
+    // telemetry-exempt: not a URL at all; the caller refuses it as a validation failure, which its span records.
+    return null;
+  }
+  if (u.protocol !== 'https:' || u.hostname !== 'github.com' || u.username || u.password || u.port) return null;
   const [owner, name, kind, ...rest] = u.pathname.split('/').filter(Boolean);
   const [wantOwner, wantName] = repo.split('/');
-  if (!owner || !name || owner.toLowerCase() !== wantOwner.toLowerCase() || name.toLowerCase() !== wantName.toLowerCase()) return false;
-  if (kind === 'pull') return rest.length >= 1 && /^\d+$/.test(rest[0]);
-  return kind === 'compare' && rest.length >= 1;
+  if (!owner || !name || owner.toLowerCase() !== wantOwner.toLowerCase() || name.toLowerCase() !== wantName.toLowerCase()) return null;
+  const ok = kind === 'pull' ? rest.length >= 1 && /^\d+$/.test(rest[0]) : kind === 'compare' && rest.length >= 1;
+  return ok ? u.href : null;
 }
 
 /**
@@ -859,13 +869,17 @@ export function isPullRequestUrlFor(url: string, repo: string): boolean {
  */
 export async function openPullRequest(dirPath: string, url: string, open: (url: string) => Promise<void>): Promise<GitOpResult> {
   return gitOp<GitOpResult>('open_pr', async () => {
-    const remote = await resolvePushRemote(dirPath);
+    // The same remote getPullRequestInfo built the URL from: the branch's upstream first.
+    const branch = await tryGitExec(['rev-parse', '--abbrev-ref', 'HEAD'], dirPath, 'open_pr');
+    const remote = await resolvePushRemote(dirPath, branch && branch !== 'HEAD' ? branch : undefined);
     const remoteUrl = remote ? await tryGitExec(['remote', 'get-url', '--', remote], dirPath, 'open_pr') : null;
     const repo = remoteUrl ? githubRepoOf(remoteUrl) : null;
-    if (!repo || !isPullRequestUrlFor(url, repo)) {
+    const href = repo ? pullRequestHref(url, repo) : null;
+    if (!href) {
       return { value: { ok: false, message: 'That page isn\u2019t this repository\u2019s pull request on GitHub.' }, failure: { errorType: 'validation', timedOut: false } };
     }
-    await open(url);
+    // The parsed, normalized URL, never the raw string that was checked.
+    await open(href);
     return { value: { ok: true, message: '' } };
   });
 }
