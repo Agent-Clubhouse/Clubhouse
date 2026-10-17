@@ -23,6 +23,7 @@ import type {
   SafeStorageLike,
 } from '../../vendor/framebriar/adapters/node/index.mjs';
 import { createFramebriar, otlpExporterOptions } from '../../vendor/framebriar/adapters/node/index.mjs';
+import { ACCESS_TIMEOUT_MS } from '../../vendor/framebriar/adapters/node/access.mjs';
 import type { FramebriarTelemetryExport } from '../../telemetry/destinations/framebriar-source';
 import type { FeedbackCaptureResult, FeedbackSendInput, FeedbackSendResult, FeedbackStatus } from '../../../shared/feedback-types';
 
@@ -40,8 +41,8 @@ const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const SCENE = /^[a-z][a-z0-9-]{0,39}$/;
 /** The SDK only sends invitations of this shape; anything else fails before any request. */
 const INVITATION = /^[A-Za-z0-9_-]{43}$/;
-/** The SDK gives up on an access request after 10 s; a connect this slow likely timed out. */
-export const LIKELY_TIMEOUT_MS = 9_500;
+/** A failed connect this slow may have exhausted at least one SDK access-call timeout. */
+export const LIKELY_TIMEOUT_MS = ACCESS_TIMEOUT_MS - 500;
 
 /** Access states that need the user (or a retry) before feedback can be delivered. */
 const ACCESS_PROBLEMS = new Set(['offline', 'expired', 'access-required', 'connection-uncertain', 'storage-unavailable', 'migration-required']);
@@ -194,7 +195,7 @@ export class FeedbackService {
     return toFeedbackStatus(true, storage, fb.access.status(), fb.outbox.status(), this.received);
   }
 
-  /** Redeem an invitation. Never retried automatically; the caller clears its field at once. */
+  /** Explicit enrollment; the SDK retries transient failures twice with the same attempt id. */
   async connect(invitation: string): Promise<{ connected: boolean; status: FeedbackStatus }> {
     await this.start();
     const access = this.sdk().access;
@@ -417,7 +418,7 @@ export function connectFailureReason(invitation: string, before: string, state: 
   if (state === 'storage-unavailable') return 'secure storage failed while saving the enrollment';
   if (notice === 'access-required') return 'server refused the invitation (expired, revoked, used up, or not for this app)';
   if (notice === 'connection-uncertain' && durationMs >= LIKELY_TIMEOUT_MS) {
-    return 'request likely timed out (the SDK waits 10 s); the server may still have accepted the invitation, so retry the same one';
+    return `request may have timed out (the SDK waits ${ACCESS_TIMEOUT_MS / 1000} s per call and retries twice); the server may still have accepted the invitation, so retry the same one`;
   }
   if (notice === 'connection-uncertain') return 'request failed or the response was rejected; the server may still have accepted the invitation';
   return 'unknown';

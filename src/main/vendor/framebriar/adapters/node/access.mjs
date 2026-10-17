@@ -4,6 +4,7 @@
 // auto-retries, persisted 'connection-uncertain' marker, coalesced refresh, a 30-day family
 // with one-hour upload tokens, and persistent notices until replacement or explicit clear.
 // Requests carry no Origin header; the service accepts originless clients.
+import {randomBytes} from 'node:crypto';
 export const FRAMEBRIAR_ENDPOINT='https://framebriar-masra91-poc.azurewebsites.net/api';
 const HOUR=3600000,MONTH=30*86400000;
 const token=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{43}$/.test(x);
@@ -20,8 +21,11 @@ export function validEndpoint(endpoint){
 const iso=v=>{const t=Date.parse(v);return Number.isFinite(t)?new Date(t).toISOString():null;};
 const noticeOf=n=>n?{state:n.state,expiresAt:n.expiresAt?iso(n.expiresAt):null,enrolled:n.enrolled!==false}:null;
 
-export function createAccess({endpoint=FRAMEBRIAR_ENDPOINT,appId,gameId=appId,buildSha=null,store,
+// Cold starts of a scaled-to-zero service can take well over 10 s, so allow 45 s per access call.
+export const ACCESS_TIMEOUT_MS=45000;
+export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>new Promise(r=>setTimeout(r,ms)),endpoint=FRAMEBRIAR_ENDPOINT,appId,gameId=appId,buildSha=null,store,
   fetchImpl=(...a)=>fetch(...a),now=()=>Date.now(),setTimer=unrefTimer,clearTimer=clearTimeout,onChange=()=>{}}={}){
+  let lastAttempt; // {invitation, attemptId, at}: in memory only, reused when the user retries the same invite
   if(!validEndpoint(endpoint)||!/^[a-z0-9-]{1,60}$/.test(gameId??'')||(buildSha!==null&&!/^[a-f0-9]{7,40}$/.test(buildSha)))throw Error('Invalid Framebriar access scope');
   if(typeof store?.read!=='function'||typeof store.replace!=='function')throw Error('Framebriar access requires a secure store');
   let running=false,disposed=false,generation=0,revision=null,session,timer,controller,inflight,operation,failures=0;
@@ -54,7 +58,7 @@ export function createAccess({endpoint=FRAMEBRIAR_ENDPOINT,appId,gameId=appId,bu
     try{
       const response=await fetchImpl(`${endpoint}/v1/access/${action}`,{method:'POST',redirect:'error',
         headers:{'content-type':'application/json'},body:JSON.stringify({v:1,...body}),
-        signal:AbortSignal.any([abort.signal,AbortSignal.timeout(10000)])});
+        signal:AbortSignal.any([abort.signal,AbortSignal.timeout(accessTimeoutMs)])});
       if(!current(ticket))throw fault('stale');
       if(!response.ok){await response.body?.cancel();throw fault([401,403].includes(response.status)?'denied':'transient');}
       if(response.redirected||response.headers.get('content-type')?.split(';')[0]!=='application/json')throw fault('invalid');
@@ -141,14 +145,21 @@ export function createAccess({endpoint=FRAMEBRIAR_ENDPOINT,appId,gameId=appId,bu
     refresh,
     async connect(invitation){
       if(disposed||!token(invitation)||operation)return false;
-      // Explicit redemption only; never retried automatically after uncertain delivery.
+      // Explicit redemption. Transient failures (timeouts, 5xx) are retried with the SAME attempt id,
+      // which the service treats idempotently for 15 min, so a slow cold start cannot burn the invite.
       halt();running=true;const ticket=generation;operation='connect';emit('connecting',null);
       try{
         const old=await load({recover:true});if(!current(ticket))return false;
         optedIn=!!old.session||!!old.notice&&old.notice.enrolled!==false;
         const next=await put(old.revision,null,{state:'connection-uncertain',expiresAt:null,enrolled:optedIn});if(!current(ticket))return false;
         if(next===null)throw fault('stale');revision=next;
-        const value=await request('redeem',{invitation,gameId,buildSha,scopeVersion:2},ticket);invitation=undefined;
+        if(!lastAttempt||lastAttempt.invitation!==invitation||now()-lastAttempt.at>14*60000)lastAttempt={invitation,attemptId:randomBytes(16).toString('base64url'),at:now()};
+        let value;
+        for(let n=0;;n++){
+          try{value=await request('redeem',{invitation,gameId,buildSha,scopeVersion:2,attemptId:lastAttempt.attemptId},ticket);break;}
+          catch(e){if(e?.kind!=='transient'||n>=2||!current(ticket))throw e;await retryDelay(n?5000:2000);if(!current(ticket))throw fault('stale');}
+        }
+        lastAttempt=undefined;invitation=undefined;
         return await accept(value,ticket);
       }catch(e){
         if(current(ticket)){
