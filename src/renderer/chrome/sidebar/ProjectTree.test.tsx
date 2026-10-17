@@ -99,6 +99,28 @@ describe('ProjectTree keyboard', () => {
     expect(useChromeStore.getState().collapsedProjectIds).not.toContain('b');
   });
 
+  it('gives fold rows the fold as parent, and idle projects the idle row', () => {
+    useChromeStore.setState({ expandedFolds: ['a:sleeping'], idleOpen: true, collapsedProjectIds: ['b', 'c', 'old'] });
+    setup();
+    expect(key('agent:a2').dataset.treeParent).toBe('fold:a:sleeping');
+    expect(key('agent:a2').getAttribute('aria-level')).toBe('3');
+    key('agent:a2').focus();
+    fireEvent.keyDown(key('agent:a2'), { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(key('fold:a:sleeping'));
+    expect(key('project:old').getAttribute('aria-level')).toBe('2');
+    key('project:old').focus();
+    fireEvent.keyDown(key('project:old'), { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(screen.getByTestId('idle-projects'));
+  });
+
+  it('Right on an expanded project with no agents stays put', () => {
+    useChromeStore.setState({ collapsedProjectIds: ['c'] });
+    setup();
+    key('project:b').focus();
+    fireEvent.keyDown(key('project:b'), { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(key('project:b'));
+  });
+
   it('opens a project with Enter and its menu with Shift+F10', () => {
     const props = setup();
     fireEvent.keyDown(key('project:b'), { key: 'Enter' });
@@ -133,11 +155,24 @@ describe('ProjectTree menus', () => {
     expect(props.onOpenSettings).toHaveBeenCalledWith('b');
   });
 
-  it('moves a durable agent in its saved order from the row menu', () => {
+  it('moves a durable agent past its visible neighbour, keeping hidden sleeping agents in place', () => {
     const props = setup();
+    // Saved order a1, a2 (sleeping, folded), a3. Shown: a1, a3.
+    fireEvent.contextMenu(screen.getByTestId('agent-item-a1'));
+    expect(screen.queryByTestId('ctx-move-up')).toBeNull();
+    fireEvent.click(screen.getByTestId('ctx-move-down'));
+    expect(props.onReorderAgents).toHaveBeenCalledWith('a', ['a3', 'a2', 'a1']);
     fireEvent.contextMenu(screen.getByTestId('agent-item-a3'));
+    expect(screen.queryByTestId('ctx-move-down')).toBeNull();
+    expect(screen.getByTestId('ctx-move-up')).toBeTruthy();
+  });
+
+  it('moves sleeping agents among themselves inside the open fold', () => {
+    useChromeStore.setState({ expandedFolds: ['a:sleeping'] });
+    const props = setup({ agentsByProject: { a: [agent('a1', 'a'), agent('s1', 'a', { status: 'sleeping' }), agent('a3', 'a'), agent('s2', 'a', { status: 'sleeping' })] } });
+    fireEvent.contextMenu(screen.getByTestId('agent-item-s2'));
     fireEvent.click(screen.getByTestId('ctx-move-up'));
-    expect(props.onReorderAgents).toHaveBeenCalledWith('a', ['a1', 'a3', 'a2']);
+    expect(props.onReorderAgents).toHaveBeenCalledWith('a', ['a1', 's2', 'a3', 's1']);
   });
 
   it('has no move or settings items on a satellite', () => {

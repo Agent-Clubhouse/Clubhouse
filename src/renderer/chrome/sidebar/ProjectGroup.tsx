@@ -96,6 +96,10 @@ export interface ProjectGroupProps {
   onOpenSettings?: (projectId: string) => void;
   /** Saves a new durable-agent order; absent for a satellite's projects. */
   onReorderAgents?: (projectId: string, orderedIds: string[]) => void;
+  /** Tree depth of the header: 1, or 2 inside the idle row. */
+  level?: number;
+  /** The header's tree parent: the idle row, when it is inside it. */
+  parentKey?: string;
 }
 
 const HEADER_INDENT = 6;
@@ -107,7 +111,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     activeProjectId, activeAgentId, headerSelected, selectedCompletedId,
     onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onNewAgent,
     onSelectAgent, onOpenTerminal, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator, draggable = true,
-    onMoveProject, canMoveUp, canMoveDown, onOpenSettings, onReorderAgents,
+    onMoveProject, canMoveUp, canMoveDown, onOpenSettings, onReorderAgents, level = 1, parentKey,
   } = props;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const projectKey = `project:${project.id}`;
@@ -117,30 +121,40 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   const isActiveProject = project.id === activeProjectId;
   const expanded = !collapsed;
 
-  // Move up / Move down for durable agents, in their saved order (§4.8).
-  // Memoized on the order, so the memoized rows don't re-render on every status change.
-  const durableKey = agents.filter((a) => a.kind === 'durable').map((a) => a.id).join('\n');
+  // Move up / Move down for durable agents (§4.8). A move swaps a row with its
+  // visible neighbour in the same group (awake, or inside the sleeping fold);
+  // the group's new order goes back into the saved order at the same places.
+  // Memoized on the order and grouping, so memoized rows don't re-render on
+  // every status change.
+  const durableKey = agents.filter((a) => a.kind === 'durable').map((a) => `${a.id}${a.status === 'sleeping' ? ' s' : ''}`).join('\n');
   const moveActionsById = useMemo(() => {
     const map = new Map<string, ActionDef[]>();
     if (!onReorderAgents || !durableKey) return map;
-    const order = durableKey.split('\n');
-    order.forEach((id, i) => {
-      const move = (to: number) => {
-        const next = [...order];
-        next.splice(i, 1);
-        next.splice(to, 0, id);
-        onReorderAgents(project.id, next);
-      };
-      const list: ActionDef[] = [];
-      if (i > 0) list.push({ id: 'move-up', label: 'Move up', icon: null, hoverColor: '', visible: true, handler: () => move(i - 1) });
-      if (i < order.length - 1) list.push({ id: 'move-down', label: 'Move down', icon: null, hoverColor: '', visible: true, handler: () => move(i + 1) });
-      map.set(id, list);
-    });
+    const entries = durableKey.split('\n').map((e) => ({ id: e.replace(/ s$/, ''), sleeping: e.endsWith(' s') }));
+    const order = entries.map((e) => e.id);
+    for (const sleeping of [false, true]) {
+      const group = entries.filter((e) => e.sleeping === sleeping).map((e) => e.id);
+      const slots = group.map((id) => order.indexOf(id));
+      group.forEach((id, i) => {
+        const move = (to: number) => {
+          const reordered = [...group];
+          reordered.splice(i, 1);
+          reordered.splice(to, 0, id);
+          const next = [...order];
+          slots.forEach((slot, k) => { next[slot] = reordered[k]; });
+          onReorderAgents(project.id, next);
+        };
+        const list: ActionDef[] = [];
+        if (i > 0) list.push({ id: 'move-up', label: 'Move up', icon: null, hoverColor: '', visible: true, handler: () => move(i - 1) });
+        if (i < group.length - 1) list.push({ id: 'move-down', label: 'Move down', icon: null, hoverColor: '', visible: true, handler: () => move(i + 1) });
+        map.set(id, list);
+      });
+    }
     return map;
   }, [durableKey, onReorderAgents, project.id]);
   const moveActions = (agent: Agent) => moveActionsById.get(agent.id);
 
-  const renderAgent = (agent: Agent, indent = ROW_INDENT, level = 2) => (
+  const renderAgent = (agent: Agent, indent = ROW_INDENT, parentKey = projectKey, depth = 1) => (
     <AgentRow
       key={agent.id}
       agent={agent}
@@ -150,8 +164,8 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
       onOpenTerminal={onOpenTerminal}
       active={agent.id === activeAgentId && isActiveProject}
       indent={indent}
-      level={level}
-      parentKey={projectKey}
+      level={level + depth}
+      parentKey={parentKey}
       extraActions={moveActions(agent)}
       onSelect={onSelectAgent}
     />
@@ -182,11 +196,12 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
       {dropIndicator && <div className="absolute -top-px left-2 right-2 h-0.5 rounded-full bg-ctp-accent" />}
       <div
         role="treeitem"
-        aria-level={1}
+        aria-level={level}
         aria-expanded={expanded}
         aria-selected={headerSelected}
         aria-label={label}
         data-tree-key={projectKey}
+        data-tree-parent={parentKey}
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectProject(project.id); }
@@ -281,7 +296,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
               <button
                 type="button"
                 role="treeitem"
-                aria-level={2}
+                aria-level={level + 1}
                 data-tree-key={`fold:${project.id}:sleeping`}
                 data-tree-parent={projectKey}
                 data-tree-toggle
@@ -294,7 +309,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
                 <Chevron open={sleepingOpen} />
                 <span>{groups.sleeping.length} sleeping</span>
               </button>
-              {sleepingOpen && groups.sleeping.map((a) => renderAgent(a, ROW_INDENT + 12, 3))}
+              {sleepingOpen && groups.sleeping.map((a) => renderAgent(a, ROW_INDENT + 12, `fold:${project.id}:sleeping`, 2))}
             </>
           )}
 
@@ -304,7 +319,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
                 <button
                   type="button"
                   role="treeitem"
-                  aria-level={2}
+                  aria-level={level + 1}
                   data-tree-key={`fold:${project.id}:finished`}
                   data-tree-parent={projectKey}
                   data-tree-toggle
@@ -331,7 +346,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
                   <button
                     type="button"
                     role="treeitem"
-                    aria-level={3}
+                    aria-level={level + 2}
                     aria-selected={selectedCompletedId === c.id}
                     data-tree-key={`finished:${c.id}`}
                     data-tree-parent={`fold:${project.id}:finished`}

@@ -108,7 +108,8 @@ function useTreeKeyboard(treeRef: React.RefObject<HTMLDivElement | null>, select
       case 'ArrowRight':
         e.preventDefault();
         if (expanded === 'false') (target.hasAttribute('data-tree-toggle') ? target : target.querySelector<HTMLElement>('[data-tree-toggle]'))?.click();
-        else if (expanded === 'true') focus(all[at + 1]);
+        // Step in only if there is a child: an expanded project with no agents stays put.
+        else if (expanded === 'true' && all[at + 1]?.dataset.treeParent === target.dataset.treeKey) focus(all[at + 1]);
         return;
       case 'ArrowLeft': {
         e.preventDefault();
@@ -227,8 +228,10 @@ export function ProjectTree(props: ProjectTreeProps) {
         : activeProjectId ? `project:${activeProjectId}` : null;
   const keyboard = useTreeKeyboard(treeRef, selectedKey);
 
-  const renderGroup = (project: Project) => (
+  const renderGroup = (project: Project, underIdle = false) => (
     <ProjectGroup
+      level={underIdle ? 2 : 1}
+      parentKey={underIdle ? IDLE_KEY : undefined}
       key={project.id}
       project={project}
       iconUrl={projectIcons[project.id]}
@@ -290,9 +293,9 @@ export function ProjectTree(props: ProjectTreeProps) {
         onFocus={keyboard.onFocus}
         className="flex-1 min-h-0 overflow-y-auto pb-2 flex flex-col gap-px"
       >
-        {pinned.map(renderGroup)}
+        {pinned.map((p) => renderGroup(p))}
         {pinned.length > 0 && active.length > 0 && <div className="h-px mx-3 my-1 bg-surface-0 flex-shrink-0" role="separator" />}
-        {active.map(renderGroup)}
+        {active.map((p) => renderGroup(p))}
         {idle.length > 0 && (
           <>
             <button
@@ -310,7 +313,7 @@ export function ProjectTree(props: ProjectTreeProps) {
               <Chevron open={idleOpen} />
               <span>{idle.length} idle project{idle.length === 1 ? '' : 's'}</span>
             </button>
-            {idleOpen && idle.map(renderGroup)}
+            {idleOpen && idle.map((p) => renderGroup(p, true))}
           </>
         )}
       </div>
