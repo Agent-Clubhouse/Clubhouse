@@ -12,6 +12,8 @@ import type { PluginRegistryEntry } from '../../shared/plugin-types';
 import type { Agent } from '../../shared/types';
 import { sanitizeSvg } from '../utils/sanitize-svg';
 import { ProjectTree } from './sidebar/ProjectTree';
+import { FilterResults } from './sidebar/FilterResults';
+import { useKeyboardShortcutsStore, formatBinding } from '../stores/keyboardShortcutsStore';
 import { NeedsYou, NeedsYouStrip } from './sidebar/NeedsYou';
 import { ListBody } from './sidebar/ListBody';
 import { SettingsNav } from './sidebar/SettingsNav';
@@ -176,6 +178,100 @@ function AppRow({ inline, overflow, explorerTab, onOpen }: {
   );
 }
 
+const FunnelIcon = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 5h16l-6 7.5V18l-4 2v-7.5z" />
+  </svg>
+);
+
+/**
+ * The filter field (#2031): a real text field that narrows the project tree in
+ * place. Esc clears it, Down moves into the results, Enter opens the first one.
+ */
+function SidebarFilter({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const results = () => e.currentTarget.closest('aside')?.querySelectorAll<HTMLElement>('[data-testid="filter-results"] [role="treeitem"]');
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (value) onChange('');
+      else e.currentTarget.blur();
+    } else if (e.key === 'ArrowDown' && value) {
+      const first = results()?.[0];
+      if (first) { e.preventDefault(); first.focus(); }
+    } else if (e.key === 'Enter' && value) {
+      e.preventDefault();
+      // The first agent if there is one, else the first project.
+      const items = [...(results() ?? [])];
+      (items.find((el) => el.dataset.treeKey?.startsWith('agent:')) ?? items[0])?.click();
+    }
+  };
+  return (
+    <div className="flex-1 min-w-0 h-7 pl-2 pr-1.5 rounded-md border border-surface-1 bg-ctp-crust flex items-center gap-1.5 focus-within:border-ctp-accent">
+      <span className="flex text-ctp-overlay1">{FunnelIcon}</span>
+      <input
+        ref={inputRef}
+        type="text"
+        data-testid="chrome-filter"
+        aria-label="Filter projects and agents"
+        placeholder="Filter"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        spellCheck={false}
+        autoComplete="off"
+        className="flex-1 min-w-0 bg-transparent text-[12.5px] text-ctp-text placeholder:text-ctp-overlay0 outline-none"
+      />
+      {value && (
+        <button
+          type="button"
+          aria-label="Clear filter"
+          title="Clear filter"
+          onClick={() => { onChange(''); inputRef.current?.focus(); }}
+          className="w-5 h-5 rounded flex items-center justify-center text-ctp-overlay1 hover:text-ctp-text cursor-pointer"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" /></svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+const CommandGlyph = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z" />
+  </svg>
+);
+
+/**
+ * The bordered command palette button (#2031): the ⌘ glyph on macOS, a Ctrl K
+ * keycap elsewhere, where ⌘ means nothing. Pressed while the palette is open.
+ */
+function PaletteButton({ onOpen }: { onOpen: () => void }) {
+  const isOpen = useCommandPaletteStore((s) => s.isOpen);
+  const binding = useKeyboardShortcutsStore((s) => s.shortcuts['command-palette']?.currentBinding);
+  const mac = window.clubhouse.platform === 'darwin';
+  // ⌘K on macOS (symbols run together there), Ctrl+K elsewhere.
+  const shortcut = binding ? (mac ? formatBinding(binding).replace(/\+/g, '') : formatBinding(binding)) : '';
+  return (
+    <button
+      type="button"
+      data-testid="chrome-palette-button"
+      aria-label="Command palette"
+      aria-keyshortcuts={binding ? binding.replace('Meta', mac ? 'Meta' : 'Control') : undefined}
+      aria-pressed={isOpen}
+      title={shortcut ? `Command palette (${shortcut})` : 'Command palette'}
+      onClick={onOpen}
+      className={`flex-shrink-0 h-7 rounded-md border flex items-center justify-center cursor-pointer focus-ring ${
+        mac || !shortcut ? 'w-7' : 'px-2 text-xs font-medium whitespace-nowrap'
+      } ${isOpen ? 'border-surface-2 bg-surface-0 text-ctp-text' : 'border-surface-1 text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text'}`}
+    >
+      {mac || !shortcut ? CommandGlyph : shortcut.replace(/\+/g, ' ')}
+    </button>
+  );
+}
+
 export function ChromeSidebar() {
   const projects = useProjectStore((s) => s.projects);
   const projectIcons = useProjectStore((s) => s.projectIcons);
@@ -212,6 +308,14 @@ export function ChromeSidebar() {
   const remoteDetailed = useRemoteProjectStore((s) => s.remoteAgentDetailedStatus);
   const remoteProjectIcons = useRemoteProjectStore((s) => s.remoteProjectIcons);
   const isRemoteHost = activeHostId !== null;
+
+  // The filter narrows the tree in place (#2031); it applies only while the tree is shown.
+  const [filter, setFilter] = useState('');
+  const filtering = mode === 'tree' && filter.trim().length > 0;
+  const changeFilter = useCallback((value: string) => {
+    if (!filter.trim() && value.trim()) reportChromeFeature('sidebar_filter');
+    setFilter(value);
+  }, [filter]);
 
   // A satellite that was unpaired can't stay the host (as in the legacy rail).
   useEffect(() => {
@@ -431,6 +535,12 @@ export function ChromeSidebar() {
     reportChromeFeature('new_agent_open');
   }, []);
 
+  // Nothing here matched: hand the query to the palette, which searches everything.
+  const searchEverything = () => {
+    useCommandPaletteStore.getState().open(filter.trim());
+    reportChromeFeature('filter_search_everything');
+  };
+
   const addProject = () => {
     pickAndAddProject().catch((err) => reportChromeActionFailed('add_project', err));
   };
@@ -480,16 +590,8 @@ export function ChromeSidebar() {
         onAnnexSettings={() => openAnnexSettings('annex')}
       />
       <div className="flex-shrink-0 px-2 pb-2 flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => { useCommandPaletteStore.getState().open(); reportChromeFeature('search_open'); }}
-          data-testid="chrome-search"
-          className="flex-1 min-w-0 h-7 px-2 rounded-md bg-surface-0 flex items-center gap-2 text-xs text-ctp-overlay1 hover:text-ctp-subtext1 cursor-pointer"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
-          <span>Search</span>
-          <kbd className="ml-auto text-xs text-ctp-overlay1">{window.clubhouse.platform === 'darwin' ? '⌘K' : 'Ctrl+K'}</kbd>
-        </button>
+        <SidebarFilter value={filter} onChange={changeFilter} />
+        <PaletteButton onOpen={() => { useCommandPaletteStore.getState().open(); reportChromeFeature('search_open'); }} />
         <MenuButton label="New agent" testId="chrome-new" items={newItems} disabled={!activeProjectId || isRemoteHost}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           New
@@ -509,7 +611,25 @@ export function ChromeSidebar() {
         </>
       )}
 
-      {mode === 'tree' && (
+      {filtering && (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <FilterResults
+            query={filter}
+            projects={treeProjects}
+            projectIcons={isRemoteHost ? remoteProjectIcons : projectIcons}
+            agentsByProject={agentsByProject}
+            detailed={treeDetailed}
+            activeAgentId={isProjectTab ? activeAgentId : null}
+            onSelectProject={selectProject}
+            onSelectAgent={selectAgent}
+            onOpenTerminal={isRemoteHost ? undefined : openTerminal}
+            terminalProjectIds={terminalProjectIds}
+            onSearchEverything={searchEverything}
+          />
+        </div>
+      )}
+
+      {mode === 'tree' && !filtering && (
         <NeedsYou
           items={needs}
           projectNames={projectNames}
@@ -519,7 +639,7 @@ export function ChromeSidebar() {
         />
       )}
 
-      <div className={`flex-1 min-h-0 flex-col ${mode === 'tree' ? 'flex' : 'hidden'}`}>
+      <div className={`flex-1 min-h-0 flex-col ${mode === 'tree' && !filtering ? 'flex' : 'hidden'}`}>
         <ProjectTree
           projectScopeId={projectScopeId}
           projects={treeProjects}

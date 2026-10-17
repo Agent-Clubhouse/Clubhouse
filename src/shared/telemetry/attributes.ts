@@ -323,7 +323,7 @@ export const ATTR = {
     'more_menu_open', 'more_menu_pick',
     'row_menu_open', 'hover_card_action',
     'project_menu_open', 'agent_reorder', 'idle_toggle', 'needs_you_review',
-    'agent_settings_page', 'agent_shell_toggle',
+    'agent_settings_page', 'agent_shell_toggle', 'sidebar_filter', 'filter_search_everything',
   ]),
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [

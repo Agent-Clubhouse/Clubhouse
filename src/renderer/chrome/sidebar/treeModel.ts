@@ -131,3 +131,36 @@ export function projectRollup(agents: Agent[], detailed: Record<string, AgentDet
   }
   return { working, waiting };
 }
+
+export interface FilteredProject<P> {
+  project: P;
+  /** The project's own name matches. */
+  nameMatch: boolean;
+  /** Its agents whose names match, awake first, then quick, then sleeping. */
+  agents: Agent[];
+}
+
+/**
+ * The sidebar filter (#2031): projects whose name matches, and agents whose
+ * name matches, sleeping ones included, under their project. Case-insensitive
+ * substring, in tree order. `count` is matched projects plus matched agents.
+ */
+export function filterTree<P extends { id: string; name: string; displayName?: string }>(
+  query: string,
+  projects: P[],
+  agentsByProject: Record<string, Agent[]>,
+): { groups: FilteredProject<P>[]; count: number } {
+  const q = query.trim().toLowerCase();
+  const groups: FilteredProject<P>[] = [];
+  let count = 0;
+  if (!q) return { groups, count };
+  for (const project of projects) {
+    const nameMatch = (project.displayName || project.name).toLowerCase().includes(q);
+    const { durable, quick, sleeping } = groupProjectAgents(agentsByProject[project.id] ?? []);
+    const agents = [...durable, ...quick, ...sleeping].filter((a) => a.name.toLowerCase().includes(q));
+    if (!nameMatch && agents.length === 0) continue;
+    groups.push({ project, nameMatch, agents });
+    count += agents.length + (nameMatch ? 1 : 0);
+  }
+  return { groups, count };
+}
