@@ -130,9 +130,12 @@ interface ChatHeaderProps {
   onToggleAgentMap?: () => void;
   agentMapOpen?: boolean;
   subagentCount?: number;
+  /** DOM ids tying the toggle to the panel it controls. */
+  agentMapPanelId?: string;
+  agentMapToggleId?: string;
 }
 
-export function ChatHeader({ agent, state, providerName, onSwitchToTerminal, switching, onToggleAgentMap, agentMapOpen, subagentCount }: ChatHeaderProps) {
+export function ChatHeader({ agent, state, providerName, onSwitchToTerminal, switching, onToggleAgentMap, agentMapOpen, subagentCount, agentMapPanelId, agentMapToggleId }: ChatHeaderProps) {
   const caps = state.capabilities;
   const limits = caps?.limits ? state.usage.limits : [];
   const context = caps && caps.usage !== 'none' ? state.usage.context : null;
@@ -157,8 +160,11 @@ export function ChatHeader({ agent, state, providerName, onSwitchToTerminal, swi
         {onToggleAgentMap && (
           <button
             type="button"
+            id={agentMapToggleId}
             onClick={onToggleAgentMap}
             aria-pressed={!!agentMapOpen}
+            aria-controls={agentMapPanelId}
+            aria-expanded={!!agentMapOpen}
             className={`h-[26px] px-2.5 rounded-md text-[11.5px] tabular-nums ${agentMapOpen ? 'bg-surface-1 text-ctp-text' : 'bg-surface-0 text-ctp-overlay1 hover:text-ctp-text'}`}
             data-testid="chat-agent-map-toggle"
           >

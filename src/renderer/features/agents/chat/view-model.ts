@@ -7,7 +7,7 @@
  */
 
 import type { ChatCapabilities, PermissionLevel, ToolCallContent } from '../../../../shared/chat';
-import type { ChatItem, ChatViewState, PendingPermission, PlanDocumentItem, SubagentInfo, ToolCallItem } from '../../../stores/chatStore';
+import type { ChatItem, ChatViewState, PendingPermission, PlanDocumentItem, SubagentInfo, ToolCallItem, TurnEndItem } from '../../../stores/chatStore';
 
 // ── Stream blocks ───────────────────────────────────────────────────────────
 
@@ -385,29 +385,52 @@ function lastTool(items: ChatItem[]): ToolCallItem | undefined {
  * The subagents of this agent, for the agent map. Gated on
  * `capabilities.subagents`: 'full' uses the driver's subagent events, and
  * 'ids_only' groups items by their subagentId with generic labels.
+ *
+ * A subagent can't outlive its agent's turn. When the agent isn't working
+ * any more, one still marked running is settled: cancelled if the last turn
+ * was stopped or failed, otherwise its status is unknown (the driver never
+ * said it finished).
  */
-export function buildAgentMap(state: Pick<ChatViewState, 'items' | 'subagents' | 'capabilities'>): AgentMap {
+export function buildAgentMap(state: Pick<ChatViewState, 'items' | 'subagents' | 'capabilities' | 'state'>): AgentMap {
   const mode = state.capabilities?.subagents ?? 'none';
   if (mode === 'none') return { mode, nodes: [] };
 
   const itemsBy = new Map<string, ChatItem[]>();
   const order: string[] = [];
   const toolsById = new Map<string, ToolCallItem>();
+  /** Where each subagent first shows up: its parent tool call or its first item. */
+  const firstSeqBy = new Map<string, number>();
+  const subByParent = new Map<string, string>();
+  if (mode === 'full') {
+    for (const info of Object.values(state.subagents)) {
+      if (info.parentToolCallId) subByParent.set(info.parentToolCallId, info.subagentId);
+    }
+  }
+  let lastStop: TurnEndItem['stopReason'] | undefined;
   for (const item of state.items) {
-    if (item.kind === 'tool_call') toolsById.set(item.toolCallId, item);
+    if (item.kind === 'turn_end') lastStop = item.stopReason;
+    if (item.kind === 'tool_call') {
+      toolsById.set(item.toolCallId, item);
+      const owner = subByParent.get(item.toolCallId);
+      if (owner && !firstSeqBy.has(owner)) firstSeqBy.set(owner, item.seq);
+    }
     const subId = 'subagentId' in item ? item.subagentId : undefined;
     if (!subId) continue;
+    if (!firstSeqBy.has(subId)) firstSeqBy.set(subId, item.seq);
     if (!itemsBy.has(subId)) { itemsBy.set(subId, []); order.push(subId); }
     itemsBy.get(subId)!.push(item);
   }
+  const rootWorking = isRunningState(state.state);
+  const settled: AgentMapStatus = lastStop === 'cancelled' || lastStop === 'error' || lastStop === 'timeout' ? 'cancelled' : 'unknown';
 
   const nodeFor = (subagentId: string, index: number): AgentMapNode => {
     const items = itemsBy.get(subagentId) ?? [];
     const info = mode === 'full' ? state.subagents[subagentId] : undefined;
     const parent = info?.parentToolCallId ? toolsById.get(info.parentToolCallId) : undefined;
     const ownTools = items.filter((i) => i.kind === 'tool_call');
-    const running = ownTools.some((t) => t.kind === 'tool_call' && (t.status === 'in_progress' || t.status === 'pending'));
-    const status: AgentMapStatus = info ? info.status : running ? 'running' : 'unknown';
+    const toolRunning = ownTools.some((t) => t.kind === 'tool_call' && (t.status === 'in_progress' || t.status === 'pending'));
+    let status: AgentMapStatus = info ? info.status : toolRunning ? 'running' : 'unknown';
+    if (status === 'running' && !rootWorking) status = settled;
     const startTs = parent?.ts ?? items[0]?.ts ?? 0;
     const lastTs = items.length > 0 ? items[items.length - 1].ts : startTs;
     const tokens = info?.usage ? (info.usage.total ?? ((info.usage.input ?? 0) + (info.usage.output ?? 0))) : undefined;
@@ -432,18 +455,9 @@ export function buildAgentMap(state: Pick<ChatViewState, 'items' | 'subagents' |
 
   // Full mode lists every reported subagent, in the order it appeared; ids
   // the driver tagged items with but never described still get a node.
+  const seqOf = (id: string) => firstSeqBy.get(id) ?? Number.MAX_SAFE_INTEGER;
   const ids = mode === 'full'
-    ? [...Object.keys(state.subagents).sort((a, b) => firstSeq(state, a) - firstSeq(state, b)), ...order.filter((id) => !state.subagents[id])]
+    ? [...Object.keys(state.subagents).sort((a, b) => seqOf(a) - seqOf(b)), ...order.filter((id) => !state.subagents[id])]
     : order;
   return { mode, nodes: ids.map(nodeFor) };
-}
-
-function firstSeq(state: Pick<ChatViewState, 'items' | 'subagents'>, subagentId: string): number {
-  const parentId = state.subagents[subagentId]?.parentToolCallId;
-  for (const item of state.items) {
-    if ((parentId && item.kind === 'tool_call' && item.toolCallId === parentId) || ('subagentId' in item && item.subagentId === subagentId)) {
-      return item.seq;
-    }
-  }
-  return Number.MAX_SAFE_INTEGER;
 }

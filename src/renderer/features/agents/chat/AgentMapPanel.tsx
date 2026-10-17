@@ -10,7 +10,8 @@
  * reported; 'none' never opens the panel (ChatView hides its toggle).
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
+import type { ChatItem } from '../../../stores/chatStore';
 import type { Agent } from '../../../../shared/types';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { AgentAvatar } from '../AgentAvatar';
@@ -40,6 +41,7 @@ function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!active) return;
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [active]);
@@ -55,12 +57,33 @@ function nodeMeta(node: AgentMapNode, now: number): string {
   return parts.join(' · ');
 }
 
-function NodeRow({ node, open, onToggle, onShowInStream, now }: {
+/**
+ * A subagent's stream. Its items keep their identity unless an event changed
+ * them, so compare them one by one: the clock tick and chunks for other
+ * messages then don't re-render (or re-parse the markdown of) this stream.
+ */
+const NodeStream = memo(function NodeStream({ items }: { items: ChatItem[] }) {
+  if (items.length === 0) return <span className="text-[12px] text-ctp-overlay0">No activity yet.</span>;
+  return (
+    <>
+      {items.map((c) => {
+        if (c.kind === 'tool_call') return <ToolRow key={c.id} tool={c} />;
+        if (c.kind === 'agent_message') return <AgentMessage key={c.id} item={c} />;
+        if (c.kind === 'thought') return <ThoughtRow key={c.id} item={c} />;
+        return null;
+      })}
+    </>
+  );
+}, (a, b) => a.items.length === b.items.length && a.items.every((x, i) => x === b.items[i]));
+
+function NodeRow({ node, open, onToggle, onShowInStream, now, missed }: {
   node: AgentMapNode;
   open: boolean;
   onToggle: () => void;
   onShowInStream: () => void;
   now: number;
+  /** The last "Show in conversation" for this node found nothing to show. */
+  missed: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -89,14 +112,8 @@ function NodeRow({ node, open, onToggle, onShowInStream, now }: {
       </button>
       {open && (
         <div className="pl-12 pr-3.5 py-2 flex flex-col gap-1.5 border-b border-surface-0" data-testid="agent-map-stream">
-          {node.items.length === 0 && <span className="text-[12px] text-ctp-overlay0">No activity yet.</span>}
-          {node.items.map((c) => {
-            if (c.kind === 'tool_call') return <ToolRow key={c.id} tool={c} />;
-            if (c.kind === 'agent_message') return <AgentMessage key={c.id} item={c} />;
-            if (c.kind === 'thought') return <ThoughtRow key={c.id} item={c} />;
-            return null;
-          })}
-          <div>
+          <NodeStream items={node.items} />
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
               onClick={onShowInStream}
@@ -104,6 +121,11 @@ function NodeRow({ node, open, onToggle, onShowInStream, now }: {
             >
               Show in conversation
             </button>
+            {missed && (
+              <span className="text-[11.5px] text-ctp-overlay1" role="status" data-testid="agent-map-jump-missed">
+                Not in the loaded conversation.
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -112,6 +134,10 @@ function NodeRow({ node, open, onToggle, onShowInStream, now }: {
 }
 
 export interface AgentMapPanelProps {
+  /** DOM id the header toggle points at with aria-controls. */
+  id?: string;
+  /** The subagent whose last jump found no target in the conversation. */
+  missedSubagentId?: string | null;
   agent: Agent;
   state: Pick<ChatViewState, 'state'>;
   map: AgentMap;
@@ -122,20 +148,29 @@ export interface AgentMapPanelProps {
   onClose: () => void;
 }
 
-export function AgentMapPanel({ agent, state, map, selected, onSelect, onShowInStream, onClose }: AgentMapPanelProps) {
+export function AgentMapPanel({ id, missedSubagentId, agent, state, map, selected, onSelect, onShowInStream, onClose }: AgentMapPanelProps) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  // Opening moves focus into the panel; closing returns it to the toggle (ChatView).
+  useEffect(() => { closeRef.current?.focus(); }, []);
   const anyRunning = map.nodes.some((n) => n.status === 'running');
   const now = useNow(anyRunning);
   const running = isRunningState(state.state);
   const counts = map.nodes.reduce((acc, n) => { acc[n.status === 'running' ? 'running' : 'other']++; return acc; }, { running: 0, other: 0 });
   return (
-    <aside className="w-[360px] flex-shrink-0 border-l border-surface-0 bg-ctp-mantle flex flex-col min-h-0" data-testid="chat-agent-map" aria-label="Agent map">
+    <aside
+      id={id}
+      className="w-[360px] flex-shrink-0 border-l border-surface-0 bg-ctp-mantle flex flex-col min-h-0"
+      data-testid="chat-agent-map"
+      aria-label="Agent map"
+      onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}
+    >
       <div className="h-[42px] flex-shrink-0 flex items-center gap-2.5 px-3.5 border-b border-surface-0 text-[12.5px]">
         <span className="font-semibold text-ctp-text">Agents</span>
         <span className="text-ctp-overlay1">
           {map.nodes.length} {map.nodes.length === 1 ? 'subagent' : 'subagents'}
           {counts.running > 0 && `, ${counts.running} running`}
         </span>
-        <button type="button" onClick={onClose} className="ml-auto text-ctp-overlay1 hover:text-ctp-text" aria-label="Close agent map">
+        <button ref={closeRef} type="button" onClick={onClose} className="ml-auto text-ctp-overlay1 hover:text-ctp-text" aria-label="Close agent map">
           <XIcon />
         </button>
       </div>
@@ -162,6 +197,7 @@ export function AgentMapPanel({ agent, state, map, selected, onSelect, onShowInS
               open={selected === node.subagentId}
               onToggle={() => onSelect(selected === node.subagentId ? null : node.subagentId)}
               onShowInStream={() => onShowInStream(node.subagentId)}
+              missed={missedSubagentId === node.subagentId}
             />
           ))
         )}

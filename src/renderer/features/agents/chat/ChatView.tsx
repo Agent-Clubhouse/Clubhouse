@@ -69,7 +69,8 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   const [selectedSubagent, setSelectedSubagent] = useState<string | null>(null);
   const [jump, setJump] = useState<StreamJump | null>(null);
   const { items, subagents, capabilities } = state;
-  const agentMap = useMemo(() => buildAgentMap({ items, subagents, capabilities }), [items, subagents, capabilities]);
+  const runState = state.state;
+  const agentMap = useMemo(() => buildAgentMap({ items, subagents, capabilities, state: runState }), [items, subagents, capabilities, runState]);
   // The map exists only when the driver reports subagents and there are some.
   const hasAgentMap = agentMap.mode !== 'none' && agentMap.nodes.length > 0;
   const openSubagent = useCallback((subagentId: string) => {
@@ -77,8 +78,21 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
     setSelectedSubagent(subagentId);
   }, []);
   const showInStream = useCallback((subagentId: string) => {
+    setJumpMissed(null);
     setJump((j) => ({ subagentId, nonce: (j?.nonce ?? 0) + 1 }));
   }, []);
+  // A jump whose target isn't rendered (e.g. a trimmed transcript) is reported in the panel.
+  const [jumpMissed, setJumpMissed] = useState<string | null>(null);
+  const onJumpResult = useCallback((j: StreamJump, found: boolean) => {
+    setJumpMissed(found ? null : j.subagentId);
+  }, []);
+  const mapPanelId = `chat-agent-map-${agent.id}`;
+  const mapToggleId = `chat-agent-map-toggle-${agent.id}`;
+  const closeAgentMap = useCallback(() => {
+    setAgentMapOpen(false);
+    // Focus goes back to the toggle that opened the panel.
+    requestAnimationFrame(() => document.getElementById(mapToggleId)?.focus());
+  }, [mapToggleId]);
 
   const onSend = (text: string, action: SendAction) => {
     void (async () => {
@@ -152,11 +166,13 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
           onToggleAgentMap: () => setAgentMapOpen((v) => !v),
           agentMapOpen,
           subagentCount: agentMap.nodes.length,
+          agentMapPanelId: mapPanelId,
+          agentMapToggleId: mapToggleId,
         })}
       />
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 min-w-0 flex flex-col">
-          <ChatStream state={state} onOpenSubagent={hasAgentMap ? openSubagent : undefined} jump={jump} />
+          <ChatStream state={state} onOpenSubagent={hasAgentMap ? openSubagent : undefined} jump={jump} onJumpResult={onJumpResult} />
           <div className="flex-shrink-0 px-7 pb-4 flex justify-center" data-testid="chat-dock">
             <div className="w-full max-w-[740px] flex flex-col gap-2">
               <ProtocolDriftNote counts={state.protocolUnknown} />
@@ -168,13 +184,15 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
         </div>
         {hasAgentMap && agentMapOpen && (
           <AgentMapPanel
+            id={mapPanelId}
+            missedSubagentId={jumpMissed}
             agent={agent}
             state={state}
             map={agentMap}
             selected={selectedSubagent}
             onSelect={setSelectedSubagent}
             onShowInStream={showInStream}
-            onClose={() => setAgentMapOpen(false)}
+            onClose={closeAgentMap}
           />
         )}
       </div>

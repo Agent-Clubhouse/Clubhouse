@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
 import type { ChatEvent } from '../../../../shared/chat';
 import { foldChatEvents, type ChatViewState } from '../../../stores/chatStore';
@@ -153,5 +153,73 @@ describe('agent map panel', () => {
     fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
     fireEvent.click(screen.getByLabelText('Close agent map'));
     expect(screen.queryByTestId('chat-agent-map')).not.toBeInTheDocument();
+  });
+});
+
+/** Append events after a fixture, continuing its seq and clock. */
+function extend(events: ChatEvent[], ...more: Array<Pick<ChatEvent, 'type' | 'data'> & { turnId?: string }>): ChatEvent[] {
+  const last = events[events.length - 1];
+  return [...events, ...more.map((m, i) => ({ ...last, seq: last.seq + 1 + i, ts: last.ts + 1000 * (i + 1), type: m.type, data: m.data, turnId: m.turnId }) as ChatEvent)];
+}
+
+describe('agent map review fixes', () => {
+  it('clears the previous outline when a second jump follows quickly', () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    renderState(stateFor('claude'));
+    fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
+    const [first, second] = screen.getAllByTestId('agent-map-node');
+    fireEvent.click(within(first).getByRole('button', { expanded: false }));
+    fireEvent.click(within(first).getByText('Show in conversation'));
+    const cards = screen.getAllByTestId('chat-subagent');
+    expect(cards[0]).toHaveAttribute('data-jump-highlight', 'true');
+    fireEvent.click(within(second).getByRole('button', { expanded: false }));
+    fireEvent.click(within(second).getByText('Show in conversation'));
+    expect(cards[0]).not.toHaveAttribute('data-jump-highlight');
+    expect(cards[0].className).not.toContain('outline');
+    expect(cards[1]).toHaveAttribute('data-jump-highlight', 'true');
+  });
+
+  it.each([
+    ['cancelled', 'cancelled'],
+    ['error', 'cancelled'],
+    ['end_turn', 'unknown'],
+  ] as const)('settles a still-running subagent once the turn ended with %s', (stopReason, expected) => {
+    const events = extend(chatFixture('claude', 'agent_map'),
+      { type: 'turn_ended', data: { stopReason }, turnId: 'turn-1' },
+      { type: 'session_state', data: { state: 'idle' } });
+    const map = buildAgentMap(fold(events));
+    expect(map.nodes.map((n) => n.status)).toEqual(['completed', expected]);
+    expect(map.nodes.some((n) => n.status === 'running')).toBe(false);
+  });
+
+  it('settles ids-only subagents with tools still in progress once the agent is idle', () => {
+    const events = extend(chatFixture('claude', 'agent_map'), { type: 'turn_ended', data: { stopReason: 'cancelled' }, turnId: 'turn-1' });
+    const s = fold(events);
+    const map = buildAgentMap({ ...s, capabilities: { ...s.capabilities!, subagents: 'ids_only' } });
+    expect(map.nodes[1].status).toBe('cancelled');
+  });
+
+  it('says so when the conversation has nothing to jump to', () => {
+    const s = stateFor('claude');
+    const state = { ...s, subagents: { ...s.subagents, ghost: { subagentId: 'ghost', name: 'ghost', status: 'completed' as const } } };
+    renderState(state);
+    fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
+    const node = screen.getAllByTestId('agent-map-node').find((n) => n.getAttribute('data-subagent-id') === 'ghost')!;
+    fireEvent.click(within(node).getByRole('button', { expanded: false }));
+    fireEvent.click(within(node).getByText('Show in conversation'));
+    expect(within(node).getByTestId('agent-map-jump-missed')).toHaveTextContent('Not in the loaded conversation.');
+  });
+
+  it('ties the toggle to the panel, moves focus in on open and back on close', async () => {
+    renderState(stateFor('codex'));
+    const toggle = screen.getByTestId('chat-agent-map-toggle');
+    fireEvent.click(toggle);
+    const panel = screen.getByTestId('chat-agent-map');
+    expect(toggle).toHaveAttribute('aria-controls', panel.id);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText('Close agent map')).toHaveFocus();
+    fireEvent.keyDown(panel, { key: 'Escape' });
+    expect(screen.queryByTestId('chat-agent-map')).not.toBeInTheDocument();
+    await waitFor(() => expect(toggle).toHaveFocus());
   });
 });

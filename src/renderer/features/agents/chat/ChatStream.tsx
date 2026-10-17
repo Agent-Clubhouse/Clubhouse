@@ -118,9 +118,11 @@ export interface ChatStreamProps {
   state: ChatViewState;
   onOpenSubagent?: (subagentId: string) => void;
   jump?: StreamJump | null;
+  /** Reports whether a jump found its target in the rendered conversation. */
+  onJumpResult?: (jump: StreamJump, found: boolean) => void;
 }
 
-export function ChatStream({ state, onOpenSubagent, jump }: ChatStreamProps) {
+export function ChatStream({ state, onOpenSubagent, jump, onJumpResult }: ChatStreamProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const { items, subagents, capabilities } = state;
@@ -165,16 +167,20 @@ export function ChatStream({ state, onOpenSubagent, jump }: ChatStreamProps) {
     if (!jump) return;
     const root = scroller.current;
     const target = root?.querySelector<HTMLElement>(`[data-subagent-id="${CSS.escape(jump.subagentId)}"]`);
+    onJumpResult?.(jump, !!target);
     if (!target) return;
     pinned.current = false;
     target.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
     target.classList.add(...JUMP_HIGHLIGHT_CLASSES);
     target.setAttribute('data-jump-highlight', 'true');
-    const t = setTimeout(() => {
+    const clear = () => {
       target.classList.remove(...JUMP_HIGHLIGHT_CLASSES);
       target.removeAttribute('data-jump-highlight');
-    }, JUMP_HIGHLIGHT_MS);
-    return () => clearTimeout(t);
+    };
+    const t = setTimeout(clear, JUMP_HIGHLIGHT_MS);
+    // A newer jump (or unmount) clears this one's outline straight away.
+    return () => { clearTimeout(t); clear(); };
+    // Only a new jump re-runs this; a new onJumpResult callback alone isn't a jump.
   }, [jump]);
 
   const onScroll = () => {
