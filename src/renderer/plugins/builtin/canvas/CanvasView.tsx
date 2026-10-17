@@ -12,7 +12,7 @@ import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { LinkDropdown } from './LinkDropdown';
 import { PendingWidgetPlaceholder } from './PendingWidgetPlaceholder';
-import { StatusDot } from '../../../chrome/sidebar/AgentRow';
+import { StatusDot } from '../../../features/agents/agent-status';
 import type { AgentDot } from '../../../chrome/sidebar/treeModel';
 import { sanitizeSvg } from '../../../utils/sanitize-svg';
 import { AGENT_ICON } from './canvas-icons';
