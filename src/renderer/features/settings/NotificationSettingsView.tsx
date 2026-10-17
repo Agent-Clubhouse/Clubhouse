@@ -8,7 +8,8 @@ import { Toggle } from '../../components/Toggle';
 import { SoundEventRow, SoundPackCard, ProjectSoundOverrideSection } from './sound-components';
 import { Spinner } from '../../components/Spinner';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
-import { SettingsPage, SettingsSection, SettingsField, settingsButton, settingsHelp } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, settingsHelp } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 const TOGGLES: { key: keyof Omit<import('../../../shared/types').NotificationSettings, 'enabled' | 'playSound'>; label: string; description: string }[] = [
   { key: 'permissionNeeded', label: 'An agent needs permission', description: '' },
@@ -19,11 +20,11 @@ const TOGGLES: { key: keyof Omit<import('../../../shared/types').NotificationSet
 ];
 
 // Three-state toggle for project overrides: global default / on / off
-function TriStateToggle({ value, onChange, disabled, ariaLabel }: {
+function TriStateToggle({ value, onChange, disabled, 'aria-label': ariaLabel }: {
   value: boolean | undefined; // undefined = use global
   onChange: (v: boolean | undefined) => void;
   disabled?: boolean;
-  ariaLabel?: string;
+  'aria-label'?: string;
 }) {
   const states: Array<{ label: string; val: boolean | undefined }> = [
     { label: 'Global', val: undefined },
@@ -99,7 +100,7 @@ function BadgeSettingsSection({ projectId }: { projectId?: string }) {
       <SettingsSection title="Badges">
         <SettingsField label="Show badges" help={badgesHelp}>
           <TriStateToggle
-            ariaLabel="Show badges"
+            aria-label="Show badges"
             value={overrides?.enabled}
             onChange={(v) => handleProjectToggle('enabled', v)}
           />
@@ -107,7 +108,7 @@ function BadgeSettingsSection({ projectId }: { projectId?: string }) {
         {badgeToggles.map(({ key, label, description }) => (
           <SettingsField key={key} label={label} help={description}>
             <TriStateToggle
-              ariaLabel={label}
+              aria-label={label}
               value={overrides?.[key]}
               onChange={(v) => handleProjectToggle(key, v)}
               disabled={!resolved.enabled}
@@ -121,12 +122,12 @@ function BadgeSettingsSection({ projectId }: { projectId?: string }) {
   return (
     <SettingsSection title="Badges">
       <SettingsField label="Show badges" help={badgesHelp}>
-        <Toggle ariaLabel="Show badges" checked={resolved.enabled} onChange={(v) => handleAppToggle('enabled', v)} />
+        <Toggle aria-label="Show badges" checked={resolved.enabled} onChange={(v) => handleAppToggle('enabled', v)} />
       </SettingsField>
       {badgeToggles.map(({ key, label, description }) => (
         <SettingsField key={key} label={label} help={description}>
           <Toggle
-            ariaLabel={label}
+            aria-label={label}
             checked={resolved[key]}
             onChange={(v) => handleAppToggle(key, v)}
             disabled={!resolved.enabled}
@@ -134,9 +135,9 @@ function BadgeSettingsSection({ projectId }: { projectId?: string }) {
         </SettingsField>
       ))}
       <SettingsField label="Clear all badges" help="Remove every count from tabs, projects and the Dock.">
-        <button type="button" onClick={() => useBadgeStore.getState().clearAll()} className={settingsButton.ghost}>
+        <Button onClick={() => useBadgeStore.getState().clearAll()} kind="ghost">
           Clear
-        </button>
+        </Button>
       </SettingsField>
     </SettingsSection>
   );
@@ -167,13 +168,13 @@ function AppSoundSection() {
         actions={
           <>
             {Object.keys(settings.slotAssignments).length > 0 && (
-              <button type="button" onClick={() => saveSettings({ slotAssignments: {} })} className={settingsButton.quiet}>
+              <Button onClick={() => saveSettings({ slotAssignments: {} })} kind="quiet">
                 Reset to system sounds
-              </button>
+              </Button>
             )}
-            <button type="button" onClick={() => importPack()} className={settingsButton.ghost}>
+            <Button onClick={() => importPack()} kind="ghost">
               Import pack…
-            </button>
+            </Button>
           </>
         }
       >
@@ -236,7 +237,7 @@ export function NotificationSettingsView({ projectId }: { projectId?: string }) 
     <SettingsPage title="Notifications & alerts" description="Desktop notifications, badges and sounds for every project.">
       <div className="mt-[22px]">
         <SettingsField label="Desktop notifications" help="Show a system notification for the events below.">
-          <Toggle ariaLabel="Desktop notifications" checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
+          <Toggle aria-label="Desktop notifications" checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
         </SettingsField>
       </div>
 
@@ -244,7 +245,7 @@ export function NotificationSettingsView({ projectId }: { projectId?: string }) 
         {TOGGLES.map(({ key, label, description }) => (
           <SettingsField key={key} label={label} help={description || undefined}>
             <Toggle
-              ariaLabel={label}
+              aria-label={label}
               checked={settings[key]}
               onChange={(v) => saveSettings({ [key]: v })}
               disabled={!settings.enabled}
@@ -252,13 +253,12 @@ export function NotificationSettingsView({ projectId }: { projectId?: string }) 
           </SettingsField>
         ))}
         <SettingsField label="Test notification" help="Check that your system lets Clubhouse notify you.">
-          <button
-            type="button"
+          <Button
             onClick={() => window.clubhouse.app.sendNotification('Clubhouse', 'Notifications are working!', !settings.playSound)}
-            className={settingsButton.ghost}
+            kind="ghost"
           >
             Send test
-          </button>
+          </Button>
         </SettingsField>
       </SettingsSection>
 

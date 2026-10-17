@@ -121,9 +121,9 @@ describe('OrchestratorSettingsView', () => {
     describe('clubhouse mode toggle', () => {
       it('shows confirmation dialog when enabling', () => {
         render(<OrchestratorSettingsView />);
-        // Find the toggle button for Clubhouse Mode (first toggle-track)
-        const clubhouseToggle = screen.getByRole('button', { name: 'Clubhouse Mode' });
-        expect(clubhouseToggle).toHaveAttribute('aria-pressed', 'false');
+        // Find the toggle button for Clubhouse Mode
+        const clubhouseToggle = screen.getByRole('switch', { name: 'Clubhouse Mode' });
+        expect(clubhouseToggle).toHaveAttribute('aria-checked', 'false');
         fireEvent.click(clubhouseToggle);
 
         expect(screen.getByText('Enable Clubhouse Mode?')).toBeInTheDocument();
@@ -135,8 +135,8 @@ describe('OrchestratorSettingsView', () => {
         useClubhouseModeStore.setState({ setEnabled });
 
         render(<OrchestratorSettingsView />);
-        const clubhouseToggle = screen.getByRole('button', { name: 'Clubhouse Mode' });
-        expect(clubhouseToggle).toHaveAttribute('aria-pressed', 'false');
+        const clubhouseToggle = screen.getByRole('switch', { name: 'Clubhouse Mode' });
+        expect(clubhouseToggle).toHaveAttribute('aria-checked', 'false');
         fireEvent.click(clubhouseToggle);
         fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
 
@@ -145,8 +145,8 @@ describe('OrchestratorSettingsView', () => {
 
       it('cancels confirmation dialog', () => {
         render(<OrchestratorSettingsView />);
-        const clubhouseToggle = screen.getByRole('button', { name: 'Clubhouse Mode' });
-        expect(clubhouseToggle).toHaveAttribute('aria-pressed', 'false');
+        const clubhouseToggle = screen.getByRole('switch', { name: 'Clubhouse Mode' });
+        expect(clubhouseToggle).toHaveAttribute('aria-checked', 'false');
         fireEvent.click(clubhouseToggle);
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
@@ -158,7 +158,7 @@ describe('OrchestratorSettingsView', () => {
         useClubhouseModeStore.setState({ enabled: true, setEnabled });
 
         render(<OrchestratorSettingsView />);
-        fireEvent.click(screen.getByRole('button', { name: 'Clubhouse Mode' }));
+        fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse Mode' }));
 
         expect(setEnabled).toHaveBeenCalledWith(false);
         expect(screen.queryByText('Enable Clubhouse Mode?')).not.toBeInTheDocument();
@@ -245,8 +245,8 @@ describe('OrchestratorSettingsView', () => {
             availability: { 'claude-code': { available: false, error: 'CLI not found' } },
           });
           render(<OrchestratorSettingsView />);
-          const orchToggle = screen.getByRole('button', { name: 'Claude Code' });
-          expect(orchToggle).toHaveAttribute('aria-pressed', 'true');
+          const orchToggle = screen.getByRole('switch', { name: 'Claude Code' });
+          expect(orchToggle).toHaveAttribute('aria-checked', 'true');
           expect(orchToggle).toBeTruthy();
           expect(orchToggle).not.toBeDisabled();
         });
@@ -276,7 +276,7 @@ describe('OrchestratorSettingsView', () => {
           render(<OrchestratorSettingsView />);
           // Not-installed orchestrators show the error under their name.
           expect(screen.getByText('CLI not found')).toBeInTheDocument();
-          const claudeToggle = screen.getByRole('button', { name: 'Claude Code' });
+          const claudeToggle = screen.getByRole('switch', { name: 'Claude Code' });
           expect(claudeToggle).toBeDisabled();
           // The reason is on the toggle's wrapper (a disabled button gets no hover).
           expect(screen.getByTestId('orchestrator-toggle-claude-code')).toHaveAttribute('title', 'CLI not found. Install it to enable.');
@@ -289,8 +289,8 @@ describe('OrchestratorSettingsView', () => {
             availability: { 'claude-code': { available: false, error: 'CLI not found' } },
           });
           render(<OrchestratorSettingsView />);
-          const orchToggle = screen.getByRole('button', { name: 'Claude Code' });
-          expect(orchToggle).toHaveAttribute('aria-pressed', 'true');
+          const orchToggle = screen.getByRole('switch', { name: 'Claude Code' });
+          expect(orchToggle).toHaveAttribute('aria-checked', 'true');
           expect(orchToggle).not.toBeDisabled();
         });
 
@@ -300,8 +300,8 @@ describe('OrchestratorSettingsView', () => {
             availability: { 'claude-code': { available: true } },
           });
           render(<OrchestratorSettingsView />);
-          const orchToggle = screen.getByRole('button', { name: 'Claude Code' });
-          expect(orchToggle).toHaveAttribute('aria-pressed', 'true');
+          const orchToggle = screen.getByRole('switch', { name: 'Claude Code' });
+          expect(orchToggle).toHaveAttribute('aria-checked', 'true');
           expect(orchToggle).toBeDisabled();
           expect(screen.getByTestId('orchestrator-toggle-claude-code')).toHaveAttribute('title', 'At least one orchestrator must be enabled');
         });

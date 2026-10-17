@@ -4,24 +4,8 @@ import type { ReactNode } from 'react';
  * Page layout for the settings pages in the chrome style (#2016): an 18px
  * title, 13px sentence-case section headings, and field rows with the label
  * and help on the left and a 28px control on the right.
- *
- * The button classes below stand in for the shared Button (#2014). When it
- * lands, swap `settingsButton.*` call sites for it.
+ * Buttons use the shared `Button`.
  */
-
-export const settingsButton = {
-  primary:
-    'h-7 px-2.5 inline-flex items-center justify-center gap-1.5 rounded-md border border-ctp-accent bg-ctp-accent text-white text-xs font-medium whitespace-nowrap cursor-pointer hover:opacity-90 focus-ring disabled:opacity-40 disabled:cursor-not-allowed',
-  ghost:
-    'h-7 px-2.5 inline-flex items-center justify-center gap-1.5 rounded-md border border-surface-1 text-ctp-subtext1 text-xs font-medium whitespace-nowrap cursor-pointer hover:bg-surface-0 hover:text-ctp-text focus-ring disabled:opacity-40 disabled:cursor-not-allowed',
-  quiet:
-    'h-7 px-2.5 inline-flex items-center justify-center gap-1.5 rounded-md border border-transparent text-ctp-subtext1 text-xs font-medium whitespace-nowrap cursor-pointer hover:bg-surface-0 hover:text-ctp-text focus-ring disabled:opacity-40 disabled:cursor-not-allowed',
-  danger:
-    'h-7 px-2.5 inline-flex items-center justify-center gap-1.5 rounded-md border border-surface-1 text-ctp-error text-xs font-medium whitespace-nowrap cursor-pointer hover:bg-surface-0 focus-ring disabled:opacity-40 disabled:cursor-not-allowed',
-  /** Square 28px icon button. */
-  icon:
-    'w-7 h-7 inline-flex items-center justify-center rounded-md text-ctp-subtext0 cursor-pointer hover:bg-surface-0 hover:text-ctp-text focus-ring disabled:opacity-40 disabled:cursor-not-allowed',
-} as const;
 
 /** 28px text input, select or similar single-line control. */
 export const settingsInput =

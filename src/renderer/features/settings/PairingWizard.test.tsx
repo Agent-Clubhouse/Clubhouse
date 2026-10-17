@@ -43,11 +43,10 @@ describe('PairingWizard', () => {
     expect(screen.getByRole('button', { name: 'Pair' })).toBeInTheDocument();
   });
 
-  it('Pair button uses white text for visibility on blue background', () => {
+  it('Pair button is the primary action', () => {
     render(<PairingWizard onClose={mockOnClose} />);
     fireEvent.click(screen.getByText('Test Machine'));
     const pairBtn = screen.getByRole('button', { name: 'Pair' });
-    expect(pairBtn.className).toContain('text-white');
-    expect(pairBtn.className).not.toContain('text-ctp-base');
+    expect(pairBtn).toHaveAttribute('data-kind', 'primary');
   });
 });

@@ -15,7 +15,8 @@ import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared
 import type { PluginPermission, PermissionRiskLevel } from '../../../shared/plugin-types';
 import { Spinner } from '../../components/Spinner';
 import { Modal } from '../../components/Modal';
-import { settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
+import { settingsInput, settingsHelp } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -106,13 +107,13 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
           )}
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
-          <button
+          <Button
             onClick={onInstall}
             disabled={installed || installing || !compatible}
-            className={installed ? settingsButton.quiet : settingsButton.primary}
+            kind={installed ? 'quiet' : 'primary'}
           >
             {installed ? 'Installed' : installing ? 'Installing…' : 'Install'}
-          </button>
+          </Button>
           {release.permissions.length > 0 && (
             <button
               onClick={() => setShowPerms(!showPerms)}
@@ -152,13 +153,13 @@ function PluginCard({ plugin, featured, installed, installing, onInstall, betaPl
                 <span className="text-ctp-error"> Uses plugin API {betaRelease.api}, which this version can&apos;t load.</span>
               )}
             </p>
-            <button
+            <Button
               onClick={onInstallBeta}
               disabled={installingBeta || !betaCompatible}
-              className={settingsButton.ghost}
+              kind="ghost"
             >
               {installingBeta ? 'Installing…' : 'Install beta'}
-            </button>
+            </Button>
           </div>
         );
       })()}
@@ -400,6 +401,17 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
       title="Plugin marketplace"
       width="w-full max-w-2xl mx-4"
       backdropTestId="marketplace-overlay"
+      footer={
+        <>
+          <p className={`${settingsHelp} mr-auto`}>
+            {data ? `${allPlugins.length} plugin(s) available` : ''}
+            {customPlugins.length > 0 ? `, ${customPlugins.length} from custom stores` : ''}
+          </p>
+          <Button onClick={onClose} kind="ghost" data-testid="marketplace-close">
+            Close
+          </Button>
+        </>
+      }
     >
       <div className="flex flex-col max-h-[70vh] -mt-1" data-testid="marketplace-dialog">
         {/* Header */}
@@ -424,12 +436,12 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
           {showRestartPrompt && (
             <div className="mb-2 flex items-center gap-3">
               <p className="flex-1 min-w-0 text-xs text-ctp-text">Beta installed. Restart Clubhouse to load the new version.</p>
-              <button
+              <Button
                 onClick={() => window.clubhouse.app.restart()}
-                className={settingsButton.primary}
+                kind="primary"
               >
                 Restart now
-              </button>
+              </Button>
             </div>
           )}
 
@@ -511,21 +523,6 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
               ))}
             </div>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between gap-2 mt-4">
-          <p className={settingsHelp}>
-            {data ? `${allPlugins.length} plugin(s) available` : ''}
-            {customPlugins.length > 0 ? `, ${customPlugins.length} from custom stores` : ''}
-          </p>
-          <button
-            onClick={onClose}
-            className={settingsButton.ghost}
-            data-testid="marketplace-close"
-          >
-            Close
-          </button>
         </div>
       </div>
     </Modal>

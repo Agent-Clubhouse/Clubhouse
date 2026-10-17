@@ -66,7 +66,7 @@ describe('ExperimentalSettingsView', () => {
     });
     expect(screen.getByText(/native chat view\. The terminal stays available for every provider\./)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Chat' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Chat' }));
 
     await waitFor(() => {
       expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ goobers: true, chat: true });
@@ -79,7 +79,7 @@ describe('ExperimentalSettingsView', () => {
     await waitFor(() => {
       expect(screen.getByText('Telemetry export')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Telemetry export' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Telemetry export' }));
     await waitFor(() => {
       expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ telemetry: true });
     });

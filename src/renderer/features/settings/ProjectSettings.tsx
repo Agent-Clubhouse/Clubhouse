@@ -18,11 +18,11 @@ import {
   SettingsSection,
   SettingsField,
   SettingsBlock,
-  settingsButton,
   settingsInput,
   settingsLabel,
   settingsHelp,
 } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 function NameField({ projectId }: { projectId: string }) {
   const { projects, updateProject } = useProjectStore();
@@ -54,9 +54,9 @@ function NameField({ projectId }: { projectId: string }) {
   return (
     <SettingsField label="Name" help="Shown in the sidebar and title bar." htmlFor="project-settings-name">
       {dirty && (
-        <button onClick={save} className={settingsButton.primary}>
+        <Button onClick={save} kind="primary">
           Save
-        </button>
+        </Button>
       )}
       <input
         id="project-settings-name"
@@ -135,20 +135,20 @@ function AppearanceFields({ projectId }: { projectId: string }) {
             )}
           </div>
           {(hasImage || hasEmoji) && (
-            <button onClick={handleRemoveIcon} className={settingsButton.quiet}>
+            <Button onClick={handleRemoveIcon} kind="quiet">
               Remove
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             ref={emojiButtonRef}
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className={settingsButton.ghost}
+            kind="ghost"
           >
             Choose emoji…
-          </button>
-          <button onClick={handlePickImage} className={settingsButton.ghost}>
+          </Button>
+          <Button onClick={handlePickImage} kind="ghost">
             Choose image…
-          </button>
+          </Button>
           {showEmojiPicker && (
             <div className="absolute top-9 right-0 z-dropdown">
               <EmojiPicker
@@ -338,28 +338,28 @@ function LaunchWrapperSection({ projectId, projectPath }: { projectId: string; p
         help={<span className={hasDiff ? 'text-ctp-warning' : undefined}>{catalogHelp}</span>}
       >
         {wrapper.refreshCommandId && (
-          <button
+          <Button
             onClick={handleRefresh}
             disabled={refreshing}
             title="Refresh catalog"
-            className={`${settingsButton.quiet} disabled:cursor-wait`}
+            kind="quiet" className="disabled:cursor-wait"
           >
             {refreshing ? <Spinner size="xs" /> : <RefreshIcon />}
             Refresh
-          </button>
+          </Button>
         )}
         {hasDiff && (
-          <button onClick={handleAcknowledge} className={settingsButton.ghost}>
+          <Button onClick={handleAcknowledge} kind="ghost">
             Mark as seen
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           onClick={() => setConfirmRemove(true)}
-          className={settingsButton.danger}
+          kind="danger"
           data-testid="remove-wrapper-button"
         >
           Remove…
-        </button>
+        </Button>
       </SettingsField>
       <ConfirmDestructiveAction
         open={confirmRemove}
@@ -434,13 +434,13 @@ function BlueprintBundleSection({ projectId, projectPath, projectName }: { proje
           label="Export canvases"
           help="Every canvas in this project as one bundle, for sharing or backup."
         >
-          <button
+          <Button
             onClick={() => setShowExportDialog(true)}
-            className={settingsButton.ghost}
+            kind="ghost"
             data-testid="export-bundle-button"
           >
             Export…
-          </button>
+          </Button>
         </SettingsField>
       </SettingsSection>
 
@@ -529,14 +529,14 @@ function RemoveProjectSection({ projectId, projectPath, projectName }: { project
     <>
       <SettingsSection title="Remove project">
         <SettingsField label="Close project" help={`Removes ${projectName} from the sidebar. Files on disk stay.`}>
-          <button onClick={handleClose} className={settingsButton.ghost}>
+          <Button onClick={handleClose} kind="ghost">
             Close…
-          </button>
+          </Button>
         </SettingsField>
         <SettingsField label="Reset project" help="Also deletes the .clubhouse folder: agents, canvases and settings.">
-          <button onClick={() => setShowResetDialog(true)} className={settingsButton.danger}>
+          <Button onClick={() => setShowResetDialog(true)} kind="danger">
             Reset…
-          </button>
+          </Button>
         </SettingsField>
       </SettingsSection>
 

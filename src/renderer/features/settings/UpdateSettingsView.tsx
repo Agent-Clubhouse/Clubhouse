@@ -1,6 +1,7 @@
 import { useUpdateStore } from '../../stores/updateStore';
 import { Toggle } from '../../components/Toggle';
-import { SettingsPage, SettingsField, settingsButton } from './SettingsLayout';
+import { SettingsPage, SettingsField } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 export function UpdateSettingsView() {
   const settings = useUpdateStore((s) => s.settings);
@@ -24,7 +25,7 @@ export function UpdateSettingsView() {
       <div className="mt-[22px]">
         <SettingsField label="Automatic updates" help="Check for updates every 4 hours and download in the background.">
           <Toggle
-            ariaLabel="Automatic updates"
+            aria-label="Automatic updates"
             checked={settings.autoUpdate}
             onChange={(v) => saveSettings({ ...settings, autoUpdate: v })}
           />
@@ -32,7 +33,7 @@ export function UpdateSettingsView() {
 
         <SettingsField label="Preview versions" help="Get upcoming features early, before they are officially released.">
           <Toggle
-            ariaLabel="Preview versions"
+            aria-label="Preview versions"
             checked={settings.previewChannel}
             onChange={(v) => saveSettings({ ...settings, previewChannel: v })}
           />
@@ -50,23 +51,21 @@ export function UpdateSettingsView() {
           }
         >
           {showManualDownload && (
-            <button
-              type="button"
+            <Button
               onClick={openUpdateDownload}
-              className={settingsButton.quiet}
+              kind="quiet"
               data-testid="settings-manual-download-btn"
             >
               Download manually
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
+          <Button
             onClick={checkForUpdates}
             disabled={status.state === 'checking' || status.state === 'downloading'}
-            className={settingsButton.ghost}
+            kind="ghost"
           >
             {status.state === 'checking' ? 'Checking…' : 'Check now'}
-          </button>
+          </Button>
         </SettingsField>
 
         {settings.lastCheck && (

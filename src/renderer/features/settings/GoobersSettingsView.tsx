@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useGoobersSettingsStore } from '../../stores/goobersSettingsStore';
 import { Toggle } from '../../components/Toggle';
-import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsButton, settingsInput } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 interface ValidateRootResult {
   ok: boolean;
@@ -95,14 +96,13 @@ export function GoobersSettingsView() {
             className={`${settingsInput} w-[240px] font-mono`}
             data-testid="goobers-instance-root"
           />
-          <button
-            type="button"
+          <Button
             onClick={handleBrowse}
-            className={settingsButton.ghost}
+            kind="ghost"
             data-testid="goobers-browse-root"
           >
             Browse…
-          </button>
+          </Button>
         </SettingsField>
 
         <SettingsField
@@ -126,7 +126,7 @@ export function GoobersSettingsView() {
         <SettingsField label="Connect automatically" help="Connect to the instance when Clubhouse starts, if a root is set.">
           <div data-testid="goobers-auto-connect-toggle" className="flex">
             <Toggle
-              ariaLabel="Connect automatically"
+              aria-label="Connect automatically"
               checked={autoConnect}
               onChange={(next) => saveSettings({ autoConnect: next })}
             />
@@ -136,7 +136,7 @@ export function GoobersSettingsView() {
         <SettingsField label="Manage daemon" help="Allow starting and stopping the Goobers daemon from Clubhouse.">
           <div data-testid="goobers-manage-daemon-toggle" className="flex">
             <Toggle
-              ariaLabel="Manage daemon"
+              aria-label="Manage daemon"
               checked={manageDaemon}
               onChange={handleManageDaemonToggle}
             />
@@ -153,22 +153,20 @@ export function GoobersSettingsView() {
                 <li>The daemon outlives Clubhouse. Quitting the app does not stop it.</li>
               </ul>
               <div className="flex gap-2">
-                <button
-                  type="button"
+                <Button
                   onClick={() => setShowDaemonHazards(false)}
-                  className={settingsButton.ghost}
+                  kind="ghost"
                   data-testid="goobers-daemon-hazards-cancel"
                 >
                   Cancel
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
                   onClick={confirmManageDaemon}
-                  className={settingsButton.primary}
+                  kind="primary"
                   data-testid="goobers-daemon-hazards-confirm"
                 >
                   Turn on anyway
-                </button>
+                </Button>
               </div>
             </div>
           </SettingsBlock>

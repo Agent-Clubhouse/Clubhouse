@@ -1,5 +1,6 @@
 import { Modal } from '../../components/Modal';
-import { settingsButton, settingsHelp } from './SettingsLayout';
+import { settingsHelp } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 export interface TelemetryShareAsk {
   /** Framebriar's host, which the user is confirming. */
@@ -15,7 +16,12 @@ export interface TelemetryShareAsk {
  */
 export function FeedbackTelemetryPrompt({ ask, onShare, onDecline }: { ask: TelemetryShareAsk; onShare: () => void; onDecline: () => void }) {
   return (
-    <Modal open onClose={onDecline} title="Share telemetry with the developer?" width="w-[440px]">
+    <Modal open onClose={onDecline} title="Share telemetry with the developer?" width="w-[440px]" footer={
+      <>
+        <Button onClick={onDecline} kind="ghost">Not now</Button>
+        <Button onClick={onShare} kind="primary">Share</Button>
+      </>
+    }>
       <div className="space-y-3" data-testid="feedback-telemetry-prompt">
         <p className="text-[13px] text-ctp-subtext1">
           Telemetry export is on. Clubhouse can also send its user activity and errors to the developer, with the same redaction as your own export, so feedback comes with context. Only &quot;User activity and errors&quot; is sent, never prompts, file contents or paths.
@@ -27,10 +33,6 @@ export function FeedbackTelemetryPrompt({ ask, onShare, onDecline }: { ask: Tele
           </ul>
         </div>
         <p className={settingsHelp}>You can change this later in Settings, Logging, under Telemetry export.</p>
-        <div className="flex justify-end gap-2 mt-4">
-          <button type="button" onClick={onDecline} className={settingsButton.ghost}>Not now</button>
-          <button type="button" onClick={onShare} className={settingsButton.primary}>Share</button>
-        </div>
       </div>
     </Modal>
   );

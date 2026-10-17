@@ -7,7 +7,8 @@ import {
   SlotAssignment,
 } from '../../../shared/types';
 import { Toggle } from '../../components/Toggle';
-import { SettingsField, SettingsSection, settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
+import { SettingsField, SettingsSection, settingsInput, settingsHelp } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 // ── Volume Slider ─────────────────────────────────────────────────────
 
@@ -121,14 +122,13 @@ export function SoundEventRow({
           disabled={disabled || !eventSettings.enabled}
         />
         {slotPackId && (
-          <button
-            type="button"
+          <Button
             onClick={() => previewSound(slotPackId, event)}
             disabled={disabled || !eventSettings.enabled}
-            className={settingsButton.ghost}
+            kind="ghost"
           >
             Preview
-          </button>
+          </Button>
         )}
         <Toggle
           checked={eventSettings.enabled}
@@ -141,7 +141,7 @@ export function SoundEventRow({
             });
           }}
           disabled={disabled}
-          ariaLabel={`${SOUND_EVENT_LABELS[event]} sound`}
+          aria-label={`${SOUND_EVENT_LABELS[event]} sound`}
         />
     </SettingsField>
   );
@@ -170,13 +170,13 @@ export function SoundPackCard({
       label={<>{pack.name}<span className="ml-2 text-xs text-ctp-overlay1">{meta}</span></>}
       help={pack.description || undefined}
     >
-      <button type="button" onClick={onApplyAll} className={settingsButton.ghost}>
+      <Button onClick={onApplyAll} kind="ghost">
         Apply to all
-      </button>
+      </Button>
       {onDelete && (
-        <button type="button" onClick={onDelete} className={settingsButton.danger}>
+        <Button onClick={onDelete} kind="danger">
           Delete
-        </button>
+        </Button>
       )}
     </SettingsField>
   );

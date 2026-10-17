@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { FeedbackStatus } from '../../../shared/feedback-types';
 import { FEEDBACK_NOTICE_TEXT, useFeedbackStore } from '../../stores/feedbackStore';
 import { FeedbackTelemetryPrompt, type TelemetryShareAsk } from './FeedbackTelemetryPrompt';
-import { SettingsPage, SettingsSection, SettingsField, settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, settingsInput, settingsHelp } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 /**
  * After connecting, offer the Framebriar telemetry destination when export is already on
@@ -166,14 +167,13 @@ export function FeedbackSettingsView() {
             testId="feedback-connected"
             label={<>Connected{expires ? <span className="text-ctp-overlay1"> · access expires {expires}</span> : null}</>}
           >
-            <button
-              type="button"
+            <Button
               onClick={() => void disconnect()}
               disabled={busy}
-              className={settingsButton.ghost}
+              kind="ghost"
             >
               Disconnect
-            </button>
+            </Button>
           </SettingsField>
         ) : (
           <form onSubmit={(e) => void connect(e)} data-testid="feedback-connect-form">
@@ -192,13 +192,13 @@ export function FeedbackSettingsView() {
                 placeholder="Paste the invitation you were sent"
                 className={`${settingsInput} w-[240px]`}
               />
-              <button
+              <Button
                 type="submit"
                 disabled={busy || storageUnavailable}
-                className={settingsButton.primary}
+                kind="primary"
               >
                 Connect
-              </button>
+              </Button>
             </SettingsField>
           </form>
         )}
@@ -206,14 +206,13 @@ export function FeedbackSettingsView() {
         {/* Offline, expired or revoked access is still an enrollment: Disconnect clears it and its notice. */}
         {!status.connected && (status.enrolled || status.notice) && (
           <SettingsField testId="feedback-enrolled" label="Saved access" help="Feedback access is saved on this computer.">
-            <button
-              type="button"
+            <Button
               onClick={() => void disconnect()}
               disabled={busy}
-              className={settingsButton.ghost}
+              kind="ghost"
             >
               Disconnect
-            </button>
+            </Button>
           </SettingsField>
         )}
       </SettingsSection>

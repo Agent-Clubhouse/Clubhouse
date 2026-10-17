@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { AgentTemplateEntry } from '../../../shared/types';
 import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
 import { Modal } from '../../components/Modal';
-import { SettingsSection, SettingsBlock, settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
+import { SettingsSection, SettingsBlock, settingsInput, settingsHelp } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 interface Props {
   projectPath: string;
@@ -85,21 +86,19 @@ export function SourceAgentTemplatesSection({ projectPath }: Props) {
         title={isCreate ? 'New agent definition' : `Edit ${editingTemplate}`}
         actions={
           <>
-            <button
-              type="button"
+            <Button
               onClick={() => { setView('list'); setEditingTemplate(null); }}
-              className={settingsButton.quiet}
+              kind="quiet"
             >
               Cancel
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               onClick={isCreate ? handleSaveNew : handleSaveEdit}
               disabled={saveDisabled}
-              className={settingsButton.primary}
+              kind="primary"
             >
               {saving ? 'Saving...' : 'Save'}
-            </button>
+            </Button>
           </>
         }
       >
@@ -132,9 +131,9 @@ export function SourceAgentTemplatesSection({ projectPath }: Props) {
       title="Agent definitions"
       meta={<span className="font-mono">.clubhouse/agent-templates/</span>}
       actions={
-        <button type="button" onClick={handleCreate} className={settingsButton.ghost}>
+        <Button onClick={handleCreate} kind="ghost">
           New definition
-        </button>
+        </Button>
       }
     >
       {templates.length === 0 ? (
@@ -157,21 +156,19 @@ export function SourceAgentTemplatesSection({ projectPath }: Props) {
                 {tpl.name}
               </button>
               <div className="flex gap-0.5 flex-shrink-0">
-                <button
-                  type="button"
+                <Button
                   onClick={() => handleOpenFolder(tpl.path)}
-                  className={settingsButton.icon}
+                  kind="quiet" className="w-7 px-0 text-ctp-subtext0"
                   title="Open in file manager"
                   aria-label="Open {tpl.name} in file manager"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                   </svg>
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
                   onClick={() => setDeleteTarget(tpl.name)}
-                  className={`${settingsButton.icon} hover:text-ctp-error`}
+                  kind="quiet" className="w-7 px-0 text-ctp-subtext0 hover:text-ctp-error"
                   title="Delete agent definition"
                   aria-label="Delete agent definition {tpl.name}"
                 >
@@ -180,7 +177,7 @@ export function SourceAgentTemplatesSection({ projectPath }: Props) {
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
                     <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                   </svg>
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -192,6 +189,19 @@ export function SourceAgentTemplatesSection({ projectPath }: Props) {
         onClose={() => setDeleteTarget(null)}
         title="Delete agent definition?"
         width="w-[400px] max-w-[calc(100vw-32px)]"
+        footer={
+          <>
+            <Button onClick={() => setDeleteTarget(null)} kind="ghost">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => { if (deleteTarget) handleDelete(deleteTarget); }}
+              kind="danger-solid"
+            >
+              Delete
+            </Button>
+          </>
+        }
       >
         <div>
           <p className={settingsHelp}>
@@ -200,18 +210,6 @@ export function SourceAgentTemplatesSection({ projectPath }: Props) {
           <p className="text-xs text-ctp-error mt-1">
             This permanently deletes the agent definition. You can’t undo this.
           </p>
-          <div className="flex justify-end gap-2 mt-4">
-            <button type="button" onClick={() => setDeleteTarget(null)} className={settingsButton.ghost}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => { if (deleteTarget) handleDelete(deleteTarget); }}
-              className={settingsButton.danger}
-            >
-              Delete
-            </button>
-          </div>
         </div>
       </Modal>
     </SettingsSection>

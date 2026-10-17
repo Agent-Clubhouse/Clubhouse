@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAnnexClientStore, type DiscoveredService } from '../../stores/annexClientStore';
-import { settingsButton, settingsInput } from './SettingsLayout';
+import { settingsInput } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 type WizardStep = 'scanning' | 'pin-entry' | 'result';
 
@@ -68,9 +69,9 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
           {step === 'pin-entry' && `Pair with ${selectedService?.alias || 'service'}`}
           {step === 'result' && 'Pairing result'}
         </div>
-        <button type="button" onClick={onClose} className={settingsButton.quiet}>
+        <Button onClick={onClose} kind="quiet">
           Close
-        </button>
+        </Button>
       </div>
 
       {step === 'scanning' && (
@@ -101,9 +102,9 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
               ))}
             </ul>
           )}
-          <button type="button" onClick={handleRefresh} className={settingsButton.ghost}>
+          <Button onClick={handleRefresh} kind="ghost">
             Refresh
-          </button>
+          </Button>
         </>
       )}
 
@@ -125,21 +126,19 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
               aria-label="Pairing PIN"
               className={`${settingsInput} w-[140px] tracking-widest text-center font-mono`}
             />
-            <button
-              type="button"
+            <Button
               onClick={handlePair}
               disabled={pairing || pin.length < 4}
-              className={settingsButton.primary}
+              kind="primary"
             >
               {pairing ? 'Pairing…' : 'Pair'}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               onClick={() => { setStep('scanning'); setSelectedService(null); }}
-              className={settingsButton.quiet}
+              kind="quiet"
             >
               Back
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -151,17 +150,16 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
           </div>
           <div className="flex gap-2">
             {!resultSuccess && (
-              <button
-                type="button"
+              <Button
                 onClick={() => { setPin(''); setStep('pin-entry'); }}
-                className={settingsButton.ghost}
+                kind="ghost"
               >
                 Try again
-              </button>
+              </Button>
             )}
-            <button type="button" onClick={onClose} className={settingsButton.ghost}>
+            <Button onClick={onClose} kind="ghost">
               {resultSuccess ? 'Done' : 'Cancel'}
-            </button>
+            </Button>
           </div>
         </div>
       )}

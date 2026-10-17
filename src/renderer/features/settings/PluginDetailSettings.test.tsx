@@ -164,7 +164,7 @@ describe('PluginDetailSettings', () => {
 
     render(<PluginDetailSettings />);
     expect(screen.getByText('On')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on Test Plugin' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Turn on Test Plugin' }));
     await vi.waitFor(() => {
       expect(mockDeactivatePlugin).toHaveBeenCalledWith('test-plugin');
     });

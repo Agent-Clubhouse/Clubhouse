@@ -143,20 +143,20 @@ test.describe('Settings Persistence — Toggle', () => {
   });
 
   test('toggling "Home" changes its state', async () => {
-    const homeToggle = window.locator('button[aria-label="Home"]').first();
+    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
     await expect(homeToggle).toBeVisible({ timeout: 3_000 });
 
-    const beforeState = await homeToggle.getAttribute('aria-pressed');
+    const beforeState = await homeToggle.getAttribute('aria-checked');
     await homeToggle.click();
     await window.waitForTimeout(300);
 
-    const afterState = await homeToggle.getAttribute('aria-pressed');
+    const afterState = await homeToggle.getAttribute('aria-checked');
     expect(afterState).not.toBe(beforeState);
   });
 
   test('localStorage verification for clubhouse_view_prefs', async () => {
-    const homeToggle = window.locator('button[aria-label="Home"]').first();
-    const currentState = await homeToggle.getAttribute('aria-pressed');
+    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
+    const currentState = await homeToggle.getAttribute('aria-checked');
 
     const storedPrefs = await window.evaluate(() => {
       const raw = localStorage.getItem('clubhouse_view_prefs');
@@ -167,24 +167,24 @@ test.describe('Settings Persistence — Toggle', () => {
   });
 
   test('toggle state persists after navigating away and back', async () => {
-    const homeToggle = window.locator('button[aria-label="Home"]').first();
-    const stateBeforeNav = await homeToggle.getAttribute('aria-pressed');
+    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
+    const stateBeforeNav = await homeToggle.getAttribute('aria-checked');
 
     await navigateToSmokeProject(window);
     await openSettings(window);
     await navigateToDisplaySettings(window);
 
     const stateAfterReturn = await window
-      .locator('button[aria-label="Home"]')
+      .locator('[role="switch"][aria-label="Home"]')
       .first()
-      .getAttribute('aria-pressed');
+      .getAttribute('aria-checked');
     expect(stateAfterReturn).toBe(stateBeforeNav);
   });
 
   test('restore original toggle state', async () => {
-    const homeToggle = window.locator('button[aria-label="Home"]').first();
+    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
     await expect(homeToggle).toBeVisible({ timeout: 3_000 });
-    const currentState = await homeToggle.getAttribute('aria-pressed');
+    const currentState = await homeToggle.getAttribute('aria-checked');
 
     // Default is "true", so restore if changed
     if (currentState === 'false') {

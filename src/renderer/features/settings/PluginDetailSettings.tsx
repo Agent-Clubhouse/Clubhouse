@@ -144,7 +144,7 @@ export function PluginDetailSettings() {
             checked={enabled}
             onChange={() => toggle(pluginSettingsId)}
             disabled={entry.status === 'incompatible'}
-            ariaLabel={`Turn on ${entry.manifest.name}`}
+            aria-label={`Turn on ${entry.manifest.name}`}
           />
         </span>
       }

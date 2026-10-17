@@ -76,7 +76,7 @@ export function DisplaySettingsView() {
               label={<span className="flex items-center gap-2"><span className="text-ctp-overlay1 flex">{icon}</span>{label}</span>}
               help={description}
             >
-              <Toggle ariaLabel={label} checked={value} onChange={set} />
+              <Toggle aria-label={label} checked={value} onChange={set} />
             </SettingsField>
           );
         })}

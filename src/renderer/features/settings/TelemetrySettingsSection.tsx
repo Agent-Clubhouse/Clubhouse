@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
-import { SettingsSection, SettingsField, settingsButton, settingsInput } from './SettingsLayout';
+import { SettingsSection, SettingsField, settingsInput } from './SettingsLayout';
 import type { TelemetryLevel } from '../../../shared/telemetry/attributes';
 import type {
   OtlpHeaderInput,
@@ -22,6 +22,7 @@ import type {
   TelemetryStatus,
   TelemetryTestReport,
 } from '../../../shared/telemetry/settings-types';
+import { Button } from '../../components/Button';
 
 const LEVELS: Array<{ id: TelemetryLevel; label: string; desc: string }> = [
   { id: 'errors', label: 'Errors only', desc: 'Crashes and failed operations' },
@@ -90,7 +91,6 @@ const api = () => window.clubhouse.telemetrySettings;
 export const WORKBOOK_DOCS_URL = 'https://github.com/Agent-Clubhouse/Clubhouse/blob/main/docs/telemetry/workbook/README.md';
 
 const inputClass = `${settingsInput} w-full`;
-const buttonClass = settingsButton.ghost;
 const panelClass = 'mt-[22px] space-y-3';
 const panelTitleClass = 'text-[13px] font-semibold text-ctp-text mb-1';
 const rowLabelClass = 'text-[13px] text-ctp-text';
@@ -261,8 +261,8 @@ export function TelemetrySettingsSection() {
                 value={connectionString}
                 onChange={(e) => setConnectionString(e.target.value)}
               />
-              <button type="button" className={buttonClass} disabled={!connectionString.trim()} onClick={() => void saveCs()}>Save</button>
-              {replacingCs && <button type="button" className={buttonClass} onClick={() => setReplacingCs(false)}>Cancel</button>}
+              <Button kind="ghost" disabled={!connectionString.trim()} onClick={() => void saveCs()}>Save</Button>
+              {replacingCs && <Button kind="ghost" onClick={() => setReplacingCs(false)}>Cancel</Button>}
             </div>
           )}
           {errorLine('azure')}
@@ -274,7 +274,7 @@ export function TelemetrySettingsSection() {
           />
         )}
         <div className="flex items-center gap-3">
-          <button type="button" className={buttonClass} disabled={!azure?.active} onClick={() => void runTest('azure')}>Send test event</button>
+          <Button kind="ghost" disabled={!azure?.active} onClick={() => void runTest('azure')}>Send test event</Button>
           {testLine('azure')}
         </div>
       </section>
@@ -342,7 +342,7 @@ export function TelemetrySettingsSection() {
                   value={h.value ?? ''}
                   onChange={(e) => setHeaders(headers.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
                 />
-                <button type="button" className={buttonClass} aria-label={`Remove header ${i + 1}`} onClick={() => setHeaders(headers.filter((_, j) => j !== i))}>Remove</button>
+                <Button kind="ghost" aria-label={`Remove header ${i + 1}`} onClick={() => setHeaders(headers.filter((_, j) => j !== i))}>Remove</Button>
               </div>
             ))}
           </div>
@@ -350,9 +350,9 @@ export function TelemetrySettingsSection() {
         </div>
         <div className="text-xs text-ctp-overlay1">Protocol: HTTP/JSON</div>
         <div className="flex items-center gap-3 flex-wrap">
-          <button type="button" className={buttonClass} disabled={!endpoint.trim()} onClick={() => void saveOtlp()}>Save</button>
+          <Button kind="ghost" disabled={!endpoint.trim()} onClick={() => void saveOtlp()}>Save</Button>
           {status.otlp.configured && (
-            <button type="button" className={buttonClass} onClick={() => void handleResult('otlp', 'otlp', () => api().clearOtlp(), {}, syncOtlpForm)}>Clear</button>
+            <Button kind="ghost" onClick={() => void handleResult('otlp', 'otlp', () => api().clearOtlp(), {}, syncOtlpForm)}>Clear</Button>
           )}
         </div>
         {errorLine('otlp')}
@@ -377,7 +377,7 @@ export function TelemetrySettingsSection() {
           />
         )}
         <div className="flex items-center gap-3">
-          <button type="button" className={buttonClass} disabled={!otlp?.active} onClick={() => void runTest('otlp')}>Send test event</button>
+          <Button kind="ghost" disabled={!otlp?.active} onClick={() => void runTest('otlp')}>Send test event</Button>
           {testLine('otlp')}
         </div>
       </section>
@@ -405,7 +405,7 @@ export function TelemetrySettingsSection() {
             onFilter={(level, preset) => void handleResult('framebriar', 'framebriar', () => api().setFilter('framebriar', level, preset))}
           />
           <div className="flex items-center gap-3">
-            <button type="button" className={buttonClass} disabled={!framebriar.active} onClick={() => void runTest('framebriar')}>Send test event</button>
+            <Button kind="ghost" disabled={!framebriar.active} onClick={() => void runTest('framebriar')}>Send test event</Button>
             {testLine('framebriar')}
           </div>
           {errorLine('framebriar')}
@@ -428,13 +428,12 @@ export function TelemetrySettingsSection() {
               value={sampleRate}
               onChange={(e) => setSampleRate(e.target.value)}
             />
-            <button
-              type="button"
-              className={buttonClass}
+            <Button
+              kind="ghost"
               onClick={() => void handleResult('general', 'general', () => api().setAdvanced({ sampleRate: Number(sampleRate) }), {}, (s) => setSampleRate(String(s.sampleRate)))}
             >
               Apply
-            </button>
+            </Button>
           </div>
           <div className="text-[13px] text-ctp-text">
             Install ID <span className="font-mono text-xs text-ctp-subtext1">{status.installId ?? 'created when telemetry is first turned on'}</span>
@@ -531,8 +530,13 @@ function ConfirmDialog({ confirm, onCancel, onConfirm }: { confirm: PendingConfi
   const host = confirm.host;
   const loopback = isLoopbackHost(host);
   return (
-    <Modal open onClose={onCancel} title="Before telemetry starts" width="w-[480px]">
-      <div className="space-y-4 text-[13px] text-ctp-subtext1" data-testid="telemetry-confirm">
+    <Modal open onClose={onCancel} title="Before telemetry starts" width="w-[480px]" testId="telemetry-confirm" footer={
+      <>
+        <Button kind="ghost" onClick={onCancel}>Cancel</Button>
+        <Button kind="primary" onClick={onConfirm}>Continue</Button>
+      </>
+    }>
+      <div className="space-y-4 text-[13px] text-ctp-subtext1">
         {confirm.needs.includes('destination') && !confirm.needs.includes('consent') && (
           loopback
             ? <p>Telemetry will be sent to a collector on this computer ({host}).</p>
@@ -555,10 +559,6 @@ function ConfirmDialog({ confirm, onCancel, onConfirm }: { confirm: PendingConfi
             <ul className="list-disc pl-5 space-y-0.5">{NEVER_SENT.map((s) => <li key={s}>{s}</li>)}</ul>
           </div>
         )}
-        <div className="flex justify-end gap-2 mt-4">
-          <button type="button" className={buttonClass} onClick={onCancel}>Cancel</button>
-          <button type="button" className={settingsButton.primary} onClick={onConfirm}>Continue</button>
-        </div>
       </div>
     </Modal>
   );

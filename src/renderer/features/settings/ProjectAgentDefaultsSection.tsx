@@ -11,8 +11,9 @@ import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
 import {
   SettingsSection, SettingsField, SettingsBlock,
-  settingsButton, settingsInput, settingsTextArea, settingsLabel, settingsHelp,
+  settingsInput, settingsTextArea, settingsLabel, settingsHelp,
 } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 const CODE_CLASS = 'font-mono text-ctp-subtext1';
 const SELECT_CLASS = `${settingsInput} w-[220px]`;
@@ -65,11 +66,10 @@ function ProvenanceMeta({ item, isOrphan }: { item: ProvenancedConfigItem; isOrp
 
 function RemoveButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
   return (
-    <button
-      type="button"
+    <Button
       onClick={onClick}
       disabled={disabled}
-      className={`${settingsButton.icon} hover:text-ctp-error flex-shrink-0`}
+      kind="quiet" className="w-7 px-0 text-ctp-subtext0 hover:text-ctp-error flex-shrink-0"
       title="Remove this item"
       aria-label="Remove this item"
     >
@@ -77,7 +77,7 @@ function RemoveButton({ onClick, disabled }: { onClick: () => void; disabled?: b
         <line x1="18" y1="6" x2="6" y2="18" />
         <line x1="6" y1="6" x2="18" y2="18" />
       </svg>
-    </button>
+    </Button>
   );
 }
 
@@ -105,17 +105,18 @@ function ConfirmDialog({
   testId?: string;
 }) {
   return (
-    <Modal open={open} onClose={onCancel} title={title} width="w-[420px] max-w-[calc(100vw-32px)]">
+    <Modal open={open} onClose={onCancel} title={title} width="w-[420px] max-w-[calc(100vw-32px)]" footer={
+      <>
+        <Button onClick={onCancel} kind="ghost">
+          Cancel
+        </Button>
+        <Button onClick={onConfirm} disabled={confirming} kind="danger-solid">
+          {confirming ? confirmingLabel : confirmLabel}
+        </Button>
+      </>
+    }>
       <div data-testid={testId}>
         <p className={settingsHelp}>{message}</p>
-        <div className="flex justify-end gap-2 mt-4">
-          <button type="button" onClick={onCancel} className={settingsButton.ghost}>
-            Cancel
-          </button>
-          <button type="button" onClick={onConfirm} disabled={confirming} className={settingsButton.danger}>
-            {confirming ? confirmingLabel : confirmLabel}
-          </button>
-        </div>
       </div>
     </Modal>
   );
@@ -164,17 +165,17 @@ function OrphanBanner({
         help="These uninstalled plugins left configs in your project defaults."
       >
         {orphanedPluginIds.length > 1 && (
-          <button type="button" onClick={handleCleanAll} disabled={cleaning !== null} className={settingsButton.danger}>
+          <Button onClick={handleCleanAll} disabled={cleaning !== null} kind="danger">
             {cleaning ? 'Cleaning…' : 'Clean all'}
-          </button>
+          </Button>
         )}
       </SettingsField>
       {orphanedPluginIds.map((id) => (
         <div key={id} className="flex items-center gap-4 h-[34px] pl-5 border-t border-surface-0">
           <span className="flex-1 min-w-0 truncate text-xs font-mono text-ctp-text">{id}</span>
-          <button type="button" onClick={() => handleClean(id)} disabled={cleaning !== null} className={settingsButton.ghost}>
+          <Button onClick={() => handleClean(id)} disabled={cleaning !== null} kind="ghost">
             {cleaning === id ? 'Cleaning…' : 'Clean up'}
-          </button>
+          </Button>
         </div>
       ))}
     </div>
@@ -450,12 +451,12 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         title="Default agent settings"
         actions={
           <>
-            <button type="button" onClick={() => setShowResetConfirm(true)} className={settingsButton.quiet}>
+            <Button onClick={() => setShowResetConfirm(true)} kind="quiet">
               Reset to defaults
-            </button>
-            <button type="button" onClick={handleSave} disabled={!dirty || saving} className={settingsButton.primary}>
+            </Button>
+            <Button onClick={handleSave} disabled={!dirty || saving} kind="primary">
               {saving ? 'Saving…' : 'Save defaults'}
-            </button>
+            </Button>
           </>
         }
       >
@@ -592,7 +593,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             : 'Start new agents with permission prompts skipped.'}
         >
           <Toggle
-            ariaLabel="Free agent mode by default"
+            aria-label="Free agent mode by default"
             checked={freeAgentMode}
             onChange={(v) => { setFreeAgentMode(v); markDirty(); }}
           />

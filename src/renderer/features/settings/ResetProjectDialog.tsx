@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Modal } from '../../components/Modal';
 import { Spinner } from '../../components/Spinner';
-import { settingsButton, settingsInput, settingsLabel } from './SettingsLayout';
+import { settingsInput, settingsLabel } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 interface ResetProjectDialogProps {
   projectName: string;
@@ -25,7 +26,16 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
   const canConfirm = confirmText === projectName;
 
   return (
-    <Modal open={true} onClose={onCancel} title="Reset project" width="w-[440px] max-w-[calc(100vw-2rem)]">
+    <Modal open={true} onClose={onCancel} title="Reset project" width="w-[440px] max-w-[calc(100vw-2rem)]" footer={
+      <>
+        <Button onClick={onCancel} kind="ghost">
+          Cancel
+        </Button>
+        <Button onClick={onConfirm} disabled={!canConfirm} kind="danger-solid">
+          Delete .clubhouse/ and close
+        </Button>
+      </>
+    }>
       <div className="space-y-4">
         <p className="text-[13px] text-ctp-subtext1">
           This permanently deletes the Clubhouse configuration for{' '}
@@ -67,14 +77,6 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
         </div>
       </div>
 
-      <div className="flex justify-end gap-2 mt-4">
-        <button onClick={onCancel} className={settingsButton.ghost}>
-          Cancel
-        </button>
-        <button onClick={onConfirm} disabled={!canConfirm} className={settingsButton.danger}>
-          Delete .clubhouse/ and close
-        </button>
-      </div>
     </Modal>
   );
 }

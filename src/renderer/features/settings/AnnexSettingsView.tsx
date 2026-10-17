@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useAnnexStore } from '../../stores/annexStore';
 import { Toggle } from '../../components/Toggle';
 import { AnnexIdentitySection } from './AnnexIdentitySection';
-import { SettingsPage, SettingsSection, SettingsField, settingsButton, settingsInput } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, settingsInput } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 export function AnnexSettingsView() {
   const settings = useAnnexStore((s) => s.settings);
@@ -34,7 +35,7 @@ export function AnnexSettingsView() {
         <SettingsField label="Allow remote control" help="Start a local network server so other instances can control this machine.">
           <div data-testid="annex-server-toggle" className="flex">
             <Toggle
-              ariaLabel="Allow remote control"
+              aria-label="Allow remote control"
               checked={settings.enableServer}
               onChange={(v) => saveSettings({ ...settings, enableServer: v })}
             />
@@ -57,9 +58,9 @@ export function AnnexSettingsView() {
               label="Pairing PIN"
               help={<span className="text-[13px] font-mono text-ctp-text tracking-widest">{status.pin || '------'}</span>}
             >
-              <button type="button" onClick={regeneratePin} className={settingsButton.ghost}>
+              <Button onClick={regeneratePin} kind="ghost">
                 Regenerate
-              </button>
+              </Button>
             </SettingsField>
           </>
         )}
@@ -93,24 +94,23 @@ export function AnnexSettingsView() {
         >
           {confirmPurge ? (
             <>
-              <button type="button" onClick={() => setConfirmPurge(false)} className={settingsButton.ghost}>
+              <Button onClick={() => setConfirmPurge(false)} kind="ghost">
                 Cancel
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
                 onClick={() => {
                   purgeServerConfig();
                   setConfirmPurge(false);
                 }}
-                className={settingsButton.danger}
+                kind="danger"
               >
                 Confirm reset
-              </button>
+              </Button>
             </>
           ) : (
-            <button type="button" onClick={() => setConfirmPurge(true)} className={settingsButton.danger}>
+            <Button onClick={() => setConfirmPurge(true)} kind="danger">
               Purge all Annex config
-            </button>
+            </Button>
           )}
         </SettingsField>
       </SettingsSection>

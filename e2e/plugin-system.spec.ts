@@ -313,7 +313,7 @@ test.describe('Plugin Settings', () => {
 
   test('built-in plugins have toggle switches that are enabled', async () => {
     // Toggles for built-in plugins should be in the "on" state
-    const toggles = window.locator('[data-testid^="plugin-row-"] button[aria-pressed="true"]');
+    const toggles = window.locator('[data-testid^="plugin-row-"] [role="switch"][aria-checked="true"]');
     await expect(toggles.first()).toBeVisible({ timeout: 5_000 });
     const count = await toggles.count();
     // At least 3 toggles for the built-in plugins

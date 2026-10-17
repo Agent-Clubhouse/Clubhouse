@@ -9,7 +9,8 @@ import { pluginHotkeyRegistry, PluginShortcut } from '../../plugins/plugin-hotke
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { Toggle } from '../../components/Toggle';
-import { SettingsPage, SettingsSection, SettingsField, settingsButton } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 const ROW = 'flex items-center gap-3 min-h-[30px] py-1 border-t border-surface-0';
 const KBD = 'inline-flex items-center px-1.5 h-5 rounded border border-surface-1 text-xs font-mono text-ctp-subtext1';
@@ -192,9 +193,9 @@ export function KeyboardShortcutsSettingsView() {
       title="Keyboard shortcuts"
       description="Click a binding to record a new one."
       actions={hasAnyOverride ? (
-        <button type="button" onClick={resetAll} className={settingsButton.ghost}>
+        <Button onClick={resetAll} kind="ghost">
           Reset all to defaults
-        </button>
+        </Button>
       ) : undefined}
     >
       <SettingsSection title="Compatibility">
@@ -202,7 +203,7 @@ export function KeyboardShortcutsSettingsView() {
           label="Clipboard compatibility"
           help="Use explicit clipboard handling for terminal paste. Turn this on if paste does not work on your platform."
         >
-          <Toggle ariaLabel="Clipboard compatibility" checked={clipboardCompat} onChange={(v) => saveClipboard(v)} />
+          <Toggle aria-label="Clipboard compatibility" checked={clipboardCompat} onChange={(v) => saveClipboard(v)} />
         </SettingsField>
       </SettingsSection>
 

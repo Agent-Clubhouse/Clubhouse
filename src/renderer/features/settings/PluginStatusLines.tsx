@@ -3,7 +3,7 @@ import { approvePluginPermissions, rejectPluginPermissions } from '../../plugins
 import type { PluginRegistryEntry } from '../../../shared/plugin-types';
 import { PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import { DEPRECATED_PLUGIN_API_VERSIONS } from '../../../shared/marketplace-types';
-import { settingsButton } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 /** Phase label for inline update progress. */
 const UPDATE_PHASE_LABELS: Record<string, string> = {
@@ -71,33 +71,33 @@ export function PluginStatusLines({ entry }: { entry: PluginRegistryEntry }) {
               </span>
             ))}
           </p>
-          <button
+          <Button
             onClick={() => rejectPluginPermissions(id)}
-            className={settingsButton.quiet}
+            kind="quiet"
             data-testid={`reject-btn-${id}`}
           >
             Reject
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => approvePluginPermissions(id)}
-            className={settingsButton.ghost}
+            kind="ghost"
             data-testid={`approve-btn-${id}`}
           >
             Approve and turn on
-          </button>
+          </Button>
         </div>
       )}
       {updateVersion && !isUpdating && (
         <div className="mt-1 flex items-center gap-3" data-testid={`update-badge-${id}`}>
           <p className="flex-1 min-w-0 text-xs text-ctp-success">Version {updateVersion} is available.</p>
-          <button
+          <Button
             onClick={() => updatePlugin(id)}
-            className={settingsButton.ghost}
+            kind="ghost"
             title={`Update to ${updateVersion}`}
             data-testid={`update-btn-${id}`}
           >
             Update
-          </button>
+          </Button>
         </div>
       )}
       {isUpdating && (

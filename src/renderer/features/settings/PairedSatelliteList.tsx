@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { SatelliteConnection } from '../../stores/annexClientStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { getAgentColorHex } from '../../../shared/name-generator';
-import { settingsButton } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 interface Props {
   satellites: SatelliteConnection[];
@@ -72,35 +72,34 @@ export function PairedSatelliteList({ satellites }: Props) {
 
           <div className="flex gap-1.5 shrink-0">
             {sat.state === 'disconnected' && (
-              <button type="button" onClick={() => retry(sat.fingerprint)} className={settingsButton.ghost}>
+              <Button onClick={() => retry(sat.fingerprint)} kind="ghost">
                 Retry
-              </button>
+              </Button>
             )}
             {sat.state === 'connected' && (
-              <button type="button" onClick={() => disconnect(sat.fingerprint)} className={settingsButton.ghost}>
+              <Button onClick={() => disconnect(sat.fingerprint)} kind="ghost">
                 Disconnect
-              </button>
+              </Button>
             )}
             {confirmForget === sat.fingerprint ? (
               <>
-                <button type="button" onClick={() => setConfirmForget(null)} className={settingsButton.ghost}>
+                <Button onClick={() => setConfirmForget(null)} kind="ghost">
                   Cancel
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
                   onClick={() => {
                     forgetSatellite(sat.fingerprint);
                     setConfirmForget(null);
                   }}
-                  className={settingsButton.danger}
+                  kind="danger"
                 >
                   Confirm
-                </button>
+                </Button>
               </>
             ) : (
-              <button type="button" onClick={() => setConfirmForget(sat.fingerprint)} className={settingsButton.danger}>
+              <Button onClick={() => setConfirmForget(sat.fingerprint)} kind="danger">
                 Forget
-              </button>
+              </Button>
             )}
           </div>
         </div>

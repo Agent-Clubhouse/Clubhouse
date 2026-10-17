@@ -15,12 +15,12 @@ const RETENTION_TIERS: { id: LogRetention; label: string; desc: string }[] = [
 ];
 
 /** A 28px segmented control, one choice at a time. */
-function Segmented<T extends string>({ value, options, onChange, disabled, ariaLabel, mono }: {
+function Segmented<T extends string>({ value, options, onChange, disabled, 'aria-label': ariaLabel, mono }: {
   value: T;
   options: { id: T; label: string; title?: string }[];
   onChange: (v: T) => void;
   disabled?: boolean;
-  ariaLabel: string;
+  'aria-label': string;
   mono?: boolean;
 }) {
   return (
@@ -87,12 +87,12 @@ export function LoggingSettingsView() {
         )}
 
         <SettingsField label="Write logs" help="Write structured log entries to disk.">
-          <Toggle ariaLabel="Write logs" checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
+          <Toggle aria-label="Write logs" checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
         </SettingsField>
 
         <SettingsField label="Retention" help={retentionTier?.desc}>
           <Segmented
-            ariaLabel="Retention"
+            aria-label="Retention"
             value={settings.retention}
             options={RETENTION_TIERS.map((t) => ({ id: t.id, label: t.label, title: t.desc }))}
             onChange={(v) => saveSettings({ retention: v })}
@@ -102,7 +102,7 @@ export function LoggingSettingsView() {
 
         <SettingsField label="Minimum level" help="Entries below this level are not written.">
           <Segmented
-            ariaLabel="Minimum level"
+            aria-label="Minimum level"
             mono
             value={settings.minLogLevel}
             options={(Object.keys(LOG_LEVEL_PRIORITY) as LogLevel[]).map((level) => ({ id: level, label: level }))}
@@ -117,7 +117,7 @@ export function LoggingSettingsView() {
           {namespaces.map((ns) => (
             <SettingsField key={ns} label={<span className="font-mono text-xs text-ctp-subtext1">{ns}</span>}>
               <Toggle
-                ariaLabel={ns}
+                aria-label={ns}
                 checked={isNamespaceEnabled(ns)}
                 onChange={(v) => handleNamespaceToggle(ns, v)}
                 disabled={!settings.enabled}

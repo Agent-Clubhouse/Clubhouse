@@ -11,9 +11,10 @@ import { Modal } from '../../components/Modal';
 import { useUIStore } from '../../stores/uiStore';
 import { noteExplicitTerminalChoice } from '../agents/chat/chat-default-tip';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
-import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp } from './SettingsLayout';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 import type { AgentRuntimeMode, ChatRuntimeSettings } from '../../../shared/chat';
+import { Button } from '../../components/Button';
 
 interface Props {
   projectId?: string;
@@ -239,7 +240,7 @@ function AppAgentSettings() {
           help="Manage agent instructions, permissions and MCP config in one place. Clubhouse pushes them to worktrees when an agent wakes."
           testId="clubhouse-mode-row"
         >
-          <Toggle ariaLabel="Clubhouse Mode" checked={clubhouseEnabled} onChange={handleClubhouseToggle} />
+          <Toggle aria-label="Clubhouse Mode" checked={clubhouseEnabled} onChange={handleClubhouseToggle} />
         </SettingsField>
         {clubhouseEnabled && (
           <SettingsBlock>
@@ -275,12 +276,21 @@ function AppAgentSettings() {
           label="Prompt for session name on quit"
           help="Ask to name the session when a durable agent stops. Projects can override this."
         >
-          <Toggle ariaLabel="Prompt for session name on quit" checked={promptForName} onChange={setPromptForName} />
+          <Toggle aria-label="Prompt for session name on quit" checked={promptForName} onChange={setPromptForName} />
         </SettingsField>
       </SettingsSection>
 
-      <Modal open={showConfirm} onClose={() => setShowConfirm(false)} title="Enable Clubhouse Mode?" width="w-[420px] max-w-[calc(100vw-32px)]">
-        <div data-testid="clubhouse-mode-confirm">
+      <Modal open={showConfirm} onClose={() => setShowConfirm(false)} title="Enable Clubhouse Mode?" width="w-[420px] max-w-[calc(100vw-32px)]" testId="clubhouse-mode-confirm" footer={
+        <>
+          <Button onClick={() => setShowConfirm(false)} kind="ghost">
+            Cancel
+          </Button>
+          <Button onClick={confirmEnable} kind="primary">
+            Enable
+          </Button>
+        </>
+      }>
+        <div>
           <p className={`${settingsHelp} mb-2`}>
             This will overwrite agent settings in worktrees with project-level defaults each time an agent wakes.
             Commit or back up your current agent configurations first.
@@ -288,14 +298,6 @@ function AppAgentSettings() {
           <p className={settingsHelp}>
             Projects without defaults get starter templates that use wildcards.
           </p>
-          <div className="flex justify-end gap-2 mt-4">
-            <button type="button" onClick={() => setShowConfirm(false)} className={settingsButton.ghost}>
-              Cancel
-            </button>
-            <button type="button" onClick={confirmEnable} className={settingsButton.primary}>
-              Enable
-            </button>
-          </div>
         </div>
       </Modal>
 
@@ -344,7 +346,7 @@ function AppAgentSettings() {
               >
                 <span title={toggleTitle} data-testid={`orchestrator-toggle-${o.id}`}>
                   <Toggle
-                    ariaLabel={o.displayName}
+                    aria-label={o.displayName}
                     checked={isEnabled}
                     onChange={(v) => setEnabled(o.id, v)}
                     disabled={toggleDisabled}
@@ -380,7 +382,7 @@ function AppAgentSettings() {
                       help="Receives this orchestrator's hook callbacks, like permission requests and tool events. When off, its agents get no hooks, so remote permissions and observability stop working. Running agents need a restart for the change to take full effect."
                     >
                       <Toggle
-                        ariaLabel={`Hook server for ${o.displayName}`}
+                        aria-label={`Hook server for ${o.displayName}`}
                         checked={hookServerOn}
                         onChange={(v) => setHookServerEnabled(o.id, v)}
                       />

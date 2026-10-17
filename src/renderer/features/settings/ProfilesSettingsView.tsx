@@ -2,8 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { useProfileStore } from '../../stores/profileStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { Modal } from '../../components/Modal';
-import { SettingsPage, SettingsSection, SettingsBlock, settingsButton, settingsInput, settingsLabel, settingsHelp } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsBlock, settingsInput, settingsLabel, settingsHelp } from './SettingsLayout';
 import type { OrchestratorProfile, OrchestratorProfileEntry } from '../../../shared/types';
+import { Button } from '../../components/Button';
 
 const CODE_CLASS = 'font-mono text-ctp-subtext1';
 
@@ -71,10 +72,9 @@ function EnvVarEditor({ entries, suggestedKeys, onChange }: EnvEditorProps) {
             aria-label="Variable value"
             className={`${settingsInput} flex-1 min-w-0 font-mono`}
           />
-          <button
-            type="button"
+          <Button
             onClick={() => removeEntry(i)}
-            className={settingsButton.icon}
+            kind="quiet" className="w-7 px-0 text-ctp-subtext0"
             title="Remove"
             aria-label="Remove variable"
           >
@@ -82,12 +82,12 @@ function EnvVarEditor({ entries, suggestedKeys, onChange }: EnvEditorProps) {
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
-          </button>
+          </Button>
         </div>
       ))}
-      <button type="button" onClick={addEntry} className={settingsButton.quiet}>
+      <Button onClick={addEntry} kind="quiet">
         Add variable
-      </button>
+      </Button>
     </div>
   );
 }
@@ -119,9 +119,9 @@ function OrchestratorSection({ orchestratorName, entry, suggestedKeys, onUpdate,
     <div className="py-2 border-t border-surface-0 space-y-1.5">
       <div className="flex items-center justify-between">
         <span className="text-[13px] text-ctp-text">{orchestratorName}</span>
-        <button type="button" onClick={onRemove} className={settingsButton.danger}>
+        <Button onClick={onRemove} kind="danger">
           Remove
-        </button>
+        </Button>
       </div>
       <EnvVarEditor entries={entries} suggestedKeys={suggestedKeys} onChange={handleEnvChange} />
     </div>
@@ -243,12 +243,12 @@ function ProfileEditForm({ profile, onSave, onCancel }: EditFormProps) {
       </div>
 
       <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onCancel} className={settingsButton.ghost}>
+        <Button onClick={onCancel} kind="ghost">
           Cancel
-        </button>
-        <button type="button" onClick={handleSave} disabled={!name.trim()} className={settingsButton.primary}>
+        </Button>
+        <Button onClick={handleSave} disabled={!name.trim()} kind="primary">
           Save
-        </button>
+        </Button>
       </div>
     </SettingsBlock>
   );
@@ -301,9 +301,9 @@ export function ProfilesSettingsView() {
       title="Profiles"
       description="Switch between accounts or configurations, like work and personal. A profile holds env vars for one or more orchestrators."
       actions={
-        <button type="button" onClick={handleCreate} disabled={editingId !== null} className={settingsButton.primary}>
+        <Button onClick={handleCreate} disabled={editingId !== null} kind="primary">
           New profile
-        </button>
+        </Button>
       }
     >
       <p className={`${settingsHelp} mt-3`}>
@@ -340,12 +340,12 @@ export function ProfilesSettingsView() {
                   </div>
                 </div>
                 <div className="flex-shrink-0 flex gap-1.5">
-                  <button type="button" onClick={() => setEditingId(p.id)} className={settingsButton.ghost}>
+                  <Button onClick={() => setEditingId(p.id)} kind="ghost">
                     Edit
-                  </button>
-                  <button type="button" onClick={() => setShowConfirmDelete(p.id)} className={settingsButton.danger}>
+                  </Button>
+                  <Button onClick={() => setShowConfirmDelete(p.id)} kind="danger">
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -373,24 +373,26 @@ export function ProfilesSettingsView() {
         open={showConfirmDelete !== null}
         onClose={() => setShowConfirmDelete(null)}
         title="Delete profile?"
+        testId="profile-delete-confirm"
         width="w-[400px] max-w-[calc(100vw-32px)]"
+        footer={
+          <>
+            <Button onClick={() => setShowConfirmDelete(null)} kind="ghost">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => { if (showConfirmDelete) handleDelete(showConfirmDelete); }}
+              kind="danger-solid"
+            >
+              Delete
+            </Button>
+          </>
+        }
       >
-        <div data-testid="profile-delete-confirm">
+        <div>
           <p className={settingsHelp}>
             Agents that use this profile will fall back to the default configuration.
           </p>
-          <div className="flex justify-end gap-2 mt-4">
-            <button type="button" onClick={() => setShowConfirmDelete(null)} className={settingsButton.ghost}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => { if (showConfirmDelete) handleDelete(showConfirmDelete); }}
-              className={settingsButton.danger}
-            >
-              Delete
-            </button>
-          </div>
         </div>
       </Modal>
     </SettingsPage>

@@ -270,7 +270,7 @@ describe('PluginListSettings', () => {
       // Reset call count after mount-time effects
       mockRefreshCommunityPlugins.mockClear();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Allow external plugins' }));
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow external plugins' }));
 
       await vi.waitFor(() => {
         expect(mockRefreshCommunityPlugins).toHaveBeenCalled();
@@ -289,7 +289,7 @@ describe('PluginListSettings', () => {
       });
       mockRefreshCommunityPlugins.mockClear();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Allow external plugins' }));
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow external plugins' }));
 
       // Give the handler time to run
       await new Promise((r) => setTimeout(r, 50));
@@ -307,7 +307,7 @@ describe('PluginListSettings', () => {
       render(<PluginListSettings />);
       mockRefreshCommunityPlugins.mockClear();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Allow external plugins' }));
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow external plugins' }));
 
       await vi.waitFor(() => {
         expect(mockRefreshCommunityPlugins).toHaveBeenCalledWith({
@@ -329,7 +329,7 @@ describe('PluginListSettings', () => {
       usePluginStore.setState({ externalPluginsEnabled: false } as any);
       render(<PluginListSettings />);
 
-      fireEvent.click(screen.getByRole('button', { name: 'Allow external plugins' }));
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow external plugins' }));
 
       await vi.waitFor(() => {
         expect(mockStorageWrite).toHaveBeenCalledWith(

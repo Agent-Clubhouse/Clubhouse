@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
-import { SettingsPage, SettingsSection, SettingsField, settingsButton } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 /** Feature definitions for the experimental settings page. */
 const EXPERIMENTAL_FEATURES: Array<{
@@ -71,7 +72,7 @@ export function ExperimentalSettingsView() {
         {EXPERIMENTAL_FEATURES.map(({ id, label, description }) => (
           <SettingsField key={id} label={label} help={description}>
             <Toggle
-              ariaLabel={label}
+              aria-label={label}
               checked={!!settings[id]}
               onChange={(enabled) => handleToggle(id, enabled)}
             />
@@ -81,9 +82,9 @@ export function ExperimentalSettingsView() {
 
       <SettingsSection title="Apply changes">
         <SettingsField label="Restart Clubhouse" help="Restart Clubhouse to apply experimental feature changes.">
-          <button type="button" onClick={handleRestart} className={settingsButton.ghost}>
+          <Button onClick={handleRestart} kind="ghost">
             Restart
-          </button>
+          </Button>
         </SettingsField>
       </SettingsSection>
     </SettingsPage>

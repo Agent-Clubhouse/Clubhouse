@@ -4,7 +4,8 @@ import { useAnnexStore } from '../../stores/annexStore';
 import { Toggle } from '../../components/Toggle';
 import { PairedSatelliteList } from './PairedSatelliteList';
 import { PairingWizard } from './PairingWizard';
-import { SettingsPage, SettingsSection, SettingsField, settingsButton } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 export function AnnexControlSettingsView() {
   const satellites = useAnnexClientStore((s) => s.satellites);
@@ -28,7 +29,7 @@ export function AnnexControlSettingsView() {
         <SettingsField label="Connect to satellites" help="Discover and control other Clubhouse instances on the network.">
           <div data-testid="annex-client-toggle" className="flex">
             <Toggle
-              ariaLabel="Connect to satellites"
+              aria-label="Connect to satellites"
               checked={annexSettings.enableClient}
               onChange={(v) => saveAnnexSettings({ ...annexSettings, enableClient: v })}
             />
@@ -41,16 +42,15 @@ export function AnnexControlSettingsView() {
         meta={satellites.length > 0 ? String(satellites.length) : undefined}
         actions={
           <>
-            <button type="button" onClick={scan} className={settingsButton.quiet}>
+            <Button onClick={scan} kind="quiet">
               Scan
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               onClick={() => setShowPairing((v) => !v)}
-              className={showPairing ? settingsButton.ghost : settingsButton.primary}
+              kind={showPairing ? 'ghost' : 'primary'}
             >
               {showPairing ? 'Cancel' : 'Add satellite'}
-            </button>
+            </Button>
           </>
         }
       >
@@ -74,24 +74,23 @@ export function AnnexControlSettingsView() {
         >
           {confirmPurge ? (
             <>
-              <button type="button" onClick={() => setConfirmPurge(false)} className={settingsButton.ghost}>
+              <Button onClick={() => setConfirmPurge(false)} kind="ghost">
                 Cancel
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
                 onClick={() => {
                   forgetAllSatellites();
                   setConfirmPurge(false);
                 }}
-                className={settingsButton.danger}
+                kind="danger"
               >
                 Confirm reset
-              </button>
+              </Button>
             </>
           ) : (
-            <button type="button" onClick={() => setConfirmPurge(true)} className={settingsButton.danger}>
+            <Button onClick={() => setConfirmPurge(true)} kind="danger">
               Forget all satellites
-            </button>
+            </Button>
           )}
         </SettingsField>
       </SettingsSection>

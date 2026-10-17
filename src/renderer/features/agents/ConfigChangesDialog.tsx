@@ -3,7 +3,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { ConfigDiffCategory, ConfigDiffAction } from '../../../shared/types';
 import { Spinner } from '../../components/Spinner';
 import { Modal } from '../../components/Modal';
-import { settingsButton } from '../settings/SettingsLayout';
+import { Button } from '../../components/Button';
 
 interface DiffItem {
   id: string;
@@ -142,8 +142,31 @@ export function ConfigChangesDialog() {
       ? 'No config changes detected'
       : 'Config changes detected';
 
+  const footer = loading ? undefined : items.length === 0 ? (
+    <Button onClick={closeDialog} kind="ghost">
+      Close
+    </Button>
+  ) : (
+    <>
+      <Button onClick={handleDiscard} disabled={executing} kind="quiet" className="mr-auto">
+        Discard
+      </Button>
+      <Button onClick={handleKeepForAgent} disabled={executing} kind="ghost">
+        Keep for this agent
+      </Button>
+      <Button
+        onClick={handleSave}
+        disabled={executing || selectedIds.size === 0}
+        kind="primary"
+      >
+        {executing && <Spinner size="xs" />}
+        Save to Clubhouse
+      </Button>
+    </>
+  );
+
   return (
-    <Modal open={true} onClose={closeDialog} title={title} width="w-[540px] max-w-[calc(100vw-2rem)]">
+    <Modal open={true} onClose={closeDialog} title={title} width="w-[540px] max-w-[calc(100vw-2rem)]" footer={footer}>
       <div className="max-h-[70vh] flex flex-col">
         {loading ? (
           <div className="flex items-center justify-center py-8">
@@ -154,11 +177,6 @@ export function ConfigChangesDialog() {
             <p className="text-[13px] text-ctp-subtext1">
               {agentName || agent?.name || 'Agent'} has no configuration changes to propagate.
             </p>
-            <div className="flex justify-end gap-2 mt-4">
-              <button onClick={closeDialog} className={settingsButton.ghost}>
-                Close
-              </button>
-            </div>
           </>
         ) : (
           <>
@@ -169,9 +187,9 @@ export function ConfigChangesDialog() {
 
             {/* Select all / deselect all */}
             <div className="flex items-center gap-2 mt-3 mb-1">
-              <button onClick={toggleAll} className={`${settingsButton.quiet} -ml-2.5`}>
+              <Button onClick={toggleAll} kind="quiet" className="-ml-2.5">
                 {selectedIds.size === items.length ? 'Deselect all' : 'Select all'}
-              </button>
+              </Button>
               <span className="text-xs text-ctp-overlay1">
                 {selectedIds.size} of {items.length} selected
               </span>
@@ -206,12 +224,12 @@ export function ConfigChangesDialog() {
                             {item.label}
                           </span>
                           {canExpand && (
-                            <button
+                            <Button
                               onClick={() => toggleExpand(item.id)}
-                              className={settingsButton.quiet}
+                              kind="quiet"
                             >
                               {isExpanded ? 'Hide diff' : 'View diff'}
-                            </button>
+                            </Button>
                           )}
                         </div>
                         {isExpanded && canExpand && (
@@ -227,26 +245,6 @@ export function ConfigChangesDialog() {
                   })}
                 </div>
               ))}
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex justify-between gap-2 mt-4">
-              <button onClick={handleDiscard} disabled={executing} className={settingsButton.quiet}>
-                Discard
-              </button>
-              <div className="flex gap-2">
-                <button onClick={handleKeepForAgent} disabled={executing} className={settingsButton.ghost}>
-                  Keep for this agent
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={executing || selectedIds.size === 0}
-                  className={settingsButton.primary}
-                >
-                  {executing && <Spinner size="xs" />}
-                  Save to Clubhouse
-                </button>
-              </div>
             </div>
           </>
         )}

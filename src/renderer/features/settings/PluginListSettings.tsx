@@ -12,7 +12,8 @@ import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
 import { PluginStatusLines } from './PluginStatusLines';
 import { showConfirmDialog } from '../../plugins/PluginDialog';
 import { Toggle } from '../../components/Toggle';
-import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput, settingsHelp } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 /** Plain source word shown in a plugin's meta line. */
 export function pluginSourceLabel(entry: PluginRegistryEntry): string | null {
@@ -245,14 +246,14 @@ function OrphanInjectionsBanner({
       title="Left behind by removed plugins"
       meta={String(orphans.length)}
       actions={orphans.length > 1 ? (
-        <button
+        <Button
           onClick={handleCleanAll}
           disabled={cleaning !== null}
-          className={settingsButton.ghost}
+          kind="ghost"
           data-testid="clean-all-orphans-btn"
         >
           {cleaning ? 'Cleaning…' : 'Clean all'}
-        </button>
+        </Button>
       ) : undefined}
     >
       <div data-testid="orphan-injections-banner">
@@ -262,14 +263,14 @@ function OrphanInjectionsBanner({
         {orphans.map((id) => (
           <div key={id} className="flex items-center gap-3 h-9 border-t border-surface-0">
             <span className="flex-1 min-w-0 truncate text-xs font-mono text-ctp-text">{id}</span>
-            <button
+            <Button
               onClick={() => handleClean(id)}
               disabled={cleaning !== null}
-              className={settingsButton.ghost}
+              kind="ghost"
               data-testid={`clean-orphan-btn-${id}`}
             >
               {cleaning === id ? 'Cleaning…' : 'Clean up'}
-            </button>
+            </Button>
           </div>
         ))}
       </div>
@@ -338,14 +339,14 @@ function PluginInjectionsPanel({
         Added {parts.join(', ')} to this project.
         {cleanError && <span className="text-ctp-error"> {cleanError}</span>}
       </p>
-      <button
+      <Button
         onClick={handleClean}
         disabled={cleaning}
-        className={settingsButton.quiet}
+        kind="quiet"
         data-testid={`clean-injections-btn-${pluginId}`}
       >
         {cleaning ? 'Removing…' : 'Remove all'}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -385,30 +386,30 @@ function PluginRow({
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <button
+          <Button
             onClick={onOpenSettings}
-            className={settingsButton.icon}
+            kind="quiet" className="w-7 px-0 text-ctp-subtext0"
             title="Plugin settings"
             aria-label={`${name} settings`}
             data-testid={`plugin-settings-btn-${id}`}
           >
             <GearIcon />
-          </button>
+          </Button>
           {onUninstall && (
-            <button
+            <Button
               onClick={onUninstall}
-              className={settingsButton.icon}
+              kind="quiet" className="w-7 px-0 text-ctp-subtext0"
               title="Uninstall plugin"
               aria-label={`Uninstall ${name}`}
             >
               <TrashIcon />
-            </button>
+            </Button>
           )}
           <Toggle
             checked={enabled}
             onChange={onToggle}
             disabled={isIncompatible}
-            ariaLabel={name}
+            aria-label={name}
           />
         </div>
       </div>
@@ -510,18 +511,18 @@ function CustomMarketplaceManager() {
               <p className="text-xs text-ctp-overlay1 truncate mt-px" title={m.url}>{m.url}</p>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <button
+              <Button
                 onClick={() => handleRemove(m.id)}
-                className={settingsButton.icon}
+                kind="quiet" className="w-7 px-0 text-ctp-subtext0"
                 title="Remove marketplace"
                 aria-label={`Remove ${m.name}`}
               >
                 <CloseIcon />
-              </button>
+              </Button>
               <Toggle
                 checked={m.enabled}
                 onChange={(v) => handleToggle(m.id, v)}
-                ariaLabel={`Use ${m.name}`}
+                aria-label={`Use ${m.name}`}
               />
             </div>
           </div>
@@ -547,14 +548,14 @@ function CustomMarketplaceManager() {
               data-testid="custom-marketplace-url"
               onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
             />
-            <button
+            <Button
               onClick={handleAdd}
               disabled={adding || !addName.trim() || !addUrl.trim()}
-              className={settingsButton.ghost}
+              kind="ghost"
               data-testid="custom-marketplace-add"
             >
               {adding ? 'Adding…' : 'Add store'}
-            </button>
+            </Button>
           </div>
           {addError && <p className="text-xs text-ctp-error mt-1.5">{addError}</p>}
         </SettingsBlock>
@@ -811,21 +812,21 @@ export function PluginListSettings() {
 
   const headerActions = isAppContext ? (
     <>
-      <button
+      <Button
         onClick={() => setStoresOpen((v) => !v)}
-        className={settingsButton.ghost}
+        kind="ghost"
         aria-expanded={storesOpen}
         data-testid="custom-marketplace-toggle"
       >
         Plugin stores…
-      </button>
-      <button
+      </Button>
+      <Button
         onClick={() => setMarketplaceOpen(true)}
-        className={settingsButton.primary}
+        kind="primary"
         data-testid="marketplace-button"
       >
         Browse marketplace
-      </button>
+      </Button>
     </>
   ) : undefined;
 
@@ -861,7 +862,7 @@ export function PluginListSettings() {
                 <Toggle
                   checked={externalPluginsEnabled}
                   onChange={handleExternalToggle}
-                  ariaLabel="Allow external plugins"
+                  aria-label="Allow external plugins"
                 />
               </span>
             </SettingsField>
@@ -886,52 +887,52 @@ export function PluginListSettings() {
                 : 'Check the marketplace and your stores for newer versions.'}
             >
               {updates.length > 1 && (
-                <button
+                <Button
                   onClick={updateAll}
                   disabled={Object.keys(updating).length > 0}
-                  className={settingsButton.ghost}
+                  kind="ghost"
                   data-testid="update-all-button"
                 >
                   Update all ({updates.length})
-                </button>
+                </Button>
               )}
-              <button
+              <Button
                 onClick={checkForUpdates}
                 disabled={checking}
-                className={settingsButton.ghost}
+                kind="ghost"
                 data-testid="check-updates-button"
               >
                 {checking ? 'Checking…' : 'Check for updates'}
-              </button>
+              </Button>
             </SettingsField>
             <SettingsField label="Beta versions" help="Offer beta versions from the official plugin registry.">
               <Toggle
                 checked={showBetaPlugins}
                 onChange={handleBetaPluginsToggle}
-                ariaLabel="Show beta plugins"
+                aria-label="Show beta plugins"
               />
             </SettingsField>
             <SettingsField
               label="Local plugins"
               help={scanResult ?? <>Load plugins you put in <code className="font-mono">~/.clubhouse/plugins/</code>.</>}
             >
-              <button
+              <Button
                 onClick={handleScanNewPlugins}
                 disabled={scanning}
-                className={settingsButton.ghost}
+                kind="ghost"
                 data-testid="scan-plugins-button"
               >
                 {scanning ? 'Reloading…' : 'Reload'}
-              </button>
+              </Button>
             </SettingsField>
             {externalPlugins.length > 0 && (
               <SettingsField
                 label="Uninstall all external plugins"
                 help="Deletes them from disk and removes what they added to projects."
               >
-                <button onClick={handleUninstallAll} className={settingsButton.danger}>
+                <Button onClick={handleUninstallAll} kind="danger">
                   Uninstall all…
-                </button>
+                </Button>
               </SettingsField>
             )}
           </SettingsSection>

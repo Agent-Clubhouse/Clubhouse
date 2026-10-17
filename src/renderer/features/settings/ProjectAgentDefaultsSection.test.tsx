@@ -128,10 +128,10 @@ describe('ProjectAgentDefaultsSection', () => {
       renderSection();
       await screen.findByText('Free agent mode by default');
 
-      const toggle = screen.getByRole('button', { name: 'Free agent mode by default' });
-      expect(toggle).toHaveAttribute('aria-pressed', 'false');
+      const toggle = screen.getByRole('switch', { name: 'Free agent mode by default' });
+      expect(toggle).toHaveAttribute('aria-checked', 'false');
       fireEvent.click(toggle);
-      expect(toggle).toHaveAttribute('aria-pressed', 'true');
+      expect(toggle).toHaveAttribute('aria-checked', 'true');
 
       expect(await screen.findByText(/skip all permission prompts/)).toBeInTheDocument();
     });
