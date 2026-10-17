@@ -8,6 +8,7 @@ import type { ActionDef } from '../../features/agents/useAgentRowActions';
 import { relativeTo } from '../scope';
 import { DOT_LABEL, StatusDot } from '../../features/agents/agent-status';
 import type { AgentDot } from './treeModel';
+import { Tooltip } from '../../components/Tooltip';
 
 /**
  * The agent hover card (docs/chrome-redesign-spec.md §2, §4.2): the details the
@@ -88,7 +89,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
           {getOrchestratorLabel(agent.orchestrator || 'claude-code', allOrchestrators)}, {formatModelLabel(agent.model)}
         </Row>
         {agent.branch && <Row label="Branch"><span className="font-mono">{agent.branch}</span></Row>}
-        {worktree && <Row label="Worktree"><span className="font-mono" title={agent.worktreePath}>{worktree}</span></Row>}
+        {worktree && <Row label="Worktree"><Tooltip content={agent.worktreePath} disabled={worktree === agent.worktreePath}><span className="font-mono">{worktree}</span></Tooltip></Row>}
         {agent.mcpIds && agent.mcpIds.length > 0 && <Row label="MCP">{agent.mcpIds.join(', ')}</Row>}
         {agent.freeAgentMode && <Row label="Permissions"><span className="text-ctp-error">Free Agent Mode, all bypassed</span></Row>}
       </dl>

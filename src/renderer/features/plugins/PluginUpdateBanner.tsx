@@ -1,6 +1,9 @@
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
+import { NoticeCard } from '../../components/NoticeCard';
+import { Button } from '../../components/Button';
 
-export function PluginUpdateBanner() {
+/** `bar` is the classic strip; `card` is the new chrome's sidebar notice (#2014). */
+export function PluginUpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } = {}) {
   const updates = usePluginUpdateStore((s) => s.updates);
   const incompatibleUpdates = usePluginUpdateStore((s) => s.incompatibleUpdates);
   const dismissed = usePluginUpdateStore((s) => s.dismissed);
@@ -27,6 +30,45 @@ export function PluginUpdateBanner() {
       updateAll();
     }
   };
+
+  if (variant === 'card') {
+    const errorCount = Object.keys(updateErrors).length;
+    if (updates.length === 0 && hasErrors) {
+      return (
+        <NoticeCard tone="error" title={errorCount === 1 ? 'Plugin reload failed' : `${errorCount} plugins failed to reload`} testId="plugin-update-banner"
+          actions={<Button kind="quiet" onClick={() => Object.keys(updateErrors).forEach((id) => clearUpdateError(id))} data-testid="plugin-update-dismiss-btn">Dismiss</Button>}>
+          <span data-testid="plugin-update-message">A restart may be needed.</span>
+        </NoticeCard>
+      );
+    }
+    if (updates.length === 0 && hasIncompatible) {
+      const one = incompatibleUpdates.length === 1 ? incompatibleUpdates[0] : null;
+      return (
+        <NoticeCard tone="neutral" title={one ? 'Plugin update needs a newer Clubhouse' : `${incompatibleUpdates.length} plugin updates need a newer Clubhouse`} testId="plugin-update-banner"
+          actions={<Button kind="quiet" onClick={dismiss} data-testid="plugin-update-dismiss-btn">Dismiss</Button>}>
+          <span data-testid="plugin-update-message">
+            {one ? `${one.pluginName} v${one.latestVersion} requires API ${one.requiredApi}.` : incompatibleUpdates.map((u) => u.pluginName).join(', ')}
+          </span>
+        </NoticeCard>
+      );
+    }
+    return (
+      <NoticeCard tone="success" title={updates.length === 1 ? 'Plugin update' : `${updates.length} plugin updates`}
+        meta={updates.length === 1 ? `v${updates[0].latestVersion}` : undefined} testId="plugin-update-banner"
+        actions={<>
+          <Button kind="primary" onClick={handleUpdate} disabled={isUpdating} data-testid="plugin-update-btn">
+            {isUpdating ? 'Updating…' : hasErrors ? 'Retry' : 'Update'}
+          </Button>
+          <Button kind="quiet" onClick={dismiss} data-testid="plugin-update-dismiss-btn">Later</Button>
+        </>}>
+        <span data-testid="plugin-update-message">{pluginNames.join(', ')}</span>
+        {hasErrors && <span className="block text-ctp-error">{errorCount} failed to reload</span>}
+        {hasIncompatible && (
+          <span className="block" data-testid="plugin-incompatible-note">{incompatibleUpdates.length} more need a newer Clubhouse</span>
+        )}
+      </NoticeCard>
+    );
+  }
 
   // If there are only errors (no pending updates), show error-only banner
   if (updates.length === 0 && hasErrors) {

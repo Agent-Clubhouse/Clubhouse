@@ -158,7 +158,7 @@ describe('ChromeSidebar', () => {
     registerAppPlugin('goobers', 'Goobers');
     usePluginStore.setState({ appEnabled: ['canvas', 'review', 'goobers'] });
     render(<ChromeSidebar />);
-    fireEvent.click(screen.getByTitle('Canvas'));
+    fireEvent.click(screen.getByTestId('app-row-canvas'));
     expect(useUIStore.getState().explorerTab).toBe('plugin:app:canvas');
     expect(screen.queryByText('Goobers', { selector: '[role=menuitem]' })).toBeNull();
     fireEvent.click(screen.getByLabelText('More app views'));
@@ -172,6 +172,21 @@ describe('ChromeSidebar', () => {
     fireEvent.mouseEnter(header);
     fireEvent.click(screen.getByLabelText('New agent in Goobers'));
     expect(useChromeDialogStore.getState().request).toEqual({ kind: 'durable', projectId: 'p2' });
+  });
+
+  it('puts the app-wide notices slot above the footer', () => {
+    render(<ChromeSidebar />);
+    const slot = screen.getByTestId('sidebar-notices');
+    expect(slot.nextElementSibling).toContainElement(screen.getByTestId('nav-settings'));
+  });
+
+  it('labels footer icon buttons with a Tooltip instead of title=', () => {
+    render(<ChromeSidebar />);
+    const settings = screen.getByTestId('nav-settings');
+    expect(settings).not.toHaveAttribute('title');
+    fireEvent.keyDown(document, { key: 'Tab' });
+    act(() => { settings.focus(); });
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings');
   });
 
   it('keeps the footer test ids', () => {
