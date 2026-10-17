@@ -721,6 +721,58 @@
               "visualization": "table"
             },
             "name": "Editor: Monaco load, external editor, save conflicts"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.settings.changed\"\n| extend area = tostring(customDimensions[\"clubhouse.settings.key\"])\n| summarize changes = sum(itemCount), installs = dcount(user_Id) by area\n| order by changes desc",
+              "size": 0,
+              "title": "Settings changed by area",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Settings changed by area"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.theme.changed\", \"clubhouse.popout.opened\", \"clubhouse.blueprint.exported\", \"clubhouse.blueprint.imported\")\n| extend detail = coalesce(tostring(customDimensions[\"clubhouse.theme.builtin_id\"]), tostring(customDimensions[\"clubhouse.popout.type\"]), tostring(customDimensions[\"clubhouse.outcome\"]))\n| summarize count = sum(itemCount), installs = dcount(user_Id) by name, detail\n| order by count desc",
+              "size": 0,
+              "title": "Feature use",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Feature use"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.group.bulletin.posts\"\n| extend result = tostring(customDimensions[\"clubhouse.bulletin.post.result\"])\n| summarize posts = sum(value) by result\n| order by posts desc",
+              "size": 0,
+              "title": "Bulletin posts by result",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Bulletin posts by result"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.mcp.tools_list\"\n| extend tools = tostring(customDimensions[\"clubhouse.mcp.tools.count_bucket\"]), empty = tostring(customDimensions[\"clubhouse.mcp.tools.empty\"])\n| summarize lists = sum(itemCount), installs = dcount(user_Id) by tools, empty",
+              "size": 0,
+              "title": "MCP tool lists, including empty ones",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "MCP tool lists, including empty ones"
           }
         ]
       },
@@ -808,6 +860,45 @@
               "visualization": "table"
             },
             "name": "Canvas loads by result"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.marketplace.fetch_registry\"\n| extend kind = tostring(customDimensions[\"clubhouse.registry.kind\"]), cache_hit = tostring(customDimensions[\"clubhouse.cache.hit\"]), status = tostring(customDimensions[\"http.response.status_code\"]), error = tostring(customDimensions[\"error.type\"])\n| summarize fetches = sum(itemCount), failed = sumif(itemCount, success == false), p95_ms = round(percentile(duration, 95)) by kind, cache_hit, status, error\n| order by fetches desc",
+              "size": 0,
+              "title": "Registry fetches",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Registry fetches"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.plugin.install\", \"clubhouse.plugin.update\", \"clubhouse.plugin.uninstall\")\n| extend stage = tostring(customDimensions[\"clubhouse.install.failure_stage\"]), error = tostring(customDimensions[\"error.type\"])\n| summarize count = sum(itemCount), failed = sumif(itemCount, success == false), p95_ms = round(percentile(duration, 95)) by name, stage, error\n| order by count desc",
+              "size": 0,
+              "title": "Plugin installs and updates",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Plugin installs and updates"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.plugin.update_check\"\n| extend trigger = tostring(customDimensions[\"clubhouse.update.trigger\"]), available = toint(customDimensions[\"clubhouse.updates.available.count\"]), incompatible = toint(customDimensions[\"clubhouse.updates.incompatible.count\"]), error = tostring(customDimensions[\"error.type\"])\n| summarize checks = sum(itemCount), failed = sumif(itemCount, success == false), avg_available = round(avg(available), 1), avg_incompatible = round(avg(incompatible), 1) by trigger, error",
+              "size": 0,
+              "title": "Plugin update checks",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Plugin update checks"
           }
         ]
       },

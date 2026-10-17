@@ -88,4 +88,13 @@ describe('ChromeBody', () => {
     render(<ChromeBody />);
     expect(screen.getByTestId('first-run')).toBeTruthy();
   });
+
+  it('follows the active project to its host', () => {
+    useUIStore.setState({ activeHostId: 's1' });
+    render(<ChromeBody />);
+    // A palette or notification click opened the local project p1.
+    expect(useUIStore.getState().activeHostId).toBeNull();
+    act(() => useProjectStore.setState({ activeProjectId: 'remote||s1||site' }));
+    expect(useUIStore.getState().activeHostId).toBe('s1');
+  });
 });

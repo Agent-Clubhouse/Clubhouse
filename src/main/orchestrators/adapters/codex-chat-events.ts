@@ -5,6 +5,7 @@
 // stamp and publish. It holds only the state the translation needs (streamed
 // plan text, open permission requests and their native decisions).
 
+import * as path from 'path';
 import type {
   ChatErrorCode,
   ChatEventDraft,
@@ -199,6 +200,14 @@ export class CodexChatEventMapper {
         }
         return [];
       }
+      case 'mcpServer/startupStatus/updated': {
+        const { name, status, error } = notification.params;
+        if (status !== 'failed') return [];
+        return [{
+          type: 'notice',
+          data: { level: 'warn', code: 'mcp_server_failed', message: `MCP server ${name} failed to start${error ? `: ${safeErrorText(error)}` : ''}` },
+        }];
+      }
       case 'thread/name/updated': {
         const { threadName } = notification.params;
         return threadName ? [{ type: 'session_info', data: { title: threadName } }] : [];
@@ -371,6 +380,22 @@ export class CodexChatEventMapper {
       reply: option.reply,
       event: { type: 'permission_resolved', data: { requestId, optionId, decision: option.outcome, by } },
     };
+  }
+
+  /**
+   * Resolve every open permission and question as cancelled by the agent, for
+   * when the process is gone and nothing can answer them any more.
+   */
+  cancelOpenRequests(): ChatEventDraft[] {
+    const events: ChatEventDraft[] = [
+      ...[...this.openPermissions.keys()].map((requestId): ChatEventDraft =>
+        ({ type: 'permission_resolved', data: { requestId, decision: 'cancelled', by: 'agent' } })),
+      ...[...this.openQuestions.keys()].map((requestId): ChatEventDraft =>
+        ({ type: 'question_resolved', data: { requestId, answers: {}, cancelled: true } })),
+    ];
+    this.openPermissions.clear();
+    this.openQuestions.clear();
+    return events;
   }
 
   /** A message the vendored schema doesn't know, as the protocol-drift event. */
@@ -703,4 +728,76 @@ export function toCodexInput(content: ContentBlock[]): UserInput[] {
         return block.text ? [{ type: 'text', text: block.text, text_elements: [] }] : [];
     }
   });
+}
+
+/** One `mcp_servers` entry as Codex's config reads it. */
+export type CodexMcpServer =
+  | { command: string; args?: string[]; env?: Record<string, string>; cwd?: string }
+  | { url: string; http_headers?: Record<string, string>; bearer_token_env_var?: string };
+
+/**
+ * Clubhouse MCP server definitions (the bridge, and project servers as
+ * written in .mcp.json) as Codex `mcp_servers` entries.
+ *
+ * Codex's config keys differ from the .mcp.json ones and it ignores keys it
+ * doesn't know, so a raw pass-through fails silently: `headers` is dropped
+ * (Codex reads `http_headers`) and an SSE server is treated as streamable
+ * HTTP. Codex has no SSE transport, so SSE servers are skipped and reported.
+ *
+ * Values are passed as written: Codex doesn't expand `${VAR}` in them, and
+ * neither does Clubhouse (checked on the pinned 0.153.4). A relative `cwd`
+ * is resolved against `baseDir`, the agent's working directory. Servers with
+ * `disabled: true` are left out.
+ */
+export function toCodexMcpServers(servers: Record<string, unknown> | undefined, baseDir?: string): {
+  servers: Record<string, CodexMcpServer>;
+  skipped: Array<{ name: string; reason: string }>;
+} {
+  const out: Record<string, CodexMcpServer> = {};
+  const skipped: Array<{ name: string; reason: string }> = [];
+  for (const [name, raw] of Object.entries(servers ?? {})) {
+    const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    const type = typeof s.type === 'string' ? s.type : undefined;
+    // A server switched off in .mcp.json isn't started, so it isn't sent.
+    if (s.disabled === true) continue;
+    if (typeof s.command === 'string' && (type === undefined || type === 'stdio')) {
+      const args = Array.isArray(s.args) ? s.args.map(String) : [];
+      const env = stringRecord(s.env);
+      out[name] = {
+        command: s.command,
+        ...(args.length > 0 && { args }),
+        ...(env && { env }),
+        // Codex keeps a relative cwd as written; resolve it against the
+        // agent's directory so it doesn't depend on Codex's own cwd.
+        ...(typeof s.cwd === 'string' && { cwd: baseDir && !path.isAbsolute(s.cwd) ? path.resolve(baseDir, s.cwd) : s.cwd }),
+      };
+    } else if (typeof s.url === 'string' && (type === undefined || HTTP_TYPES.has(type))) {
+      const headers = stringRecord(s.headers) ?? stringRecord(s.http_headers);
+      out[name] = {
+        url: s.url,
+        ...(headers && { http_headers: headers }),
+        ...(typeof s.bearer_token_env_var === 'string' && { bearer_token_env_var: s.bearer_token_env_var }),
+      };
+    } else {
+      skipped.push({ name, reason: type === 'sse' ? 'Codex has no SSE transport' : 'not a stdio or HTTP server' });
+    }
+  }
+  return { servers: out, skipped };
+}
+
+function stringRecord(v: unknown): Record<string, string> | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const entries = Object.entries(v as Record<string, unknown>).map(([k, val]) => [k, String(val)] as const);
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+const HTTP_TYPES: ReadonlySet<string> = new Set(['http', 'streamable_http', 'streamable-http']);
+
+/**
+ * Codex's error text for a failed MCP server, shortened and with URL query
+ * strings removed (they can carry tokens).
+ */
+function safeErrorText(error: string): string {
+  const stripped = error.replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/g, '$1?…');
+  return stripped.length > 200 ? `${stripped.slice(0, 200)}…` : stripped;
 }

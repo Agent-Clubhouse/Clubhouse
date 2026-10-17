@@ -32,6 +32,7 @@ import * as agentSystem from '../services/agent-system';
 import { syncPluginThemes, PluginThemeSummary } from '../services/plugin-theme-store';
 import { consumePendingProtocolAction } from '../services/protocol-service';
 import { flushBeforeExit } from '../telemetry/facade';
+import { settingsChanged, themeChanged } from '../telemetry/feature-events';
 
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
 const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
@@ -98,6 +99,7 @@ export function registerAppHandlers(): void {
     [objectArg<NotificationSettings>()],
     async (_event, settings) => {
       await notificationService.saveSettings(settings);
+      settingsChanged('notifications');
     },
   ));
 
@@ -127,6 +129,7 @@ export function registerAppHandlers(): void {
     })],
     async (_event, settings) => {
       await themeService.saveSettings(settings);
+      themeChanged(settings.themeId);
       annexServer.broadcastThemeChanged();
     },
   ));
@@ -176,6 +179,7 @@ export function registerAppHandlers(): void {
       // Merge into existing settings so a partial save (e.g. just `enabled`)
       // never clobbers sibling fields such as `hookServerEnabled`.
       await orchestratorSettings.updateSettings((current) => ({ ...current, ...settings }));
+      settingsChanged('orchestrators');
     },
   ));
 
@@ -196,6 +200,7 @@ export function registerAppHandlers(): void {
     [objectArg<headlessSettings.HeadlessSettings>()],
     async (_event, settings) => {
       await headlessSettings.saveSettings(settings);
+      settingsChanged('headless');
     },
   ));
 
@@ -207,6 +212,7 @@ export function registerAppHandlers(): void {
     [objectArg<freeAgentSettings.FreeAgentSettings>()],
     async (_event, settings) => {
       await freeAgentSettings.saveSettings(settings);
+      settingsChanged('free_agent');
     },
   ));
 
@@ -218,6 +224,7 @@ export function registerAppHandlers(): void {
     [objectArg<BadgeSettings>()],
     async (_event, settings) => {
       await badgeSettings.saveSettings(settings);
+      settingsChanged('badge');
     },
   ));
 
@@ -231,6 +238,7 @@ export function registerAppHandlers(): void {
     [objectArg<ClipboardSettings>()],
     async (_event, settings) => {
       await clipboardSettings.saveSettings(settings);
+      settingsChanged('clipboard');
     },
   ));
 
@@ -274,6 +282,7 @@ export function registerAppHandlers(): void {
     [objectArg<UpdateSettings>()],
     async (_event, settings) => {
       await autoUpdateService.saveSettings(settings);
+      settingsChanged('update');
       if (settings.autoUpdate) {
         await autoUpdateService.startPeriodicChecks();
       } else {
@@ -323,6 +332,7 @@ export function registerAppHandlers(): void {
     [objectArg<LoggingSettings>()],
     async (_event, settings) => {
       await logSettings.saveSettings(settings);
+      settingsChanged('logging');
     },
   ));
 
@@ -343,6 +353,7 @@ export function registerAppHandlers(): void {
     [objectArg<SoundSettings>()],
     async (_event, settings) => {
       await soundService.saveSettings(settings);
+      settingsChanged('sound');
     },
   ));
 
@@ -377,6 +388,7 @@ export function registerAppHandlers(): void {
     [objectArg<sessionSettings.SessionSettings>()],
     async (_event, settings) => {
       await sessionSettings.saveSettings(settings);
+      settingsChanged('session');
     },
   ));
 
@@ -393,6 +405,7 @@ export function registerAppHandlers(): void {
         : clubhouseModeSettings.getSettings().enabled;
 
       await clubhouseModeSettings.saveSettings(settings);
+      settingsChanged('clubhouse_mode');
 
       const nowEnabled = projectPath
         ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
@@ -436,6 +449,7 @@ export function registerAppHandlers(): void {
     [objectArg<ExperimentalSettings>()],
     async (_event, settings) => {
       await experimentalSettings.saveSettings(settings);
+      settingsChanged('experimental');
     },
   ));
 
