@@ -199,8 +199,11 @@ function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename, onP
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            // On an inactive tab the × only appears on hover; until then it
+            // takes no clicks and no Tab stop (the tab menu has Close canvas).
+            tabIndex={active ? undefined : -1}
             className={`w-4 h-4 -mr-1 flex-shrink-0 flex items-center justify-center rounded text-ctp-overlay1 hover:bg-surface-1 hover:text-ctp-text ${
-              active ? '' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
+              active ? '' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
             }`}
             aria-label={`Close ${canvas.name}`}
             data-testid="canvas-tab-close"

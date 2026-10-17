@@ -19,8 +19,8 @@ function setup() {
   return { result, onViewportChange };
 }
 
-function keyEvent(key: string, target: EventTarget) {
-  return { key, target, preventDefault: vi.fn() } as unknown as React.KeyboardEvent;
+function keyEvent(key: string, target: EventTarget, defaultPrevented = false) {
+  return { key, target, defaultPrevented, preventDefault: vi.fn() } as unknown as React.KeyboardEvent;
 }
 
 describe('useViewportControls keyboard', () => {
@@ -42,6 +42,17 @@ describe('useViewportControls keyboard', () => {
     const clear = vi.fn();
     result.current.handleKeyDown(keyEvent('ArrowLeft', target), null, [], clear);
     result.current.handleKeyDown(keyEvent('Escape', target), 'view-1', ['view-1'], clear);
+    expect(onViewportChange).not.toHaveBeenCalled();
+    expect(clear).not.toHaveBeenCalled();
+  });
+
+  it('ignores arrows a menu already handled (the context menu moving its highlight)', () => {
+    const { result, onViewportChange } = setup();
+    const clear = vi.fn();
+    for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) {
+      result.current.handleKeyDown(keyEvent(key, document.createElement('button'), true), null, [], clear);
+    }
+    result.current.handleKeyDown(keyEvent('Escape', document.createElement('button'), true), 'view-1', ['view-1'], clear);
     expect(onViewportChange).not.toHaveBeenCalled();
     expect(clear).not.toHaveBeenCalled();
   });

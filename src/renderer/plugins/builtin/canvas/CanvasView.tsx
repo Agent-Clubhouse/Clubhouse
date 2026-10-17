@@ -4,7 +4,7 @@ import { InlineRename } from './InlineRename';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, ANCHOR_HEIGHT } from './canvas-types';
 import type { ProjectInfo, AgentInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
-import type { PluginAPI, CanvasWidgetMetadata, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
+import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType, generatePluginWidgetDisplayName, isWidgetPending, onRegistryChange, parsePluginWidgetType } from '../../canvas-widget-registry';
 import { usePluginStore } from '../../plugin-store';
@@ -13,9 +13,9 @@ import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupp
 import { LinkDropdown } from './LinkDropdown';
 import { PendingWidgetPlaceholder } from './PendingWidgetPlaceholder';
 import { StatusDot } from '../../../features/agents/agent-status';
-import type { AgentDot } from '../../../chrome/sidebar/treeModel';
 import { sanitizeSvg } from '../../../utils/sanitize-svg';
 import { AGENT_ICON } from './canvas-icons';
+import { cardDot } from './canvas-card-status';
 import { Tooltip } from '../../../components/Tooltip';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -32,34 +32,6 @@ export function buildProjectContext(view: CanvasView, projects: ProjectInfo[]): 
   const project = projects.find((p) => p.id === projectId);
   if (!project) return null;
   return project.name;
-}
-
-/** The one word that goes with a status dot, as in the sidebar. */
-export const DOT_WORD: Record<AgentDot, string> = {
-  working: 'Working',
-  idle: 'Idle',
-  needs: 'Needs you',
-  error: 'Error',
-  sleeping: 'Sleeping',
-  starting: 'Starting',
-};
-
-/**
- * The status dot on an agent card: attention wins, then the agent's own state,
- * matching the sidebar's dot (chrome/sidebar/treeModel.ts agentDot).
- */
-export function cardDot(
-  agent: Pick<AgentInfo, 'status'>,
-  detailed: PluginAgentDetailedStatus | null | undefined,
-  attention: CanvasViewAttention | null | undefined,
-): AgentDot {
-  if (attention) return attention.level === 'error' ? 'error' : 'needs';
-  if (agent.status === 'error' || detailed?.state === 'tool_error') return 'error';
-  if (detailed?.state === 'needs_permission') return 'needs';
-  if (agent.status === 'sleeping') return 'sleeping';
-  if (agent.status === 'creating' || agent.status === 'spawning' || agent.status === 'waking') return 'starting';
-  if (detailed?.state === 'working') return 'working';
-  return 'idle';
 }
 
 // ── Resize direction types ──────────────────────────────────────────
