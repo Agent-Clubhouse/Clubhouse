@@ -2,21 +2,9 @@ import type { ReactNode } from 'react';
 
 /**
  * Chrome-sized pieces for the agent settings pages (#2015): 13px sentence-case
- * headings, field rows, 28px controls. The button classes stand in for the
- * shared Button (#2013/#2014) until it lands; swap them for it then.
+ * headings, field rows, 28px controls. Buttons and switches are the shared
+ * components/Button and components/Toggle.
  */
-
-export type ButtonKind = 'primary' | 'ghost' | 'quiet' | 'danger';
-
-const BUTTON_KIND: Record<ButtonKind, string> = {
-  primary: 'bg-ctp-accent border-ctp-accent text-ctp-crust hover:bg-ctp-accent/85',
-  ghost: 'border-surface-1 text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text',
-  quiet: 'border-transparent text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text',
-  danger: 'border-surface-1 text-ctp-error hover:bg-surface-0',
-};
-
-export const buttonClass = (kind: ButtonKind = 'ghost') =>
-  `h-7 px-2.5 rounded-md border inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap flex-shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${BUTTON_KIND[kind]}`;
 
 export const selectClass =
   'h-7 w-[200px] rounded-md border border-surface-1 bg-ctp-base px-2 text-xs text-ctp-text focus:outline-none focus:border-ctp-accent disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer';

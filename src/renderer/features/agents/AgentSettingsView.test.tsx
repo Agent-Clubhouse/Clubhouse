@@ -303,7 +303,7 @@ describe('AgentSettingsView', () => {
 
     it('renders free agent mode as a switch', () => {
       renderSettings();
-      expect(screen.getByRole('button', { name: 'Free agent mode' })).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'Free agent mode' })).toBeInTheDocument();
     });
 
     it('does not render a Structured Mode toggle, even with the legacy experimental flag set', async () => {
@@ -503,7 +503,7 @@ describe('AgentSettingsView', () => {
 
     it('shows local override switch', () => {
       renderSettings();
-      expect(screen.getByRole('button', { name: 'Local overrides' })).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'Local overrides' })).toBeInTheDocument();
     });
 
     it('hides editable sections when managed by clubhouse', async () => {
@@ -589,7 +589,7 @@ describe('AgentSettingsView', () => {
 
     it('toggles override on switch click', async () => {
       renderSettings();
-      fireEvent.click(await screen.findByRole('button', { name: 'Local overrides' }));
+      fireEvent.click(await screen.findByRole('switch', { name: 'Local overrides' }));
 
       await waitFor(() => {
         expect((window.clubhouse.agent as any).updateDurableConfig).toHaveBeenCalledWith(

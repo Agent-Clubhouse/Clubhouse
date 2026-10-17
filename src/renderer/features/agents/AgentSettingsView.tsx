@@ -23,6 +23,7 @@ import { serializeManifest } from '../blueprints/blueprint-export';
 import { PERSONA_TEMPLATES } from '../personas';
 import type { AgentRuntimeMode } from '../../../shared/chat';
 import { Toggle } from '../../components/Toggle';
+import { Button } from '../../components/Button';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import {
   AGENT_SETTINGS_PAGES,
@@ -30,7 +31,7 @@ import {
   type AgentSettingsPage,
   type AgentSettingsTextPage,
 } from './agentSettingsPages';
-import { buttonClass, Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
+import { Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
 
 interface Props {
   agent: Agent;
@@ -858,21 +859,21 @@ export function AgentSettingsView({ agent }: Props) {
   const stopFirst = isRunning ? 'Stop the agent to change this' : undefined;
 
   const reloadButton = (
-    <button
-      type="button"
+    <Button
+      kind="quiet"
       onClick={handleRefreshAll}
-      className={buttonClass('quiet')}
       title="Reload from disk"
       aria-label="Reload from disk"
       data-testid="agent-settings-reload"
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M21 2v6h-6" />
-        <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-        <path d="M3 22v-6h6" />
-        <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-      </svg>
-    </button>
+      icon={(
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 2v6h-6" />
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+          <path d="M3 22v-6h6" />
+          <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+        </svg>
+      )}
+    />
   );
 
   const runningLine = isRunning && (
@@ -880,10 +881,14 @@ export function AgentSettingsView({ agent }: Props) {
       <span className="w-2 h-2 rounded-full flex-shrink-0 bg-ctp-success" aria-hidden="true" />
       <span className="text-ctp-text">Working</span>
       <span className="text-xs text-ctp-overlay1 truncate">Stop the agent to change these settings.</span>
-      <button type="button" onClick={handleStop} className={`${buttonClass('ghost')} ml-auto`}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" /></svg>
+      <Button
+        kind="ghost"
+        onClick={handleStop}
+        className="ml-auto"
+        icon={<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5" /></svg>}
+      >
         Stop
-      </button>
+      </Button>
     </div>
   );
 
@@ -929,22 +934,21 @@ export function AgentSettingsView({ agent }: Props) {
       <Field label="Icon" help="An image or emoji in place of the initials.">
         <div className="relative flex items-center gap-2">
           <AgentAvatar agent={agent} size="xs" iconUrl={iconDataUrl} />
-          <button type="button" onClick={handlePickIcon} disabled={isRunning} className={buttonClass('ghost')}>
+          <Button onClick={handlePickIcon} disabled={isRunning}>
             Choose image…
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            kind="quiet"
             ref={emojiButtonRef}
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
             disabled={isRunning}
-            className={buttonClass('quiet')}
           >
             Emoji…
-          </button>
+          </Button>
           {((agent.icon && iconDataUrl) || agent.emoji) && !isRunning && (
-            <button type="button" onClick={agent.emoji ? handleRemoveEmoji : handleRemoveIcon} className={buttonClass('quiet')}>
+            <Button kind="quiet" onClick={agent.emoji ? handleRemoveEmoji : handleRemoveIcon}>
               Remove
-            </button>
+            </Button>
           )}
           {showEmojiPicker && (
             <div className="absolute top-8 right-0 z-dropdown">
@@ -1157,9 +1161,9 @@ export function AgentSettingsView({ agent }: Props) {
 
       <SectionHeading title="Template" />
       <Field label="Copy as template" help="Copies this agent's definition to the clipboard to share or reuse.">
-        <button type="button" onClick={handleExportAsTemplate} disabled={exportingTemplate} className={buttonClass('ghost')}>
+        <Button onClick={handleExportAsTemplate} disabled={exportingTemplate}>
           Copy
-        </button>
+        </Button>
       </Field>
       {!isManagedByClubhouse && !pageMode && (
         <p className="mt-3 text-xs text-ctp-overlay1">
@@ -1184,9 +1188,9 @@ export function AgentSettingsView({ agent }: Props) {
       <div className="flex items-center gap-2 mt-2 text-xs text-ctp-overlay1 min-w-0">
         <span className="flex-shrink-0">Written to the agent worktree at</span>
         <span className="font-mono text-ctp-subtext1 truncate">{relativeWorktree}</span>
-        <button type="button" onClick={handleOpenAgentRoot} className={`${buttonClass('quiet')} ml-auto`}>
+        <Button kind="quiet" onClick={handleOpenAgentRoot} className="ml-auto">
           Open in Finder
-        </button>
+        </Button>
       </div>
     </>
   );
@@ -1438,12 +1442,12 @@ export function AgentSettingsView({ agent }: Props) {
           <span className="w-2 h-2 rounded-full flex-shrink-0 bg-ctp-warning" aria-hidden="true" />
           <span className="text-ctp-text truncate">Unsaved changes to {joinNames(dirtyNames)}</span>
           <div className="ml-auto flex items-center gap-1.5">
-            <button type="button" onClick={handleDiscard} disabled={saving} className={buttonClass('quiet')}>
+            <Button kind="quiet" onClick={handleDiscard} disabled={saving}>
               Discard
-            </button>
-            <button type="button" onClick={handleSaveAll} disabled={saving || isRunning} title={stopFirst} className={buttonClass('primary')}>
+            </Button>
+            <Button kind="primary" onClick={handleSaveAll} disabled={saving || isRunning} title={stopFirst}>
               {saving ? 'Saving…' : 'Save'}
-            </button>
+            </Button>
           </div>
         </div>
       )}
