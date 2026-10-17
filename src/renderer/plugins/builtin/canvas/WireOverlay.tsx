@@ -58,7 +58,7 @@ interface WireOverlayProps {
 }
 
 /** Zone wires use a distinct accent so the "bundle to a zone" reads differently. */
-const ZONE_WIRE_COLOR = 'rgb(var(--ctp-mauve, 203 166 247))';
+const ZONE_WIRE_COLOR = 'rgb(var(--ctp-accent2, 203 166 247))';
 
 /** A single zone wire — a bundled connection drawn to the zone itself. */
 const ZoneWireGroup = React.memo(function ZoneWireGroup({

@@ -92,7 +92,7 @@ export function DurablePermissionPrompt({ agentId }: Props) {
     // Surface the tail of a refused decision even after the prompt clears.
     return error ? (
       <div
-        className="absolute bottom-2 left-2 right-2 z-20 rounded-lg border border-ctp-surface1 bg-surface-0/95 px-3 py-2 text-xs text-ctp-subtext0 shadow-lg backdrop-blur-sm"
+        className="absolute bottom-2 left-2 right-2 z-20 rounded-lg border border-surface-1 bg-surface-0/95 px-3 py-2 text-xs text-ctp-subtext0 shadow-lg backdrop-blur-sm"
         data-testid="permission-prompt-error"
         role="status"
       >
@@ -145,7 +145,7 @@ export function DurablePermissionPrompt({ agentId }: Props) {
 
         <div className="flex items-center justify-end gap-2">
           <button
-            className="px-2.5 py-1 text-xs rounded border border-ctp-surface1 text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors disabled:opacity-50"
+            className="px-2.5 py-1 text-xs rounded border border-surface-1 text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors disabled:opacity-50"
             onClick={() => handleDecision('deny')}
             disabled={busy}
             data-testid="durable-permission-deny"
