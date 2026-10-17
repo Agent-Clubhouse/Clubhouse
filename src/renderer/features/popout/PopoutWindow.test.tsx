@@ -37,6 +37,10 @@ vi.mock('../../stores/agentStore', () => ({
   ),
 }));
 
+vi.mock('./PopoutCanvasView', () => ({
+  PopoutCanvasView: () => <div data-testid="popout-canvas-view" />,
+}));
+
 vi.mock('./PopoutAgentView', () => ({
   PopoutAgentView: ({ agentId }: { agentId?: string }) => (
     <div data-testid="popout-agent-view">{agentId}</div>
@@ -81,9 +85,26 @@ describe('PopoutWindow', () => {
     }
   });
 
-  it('keeps the legacy title bar with the flag off', () => {
+  it('names the agent in the legacy title bar too, with the flag off', () => {
+    mockAgentState.agents = { a1: { id: 'a1', name: 'snazzy-fox' } } as never;
     render(<PopoutWindow />);
-    expect(screen.getByTestId('popout-title').textContent).toBe('Agent — Pop-out');
+    expect(screen.getByTestId('popout-title').textContent).toBe('snazzy-fox');
+    expect(screen.getByTestId('popout-agent-name').textContent).toBe('snazzy-fox');
+  });
+
+  it('puts Show in main window and Stop in the title bar once synced', async () => {
+    mockAgentState.agents = { a1: { id: 'a1', name: 'snazzy-fox', status: 'running', kind: 'durable' } } as never;
+    render(<PopoutWindow />);
+    const bar = screen.getByTestId('popout-title-bar');
+    await waitFor(() => expect(bar.querySelector('[data-testid="popout-view-button"]')).not.toBeNull());
+    expect(bar.querySelector('[data-testid="popout-stop-button"]')).not.toBeNull();
+  });
+
+  it('shows the canvas name in a canvas popout', () => {
+    window.clubhouse.window.getPopoutParams = vi.fn().mockReturnValue({ type: 'canvas', canvasId: 'c1', title: 'Chrome redesign' });
+    render(<PopoutWindow />);
+    expect(screen.getByTestId('popout-title').textContent).toBe('Chrome redesign');
+    expect(screen.queryByTestId('popout-actions')).not.toBeInTheDocument();
   });
 
   it('listens for chat events while open and stops on close, and loads provider names', async () => {

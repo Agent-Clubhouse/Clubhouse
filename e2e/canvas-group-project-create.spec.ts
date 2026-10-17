@@ -64,7 +64,7 @@ test('creating a group project advances from naming form to initialized card', a
 
   const widget = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
   await expect(widget).toBeVisible({ timeout: 8_000 });
-  const nameInput = widget.locator('input[placeholder="Project name..."]');
+  const nameInput = widget.locator('input[placeholder="Project name"]');
   await expect(nameInput).toBeVisible({ timeout: 5_000 });
   await nameInput.fill('E2E Group Project');
   const createButton = widget.getByRole('button', { name: 'Create', exact: true });

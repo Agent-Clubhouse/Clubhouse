@@ -70,7 +70,7 @@ describe('WireConfigPopover', () => {
       <WireConfigPopover binding={browserBinding} x={100} y={200} onClose={vi.fn()} />,
     );
     expect(getByTestId('wire-instructions-button')).toBeTruthy();
-    expect(getByTestId('wire-instructions-button').textContent).toContain('Set Instructions');
+    expect(getByTestId('wire-instructions-button').textContent).toContain('Set instructions');
   });
 
   it('does not expose a wire-level wake action for sleeping agent targets', () => {
@@ -97,7 +97,7 @@ describe('WireConfigPopover', () => {
     const { getByTestId } = render(
       <WireConfigPopover binding={bindingWithInstructions} x={100} y={200} onClose={vi.fn()} />,
     );
-    expect(getByTestId('wire-instructions-button').textContent).toContain('Edit Instructions');
+    expect(getByTestId('wire-instructions-button').textContent).toContain('Edit instructions');
   });
 
   it('opens instructions dialog when Set Instructions is clicked', () => {

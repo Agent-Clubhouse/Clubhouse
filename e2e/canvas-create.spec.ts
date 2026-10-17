@@ -83,8 +83,8 @@ test('clicking the canvas + button → New Canvas creates a new canvas tab', asy
   await expect(addBtn).toBeVisible();
   await addBtn.click();
 
-  // 5. The dropdown should appear and contain "New Canvas".
-  const addMenu = window.locator('[data-testid="canvas-add-menu"]');
+  // 5. The dropdown should appear and contain "New canvas".
+  const addMenu = window.locator('[data-testid="canvas-add"]');
   await expect(addMenu).toBeVisible({ timeout: 2_000 });
   const addNew = window.locator('[data-testid="canvas-add-new"]');
   await expect(addNew).toBeVisible({ timeout: 5_000 });

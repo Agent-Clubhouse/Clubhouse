@@ -70,11 +70,8 @@ describe('canvas manifest', () => {
     expect(manifest.contributes!.storage!.scope).toBe('project-local');
   });
 
-  it('contributes cross-project-canvas boolean setting with default true', () => {
-    const setting = manifest.contributes!.settings!.find((s) => s.key === 'cross-project-canvas');
-    expect(setting).toBeDefined();
-    expect(setting!.type).toBe('boolean');
-    expect(setting!.default).toBe(true);
+  it('no longer contributes the dead cross-project-canvas setting', () => {
+    expect(manifest.contributes!.settings!.find((s) => s.key === 'cross-project-canvas')).toBeUndefined();
   });
 
   it('contributes bidirectional-wires boolean setting with default false', () => {

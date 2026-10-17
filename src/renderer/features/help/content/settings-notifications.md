@@ -4,7 +4,7 @@ Stay informed about agent activity even when Clubhouse is in the background.
 
 ## Notification Settings
 
-**Settings > Notifications**
+**Settings > Notifications & Alerts**
 
 ### Master Toggle
 
@@ -42,4 +42,4 @@ The macOS Dock icon shows a count of pending items (e.g., permission requests). 
 
 ## Sound
 
-Notification sounds are configured separately in **Settings > Sound**. See the **Sound & Audio** help topic.
+Notification sounds are on the same page, under **Sounds**. See the **Sound & Audio** help topic.

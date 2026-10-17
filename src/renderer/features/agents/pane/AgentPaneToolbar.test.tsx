@@ -1,0 +1,123 @@
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { AgentPaneToolbar } from './AgentPaneToolbar';
+import { chatActivity, chatUsage } from '../chat/ChatHeader';
+import { createChatViewState } from '../../../stores/chatStore';
+import type { Agent } from '../../../../shared/types';
+
+const agent = { id: 'a1', name: 'gallant-swift', status: 'running', kind: 'durable', projectId: 'p1', color: 'indigo', orchestrator: 'claude-code' } as Agent;
+
+/** Drives useNarrow's ResizeObserver from the test. */
+function installResizeObserver() {
+  let cb: ResizeObserverCallback | null = null;
+  const Orig = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(c: ResizeObserverCallback) { cb = c; }
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  } as unknown as typeof ResizeObserver;
+  return {
+    resize: (width: number) => act(() => cb?.([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver)),
+    restore: () => { globalThis.ResizeObserver = Orig; },
+  };
+}
+
+describe('AgentPaneToolbar', () => {
+  let ro: ReturnType<typeof installResizeObserver> | null = null;
+  afterEach(() => { ro?.restore(); ro = null; });
+
+  it('is one 32px bar with status, activity, model, Changes and the switch, without the agent name', () => {
+    const onToggle = vi.fn();
+    render(
+      <AgentPaneToolbar
+        agent={agent}
+        dot="working"
+        activity="3:12 · Edit AgentRow.tsx"
+        model="opus"
+        changes={{ open: false, onToggle }}
+        runtime={{ value: 'chat', onChange: vi.fn() }}
+        detailsToggle={<button type="button" data-testid="details-slot">Details</button>}
+      />,
+    );
+    const bar = screen.getByTestId('agent-pane-toolbar');
+    expect(bar.className).toContain('h-8');
+    expect(bar).not.toHaveTextContent('gallant-swift');
+    expect(screen.getByTestId('pane-status')).toHaveTextContent('Working');
+    expect(screen.getByTestId('pane-activity')).toHaveTextContent('3:12 · Edit AgentRow.tsx');
+    expect(screen.getByTestId('pane-model')).toHaveTextContent('opus');
+    expect(screen.getByTestId('pane-orchestrator')).toHaveTextContent('C');
+    expect(screen.getByTestId('details-slot')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
+    expect(onToggle).toHaveBeenCalled();
+    expect(screen.getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('folds Changes, the switch and the model into icons below 640px', () => {
+    ro = installResizeObserver();
+    render(
+      <AgentPaneToolbar agent={agent} dot="idle" model="opus" changes={{ open: false, onToggle: vi.fn() }} runtime={{ value: 'terminal', onChange: vi.fn() }} />,
+    );
+    ro.resize(400);
+    expect(screen.getByTestId('agent-pane-toolbar')).toHaveAttribute('data-narrow', 'true');
+    expect(screen.getByTestId('chat-changes-toggle')).toHaveAttribute('aria-label', 'Changes');
+    expect(screen.getByTestId('chat-changes-toggle')).toHaveTextContent('');
+    expect(screen.getByRole('radio', { name: 'Terminal' })).toHaveTextContent('');
+    expect(screen.queryByTestId('pane-model')).not.toBeInTheDocument();
+    expect(screen.getByTestId('pane-orchestrator').getAttribute('aria-label')).toContain('Model opus');
+    ro.resize(800);
+    expect(screen.getByTestId('pane-model')).toHaveTextContent('opus');
+  });
+
+  it('offers the agent menu only where asked', () => {
+    const { rerender } = render(<AgentPaneToolbar agent={agent} dot="idle" />);
+    expect(screen.queryByTestId('pane-menu-button')).not.toBeInTheDocument();
+    rerender(<AgentPaneToolbar agent={agent} dot="idle" showMenu />);
+    fireEvent.click(screen.getByTestId('pane-menu-button'));
+    expect(screen.getByTestId('agent-context-menu')).toBeInTheDocument();
+  });
+
+  it('names the agent only when asked (the classic shell)', () => {
+    const { rerender } = render(<AgentPaneToolbar agent={agent} dot="idle" />);
+    expect(screen.queryByTestId('pane-agent-name')).not.toBeInTheDocument();
+    rerender(<AgentPaneToolbar agent={agent} dot="idle" showName />);
+    expect(screen.getByTestId('pane-agent-name')).toHaveTextContent('gallant-swift');
+  });
+
+  it('shows a focusable context meter that turns red when context or a limit runs out', () => {
+    const { rerender } = render(<AgentPaneToolbar agent={agent} dot="working" usage={{ contextPct: 34, hot: false, lines: ['Context 34%: 68k of 200k tokens', '5h limit: 40%, resets Fri 3:00 PM'] }} />);
+    const meter = screen.getByTestId('pane-usage');
+    expect(meter).toHaveTextContent('34%');
+    expect(meter).toHaveAttribute('tabindex', '0');
+    expect(meter.getAttribute('aria-label')).toContain('resets Fri 3:00 PM');
+    expect(meter).not.toHaveAttribute('data-hot');
+    rerender(<AgentPaneToolbar agent={agent} dot="working" usage={{ contextPct: 92, hot: true, lines: [] }} />);
+    expect(screen.getByTestId('pane-usage')).toHaveAttribute('data-hot', 'true');
+    expect(screen.getByTestId('pane-usage').className).toContain('text-ctp-error');
+  });
+});
+
+describe('chatActivity', () => {
+  const base = createChatViewState('a1');
+  it('shows elapsed time and the running tool', () => {
+    const state = {
+      ...base, state: 'running' as const, turnStartedAt: 0,
+      items: [{ id: 't', sessionId: 's', seq: 1, ts: 0, kind: 'tool_call' as const, toolCallId: 't', toolKind: 'edit' as const, title: 'Edit AgentRow.tsx', status: 'in_progress' as const, content: [] }],
+    };
+    expect(chatActivity(state, 192_000)).toBe('3:12 · Edit AgentRow.tsx');
+  });
+  it('marks the meter hot at 90% context or a reached limit, with reset times', () => {
+    const caps = { usage: 'tokens', limits: true } as never;
+    const u = chatUsage({ ...base, capabilities: caps, usage: { ...base.usage, context: { used: 95, size: 100 }, limits: [] } });
+    expect(u).toMatchObject({ contextPct: 95, hot: true });
+    const l = chatUsage({ ...base, capabilities: caps, usage: { ...base.usage, context: { used: 10, size: 100 }, limits: [{ window: '5h', status: 'exceeded', resetsAt: '2026-10-17T15:00:00Z' }] } as never });
+    expect(l?.hot).toBe(true);
+    expect(l?.lines[1]).toMatch(/^5h limit: limit reached, resets /);
+    expect(chatUsage({ ...base, capabilities: { usage: 'none' } as never })).toBeNull();
+  });
+
+  it('says what a waiting agent needs', () => {
+    expect(chatActivity({ ...base, state: 'waiting_input' }, 0)).toBe('Has a question');
+    expect(chatActivity({ ...base, state: 'idle' }, 0)).toBe('');
+  });
+});

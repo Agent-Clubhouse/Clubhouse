@@ -5,6 +5,8 @@ import { initChatEventListener } from '../../stores/chatStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { PopoutAgentView } from './PopoutAgentView';
 import { PopoutCanvasView } from './PopoutCanvasView';
+import { PopoutAgentActions } from './PopoutAgentActions';
+import { ToastContainer } from '../../components/ToastContainer';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { PopoutTitleBar } from '../../chrome/titlebar/PopoutTitleBar';
 import type { Agent, AgentHookEvent } from '../../../shared/types';
@@ -163,16 +165,29 @@ export function PopoutWindow() {
     );
   }
 
+  const isAgent = params.type === 'agent';
+  const title = isAgent
+    ? <span data-testid="popout-agent-name">{agentName || 'Agent'}</span>
+    : params.type === 'canvas' ? params.title || 'Canvas' : 'Pop-out';
+  const actions = isAgent && ready && params.agentId
+    ? <PopoutAgentActions agentId={params.agentId} projectId={params.projectId} />
+    : undefined;
+
   return (
     <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col" data-testid="popout-window">
-      {/* Title bar drag region */}
+      {/* Title bar: the agent's or canvas's name, and an agent's actions on the right */}
       {isNewChromeEnabled() ? (
-        <PopoutTitleBar title={params.type === 'agent' ? (agentName || 'Agent') : 'Canvas'} />
+        <PopoutTitleBar title={title} actions={actions} />
       ) : (
-        <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center" data-testid="popout-title-bar">
-          <span className="text-xs text-ctp-subtext0 select-none" data-testid="popout-title">
-            {params.type === 'agent' ? 'Agent' : 'Canvas'} — Pop-out
+        <div
+          className={`h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center gap-2 pr-1.5 ${window.clubhouse.platform === 'darwin' ? 'pl-[78px]' : 'pl-2'} ${window.clubhouse.platform === 'win32' ? 'win-overlay-padding' : ''}`}
+          data-testid="popout-title-bar"
+        >
+          {/* Centered in the room the actions leave, so a narrow window never overlaps them. */}
+          <span className="flex-1 min-w-0 text-center text-xs text-ctp-subtext0 select-none truncate" data-testid="popout-title">
+            {title}
           </span>
+          {actions}
         </div>
       )}
       {/* Content */}
@@ -191,6 +206,7 @@ export function PopoutWindow() {
           </div>
         )}
       </div>
+      <ToastContainer />
     </div>
   );
 }

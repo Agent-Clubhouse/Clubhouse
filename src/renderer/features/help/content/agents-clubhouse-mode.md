@@ -1,14 +1,14 @@
-# Clubhouse Mode
+# Clubhouse mode
 
 Clubhouse Mode keeps your durable agents in sync with project-level defaults. When enabled, changes to project settings (instructions, permissions, MCP config, skills, templates) are automatically pushed to agents on wake.
 
-## How It Works
+## How it works
 
 1. You configure project-level agent defaults (instructions, MCP, skills, etc.)
 2. Clubhouse Mode pushes these defaults to durable agent worktrees
 3. When an agent wakes and its config has drifted, a **Config Changes Dialog** appears
 
-## Config Changes Dialog
+## Config changes dialog
 
 When drift is detected, you see a diff grouped by category (instructions, permissions, MCP, skills, templates) with additions (+), removals (-), and modifications (~).
 
@@ -20,7 +20,7 @@ Three options:
 | **Keep for this agent** | Lock the agent to its own config (override) |
 | **Discard** | Ignore the changes |
 
-## Wildcard Substitutions
+## Wildcard substitutions
 
 Clubhouse Mode supports dynamic placeholders in instructions:
 
@@ -34,10 +34,10 @@ Clubhouse Mode supports dynamic placeholders in instructions:
 
 ## Settings
 
-- **Global toggle:** **Settings > Clubhouse Mode** — enable/disable for all projects
-- **Per-project override:** **Project Settings > Clubhouse Mode** — override the global setting
+- **Global toggle:** **Settings > Orchestrators & Agents > Clubhouse Mode** — enable/disable for all projects
+- **Per-project override:** the project's **Orchestrators & Agents** settings page, **Clubhouse Mode** — override the global setting
 
-## When to Use
+## When to use
 
 - **Teams** — Ensure all agents follow the same coding standards and instructions
 - **Consistency** — Keep MCP servers, skills, and permissions uniform across agents

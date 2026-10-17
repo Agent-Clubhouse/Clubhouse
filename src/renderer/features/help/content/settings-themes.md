@@ -4,7 +4,7 @@ Customize how Clubhouse looks: themes, terminal colors, and display preferences.
 
 ## Changing Your Theme
 
-**Settings > Display** — Select a theme. Applied immediately, no restart needed.
+**Settings > Display & UI** — Select a theme. Applied immediately, no restart needed.
 
 ## Built-in Themes
 

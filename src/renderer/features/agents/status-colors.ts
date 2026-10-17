@@ -1,13 +1,16 @@
+import { DOT_COLOR } from './agent-status';
+
 /**
- * Shared status ring colors for agent avatars.
- * Uses CSS custom properties for theme compatibility.
+ * Avatar ring colors by `agent.status` and hook state, in the shared status
+ * palette (agent-status.tsx). Prefer `statusRingColor(agent, detailed)`, which
+ * also tells a working agent from one that is done with its turn.
  */
 export const STATUS_RING_COLORS: Record<string, string> = {
-  running: 'rgb(var(--ctp-success))',
-  sleeping: 'rgb(var(--ctp-surface2))',
-  waking: 'rgb(var(--ctp-warning))',
-  creating: 'rgb(var(--ctp-accent))',
-  error: 'rgb(var(--ctp-error))',
-  needs_permission: 'rgb(var(--ctp-badge-orange))',
-  tool_error: 'rgb(var(--ctp-badge-amber))',
+  running: DOT_COLOR.working,
+  sleeping: DOT_COLOR.sleeping,
+  waking: DOT_COLOR.starting,
+  creating: DOT_COLOR.starting,
+  error: DOT_COLOR.error,
+  needs_permission: DOT_COLOR.needs,
+  tool_error: DOT_COLOR.error,
 };
