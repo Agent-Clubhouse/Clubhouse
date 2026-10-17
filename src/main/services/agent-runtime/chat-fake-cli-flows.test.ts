@@ -58,7 +58,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await runtime?.stop().catch(() => undefined);
   runtime = undefined;
-  await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  // Windows: a fake that was just stopped can hold its files for a moment.
+  await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 async function startRuntime(p: Provider, fixture: string) {

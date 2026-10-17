@@ -10,11 +10,14 @@ import type { ChatFixtureCli } from '../src/main/orchestrators/adapters/testing/
 /**
  * Native chat end to end over fake CLIs: zero tokens, real protocol traffic.
  *
- * `installFakeClis` puts fixture-replaying `claude`, `codex` and `copilot`
- * first on the app's PATH (test/chat-fixtures/<cli>/<fixture>.jsonl). The
- * fake fails with a mismatch on any message the fixture doesn't expect, and
- * its report says whether the app drove the whole fixture, so each test ends
- * by asserting the CLI side as well as the ChatView.
+ * `installFakeClis` pins every provider's binary to a fixture-replaying fake
+ * (test/chat-fixtures/<cli>/<fixture>.jsonl) through the unpackaged-only
+ * CLUBHOUSE_TEST_CLI_BINARIES seam, so resolution never reaches a real CLI at
+ * a well-known install path, and each test checks the fake is what the app
+ * spawned before it sends anything. The fake fails with a mismatch on any
+ * message the fixture doesn't expect, and its report says whether the app
+ * drove the whole fixture, so each test ends by asserting the CLI side as
+ * well as the ChatView.
  *
  * The same three flows run one layer down, without the UI, in
  * src/main/services/agent-runtime/chat-fake-cli-flows.test.ts.
@@ -59,7 +62,7 @@ let projectDir: string | undefined;
 test.afterEach(async () => {
   await fakes?.cleanup();
   fakes = undefined;
-  if (projectDir) await fs.promises.rm(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  if (projectDir) await fs.promises.rm(projectDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   projectDir = undefined;
 });
 
@@ -87,7 +90,21 @@ async function openChat(p: ProviderCase, fixture: string) {
   const chat = window.locator('[data-testid="chat-view"]');
   await expect(chat).toBeVisible({ timeout: 20_000 });
   await expect(chat).toHaveAttribute('data-state', 'idle', { timeout: 20_000 });
+  await expectFakeInUse(p.cli);
   return { electronApp, window, chat };
+}
+
+/**
+ * Before any prompt: the app spawned the fake, not a real CLI. The fake writes
+ * its report from the moment it starts, and by the time the chat is idle it
+ * has replayed the handshake, so a missing or untouched report means some
+ * other binary answered.
+ */
+async function expectFakeInUse(cli: ChatFixtureCli): Promise<void> {
+  const report = await fakes!.report(cli).catch((): undefined => undefined);
+  expect(report, `the app did not spawn the fake ${cli}`).toBeDefined();
+  expect(report!.mismatch).toBeNull();
+  expect(report!.consumed).toBeGreaterThan(0);
 }
 
 async function send(window: Page, text: string): Promise<void> {
