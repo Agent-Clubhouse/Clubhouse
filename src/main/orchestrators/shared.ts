@@ -7,6 +7,7 @@ import { app } from 'electron';
 import { getShellEnvironment } from '../util/shell';
 import type { LaunchWrapperConfig } from '../../shared/types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
+import { recordBinaryLookup } from '../telemetry/agent-signals';
 
 /** Cached binary lookup results keyed by the first binary name */
 const binaryCache = new Map<string, { path: string; ts: number }>();
@@ -31,11 +32,13 @@ export function clearBinaryCache(): void {
  * 3. Shell-native lookup (`where`/`which`) — last resort, spawns a login shell
  */
 export function findBinaryInPath(names: string[], extraPaths: string[]): string {
+  const lookupStartMs = Date.now();
   const cacheKey = names[0] || '';
   const cached = binaryCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < BINARY_CACHE_TTL_MS) {
     // Verify the cached path still exists (handles uninstalls / path changes)
     if (fs.existsSync(cached.path)) {
+      recordBinaryLookup('cache', lookupStartMs);
       return cached.path;
     }
     binaryCache.delete(cacheKey);
@@ -43,8 +46,10 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
 
   const isWin = process.platform === 'win32';
 
+  let tier: 'well_known' | 'path_scan' | 'login_shell' = 'well_known';
   const cacheHit = (found: string) => {
     binaryCache.set(cacheKey, { path: found, ts: Date.now() });
+    recordBinaryLookup(tier, lookupStartMs);
     return found;
   };
 
@@ -52,6 +57,7 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
   for (const p of extraPaths) {
     if (fs.existsSync(p)) return cacheHit(p);
   }
+  tier = 'path_scan';
 
   // ── 2. Manual PATH scan ──
   // Start with process.env.PATH (available immediately, no shell spawn).
@@ -83,6 +89,7 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
   }
 
   // ── 3. Shell-native lookup (`where` / `which`) — last resort ──
+  tier = 'login_shell';
   // Only reached when the binary isn't in well-known paths or on PATH.
   // This spawns a login shell which can take 500ms–2s.
   for (const name of names) {
@@ -110,6 +117,7 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
     }
   }
 
+  recordBinaryLookup('not_found', lookupStartMs);
   throw new Error(
     `Could not find any of [${names.join(', ')}] on PATH. Make sure it is installed.`
   );

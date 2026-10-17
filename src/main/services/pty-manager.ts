@@ -11,6 +11,7 @@ import * as headlessTerminal from './pty-headless-terminal';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
+import { agentKillStage, agentOutput, agentRunKilled, agentRunStarted, agentShellReady, agentSwept } from '../telemetry/agent-telemetry';
 
 /** Pattern matching common API key environment variable names. */
 const API_KEY_ENV_PATTERN = /^(ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AZURE_OPENAI_API_KEY|MISTRAL_API_KEY|COHERE_API_KEY|HUGGING_FACE_TOKEN|HF_TOKEN)$/;
@@ -153,6 +154,7 @@ const staleSweeper = new StaleSweeper<ManagedSession>(sessions, {
     appLog('core:pty', 'warn', 'Stale PTY session detected, cleaning up', {
       meta: { agentId, pid: session.process.pid },
     });
+    agentSwept(agentId);
     const { onExitCallback } = session;
     cleanupSession(agentId);
     broadcastAgentExit(agentId, 1, '');
@@ -345,6 +347,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
   const session = createSession(proc, agentId, pendingCommand);
   session.onExitCallback = onExit;
   sessions.set(agentId, session);
+  agentRunStarted(agentId, 'pty');
   const expectedGeneration = session.generation;
 
   proc.onData((data: string) => {
@@ -354,11 +357,13 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
     // Fire the command immediately so agents start without waiting for a
     // terminal UI resize (which only happens when the terminal is visible).
     if (flushPendingCommand(current)) {
+      agentShellReady(agentId);
       return; // suppress shell startup output
     }
 
     current.lastActivity = Date.now();
     appendToBuffer(current, data);
+    agentOutput(agentId, data.length);
     if (annexEventBus.isActive()) {
       headlessTerminal.feedData(agentId, data);
     }
@@ -504,6 +509,7 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
   if (session.killing) return;
 
   session.killing = true;
+  agentKillStage(agentId, 'exit_command');
 
   try {
     session.process.write(exitCommand);
@@ -523,18 +529,21 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
   session.eofTimer = setTimeout(() => {
     const current = sessions.get(agentId);
     if (!current || current.process !== proc) return;
+    agentKillStage(agentId, 'eof');
     try { proc.write('\x04'); } catch { /* dead */ }
   }, 3000);
 
   session.termTimer = setTimeout(() => {
     const current = sessions.get(agentId);
     if (!current || current.process !== proc) return;
+    agentKillStage(agentId, 'sigterm');
     try { proc.kill('SIGTERM'); } catch { /* dead */ }
   }, 6000);
 
   session.killTimer = setTimeout(() => {
     const current = sessions.get(agentId);
     if (current && current.process === proc) {
+      agentKillStage(agentId, 'sigkill');
       try { proc.kill(); } catch { /* dead */ }
       const { onExitCallback } = current;
       cleanupSession(agentId);
@@ -554,6 +563,9 @@ export function kill(agentId: string): void {
     if (annexEventBus.isActive()) {
       headlessTerminal.dispose(agentId);
     }
+    // cleanupSession makes onExit skip this session, so no exit broadcast
+    // follows: end the run here.
+    agentRunKilled(agentId, 'sigkill');
     cleanupSession(agentId);
   }
 }
@@ -565,6 +577,7 @@ export function killAll(exitCommand: string = '/exit\r'): Promise<void> {
   for (const id of ids) {
     const session = sessions.get(id);
     if (!session) continue;
+    agentKillStage(id, 'exit_command');
     try {
       session.process.write(exitCommand);
     } catch {
@@ -579,6 +592,7 @@ export function killAll(exitCommand: string = '/exit\r'): Promise<void> {
         if (session) {
           console.warn(`[pty-manager] killAll: process ${id} did not exit within grace period, sending SIGKILL`);
           try { session.process.kill(); } catch { /* dead */ }
+          agentRunKilled(id, 'sigkill');
         }
         cleanupSession(id);
       }
