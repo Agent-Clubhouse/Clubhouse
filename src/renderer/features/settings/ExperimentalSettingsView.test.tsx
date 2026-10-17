@@ -75,6 +75,19 @@ describe('ExperimentalSettingsView', () => {
     });
   });
 
+  it('renders the Telemetry export toggle and saves it under the telemetry id', async () => {
+    mockGetExperimentalSettings.mockResolvedValue({});
+    render(<ExperimentalSettingsView />);
+    await waitFor(() => {
+      expect(screen.getByText('Telemetry export')).toBeInTheDocument();
+    });
+    const row = screen.getByText('Telemetry export').closest('.flex.items-center.justify-between') as HTMLElement;
+    fireEvent.click(row.querySelector('button.rounded-full') as HTMLElement);
+    await waitFor(() => {
+      expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ telemetry: true });
+    });
+  });
+
   it('does not list Clubhouse MCP as experimental (promoted)', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {
