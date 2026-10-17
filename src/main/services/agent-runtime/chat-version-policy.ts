@@ -60,7 +60,14 @@ export const TESTED_CLI_VERSIONS: Readonly<Partial<Record<ChatDriverId, CliVersi
   claude_stream_json: { testedMax: '2.1.301' },
   // Generated bindings are pinned at 0.153.4; the research probed 0.159.3.
   codex_app_server: { testedMax: '0.159.3' },
-  copilot_acp: { testedMax: '1.0.92' },
+  // Fixtures exist from 1.0.82, 1.0.92 and 1.0.98. 1.0.82 is what the Homebrew /
+  // WinGet shim runs under --no-auto-update, which the probe also passes, so
+  // probe.cliVersion is the version that actually runs. Nothing older is
+  // known to break, so there is no floor.
+  copilot_acp: { testedMax: '1.0.98' },
+  // @github/copilot-sdk 1.0.22 pins Copilot CLI 1.0.98 (and checks its own
+  // protocol version on connect).
+  copilot_sdk: { testedMax: '1.0.98' },
 };
 
 /** Known-bad versions shipped with the app. The update manifest can add more. */

@@ -70,6 +70,14 @@ describe('chat CLI version policy', () => {
     expect(evaluateCliVersion('copilot_acp', 'copilot-cli', '9.9.9', policy()).status).toBe('ok');
   });
 
+  it('covers the Copilot versions that actually run, including Homebrew\'s pinned 1.0.82', () => {
+    for (const driver of ['copilot_acp', 'copilot_sdk'] as const) {
+      expect(evaluateCliVersion(driver, 'copilot-cli', '1.0.82').status).toBe('ok');
+      expect(evaluateCliVersion(driver, 'copilot-cli', '1.0.98').status).toBe('ok');
+      expect(evaluateCliVersion(driver, 'copilot-cli', '1.0.99').status).toBe('untested');
+    }
+  });
+
   it('notes a newer-than-tested version without failing it', () => {
     const v = evaluateCliVersion('claude_agent_sdk', 'claude-code', '2.1.400', policy());
     expect(v).toMatchObject({ status: 'untested', version: '2.1.400' });
