@@ -14,6 +14,7 @@ export const Z_INDEX = {
   canvasOverlay: 9999,   // Canvas-specific overlays and critical app states
   canvasDialog: 10000,   // Canvas-specific dialogs (zone delete, plugin)
   top: 100000,           // Absolute top layer (blueprint/wire dialogs)
+  tooltip: 100001,       // Tooltips: above every layer, including canvas and top-layer dialogs
 } as const;
 
 export type ZIndexKey = keyof typeof Z_INDEX;

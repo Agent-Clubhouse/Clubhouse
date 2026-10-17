@@ -1,6 +1,7 @@
 import React from 'react';
 import { usePluginStore } from './plugin-store';
 import type { PluginSettingDeclaration } from '../../shared/plugin-types';
+import { Toggle } from '../components/Toggle';
 
 interface Props {
   pluginId: string;
@@ -49,13 +50,7 @@ export function PluginSettingsRenderer({ pluginId, settings, scope }: Props) {
                   <div className="text-xs text-ctp-subtext0 mt-0.5">{setting.description}</div>
                 )}
               </div>
-              <button
-                onClick={() => handleChange(setting.key, !value)}
-                className="toggle-track"
-                data-on={String(!!value)}
-              >
-                <span className="toggle-knob" />
-              </button>
+              <Toggle checked={!!value} onChange={(v) => handleChange(setting.key, v)} ariaLabel={setting.label} />
             </div>
           );
         }

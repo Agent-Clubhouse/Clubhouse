@@ -143,7 +143,7 @@ test.describe('Settings Persistence — Toggle', () => {
   });
 
   test('toggling "Home" changes its state', async () => {
-    const homeToggle = window.locator('button.toggle-track').first();
+    const homeToggle = window.locator('button[role="switch"]').first();
     await expect(homeToggle).toBeVisible({ timeout: 3_000 });
 
     const beforeState = await homeToggle.getAttribute('data-on');
@@ -155,7 +155,7 @@ test.describe('Settings Persistence — Toggle', () => {
   });
 
   test('localStorage verification for clubhouse_view_prefs', async () => {
-    const homeToggle = window.locator('button.toggle-track').first();
+    const homeToggle = window.locator('button[role="switch"]').first();
     const currentState = await homeToggle.getAttribute('data-on');
 
     const storedPrefs = await window.evaluate(() => {
@@ -167,7 +167,7 @@ test.describe('Settings Persistence — Toggle', () => {
   });
 
   test('toggle state persists after navigating away and back', async () => {
-    const homeToggle = window.locator('button.toggle-track').first();
+    const homeToggle = window.locator('button[role="switch"]').first();
     const stateBeforeNav = await homeToggle.getAttribute('data-on');
 
     await navigateToSmokeProject(window);
@@ -175,14 +175,14 @@ test.describe('Settings Persistence — Toggle', () => {
     await navigateToDisplaySettings(window);
 
     const stateAfterReturn = await window
-      .locator('button.toggle-track')
+      .locator('button[role="switch"]')
       .first()
       .getAttribute('data-on');
     expect(stateAfterReturn).toBe(stateBeforeNav);
   });
 
   test('restore original toggle state', async () => {
-    const homeToggle = window.locator('button.toggle-track').first();
+    const homeToggle = window.locator('button[role="switch"]').first();
     await expect(homeToggle).toBeVisible({ timeout: 3_000 });
     const currentState = await homeToggle.getAttribute('data-on');
 

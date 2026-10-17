@@ -121,12 +121,7 @@ describe('OrchestratorSettingsView', () => {
     describe('clubhouse mode toggle', () => {
       it('shows confirmation dialog when enabling', () => {
         render(<OrchestratorSettingsView />);
-        // Find the toggle button for Clubhouse Mode (first toggle-track)
-        const toggleButtons = screen.getAllByRole('button');
-        const clubhouseToggle = toggleButtons.find((btn) =>
-          btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'false'
-        );
-        if (clubhouseToggle) fireEvent.click(clubhouseToggle);
+        fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse Mode' }));
 
         expect(screen.getByText('Enable Clubhouse Mode?')).toBeInTheDocument();
         expect(screen.getByText(/overwrite agent settings/)).toBeInTheDocument();
@@ -137,11 +132,7 @@ describe('OrchestratorSettingsView', () => {
         useClubhouseModeStore.setState({ setEnabled });
 
         render(<OrchestratorSettingsView />);
-        const toggleButtons = screen.getAllByRole('button');
-        const clubhouseToggle = toggleButtons.find((btn) =>
-          btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'false'
-        );
-        if (clubhouseToggle) fireEvent.click(clubhouseToggle);
+        fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse Mode' }));
         fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
 
         expect(setEnabled).toHaveBeenCalledWith(true);
@@ -149,11 +140,7 @@ describe('OrchestratorSettingsView', () => {
 
       it('cancels confirmation dialog', () => {
         render(<OrchestratorSettingsView />);
-        const toggleButtons = screen.getAllByRole('button');
-        const clubhouseToggle = toggleButtons.find((btn) =>
-          btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'false'
-        );
-        if (clubhouseToggle) fireEvent.click(clubhouseToggle);
+        fireEvent.click(screen.getByRole('switch', { name: 'Clubhouse Mode' }));
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
         expect(screen.queryByText('Enable Clubhouse Mode?')).not.toBeInTheDocument();
@@ -167,7 +154,7 @@ describe('OrchestratorSettingsView', () => {
         // Find the Clubhouse Mode toggle by traversing from the "Clubhouse Mode" text
         const clubhouseLabel = screen.getByText('Clubhouse Mode');
         const clubhouseSection = clubhouseLabel.closest('.flex.items-center.justify-between');
-        const clubhouseToggle = clubhouseSection?.querySelector('.toggle-track');
+        const clubhouseToggle = clubhouseSection?.querySelector('[role="switch"]');
         if (clubhouseToggle) fireEvent.click(clubhouseToggle);
 
         expect(setEnabled).toHaveBeenCalledWith(false);
@@ -254,9 +241,9 @@ describe('OrchestratorSettingsView', () => {
             availability: { 'claude-code': { available: false, error: 'CLI not found' } },
           });
           render(<OrchestratorSettingsView />);
-          const toggleButtons = screen.getAllByRole('button');
+          const toggleButtons = screen.getAllByRole('switch');
           const orchToggle = toggleButtons.find((btn) =>
-            btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'true'
+            btn.getAttribute('role') === 'switch' && btn.getAttribute('data-on') === 'true'
           );
           expect(orchToggle).toBeTruthy();
           expect(orchToggle).not.toBeDisabled();
@@ -289,7 +276,7 @@ describe('OrchestratorSettingsView', () => {
           // beneath them — navigate from that error text up to the row's toggle button
           const errorText = screen.getByText('CLI not found');
           const row = errorText.closest('.flex.items-center.justify-between');
-          const claudeToggle = row?.querySelector('.toggle-track');
+          const claudeToggle = row?.querySelector('[role="switch"]');
           expect(claudeToggle).toBeTruthy();
           expect(claudeToggle).toBeDisabled();
           expect(claudeToggle).toHaveAttribute('title', 'CLI not found — install to enable');
@@ -302,9 +289,9 @@ describe('OrchestratorSettingsView', () => {
             availability: { 'claude-code': { available: false, error: 'CLI not found' } },
           });
           render(<OrchestratorSettingsView />);
-          const toggleButtons = screen.getAllByRole('button');
+          const toggleButtons = screen.getAllByRole('switch');
           const orchToggle = toggleButtons.find((btn) =>
-            btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'true'
+            btn.getAttribute('role') === 'switch' && btn.getAttribute('data-on') === 'true'
           );
           expect(orchToggle).not.toBeDisabled();
         });
@@ -315,9 +302,9 @@ describe('OrchestratorSettingsView', () => {
             availability: { 'claude-code': { available: true } },
           });
           render(<OrchestratorSettingsView />);
-          const toggleButtons = screen.getAllByRole('button');
+          const toggleButtons = screen.getAllByRole('switch');
           const orchToggle = toggleButtons.find((btn) =>
-            btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'true'
+            btn.getAttribute('role') === 'switch' && btn.getAttribute('data-on') === 'true'
           );
           expect(orchToggle).toBeDisabled();
           expect(orchToggle).toHaveAttribute('title', 'At least one orchestrator must be enabled');

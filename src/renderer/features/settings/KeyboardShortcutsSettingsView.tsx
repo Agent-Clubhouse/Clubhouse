@@ -8,6 +8,7 @@ import {
 import { pluginHotkeyRegistry, PluginShortcut } from '../../plugins/plugin-hotkeys';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
+import { Toggle } from '../../components/Toggle';
 
 function ShortcutRow({ shortcut }: { shortcut: ShortcutDefinition }) {
   const editingId = useKeyboardShortcutsStore((s) => s.editingId);
@@ -199,13 +200,7 @@ export function KeyboardShortcutsSettingsView() {
                 Use explicit clipboard handling for terminal paste. Enable this if paste does not work on your platform.
               </div>
             </div>
-            <button
-              onClick={() => saveClipboard(!clipboardCompat)}
-              className="toggle-track"
-              data-on={String(clipboardCompat)}
-            >
-              <span className="toggle-knob" />
-            </button>
+            <Toggle checked={clipboardCompat} onChange={saveClipboard} ariaLabel="Enable Clipboard Compatibility" />
           </div>
         </div>
 

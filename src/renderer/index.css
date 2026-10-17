@@ -47,6 +47,7 @@
   --z-index-canvas-overlay: 9999;
   --z-index-canvas-dialog: 10000;
   --z-index-top: 100000;
+  --z-index-tooltip: 100001;
 }
 
 @import '@xterm/xterm/css/xterm.css';
@@ -250,35 +251,6 @@
 .xterm .xterm-helper-textarea {
   caret-color: transparent !important;
 }
-/* Toggle switch */
-.toggle-track {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  border-radius: 9999px;
-  cursor: pointer;
-  background-color: rgb(var(--ctp-surface2));
-  transition: background-color 200ms ease;
-}
-.toggle-track[data-on="true"] {
-  background-color: rgb(var(--ctp-accent));
-}
-.toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  background: white;
-  border-radius: 9999px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-  transform: translateX(0);
-  transition: transform 200ms ease;
-}
-.toggle-track[data-on="true"] .toggle-knob {
-  transform: translateX(16px);
-}
-
 /* Pulsing status ring for working agents with rotating highlight */
 @keyframes pulse-ring {
   0%, 100% {

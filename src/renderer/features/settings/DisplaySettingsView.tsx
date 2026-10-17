@@ -5,6 +5,7 @@ import { getTheme } from '../../themes';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { IDLE_DAY_CHOICES } from '../../chrome/projectActivity';
+import { Toggle } from '../../components/Toggle';
 
 /** The new layout's idle window (docs/chrome-redesign-spec.md §2 idle rule). */
 function IdleProjectsSetting() {
@@ -86,13 +87,7 @@ export function DisplaySettingsView() {
                     <div className="text-xs text-ctp-subtext0 mt-0.5">{description}</div>
                   </div>
                 </div>
-                <button
-                  onClick={() => set(!value)}
-                  className="toggle-track"
-                  data-on={String(value)}
-                >
-                  <span className="toggle-knob" />
-                </button>
+                <Toggle checked={value} onChange={set} ariaLabel={label} />
               </div>
             );
           })}

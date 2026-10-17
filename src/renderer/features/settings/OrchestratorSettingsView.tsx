@@ -245,13 +245,7 @@ function AppAgentSettings() {
               </div>
             </div>
           </div>
-          <button
-            onClick={handleClubhouseToggle}
-            className="toggle-track"
-            data-on={String(clubhouseEnabled)}
-          >
-            <span className="toggle-knob" />
-          </button>
+          <Toggle checked={clubhouseEnabled} onChange={() => handleClubhouseToggle()} ariaLabel="Clubhouse Mode" />
         </div>
         {clubhouseEnabled && (
           <div className="px-3 py-2 rounded-lg bg-ctp-warning/10 border border-ctp-warning/20 text-xs text-ctp-warning space-y-1">
@@ -378,15 +372,13 @@ function AppAgentSettings() {
                     )}
                   </div>
                 </div>
-                <button
-                  onClick={() => setEnabled(o.id, !isEnabled)}
+                <Toggle
+                  checked={isEnabled}
+                  onChange={(v) => setEnabled(o.id, v)}
                   disabled={toggleDisabled}
-                  className="toggle-track"
-                  data-on={String(isEnabled)}
+                  ariaLabel={`Enable ${o.displayName}`}
                   title={!!notInstalled && !isEnabled ? 'CLI not found — install to enable' : isOnlyEnabled && !notInstalled ? 'At least one orchestrator must be enabled' : undefined}
-                >
-                  <span className="toggle-knob" />
-                </button>
+                />
               </div>
 
               {showExpansion && (
