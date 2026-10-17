@@ -62,7 +62,7 @@ const Chevron = ({ open }: { open: boolean }) => (
 );
 
 /** Arrow-key handling for the tree, on the DOM order of its treeitems. */
-function useTreeKeyboard(treeRef: React.RefObject<HTMLDivElement | null>, selectedKey: string | null) {
+export function useTreeKeyboard(treeRef: React.RefObject<HTMLDivElement | null>, selectedKey: string | null) {
   const focusKey = useRef<string | null>(null);
 
   const items = useCallback(

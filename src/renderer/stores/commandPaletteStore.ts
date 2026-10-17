@@ -46,7 +46,8 @@ interface CommandPaletteState {
   selectedIndex: number;
   lastInteraction: InteractionSource;
   recentCommands: RecentCommand[];
-  open: () => void;
+  /** Open, optionally with a query already typed (the sidebar filter's Search everything). */
+  open: (query?: string) => void;
   close: () => void;
   toggle: () => void;
   setQuery: (query: string) => void;
@@ -64,7 +65,7 @@ export const useCommandPaletteStore = create<CommandPaletteState>((set, get) => 
   lastInteraction: 'keyboard' as InteractionSource,
   recentCommands: loadRecents(),
 
-  open: () => set({ isOpen: true, query: '', mode: 'all', selectedIndex: 0, lastInteraction: 'keyboard' }),
+  open: (query = '') => set({ isOpen: true, query, mode: deriveMode(query), selectedIndex: 0, lastInteraction: 'keyboard' }),
   close: () => set({ isOpen: false, query: '', mode: 'all', selectedIndex: 0, lastInteraction: 'keyboard' }),
   toggle: () => {
     const { isOpen } = get();

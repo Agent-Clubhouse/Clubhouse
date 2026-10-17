@@ -44,9 +44,24 @@ interface AgentRowProps {
   parentKey?: string;
   /** New-shell-only actions appended to the menu, such as Move up / Move down. */
   extraActions?: ActionDef[];
+  /** The sidebar filter's query, marked in the name. */
+  highlight?: string;
 }
 
-export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions }: AgentRowProps) {
+/** `text` with the first case-insensitive match of `query` marked, as the sidebar filter shows it. */
+export function MarkedText({ text, query }: { text: string; query?: string }) {
+  const at = query ? text.toLowerCase().indexOf(query.toLowerCase()) : -1;
+  if (!query || at < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark className="bg-transparent text-ctp-text font-bold underline underline-offset-2">{text.slice(at, at + query.length)}</mark>
+      {text.slice(at + query.length)}
+    </>
+  );
+}
+
+export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions, highlight }: AgentRowProps) {
   const note = dot === 'needs' ? 'needs you' : dot === 'error' ? 'error' : agent.kind === 'quick' ? 'quick' : '';
   const rowRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -153,7 +168,7 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
               />
             )}
           </span>
-          <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}>{agent.name}</span>
+          <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}><MarkedText text={agent.name} query={highlight} /></span>
           {note && (
             <span className={`ml-auto flex-shrink-0 text-xs group-hover/row:hidden ${dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}`}>
               {note}

@@ -32,6 +32,8 @@ import { useChromeStore, SIDEBAR_DEFAULT, syncProjectScopeWithActiveAgent } from
 import { useAgentSettingsPages } from '../features/agents/agentSettingsPages';
 import type { PluginManifest, PluginSource } from '../../shared/plugin-types';
 import type { Agent } from '../../shared/types';
+import { useCommandPaletteStore } from '../stores/commandPaletteStore';
+import { useKeyboardShortcutsStore } from '../stores/keyboardShortcutsStore';
 
 function registerAppPlugin(id: string, label: string, position: 'top' | 'bottom' = 'top') {
   usePluginStore.getState().registerPlugin(
@@ -233,6 +235,66 @@ describe('ChromeSidebar', () => {
     render(<ChromeSidebar />);
     expect(screen.getByTestId('agent-item-a1').getAttribute('data-active')).toBe('true');
     act(() => useChromeStore.getState().setAppViewAgent(null));
+  });
+
+  describe('filter and palette button', () => {
+    afterEach(() => { useCommandPaletteStore.setState({ isOpen: false, query: '', mode: 'all' }); });
+
+    it('narrows the tree in place, sleeping matches included, with the match marked', () => {
+      render(<ChromeSidebar />);
+      fireEvent.change(screen.getByTestId('chrome-filter'), { target: { value: 'a' } });
+      const results = screen.getByTestId('filter-results');
+      expect(within(results).getByTestId('agent-item-a1')).toBeTruthy();
+      expect(within(results).getByTestId('agent-item-a2')).toBeTruthy();
+      expect(within(results).queryByTestId('agent-item-b1')).toBeNull();
+      expect(screen.queryByTestId('project-tree')?.closest('.hidden')).toBeTruthy();
+      expect(within(results).getByTestId('agent-item-a3').querySelector('mark')?.textContent).toBe('a');
+      expect(results.textContent).toContain('3 matches');
+    });
+
+    it('clears on Esc', () => {
+      render(<ChromeSidebar />);
+      const field = screen.getByTestId('chrome-filter') as HTMLInputElement;
+      fireEvent.change(field, { target: { value: 'b1' } });
+      fireEvent.keyDown(field, { key: 'Escape' });
+      expect(field.value).toBe('');
+      expect(screen.queryByTestId('filter-results')).toBeNull();
+    });
+
+    it('opens the first match on Enter', () => {
+      render(<ChromeSidebar />);
+      const field = screen.getByTestId('chrome-filter');
+      fireEvent.change(field, { target: { value: 'b1' } });
+      fireEvent.keyDown(field, { key: 'Enter' });
+      expect(useAgentStore.getState().activeAgentId).toBe('b1');
+    });
+
+    it('hands the query to the palette when nothing matches', () => {
+      render(<ChromeSidebar />);
+      fireEvent.change(screen.getByTestId('chrome-filter'), { target: { value: 'deploy' } });
+      expect(screen.getByTestId('filter-results').textContent).toContain('No matches');
+      fireEvent.click(screen.getByTestId('filter-search-everything'));
+      expect(useCommandPaletteStore.getState()).toMatchObject({ isOpen: true, query: 'deploy' });
+    });
+
+    it('shows the ⌘ glyph on macOS and a Ctrl K keycap elsewhere', () => {
+      const platform = window.clubhouse.platform;
+      useKeyboardShortcutsStore.setState({ shortcuts: { 'command-palette': { id: 'command-palette', label: 'Command Palette', category: 'General', defaultBinding: 'Meta+K', currentBinding: 'Meta+K' } } as never });
+      try {
+        (window.clubhouse as { platform: string }).platform = 'darwin';
+        const { unmount } = render(<ChromeSidebar />);
+        expect(screen.getByTestId('chrome-palette-button').textContent).toBe('');
+        unmount();
+        (window.clubhouse as { platform: string }).platform = 'win32';
+        render(<ChromeSidebar />);
+        expect(screen.getByTestId('chrome-palette-button').textContent).toBe('Ctrl K');
+        fireEvent.click(screen.getByTestId('chrome-palette-button'));
+        expect(useCommandPaletteStore.getState().isOpen).toBe(true);
+        expect(screen.getByTestId('chrome-palette-button').getAttribute('aria-pressed')).toBe('true');
+      } finally {
+        (window.clubhouse as { platform: string }).platform = platform;
+      }
+    });
   });
 
   describe('drag to reorder', () => {
