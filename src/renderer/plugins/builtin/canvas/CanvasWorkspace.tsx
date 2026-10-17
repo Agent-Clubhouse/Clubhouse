@@ -299,7 +299,8 @@ export function CanvasWorkspace({
   const handleBlueprintImport = useCallback((result: ParseResult) => {
     const store = projectId ? getProjectCanvasStore(projectId) : useAppCanvasStore;
     // Same parse and wire plan as the gallery; only the store method differs.
-    void applyParsedBlueprint(result, {
+    // Returned so useBlueprintDrop reports a failure through onError.
+    return applyParsedBlueprint(result, {
       insertCanvas: (canvas) => store.getState().insertCanvas(canvas),
       addWireDefinition: (wire) => store.getState().addWireDefinition(wire),
     });
