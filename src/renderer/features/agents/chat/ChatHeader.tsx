@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { ChatDriverId, UsageLimit } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
-import type { ActionDef } from '../useAgentRowActions';
 import { chatDot } from '../agent-status';
-import { AgentPaneToolbar } from '../pane/AgentPaneToolbar';
+import { AgentPaneToolbar, type PaneUsage } from '../pane/AgentPaneToolbar';
 import { formatElapsed, formatTokens } from './view-model';
 import { ChatDefaultTip } from './ChatDefaultTip';
 
@@ -58,11 +57,27 @@ export function chatDetails(agent: Agent, state: ChatViewState): string[] {
   const runtime = [state.driver ? DRIVER_LABELS[state.driver] ?? state.driver : null, state.cliVersion].filter(Boolean).join(' · ');
   if (runtime) out.push(runtime);
   if (agent.branch) out.push(`Branch ${agent.branch}`);
+  return out;
+}
+
+function limitHot(l: UsageLimit): boolean {
+  return l.status === 'exceeded' || (l.utilization !== undefined && l.utilization >= 0.9);
+}
+
+/** The toolbar's context meter: context fill and plan limits with their reset times, red when one runs out. */
+export function chatUsage(state: ChatViewState): PaneUsage | null {
   const caps = state.capabilities;
   const ctx = caps && caps.usage !== 'none' ? state.usage.context : null;
-  if (ctx && ctx.size > 0) out.push(`Context ${Math.min(100, Math.round((ctx.used / ctx.size) * 100))}% of ${formatTokens(ctx.size)} tokens`);
-  if (caps?.limits) for (const l of state.usage.limits) out.push(`${l.window} limit ${limitLabel(l)}`);
-  return out;
+  const limits = caps?.limits ? state.usage.limits : [];
+  const pct = ctx && ctx.size > 0 ? Math.min(100, Math.round((ctx.used / ctx.size) * 100)) : null;
+  if (pct === null && limits.length === 0) return null;
+  const lines: string[] = [];
+  if (pct !== null && ctx) lines.push(`Context ${pct}%: ${formatTokens(ctx.used)} of ${formatTokens(ctx.size)} tokens`);
+  for (const l of limits) {
+    const reset = l.resetsAt ? `, resets ${new Date(l.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
+    lines.push(`${l.window} limit: ${limitLabel(l)}${reset}`);
+  }
+  return { contextPct: pct, hot: (pct !== null && pct >= 90) || limits.some(limitHot), lines };
 }
 
 export { RuntimeSwitch, type RuntimeView } from '../pane/AgentPaneToolbar';
@@ -82,11 +97,14 @@ interface ChatHeaderProps {
   /** DOM ids tying the toggle to the panel it controls. */
   agentMapPanelId?: string;
   agentMapToggleId?: string;
-  actions?: ActionDef[];
+  /** Offer the agent's ⋯ menu (main pane only). */
+  showMenu?: boolean;
+  /** Name the agent in the bar (the classic shell's main pane has no breadcrumb). */
+  showName?: boolean;
 }
 
 /** The chat runtime's pane toolbar: AgentPaneToolbar fed from the chat session. */
-export function ChatHeader({ agent, state, onSwitchToTerminal, switching, onToggleChanges, changesOpen, onToggleAgentMap, agentMapOpen, subagentCount, agentMapPanelId, agentMapToggleId, actions }: ChatHeaderProps) {
+export function ChatHeader({ agent, state, onSwitchToTerminal, switching, onToggleChanges, changesOpen, onToggleAgentMap, agentMapOpen, subagentCount, agentMapPanelId, agentMapToggleId, showMenu, showName }: ChatHeaderProps) {
   const now = useNow(state.state === 'running' && state.turnStartedAt !== null);
   return (
     <AgentPaneToolbar
@@ -96,6 +114,7 @@ export function ChatHeader({ agent, state, onSwitchToTerminal, switching, onTogg
       activity={chatActivity(state, now)}
       model={state.model ?? agent.model}
       details={chatDetails(agent, state)}
+      usage={chatUsage(state)}
       changes={onToggleChanges ? { open: !!changesOpen, onToggle: onToggleChanges } : undefined}
       agentMap={onToggleAgentMap && agentMapPanelId && agentMapToggleId
         ? { open: !!agentMapOpen, onToggle: onToggleAgentMap, count: subagentCount ?? 0, panelId: agentMapPanelId, toggleId: agentMapToggleId }
@@ -103,7 +122,8 @@ export function ChatHeader({ agent, state, onSwitchToTerminal, switching, onTogg
       runtime={onSwitchToTerminal
         ? { value: 'chat', onChange: onSwitchToTerminal, disabled: switching, tip: <ChatDefaultTip agent={agent} /> }
         : undefined}
-      actions={actions}
+      showMenu={showMenu}
+      showName={showName}
     />
   );
 }

@@ -11,12 +11,23 @@ import type { ChatSessionState } from '../../../shared/chat';
 /** What an agent's status dot shows. `idle` is an agent between turns, shown as Done. */
 export type AgentDot = 'working' | 'idle' | 'needs' | 'error' | 'sleeping' | 'starting';
 
-export function agentDot(agent: Pick<Agent, 'status'>, detailed: Pick<AgentDetailedStatus, 'state'> | undefined): AgentDot {
+/**
+ * Hook status between tool calls: post_tool and permission_resolved report
+ * state 'idle' with message "Thinking" while the turn is still going
+ * (agentStatusSlice). That is working, not done.
+ */
+export function isMidTurn(detailed: Pick<AgentDetailedStatus, 'state' | 'message'> | undefined): boolean {
+  return detailed?.state === 'idle' && detailed.message === 'Thinking';
+}
+
+type DetailedLike = Pick<AgentDetailedStatus, 'state'> & Partial<Pick<AgentDetailedStatus, 'message'>>;
+
+export function agentDot(agent: Pick<Agent, 'status'>, detailed: DetailedLike | undefined): AgentDot {
   if (agent.status === 'error' || detailed?.state === 'tool_error') return 'error';
   if (detailed?.state === 'needs_permission') return 'needs';
   if (agent.status === 'sleeping') return 'sleeping';
   if (agent.status === 'creating' || agent.status === 'spawning' || agent.status === 'waking') return 'starting';
-  if (detailed?.state === 'working') return 'working';
+  if (detailed?.state === 'working' || isMidTurn(detailed as AgentDetailedStatus | undefined)) return 'working';
   return 'idle';
 }
 
@@ -62,7 +73,7 @@ export const DOT_COLOR: Record<AgentDot, string> = {
 };
 
 /** The avatar ring color for an agent: the color of its status dot. */
-export function statusRingColor(agent: Pick<Agent, 'status'>, detailed: Pick<AgentDetailedStatus, 'state'> | undefined): string {
+export function statusRingColor(agent: Pick<Agent, 'status'>, detailed: DetailedLike | undefined): string {
   return DOT_COLOR[agentDot(agent, detailed)];
 }
 
@@ -84,7 +95,7 @@ const SUMMARY_ORDER: AgentDot[] = ['needs', 'error', 'working', 'starting', 'idl
 /** How many agents are in each status, in summary order, skipping empty ones. */
 export function statusCounts(
   agents: Pick<Agent, 'id' | 'status'>[],
-  detailed: Record<string, Pick<AgentDetailedStatus, 'state'> | undefined>,
+  detailed: Record<string, DetailedLike | undefined>,
 ): { dot: AgentDot; count: number }[] {
   const counts = new Map<AgentDot, number>();
   for (const a of agents) {
@@ -93,3 +104,26 @@ export function statusCounts(
   }
   return SUMMARY_ORDER.filter((d) => counts.has(d)).map((dot) => ({ dot, count: counts.get(dot)! }));
 }
+
+/** Hook messages that only restate the status word. */
+const GENERIC_MESSAGES = new Set(['Idle', 'Thinking', 'Working', 'Needs permission']);
+
+/**
+ * The status word, then what the agent is doing when that adds something
+ * ("Working · Editing App.tsx"). For list rows that show status as text.
+ */
+export function statusText(agent: Pick<Agent, 'status'>, detailed: DetailedLike | undefined, dot = agentDot(agent, detailed)): string {
+  const word = DOT_LABEL[dot];
+  const msg = agent.status === 'running' ? detailed?.message : undefined;
+  return msg && !GENERIC_MESSAGES.has(msg) ? `${word} · ${msg}` : word;
+}
+
+/** Text color for a status line: the states that want attention stand out. */
+export const STATUS_TONE: Record<AgentDot, string> = {
+  working: 'text-ctp-subtext0',
+  idle: 'text-ctp-subtext0',
+  needs: 'text-ctp-warning',
+  error: 'text-ctp-error',
+  sleeping: 'text-ctp-subtext0',
+  starting: 'text-ctp-subtext0',
+};

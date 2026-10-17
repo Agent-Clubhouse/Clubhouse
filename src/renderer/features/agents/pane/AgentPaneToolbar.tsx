@@ -2,20 +2,22 @@
  * The agent pane's one 32px toolbar (#2018, "Design decided 2026-10-17"). It
  * replaces ChatHeader's 52px header and the terminal's 32px runtime bar, in
  * the main pane and in popouts: status dot and word, what the agent is doing,
- * a neutral orchestrator glyph, the model, Changes, the Chat / Terminal switch
- * and a menu. The agent's name is not repeated; the breadcrumb or the popout
- * title already says it.
+ * a neutral orchestrator glyph, the model, the context meter, Changes, the
+ * Chat / Terminal switch and the agent's menu. The agent's name is not
+ * repeated where the breadcrumb or the popout title already says it.
  *
  * Below 640px wide (popouts parked beside the main window) Changes and the
  * switch become icons and the model moves into the glyph's tooltip.
  */
 
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
-import { useOrchestratorStore } from '../../../stores/orchestratorStore';
-import { getOrchestratorLabel } from '../orchestrator-colors';
-import { AgentContextMenu, type ActionDef } from '../useAgentRowActions';
 import { useAgentStore } from '../../../stores/agentStore';
+import { useOrchestratorStore } from '../../../stores/orchestratorStore';
+import { Tooltip } from '../../../components/Tooltip';
+import { holdChromeSurface, reportChromeFeature } from '../../../chrome/telemetry';
+import { getOrchestratorLabel } from '../orchestrator-colors';
+import { AgentContextMenu, useAgentRowActions } from '../useAgentRowActions';
 import { agentDot, DOT_LABEL, StatusDot, type AgentDot } from '../agent-status';
 import { useNarrow } from './useNarrow';
 
@@ -40,21 +42,21 @@ export function RuntimeSwitch({ value, onChange, disabled, compact }: { value: R
       {(['chat', 'terminal'] as const).map((v) => {
         const label = v === 'chat' ? 'Chat' : 'Terminal';
         return (
-          <button
-            key={v}
-            type="button"
-            role="radio"
-            aria-checked={value === v}
-            aria-label={compact ? label : undefined}
-            title={compact ? label : undefined}
-            disabled={disabled}
-            onClick={() => { if (v !== value) onChange(v); }}
-            className={`h-[22px] flex items-center justify-center rounded-[5px] text-xs ${compact ? 'w-[26px]' : 'px-[9px]'} ${
-              value === v ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'
-            } disabled:opacity-50`}
-          >
-            {compact ? (v === 'chat' ? <ChatBubbleIcon /> : <TerminalGlyph />) : label}
-          </button>
+          <Tooltip key={v} content={label} disabled={!compact}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={value === v}
+              aria-label={compact ? label : undefined}
+              disabled={disabled}
+              onClick={() => { if (v !== value) onChange(v); }}
+              className={`h-[22px] flex items-center justify-center rounded-[5px] text-xs ${compact ? 'w-[26px]' : 'px-[9px]'} ${
+                value === v ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'
+              } disabled:opacity-50`}
+            >
+              {compact ? (v === 'chat' ? <ChatBubbleIcon /> : <TerminalGlyph />) : label}
+            </button>
+          </Tooltip>
         );
       })}
     </span>
@@ -63,26 +65,106 @@ export function RuntimeSwitch({ value, onChange, disabled, compact }: { value: R
 
 const ORCH_GLYPH: Record<string, string> = { 'claude-code': 'C', 'codex-cli': 'X', 'copilot-cli': 'G' };
 
-/** A neutral 14px tile with the provider's initial; its tooltip carries the session details. */
-export function OrchestratorGlyph({ orchestrator, details }: { orchestrator: string; details?: string }) {
-  const all = useOrchestratorStore((s) => s.allOrchestrators);
-  const name = getOrchestratorLabel(orchestrator, all);
-  const letter = ORCH_GLYPH[orchestrator] ?? (name.charAt(0).toUpperCase() || '?');
-  const tip = details ? `${name}\n${details}` : name;
+/** Tooltip body: an optional title line, then detail lines. */
+function TipLines({ title, lines }: { title?: string; lines: string[] }) {
   return (
-    <span
-      role="img"
-      aria-label={name}
-      title={tip}
-      data-testid="pane-orchestrator"
-      className="flex-shrink-0 w-3.5 h-3.5 rounded grid place-items-center bg-surface-0 text-ctp-overlay1 text-[8.5px] font-semibold leading-none"
-    >
-      {letter}
+    <span className="flex flex-col gap-0.5">
+      {title && <span className="font-medium text-ctp-text">{title}</span>}
+      {lines.map((l) => <span key={l}>{l}</span>)}
     </span>
   );
 }
 
+/** A neutral 14px tile with the provider's initial; its tooltip carries the session details. */
+export function OrchestratorGlyph({ orchestrator, details = [] }: { orchestrator: string; details?: string[] }) {
+  const all = useOrchestratorStore((s) => s.allOrchestrators);
+  const name = getOrchestratorLabel(orchestrator, all);
+  const letter = ORCH_GLYPH[orchestrator] ?? (name.charAt(0).toUpperCase() || '?');
+  return (
+    <Tooltip content={<TipLines title={name} lines={details} />}>
+      <span
+        role="img"
+        tabIndex={0}
+        aria-label={[name, ...details].join(', ')}
+        data-testid="pane-orchestrator"
+        className="flex-shrink-0 w-3.5 h-3.5 rounded grid place-items-center bg-surface-0 text-ctp-overlay1 text-[8.5px] font-semibold leading-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent"
+      >
+        {letter}
+      </span>
+    </Tooltip>
+  );
+}
+
+/** How full the context window is, plus any plan limits, for the toolbar's meter. */
+export interface PaneUsage {
+  /** Context fill, 0-100, or null when the driver reports only limits. */
+  contextPct: number | null;
+  /** Context at 90% or more, or a plan limit reached or near it. */
+  hot: boolean;
+  /** Tooltip lines: context tokens, then each limit with its reset time. */
+  lines: string[];
+}
+
+/** A 14px ring and the context %, focusable, red when the context or a limit runs out. */
+export function UsageMeter({ usage, compact }: { usage: PaneUsage; compact?: boolean }) {
+  const pct = usage.contextPct;
+  const r = 5;
+  const c = 2 * Math.PI * r;
+  const label = pct !== null ? `Context ${pct}%` : 'Usage limits';
+  return (
+    <Tooltip content={<TipLines lines={usage.lines} />}>
+      <span
+        role="img"
+        tabIndex={0}
+        aria-label={[label, ...usage.lines.filter((l) => !l.startsWith('Context '))].join(', ')}
+        data-testid="pane-usage"
+        data-hot={usage.hot || undefined}
+        className={`flex-shrink-0 flex items-center gap-1 px-1 h-7 rounded-md tabular-nums focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent ${usage.hot ? 'text-ctp-error' : 'text-ctp-overlay1'}`}
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" className="-rotate-90 flex-shrink-0" aria-hidden="true">
+          <circle cx="7" cy="7" r={r} fill="none" strokeWidth="2" className="stroke-surface-0" />
+          {pct !== null && (
+            <circle cx="7" cy="7" r={r} fill="none" strokeWidth="2" strokeDasharray={`${(pct / 100) * c} ${c}`} className={usage.hot ? 'stroke-ctp-error' : 'stroke-ctp-info'} />
+          )}
+        </svg>
+        {!compact && pct !== null && <span>{pct}%</span>}
+      </span>
+    </Tooltip>
+  );
+}
+
 const QUIET = 'h-7 rounded-md flex items-center gap-1.5 text-xs text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text';
+
+/** The ⋯ menu: the sidebar row's actions for this agent. Mounted only where the menu is offered. */
+function PaneMenu({ agent }: { agent: Agent }) {
+  const actions = useAgentRowActions(agent).filter((a) => a.visible);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => (menu ? holdChromeSurface('row_menu') : undefined), [menu]);
+  if (actions.length === 0) return null;
+  return (
+    <>
+      <Tooltip content="More actions">
+        <button
+          type="button"
+          aria-label={`More actions for ${agent.name}`}
+          aria-haspopup="menu"
+          aria-expanded={menu !== null}
+          onClick={(e) => {
+            if (menu) { setMenu(null); return; }
+            const r = e.currentTarget.getBoundingClientRect();
+            setMenu({ x: r.right - 160, y: r.bottom + 4 });
+            reportChromeFeature('row_menu_open');
+          }}
+          className={`${QUIET} w-7 justify-center`}
+          data-testid="pane-menu-button"
+        >
+          <MoreIcon />
+        </button>
+      </Tooltip>
+      {menu && <AgentContextMenu actions={actions} position={menu} onClose={() => setMenu(null)} />}
+    </>
+  );
+}
 
 export interface PaneToggle {
   open: boolean;
@@ -94,28 +176,33 @@ export interface AgentPaneToolbarProps {
   /** The provider, when the session reports one; defaults to the agent's orchestrator. */
   orchestrator?: string | null;
   dot: AgentDot;
-  /** What the agent is doing, after the status word ("3m · editing AgentRow.tsx"). */
+  /** What the agent is doing, after the status word ("3:12 · Edit AgentRow.tsx"). */
   activity?: string;
   model?: string | null;
-  /** Extra lines for the orchestrator glyph's tooltip: driver, version, branch, context, limits. */
+  /** Extra lines for the orchestrator glyph's tooltip: driver, version, branch. */
   details?: string[];
+  /** Context fill and plan limits; omitted hides the meter. */
+  usage?: PaneUsage | null;
   changes?: PaneToggle;
   /** The subagent map, with its count; only when the driver reports subagents. */
   agentMap?: PaneToggle & { count: number; panelId: string; toggleId: string };
   runtime?: { value: RuntimeView; onChange: (v: RuntimeView) => void; disabled?: boolean; tip?: ReactNode };
   /** Slot for the agent details toggle (#2032), before the menu. */
   detailsToggle?: ReactNode;
-  /** The agent's actions for the overflow menu; empty hides it. */
-  actions?: ActionDef[];
+  /** Offer the agent's ⋯ menu (the main pane; popouts have their actions in the title bar). */
+  showMenu?: boolean;
+  /**
+   * Name the agent at the start of the bar. Off in the new layout, where the
+   * breadcrumb or popout title names it; on in the classic shell, which has neither.
+   */
+  showName?: boolean;
 }
 
-export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, details, changes, agentMap, runtime, detailsToggle, actions = [] }: AgentPaneToolbarProps) {
+export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, details, usage, changes, agentMap, runtime, detailsToggle, showMenu, showName }: AgentPaneToolbarProps) {
   const ref = useRef<HTMLDivElement>(null);
   const narrow = useNarrow(ref);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const shownModel = model && model !== 'default' ? model : null;
-  const glyphDetails = [...(narrow && shownModel ? [`Model ${shownModel}`] : []), ...(details ?? [])].join('\n') || undefined;
-  const menuActions = actions.filter((a) => a.visible);
+  const glyphDetails = [...(narrow && shownModel ? [`Model ${shownModel}`] : []), ...(details ?? [])];
 
   return (
     <div
@@ -124,26 +211,29 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
       data-testid="agent-pane-toolbar"
       data-narrow={narrow || undefined}
     >
+      {showName && <span className="text-[13px] font-medium text-ctp-text truncate min-w-0 max-w-[40%]" data-testid="pane-agent-name">{agent.name}</span>}
       <StatusDot dot={dot} />
       <span className="text-ctp-text flex-shrink-0" data-testid="pane-status">{DOT_LABEL[dot]}</span>
-      {activity && <span className="min-w-0 truncate" data-testid="pane-activity" title={activity}>{activity}</span>}
+      {activity && <span className="min-w-0 truncate" data-testid="pane-activity">{activity}</span>}
       <span className="ml-auto flex-shrink-0 flex items-center gap-1">
         <OrchestratorGlyph orchestrator={orchestrator ?? agent.orchestrator ?? 'claude-code'} details={glyphDetails} />
         {shownModel && !narrow && <span className="ml-1 text-ctp-overlay1" data-testid="pane-model">{shownModel}</span>}
+        {usage && <UsageMeter usage={usage} compact={narrow} />}
         {(changes || agentMap || runtime) && <span className="w-px h-4 bg-surface-0 mx-1" aria-hidden="true" />}
         {changes && (
-          <button
-            type="button"
-            onClick={changes.onToggle}
-            aria-pressed={changes.open}
-            aria-label={narrow ? 'Changes' : undefined}
-            title={narrow ? 'Changes' : undefined}
-            className={`${QUIET} ${narrow ? 'w-7 justify-center' : 'px-2'} ${changes.open ? 'bg-surface-0 text-ctp-text' : ''}`}
-            data-testid="chat-changes-toggle"
-          >
-            <DiffIcon />
-            {!narrow && 'Changes'}
-          </button>
+          <Tooltip content="Changes" disabled={!narrow}>
+            <button
+              type="button"
+              onClick={changes.onToggle}
+              aria-pressed={changes.open}
+              aria-label={narrow ? 'Changes' : undefined}
+              className={`${QUIET} ${narrow ? 'w-7 justify-center' : 'px-2'} ${changes.open ? 'bg-surface-0 text-ctp-text' : ''}`}
+              data-testid="chat-changes-toggle"
+            >
+              <DiffIcon />
+              {!narrow && 'Changes'}
+            </button>
+          </Tooltip>
         )}
         {agentMap && (
           <button
@@ -166,25 +256,8 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
           </span>
         )}
         {detailsToggle}
-        {menuActions.length > 0 && (
-          <button
-            type="button"
-            aria-label={`More actions for ${agent.name}`}
-            title="More actions"
-            aria-haspopup="menu"
-            aria-expanded={menu !== null}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              setMenu(menu ? null : { x: r.right - 160, y: r.bottom + 4 });
-            }}
-            className={`${QUIET} w-7 justify-center`}
-            data-testid="pane-menu-button"
-          >
-            <MoreIcon />
-          </button>
-        )}
+        {showMenu && <PaneMenu agent={agent} />}
       </span>
-      {menu && <AgentContextMenu actions={menuActions} position={menu} onClose={() => setMenu(null)} />}
     </div>
   );
 }
@@ -193,10 +266,12 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
  * The toolbar for an agent in the terminal runtime, fed from hook status: the
  * same bar the chat runtime shows, so switching runtimes keeps it in place.
  */
-export function TerminalPaneToolbar({ agent, runtime, actions }: Pick<AgentPaneToolbarProps, 'agent' | 'runtime' | 'actions'>) {
+export function TerminalPaneToolbar({ agent, runtime, showMenu, showName }: Pick<AgentPaneToolbarProps, 'agent' | 'runtime' | 'showMenu' | 'showName'>) {
   const detailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
   const dot = agentDot(agent, detailed);
-  const activity = agent.status === 'running' ? detailed?.message : agent.status === 'error' ? agent.errorMessage : undefined;
+  // "Idle" after a stop only repeats the Done the status word already says.
+  const activity = agent.status === 'running' ? (dot === 'idle' && detailed?.message === 'Idle' ? undefined : detailed?.message)
+    : agent.status === 'error' ? agent.errorMessage : undefined;
   return (
     <AgentPaneToolbar
       agent={agent}
@@ -205,7 +280,8 @@ export function TerminalPaneToolbar({ agent, runtime, actions }: Pick<AgentPaneT
       model={agent.model}
       details={agent.branch ? [`Branch ${agent.branch}`] : undefined}
       runtime={runtime}
-      actions={actions}
+      showMenu={showMenu}
+      showName={showName}
     />
   );
 }

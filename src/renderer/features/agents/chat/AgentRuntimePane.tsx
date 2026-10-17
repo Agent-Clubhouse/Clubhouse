@@ -20,7 +20,7 @@ import { useToastStore } from '../../../stores/toastStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
 import { TerminalPaneToolbar } from '../pane/AgentPaneToolbar';
-import { useAgentRowActions } from '../useAgentRowActions';
+import { isNewChromeEnabled } from '../../../chrome/chromeFlag';
 import type { ChatViewContext } from './ChatView';
 import { isRunningState } from './view-model';
 import { noteExplicitTerminalChoice } from './chat-default-tip';
@@ -150,7 +150,6 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
   const terminalBusy = hookState === 'working' || hookState === 'needs_permission';
   const [switching, setSwitching] = useState(false);
   const [confirm, setConfirm] = useState<AgentRuntimeMode | null>(null);
-  const rowActions = useAgentRowActions(agent);
 
   const doSwitch = useCallback(async (mode: AgentRuntimeMode) => {
     setConfirm(null);
@@ -205,7 +204,8 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
         <TerminalPaneToolbar
           agent={agent}
           runtime={{ value: 'terminal', onChange: () => requestSwitch('chat'), disabled: switching }}
-          actions={context === 'main' ? rowActions : undefined}
+          showMenu={context === 'main'}
+          showName={!isNewChromeEnabled()}
         />
       </div>
       <div className="flex-1 min-h-0 relative">{terminal}</div>

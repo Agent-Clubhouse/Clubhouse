@@ -27,8 +27,6 @@ function useSurfaceWhile(open: boolean, surface: ChromeSurface) {
   useEffect(() => (open ? holdChromeSurface(surface) : undefined), [open, surface]);
 }
 
-export { StatusDot };
-
 interface AgentRowProps {
   agent: Agent;
   dot: AgentDot;

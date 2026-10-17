@@ -37,6 +37,12 @@ describe('agent status vocabulary', () => {
     expect(agentDot({ status: 'error' }, undefined)).toBe('error');
   });
 
+  it('keeps an agent working between tool calls (post_tool reports idle + Thinking)', () => {
+    expect(agentDot({ status: 'running' }, { state: 'idle', message: 'Thinking' })).toBe('working');
+    expect(agentDot({ status: 'running' }, { state: 'idle', message: 'Idle' })).toBe('idle');
+    expect(statusRingColor({ status: 'running' }, { state: 'idle', message: 'Thinking' })).toBe('rgb(var(--ctp-success))');
+  });
+
   it('renders an 8px dot named by its word', () => {
     render(<StatusDot dot="needs" />);
     const dot = screen.getByRole('img', { name: 'Needs you' });

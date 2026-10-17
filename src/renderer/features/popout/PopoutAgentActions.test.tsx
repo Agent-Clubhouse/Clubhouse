@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { useToastStore } from '../../stores/toastStore';
 import { PopoutAgentActions } from './PopoutAgentActions';
 
 const mockAgents: Record<string, any> = {};
@@ -64,6 +65,14 @@ describe('PopoutAgentActions', () => {
     expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('agent-1', 'proj-1');
   });
 
+  it('toasts when Stop fails', async () => {
+    window.clubhouse.agent.killAgent = vi.fn().mockRejectedValue(new Error('gone'));
+    mockAgents['agent-1'] = agent();
+    render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
+    fireEvent.click(screen.getByTestId('popout-stop-button'));
+    await waitFor(() => expect(useToastStore.getState().toasts.some((t) => t.message.includes("Couldn't stop the agent: gone"))).toBe(true));
+  });
+
   it('turns into icons with tooltips below 640px wide', () => {
     mockAgents['agent-1'] = agent();
     render(<PopoutAgentActions agentId="agent-1" projectId="proj-1" />);
@@ -71,7 +80,6 @@ describe('PopoutAgentActions', () => {
     const view = screen.getByTestId('popout-view-button');
     expect(view).toHaveTextContent('');
     expect(view).toHaveAttribute('aria-label', 'Show in main window');
-    expect(view).toHaveAttribute('title', 'Show in main window');
     expect(screen.getByTestId('popout-stop-button')).toHaveAttribute('aria-label', 'Stop agent');
   });
 });

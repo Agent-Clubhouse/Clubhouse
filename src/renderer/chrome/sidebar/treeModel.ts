@@ -1,4 +1,5 @@
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
+import { agentDot } from '../../features/agents/agent-status';
 
 /**
  * Pure helpers behind the sidebar tree (docs/chrome-redesign-spec.md §4.2).
@@ -7,7 +8,6 @@ import type { Agent, AgentDetailedStatus } from '../../../shared/types';
  */
 
 /** What the status dot on a row shows; shared with every status surface (#2018). */
-import { agentDot } from '../../features/agents/agent-status';
 export { agentDot, type AgentDot } from '../../features/agents/agent-status';
 
 export interface NeedsAttentionItem {

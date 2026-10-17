@@ -69,7 +69,7 @@ describe('ChatView conversation', () => {
     expect(screen.getByTestId('chat-turn-footer')).toHaveTextContent('Turn 1');
     expect(screen.getByTestId('chat-turn-footer')).toHaveTextContent('1m 12s');
     expect(screen.getByTestId('pane-status')).toHaveTextContent('Done');
-    expect(screen.getByTestId('pane-orchestrator').getAttribute('title')).toMatch(/Context \d+% of/);
+    expect(screen.getByTestId('pane-usage')).toHaveTextContent(/\d+%/);
   });
 
   it('expands the explore group to show each call', () => {
@@ -108,8 +108,8 @@ describe('ChatView conversation', () => {
 
   it.each([['claude', 2], ['codex', 2], ['copilot', 0]] as const)('shows plan-limit meters by capability (%s)', (p, n) => {
     renderFixture(p, 'conversation');
-    const details = screen.getByTestId('pane-orchestrator').getAttribute('title') ?? '';
-    expect(details.split('\n').filter((l) => / limit /.test(l))).toHaveLength(n);
+    const label = screen.getByTestId('pane-usage').getAttribute('aria-label') ?? '';
+    expect(label.split(', ').filter((l) => / limit:/.test(l))).toHaveLength(n);
   });
 
   it('streams text and thinking before the final events arrive', () => {

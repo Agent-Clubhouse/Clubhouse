@@ -16,14 +16,7 @@ interface Props {
   isNested?: boolean;
 }
 
-const STATUS_CONFIG: Record<string, { label: string }> = {
-  running: { label: 'Running' },
-  sleeping: { label: 'Sleeping' },
-  creating: { label: 'Setting up worktree…' },
-  error: { label: 'Error' },
-};
-
-import { statusRingColor } from './agent-status';
+import { agentDot, STATUS_TONE, statusRingColor, statusText } from './agent-status';
 
 // Button width: 12px icon + 2*4px padding + gap ≈ 26px each
 const ACTION_BUTTON_WIDTH = 26;
@@ -42,13 +35,13 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
   const iconDataUrl = isRemote ? remoteIconDataUrl : localIconDataUrl;
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
 
-  const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
   const ringColor = statusRingColor(agent, detailed);
 
-  const isCreating = agent.status === 'creating';
-  const hasDetailed = agent.status === 'running' && detailed;
-  const isWorking = isCreating || (hasDetailed ? detailed.state === 'working' : isThinking);
-  const statusLabel = hasDetailed ? detailed.message : (isThinking ? 'Thinking...' : statusInfo.label);
+  // Without hook status, the list's own thinking signal still counts as working.
+  const baseDot = agentDot(agent, detailed);
+  const dot = baseDot === 'idle' && !detailed && isThinking ? 'working' : baseDot;
+  const isWorking = dot === 'working' || dot === 'starting';
+  const statusLabel = statusText(agent, detailed, dot);
 
   const actions = useAgentRowActions(agent, { onSpawnQuickChild });
 
@@ -163,9 +156,7 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
             )}
           </div>
           <span className={`text-xs truncate block mt-0.5 ${
-            hasDetailed && detailed.state === 'needs_permission' ? 'text-orange-400' :
-            hasDetailed && detailed.state === 'tool_error' ? 'text-ctp-error' :
-            'text-ctp-subtext0'
+            STATUS_TONE[dot]
           }`}>
             {statusLabel}
           </span>

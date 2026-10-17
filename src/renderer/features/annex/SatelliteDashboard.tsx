@@ -19,7 +19,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { EmptyState } from '../../components/EmptyState';
 import { AgentAvatar } from '../agents/AgentAvatar';
-import { DOT_LABEL, StatusDot, statusCounts, statusRingColor } from '../agents/agent-status';
+import { agentDot, DOT_LABEL, StatusDot, statusCounts, STATUS_TONE, statusRingColor, statusText } from '../agents/agent-status';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -55,11 +55,10 @@ function RemoteAgentRow({ agent, satelliteId, detailedStatus, iconDataUrl, navig
   const sendAgentKill = useAnnexClientStore((s) => s.sendAgentKill);
   const sendAgentWake = useAnnexClientStore((s) => s.sendAgentWake);
 
-  const isWorking = agent.status === 'running' && detailedStatus?.state === 'working';
+  const isWorking = agentDot(agent, detailedStatus) === 'working';
   const ringColor = statusRingColor(agent, detailedStatus);
 
-  const hasDetailed = agent.status === 'running' && detailedStatus;
-  const statusLabel = hasDetailed ? detailedStatus.message : agent.status.charAt(0).toUpperCase() + agent.status.slice(1);
+  const statusLabel = statusText(agent, detailedStatus);
 
   // Extract the original (non-namespaced) agent ID for annex operations
   const parsed = parseNamespacedId(agent.id);
@@ -98,11 +97,7 @@ function RemoteAgentRow({ agent, satelliteId, detailedStatus, iconDataUrl, navig
 
       <span
         className={`text-xs truncate flex-shrink-0 ${
-          hasDetailed && detailedStatus.state === 'needs_permission'
-            ? 'text-orange-400'
-            : hasDetailed && detailedStatus.state === 'tool_error'
-              ? 'text-ctp-error'
-              : 'text-ctp-subtext0'
+          STATUS_TONE[agentDot(agent, detailedStatus)]
         }`}
       >
         {statusLabel}
@@ -230,8 +225,9 @@ function SatelliteStats({ projects, agents, detailedStatuses }: {
     for (const a of agents) {
       if (a.status === 'running') {
         const d = detailedStatuses[a.id];
-        if (d?.state === 'working') working++;
-        if (d?.state === 'needs_permission' || d?.state === 'tool_error') attention++;
+        const dot = agentDot(a, d);
+        if (dot === 'working') working++;
+        if (dot === 'needs' || dot === 'error') attention++;
       }
       if (a.status === 'error') attention++;
     }

@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Button } from '../../components/Button';
+import { Tooltip } from '../../components/Tooltip';
+import { reportChromeActionFailed } from '../../chrome/telemetry';
+import { useToastStore } from '../../stores/toastStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { NARROW_PANE_PX } from '../agents/pane/useNarrow';
@@ -32,8 +36,6 @@ const WakeGlyph = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
 );
 
-const BTN = 'no-drag h-7 rounded-md flex items-center justify-center gap-1.5 text-xs';
-
 export function PopoutAgentActions({ agentId, projectId }: { agentId: string; projectId?: string }) {
   const agent = useAgentStore((s) => s.agents[agentId]);
   const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
@@ -41,17 +43,28 @@ export function PopoutAgentActions({ agentId, projectId }: { agentId: string; pr
   const narrow = useWindowNarrow();
 
   const handleKill = useCallback(async () => {
-    if (projectId) await window.clubhouse.agent.killAgent(agentId, projectId);
-    else await window.clubhouse.pty.kill(agentId);
+    try {
+      if (projectId) await window.clubhouse.agent.killAgent(agentId, projectId);
+      else await window.clubhouse.pty.kill(agentId);
+    } catch (err) {
+      useToastStore.getState().addToast(`Couldn't stop the agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      reportChromeActionFailed('agent_stop', err);
+    }
   }, [agentId, projectId]);
 
   const handleWake = useCallback(async () => {
     if (!agent || agent.kind !== 'durable') return;
-    const agentProject = projects.find((p) => p.id === agent.projectId);
-    if (!agentProject) return;
-    const configs = await window.clubhouse.agent.listDurable(agentProject.path);
-    const config = configs.find((c: { id: string }) => c.id === agent.id);
-    if (config) await spawnDurableAgent(agentProject.id, agentProject.path, config, false);
+    try {
+      const agentProject = projects.find((p) => p.id === agent.projectId);
+      if (!agentProject) throw new Error('Project not found');
+      const configs = await window.clubhouse.agent.listDurable(agentProject.path);
+      const config = configs.find((c: { id: string }) => c.id === agent.id);
+      if (!config) throw new Error('Agent config not found');
+      await spawnDurableAgent(agentProject.id, agentProject.path, config, false);
+    } catch (err) {
+      useToastStore.getState().addToast(`Couldn't wake the agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      reportChromeActionFailed('agent_wake', err);
+    }
   }, [agent, projects, spawnDurableAgent]);
 
   const handleView = useCallback(() => {
@@ -60,44 +73,26 @@ export function PopoutAgentActions({ agentId, projectId }: { agentId: string; pr
 
   if (!agent) return null;
   const isRunning = agent.status === 'running' || agent.status === 'creating';
-  const label = (text: string) => (narrow ? { 'aria-label': text, title: text } : {});
+  const action = (testId: string, label: string, kind: 'quiet' | 'danger', icon: ReactNode, onClick: () => void, text = label) => (
+    <Tooltip content={label} disabled={!narrow}>
+      <Button
+        kind={kind}
+        icon={icon}
+        onClick={onClick}
+        aria-label={narrow ? label : undefined}
+        className={`no-drag ${narrow && kind === 'danger' ? 'border-transparent' : ''}`}
+        data-testid={testId}
+      >
+        {narrow ? undefined : text}
+      </Button>
+    </Tooltip>
+  );
 
   return (
-    <span className="flex items-center gap-0.5 flex-shrink-0" data-testid="popout-actions">
-      <button
-        type="button"
-        onClick={handleView}
-        {...label('Show in main window')}
-        className={`${BTN} text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text ${narrow ? 'w-7' : 'px-2'}`}
-        data-testid="popout-view-button"
-      >
-        <ShowIcon />
-        {!narrow && 'Show in main window'}
-      </button>
-      {isRunning && (
-        <button
-          type="button"
-          onClick={handleKill}
-          {...label('Stop agent')}
-          className={`${BTN} text-ctp-error hover:bg-surface-0 ${narrow ? 'w-7' : 'px-2.5 border border-surface-1'}`}
-          data-testid="popout-stop-button"
-        >
-          <StopGlyph />
-          {!narrow && 'Stop'}
-        </button>
-      )}
-      {!isRunning && agent.kind === 'durable' && (
-        <button
-          type="button"
-          onClick={handleWake}
-          {...label('Wake agent')}
-          className={`${BTN} text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text ${narrow ? 'w-7' : 'px-2'}`}
-          data-testid="popout-wake-button"
-        >
-          <WakeGlyph />
-          {!narrow && 'Wake'}
-        </button>
-      )}
+    <span className="no-drag flex items-center gap-1 flex-shrink-0" data-testid="popout-actions">
+      {action('popout-view-button', 'Show in main window', 'quiet', <ShowIcon />, handleView)}
+      {isRunning && action('popout-stop-button', 'Stop agent', 'danger', <StopGlyph />, () => { void handleKill(); }, 'Stop')}
+      {!isRunning && agent.kind === 'durable' && action('popout-wake-button', 'Wake agent', 'quiet', <WakeGlyph />, () => { void handleWake(); }, 'Wake')}
     </span>
   );
 }

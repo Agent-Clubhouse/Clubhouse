@@ -61,7 +61,7 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
-import { DOT_LABEL, StatusDot, statusCounts, statusRingColor } from '../agents/agent-status';
+import { agentDot, DOT_LABEL, StatusDot, statusCounts, STATUS_TONE, statusRingColor, statusText } from '../agents/agent-status';
 
 /* ─── Agent Avatar (compact) — delegates to shared component ─── */
 
@@ -70,7 +70,7 @@ const DASHBOARD_SIZE_MAP = { sm: 'xs', md: 'sm' } as const;
 function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' }) {
   const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
   const detailed = detailedStatus[agent.id];
-  const isWorking = agent.status === 'running' && detailed?.state === 'working';
+  const isWorking = agentDot(agent, detailed) === 'working';
   const ringColor = statusRingColor(agent, detailed);
 
   return (
@@ -119,8 +119,9 @@ function StatsOverview() {
     for (const a of allAgents) {
       if (a.status === 'running') {
         const d = detailedStatus[a.id];
-        if (d?.state === 'working') working++;
-        if (d?.state === 'needs_permission' || d?.state === 'tool_error') attention++;
+        const dot = agentDot(a, d);
+        if (dot === 'working') working++;
+        if (dot === 'needs' || dot === 'error') attention++;
       }
       if (a.status === 'error') attention++;
     }
@@ -370,12 +371,6 @@ function ProjectCard({ project }: { project: Project }) {
 
 /* ─── Agent Row ─── */
 
-const STATUS_CONFIG: Record<string, { label: string }> = {
-  running: { label: 'Running' },
-  sleeping: { label: 'Sleeping' },
-  error: { label: 'Error' },
-};
-
 interface AgentActionDef {
   id: string;
   label: string;
@@ -449,9 +444,7 @@ function AgentRow({ agent, project, navigateToAgent }: {
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const detailed = detailedStatus[agent.id];
 
-  const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
-  const hasDetailed = agent.status === 'running' && detailed;
-  const statusLabel = hasDetailed ? detailed.message : statusInfo.label;
+  const statusLabel = statusText(agent, detailed);
   const isDurable = agent.kind === 'durable';
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -565,11 +558,7 @@ function AgentRow({ agent, project, navigateToAgent }: {
 
         <span
           className={`text-xs truncate flex-shrink-0 ${
-            hasDetailed && detailed.state === 'needs_permission'
-              ? 'text-orange-400'
-              : hasDetailed && detailed.state === 'tool_error'
-                ? 'text-ctp-error'
-                : 'text-ctp-subtext0'
+            STATUS_TONE[agentDot(agent, detailed)]
           }`}
         >
           {statusLabel}

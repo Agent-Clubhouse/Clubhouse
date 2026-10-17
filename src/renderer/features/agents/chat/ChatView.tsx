@@ -12,7 +12,7 @@ import type { Agent } from '../../../../shared/types';
 import type { PermissionLevel } from '../../../../shared/chat';
 import { createChatViewState, useAnswering, type ChatViewState } from '../../../stores/chatStore';
 import { ChatHeader } from './ChatHeader';
-import { useAgentRowActions } from '../useAgentRowActions';
+import { isNewChromeEnabled } from '../../../chrome/chromeFlag';
 import { ChatStream, type StreamJump } from './ChatStream';
 import { ChangesPanel } from './ChangesPanel';
 import { AgentMapPanel } from './AgentMapPanel';
@@ -110,7 +110,6 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const questionBusy = useAnswering(agent.id, question?.requestId ?? '');
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
-  const rowActions = useAgentRowActions(agent);
   const rootRef = useRef<HTMLDivElement>(null);
   const narrow = useNarrow(rootRef);
   // A popout near its 300px minimum height keeps the conversation, not the composer chrome.
@@ -232,7 +231,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
       <ChatHeader
         agent={agent}
         state={state}
-        actions={context === 'main' ? rowActions : undefined}
+        showMenu={context === 'main'}
+        showName={context === 'main' && !isNewChromeEnabled()}
         onSwitchToTerminal={onSwitchToTerminal}
         switching={switching}
         onToggleChanges={() => { setAgentMapOpen(false); setChangesOpen((v) => !v); }}

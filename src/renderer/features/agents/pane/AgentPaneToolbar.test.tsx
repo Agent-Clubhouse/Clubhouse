@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { AgentPaneToolbar } from './AgentPaneToolbar';
-import { chatActivity } from '../chat/ChatHeader';
+import { chatActivity, chatUsage } from '../chat/ChatHeader';
 import { createChatViewState } from '../../../stores/chatStore';
 import type { Agent } from '../../../../shared/types';
 
@@ -64,22 +64,36 @@ describe('AgentPaneToolbar', () => {
     expect(screen.getByTestId('chat-changes-toggle')).toHaveTextContent('');
     expect(screen.getByRole('radio', { name: 'Terminal' })).toHaveTextContent('');
     expect(screen.queryByTestId('pane-model')).not.toBeInTheDocument();
-    expect(screen.getByTestId('pane-orchestrator').getAttribute('title')).toContain('Model opus');
+    expect(screen.getByTestId('pane-orchestrator').getAttribute('aria-label')).toContain('Model opus');
     ro.resize(800);
     expect(screen.getByTestId('pane-model')).toHaveTextContent('opus');
   });
 
-  it('opens the agent menu from the toolbar', () => {
-    const handler = vi.fn();
-    render(<AgentPaneToolbar agent={agent} dot="idle" actions={[{ id: 'popout', label: 'Pop out', icon: null, hoverColor: '', visible: true, handler }]} />);
+  it('offers the agent menu only where asked', () => {
+    const { rerender } = render(<AgentPaneToolbar agent={agent} dot="idle" />);
+    expect(screen.queryByTestId('pane-menu-button')).not.toBeInTheDocument();
+    rerender(<AgentPaneToolbar agent={agent} dot="idle" showMenu />);
     fireEvent.click(screen.getByTestId('pane-menu-button'));
-    fireEvent.click(screen.getByTestId('ctx-popout'));
-    expect(handler).toHaveBeenCalled();
+    expect(screen.getByTestId('agent-context-menu')).toBeInTheDocument();
   });
 
-  it('hides the menu when there are no actions', () => {
-    render(<AgentPaneToolbar agent={agent} dot="idle" />);
-    expect(screen.queryByTestId('pane-menu-button')).not.toBeInTheDocument();
+  it('names the agent only when asked (the classic shell)', () => {
+    const { rerender } = render(<AgentPaneToolbar agent={agent} dot="idle" />);
+    expect(screen.queryByTestId('pane-agent-name')).not.toBeInTheDocument();
+    rerender(<AgentPaneToolbar agent={agent} dot="idle" showName />);
+    expect(screen.getByTestId('pane-agent-name')).toHaveTextContent('gallant-swift');
+  });
+
+  it('shows a focusable context meter that turns red when context or a limit runs out', () => {
+    const { rerender } = render(<AgentPaneToolbar agent={agent} dot="working" usage={{ contextPct: 34, hot: false, lines: ['Context 34%: 68k of 200k tokens', '5h limit: 40%, resets Fri 3:00 PM'] }} />);
+    const meter = screen.getByTestId('pane-usage');
+    expect(meter).toHaveTextContent('34%');
+    expect(meter).toHaveAttribute('tabindex', '0');
+    expect(meter.getAttribute('aria-label')).toContain('resets Fri 3:00 PM');
+    expect(meter).not.toHaveAttribute('data-hot');
+    rerender(<AgentPaneToolbar agent={agent} dot="working" usage={{ contextPct: 92, hot: true, lines: [] }} />);
+    expect(screen.getByTestId('pane-usage')).toHaveAttribute('data-hot', 'true');
+    expect(screen.getByTestId('pane-usage').className).toContain('text-ctp-error');
   });
 });
 
@@ -92,6 +106,16 @@ describe('chatActivity', () => {
     };
     expect(chatActivity(state, 192_000)).toBe('3:12 · Edit AgentRow.tsx');
   });
+  it('marks the meter hot at 90% context or a reached limit, with reset times', () => {
+    const caps = { usage: 'tokens', limits: true } as never;
+    const u = chatUsage({ ...base, capabilities: caps, usage: { ...base.usage, context: { used: 95, size: 100 }, limits: [] } });
+    expect(u).toMatchObject({ contextPct: 95, hot: true });
+    const l = chatUsage({ ...base, capabilities: caps, usage: { ...base.usage, context: { used: 10, size: 100 }, limits: [{ window: '5h', status: 'exceeded', resetsAt: '2026-10-17T15:00:00Z' }] } as never });
+    expect(l?.hot).toBe(true);
+    expect(l?.lines[1]).toMatch(/^5h limit: limit reached, resets /);
+    expect(chatUsage({ ...base, capabilities: { usage: 'none' } as never })).toBeNull();
+  });
+
   it('says what a waiting agent needs', () => {
     expect(chatActivity({ ...base, state: 'waiting_input' }, 0)).toBe('Has a question');
     expect(chatActivity({ ...base, state: 'idle' }, 0)).toBe('');
