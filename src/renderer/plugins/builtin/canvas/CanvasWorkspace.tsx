@@ -29,7 +29,7 @@ import { useProjectStore } from '../../../stores/projectStore';
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import { useBlueprintDrop } from './useBlueprintDrop';
 import { getProjectCanvasStore, useAppCanvasStore } from './main';
-import { buildWireDefinitionsFromResult, type ParseResult } from '../../../features/blueprints/parse-blueprint';
+import { applyParsedBlueprint, type ParseResult } from '../../../features/blueprints/parse-blueprint';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useViewportControls } from './useViewportControls';
 import { useBatchedViewportChange } from './canvas-viewport-batching';
@@ -298,10 +298,11 @@ export function CanvasWorkspace({
 
   const handleBlueprintImport = useCallback((result: ParseResult) => {
     const store = projectId ? getProjectCanvasStore(projectId) : useAppCanvasStore;
-    store.getState().insertCanvas(result.canvas);
-    for (const wire of buildWireDefinitionsFromResult(result)) {
-      store.getState().addWireDefinition(wire);
-    }
+    // Same parse and wire plan as the gallery; only the store method differs.
+    void applyParsedBlueprint(result, {
+      insertCanvas: (canvas) => store.getState().insertCanvas(canvas),
+      addWireDefinition: (wire) => store.getState().addWireDefinition(wire),
+    });
   }, [projectId]);
 
   const handleBlueprintError = useCallback((message: string) => {

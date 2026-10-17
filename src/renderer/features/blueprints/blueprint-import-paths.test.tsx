@@ -2,11 +2,12 @@
  * Blueprint import through every entry point (#2055): gallery card, "Open
  * from file…", canvas drop and canvas paste, all fed one realistic manifest.
  * Each path's wire output is normalised (generated view ids → display names)
- * so the paths can be compared directly.
+ * so the paths can be compared directly: they must all produce the wires the
+ * contract in blueprint-wire-plan.ts describes.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { BlueprintManifest } from '../../../shared/blueprint-types';
 import type { CanvasInstance } from '../../plugins/builtin/canvas/canvas-types';
 import type { McpBindingEntry } from '../../stores/mcpBindingStore';
@@ -49,7 +50,7 @@ vi.mock('../../plugins/builtin/canvas/main', () => {
 vi.mock('../../plugins/plugin-api-storage', () => ({ createScopedStorage: () => ({}) }));
 
 import { BlueprintGallery } from './BlueprintGallery';
-import { buildWireDefinitionsFromResult, type ParseResult } from './parse-blueprint';
+import { applyParsedBlueprint, type ParseResult } from './parse-blueprint';
 import { useBlueprintDrop } from '../../plugins/builtin/canvas/useBlueprintDrop';
 
 // ── The manifest ─────────────────────────────────────────────────────
@@ -76,10 +77,10 @@ const MANIFEST: BlueprintManifest = {
       { refId: 'gp', type: 'plugin:group-project:group-project', displayName: 'Board', position: { x: 1200, y: 600 }, metadata: { pluginWidgetType: 'plugin:group-project:group-project', pluginId: 'group-project', groupProjectId: 'gp-42' } },
     ],
     wires: [
-      { sourceRef: 'orch', targetRef: 'rev', bidirectional: true, instructions: { forward: 'Ask for a review' }, disabledTools: ['delete_file'] },
-      { sourceRef: 'orch', targetRef: 'web', instructions: { forward: 'Read the docs first' }, disabledTools: ['navigate'] },
+      { sourceRef: 'orch', targetRef: 'rev', bidirectional: true, instructions: { send_message: 'Ask for a review' }, disabledTools: ['delete_file'] },
+      { sourceRef: 'orch', targetRef: 'web', instructions: { '*': 'Read the docs first' }, disabledTools: ['navigate'] },
       { sourceRef: 'orch', targetRef: 'sh' },
-      { sourceRef: 'orch', targetRef: 'gp', instructions: { forward: 'Post status to the board' } },
+      { sourceRef: 'orch', targetRef: 'gp', instructions: { '*': 'Post status to the board' } },
       { sourceRef: 'rev', targetRef: 'new' },
       { sourceRef: 'new', targetRef: 'orch' },
     ],
@@ -108,6 +109,7 @@ function normalise(canvas: CanvasInstance, wires: Wire[]): Record<string, unknow
 beforeEach(() => {
   sink.canvases = [];
   sink.wires = [];
+  canvasResults.length = 0;
   ui.open = true;
   window.clubhouse.blueprint = {
     ...window.clubhouse.blueprint,
@@ -131,9 +133,13 @@ async function viaOpenFromFile() {
   return normalise(sink.canvases[0] as CanvasInstance, sink.wires as Wire[]);
 }
 
-/** What CanvasWorkspace does with the hook's result: insert the canvas, add the wires. */
-function applyAsCanvasWorkspace(result: ParseResult) {
-  return normalise(result.canvas, buildWireDefinitionsFromResult(result));
+/** What CanvasWorkspace does with the hook's result: apply it to the canvas store. */
+const canvasResults: ParseResult[] = [];
+async function applyAsCanvasWorkspace(result: ParseResult) {
+  canvasResults.push(result);
+  const wires: Wire[] = [];
+  await applyParsedBlueprint(result, { insertCanvas: () => {}, addWireDefinition: (w) => { wires.push(w); } });
+  return normalise(result.canvas, wires);
 }
 
 function canvasHook() {
@@ -168,30 +174,50 @@ async function viaCanvasPaste() {
   return applyAsCanvasWorkspace(onImport.mock.calls[0][0] as ParseResult);
 }
 
-// ── Today's behaviour (before #2055) ─────────────────────────────────
+// ── The contract ─────────────────────────────────────────────────────
 
-describe('blueprint import paths: behaviour before #2055', () => {
-  it('gallery card: every non-agent target becomes browser, instructions and disabledTools are dropped', async () => {
-    expect(await viaGalleryCard()).toEqual([
-      { agentId: 'agent-orch', targetId: 'view:Reviewer', targetKind: 'agent' },
-      { agentId: 'agent-orch', targetId: 'view:Docs', targetKind: 'browser' },
-      { agentId: 'agent-orch', targetId: 'view:Shell', targetKind: 'browser' },
-      { agentId: 'agent-orch', targetId: 'view:Board', targetKind: 'browser' },
-      { agentId: 'agent-rev', targetId: 'view:Newcomer', targetKind: 'agent' },
-    ]);
+/** What every path must produce for MANIFEST (see blueprint-wire-plan.ts). */
+const EXPECTED = [
+  // Agent targets are addressed by agent id; bidirectional adds the reverse; metadata on both.
+  { agentId: 'agent-orch', targetId: 'agent-rev', targetKind: 'agent', instructions: { send_message: 'Ask for a review' }, disabledTools: ['delete_file'] },
+  { agentId: 'agent-rev', targetId: 'agent-orch', targetKind: 'agent', instructions: { send_message: 'Ask for a review' }, disabledTools: ['delete_file'] },
+  // Browsers by view id.
+  { agentId: 'agent-orch', targetId: 'view:Docs', targetKind: 'browser', instructions: { '*': 'Read the docs first' }, disabledTools: ['navigate'] },
+  // Group projects by their group project id.
+  { agentId: 'agent-orch', targetId: 'gp-42', targetKind: 'group-project', instructions: { '*': 'Post status to the board' } },
+  // Not created: the terminal (not a wire target) and both wires touching the unbound Newcomer.
+];
+
+const PATHS = [
+  ['gallery card', viaGalleryCard],
+  ['open from file', viaOpenFromFile],
+  ['canvas drop', viaCanvasDrop],
+  ['canvas paste', viaCanvasPaste],
+] as const;
+
+describe('blueprint import paths', () => {
+  it.each(PATHS)('%s produces the contract\'s wires', async (_name, run) => {
+    expect(await run()).toEqual(EXPECTED);
   });
 
-  it.each([
-    ['open from file', viaOpenFromFile],
-    ['canvas drop', viaCanvasDrop],
-    ['canvas paste', viaCanvasPaste],
-  ])('%s: keeps group-project and metadata, but targets view ids, turns terminals into browsers and ignores bidirectional', async (_name, run) => {
-    expect(await run()).toEqual([
-      { agentId: 'agent-orch', targetId: 'view:Reviewer', targetKind: 'agent', instructions: { forward: 'Ask for a review' }, disabledTools: ['delete_file'] },
-      { agentId: 'agent-orch', targetId: 'view:Docs', targetKind: 'browser', instructions: { forward: 'Read the docs first' }, disabledTools: ['navigate'] },
-      { agentId: 'agent-orch', targetId: 'view:Shell', targetKind: 'browser' },
-      { agentId: 'agent-orch', targetId: 'view:Board', targetKind: 'group-project', instructions: { forward: 'Post status to the board' } },
-      { agentId: 'agent-rev', targetId: 'view:Newcomer', targetKind: 'agent' },
+  it('every path produces the same wires', async () => {
+    const outputs = [];
+    for (const [, run] of PATHS) {
+      outputs.push(await run());
+      cleanup();
+      sink.canvases = [];
+      sink.wires = [];
+    }
+    for (const output of outputs.slice(1)) expect(output).toEqual(outputs[0]);
+  });
+
+  it('reports the wires it defers and skips', async () => {
+    await viaCanvasPaste();
+    const { deferred, skipped } = canvasResults[0].wires;
+    expect(deferred.map((d) => [d.wire.sourceRef, d.wire.targetRef, d.reason])).toEqual([
+      ['rev', 'new', 'target_unbound'],
+      ['new', 'orch', 'source_unbound'],
     ]);
+    expect(skipped.map((d) => [d.wire.sourceRef, d.wire.targetRef, d.reason])).toEqual([['orch', 'sh', 'unsupported_target']]);
   });
 });
