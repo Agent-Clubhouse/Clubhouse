@@ -22,17 +22,29 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
       set({ resumingAgents: {} });
     },
 
-    spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode, pluginMetadata) => {
+    spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode, pluginMetadata, cwdOverride) => {
       const agentId = generateQuickAgentId();
       const name = generateQuickName();
 
-      // Resolve CWD: if spawning under a parent durable, use its worktree
+      // Resolve CWD: an explicit override (retry in the same worktree) wins,
+      // else the parent durable's worktree, else the project root.
       let cwd = projectPath;
-      if (parentAgentId) {
+      if (cwdOverride) {
+        cwd = cwdOverride;
+      } else if (parentAgentId) {
         const parent = get().agents[parentAgentId];
         if (parent?.worktreePath) {
           cwd = parent.worktreePath;
         }
+      }
+
+      // Best-effort base commit so the run's diff can be measured later.
+      // Started now, before the agent can commit; never blocks or fails the spawn.
+      let baseShaPromise: Promise<string | null | undefined>;
+      try {
+        baseShaPromise = Promise.resolve(window.clubhouse.git?.headSha?.(cwd)).catch((): undefined => undefined);
+      } catch {
+        baseShaPromise = Promise.resolve(undefined);
       }
 
       // Fetch quick agent defaults from parent durable agent
@@ -77,6 +89,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         headless: isHeadless || undefined,
         freeAgentMode: resolvedFreeAgentMode || undefined,
         pluginMetadata,
+        runCwd: cwd,
       };
 
       set((s) => ({
@@ -85,6 +98,15 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         agentSpawnedAt: { ...s.agentSpawnedAt, [agentId]: Date.now() },
         projectActiveAgent: { ...s.projectActiveAgent, [projectId]: agentId },
       }));
+
+      void baseShaPromise.then((sha) => {
+        if (typeof sha !== 'string' || !sha) return;
+        set((s) => {
+          const current = s.agents[agentId];
+          if (!current) return s;
+          return { agents: { ...s.agents, [agentId]: { ...current, runBaseSha: sha } } };
+        });
+      });
 
       try {
         // Get summary instruction from the orchestrator provider

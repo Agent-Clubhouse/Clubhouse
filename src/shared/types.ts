@@ -85,6 +85,10 @@ export interface Agent {
   pluginOwner?: string;
   /** Path to companion workspace directory (v0.9+). */
   companionWorkspace?: string;
+  /** Quick agents: the directory the run was spawned in. */
+  runCwd?: string;
+  /** Quick agents: HEAD sha of `runCwd` when the run was spawned (best-effort). */
+  runBaseSha?: string;
 }
 
 export interface CompletedQuickAgent {
@@ -107,6 +111,21 @@ export interface CompletedQuickAgent {
   cancelled?: boolean;
   /** Plugin-supplied metadata carried from the spawning agent. */
   pluginMetadata?: Record<string, string>;
+  /** Headless runs: last ~4 KB of stderr (or the spawn error message). */
+  stderrTail?: string;
+  /** Directory the run was spawned in. */
+  cwd?: string;
+  /** HEAD sha of `cwd` when the run was spawned, for diffing what the run changed. */
+  baseSha?: string;
+  /** Epoch ms the run was spawned. */
+  startedAt?: number;
+  freeAgentMode?: boolean;
+  /** Headless runs: number of tool calls in the transcript. */
+  toolCalls?: number;
+  /** Headless runs: input tokens, including cache reads and writes. */
+  inputTokens?: number;
+  /** Headless runs: output tokens. */
+  outputTokens?: number;
 }
 
 // --- Profile types ---
@@ -1001,6 +1020,16 @@ export interface GitOpResult {
   message: string;
 }
 
+/** One file from `git diff --numstat` (plus untracked files) against a base. */
+export interface GitNumstatEntry {
+  /** Path relative to the repository root (the new path for renames). */
+  path: string;
+  added: number;
+  removed: number;
+  /** True for binary files, whose line counts are reported as 0. */
+  binary: boolean;
+}
+
 export interface GitWorktreeEntry {
   /** Absolute path to the worktree directory. */
   path: string;
@@ -1052,6 +1081,8 @@ export interface AgentHookEvent {
   message?: string;
   /** Human-readable verb for the tool, resolved by the provider (e.g. "Editing file") */
   toolVerb?: string;
+  /** Pairs a pre_tool event with its post_tool event (the tool_use block id). */
+  toolUseId?: string;
   timestamp: number;
 }
 

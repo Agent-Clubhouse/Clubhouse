@@ -88,4 +88,15 @@ export function registerGitHandlers(): void {
   ipcMain.handle(IPC.GIT.COMMIT_DIFF, withValidatedArgs([stringArg(), stringArg(), stringArg()], async (_event, dirPath: string, hash: string, filePath: string) => {
     return deferInvocation(() => gitService.getCommitFileDiff(dirPath, hash, filePath));
   }));
+
+  ipcMain.handle(IPC.GIT.HEAD_SHA, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
+    return deferInvocation(() => gitService.getHeadSha(dirPath));
+  }));
+
+  ipcMain.handle(IPC.GIT.DIFF_NUMSTAT, withValidatedArgs(
+    [stringArg(), stringArg({ optional: true, maxLength: 256 })],
+    async (_event, dirPath: string, base?: string) => {
+      return deferInvocation(() => gitService.getDiffNumstat(dirPath, base));
+    },
+  ));
 }

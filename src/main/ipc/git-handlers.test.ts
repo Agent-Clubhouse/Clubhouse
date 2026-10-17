@@ -19,6 +19,8 @@ vi.mock('../services/git-service', () => ({
   createBranch: vi.fn(),
   stash: vi.fn(),
   stashPop: vi.fn(),
+  getHeadSha: vi.fn(async () => 'abc1234'),
+  getDiffNumstat: vi.fn(async () => [{ path: 'a.ts', added: 1, removed: 0, binary: false }]),
 }));
 
 import { ipcMain } from 'electron';
@@ -44,6 +46,7 @@ describe('git-handlers', () => {
       IPC.GIT.STAGE_ALL, IPC.GIT.UNSTAGE_ALL, IPC.GIT.DISCARD,
       IPC.GIT.COMMIT, IPC.GIT.PUSH, IPC.GIT.PULL,
       IPC.GIT.DIFF, IPC.GIT.CREATE_BRANCH, IPC.GIT.STASH, IPC.GIT.STASH_POP,
+      IPC.GIT.HEAD_SHA, IPC.GIT.DIFF_NUMSTAT,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
@@ -157,5 +160,24 @@ describe('git-handlers', () => {
     const handler = handlers.get(IPC.GIT.STAGE)!;
     expect(() => handler({}, '/project', 42)).toThrow('arg2 must be a string');
     expect(gitService.stage).not.toHaveBeenCalled();
+  });
+
+  it('HEAD_SHA delegates to gitService.getHeadSha', async () => {
+    const handler = handlers.get(IPC.GIT.HEAD_SHA)!;
+    await expect(handler({}, '/project')).resolves.toBe('abc1234');
+    expect(gitService.getHeadSha).toHaveBeenCalledWith('/project');
+  });
+
+  it('DIFF_NUMSTAT delegates to gitService.getDiffNumstat with an optional base', async () => {
+    const handler = handlers.get(IPC.GIT.DIFF_NUMSTAT)!;
+    await expect(handler({}, '/project', 'abc1234')).resolves.toEqual([{ path: 'a.ts', added: 1, removed: 0, binary: false }]);
+    expect(gitService.getDiffNumstat).toHaveBeenCalledWith('/project', 'abc1234');
+    await handler({}, '/project');
+    expect(gitService.getDiffNumstat).toHaveBeenLastCalledWith('/project', undefined);
+  });
+
+  it('DIFF_NUMSTAT rejects a non-string base', () => {
+    const handler = handlers.get(IPC.GIT.DIFF_NUMSTAT)!;
+    expect(() => handler({}, '/project', 7)).toThrow('arg2 must be a string');
   });
 });

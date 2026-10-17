@@ -12,6 +12,8 @@ export interface StreamJsonEvent {
   is_error?: boolean;
   session_id?: string;
   tools?: string[];
+  /** Epoch ms the headless pipeline received this event (stamped by headless-manager). */
+  _ts?: number;
   [key: string]: unknown;
 }
 

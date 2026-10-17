@@ -137,6 +137,8 @@ vi.stubGlobal('clubhouse', {
     log: async () => [],
     showCommit: async () => ({ hash: '', files: [] }),
     commitDiff: async () => ({ original: '', modified: '' }),
+    headSha: async () => null,
+    diffNumstat: async () => [],
   },
   agentSettings: {
     readInstructions: async () => '',

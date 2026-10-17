@@ -25,6 +25,7 @@ import { pluginEventBus } from './plugins/plugin-events';
 import { useAppCanvasStore, getProjectCanvasStore, hasProjectCanvasStore, getKnownProjectIds } from './plugins/builtin/canvas/main';
 import { applyCanvasMutation } from './plugins/builtin/canvas/canvas-sync';
 import type { AgentHookEvent, AgentStatus, CanvasMutation, SoundEvent, ResolvedProtocolAction } from '../shared/types';
+import { summarizeHeadlessTranscript } from '../shared/headless-transcript';
 import { fileState } from './plugins/builtin/files/state';
 import { useSoundStore } from './stores/soundStore';
 import { useSessionSettingsStore } from './stores/sessionSettingsStore';
@@ -171,6 +172,8 @@ function initPtyExitListener(): () => void {
   const removeExitListener = window.clubhouse.pty.onExit(
     async (agentId: string, exitCode: number, lastOutput?: string) => {
       const agent = useAgentStore.getState().agents[agentId];
+      // Read before removeAgent() drops it.
+      const startedAt = useAgentStore.getState().agentSpawnedAt?.[agentId];
       useAgentStore.getState().updateAgentStatus(agentId, 'sleeping' as AgentStatus, exitCode, undefined, lastOutput);
 
       // Handle quick agent completion FIRST (before plugin events which could throw)
@@ -180,13 +183,17 @@ function initPtyExitListener(): () => void {
         let costUsd: number | undefined;
         let durationMs: number | undefined;
         let toolsUsed: string[] | undefined;
+        let toolCalls: number | undefined;
+        let inputTokens: number | undefined;
+        let outputTokens: number | undefined;
+        // Headless exits carry the stderr tail (or spawn error) as lastOutput.
+        const stderrTail = agent.headless && lastOutput ? lastOutput : undefined;
 
         if (agent.headless) {
           // Headless agents: read enriched data from transcript
           try {
             const transcript = await window.clubhouse.agent.readTranscript(agentId);
             if (transcript) {
-              // Parse transcript events to extract summary data
               const events = transcript.split('\n')
                 .filter((line: string) => line.trim())
                 .map((line: string) => {
@@ -194,46 +201,15 @@ function initPtyExitListener(): () => void {
                 })
                 .filter(Boolean);
 
-              // Extract data from transcript events (--verbose format)
-              let lastAssistantText = '';
-              const tools = new Set<string>();
-
-              for (const evt of events) {
-                // Result event: summary, cost, duration
-                if (evt.type === 'result') {
-                  if (typeof evt.result === 'string' && evt.result) {
-                    summary = evt.result;
-                  }
-                  if (evt.total_cost_usd != null) costUsd = evt.total_cost_usd;
-                  else if (evt.cost_usd != null) costUsd = evt.cost_usd;
-                  if (evt.duration_ms != null) durationMs = evt.duration_ms;
-                }
-
-                // --verbose: assistant messages contain text and tool_use blocks
-                if (evt.type === 'assistant' && evt.message?.content) {
-                  for (const block of evt.message.content) {
-                    if (block.type === 'text' && block.text) {
-                      lastAssistantText = block.text;
-                    }
-                    if (block.type === 'tool_use' && block.name) {
-                      tools.add(block.name);
-                    }
-                  }
-                }
-
-                // Legacy streaming format fallback
-                if (evt.type === 'content_block_start' && evt.content_block?.type === 'tool_use' && evt.content_block?.name) {
-                  tools.add(evt.content_block.name);
-                }
-              }
-
-              // Fall back to last assistant text if result was empty
-              if (!summary && lastAssistantText.trim()) {
-                const text = lastAssistantText.trim();
-                summary = text.length > 500 ? text.slice(0, 497) + '...' : text;
-              }
-
-              if (tools.size > 0) toolsUsed = Array.from(tools);
+              const parsed = summarizeHeadlessTranscript(events);
+              summary = parsed.summary;
+              filesModified = parsed.filesModified;
+              costUsd = parsed.costUsd;
+              durationMs = parsed.durationMs;
+              if (parsed.toolsUsed.length > 0) toolsUsed = parsed.toolsUsed;
+              toolCalls = parsed.toolCalls;
+              inputTokens = parsed.inputTokens;
+              outputTokens = parsed.outputTokens;
             }
           } catch {
             // Transcript not available
@@ -274,6 +250,14 @@ function initPtyExitListener(): () => void {
           model: agent.model,
           cancelled,
           pluginMetadata: agent.pluginMetadata,
+          stderrTail,
+          cwd: agent.runCwd,
+          baseSha: agent.runBaseSha,
+          startedAt,
+          freeAgentMode: agent.freeAgentMode,
+          toolCalls,
+          inputTokens,
+          outputTokens,
         });
 
         useAgentStore.getState().removeAgent(agentId);
