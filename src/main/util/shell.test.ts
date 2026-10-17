@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(),
   execFile: vi.fn(),
 }));
 
-import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, buildCliSpawnEnv, winQuoteArg } from './shell';
+import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, buildCliSpawnEnv, summarizeSpawnEnv, winQuoteArg } from './shell';
 import { execSync, execFile } from 'child_process';
 
 // The module caches the shell env, so we need to reset between tests
@@ -171,6 +171,29 @@ describe('buildCliSpawnEnv', () => {
   it('works with no overrides', () => {
     vi.mocked(execSync).mockImplementation(() => 'HOME=/home/user\n');
     expect(buildCliSpawnEnv().HOME).toBe('/home/user');
+  });
+});
+
+describe('summarizeSpawnEnv', () => {
+  const originalPlatform = process.platform;
+  afterEach(() => { Object.defineProperty(process, 'platform', { value: originalPlatform }); });
+
+  it('names the login-critical vars a stripped env is missing, without values', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const summary = summarizeSpawnEnv({ CLUBHOUSE_AGENT_ID: 'a', CLUBHOUSE_HOOK_NONCE: 'secret-nonce' });
+    expect(summary).toEqual({ keyCount: 2, missing: ['HOME', 'PATH', 'USER', 'SHELL'] });
+    expect(JSON.stringify(summary)).not.toContain('secret-nonce');
+  });
+
+  it('reports nothing missing for a full env and skips undefined values', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    expect(summarizeSpawnEnv({ HOME: '/h', PATH: '/p', USER: 'u', SHELL: '/bin/zsh', GONE: undefined })).toEqual({ keyCount: 4, missing: [] });
+  });
+
+  it('checks the Windows login vars case-insensitively', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    expect(summarizeSpawnEnv({ Path: 'C:\\Windows', USERPROFILE: 'C:\\Users\\u' })).toEqual({ keyCount: 2, missing: [] });
+    expect(summarizeSpawnEnv({}).missing).toEqual(['PATH', 'USERPROFILE']);
   });
 });
 

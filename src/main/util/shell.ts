@@ -95,6 +95,21 @@ export function buildCliSpawnEnv(extra?: Record<string, string>): Record<string,
   return cleanSpawnEnv({ ...getShellEnvironment(), ...extra });
 }
 
+/** Vars a CLI needs to find its own install and login. */
+const CLI_LOGIN_ENV_KEYS = ['HOME', 'PATH', 'USER', 'SHELL'] as const;
+
+/**
+ * Log-safe description of a child env: counts and key names, never values.
+ * `missing` lists login-critical vars that are absent; non-empty there is the
+ * usual cause of a CLI that works in the terminal but not in chat.
+ */
+export function summarizeSpawnEnv(env: Record<string, string | undefined>): { keyCount: number; missing: string[] } {
+  const keys = Object.keys(env).filter((k) => env[k] !== undefined);
+  const present = new Set(process.platform === 'win32' ? keys.map((k) => k.toUpperCase()) : keys);
+  const critical = process.platform === 'win32' ? ['PATH', 'USERPROFILE'] : CLI_LOGIN_ENV_KEYS;
+  return { keyCount: keys.length, missing: critical.filter((k) => !present.has(k)) };
+}
+
 /**
  * Quote a single argument for use in a Windows cmd.exe command line.
  * Always wraps in double quotes to safely handle spaces, special chars,

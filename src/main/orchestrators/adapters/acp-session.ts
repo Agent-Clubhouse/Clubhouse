@@ -224,6 +224,9 @@ export class AcpSession {
       profile: this.profile.id,
       agent: init.agentInfo?.name,
       version: init.agentInfo?.version,
+      // Advertised whether or not the user is logged in; a later "Authentication required" is the real signal.
+      authMethods: (init.authMethods ?? []).map((m) => m.id),
+      loadSession: init.agentCapabilities?.loadSession === true,
     });
     return this.caps;
   }

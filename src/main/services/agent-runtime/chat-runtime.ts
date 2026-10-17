@@ -152,6 +152,16 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.session = session;
     this.capabilities = session.capabilities;
     this.noteNativeSessionId(session.nativeSessionId ?? resumeNativeSessionId);
+    appLog('core:chat', 'info', 'Chat session open', {
+      meta: {
+        agentId: this.agentId,
+        driver: this.opts.driverId,
+        nativeSessionId: this.nativeSessionId ?? null,
+        requestedResumeId: resumeNativeSessionId ?? null,
+        // False when the CLI started fresh instead of resuming (e.g. the old session was gone).
+        resumeHonored: resumeNativeSessionId ? this.nativeSessionId === resumeNativeSessionId : null,
+      },
+    });
     await this.emit({
       type: 'session_started',
       data: {
@@ -373,6 +383,7 @@ export class ChatAgentRuntime implements AgentRuntime {
    */
   async abandon(): Promise<void> {
     if (this.ended) return;
+    appLog('core:chat', 'info', 'Abandoning chat start', { meta: { agentId: this.agentId, driver: this.opts.driverId, sessionOpen: !!this.session } });
     this.ended = true;
     this.clearIdleTimer();
     this.settleAllPermissions();
@@ -387,6 +398,9 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   async stop(): Promise<void> {
     const session = this.session;
+    appLog('core:chat', 'info', 'Stopping chat session', {
+      meta: { agentId: this.agentId, driver: this.opts.driverId, nativeSessionId: this.nativeSessionId ?? null, sessionOpen: !!session },
+    });
     this.session = undefined;
     if (session) {
       try {
