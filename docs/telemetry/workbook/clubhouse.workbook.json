@@ -121,7 +121,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "union requests, customEvents, customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| summarize installs = dcount(user_Id) by bin(timestamp, 1d)",
+              "query": "union requests, customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| summarize installs = dcount(user_Id) by bin(timestamp, 1d)",
               "size": 0,
               "title": "Active installs per day",
               "queryType": 0,
@@ -181,6 +181,19 @@
               "visualization": "barchart"
             },
             "name": "Unclean exits by previous state"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange}\n| where name == \"clubhouse.app.unclean_exit\"\n| extend crashed = tostring(customDimensions[\"clubhouse.update.from_version\"]), previous = tostring(customDimensions[\"clubhouse.shutdown.previous\"])\n| summarize exits = sum(itemCount), installs = dcount(user_Id) by crashed, previous\n| order by exits desc",
+              "size": 0,
+              "title": "Unclean exits by the version that crashed",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Unclean exits by the version that crashed"
           }
         ]
       },
@@ -201,7 +214,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "exceptions\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| extend origin = tostring(customDimensions[\"clubhouse.exception.origin\"]), handled = tostring(customDimensions[\"clubhouse.exception.handled\"])\n| summarize count = count(), installs = dcount(user_Id) by type, origin, handled\n| top 25 by count desc",
+              "query": "exceptions\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| extend origin = tostring(customDimensions[\"clubhouse.exception.origin\"]), handled = tostring(customDimensions[\"clubhouse.exception.handled\"])\n| summarize count = sum(itemCount), installs = dcount(user_Id) by type, origin, handled\n| top 25 by count desc",
               "size": 0,
               "title": "Exceptions by type and origin",
               "queryType": 0,
@@ -214,7 +227,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "exceptions\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| extend origin = tostring(customDimensions[\"clubhouse.exception.origin\"])\n| summarize count = count() by origin, bin(timestamp, 1h)",
+              "query": "exceptions\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| extend origin = tostring(customDimensions[\"clubhouse.exception.origin\"])\n| summarize count = sum(itemCount) by origin, bin(timestamp, 1h)",
               "size": 0,
               "title": "Exceptions over time by origin",
               "queryType": 0,
@@ -227,7 +240,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.renderer.gone\", \"clubhouse.child_process.gone\")\n| extend reason = coalesce(tostring(customDimensions[\"clubhouse.renderer.gone_reason\"]), tostring(customDimensions[\"clubhouse.child_process.gone_reason\"]))\n| summarize count = count() by name, reason",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.renderer.gone\", \"clubhouse.child_process.gone\")\n| extend reason = coalesce(tostring(customDimensions[\"clubhouse.renderer.gone_reason\"]), tostring(customDimensions[\"clubhouse.child_process.gone_reason\"]))\n| summarize count = sum(itemCount) by name, reason",
               "size": 0,
               "title": "Renderer and child-process exits",
               "queryType": 0,
@@ -240,7 +253,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.renderer.unresponsive\"\n| extend window = tostring(customDimensions[\"clubhouse.window.kind\"])\n| summarize hangs = count(), p95_s = round(percentile(duration, 95) / 1000, 1) by window",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.renderer.unresponsive\"\n| extend window = tostring(customDimensions[\"clubhouse.window.kind\"])\n| summarize hangs = sum(itemCount), p95_s = round(percentile(duration, 95) / 1000, 1) by window",
               "size": 0,
               "title": "Window hangs",
               "queryType": 0,
@@ -253,7 +266,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.process.eventloop_blocked\"\n| extend flow = tostring(customDimensions[\"clubhouse.blocked.flow\"])\n| summarize stalls = count(), installs = dcount(user_Id) by flow\n| order by stalls desc",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.process.eventloop_blocked\"\n| extend flow = tostring(customDimensions[\"clubhouse.blocked.flow\"])\n| summarize stalls = sum(itemCount), installs = dcount(user_Id) by flow\n| order by stalls desc",
               "size": 0,
               "title": "Main-thread stalls by running flow",
               "queryType": 0,
@@ -320,7 +333,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.startup\"\n| extend kind = tostring(customDimensions[\"clubhouse.startup.kind\"])\n| summarize starts = count(), p50_s = round(percentile(duration, 50) / 1000, 2), p95_s = round(percentile(duration, 95) / 1000, 2) by kind, application_Version\n| order by application_Version desc",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.startup\"\n| extend kind = tostring(customDimensions[\"clubhouse.startup.kind\"])\n| summarize starts = sum(itemCount), p50_s = round(percentile(duration, 50) / 1000, 2), p95_s = round(percentile(duration, 95) / 1000, 2) by kind, application_Version\n| order by application_Version desc",
               "size": 0,
               "title": "Startup time by kind and version",
               "queryType": 0,
@@ -346,7 +359,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.startup\" and success == false\n| summarize count = count() by error = tostring(customDimensions[\"error.type\"])",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.startup\" and success == false\n| summarize count = sum(itemCount) by error = tostring(customDimensions[\"error.type\"])",
               "size": 0,
               "title": "Failed startups",
               "queryType": 0,
@@ -359,7 +372,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "let checks = customMetrics | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.update.checks\" | summarize n = sum(value) by stage = strcat(\"check: \", tostring(customDimensions[\"clubhouse.update.result\"]));\nlet applies = requests | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.update.apply\" | summarize n = todouble(count()) by stage = strcat(\"apply: \", tostring(customDimensions[\"clubhouse.update.result\"]));\nlet verified = customEvents | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.update.apply_verified\" | summarize n = todouble(count()) by stage = strcat(\"verified: \", tostring(customDimensions[\"clubhouse.update.apply.verified\"]));\nunion checks, applies, verified\n| order by stage asc",
+              "query": "let checks = customMetrics | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.update.checks\" | summarize n = sum(value) by stage = strcat(\"check: \", tostring(customDimensions[\"clubhouse.update.result\"]));\nlet applies = requests | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.update.apply\" | summarize n = todouble(sum(itemCount)) by stage = strcat(\"apply: \", tostring(customDimensions[\"clubhouse.update.result\"]));\nlet verified = customEvents | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.update.apply_verified\" | summarize n = todouble(sum(itemCount)) by stage = strcat(\"verified: \", tostring(customDimensions[\"clubhouse.update.apply.verified\"]));\nunion checks, applies, verified\n| order by stage asc",
               "size": 0,
               "title": "Update funnel",
               "queryType": 0,
@@ -372,7 +385,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.update.apply_verified\"\n| extend verified = tostring(customDimensions[\"clubhouse.update.apply.verified\"]), install = tostring(customDimensions[\"clubhouse.install.kind\"])\n| summarize applies = count(), not_taken = countif(verified == \"not_taken\") by install",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.update.apply_verified\"\n| extend verified = tostring(customDimensions[\"clubhouse.update.apply.verified\"]), install = tostring(customDimensions[\"clubhouse.install.kind\"])\n| summarize applies = sum(itemCount), not_taken = sumif(itemCount, verified == \"not_taken\") by install",
               "size": 0,
               "title": "Applies that did not take, by install kind",
               "queryType": 0,
@@ -398,7 +411,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.safe_mode\"\n| summarize count = count() by trigger = tostring(customDimensions[\"clubhouse.safe_mode.trigger\"])",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.app.safe_mode\"\n| summarize count = sum(itemCount) by trigger = tostring(customDimensions[\"clubhouse.safe_mode.trigger\"])",
               "size": 0,
               "title": "Safe-mode decisions",
               "queryType": 0,
@@ -459,7 +472,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.persist.recovery\"\n| extend store = tostring(customDimensions[\"clubhouse.persist.store\"]), action = tostring(customDimensions[\"clubhouse.persist.action\"])\n| summarize count = count(), installs = dcount(user_Id) by store, action\n| order by count desc",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.persist.recovery\"\n| extend store = tostring(customDimensions[\"clubhouse.persist.store\"]), action = tostring(customDimensions[\"clubhouse.persist.action\"])\n| summarize count = sum(itemCount), installs = dcount(user_Id) by store, action\n| order by count desc",
               "size": 0,
               "title": "Recoveries by store and action",
               "queryType": 0,

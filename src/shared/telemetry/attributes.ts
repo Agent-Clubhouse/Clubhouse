@@ -243,6 +243,11 @@ export const SDK_ATTRIBUTE_KEYS = {
   sampleRate: 'microsoft.sample_rate',
   /** Routes an event log record to the App Insights `customEvents` table. */
   customEventName: 'microsoft.custom_event.name',
+  /**
+   * The install id, copied onto every span and log record (never metrics):
+   * the Azure exporter fills `user_Id` from item attributes, not the resource.
+   */
+  endUserPseudoId: 'enduser.pseudo.id',
 } as const;
 
 /** Stack traces get a larger cap than other strings; frames are pre-sanitized. */

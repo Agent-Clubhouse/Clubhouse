@@ -240,6 +240,12 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
   const logger = loggerProvider.getLogger(SCOPE);
 
   // --- Attribute conversion ---
+  // The install id goes on every span and log record so App Insights fills
+  // user_Id (it ignores the resource for that); metrics never get it.
+  const installId = opts.resourceAttributes['enduser.pseudo.id'];
+  const userAttrs: Attributes =
+    typeof installId === 'string' ? { [SDK_ATTRIBUTE_KEYS.endUserPseudoId]: installId } : {};
+
   function toAttributes(attrs: TelAttr[] | undefined): Attributes {
     const out: Attributes = {};
     if (!attrs) return out;
@@ -263,6 +269,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       [SDK_ATTRIBUTE_KEYS.exceptionMessage]: type,
       [SDK_ATTRIBUTE_KEYS.exceptionStacktrace]: stack,
       ...toAttributes([ATTR.exceptionOrigin(origin.origin), ATTR.exceptionHandled(origin.handled), ...(origin.attrs ?? [])]),
+      ...userAttrs,
     };
     span?.addEvent('exception', attributes);
     if (levelAllows(level, EVENTS['clubhouse.exception'].level)) {
@@ -295,7 +302,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     extras?: FlowExtras<T>,
   ): T {
     if (!levelAllows(spanLevel, SPANS[name].level)) return fn({ set: () => {} });
-    return tracer.startActiveSpan(name, { kind, attributes: toAttributes(opts2.attrs) }, (span) => {
+    return tracer.startActiveSpan(name, { kind, attributes: { ...toAttributes(opts2.attrs), ...userAttrs } }, (span) => {
       const classifyResult = (r: Awaited<T>): Classification => {
         if (opts2.signal?.aborted) return { outcome: 'cancelled' };
         try {
@@ -359,7 +366,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
         eventName: name,
         severityNumber: SeverityNumber.INFO,
         severityText: 'INFO',
-        attributes: { ...toAttributes(attrs), [SDK_ATTRIBUTE_KEYS.customEventName]: name },
+        attributes: { ...toAttributes(attrs), ...userAttrs, [SDK_ATTRIBUTE_KEYS.customEventName]: name },
       });
     },
 
@@ -372,7 +379,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       const span = tracer.startSpan(s.name, {
         kind: SPANS[s.name].root ? SpanKind.SERVER : SpanKind.INTERNAL,
         startTime: s.startMs,
-        attributes: toAttributes(s.attrs),
+        attributes: { ...toAttributes(s.attrs), ...userAttrs },
       }, context.active());
       const attrs = [ATTR.outcome(s.outcome)];
       if (s.errorType) attrs.push(ATTR.errorType(s.errorType));
@@ -386,7 +393,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       const rootSpan = tracer.startSpan(root.name, {
         kind: SPANS[root.name].root ? SpanKind.SERVER : SpanKind.INTERNAL,
         startTime: root.startMs,
-        attributes: toAttributes(root.attrs),
+        attributes: { ...toAttributes(root.attrs), ...userAttrs },
       }, context.active());
       const parentCtx = trace.setSpan(context.active(), rootSpan);
       for (const c of children) {
@@ -394,7 +401,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
         const child = tracer.startSpan(c.name, {
           kind: SpanKind.INTERNAL,
           startTime: c.startMs,
-          attributes: toAttributes(c.attrs),
+          attributes: { ...toAttributes(c.attrs), ...userAttrs },
         }, parentCtx);
         const cAttrs = [ATTR.outcome(c.outcome)];
         if (c.errorType) cAttrs.push(ATTR.errorType(c.errorType));

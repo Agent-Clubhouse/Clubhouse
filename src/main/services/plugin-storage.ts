@@ -142,6 +142,9 @@ async function readJsonFileOrQuarantine(file: string): Promise<JsonFileRead> {
   }
 }
 
+/** Keys whose backup fallback was already reported this session. */
+const reportedBackupReads = new Set<string>();
+
 export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   const file = path.join(dir, `${req.key}.json`);
@@ -155,8 +158,12 @@ export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
   const backup = await readJsonFileOrQuarantine(getBackupPath(file));
   if (backup.found) {
     // Writes always produce both copies, so any fallback to the backup means
-    // the primary was lost, torn or unreadable.
-    persist.recovery('plugin_kv', 'restored_from_backup');
+    // the primary was lost, torn or unreadable. Reported once per key per
+    // session: until the next write, every read takes this path.
+    if (!reportedBackupReads.has(file)) {
+      reportedBackupReads.add(file);
+      persist.recovery('plugin_kv', 'restored_from_backup');
+    }
     return backup.value;
   }
 
