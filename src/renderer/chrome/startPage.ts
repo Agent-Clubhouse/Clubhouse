@@ -19,6 +19,15 @@ export function openStartPage(projectId: string): void {
   useUIStore.getState().setExplorerTab('agents', projectId);
 }
 
+/** Show an agent just made from the New agent page or its template dialogs: the project's start page, then the agent, idle. */
+export function openCreatedAgent(projectId: string, agentId: string): void {
+  openStartPage(projectId);
+  if (useProjectStore.getState().activeProjectId !== projectId) return;
+  useChromeStore.getState().setProjectScope(null);
+  useUIStore.getState().setExplorerTab('agents', projectId);
+  useAgentStore.getState().setActiveAgent(agentId, projectId);
+}
+
 /** Whether the New agent page can open: the new shell, on the local host, with a project. */
 export function canOpenNewAgentPage(): boolean {
   return isNewChromeEnabled() && !useUIStore.getState().activeHostId && useProjectStore.getState().projects.length > 0;

@@ -15,7 +15,7 @@ import { Tooltip } from '../../components/Tooltip';
 import { createDurableAgent } from '../../features/agents/create-agent';
 import { useChromeStore, settleNewAgent, type NewAgentRequest } from '../chromeStore';
 import { useChromeDialogStore } from '../sidebar/ChromeAgentDialogs';
-import { openStartPage } from '../startPage';
+import { openCreatedAgent } from '../startPage';
 import { ProjectPicker } from './ProjectPicker';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
 
@@ -171,10 +171,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     if (!stillOpen()) { settleNewAgent(request, agentId); return; }
     request.onCreated?.(agentId);
     close(agentId);
-    if (!request.stayInView) {
-      openStartPage(projectIdDone);
-      selectAgent(projectIdDone, agentId);
-    }
+    if (!request.stayInView) openCreatedAgent(projectIdDone, agentId);
   };
   const failed = (message: string) => {
     if (!stillOpen()) { settleNewAgent(request, null); return; }
@@ -243,9 +240,10 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   // The template dialogs take over the opener's callbacks: an agent made from
   // a template is reported like one made here.
   const openTemplates = () => {
-    if (!project) return;
+    if (!project || busy) return;
     const handed = useChromeStore.getState().handOffNewAgent();
-    useChromeDialogStore.getState().openGallery(project.id, { onCreated: handed?.onCreated, onClosed: handed?.onClosed });
+    if (!handed) return;
+    useChromeDialogStore.getState().openGallery(project.id, { onCreated: handed.onCreated, onClosed: handed.onClosed, stayInView: handed.stayInView });
     reportChromeFeature('new_agent_open');
   };
 
@@ -446,7 +444,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
         )}
         <div className="mt-[18px] pl-32 flex items-center gap-2">
           {durable && (
-            <button type="button" onClick={openTemplates} className="text-xs text-ctp-subtext0 hover:text-ctp-text cursor-pointer focus-ring rounded">
+            <button type="button" onClick={openTemplates} disabled={busy} className="text-xs text-ctp-subtext0 hover:text-ctp-text cursor-pointer focus-ring rounded disabled:opacity-50 disabled:cursor-not-allowed">
               From a template…
             </button>
           )}
@@ -461,10 +459,4 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   );
 }
 
-/** Open a newly made agent, idle and ready for a first message. */
-function selectAgent(projectId: string, agentId: string): void {
-  if (useProjectStore.getState().activeProjectId !== projectId) return;
-  useChromeStore.getState().setProjectScope(null);
-  useUIStore.getState().setExplorerTab('agents', projectId);
-  useAgentStore.getState().setActiveAgent(agentId, projectId);
-}
+

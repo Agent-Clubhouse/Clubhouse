@@ -25,6 +25,8 @@ vi.mock('../../features/agents/TemplateConfigDialog', () => ({
 
 import { ChromeAgentDialogs, useChromeDialogStore } from './ChromeAgentDialogs';
 import { useProjectStore } from '../../stores/projectStore';
+import { useAgentStore } from '../../stores/agentStore';
+import { useUIStore } from '../../stores/uiStore';
 
 beforeEach(() => {
   createFromTemplate.mockReset().mockResolvedValue('t-new');
@@ -69,6 +71,52 @@ describe('ChromeAgentDialogs: From a template… for a New agent page opener', (
     fireEvent.click(screen.getByText('Pick'));
     fireEvent.click(screen.getByText('Close config'));
     expect(onClosed).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it('ends a replaced opener with onClosed(null)', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    render(<ChromeAgentDialogs />);
+    open({ onClosed: first });
+    open({ onClosed: second });
+    expect(first).toHaveBeenCalledExactlyOnceWith(null);
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it('ends the opener with onClosed(null) when the project goes away under the gallery or the template dialog', () => {
+    const onClosed = vi.fn();
+    render(<ChromeAgentDialogs />);
+    open({ onClosed });
+    act(() => useProjectStore.setState({ projects: [] }));
+    expect(onClosed).toHaveBeenCalledExactlyOnceWith(null);
+    expect(useChromeDialogStore.getState().request).toBeNull();
+
+    onClosed.mockClear();
+    act(() => useProjectStore.setState({ projects: [{ id: 'p1', name: 'Clubhouse', path: '/ch' }] as never }));
+    open({ onClosed });
+    fireEvent.click(screen.getByText('Pick'));
+    act(() => useProjectStore.setState({ projects: [] }));
+    expect(onClosed).toHaveBeenCalledExactlyOnceWith(null);
+    expect(screen.queryByTestId('template-config')).toBeNull();
+  });
+
+  it('opens the new agent like the page does, unless the opener asked to stay in view', async () => {
+    useAgentStore.setState({ activeAgentId: null });
+    useUIStore.setState({ explorerTab: 'plugin:app:canvas' });
+    render(<ChromeAgentDialogs />);
+    open({ stayInView: true, onClosed: () => {} });
+    fireEvent.click(screen.getByText('Pick'));
+    fireEvent.click(screen.getByText('Create from template'));
+    await waitFor(() => expect(createFromTemplate).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(useUIStore.getState().explorerTab).toBe('plugin:app:canvas');
+
+    open({ onClosed: () => {} });
+    fireEvent.click(screen.getByText('Pick'));
+    fireEvent.click(screen.getByText('Create from template'));
+    await waitFor(() => expect(useAgentStore.getState().activeAgentId).toBe('t-new'));
+    expect(useUIStore.getState()).toMatchObject({ explorerTab: 'agents' });
+    expect(useProjectStore.getState().activeProjectId).toBe('p1');
   });
 
   it('works without an opener, as from the New menu', async () => {

@@ -126,6 +126,7 @@ export interface ChromeState {
   /**
    * Close the page without ending it: the opener's callbacks move on with the
    * returned request (From a template… hands them to the template dialogs).
+   * Refuses (null) while the page is creating, whose own settle owns them.
    */
   handOffNewAgent: () => NewAgentRequest | null;
   /**
@@ -319,7 +320,8 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     },
     handOffNewAgent: () => {
       const request = get().newAgent;
-      if (request) set({ newAgent: null, newAgentBusy: false, newAgentKnownIds: null });
+      if (!request || get().newAgentBusy) return null;
+      set({ newAgent: null, newAgentBusy: false, newAgentKnownIds: null });
       return request;
     },
     setNewAgentBusy: (busy, known) => {

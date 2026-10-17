@@ -38,6 +38,7 @@ beforeEach(() => {
     availability: {},
   });
   useUIStore.setState({ explorerTab: 'agents', activeHostId: null });
+  useChromeDialogStore.setState({ request: null });
   useChromeStore.setState({ newAgent: req(), newAgentBusy: false, lastProjectId: 'p2', projectActivity: {}, projectScopeId: null });
 });
 
@@ -258,7 +259,21 @@ describe('NewAgentPage', () => {
     fireEvent.click(screen.getByText('From a template…'));
     expect(useChromeStore.getState().newAgent).toBeNull();
     expect(onClosed).not.toHaveBeenCalled();
-    expect(useChromeDialogStore.getState().request).toEqual({ kind: 'gallery', projectId: 'p2', opener: { onCreated, onClosed } });
+    expect(useChromeDialogStore.getState().request).toEqual({ kind: 'gallery', projectId: 'p2', opener: { onCreated, onClosed, stayInView: undefined } });
+  });
+
+  it('From a template… is off while creating, and the hand-off refuses then', async () => {
+    createDurableAgent.mockReturnValue(new Promise(() => {}));
+    const onClosed = vi.fn();
+    openWith({ onClosed });
+    await submitWhenReady();
+    const link = screen.getByText('From a template…') as HTMLButtonElement;
+    expect(link.disabled).toBe(true);
+    fireEvent.click(link);
+    expect(useChromeStore.getState().handOffNewAgent()).toBeNull();
+    expect(useChromeStore.getState().newAgent).not.toBeNull();
+    expect(useChromeDialogStore.getState().request).toBeNull();
+    expect(onClosed).not.toHaveBeenCalled();
   });
 
   it('Cancel closes the page and tells the opener nothing was made', () => {
