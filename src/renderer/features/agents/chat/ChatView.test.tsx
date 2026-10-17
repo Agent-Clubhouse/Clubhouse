@@ -347,7 +347,7 @@ describe('ChatView subagents', () => {
     expect(card).toHaveTextContent(p === 'claude' ? 'Explore' : 'worker-1');
     expect(card).toHaveTextContent('12 tools');
     expect(card).toHaveTextContent('Found 3 consumers');
-    fireEvent.click(within(card).getByRole('button'));
+    fireEvent.click(within(card).getAllByRole('button', { expanded: false })[0]);
     expect(within(card).getAllByTestId('chat-tool-row')).toHaveLength(2);
   });
 
