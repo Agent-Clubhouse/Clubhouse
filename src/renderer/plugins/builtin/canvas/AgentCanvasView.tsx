@@ -3,7 +3,7 @@ import type { AgentCanvasView as AgentCanvasViewType, CanvasView } from './canva
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import { AddAgentDialog } from '../../../features/agents/AddAgentDialog';
 import { WidgetPicker, projectRows, type PickerRow, type PickerSection } from './WidgetPicker';
-import { StatusDot } from '../../../chrome/sidebar/AgentRow';
+import { StatusDot } from '../../../features/agents/agent-status';
 import { cardDot, DOT_WORD } from './CanvasView';
 import { AgentView } from '../../../features/agents/chat/AgentView';
 
