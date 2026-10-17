@@ -147,10 +147,12 @@ export const useUIStore = create<UIState>((set, get) => ({
     const saved = get().projectExplorerTab[projectId];
     set({ explorerTab: saved ? resolveExplorerTab(saved) : 'agents' });
   },
-  setSettingsSubPage: (page) => set({ settingsSubPage: page }),
+  // A focus target belongs to the page it was opened for; moving on drops it.
+  setSettingsSubPage: (page) => set({ settingsSubPage: page, settingsFocus: null }),
   setSettingsContext: (context) => set({
     settingsContext: context,
     settingsSubPage: context === 'app' ? 'orchestrators' : 'project',
+    settingsFocus: null,
   }),
   toggleSettings: () => {
     const { explorerTab, previousExplorerTab } = get();

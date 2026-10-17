@@ -440,6 +440,31 @@ describe('OrchestratorSettingsView', () => {
       expect(useUIStore.getState().settingsFocus).toBeNull();
     });
 
+    it('drops the deep-link focus when chat is off, so it cannot fire later', async () => {
+      setChatFlag(false);
+      useUIStore.getState().openRuntimeSettings('claude-code');
+      render(<OrchestratorSettingsView />);
+      await waitFor(() => expect(useUIStore.getState().settingsFocus).toBeNull());
+    });
+
+    it('drops the deep-link focus for an unknown provider', async () => {
+      setChatFlag(true);
+      useUIStore.getState().openRuntimeSettings('no-such-cli');
+      render(<OrchestratorSettingsView />);
+      await screen.findByTestId('runtime-mode-claude-code');
+      await waitFor(() => expect(useUIStore.getState().settingsFocus).toBeNull());
+    });
+
+    it('drops the deep-link focus when the page unmounts first', async () => {
+      setChatFlag(true);
+      window.clubhouse.app.getExperimentalSettings = vi.fn(() => new Promise(() => {})) as never;
+      useUIStore.getState().openRuntimeSettings('claude-code');
+      const { unmount } = render(<OrchestratorSettingsView />);
+      expect(useUIStore.getState().settingsFocus).toBe('runtime:claude-code');
+      unmount();
+      expect(useUIStore.getState().settingsFocus).toBeNull();
+    });
+
     it('is not shown for disabled orchestrators', async () => {
       setChatFlag(true);
       useOrchestratorStore.setState({

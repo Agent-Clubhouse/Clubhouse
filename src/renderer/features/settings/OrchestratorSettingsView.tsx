@@ -34,6 +34,8 @@ const DEFAULT_RUNTIME_MODE: AgentRuntimeMode = 'chat';
  */
 function useChatRuntimeSettings() {
   const [chatEnabled, setChatEnabled] = useState(false);
+  /** The flag (and, when on, the settings) have loaded, whatever the answer. */
+  const [chatResolved, setChatResolved] = useState(false);
   const [runtimeSettings, setRuntimeSettings] = useState<ChatRuntimeSettings>({});
 
   useEffect(() => {
@@ -51,6 +53,8 @@ function useChatRuntimeSettings() {
         if (!cancelled) setRuntimeSettings(settings ?? {});
       } catch {
         // Leave the control hidden / at defaults.
+      } finally {
+        if (!cancelled) setChatResolved(true);
       }
     })();
     return () => { cancelled = true; };
@@ -71,7 +75,7 @@ function useChatRuntimeSettings() {
     }
   };
 
-  return { chatEnabled, runtimeSettings, setRuntimeMode };
+  return { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode };
 }
 
 function RuntimeModeControl({ value, onChange }: { value: AgentRuntimeMode; onChange: (mode: AgentRuntimeMode) => void }) {
@@ -126,25 +130,39 @@ function AppAgentSettings() {
   const setFreeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.setDefaultMode);
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
-  const { chatEnabled, runtimeSettings, setRuntimeMode } = useChatRuntimeSettings();
+  const { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode } = useChatRuntimeSettings();
 
   // Deep link (uiStore.openRuntimeSettings): scroll to the provider's runtime
   // row and outline it briefly. Falls back to the provider's card when the
-  // row isn't shown (provider disabled).
+  // row isn't shown (provider disabled). The focus is one-shot: it's cleared
+  // once used, when there's nothing to scroll to (chat off, unknown provider)
+  // and when this page unmounts, so it can't fire on a later visit.
   const settingsFocus = useUIStore((s) => s.settingsFocus);
   const setSettingsFocus = useUIStore((s) => s.setSettingsFocus);
   const runtimeRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [highlightedRuntime, setHighlightedRuntime] = useState<string | null>(null);
   useEffect(() => {
-    if (!settingsFocus?.startsWith('runtime:') || !chatEnabled) return;
+    if (!settingsFocus?.startsWith('runtime:') || !chatResolved) return;
+    if (!chatEnabled) {
+      setSettingsFocus(null);
+      return;
+    }
     const providerId = settingsFocus.slice('runtime:'.length);
     const target = runtimeRowRefs.current[providerId] ?? cardRefs.current[providerId];
-    if (!target) return; // rows not rendered yet; retried when they are
+    if (!target) {
+      // Rows not rendered yet: retried when the orchestrator list arrives. Once
+      // it has, a missing target means an unknown provider.
+      if (allOrchestrators.length > 0) setSettingsFocus(null);
+      return;
+    }
     target.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
     setHighlightedRuntime(providerId);
     setSettingsFocus(null);
-  }, [settingsFocus, chatEnabled, allOrchestrators, enabled, setSettingsFocus]);
+  }, [settingsFocus, chatEnabled, chatResolved, allOrchestrators, enabled, setSettingsFocus]);
+  useEffect(() => () => {
+    if (useUIStore.getState().settingsFocus?.startsWith('runtime:')) useUIStore.getState().setSettingsFocus(null);
+  }, []);
   useEffect(() => {
     if (!highlightedRuntime) return;
     const t = setTimeout(() => setHighlightedRuntime(null), 2500);

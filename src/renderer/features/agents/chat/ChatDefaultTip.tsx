@@ -18,18 +18,19 @@ export function resetChatDefaultTipClaim(): void {
  */
 export function ChatDefaultTip({ agent }: { agent: Agent }) {
   const [visible, setVisible] = useState(false);
-  const projectPath = useProjectStore((s) => s.projects.find((p) => p.id === agent.projectId)?.path);
+  const projects = useProjectStore((s) => s.projects);
   const provider = agent.orchestrator ?? 'claude-code';
 
   useEffect(() => {
     if (claimed) return;
     let cancelled = false;
-    void shouldShowChatDefaultTip(agent, projectPath)
+    void shouldShowChatDefaultTip(agent, projects)
       .then((show) => {
         if (cancelled || !show || claimed) return;
         claimed = true;
         // Remembered as soon as it's seen, so it shows once even if ignored.
-        resolveChatTip('shown');
+        // Storage that can't remember it means no tip, not a tip every launch.
+        if (!resolveChatTip('shown')) return;
         setVisible(true);
       })
       .catch(() => {
@@ -37,12 +38,26 @@ export function ChatDefaultTip({ agent }: { agent: Agent }) {
       });
     return () => { cancelled = true; };
     // Decided once per agent pane; later setting changes go through resolveChatTip.
-  }, [agent.id, projectPath]);
+  }, [agent.id, projects.length]);
+
+  // Escape dismisses it, like Got it. It never takes focus, so other Escape
+  // handlers (dialogs) keep working; an already-handled Escape is left alone.
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      resolveChatTip('dismissed');
+      setVisible(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [visible]);
 
   if (!visible) return null;
   return (
     <div
       role="status"
+      aria-label="Chat is the default"
       data-testid="chat-default-tip"
       className="absolute right-0 top-full mt-2 z-20 w-[290px] rounded-md border border-surface-1 bg-ctp-mantle p-3 text-[12px] leading-snug text-ctp-subtext1 shadow-lg"
     >

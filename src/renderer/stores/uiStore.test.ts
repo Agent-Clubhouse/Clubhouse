@@ -54,6 +54,15 @@ describe('uiStore', () => {
       expect(getState().settingsFocus).toBeNull();
     });
 
+    it('drops the focus when the settings page or context changes', () => {
+      getState().openRuntimeSettings('claude-code');
+      getState().setSettingsSubPage('plugins');
+      expect(getState().settingsFocus).toBeNull();
+      getState().openRuntimeSettings('claude-code');
+      getState().setSettingsContext('proj-1');
+      expect(getState().settingsFocus).toBeNull();
+    });
+
     it('keeps the tab to return to when already in settings', () => {
       useUIStore.setState({ explorerTab: 'settings', previousExplorerTab: 'agents' });
       getState().openRuntimeSettings('claude-code');
