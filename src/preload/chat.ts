@@ -1,13 +1,26 @@
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { ChatAgentRuntimeInfo, ChatEvent, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult } from '../shared/chat';
+import type { ChatAgentRuntimeInfo, ChatEvent, ChatQuestionAnswers, ChatRuntimeSettings, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult, StagedChatAttachment } from '../shared/chat';
+import { CHAT_IMAGE_MAX_BYTES } from '../shared/chat';
 
 export const chat = {
   chat: {
     readTranscript: (agentId: string, tail?: number): Promise<ChatEvent[]> =>
       ipcRenderer.invoke(IPC.CHAT.READ_TRANSCRIPT, agentId, tail),
-    sendMessage: (agentId: string, text: string, delivery?: 'auto' | MessageDelivery, attachments?: ContentBlock[]): Promise<RuntimeSendResult> =>
-      ipcRenderer.invoke(IPC.CHAT.SEND_MESSAGE, agentId, text, delivery, attachments),
+    /** `attachmentIds` come from stageAttachment. */
+    sendMessage: (agentId: string, text: string, delivery?: 'auto' | MessageDelivery, attachmentIds?: string[]): Promise<RuntimeSendResult> =>
+      ipcRenderer.invoke(IPC.CHAT.SEND_MESSAGE, agentId, text, delivery, attachmentIds),
+    /**
+     * Hand a dropped, picked or pasted File to main for checking. The path is
+     * resolved here from the File itself, so page code can only stage files
+     * the user actually gave it; a File with no path (pasted) goes as bytes.
+     */
+    stageAttachment: async (agentId: string, file: File): Promise<StagedChatAttachment> => {
+      const filePath = webUtils.getPathForFile(file);
+      if (filePath) return ipcRenderer.invoke(IPC.CHAT.STAGE_ATTACHMENT, agentId, { path: filePath, name: file.name });
+      if (file.size > CHAT_IMAGE_MAX_BYTES) throw new Error('Pasted images must be 3.75 MB or smaller');
+      return ipcRenderer.invoke(IPC.CHAT.STAGE_ATTACHMENT, agentId, { data: new Uint8Array(await file.arrayBuffer()), name: file.name });
+    },
     interrupt: (agentId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.INTERRUPT, agentId),
     respondPermission: (agentId: string, requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> =>

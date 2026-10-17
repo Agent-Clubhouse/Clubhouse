@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
-import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, type AvailableCommand, type ChatCapabilities, type ContentBlock, type PermissionLevel } from '../../../../shared/chat';
+import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, type AvailableCommand, type ChatCapabilities, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
 import { CheckIcon, ChevronDown, FileIcon, PaperclipIcon, PlanIcon, ShieldIcon, StopIcon, UpIcon, XIcon } from './icons';
@@ -157,11 +157,13 @@ export interface ComposerProps {
   /** The draft is owned by the caller so it outlives this component. */
   text: string;
   onTextChange: (text: string) => void;
+  /** Agent the attachments are staged for; attaching is off without it. */
+  attachmentAgentId?: string;
   /** Unsent attachments, owned by the caller like the text. */
   attachments?: ComposerAttachment[];
   onAttachmentsChange?: (attachments: ComposerAttachment[]) => void;
-  /** `attachments` is only passed when there are some. */
-  onSend: (text: string, action: SendAction, attachments?: ContentBlock[]) => void;
+  /** Staged attachment ids, only passed when there are some. */
+  onSend: (text: string, action: SendAction, attachmentIds?: string[]) => void;
   onStop: () => void;
   onLevelChange: (level: PermissionLevel) => void;
 }
@@ -183,7 +185,7 @@ function AttachmentChips({ attachments, onRemove }: { attachments: ComposerAttac
           {a.preview
             ? <img src={a.preview} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />
             : <FileIcon size={14} className="ml-1 text-ctp-overlay1 flex-shrink-0" />}
-          <span className="truncate min-w-0" title={a.block.type === 'file' ? a.block.path : a.name}>{a.name}</span>
+          <span className="truncate min-w-0" title={a.kind === 'file' ? `${a.name} (sent as a file path)` : a.name}>{a.name}</span>
           <button type="button" onClick={() => onRemove(a.id)} aria-label={`Remove ${a.name}`} className="text-ctp-overlay1 hover:text-ctp-text flex-shrink-0">
             <XIcon size={12} />
           </button>
@@ -196,15 +198,18 @@ function AttachmentChips({ attachments, onRemove }: { attachments: ComposerAttac
 export function Composer(props: ComposerProps) {
   const { capabilities, running, disabled, text, onTextChange: setText } = props;
   const attachments = props.attachments ?? NO_ATTACHMENTS;
-  const canAttach = !!props.onAttachmentsChange;
+  const agentId = props.attachmentAgentId;
+  const canAttach = !!props.onAttachmentsChange && !!agentId;
   const [cmdIndex, setCmdIndex] = useState(0);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
-  // Adding files is async; keep the latest list so concurrent adds don't drop each other.
+  // Adding files is async; keep the latest list so concurrent adds don't drop
+  // each other, and count adds in flight so the cap holds across them.
   const latest = useRef(attachments);
   latest.current = attachments;
+  const adding = useRef(0);
   const modes = composerModes(capabilities, running);
 
   useEffect(() => {
@@ -223,17 +228,26 @@ export function Composer(props: ComposerProps) {
   useEffect(() => { setCmdIndex(0); }, [slashMatches.length]);
 
   const addFiles = async (files: File[]) => {
-    if (!canAttach || disabled || !files.length) return;
-    const room = CHAT_ATTACHMENTS_MAX - latest.current.length;
+    if (!canAttach || !agentId || disabled || !files.length) return;
+    // Reserve room synchronously, before any await.
+    const room = Math.max(0, CHAT_ATTACHMENTS_MAX - latest.current.length - adding.current);
+    const accepted = files.slice(0, room);
+    adding.current += accepted.length;
+    // Cleared now and set only on failure, so a concurrent add can't wipe another's message.
+    setAttachError(null);
     const errors: string[] = [];
     if (files.length > room) errors.push(`Attach at most ${CHAT_ATTACHMENTS_MAX} files at a time`);
     const added: ComposerAttachment[] = [];
-    for (const file of files.slice(0, Math.max(0, room))) {
-      const result = await attachmentFromFile(file, capabilities?.images === true);
-      if ('error' in result) errors.push(result.error);
-      else added.push(result);
+    try {
+      for (const file of accepted) {
+        const result = await attachmentFromFile(agentId, file, capabilities?.images === true);
+        if ('error' in result) errors.push(result.error);
+        else added.push(result);
+      }
+    } finally {
+      adding.current -= accepted.length;
     }
-    setAttachError(errors.length ? errors.join('. ') : null);
+    if (errors.length) setAttachError(errors.join('. '));
     if (added.length) props.onAttachmentsChange?.([...latest.current, ...added]);
   };
 
@@ -267,7 +281,7 @@ export function Composer(props: ComposerProps) {
   const submit = (action: SendAction) => {
     const trimmed = text.trim();
     if ((!trimmed && !attachments.length) || disabled) return;
-    if (attachments.length) props.onSend(trimmed, action, attachments.map((a) => a.block));
+    if (attachments.length) props.onSend(trimmed, action, attachments.map((a) => a.id));
     else props.onSend(trimmed, action);
     setText('');
     if (attachments.length) props.onAttachmentsChange?.([]);
@@ -334,9 +348,14 @@ export function Composer(props: ComposerProps) {
         className={`border rounded-xl bg-ctp-mantle flex flex-col ${disabled ? 'border-surface-0 opacity-70' : dragging ? 'border-ctp-accent' : 'border-surface-1 focus-within:border-ctp-accent/60'}`}
         data-testid="chat-composer"
         onDragOver={onDragOver}
-        onDragLeave={() => setDragging(false)}
+        onDragLeave={(e) => {
+          // Moving between children fires dragleave too; only leaving the composer counts.
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+        }}
         onDrop={onDrop}
       >
+        <span className="sr-only" aria-live="polite">{dragging ? 'Drop files to attach them' : ''}</span>
+        {dragging && <p className="px-3.5 pt-2.5 text-[12px] text-ctp-accent" data-testid="chat-drop-hint">Drop files to attach them</p>}
         {attachments.length > 0 && <AttachmentChips attachments={attachments} onRemove={removeAttachment} />}
         <textarea
           ref={area}

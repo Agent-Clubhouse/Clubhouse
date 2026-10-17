@@ -1,22 +1,24 @@
 /**
- * Composer attachments (see src/shared/chat/attachments.ts). Dropped and
- * picked files carry a local path; pasted images don't, so they go inline and
- * main saves them to a file before the runtime sees them.
+ * Composer attachments (see src/shared/chat/attachments.ts). Each file is
+ * staged with main as soon as it's added; the composer keeps only the staged
+ * id, its name and a small thumbnail, and sends the ids.
  */
 
 import type { ContentBlock } from '../../../../shared/chat';
-import { CHAT_IMAGE_MAX_BYTES, isChatImageType } from '../../../../shared/chat';
 
 export interface ComposerAttachment {
+  /** Staged id from main. */
   id: string;
   name: string;
-  /** What's sent: an image block, or a file block carrying its path. */
-  block: Extract<ContentBlock, { type: 'image' } | { type: 'file' }>;
-  /** data: URL thumbnail for images (the CSP allows data: images, not blob:). */
+  /** How it's shown: an image the agent will see, or a file it gets the path of. */
+  kind: 'image' | 'file';
+  /** Small data: URL thumbnail for images (the CSP allows data: images, not blob:). */
   preview?: string;
 }
 
-let nextId = 0;
+/** Images up to this size are their own thumbnail; larger ones are scaled down. */
+const INLINE_PREVIEW_BYTES = 256 * 1024;
+const THUMB_PX = 64;
 
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -27,37 +29,45 @@ function readAsDataUrl(file: File): Promise<string> {
   });
 }
 
-function localPath(file: File): string {
+/** A thumbnail small enough to keep in the draft store, or undefined when it can't be made. */
+async function thumbnail(file: File): Promise<string | undefined> {
   try {
-    return window.clubhouse.getPathForFile(file) || '';
+    if (file.size <= INLINE_PREVIEW_BYTES) return await readAsDataUrl(file);
+    if (typeof createImageBitmap !== 'function') return undefined;
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, THUMB_PX / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return undefined;
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    return canvas.toDataURL('image/jpeg', 0.8);
   } catch {
-    // telemetry-exempt: no path just means the file is attached inline or refused with a message.
-    return '';
+    // telemetry-exempt: a missing thumbnail only changes the chip's icon.
+    return undefined;
   }
 }
 
 /**
- * Turn a pasted, dropped or picked file into an attachment, or a reason it
- * can't be attached. When the agent can't take images, an image on disk goes
- * as a file path the agent can open with its own tools.
+ * Stage a pasted, dropped or picked file, or say why it can't be attached.
+ * When the agent can't take images, an image on disk is shown (and sent) as
+ * a file path the agent can open with its own tools.
  */
-export async function attachmentFromFile(file: File, imagesAllowed: boolean): Promise<ComposerAttachment | { error: string }> {
-  const filePath = localPath(file);
-  const name = file.name || (filePath ? filePath.split(/[\\/]/).pop() ?? filePath : 'pasted image');
-  const id = `att-${++nextId}`;
-  if (imagesAllowed && isChatImageType(file.type)) {
-    if (file.size > CHAT_IMAGE_MAX_BYTES) return { error: `${name} is over 5 MB` };
-    const preview = await readAsDataUrl(file);
-    const block: ComposerAttachment['block'] = filePath
-      ? { type: 'image', mimeType: file.type, path: filePath }
-      : { type: 'image', mimeType: file.type, data: preview.slice(preview.indexOf(',') + 1) };
-    return { id, name, block, preview };
+export async function attachmentFromFile(agentId: string, file: File, imagesAllowed: boolean): Promise<ComposerAttachment | { error: string }> {
+  let staged;
+  try {
+    staged = await window.clubhouse.chat.stageAttachment(agentId, file);
+  } catch (err) {
+    // telemetry-exempt: shown to the user next to the composer.
+    const message = err instanceof Error ? err.message : String(err);
+    return { error: message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') };
   }
-  if (filePath) return { id, name, block: { type: 'file', path: filePath } };
-  if (file.type.startsWith('image/')) {
-    return { error: imagesAllowed ? `${name} isn't a PNG, JPEG, GIF or WebP image` : "This agent's chat can't take pasted images" };
-  }
-  return { error: `Can't attach ${name}: only files on disk can be attached` };
+  if (staged.kind === 'image' && !imagesAllowed && staged.pasted) return { error: "This agent's chat can't take pasted images" };
+  const kind = staged.kind === 'image' && imagesAllowed ? 'image' : 'file';
+  const preview = kind === 'image' ? await thumbnail(file) : undefined;
+  return { id: staged.id, name: staged.name, kind, ...(preview ? { preview } : {}) };
 }
 
 /** File name for an attachment block in a sent message. */

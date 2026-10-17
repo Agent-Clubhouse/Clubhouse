@@ -9,7 +9,7 @@
 
 import { useMemo, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
-import type { ContentBlock, PermissionLevel } from '../../../../shared/chat';
+import type { PermissionLevel } from '../../../../shared/chat';
 import { createChatViewState, type ChatViewState } from '../../../stores/chatStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { ChatHeader } from './ChatHeader';
@@ -66,7 +66,7 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   const [draft, setDraft] = useChatDraft(agent.id);
   const [attachments, setAttachments] = useChatAttachments(agent.id);
 
-  const onSend = (text: string, action: SendAction, blocks?: ContentBlock[]) => {
+  const onSend = (text: string, action: SendAction, blocks?: string[]) => {
     const sentAttachments = attachments;
     const send = (delivery: 'auto' | 'steer' | 'queued') => (blocks ? actions.send(text, delivery, blocks) : actions.send(text, delivery));
     void (async () => {
@@ -125,6 +125,7 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
           commands={state.commands}
           text={draft}
           onTextChange={setDraft}
+          attachmentAgentId={agent.id}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
           onSend={onSend}

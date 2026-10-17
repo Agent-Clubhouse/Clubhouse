@@ -6,14 +6,14 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
-import { PERMISSION_LEVELS } from '../../shared/chat';
+import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS } from '../../shared/chat';
 import { getAgentRuntime, isChatAgent, readChatTranscript, onChatEvent, resolveChatDriver } from '../services/agent-runtime';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg } from './validation';
-import { prepareAttachments } from '../services/agent-runtime/chat-attachments';
+import { resolveAttachments, stageAttachmentData, stageAttachmentPath } from '../services/agent-runtime/chat-attachments';
 
 function requireChatRuntime(agentId: string) {
   const runtime = getAgentRuntime(agentId);
@@ -47,14 +47,29 @@ export function registerChatHandlers(): void {
   ));
 
   ipcMain.handle(IPC.CHAT.SEND_MESSAGE, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ optional: true }), arrayArg(objectArg<object>(), { optional: true })],
-    async (_event, agentId, text, delivery, attachments) => {
+    // Text may be empty when attachments carry the message.
+    [stringArg(), stringArg({ minLength: 0 }), stringArg({ optional: true }), arrayArg(stringArg({ minLength: 1, maxLength: 64 }), { optional: true, maxLength: CHAT_ATTACHMENTS_MAX })],
+    async (_event, agentId, text, delivery, attachmentIds) => {
       const requested = delivery && DELIVERIES.has(delivery) ? (delivery as 'auto' | MessageDelivery) : 'auto';
       const runtime = requireChatRuntime(agentId);
-      const attached = attachments?.length ? await prepareAttachments(agentId, attachments, runtime.getCapabilities?.()) : [];
+      // Only ids staged through STAGE_ATTACHMENT: the renderer can't name a path here.
+      const attached = attachmentIds?.length ? await resolveAttachments(agentId, attachmentIds, runtime.getCapabilities?.()) : [];
       const content: ContentBlock[] = [...(text.trim() ? [{ type: 'text' as const, text }] : []), ...attached];
       if (!content.length) throw new Error('Nothing to send');
       return runtime.sendMessage(content, { source: 'user', delivery: requested });
+    },
+  ));
+
+  // Reached only through the preload's stageAttachment(File): the path comes
+  // from webUtils.getPathForFile, which resolves only files the user dropped
+  // or picked, so page code can't stage an arbitrary path.
+  ipcMain.handle(IPC.CHAT.STAGE_ATTACHMENT, withValidatedArgs(
+    [stringArg(), objectArg<{ path?: unknown; data?: unknown; name?: unknown }>()],
+    async (_event, agentId, input) => {
+      const name = typeof input.name === 'string' ? input.name.slice(0, 255) : undefined;
+      if (typeof input.path === 'string') return stageAttachmentPath(agentId, input.path, name);
+      if (input.data instanceof Uint8Array) return stageAttachmentData(agentId, input.data, name);
+      throw new Error('Attachment needs a file path or image data');
     },
   ));
 

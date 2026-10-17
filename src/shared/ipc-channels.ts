@@ -145,6 +145,7 @@ export const IPC = {
     EVENT: 'chat:event',                                       // Main → Renderer
     READ_TRANSCRIPT: 'chat:read-transcript',
     SEND_MESSAGE: 'chat:send-message',
+    STAGE_ATTACHMENT: 'chat:stage-attachment',
     INTERRUPT: 'chat:interrupt',
     RESPOND_PERMISSION: 'chat:respond-permission',
     ANSWER_QUESTION: 'chat:answer-question',

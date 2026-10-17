@@ -6,13 +6,14 @@
 
 import { useCallback, useEffect, useMemo } from 'react';
 import { create } from 'zustand';
-import type { ChatQuestionAnswers, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult } from '../../../../shared/chat';
+import type { ChatQuestionAnswers, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult } from '../../../../shared/chat';
 import { useChatStore, type ChatViewState } from '../../../stores/chatStore';
 import { useToastStore } from '../../../stores/toastStore';
 import type { ComposerAttachment } from './attachments';
 
 export interface ChatActions {
-  send: (text: string, delivery?: 'auto' | MessageDelivery, attachments?: ContentBlock[]) => Promise<RuntimeSendResult | null>;
+  /** `attachmentIds` are staged attachment ids. */
+  send: (text: string, delivery?: 'auto' | MessageDelivery, attachmentIds?: string[]) => Promise<RuntimeSendResult | null>;
   interrupt: () => Promise<void>;
   /** Resolves false when the answer didn't reach the agent (a toast says why). */
   respondPermission: (requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<boolean>;
