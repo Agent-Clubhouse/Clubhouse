@@ -14,7 +14,7 @@ import type {
 } from '../../../shared/chat/runtime';
 import { AsyncQueue } from './async-queue';
 import { CodexAppServerClient } from './codex-app-server-client';
-import { CodexChatEventMapper, toCodexInput } from './codex-chat-events';
+import { CodexChatEventMapper, toCodexInput, toCodexMcpServers } from './codex-chat-events';
 import {
   CODEX_APP_SERVER_SCHEMA_VERSION,
   type AskForApproval,
@@ -235,10 +235,10 @@ class CodexChatSession implements ChatDriverSession {
   /** The sandbox policy Codex resolved for the thread, used as the base for level changes. */
   private threadSandbox: SandboxPolicy | undefined;
 
-  constructor(private readonly opts: ChatDriverStartOptions, onLog?: LogFn) {
+  constructor(private readonly opts: ChatDriverStartOptions, private readonly log?: LogFn) {
     const { args, dropped } = appServerArgs(opts.extraArgs ?? []);
     if (dropped.length > 0) {
-      onLog?.('warn', 'Ignoring extraArgs that codex app-server does not accept', { dropped });
+      log?.('warn', 'Ignoring extraArgs that codex app-server does not accept', { dropped });
     }
     const spawnCmd = resolveStructuredSpawn(opts.binaryPath, ['app-server', ...args], opts.commandPrefix);
     let markExited: () => void = () => {};
@@ -247,7 +247,7 @@ class CodexChatSession implements ChatDriverSession {
       ...spawnCmd,
       cwd: opts.cwd,
       env: opts.env,
-      onLog,
+      onLog: log,
       onCodexNotification: (n) => this.onNotification(n),
       onCodexServerRequest: (request) => {
         const threadId = threadOf(request.params);
@@ -310,9 +310,11 @@ class CodexChatSession implements ChatDriverSession {
     const level = codexLevelSettings(opts.level);
     let result: ThreadStartResponse | ThreadResumeResponse;
     let cliVersion: string | undefined;
+    let mcp: ReturnType<typeof toCodexMcpServers> = { servers: {}, skipped: [] };
     try {
       const info = await this.client.start();
       cliVersion = parseCodexVersion(info?.userAgent);
+      mcp = toCodexMcpServers(opts.mcpServers, opts.cwd);
       const shared = {
         cwd: opts.cwd,
         ...(opts.model && { model: opts.model }),
@@ -321,7 +323,7 @@ class CodexChatSession implements ChatDriverSession {
         ...(opts.systemPrompt && { developerInstructions: opts.systemPrompt }),
         // Codex reads MCP servers from config.toml's `mcp_servers` table;
         // the per-session override takes the same shape.
-        ...(opts.mcpServers && { config: { mcp_servers: opts.mcpServers as JsonValue } }),
+        ...(Object.keys(mcp.servers).length > 0 && { config: { mcp_servers: mcp.servers as unknown as JsonValue } }),
       };
       result = opts.resumeNativeSessionId
         ? await this.client.threadResume({ threadId: opts.resumeNativeSessionId, excludeTurns: true, ...shared })
@@ -351,6 +353,17 @@ class CodexChatSession implements ChatDriverSession {
       },
     });
     this.queue.push({ type: 'commands_available', data: { commands: [...CODEX_SLASH_COMMANDS] } });
+    if (mcp.skipped.length > 0) {
+      this.log?.('warn', 'MCP servers Codex cannot run were left out', { skipped: mcp.skipped });
+      this.queue.push({
+        type: 'notice',
+        data: {
+          level: 'warn',
+          code: 'mcp_servers_skipped',
+          message: `Left out MCP servers Codex can't run: ${mcp.skipped.map((x) => `${x.name} (${x.reason})`).join(', ')}`,
+        },
+      });
+    }
     const version = cliVersion ?? result.thread.cliVersion;
     if (version && version !== CODEX_APP_SERVER_SCHEMA_VERSION) {
       this.queue.push({

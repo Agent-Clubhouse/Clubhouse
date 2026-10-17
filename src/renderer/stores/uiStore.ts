@@ -70,6 +70,15 @@ interface UIState {
   setHelpSearchQuery: (query: string) => void;
   setShowHome: (show: boolean) => void;
   openAbout: () => void;
+  /**
+   * One-shot focus target inside a settings page, cleared by the page once it
+   * has scrolled there. `runtime:<providerId>` is a provider's Chat / Terminal
+   * runtime row on the Orchestrators page.
+   */
+  settingsFocus: string | null;
+  setSettingsFocus: (focus: string | null) => void;
+  /** Deep link: app settings › Orchestrators, scrolled to a provider's runtime setting. */
+  openRuntimeSettings: (providerId: string) => void;
   openPluginSettings: (pluginId: string) => void;
   closePluginSettings: () => void;
   quickAgentDialogOpen: boolean;
@@ -138,10 +147,12 @@ export const useUIStore = create<UIState>((set, get) => ({
     const saved = get().projectExplorerTab[projectId];
     set({ explorerTab: saved ? resolveExplorerTab(saved) : 'agents' });
   },
-  setSettingsSubPage: (page) => set({ settingsSubPage: page }),
+  // A focus target belongs to the page it was opened for; moving on drops it.
+  setSettingsSubPage: (page) => set({ settingsSubPage: page, settingsFocus: null }),
   setSettingsContext: (context) => set({
     settingsContext: context,
     settingsSubPage: context === 'app' ? 'orchestrators' : 'project',
+    settingsFocus: null,
   }),
   toggleSettings: () => {
     const { explorerTab, previousExplorerTab } = get();
@@ -180,6 +191,18 @@ export const useUIStore = create<UIState>((set, get) => ({
   openAbout: () => {
     const { explorerTab } = get();
     set({ previousExplorerTab: explorerTab, explorerTab: 'settings', settingsSubPage: 'about', settingsContext: 'app' });
+  },
+  settingsFocus: null,
+  setSettingsFocus: (focus) => set({ settingsFocus: focus }),
+  openRuntimeSettings: (providerId) => {
+    const { explorerTab, previousExplorerTab } = get();
+    set({
+      previousExplorerTab: explorerTab !== 'settings' ? explorerTab : previousExplorerTab,
+      explorerTab: 'settings',
+      settingsContext: 'app',
+      settingsSubPage: 'orchestrators',
+      settingsFocus: `runtime:${providerId}`,
+    });
   },
   openPluginSettings: (pluginId) => {
     set({ pluginSettingsId: pluginId, settingsSubPage: 'plugin-detail' });

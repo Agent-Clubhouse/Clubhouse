@@ -132,3 +132,69 @@ jobs:
               echo "- result: failed"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Zero-token protocol handshake for every chat driver (docs/structured-chat-research.md
+  # §8 decision 4). Each driver's probe() spawns the pinned CLI, completes the
+  # `initialize` handshake and exits: no prompt is sent and no credentials are
+  # configured, so nothing can spend tokens. Pins track the versions the drivers
+  # were tested with (chat-version-policy.ts TESTED_CLI_VERSIONS).
+  chat-handshake:
+    name: chat handshake (${{ matrix.provider }}, zero tokens)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - provider: claude-code
+            package: '@anthropic-ai/claude-code'
+            version: '2.1.300'
+          - provider: codex-cli
+            package: '@openai/codex'
+            version: '0.159.3'
+          - provider: copilot-cli
+            package: '@github/copilot'
+            version: '1.0.98'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install pinned CLI
+        shell: bash
+        run: npm install -g "${{ matrix.package }}@${{ matrix.version }}"
+
+      - name: Handshake only (no prompt)
+        shell: bash
+        env:
+          CLUBHOUSE_CHAT_HANDSHAKE_SMOKE: '1'
+          CLUBHOUSE_CHAT_HANDSHAKE_PROVIDERS: ${{ matrix.provider }}
+          CLUBHOUSE_CHAT_HANDSHAKE_REPORT: ${{ runner.temp }}/chat-handshake.json
+        run: npx vitest run src/main/chat/handshake-smoke.test.ts
+
+      - name: Publish handshake summary
+        if: always()
+        shell: bash
+        env:
+          REPORT: ${{ runner.temp }}/chat-handshake.json
+        run: |
+          {
+            echo "## Chat handshake: ${{ matrix.provider }} (pinned ${{ matrix.version }})"
+            if [ -f "$REPORT" ]; then
+              node -e '
+                const rows = JSON.parse(require("fs").readFileSync(process.env.REPORT, "utf8"));
+                console.log("| driver | handshake | CLI version | version policy | ms | error |");
+                console.log("|---|---|---|---|---|---|");
+                for (const r of rows) console.log(`| ${r.driver} | ${r.handshakeOk ? "ok" : "FAILED"} | ${r.cliVersion ?? "?"} | ${r.versionStatus ?? "?"} (tested to ${r.testedMax ?? "?"}) | ${r.ms} | ${(r.error ?? "").replace(/\|/g, "/")} |`);
+              '
+            else
+              echo "- no report written"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
