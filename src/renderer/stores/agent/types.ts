@@ -74,6 +74,8 @@ export interface AgentLifecycleSlice {
     orchestrator?: string,
     freeAgentMode?: boolean,
     pluginMetadata?: Record<string, string>,
+    /** Run in this directory instead of the parent's worktree (e.g. retry in the same worktree). */
+    cwdOverride?: string,
   ) => Promise<string>;
   spawnDurableAgent: (
     projectId: string,

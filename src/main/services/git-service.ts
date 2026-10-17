@@ -1,7 +1,7 @@
 import { execFile as nodeExecFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult, GitWorktreeEntry, GitCommitDetail, GitCommitFileEntry } from '../../shared/types';
+import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult, GitWorktreeEntry, GitCommitDetail, GitCommitFileEntry, GitNumstatEntry } from '../../shared/types';
 import { appLog } from './log-service';
 import { isTelemetryActive, replaySpan, tel } from '../telemetry/facade';
 import { classifyGitFailure, type GitFailure } from '../telemetry/workspace';
@@ -498,4 +498,118 @@ async function readWorktrees(dirPath: string): Promise<GitWorktreeEntry[]> {
   }
 
   return entries;
+}
+
+// ── Run diff stats (headless run monitor, #2033) ───────────────────────────
+
+/**
+ * HEAD commit sha of the repository containing `dirPath`, or null when it is
+ * not a repository or has no commits yet.
+ */
+export async function getHeadSha(dirPath: string): Promise<string | null> {
+  try {
+    const sha = (await gitExec(['rev-parse', '--verify', 'HEAD'], dirPath)).trim();
+    return /^[0-9a-f]{7,64}$/i.test(sha) ? sha : null;
+  } catch {
+    // telemetry-exempt: not a repo or no commits yet; null is the answer.
+    return null;
+  }
+}
+
+/**
+ * Parse `git diff --numstat -z` output.
+ *
+ * Records are NUL-terminated. A plain record is `added\tremoved\tpath`; a
+ * rename or copy is `added\tremoved\t` followed by the old and new paths as
+ * two more NUL-terminated fields. Binary files report `-\t-`.
+ */
+export function parseNumstatZ(output: string): GitNumstatEntry[] {
+  const fields = output.split('\0');
+  const entries: GitNumstatEntry[] = [];
+  let i = 0;
+  while (i < fields.length) {
+    const field = fields[i++];
+    if (!field) continue;
+    const match = /^(-|\d+)\t(-|\d+)\t([\s\S]*)$/.exec(field);
+    if (!match) continue;
+    const [, addedRaw, removedRaw, inlinePath] = match;
+    let filePath = inlinePath;
+    if (!filePath) {
+      // Rename or copy: the old path, then the new path.
+      i++;
+      filePath = fields[i++] ?? '';
+    }
+    if (!filePath) continue;
+    const binary = addedRaw === '-' || removedRaw === '-';
+    entries.push({
+      path: filePath,
+      added: binary ? 0 : parseInt(addedRaw, 10),
+      removed: binary ? 0 : parseInt(removedRaw, 10),
+      binary,
+    });
+  }
+  return entries;
+}
+
+/** Untracked files larger than this are reported as binary without reading them. */
+const UNTRACKED_MAX_BYTES = 1024 * 1024;
+/** Upper bound on untracked files read per call, so a stray build dir can't stall it. */
+const UNTRACKED_MAX_FILES = 1000;
+
+/**
+ * Line count of an untracked file's contents, where every line is an
+ * addition. Content containing a NUL byte is treated as binary.
+ */
+export function countUntrackedLines(content: Uint8Array): { added: number; binary: boolean } {
+  if (content.includes(0)) return { added: 0, binary: true };
+  if (content.length === 0) return { added: 0, binary: false };
+  let lines = 0;
+  for (const byte of content) if (byte === 0x0a) lines++;
+  if (content[content.length - 1] !== 0x0a) lines++;
+  return { added: lines, binary: false };
+}
+
+async function untrackedEntry(root: string, relPath: string): Promise<GitNumstatEntry> {
+  try {
+    const full = path.join(root, relPath);
+    const stat = await fs.promises.stat(full);
+    if (!stat.isFile() || stat.size > UNTRACKED_MAX_BYTES) {
+      return { path: relPath, added: 0, removed: 0, binary: stat.isFile() };
+    }
+    const { added, binary } = countUntrackedLines(await fs.promises.readFile(full));
+    return { path: relPath, added, removed: 0, binary };
+  } catch {
+    // telemetry-exempt: the file vanished or is unreadable; list it without counts.
+    return { path: relPath, added: 0, removed: 0, binary: false };
+  }
+}
+
+/**
+ * Per-file line counts for everything that differs from `base` (default
+ * HEAD): `git diff --numstat` of the working tree against `base`, so commits
+ * made since `base` and uncommitted edits both count, plus untracked files
+ * with every line an addition. Paths are relative to the repository root.
+ * Returns [] when `dirPath` is not a repository or git fails.
+ */
+export async function getDiffNumstat(dirPath: string, base?: string): Promise<GitNumstatEntry[]> {
+  const ref = base || 'HEAD';
+  if (ref.startsWith('-') || ref.includes('\0')) return [];
+  try {
+    // Run from the top level so ls-files lists the whole repo and both
+    // commands report root-relative paths.
+    const root = (await gitExec(['rev-parse', '--show-toplevel'], dirPath)).trim();
+    if (!root) return [];
+    const [diffRaw, untrackedRaw] = await Promise.all([
+      gitExec(['diff', '--numstat', '-z', ref, '--'], root),
+      gitExec(['ls-files', '--others', '--exclude-standard', '-z'], root),
+    ]);
+    const entries = parseNumstatZ(diffRaw);
+    const seen = new Set(entries.map((e) => e.path));
+    const untracked = untrackedRaw.split('\0').filter((p) => p && !seen.has(p)).slice(0, UNTRACKED_MAX_FILES);
+    entries.push(...(await Promise.all(untracked.map((p) => untrackedEntry(root, p)))));
+    return entries;
+  } catch {
+    // telemetry-exempt: polled diff stats; not a repo or a bad base means no stats.
+    return [];
+  }
 }

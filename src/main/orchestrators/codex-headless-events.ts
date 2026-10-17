@@ -59,8 +59,18 @@ function toolFor(item: CodexItem): { name: string; input: Record<string, unknown
   switch (str(item.type)) {
     case 'command_execution':
       return { name: SHELL_TOOL, input: { command: str(details.command) } };
-    case 'file_change':
-      return { name: PATCH_TOOL, input: { path: str(details.path) } };
+    case 'file_change': {
+      // `codex exec --json` reports `changes: [{ path, kind }]`; older builds
+      // and tests use a single `path`. Keep both so the transcript summarizer
+      // (shared/headless-transcript.ts) can list every file touched.
+      const changes = Array.isArray(details.changes)
+        ? (details.changes as unknown[])
+          .filter((c): c is Record<string, unknown> => typeof c === 'object' && c !== null && typeof (c as Record<string, unknown>).path === 'string')
+          .map((c) => ({ path: str(c.path), kind: str(c.kind) }))
+        : null;
+      const path = str(details.path, changes?.[0]?.path ?? '');
+      return { name: PATCH_TOOL, input: changes ? { path, changes } : { path } };
+    }
     case 'mcp_tool_call':
       return {
         name: str(details.tool, str(details.name, 'mcp_tool')),

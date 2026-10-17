@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { GitNumstatEntry } from '../shared/types';
 
 export const git = {
   git: {
@@ -33,5 +34,11 @@ export const git = {
     ipcRenderer.invoke(IPC.GIT.SHOW_COMMIT, dirPath, hash),
   commitDiff: (dirPath: string, hash: string, filePath: string) =>
     ipcRenderer.invoke(IPC.GIT.COMMIT_DIFF, dirPath, hash, filePath),
+  /** HEAD sha of the repo containing `dirPath`, or null. */
+  headSha: (dirPath: string): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.GIT.HEAD_SHA, dirPath),
+  /** Working tree vs `base` (default HEAD) line counts, plus untracked files. */
+  diffNumstat: (dirPath: string, base?: string): Promise<GitNumstatEntry[]> =>
+    ipcRenderer.invoke(IPC.GIT.DIFF_NUMSTAT, dirPath, base ?? undefined),
   },
 };

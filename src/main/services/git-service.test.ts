@@ -12,13 +12,14 @@ vi.mock('fs', async () => {
     promises: {
       readFile: vi.fn(),
       unlink: vi.fn(),
+      stat: vi.fn(),
     },
   };
 });
 
 import * as fs from 'fs';
 import { execFile } from 'child_process';
-import { getGitInfo, isInsideGitRepo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop, listWorktrees, getLog, showCommit, getCommitFileDiff } from './git-service';
+import { getGitInfo, isInsideGitRepo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop, listWorktrees, getLog, showCommit, getCommitFileDiff, getHeadSha, getDiffNumstat, parseNumstatZ, countUntrackedLines } from './git-service';
 
 // No longer need to mock pathExists — git repo detection uses git rev-parse via execFile
 
@@ -1166,5 +1167,131 @@ describe('getCommitFileDiff', () => {
 
   it('rejects traversal path', async () => {
     await expect(getCommitFileDiff(DIR, 'abc1234', '../../etc/passwd')).rejects.toThrow('traverse above');
+  });
+});
+
+describe('parseNumstatZ', () => {
+  it('parses plain records', () => {
+    expect(parseNumstatZ('3\t1\tsrc/a.ts\x0010\t0\tREADME.md\x00')).toEqual([
+      { path: 'src/a.ts', added: 3, removed: 1, binary: false },
+      { path: 'README.md', added: 10, removed: 0, binary: false },
+    ]);
+  });
+
+  it('reports binary files with zero counts', () => {
+    expect(parseNumstatZ('-\t-\timg/logo.png\x00')).toEqual([
+      { path: 'img/logo.png', added: 0, removed: 0, binary: true },
+    ]);
+  });
+
+  it('uses the new path for rename records', () => {
+    expect(parseNumstatZ('2\t2\t\x00old/name.ts\x00new/name.ts\x005\t0\tother.ts\x00')).toEqual([
+      { path: 'new/name.ts', added: 2, removed: 2, binary: false },
+      { path: 'other.ts', added: 5, removed: 0, binary: false },
+    ]);
+  });
+
+  it('handles binary renames and paths with tabs or newlines', () => {
+    expect(parseNumstatZ('-\t-\t\x00a.bin\x00b.bin\x001\t0\tweird\tname\nfile\x00')).toEqual([
+      { path: 'b.bin', added: 0, removed: 0, binary: true },
+      { path: 'weird\tname\nfile', added: 1, removed: 0, binary: false },
+    ]);
+  });
+
+  it('returns [] for empty or unrecognised output', () => {
+    expect(parseNumstatZ('')).toEqual([]);
+    expect(parseNumstatZ('garbage\x00')).toEqual([]);
+  });
+});
+
+describe('countUntrackedLines', () => {
+  it('counts lines with and without a trailing newline', () => {
+    expect(countUntrackedLines(Buffer.from('a\nb\n'))).toEqual({ added: 2, binary: false });
+    expect(countUntrackedLines(Buffer.from('a\nb'))).toEqual({ added: 2, binary: false });
+    expect(countUntrackedLines(Buffer.from(''))).toEqual({ added: 0, binary: false });
+  });
+
+  it('treats content with a NUL byte as binary', () => {
+    expect(countUntrackedLines(Buffer.from([0x61, 0x00, 0x0a]))).toEqual({ added: 0, binary: true });
+  });
+});
+
+describe('getHeadSha', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns the trimmed sha', async () => {
+    mockGitExec(() => 'abcdef1234567890abcdef1234567890abcdef12\n');
+    expect(await getHeadSha(DIR)).toBe('abcdef1234567890abcdef1234567890abcdef12');
+  });
+
+  it('returns null when git fails (not a repo, no commits)', async () => {
+    mockGitExecError('fatal: not a git repository');
+    expect(await getHeadSha(DIR)).toBeNull();
+  });
+});
+
+describe('getDiffNumstat', () => {
+  const ROOT = path.join(path.sep, 'test', 'root');
+
+  beforeEach(() => vi.clearAllMocks());
+
+  function mockRepo(diff: string, untracked: string, calls: Array<{ args: string[]; cwd: string }> = []) {
+    vi.mocked(execFile).mockImplementation(
+      (_file: any, args: any, opts: any, cb: any) => {
+        calls.push({ args, cwd: opts.cwd });
+        const a = (args as string[]).join(' ');
+        if (a.startsWith('rev-parse --show-toplevel')) cb(null, `${ROOT}\n`, '');
+        else if (a.startsWith('diff --numstat')) cb(null, diff, '');
+        else if (a.startsWith('ls-files')) cb(null, untracked, '');
+        else cb(new Error('unexpected'), '', '');
+        return {} as any;
+      },
+    );
+  }
+
+  it('diffs the working tree against the base from the repo root and adds untracked files', async () => {
+    const calls: Array<{ args: string[]; cwd: string }> = [];
+    mockRepo('4\t2\tsrc/a.ts\x00', 'new.txt\x00big.bin\x00', calls);
+    vi.mocked(fs.promises.stat).mockImplementation((async (p: string) => ({
+      isFile: () => true,
+      size: p.endsWith('big.bin') ? 2 * 1024 * 1024 : 10,
+    })) as any);
+    vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from('one\ntwo\nthree\n') as any);
+
+    const result = await getDiffNumstat(path.join(ROOT, 'sub'), 'abc1234');
+
+    expect(result).toEqual([
+      { path: 'src/a.ts', added: 4, removed: 2, binary: false },
+      { path: 'new.txt', added: 3, removed: 0, binary: false },
+      { path: 'big.bin', added: 0, removed: 0, binary: true },
+    ]);
+    expect(calls.find((c) => c.args[0] === 'diff')).toEqual({ args: ['diff', '--numstat', '-z', 'abc1234', '--'], cwd: ROOT });
+    expect(calls.find((c) => c.args[0] === 'ls-files')).toEqual({ args: ['ls-files', '--others', '--exclude-standard', '-z'], cwd: ROOT });
+    expect(fs.promises.readFile).toHaveBeenCalledWith(path.join(ROOT, 'new.txt'));
+  });
+
+  it('defaults the base to HEAD', async () => {
+    const calls: Array<{ args: string[]; cwd: string }> = [];
+    mockRepo('', '', calls);
+    expect(await getDiffNumstat(DIR)).toEqual([]);
+    expect(calls.find((c) => c.args[0] === 'diff')!.args).toContain('HEAD');
+  });
+
+  it('marks untracked files containing NUL as binary', async () => {
+    mockRepo('', 'blob\x00');
+    vi.mocked(fs.promises.stat).mockResolvedValue({ isFile: () => true, size: 3 } as any);
+    vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from([1, 0, 2]) as any);
+    expect(await getDiffNumstat(DIR)).toEqual([{ path: 'blob', added: 0, removed: 0, binary: true }]);
+  });
+
+  it('returns [] outside a repository or on git failure', async () => {
+    mockGitExecError('fatal: not a git repository');
+    expect(await getDiffNumstat(DIR)).toEqual([]);
+  });
+
+  it('rejects a base that looks like a flag without running git', async () => {
+    mockGitExec(() => '');
+    expect(await getDiffNumstat(DIR, '--output=/tmp/x')).toEqual([]);
+    expect(execFile).not.toHaveBeenCalled();
   });
 });

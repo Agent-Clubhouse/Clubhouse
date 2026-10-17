@@ -198,6 +198,8 @@ export const IPC = {
     LOG: 'git:log',
     SHOW_COMMIT: 'git:show-commit',
     COMMIT_DIFF: 'git:commit-diff',
+    HEAD_SHA: 'git:head-sha',
+    DIFF_NUMSTAT: 'git:diff-numstat',
   },
   APP: {
     OPEN_EXTERNAL_URL: 'app:open-external-url',

@@ -111,6 +111,7 @@ export const agent = {
     toolInput?: Record<string, unknown>;
     message?: string;
     toolVerb?: string;
+    toolUseId?: string;
     timestamp: number;
   }) => void) => {
     // Hook events may arrive as a single event or as a batched array
