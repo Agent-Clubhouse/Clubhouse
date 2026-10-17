@@ -9,7 +9,7 @@ import { AnnexDisabledView } from '../panels/AnnexDisabledView';
 import { HelpView } from '../features/help/HelpView';
 import { SatelliteDashboard } from '../features/annex/SatelliteDashboard';
 import { ChromeSidebar } from './ChromeSidebar';
-import { useChromeStore, syncProjectScopeWithActiveAgent } from './chromeStore';
+import { useChromeStore, syncProjectScopeWithActiveAgent, syncProjectActivityWithAgents } from './chromeStore';
 import { useSidebarMode } from './listTabs';
 import { useChromeScope } from './scope';
 import { hostOf } from './hosts';
@@ -62,6 +62,7 @@ export function ChromeBody() {
   const setLastProjectId = useChromeStore((s) => s.setLastProjectId);
 
   useEffect(() => syncProjectScopeWithActiveAgent(), []);
+  useEffect(() => syncProjectActivityWithAgents(), []);
 
   // The active project decides the host: opening a local agent from the palette
   // or a notification while a satellite is shown brings the sidebar back to

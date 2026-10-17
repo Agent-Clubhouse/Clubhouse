@@ -2,6 +2,34 @@ import { useEffect, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
 import { getTheme } from '../../themes';
+import { useChromeFlagStore } from '../../chrome/chromeFlag';
+import { useChromeStore } from '../../chrome/chromeStore';
+import { IDLE_DAY_CHOICES } from '../../chrome/projectActivity';
+
+/** The new layout's idle window (docs/chrome-redesign-spec.md §2 idle rule). */
+function IdleProjectsSetting() {
+  const idleDays = useChromeStore((s) => s.idleDays);
+  const setIdleDays = useChromeStore((s) => s.setIdleDays);
+  return (
+    <div className="flex items-center justify-between py-1.5">
+      <div>
+        <div className="text-sm text-ctp-text">Idle projects</div>
+        <div className="text-xs text-ctp-subtext0 mt-0.5">
+          Unpinned projects with no agent runs and no opened tabs for this long fold into one row at the bottom of the sidebar.
+        </div>
+      </div>
+      <select
+        aria-label="Idle after"
+        data-testid="idle-days"
+        value={idleDays}
+        onChange={(e) => setIdleDays(Number(e.target.value))}
+        className="ml-4 h-7 bg-surface-0 border border-surface-1 rounded-md px-2 text-xs text-ctp-text focus-ring cursor-pointer"
+      >
+        {IDLE_DAY_CHOICES.map((d) => <option key={d} value={d}>{d === 0 ? 'Never' : `After ${d} days`}</option>)}
+      </select>
+    </div>
+  );
+}
 
 const VIEW_TOGGLES = [
   {
@@ -22,6 +50,8 @@ export function DisplaySettingsView() {
   const setTheme = useThemeStore((s) => s.setTheme);
   const availableThemeIds = useThemeStore((s) => s.availableThemeIds);
   const showHome = useUIStore((s) => s.showHome);
+  // The new layout has no Home (spec §4.4); its sidebar setting is the idle window instead.
+  const newChrome = useChromeFlagStore((s) => s.enabled);
   const setShowHome = useUIStore((s) => s.setShowHome);
   const toggleMap = {
     showHome: { value: showHome, set: setShowHome },
@@ -44,7 +74,8 @@ export function DisplaySettingsView() {
         {/* View toggles */}
         <div className="space-y-3 mb-6">
           <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Views</h3>
-          {VIEW_TOGGLES.map(({ key, label, description, icon }) => {
+          {newChrome && <IdleProjectsSetting />}
+          {!newChrome && VIEW_TOGGLES.map(({ key, label, description, icon }) => {
             const { value, set } = toggleMap[key];
             return (
               <div key={key} className="flex items-center justify-between py-1.5">

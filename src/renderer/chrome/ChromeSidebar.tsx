@@ -329,6 +329,20 @@ export function ChromeSidebar() {
     reportChromeFeature('agent_select');
   }, [openAgent]);
 
+  const openProjectSettings = useCallback((projectId: string) => useUIStore.getState().openProjectSettings(projectId), []);
+  const reorderProjectAgents = useCallback((projectId: string, orderedIds: string[]) => {
+    const project = useProjectStore.getState().projects.find((p) => p.id === projectId);
+    if (!project) return;
+    useAgentStore.getState().reorderAgents(project.path, orderedIds).catch((err) => reportChromeActionFailed('reorder_agents', err));
+    reportChromeFeature('agent_reorder');
+  }, []);
+
+  // A project seen for the first time starts its idle clock now, so nothing
+  // starts out idle when the rule ships (§2 idle rule).
+  useEffect(() => {
+    if (treeProjects.length > 0) useChromeStore.getState().seedActivity(treeProjects.map((p) => p.id));
+  }, [treeProjects]);
+
   // A string key rather than the whole projectEnabled record (selector-safety
   // guard): the sidebar re-renders only when the set of Terminal projects changes.
   const terminalProjectKey = usePluginStore((s) => Object.entries(s.projectEnabled)
@@ -485,6 +499,8 @@ export function ChromeSidebar() {
           onSelectAgent={selectAgent}
           onOpenTerminal={isRemoteHost ? undefined : openTerminal}
           terminalProjectIds={terminalProjectIds}
+          onOpenSettings={isRemoteHost ? undefined : openProjectSettings}
+          onReorderAgents={isRemoteHost ? undefined : reorderProjectAgents}
           onSelectCompleted={selectCompleted}
           onDismissCompleted={dismissCompleted}
           onClearCompleted={clearCompleted}

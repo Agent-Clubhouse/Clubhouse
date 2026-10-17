@@ -65,13 +65,20 @@ interface AgentRowProps {
   projectPath?: string;
   onSelect: (agent: Agent) => void;
   onOpenTerminal?: (agent: Agent) => void;
+  /** Tree depth (§4.8): 2 under a project, 3 inside the sleeping fold. */
+  level?: number;
+  /** The tree key of the row's parent, for Left-arrow navigation. */
+  parentKey?: string;
+  /** New-shell-only actions appended to the menu, such as Move up / Move down. */
+  extraActions?: ActionDef[];
 }
 
-export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal }: AgentRowProps) {
+export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions }: AgentRowProps) {
   const note = dot === 'needs' ? 'needs you' : dot === 'error' ? 'error' : agent.kind === 'quick' ? 'quick' : '';
   const rowRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  const actions = useAgentRowActions(agent);
+  const rowActions = useAgentRowActions(agent);
+  const actions = extraActions?.length ? [...rowActions, ...extraActions] : rowActions;
 
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [card, setCard] = useState<DOMRect | null>(null);
@@ -122,8 +129,8 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
   };
   const menuActions = actions.map((a) => ({ ...a, handler: () => run(a, 'menu') }));
 
-  // The wrapper keeps the legacy test ids and takes clicks; the element inside
-  // is the focusable, announced row, and the overflow button sits beside it
+  // The wrapper keeps the legacy test ids and takes clicks; the treeitem inside
+  // is the focusable, announced row (ProjectTree owns its tabindex), and the overflow button sits beside it
   // rather than inside it, so no interactive element is nested in another.
   return (
     <>
@@ -143,9 +150,12 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
         }`}
       >
         <div
-          role="button"
-          tabIndex={0}
+          role="treeitem"
+          aria-level={level}
+          aria-selected={active}
           aria-label={agent.name}
+          data-tree-key={`agent:${agent.id}`}
+          data-tree-parent={parentKey}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(agent); }
             else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
