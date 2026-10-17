@@ -143,7 +143,7 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
                   </div>
                 )}
               </div>
-              <Toggle checked={isEnabled} onChange={(val) => handleToggle(suffix, val)} ariaLabel={toolLabel(suffix)} />
+              <Toggle checked={isEnabled} onChange={(val) => handleToggle(suffix, val)} aria-label={toolLabel(suffix)} />
             </div>
           );
         })}

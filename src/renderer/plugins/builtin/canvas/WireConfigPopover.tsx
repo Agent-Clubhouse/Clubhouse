@@ -153,7 +153,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
                 )}
               </span>
               <Toggle
-                ariaLabel="Both directions"
+                aria-label="Both directions"
                 checked={bidirectional || (forceBidirectional ?? false)}
                 onChange={handleBidirectionalToggle}
                 disabled={!!(forceBidirectional && !bidirectional)}
