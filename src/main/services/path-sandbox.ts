@@ -3,6 +3,7 @@ import * as fsp from 'fs/promises';
 import { app } from 'electron';
 import * as projectStore from './project-store';
 import { appLog } from './log-service';
+import { tel } from '../telemetry/facade';
 
 /**
  * Returns the list of allowed root directories for IPC file operations.
@@ -50,6 +51,7 @@ export async function assertAllowedPath(targetPath: string): Promise<void> {
     // File may not exist yet (e.g. new file creation) — fall through to path.resolve check
   }
   if (!isPathAllowed(realTarget, roots)) {
+    tel.count('clubhouse.file.path_denied');
     const resolved = path.resolve(targetPath);
     appLog('core:file', 'error', 'Path access denied: outside allowed directories', {
       meta: { targetPath, resolved },

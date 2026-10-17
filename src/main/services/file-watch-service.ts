@@ -3,6 +3,8 @@ import * as path from 'path';
 import { BrowserWindow } from 'electron';
 import picomatch from 'picomatch';
 import { IPC } from '../../shared/ipc-channels';
+import { tel } from '../telemetry/facade';
+import { ATTR } from '../../shared/telemetry/attributes';
 
 type FileEventType = 'created' | 'modified' | 'deleted';
 
@@ -75,6 +77,7 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
   // Extract the base directory from the glob (everything before the first wildcard)
   const baseDir = extractBaseDir(glob);
   if (!fs.existsSync(baseDir)) {
+    tel.count('clubhouse.file_watch.errors', 1, [ATTR.errorType('base_missing')]);
     throw new Error(`Watch directory does not exist: ${baseDir}`);
   }
 
@@ -140,6 +143,7 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     entry.destroyedListener = destroyedListener;
     sender.once('destroyed', destroyedListener);
   } catch (err) {
+    tel.count('clubhouse.file_watch.errors', 1, [ATTR.errorType('create_failed')]);
     throw new Error(`Failed to start file watcher: ${(err as Error).message}`);
   }
 }
