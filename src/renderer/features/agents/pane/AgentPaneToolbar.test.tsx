@@ -71,6 +71,31 @@ describe('AgentPaneToolbar', () => {
     expect(screen.getByTestId('agent-context-menu')).toBeInTheDocument();
   });
 
+  it('offers Changes as a third view beside Chat and Terminal', () => {
+    const onOpen = vi.fn();
+    const onClose = vi.fn();
+    const onChange = vi.fn();
+    const { rerender } = render(<AgentPaneToolbar agent={agent} dot="idle" runtime={{ value: 'chat', onChange }} review={{ active: false, count: 6, onOpen, onClose }} />);
+    const changes = screen.getByTestId('view-changes');
+    expect(changes).toHaveTextContent('Changes6');
+    fireEvent.click(changes);
+    expect(onOpen).toHaveBeenCalled();
+    rerender(<AgentPaneToolbar agent={agent} dot="idle" runtime={{ value: 'chat', onChange }} review={{ active: true, count: 6, onOpen, onClose }} />);
+    expect(screen.getByRole('radio', { name: /Changes/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'Chat' })).toHaveAttribute('aria-checked', 'false');
+    // Back to the current runtime closes the review; the other runtime also switches.
+    fireEvent.click(screen.getByRole('radio', { name: 'Chat' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('radio', { name: 'Terminal' }));
+    expect(onChange).toHaveBeenCalledWith('terminal');
+  });
+
+  it('shows Terminal and Changes for an agent that can\'t switch runtimes', () => {
+    render(<AgentPaneToolbar agent={agent} dot="idle" runtime={{ value: 'terminal' }} review={{ active: false, onOpen: vi.fn(), onClose: vi.fn() }} />);
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['Terminal', 'Changes']);
+  });
+
   it('names the agent only when asked (the classic shell)', () => {
     const { rerender } = render(<AgentPaneToolbar agent={agent} dot="idle" />);
     expect(screen.queryByTestId('pane-agent-name')).not.toBeInTheDocument();

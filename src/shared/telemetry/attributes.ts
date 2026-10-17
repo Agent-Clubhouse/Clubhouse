@@ -216,7 +216,7 @@ export function countBucket(n: number): CountBucket {
 export const GIT_OPS = [
   'checkout', 'stage', 'unstage', 'stage_all', 'unstage_all', 'discard', 'commit', 'push', 'pull',
   'create_branch', 'stash', 'stash_pop', 'diff', 'show_commit', 'worktree_list',
-  'head_sha', 'diff_numstat', 'branch_changes', 'branch_patch',
+  'head_sha', 'diff_numstat', 'branch_changes', 'branch_patch', 'branch_log', 'pr_info', 'open_pr',
   'status', 'other',
 ] as const;
 export type GitOp = (typeof GIT_OPS)[number];
@@ -293,7 +293,7 @@ export const ATTR = {
    * refresh sets it from the active tab and pane (spec §9.1; chrome spec §8);
    * finer placement goes in a separate attribute, not here.
    */
-  view: enumAttr('clubhouse.view', ['agent', 'terminal', 'canvas', 'files', 'git', 'settings', 'plugin', 'other']),
+  view: enumAttr('clubhouse.view', ['agent', 'terminal', 'canvas', 'files', 'git', 'changes', 'settings', 'plugin', 'other']),
   errorBoundary: enumAttr('clubhouse.error.boundary', ['app', 'plugin']),
   /** Electron `RenderProcessGoneDetails.reason`. */
   rendererGoneReason: enumAttr('clubhouse.renderer.gone_reason', [
@@ -719,6 +719,7 @@ export const SPANS = {
   'clubhouse.git.discard': { level: 'standard', root: true },
   'clubhouse.git.commit': { level: 'standard', root: true },
   'clubhouse.git.push': { level: 'standard', root: true },
+  'clubhouse.git.open_pr': { level: 'standard', root: true },
   'clubhouse.git.pull': { level: 'standard', root: true },
   'clubhouse.git.create_branch': { level: 'standard', root: true },
   'clubhouse.git.stash': { level: 'standard', root: true },

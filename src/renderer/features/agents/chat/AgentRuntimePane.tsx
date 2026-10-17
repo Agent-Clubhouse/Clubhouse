@@ -24,6 +24,8 @@ import { AgentDetails } from '../details/AgentDetails';
 import { DetailsToggle } from '../details/DetailsToggle';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { useNarrow } from '../pane/useNarrow';
+import { ChangesReview } from '../review/ChangesReview';
+import { useAgentReview } from '../review/useAgentReview';
 import { isNewChromeEnabled } from '../../../chrome/chromeFlag';
 import type { ChatViewContext } from './ChatView';
 import { isRunningState } from './view-model';
@@ -218,20 +220,27 @@ function MainTerminal({ agent, terminal, runtime }: { agent: Agent; terminal: Re
   // Below 640px of pane there's no room beside the terminal, so details hides.
   const paneNarrow = useNarrow(paneRef);
   const detailsOpen = useAgentDetailsStore((s) => s.open) && !paneNarrow;
+  const hook = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
+  const review = useAgentReview(agent, `${hook?.state ?? ''}:${hook?.toolName ?? ''}:${agent.status}`);
   return (
     <div ref={paneRef} className="flex flex-col h-full" data-agent-pane={agent.id}>
       <div data-testid={runtime ? 'terminal-runtime-bar' : 'terminal-pane-bar'}>
         <TerminalPaneToolbar
           agent={agent}
           runtime={runtime}
+          review={review.view}
           detailsToggle={<DetailsToggle />}
           showMenu
           showName={!isNewChromeEnabled()}
         />
       </div>
-      <div className="flex-1 min-h-0 flex">
+      {review.active && review.cwd && (
+        <ChangesReview agentName={agent.name} cwd={review.cwd} branch={review.branch} onChanged={review.reload} />
+      )}
+      {/* Hidden, not unmounted, while reviewing: the terminal keeps its session and scrollback. */}
+      <div className={`flex-1 min-h-0 flex ${review.active ? 'hidden' : ''}`}>
         <div className="flex-1 min-w-0 relative">{terminal}</div>
-        {detailsOpen && <AgentDetails agent={agent} />}
+        {detailsOpen && <AgentDetails agent={agent} branch={review.branch} onReviewAll={review.cwd ? review.open : undefined} />}
       </div>
     </div>
   );

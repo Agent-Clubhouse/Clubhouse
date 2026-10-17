@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as gitService from '../services/git-service';
 import { booleanArg, numberArg, stringArg, withValidatedArgs } from './validation';
@@ -99,11 +99,28 @@ export function registerGitHandlers(): void {
       return deferInvocation(() => gitService.getDiffNumstat(dirPath, base));
     },
   ));
-  ipcMain.handle(IPC.GIT.BRANCH_CHANGES, withValidatedArgs([stringArg(), stringArg({ optional: true, maxLength: 256 })], async (_event, dirPath: string, base?: string) => {
-    return deferInvocation(() => gitService.getBranchChanges(dirPath, base));
+  ipcMain.handle(IPC.GIT.BRANCH_CHANGES, withValidatedArgs([stringArg(), stringArg({ optional: true, maxLength: 256 }), booleanArg({ optional: true })], async (_event, dirPath: string, base?: string, counts?: boolean) => {
+    return deferInvocation(() => gitService.getBranchChanges(dirPath, base, !!counts));
+  }));
+
+  ipcMain.handle(IPC.GIT.BRANCH_LOG, withValidatedArgs([stringArg(), stringArg({ optional: true, maxLength: 256 })], async (_event, dirPath: string, base?: string) => {
+    return deferInvocation(() => gitService.getBranchLog(dirPath, base));
   }));
 
   ipcMain.handle(IPC.GIT.BRANCH_FILE_PATCH, withValidatedArgs([stringArg(), stringArg(), stringArg({ optional: true, maxLength: 256 })], async (_event, dirPath: string, filePath: string, base?: string) => {
     return deferInvocation(() => gitService.getBranchFilePatch(dirPath, filePath, base));
+  }));
+
+  ipcMain.handle(IPC.GIT.PULL_REQUEST_INFO, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
+    return deferInvocation(() => gitService.getPullRequestInfo(dirPath));
+  }));
+
+  ipcMain.handle(IPC.GIT.PUSH_BRANCH, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
+    return gitService.pushUpstream(dirPath);
+  }));
+
+  // Opens only this repo's GitHub pull request or compare page (checked in openPullRequest).
+  ipcMain.handle(IPC.GIT.OPEN_PULL_REQUEST, withValidatedArgs([stringArg(), stringArg({ maxLength: 2048 })], (_event, dirPath: string, url: string) => {
+    return gitService.openPullRequest(dirPath, url, (u) => shell.openExternal(u));
   }));
 }

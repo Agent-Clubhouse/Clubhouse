@@ -16,6 +16,10 @@ import { isNewChromeEnabled } from '../../../chrome/chromeFlag';
 import { ChatStream, type StreamJump } from './ChatStream';
 import { AgentDetails } from '../details/AgentDetails';
 import { DetailsToggle } from '../details/DetailsToggle';
+import { ChangesReview } from '../review/ChangesReview';
+import { DOT_LABEL, StatusDot } from '../agent-status';
+import { Button } from '../../../components/Button';
+import { useAgentReview } from '../review/useAgentReview';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { Composer, QueueList, TaskList, type ComposerLayout } from './Composer';
@@ -135,6 +139,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
   const openSubagent = useCallback((subagentId: string) => {
     revealDetails({ agentId: agent.id, card: 'subagents', subagentId });
   }, [revealDetails, agent.id]);
+  const review = useAgentReview(agent, `${state.turnId ?? 'idle'}:${state.state ?? ''}`, detailsAvailable);
+  const reviewing = detailsAvailable && review.active;
   const showInStream = useCallback((subagentId: string) => {
     setJumpMissed(null);
     setJump((j) => ({ subagentId, nonce: (j?.nonce ?? 0) + 1 }));
@@ -234,8 +240,29 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
         onSwitchToTerminal={onSwitchToTerminal}
         switching={switching}
         detailsToggle={detailsAvailable ? <DetailsToggle /> : undefined}
+        review={detailsAvailable ? review.view : undefined}
       />
-      <div className="flex-1 min-h-0 flex">
+      {reviewing && (permission || question) && (
+        // The approval card lives in the chat dock; while reviewing, say it's waiting and offer the way back.
+        <div className="h-9 flex-shrink-0 flex items-center gap-2 px-3.5 border-b border-surface-0 text-xs" role="status" data-testid="review-needs-you">
+          <StatusDot dot="needs" />
+          <span className="text-ctp-text">{DOT_LABEL.needs}</span>
+          <span className="min-w-0 truncate text-ctp-overlay1">{permission ? permission.title : 'has a question'}</span>
+          <Button kind="primary" className="ml-auto" onClick={() => review.view?.onClose()} data-testid="review-back-to-chat">Back to chat</Button>
+        </div>
+      )}
+      {reviewing && review.cwd && (
+        <ChangesReview
+          agentName={agent.name}
+          cwd={review.cwd}
+          branch={review.branch}
+          onChanged={review.reload}
+          refreshKey={`${state.turnId ?? 'idle'}:${state.state ?? ''}`}
+          onAskAgent={ended ? undefined : (text) => { void actions.send(text, running ? 'queued' : 'auto'); }}
+        />
+      )}
+      {/* Hidden, not unmounted, while reviewing: the stream keeps its scroll and the draft its focus. */}
+      <div className={`flex-1 min-h-0 flex ${reviewing ? 'hidden' : ''}`}>
         <div ref={columnRef} className="flex-1 min-w-0 flex flex-col">
           {/* Canvas cards stay quiet: the focused view announces replies, not every card on the board. */}
           <ChatStream
@@ -257,7 +284,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           </div>
         </div>
         {detailsOpen && (
-          <AgentDetails agent={agent} chat={state} onShowInStream={showInStream} missedSubagentId={jumpMissed} />
+          <AgentDetails agent={agent} chat={state} onShowInStream={showInStream} missedSubagentId={jumpMissed} branch={review.branch} onReviewAll={review.cwd ? review.open : undefined} />
         )}
       </div>
     </div>

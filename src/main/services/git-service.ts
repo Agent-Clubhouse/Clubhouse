@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult, GitWorktreeEntry, GitCommitDetail, GitCommitFileEntry, GitNumstatEntry } from '../../shared/types';
 import type { ChangedFile } from '../../shared/chat-checkpoints';
-import type { BranchChanges, BranchFilePatch, BranchFileStatus } from '../../shared/git-branch';
+import type { BranchChanges, BranchFilePatch, BranchFileStatus, PullRequestInfo } from '../../shared/git-branch';
+import { getShellEnvironment } from '../util/shell';
 import { appLog } from './log-service';
 import { isTelemetryActive, replaySpan, tel } from '../telemetry/facade';
 import { classifyGitFailure, type GitFailure } from '../telemetry/workspace';
@@ -19,6 +20,13 @@ function validateBranchName(name: string): void {
   }
   if (name.includes('\0')) {
     throw new Error('Invalid branch name: must not contain null bytes');
+  }
+}
+
+/** Remote names come from the repo's own config; one starting with '-' would be read as an option. */
+function validateRemoteName(name: string): void {
+  if (!name || name.startsWith('-') || name.includes('\0') || /\s/.test(name)) {
+    throw new Error('Invalid remote name');
   }
 }
 
@@ -268,8 +276,47 @@ export async function push(dirPath: string): Promise<GitOpResult> {
   return gitOp('push', async () => {
     const info = await readGitInfo(dirPath);
     if (!info.remote) return noRemote();
-    return runResultDetailed(['push', info.remote, info.branch], dirPath, undefined, 'push');
+    validateRemoteName(info.remote);
+    validateBranchName(info.branch);
+    return runResultDetailed(['push', '--', info.remote, info.branch], dirPath, undefined, 'push');
   });
+}
+
+/**
+ * Push HEAD and set its upstream, so a new agent branch can be pushed and a
+ * pull request opened (#2032). It pushes to the same remote the review's
+ * pull request status reads (resolvePushRemote).
+ */
+export async function pushUpstream(dirPath: string): Promise<GitOpResult> {
+  return gitOp('push', async () => {
+    const branch = (await tryGitExec(['rev-parse', '--abbrev-ref', 'HEAD'], dirPath, 'push')) ?? '';
+    if (!branch || branch === 'HEAD') {
+      return { value: { ok: false, message: 'HEAD is detached. Check out a branch to push it.' }, failure: { errorType: 'validation', timedOut: false } };
+    }
+    validateBranchName(branch);
+    const remote = await resolvePushRemote(dirPath, branch);
+    if (!remote) return noRemote();
+    return runResultDetailed(['push', '--set-upstream', '--', remote, 'HEAD'], dirPath, 60_000, 'push');
+  });
+}
+
+/**
+ * The remote a branch pushes to: its upstream's remote when set, else
+ * origin, else the only remote. Null when there's none, or several and none
+ * of them is origin.
+ */
+export async function resolvePushRemote(dirPath: string, branch?: string): Promise<string | null> {
+  const remotes = ((await tryGitExec(['remote'], dirPath, 'pr_info')) ?? '').split('\n').map((r) => r.trim()).filter(Boolean);
+  if (remotes.length === 0) return null;
+  let pick: string | undefined;
+  if (branch && !branch.startsWith('-')) {
+    const upstream = await tryGitExec(['config', '--get', `branch.${branch}.remote`], dirPath, 'pr_info');
+    if (upstream && remotes.includes(upstream)) pick = upstream;
+  }
+  pick ??= remotes.includes('origin') ? 'origin' : remotes.length === 1 ? remotes[0] : undefined;
+  if (!pick) return null;
+  validateRemoteName(pick);
+  return pick;
 }
 
 /**
@@ -328,7 +375,9 @@ export async function pull(dirPath: string): Promise<GitOpResult> {
   return gitOp('pull', async () => {
     const info = await readGitInfo(dirPath);
     if (!info.remote) return noRemote();
-    return runResultDetailed(['pull', info.remote, info.branch], dirPath, undefined, 'pull');
+    validateRemoteName(info.remote);
+    validateBranchName(info.branch);
+    return runResultDetailed(['pull', '--', info.remote, info.branch], dirPath, undefined, 'pull');
   });
 }
 
@@ -722,16 +771,17 @@ const branchInFlight = new Map<string, Promise<BranchChanges>>();
  * uncommitted and untracked, with line counts from getDiffNumstat (which
  * caps and budgets untracked reads). Paths are relative to the repo root.
  */
-export function getBranchChanges(dirPath: string, base?: string): Promise<BranchChanges> {
-  const key = `${dirPath}\0${base ?? ''}`;
+export function getBranchChanges(dirPath: string, base?: string, counts = false): Promise<BranchChanges> {
+  const key = `${dirPath}\0${base ?? ''}\0${counts ? 1 : 0}`;
   const running = branchInFlight.get(key);
   if (running) return running;
-  const run = readBranchChanges(dirPath, base).finally(() => branchInFlight.delete(key));
+  const run = readBranchChanges(dirPath, base, counts).finally(() => branchInFlight.delete(key));
   branchInFlight.set(key, run);
   return run;
 }
 
-async function readBranchChanges(dirPath: string, base?: string): Promise<BranchChanges> {
+/** `counts` also reads how many commits the branch has and how many files are uncommitted (the review and project page). */
+async function readBranchChanges(dirPath: string, base: string | undefined, counts: boolean): Promise<BranchChanges> {
   const op: GitOp = 'branch_changes';
   const root = await tryGitExec(['rev-parse', '--show-toplevel'], dirPath, op);
   if (!root) return { available: false, files: [] };
@@ -748,7 +798,142 @@ async function readBranchChanges(dirPath: string, base?: string): Promise<Branch
   const files: ChangedFile[] = numstat
     .map((e) => ({ path: e.path, status: statuses.get(e.path) ?? 'added', additions: e.added, deletions: e.removed, binary: e.binary }))
     .sort((a, b) => a.path.localeCompare(b.path));
-  return { available: true, branch, base: resolved.name, mergeBase: resolved.sha, files };
+  const out: BranchChanges = { available: true, branch, base: resolved.name, mergeBase: resolved.sha, files };
+  if (counts) {
+    const [ahead, dirty] = await Promise.all([
+      tryGitExec(['rev-list', '--count', `${resolved.sha}..HEAD`], root, op),
+      gitExec(['status', '--porcelain', '-z', '--untracked-files=normal'], root, undefined, op, NUMSTAT_MAX_BUFFER).catch(() => ''),
+    ]);
+    out.ahead = Number(ahead) || 0;
+    // -z puts a rename's old path in its own field, with no status letters in front.
+    out.uncommitted = dirty.split('\0').filter((e) => /^[ MTADRCU?!]{2} /.test(e)).length;
+  }
+  return out;
+}
+
+/** The branch's own commits since it left the main line, newest first (the Changes review). */
+export async function getBranchLog(dirPath: string, base?: string, limit = 100): Promise<GitLogEntry[]> {
+  const op: GitOp = 'branch_log';
+  const root = await tryGitExec(['rev-parse', '--show-toplevel'], dirPath, op);
+  if (!root) return [];
+  const resolved = await resolveMergeBase(root, base);
+  if (!resolved) return [];
+  const n = Math.max(1, Math.min(500, Math.floor(limit)));
+  const raw = await gitExec(['log', `-${n}`, '--format=%H%x1f%h%x1f%s%x1f%an%x1f%ar%x1e', `${resolved.sha}..HEAD`], root, undefined, op);
+  return raw.split('\x1e').map((r) => r.trim()).filter(Boolean).map((r) => {
+    const [hash, shortHash, subject, author, date] = r.split('\x1f');
+    return { hash, shortHash, subject, author, date };
+  });
+}
+
+/**
+ * Turn a GitHub remote URL into "owner/repo": https://github.com/o/r(.git),
+ * git@github.com:o/r(.git) or ssh://git@github.com/o/r(.git). Null for any
+ * other host or shape; owner and repo are limited to [\w.-].
+ */
+export function githubRepoOf(remoteUrl: string): string | null {
+  const m = remoteUrl.trim().match(/^(?:https:\/\/(?:[^@/\s]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
+  if (!m || m[1] === '.' || m[1] === '..' || m[2] === '.' || m[2] === '..') return null;
+  return `${m[1]}/${m[2]}`;
+}
+
+/**
+ * Whether `url` is a GitHub pull request or compare page of `repo`
+ * ("owner/repo"), the only pages the review opens.
+ */
+export function isPullRequestUrlFor(url: string, repo: string): boolean {
+  return pullRequestHref(url, repo) !== null;
+}
+
+/** The normalized href of a GitHub pull request or compare page of `repo`, or null for anything else. */
+function pullRequestHref(url: string, repo: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    // telemetry-exempt: not a URL at all; the caller refuses it as a validation failure, which its span records.
+    return null;
+  }
+  if (u.protocol !== 'https:' || u.hostname !== 'github.com' || u.username || u.password || u.port) return null;
+  const [owner, name, kind, ...rest] = u.pathname.split('/').filter(Boolean);
+  const [wantOwner, wantName] = repo.split('/');
+  if (!owner || !name || owner.toLowerCase() !== wantOwner.toLowerCase() || name.toLowerCase() !== wantName.toLowerCase()) return null;
+  const ok = kind === 'pull' ? rest.length >= 1 && /^\d+$/.test(rest[0]) : kind === 'compare' && rest.length >= 1;
+  return ok ? u.href : null;
+}
+
+/**
+ * Open the branch's pull request page (#2032) after checking it belongs to
+ * this repo's GitHub remote, so a URL from gh or the renderer can't send the
+ * browser elsewhere. `open` is shell.openExternal, passed in by the handler.
+ */
+export async function openPullRequest(dirPath: string, url: string, open: (url: string) => Promise<void>): Promise<GitOpResult> {
+  return gitOp<GitOpResult>('open_pr', async () => {
+    // The same remote getPullRequestInfo built the URL from: the branch's upstream first.
+    const branch = await tryGitExec(['rev-parse', '--abbrev-ref', 'HEAD'], dirPath, 'open_pr');
+    const remote = await resolvePushRemote(dirPath, branch && branch !== 'HEAD' ? branch : undefined);
+    const remoteUrl = remote ? await tryGitExec(['remote', 'get-url', '--', remote], dirPath, 'open_pr') : null;
+    const repo = remoteUrl ? githubRepoOf(remoteUrl) : null;
+    const href = repo ? pullRequestHref(url, repo) : null;
+    if (!href) {
+      return { value: { ok: false, message: 'That page isn\u2019t this repository\u2019s pull request on GitHub.' }, failure: { errorType: 'validation', timedOut: false } };
+    }
+    // The parsed, normalized URL, never the raw string that was checked.
+    await open(href);
+    return { value: { ok: true, message: '' } };
+  });
+}
+
+function ghExec(cwd: string, args: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    nodeExecFile('gh', args, { cwd, encoding: 'utf-8', timeout: 10_000, env: getShellEnvironment() }, (err, stdout) => {
+      // telemetry-exempt: gh is optional; without it (or signed out) the review offers the compare page instead.
+      if (err) resolve(null);
+      else resolve((stdout as string).trim());
+    });
+  });
+}
+
+/**
+ * Where the branch stands with its remote and pull request, for the review's
+ * footer: whether it's pushed, an open PR if `gh` can find one, and the
+ * GitHub page that opens a new one.
+ */
+export async function getPullRequestInfo(dirPath: string): Promise<PullRequestInfo> {
+  const op: GitOp = 'pr_info';
+  const root = await tryGitExec(['rev-parse', '--show-toplevel'], dirPath, op);
+  if (!root) return { available: false };
+  const branch = await tryGitExec(['rev-parse', '--abbrev-ref', 'HEAD'], root, op);
+  if (!branch || branch === 'HEAD') return { available: true };
+  if (branch.startsWith('-') || branch.includes('\0')) return { available: true };
+  const remote = await resolvePushRemote(root, branch);
+  const [resolved, remoteUrl, remoteRef] = await Promise.all([
+    resolveMergeBase(root),
+    remote ? tryGitExec(['remote', 'get-url', '--', remote], root, op) : Promise.resolve(null),
+    remote ? tryGitExec(['rev-parse', '--verify', '--quiet', `refs/remotes/${remote}/${branch}`], root, op) : Promise.resolve(null),
+  ]);
+  const unpushed = remote && remoteRef ? Number(await tryGitExec(['rev-list', '--count', `refs/remotes/${remote}/${branch}..HEAD`], root, op)) || 0 : undefined;
+  const repo = remoteUrl ? githubRepoOf(remoteUrl) : null;
+  const info: PullRequestInfo = {
+    available: true, branch, base: resolved?.name, remote: remote ?? undefined, hasRemote: !!remoteUrl, github: !!repo, pushed: !!remoteRef, unpushed,
+  };
+  if (repo && resolved) {
+    const [owner, name] = repo.split('/').map(encodeURIComponent);
+    info.compareUrl = `https://github.com/${owner}/${name}/compare/${encodeURIComponent(resolved.name)}...${encodeURIComponent(branch)}?expand=1`;
+  }
+  if (repo) {
+    // --head=<branch> and --repo=<repo> keep both values out of option position; only open PRs count.
+    const raw = await ghExec(root, ['pr', 'list', `--repo=${repo}`, `--head=${branch}`, '--state=open', '--limit=1', '--json=url,number,state']);
+    if (raw) {
+      try {
+        const [pr] = JSON.parse(raw) as Array<{ url?: string; number?: number; state?: string }>;
+        if (pr?.url && isPullRequestUrlFor(pr.url, repo)) info.pr = { url: pr.url, number: pr.number ?? 0, state: (pr.state ?? 'OPEN').toLowerCase() };
+      } catch {
+        // telemetry-exempt: unexpected gh output; the footer just offers to open a PR.
+      }
+    }
+  }
+  return info;
 }
 
 /** Patches and untracked files past this size aren't shown; the review says the file is too large. */

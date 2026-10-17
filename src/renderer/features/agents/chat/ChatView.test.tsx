@@ -7,6 +7,7 @@ import { CANVAS_TRANSCRIPT_TAIL, ChatView, ChatViewBody } from './ChatView';
 import { useChatDraftStore, type ChatActions } from './useChatSession';
 import { chatFixture, FIXTURE_AGENT_ID, PROFILES, type FixtureProvider } from './fixtures';
 import { useAgentDetailsStore } from '../details/detailsStore';
+import { useProjectStore } from '../../../stores/projectStore';
 
 const agent: Agent = {
   id: FIXTURE_AGENT_ID,
@@ -771,6 +772,51 @@ describe('ChatView agent details', () => {
     const card = screen.getByTestId('details-card-session');
     expect(card).toHaveTextContent('Runs on');
     expect(card).toHaveTextContent('Plan limits');
+  });
+
+  it('opens the Changes review from Review all and goes back to Chat', async () => {
+    useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'p', path: '/proj' } as never] });
+    window.clubhouse.git.branchChanges = vi.fn(async () => ({
+      available: true, branch: 'gallant-swift/rows', base: 'main', ahead: 1, uncommitted: 0,
+      files: [{ path: 'src/a.ts', status: 'modified' as const, additions: 3, deletions: 1, binary: false }],
+    }));
+    window.clubhouse.git.info = vi.fn(async () => ({ status: [] }));
+    window.clubhouse.git.branchLog = vi.fn(async () => []);
+    window.clubhouse.git.pullRequestInfo = vi.fn(async () => ({ available: true, hasRemote: false }));
+    window.clubhouse.git.branchFilePatch = vi.fn(async () => ({ patch: '' }));
+    try {
+      renderFixture('claude', 'conversation');
+      fireEvent.click(screen.getByTestId('agent-details-toggle'));
+      fireEvent.click(screen.getByTestId('details-card-changes-toggle'));
+      fireEvent.click(await screen.findByTestId('details-review-all'));
+      expect(await screen.findByTestId('changes-review')).toBeInTheDocument();
+      expect(screen.getByTestId('view-changes')).toHaveAttribute('aria-checked', 'true');
+      fireEvent.click(screen.getByRole('radio', { name: 'Chat' }));
+      expect(screen.queryByTestId('changes-review')).not.toBeInTheDocument();
+    } finally {
+      useProjectStore.setState({ projects: [] });
+      useAgentDetailsStore.setState({ review: {} });
+    }
+  });
+
+  it('says the agent needs you while the review is showing, with the way back', async () => {
+    useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'p', path: '/proj' } as never] });
+    window.clubhouse.git.branchChanges = vi.fn(async () => ({ available: true, base: 'main', files: [] }));
+    window.clubhouse.git.info = vi.fn(async () => ({ status: [] }));
+    window.clubhouse.git.branchLog = vi.fn(async () => []);
+    window.clubhouse.git.pullRequestInfo = vi.fn(async () => ({ available: true, hasRemote: false }));
+    useAgentDetailsStore.setState({ review: { [agent.id]: true } });
+    try {
+      renderFixture('claude', 'approval');
+      expect(await screen.findByTestId('changes-review')).toBeInTheDocument();
+      expect(screen.getByTestId('review-needs-you')).toHaveTextContent('Needs you');
+      fireEvent.click(screen.getByTestId('review-back-to-chat'));
+      expect(screen.queryByTestId('changes-review')).not.toBeInTheDocument();
+      expect(screen.getByTestId('chat-permission-feedback')).toBeInTheDocument();
+    } finally {
+      useProjectStore.setState({ projects: [] });
+      useAgentDetailsStore.setState({ review: {} });
+    }
   });
 
   it('is not offered in popouts or canvas cards', () => {

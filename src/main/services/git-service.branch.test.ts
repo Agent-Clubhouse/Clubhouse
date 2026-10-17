@@ -1,9 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { getBranchChanges, getBranchFilePatch, resolveMergeBase } from './git-service';
+import {
+  getBranchChanges, getBranchFilePatch, getBranchLog, getPullRequestInfo, githubRepoOf, isPullRequestUrlFor,
+  openPullRequest, push, pushUpstream, resolveMergeBase, resolvePushRemote,
+} from './git-service';
 
 let repo: string;
 const temps: string[] = [];
@@ -156,6 +159,137 @@ describe('git branch against main', { timeout: 30_000 }, () => {
   it('reports no base when there is no main or master', async () => {
     git('branch', '-m', 'main', 'trunk');
     expect(await getBranchChanges(repo)).toMatchObject({ available: true, noBase: true, files: [] });
+  });
+
+  it('counts commits and uncommitted files only when asked', async () => {
+    git('checkout', '-q', '-b', 'agent/work');
+    write('src/app.ts', 'export const a = 2;\n');
+    git('commit', '-q', '-am', 'branch commit');
+    write('notes.md', 'x\n');
+    expect((await getBranchChanges(repo)).ahead).toBeUndefined();
+    expect(await getBranchChanges(repo, undefined, true)).toMatchObject({ ahead: 1, uncommitted: 1 });
+  });
+
+  it('logs only the branch\'s own commits', async () => {
+    git('checkout', '-q', '-b', 'agent/work');
+    write('src/app.ts', 'export const a = 2;\n');
+    git('commit', '-q', '-am', 'branch commit');
+    expect((await getBranchLog(repo)).map((e) => e.subject)).toEqual(['branch commit']);
+  });
+
+  it('reads GitHub remotes in ssh and https form only', () => {
+    expect(githubRepoOf('git@github.com:Agent-Clubhouse/Clubhouse.git')).toBe('Agent-Clubhouse/Clubhouse');
+    expect(githubRepoOf('https://github.com/Agent-Clubhouse/Clubhouse')).toBe('Agent-Clubhouse/Clubhouse');
+    expect(githubRepoOf('https://gitlab.com/a/b.git')).toBeNull();
+  });
+
+  it('knows whether the branch is pushed, and pushes it with an upstream', async () => {
+    withOrigin();
+    git('checkout', '-q', '-b', 'agent/work');
+    write('src/app.ts', 'export const a = 2;\n');
+    git('commit', '-q', '-am', 'branch commit');
+    expect(await getPullRequestInfo(repo)).toMatchObject({ available: true, branch: 'agent/work', base: 'main', hasRemote: true, pushed: false });
+    expect(await pushUpstream(repo)).toMatchObject({ ok: true });
+    const info = await getPullRequestInfo(repo);
+    expect(info).toMatchObject({ pushed: true, unpushed: 0 });
+    // Not a GitHub remote: no compare page to open.
+    expect(info.compareUrl).toBeUndefined();
+  });
+
+  it('reports a failed push', async () => {
+    git('remote', 'add', 'origin', path.join(os.tmpdir(), 'no-such-remote-xyz'));
+    const r = await pushUpstream(repo);
+    expect(r.ok).toBe(false);
+    expect(r.message.length).toBeGreaterThan(0);
+  });
+
+  it('refuses a remote whose name would be read as an option', async () => {
+    const remote = tmp('git-origin-');
+    gitIn(remote, 'init', '-q', '--bare');
+    git('config', 'remote.--receive-pack=touch pwned.url', remote);
+    expect(git('remote')).toBe('--receive-pack=touch pwned');
+    git('checkout', '-q', '-b', 'agent/work');
+    await expect(pushUpstream(repo)).rejects.toThrow('Invalid remote name');
+    await expect(push(repo)).rejects.toThrow('Invalid remote name');
+    expect(fs.existsSync(path.join(repo, 'pwned'))).toBe(false);
+  });
+
+  it('pushes to and reads the one remote there is, even when it isn\'t origin', async () => {
+    const remote = tmp('git-upstream-');
+    gitIn(remote, 'init', '-q', '--bare');
+    git('remote', 'add', 'upstream', remote);
+    git('checkout', '-q', '-b', 'agent/work');
+    expect(await resolvePushRemote(repo, 'agent/work')).toBe('upstream');
+    expect(await pushUpstream(repo)).toMatchObject({ ok: true });
+    expect(gitIn(remote, 'branch', '--list', 'agent/work')).toContain('agent/work');
+    expect(await getPullRequestInfo(repo)).toMatchObject({ remote: 'upstream', pushed: true, unpushed: 0, github: false });
+  });
+
+  it('prefers the branch\'s upstream remote, then origin', async () => {
+    for (const name of ['fork', 'origin']) {
+      const r = tmp(`git-${name}-`);
+      gitIn(r, 'init', '-q', '--bare');
+      git('remote', 'add', name, r);
+    }
+    git('checkout', '-q', '-b', 'agent/work');
+    expect(await resolvePushRemote(repo, 'agent/work')).toBe('origin');
+    git('config', 'branch.agent/work.remote', 'fork');
+    expect(await resolvePushRemote(repo, 'agent/work')).toBe('fork');
+  });
+
+  it('won\'t push a detached HEAD, and says why', async () => {
+    withOrigin();
+    git('checkout', '-q', '--detach', 'HEAD');
+    expect(await pushUpstream(repo)).toMatchObject({ ok: false, message: expect.stringContaining('detached') });
+    expect(await getPullRequestInfo(repo)).toEqual({ available: true });
+  });
+
+  it('only opens this repository\'s pull request pages on GitHub', async () => {
+    git('remote', 'add', 'origin', 'git@github.com:Agent-Clubhouse/Clubhouse.git');
+    const open = vi.fn(async () => {});
+    expect(await openPullRequest(repo, 'https://github.com/Agent-Clubhouse/Clubhouse/pull/2073', open)).toMatchObject({ ok: true });
+    expect(await openPullRequest(repo, 'https://github.com/Agent-Clubhouse/Clubhouse/compare/main...a%2Fb?expand=1', open)).toMatchObject({ ok: true });
+    for (const bad of [
+      'https://github.com/attacker/Clubhouse/pull/1',
+      'https://github.com.evil.com/Agent-Clubhouse/Clubhouse/pull/1',
+      'http://github.com/Agent-Clubhouse/Clubhouse/pull/1',
+      'https://user@github.com/Agent-Clubhouse/Clubhouse/pull/1',
+      'https://github.com/Agent-Clubhouse/Clubhouse/settings',
+      'javascript:alert(1)',
+    ]) {
+      expect(await openPullRequest(repo, bad, open)).toMatchObject({ ok: false });
+    }
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
+  it('opens the pull request of the branch\'s upstream remote, not origin\'s', async () => {
+    git('remote', 'add', 'origin', 'https://github.com/upstream-org/Clubhouse.git');
+    git('remote', 'add', 'fork', 'git@github.com:me/Clubhouse.git');
+    git('checkout', '-q', '-b', 'agent/work');
+    git('config', 'branch.agent/work.remote', 'fork');
+    const open = vi.fn(async () => {});
+    // The URL getPullRequestInfo builds is the fork's; main must accept it.
+    expect(await openPullRequest(repo, 'https://github.com/me/Clubhouse/compare/main...agent%2Fwork?expand=1', open)).toMatchObject({ ok: true });
+    expect(await openPullRequest(repo, 'https://github.com/upstream-org/Clubhouse/pull/3', open)).toMatchObject({ ok: false });
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the normalized URL it checked, not the raw string', async () => {
+    git('remote', 'add', 'origin', 'git@github.com:Agent-Clubhouse/Clubhouse.git');
+    const open = vi.fn(async (_u: string) => {});
+    await openPullRequest(repo, 'https://GITHUB.com/Agent-Clubhouse/Clubhouse/pull/12', open);
+    expect(open).toHaveBeenCalledWith('https://github.com/Agent-Clubhouse/Clubhouse/pull/12');
+  });
+
+  it('reads GitHub remotes only from github.com itself', () => {
+    expect(githubRepoOf('ssh://git@github.com/a/b.git')).toBe('a/b');
+    expect(githubRepoOf('https://token@github.com/a/b')).toBe('a/b');
+    expect(githubRepoOf('https://evilgithub.com/a/b')).toBeNull();
+    expect(githubRepoOf('https://github.com.evil.com/a/b')).toBeNull();
+    expect(githubRepoOf('https://example.com/github.com/a/b')).toBeNull();
+    expect(githubRepoOf('https://github.com/a/b%2F..')).toBeNull();
+    expect(isPullRequestUrlFor('https://github.com/A/B/pull/7', 'a/b')).toBe(true);
+    expect(isPullRequestUrlFor('https://github.com/a/b/pull/x', 'a/b')).toBe(false);
   });
 
   it('shares one read between concurrent callers', async () => {

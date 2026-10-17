@@ -203,6 +203,10 @@ export const IPC = {
     DIFF_NUMSTAT: 'git:diff-numstat',
     BRANCH_CHANGES: 'git:branch-changes',
     BRANCH_FILE_PATCH: 'git:branch-file-patch',
+    BRANCH_LOG: 'git:branch-log',
+    PULL_REQUEST_INFO: 'git:pull-request-info',
+    PUSH_BRANCH: 'git:push-branch',
+    OPEN_PULL_REQUEST: 'git:open-pull-request',
   },
   APP: {
     OPEN_EXTERNAL_URL: 'app:open-external-url',

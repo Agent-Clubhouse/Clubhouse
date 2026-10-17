@@ -35,30 +35,68 @@ export const ChatBubbleIcon = () => <Svg size={13}><path d="M4 5h16v11H10l-5 4v-
 export const TerminalGlyph = () => <Svg size={13}><path d="M4 17l6-5-6-5M12 19h8" /></Svg>;
 export const MoreIcon = () => <Svg><path d="M5 12h.01M12 12h.01M19 12h.01" strokeWidth={3} /></Svg>;
 
-/** The Chat / Terminal switch: labels when wide, two icon segments when narrow. */
-export function RuntimeSwitch({ value, onChange, disabled, compact }: { value: RuntimeView; onChange: (v: RuntimeView) => void; disabled?: boolean; compact?: boolean }) {
+/** The Changes review as a third view beside Chat and Terminal (#2032). */
+export interface ReviewView {
+  active: boolean;
+  /** Files changed on the branch, shown on the segment. */
+  count?: number;
+  onOpen: () => void;
+  onClose: () => void;
+}
+
+/**
+ * The Chat / Terminal switch: labels when wide, icon segments when narrow.
+ * Without `onChange` only the current runtime shows (agents that can't
+ * switch); with `review` a Changes segment follows.
+ */
+export function RuntimeSwitch({ value, onChange, disabled, compact, review }: {
+  value: RuntimeView;
+  onChange?: (v: RuntimeView) => void;
+  disabled?: boolean;
+  compact?: boolean;
+  review?: ReviewView;
+}) {
+  const views: RuntimeView[] = onChange ? ['chat', 'terminal'] : [value];
+  const showing = review?.active ? 'changes' : value;
+  const segment = 'h-[22px] flex items-center justify-center gap-1 rounded-[5px] text-xs disabled:opacity-50';
   return (
-    <span className="inline-flex gap-0.5 p-0.5 rounded-[7px] bg-ctp-crust" role="radiogroup" aria-label="Chat or terminal" data-testid="runtime-switch">
-      {(['chat', 'terminal'] as const).map((v) => {
+    <span className="inline-flex gap-0.5 p-0.5 rounded-[7px] bg-ctp-crust" role="radiogroup" aria-label={review ? 'View' : 'Chat or terminal'} data-testid="runtime-switch">
+      {views.map((v) => {
         const label = v === 'chat' ? 'Chat' : 'Terminal';
         return (
           <Tooltip key={v} content={label} disabled={!compact}>
             <button
               type="button"
               role="radio"
-              aria-checked={value === v}
+              aria-checked={showing === v}
               aria-label={compact ? label : undefined}
               disabled={disabled}
-              onClick={() => { if (v !== value) onChange(v); }}
-              className={`h-[22px] flex items-center justify-center rounded-[5px] text-xs ${compact ? 'w-[26px]' : 'px-[9px]'} ${
-                value === v ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'
-              } disabled:opacity-50`}
+              onClick={() => {
+                if (review?.active) review.onClose();
+                if (v !== value) onChange?.(v);
+              }}
+              className={`${segment} ${compact ? 'w-[26px]' : 'px-[9px]'} ${showing === v ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'}`}
             >
               {compact ? (v === 'chat' ? <ChatBubbleIcon /> : <TerminalGlyph />) : label}
             </button>
           </Tooltip>
         );
       })}
+      {review && (
+        <Tooltip content="Changes" disabled={!compact}>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={review.active}
+            aria-label={compact ? 'Changes' : undefined}
+            onClick={() => { if (!review.active) review.onOpen(); }}
+            className={`${segment} ${compact ? 'w-[26px]' : 'px-[9px]'} ${review.active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'}`}
+            data-testid="view-changes"
+          >
+            {compact ? <DiffIcon /> : <>Changes{review.count ? <span className="text-ctp-overlay1 tabular-nums">{review.count}</span> : null}</>}
+          </button>
+        </Tooltip>
+      )}
     </span>
   );
 }
@@ -178,7 +216,10 @@ export interface AgentPaneToolbarProps {
   details?: string[];
   /** Context fill and plan limits; omitted hides the meter. */
   usage?: PaneUsage | null;
-  runtime?: { value: RuntimeView; onChange: (v: RuntimeView) => void; disabled?: boolean; tip?: ReactNode };
+  /** The runtime switch. Without `onChange` it only names the current runtime, beside Changes. */
+  runtime?: { value: RuntimeView; onChange?: (v: RuntimeView) => void; disabled?: boolean; tip?: ReactNode };
+  /** The Changes review segment (#2032), main pane only. */
+  review?: ReviewView;
   /** The Agent details toggle (#2032), before the runtime switch. */
   detailsToggle?: ReactNode;
   /** Offer the agent's ⋯ menu (the main pane; popouts have their actions in the title bar). */
@@ -190,7 +231,8 @@ export interface AgentPaneToolbarProps {
   showName?: boolean;
 }
 
-export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, details, usage, runtime, detailsToggle, showMenu, showName }: AgentPaneToolbarProps) {
+export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, details, usage, runtime, review, detailsToggle, showMenu, showName }: AgentPaneToolbarProps) {
+  const switchShown = !!runtime && (!!runtime.onChange || !!review);
   const ref = useRef<HTMLDivElement>(null);
   const narrow = useNarrow(ref);
   const shownModel = model && model !== 'default' ? model : null;
@@ -211,11 +253,11 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
         <OrchestratorGlyph orchestrator={orchestrator ?? agent.orchestrator ?? 'claude-code'} details={glyphDetails} />
         {shownModel && !narrow && <span className="ml-1 text-ctp-overlay1" data-testid="pane-model">{shownModel}</span>}
         {usage && <UsageMeter usage={usage} compact={narrow} />}
-        {(runtime || detailsToggle) && <span className="w-px h-4 bg-surface-0 mx-1" aria-hidden="true" />}
+        {(switchShown || detailsToggle) && <span className="w-px h-4 bg-surface-0 mx-1" aria-hidden="true" />}
         {detailsToggle}
-        {runtime && (
+        {runtime && switchShown && (
           <span className="relative">
-            <RuntimeSwitch value={runtime.value} onChange={runtime.onChange} disabled={runtime.disabled} compact={narrow} />
+            <RuntimeSwitch value={runtime.value} onChange={runtime.onChange} disabled={runtime.disabled} compact={narrow} review={review} />
             {runtime.tip}
           </span>
         )}
@@ -229,7 +271,7 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
  * The toolbar for an agent in the terminal runtime, fed from hook status: the
  * same bar the chat runtime shows, so switching runtimes keeps it in place.
  */
-export function TerminalPaneToolbar({ agent, runtime, detailsToggle, showMenu, showName }: Pick<AgentPaneToolbarProps, 'agent' | 'runtime' | 'detailsToggle' | 'showMenu' | 'showName'>) {
+export function TerminalPaneToolbar({ agent, runtime, review, detailsToggle, showMenu, showName }: Pick<AgentPaneToolbarProps, 'agent' | 'runtime' | 'review' | 'detailsToggle' | 'showMenu' | 'showName'>) {
   const detailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
   const dot = agentDot(agent, detailed);
   // "Idle" after a stop only repeats the Done the status word already says.
@@ -242,7 +284,8 @@ export function TerminalPaneToolbar({ agent, runtime, detailsToggle, showMenu, s
       activity={activity || undefined}
       model={agent.model}
       details={agent.branch ? [`Branch ${agent.branch}`] : undefined}
-      runtime={runtime}
+      runtime={runtime ?? { value: 'terminal' }}
+      review={review}
       detailsToggle={detailsToggle}
       showMenu={showMenu}
       showName={showName}
