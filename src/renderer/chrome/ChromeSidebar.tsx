@@ -4,7 +4,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useAnnexClientStore, type SatelliteConnection } from '../stores/annexClientStore';
-import { useRemoteProjectStore } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, satellitePrefix } from '../stores/remoteProjectStore';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useOrderedShallow } from '../hooks/useOrderedShallow';
@@ -207,6 +207,19 @@ export function ChromeSidebar() {
     if (activeHostId && satellites.length > 0 && !satellites.some((s) => s.id === activeHostId)) switchHost(null);
   }, [activeHostId, satellites]);
 
+  // An unpaired satellite's pins, collapsed state and folds go with it. Only on
+  // unpairing: a satellite that goes offline keeps them for when it is back.
+  const prevSatelliteIdsRef = useRef<string[] | null>(null);
+  useEffect(() => {
+    const ids = satellites.map((s) => s.id);
+    const prev = prevSatelliteIdsRef.current;
+    if (prev) {
+      const current = new Set(ids);
+      for (const id of prev) if (!current.has(id)) useChromeStore.getState().forgetProjectsWithPrefix(satellitePrefix(id));
+    }
+    if (ids.length > 0 || prev) prevSatelliteIdsRef.current = ids;
+  }, [satellites]);
+
   // When a project is removed, drop its pin, collapsed state and folds. Compared
   // against the previous non-empty list so the empty list at startup prunes nothing.
   const prevProjectIdsRef = useRef<string[] | null>(null);
@@ -317,7 +330,8 @@ export function ChromeSidebar() {
   }, [openAgent]);
 
   const selectNeedsYou = useCallback((agent: Agent) => {
-    const remote = hostOf(agent.projectId) !== useUIStore.getState().activeHostId;
+    // needs_you_remote_select: the agent runs on a satellite, whichever host is shown.
+    const remote = hostOf(agent.projectId) !== null;
     openAgent(agent, false);
     reportChromeFeature(remote ? 'needs_you_remote_select' : 'needs_you_select');
   }, [openAgent]);

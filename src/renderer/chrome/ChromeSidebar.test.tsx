@@ -395,6 +395,17 @@ describe('ChromeSidebar', () => {
       expect(screen.getByTestId('project-p1')).toBeTruthy();
     });
 
+    it('forgets an unpaired satellite’s pins, but keeps them while it is only offline', () => {
+      useChromeStore.setState({ pinnedProjectIds: ['p1', rp] });
+      const { rerender } = render(<ChromeSidebar />);
+      act(() => useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, state: 'disconnected' as const })) })));
+      rerender(<ChromeSidebar />);
+      expect(useChromeStore.getState().pinnedProjectIds).toEqual(['p1', rp]);
+      act(() => useAnnexClientStore.setState({ satellites: [] }));
+      rerender(<ChromeSidebar />);
+      expect(useChromeStore.getState().pinnedProjectIds).toEqual(['p1']);
+    });
+
     it('opens Annex settings for pairing', () => {
       render(<ChromeSidebar />);
       fireEvent.click(screen.getByTestId('host-switcher'));

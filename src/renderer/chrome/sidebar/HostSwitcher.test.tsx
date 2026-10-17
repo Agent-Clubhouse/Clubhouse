@@ -67,4 +67,19 @@ describe('HostSwitcher', () => {
     expect(screen.getByTestId('host-menu-s2').textContent).toContain('2 waiting');
     expect(screen.getByTestId('host-menu-local').textContent).toContain('1 waiting');
   });
+
+  it('moves through the menu with the keyboard and returns focus on Esc', () => {
+    setup();
+    const pill = screen.getByTestId('host-switcher');
+    fireEvent.click(pill);
+    expect(document.activeElement).toBe(screen.getByTestId('host-menu-local'));
+    fireEvent.keyDown(screen.getByTestId('host-menu'), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByTestId('host-menu-s2'));
+    fireEvent.keyDown(screen.getByTestId('host-menu'), { key: 'ArrowUp' });
+    fireEvent.keyDown(screen.getByTestId('host-menu'), { key: 'ArrowUp' });
+    expect(document.activeElement?.textContent).toBe('Annex settings');
+    fireEvent.keyDown(screen.getByTestId('host-menu'), { key: 'Escape' });
+    expect(screen.queryByTestId('host-menu')).toBeNull();
+    expect(document.activeElement).toBe(pill);
+  });
 });
