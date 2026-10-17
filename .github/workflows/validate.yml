@@ -3,10 +3,29 @@ name: Validate
 on:
   pull_request:
     branches: [main, dev/*]
+    # `labeled` lets a maintainer opt a PR into the full matrix with the
+    # `full-ci` label without pushing a new commit.
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: [main]
+  schedule:
+    # Nightly full matrix (07:00 UTC) so E2E regressions surface even on
+    # quiet days.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
 
+# PRs: a newer push supersedes the running validation. main/nightly: let every
+# run finish so each merged commit gets a full E2E result.
 concurrency:
-  group: validate-${{ github.ref }}
-  cancel-in-progress: true
+  group: validate-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Runner capacity is the bottleneck: the E2E matrices (6 jobs, mostly macOS
+# and Windows) and the Linux package smoke test only run on pushes to main,
+# the nightly schedule, manual dispatch, Dependabot PRs, and PRs labelled
+# `full-ci`. Every PR still gets lint, the API surface check, and typecheck
+# plus unit/component tests on Linux and Windows; macOS typecheck/unit runs in
+# those same full runs (macOS runners are capped at 5 concurrent jobs).
 
 jobs:
   dependency-preflight:
@@ -49,7 +68,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS has a 5-concurrent-job cap on this plan, so PRs run on Linux and
+        # Windows only; main, nightly, Dependabot and `full-ci` PRs add macOS.
+        os: ${{ fromJSON((github.event_name != 'pull_request' || github.actor == 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && '["ubuntu-latest","windows-latest","macos-latest"]' || '["ubuntu-latest","windows-latest"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -69,7 +90,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS has a 5-concurrent-job cap on this plan, so PRs run on Linux and
+        # Windows only; main, nightly, Dependabot and `full-ci` PRs add macOS.
+        os: ${{ fromJSON((github.event_name != 'pull_request' || github.actor == 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && '["ubuntu-latest","windows-latest","macos-latest"]' || '["ubuntu-latest","windows-latest"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -86,7 +109,7 @@ jobs:
 
   e2e:
     needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') && (github.event_name != 'pull_request' || github.actor == 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     name: E2E Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -136,7 +159,7 @@ jobs:
 
   e2e-annex:
     needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') && (github.event_name != 'pull_request' || github.actor == 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     name: Annex E2E Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -181,7 +204,7 @@ jobs:
 
   make-linux:
     needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') && (github.event_name != 'pull_request' || github.actor == 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     name: Linux Package Smoke Test
     runs-on: ubuntu-latest
     steps:

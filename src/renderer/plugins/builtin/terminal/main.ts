@@ -3,6 +3,7 @@ import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/
 import { terminalState, makeSessionId } from './state';
 import type { TerminalTarget } from './state';
 import { TerminalCanvasWidget } from './TerminalCanvasWidget';
+import { useChromeScope } from '../../../chrome/scope';
 
 type TerminalStatus = 'starting' | 'running' | 'exited';
 
@@ -162,7 +163,19 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     kind: 'project',
   };
 
-  const target = activeTarget || defaultTarget;
+  // New chrome: the sidebar selection is the target (spec §4.5), so there is no
+  // targets list. Agents without a worktree fall back to the project root.
+  const scope = useChromeScope(api.context.projectId);
+  const scopedTarget: TerminalTarget | null = scope
+    ? {
+        sessionId: scope.isWorktree ? makeSessionId(projectId, 'agent', scope.agentName) : makeSessionId(projectId, 'project'),
+        label: scope.isWorktree ? scope.label : 'Project',
+        cwd: scope.cwd,
+        kind: scope.isWorktree ? 'agent' : 'project',
+      }
+    : null;
+
+  const target = scopedTarget || activeTarget || defaultTarget;
   const sessionId = target.sessionId;
   const cwd = target.cwd;
 
