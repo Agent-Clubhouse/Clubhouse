@@ -81,12 +81,14 @@ export const PROFILES: Record<FixtureProvider, ProviderFixtureProfile> = {
       liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
       login: 'terminal',
       systemPrompt: true,
+      permissionExtras: { denyMessage: true, updatedInput: true },
     },
     installTitle: 'Run npm install zod@4 --save',
     installDescription: 'Adds zod to package.json and package-lock.json.',
     installOptions: [
-      { optionId: 'allow', kind: 'allow_once', label: 'Allow once' },
-      { optionId: 'allow-rule', kind: 'allow_always', label: 'Always allow in this project', scope: 'npm install:*' },
+      // Ids and labels as ClaudeChatDriver builds them (claudePermissionOptions).
+      { optionId: 'allow', kind: 'allow_once', label: 'Allow' },
+      { optionId: 'allow_always', kind: 'allow_always', label: "Allow and don't ask again", scope: 'Bash(npm install:*)' },
       { optionId: 'deny', kind: 'reject_once', label: 'Deny' },
     ],
     editContent: { type: 'diff', path: EDIT_PATH, oldText: EDIT_OLD, newText: EDIT_NEW },

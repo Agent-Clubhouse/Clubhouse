@@ -11,7 +11,12 @@ import { SatelliteDashboard } from '../features/annex/SatelliteDashboard';
 import { ChromeSidebar } from './ChromeSidebar';
 import { useChromeStore, syncProjectScopeWithActiveAgent } from './chromeStore';
 import { useSidebarMode } from './listTabs';
-import { reportChromeSurface, reportChromeActionFailed, reportChromeView } from './telemetry';
+import { useChromeScope } from './scope';
+import { hostOf } from './hosts';
+import { ProjectStartPage } from './pages/ProjectStartPage';
+import { FirstRun } from './pages/FirstRun';
+import { useQuickAgentStore } from '../stores/quickAgentStore';
+import { reportChromePage, reportChromeSurface, reportChromeView } from './telemetry';
 
 function AppPluginContent({ pluginId }: { pluginId: string }) {
   const activeHostId = useUIStore((s) => s.activeHostId);
@@ -26,41 +31,21 @@ function AppPluginContent({ pluginId }: { pluginId: string }) {
   return <PluginContentView pluginId={pluginId} mode="app" />;
 }
 
-function NoProjectContent() {
-  const pickAndAddProject = useProjectStore((s) => s.pickAndAddProject);
-  // Interim first-run state; the designed version lands in Phase 2b (pages/FirstRun).
-  return (
-    <div className="h-full bg-ctp-base flex justify-center">
-      <div className="max-w-md pt-32 px-6 flex flex-col gap-3">
-        <h1 className="text-lg font-semibold text-ctp-text">Add your first project</h1>
-        <p className="text-sm text-ctp-subtext0 leading-relaxed">
-          A project is a folder with a git repository. Each agent you add gets its own branch and worktree inside it.
-        </p>
-        <div>
-          <button
-            type="button"
-            onClick={() => { pickAndAddProject().catch((err) => reportChromeActionFailed('add_project', err)); }}
-            className="mt-1 px-3.5 py-1.5 rounded-md bg-ctp-accent text-white text-sm font-medium cursor-pointer hover:opacity-90"
-          >
-            Choose a folder…
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProjectContent() {
-  const mode = useSidebarMode();
-  useEffect(() => {
-    reportChromeSurface(mode === 'list' ? 'sidebar_list' : 'sidebar_agents');
-  }, [mode]);
-  // A tab's own list lives in the sidebar (spec §4.6), so the pane is just the tab's content.
-  return <MainContentView />;
+/**
+ * The start page shows on the Agents tab while the scope is the project root:
+ * its header is selected, or no agent in it is (spec §2), unless a finished
+ * quick agent is open.
+ */
+function useShowsStartPage(projectId: string | null): boolean {
+  const explorerTab = useUIStore((s) => s.explorerTab);
+  const scope = useChromeScope(projectId ?? undefined);
+  const selectedCompletedId = useQuickAgentStore((s) => s.selectedCompletedId);
+  return explorerTab === 'agents' && scope?.kind === 'project' && !selectedCompletedId;
 }
 
 export function ChromeBody() {
   const projects = useProjectStore((s) => s.projects);
+  const projectsLoaded = useProjectStore((s) => s.projectsLoaded);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activeHostId = useUIStore((s) => s.activeHostId);
@@ -78,6 +63,16 @@ export function ChromeBody() {
 
   useEffect(() => syncProjectScopeWithActiveAgent(), []);
 
+  // The active project decides the host: opening a local agent from the palette
+  // or a notification while a satellite is shown brings the sidebar back to
+  // Local, and the other way round. A host switch clears the project in the same
+  // update (hosts.ts), so this never undoes one.
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const host = hostOf(activeProjectId);
+    if (host !== activeHostId) useUIStore.getState().setActiveHost(host);
+  }, [activeProjectId, activeHostId]);
+
   // Remember the most recently active local project.
   useEffect(() => {
     if (activeProjectId && projects.some((p) => p.id === activeProjectId)) setLastProjectId(activeProjectId);
@@ -93,14 +88,24 @@ export function ChromeBody() {
     }
   }, [activeProjectId, activeHostId, isSettings, isHelp, appPluginId, fallbackProjectId]);
 
-  useEffect(() => {
-    if (isSettings) reportChromeSurface('sidebar_settings');
-  }, [isSettings]);
+  const mode = useSidebarMode();
+  const activeProject = projects.find((p) => p.id === activeProjectId);
+  const startPage = useShowsStartPage(activeProjectId) && !!activeProject;
+  // Not before the project list loads, or first run would flash on every launch.
+  const firstRun = projectsLoaded && projects.length === 0 && !activeHostId;
+  const inPane = !isSettings && !isHelp && !appPluginId;
+  const page = !inPane ? null : activeProjectId ? (startPage ? 'start_page' : null) : (firstRun ? 'first_run' : null);
 
-  // clubhouse.view for slow-frame and render-error signals (spec §8).
+  // clubhouse.view and clubhouse.ui.surface for slow-frame and render-error
+  // signals (spec §8). The start page and first run are panes of their own.
   useEffect(() => {
+    if (page) {
+      reportChromePage(page);
+      return;
+    }
     reportChromeView(explorerTab);
-  }, [explorerTab]);
+    reportChromeSurface(mode === 'settings' ? 'sidebar_settings' : mode === 'list' ? 'sidebar_list' : 'sidebar_agents');
+  }, [page, explorerTab, mode]);
 
   const content = useMemo(() => {
     // The settings navigator is in the sidebar; the pane shows the selected page.
@@ -109,10 +114,13 @@ export function ChromeBody() {
     if (appPluginId) return <AppPluginContent pluginId={appPluginId} />;
     if (!activeProjectId) {
       if (activeHostId) return <SatelliteDashboard activeHostId={activeHostId} />;
-      return <NoProjectContent />;
+      // With projects, the fallback above selects one on the next render.
+      return firstRun ? <FirstRun /> : null;
     }
-    return <ProjectContent />;
-  }, [isSettings, isHelp, appPluginId, activeProjectId, activeHostId]);
+    if (startPage && activeProject) return <ProjectStartPage project={activeProject} />;
+    // A tab's own list lives in the sidebar (spec §4.6), so the pane is just the tab's content.
+    return <MainContentView />;
+  }, [isSettings, isHelp, appPluginId, activeProjectId, activeHostId, firstRun, startPage, activeProject]);
 
 
   return (

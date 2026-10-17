@@ -38,6 +38,10 @@ export interface ChromeState {
    */
   projectScopeId: string | null;
   setProjectScope: (projectId: string | null) => void;
+  /** Set by ⌘⇧N for the start page to focus its composer, which clears it. Not persisted. */
+  composerFocusPending: boolean;
+  requestComposer: () => void;
+  consumeComposerFocus: () => void;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   lastProjectId: string | null;
@@ -56,6 +60,8 @@ export interface ChromeState {
   toggleFold: (projectId: string, fold: ProjectFold) => void;
   /** Drop pins, collapsed state and folds for projects that were removed. */
   forgetProjects: (projectIds: string[]) => void;
+  /** The same for every stored project id with a prefix: an unpaired satellite's projects. */
+  forgetProjectsWithPrefix: (prefix: string) => void;
 }
 
 type PersistedFields = Pick<ChromeState,
@@ -139,6 +145,10 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       if (get().projectScopeId !== projectId) set({ projectScopeId: projectId });
     },
 
+    composerFocusPending: false,
+    requestComposer: () => set({ composerFocusPending: true }),
+    consumeComposerFocus: () => { if (get().composerFocusPending) set({ composerFocusPending: false }); },
+
     resizeSidebar: (delta) => {
       const { sidebarWidth, sidebarCollapsed } = get();
       if (sidebarCollapsed) return;
@@ -199,6 +209,17 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       const current = get().expandedFolds;
       set({ expandedFolds: current.includes(key) ? current.filter((k) => k !== key) : [...current, key] });
       schedulePersist();
+    },
+
+    forgetProjectsWithPrefix: (prefix) => {
+      const s = get();
+      const stored = [
+        ...s.pinnedProjectIds,
+        ...s.collapsedProjectIds,
+        ...s.expandedFolds.map((key) => key.slice(0, key.lastIndexOf(':'))),
+        ...(s.lastProjectId ? [s.lastProjectId] : []),
+      ];
+      get().forgetProjects([...new Set(stored.filter((id) => id.startsWith(prefix)))]);
     },
 
     forgetProjects: (projectIds) => {

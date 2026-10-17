@@ -5,7 +5,7 @@
 // the session lifecycle.
 
 import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type PermissionLevel } from '../../../shared/chat/capabilities';
-import type { ChatEventDraft, ChatQuestionAnswers, ContentBlock, MessageDelivery } from '../../../shared/chat/events';
+import type { AvailableCommand, ChatEventDraft, ChatQuestionAnswers, ContentBlock, MessageDelivery } from '../../../shared/chat/events';
 import type {
   ChatDriver,
   ChatDriverProbe,
@@ -20,6 +20,7 @@ import {
   type AskForApproval,
   type JsonValue,
   type SandboxMode,
+  type ReviewTarget,
   type SandboxPolicy,
   type ServerNotification,
   type ThreadResumeResponse,
@@ -48,8 +49,57 @@ const codexCapabilities: ChatCapabilities = {
   login: 'terminal',
   // thread/start takes developerInstructions.
   systemPrompt: true,
+  // app-server doesn't parse slash commands in prompt text (the TUI does);
+  // the driver handles CODEX_SLASH_COMMANDS itself.
+  slashCommands: true,
 };
 export const CODEX_CHAT_CAPABILITIES: ChatCapabilities = Object.freeze(codexCapabilities);
+
+/** Slash commands the driver runs through app-server methods, as the composer lists them. */
+export const CODEX_SLASH_COMMANDS: readonly AvailableCommand[] = Object.freeze([
+  {
+    name: 'review',
+    description: 'Review your changes: uncommitted by default, or against a branch or commit',
+    inputHint: '[branch <name> | commit <sha> | instructions]',
+  },
+  { name: 'compact', description: 'Summarize the conversation to free up context' },
+]);
+
+export type CodexSlashCommand =
+  | { name: 'review'; target: ReviewTarget }
+  | { name: 'compact' }
+  /** A known command with arguments it can't take; `send` rejects it with this message. */
+  | { name: 'invalid'; error: string };
+
+/**
+ * A message that is exactly one of CODEX_SLASH_COMMANDS, parsed. Anything else
+ * (including an unknown `/word`) is an ordinary prompt.
+ */
+export function parseCodexSlashCommand(content: ContentBlock[]): CodexSlashCommand | undefined {
+  if (content.length !== 1 || content[0].type !== 'text') return undefined;
+  const match = /^\/(\w+)(?:\s+([\s\S]*))?$/.exec(content[0].text.trim());
+  if (!match) return undefined;
+  const [, name, rest = ''] = match;
+  const arg = rest.trim();
+  if (name === 'compact') return arg ? { name: 'invalid', error: '/compact takes no arguments' } : { name: 'compact' };
+  if (name !== 'review') return undefined;
+  if (!arg) return { name: 'review', target: { type: 'uncommittedChanges' } };
+  const [mode, ...values] = arg.split(/\s+/);
+  if (mode === 'branch') {
+    // A leading '-' would read as an option to git, never a branch name.
+    if (values.length !== 1 || values[0].startsWith('-')) {
+      return { name: 'invalid', error: 'Usage: /review branch <name>' };
+    }
+    return { name: 'review', target: { type: 'baseBranch', branch: values[0] } };
+  }
+  if (mode === 'commit') {
+    if (values.length !== 1 || !/^[0-9a-f]{4,40}$/i.test(values[0])) {
+      return { name: 'invalid', error: 'Usage: /review commit <sha>' };
+    }
+    return { name: 'review', target: { type: 'commit', sha: values[0], title: null } };
+  }
+  return { name: 'review', target: { type: 'custom', instructions: arg } };
+}
 
 /** How long close() waits for the process to exit before giving up. */
 const CLOSE_TIMEOUT_MS = 5_000;
@@ -169,9 +219,19 @@ class CodexChatSession implements ChatDriverSession {
   /** Events that arrive before session_started is emitted. */
   private early: ChatEventDraft[] | null = [];
   private closing = false;
+  /** Between a turn_started and its turn_ended on this chat's thread. */
+  private turnRunning = false;
+  /** interrupt() was sent for the running turn and it hasn't ended yet. */
+  private interrupting = false;
   private exited: Promise<void>;
   /** Overrides applied on the next turn/start (Codex keeps them for later turns too). */
   private nextTurn: Partial<TurnStartParams> = {};
+  /** A slash command was sent and its turn hasn't ended (see send()). */
+  private commandRunning = false;
+  /** The turn a /review started, once review/start has answered. */
+  private commandTurnId: string | undefined;
+  /** The last turn that ended here, so a late review/start reply can't re-block commands. */
+  private lastEndedTurnId: string | undefined;
   /** The sandbox policy Codex resolved for the thread, used as the base for level changes. */
   private threadSandbox: SandboxPolicy | undefined;
 
@@ -206,6 +266,22 @@ class CodexChatSession implements ChatDriverSession {
       },
       onUnrecognizedMessage: (message) => this.mapper.mapUnrecognized(message).forEach((e) => this.emit(e)),
       onExit: (code, signal) => {
+        // Close out what the dead process can no longer finish, as the Claude
+        // and ACP drivers do: the running turn, then any open approvals.
+        if (this.turnRunning) {
+          // A turn the user already asked to stop (close or interrupt) ends
+          // as cancelled even if the process dies before confirming it.
+          const cancelled = this.closing || this.interrupting;
+          if (!cancelled) {
+            const how = code !== null ? ` with code ${code}` : signal ? ` on ${signal}` : '';
+            this.emit({
+              type: 'error',
+              data: { code: 'process_exited', message: `Codex app-server exited${how} during a turn`, fatal: true },
+            });
+          }
+          this.emit({ type: 'turn_ended', data: { stopReason: cancelled ? 'cancelled' : 'error' } });
+        }
+        this.mapper.cancelOpenRequests().forEach((e) => this.emit(e));
         this.emit({
           type: 'session_ended',
           data: {
@@ -274,6 +350,7 @@ class CodexChatSession implements ChatDriverSession {
         capabilities: this.capabilities,
       },
     });
+    this.queue.push({ type: 'commands_available', data: { commands: [...CODEX_SLASH_COMMANDS] } });
     const version = cliVersion ?? result.thread.cliVersion;
     if (version && version !== CODEX_APP_SERVER_SCHEMA_VERSION) {
       this.queue.push({
@@ -290,6 +367,37 @@ class CodexChatSession implements ChatDriverSession {
 
   async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
     const threadId = this.requireThread();
+    const command = parseCodexSlashCommand(content);
+    if (command) {
+      if (command.name === 'invalid') throw new Error(command.error);
+      // Each command starts its own turn, so it can't join a running one. A
+      // command already sent counts as running until its turn ends, which
+      // closes the gap before turn/started arrives.
+      if (this.client.getActiveTurnId(threadId) || this.commandRunning) {
+        throw new Error(`Finish or stop the current turn before running /${command.name}`);
+      }
+      this.commandRunning = true;
+      try {
+        if (command.name === 'compact') {
+          await this.compact();
+          this.commandRunning = false;
+        } else {
+          // Inline: the review runs on this thread, so its turn and items
+          // stream into this chat rather than a detached review thread.
+          // review/start takes no model or approval settings: a pending
+          // setModel/setLevel stays queued for the next turn/start, and the
+          // review runs with the thread's current ones.
+          const result = await this.client.request('review/start', { threadId, target: command.target, delivery: 'inline' });
+          const turn = result?.turn;
+          if (turn?.status === 'inProgress' && turn.id !== this.lastEndedTurnId) this.commandTurnId = turn.id;
+          else this.commandRunning = false;
+        }
+      } catch (err) {
+        this.commandRunning = false;
+        throw err;
+      }
+      return 'prompt';
+    }
     const input = toCodexInput(content);
     if (delivery === 'steer' && this.client.getActiveTurnId(threadId)) {
       try {
@@ -318,7 +426,13 @@ class CodexChatSession implements ChatDriverSession {
   async interrupt(): Promise<void> {
     const threadId = this.requireThread();
     if (!this.client.getActiveTurnId(threadId)) return;
-    await this.client.turnInterrupt(threadId);
+    this.interrupting = true;
+    try {
+      await this.client.turnInterrupt(threadId);
+    } catch (err) {
+      this.interrupting = false;
+      throw err;
+    }
   }
 
   /** Codex approvals carry only a decision, so denial messages and edited inputs are dropped. */
@@ -363,6 +477,14 @@ class CodexChatSession implements ChatDriverSession {
 
   private onNotification(notification: ServerNotification): void {
     const threadId = threadOf(notification.params);
+    if (notification.method === 'turn/completed' && threadId === this.threadId) {
+      const ended = notification.params.turn.id;
+      this.lastEndedTurnId = ended;
+      if (ended === this.commandTurnId) {
+        this.commandTurnId = undefined;
+        this.commandRunning = false;
+      }
+    }
     const events = this.mapper.mapNotification(notification);
     // Account-level notifications have no thread and always apply.
     if (!this.threadId || threadId === undefined || threadId === this.threadId) {
@@ -380,6 +502,11 @@ class CodexChatSession implements ChatDriverSession {
   }
 
   private emit(event: ChatEventDraft): void {
+    if (event.type === 'turn_started') this.turnRunning = true;
+    else if (event.type === 'turn_ended') {
+      this.turnRunning = false;
+      this.interrupting = false;
+    }
     if (this.early) this.early.push(event);
     else this.queue.push(event);
   }

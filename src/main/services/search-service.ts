@@ -89,6 +89,8 @@ export async function searchFiles(
   rootPath: string,
   query: string,
   options?: FileSearchOptions,
+  /** Told which engine ran, for telemetry (spec §4.9). */
+  onEngine?: (engine: 'rg' | 'node') => void,
 ): Promise<FileSearchResult> {
   if (!query) {
     return { results: [], totalMatches: 0, truncated: false };
@@ -96,8 +98,10 @@ export async function searchFiles(
 
   const rgPath = await getRipgrepPath();
   if (rgPath) {
+    onEngine?.('rg');
     return searchWithRipgrep(rgPath, rootPath, query, options);
   }
+  onEngine?.('node');
   return searchWithNodeFs(rootPath, query, options);
 }
 
