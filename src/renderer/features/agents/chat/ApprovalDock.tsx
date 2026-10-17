@@ -57,11 +57,14 @@ interface PermissionCardProps {
   extras?: ChatCapabilities['permissionExtras'];
   /** Resolves false when the answer didn't go through; the card unlocks so the user can retry. */
   onRespond: (requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<boolean>;
+  /** An answer is already in flight, possibly from another view of this agent. */
+  busy?: boolean;
 }
 
-export function PermissionCard({ request, plan, queueSize, agentName, extras, onRespond }: PermissionCardProps) {
+export function PermissionCard({ request, plan, queueSize, agentName, extras, onRespond, busy }: PermissionCardProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [answered, setAnswered] = useState(false);
+  const [answeredHere, setAnswered] = useState(false);
+  const answered = answeredHere || !!busy;
   const [feedback, setFeedback] = useState('');
   const [editing, setEditing] = useState(false);
   const [planText, setPlanText] = useState(plan?.markdown ?? '');
@@ -217,16 +220,19 @@ interface QuestionCardProps {
   request: PendingQuestion;
   /** Resolves false when the answer didn't go through; the card unlocks so the user can retry. */
   onAnswer: (requestId: string, answers: ChatQuestionAnswers) => Promise<boolean>;
+  /** An answer is already in flight, possibly from another view of this agent. */
+  busy?: boolean;
 }
 
 function isSimpleChoice(q: ChatQuestion): boolean {
   return !q.multiSelect && !q.allowFreeText && (q.options?.length ?? 0) > 0;
 }
 
-export function QuestionCard({ request, onAnswer }: QuestionCardProps) {
+export function QuestionCard({ request, onAnswer, busy }: QuestionCardProps) {
   const [answers, setAnswers] = useState<ChatQuestionAnswers>({});
   const [free, setFree] = useState<Record<string, string>>({});
-  const [sent, setSent] = useState(false);
+  const [sentHere, setSent] = useState(false);
+  const sent = sentHere || !!busy;
   const ref = useRef<HTMLDivElement>(null);
   const single = request.questions.length === 1 && isSimpleChoice(request.questions[0]);
   const first = request.questions[0];

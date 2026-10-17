@@ -719,7 +719,14 @@ export interface NavigationAPI {
 }
 
 export interface WidgetsAPI {
+  /** The agent's terminal. Blank for an agent running in chat; prefer AgentView. */
   AgentTerminal: React.ComponentType<{ agentId: string; focused?: boolean; zoneThemeId?: string }>;
+  /**
+   * The agent's live view: chat when it runs in the chat runtime, its terminal
+   * otherwise. Added within API 0.9; hosts without it lack the key, so
+   * feature-detect with `api.widgets.AgentView ?? api.widgets.AgentTerminal`.
+   */
+  AgentView: React.ComponentType<{ agentId: string; focused?: boolean; zoneThemeId?: string }>;
   SleepingAgent: React.ComponentType<{ agentId: string }>;
   AgentAvatar: React.ComponentType<{
     agentId: string;
