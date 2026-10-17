@@ -78,6 +78,42 @@ describe('Framebriar SDK access drop', () => {
     expect(restarted.status()).toMatchObject({ notice: 'connection-uncertain', enrolled: false });
   });
 
+  it('recovers a redeemed invitation after a temporary enrollment storage failure', async () => {
+    const backing = memoryStore();
+    let failSessionWrite = true;
+    const store = {
+      read: backing.read,
+      replace: async (expected: string, next: Omit<Saved, 'revision'>) => {
+        if (next.session && failSessionWrite) {
+          failSessionWrite = false;
+          throw new Error('Temporary secure-store failure');
+        }
+        return backing.replace(expected, next);
+      },
+    };
+    let redeemedAttempt: string | undefined;
+    let enrollments = 0;
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+      const { attemptId } = JSON.parse(String(init!.body));
+      // A single-use issuer can recover the original attempt, but cannot spend another use.
+      if (!redeemedAttempt) { redeemedAttempt = attemptId; enrollments++; }
+      return attemptId === redeemedAttempt ? json(grant()) : json({}, 401);
+    });
+    const { controller } = access(fetchImpl, undefined, store);
+    expect(await controller.connect(INVITE)).toBe(false);
+    expect(controller.status()).toMatchObject({ state: 'storage-unavailable', connected: false });
+    expect((await store.read()).session).toBeNull();
+
+    expect(await controller.connect(INVITE)).toBe(true);
+    expect(controller.status().connected).toBe(true);
+    expect(await controller.getToken()).toBe(grant().token);
+    expect((await store.read()).session).toBeTruthy();
+    expect(enrollments).toBe(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const attempts = fetchImpl.mock.calls.map(([, init]) => JSON.parse(String(init!.body)).attemptId);
+    expect(attempts[0]).toBe(attempts[1]);
+  });
+
   it.each([401, 403])('does not retry a server refusal (%s)', async (status) => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(json({}, status));
     const { controller, retryDelay } = access(fetchImpl);

@@ -1,7 +1,7 @@
 // Enrollment controller for Node/Electron main processes: a port of
 // adapters/browser/playtest-access.mjs onto the secure store (secure-store.mjs).
-// v2 contract (docs/general-feedback-v2.md): explicit single redemption that never
-// auto-retries, persisted 'connection-uncertain' marker, coalesced refresh, a 30-day family
+// v2 contract (docs/general-feedback-v2.md): explicit redemption with bounded same-attempt
+// recovery, persisted 'connection-uncertain' marker, coalesced refresh, a 30-day family
 // with one-hour upload tokens, and persistent notices until replacement or explicit clear.
 // Requests carry no Origin header; the service accepts originless clients.
 import {randomBytes} from 'node:crypto';
@@ -97,6 +97,7 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
     revision=next;
     session={token:value.token,refreshToken:value.refreshToken,expiresAt:value.expiresAt,refreshExpiresAt:iso(value.refreshExpiresAt)};
     notice=null;optedIn=true;failures=0;emit('connected');
+    if(!current(ticket))return false;
     const end=Date.parse(session.refreshExpiresAt),expiry=Date.parse(session.expiresAt);
     schedule((expiry>=end?end:expiry-4*60000)-now());
     return true;
@@ -154,13 +155,18 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
         const next=await put(old.revision,null,{state:'connection-uncertain',expiresAt:null,enrolled:optedIn});if(!current(ticket))return false;
         if(next===null)throw fault('stale');revision=next;
         if(!lastAttempt||lastAttempt.invitation!==invitation||now()-lastAttempt.at>14*60000)lastAttempt={invitation,attemptId:randomBytes(16).toString('base64url'),at:now()};
+        const attempt=lastAttempt;
         let value;
         for(let n=0;;n++){
-          try{value=await request('redeem',{invitation,gameId,buildSha,scopeVersion:2,attemptId:lastAttempt.attemptId},ticket);break;}
+          try{value=await request('redeem',{invitation,gameId,buildSha,scopeVersion:2,attemptId:attempt.attemptId},ticket);break;}
           catch(e){if(e?.kind!=='transient'||n>=2||!current(ticket))throw e;await retryDelay(n?5000:2000);if(!current(ticket))throw fault('stale');}
         }
-        lastAttempt=undefined;invitation=undefined;
-        return await accept(value,ticket);
+        invitation=undefined;
+        const accepted=await accept(value,ticket);
+        // A successful response is still recoverable until validation and persistence
+        // succeed. A stopped/superseded operation must not clear a newer attempt.
+        if(accepted&&current(ticket)&&lastAttempt===attempt)lastAttempt=undefined;
+        return accepted;
       }catch(e){
         if(current(ticket)){
           session=undefined;notice={state:e?.kind==='denied'?'access-required':'connection-uncertain',expiresAt:null,enrolled:optedIn};
@@ -186,6 +192,7 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
     // Forgets locally (reports stay queued) and attempts server revocation.
     async disconnect(){
       if(disposed)return {forgotten:false,revoked:false};
+      lastAttempt=undefined;
       halt();running=true;const ticket=generation;operation='disconnect';emit('disconnecting',null);
       try{
         const old=await load({recover:true});if(!current(ticket))return {forgotten:false,revoked:false};
@@ -199,6 +206,6 @@ export function createAccess({accessTimeoutMs=ACCESS_TIMEOUT_MS,retryDelay=ms=>n
       }catch{if(current(ticket))emit('storage-unavailable',null);return {forgotten:false,revoked:false};}
       finally{if(ticket===generation)operation=undefined;}
     },
-    dispose(){running=false;disposed=true;halt();listeners.clear();},
+    dispose(){lastAttempt=undefined;running=false;disposed=true;halt();listeners.clear();},
   });
 }
