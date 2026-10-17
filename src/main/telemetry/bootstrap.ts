@@ -45,6 +45,7 @@ import { readSecrets } from './secret-store';
 import type { ExportRecord } from './types';
 import { loadAzureDestination, loadOtlpDestination, loadSdk } from './lazy-chunks';
 import type { DestinationExporters } from './destinations/types';
+import { setStartupKind } from './lifecycle';
 
 const LOG_NS = 'core:telemetry';
 
@@ -313,6 +314,7 @@ export function recordAppSession(): void {
       : settings.lastVersion && settings.lastVersion !== version
         ? 'after_update'
         : 'cold';
+  setStartupKind(kind);
   tel.count('clubhouse.app.sessions', 1, [ATTR.startupKind(kind)]);
   if (settings.lastVersion !== version) {
     updateTelemetrySettings((s) => ({ ...s, lastVersion: version })).catch(() => {});

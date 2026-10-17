@@ -102,6 +102,17 @@ export const ERROR_TYPES = [
   'binary_not_found',
   // Renderer and crash handling (§4.2, Phase 3)
   'render_error',
+  // Auto-update (§4.3)
+  'network_transient',
+  'network',
+  'http_4xx',
+  'http_5xx',
+  'manifest_invalid',
+  'manifests_unavailable',
+  'integrity_mismatch',
+  'redirect_blocked',
+  'apply_spawn_failed',
+  'apply_failed',
 ] as const;
 
 export const OUTCOMES = ['ok', 'error', 'cancelled', 'timeout', 'skipped'] as const;
@@ -175,6 +186,36 @@ export const ATTR = {
   uiAction: enumAttr('clubhouse.ui.action', [
     'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save',
   ]),
+  // App lifecycle (§4.1, Phase 3b)
+  shutdownStep: enumAttr('clubhouse.shutdown.step', [
+    'pty_kill_all', 'agent_config_flush', 'group_project_flush', 'bulletin_flush', 'update_apply_on_quit',
+  ]),
+  previousExit: enumAttr('clubhouse.shutdown.previous', ['unknown_exit', 'crash_loop']),
+  safeModeTrigger: enumAttr('clubhouse.safe_mode.trigger', ['cli_flag', 'user_chosen', 'user_declined']),
+  /** How this copy was installed (§12 H6). Detected asynchronously; never blocks startup. */
+  installKind: enumAttr('clubhouse.install.kind', ['mac_zip', 'squirrel', 'deb', 'rpm', 'appimage', 'linux_other', 'dev']),
+
+  // Config snapshot (§5.4): counts and switches only, never names.
+  projectsCount: intAttr('clubhouse.projects.count'),
+  themeKind: enumAttr('clubhouse.theme.kind', ['builtin', 'plugin']),
+  clubhouseMode: boolAttr('clubhouse.clubhouse_mode'),
+  annexServer: boolAttr('clubhouse.annex.server'),
+  annexClient: boolAttr('clubhouse.annex.client'),
+  loggingEnabled: boolAttr('clubhouse.logging.enabled'),
+
+  // Auto-update (§4.3)
+  updateTrigger: enumAttr('clubhouse.update.trigger', ['startup', 'periodic', 'manual']),
+  updateChannel: enumAttr('clubhouse.update.channel', ['stable', 'preview']),
+  updateResult: enumAttr('clubhouse.update.result', [
+    'up_to_date', 'available', 'dismissed', 'no_artifact', 'skipped_busy', 'disabled',
+    'downloaded', 'already_downloaded', 'applied', 'failed',
+  ]),
+  updatePhase: enumAttr('clubhouse.update.phase', ['check', 'download', 'apply', 'apply_on_quit']),
+  updateApplyMode: enumAttr('clubhouse.update.apply.mode', ['relaunch', 'on_quit']),
+  applyVerified: enumAttr('clubhouse.update.apply.verified', ['verified', 'not_taken']),
+
+  // Process health (§4.15)
+  processType: enumAttr('clubhouse.process.type', ['browser', 'renderer', 'gpu', 'utility', 'other']),
 } as const;
 
 /**
@@ -214,8 +255,29 @@ export const SPANS = {
   'clubhouse.telemetry.test': { level: 'errors', root: true },
   /** A window that stopped responding, from `unresponsive` to `responsive` (§4.2). */
   'clubhouse.renderer.unresponsive': { level: 'errors', root: true },
+  // Startup tree (§4.1): process start → renderer-ready.
+  'clubhouse.app.startup': { level: 'standard', root: true },
+  'clubhouse.app.startup.main_ready': { level: 'standard', root: false },
+  'clubhouse.app.startup.register_ipc': { level: 'standard', root: false },
+  'clubhouse.app.startup.create_window': { level: 'standard', root: false },
+  'clubhouse.app.startup.renderer_init': { level: 'standard', root: false },
+  'clubhouse.app.startup.load_settings': { level: 'standard', root: false },
+  'clubhouse.app.startup.plugin_system': { level: 'standard', root: false },
+  // Shutdown (§4.1): before-quit → quit, one child per cleanup.
+  'clubhouse.app.shutdown': { level: 'standard', root: true },
+  'clubhouse.app.shutdown.step': { level: 'standard', root: false },
+  // Auto-update (§4.3)
+  'clubhouse.update.check': { level: 'standard', root: true },
+  'clubhouse.update.download': { level: 'standard', root: true },
+  'clubhouse.update.apply': { level: 'standard', root: true },
 } as const satisfies Record<string, SpanDef>;
 export type SpanName = keyof typeof SPANS;
+
+/**
+ * The flow that was running when the main thread stalled (§4.15). Values are
+ * the span names themselves (static strings), plus `none`.
+ */
+export const blockedFlowAttr = enumAttr('clubhouse.blocked.flow', [...(Object.keys(SPANS) as SpanName[]), 'none']);
 
 export interface MetricDef {
   readonly kind: 'counter' | 'histogram' | 'gauge';
@@ -262,6 +324,61 @@ export const METRICS = {
     description: 'Windows that stopped responding',
     attributes: ['clubhouse.window.kind'],
   },
+  'clubhouse.app.startup.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Process start to renderer ready',
+    attributes: ['clubhouse.startup.kind'],
+  },
+  'clubhouse.app.session.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'App session length, recorded at shutdown',
+    attributes: [],
+  },
+  'clubhouse.app.shutdown.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'before-quit to quit',
+    attributes: [],
+  },
+  'clubhouse.app.unclean_exits': {
+    kind: 'counter', unit: '{exit}', level: 'errors',
+    description: 'Previous sessions that ended without a clean shutdown, counted at the next start',
+    attributes: ['clubhouse.shutdown.previous'],
+  },
+  'clubhouse.update.checks': {
+    kind: 'counter', unit: '{check}', level: 'standard',
+    description: 'Update checks by result',
+    attributes: ['clubhouse.update.result', 'clubhouse.update.channel', 'clubhouse.update.trigger'],
+  },
+  'clubhouse.update.failures': {
+    kind: 'counter', unit: '{failure}', level: 'errors',
+    description: 'Update failures by phase and error type',
+    attributes: ['clubhouse.update.phase', 'error.type'],
+  },
+  'clubhouse.update.download.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Update artifact download time',
+    attributes: [],
+  },
+  'clubhouse.process.eventloop.delay.p99': {
+    kind: 'gauge', unit: 's', level: 'standard',
+    description: 'Main-process event-loop delay, 99th percentile over the last minute',
+    attributes: [],
+  },
+  'clubhouse.process.eventloop.delay.max': {
+    kind: 'gauge', unit: 's', level: 'standard',
+    description: 'Main-process event-loop delay, maximum over the last minute',
+    attributes: [],
+  },
+  'clubhouse.process.memory': {
+    kind: 'gauge', unit: 'By', level: 'standard',
+    description: 'Working-set memory summed per Electron process type',
+    attributes: ['clubhouse.process.type'],
+  },
+  'clubhouse.process.cpu': {
+    kind: 'gauge', unit: '%', level: 'standard',
+    description: 'CPU usage summed per Electron process type',
+    attributes: ['clubhouse.process.type'],
+  },
   'clubhouse.telemetry.export.failures': {
     kind: 'counter',
     unit: '{export}',
@@ -290,6 +407,16 @@ export const EVENTS = {
   'clubhouse.ui.action_failed': { level: 'errors' },
   /** A chrome feature was used. Attributes: `clubhouse.ui.feature`, `clubhouse.ui.surface`. */
   'clubhouse.ui.feature_used': { level: 'standard' },
+  /** The previous session ended without a clean shutdown (§4.1). */
+  'clubhouse.app.unclean_exit': { level: 'errors' },
+  /** Safe-mode decision at startup (§4.1). */
+  'clubhouse.app.safe_mode': { level: 'errors' },
+  /** Counts and switches describing this install (§5.4). Once per start, at most daily. */
+  'clubhouse.app.config_snapshot': { level: 'standard' },
+  /** The main thread stalled for over 2 s; names the flow that was running (§4.15). */
+  'clubhouse.process.eventloop_blocked': { level: 'errors' },
+  /** At startup: whether the last applied update actually took (§12 H6). */
+  'clubhouse.update.apply_verified': { level: 'errors' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

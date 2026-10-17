@@ -280,6 +280,45 @@ test.describe('Telemetry export', () => {
     }
   });
 
+  test('lifecycle: startup and shutdown span trees and the config snapshot are exported', async () => {
+    // Phase 3b: startup ends on renderer-ready; shutdown is recorded before the final flush.
+    const mock = await startMockIngestion();
+    const { electronApp, window, userDataDir } = await launchApp({
+      experimental: { telemetry: true },
+      userDataFiles: {
+        'telemetry-settings.json': {
+          enabled: true,
+          level: 'standard',
+          sampleRate: 1,
+          destination: { kind: 'otlp', endpoint: `http://127.0.0.1:${mock.port}` },
+        },
+      },
+    });
+    try {
+      await expect(window.locator('body')).toBeVisible();
+      // The startup span is exported once initApp() reports ready and the exporter batch (5 s) runs.
+      const tracesBody = () => mock.received.filter((r) => r.url === '/v1/traces').map((r) => r.body).join('\n');
+      const logsBody = () => mock.received.filter((r) => r.url === '/v1/logs').map((r) => r.body).join('\n');
+      await expect.poll(() => tracesBody(), { timeout: 20_000 }).toContain('clubhouse.app.startup');
+      await expect.poll(() => logsBody(), { timeout: 20_000 }).toContain('clubhouse.app.config_snapshot');
+      await quitAndWait(electronApp);
+
+      const traces = tracesBody();
+      expect(traces).toContain('clubhouse.app.startup');
+      expect(traces).toContain('clubhouse.app.shutdown');
+      expect(logsBody()).toContain('clubhouse.app.config_snapshot');
+      expectNoMachineIdentifiers(mock.received);
+
+      // The session record says this run ended cleanly.
+      const session = JSON.parse(await fs.promises.readFile(path.join(userDataDir!, 'telemetry-session.json'), 'utf-8'));
+      expect(session.clean).toBe(true);
+    } finally {
+      await electronApp.close().catch(() => {});
+      mock.server.close();
+      if (userDataDir) fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
   test('flag on but not enabled: nothing exported and no install id created', async () => {
     const { electronApp, window, userDataDir } = await launchApp({ experimental: { telemetry: true } });
     try {

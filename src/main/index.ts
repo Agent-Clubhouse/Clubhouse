@@ -34,6 +34,17 @@ import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
 import * as projectStore from './services/project-store';
 import { initTelemetry, recordAppSession, flushBeforeExit } from './telemetry';
 import { installCrashTelemetry, reportMainProcessError } from './telemetry/crash-handlers';
+import { installHealthTelemetry } from './telemetry/health';
+import {
+  checkPreviousSession,
+  completeStartup,
+  installLifecycleTelemetry,
+  markStartup,
+  shutdownCompleted,
+  shutdownStarted,
+  shutdownStep,
+} from './telemetry/lifecycle';
+import { onRendererReady } from './telemetry/renderer-bridge';
 import { registerTelemetryRendererHandlers } from './ipc/telemetry-renderer-handlers';
 import { getTelemetrySettings } from './telemetry/settings';
 import { getSettings as getExperimentalSettings } from './services/experimental-settings';
@@ -72,6 +83,9 @@ registerTelemetryRendererHandlers({
   getConfiguredLevel: () => getTelemetrySettings().level,
 });
 installCrashTelemetry();
+installLifecycleTelemetry();
+// The startup span (§4.1) ends when the main window's initApp() resolves.
+onRendererReady((atMs, marks) => completeStartup(marks, undefined, atMs));
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
 // instead of "Electron" during development.
@@ -197,7 +211,12 @@ const createWindow = (): void => {
     },
   });
 
+  markStartup('create_window_start');
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+  // A main window that never loads also ends the startup span, as a failure.
+  mainWindow.webContents.once('did-fail-load', (_event, _code, _desc, _url, isMainFrame) => {
+    if (isMainFrame) completeStartup(undefined, 'window_load_failed');
+  });
 
   // Apply security guards (will-navigate, setWindowOpenHandler, will-attach-webview)
   applyWindowSecurityGuards(mainWindow);
@@ -212,6 +231,7 @@ const createWindow = (): void => {
 
   // Show window once the renderer is ready (avoids white flash on startup).
   mainWindow.once('ready-to-show', () => {
+    markStartup('window_ready_to_show');
     mainWindow?.show();
   });
 
@@ -232,10 +252,16 @@ app.on('ready', () => {
   // Safe mode: check --safe-mode flag or startup marker crash counter.
   // Must run before registerAllHandlers(), which reads CLUBHOUSE_SAFE_MODE
   // when initializing trusted manifests.
+  markStartup('ready');
+  const crashLoop = safeMode.shouldShowSafeModeDialog();
   safeMode.handleSafeModeStartup();
   recordAppSession();
+  checkPreviousSession(crashLoop);
+  installHealthTelemetry();
 
+  markStartup('register_ipc_start');
   registerAllHandlers();
+  markStartup('register_ipc_end');
   buildMenu();
 
   // Resume satellite connections when the machine wakes from sleep
@@ -403,6 +429,7 @@ app.on('before-quit', createBeforeQuitHandler({
   flushAllGroupProjects: () => groupProjectRegistry.flush(),
   flushAllBulletinBoards,
   flushTelemetry: () => flushBeforeExit(),
+  telemetry: { started: () => shutdownStarted(), step: shutdownStep, completed: () => shutdownCompleted() },
   applyUpdateOnQuit,
   appQuit: () => app.quit(),
   onCleanupError: (operation, error) => {

@@ -14,7 +14,7 @@
  */
 import { app, type BrowserWindow } from 'electron';
 import { ATTR } from '../../shared/telemetry/attributes';
-import { flushBeforeExit, replaySpan, tel } from './facade';
+import { forceFlushTelemetry, replaySpan, tel } from './facade';
 import { windowKindFor } from './renderer-bridge';
 
 export const CRASH_FLUSH_TIMEOUT_MS = 2000;
@@ -23,7 +23,7 @@ export const CRASH_FLUSH_TIMEOUT_MS = 2000;
 export function reportMainProcessError(error: unknown, kind: 'uncaught' | 'unhandled-rejection'): void {
   try {
     tel.exception(error, { origin: 'main', handled: false });
-    if (kind === 'uncaught') void flushBeforeExit(CRASH_FLUSH_TIMEOUT_MS);
+    if (kind === 'uncaught') void forceFlushTelemetry(CRASH_FLUSH_TIMEOUT_MS);
   } catch {
     // Telemetry must never throw from a crash handler.
   }

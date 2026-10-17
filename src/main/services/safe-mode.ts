@@ -3,6 +3,7 @@ import * as path from 'path';
 import { app, dialog } from 'electron';
 import type { StartupMarker } from '../../shared/plugin-types';
 import { appLog } from './log-service';
+import { ATTR, tel } from '../telemetry';
 
 function getMarkerPath(): string {
   return path.join(app.getPath('home'), '.clubhouse', '.startup-marker');
@@ -94,7 +95,13 @@ export function isSafeModeActive(): boolean {
  * which reads CLUBHOUSE_SAFE_MODE when initializing trusted manifests.
  */
 export function handleSafeModeStartup(forceSafeMode = process.argv.includes('--safe-mode')): boolean {
-  const userChoseSafeMode = !forceSafeMode && shouldShowSafeModeDialog() && handleSafeModeDialog();
+  const dialogShown = !forceSafeMode && shouldShowSafeModeDialog();
+  const userChoseSafeMode = dialogShown && handleSafeModeDialog();
+  if (forceSafeMode || dialogShown) {
+    tel.event('clubhouse.app.safe_mode', [
+      ATTR.safeModeTrigger(forceSafeMode ? 'cli_flag' : userChoseSafeMode ? 'user_chosen' : 'user_declined'),
+    ]);
+  }
 
   if (userChoseSafeMode || forceSafeMode) {
     appLog('core:safe-mode', 'warn', 'Safe mode activated — disabling all plugins');

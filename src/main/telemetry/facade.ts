@@ -14,6 +14,7 @@ import {
   type FlowExtras,
   type FlowOptions,
   type ReplaySpan,
+  type ReplayTree,
   type SpanHandle,
   type TelemetryRuntime,
 } from './types';
@@ -78,12 +79,42 @@ function bufferedSpan<T>(name: SpanName, opts: FlowOptions, fn: (s: SpanHandle) 
   return result;
 }
 
+// --- Active flow tracking (§4.15 blocked-flow attribution) -----------------
+
+/** Root flows currently in progress, most recent last. Only tracked while telemetry is on. */
+const activeFlows: SpanName[] = [];
+
+function trackFlow<T>(name: SpanName, fn: (span: SpanHandle) => T): (span: SpanHandle) => T {
+  return (span) => {
+    activeFlows.push(name);
+    const done = (): void => {
+      const i = activeFlows.lastIndexOf(name);
+      if (i >= 0) activeFlows.splice(i, 1);
+    };
+    let result: T;
+    try {
+      result = fn(span);
+    } catch (err) {
+      done();
+      throw err;
+    }
+    if (isPromiseLike(result)) Promise.resolve(result).then(done, done);
+    else done();
+    return result;
+  };
+}
+
+/** The most recently started root flow still running, if any. */
+export function currentFlow(): SpanName | null {
+  return activeFlows.length > 0 ? activeFlows[activeFlows.length - 1] : null;
+}
+
 export const tel = {
   /** A root user-flow span. Thrown errors are recorded and rethrown unchanged. */
   flow<T>(name: SpanName, opts: FlowOptions, fn: (span: SpanHandle) => T, extras?: FlowExtras<T>): T {
-    if (runtime) return runtime.flow(name, opts, fn, extras);
+    if (runtime) return runtime.flow(name, opts, trackFlow(name, fn), extras);
     if (!pending) return fn(NOOP_SPAN);
-    return bufferedSpan(name, opts, fn, extras);
+    return bufferedSpan(name, opts, trackFlow(name, fn), extras);
   },
 
   /** A child span of the active flow. */
@@ -116,6 +147,17 @@ export const tel = {
 export function replaySpan(span: ReplaySpan): void {
   if (runtime) runtime.replaySpan(span);
   else if (pending) buffer((rt) => rt.replaySpan(span));
+}
+
+/** Record a root span and its children with explicit times (startup, shutdown). */
+export function replaySpanTree(tree: ReplayTree): void {
+  if (runtime) runtime.replayTree(tree);
+  else if (pending) buffer((rt) => rt.replayTree(tree));
+}
+
+/** True while telemetry is running or starting. */
+export function isTelemetryActive(): boolean {
+  return runtime !== null || pending !== null;
 }
 
 // --- Runtime change notifications ------------------------------------------
@@ -194,6 +236,32 @@ export function isPending(): boolean {
  * an early quit for telemetry the user has not seen yet.
  */
 export async function flushBeforeExit(timeoutMs = DEFAULT_FLUSH_TIMEOUT_MS): Promise<void> {
+  // Every caller of flushBeforeExit is an intentional exit (quit, restart,
+  // update relaunch). Crash paths use forceFlushTelemetry instead, so these
+  // listeners can mark the session as cleanly ended.
+  for (const l of exitListeners) {
+    try {
+      l();
+    } catch {
+      // Never block an exit.
+    }
+  }
+  await forceFlushTelemetry(timeoutMs);
+}
+
+const exitListeners = new Set<() => void>();
+
+/** Run synchronously at the start of every intentional exit. */
+export function onIntentionalExit(listener: () => void): () => void {
+  exitListeners.add(listener);
+  return () => exitListeners.delete(listener);
+}
+
+/**
+ * Flush without marking the session as cleanly ended. Used by crash
+ * handlers. Never throws and never waits longer than `timeoutMs`.
+ */
+export async function forceFlushTelemetry(timeoutMs = DEFAULT_FLUSH_TIMEOUT_MS): Promise<void> {
   const rt = runtime;
   if (!rt) return;
   let timer: NodeJS.Timeout | undefined;

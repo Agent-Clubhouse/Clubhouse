@@ -12,6 +12,7 @@ import { createSettingsStore } from './settings-store';
 import { appLog, flush as flushLogs } from './log-service';
 import { pathExists } from './fs-utils';
 import { flushBeforeExit } from '../telemetry/facade';
+import { recordApplyVerification, recordUpdateApply, recordUpdateCheck, recordUpdateDownload } from '../telemetry/update-telemetry';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -575,8 +576,13 @@ async function fetchBestManifest(previewChannel: boolean): Promise<ManifestResul
   return { manifest: stable, sourceUrl: UPDATE_URL };
 }
 
-export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
+export async function checkForUpdates(
+  manual = false,
+  trigger: 'startup' | 'periodic' | 'manual' = manual ? 'manual' : 'periodic',
+): Promise<UpdateStatus> {
+  const checkStartMs = Date.now();
   if (status.state === 'downloading') {
+    recordUpdateCheck({ startMs: checkStartMs, trigger, preview: getSettings().previewChannel, result: 'skipped_busy' });
     return status;
   }
 
@@ -584,6 +590,8 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
   if (!manual && !settings.autoUpdate) {
     return status;
   }
+  const recordCheck = (result: Parameters<typeof recordUpdateCheck>[0]['result'], error?: unknown): void =>
+    recordUpdateCheck({ startMs: checkStartMs, trigger, preview: settings.previewChannel, result, error });
 
   setState('checking');
   appLog('update:check', 'info', 'Checking for updates', {
@@ -607,6 +615,7 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
       });
       setState('idle');
       await saveSettings({ ...settings, lastCheck: new Date().toISOString() });
+      recordCheck('up_to_date');
       return status;
     }
 
@@ -617,6 +626,7 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
       });
       setState('idle');
       await saveSettings({ ...settings, lastCheck: new Date().toISOString() });
+      recordCheck('dismissed');
       return status;
     }
 
@@ -627,6 +637,7 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
         meta: { version: manifest.version, availableKeys: Object.keys(manifest.artifacts) },
       });
       setState('idle');
+      recordCheck('no_artifact');
       return status;
     }
 
@@ -652,9 +663,11 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
         error: null,
         artifactUrl: artifact.url,
       });
+      recordCheck('available');
       return status;
     }
 
+    recordCheck('available');
     // macOS/Linux: download the artifact ourselves
     await downloadUpdate(manifest.version, manifest.releaseNotes || null, manifest.releaseMessage || null, artifact);
 
@@ -663,6 +676,7 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
     const msg = err instanceof Error ? err.message : String(err);
     appLog('update:check', 'error', `Update check failed: ${msg}`);
     setState('error', { error: msg });
+    recordCheck('failed', err);
     return status;
   }
 }
@@ -678,6 +692,7 @@ async function downloadUpdate(
   releaseMessage: string | null,
   artifact: UpdateArtifact,
 ): Promise<void> {
+  const downloadStartMs = Date.now();
   const tmpDir = path.join(app.getPath('temp'), 'clubhouse-updates');
   await fsp.mkdir(tmpDir, { recursive: true });
 
@@ -691,6 +706,7 @@ async function downloadUpdate(
       const valid = await verifySHA256(destPath, artifact.sha256);
       if (valid) {
         appLog('update:download', 'info', 'Update already downloaded and verified');
+        recordUpdateDownload({ startMs: downloadStartMs, result: 'already_downloaded' });
         await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
         setState('ready', {
           availableVersion: version,
@@ -744,6 +760,7 @@ async function downloadUpdate(
     }
 
     appLog('update:download', 'info', 'Update verified and ready to install');
+    recordUpdateDownload({ startMs: downloadStartMs, result: 'downloaded' });
     await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
     setState('ready', {
       downloadProgress: 100,
@@ -755,6 +772,7 @@ async function downloadUpdate(
     const msg = err instanceof Error ? err.message : String(err);
     appLog('update:download', 'error', `Download failed: ${msg}`);
     setState('error', { error: msg, downloadProgress: 0 });
+    recordUpdateDownload({ startMs: downloadStartMs, result: 'failed', error: err });
   }
 }
 
@@ -945,6 +963,7 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
     throw new Error('No update ready to apply');
   }
 
+  const applyStartMs = Date.now();
   const context = await prepareApply(updateStatus, 'update:apply');
 
   setState('idle', {
@@ -964,6 +983,8 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
   const recordOnce = async (): Promise<void> => {
     if (recorded) return;
     recorded = true;
+    // Before the handler's flush and exit, so the apply span is exported.
+    recordUpdateApply({ startMs: applyStartMs, mode: 'relaunch', ok: true });
     await recordSuccessfulApply(context);
   };
 
@@ -976,6 +997,7 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appLog('update:apply', 'error', `Failed to apply update: ${msg}`);
+    if (!recorded) recordUpdateApply({ startMs: applyStartMs, mode: 'relaunch', ok: false, error: err });
     if (process.platform === 'linux') {
       if (context.downloadPath) {
         try {
@@ -1009,13 +1031,16 @@ export async function applyUpdateOnQuit(updateStatus: UpdateStatus = status): Pr
     return; // No update ready — nothing to do
   }
 
+  const applyStartMs = Date.now();
   const context = await prepareApply(updateStatus, 'update:apply-on-quit');
 
   try {
     const applied = await applyPlatformUpdate(context, { relaunch: false });
+    recordUpdateApply({ startMs: applyStartMs, mode: 'on_quit', ok: applied });
     if (applied) await recordSuccessfulApply(context);
   } catch (err) {
     appLog('update:apply-on-quit', 'warn', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
+    recordUpdateApply({ startMs: applyStartMs, mode: 'on_quit', ok: false, error: err });
   }
   return;
 }
@@ -1286,9 +1311,11 @@ export async function startPeriodicChecks(): Promise<void> {
         meta: { attemptedVersion: attempt.version, currentVersion, attemptedAt: attempt.attemptedAt },
       });
       previousAttemptFailed = true;
+      void recordApplyVerification(false);
       // Keep the marker — it will be cleared when we successfully update
     } else {
       // Update succeeded (or we moved past that version) — clean up
+      void recordApplyVerification(true);
       await clearApplyAttempt();
     }
   }
@@ -1336,7 +1363,7 @@ export async function startPeriodicChecks(): Promise<void> {
 
   // Check on startup (delayed to let the app settle)
   setTimeout(() => {
-    checkForUpdates().catch((err: unknown) => {
+    checkForUpdates(false, 'startup').catch((err: unknown) => {
       appLog('update:check', 'error', `Startup update check failed: ${err instanceof Error ? err.message : String(err)}`);
     });
   }, 30_000); // 30 second delay after startup

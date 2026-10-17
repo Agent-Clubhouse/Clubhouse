@@ -25,6 +25,7 @@ import {
   parseTelemetryState,
   type ErrorTypeValue,
   type RendererItem,
+  type RendererReadyMarks,
   type TelemetryState,
 } from '../../shared/telemetry/renderer-protocol';
 
@@ -59,7 +60,7 @@ interface Bridge {
   emit(batch: { v: typeof RENDERER_PROTOCOL_VERSION; items: RendererItem[] }): void;
   getState(): Promise<unknown>;
   onStateChanged(cb: (state: unknown) => void): () => void;
-  rendererReady(): void;
+  rendererReady(marks?: RendererReadyMarks): void;
 }
 
 const NOOP_SPAN: SpanHandle = { set: () => {} };
@@ -270,11 +271,11 @@ export function initRendererTelemetry(source: Bridge | undefined = (globalThis a
 }
 
 /** Tell main the app finished initializing. Main window only; sent once. */
-export function markRendererReady(): void {
+export function markRendererReady(marks?: RendererReadyMarks): void {
   if (readySent || !bridge) return;
   readySent = true;
   try {
-    bridge.rendererReady();
+    bridge.rendererReady(marks);
   } catch {
     // Never break startup for telemetry.
   }

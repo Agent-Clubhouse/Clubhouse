@@ -67,6 +67,28 @@ export interface TelemetryState {
 
 export const DISABLED_STATE: TelemetryState = { enabled: false, level: null };
 
+/** Renderer-side startup marks sent with `telemetry:renderer-ready` (Date.now() values). */
+export interface RendererReadyMarks {
+  initStartMs?: number;
+  settingsLoadedMs?: number;
+  pluginsReadyMs?: number;
+}
+
+/** Keep only finite, ordered marks; anything else is dropped. */
+export function parseRendererReadyMarks(raw: unknown): RendererReadyMarks {
+  if (typeof raw !== 'object' || raw === null) return {};
+  const r = raw as Record<string, unknown>;
+  const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined);
+  const out: RendererReadyMarks = {};
+  const init = num(r.initStartMs);
+  const settings = num(r.settingsLoadedMs);
+  const plugins = num(r.pluginsReadyMs);
+  if (init !== undefined) out.initStartMs = init;
+  if (settings !== undefined && (init === undefined || settings >= init)) out.settingsLoadedMs = settings;
+  if (plugins !== undefined && (out.settingsLoadedMs === undefined || plugins >= out.settingsLoadedMs)) out.pluginsReadyMs = plugins;
+  return out;
+}
+
 const ERROR_TYPE_SET = new Set<string>(ERROR_TYPES);
 const OUTCOME_SET = new Set<string>(OUTCOMES);
 const TYPE_NAME = /^[A-Za-z_$][\w$.]{0,63}$/;
