@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
 
 vi.mock('./sidebar/ChromeAgentDialogs', async () => {
   const { create } = await import('zustand');
@@ -111,7 +111,7 @@ describe('ChromeSidebar', () => {
   it('puts pinned projects first', () => {
     useChromeStore.setState({ pinnedProjectIds: ['p3'] });
     render(<ChromeSidebar />);
-    const tree = screen.getByRole('tree');
+    const tree = screen.getByTestId('project-tree');
     const order = within(tree).getAllByTestId(/^project-group-/).map((el) => el.getAttribute('data-testid'));
     expect(order).toEqual(['project-group-p3', 'project-group-p1', 'project-group-p2']);
   });
@@ -170,5 +170,57 @@ describe('ChromeSidebar', () => {
     fireEvent.click(screen.getByTestId('nav-help'));
     expect(useUIStore.getState().explorerTab).toBe('help');
     expect(screen.getByTestId('nav-add-project')).toBeTruthy();
+  });
+
+  it('marks rows with data-agent-id for E2E', () => {
+    render(<ChromeSidebar />);
+    expect(screen.getByTestId('agent-item-a1').getAttribute('data-agent-id')).toBe('a1');
+    expect(screen.getByTestId('needs-you-row-b1').getAttribute('data-agent-id')).toBe('b1');
+  });
+
+  it('gives the Canvas and Review buttons the app-row test ids', () => {
+    registerAppPlugin('canvas', 'Canvas');
+    registerAppPlugin('review', 'Review');
+    usePluginStore.setState({ appEnabled: ['canvas', 'review'] });
+    render(<ChromeSidebar />);
+    expect(screen.getByTestId('app-row-canvas')).toBeTruthy();
+    expect(screen.getByTestId('app-row-review')).toBeTruthy();
+  });
+
+  describe('drag to reorder', () => {
+    const dataTransfer = { setData: () => {}, effectAllowed: '', dropEffect: '' };
+    const drag = (fromId: string, toId: string) => {
+      const from = screen.getByTestId(`project-${fromId}`).parentElement!;
+      const to = screen.getByTestId(`project-group-${toId}`);
+      fireEvent.dragStart(from, { dataTransfer });
+      fireEvent.dragOver(to, { dataTransfer });
+      fireEvent.drop(to, { dataTransfer });
+    };
+
+    it('reorders in display order, so a drop lands where it is shown', () => {
+      const reorder = vi.fn(async () => {});
+      useProjectStore.setState({ reorderProjects: reorder } as never);
+      useChromeStore.setState({ pinnedProjectIds: ['p3'] });
+      render(<ChromeSidebar />);
+      // Shown: p3 (pinned) | p1, p2. Dropping p2 on p1 puts it first among the rest.
+      drag('p2', 'p1');
+      expect(reorder).toHaveBeenCalledWith(['p3', 'p2', 'p1']);
+    });
+
+    it('ignores drops across the pinned and unpinned sections', () => {
+      const reorder = vi.fn(async () => {});
+      useProjectStore.setState({ reorderProjects: reorder } as never);
+      useChromeStore.setState({ pinnedProjectIds: ['p3'] });
+      render(<ChromeSidebar />);
+      drag('p1', 'p3');
+      expect(reorder).not.toHaveBeenCalled();
+    });
+  });
+
+  it('forgets pins, collapsed state and folds for a removed project', () => {
+    useChromeStore.setState({ pinnedProjectIds: ['p3'], collapsedProjectIds: ['p3'], expandedFolds: ['p3:sleeping'] });
+    render(<ChromeSidebar />);
+    act(() => { useProjectStore.setState({ projects: projects.slice(0, 2) as never }); });
+    expect(useChromeStore.getState()).toMatchObject({ pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
   });
 });

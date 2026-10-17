@@ -52,6 +52,7 @@ export async function createDurableAgent(project: AgentProjectRef, input: Durabl
     } catch (err) {
       console.error('Failed to create remote durable agent:', err);
       tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
+      tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
       toastFailure(err);
     }
     return;
@@ -73,6 +74,7 @@ export async function createDurableAgent(project: AgentProjectRef, input: Durabl
     if (tempId) removeAgent(tempId);
     console.error('Failed to create durable agent:', err);
     tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
+    tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
     toastFailure(err);
   }
 }
@@ -93,6 +95,7 @@ export async function createDurableAgentFromTemplate(project: AgentProjectRef, t
     if (tempId) removeAgent(tempId);
     console.error('Failed to create agent from template:', err);
     tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
+    tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
     toastFailure(err);
   }
 }

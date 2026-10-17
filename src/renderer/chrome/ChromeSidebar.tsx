@@ -116,6 +116,7 @@ function AppRow({ inline, overflow, explorerTab, onOpen }: {
             key={entry.manifest.id}
             type="button"
             title={rail.title || rail.label}
+            data-testid={`app-row-${entry.manifest.id}`}
             data-active={active}
             onClick={() => onOpen(entry.manifest.id)}
             className={`flex-1 min-w-0 h-[30px] px-2 rounded-md border flex items-center gap-1.5 text-[13px] font-medium cursor-pointer [&_svg]:w-[15px] [&_svg]:h-[15px] ${
@@ -182,6 +183,23 @@ export function ChromeSidebar() {
   const plugins = usePluginStore((s) => s.plugins);
   const appEnabled = usePluginStore((s) => s.appEnabled);
   const setProjectCollapsed = useChromeStore((s) => s.setProjectCollapsed);
+  const forgetProjects = useChromeStore((s) => s.forgetProjects);
+
+  // When a project is removed, drop its pin, collapsed state and folds. Compared
+  // against the previous non-empty list so the empty list at startup prunes nothing.
+  const prevProjectIdsRef = useRef<string[] | null>(null);
+  useEffect(() => {
+    const ids = projects.map((p) => p.id);
+    const prev = prevProjectIdsRef.current;
+    if (ids.length > 0 || prev) {
+      if (prev) {
+        const current = new Set(ids);
+        const removed = prev.filter((id) => !current.has(id));
+        if (removed.length > 0) forgetProjects(removed);
+      }
+      prevProjectIdsRef.current = ids;
+    }
+  }, [projects, forgetProjects]);
 
   // App-level plugin items, same visibility rule as the legacy rail.
   const { inlineItems, overflowItems, bottomItems } = useMemo(() => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { AgentRow } from './AgentRow';
@@ -85,7 +85,6 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onNewAgent,
     onSelectAgent, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator,
   } = props;
-  const [hover, setHover] = useState(false);
   const label = project.displayName || project.name;
   const groups = groupProjectAgents(agents);
   const rollup = projectRollup(agents, detailed);
@@ -105,8 +104,6 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
 
   return (
     <div
-      role="group"
-      aria-label={label}
       data-testid={`project-group-${project.id}`}
       className="relative flex flex-col"
       onDragOver={(e) => dragHandlers.onDragOver(e, project.id)}
@@ -119,8 +116,6 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         draggable
         onDragStart={(e) => dragHandlers.onDragStart(e, project.id)}
         onDragEnd={dragHandlers.onDragEnd}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
       >
         <button
           type="button"
@@ -142,42 +137,38 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
           <ProjectSquare project={project} iconUrl={iconUrl} />
           <span className={`text-[13px] font-semibold truncate ${isActiveProject ? 'text-ctp-text' : 'text-ctp-subtext1'}`}>{label}</span>
         </button>
-        <span className="flex-shrink-0 flex items-center gap-1 pr-1.5 text-xs text-ctp-subtext0">
-          {hover ? (
-            <>
-              <button
-                type="button"
-                title={pinned ? 'Unpin project' : 'Pin to top'}
-                aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
-                aria-pressed={pinned}
-                onClick={() => onTogglePinned(project.id)}
-                className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1 ${pinned ? 'text-ctp-text' : ''}`}
-              >
-                {PinIcon}
-              </button>
-              <button
-                type="button"
-                title="New agent"
-                aria-label={`New agent in ${label}`}
-                onClick={() => onNewAgent(project.id)}
-                className="w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1"
-              >
-                {PlusIcon}
-              </button>
-            </>
-          ) : (
-            <>
-              {pinned && <span className="text-ctp-overlay0">pinned</span>}
-              {rollup.working > 0 && <span className="flex items-center gap-1" title={`${rollup.working} working`}><span className="w-1.5 h-1.5 rounded-full bg-ctp-success" />{rollup.working}</span>}
-              {rollup.waiting > 0 && <span className="flex items-center gap-1 text-ctp-warning" title={`${rollup.waiting} waiting on you`}><span className="w-1.5 h-1.5 rounded-full bg-ctp-warning" />{rollup.waiting}</span>}
-              {rollup.working === 0 && rollup.waiting === 0 && collapsed && agents.length > 0 && <span>{agents.length}</span>}
-            </>
-          )}
+        {/* Actions show on hover and on keyboard focus anywhere in the header; the roll-up shows otherwise. */}
+        <span className="flex-shrink-0 hidden group-hover:flex group-focus-within:flex items-center gap-1 pr-1.5 text-xs text-ctp-subtext0">
+          <button
+            type="button"
+            title={pinned ? 'Unpin project' : 'Pin to top'}
+            aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
+            aria-pressed={pinned}
+            onClick={() => onTogglePinned(project.id)}
+            className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1 ${pinned ? 'text-ctp-text' : ''}`}
+          >
+            {PinIcon}
+          </button>
+          <button
+            type="button"
+            title="New agent"
+            aria-label={`New agent in ${label}`}
+            onClick={() => onNewAgent(project.id)}
+            className="w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1"
+          >
+            {PlusIcon}
+          </button>
+        </span>
+        <span className="flex-shrink-0 flex group-hover:hidden group-focus-within:hidden items-center gap-1 pr-1.5 text-xs text-ctp-subtext0">
+          {pinned && <span className="text-ctp-overlay0">pinned</span>}
+          {rollup.working > 0 && <span className="flex items-center gap-1" title={`${rollup.working} working`}><span className="w-1.5 h-1.5 rounded-full bg-ctp-success" />{rollup.working}</span>}
+          {rollup.waiting > 0 && <span className="flex items-center gap-1 text-ctp-warning" title={`${rollup.waiting} waiting on you`}><span className="w-1.5 h-1.5 rounded-full bg-ctp-warning" />{rollup.waiting}</span>}
+          {rollup.working === 0 && rollup.waiting === 0 && collapsed && agents.length > 0 && <span>{agents.length}</span>}
         </span>
       </div>
 
       {expanded && (
-        <div role="group" className="flex flex-col gap-px px-1.5">
+        <div className="flex flex-col gap-px px-1.5">
           {groups.durable.map((a) => renderAgent(a))}
           {groups.quick.map((a) => renderAgent(a))}
 

@@ -34,6 +34,7 @@ export function NeedsYou({ items, projectNames, activeAgentId, onSelect, onRevie
               key={agent.id}
               type="button"
               data-testid={`needs-you-row-${agent.id}`}
+              data-agent-id={agent.id}
               onClick={() => onSelect(agent)}
               className={`w-full flex items-start gap-2 px-2 py-1.5 rounded-md text-left cursor-pointer ${active ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
             >

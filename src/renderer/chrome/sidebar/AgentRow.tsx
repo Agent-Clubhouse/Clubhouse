@@ -4,6 +4,9 @@ import { AgentAvatar } from '../../features/agents/AgentAvatar';
 import type { AgentDot } from './treeModel';
 
 /**
+ * Tree roles (role=tree / treeitem with arrow-key navigation) arrive with the
+ * keyboard pass in Phase 4 (spec §4.8); until then rows are plain buttons.
+ *
  * One 30px agent row (docs/chrome-redesign-spec.md §2): status dot, 18px
  * avatar, name, then a short right-aligned note. Chips move to the hover card
  * in Phase 4. Keeps the legacy `agent-item-<id>` test id (§9).
@@ -51,9 +54,9 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, active, inden
   return (
     <button
       type="button"
-      role="treeitem"
-      aria-selected={active}
+      aria-current={active ? 'true' : undefined}
       data-testid={`agent-item-${agent.id}`}
+      data-agent-id={agent.id}
       data-agent-name={agent.name}
       data-active={active}
       onClick={() => onSelect(agent)}
@@ -67,6 +70,8 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, active, inden
         <AgentAvatar agent={agent} size="2xs" />
         {agent.freeAgentMode && (
           <span
+            role="img"
+            aria-label="Free Agent Mode: all permissions bypassed"
             className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-ctp-error ring-1 ring-ctp-mantle"
             title="Free Agent Mode: all permissions bypassed"
           />

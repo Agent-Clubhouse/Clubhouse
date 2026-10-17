@@ -51,6 +51,9 @@ export function ProjectTree(props: ProjectTreeProps) {
   const collapsedSet = useMemo(() => new Set(collapsedProjectIds), [collapsedProjectIds]);
   const foldSet = useMemo(() => new Set(expandedFolds), [expandedFolds]);
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
+  const pinnedSet = useMemo(() => new Set(pinnedProjectIds), [pinnedProjectIds]);
+  /** Order as shown: pinned first. Reordering works on this, so a drop lands where it looks like it will. */
+  const displayIds = useMemo(() => [...pinned, ...rest].map((p) => p.id), [pinned, rest]);
   const allCollapsed = projectIds.length > 0 && projectIds.every((id) => collapsedSet.has(id));
 
   // Drag-to-reorder projects
@@ -63,20 +66,22 @@ export function ProjectTree(props: ProjectTreeProps) {
       e.dataTransfer.setData('text/plain', id);
     },
     onDragOver: (e: React.DragEvent, id: string) => {
-      if (!dragId) return;
+      // Drops stay inside their section: pinned among pinned, the rest among the rest.
+      if (!dragId || pinnedSet.has(dragId) !== pinnedSet.has(id)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       setOverId(id);
     },
     onDrop: (e: React.DragEvent, id: string) => {
       e.preventDefault();
-      const next = dragId ? moveProject(projectIds, dragId, id) : null;
+      const sameSection = !!dragId && pinnedSet.has(dragId) === pinnedSet.has(id);
+      const next = dragId && sameSection ? moveProject(displayIds, dragId, id) : null;
       setDragId(null);
       setOverId(null);
       if (next) onReorder(next);
     },
     onDragEnd: () => { setDragId(null); setOverId(null); },
-  }), [dragId, projectIds, onReorder]);
+  }), [dragId, displayIds, pinnedSet, onReorder]);
 
   const onToggleFold = useCallback((projectId: string, fold: ProjectFold) => {
     toggleFold(projectId, fold);
@@ -137,7 +142,7 @@ export function ProjectTree(props: ProjectTreeProps) {
           {CollapseAllIcon}
         </button>
       </div>
-      <div role="tree" aria-label="Projects and agents" className="flex-1 min-h-0 overflow-y-auto pb-2 flex flex-col gap-px">
+      <div data-testid="project-tree" aria-label="Projects and agents" className="flex-1 min-h-0 overflow-y-auto pb-2 flex flex-col gap-px">
         {pinned.map(renderGroup)}
         {pinned.length > 0 && rest.length > 0 && <div className="h-px mx-3 my-1 bg-surface-0 flex-shrink-0" />}
         {rest.map(renderGroup)}
