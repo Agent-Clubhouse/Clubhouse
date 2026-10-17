@@ -522,7 +522,7 @@ function PluginRow({
               </svg>
             </button>
           )}
-          <Toggle checked={enabled} onChange={() => onToggle()} disabled={isIncompatible} ariaLabel={`Enable ${entry.manifest.name}`} />
+          <Toggle checked={enabled} onChange={() => onToggle()} disabled={isIncompatible} aria-label={`Enable ${entry.manifest.name}`} />
         </div>
       </div>
       {projectPath && (
@@ -662,7 +662,7 @@ function CustomMarketplaceManager() {
                         <line x1="6" y1="6" x2="18" y2="18" />
                       </svg>
                     </button>
-                    <Toggle checked={m.enabled} onChange={(v) => handleToggle(m.id, v)} ariaLabel={`Enable ${m.name}`} />
+                    <Toggle checked={m.enabled} onChange={(v) => handleToggle(m.id, v)} aria-label={`Enable ${m.name}`} />
                   </div>
                 </div>
               ))}
@@ -1107,7 +1107,7 @@ export function PluginListSettings() {
               <h3 className="text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider">Beta</h3>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-ctp-subtext0">Show beta plugins</span>
-                <Toggle checked={showBetaPlugins} onChange={() => handleBetaPluginsToggle()} ariaLabel="Show beta plugins" />
+                <Toggle checked={showBetaPlugins} onChange={() => handleBetaPluginsToggle()} aria-label="Show beta plugins" />
               </div>
             </div>
             <p className="text-xs text-ctp-subtext0 mb-3">
@@ -1124,7 +1124,7 @@ export function PluginListSettings() {
                 <h3 className="text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider">External</h3>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-ctp-subtext0">Enable External Plugins</span>
-                  <Toggle checked={externalPluginsEnabled} onChange={() => handleExternalToggle()} ariaLabel="Enable External Plugins" data-testid="external-plugins-toggle" />
+                  <Toggle checked={externalPluginsEnabled} onChange={() => handleExternalToggle()} aria-label="Enable external plugins" data-testid="external-plugins-toggle" />
                 </div>
               </div>
               <p className="text-xs text-ctp-subtext0 mb-3">

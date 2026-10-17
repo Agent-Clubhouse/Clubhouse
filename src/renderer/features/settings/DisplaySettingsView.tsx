@@ -87,7 +87,7 @@ export function DisplaySettingsView() {
                     <div className="text-xs text-ctp-subtext0 mt-0.5">{description}</div>
                   </div>
                 </div>
-                <Toggle checked={value} onChange={set} ariaLabel={label} />
+                <Toggle checked={value} onChange={set} aria-label={label} />
               </div>
             );
           })}

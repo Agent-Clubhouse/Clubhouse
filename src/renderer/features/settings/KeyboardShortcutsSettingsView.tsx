@@ -200,7 +200,7 @@ export function KeyboardShortcutsSettingsView() {
                 Use explicit clipboard handling for terminal paste. Enable this if paste does not work on your platform.
               </div>
             </div>
-            <Toggle checked={clipboardCompat} onChange={saveClipboard} ariaLabel="Enable Clipboard Compatibility" />
+            <Toggle checked={clipboardCompat} onChange={saveClipboard} aria-label="Enable clipboard compatibility" />
           </div>
         </div>
 

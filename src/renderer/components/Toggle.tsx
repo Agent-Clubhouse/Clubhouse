@@ -2,21 +2,20 @@ import type { ComponentProps } from 'react';
 
 /**
  * The app's one switch (#2014): 28×16, `role="switch"` with `aria-checked`.
- * Give it an accessible name with `ariaLabel`, or `aria-labelledby` pointing
+ * Give it an accessible name with `aria-label`, or `aria-labelledby` pointing
  * at the row's label.
  */
-export function Toggle({ checked, onChange, disabled, ariaLabel, className = '', ...rest }: Omit<ComponentProps<'button'>, 'onChange' | 'role' | 'type'> & {
+export function Toggle({ checked, onChange, disabled, className = '', ...rest }: Omit<ComponentProps<'button'>, 'onChange' | 'onClick' | 'role' | 'type' | 'aria-checked'> & {
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
-  ariaLabel?: string;
 }) {
   return (
     <button
+      {...rest}
       type="button"
       role="switch"
       aria-checked={checked}
-      aria-label={ariaLabel}
       aria-disabled={disabled || undefined}
       disabled={disabled}
       data-on={String(checked)}
@@ -24,7 +23,6 @@ export function Toggle({ checked, onChange, disabled, ariaLabel, className = '',
       className={`relative flex-shrink-0 w-7 h-4 rounded-full transition-colors duration-150 ${
         checked ? 'bg-ctp-accent' : 'bg-surface-1'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${className}`}
-      {...rest}
     >
       <span
         aria-hidden="true"

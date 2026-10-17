@@ -4,6 +4,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useKeyboardShortcutsStore } from '../stores/keyboardShortcutsStore';
+import { LAYER_PORTAL_ATTR } from './layers';
 
 /**
  * The app's tooltip (#2013), styled like the chrome's agent hover card. It
@@ -154,12 +155,17 @@ export function Tooltip({ content, shortcut, shortcutAction, side = 'bottom', di
 
   useEffect(() => {
     if (!open) { setPos(null); return; }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') hide(); };
-    document.addEventListener('keydown', onKey);
+    // Capture phase + preventDefault: Esc dismisses only the tooltip, not a Modal under it (layers.ts).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      hide();
+    };
+    document.addEventListener('keydown', onKey, true);
     window.addEventListener('scroll', hide, true);
     window.addEventListener('resize', hide);
     return () => {
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       window.removeEventListener('scroll', hide, true);
       window.removeEventListener('resize', hide);
     };
@@ -196,12 +202,13 @@ export function Tooltip({ content, shortcut, shortcutAction, side = 'bottom', di
           id={id}
           role="tooltip"
           data-testid="tooltip"
+          {...{ [LAYER_PORTAL_ATTR]: '' }}
           style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden' }}
           className="fixed z-tooltip pointer-events-none flex items-center gap-2 min-h-[26px] max-w-xs px-[9px] py-1 rounded-md border border-surface-1 bg-ctp-mantle shadow-lg text-xs text-ctp-subtext1"
         >
           <span className="min-w-0">{content}</span>
           {keys && (
-            <kbd className="flex-shrink-0 px-[5px] py-px rounded border border-surface-1 font-sans text-[10.5px] leading-4 text-ctp-overlay1">{keys}</kbd>
+            <kbd className="flex-shrink-0 px-[5px] py-px rounded border border-surface-1 font-sans text-xs leading-4 text-ctp-overlay1">{keys}</kbd>
           )}
         </div>,
         document.body,

@@ -50,7 +50,7 @@ export function PluginSettingsRenderer({ pluginId, settings, scope }: Props) {
                   <div className="text-xs text-ctp-subtext0 mt-0.5">{setting.description}</div>
                 )}
               </div>
-              <Toggle checked={!!value} onChange={(v) => handleChange(setting.key, v)} ariaLabel={setting.label} />
+              <Toggle checked={!!value} onChange={(v) => handleChange(setting.key, v)} aria-label={setting.label} />
             </div>
           );
         }

@@ -55,7 +55,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
   };
 
   return (
-    <Modal open={true} onClose={onClose}>
+    <Modal open={true} onClose={onClose} aria-label="New agent">
         <h2 className="text-base font-semibold text-ctp-text mb-4">New Agent</h2>
         {error && (
           <div

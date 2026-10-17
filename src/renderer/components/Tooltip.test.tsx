@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { Tooltip, TOOLTIP_DELAY_MS, formatShortcut } from './Tooltip';
+import { Modal } from './Modal';
 import { useKeyboardShortcutsStore } from '../stores/keyboardShortcutsStore';
 
 describe('formatShortcut', () => {
@@ -155,4 +156,22 @@ describe('Tooltip', () => {
     act(() => { fireEvent.keyDown(document, { key: 'Tab' }); screen.getByRole('button').focus(); });
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
+
+  it('inside a Modal, Esc dismisses the tooltip and leaves the Modal open', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal open onClose={onClose} aria-label="Dialog">
+        <Tooltip content="Tip"><button type="button">x</button></Tooltip>
+      </Modal>,
+    );
+    const trigger = screen.getByRole('button', { name: 'x' });
+    act(() => { fireEvent.keyDown(document, { key: 'Tab' }); trigger.focus(); });
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
+

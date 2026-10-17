@@ -94,8 +94,8 @@ describe('Modal', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true');
   });
 
-  it('uses ariaLabel when there is no title row', () => {
-    render(<Modal open onClose={vi.fn()} ariaLabel="Picker"><span>content</span></Modal>);
+  it('uses aria-label when there is no title row', () => {
+    render(<Modal open onClose={vi.fn()} aria-label="Picker"><span>content</span></Modal>);
     expect(screen.getByRole('dialog', { name: 'Picker' })).toBeInTheDocument();
   });
 
@@ -186,4 +186,29 @@ describe('Modal', () => {
     expect(inner).toHaveBeenCalledTimes(1);
     expect(outer).not.toHaveBeenCalled();
   });
+
+  it('leaves Tab alone while focus is in a portaled menu or tooltip', () => {
+    const popup = document.createElement('div');
+    popup.setAttribute('data-layer-portal', '');
+    const item = document.createElement('button');
+    popup.appendChild(item);
+    document.body.appendChild(popup);
+    render(<Modal open onClose={vi.fn()}><button>one</button></Modal>);
+    item.focus();
+    const e = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    document.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(item);
+    popup.remove();
+  });
+
+  it('ignores an Esc that a popup already handled', () => {
+    const onClose = vi.fn();
+    render(<Modal open onClose={onClose}><button>one</button></Modal>);
+    const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    e.preventDefault();
+    document.dispatchEvent(e);
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });
+

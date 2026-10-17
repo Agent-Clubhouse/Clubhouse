@@ -4,11 +4,11 @@ import { Toggle } from './Toggle';
 
 describe('Toggle', () => {
   it('is a switch whose aria-checked follows checked', () => {
-    const { rerender } = render(<Toggle checked={false} onChange={() => {}} ariaLabel="Sounds" />);
+    const { rerender } = render(<Toggle checked={false} onChange={() => {}} aria-label="Sounds" />);
     const sw = screen.getByRole('switch', { name: 'Sounds' });
     expect(sw).toHaveAttribute('aria-checked', 'false');
     expect(sw).toHaveAttribute('data-on', 'false');
-    rerender(<Toggle checked onChange={() => {}} ariaLabel="Sounds" />);
+    rerender(<Toggle checked onChange={() => {}} aria-label="Sounds" />);
     expect(sw).toHaveAttribute('aria-checked', 'true');
     expect(sw).toHaveAttribute('data-on', 'true');
   });

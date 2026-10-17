@@ -231,7 +231,7 @@ export function TelemetrySettingsSection() {
         <div className="flex items-center justify-between">
           <div className="text-sm text-ctp-text">Send telemetry</div>
           <Toggle
-            ariaLabel="Send telemetry to Application Insights"
+            aria-label="Send telemetry to Application Insights"
             checked={azureOn}
             disabled={!status.azure.configured && !azureOn}
             onChange={(v) => void handleResult('azure', 'azure', (ack) => api().setEnabled('azure', v, ack))}
@@ -301,7 +301,7 @@ export function TelemetrySettingsSection() {
         <div className="flex items-center justify-between">
           <div className="text-sm text-ctp-text">Send to OTLP</div>
           <Toggle
-            ariaLabel="Send telemetry to OTLP"
+            aria-label="Send telemetry to OTLP"
             checked={otlpOn}
             disabled={!status.otlp.configured && !otlpOn}
             onChange={(v) => void handleResult('otlp', 'otlp', (ack) => api().setEnabled('otlp', v, ack))}
@@ -391,7 +391,7 @@ export function TelemetrySettingsSection() {
           <div className="flex items-center justify-between">
             <div className="text-sm text-ctp-text">Send telemetry</div>
             <Toggle
-              ariaLabel="Send telemetry to the Clubhouse developer"
+              aria-label="Send telemetry to the Clubhouse developer"
               checked={framebriar.enabled}
               disabled={!framebriar.configured && !framebriar.enabled}
               onChange={(v) => void handleResult('framebriar', 'framebriar', (ack) => api().setEnabled('framebriar', v, ack))}

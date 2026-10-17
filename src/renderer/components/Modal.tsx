@@ -1,5 +1,6 @@
 import { ReactNode, RefObject, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { isInLayerPortal, isTopModal, pushModal, removeModal } from './layers';
 
 /**
  * The app's dialog (#2014): chrome tokens, a 44px title row with a close
@@ -15,7 +16,7 @@ interface Props {
   /** When provided, renders the 44px title row with the title and a close button. */
   title?: ReactNode;
   /** Accessible name when there's no title row. */
-  ariaLabel?: string;
+  'aria-label'?: string;
   /** Width class; defaults to w-[360px]. */
   width?: string;
   /** Darker backdrop for image/media dialogs. */
@@ -35,15 +36,12 @@ interface Props {
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
 
-/** Open modals, innermost last, so Esc and the focus trap only act on the top one. */
-const stack: symbol[] = [];
-
 function focusables(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => !el.closest('[inert]'));
 }
 
 export function Modal({
-  open, onClose, title, ariaLabel, width = 'w-[360px]', backdrop = 'default', backdropTestId, testId,
+  open, onClose, title, 'aria-label': ariaLabel, width = 'w-[360px]', backdrop = 'default', backdropTestId, testId,
   footer, padding = 'default', initialFocusRef, children,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -54,8 +52,7 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
     const token = Symbol('modal');
-    stack.push(token);
-    const isTop = () => stack[stack.length - 1] === token;
+    pushModal(token);
     const previous = document.activeElement as HTMLElement | null;
 
     const panel = panelRef.current;
@@ -65,9 +62,12 @@ export function Modal({
     }
 
     const onKey = (e: KeyboardEvent) => {
-      if (!isTop()) return;
-      if (e.key === 'Escape') { onCloseRef.current(); return; }
+      if (!isTopModal(token)) return;
+      // A menu or tooltip over the modal handled this Esc (layers.ts).
+      if (e.key === 'Escape') { if (!e.defaultPrevented) onCloseRef.current(); return; }
       if (e.key !== 'Tab' || !panelRef.current) return;
+      // Focus in a menu or tooltip portaled from this modal counts as inside; the popup handles Tab.
+      if (isInLayerPortal(document.activeElement)) return;
       const all = focusables(panelRef.current);
       if (all.length === 0) { e.preventDefault(); panelRef.current.focus(); return; }
       const first = all[0];
@@ -79,7 +79,7 @@ export function Modal({
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
-      stack.splice(stack.indexOf(token), 1);
+      removeModal(token);
       if (previous && previous.isConnected && typeof previous.focus === 'function') previous.focus();
     };
     // initialFocusRef is read once, on open.
@@ -106,7 +106,7 @@ export function Modal({
       >
         {title && (
           <div className="flex-shrink-0 flex items-center gap-2 h-11 pl-4 pr-2.5 border-b border-surface-0">
-            <h2 id={titleId} className="min-w-0 truncate text-[13.5px] font-semibold text-ctp-text">{title}</h2>
+            <h2 id={titleId} className="min-w-0 truncate text-[13px] font-semibold text-ctp-text">{title}</h2>
             <button
               type="button"
               onClick={onClose}

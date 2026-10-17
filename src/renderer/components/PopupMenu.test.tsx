@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { Modal } from './Modal';
+import { Z_INDEX } from '../zIndex';
 import { PopupMenu, type MenuEntry } from './PopupMenu';
 
 const items = (onSelect = vi.fn()): MenuEntry[] => [
@@ -20,7 +23,7 @@ describe('PopupMenu', () => {
     renderMenu();
     const menu = screen.getByRole('menu', { name: 'Agent menu' });
     expect(menu.parentElement).toBe(document.body);
-    expect(menu.className).toContain('z-dropdown');
+    expect(menu.style.zIndex).toBe(String(Z_INDEX.dropdown));
     expect(screen.getAllByRole('menuitem')).toHaveLength(4);
     expect(screen.getByRole('separator')).toBeInTheDocument();
   });
@@ -82,5 +85,69 @@ describe('PopupMenu', () => {
     unmount();
     expect(document.activeElement).toBe(trigger);
     trigger.remove();
+  });
+
+  it('draws leading and trailing content, and starts on the selected item', () => {
+    render(
+      <PopupMenu
+        testId="r"
+        label="Agents"
+        position={{ x: 0, y: 0 }}
+        onClose={() => {}}
+        items={[
+          { id: 'a', label: 'bold-falcon', leading: <i data-testid="dot" />, trailing: <>Working<kbd>1</kbd></>, onSelect: () => {} },
+          { id: 'b', label: 'gallant-swift', selected: true, onSelect: () => {} },
+          { id: 'c', label: 'quiet-otter', onSelect: () => {} },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId('r-a')).toContainElement(screen.getByTestId('dot'));
+    expect(screen.getByTestId('r-a')).toHaveTextContent('Working1');
+    const selected = screen.getByTestId('r-b');
+    expect(selected).toHaveAttribute('aria-current', 'true');
+    expect(selected.className).toContain('bg-surface-0');
+    expect(document.activeElement).toBe(selected);
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByTestId('r-c'));
+  });
+
+  it('uses a roving tabindex', () => {
+    renderMenu();
+    const tabbable = () => screen.getAllByRole('menuitem').filter((el) => el.tabIndex === 0);
+    expect(tabbable()).toEqual([screen.getByTestId('m-rename')]);
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' });
+    expect(tabbable()).toEqual([screen.getByTestId('m-pop')]);
+  });
+
+  it('sits at the dropdown layer, above an open Modal, or at the given layer', () => {
+    const { unmount } = render(<PopupMenu items={items()} position={{ x: 0, y: 0 }} label="M" testId="m" onClose={() => {}} />);
+    expect(screen.getByRole('menu').style.zIndex).toBe(String(Z_INDEX.dropdown));
+    unmount();
+    render(<PopupMenu items={items()} position={{ x: 0, y: 0 }} label="M" testId="c" layer="canvasDialog" onClose={() => {}} />);
+    expect(screen.getByTestId('c').style.zIndex).toBe(String(Z_INDEX.canvasDialog + 1));
+  });
+
+  it('inside a Modal, Esc closes only the menu, and focus in the menu counts as inside the Modal', () => {
+    const closeModal = vi.fn();
+    const closeMenu = vi.fn();
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <Modal open onClose={closeModal} aria-label="Dialog">
+          <button>inside</button>
+          {open && <PopupMenu items={items()} position={{ x: 0, y: 0 }} label="M" testId="mm" onClose={() => { closeMenu(); setOpen(false); }} />}
+        </Modal>
+      );
+    }
+    render(<Harness />);
+    const menu = screen.getByTestId('mm');
+    expect(menu.style.zIndex).toBe(String(Z_INDEX.modal + 1));
+    // Tab from inside the menu is the menu's to handle, not the modal trap's.
+    act(() => { screen.getByTestId('mm-rename').focus(); });
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(closeMenu).toHaveBeenCalledTimes(1);
+    expect(closeModal).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(closeModal).toHaveBeenCalledTimes(1);
   });
 });
