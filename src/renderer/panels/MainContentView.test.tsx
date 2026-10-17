@@ -19,6 +19,9 @@ vi.mock('../features/agents/SleepingAgent', () => ({
 vi.mock('../features/agents/HeadlessAgentView', () => ({
   HeadlessAgentView: () => <div data-testid="headless-agent" />,
 }));
+vi.mock('../features/agents/states/HeadlessRunFinished', () => ({
+  HeadlessRunFinished: (props: any) => <div data-testid="headless-run-finished">{props.completed.mission}</div>,
+}));
 vi.mock('../features/agents/AgentSettingsView', () => ({
   AgentSettingsView: () => <div data-testid="agent-settings" />,
 }));
@@ -579,5 +582,27 @@ describe('MainContentView legacy structuredMode agents', () => {
 
     render(<MainContentView />);
     expect(screen.getByTestId('headless-agent')).toBeInTheDocument();
+  });
+
+  it.each(['spawning', 'running', 'sleeping', 'error'] as const)('keeps the run monitor for a headless quick agent that is %s', (status) => {
+    useAgentStore.setState({
+      agents: {
+        'q-1': { id: 'q-1', projectId: 'proj-1', status, kind: 'quick', name: 'quick-one', color: 'gray', headless: true, mission: 'm' },
+      },
+      activeAgentId: 'q-1',
+    });
+    render(<MainContentView />);
+    expect(screen.getByTestId('headless-agent')).toBeInTheDocument();
+    expect(screen.queryByTestId('sleeping-agent')).toBeNull();
+  });
+
+  it('shows a finished headless run in the monitor layout, not the ghost card', () => {
+    useQuickAgentStore.setState({
+      completedAgents: { 'proj-1': [{ ...completedAgent, headless: true }] },
+      selectedCompletedId: 'completed-1',
+    });
+    render(<MainContentView />);
+    expect(screen.getByTestId('headless-run-finished')).toHaveTextContent('fix the bug');
+    expect(screen.queryByTestId('quick-agent-ghost')).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { HeadlessAgentView, MAX_FEED_ITEMS } from './HeadlessAgentView';
+import { HeadlessAgentView } from './HeadlessAgentView';
 import { useAgentStore } from '../../stores/agentStore';
 import type { Agent } from '../../../shared/types';
 
@@ -8,7 +8,7 @@ const headlessAgent: Agent = {
   id: 'headless-1',
   projectId: 'proj-1',
   name: 'swift-runner',
-  kind: 'durable',
+  kind: 'quick',
   status: 'running',
   color: 'blue',
   headless: true,
@@ -53,40 +53,30 @@ describe('HeadlessAgentView', () => {
     vi.useRealTimers();
   });
 
-  it('renders the live activity header without event count', () => {
+  it('shows Working in the toolbar and the starting state before the first step', () => {
     render(<HeadlessAgentView agent={headlessAgent} />);
-
-    expect(screen.getByText('Live Activity')).toBeInTheDocument();
-    // The event count label should not be present
-    expect(screen.queryByText(/events$/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('state-word')).toHaveTextContent('Working');
+    expect(screen.getByTestId('run-toolbar')).toHaveTextContent('headless · starting');
+    expect(screen.getByTestId('run-starting')).toHaveTextContent('Starting swift-runner');
+    expect(screen.getByTestId('headless-agent-view')).toHaveAttribute('data-phase', 'start');
   });
 
-  it('still shows the green pulse indicator dot', () => {
+  it('renders the treehouse in theme tokens, with the run state', () => {
     const { container } = render(<HeadlessAgentView agent={headlessAgent} />);
-
-    // Green pulse dot should still be present
-    const pulseDot = container.querySelector('.bg-ctp-success.animate-pulse');
-    expect(pulseDot).not.toBeNull();
+    expect(screen.getByTestId('treehouse')).toHaveAttribute('data-phase', 'start');
+    expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{6}\b/);
   });
 
-  it('renders the animated treehouse', () => {
-    const { container } = render(<HeadlessAgentView agent={headlessAgent} />);
-
-    // The treehouse SVG should be present
-    const svg = container.querySelector('svg[viewBox="0 0 120 120"]');
-    expect(svg).not.toBeNull();
-  });
-
-  it('shows agent mission text', () => {
+  it('shows the mission in the header, no Headless chip or uppercase label', () => {
     render(<HeadlessAgentView agent={headlessAgent} />);
-
-    expect(screen.getByText('Fix all the bugs')).toBeInTheDocument();
+    expect(screen.getByTestId('run-mission')).toHaveTextContent('Fix all the bugs');
+    expect(screen.queryByText('Headless')).toBeNull();
+    expect(screen.queryByText('Live Activity')).toBeNull();
   });
 
   it('shows stop button', () => {
     render(<HeadlessAgentView agent={headlessAgent} />);
-
-    expect(screen.getByText('Stop Agent')).toBeInTheDocument();
+    expect(screen.getByTestId('stop-agent-button')).toHaveTextContent('Stop…');
   });
 
   it('uses agentSpawnedAt as the timer baseline so remounts preserve elapsed time', () => {
@@ -115,29 +105,6 @@ describe('HeadlessAgentView', () => {
 
     act(() => { vi.advanceTimersByTime(5000); });
     expect(screen.getByText('15s')).toBeInTheDocument();
-  });
-
-  it('caps transcript feed items at MAX_FEED_ITEMS', async () => {
-    const transcriptEvents = Array.from({ length: MAX_FEED_ITEMS + 50 }, (_, i) => ({
-      type: 'assistant',
-      message: {
-        content: [{ type: 'tool_use', name: `tool-${i}` }],
-      },
-    }));
-
-    window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(
-      async (_agentId: string, offset: number, limit: number) => ({
-        events: transcriptEvents.slice(offset, offset + limit),
-        totalEvents: transcriptEvents.length,
-      }),
-    );
-
-    render(<HeadlessAgentView agent={headlessAgent} />);
-    await flushAsyncWork();
-
-    const toolItems = screen.getAllByText(/^tool-/);
-    expect(toolItems.length).toBeLessThanOrEqual(MAX_FEED_ITEMS);
-    expect(screen.getByText(`tool-${MAX_FEED_ITEMS + 49}`)).toBeInTheDocument();
   });
 
   it('uses transcript pages as the canonical source for tool and result items', async () => {
@@ -187,8 +154,8 @@ describe('HeadlessAgentView', () => {
 
     await flushAsyncWork();
 
-    expect(screen.getAllByText('Read')).toHaveLength(1);
-    expect(screen.getAllByText('Done')).toHaveLength(1);
+    expect(screen.getAllByTestId('timeline-tool')).toHaveLength(1);
+    expect(screen.getByTestId('timeline-tool')).toHaveAttribute('data-tool', 'Read');
 
     expect(window.clubhouse.agent.readTranscript).not.toHaveBeenCalled();
   });
@@ -225,8 +192,9 @@ describe('HeadlessAgentView', () => {
     render(<HeadlessAgentView agent={headlessAgent} />);
     await flushAsyncWork();
 
-    expect(screen.getByText('Read')).toBeInTheDocument();
+    expect(screen.getByTestId('timeline-tool')).toHaveAttribute('data-tool', 'Read');
     expect(screen.getByText('Inspect file')).toBeInTheDocument();
+    expect(screen.getByTestId('headless-agent-view')).toHaveAttribute('data-phase', 'run');
 
     // Advance past the 5s fallback poll interval to trigger the next sync
     await act(async () => {
@@ -234,14 +202,12 @@ describe('HeadlessAgentView', () => {
     });
     await flushAsyncWork();
 
-    expect(screen.getByText('Done')).toBeInTheDocument();
-
     const offsets = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls
       .map(([, offset]) => offset);
 
     expect(offsets.filter((offset) => offset === 0)).toHaveLength(1);
     expect(offsets).toContain(1);
-    expect(screen.getByText('Read')).toBeInTheDocument();
+    expect(screen.getByTestId('timeline-tool')).toHaveAttribute('data-tool', 'Read');
     expect(screen.getByText('Inspect file')).toBeInTheDocument();
   });
 
@@ -424,7 +390,7 @@ describe('HeadlessAgentView', () => {
     useAgentStore.setState({ killAgent: mockKillAgent });
     render(<HeadlessAgentView agent={headlessAgent} />);
     fireEvent.click(screen.getByTestId('stop-agent-button'));
-    expect(screen.getByText(`Kill ${headlessAgent.name}?`)).toBeInTheDocument();
+    expect(screen.getByText(`Stop ${headlessAgent.name}?`)).toBeInTheDocument();
     expect(mockKillAgent).not.toHaveBeenCalled();
   });
 
@@ -444,5 +410,77 @@ describe('HeadlessAgentView', () => {
     fireEvent.click(screen.getByTestId('stop-agent-button'));
     fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
     expect(mockKillAgent).toHaveBeenCalledWith(headlessAgent.id);
+  });
+
+  it('keeps tool input: shows the file, folds consecutive reads, and pairs results by id', async () => {
+    const t0 = Date.now();
+    resetStore(t0);
+    window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(async (_id: string, offset: number) => offset > 0
+      ? { events: [], totalEvents: 5 }
+      : {
+        events: [
+          { type: 'assistant', _ts: t0 + 1000, message: { content: [{ type: 'tool_use', id: 'a', name: 'Read', input: { file_path: '/wt/src/one.ts' } }] } },
+          { type: 'assistant', _ts: t0 + 2000, message: { content: [{ type: 'tool_use', id: 'b', name: 'Read', input: { file_path: '/wt/src/two.ts' } }] } },
+          { type: 'assistant', _ts: t0 + 3000, message: { content: [{ type: 'tool_use', id: 'c', name: 'Edit', input: { file_path: '/wt/src/one.ts' } }] } },
+          { type: 'user', _ts: t0 + 4000, message: { content: [{ type: 'tool_result', tool_use_id: 'c' }] } },
+          { type: 'assistant', _ts: t0 + 5000, message: { content: [{ type: 'tool_use', id: 'd', name: 'Bash', input: { command: 'npm test' } }] } },
+        ],
+        totalEvents: 5,
+      });
+    window.clubhouse.git.diffNumstat = vi.fn().mockResolvedValue([{ path: 'src/one.ts', added: 12, removed: 3, binary: false }]);
+    render(<HeadlessAgentView agent={{ ...headlessAgent, runCwd: '/wt', runBaseSha: 'abc123' }} />);
+    await flushAsyncWork();
+
+    const fold = screen.getByTestId('timeline-fold');
+    expect(fold).toHaveTextContent('Read 2 files');
+    expect(fold).toHaveTextContent('one.ts, two.ts');
+    expect(fold).toHaveTextContent('0:01');
+
+    const tools = screen.getAllByTestId('timeline-tool');
+    expect(tools[0]).toHaveTextContent('Edited');
+    expect(tools[0]).toHaveTextContent('one.ts');
+    expect(tools[1]).toHaveTextContent('Running');
+    expect(tools[1]).toHaveTextContent('npm test');
+    expect(tools[1]).toHaveTextContent('running');
+
+    // The files column lists the edited file, with its diff size from numstat against the run's base
+    await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+    await flushAsyncWork();
+    expect(window.clubhouse.git.diffNumstat).toHaveBeenCalledWith('/wt', 'abc123');
+    expect(screen.getByTestId('run-files')).toHaveTextContent('one.ts');
+    expect(screen.getByTestId('run-files')).toHaveTextContent('+12');
+    expect(screen.getByTestId('run-summary')).toHaveTextContent('Tool calls4');
+  });
+
+  it('expands a fold to list each read', async () => {
+    window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(async (_id: string, offset: number) => offset > 0
+      ? { events: [], totalEvents: 1 }
+      : { events: [{ type: 'assistant', message: { content: [
+        { type: 'tool_use', id: 'a', name: 'Read', input: { file_path: 'a.ts' } },
+        { type: 'tool_use', id: 'b', name: 'Grep', input: { pattern: 'TODO' } },
+      ] } }], totalEvents: 1 });
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    await flushAsyncWork();
+    fireEvent.click(screen.getByRole('button', { name: /Read 1 file, searched 1/ }));
+    expect(screen.getAllByTestId('timeline-tool')).toHaveLength(2);
+  });
+
+  it('shows a failed launch in place with the error', () => {
+    render(<HeadlessAgentView agent={{ ...headlessAgent, status: 'error', errorMessage: 'claude: command not found' }} />);
+    expect(screen.getByTestId('state-word')).toHaveTextContent('Error');
+    expect(screen.getByTestId('run-error')).toHaveTextContent('claude: command not found');
+    expect(screen.queryByTestId('stop-agent-button')).toBeNull();
+  });
+
+  it('stacks the summary column when asked (popouts)', () => {
+    render(<HeadlessAgentView agent={headlessAgent} stacked />);
+    expect(screen.getByTestId('headless-agent-view')).toHaveAttribute('data-stacked', 'true');
+    expect(screen.queryByTestId('run-popout-button')).toBeNull();
+  });
+
+  it('opens the transcript inline', () => {
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    fireEvent.click(screen.getByTestId('run-transcript-button'));
+    expect(screen.getByTestId('run-transcript')).toBeInTheDocument();
   });
 });

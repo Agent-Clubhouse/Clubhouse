@@ -407,13 +407,16 @@ describe('initAppEventBridge', () => {
   });
 
   describe('quick agent completion (#2033)', () => {
-    async function exitQuickAgent(agent: Record<string, unknown>, transcript: string | null, exitCode: number, lastOutput?: string) {
+    let lastSelectCompleted: ReturnType<typeof vi.fn> = vi.fn();
+    async function exitQuickAgent(agent: Record<string, unknown>, transcript: string | null, exitCode: number, lastOutput?: string, activeAgentId: string | null = null) {
       const addCompleted = vi.fn();
       const removeAgent = vi.fn();
+      const selectCompleted = vi.fn();
+      lastSelectCompleted = selectCompleted;
       vi.mocked(useAgentStore.getState).mockReturnValue({
         agents: { q1: agent },
         agentSpawnedAt: { q1: 1_000 },
-        activeAgentId: null,
+        activeAgentId,
         agentDetailedStatus: {},
         agentIcons: {},
         updateAgentStatus: vi.fn(),
@@ -425,7 +428,7 @@ describe('initAppEventBridge', () => {
         openConfigChangesDialog: vi.fn(),
         setSessionNamePrompt: vi.fn(),
       } as any);
-      vi.mocked(useQuickAgentStore.getState).mockReturnValue({ addCompleted } as any);
+      vi.mocked(useQuickAgentStore.getState).mockReturnValue({ addCompleted, selectCompleted } as any);
       vi.mocked(window.clubhouse.agent.readTranscript).mockResolvedValue(transcript as any);
 
       const onExit = vi.mocked(window.clubhouse.pty.onExit).mock.calls[0][0];
@@ -470,6 +473,16 @@ describe('initAppEventBridge', () => {
     it('keeps the stderr tail and the failing exit code when a headless run fails', async () => {
       const record = await exitQuickAgent(headlessAgent, '', 1, 'Error: invalid API key');
       expect(record).toMatchObject({ summary: null, exitCode: 1, stderrTail: 'Error: invalid API key', filesModified: [] });
+    });
+
+    it('keeps the finished run on screen when it was the agent being viewed (#2019)', async () => {
+      await exitQuickAgent(headlessAgent, '', 0, undefined, 'q1');
+      expect(lastSelectCompleted).toHaveBeenCalledWith('q1');
+    });
+
+    it('does not select the finished run when another agent is on screen', async () => {
+      await exitQuickAgent(headlessAgent, '', 0, undefined, 'other');
+      expect(lastSelectCompleted).not.toHaveBeenCalled();
     });
 
     it('does not treat PTY output as stderr for non-headless quick agents', async () => {

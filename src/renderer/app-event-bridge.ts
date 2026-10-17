@@ -260,6 +260,12 @@ function initPtyExitListener(): () => void {
           outputTokens,
         });
 
+        // Keep the finished run on screen when it was the one being viewed,
+        // instead of dropping to the start page (#2019).
+        if (useAgentStore.getState().activeAgentId === agentId) {
+          useQuickAgentStore.getState().selectCompleted(agentId);
+        }
+
         useAgentStore.getState().removeAgent(agentId);
       }
 
