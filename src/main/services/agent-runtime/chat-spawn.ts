@@ -64,7 +64,9 @@ export async function findChatSessionFor(agentId: string, nativeSessionId: strin
 
 /**
  * Try to start the agent in chat. Returns true when it did; false means the
- * caller should fall back to the terminal.
+ * caller should fall back to the terminal. `onStarting` is called once a
+ * driver and CLI are found and the chat start really begins, so a caller can
+ * tell a failed start (called, then false) from an agent that was never chat.
  */
 export async function tryStartChatAgent(
   params: ChatSpawnParams,
@@ -72,6 +74,7 @@ export async function tryStartChatAgent(
   profileEnv: Record<string, string> | undefined,
   commandPrefix: string | undefined,
   durableConfig: DurableAgentConfig | null | undefined,
+  onStarting?: () => void,
 ): Promise<boolean> {
   // Only durable agents get chat for now; quick agents stay fire-and-forget.
   if (params.kind !== 'durable') return false;
@@ -94,6 +97,7 @@ export async function tryStartChatAgent(
     });
     return false;
   }
+  onStarting?.();
 
   const nonce = randomUUID();
   agentRegistry.setNonce(params.agentId, nonce);

@@ -580,7 +580,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "dependencies\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.provider.resolve\", \"clubhouse.provider.check_availability\", \"clubhouse.agent.materialize\", \"clubhouse.agent.prepare_pty\", \"clubhouse.hooks.configure\", \"clubhouse.mcp.inject\", \"clubhouse.provider.build_command\", \"clubhouse.pty.spawn\", \"clubhouse.headless.spawn\")\n| summarize p50_ms = percentile(duration, 50), p95_ms = percentile(duration, 95), failed = countif(success == false) by name\n| order by p95_ms desc",
+              "query": "dependencies\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.provider.resolve\", \"clubhouse.provider.check_availability\", \"clubhouse.agent.materialize\", \"clubhouse.agent.prepare_pty\", \"clubhouse.hooks.configure\", \"clubhouse.mcp.inject\", \"clubhouse.provider.build_command\", \"clubhouse.pty.spawn\", \"clubhouse.headless.spawn\", \"clubhouse.chat.start\")\n| summarize p50_ms = percentile(duration, 50), p95_ms = percentile(duration, 95), failed = countif(success == false) by name\n| order by p95_ms desc",
               "size": 0,
               "title": "Spawn steps (p50 / p95 ms)",
               "queryType": 0,

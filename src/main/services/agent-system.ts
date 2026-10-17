@@ -29,7 +29,7 @@ import { tryStartChatAgent } from './agent-runtime/chat-spawn';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { agentKillRequested, clearSpawnKind, noteSpawnKind } from '../telemetry/agent-telemetry';
-import { recordSpawn, spawnAttrs, type SpawnFacts } from '../telemetry/spawn-telemetry';
+import { recordChatStart, recordSpawn, spawnAttrs, type SpawnFacts } from '../telemetry/spawn-telemetry';
 
 /** Expand leading `~` or `~/` to the user's home directory. */
 export function expandHome(p: string): string {
@@ -240,19 +240,27 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
 
     // Chat runtime (experimental): durable agents whose provider is set to
     // Chat and has a registered driver. Falls through to the terminal otherwise.
-    const startedInChat = await withErrorType('chat_start_failed', () => tryStartChatAgent({
-      agentId: params.agentId,
-      projectPath: params.projectPath,
-      cwd: params.cwd,
-      kind: params.kind,
-      model: params.model,
-      mission: params.mission,
-      systemPrompt: params.systemPrompt,
-      freeAgentMode: params.freeAgentMode,
-      permissionMode,
-      resume: params.resume,
-      sessionId: params.sessionId,
-    }, provider, profileEnv, commandPrefix, durableConfig));
+    let chatStartMs: number | undefined;
+    let startedInChat: boolean;
+    try {
+      startedInChat = await withErrorType('chat_start_failed', () => tryStartChatAgent({
+        agentId: params.agentId,
+        projectPath: params.projectPath,
+        cwd: params.cwd,
+        kind: params.kind,
+        model: params.model,
+        mission: params.mission,
+        systemPrompt: params.systemPrompt,
+        freeAgentMode: params.freeAgentMode,
+        permissionMode,
+        resume: params.resume,
+        sessionId: params.sessionId,
+      }, provider, profileEnv, commandPrefix, durableConfig, () => { chatStartMs = Date.now(); }));
+    } catch (err) {
+      recordChatStart(chatStartMs, false);
+      throw err;
+    }
+    recordChatStart(chatStartMs, startedInChat);
     if (startedInChat) {
       facts.runtime = 'chat';
       broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);

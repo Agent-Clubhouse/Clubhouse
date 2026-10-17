@@ -6,7 +6,7 @@
  * No OpenTelemetry imports: part of the main bundle.
  */
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
-import { tel } from './facade';
+import { replaySpan, tel } from './facade';
 import { errorTypeOf } from './types';
 
 type Kind = Parameters<typeof ATTR.agentKind>[0];
@@ -52,6 +52,23 @@ export function spawnAttrs(f: SpawnFacts): TelAttr[] {
   if (f.profileActive !== undefined) attrs.push(ATTR.profileActive(f.profileActive));
   if (f.wrapperApplied !== undefined) attrs.push(ATTR.wrapperApplied(f.wrapperApplied));
   return attrs;
+}
+
+/**
+ * A chat start that really began (a driver and CLI were found), replayed as a
+ * child of the spawn. Spawns that were never chat (`startMs` unset) record
+ * nothing; a start that fell back to the terminal is `chat_start_failed`.
+ */
+export function recordChatStart(startMs: number | undefined, started: boolean, atMs = Date.now()): void {
+  if (startMs === undefined) return;
+  replaySpan({
+    name: 'clubhouse.chat.start',
+    startMs,
+    endMs: Math.max(atMs, startMs),
+    attrs: [],
+    outcome: started ? 'ok' : 'error',
+    errorType: started ? undefined : 'chat_start_failed',
+  });
 }
 
 /** Count one spawn attempt; on success also its duration. */

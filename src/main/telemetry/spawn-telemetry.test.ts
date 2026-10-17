@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { setRuntime } from './facade';
-import { modelFamily, recordSpawn, spawnAttrs } from './spawn-telemetry';
+import { modelFamily, recordChatStart, recordSpawn, spawnAttrs } from './spawn-telemetry';
 import { tagError, type TelemetryRuntime } from './types';
 
 let count: ReturnType<typeof vi.fn>;
+let replaySpan: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   count = vi.fn();
-  setRuntime({ level: 'standard', count } as unknown as TelemetryRuntime);
+  replaySpan = vi.fn();
+  setRuntime({ level: 'standard', count, replaySpan } as unknown as TelemetryRuntime);
 });
 afterEach(() => setRuntime(null));
 
@@ -22,6 +24,19 @@ describe('modelFamily', () => {
     ['my-private-finetune', 'other'],
   ])('%s → %s', (model, family) => {
     expect(modelFamily(model)).toBe(family);
+  });
+});
+
+describe('recordChatStart', () => {
+  it('records nothing for a spawn that was never chat, and a fallback as chat_start_failed', () => {
+    recordChatStart(undefined, false);
+    expect(replaySpan).not.toHaveBeenCalled();
+    recordChatStart(1000, true, 1400);
+    recordChatStart(2000, false, 2100);
+    expect(replaySpan.mock.calls.map((c) => c[0])).toEqual([
+      { name: 'clubhouse.chat.start', startMs: 1000, endMs: 1400, attrs: [], outcome: 'ok', errorType: undefined },
+      { name: 'clubhouse.chat.start', startMs: 2000, endMs: 2100, attrs: [], outcome: 'error', errorType: 'chat_start_failed' },
+    ]);
   });
 });
 

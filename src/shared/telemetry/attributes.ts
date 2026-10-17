@@ -384,6 +384,8 @@ export const SPANS = {
   'clubhouse.provider.build_command': { level: 'standard', root: false },
   'clubhouse.pty.spawn': { level: 'standard', root: false },
   'clubhouse.headless.spawn': { level: 'standard', root: false },
+  /** Chat driver start inside a spawn; only when a chat start really began. */
+  'clubhouse.chat.start': { level: 'standard', root: false },
   /** killAgent → exit. Replayed at exit; carries the trigger and the stage reached. */
   'clubhouse.agent.kill': { level: 'standard', root: true },
   /** One shoulder tap (direct or broadcast) to group-project members. */
