@@ -18,7 +18,8 @@ function setup(agent: Agent, extra: Partial<React.ComponentProps<typeof AgentRow
     <AgentRow agent={agent} dot={agent.status === 'sleeping' ? 'sleeping' : 'working'} active={false} indent={20}
       projectPath="/src/ch" onSelect={onSelect} onOpenTerminal={onOpenTerminal} {...extra} />,
   );
-  return { onSelect, onOpenTerminal, row: screen.getByTestId(`agent-item-${agent.id}`) };
+  const row = screen.getByTestId(`agent-item-${agent.id}`);
+  return { onSelect, onOpenTerminal, row, focusable: row.firstElementChild as HTMLElement };
 }
 
 beforeEach(() => {
@@ -47,11 +48,11 @@ describe('AgentRow menu', () => {
   });
 
   it('opens the menu from the keyboard with Shift+F10 and selects with Enter', () => {
-    const { row, onSelect } = setup(durable());
-    fireEvent.keyDown(row, { key: 'F10', shiftKey: true });
+    const { focusable, onSelect } = setup(durable());
+    fireEvent.keyDown(focusable, { key: 'F10', shiftKey: true });
     expect(screen.getByTestId('agent-context-menu')).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' });
-    fireEvent.keyDown(row, { key: 'Enter' });
+    fireEvent.keyDown(focusable, { key: 'Enter' });
     expect(onSelect).toHaveBeenCalled();
   });
 
@@ -98,12 +99,34 @@ describe('AgentRow hover card', () => {
 
   it('opens on keyboard focus and closes on Esc', () => {
     vi.useFakeTimers();
-    const { row } = setup(durable({ status: 'running' }));
-    fireEvent.focus(row);
+    const { focusable } = setup(durable({ status: 'running' }));
+    fireEvent.focus(focusable);
     act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
     expect(screen.getByTestId('hover-stop')).toBeTruthy();
-    fireEvent.keyDown(row, { key: 'Escape' });
+    fireEvent.keyDown(focusable, { key: 'Escape' });
     expect(screen.queryByTestId('agent-hover-card')).toBeNull();
+  });
+
+  it('stays open when focus moves from the row into the card', () => {
+    vi.useFakeTimers();
+    const { focusable } = setup(durable({ status: 'running' }));
+    fireEvent.focus(focusable);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    const stop = screen.getByTestId('hover-stop');
+    fireEvent.blur(focusable, { relatedTarget: stop });
+    fireEvent.focus(stop);
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(screen.getByTestId('agent-hover-card')).toBeTruthy();
+    // Leaving the card for somewhere else closes it.
+    fireEvent.blur(stop, { relatedTarget: document.body });
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(screen.queryByTestId('agent-hover-card')).toBeNull();
+  });
+
+  it('keeps the overflow button beside the row, not inside the focusable element', () => {
+    const { row, focusable } = setup(durable());
+    const overflow = row.querySelector('[data-testid="action-overflow"]')!;
+    expect(focusable.contains(overflow)).toBe(false);
   });
 
   it('offers no Open terminal where the project has no Terminal tab', () => {

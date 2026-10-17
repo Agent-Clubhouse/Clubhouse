@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
@@ -35,7 +36,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-export function AgentHoverCard({ agent, dot, detailed, projectPath, anchor, actions, onOpenTerminal, onAction, onMouseEnter, onMouseLeave }: {
+export const AgentHoverCard = forwardRef<HTMLDivElement, {
   agent: Agent;
   dot: AgentDot;
   detailed: AgentDetailedStatus | undefined;
@@ -47,7 +48,9 @@ export function AgentHoverCard({ agent, dot, detailed, projectPath, anchor, acti
   onAction: (action: ActionDef) => void;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
-}) {
+  onFocus: () => void;
+  onBlur: (e: React.FocusEvent) => void;
+}>(function AgentHoverCard({ agent, dot, detailed, projectPath, anchor, actions, onOpenTerminal, onAction, onMouseEnter, onMouseLeave, onFocus, onBlur }, ref) {
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const running = agent.status === 'running' && spawnedAt;
@@ -60,6 +63,9 @@ export function AgentHoverCard({ agent, dot, detailed, projectPath, anchor, acti
 
   return createPortal(
     <div
+      ref={ref}
+      onFocus={onFocus}
+      onBlur={onBlur}
       role="dialog"
       aria-label={`${agent.name} details`}
       data-testid="agent-hover-card"
@@ -104,4 +110,4 @@ export function AgentHoverCard({ agent, dot, detailed, projectPath, anchor, acti
     </div>,
     document.body,
   );
-}
+});

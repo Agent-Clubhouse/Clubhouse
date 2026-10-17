@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
 import { AgentContextMenu, OverflowIcon, useAgentRowActions, type ActionDef } from '../../features/agents/useAgentRowActions';
-import { getChromeSurface, reportChromeFeature, reportChromeSurface, type ChromeSurface } from '../telemetry';
+import { holdChromeSurface, reportChromeFeature, type ChromeSurface } from '../telemetry';
 import { AgentHoverCard } from './AgentHoverCard';
 import type { AgentDot } from './treeModel';
 
@@ -21,14 +21,9 @@ const HOVER_CLOSE_MS = 150;
 /** Actions that show the agent in the pane before they run (settings render there). */
 const REVEAL_FIRST = new Set(['settings']);
 
-/** While a popup is open it is where the user is (spec §8); restore the previous surface after. */
+/** While a popup is open it is where the user is (spec §8). */
 function useSurfaceWhile(open: boolean, surface: ChromeSurface) {
-  useEffect(() => {
-    if (!open) return;
-    const previous = getChromeSurface();
-    reportChromeSurface(surface);
-    return () => reportChromeSurface(previous);
-  }, [open, surface]);
+  useEffect(() => (open ? holdChromeSurface(surface) : undefined), [open, surface]);
 }
 
 const DOT_CLASS: Record<AgentDot, string> = {
@@ -75,6 +70,7 @@ interface AgentRowProps {
 export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal }: AgentRowProps) {
   const note = dot === 'needs' ? 'needs you' : dot === 'error' ? 'error' : agent.kind === 'quick' ? 'quick' : '';
   const rowRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const actions = useAgentRowActions(agent);
 
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -102,6 +98,12 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
     closeTimer.current = setTimeout(() => setCard(null), HOVER_CLOSE_MS);
   }, []);
   const keepOpen = useCallback(() => clearTimers(), []);
+  /** Focus leaving the row or the card closes it, unless it moved between the two. */
+  const onBlurOut = useCallback((e: React.FocusEvent) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && (rowRef.current?.contains(next) || cardRef.current?.contains(next))) return;
+    scheduleClose();
+  }, [scheduleClose]);
 
   const openMenuAt = (x: number, y: number) => {
     clearTimers();
@@ -120,6 +122,9 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
   };
   const menuActions = actions.map((a) => ({ ...a, handler: () => run(a, 'menu') }));
 
+  // The wrapper keeps the legacy test ids and takes clicks; the element inside
+  // is the focusable, announced row, and the overflow button sits beside it
+  // rather than inside it, so no interactive element is nested in another.
   return (
     <>
       <div
@@ -129,46 +134,50 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
         data-agent-name={agent.name}
         data-active={active}
         aria-current={active ? 'true' : undefined}
-        aria-label={agent.name}
-        role="button"
-        tabIndex={0}
         onClick={() => onSelect(agent)}
         onContextMenu={(e) => { e.preventDefault(); openMenuAt(e.clientX, e.clientY); }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(agent); }
-          else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
-            e.preventDefault();
-            const r = e.currentTarget.getBoundingClientRect();
-            openMenuAt(r.left + 24, r.bottom);
-          } else if (e.key === 'Escape' && card) { e.stopPropagation(); setCard(null); }
-        }}
         onMouseEnter={scheduleOpen}
         onMouseLeave={scheduleClose}
-        onFocus={scheduleOpen}
-        onBlur={scheduleClose}
-        style={{ paddingLeft: indent }}
-        className={`group/row w-full h-[30px] flex-shrink-0 pr-1 rounded-md flex items-center gap-2 text-[13px] text-left cursor-pointer transition-colors duration-100 focus-ring ${
+        className={`group/row relative w-full h-[30px] flex-shrink-0 rounded-md flex items-center cursor-pointer transition-colors duration-100 ${
           active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0/60 hover:text-ctp-text'
         }`}
       >
-        <StatusDot dot={dot} />
-        <span className="relative flex-shrink-0">
-          <AgentAvatar agent={agent} size="2xs" />
-          {agent.freeAgentMode && (
-            <span
-              role="img"
-              aria-label="Free Agent Mode: all permissions bypassed"
-              className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-ctp-error ring-1 ring-ctp-mantle"
-              title="Free Agent Mode: all permissions bypassed"
-            />
-          )}
-        </span>
-        <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}>{agent.name}</span>
-        {note && (
-          <span className={`ml-auto flex-shrink-0 text-xs group-hover/row:hidden ${dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}`}>
-            {note}
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label={agent.name}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(agent); }
+            else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+              e.preventDefault();
+              const r = e.currentTarget.getBoundingClientRect();
+              openMenuAt(r.left + 24, r.bottom);
+            } else if (e.key === 'Escape' && card) { e.stopPropagation(); setCard(null); }
+          }}
+          onFocus={scheduleOpen}
+          onBlur={onBlurOut}
+          style={{ paddingLeft: indent }}
+          className="min-w-0 flex-1 h-full pr-1 rounded-md flex items-center gap-2 text-[13px] text-left focus-ring"
+        >
+          <StatusDot dot={dot} />
+          <span className="relative flex-shrink-0">
+            <AgentAvatar agent={agent} size="2xs" />
+            {agent.freeAgentMode && (
+              <span
+                role="img"
+                aria-label="Free Agent Mode: all permissions bypassed"
+                className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-ctp-error ring-1 ring-ctp-mantle"
+                title="Free Agent Mode: all permissions bypassed"
+              />
+            )}
           </span>
-        )}
+          <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}>{agent.name}</span>
+          {note && (
+            <span className={`ml-auto flex-shrink-0 text-xs group-hover/row:hidden ${dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}`}>
+              {note}
+            </span>
+          )}
+        </div>
         {actions.length > 0 && (
           <button
             type="button"
@@ -181,7 +190,7 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
               const r = e.currentTarget.getBoundingClientRect();
               openMenuAt(r.right, r.bottom);
             }}
-            className="ml-auto flex-shrink-0 w-6 h-6 rounded hidden group-hover/row:flex items-center justify-center text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text cursor-pointer"
+            className="mr-1 flex-shrink-0 w-6 h-6 rounded hidden group-hover/row:flex items-center justify-center text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text cursor-pointer"
           >
             <OverflowIcon />
           </button>
@@ -190,6 +199,7 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
       {menu && <AgentContextMenu actions={menuActions} position={menu} onClose={() => setMenu(null)} />}
       {card && !menu && (
         <AgentHoverCard
+          ref={cardRef}
           agent={agent}
           dot={dot}
           detailed={detailed}
@@ -200,6 +210,8 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
           onAction={(action) => run(action, 'card')}
           onMouseEnter={keepOpen}
           onMouseLeave={scheduleClose}
+          onFocus={keepOpen}
+          onBlur={onBlurOut}
         />
       )}
     </>

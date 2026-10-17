@@ -77,4 +77,16 @@ describe('ApplyPersonaDialog', () => {
       expect(mockClose).toHaveBeenCalled();
     });
   });
+
+  it('lists personas from the agent’s own project when another project is active', async () => {
+    useProjectStore.setState({
+      projects: [
+        { id: 'proj-1', name: 'my-project', path: '/home/user/project', color: 'indigo' },
+        { id: 'proj-2', name: 'active', path: '/home/user/active', color: 'blue' },
+      ] as never,
+      activeProjectId: 'proj-2',
+    });
+    render(<ApplyPersonaDialog />);
+    await waitFor(() => expect(window.clubhouse.agentSettings.listSourcePersonas).toHaveBeenCalledWith('/home/user/project'));
+  });
 });
