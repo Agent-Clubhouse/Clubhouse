@@ -21,6 +21,34 @@ export function clearBinaryCache(): void {
 }
 
 /**
+ * Test/E2E seam: `CLUBHOUSE_TEST_CLI_BINARIES` is a JSON object mapping an
+ * orchestrator id to the exact binary to use for it, e.g.
+ * `{"claude-code": "/tmp/fake/bin/claude"}`. Chat E2E points each provider at
+ * a fixture-replaying fake CLI this way, so resolution can never reach a
+ * real install at a well-known path (which would spend tokens).
+ *
+ * Honored ONLY in unpackaged builds, like `CLUBHOUSE_PLUGINS_DIR`. A listed
+ * provider whose path doesn't exist throws rather than falling back to the
+ * normal lookup. Returns undefined when the provider isn't listed.
+ */
+export function testBinaryOverride(providerId: string): string | undefined {
+  const raw = process.env.CLUBHOUSE_TEST_CLI_BINARIES;
+  if (!raw || app.isPackaged) return undefined;
+  let map: unknown;
+  try {
+    map = JSON.parse(raw);
+  } catch {
+    throw new Error('CLUBHOUSE_TEST_CLI_BINARIES is not valid JSON');
+  }
+  const override = (map as Record<string, unknown> | null)?.[providerId];
+  if (override === undefined) return undefined;
+  if (typeof override !== 'string' || !fs.existsSync(override)) {
+    throw new Error(`Could not find the ${providerId} test binary from CLUBHOUSE_TEST_CLI_BINARIES: ${String(override)}`);
+  }
+  return override;
+}
+
+/**
  * Shared binary finder used by all orchestrator providers.
  *
  * Results are cached for 5 minutes to avoid repeatedly spawning login shells

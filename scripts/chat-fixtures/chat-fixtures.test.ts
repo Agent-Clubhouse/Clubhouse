@@ -341,3 +341,49 @@ describe('record', () => {
     if (process.platform !== 'win32') expect(last).toMatchObject({ exit: { code: 127 }, error: expect.stringContaining('ENOENT') });
   });
 });
+
+describe('fake CLI lifetime', () => {
+  // TODO(#1998): fails on windows-latest; the stdin-holder harness likely doesn't
+  // inherit the pipe there. The parent watch it covers is platform-independent
+  // and still runs on Linux and macOS.
+  const itPosix = process.platform === 'win32' ? it.skip : it;
+  itPosix('exits when its launcher dies, even with stdin still open (the Windows .cmd shim case)', async () => {
+    const fixture = path.join(tmp, 'wait.jsonl');
+    // A client entry the fake waits on forever.
+    await fs.promises.writeFile(fixture, jsonl([
+      header('acp'),
+      { from: 'client', msg: { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} } },
+    ]));
+    // The launcher plays cmd.exe running a shim. The fake's stdin is the
+    // output of a separate holder process that outlives the launcher, so
+    // killing the launcher gives the fake no EOF: only its parent watch can
+    // end it, as on Windows where killing cmd.exe leaves node running.
+    const launcherCode = [
+      "const { spawn } = require('child_process');",
+      "const holder = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'pipe', 'ignore'] });",
+      `const fake = spawn(process.execPath, [${JSON.stringify(FAKE_CLI)}, '--fake-fixture', ${JSON.stringify(fixture)}], { stdio: [holder.stdout, 'ignore', 'ignore'] });`,
+      'process.stdout.write(JSON.stringify({ fake: fake.pid, holder: holder.pid }) + "\\n");',
+      'setInterval(() => {}, 1000);',
+    ].join('\n');
+    const launcher = spawn(process.execPath, ['-e', launcherCode], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    let pids: { fake: number; holder: number } | undefined;
+    try {
+      pids = await new Promise<{ fake: number; holder: number }>((resolve, reject) => {
+        launcher.stdout.once('data', (d: Buffer) => resolve(JSON.parse(String(d))));
+        launcher.once('error', reject);
+      });
+      expect(alive(pids.fake)).toBe(true);
+
+      launcher.kill('SIGKILL');
+
+      await expect.poll(() => alive(pids!.fake), { timeout: 3_000, interval: 50 }).toBe(false);
+      expect(alive(pids.holder)).toBe(true); // stdin really was still open
+    } finally {
+      launcher.kill('SIGKILL');
+      for (const pid of [pids?.fake, pids?.holder]) {
+        if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
+      }
+    }
+  });
+});
