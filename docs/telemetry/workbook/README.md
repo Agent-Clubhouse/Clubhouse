@@ -56,8 +56,9 @@ Once per release that changes the workbook, the alert rules or the attribute reg
 | Agents | Spawns and spawn failures by orchestrator, runtime and error; spawn time and spawn steps; CLI binary lookup by tier; how runs end; readiness; kills by trigger and stage; kill escalations; tool calls by bucket; Clubhouse MCP tool calls; permission waits; shoulder tap deliveries; durable create and delete |
 | Annex | Pairing results; connects by address family; connect and discovery failures; identity regenerations and TLS fallbacks; reconnects by attempt; disconnects by reason; heartbeat RTT; control requests denied; remote spawns; the satellite event stream by type; connected clients; snapshot build and replays; REST routes (Detailed level) |
 | Chat | Turns by driver and end reason (p50/p95), failed turns by error type, time to first token, protocol drift by driver and version, stalled turns, tokens by driver, chat permission waits |
+| Goobers | Data age by model; stream mode changes; stream reconnects and terminal stops; liveness transitions; activation and daemon control; the poll loop (Detailed level) |
 
-Permission panels live on the Agents tab. The Goobers tab is added with telemetry Phase 6b, in the same PR as the instrumentation it charts.
+Permission panels live on the Agents tab. Detailed-level panels (tool-call time on Agents, slowest IPC invokes on Reliability, REST routes on Annex) stay empty below the Detailed level.
 
 ## Keeping it in sync
 

@@ -7,8 +7,11 @@
  * every exported item against this file and drops anything not declared here.
  * See docs/telemetry-otel-spec.md §5.
  *
- * This module has no runtime dependencies so the renderer can share it later.
+ * Its only import is the IPC channel constants (themselves dependency-free),
+ * so the renderer can share it.
  */
+
+import { IPC } from '../ipc-channels';
 
 /** Bump on breaking attribute changes; exported as `clubhouse.telemetry.schema`. */
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
@@ -189,6 +192,8 @@ export const ERROR_TYPES = [
   'handshake_timeout',
   'not_connected',
   'send_failed',
+  // Goobers (§4.13, Phase 6b)
+  'goobers_daemon_failed',
 ] as const;
 
 export const OUTCOMES = ['ok', 'error', 'cancelled', 'timeout', 'skipped'] as const;
@@ -238,6 +243,17 @@ export const BUILTIN_PLUGIN_IDS = [
 ] as const;
 
 // --- The registry -----------------------------------------------------------
+
+/** Every channel string in the IPC constants (nested groups flattened). */
+function ipcChannelNames(): string[] {
+  const out = new Set<string>();
+  const walk = (o: unknown): void => {
+    if (typeof o === 'string') out.add(o);
+    else if (o && typeof o === 'object') for (const v of Object.values(o)) walk(v);
+  };
+  walk(IPC);
+  return [...out].sort();
+}
 
 export const ATTR = {
   // Cross-cutting (§3.2)
@@ -505,6 +521,25 @@ export const ATTR = {
    * Satellite REST route template, from ANNEX_HTTP_ROUTE_TABLE (a test keeps
    * them in sync); never a concrete path or query.
    */
+  // Goobers (§4.13, §12 H12, Phase 6b). Codes only, never messages: most
+  // messages interpolate the instance root, address or instance ids.
+  goobersDaemonState: enumAttr('clubhouse.goobers.state', ['running', 'not-running', 'starting', 'stopping', 'unknown']),
+  goobersConnection: enumAttr('clubhouse.goobers.connection', ['idle', 'connecting', 'connected', 'degraded', 'error']),
+  goobersError: enumAttr('clubhouse.goobers.error', [
+    'none', 'unsupported-platform', 'not-configured', 'not-a-goobers-instance-root', 'decommissioned-root',
+    'invalid-instance-id', 'instance-id-unreadable', 'invalid-root', 'binary-not-found', 'binary-not-executable',
+    'non-loopback-address', 'unexpected-readyz-status', 'identity-check-failed', 'identity-unverifiable',
+    'identity-mismatch', 'auth-required', 'recovering', 'recovery-stalled', 'degraded', 'lifecycle-busy',
+    'daemon-control-disabled', 'daemon-start-failed', 'daemon-start-unknown', 'daemon-stop-failed', 'other',
+  ]),
+  goobersStreamMode: enumAttr('clubhouse.goobers.stream.mode', ['live', 'reconnecting', 'polling', 'unavailable']),
+  goobersModel: enumAttr('clubhouse.goobers.model', ['instance', 'run', 'workflow']),
+  sseTerminalReason: enumAttr('clubhouse.sse.terminal_reason', ['auth-required', 'no-read-model', 'schema-changed']),
+  /**
+   * IPC channel, from the fixed IPC constants; never a dynamic name. Channels
+   * built at runtime (e.g. per-key managed-settings channels) are `other`.
+   */
+  ipcChannel: enumAttr('clubhouse.ipc.channel', [...ipcChannelNames(), 'other']),
   annexRoute: enumAttr('clubhouse.annex.route', [
     'GET /api/v1/identity',
     'GET /api/v1/status',
@@ -620,6 +655,15 @@ export const SPANS = {
   'clubhouse.agent.permission': { level: 'standard', root: true },
   /** One Clubhouse MCP tool call served to an agent. */
   'clubhouse.mcp.tool_call': { level: 'standard', root: true },
+  // Goobers (§4.13, Phase 6b)
+  /** subscribe() → the first reconcile (liveness) result. */
+  'clubhouse.goobers.activate': { level: 'standard', root: true },
+  'clubhouse.goobers.daemon.start': { level: 'standard', root: true },
+  'clubhouse.goobers.daemon.stop': { level: 'standard', root: true },
+  /** One renderer ipcRenderer.invoke handled in main, per channel. Detailed only. */
+  'clubhouse.ipc.invoke': { level: 'detailed', root: true },
+  /** pre_tool → post_tool / tool_error from the hook server. Detailed only. */
+  'clubhouse.agent.tool_call': { level: 'detailed', root: true },
   /** Durable agent creation (IPC entry → config written, persona applied). */
   'clubhouse.agent.create': { level: 'standard', root: true },
   'clubhouse.agent.persona_inject': { level: 'standard', root: false },
@@ -983,6 +1027,37 @@ export const METRICS = {
     description: 'Event replays requested by reconnecting clients, by result',
     attributes: ['clubhouse.annex.replay.result'],
   },
+  // Goobers (§4.13, Phase 6b)
+  'clubhouse.goobers.polls': {
+    kind: 'counter', unit: '{poll}', level: 'detailed',
+    description: 'Goobers liveness poll ticks that ran',
+    attributes: [],
+  },
+  'clubhouse.goobers.poll.skipped': {
+    kind: 'counter', unit: '{poll}', level: 'detailed',
+    description: 'Poll ticks skipped because the previous one was still running',
+    attributes: [],
+  },
+  'clubhouse.goobers.poll.duration': {
+    kind: 'histogram', unit: 's', level: 'detailed',
+    description: 'Goobers liveness poll time',
+    attributes: [],
+  },
+  'clubhouse.goobers.data.age': {
+    kind: 'gauge', unit: 's', level: 'standard',
+    description: 'Seconds since the last fresh payload, per model, sampled at each poll tick (§12 H12)',
+    attributes: ['clubhouse.goobers.model'],
+  },
+  'clubhouse.goobers.sse.reconnects': {
+    kind: 'counter', unit: '{reconnect}', level: 'standard',
+    description: 'Goobers event-stream drops that went back to reconnecting',
+    attributes: [],
+  },
+  'clubhouse.goobers.sse.terminals': {
+    kind: 'counter', unit: '{stream}', level: 'standard',
+    description: 'Goobers event streams that stopped for good this lifecycle, by reason',
+    attributes: ['clubhouse.sse.terminal_reason'],
+  },
   'clubhouse.telemetry.export.failures': {
     kind: 'counter',
     unit: '{export}',
@@ -1077,6 +1152,10 @@ export const EVENTS = {
   'clubhouse.annex.identity.regenerated': { level: 'errors' },
   /** The satellite could not set up TLS and serves plain HTTP (security-relevant, §4.12). */
   'clubhouse.annex.tls_fallback': { level: 'errors' },
+  /** Goobers liveness changed (daemon state, connection or error code). Only on transitions. */
+  'clubhouse.goobers.liveness': { level: 'standard' },
+  /** The Goobers event stream changed mode (live / reconnecting / polling / unavailable). */
+  'clubhouse.goobers.stream.mode': { level: 'standard' },
   /** A store hit corruption or fell back to a backup (§12 H1). Silent today; always worth knowing. */
   'clubhouse.persist.recovery': { level: 'errors' },
   /** A data-loss guard blocked saves. Sent once per store and reason per session. */

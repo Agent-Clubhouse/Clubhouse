@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { app, BrowserWindow, powerMonitor, session, net, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, powerMonitor, session, net, protocol } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, getActiveWatchCount, stopAllWatches } from './services/file-watch-service';
@@ -50,6 +50,7 @@ import { registerTelemetryRendererHandlers } from './ipc/telemetry-renderer-hand
 import { getTelemetrySettings } from './telemetry/settings';
 import { installAgentTelemetry } from './telemetry/agent-telemetry';
 import { installChatTelemetry } from './telemetry/chat-telemetry';
+import { installIpcTelemetry } from './telemetry/ipc-telemetry';
 import { getAgentOrchestrator } from './services/agent-registry';
 import { NEW_CHROME_ARG } from '../shared/chrome-flag';
 import { newChromeEnabled, titleBarOptions } from './window-chrome';
@@ -90,6 +91,9 @@ installCrashTelemetry();
 installLifecycleTelemetry();
 installAgentTelemetry(getAgentOrchestrator);
 installChatTelemetry();
+// Before registerAllHandlers, so every app invoke handler is timed at the
+// Detailed level. Telemetry's own handlers (registered above) stay untimed.
+installIpcTelemetry(ipcMain);
 // The startup span (§4.1) ends when the main window's initApp() resolves.
 onRendererReady((atMs, marks) => completeStartup(marks, undefined, atMs));
 

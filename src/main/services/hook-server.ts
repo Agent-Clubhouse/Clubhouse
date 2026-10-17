@@ -341,7 +341,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       },
     });
 
-    recordHookEvent(provider.id, normalized.kind, normalized.toolName);
+    recordHookEvent(provider.id, normalized.kind, normalized.toolName, agentId);
 
     const hookEvent = buildHookEvent(provider, normalized);
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);

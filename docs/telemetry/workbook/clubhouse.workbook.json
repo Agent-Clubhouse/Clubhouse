@@ -139,6 +139,14 @@
             "linkLabel": "Chat",
             "subTarget": "chat",
             "style": "link"
+          },
+          {
+            "id": "goobers",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Goobers",
+            "subTarget": "goobers",
+            "style": "link"
           }
         ]
       },
@@ -353,6 +361,19 @@
               "visualization": "timechart"
             },
             "name": "Long frames by view"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.ipc.invoke\"\n| summarize invokes = sum(itemCount), failed = countif(success == false), p95_ms = round(percentile(duration, 95), 0), max_ms = round(max(duration), 0) by channel = tostring(customDimensions[\"clubhouse.ipc.channel\"])\n| top 25 by p95_ms desc",
+              "size": 0,
+              "title": "Slowest IPC invokes (Detailed level)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Slowest IPC invokes (Detailed level)"
           }
         ]
       },
@@ -1119,6 +1140,19 @@
               "visualization": "table"
             },
             "name": "Durable create and delete"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.tool_call\"\n| extend bucket = tostring(customDimensions[\"clubhouse.tool.bucket\"])\n| summarize calls = sum(itemCount), errors = countif(success == false), p50_ms = percentile(duration, 50), p95_ms = percentile(duration, 95) by bucket, orchestrator = tostring(customDimensions[\"clubhouse.orchestrator\"])\n| order by p95_ms desc",
+              "size": 0,
+              "title": "Tool-call time by bucket (Detailed level)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Tool-call time by bucket (Detailed level)"
           }
         ]
       },
@@ -1432,6 +1466,106 @@
         "value": "chat"
       },
       "name": "tab-chat"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Goobers (experimental, spec \u00a74.13, \u00a712 H12): activation, liveness transitions, daemon control, event-stream mode and how stale the data shown is. Poll counts need the Detailed level."
+            },
+            "name": "text-goobers"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.goobers.data.age\"\n| summarize avg_s = round(sum(valueSum) / sum(valueCount), 1), max_s = round(max(valueMax), 0) by bin(timestamp, 1h), model = tostring(customDimensions[\"clubhouse.goobers.model\"])",
+              "size": 0,
+              "title": "Data age by model (s)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Data age by model (s)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.goobers.stream.mode\"\n| summarize changes = sum(itemCount), installs = dcount(user_Id) by mode = tostring(customDimensions[\"clubhouse.goobers.stream.mode\"])",
+              "size": 0,
+              "title": "Stream mode changes",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Stream mode changes"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.goobers.sse.reconnects\", \"clubhouse.goobers.sse.terminals\")\n| summarize count = sum(value) by name, reason = tostring(customDimensions[\"clubhouse.sse.terminal_reason\"])",
+              "size": 0,
+              "title": "Stream reconnects and terminal stops",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Stream reconnects and terminal stops"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.goobers.liveness\"\n| summarize transitions = sum(itemCount), installs = dcount(user_Id) by state = tostring(customDimensions[\"clubhouse.goobers.state\"]), connection = tostring(customDimensions[\"clubhouse.goobers.connection\"]), error = tostring(customDimensions[\"clubhouse.goobers.error\"])\n| order by transitions desc",
+              "size": 0,
+              "title": "Liveness transitions",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Liveness transitions"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.goobers.activate\", \"clubhouse.goobers.daemon.start\", \"clubhouse.goobers.daemon.stop\")\n| extend outcome = tostring(customDimensions[\"clubhouse.outcome\"]), error = tostring(customDimensions[\"clubhouse.goobers.error\"])\n| summarize count = sum(itemCount), p95_s = round(percentile(duration, 95) / 1000, 1) by name, outcome, error\n| order by name asc, count desc",
+              "size": 0,
+              "title": "Activation and daemon control",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Activation and daemon control"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.goobers.polls\", \"clubhouse.goobers.poll.skipped\", \"clubhouse.goobers.poll.duration\")\n| summarize polls = sumif(value, name == \"clubhouse.goobers.polls\"), skipped = sumif(value, name == \"clubhouse.goobers.poll.skipped\"), avg_ms = round(1000 * sumif(valueSum, name == \"clubhouse.goobers.poll.duration\") / sumif(valueCount, name == \"clubhouse.goobers.poll.duration\"), 0)",
+              "size": 0,
+              "title": "Poll loop (Detailed level)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Poll loop (Detailed level)"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "goobers"
+      },
+      "name": "tab-goobers"
     }
   ],
   "fallbackResourceIds": [

@@ -22,6 +22,8 @@ import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import { onAgentExit } from '../services/agent-exit-broadcast';
 import { isTelemetryActive, replaySpan, tel } from './facade';
 
+import { clearToolCalls } from './agent-signals';
+
 export { recordBinaryLookup, recordHookEvent, recordMcpToolCall, recordPermission, toolBucket } from './agent-signals';
 
 type Runtime = 'pty' | 'headless' | 'chat';
@@ -213,7 +215,10 @@ export function installAgentTelemetry(getOrchestrator: (agentId: string) => stri
   lookupOrchestrator = getOrchestrator;
   if (installed) return;
   installed = true;
-  onAgentExit((agentId, exitCode) => endRun(agentId, exitCode, null));
+  onAgentExit((agentId, exitCode) => {
+    endRun(agentId, exitCode, null);
+    clearToolCalls(agentId);
+  });
 }
 
 /** Test-only reset. */
