@@ -17,6 +17,10 @@ import type {
 } from '../../shared/marketplace-types';
 import { SUPPORTED_REGISTRY_VERSION } from '../../shared/marketplace-types';
 import { isValidPluginId } from '../../shared/manifest-validator';
+import { tel } from '../telemetry/facade';
+import type { SpanHandle } from '../telemetry/types';
+import { byteSizeBucket, classifyFetchError, flowClassifyingThrows } from '../telemetry/workspace';
+import { ATTR } from '../../shared/telemetry/attributes';
 
 const REGISTRY_URL =
   'https://raw.githubusercontent.com/Agent-Clubhouse/Clubhouse-Workshop/main/registry/registry.json';
@@ -52,14 +56,22 @@ function getCommunityPluginsDir(): string {
 }
 
 export async function fetchRegistry(): Promise<MarketplaceFetchResult> {
+  return flowClassifyingThrows('clubhouse.marketplace.fetch_registry', { attrs: [ATTR.registryKind('official')] },
+    (span) => fetchOfficialRegistry(span), classifyFetchError);
+}
+
+async function fetchOfficialRegistry(span: SpanHandle): Promise<MarketplaceFetchResult> {
   // Return cached if fresh
   if (registryCache && Date.now() - registryCache.fetchedAt < CACHE_TTL_MS) {
+    span.set(ATTR.cacheHit(true));
     return registryCache.data;
   }
+  span.set(ATTR.cacheHit(false));
 
   appLog('marketplace', 'info', 'Fetching plugin registry');
 
   const registryRes = await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  span.set(ATTR.httpStatusCode(registryRes.status));
   if (!registryRes.ok) {
     throw new Error(`Failed to fetch registry: ${registryRes.status} ${registryRes.statusText}`);
   }
@@ -92,15 +104,27 @@ export async function fetchCustomRegistry(marketplace: CustomMarketplace): Promi
   registry: MarketplaceRegistry;
   featured: MarketplaceFeatured | null;
 }> {
+  // The marketplace name and URL are never sent (spec §4.11).
+  return flowClassifyingThrows('clubhouse.marketplace.fetch_registry', { attrs: [ATTR.registryKind('custom')] },
+    (span) => fetchCustomRegistryNow(marketplace, span), classifyFetchError);
+}
+
+async function fetchCustomRegistryNow(marketplace: CustomMarketplace, span: SpanHandle): Promise<{
+  registry: MarketplaceRegistry;
+  featured: MarketplaceFeatured | null;
+}> {
   // Check cache
   const cached = customRegistryCache.get(marketplace.id);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    span.set(ATTR.cacheHit(true));
     return { registry: cached.data, featured: null };
   }
+  span.set(ATTR.cacheHit(false));
 
   appLog('marketplace', 'info', `Fetching custom registry: ${marketplace.name} (${marketplace.url})`);
 
   const registryRes = await fetch(marketplace.url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  span.set(ATTR.httpStatusCode(registryRes.status));
   if (!registryRes.ok) {
     throw new Error(`Failed to fetch custom registry "${marketplace.name}": ${registryRes.status} ${registryRes.statusText}`);
   }
@@ -222,7 +246,32 @@ function isErrnoCode(err: unknown, code: string): boolean {
   return typeof err === 'object' && err !== null && (err as NodeJS.ErrnoException).code === code;
 }
 
+type InstallStage = Parameters<typeof ATTR.installFailureStage>[0];
+
+/** Where an install got to and how big the download was, for telemetry. */
+interface InstallTrack {
+  stage: InstallStage;
+  bytes: number;
+}
+
+/**
+ * Install a marketplace plugin, measured as `clubhouse.plugin.install`
+ * (spec §4.11): the failure stage and download size bucket, never the id
+ * (hashed) or the asset URL.
+ */
 export async function installPlugin(req: MarketplaceInstallRequest): Promise<MarketplaceInstallResult> {
+  const track: InstallTrack = { stage: 'invalid_id', bytes: 0 };
+  return tel.flow('clubhouse.plugin.install', {
+    attrs: [ATTR.pluginRef('other'), ATTR.pluginIdHash(req.pluginId), ATTR.pluginOrigin('marketplace')],
+  }, async (span) => {
+    const result = await installPluginNow(req, track);
+    if (track.bytes > 0) span.set(ATTR.sizeBucket(byteSizeBucket(track.bytes)));
+    if (!result.success) span.set(ATTR.installFailureStage(track.stage));
+    return result;
+  }, { classify: (r) => (r.success ? 'ok' : { error: 'install_failed' }) });
+}
+
+async function installPluginNow(req: MarketplaceInstallRequest, track: InstallTrack): Promise<MarketplaceInstallResult> {
   const { pluginId, assetUrl, sha256 } = req;
 
   const pluginsDir = getCommunityPluginsDir();
@@ -254,19 +303,23 @@ export async function installPlugin(req: MarketplaceInstallRequest): Promise<Mar
 
   try {
     // 1. Download the zip
+    track.stage = 'download_http';
     const res = await fetch(assetUrl, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
     if (!res.ok) {
       return { success: false, error: `Download failed: ${res.status} ${res.statusText}` };
     }
     const buffer = Buffer.from(await res.arrayBuffer());
+    track.bytes = buffer.length;
 
     // 2. Verify SHA-256
+    track.stage = 'integrity';
     const hash = crypto.createHash('sha256').update(buffer).digest('hex');
     if (hash !== sha256) {
       return { success: false, error: `Integrity check failed: expected ${sha256}, got ${hash}` };
     }
 
     // 3. Write zip to the staging directory
+    track.stage = 'extract';
     await fsp.writeFile(tmpZipPath, buffer);
 
     // 4. Extract using adm-zip (cross-platform, no shell dependency)
@@ -289,6 +342,7 @@ export async function installPlugin(req: MarketplaceInstallRequest): Promise<Mar
     }
 
     // 6. Verify manifest.json exists
+    track.stage = 'no_manifest';
     try {
       await fsp.access(path.join(extractDir, 'manifest.json'));
     } catch {
@@ -296,6 +350,7 @@ export async function installPlugin(req: MarketplaceInstallRequest): Promise<Mar
     }
 
     // 7. Write .marketplace marker so the client knows this was installed from the marketplace
+    track.stage = 'swap';
     await fsp.writeFile(path.join(extractDir, '.marketplace'), '', 'utf-8');
 
     // 8. Swap into place: move the old install aside, move the new one in,
@@ -318,6 +373,7 @@ export async function installPlugin(req: MarketplaceInstallRequest): Promise<Mar
           appLog('marketplace', 'error', `Failed to restore previous install of ${pluginId} from ${backupDir}: ${restoreMsg}`);
           // Leave the staging directory (and the backup in it) for manual recovery.
           preserveStaging = true;
+          track.stage = 'restore';
         }
       }
       throw err;

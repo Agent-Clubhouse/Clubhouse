@@ -1,4 +1,5 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
+import { blueprintTransfer } from '../telemetry/feature-events';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
@@ -101,8 +102,10 @@ export function registerBlueprintHandlers(): void {
       }
       try {
         await fsp.writeFile(dialogResult.filePath, content, 'utf-8');
+        blueprintTransfer('exported', true);
         return { canceled: false, filePath: dialogResult.filePath };
       } catch (err) {
+        blueprintTransfer('exported', false);
         const message = err instanceof Error ? err.message : String(err);
         appLog('core:blueprint', 'error', 'Failed to write blueprint to user-chosen path', {
           meta: { filePath: dialogResult.filePath, error: message },
@@ -145,8 +148,10 @@ export function registerBlueprintHandlers(): void {
       }
       const raw = await fsp.readFile(filePath, 'utf-8');
       const data = JSON.parse(raw) as Record<string, unknown>;
+      blueprintTransfer('imported', true);
       return { canceled: false, filePath, data };
     } catch (err) {
+      blueprintTransfer('imported', false);
       const message = err instanceof Error ? err.message : String(err);
       appLog('core:blueprint', 'error', 'Failed to open user-chosen blueprint file', {
         meta: { filePath, error: message },

@@ -22,6 +22,7 @@ import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructive
 import { RuntimeSwitch } from './ChatHeader';
 import type { ChatViewContext } from './ChatView';
 import { isRunningState } from './view-model';
+import { noteExplicitTerminalChoice } from './chat-default-tip';
 
 const ChatView = lazy(() => import('./ChatView'));
 
@@ -97,6 +98,7 @@ export async function switchAgentRuntime(agent: Agent, mode: AgentRuntimeMode): 
   if (!project) throw new Error('Project not found');
   const api = window.clubhouse.agent;
   await api.updateDurableConfig(project.path, agent.id, { runtimeMode: mode });
+  if (mode === 'terminal') noteExplicitTerminalChoice();
   const store = useAgentStore.getState();
   await store.killAgent(agent.id, project.path);
   const config = await api.getDurableConfig(project.path, agent.id);

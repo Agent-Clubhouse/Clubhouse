@@ -9,9 +9,11 @@ import { create } from 'zustand';
 import type { ChatQuestionAnswers, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult } from '../../../../shared/chat';
 import { useChatStore, type ChatViewState } from '../../../stores/chatStore';
 import { useToastStore } from '../../../stores/toastStore';
+import type { ComposerAttachment } from './attachments';
 
 export interface ChatActions {
-  send: (text: string, delivery?: 'auto' | MessageDelivery) => Promise<RuntimeSendResult | null>;
+  /** `attachmentIds` are staged attachment ids. */
+  send: (text: string, delivery?: 'auto' | MessageDelivery, attachmentIds?: string[]) => Promise<RuntimeSendResult | null>;
   interrupt: () => Promise<void>;
   /** Resolves false when the answer didn't reach the agent (a toast says why). */
   respondPermission: (requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<boolean>;
@@ -26,6 +28,9 @@ export interface ChatActions {
 interface DraftState {
   drafts: Record<string, string>;
   setDraft: (agentId: string, text: string) => void;
+  /** Unsent attachments per agent, kept alongside the text for the same reason. */
+  attachments: Record<string, ComposerAttachment[]>;
+  setAttachments: (agentId: string, attachments: ComposerAttachment[]) => void;
 }
 
 export const useChatDraftStore = create<DraftState>((set) => ({
@@ -36,7 +41,23 @@ export const useChatDraftStore = create<DraftState>((set) => ({
     else delete drafts[agentId];
     return { drafts };
   }),
+  attachments: {},
+  setAttachments: (agentId, list) => set((s) => {
+    const attachments = { ...s.attachments };
+    if (list.length) attachments[agentId] = list;
+    else delete attachments[agentId];
+    return { attachments };
+  }),
 }));
+
+const NO_ATTACHMENTS: ComposerAttachment[] = [];
+
+export function useChatAttachments(agentId: string): [ComposerAttachment[], (list: ComposerAttachment[]) => void] {
+  const list = useChatDraftStore((s) => s.attachments[agentId] ?? NO_ATTACHMENTS);
+  const setAttachments = useChatDraftStore((s) => s.setAttachments);
+  const set = useCallback((l: ComposerAttachment[]) => setAttachments(agentId, l), [agentId, setAttachments]);
+  return [list, set];
+}
 
 export function useChatDraft(agentId: string): [string, (text: string) => void] {
   const text = useChatDraftStore((s) => s.drafts[agentId] ?? '');
@@ -96,8 +117,10 @@ export function useChatActions(agentId: string): ChatActions {
     }, []);
 
   return useMemo<ChatActions>(() => ({
-    send: async (text, delivery) => {
-      const r = await wrap('Message not sent', store.getState().send)(agentId, text, delivery);
+    send: async (text, delivery, attachments) => {
+      const r = attachments?.length
+        ? await wrap('Message not sent', store.getState().send)(agentId, text, delivery, attachments)
+        : await wrap('Message not sent', store.getState().send)(agentId, text, delivery);
       return r.ok ? r.value : null;
     },
     interrupt: async () => { await wrap("Couldn't stop the turn", store.getState().interrupt)(agentId); },

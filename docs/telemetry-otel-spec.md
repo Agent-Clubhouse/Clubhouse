@@ -390,7 +390,7 @@ Exits are classified on the `c.agent.run` span (above), not a separate span. Cha
 
 - `c.group.shoulder_tap` (S): `executeShoulderTap` (`group-project-shoulder-tap.ts:63`), with a child per target. Attributes: `c.delivery.result` (`delivered`/`not_running`/`unsupported_runtime`/`failed`), `c.agent.runtime`, `c.targets.count`.
 - `c.group.membership_sync` (S): `syncMemberships`. Attributes: join/leave counts.
-- `c.group.bulletin.posts` is not a separate counter: it is `c.mcp.tool_calls` filtered to `c.mcp.tool = post_bulletin`.
+- `c.group.bulletin.posts` (S) counts every post, from MCP or the UI, by `c.bulletin.post.result`: `ok`; `evicted_message` when the topic's own cap dropped older messages; `evicted_topic` when the board-wide cap dropped messages from other topics; `rejected` for an oversized body (Phase 5b, §12 H8). `c.mcp.tool_calls` with `c.mcp.tool = post_bulletin` still shows the MCP share, but without the eviction result.
 
 ### 4.5 Clubhouse MCP bridge (`clubhouse-mcp/`)
 
@@ -402,6 +402,8 @@ Exits are classified on the `c.agent.run` span (above), not a separate span. Cha
 | `c.mcp.tool_call.duration` histogram | tool kind | S |
 | `c.mcp.auth_rejected` counter | nonce 403s (`:71-82`) | E |
 | `c.mcp.sessions` gauge | SSE connections | D |
+
+`c.mcp.tools_list` event (S, Phase 5b): on every `tools/list`, with `c.mcp.tools.count_bucket` and `c.mcp.tools.empty`, never tool names (§12 H8, the empty-list bug #1544).
 
 The stdio relay `bridge/clubhouse-mcp-bridge.js` runs in the agent's process tree. It is **not** instrumented; there is nowhere safe for it to export from.
 
@@ -494,6 +496,8 @@ Failures here often come back as return values (`false`, `[]`) rather than excep
 
 Custom marketplace names and URLs are never sent. The config snapshot carries only `c.marketplace.custom.count`.
 
+**As implemented (Phase 5b).** Install failures before the staging steps (creating the plugins or staging directory) throw before any stage is tracked, so they are recorded as an `install_failed` span without `c.install.failure_stage`. `c.registry.kind` is `official` or `custom`; the featured list is fetched inside the official span. `c.plugin.install` records `c.install.failure_stage` and `c.size_bucket` (download size) as attributes, with `error.type=install_failed`, and no child spans. A plugin update's install runs as its child. Plugins are identified as `c.plugin.ref=other` plus `c.plugin.id_hash`, as in Phase 5a. `c.plugin.update_check` uses `c.update.trigger` (`startup`/`periodic`/`manual`) and the two counts. A check requested while one is running is not measured.
+
 ### 4.12 Annex (satellite / controller)
 
 The architecture and the telemetry stance on Annex are in §7. Instrumentation:
@@ -541,6 +545,8 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 | `c.theme.changed` | `c.theme.kind` (`builtin`/`plugin`), `c.theme.builtin_id` if built-in |
 | `c.popout.opened` | `c.popout.type` |
 | `c.telemetry.*` | `enabled`, `level_changed`, `disabled` (sent as the last record before shutdown of the exporter), `test` |
+
+**As implemented (Phase 5b, main-process call sites).** `c.settings.changed` carries `c.settings.key` only, from a static list covering the managed settings and the legacy settings handlers, with no field names or values. `c.theme.changed` adds `c.theme.builtin_id=other` for plugin themes. `c.popout.opened` and `c.blueprint.exported` / `c.blueprint.imported` (with `c.outcome`) come from main. Page views, the command palette, onboarding and help topics are renderer call sites, owned by the refresh (§9.1).
 
 ### 4.15 Process health, renderer performance and pipeline health (added in revision 2)
 
