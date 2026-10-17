@@ -9,6 +9,7 @@ import { app } from 'electron';
 import type { GroupProject } from '../../shared/group-project-types';
 import { appLog } from './log-service';
 import { ensureProjectChannels } from './group-project-bulletin';
+import { persist } from '../telemetry/persist';
 
 function groupProjectsDir(): string {
   const dirName = app.isPackaged ? '.clubhouse' : '.clubhouse-dev';
@@ -83,7 +84,7 @@ class GroupProjectRegistry {
     const data = [...this.projects.values()];
     const flushPromise = (async () => {
       await ensureDir(groupProjectsDir());
-      await fsp.writeFile(registryPath(), JSON.stringify(data, null, 2), 'utf-8');
+      await persist.timed('group_registry', () => fsp.writeFile(registryPath(), JSON.stringify(data, null, 2), 'utf-8'));
       this.dirty = false;
     })().catch((err) => {
       appLog('core:group-project', 'error', 'Failed to write group-projects registry', {

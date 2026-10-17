@@ -102,6 +102,8 @@ export const ERROR_TYPES = [
   'binary_not_found',
   // Renderer and crash handling (§4.2, Phase 3)
   'render_error',
+  // Persistence (§12 H1)
+  'write_failed',
   // Auto-update (§4.3)
   'network_transient',
   'network',
@@ -216,6 +218,17 @@ export const ATTR = {
 
   // Process health (§4.15)
   processType: enumAttr('clubhouse.process.type', ['browser', 'renderer', 'gpu', 'utility', 'other']),
+
+  // Persistence integrity (§12 H1, Phase 3c)
+  persistStore: enumAttr('clubhouse.persist.store', [
+    'settings', 'agents', 'projects', 'plugin_kv', 'canvas', 'group_registry', 'bulletin',
+  ]),
+  persistResult: enumAttr('clubhouse.persist.result', ['ok', 'failed']),
+  persistAction: enumAttr('clubhouse.persist.action', [
+    'primary_corrupt', 'quarantined', 'restored_from_backup', 'backup_corrupt', 'reset_to_default',
+    'external_change_merged', 'records_dropped', 'unreadable',
+  ]),
+  persistGuardReason: enumAttr('clubhouse.persist.guard_reason', ['not_hydrated', 'verify_empty']),
 } as const;
 
 /**
@@ -379,6 +392,26 @@ export const METRICS = {
     description: 'CPU usage summed per Electron process type',
     attributes: ['clubhouse.process.type'],
   },
+  'clubhouse.persist.writes': {
+    kind: 'counter', unit: '{write}', level: 'standard',
+    description: 'Writes to Clubhouse JSON stores by store and result',
+    attributes: ['clubhouse.persist.store', 'clubhouse.persist.result'],
+  },
+  'clubhouse.persist.write.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Time to write one store file',
+    attributes: ['clubhouse.persist.store'],
+  },
+  'clubhouse.persist.guard_blocks': {
+    kind: 'counter', unit: '{save}', level: 'errors',
+    description: 'Saves skipped by a data-loss guard (e.g. canvas after a failed load)',
+    attributes: ['clubhouse.persist.store', 'clubhouse.persist.guard_reason'],
+  },
+  'clubhouse.persist.flush_barrier.wait': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Time a flush waited on an in-flight write before writing newer state',
+    attributes: ['clubhouse.persist.store'],
+  },
   'clubhouse.telemetry.export.failures': {
     kind: 'counter',
     unit: '{export}',
@@ -417,6 +450,10 @@ export const EVENTS = {
   'clubhouse.process.eventloop_blocked': { level: 'errors' },
   /** At startup: whether the last applied update actually took (§12 H6). */
   'clubhouse.update.apply_verified': { level: 'errors' },
+  /** A store hit corruption or fell back to a backup (§12 H1). Silent today; always worth knowing. */
+  'clubhouse.persist.recovery': { level: 'errors' },
+  /** A data-loss guard blocked saves. Sent once per store and reason per session. */
+  'clubhouse.persist.guard_blocked': { level: 'errors' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 
