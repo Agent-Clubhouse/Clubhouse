@@ -5,7 +5,8 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { AcpClient, RpcError } from './acp-client';
-import { CodexAppServerClient } from './codex-app-server-client';
+import { CodexAppServerClient, textInput } from './codex-app-server-client';
+import type { CodexUnrecognizedMessage } from './codex-protocol';
 import {
   EventLog,
   NdjsonPeer,
@@ -159,32 +160,33 @@ describe('CodexAppServerClient against fake codex app-server', () => {
     const handle = await fake('codex', name, ['app-server']);
     const notes = new EventLog<Notification>();
     const requests = new EventLog<ServerRequest>();
+    const unrecognized = new EventLog<CodexUnrecognizedMessage>();
     const logs: LogEntry[] = [];
     const client = new CodexAppServerClient({
       binary: handle.binary,
       args: handle.args,
       rpcTimeoutMs: 5000,
-      onNotification: (method, params) => notes.push({ method, params: params as Record<string, unknown> }),
-      onServerRequest: (id, method, params) => requests.push({ id, method, params: params as Record<string, unknown> }),
+      onCodexNotification: (n) => notes.push(n as unknown as Notification),
+      onCodexServerRequest: (r) => requests.push(r as unknown as ServerRequest),
+      onUnrecognizedMessage: (m) => {
+        unrecognized.push(m);
+        if (m.kind === 'notification') notes.push({ method: m.method, params: m.params as Record<string, unknown> });
+      },
       onLog: (level, message) => logs.push({ level, message }),
     });
     cleanups.push(() => client.kill());
-    await client.start();
+    const init = await client.start();
+    expect(init.userAgent).toContain('0.159.3');
     let threadId = '';
     if (startThread) {
-      const started = await client.request('thread/start', {
-        cwd: '/workspace/project', approvalPolicy: 'on-request', sandbox: 'workspace-write',
-      }) as { thread: { id: string } };
+      const started = await client.threadStart({ cwd: '/workspace/project', approvalPolicy: 'on-request', sandbox: 'workspace-write' });
       threadId = started.thread.id;
     }
-    const startTurn = async (text: string, thread = threadId) => {
-      const res = await client.request('turn/start', { threadId: thread, input: [{ type: 'text', text, text_elements: [] }] }) as
-        { turn: { id: string } };
-      return res.turn.id;
-    };
+    const startTurn = async (text: string, thread = threadId) =>
+      (await client.turnStart({ threadId: thread, input: [textInput(text)] })).turn.id;
     const turnCompleted = async () =>
       (await notes.waitFor({ method: 'turn/completed' })).params.turn as { status: string; error: { message: string } | null };
-    return { handle, client, notes, requests, logs, startTurn, turnCompleted };
+    return { handle, client, notes, requests, unrecognized, logs, startTurn, turnCompleted, threadId };
   }
 
   it('multi-turn: deltas assemble into each agent message', async () => {
@@ -202,17 +204,19 @@ describe('CodexAppServerClient against fake codex app-server', () => {
     expect(messages).toEqual(['one', 'two']);
     const deltas = notes.items.filter((n) => n.method === 'item/agentMessage/delta').map((n) => n.params.delta);
     expect(deltas.join('')).toBe('onetwo');
-    expect((await handle.readReport()).argv).toEqual(['app-server']);
+    const report = await handle.waitForReport();
+    expect(report.argv).toEqual(['app-server']);
     await expectFixtureComplete(handle);
   });
 
-  it('interrupt: turn/interrupt ends the turn as interrupted', async () => {
-    const { handle, client, notes, startTurn, turnCompleted } = await startCodex('interrupt');
+  it('interrupt: turnInterrupt targets the tracked active turn and the turn ends interrupted', async () => {
+    const { handle, client, notes, startTurn, turnCompleted, threadId } = await startCodex('interrupt');
     const turnId = await startTurn('Run the test suite.');
     await notes.waitFor({ method: 'item/commandExecution/outputDelta' });
-    const threadId = (notes.items.find((n) => n.method === 'turn/started')?.params.threadId) as string;
-    await client.request('turn/interrupt', { threadId, turnId });
+    expect(client.getActiveTurnId(threadId)).toBe(turnId);
+    await client.turnInterrupt(threadId);
     expect((await turnCompleted()).status).toBe('interrupted');
+    expect(client.getActiveTurnId(threadId)).toBeUndefined();
     await expectFixtureComplete(handle);
   });
 
@@ -220,7 +224,7 @@ describe('CodexAppServerClient against fake codex app-server', () => {
     const { handle, client, notes, requests, startTurn, turnCompleted } = await startCodex('permission-approve-edit');
     await startTurn('Use a template literal in greet.');
     const ask = await requests.waitFor({ method: 'item/fileChange/requestApproval' });
-    client.respond(ask.id, { decision: 'accept' });
+    client.respondToFileChangeApproval(ask.id, 'accept');
     const diff = await notes.waitFor({ method: 'turn/diff/updated' });
     expect(diff.params.diff).toContain('+  return `Hello, ${name}!`;');
     expect((await turnCompleted()).status).toBe('completed');
@@ -229,6 +233,7 @@ describe('CodexAppServerClient against fake codex app-server', () => {
       .map((n) => n.params.item as { type: string; status?: string })
       .find((item) => item.type === 'fileChange');
     expect(patched?.status).toBe('completed');
+    expect(client.getOpenServerRequests().size).toBe(0);
     await expectFixtureComplete(handle);
   });
 
@@ -236,8 +241,8 @@ describe('CodexAppServerClient against fake codex app-server', () => {
     const { handle, client, notes, requests, startTurn, turnCompleted } = await startCodex('permission-deny');
     await startTurn('Clean the build output.');
     const ask = await requests.waitFor({ method: 'item/commandExecution/requestApproval' });
-    expect(ask.params.availableDecisions).toContain('decline');
-    client.respond(ask.id, { decision: 'decline' });
+    expect(ask.params.command).toBe('rm -rf dist');
+    client.respondToCommandApproval(ask.id, 'decline');
     expect((await turnCompleted()).status).toBe('completed');
     const command = notes.items
       .filter((n) => n.method === 'item/completed')
@@ -247,11 +252,12 @@ describe('CodexAppServerClient against fake codex app-server', () => {
     await expectFixtureComplete(handle);
   });
 
-  it('turn error: a failed resume rejects, and a failed turn reports its error', async () => {
+  it('turn error: a failed resume rejects with RpcError, and a failed turn reports its error', async () => {
     const { handle, client, notes, startTurn, turnCompleted } = await startCodex('turn-error', false);
-    await expect(client.request('thread/resume', { threadId: '019a0000-0000-7000-8000-0000000dead0' }))
-      .rejects.toThrow('RPC error -32600');
-    const started = await client.request('thread/start', { cwd: '/workspace/project' }) as { thread: { id: string } };
+    const err = await client.threadResume({ threadId: '019a0000-0000-7000-8000-0000000dead0' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RpcError);
+    expect((err as RpcError).code).toBe(-32600);
+    const started = await client.threadStart({ cwd: '/workspace/project' });
     await startTurn('Summarize the repo.', started.thread.id);
     const turn = await turnCompleted();
     expect(turn.status).toBe('failed');
@@ -261,13 +267,16 @@ describe('CodexAppServerClient against fake codex app-server', () => {
     await expectFixtureComplete(handle);
   });
 
-  it('schema drift: unknown items and requests do not break the turn', async () => {
-    const { handle, client, notes, requests, logs, startTurn, turnCompleted } = await startCodex('schema-drift');
+  it('schema drift: unknown items pass through, unknown requests are refused for us, stray lines are logged', async () => {
+    const { handle, notes, unrecognized, logs, startTurn, turnCompleted } = await startCodex('schema-drift');
     await startTurn('Hello.');
-    const unknown = await requests.waitFor({ method: 'item/tool/requestTeleport' });
-    client.respondWithError(unknown.id, -32601, 'Method not found');
+    // The client answers the unknown request with method-not-found itself;
+    // the fixture's `match` checks that reply reached the CLI.
+    expect(await unrecognized.waitFor({ kind: 'request' })).toMatchObject({ method: 'item/tool/requestTeleport' });
     expect((await turnCompleted()).status).toBe('completed');
-    expect(notes.items.map((n) => n.method)).toContain('item/hologram/delta');
+    expect(unrecognized.items.map((m) => m.kind === 'notification' && m.method)).toContain('item/hologram/delta');
+    const hologram = notes.items.find((n) => n.method === 'item/started' && (n.params.item as { type: string }).type === 'hologram');
+    expect(hologram).toBeDefined();
     expect(logs.some((l) => l.message.startsWith('Malformed JSON line'))).toBe(true);
     await expectFixtureComplete(handle);
   });
