@@ -18,7 +18,7 @@ import { ChangesPanel } from './ChangesPanel';
 import { AgentMapPanel } from './AgentMapPanel';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { Composer, QueueList, TaskList } from './Composer';
-import { useChatActions, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, type ChatActions } from './useChatSession';
+import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, type ChatActions } from './useChatSession';
 import { buildAgentMap, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
 
 export interface ChatViewBodyProps {
@@ -67,6 +67,7 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   const ended = isSessionEnded(state);
   const [draft, setDraft] = useChatDraft(agent.id);
   const [changesOpen, setChangesOpen] = useState(false);
+  const [attachments, setAttachments] = useChatAttachments(agent.id);
   const [agentMapOpen, setAgentMapOpen] = useState(false);
   const [selectedSubagent, setSelectedSubagent] = useState<string | null>(null);
   const [jump, setJump] = useState<StreamJump | null>(null);
@@ -97,19 +98,26 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
     requestAnimationFrame(() => document.getElementById(mapToggleId)?.focus());
   }, [mapToggleId]);
 
-  const onSend = (text: string, action: SendAction) => {
+  const onSend = (text: string, action: SendAction, blocks?: string[]) => {
+    const sentAttachments = attachments;
+    const send = (delivery: 'auto' | 'steer' | 'queued') => (blocks ? actions.send(text, delivery, blocks) : actions.send(text, delivery));
     void (async () => {
       let result;
-      if (action === 'steer') result = await actions.send(text, 'steer');
-      else if (action === 'queue') result = await actions.send(text, 'queued');
+      if (action === 'steer') result = await send('steer');
+      else if (action === 'queue') result = await send('queued');
       else if (action === 'stop_and_send') {
         // No steering: cancel the turn, then send. 'auto' queues it until the
         // cancelled turn has ended, so it becomes the next prompt.
         await actions.interrupt();
-        result = await actions.send(text, 'auto');
-      } else result = await actions.send(text, 'auto');
-      // Not sent: put the text back unless the user has started a new draft.
-      if (result === null && !useChatDraftStore.getState().drafts[agent.id]) setDraft(text);
+        result = await send('auto');
+      } else result = await send('auto');
+      // Not sent: put the draft back unless the user has started a new one.
+      if (result !== null) return;
+      const drafts = useChatDraftStore.getState();
+      if (!drafts.drafts[agent.id] && !drafts.attachments[agent.id]) {
+        setDraft(text);
+        if (blocks) setAttachments(sentAttachments);
+      }
     })();
   };
 
@@ -151,6 +159,9 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
           commands={state.commands}
           text={draft}
           onTextChange={setDraft}
+          attachmentAgentId={agent.id}
+          attachments={attachments}
+          onAttachmentsChange={setAttachments}
           onSend={onSend}
           onStop={() => { void actions.interrupt(); }}
           onLevelChange={(l) => { void actions.setLevel(l); }}

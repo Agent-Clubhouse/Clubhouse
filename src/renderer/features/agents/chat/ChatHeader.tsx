@@ -4,6 +4,7 @@ import type { ChatDriverId, UsageLimit } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { AgentAvatar } from '../AgentAvatar';
 import { formatElapsed, formatTokens } from './view-model';
+import { ChatDefaultTip } from './ChatDefaultTip';
 
 const DRIVER_LABELS: Record<ChatDriverId, string> = {
   claude_agent_sdk: 'Agent SDK',
@@ -185,7 +186,12 @@ export function ChatHeader({ agent, state, providerName, onSwitchToTerminal, swi
             Agents{subagentCount ? ` ${subagentCount}` : ''}
           </button>
         )}
-        {onSwitchToTerminal && <RuntimeSwitch value="chat" onChange={onSwitchToTerminal} disabled={switching} />}
+        {onSwitchToTerminal && (
+          <span className="relative">
+            <RuntimeSwitch value="chat" onChange={onSwitchToTerminal} disabled={switching} />
+            <ChatDefaultTip agent={agent} />
+          </span>
+        )}
       </div>
     </div>
   );

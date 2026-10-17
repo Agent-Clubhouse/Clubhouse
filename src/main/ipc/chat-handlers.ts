@@ -3,22 +3,45 @@
  * the registry, so a request for an agent that isn't running in chat fails
  * cleanly instead of reaching a PTY.
  */
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
-import { PERMISSION_LEVELS } from '../../shared/chat';
+import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS } from '../../shared/chat';
 import { getAgentRuntime, isChatAgent, readChatTranscript, onChatEvent, resolveChatDriver } from '../services/agent-runtime';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
 import { handleChatEventForCheckpoints, listTurns, getChanges, revertTurn, undoRevert, isRevertRunning, type ChangesScope } from '../services/agent-runtime/checkpoint-tracker';
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, stringArg, numberArg, objectArg, booleanArg } from './validation';
+import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg } from './validation';
+import { resolveAttachments, stageAttachmentData, stageAttachmentPath } from '../services/agent-runtime/chat-attachments';
 
 function requireChatRuntime(agentId: string) {
   const runtime = getAgentRuntime(agentId);
   if (!runtime || runtime.kind !== 'chat') throw new Error(`Agent ${agentId} is not running in chat`);
   return runtime;
+}
+
+/**
+ * Staging must come from a Clubhouse window's own page (the main window or a
+ * popout), not an iframe, webview or detached WebContents.
+ */
+function assertTopFrameOfAppWindow(event: IpcMainInvokeEvent): void {
+  if (!BrowserWindow.fromWebContents(event.sender) || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error('Attachments can only be added from a Clubhouse window');
+  }
+}
+
+interface StageInput { path?: unknown; data?: unknown; name?: unknown; imagesAllowed?: unknown }
+
+/** Bounds checked before anything is read or written. */
+function validateStageInput(input: StageInput, argName: string): void {
+  if (input.path !== undefined && (typeof input.path !== 'string' || input.path.length > 4096)) throw new Error(`${argName}.path must be a path`);
+  if (input.data !== undefined) {
+    if (!(input.data instanceof Uint8Array)) throw new Error(`${argName}.data must be bytes`);
+    if (input.data.byteLength > CHAT_IMAGE_MAX_BYTES) throw new Error('Images must be 3.75 MB or smaller');
+  }
+  if (input.imagesAllowed !== undefined && typeof input.imagesAllowed !== 'boolean') throw new Error(`${argName}.imagesAllowed must be a boolean`);
 }
 
 const DELIVERIES: ReadonlySet<string> = new Set(['auto', 'prompt', 'steer', 'queued']);
@@ -48,14 +71,39 @@ export function registerChatHandlers(): void {
   ));
 
   ipcMain.handle(IPC.CHAT.SEND_MESSAGE, withValidatedArgs(
-    [stringArg(), stringArg({ minLength: 1 }), stringArg({ optional: true })],
-    async (_event, agentId, text, delivery) => {
+    // Text may be empty when attachments carry the message.
+    [stringArg(), stringArg({ minLength: 0 }), stringArg({ optional: true }), arrayArg(stringArg({ minLength: 1, maxLength: 64 }), { optional: true, maxLength: CHAT_ATTACHMENTS_MAX })],
+    async (_event, agentId, text, delivery, attachmentIds) => {
       const requested = delivery && DELIVERIES.has(delivery) ? (delivery as 'auto' | MessageDelivery) : 'auto';
       const runtime = requireChatRuntime(agentId);
       // The agent would start editing files the revert is restoring.
       if (await isRevertRunning(agentId)) throw new Error('Wait for the revert to finish before sending');
-      const content: ContentBlock[] = [{ type: 'text', text }];
+      // Only ids staged through STAGE_ATTACHMENT: the renderer can't name a path here.
+      const attached = attachmentIds?.length ? await resolveAttachments(agentId, attachmentIds, runtime.getCapabilities?.()) : [];
+      const content: ContentBlock[] = [...(text.trim() ? [{ type: 'text' as const, text }] : []), ...attached];
+      if (!content.length) throw new Error('Nothing to send');
       return runtime.sendMessage(content, { source: 'user', delivery: requested });
+    },
+  ));
+
+  // Trust model: page code has no raw ipcRenderer (contextIsolation, and the
+  // preload exposes no generic invoke), so this channel is reached only
+  // through the preload's stageAttachment(File). There the path comes from
+  // webUtils.getPathForFile, which resolves only files the user dropped or
+  // picked; page code can't stage an arbitrary path. Exposing a raw invoke
+  // would break this.
+  ipcMain.handle(IPC.CHAT.STAGE_ATTACHMENT, withValidatedArgs(
+    [stringArg(), objectArg<StageInput>({ validate: validateStageInput })],
+    async (event, agentId, input) => {
+      assertTopFrameOfAppWindow(event);
+      const name = typeof input.name === 'string' ? input.name.slice(0, 255) : undefined;
+      if (typeof input.path === 'string') return stageAttachmentPath(agentId, input.path, name);
+      if (input.data instanceof Uint8Array) {
+        // Refuse before saving, so a paste the agent can't take leaves no file behind.
+        if (input.imagesAllowed === false) throw new Error("This agent's chat can't take pasted images");
+        return stageAttachmentData(agentId, input.data, name);
+      }
+      throw new Error('Attachment needs a file path or image data');
     },
   ));
 
