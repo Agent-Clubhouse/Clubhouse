@@ -310,7 +310,7 @@ export const ATTR = {
   // lists report `sidebar_list`, plugin ids are never values.
   /** Where in the new chrome the user is, beside the coarse `clubhouse.view`. */
   uiSurface: enumAttr('clubhouse.ui.surface', [
-    'sidebar_agents', 'sidebar_list', 'sidebar_settings', 'sidebar_agent_settings', 'start_page', 'first_run', 'host_menu', 'more_menu', 'hover_card', 'row_menu',
+    'sidebar_agents', 'sidebar_list', 'sidebar_settings', 'sidebar_help', 'sidebar_agent_settings', 'start_page', 'first_run', 'host_menu', 'more_menu', 'hover_card', 'row_menu',
   ]),
   /** Feature-usage events from the new chrome. */
   uiFeature: enumAttr('clubhouse.ui.feature', [
@@ -327,6 +327,7 @@ export const ATTR = {
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [
     'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save', 'agent_create', 'agent_start', 'shortcut_save', 'reorder_agents',
+    'agent_stop', 'agent_wake',
     'agent_settings_save',
   ]),
   // App lifecycle (§4.1, Phase 3b)

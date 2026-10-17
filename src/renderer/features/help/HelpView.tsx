@@ -1,16 +1,32 @@
 import { useMemo, useCallback } from 'react';
 import { useUIStore } from '../../stores/uiStore';
-import { usePluginStore } from '../../plugins/plugin-store';
-import { HELP_SECTIONS, HelpSection } from './help-content';
-import { getPluginHelpTopics } from './plugin-help';
+import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import { searchHelpTopics } from './help-search';
+import { useHelpSections, resolveHelpSelection } from './useHelpSections';
 import { HelpSectionNav } from './HelpSectionNav';
 import { HelpTopicList } from './HelpTopicList';
 import { HelpContentPane } from './HelpContentPane';
 import { HelpSearchInput } from './HelpSearchInput';
 import { HelpSearchResults } from './HelpSearchResults';
 
+/**
+ * Help in the pane. The new shell lists topics and search results in the
+ * sidebar (chrome/sidebar/HelpNav.tsx), so the pane is only the article.
+ */
 export function HelpView() {
+  const newChrome = useChromeFlagStore((s) => s.enabled);
+  return newChrome ? <ChromeHelpArticle /> : <ClassicHelpView />;
+}
+
+function ChromeHelpArticle() {
+  const helpSectionId = useUIStore((s) => s.helpSectionId);
+  const helpTopicId = useUIStore((s) => s.helpTopicId);
+  const { all } = useHelpSections();
+  const { topic } = resolveHelpSelection(all, helpSectionId, helpTopicId, true);
+  return <HelpContentPane markdown={topic?.content ?? null} variant="chrome" />;
+}
+
+function ClassicHelpView() {
   const helpSectionId = useUIStore((s) => s.helpSectionId);
   const helpTopicId = useUIStore((s) => s.helpTopicId);
   const helpSearchQuery = useUIStore((s) => s.helpSearchQuery);
@@ -18,28 +34,7 @@ export function HelpView() {
   const setHelpTopic = useUIStore((s) => s.setHelpTopic);
   const setHelpSearchQuery = useUIStore((s) => s.setHelpSearchQuery);
 
-  const projectEnabled = usePluginStore((s) => s.projectEnabled);
-  const appEnabled = usePluginStore((s) => s.appEnabled);
-  const plugins = usePluginStore((s) => s.plugins);
-
-  const pluginSections = useMemo<HelpSection[]>(() => {
-    // Collect all plugin IDs enabled at app level or in any project
-    const allProjectIds = Object.values(projectEnabled).flat();
-    const enabledIds = [...new Set([...appEnabled, ...allProjectIds])];
-    return enabledIds
-      .map((id) => plugins[id])
-      .filter((entry) => entry && entry.status !== 'incompatible')
-      .map((entry) => ({
-        id: `plugin:${entry.manifest.id}`,
-        title: entry.manifest.name,
-        topics: getPluginHelpTopics(entry.manifest),
-      }));
-  }, [projectEnabled, appEnabled, plugins]);
-
-  const allSections = useMemo(
-    () => [...HELP_SECTIONS, ...pluginSections],
-    [pluginSections],
-  );
+  const { builtIn, plugins: pluginSections, all: allSections } = useHelpSections();
 
   const isSearching = helpSearchQuery.trim().length > 0;
 
@@ -57,8 +52,7 @@ export function HelpView() {
     [setHelpSection, setHelpTopic],
   );
 
-  const activeSection = allSections.find((s) => s.id === helpSectionId) || allSections[0];
-  const activeTopic = activeSection?.topics.find((t) => t.id === helpTopicId) || null;
+  const { section: activeSection, topic: activeTopic } = resolveHelpSelection(allSections, helpSectionId, helpTopicId, false);
 
   // When searching and a result is selected, find the topic from search results
   const displayedMarkdown = isSearching && helpTopicId
@@ -84,7 +78,7 @@ export function HelpView() {
         ) : (
           <>
             <HelpSectionNav
-              sections={HELP_SECTIONS}
+              sections={builtIn}
               pluginSections={pluginSections}
               activeSectionId={helpSectionId}
               onSelectSection={setHelpSection}

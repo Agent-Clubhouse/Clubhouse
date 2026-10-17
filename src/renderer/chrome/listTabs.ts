@@ -19,9 +19,10 @@ export function isListTab(explorerTab: string, layout: 'sidebar-content' | 'full
 
 /**
  * What the sidebar body shows: the agent tree, a project tab's list, the
- * settings navigator, or the pages of the agent whose settings are open.
+ * settings navigator, Help topics, or the pages of the agent whose settings
+ * are open.
  */
-export type SidebarMode = 'tree' | 'list' | 'settings' | 'agent-settings';
+export type SidebarMode = 'tree' | 'list' | 'settings' | 'help' | 'agent-settings';
 
 export function useSidebarMode(): SidebarMode {
   const explorerTab = useUIStore((s) => s.explorerTab);
@@ -29,6 +30,7 @@ export function useSidebarMode(): SidebarMode {
   const layout = usePluginStore((s) => (pluginId ? s.plugins[pluginId]?.manifest.contributes?.tab?.layout : undefined));
   const agentSettings = useAgentSettingsTarget(explorerTab);
   if (explorerTab === 'settings') return 'settings';
+  if (explorerTab === 'help') return 'help';
   if (agentSettings) return 'agent-settings';
   return isListTab(explorerTab, layout) ? 'list' : 'tree';
 }

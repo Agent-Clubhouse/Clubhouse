@@ -82,6 +82,7 @@ function stubApi(options: {
   return {
     agents: {
       list: () => agentsList,
+      getDetailedStatus: () => null,
       onAnyChange: () => ({ dispose: () => {} }),
       createDurable: options.createDurable
         ? async (opts: { projectId?: string; name: string; color: string }) => {
@@ -119,7 +120,7 @@ describe('AgentCanvasView', () => {
     const view = makeView({ agentId: null });
     render(<AgentCanvasView view={view} api={stubApi()} onUpdate={noop} />);
 
-    expect(screen.getByText('Assign an agent')).toBeTruthy();
+    expect(screen.getByTestId('canvas-widget-picker')).toBeTruthy();
   });
 
   it('shows connecting state when agentId is set but agent not in store', () => {
@@ -134,7 +135,7 @@ describe('AgentCanvasView', () => {
     expect(screen.getByText('RemoteAlpha')).toBeTruthy();
     expect(screen.getByText('Connecting...')).toBeTruthy();
     // Should NOT show the picker
-    expect(screen.queryByText('Assign an agent')).toBeNull();
+    expect(screen.queryByTestId('canvas-widget-picker')).toBeNull();
   });
 
   it('shows the runtime-aware AgentView in canvas mode when the agent is running', () => {
@@ -223,7 +224,7 @@ describe('AgentCanvasView', () => {
       );
 
       // App mode starts on the project-selection step.
-      expect(screen.getByText('Select a project')).toBeTruthy();
+      expect(screen.getByPlaceholderText('Find a project')).toBeTruthy();
       const scroll = screen.getByTestId('canvas-agent-picker-scroll');
       fireEvent.wheel(scroll, { deltaY: -120 });
 

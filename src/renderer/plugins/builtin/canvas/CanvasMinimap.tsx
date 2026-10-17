@@ -12,6 +12,7 @@ import {
   MINIMAP_INTERACTION_HIDE_DELAY,
 } from './canvas-minimap';
 import type { PluginCanvasView } from './canvas-types';
+import { CANVAS_Z } from './canvas-chrome';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -255,7 +256,7 @@ export function CanvasMinimap({
       style={{
         width: MINIMAP_WIDTH,
         height: MINIMAP_HEIGHT,
-        zIndex: 9990,
+        zIndex: CANVAS_Z.minimap,
         opacity: visible ? 1 : 0,
         pointerEvents: visible ? 'auto' : 'none',
         transition: 'opacity 200ms ease',

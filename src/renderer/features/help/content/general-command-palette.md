@@ -1,8 +1,8 @@
-# Command Palette
+# Command palette
 
 The Command Palette (`Cmd+K`) is a fuzzy-search launcher for navigating anywhere in Clubhouse. It works even when your cursor is in a text input.
 
-## Filter Modes
+## Filter modes
 
 Type a prefix to filter results:
 
@@ -20,11 +20,11 @@ Type a prefix to filter results:
 - **Enter** — select the highlighted item
 - **Escape** — close the palette
 
-## Recently Used
+## Recently used
 
 When you open the palette with no query, it shows your most recently used items (up to 20). Recent items also get a ranking boost in search results.
 
-## Shortcut Display
+## Shortcut display
 
 Each result shows its keyboard shortcut (if one exists), so you can learn shortcuts as you use the palette.
 

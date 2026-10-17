@@ -120,6 +120,7 @@ export function MainContentView() {
           <PoppedOutPlaceholder
             type="agent"
             name={activeAgent?.name}
+            agentId={activeAgentId}
             windowId={agentPopout.windowId}
           />
         );

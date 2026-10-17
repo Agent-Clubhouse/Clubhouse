@@ -12,10 +12,10 @@ const agent: Agent = { id: FIXTURE_AGENT_ID, projectId: 'p', name: 'gallant-swif
 
 const actions: ChatActions = {
   send: vi.fn(async () => ({ delivery: 'prompt' as const })),
-  interrupt: vi.fn(async () => {}),
+  interrupt: vi.fn(async () => true),
   respondPermission: vi.fn(async () => true),
   answerQuestion: vi.fn(async () => true),
-  setLevel: vi.fn(async () => {}),
+  setLevel: vi.fn(async () => true),
 };
 
 const fold = (events: ChatEvent[]): ChatViewState => foldChatEvents(undefined, FIXTURE_AGENT_ID, events);

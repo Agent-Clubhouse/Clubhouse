@@ -5,7 +5,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { AgentSettingsView } from './AgentSettingsView';
-import { useAgentSettingsPages, requestCloseAgentSettings } from './agentSettingsPages';
+import { useAgentSettingsPages, requestCloseAgentSettings, requestLeaveAgentSettings } from './agentSettingsPages';
 import { useToastStore } from '../../stores/toastStore';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import type { Agent, MaterializationPreview } from '../../../shared/types';
@@ -112,6 +112,7 @@ function resetStores() {
   useAgentStore.setState({
     agents: { 'agent-1': defaultAgent },
     activeAgentId: 'agent-1',
+    agentSettingsOpenFor: 'agent-1',
     agentIcons: {},
     closeAgentSettings: vi.fn(),
     updateAgent: vi.fn(),
@@ -898,6 +899,19 @@ describe('AgentSettingsView', () => {
       act(() => requestCloseAgentSettings());
       fireEvent.click(await screen.findByTestId('confirm-destructive-confirm'));
       expect(closeAgentSettings).toHaveBeenCalled();
+    });
+
+    it('runs the pending action after confirming, so the other agent opens', async () => {
+      const closeAgentSettings = vi.fn();
+      const next = vi.fn();
+      useAgentStore.setState({ closeAgentSettings, agentSettingsOpenFor: 'agent-1' });
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Unsaved' } });
+      act(() => requestLeaveAgentSettings(next));
+      expect(next).not.toHaveBeenCalled();
+      fireEvent.click(await screen.findByTestId('confirm-destructive-confirm'));
+      expect(closeAgentSettings).toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
     });
 
     it('closes at once when nothing is unsaved', () => {

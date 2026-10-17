@@ -83,7 +83,7 @@ describe('LinkDropdown', () => {
       <LinkDropdown agentView={agentView} views={[agentView]} onClose={vi.fn()} />,
     );
 
-    expect(container.textContent).toContain('No connectable widgets');
+    expect(container.textContent).toContain('No widgets on this canvas to link');
   });
 
   it('shows connected state for bound targets', () => {
@@ -98,7 +98,7 @@ describe('LinkDropdown', () => {
     );
 
     const target = getByTestId('link-target-b1');
-    expect(target.className).toContain('text-ctp-accent');
+    expect(target.getAttribute('aria-checked')).toBe('true');
   });
 
   it('calls bind when clicking unbound target', async () => {

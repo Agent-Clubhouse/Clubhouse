@@ -910,8 +910,11 @@ export function AgentSettingsView({ agent }: Props) {
 
   // ── Leaving with unsaved edits ─────────────────────────────────
 
-  const leavePending = useAgentSettingsPages((s) => s.leavePending);
-  const setLeavePending = useAgentSettingsPages((s) => s.setLeavePending);
+  const pendingLeave = useAgentSettingsPages((s) => s.pendingLeave);
+  const setPendingLeave = useAgentSettingsPages((s) => s.setPendingLeave);
+
+  // Nothing here is unsaved once the view is gone.
+  useEffect(() => () => setDirtyPages([]), [setDirtyPages]);
   const dirtyPageNames = dirtyPages.map((p) => AGENT_SETTINGS_PAGES.find((x) => x.page === p)?.label ?? p);
 
   // ── Sidebar counts ─────────────────────────────────────────────
@@ -1574,14 +1577,16 @@ export function AgentSettingsView({ agent }: Props) {
       )}
 
       <ConfirmDestructiveAction
-        open={leavePending}
+        open={pendingLeave !== null}
         title="Leave with unsaved changes?"
         description={`Your changes to ${joinNames(dirtyPageNames.map((n) => (n.startsWith('MCP') ? n : n.toLowerCase())))} will be lost.`}
         confirmLabel="Leave"
-        onCancel={() => setLeavePending(false)}
+        onCancel={() => setPendingLeave(null)}
         onConfirm={() => {
-          setLeavePending(false);
+          const next = pendingLeave;
+          setPendingLeave(null);
           closeAgentSettings();
+          next?.();
         }}
       />
 
