@@ -43,6 +43,7 @@ Every other line is an entry, in wire order:
 - `t` is milliseconds since the session started. It is optional in hand-made fixtures.
 - A CLI entry carries exactly one of `msg` (a JSON line on stdout), `raw` (a non-JSON stdout line), `stderr`, or `exit`.
 - `cli.versionOutput` is what `--version` prints, so version probes see the recorded CLI.
+- `synthesized` (optional) lists the shapes in a hand-made fixture that no capture backs. A recording that covers them should replace the fixture.
 
 ## Replay rules
 
@@ -99,11 +100,22 @@ Each CLI has seven hand-made fixtures, plus two Claude-only ones, shaped on the 
 | `permission-deny` | A shell command approval that the client denies |
 | `turn-error` | A failed request or turn, then recovery |
 | `schema-drift` | Unknown event types and fields, an unknown CLI→client request the driver must refuse, and a stray non-JSON stdout line |
-| `session-info` | Session metadata: Claude's `system/init` (after the first prompt, then again with a new model), Codex `thread/name/updated` and `thread/name/set`, ACP `session_info_update` titles and `session/close` |
+| `session-info` | Session metadata: Claude's `system/init` (after the first prompt, then again with a new model), Codex `thread/name/updated` on two turns, ACP `session_info_update` titles and `session/close` |
 | `ask-user-question` (Claude) | `AskUserQuestion` with two questions, the second `multiSelect`, answered through `can_use_tool` with `answers` in `updatedInput` |
 | `subagent-task` (Claude) | A `Task` subagent: `task_started`/`task_progress`/`task_notification`, and its messages, partials and tool calls tagged with `parent_tool_use_id` |
 
 Hand-made fixtures are approximations: field sets were taken from real captures, but they weren't recorded end to end. Replace them with recordings as each driver lands, and keep the hand-made `schema-drift` ones, since no real session produces those on purpose.
+
+### Synthesized, not recorded
+
+Some shapes in the hand-made fixtures have no capture behind them at all; they come from SDK types and docs. Each fixture lists them in its header's `synthesized` field. Record a real session for these first, and replace the fixture when you do:
+
+| Fixture | Synthesized |
+|---|---|
+| `claude/ask-user-question` | The `updatedInput.answers` format (keyed by question text, multiSelect labels joined with `", "`), the tool_result text and the `tool_use_result` shape |
+| `claude/subagent-task` | The `task_started` / `task_progress` / `task_notification` field sets and the Task `tool_use_result` shape |
+
+If the recording disagrees, change the driver to match the recording. The fixture and the replay test that encode the old guess change with it.
 
 ## Recording a fixture
 

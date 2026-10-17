@@ -9,6 +9,7 @@ import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ChatEventDraft } from '../../../shared/chat';
 import { createCopilotAcpChatDriver } from './acp-chat-driver';
+import { CodexChatDriver } from './codex-chat-driver';
 import { AcpClient, RpcError } from './acp-client';
 import { CodexAppServerClient, textInput } from './codex-app-server-client';
 import type { CodexUnrecognizedMessage } from './codex-protocol';
@@ -286,13 +287,14 @@ describe('CodexAppServerClient against fake codex app-server', () => {
     expect(logs.some((l) => l.message.startsWith('Malformed JSON line'))).toBe(true);
     await expectFixtureComplete(handle);
   });
-  it('session info: thread/name/updated names the thread, and thread/name/set renames it', async () => {
-    const { handle, client, notes, startTurn, turnCompleted, threadId } = await startCodex('session-info', true, { cwd: '/workspace/project' });
+  it('session info: thread/name/updated names the thread, then renames it on the next turn', async () => {
+    const { handle, notes, startTurn, turnCompleted, threadId } = await startCodex('session-info', true, { cwd: '/workspace/project' });
     await startTurn('Rename greet to welcome.');
     expect((await notes.waitFor({ method: 'thread/name/updated' })).params).toEqual({ threadId, threadName: 'Rename greet to welcome' });
     await turnCompleted();
-    await client.request('thread/name/set', { threadId, name: 'Greet refactor' });
-    expect((await notes.waitFor({ method: 'thread/name/updated' })).params.threadName).toBe('Greet refactor');
+    await startTurn('Also update the README.');
+    expect((await notes.waitFor({ method: 'thread/name/updated' })).params.threadName).toBe('Rename greet and update the README');
+    await turnCompleted();
     await expectFixtureComplete(handle);
   });
 });
@@ -424,6 +426,40 @@ describe('copilot_acp ChatDriver against fake Copilot ACP', () => {
     const done = await waitForJson(report, (r: { complete: boolean; mismatch: unknown }) => r.complete || r.mismatch !== null);
     expect(done).toMatchObject({ complete: true, mismatch: null });
     expect((done as unknown as { argv: string[] }).argv).toEqual(expect.arrayContaining(['--acp']));
+  }, 15_000);
+});
+
+// ───────────────────────────── Codex ChatDriver ─────────────────────────────
+
+describe('CodexChatDriver against fake codex app-server', () => {
+  it('session info: thread names become session_info title drafts', async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'codex-driver-'));
+    cleanups.push(() => fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+    const report = path.join(dir, 'report.json');
+    const shims = await writeFakeCliShims(path.join(dir, 'bin'), {
+      codex: { fixture: chatFixturePath('codex', 'session-info'), report },
+    });
+
+    const session = await new CodexChatDriver().start({
+      agentId: 'agent-1', provider: 'codex-cli', cwd: dir, binaryPath: shims.codex, level: 'ask',
+    });
+    cleanups.push(() => session.close());
+    const drafts = EventLog.fromAsyncIterable(session.events);
+
+    expect((await drafts.waitFor({ type: 'session_started' })).data).toMatchObject({
+      driver: 'codex_app_server', nativeSessionId: '019a0000-0000-7000-8000-00000000c001',
+    });
+    await session.send([{ type: 'text', text: 'Rename greet to welcome.' }], 'prompt');
+    await drafts.waitFor({ type: 'turn_ended' });
+    await session.send([{ type: 'text', text: 'Also update the README.' }], 'prompt');
+    await drafts.waitFor({ type: 'turn_ended' });
+
+    const titles = drafts.items
+      .filter((d): d is Extract<ChatEventDraft, { type: 'session_info' }> => d.type === 'session_info')
+      .map((d) => d.data.title);
+    expect(titles).toEqual(['Rename greet to welcome', 'Rename greet and update the README']);
+    const done = await waitForJson(report, (r: { complete: boolean; mismatch: unknown }) => r.complete || r.mismatch !== null);
+    expect(done).toMatchObject({ complete: true, mismatch: null, argv: ['app-server'] });
   }, 15_000);
 });
 
