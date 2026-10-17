@@ -83,7 +83,9 @@ function LevelPill({ level, capabilities, onChange }: { level: PermissionLevel |
   const [open, setOpen] = useState(false);
   const live = capabilities?.liveLevels ?? [];
   const current = level ?? 'ask';
-  const canChange = live.length > 0;
+  // The driver's own levels, in ladder order; the current level stays listed even if it can't be re-entered live.
+  const levels = PERMISSION_LEVELS.filter((l) => l === current || live.includes(l));
+  const canChange = levels.some((l) => l !== current);
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
@@ -114,16 +116,13 @@ function LevelPill({ level, capabilities, onChange }: { level: PermissionLevel |
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Permissions</div>
-          {PERMISSION_LEVELS.map((l) => {
-            const enabled = l === current || live.includes(l);
+          {levels.map((l) => {
             return (
               <button
                 key={l}
                 type="button"
                 role="menuitemradio"
                 aria-checked={l === current}
-                disabled={!enabled}
-                title={enabled ? undefined : "This agent can't switch to this level mid-session"}
                 onClick={() => { setOpen(false); if (l !== current) onChange(l); }}
                 className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text disabled:opacity-45 ${l === current ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
               >

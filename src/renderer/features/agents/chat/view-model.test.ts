@@ -55,9 +55,9 @@ describe('buildStreamBlocks', () => {
     expect(topIds.some((id) => id.endsWith(':task-1'))).toBe(false);
   });
 
-  it('leaves subagent work inline when the driver only reports ids', () => {
-    const state = fold(chatFixture('copilot', 'subagents'));
-    expect(state.capabilities?.subagents).toBe('ids_only');
+  it.each(['ids_only', 'none'] as const)('leaves subagent work inline when subagents are %s', (mode) => {
+    const fixture = fold(chatFixture('copilot', 'subagents'));
+    const state = { ...fixture, capabilities: { ...fixture.capabilities!, subagents: mode } };
     const blocks = buildStreamBlocks(state);
     expect(blocks.some((b) => b.type === 'subagent')).toBe(false);
     expect(blocks.some((b) => b.type === 'item' && b.item.kind === 'tool_call' && b.item.toolCallId === 'task-1')).toBe(true);

@@ -141,6 +141,8 @@ export const PROFILES: Record<FixtureProvider, ProviderFixtureProfile> = {
     model: 'claude-sonnet-5.5',
     effort: 'medium',
     cliVersion: '1.0.92',
+    // As the copilot_acp driver reports them (acp-chat-mapper.ts): no Auto level
+    // over ACP, unverified subagent ids claimed as none, per-turn token totals.
     capabilities: {
       ...MINIMAL_CHAT_CAPABILITIES,
       steer: false,
@@ -149,14 +151,13 @@ export const PROFILES: Record<FixtureProvider, ProviderFixtureProfile> = {
       resume: 'replay',
       planApproval: false,
       questions: false,
-      subagents: 'ids_only',
-      usage: 'context',
+      subagents: 'none',
+      usage: 'tokens',
       limits: false,
       images: true,
       slashCommands: true,
       modelSwitch: 'live',
-      effortSwitch: 'live',
-      liveLevels: ['plan', 'ask', 'auto', 'full_access'],
+      liveLevels: ['plan', 'ask', 'full_access'],
       login: 'terminal',
       systemPrompt: false,
     },

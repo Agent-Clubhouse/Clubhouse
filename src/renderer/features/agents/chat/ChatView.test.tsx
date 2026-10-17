@@ -91,8 +91,16 @@ describe('ChatView conversation', () => {
     expect(footer).not.toHaveTextContent('$');
   });
 
-  it('hides tokens and cost when the driver reports only context fill', () => {
+  it('shows tokens without cost for the Copilot driver', () => {
     renderFixture('copilot', 'conversation');
+    const footer = screen.getByTestId('chat-turn-footer');
+    expect(footer).toHaveTextContent('26.1k in · 900 out');
+    expect(footer).not.toHaveTextContent('$');
+  });
+
+  it('hides tokens and cost when the driver reports only context fill', () => {
+    const state = fold(chatFixture('copilot', 'conversation'));
+    renderState({ ...state, capabilities: { ...state.capabilities!, usage: 'context' } });
     const footer = screen.getByTestId('chat-turn-footer');
     expect(footer).not.toHaveTextContent(' in');
     expect(footer).not.toHaveTextContent('$');
@@ -293,13 +301,15 @@ describe('ChatView composer', () => {
     expect(screen.getByTestId('chat-level-pill')).toHaveTextContent('Ask first');
   });
 
-  it('disables levels the driver cannot switch to live', () => {
+  it('lists only the levels the driver can switch to live', () => {
     const { actions } = renderFixture('copilot', 'conversation');
     fireEvent.click(screen.getByTestId('chat-level-pill'));
     const items = screen.getAllByRole('menuitemradio');
-    expect(items.map((i) => i.textContent)).toEqual(expect.arrayContaining([expect.stringContaining('Auto-accept edits')]));
-    const autoEdit = items.find((i) => i.textContent?.startsWith('Auto-accept edits'))!;
-    expect(autoEdit).toBeDisabled();
+    expect(items).toHaveLength(3);
+    expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
+    expect(items[0]).toHaveTextContent('Plan');
+    expect(items[1]).toHaveTextContent('Ask first');
+    expect(items[2]).toHaveTextContent('Full access');
     fireEvent.click(items.find((i) => i.textContent?.startsWith('Plan'))!);
     expect(actions.setLevel).toHaveBeenCalledWith('plan');
   });
