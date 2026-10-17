@@ -25,7 +25,8 @@ beforeEach(() => {
     ],
   }));
   git.branchLog = vi.fn(async () => [{ hash: 'abc123', shortHash: 'abc123', subject: 'feat: rows', author: 'A', date: '2 hours ago' }]);
-  git.pullRequestInfo = vi.fn(async () => ({ available: true, branch: 'agent/work', base: 'main', hasRemote: true, pushed: false, compareUrl: 'https://github.com/o/r/compare/main...agent%2Fwork?expand=1' }));
+  git.pullRequestInfo = vi.fn(async () => ({ available: true, branch: 'agent/work', base: 'main', remote: 'origin', hasRemote: true, github: true, pushed: false, compareUrl: 'https://github.com/o/r/compare/main...agent%2Fwork?expand=1' }));
+  git.openPullRequest = vi.fn(async () => ({ ok: true, message: '' }));
   git.branchFilePatch = vi.fn(async () => ({ patch: PATCH }));
   git.stage = vi.fn(async () => ({ ok: true, message: '' }));
   git.unstage = vi.fn(async () => ({ ok: true, message: '' }));
@@ -88,8 +89,50 @@ describe('ChangesReview', () => {
     await waitFor(() => expect(button).toHaveTextContent('Push and open PR…'));
     expect(screen.getByTestId('review-pr-status')).toHaveTextContent('not pushed');
     fireEvent.click(button);
-    await waitFor(() => expect(window.clubhouse.app.openExternalUrl).toHaveBeenCalled());
+    // Opened through main, which checks the page is this repo's on GitHub.
+    await waitFor(() => expect(git.openPullRequest).toHaveBeenCalledWith('/w', 'https://github.com/o/r/compare/main...agent%2Fwork?expand=1'));
     expect(git.pushBranch).toHaveBeenCalledWith('/w');
+    expect(window.clubhouse.app.openExternalUrl).not.toHaveBeenCalled();
+  });
+
+  it('shows a refused page instead of opening it', async () => {
+    git.pullRequestInfo = vi.fn(async () => ({ available: true, branch: 'agent/work', hasRemote: true, github: true, pushed: true, unpushed: 0, pr: { url: 'https://github.com/o/r/pull/9', number: 9, state: 'open' } }));
+    git.openPullRequest = vi.fn(async () => ({ ok: false, message: 'That page isn\u2019t this repository\u2019s pull request on GitHub.' }));
+    renderReview();
+    const button = await screen.findByTestId('review-open-pr');
+    await waitFor(() => expect(button).toHaveTextContent('Open pull request'));
+    fireEvent.click(button);
+    expect(await screen.findByTestId('review-error')).toHaveTextContent('isn\u2019t this repository');
+  });
+
+  it('says why it can\'t push a detached HEAD', async () => {
+    git.pullRequestInfo = vi.fn(async () => ({ available: true }));
+    renderReview();
+    expect(await screen.findByTestId('review-pr-blocker')).toHaveTextContent('HEAD is detached');
+    expect(screen.queryByTestId('review-open-pr')).not.toBeInTheDocument();
+    expect(screen.getByTestId('review-push')).toBeDisabled();
+  });
+
+  it('says why there is nothing to push to', async () => {
+    git.pullRequestInfo = vi.fn(async () => ({ available: true, branch: 'agent/work', hasRemote: false }));
+    renderReview();
+    expect(await screen.findByTestId('review-pr-blocker')).toHaveTextContent('no remote');
+  });
+
+  it('offers only Push for a remote that isn\'t on GitHub', async () => {
+    git.pullRequestInfo = vi.fn(async () => ({ available: true, branch: 'agent/work', remote: 'gitlab', hasRemote: true, github: false, pushed: false }));
+    renderReview();
+    expect(await screen.findByTestId('review-pr-not-github')).toHaveTextContent('gitlab isn\'t on GitHub');
+    expect(screen.queryByTestId('review-open-pr')).not.toBeInTheDocument();
+    expect(screen.getByTestId('review-push')).not.toBeDisabled();
+  });
+
+  it('reloads an open diff when the file changes again', async () => {
+    const { rerender } = renderReview();
+    await waitFor(() => expect(git.branchFilePatch).toHaveBeenCalledTimes(1));
+    const changed = { ...branch, files: [{ ...branch.files[0], additions: 5 }, branch.files[1]] };
+    rerender(<ChangesReview agentName="gallant-swift" cwd="/w" branch={changed} onChanged={vi.fn()} />);
+    await waitFor(() => expect(git.branchFilePatch).toHaveBeenCalledTimes(2));
   });
 
   it('reports a failed push instead of opening anything', async () => {
@@ -99,7 +142,7 @@ describe('ChangesReview', () => {
     await waitFor(() => expect(button).not.toBeDisabled());
     fireEvent.click(button);
     expect(await screen.findByTestId('review-error')).toHaveTextContent('rejected: non-fast-forward');
-    expect(window.clubhouse.app.openExternalUrl).not.toHaveBeenCalled();
+    expect(git.openPullRequest).not.toHaveBeenCalled();
   });
 
   it('narrows to one commit', async () => {

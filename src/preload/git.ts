@@ -54,5 +54,8 @@ export const git = {
   /** Push HEAD to origin and set its upstream. */
   pushBranch: (dirPath: string): Promise<GitOpResult> =>
     ipcRenderer.invoke(IPC.GIT.PUSH_BRANCH, dirPath),
+  /** Open the branch's pull request or compare page; refused unless it's this repo's on GitHub. */
+  openPullRequest: (dirPath: string, url: string): Promise<GitOpResult> =>
+    ipcRenderer.invoke(IPC.GIT.OPEN_PULL_REQUEST, dirPath, url),
   },
 };

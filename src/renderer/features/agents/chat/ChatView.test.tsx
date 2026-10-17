@@ -799,6 +799,26 @@ describe('ChatView agent details', () => {
     }
   });
 
+  it('says the agent needs you while the review is showing, with the way back', async () => {
+    useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'p', path: '/proj' } as never] });
+    window.clubhouse.git.branchChanges = vi.fn(async () => ({ available: true, base: 'main', files: [] }));
+    window.clubhouse.git.info = vi.fn(async () => ({ status: [] }));
+    window.clubhouse.git.branchLog = vi.fn(async () => []);
+    window.clubhouse.git.pullRequestInfo = vi.fn(async () => ({ available: true, hasRemote: false }));
+    useAgentDetailsStore.setState({ review: { [agent.id]: true } });
+    try {
+      renderFixture('claude', 'approval');
+      expect(await screen.findByTestId('changes-review')).toBeInTheDocument();
+      expect(screen.getByTestId('review-needs-you')).toHaveTextContent('Needs you');
+      fireEvent.click(screen.getByTestId('review-back-to-chat'));
+      expect(screen.queryByTestId('changes-review')).not.toBeInTheDocument();
+      expect(screen.getByTestId('chat-permission-feedback')).toBeInTheDocument();
+    } finally {
+      useProjectStore.setState({ projects: [] });
+      useAgentDetailsStore.setState({ review: {} });
+    }
+  });
+
   it('is not offered in popouts or canvas cards', () => {
     const state = fold(chatFixture('claude', 'conversation'));
     const { rerender } = render(<ChatViewBody agent={agent} state={state} actions={makeActions()} context="popout" />);

@@ -30,13 +30,17 @@ export interface PullRequestInfo {
   available: boolean;
   branch?: string;
   base?: string;
-  /** There is an `origin` remote. */
+  /** The remote pushes go to: the branch's upstream, else origin, else the only remote. */
+  remote?: string;
+  /** There is a remote to push to. */
   hasRemote?: boolean;
-  /** origin has this branch. */
+  /** The remote is on GitHub, so the review can open a pull request. */
+  github?: boolean;
+  /** The remote has this branch. */
   pushed?: boolean;
-  /** Commits not on origin's copy of the branch yet; absent when it was never pushed. */
+  /** Commits not on the remote's copy of the branch yet; absent when it was never pushed. */
   unpushed?: number;
-  /** An open or merged pull request for the branch, when `gh` is installed and signed in. */
+  /** An open pull request for the branch, when `gh` is installed and signed in. */
   pr?: { url: string; number: number; state: string };
   /** GitHub's page for opening a pull request from this branch. */
   compareUrl?: string;

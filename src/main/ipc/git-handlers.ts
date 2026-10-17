@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as gitService from '../services/git-service';
 import { booleanArg, numberArg, stringArg, withValidatedArgs } from './validation';
@@ -117,5 +117,10 @@ export function registerGitHandlers(): void {
 
   ipcMain.handle(IPC.GIT.PUSH_BRANCH, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
     return gitService.pushUpstream(dirPath);
+  }));
+
+  // Opens only this repo's GitHub pull request or compare page (checked in openPullRequest).
+  ipcMain.handle(IPC.GIT.OPEN_PULL_REQUEST, withValidatedArgs([stringArg(), stringArg({ maxLength: 2048 })], (_event, dirPath: string, url: string) => {
+    return gitService.openPullRequest(dirPath, url, (u) => shell.openExternal(u));
   }));
 }

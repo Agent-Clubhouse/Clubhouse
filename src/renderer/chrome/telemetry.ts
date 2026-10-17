@@ -48,7 +48,19 @@ function applySurface(): void {
 }
 
 export function reportChromeView(explorerTab: string): void {
-  setTelemetryView(viewForTab(explorerTab));
+  lastTabView = viewForTab(explorerTab);
+  setTelemetryView(lastTabView);
+}
+
+let lastTabView: TelemetryView = 'agent';
+
+/**
+ * A view shown inside the agent pane (the Changes review, #2032) while it's
+ * mounted. Returns the release, which goes back to the tab's view.
+ */
+export function holdChromeView(view: TelemetryView): () => void {
+  setTelemetryView(view);
+  return () => setTelemetryView(lastTabView);
 }
 
 /** Also feeds long-frame metrics and render-error reports (spec §8). */

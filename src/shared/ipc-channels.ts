@@ -206,6 +206,7 @@ export const IPC = {
     BRANCH_LOG: 'git:branch-log',
     PULL_REQUEST_INFO: 'git:pull-request-info',
     PUSH_BRANCH: 'git:push-branch',
+    OPEN_PULL_REQUEST: 'git:open-pull-request',
   },
   APP: {
     OPEN_EXTERNAL_URL: 'app:open-external-url',

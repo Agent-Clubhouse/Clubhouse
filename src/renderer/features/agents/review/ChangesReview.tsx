@@ -18,6 +18,7 @@ import { Button } from '../../../components/Button';
 import { DiffCard } from '../chat/ToolBlocks';
 import { PlusMinus } from '../details/DetailsCard';
 import { totals } from '../details/ChangesCard';
+import { holdChromeView } from '../../../chrome/telemetry';
 
 type Diff = Parameters<typeof DiffCard>[0]['diff'];
 
@@ -65,8 +66,10 @@ function Result({ result }: { result: GitOpResult | null }) {
 }
 
 /** One file in the scroll: a header that collapses it, and its diff loaded on first open. */
-function FileBlock({ file, loadDiff, staged, onDiscard }: {
+function FileBlock({ file, loadDiff, staged, onDiscard, version }: {
   file: ChangedFile;
+  /** Changes when the file may have changed (its stats, a refresh), so an open diff reloads. */
+  version: string;
   loadDiff: (path: string) => Promise<Diff | null>;
   /** Uncommitted files only: whether it's staged. */
   staged?: boolean;
@@ -88,7 +91,7 @@ function FileBlock({ file, loadDiff, staged, onDiscard }: {
       () => { if (!cancelled) setDiff('failed'); },
     );
     return () => { cancelled = true; };
-  }, [wanted, loadDiff, file.path]);
+  }, [wanted, loadDiff, file.path, version]);
 
   return (
     <div className="flex-shrink-0 rounded-lg border border-surface-0 overflow-hidden" data-testid="review-file" data-path={file.path} data-open={open || undefined}>
@@ -178,7 +181,11 @@ export function ChangesReview({ agentName, cwd, branch, onChanged, onAskAgent, r
   const uncommitted = useMemo(() => (info?.status ?? []).map(statusFile), [info]);
   const stagedCount = uncommitted.filter((f) => f.staged).length;
 
-  const refresh = useCallback(() => { reloadInfo(); reloadLog(); reloadPr(); onChanged(); }, [reloadInfo, reloadLog, reloadPr, onChanged]);
+  const [reloads, setReloads] = useState(0);
+  const refresh = useCallback(() => { reloadInfo(); reloadLog(); reloadPr(); onChanged(); setReloads((n) => n + 1); }, [reloadInfo, reloadLog, reloadPr, onChanged]);
+
+  // The Git tab reported clubhouse.view = git; the review reports its own view while it shows.
+  useEffect(() => holdChromeView('changes'), []);
 
   const run = async (key: string, op: () => Promise<GitOpResult>, after?: (r: GitOpResult) => void) => {
     setBusy(key);
@@ -212,8 +219,10 @@ export function ChangesReview({ agentName, cwd, branch, onChanged, onAskAgent, r
         setResults((s) => ({ ...s, pr: { ok: false, message: 'This remote isn’t on GitHub, so open the pull request on your git host.' } }));
         return;
       }
-      await window.clubhouse.app.openExternalUrl(url);
-      setResults((s) => ({ ...s, pr: { ok: true, message: '' } }));
+      // Main checks the page is this repository's on GitHub before opening it.
+      setResults((s) => ({ ...s, pr: null }));
+      const opened = await window.clubhouse.git.openPullRequest(cwd, url);
+      setResults((s) => ({ ...s, pr: opened }));
     } catch (err) {
       // telemetry-exempt: shown under the button.
       setResults((s) => ({ ...s, pr: { ok: false, message: err instanceof Error ? err.message : String(err) } }));
@@ -266,6 +275,13 @@ export function ChangesReview({ agentName, cwd, branch, onChanged, onAskAgent, r
     ? <>Pull request #{pr.pr.number} <span className="text-ctp-overlay0">{pr.pr.state}</span></>
     : <>No pull request yet <span className="ml-auto text-ctp-overlay0">{!pr?.hasRemote ? 'no remote' : !pr.pushed ? 'not pushed' : pr.unpushed ? `${pr.unpushed} to push` : 'pushed'}</span></>;
   const prButton = pr?.pr ? 'Open pull request' : !pr?.pushed || (pr.unpushed ?? 0) > 0 ? 'Push and open PR…' : 'Open pull request…';
+  // Why the footer's buttons can't do anything, said instead of just disabling them.
+  const blocker = !pr ? null
+    : pr.available && !pr.branch ? 'HEAD is detached. Check out a branch to push it or open a pull request.'
+      : !pr.hasRemote ? 'This repository has no remote to push to (or several, and none is origin).'
+        : null;
+  const canPush = !blocker && !(pr?.pushed && !pr.unpushed);
+  const offerPr = !blocker && !!pr?.github;
 
   return (
     <div className="flex-1 min-h-0 flex bg-ctp-base" data-testid="changes-review">
@@ -381,13 +397,22 @@ export function ChangesReview({ agentName, cwd, branch, onChanged, onAskAgent, r
 
         {!root && <div className="flex-shrink-0 border-t border-surface-0 px-3.5 py-2.5 flex flex-col gap-2">
           <div className="flex items-center gap-2 text-xs text-ctp-overlay1" data-testid="review-pr-status">{prLine}</div>
+          {blocker && <p className="text-xs text-ctp-overlay1" data-testid="review-pr-blocker">{blocker}</p>}
+          {!blocker && pr && !pr.github && (
+            <p className="text-xs text-ctp-overlay1" data-testid="review-pr-not-github">
+              {pr.remote ?? 'This remote'} isn&apos;t on GitHub. Push here, then open the pull request on your git host.
+            </p>
+          )}
           <div className="flex gap-1.5">
-            <Button kind="primary" className="flex-1" disabled={busy !== null || !pr?.hasRemote} onClick={() => { void openPr(); }} data-testid="review-open-pr">
-              {prButton}
-            </Button>
+            {offerPr && (
+              <Button kind="primary" className="flex-1" disabled={busy !== null} onClick={() => { void openPr(); }} data-testid="review-open-pr">
+                {prButton}
+              </Button>
+            )}
             <Button
-              kind="ghost"
-              disabled={busy !== null || !pr?.hasRemote || (!!pr?.pushed && !pr.unpushed)}
+              kind={offerPr ? 'ghost' : 'primary'}
+              className={offerPr ? '' : 'flex-1'}
+              disabled={busy !== null || !canPush}
               onClick={() => { void run('push', () => window.clubhouse.git.pushBranch(cwd)); }}
               data-testid="review-push"
             >
@@ -439,6 +464,7 @@ export function ChangesReview({ agentName, cwd, branch, onChanged, onAskAgent, r
               <FileBlock
                 key={`${focus.kind}:${focus.kind === 'commit' ? focus.hash : ''}:${f.path}`}
                 file={f}
+                version={`${String(refreshKey)}:${reloads}:${branch?.mergeBase ?? ''}:${f.additions}/${f.deletions}:${unc?.staged ? 's' : ''}`}
                 loadDiff={loader}
                 staged={unc ? unc.staged : undefined}
                 onDiscard={unc ? async () => {

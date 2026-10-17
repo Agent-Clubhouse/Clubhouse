@@ -5,14 +5,14 @@
  * that agent's Changes review. Replaces the Git tab in the new layout.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Agent, Project } from '../../../shared/types';
 import type { BranchChanges } from '../../../shared/git-branch';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
-import { agentDot, StatusDot } from '../../features/agents/agent-status';
+import { agentDot, isMidTurn, StatusDot } from '../../features/agents/agent-status';
 import { useAgentDetailsStore } from '../../features/agents/details/detailsStore';
 import { ChangesReview } from '../../features/agents/review/ChangesReview';
 import { useBranchChanges } from '../../features/agents/details/AgentDetails';
@@ -26,22 +26,57 @@ function useBranchAgents(projectId: string): Agent[] {
   );
 }
 
-/** Each agent's branch against main, re-read when `refreshKey` changes. */
+/** Branches read at once, so a project with many agents doesn't start a burst of git. */
+export const BRANCH_READ_CONCURRENCY = 3;
+
+/** Run `jobs` with at most `limit` in flight. */
+export async function runLimited(jobs: Array<() => Promise<void>>, limit = BRANCH_READ_CONCURRENCY): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < jobs.length) await jobs[next++]();
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, worker));
+}
+
+/** Changes whenever one of these agents finishes a turn (or starts, stops or errors), so the branches are re-read then. */
+function useTurnKey(agents: Agent[]): string {
+  const detailed = useAgentStore((s) => s.agentDetailedStatus);
+  // The last finished turn per agent, kept while the next turn runs, so only a turn end moves the key.
+  const lastDone = useRef<Record<string, number>>({});
+  return agents.map((a) => {
+    const d = detailed[a.id];
+    // A finished turn is idle without the mid-turn "Thinking"; its timestamp moves on each turn end.
+    if (d && d.state === 'idle' && !isMidTurn(d)) lastDone.current[a.id] = d.timestamp;
+    return `${a.id}:${a.status}:${lastDone.current[a.id] ?? ''}`;
+  }).join('|');
+}
+
+/**
+ * Each agent's branch against main, re-read when `refreshKey` changes or an
+ * agent's turn ends, at most BRANCH_READ_CONCURRENCY at a time. Agents that
+ * are gone drop out, so their files no longer count as overlaps.
+ */
 function useAgentBranches(agents: Agent[], refreshKey: unknown): Record<string, BranchChanges | null> {
   const [byId, setById] = useState<Record<string, BranchChanges | null>>({});
   const key = agents.map((a) => `${a.id}:${a.worktreePath}`).join('|');
+  const turnKey = useTurnKey(agents);
   useEffect(() => {
+    const ids = new Set(agents.map((a) => a.id));
+    setById((s) => (Object.keys(s).every((id) => ids.has(id)) ? s : Object.fromEntries(Object.entries(s).filter(([id]) => ids.has(id)))));
     let cancelled = false;
-    for (const a of agents) {
-      if (!a.worktreePath) continue;
-      window.clubhouse.git.branchChanges(a.worktreePath, undefined, true).then(
-        (r) => { if (!cancelled) setById((s) => ({ ...s, [a.id]: r })); },
+    void runLimited(agents.filter((a) => a.worktreePath).map((a) => async () => {
+      if (cancelled) return;
+      try {
+        const r = await window.clubhouse.git.branchChanges(a.worktreePath!, undefined, true);
+        if (!cancelled) setById((s) => ({ ...s, [a.id]: r }));
+      } catch {
         // telemetry-exempt: that agent's row says its branch couldn't be read.
-        () => { if (!cancelled) setById((s) => ({ ...s, [a.id]: { available: false, files: [] } })); },
-      );
-    }
+        if (!cancelled) setById((s) => ({ ...s, [a.id]: { available: false, files: [] } }));
+      }
+    }));
     return () => { cancelled = true; };
-  }, [key, refreshKey]);
+    // `agents` is keyed by `key`; re-reading on each new array would undo the throttle.
+  }, [key, refreshKey, turnKey]);
   return byId;
 }
 
@@ -71,7 +106,7 @@ function branchLine(b: BranchChanges | null | undefined): string {
   return parts.join(' · ');
 }
 
-function AgentBranches({ project, refreshKey }: { project: Project; refreshKey: unknown }) {
+export function AgentBranches({ project, refreshKey }: { project: Project; refreshKey: unknown }) {
   const agents = useBranchAgents(project.id);
   const detailed = useAgentStore((s) => s.agentDetailedStatus);
   const branches = useAgentBranches(agents, refreshKey);
@@ -159,8 +194,9 @@ export function ProjectHome({ project, overview }: { project: Project; overview:
 }
 
 export function ProjectChanges({ project }: { project: Project }) {
-  const branch = useBranchChanges(project.path, 0);
   const [tick, setTick] = useState(0);
+  // Re-read after a commit, stage or discard here, so the header stays right.
+  const branch = useBranchChanges(project.path, tick);
   return (
     <ChangesReview
       agentName={project.displayName || project.name}

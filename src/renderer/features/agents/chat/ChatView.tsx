@@ -17,6 +17,8 @@ import { ChatStream, type StreamJump } from './ChatStream';
 import { AgentDetails } from '../details/AgentDetails';
 import { DetailsToggle } from '../details/DetailsToggle';
 import { ChangesReview } from '../review/ChangesReview';
+import { DOT_LABEL, StatusDot } from '../agent-status';
+import { Button } from '../../../components/Button';
 import { useAgentReview } from '../review/useAgentReview';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
@@ -240,6 +242,15 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
         detailsToggle={detailsAvailable ? <DetailsToggle /> : undefined}
         review={detailsAvailable ? review.view : undefined}
       />
+      {reviewing && (permission || question) && (
+        // The approval card lives in the chat dock; while reviewing, say it's waiting and offer the way back.
+        <div className="h-9 flex-shrink-0 flex items-center gap-2 px-3.5 border-b border-surface-0 text-xs" role="status" data-testid="review-needs-you">
+          <StatusDot dot="needs" />
+          <span className="text-ctp-text">{DOT_LABEL.needs}</span>
+          <span className="min-w-0 truncate text-ctp-overlay1">{permission ? permission.title : 'has a question'}</span>
+          <Button kind="primary" className="ml-auto" onClick={() => review.view?.onClose()} data-testid="review-back-to-chat">Back to chat</Button>
+        </div>
+      )}
       {reviewing && review.cwd && (
         <ChangesReview
           agentName={agent.name}
