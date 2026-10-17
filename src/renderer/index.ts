@@ -5,6 +5,8 @@ import * as ReactDOMClient from 'react-dom/client';
 import { createElement } from 'react';
 import { App } from './App';
 import { PopoutWindow } from './features/popout/PopoutWindow';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { initRendererTelemetry, installRendererErrorHandlers, startLongFrameCollection } from './telemetry';
 import './index.css';
 
 // Expose React on globalThis so community plugins loaded via native ESM
@@ -15,9 +17,14 @@ import './index.css';
 (globalThis as Record<string, unknown>).ReactDOMClient = ReactDOMClient;
 (globalThis as Record<string, unknown>).__REACT_JSX_RUNTIME__ = jsxRuntime;
 
+// Telemetry is off unless main says otherwise; these are inert until then.
+initRendererTelemetry();
+installRendererErrorHandlers();
+startLongFrameCollection();
+
 const container = document.getElementById('root');
 if (container) {
   const root = ReactDOMClient.createRoot(container);
   const isPopout = window.clubhouse.window?.isPopout();
-  root.render(createElement(isPopout ? PopoutWindow : App));
+  root.render(createElement(AppErrorBoundary, null, createElement(isPopout ? PopoutWindow : App)));
 }

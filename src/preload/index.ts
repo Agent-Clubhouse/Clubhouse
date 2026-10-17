@@ -23,6 +23,7 @@ import { canvas } from './canvas';
 import { hookServer } from './hookServer';
 import { goobers } from './goobers';
 import { telemetrySettings } from './telemetrySettings';
+import { telemetry } from './telemetry';
 
 export const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
@@ -65,6 +66,7 @@ export const api = {
   ...hookServer,
   ...goobers,
   ...telemetrySettings,
+  ...telemetry,
 };
 
 export type ClubhouseAPI = typeof api;

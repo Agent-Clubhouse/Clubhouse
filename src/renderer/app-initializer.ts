@@ -30,6 +30,7 @@ import { rendererLog } from './plugins/renderer-logger';
 import { useToastStore } from './stores/toastStore';
 import { processResumeQueue } from './services/resume-queue';
 import type { RestartSessionState } from '../shared/types';
+import { markRendererReady } from './telemetry';
 
 // ─── Settings Loading ───────────────────────────────────────────────────────
 
@@ -117,6 +118,9 @@ export async function initApp(): Promise<() => void> {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
   });
+
+  // 8. Tell main the app is ready: the end of the startup span (spec §4.1).
+  markRendererReady();
 
   return () => {
     for (const cleanup of cleanups) {

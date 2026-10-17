@@ -33,6 +33,7 @@ import { mcpBinding } from './mcpBinding';
 import { hookServer } from './hookServer';
 import { goobers } from './goobers';
 import { telemetrySettings } from './telemetrySettings';
+import { telemetry } from './telemetry';
 import { plugin } from './plugin';
 import { profile } from './profile';
 import { marketplace } from './marketplace';
@@ -77,6 +78,7 @@ describe('preload IPC bridge', () => {
       hookServer,
       goobers,
       telemetrySettings,
+      telemetry,
     ];
     const expectedApi = {
       platform: api.platform,

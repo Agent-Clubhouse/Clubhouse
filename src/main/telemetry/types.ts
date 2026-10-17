@@ -36,6 +36,8 @@ export interface FlowExtras<T> {
 export interface ExceptionOptions {
   origin: 'main' | 'renderer' | 'plugin';
   handled: boolean;
+  /** Extra registry attributes, e.g. the window kind or error boundary. */
+  attrs?: TelAttr[];
 }
 
 /** A span recorded before the SDK was ready, replayed with explicit times. */
@@ -76,3 +78,19 @@ export interface TelemetryRuntime {
 }
 
 export const NOOP_SPAN: SpanHandle = { set: () => {} };
+
+/**
+ * An error reported from another process (a renderer or plugin). It carries
+ * the original constructor name and raw stack; the message is never sent
+ * across, so it is always empty here.
+ */
+export class ForwardedError extends Error {
+  constructor(
+    readonly forwardedType: string,
+    stack: string | undefined,
+  ) {
+    super('');
+    this.name = forwardedType;
+    this.stack = stack;
+  }
+}
