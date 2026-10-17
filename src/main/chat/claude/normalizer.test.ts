@@ -77,7 +77,17 @@ describe('ClaudeNormalizer', () => {
       { kind: 'permission_denied', toolName: 'Bash' },
     ]);
     expect(n.normalize({ type: 'keep_alive' })).toEqual([]);
+    expect(n.normalize({ type: 'system', subtype: 'something_new' })).toMatchObject([{ kind: 'unmapped', type: 'system', subtype: 'something_new' }]);
     expect(n.normalize({ type: 'something_new' })).toMatchObject([{ kind: 'unmapped', type: 'something_new' }]);
+  });
+
+  it('drops thinking-token estimates instead of reporting them as unknown', () => {
+    const n = new ClaudeNormalizer();
+    const frame = { type: 'system', subtype: 'thinking_tokens', estimated_tokens: 120, estimated_tokens_delta: 40, uuid: 'u1', session_id: 's1' };
+    expect(n.normalize(frame)).toEqual([]);
+    expect(n.normalize(frame)).toEqual([]);
+    // Dropped frames don't advance seq.
+    expect(n.normalize({ type: 'system', subtype: 'permission_denied', tool_name: 'Bash' })).toMatchObject([{ seq: 1 }]);
   });
 
   it('reports an assistant API error without dropping its content', () => {
