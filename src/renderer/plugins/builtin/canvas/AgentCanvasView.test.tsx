@@ -504,6 +504,21 @@ describe('AgentCanvasView', () => {
       expect(onUpdate).not.toHaveBeenCalled();
     });
 
+    it('still places the card when onCreated arrives after the card unmounted (the page replaced the pane)', () => {
+      openNewAgentPage.mockReturnValue(true);
+      const onCreateAgentCard = vi.fn();
+      const view = makeView({ position: { x: 200, y: 300 } });
+      const { unmount } = render(<AgentCanvasView view={view} api={stubApi({ projects: [project] })} onUpdate={noop} onCreateAgentCard={onCreateAgentCard} />);
+
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+      const { onCreated } = openNewAgentPage.mock.calls[0][2] as { onCreated: (id: string) => void };
+      unmount();
+      // With a worktree, onCreated comes seconds later, after spawn.
+      onCreated('agent-after-spawn');
+
+      expect(onCreateAgentCard).toHaveBeenCalledWith(expect.objectContaining({ id: 'cv_agent_1' }), 'agent-after-spawn');
+    });
+
     it('falls back to the dialog where the page can\'t open', () => {
       openNewAgentPage.mockReturnValue(false);
       render(<AgentCanvasView view={makeView()} api={stubApi({ projects: [project] })} onUpdate={noop} />);
