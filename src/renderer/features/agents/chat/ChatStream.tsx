@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import type { ChatCapabilities } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { buildStreamBlocks, type StreamBlock } from './view-model';
+import { scrollWithin } from './scroll';
 import {
   AgentMessage,
   ErrorRow,
@@ -172,9 +173,9 @@ export function ChatStream({ state, onOpenSubagent, jump, onJumpResult, announce
     const root = scroller.current;
     const target = root?.querySelector<HTMLElement>(`[data-subagent-id="${CSS.escape(jump.subagentId)}"]`);
     onJumpResult?.(jump, !!target);
-    if (!target) return;
+    if (!root || !target) return;
     pinned.current = false;
-    target.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    scrollWithin(root, target, 'center', 'smooth');
     target.classList.add(...JUMP_HIGHLIGHT_CLASSES);
     target.setAttribute('data-jump-highlight', 'true');
     const clear = () => {
