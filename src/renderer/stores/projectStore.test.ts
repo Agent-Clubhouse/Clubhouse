@@ -116,6 +116,18 @@ describe('projectStore', () => {
       expect(getState().projects).toEqual(projects);
     });
 
+    it('marks the list loaded with the projects, and after a failure', async () => {
+      useProjectStore.setState({ projectsLoaded: false });
+      mockProject.list.mockResolvedValueOnce([]);
+      await getState().loadProjects();
+      expect(getState().projectsLoaded).toBe(true);
+
+      useProjectStore.setState({ projectsLoaded: false });
+      mockProject.list.mockRejectedValueOnce(new Error('ipc down'));
+      await expect(getState().loadProjects()).rejects.toThrow('ipc down');
+      expect(getState().projectsLoaded).toBe(true);
+    });
+
     it('checks git status for every project', async () => {
       const projects = [makeProject(), makeProject({ id: 'proj_2', name: 'other', path: '/other' })];
       mockProject.list.mockResolvedValueOnce(projects);
