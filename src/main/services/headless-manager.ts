@@ -17,7 +17,7 @@ import { HeadlessOutputKind } from '../orchestrators/types';
 import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
 import { validateSpawnCwd } from './pty-manager';
-import { agentKillStage, agentOutput, agentRunStarted, agentSwept } from '../telemetry/agent-telemetry';
+import { agentKillRequested, agentKillStage, agentOutput, agentRunStarted, agentSwept } from '../telemetry/agent-telemetry';
 
 /** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
 let maxTranscriptBytes = 10 * 1024 * 1024; // 10 MB
@@ -614,6 +614,7 @@ export function kill(agentId: string): void {
   if (session.killTimer) clearTimeout(session.killTimer);
 
   const proc = session.process;
+  agentKillRequested(agentId, 'other'); // no-op when the caller already named a trigger
   agentKillStage(agentId, 'sigterm');
 
   try {

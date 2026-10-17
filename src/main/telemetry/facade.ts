@@ -10,7 +10,9 @@ import type { EventName, MetricName, SpanName, TelAttr } from '../../shared/tele
 import {
   NOOP_SPAN,
   errorTypeOf,
+  tagError,
   type Classification,
+  type ErrorType,
   type ExceptionOptions,
   type FlowExtras,
   type FlowOptions,
@@ -110,7 +112,28 @@ export function currentFlow(): SpanName | null {
   return activeFlows.length > 0 ? activeFlows[activeFlows.length - 1] : null;
 }
 
-export { tagError, withErrorType } from './types';
+export { tagError } from './types';
+
+/**
+ * Run `fn`, tagging anything it throws or rejects with `type` (see tagError).
+ * Returns `fn`'s own value: while telemetry is off it is a plain call, and a
+ * synchronous result is never wrapped in a promise.
+ */
+export function withErrorType<T>(type: ErrorType, fn: () => T): T {
+  if (!runtime && !pending) return fn();
+  let result: T;
+  try {
+    result = fn();
+  } catch (err) {
+    throw tagError(err, type);
+  }
+  if (isPromiseLike(result)) {
+    return Promise.resolve(result).catch((err: unknown) => {
+      throw tagError(err, type);
+    }) as T;
+  }
+  return result;
+}
 
 export const tel = {
   /** A root user-flow span. Thrown errors are recorded and rethrown unchanged. */

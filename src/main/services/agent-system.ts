@@ -94,7 +94,7 @@ export function getRunningAgentIds(agentIds: string[]): string[] {
 }
 
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
-  const facts: SpawnFacts = { runtime: 'pty', model: params.model };
+  const facts: SpawnFacts = { model: params.model };
   const startMs = Date.now();
   await tel.flow(
     'clubhouse.agent.spawn',
@@ -102,14 +102,18 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     async (span) => {
       try {
         await spawnAgentInner(params, facts);
-        recordSpawn(params.kind, facts, startMs, undefined);
       } catch (err) {
-        clearSpawnKind(params.agentId);
-        recordSpawn(params.kind, facts, startMs, err);
+        try {
+          clearSpawnKind(params.agentId);
+          recordSpawn(params.kind, facts, startMs, err);
+          span.set(...spawnAttrs(facts));
+        } catch {
+          // telemetry-exempt: never replace the spawn error with a telemetry one
+        }
         throw err;
-      } finally {
-        span.set(...spawnAttrs(facts));
       }
+      recordSpawn(params.kind, facts, startMs, undefined);
+      span.set(...spawnAttrs(facts));
     },
     { classify: () => (facts.noPid ? { error: 'headless_no_pid' } : 'ok') },
   );
@@ -313,6 +317,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     }
 
     // Fall back to PTY mode
+    facts.runtime = 'pty';
     await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds, resolvedMcpConfigs, facts);
     broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
   } catch (err) {
@@ -330,7 +335,7 @@ async function spawnPtyAgent(
   wrapperConfig?: LaunchWrapperConfig,
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
-  facts: SpawnFacts = { runtime: 'pty' },
+  facts: SpawnFacts = {},
 ): Promise<void> {
   const nonce = randomUUID();
   agentRegistry.setNonce(params.agentId, nonce);

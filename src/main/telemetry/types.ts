@@ -105,15 +105,6 @@ export function tagError<E>(error: E, type: ErrorType): E {
   return error;
 }
 
-/** Run `fn`, tagging anything it throws or rejects with `type` (see tagError). */
-export async function withErrorType<T>(type: ErrorType, fn: () => T | PromiseLike<T>): Promise<T> {
-  try {
-    return await fn();
-  } catch (err) {
-    throw tagError(err, type);
-  }
-}
-
 /** The error type a thrown value was tagged with, or `unknown`. */
 export function errorTypeOf(error: unknown): ErrorType {
   if (typeof error === 'object' && error !== null && ERROR_TYPE_TAG in error) {

@@ -25,16 +25,13 @@ import { orchestratorAttr } from '../telemetry/spawn-telemetry';
 type DeleteMode = Parameters<typeof ATTR.deleteMode>[0];
 
 /**
- * Wrap a durable-agent delete in the `clubhouse.agent.delete` flow. A result
- * with `ok: false` is `cancelled` when the user backed out and `delete_failed`
- * otherwise.
+ * Wrap a durable-agent delete in the `clubhouse.agent.delete` flow. A thrown
+ * error or a result with `ok: false` is `delete_failed`. (The save-patch
+ * dialog's cancel returns before this, so it is not recorded.)
  */
 function deleteFlow<T extends DeleteResult | void>(mode: DeleteMode, fn: () => Promise<T>): Promise<T> {
   return tel.flow('clubhouse.agent.delete', { attrs: [ATTR.deleteMode(mode)] }, () => withErrorType('delete_failed', fn), {
-    classify: (r) => {
-      if (!r || r.ok) return 'ok';
-      return r.message === 'cancelled' ? { outcome: 'cancelled' } : { error: 'delete_failed' };
-    },
+    classify: (r) => (!r || r.ok ? 'ok' : { error: 'delete_failed' }),
   });
 }
 
@@ -57,9 +54,8 @@ async function createDurableAgent(
   try {
     config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, freeAgentMode, mcpIds, mcpConfigs, persona);
   } catch (err) {
-    // The message stays local; it only picks the error type.
-    const worktree = err instanceof Error && err.message.startsWith('Failed to create git worktree');
-    throw tagError(err, worktree ? 'worktree_failed' : 'write_failed');
+    // worktree_failed is tagged at its throw site; anything else is a write failure.
+    throw tagError(err, 'write_failed');
   }
 
   // Inject persona instructions into the agent's worktree

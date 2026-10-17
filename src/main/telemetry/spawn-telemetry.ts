@@ -16,7 +16,8 @@ type Orchestrator = Parameters<typeof ATTR.orchestrator>[0];
 /** What a spawn learned on its way, set as it goes and attached to the span at the end. */
 export interface SpawnFacts {
   orchestrator?: string;
-  runtime: Runtime;
+  /** Unset until the spawn picks a runtime; omitted from attributes until then. */
+  runtime?: Runtime;
   clubhouseMode?: boolean;
   mcpEnabled?: boolean;
   hooksEnabled?: boolean;
@@ -43,11 +44,8 @@ export function modelFamily(model: string | undefined): Parameters<typeof ATTR.m
 }
 
 export function spawnAttrs(f: SpawnFacts): TelAttr[] {
-  const attrs: TelAttr[] = [
-    ATTR.orchestrator(orchestratorAttr(f.orchestrator)),
-    ATTR.agentRuntime(f.runtime),
-    ATTR.modelFamily(modelFamily(f.model)),
-  ];
+  const attrs: TelAttr[] = [ATTR.orchestrator(orchestratorAttr(f.orchestrator)), ATTR.modelFamily(modelFamily(f.model))];
+  if (f.runtime) attrs.push(ATTR.agentRuntime(f.runtime));
   if (f.clubhouseMode !== undefined) attrs.push(ATTR.clubhouseMode(f.clubhouseMode));
   if (f.mcpEnabled !== undefined) attrs.push(ATTR.mcpEnabled(f.mcpEnabled));
   if (f.hooksEnabled !== undefined) attrs.push(ATTR.hooksEnabled(f.hooksEnabled));
@@ -58,7 +56,8 @@ export function spawnAttrs(f: SpawnFacts): TelAttr[] {
 
 /** Count one spawn attempt; on success also its duration. */
 export function recordSpawn(kind: Kind, f: SpawnFacts, startMs: number, error: unknown, atMs = Date.now()): void {
-  const dims = [ATTR.agentKind(kind), ATTR.orchestrator(orchestratorAttr(f.orchestrator)), ATTR.agentRuntime(f.runtime)];
+  const dims = [ATTR.agentKind(kind), ATTR.orchestrator(orchestratorAttr(f.orchestrator))];
+  if (f.runtime) dims.push(ATTR.agentRuntime(f.runtime));
   const failed = error !== undefined || f.noPid === true;
   const errorType = error !== undefined ? errorTypeOf(error) : f.noPid ? 'headless_no_pid' : undefined;
   tel.count('clubhouse.agent.spawns', 1, [

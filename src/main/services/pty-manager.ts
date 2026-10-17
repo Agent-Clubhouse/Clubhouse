@@ -11,7 +11,7 @@ import * as headlessTerminal from './pty-headless-terminal';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
-import { agentKillStage, agentOutput, agentRunKilled, agentRunStarted, agentShellReady, agentSwept } from '../telemetry/agent-telemetry';
+import { agentKillRequested, agentKillStage, agentOutput, agentRunKilled, agentRunStarted, agentShellReady, agentSwept } from '../telemetry/agent-telemetry';
 import { tagError } from '../telemetry/types';
 
 /** Pattern matching common API key environment variable names. */
@@ -510,6 +510,7 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
   if (session.killing) return;
 
   session.killing = true;
+  agentKillRequested(agentId, 'other'); // no-op when the caller already named a trigger
   agentKillStage(agentId, 'exit_command');
 
   try {
@@ -566,6 +567,7 @@ export function kill(agentId: string): void {
     }
     // cleanupSession makes onExit skip this session, so no exit broadcast
     // follows: end the run here.
+    agentKillRequested(agentId, 'other');
     agentRunKilled(agentId, 'sigkill');
     cleanupSession(agentId);
   }
@@ -578,6 +580,7 @@ export function killAll(exitCommand: string = '/exit\r'): Promise<void> {
   for (const id of ids) {
     const session = sessions.get(id);
     if (!session) continue;
+    agentKillRequested(id, 'shutdown');
     agentKillStage(id, 'exit_command');
     try {
       session.process.write(exitCommand);

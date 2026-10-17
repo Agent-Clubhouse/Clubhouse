@@ -44,7 +44,8 @@ describe('recordSpawn', () => {
 
   it('only attaches the facts a spawn learned', () => {
     expect(spawnAttrs({ runtime: 'chat', orchestrator: 'weird', model: 'opus' })).toEqual([
-      ATTR.orchestrator('other'), ATTR.agentRuntime('chat'), ATTR.modelFamily('opus'),
+      ATTR.orchestrator('other'), ATTR.modelFamily('opus'), ATTR.agentRuntime('chat'),
     ]);
+    expect(spawnAttrs({})).toEqual([ATTR.orchestrator('other'), ATTR.modelFamily('default')]);
   });
 });

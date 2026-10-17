@@ -290,8 +290,12 @@ export const ATTR = {
   wrapperApplied: boolAttr('clubhouse.wrapper.applied'),
   /** Bucketed from the model string; never the raw model name. */
   modelFamily: enumAttr('clubhouse.model.family', ['opus', 'sonnet', 'haiku', 'gpt-5', 'default', 'other']),
-  /** Who asked for a kill. Renderer kills (including quick-agent auto-stop) arrive over IPC as `user`. */
-  killTrigger: enumAttr('clubhouse.kill.trigger', ['user', 'agent_tool', 'other']),
+  /**
+   * Who asked for a kill. Renderer kills over the agent IPC (including
+   * quick-agent auto-stop) are `user`; `other` is a kill that reached the
+   * runtime managers without a known caller (terminal IPC, force-kill).
+   */
+  killTrigger: enumAttr('clubhouse.kill.trigger', ['user', 'agent_tool', 'annex', 'shutdown', 'other']),
   deleteMode: enumAttr('clubhouse.agent.delete.mode', [
     'standard', 'commit_push', 'cleanup_branch', 'save_patch', 'force', 'unregister',
   ]),

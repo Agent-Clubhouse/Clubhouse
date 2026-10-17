@@ -294,7 +294,7 @@ Both flows start in the IPC handlers, so the git and config work below them (`ag
 | Span | Children | Attributes / result | Level |
 |---|---|---|---|
 | `c.agent.create` | `c.git.worktree_create` (Phase 5, in `agent-config.ts`), `c.agent.persona_inject` | `c.agent.uses_worktree`, orchestrator; `error.type ∈ {worktree_failed, write_failed}`. A persona failure is non-fatal: the child span records it, the create stays `ok` | S |
-| `c.agent.delete` | `c.git.worktree_remove` (Phase 5) | `c.agent.delete.mode` (`standard`/`commit_push`/`cleanup_branch`/`save_patch`/`force`/`unregister`); a result with `ok: false` is `cancelled` when the user backed out, else `error.type = delete_failed` | S |
+| `c.agent.delete` | `c.git.worktree_remove` (Phase 5) | `c.agent.delete.mode` (`standard`/`commit_push`/`cleanup_branch`/`save_patch`/`force`/`unregister`); a throw or a result with `ok: false` is `error.type = delete_failed` (cancelling the save-patch dialog returns before the flow and is not recorded) | S |
 
 Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`agentLifecycleSlice.ts:25`) starts a renderer span `c.agent.quick_launch` that is propagated into `SPAWN_AGENT` (§6.2). That is how the renderer-side work (summary instruction fetch, template expansion) gets measured.
 
@@ -372,9 +372,9 @@ Exits are classified on the `c.agent.run` span (above), not a separate span. Cha
 
 | Span | Boundaries | Attributes | Level |
 |---|---|---|---|
-| `c.agent.kill` | `killAgent` (`agent-system.ts`) → the run's exit; replayed when the run ends, like `c.agent.run`. PTY and headless only | `c.kill.trigger` (`user` for IPC, which includes the renderer's quick-agent auto-stop; `agent_tool` for the `sleep_agent` MCP tool), `c.kill.stage_reached` (`exit_command`/`eof`/`sigterm`/`sigkill`), `c.agent.exit.class` | S |
+| `c.agent.kill` | `killAgent` (`agent-system.ts`) → the run's exit; replayed when the run ends, like `c.agent.run`. PTY and headless only | `c.kill.trigger`: `user` (agent IPC, which includes the renderer's quick-agent auto-stop), `agent_tool` (the `sleep_agent` MCP tool), `annex` (Annex kill and delete), `shutdown` (`killAll` at quit), `other` (a kill that reached the runtime managers without a known caller: terminal IPC, force-kill). Also `c.kill.stage_reached` (`exit_command`/`eof`/`sigterm`/`sigkill`) and `c.agent.exit.class` | S |
 
-Shutdown, replacement and the stale sweeper don't go through `killAgent`; they show up as the run's exit class (`killed_user` from `killAll`, `replaced`, `stale_swept`) rather than a kill span.
+The trigger is recorded where the caller is known, before the runtime manager is asked; the managers record `other` only when no trigger was set. Replacement and the stale sweeper are not kills; they show up as the run's exit class (`replaced`, `stale_swept`).
 
 `c.agent.exit.class` takes one of:
 
@@ -778,6 +778,7 @@ tel.exception(err, { origin: 'main', handled: false });
 - When telemetry is disabled, `tel.*` are no-op functions that run `fn` directly. That is one property read and a branch, so hot-adjacent code (hook server) pays nothing measurable.
 - `tel.flow` also accepts an existing `AbortSignal` and marks `cancelled` on abort.
 - Thrown errors are recorded via `tel.exception` (sanitized) and rethrown unchanged. Instrumentation never changes control flow.
+- A flow on a registered root span (`root: true`) and every replayed span or tree always start a new trace, whatever context is active; only `tel.step` nests under the active span. Process callbacks registered inside a flow (a PTY's `onExit`) keep that flow's context for the life of the process, so without this a run or kill replayed at exit would hang off a spawn trace that ended long before. `tel.exception` likewise attaches only to a span that is still recording.
 - A thrown error's `error.type` is `unknown` unless the error was typed at the throw site: `throw tagError(err, 'preflight_failed')`, or `withErrorType('pty_spawn_failed', () => spawn(...))` around a call. The tag is a non-enumerable symbol property, so the error the caller sees is otherwise unchanged. The first tag wins, so an inner, more specific type (`cwd_invalid`) survives an outer wrapper (`pty_spawn_failed`), and every span the error passes through records the same type.
 
 ### 6.6 Bridging `appLog` into OTel logs

@@ -50,6 +50,7 @@ import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
 import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
+import { agentKillRequested } from '../telemetry/agent-telemetry';
 import type {
   AnnexStatus,
   AgentHookEvent,
@@ -1646,6 +1647,7 @@ async function handleDurableDeleteRoute(ctx: AnnexRouteContext, match: RegExpMat
   readJsonBody(ctx.req, ctx.res, async (body) => {
     const mode = (body.mode as string) || 'force';
     if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
+      agentKillRequested(agentId, 'annex');
       ptyManager.gracefulKill(agentId);
     }
     try {
@@ -2213,6 +2215,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     case 'agent:kill': {
       const agentId = payload.agentId as string;
       if (!agentId) break;
+      agentKillRequested(agentId, 'annex');
       ptyManager.gracefulKill(agentId);
       safeSend(ws, JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
       break;

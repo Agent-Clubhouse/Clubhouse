@@ -459,7 +459,8 @@ describe('agent-system', () => {
         mockProvider.checkAvailability.mockResolvedValueOnce({ available: false, error: 'not installed' });
         await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick' })).rejects.toThrow();
         expect(count).toHaveBeenCalledWith('clubhouse.agent.spawns', 1, [
-          ATTR.agentKind('quick'), ATTR.orchestrator('claude-code'), ATTR.agentRuntime('pty'),
+          // No runtime yet: the spawn failed before choosing one.
+          ATTR.agentKind('quick'), ATTR.orchestrator('claude-code'),
           ATTR.outcome('error'), ATTR.errorType('preflight_failed'),
         ]);
       } finally {

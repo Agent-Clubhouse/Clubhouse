@@ -10,7 +10,7 @@ import {
   tel,
   withErrorType,
 } from './facade';
-import type { TelemetryRuntime } from './types';
+import { errorTypeOf, type TelemetryRuntime } from './types';
 
 function fakeRuntime(overrides: Partial<TelemetryRuntime> = {}): TelemetryRuntime {
   return {
@@ -104,6 +104,19 @@ describe('telemetry facade', () => {
     setRuntime(rt);
     expect(rt.exception).toHaveBeenCalledWith(err, { origin: 'main', handled: false });
     expect(vi.mocked(rt.replaySpan).mock.calls[0][0]).toMatchObject({ outcome: 'error', errorType: 'unknown' });
+  });
+
+  it('withErrorType returns fn\'s own value, sync or async, and is a plain call while off', async () => {
+    expect(withErrorType('cwd_invalid', () => 7)).toBe(7);
+    const p = Promise.resolve(1);
+    expect(withErrorType('cwd_invalid', () => p)).toBe(p);
+    const err = new Error('x');
+    expect(() => withErrorType('cwd_invalid', () => { throw err; })).toThrow(err);
+    expect(errorTypeOf(err)).toBe('unknown');
+    setRuntime(fakeRuntime());
+    await expect(withErrorType('cwd_invalid', () => Promise.reject(err))).rejects.toBe(err);
+    expect(errorTypeOf(err)).toBe('cwd_invalid');
+    expect(withErrorType('cwd_invalid', () => 8)).toBe(8);
   });
 
   it('keeps the tagged error type on buffered startup flows', async () => {

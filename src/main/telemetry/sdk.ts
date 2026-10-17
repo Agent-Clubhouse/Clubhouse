@@ -9,6 +9,7 @@
 import {
   context,
   diag,
+  ROOT_CONTEXT,
   DiagLogLevel,
   SpanKind,
   SpanStatusCode,
@@ -294,6 +295,18 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     span.end();
   }
 
+  /**
+   * Parent context for a replayed span, and (via SpanKind.SERVER) for a flow
+   * on a registered root span: those always start a new trace, while a
+   * tel.step stays under the active span whatever its name. Process and timer
+   * callbacks registered inside a flow (a PTY's onExit, for example) keep that
+   * flow's context for the life of the process, and a run or kill replayed
+   * from there must not hang off a spawn trace that ended hours ago.
+   */
+  function parentFor(name: SpanName) {
+    return SPANS[name].root ? ROOT_CONTEXT : context.active();
+  }
+
   function runSpan<T>(
     name: SpanName,
     kind: SpanKind,
@@ -302,7 +315,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     extras?: FlowExtras<T>,
   ): T {
     if (!levelAllows(spanLevel, SPANS[name].level)) return fn({ set: () => {} });
-    return tracer.startActiveSpan(name, { kind, attributes: { ...toAttributes(opts2.attrs), ...userAttrs } }, (span) => {
+    return tracer.startActiveSpan(name, { kind, attributes: { ...toAttributes(opts2.attrs), ...userAttrs } }, kind === SpanKind.SERVER ? ROOT_CONTEXT : context.active(), (span) => {
       const classifyResult = (r: Awaited<T>): Classification => {
         if (opts2.signal?.aborted) return { outcome: 'cancelled' };
         try {
@@ -371,7 +384,12 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     },
 
     exception(error, exOpts) {
-      recordException(trace.getActiveSpan(), error, exOpts);
+      // Only attach to a span that is still recording. An ended span left in
+      // a long-lived callback's context must not claim this exception or
+      // lend its trace id to the log record.
+      const active = trace.getActiveSpan();
+      if (active?.isRecording()) recordException(active, error, exOpts);
+      else context.with(ROOT_CONTEXT, () => recordException(undefined, error, exOpts));
     },
 
     replaySpan(s: ReplaySpan) {
@@ -380,7 +398,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
         kind: SPANS[s.name].root ? SpanKind.SERVER : SpanKind.INTERNAL,
         startTime: s.startMs,
         attributes: { ...toAttributes(s.attrs), ...userAttrs },
-      }, context.active());
+      }, parentFor(s.name));
       const attrs = [ATTR.outcome(s.outcome)];
       if (s.errorType) attrs.push(ATTR.errorType(s.errorType));
       span.setAttributes(toAttributes(attrs));
@@ -394,8 +412,8 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
         kind: SPANS[root.name].root ? SpanKind.SERVER : SpanKind.INTERNAL,
         startTime: root.startMs,
         attributes: { ...toAttributes(root.attrs), ...userAttrs },
-      }, context.active());
-      const parentCtx = trace.setSpan(context.active(), rootSpan);
+      }, parentFor(root.name));
+      const parentCtx = trace.setSpan(ROOT_CONTEXT, rootSpan);
       for (const c of children) {
         if (!levelAllows(spanLevel, SPANS[c.name].level)) continue;
         const child = tracer.startSpan(c.name, {
