@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { AgentRow } from './AgentRow';
@@ -118,21 +118,27 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   const expanded = !collapsed;
 
   // Move up / Move down for durable agents, in their saved order (§4.8).
-  const durableOrder = agents.filter((a) => a.kind === 'durable').map((a) => a.id);
-  const moveActions = (agent: Agent): ActionDef[] | undefined => {
-    if (!onReorderAgents || agent.kind !== 'durable') return undefined;
-    const i = durableOrder.indexOf(agent.id);
-    const move = (to: number) => {
-      const next = [...durableOrder];
-      next.splice(i, 1);
-      next.splice(to, 0, agent.id);
-      onReorderAgents(project.id, next);
-    };
-    const list: ActionDef[] = [];
-    if (i > 0) list.push({ id: 'move-up', label: 'Move up', icon: null, hoverColor: '', visible: true, handler: () => move(i - 1) });
-    if (i < durableOrder.length - 1) list.push({ id: 'move-down', label: 'Move down', icon: null, hoverColor: '', visible: true, handler: () => move(i + 1) });
-    return list;
-  };
+  // Memoized on the order, so the memoized rows don't re-render on every status change.
+  const durableKey = agents.filter((a) => a.kind === 'durable').map((a) => a.id).join('\n');
+  const moveActionsById = useMemo(() => {
+    const map = new Map<string, ActionDef[]>();
+    if (!onReorderAgents || !durableKey) return map;
+    const order = durableKey.split('\n');
+    order.forEach((id, i) => {
+      const move = (to: number) => {
+        const next = [...order];
+        next.splice(i, 1);
+        next.splice(to, 0, id);
+        onReorderAgents(project.id, next);
+      };
+      const list: ActionDef[] = [];
+      if (i > 0) list.push({ id: 'move-up', label: 'Move up', icon: null, hoverColor: '', visible: true, handler: () => move(i - 1) });
+      if (i < order.length - 1) list.push({ id: 'move-down', label: 'Move down', icon: null, hoverColor: '', visible: true, handler: () => move(i + 1) });
+      map.set(id, list);
+    });
+    return map;
+  }, [durableKey, onReorderAgents, project.id]);
+  const moveActions = (agent: Agent) => moveActionsById.get(agent.id);
 
   const renderAgent = (agent: Agent, indent = ROW_INDENT, level = 2) => (
     <AgentRow
