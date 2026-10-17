@@ -69,6 +69,15 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
   const canFeedback = !!extras?.denyMessage && !!reject;
   const canEditPlan = !!extras?.updatedInput && !!plan;
   const planEdited = canEditPlan && planText.trim() !== '' && planText !== plan!.markdown;
+  // A cleared editor can't be approved: it would silently approve the original plan.
+  const planEmpty = canEditPlan && editing && planText.trim() === '';
+  // With unsent text in the card, shortcuts on the card would throw it away, so they pause.
+  const dirty = (canFeedback && feedback.trim() !== '') || planEdited;
+  const editor = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (editing) editor.current?.focus();
+  }, [editing]);
 
   useEffect(() => {
     setAnswered(false);
@@ -84,6 +93,7 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
 
   const choose = (opt: PermissionOption | undefined) => {
     if (!opt || answered) return;
+    if (planEmpty && ALLOW_KINDS.has(opt.kind)) return;
     setAnswered(true);
     const sent = extrasFor(opt);
     void (sent ? onRespond(request.requestId, opt.optionId, sent) : onRespond(request.requestId, opt.optionId)).then((ok) => {
@@ -95,7 +105,7 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (ownsKey(e)) return;
+    if (ownsKey(e) || dirty) return;
     if (e.key === 'Enter') { e.preventDefault(); choose(primary); return; }
     if (e.key === 'Escape') { e.preventDefault(); choose(reject); return; }
     const i = digitIndex(e.key, request.options.length);
@@ -130,7 +140,7 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
             <button
               key={opt.optionId}
               type="button"
-              disabled={answered}
+              disabled={answered || (planEmpty && ALLOW_KINDS.has(opt.kind))}
               onClick={() => choose(opt)}
               className={`flex items-center gap-2.5 h-[30px] px-2 rounded-md text-[12.5px] text-left disabled:opacity-50 ${isPrimary ? 'bg-surface-0 text-ctp-text ring-1 ring-surface-1' : 'text-ctp-subtext1 hover:bg-surface-0/60'}`}
               data-option-kind={opt.kind}
@@ -138,8 +148,8 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
               <span className="w-[18px] h-[18px] rounded bg-ctp-crust grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
               <span className="truncate">{opt.label}</span>
               {opt.scope && <span className="font-mono text-[11px] text-ctp-overlay1 truncate">{opt.scope}</span>}
-              {isPrimary && <Key>⏎</Key>}
-              {opt === reject && <Key>Esc</Key>}
+              {!dirty && isPrimary && <Key>⏎</Key>}
+              {!dirty && opt === reject && <Key>Esc</Key>}
             </button>
           );
         })}
@@ -148,6 +158,7 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
         <div className="pl-5 flex flex-col gap-1.5">
           {editing ? (
             <textarea
+              ref={editor}
               value={planText}
               disabled={answered}
               onChange={(e) => setPlanText(e.target.value)}
@@ -161,11 +172,20 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
               type="button"
               disabled={answered}
               onClick={() => setEditing((v) => !v)}
+              aria-expanded={editing}
               className="h-6 px-2 rounded-md bg-surface-0 text-ctp-subtext1 disabled:opacity-50"
             >
               {editing ? 'Hide plan editor' : 'Edit plan'}
             </button>
             {planEdited && <span>Approving sends your edited plan.</span>}
+            {planEmpty && (
+              <>
+                <span className="text-ctp-warning" role="status">The plan is empty, so it can't be approved.</span>
+                <button type="button" onClick={() => setPlanText(plan!.markdown)} className="h-6 px-2 rounded-md bg-surface-0 text-ctp-subtext1">
+                  Restore original
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -183,6 +203,11 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
           className="ml-5 h-[30px] rounded-md border border-dashed border-surface-1 bg-transparent px-2.5 text-[12.5px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-solid focus:border-ctp-accent/60 disabled:opacity-50"
           data-testid="chat-permission-feedback"
         />
+      )}
+      {dirty && (
+        <div className="pl-5 text-[11.5px] text-ctp-overlay1" data-testid="chat-permission-shortcuts-paused">
+          Keyboard shortcuts are paused while you have unsent text. Choose an option to answer.
+        </div>
       )}
     </div>
   );

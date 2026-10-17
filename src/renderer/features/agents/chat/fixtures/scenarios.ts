@@ -121,14 +121,15 @@ function plan(p: FixtureProvider, agentId?: string): ChatEvent[] {
     f.emit('plan_document', { planId: 'plan-1', markdown, status: 'ready', toolCallId: 'exit-plan' }, { turnId: t });
     f.emit('permission_request', {
       requestId: 'perm-plan',
-      title: 'Claude finished planning. How should it continue?',
+      title: 'Plan ready for review',
       toolCallId: 'exit-plan',
       toolName: 'ExitPlanMode',
       rawInput: { plan: markdown },
       options: [
-        { optionId: 'acceptEdits', kind: 'allow_once', label: 'Approve, auto-accept edits' },
-        { optionId: 'default', kind: 'allow_once', label: 'Approve, ask before each edit' },
-        { optionId: 'keep-planning', kind: 'reject_once', label: 'Keep planning' },
+        // ClaudeChatDriver's options; the CLI's setMode suggestion becomes the "always" scope.
+        { optionId: 'allow', kind: 'allow_once', label: 'Allow' },
+        { optionId: 'allow_always', kind: 'allow_always', label: "Allow and don't ask again", scope: 'acceptEdits mode' },
+        { optionId: 'deny', kind: 'reject_once', label: 'Deny' },
       ],
     }, { turnId: t });
     f.emit('session_state', { state: 'waiting_permission' });

@@ -154,7 +154,7 @@ describe('ChatView approvals', () => {
 
   it('shows what an always-allow option covers', () => {
     renderFixture('claude', 'approval');
-    expect(screen.getByTestId('chat-permission')).toHaveTextContent('npm install:*');
+    expect(screen.getByTestId('chat-permission')).toHaveTextContent('Bash(npm install:*)');
   });
 
   it('answers with Enter, Esc and number keys', () => {
@@ -199,9 +199,10 @@ describe('ChatView plans and questions', () => {
     expect(screen.getByTestId('chat-plan-document')).toHaveTextContent('Ready for review');
     expect(screen.getByTestId('chat-plan-document')).toHaveTextContent('Row layout.');
     const card = screen.getByTestId('chat-permission');
-    expect(card).toHaveTextContent('Claude finished planning');
-    fireEvent.click(within(card).getByText('Approve, auto-accept edits'));
-    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'acceptEdits');
+    expect(card).toHaveTextContent('Plan ready for review');
+    expect(card).toHaveTextContent('acceptEdits mode');
+    fireEvent.click(within(card).getByText("Allow and don't ask again"));
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow_always');
   });
 
   it('asks a question with options and free text', () => {
@@ -507,7 +508,7 @@ describe('ChatView permission extras', () => {
     const a2 = makeActions();
     renderFixture('claude', 'approval', a2);
     fireEvent.change(screen.getByTestId('chat-permission-feedback'), { target: { value: 'ignored' } });
-    fireEvent.click(screen.getByText('Allow once'));
+    fireEvent.click(screen.getByText('Allow'));
     expect(a2.respondPermission).toHaveBeenCalledWith('perm-1', 'allow');
   });
 
@@ -522,24 +523,24 @@ describe('ChatView permission extras', () => {
     const editor = screen.getByLabelText('Edit the plan');
     fireEvent.change(editor, { target: { value: '1. Only the row layout.' } });
     expect(screen.getByText('Approving sends your edited plan.')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Approve, auto-accept edits'));
-    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'acceptEdits', { updatedInput: { plan: '1. Only the row layout.' } });
+    fireEvent.click(screen.getByText('Allow'));
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow', { updatedInput: { plan: '1. Only the row layout.' } });
   });
 
   it('approves an unedited plan without extras', () => {
     const { actions } = renderFixture('claude', 'plan');
     fireEvent.click(screen.getByText('Edit plan'));
-    fireEvent.click(screen.getByText('Approve, ask before each edit'));
-    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'default');
+    fireEvent.click(screen.getByText('Allow'));
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow');
   });
 
-  it('sends plan feedback with Keep planning', () => {
+  it('sends plan feedback with the reject option', () => {
     const { actions } = renderFixture('claude', 'plan');
     const input = screen.getByTestId('chat-permission-feedback');
-    expect(input).toHaveAttribute('placeholder', 'Keep planning, and tell gallant-swift what to change…');
+    expect(input).toHaveAttribute('placeholder', 'Deny, and tell gallant-swift what to change…');
     fireEvent.change(input, { target: { value: 'Also cover the canvas view' } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'keep-planning', { message: 'Also cover the canvas view' });
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'deny', { message: 'Also cover the canvas view' });
   });
 
   it('hides plan editing when the driver carries no updatedInput', () => {
@@ -549,13 +550,59 @@ describe('ChatView permission extras', () => {
     expect(screen.getByTestId('chat-permission-feedback')).toBeInTheDocument();
   });
 
-  it('keeps number keys for options while the message field is not focused', () => {
+  it('leaves typed digits in the message field', () => {
     const { actions } = renderFixture('claude', 'approval');
     const input = screen.getByTestId('chat-permission-feedback');
     fireEvent.change(input, { target: { value: '3 reasons' } });
     fireEvent.keyDown(input, { key: '3' });
     expect(actions.respondPermission).not.toHaveBeenCalled();
-    fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: '1' });
+  });
+
+  it.each(['1', 'Enter', 'Escape'])('pauses the %s shortcut while a message is typed, so it is not thrown away', (key) => {
+    const { actions } = renderFixture('claude', 'approval');
+    const card = screen.getByTestId('chat-permission');
+    fireEvent.change(screen.getByTestId('chat-permission-feedback'), { target: { value: 'Use pnpm' } });
+    expect(screen.getByTestId('chat-permission-shortcuts-paused')).toBeInTheDocument();
+    fireEvent.keyDown(card, { key });
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByTestId('chat-permission-feedback'), { target: { value: '' } });
+    fireEvent.keyDown(card, { key: '1' });
     expect(actions.respondPermission).toHaveBeenCalledWith('perm-1', 'allow');
+  });
+
+  it('pauses shortcuts while the plan has unsent edits', () => {
+    const { actions } = renderFixture('claude', 'plan');
+    fireEvent.click(screen.getByText('Edit plan'));
+    fireEvent.change(screen.getByLabelText('Edit the plan'), { target: { value: '1. Smaller plan.' } });
+    fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: 'Escape' });
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+  });
+
+  it('focuses the editor and reports it expanded when Edit plan opens it', () => {
+    renderFixture('claude', 'plan');
+    const toggle = screen.getByText('Edit plan');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(screen.getByText('Hide plan editor')).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText('Edit the plan')).toHaveFocus();
+  });
+
+  it('will not approve a cleared plan, and can restore it', () => {
+    const { actions } = renderFixture('claude', 'plan');
+    fireEvent.click(screen.getByText('Edit plan'));
+    fireEvent.change(screen.getByLabelText('Edit the plan'), { target: { value: '   ' } });
+    expect(screen.getByText("The plan is empty, so it can't be approved.")).toBeInTheDocument();
+    const allow = screen.getByText('Allow').closest('button')!;
+    expect(allow).toBeDisabled();
+    fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: 'Enter' });
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+    // Rejecting still works with an empty editor.
+    expect(screen.getByText('Deny').closest('button')).not.toBeDisabled();
+
+    fireEvent.click(screen.getByText('Restore original'));
+    expect(allow).not.toBeDisabled();
+    fireEvent.click(allow);
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow');
   });
 });
