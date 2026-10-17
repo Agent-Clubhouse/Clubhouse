@@ -5,7 +5,7 @@ import {
   flushTelemetry,
   initRendererTelemetry,
 } from '../telemetry/facade';
-import { getTelemetryView } from '../telemetry/long-frames';
+import { getTelemetryView, getTelemetrySurface, recordLongFrame, flushLongFrames, _resetLongFramesForTests } from '../telemetry/long-frames';
 import { getAttributeSpec, isKnownEvent } from '../../shared/telemetry/attributes';
 import {
   getChromeSurface,
@@ -44,6 +44,22 @@ describe('chrome telemetry', () => {
 
   afterEach(() => {
     _resetRendererTelemetryForTests();
+    _resetLongFramesForTests();
+  });
+
+  it('puts the chrome surface on long-frame metrics beside the view', () => {
+    _setStateForTests({ enabled: true, level: 'standard' });
+    reportChromeView('plugin:files');
+    reportChromeSurface('sidebar_list');
+    expect(getTelemetrySurface()).toBe('sidebar_list');
+    recordLongFrame(80);
+    flushLongFrames();
+    const counts = emitted(b).filter((i) => i.name === 'clubhouse.renderer.long_frames');
+    expect(counts).toHaveLength(1);
+    expect(counts[0].attrs).toEqual([
+      expect.objectContaining({ key: 'clubhouse.view', value: 'files' }),
+      expect.objectContaining({ key: 'clubhouse.ui.surface', value: 'sidebar_list' }),
+    ]);
   });
 
   it('registers its attributes and events', () => {

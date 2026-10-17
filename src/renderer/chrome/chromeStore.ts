@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { reportChromeActionFailed } from './telemetry';
+import { isNewChromeEnabled } from './chromeFlag';
 
 /**
  * State for the new chrome shell. Persisted under its own key so the legacy
@@ -18,12 +19,20 @@ interface PersistedChromeState {
   version: number;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
+  /** The project selected most recently, restored when nothing is selected (spec §5.2). */
+  lastProjectId?: string | null;
 }
+
+type PersistedFields = Pick<ChromeState, 'sidebarWidth' | 'sidebarCollapsed' | 'lastProjectId'>;
+
+const DEFAULTS: PersistedFields = { sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null };
 
 export interface ChromeState {
   sidebarWidth: number;
   sidebarCollapsed: boolean;
+  lastProjectId: string | null;
   resizeSidebar: (delta: number) => void;
+  setLastProjectId: (projectId: string) => void;
   setSidebarWidth: (width: number) => void;
   toggleSidebar: () => void;
 }
@@ -33,34 +42,34 @@ export function clampSidebarWidth(width: number): number {
   return Math.max(SIDEBAR_MIN, Math.min(Math.round(width), SIDEBAR_MAX));
 }
 
-export function loadChromeState(): Pick<ChromeState, 'sidebarWidth' | 'sidebarCollapsed'> {
-  const defaults = { sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false };
+export function loadChromeState(): PersistedFields {
   try {
     const raw = localStorage.getItem(CHROME_STORAGE_KEY);
-    if (!raw) return defaults;
+    if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw) as Partial<PersistedChromeState> | null;
-    if (!parsed || typeof parsed !== 'object') return defaults;
+    if (!parsed || typeof parsed !== 'object') return { ...DEFAULTS };
     return {
       sidebarWidth: typeof parsed.sidebarWidth === 'number' ? clampSidebarWidth(parsed.sidebarWidth) : SIDEBAR_DEFAULT,
       sidebarCollapsed: parsed.sidebarCollapsed === true,
+      lastProjectId: typeof parsed.lastProjectId === 'string' ? parsed.lastProjectId : null,
     };
   } catch {
     // telemetry-exempt: read at module load, before telemetry is connected; corrupt state falls back to defaults
-    return defaults;
+    return { ...DEFAULTS };
   }
 }
 
-function persistChromeState(state: Pick<ChromeState, 'sidebarWidth' | 'sidebarCollapsed'>): void {
+function persistChromeState(state: PersistedFields): void {
   const payload: PersistedChromeState = {
     version: STORAGE_VERSION,
     sidebarWidth: state.sidebarWidth,
     sidebarCollapsed: state.sidebarCollapsed,
+    lastProjectId: state.lastProjectId,
   };
   try {
     localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify(payload));
   } catch (err) {
     console.warn('[store:chrome] Failed to persist chrome state (quota?):', err instanceof Error ? err.message : err);
-    // telemetry-exempt: reported through reportChromeActionFailed (clubhouse.ui.action_failed)
     reportChromeActionFailed('chrome_state_save', err);
   }
 }
@@ -77,7 +86,9 @@ export const useChromeStore = create<ChromeState>((set, get) => {
   };
 
   return {
-    ...loadChromeState(),
+    // With the flag off the legacy shell runs and this store is never used, so
+    // don't touch localStorage at startup.
+    ...(isNewChromeEnabled() ? loadChromeState() : DEFAULTS),
 
     resizeSidebar: (delta) => {
       const { sidebarWidth, sidebarCollapsed } = get();
@@ -85,6 +96,12 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       const next = clampSidebarWidth(sidebarWidth + delta);
       if (next === sidebarWidth) return;
       set({ sidebarWidth: next });
+      schedulePersist();
+    },
+
+    setLastProjectId: (projectId) => {
+      if (get().lastProjectId === projectId) return;
+      set({ lastProjectId: projectId });
       schedulePersist();
     },
 

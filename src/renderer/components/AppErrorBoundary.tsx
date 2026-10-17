@@ -1,6 +1,6 @@
 import React from 'react';
 import { rendererLog } from '../plugins/renderer-logger';
-import { ATTR, tel } from '../telemetry';
+import { ATTR, surfaceAttrs, tel } from '../telemetry';
 
 interface Props {
   children: React.ReactNode;
@@ -30,7 +30,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
     rendererLog('core:renderer', 'error', 'App render error', {
       meta: { error: error.message, stack: error.stack, componentStack: info.componentStack },
     });
-    tel.exception(error, { handled: true, attrs: [ATTR.errorBoundary('app')] });
+    tel.exception(error, { handled: true, attrs: [ATTR.errorBoundary('app'), ...surfaceAttrs()] });
   }
 
   render() {

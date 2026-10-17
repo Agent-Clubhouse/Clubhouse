@@ -94,14 +94,23 @@ export function ChromeBody() {
   const isHelp = explorerTab === 'help';
   const appPluginId = explorerTab.startsWith('plugin:app:') ? explorerTab.slice('plugin:app:'.length) : null;
 
-  // There is no Home in the new shell (spec §5.2). With no project selected and
-  // nothing else open, select the first project so the window is never empty.
-  const firstLocalProjectId = projects[0]?.id ?? null;
+  const lastProjectId = useChromeStore((s) => s.lastProjectId);
+  const setLastProjectId = useChromeStore((s) => s.setLastProjectId);
+
+  // Remember the most recently active local project.
   useEffect(() => {
-    if (!activeProjectId && !activeHostId && !isSettings && !isHelp && !appPluginId && firstLocalProjectId) {
-      useProjectStore.getState().setActiveProject(firstLocalProjectId);
+    if (activeProjectId && projects.some((p) => p.id === activeProjectId)) setLastProjectId(activeProjectId);
+  }, [activeProjectId, projects, setLastProjectId]);
+
+  // There is no Home in the new shell (spec §5.2). With no project selected and
+  // nothing else open (startup, or the legacy "Go to Home" shortcut), reopen the
+  // most recently active project, falling back to the first one.
+  const fallbackProjectId = (lastProjectId && projects.some((p) => p.id === lastProjectId) ? lastProjectId : projects[0]?.id) ?? null;
+  useEffect(() => {
+    if (!activeProjectId && !activeHostId && !isSettings && !isHelp && !appPluginId && fallbackProjectId) {
+      useProjectStore.getState().setActiveProject(fallbackProjectId);
     }
-  }, [activeProjectId, activeHostId, isSettings, isHelp, appPluginId, firstLocalProjectId]);
+  }, [activeProjectId, activeHostId, isSettings, isHelp, appPluginId, fallbackProjectId]);
 
   useEffect(() => {
     if (isSettings) reportChromeSurface('sidebar_settings');

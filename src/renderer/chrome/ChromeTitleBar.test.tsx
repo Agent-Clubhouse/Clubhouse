@@ -42,7 +42,7 @@ describe('ChromeTitleBar', () => {
     registerTabPlugin('files', 'Files');
     usePluginStore.setState({ projectEnabled: { p1: ['files'] } });
     render(<ChromeTitleBar />);
-    expect(screen.getByTestId('title-bar')).toBeTruthy();
+    expect(screen.getByTestId('chrome-title-bar')).toBeTruthy();
     expect(screen.getByTestId('explorer-tab-agents').getAttribute('data-active')).toBe('true');
     expect(screen.getByTestId('explorer-tab-plugin:files').textContent).toContain('Files');
   });
@@ -60,12 +60,29 @@ describe('ChromeTitleBar', () => {
     useUIStore.setState({ explorerTab: 'settings' });
     render(<ChromeTitleBar />);
     expect(screen.queryByTestId('explorer-tab-agents')).toBeNull();
-    expect(screen.getByTestId('chrome-breadcrumb').textContent).toBe('Settings');
+    expect(screen.getByTestId('title-bar').textContent).toBe('Settings');
   });
 
   it('shows the project name in the breadcrumb', () => {
     render(<ChromeTitleBar />);
-    expect(screen.getByTestId('chrome-breadcrumb').textContent).toContain('Clubhouse');
+    expect(screen.getByTestId('title-bar').textContent).toContain('Clubhouse');
+  });
+
+  it('names the tab in the title text, and only the title text carries title-bar', () => {
+    registerTabPlugin('terminal', 'Terminal');
+    usePluginStore.setState({ projectEnabled: { p1: ['terminal'] } });
+    useUIStore.setState({ explorerTab: 'plugin:terminal' });
+    render(<ChromeTitleBar />);
+    expect(screen.getByTestId('title-bar').textContent).toBe('Clubhouse/Terminal');
+    useUIStore.setState({ explorerTab: 'agents' });
+  });
+
+  it('prefers a plugin window title set with window.setTitle()', () => {
+    registerTabPlugin('files', 'Files');
+    usePluginStore.setState({ projectEnabled: { p1: ['files'] }, pluginTitles: { files: 'README.md' } });
+    useUIStore.setState({ explorerTab: 'plugin:files' });
+    render(<ChromeTitleBar />);
+    expect(screen.getByTestId('title-bar').textContent).toContain('README.md');
   });
 
   it('toggles the sidebar', () => {
@@ -77,7 +94,7 @@ describe('ChromeTitleBar', () => {
   it('leaves room for the traffic lights on macOS', () => {
     setPlatform('darwin');
     render(<ChromeTitleBar />);
-    const root = screen.getByTestId('title-bar');
+    const root = screen.getByTestId('chrome-title-bar');
     expect(root.className).toContain('pl-[78px]');
     expect(root.className).not.toContain('win-overlay-padding');
   });
@@ -85,7 +102,7 @@ describe('ChromeTitleBar', () => {
   it('reserves the overlay controls on Windows', () => {
     setPlatform('win32');
     render(<ChromeTitleBar />);
-    const root = screen.getByTestId('title-bar');
+    const root = screen.getByTestId('chrome-title-bar');
     expect(root.className).toContain('win-overlay-padding');
     expect(root.className).not.toContain('pl-[78px]');
   });

@@ -41,7 +41,9 @@ export function getCommandActions(): CommandAction[] {
     },
     {
       id: 'toggle-accessory',
-      execute: () => usePanelStore.getState().toggleAccessoryCollapse(),
+      // The new chrome has no accessory column; writing the legacy panel state would
+      // leave a collapsed column behind when the flag is turned off (spec §5).
+      execute: () => { if (!isNewChromeEnabled()) usePanelStore.getState().toggleAccessoryCollapse(); },
     },
     {
       id: 'new-quick-agent',

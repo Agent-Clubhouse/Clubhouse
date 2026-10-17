@@ -25,6 +25,7 @@ import {
 import { createIdentity, isValidIdentity, type TelemetryIdentity } from './ids';
 import { deleteOfflineData, getOfflineDir, OFFLINE_PRUNE_INTERVAL_MS, pruneOfflineDir } from './offline';
 import { buildResourceAttributes, type ResourceInputs } from './resource';
+import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { createScrubber } from './scrubber';
 import {
   getTelemetrySettings,
@@ -74,7 +75,7 @@ function annexRole(): ResourceInputs['annexRole'] {
 function uiChrome(): ResourceInputs['uiChrome'] {
   try {
     const { getSettings } = require('../services/experimental-settings') as typeof import('../services/experimental-settings');
-    return getSettings().newChrome === true ? 'v2' : 'legacy';
+    return getSettings()[NEW_CHROME_FLAG] === true ? 'v2' : 'legacy';
   } catch {
     // Settings unreadable: the renderer falls back to the legacy shell too.
     return 'legacy';

@@ -80,6 +80,7 @@ describe('preload IPC bridge', () => {
     ];
     const expectedApi = {
       platform: api.platform,
+      newChromeLayout: api.newChromeLayout,
       getPathForFile: api.getPathForFile,
       settings: api.settings,
       ...Object.assign({}, ...domainSlices),

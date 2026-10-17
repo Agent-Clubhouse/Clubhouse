@@ -104,6 +104,18 @@ describe('command-actions', () => {
     expect(mockToggleExplorerCollapse).toHaveBeenCalled();
   });
 
+  it('toggle-accessory is a no-op in the new layout', async () => {
+    const { useChromeFlagStore } = await import('../../chrome/chromeFlag');
+    useChromeFlagStore.setState({ enabled: true });
+    mockToggleAccessoryCollapse.mockClear();
+    try {
+      findAction('toggle-accessory')?.execute();
+      expect(mockToggleAccessoryCollapse).not.toHaveBeenCalled();
+    } finally {
+      useChromeFlagStore.setState({ enabled: false });
+    }
+  });
+
   it('toggle-sidebar collapses the new chrome sidebar when the new layout is on', async () => {
     const { useChromeFlagStore } = await import('../../chrome/chromeFlag');
     const { useChromeStore } = await import('../../chrome/chromeStore');

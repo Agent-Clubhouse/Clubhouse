@@ -36,6 +36,8 @@ import { initTelemetry, recordAppSession, flushBeforeExit } from './telemetry';
 import { installCrashTelemetry, reportMainProcessError } from './telemetry/crash-handlers';
 import { registerTelemetryRendererHandlers } from './ipc/telemetry-renderer-handlers';
 import { getTelemetrySettings } from './telemetry/settings';
+import { getSettings as getExperimentalSettings } from './services/experimental-settings';
+import { NEW_CHROME_ARG, NEW_CHROME_FLAG } from '../shared/chrome-flag';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
 // workers indefinitely, starving every fs.promises operation after an agent
@@ -150,6 +152,16 @@ function getThemeColors(): { bg: string; mantle: string; text: string } {
   }
 }
 
+/** Whether this session uses the new chrome layout (experimental flag, read once). */
+function newChromeEnabled(): boolean {
+  try {
+    return getExperimentalSettings()[NEW_CHROME_FLAG] === true;
+  } catch {
+    // Unreadable settings: start on the legacy layout, as the renderer would.
+    return false;
+  }
+}
+
 const createWindow = (): void => {
   const isWin = process.platform === 'win32';
   const themeColors = getThemeColors();
@@ -180,6 +192,8 @@ const createWindow = (): void => {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      // The chrome layout is fixed per session; preload reads this synchronously.
+      additionalArguments: newChromeEnabled() ? [NEW_CHROME_ARG] : [],
     },
   });
 

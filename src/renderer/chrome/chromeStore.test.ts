@@ -12,7 +12,7 @@ import {
 describe('chromeStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false });
+    useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null });
   });
 
   afterEach(() => {
@@ -21,12 +21,12 @@ describe('chromeStore', () => {
 
   describe('loadChromeState', () => {
     it('defaults to a 264px expanded sidebar when nothing is stored', () => {
-      expect(loadChromeState()).toEqual({ sidebarWidth: 264, sidebarCollapsed: false });
+      expect(loadChromeState()).toEqual({ sidebarWidth: 264, sidebarCollapsed: false, lastProjectId: null });
     });
 
     it('reads persisted width and collapsed state', () => {
       localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 1, sidebarWidth: 300, sidebarCollapsed: true }));
-      expect(loadChromeState()).toEqual({ sidebarWidth: 300, sidebarCollapsed: true });
+      expect(loadChromeState()).toMatchObject({ sidebarWidth: 300, sidebarCollapsed: true });
     });
 
     it('clamps an out-of-range persisted width', () => {
@@ -36,12 +36,17 @@ describe('chromeStore', () => {
 
     it('falls back to defaults on corrupt JSON', () => {
       localStorage.setItem(CHROME_STORAGE_KEY, '{not json');
-      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false });
+      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null });
+    });
+
+    it('reads the last selected project', () => {
+      localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 1, lastProjectId: 'p2' }));
+      expect(loadChromeState().lastProjectId).toBe('p2');
     });
 
     it('never reads the legacy panel sizes key', () => {
       localStorage.setItem('clubhouse_panel_sizes', JSON.stringify({ explorerWidth: 390, explorerCollapsed: true }));
-      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false });
+      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null });
     });
   });
 
@@ -85,8 +90,30 @@ describe('chromeStore', () => {
       useChromeStore.getState().toggleSidebar();
       expect(localStorage.getItem(CHROME_STORAGE_KEY)).toBeNull();
       vi.advanceTimersByTime(400);
-      expect(JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!)).toEqual({ version: 1, sidebarWidth: 310, sidebarCollapsed: true });
+      expect(JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!)).toEqual({ version: 1, sidebarWidth: 310, sidebarCollapsed: true, lastProjectId: null });
       expect(localStorage.getItem('clubhouse_panel_sizes')).toBe('{"explorerWidth":200}');
+    });
+  });
+
+  describe('lazy load', () => {
+    it('does not read localStorage at startup when the new layout is off', async () => {
+      vi.resetModules();
+      (window.clubhouse as { newChromeLayout?: boolean }).newChromeLayout = undefined;
+      localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 1, sidebarWidth: 400 }));
+      const getItem = vi.spyOn(Storage.prototype, 'getItem');
+      const mod = await import('./chromeStore');
+      expect(getItem).not.toHaveBeenCalledWith(CHROME_STORAGE_KEY);
+      expect(mod.useChromeStore.getState().sidebarWidth).toBe(SIDEBAR_DEFAULT);
+      getItem.mockRestore();
+    });
+
+    it('loads persisted state at startup when the new layout is on', async () => {
+      vi.resetModules();
+      (window.clubhouse as { newChromeLayout?: boolean }).newChromeLayout = true;
+      localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 1, sidebarWidth: 400 }));
+      const mod = await import('./chromeStore');
+      expect(mod.useChromeStore.getState().sidebarWidth).toBe(400);
+      (window.clubhouse as { newChromeLayout?: boolean }).newChromeLayout = undefined;
     });
   });
 });

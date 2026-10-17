@@ -56,22 +56,35 @@ const TitleTab = React.memo(function TitleTab({ tab, isActive, projectId, onSele
   );
 });
 
-function useBreadcrumb(projectLabel: string | undefined): { parent?: string; current: string } {
+/**
+ * Breadcrumb text. Mirrors the legacy title (core label or the plugin's
+ * tab/rail title, overridden by a plugin's window.setTitle()), shown as
+ * "Project / Tab" in a project view (spec §6).
+ */
+function useBreadcrumb(projectLabel: string | undefined, tabLabel: string | undefined): { parent?: string; current: string } {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activeAgentName = useAgentStore((s) => (s.activeAgentId ? s.agents[s.activeAgentId]?.name : undefined));
   const appPluginId = explorerTab.startsWith('plugin:app:') ? explorerTab.slice('plugin:app:'.length) : null;
+  const projectPluginId = !appPluginId && explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
+  const pluginId = appPluginId ?? projectPluginId;
+  const dynamicTitle = usePluginStore((s) => (pluginId ? s.pluginTitles[pluginId] : undefined));
   const appPluginLabel = usePluginStore((s) => {
     if (!appPluginId) return undefined;
     const rail = s.plugins[appPluginId]?.manifest.contributes?.railItem;
     return rail?.title || rail?.label || s.plugins[appPluginId]?.manifest.name;
   });
+  const projectPluginTitle = usePluginStore((s) => {
+    if (!projectPluginId) return undefined;
+    const tab = s.plugins[projectPluginId]?.manifest.contributes?.tab;
+    return tab?.title || tab?.label;
+  });
 
   if (explorerTab === 'settings') return { current: 'Settings' };
   if (explorerTab === 'help') return { current: 'Help' };
-  if (appPluginId) return { current: appPluginLabel || appPluginId };
+  if (appPluginId) return { current: dynamicTitle || appPluginLabel || appPluginId };
   if (!projectLabel) return { current: 'Clubhouse' };
-  if (explorerTab === 'agents' && activeAgentName) return { parent: projectLabel, current: activeAgentName };
-  return { current: projectLabel };
+  if (explorerTab === 'agents') return { parent: projectLabel, current: activeAgentName || 'Agents' };
+  return { parent: projectLabel, current: dynamicTitle || projectPluginTitle || tabLabel || projectLabel };
 }
 
 export function ChromeTitleBar() {
@@ -86,7 +99,8 @@ export function ChromeTitleBar() {
   const hasOverlayControls = platform === 'win32';
   const inProjectView = !!activeProjectId && explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
   const projectLabel = activeProject ? (activeProject.displayName || activeProject.name) : undefined;
-  const crumb = useBreadcrumb(projectLabel);
+  const activeTabLabel = orderedTabs.find((t) => t.id === explorerTab)?.label;
+  const crumb = useBreadcrumb(projectLabel, activeTabLabel);
 
   const onSelect = (id: string) => {
     setExplorerTab(id, activeProjectId ?? undefined);
@@ -99,7 +113,7 @@ export function ChromeTitleBar() {
 
   return (
     <div
-      data-testid="title-bar"
+      data-testid="chrome-title-bar"
       className={`h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center gap-1 pr-3 ${
         isMac ? 'pl-[78px]' : 'pl-2'
       }${hasOverlayControls ? ' win-overlay-padding' : ''}`}
@@ -133,7 +147,7 @@ export function ChromeTitleBar() {
       {/* Empty space between tabs and breadcrumb stays draggable. */}
       <div className="flex-1 min-w-[80px] self-stretch" />
 
-      <div className="flex-shrink-0 flex items-center gap-1.5 text-xs min-w-0 max-w-[40%]" data-testid="chrome-breadcrumb">
+      <div className="flex-shrink-0 flex items-center gap-1.5 text-xs min-w-0 max-w-[40%]" data-testid="title-bar">
         {crumb.parent && (
           <>
             <span className="text-ctp-subtext0 truncate">{crumb.parent}</span>

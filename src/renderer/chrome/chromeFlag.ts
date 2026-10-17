@@ -1,34 +1,25 @@
 import { create } from 'zustand';
 
-/** Experimental flag id for the redesigned chrome (docs/chrome-redesign-spec.md §4.1). */
-export const NEW_CHROME_FLAG = 'newChrome';
+export { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
+
+/**
+ * Whether the new chrome shell is active for this session. Main passes the
+ * experimental flag to the main window as a launch argument and preload exposes
+ * it synchronously, so the shell is known before the first render with no IPC
+ * on the startup path. Switching layouts takes effect on the next launch, so a
+ * session never mixes the two shells (docs/chrome-redesign-spec.md §4.1).
+ */
+function readLaunchFlag(): boolean {
+  return (globalThis as { clubhouse?: { newChromeLayout?: unknown } }).clubhouse?.newChromeLayout === true;
+}
 
 interface ChromeFlagState {
-  /**
-   * Whether the new chrome shell is active for this session. Read once at
-   * startup and never changed while the app runs: switching layouts takes
-   * effect on the next launch, so a session never mixes the two shells.
-   */
   enabled: boolean;
 }
 
-export const useChromeFlagStore = create<ChromeFlagState>(() => ({ enabled: false }));
+export const useChromeFlagStore = create<ChromeFlagState>(() => ({ enabled: readLaunchFlag() }));
 
-/** Reads the experimental flag once. Any failure leaves the legacy shell on. */
-export async function loadChromeFlag(): Promise<boolean> {
-  let enabled = false;
-  try {
-    const settings = await window.clubhouse.app.getExperimentalSettings();
-    enabled = settings?.[NEW_CHROME_FLAG] === true;
-  } catch {
-    // telemetry-exempt: runs before the first render and before telemetry is connected; failing closed to the legacy shell is the handling
-    enabled = false;
-  }
-  useChromeFlagStore.setState({ enabled });
-  return enabled;
-}
-
-/** Non-hook accessor for code outside React (command actions, event bridge). */
+/** Non-hook accessor for code outside React (command actions, stores). */
 export function isNewChromeEnabled(): boolean {
   return useChromeFlagStore.getState().enabled;
 }

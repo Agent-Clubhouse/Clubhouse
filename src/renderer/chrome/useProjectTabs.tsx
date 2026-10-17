@@ -37,7 +37,6 @@ export function saveTabOrder(projectId: string, order: string[]): void {
     localStorage.setItem(TAB_ORDER_KEY_PREFIX + projectId, JSON.stringify(order));
   } catch (err) {
     console.warn('[ExplorerRail] Failed to persist tab order to localStorage (quota?):', err instanceof Error ? err.message : err);
-    // telemetry-exempt: reported through reportChromeActionFailed (clubhouse.ui.action_failed)
     reportChromeActionFailed('tab_order_save', err);
   }
 }

@@ -7,7 +7,6 @@ import { App } from './App';
 import { PopoutWindow } from './features/popout/PopoutWindow';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { initRendererTelemetry, installRendererErrorHandlers, startLongFrameCollection } from './telemetry';
-import { loadChromeFlag } from './chrome/chromeFlag';
 import './index.css';
 
 // Expose React on globalThis so community plugins loaded via native ESM
@@ -27,11 +26,5 @@ const container = document.getElementById('root');
 if (container) {
   const root = ReactDOMClient.createRoot(container);
   const isPopout = window.clubhouse.window?.isPopout();
-  if (isPopout) {
-    root.render(createElement(AppErrorBoundary, null, createElement(PopoutWindow)));
-  } else {
-    // The chrome layout is chosen once per session, before the first render,
-    // so the window never flashes the other shell (docs/chrome-redesign-spec.md §4.1).
-    loadChromeFlag().finally(() => root.render(createElement(AppErrorBoundary, null, createElement(App))));
-  }
+  root.render(createElement(AppErrorBoundary, null, createElement(isPopout ? PopoutWindow : App)));
 }

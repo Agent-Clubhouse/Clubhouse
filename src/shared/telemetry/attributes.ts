@@ -246,14 +246,14 @@ export const METRICS = {
     unit: '{frame}',
     level: 'standard',
     description: 'Long animation frames (>= 50 ms) in a renderer, aggregated per minute',
-    attributes: ['clubhouse.view', 'clubhouse.window.kind'],
+    attributes: ['clubhouse.view', 'clubhouse.window.kind', 'clubhouse.ui.surface'],
   },
   'clubhouse.renderer.long_frame.duration': {
     kind: 'histogram',
     unit: 's',
     level: 'standard',
     description: 'Duration of sampled long animation frames',
-    attributes: ['clubhouse.view', 'clubhouse.window.kind'],
+    attributes: ['clubhouse.view', 'clubhouse.window.kind', 'clubhouse.ui.surface'],
   },
   'clubhouse.renderer.unresponsive_count': {
     kind: 'counter',

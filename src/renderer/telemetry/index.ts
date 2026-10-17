@@ -4,5 +4,12 @@
  */
 export { tel, initRendererTelemetry, markRendererReady, flushTelemetry, isTelemetryEnabled } from './facade';
 export { installRendererErrorHandlers } from './errors';
-export { setTelemetryView, startLongFrameCollection, type TelemetryView } from './long-frames';
+export {
+  setTelemetryView,
+  setTelemetrySurface,
+  surfaceAttrs,
+  startLongFrameCollection,
+  type TelemetryView,
+  type TelemetrySurface,
+} from './long-frames';
 export { ATTR } from '../../shared/telemetry/attributes';

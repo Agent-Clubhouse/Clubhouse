@@ -4,8 +4,8 @@
  *
  * - `clubhouse.view` stays the coarse enum from the telemetry spec; the chrome
  *   sets it from the active tab and pane (`viewForTab`).
- * - `clubhouse.ui.surface` says where in the chrome the user is, and rides on
- *   feature-usage events.
+ * - `clubhouse.ui.surface` says where in the chrome the user is. It rides on
+ *   feature-usage events, long-frame metrics and render-error reports.
  * - `clubhouse.ui.action_failed` reports catch sites that would otherwise only
  *   toast or swallow.
  * - `clubhouse.ui.chrome` (`legacy` | `v2`) is a resource attribute set by main
@@ -13,7 +13,7 @@
  *
  * Every function is a cheap no-op while telemetry is off.
  */
-import { ATTR, setTelemetryView, tel, type TelemetryView } from '../telemetry';
+import { ATTR, setTelemetrySurface, setTelemetryView, tel, type TelemetryView } from '../telemetry';
 
 export type ChromeSurface = Parameters<typeof ATTR.uiSurface>[0];
 export type ChromeFeature = Parameters<typeof ATTR.uiFeature>[0];
@@ -42,8 +42,10 @@ export function reportChromeView(explorerTab: string): void {
   setTelemetryView(viewForTab(explorerTab));
 }
 
+/** Also feeds long-frame metrics and render-error reports (spec §8). */
 export function reportChromeSurface(surface: ChromeSurface): void {
   currentSurface = surface;
+  setTelemetrySurface(surface);
 }
 
 export function getChromeSurface(): ChromeSurface {
