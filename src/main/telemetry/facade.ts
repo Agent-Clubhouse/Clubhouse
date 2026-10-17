@@ -108,7 +108,13 @@ function trackFlow<T>(name: SpanName, fn: (span: SpanHandle) => T): (span: SpanH
 
 /** The active span's trace and span ids, when telemetry is running. */
 export function currentTraceIds(): TraceIds | undefined {
-  return runtime?.activeTraceIds();
+  // Called from appLog on every line; a logger must never throw, and runtimes
+  // built before activeTraceIds existed (test fakes) may not have it.
+  try {
+    return runtime?.activeTraceIds?.();
+  } catch {
+    return undefined;
+  }
 }
 
 /** The most recently started root flow still running, if any. */

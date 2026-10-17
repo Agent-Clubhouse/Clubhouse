@@ -1,6 +1,6 @@
 import * as fsp from 'fs/promises';
-import { ATTR } from '../../shared/telemetry/attributes';
 import * as path from 'path';
+import { ATTR } from '../../shared/telemetry/attributes';
 import { OrchestratorProvider } from '../orchestrators/types';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';

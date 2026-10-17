@@ -1,6 +1,6 @@
 import * as http from 'http';
-import { ATTR } from '../../shared/telemetry/attributes';
 import { IPC } from '../../shared/ipc-channels';
+import { ATTR } from '../../shared/telemetry/attributes';
 import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrchestrator } from './agent-registry';
 import { isHookCapable } from '../orchestrators';
 import { appLog } from './log-service';
@@ -367,13 +367,23 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
  * permission that has been pending longer than STUCK_PERMISSION_AGE_MS.
  * Without this, a stuck queue is silent until a user reports the symptom.
  */
-function scanForStuckPermissions(): void {
+/** Requests already exported as stuck, so telemetry sees each one once. */
+const reportedStuck = new Set<string>();
+
+export function scanForStuckPermissions(): void {
   const now = Date.now();
   const pending = permissionQueue.listPending();
+  // Drop ids that resolved or timed out since the last scan.
+  const pendingIds = new Set(pending.map((p) => p.requestId));
+  for (const id of reportedStuck) {
+    if (!pendingIds.has(id)) reportedStuck.delete(id);
+  }
   for (const p of pending) {
     const ageMs = now - p.createdAt;
     if (ageMs >= STUCK_PERMISSION_AGE_MS) {
       const remainingMs = (p.createdAt + p.timeoutMs) - now;
+      const firstReport = !reportedStuck.has(p.requestId);
+      reportedStuck.add(p.requestId);
       appLog('core:permission-queue', 'warn', 'Stuck pending permission', {
         meta: {
           requestId: p.requestId,
@@ -383,7 +393,9 @@ function scanForStuckPermissions(): void {
           timeoutMs: p.timeoutMs,
           remainingMs,
         },
-        telemetry: { event: 'clubhouse.agent.permission.stuck', attrs: [ATTR.agentIdHash(p.agentId)] },
+        ...(firstReport
+          ? { telemetry: { event: 'clubhouse.agent.permission.stuck' as const, attrs: [ATTR.agentIdHash(p.agentId)] } }
+          : {}),
       });
     }
   }
@@ -429,6 +441,7 @@ export function stop(): void {
     clearInterval(stuckScanTimer);
     stuckScanTimer = null;
   }
+  reportedStuck.clear();
   if (server) {
     server.close();
     server = null;

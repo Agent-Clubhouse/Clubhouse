@@ -1516,6 +1516,61 @@ describe('annex-client', () => {
 
       vi.useRealTimers();
     });
+
+    it('bridges a pong timeout to telemetry with no attributes', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+      const { appLog } = await import('./log-service');
+
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let openCb: (() => void) | null = null;
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.socket = makeMockSocket('PP:QQ:RR:SS');
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      vi.useFakeTimers();
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.advanceTimersByTimeAsync(0);
+      openCb!();
+      vi.mocked(appLog).mockClear();
+
+      // One heartbeat ping, then no pong within the 10s timeout.
+      vi.advanceTimersByTime(30_000 + 10_000);
+
+      expect(annexClient.getSatellites()[0].lastError).toBe('Heartbeat timeout');
+      const call = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Heartbeat pong timeout — closing connection');
+      expect(call?.[3]).toMatchObject({ telemetry: { event: 'clubhouse.annex.heartbeat_timeout' } });
+      expect((call?.[3] as { telemetry: { attrs?: unknown } }).telemetry.attrs).toBeUndefined();
+
+      vi.useRealTimers();
+    });
   });
 
   // -------------------------------------------------------------------------
