@@ -1,7 +1,7 @@
 import type { Agent } from '../../../shared/types';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
 import type { NeedsAttentionItem } from './treeModel';
-import { StatusDot } from './AgentRow';
+import { StatusDot } from '../../features/agents/agent-status';
 
 /**
  * Pinned list of agents waiting on the user (docs/chrome-redesign-spec.md §2).

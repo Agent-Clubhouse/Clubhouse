@@ -68,8 +68,8 @@ describe('ChatView conversation', () => {
     expect(screen.getAllByTestId('chat-agent-message')).toHaveLength(2);
     expect(screen.getByTestId('chat-turn-footer')).toHaveTextContent('Turn 1');
     expect(screen.getByTestId('chat-turn-footer')).toHaveTextContent('1m 12s');
-    expect(screen.getByTestId('chat-state')).toHaveTextContent('Idle');
-    expect(screen.getByTestId('chat-context')).toBeInTheDocument();
+    expect(screen.getByTestId('pane-status')).toHaveTextContent('Done');
+    expect(screen.getByTestId('pane-usage')).toHaveTextContent(/\d+%/);
   });
 
   it('expands the explore group to show each call', () => {
@@ -108,7 +108,8 @@ describe('ChatView conversation', () => {
 
   it.each([['claude', 2], ['codex', 2], ['copilot', 0]] as const)('shows plan-limit meters by capability (%s)', (p, n) => {
     renderFixture(p, 'conversation');
-    expect(screen.queryAllByTestId('chat-limit')).toHaveLength(n);
+    const label = screen.getByTestId('pane-usage').getAttribute('aria-label') ?? '';
+    expect(label.split(', ').filter((l) => / limit:/.test(l))).toHaveLength(n);
   });
 
   it('streams text and thinking before the final events arrive', () => {
@@ -118,7 +119,7 @@ describe('ChatView conversation', () => {
     const thinking = fold(events.slice(0, thoughtChunk + 1));
     const { unmount } = renderState(thinking);
     expect(screen.getByTestId('chat-thought')).toHaveTextContent('Thinking…');
-    expect(screen.getByTestId('chat-state')).toHaveTextContent('Working');
+    expect(screen.getByTestId('pane-status')).toHaveTextContent('Working');
     unmount();
 
     renderState(fold(events.slice(0, firstChunk + 2)));
@@ -145,7 +146,7 @@ describe('ChatView approvals', () => {
     const labels = within(card).getAllByRole('button').map((b) => b.textContent);
     expect(labels).toHaveLength(PROFILES[p].installOptions.length);
     PROFILES[p].installOptions.forEach((o, i) => expect(labels[i]).toContain(o.label));
-    expect(screen.getByTestId('chat-state')).toHaveTextContent('Waiting for you');
+    expect(screen.getByTestId('pane-status')).toHaveTextContent('Needs you');
     expect(screen.getByTestId('chat-command-card')).toHaveTextContent('waiting for approval');
 
     fireEvent.click(within(card).getAllByRole('button')[1]);
@@ -532,7 +533,7 @@ describe('ChatView failures', () => {
     expect(screen.getByTestId('chat-protocol-unknown')).toHaveTextContent('sent 2 messages Clubhouse doesn\'t recognize');
     expect(screen.getByRole('alert')).toHaveTextContent('The CLI exited unexpectedly');
     expect(screen.getByLabelText('Message')).toBeDisabled();
-    expect(screen.getByTestId('chat-state')).toHaveTextContent('Error');
+    expect(screen.getByTestId('pane-status')).toHaveTextContent('Error');
   });
 });
 
@@ -609,7 +610,7 @@ describe('ChatView (store-bound)', () => {
     await screen.findByTestId('chat-permission');
     expect(window.clubhouse.chat.readTranscript).toHaveBeenCalledWith(FIXTURE_AGENT_ID, undefined);
     act(() => { useChatStore.getState().applyEvent(live); });
-    expect(screen.getByTestId('chat-state')).toHaveTextContent('Waiting for you');
+    expect(screen.getByTestId('pane-status')).toHaveTextContent('Needs you');
   });
 
   it('sends through the chat API', async () => {

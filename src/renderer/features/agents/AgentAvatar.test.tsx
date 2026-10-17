@@ -230,13 +230,13 @@ describe('AgentAvatarWithRing', () => {
     expect(styledEl!.getAttribute('style')).toContain('border');
   });
 
-  it('renders amber ring for waking agent', () => {
+  it('renders the starting ring for a waking agent', () => {
     const { container } = render(
       <AgentAvatarWithRing agent={makeAgent({ status: 'waking' })} />,
     );
     const styledEl = container.querySelector('[style]');
     expect(styledEl).toBeTruthy();
-    // Waking uses CSS variable via status-colors.ts
-    expect(styledEl!.getAttribute('style')).toContain('rgb(var(--ctp-warning))');
+    // Waking is Starting in the shared status palette (agent-status.tsx)
+    expect(styledEl!.getAttribute('style')).toContain('rgb(var(--ctp-info))');
   });
 });
