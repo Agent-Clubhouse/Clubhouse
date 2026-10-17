@@ -85,8 +85,8 @@ export function holdChromeSurface(surface: ChromeSurface): () => void {
   };
 }
 
-/** The start page, first run and New agent are panes of their own: `clubhouse.view` is `other` (spec §8). */
-export function reportChromePage(page: 'start_page' | 'first_run' | 'new_agent'): void {
+/** The start page, first run, New agent and a satellite's start page are panes of their own: `clubhouse.view` is `other` (spec §8). */
+export function reportChromePage(page: 'start_page' | 'first_run' | 'new_agent' | 'satellite_start'): void {
   reportChromeSurface(page);
   setTelemetryView('other');
 }

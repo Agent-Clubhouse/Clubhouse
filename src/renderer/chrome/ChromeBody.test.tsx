@@ -6,6 +6,7 @@ vi.mock('./ChromeSidebar', () => ({ ChromeSidebar: () => <div data-testid="chrom
 vi.mock('../panels/MainContentView', () => ({ MainContentView: () => <div data-testid="main-content" /> }));
 vi.mock('./pages/ProjectStartPage', () => ({ ProjectStartPage: ({ project }: { project: { id: string } }) => <div data-testid="start-page">{project.id}</div> }));
 vi.mock('./pages/FirstRun', () => ({ FirstRun: () => <div data-testid="first-run" /> }));
+vi.mock('./pages/SatelliteStartPage', () => ({ SatelliteStartPage: ({ activeHostId }: { activeHostId: string }) => <div data-testid="satellite-start-page">{activeHostId}</div> }));
 vi.mock('./pages/NewAgentPage', () => ({ NewAgentPage: ({ request }: { request: { kind: string } }) => <div data-testid="new-agent-page">{request.kind}</div> }));
 
 import { ChromeBody } from './ChromeBody';
@@ -80,6 +81,14 @@ describe('ChromeBody', () => {
     act(() => { useChromeStore.getState().openNewAgent('quick'); goBusy(); });
     act(() => useUIStore.setState({ explorerTab: 'plugin:files' }));
     expect(useChromeStore.getState().newAgent).toBeNull();
+  });
+
+  it("shows a satellite's start page, not the old dashboard, with no project selected", () => {
+    useUIStore.setState({ activeHostId: 's1' });
+    useProjectStore.setState({ activeProjectId: null });
+    render(<ChromeBody />);
+    expect(screen.getByTestId('satellite-start-page').textContent).toBe('s1');
+    expect(screen.queryByTestId('satellite-dashboard')).toBeNull();
   });
 
   it('shows the selected agent on the Agents tab', () => {
