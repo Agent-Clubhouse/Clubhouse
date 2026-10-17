@@ -17,6 +17,7 @@ import type { ChatViewState } from '../../../stores/chatStore';
 import { AgentAvatar } from '../AgentAvatar';
 import { AgentMessage, ThoughtRow } from './MessageBlocks';
 import { ToolRow } from './ToolBlocks';
+import { scrollWithin } from './scroll';
 import { AgentsIcon, ChevronDown, ChevronRight, XIcon } from './icons';
 import { formatDuration, formatElapsed, formatTokens, isRunningState, type AgentMap, type AgentMapNode, type AgentMapStatus } from './view-model';
 
@@ -87,7 +88,9 @@ function NodeRow({ node, open, onToggle, onShowInStream, now, missed }: {
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (open) ref.current?.scrollIntoView?.({ block: 'nearest' });
+    const el = ref.current;
+    const scroller = el?.closest<HTMLElement>('[data-agent-map-scroller]');
+    if (open && el && scroller) scrollWithin(scroller, el, 'nearest');
   }, [open]);
   const meta = nodeMeta(node, now);
   return (
@@ -174,7 +177,7 @@ export function AgentMapPanel({ id, missedSubagentId, agent, state, map, selecte
           <XIcon />
         </button>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto py-2">
+      <div className="flex-1 min-h-0 overflow-y-auto py-2" data-agent-map-scroller>
         <div className="flex items-center gap-2 h-[30px] px-3.5 text-[12.5px]" data-testid="agent-map-root">
           <AgentAvatar agent={agent} size="xs" />
           <span className="font-semibold text-ctp-text truncate">{agent.name}</span>

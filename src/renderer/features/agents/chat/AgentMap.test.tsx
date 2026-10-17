@@ -102,8 +102,10 @@ describe('agent map panel', () => {
 
   it('jumps from the map back to the subagent in the conversation', () => {
     vi.useFakeTimers();
+    const intoView = vi.fn();
+    Element.prototype.scrollIntoView = intoView;
     const scrolled = vi.fn();
-    Element.prototype.scrollIntoView = scrolled;
+    Element.prototype.scrollTo = scrolled;
     renderState(stateFor('claude'));
     fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
     const node = screen.getAllByTestId('agent-map-node')[0];
@@ -111,7 +113,9 @@ describe('agent map panel', () => {
     fireEvent.click(within(node).getByText('Show in conversation'));
     const card = screen.getAllByTestId('chat-subagent')[0];
     expect(card).toHaveAttribute('data-jump-highlight', 'true');
-    expect(scrolled).toHaveBeenCalled();
+    // Only the stream scrolls; scrollIntoView would also scroll the app shell (window shifts up).
+    expect(intoView).not.toHaveBeenCalled();
+    expect(scrolled.mock.contexts).toContain(screen.getByTestId('chat-stream'));
     act(() => { vi.advanceTimersByTime(2000); });
     expect(card).not.toHaveAttribute('data-jump-highlight');
     vi.useRealTimers();
@@ -164,7 +168,6 @@ function extend(events: ChatEvent[], ...more: Array<Pick<ChatEvent, 'type' | 'da
 
 describe('agent map review fixes', () => {
   it('clears the previous outline when a second jump follows quickly', () => {
-    Element.prototype.scrollIntoView = vi.fn();
     renderState(stateFor('claude'));
     fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
     const [first, second] = screen.getAllByTestId('agent-map-node');
