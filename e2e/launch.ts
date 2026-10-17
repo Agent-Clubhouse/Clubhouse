@@ -37,6 +37,12 @@ export interface LaunchOptions {
 
   /** Launch a packaged Clubhouse executable instead of the webpack entry. */
   executablePath?: string;
+
+  /**
+   * Extra environment for the app process, applied last. Chat E2E uses this
+   * to put fake CLIs first on PATH (see e2e/chat-fake-cli.ts).
+   */
+  env?: Record<string, string>;
 }
 
 /**
@@ -80,6 +86,7 @@ export async function launchApp(opts: LaunchOptions = {}) {
   if (opts.pluginsDir) {
     env.CLUBHOUSE_PLUGINS_DIR = opts.pluginsDir;
   }
+  Object.assign(env, opts.env);
 
   const electronApp = await electron.launch({
     ...(opts.executablePath ? { executablePath: opts.executablePath } : {}),
