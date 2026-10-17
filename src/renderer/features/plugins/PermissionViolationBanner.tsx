@@ -1,13 +1,35 @@
 import { useState } from 'react';
 import { usePluginStore } from '../../plugins/plugin-store';
+import { NoticeCard } from '../../components/NoticeCard';
+import { Button } from '../../components/Button';
 
-export function PermissionViolationBanner() {
+/** `bar` is the classic strip; `card` is the new chrome's sidebar notice (#2014). */
+export function PermissionViolationBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } = {}) {
   const violations = usePluginStore((s) => s.permissionViolations);
   const clearPermissionViolation = usePluginStore((s) => s.clearPermissionViolation);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const visible = violations.filter((v) => !dismissed.has(v.pluginId));
   if (visible.length === 0) return null;
+
+  const dismissOne = (pluginId: string) => {
+    setDismissed((prev) => new Set(prev).add(pluginId));
+    clearPermissionViolation(pluginId);
+  };
+
+  if (variant === 'card') {
+    return (
+      <>
+        {visible.map((v) => (
+          <NoticeCard key={v.pluginId} urgent tone="error" title="Plugin disabled" meta={v.pluginName} testId="permission-violation-banner"
+            actions={<Button kind="quiet" onClick={() => dismissOne(v.pluginId)}>Dismiss</Button>}>
+            {v.pluginName} tried to use <code className="font-mono text-ctp-subtext1">api.{v.apiName}</code> without
+            the <code className="font-mono text-ctp-subtext1">{v.permission}</code> permission.
+          </NoticeCard>
+        ))}
+      </>
+    );
+  }
 
   return (
     <>
@@ -30,10 +52,7 @@ export function PermissionViolationBanner() {
             permission.
           </span>
           <button
-            onClick={() => {
-              setDismissed((prev) => new Set(prev).add(v.pluginId));
-              clearPermissionViolation(v.pluginId);
-            }}
+            onClick={() => dismissOne(v.pluginId)}
             className="text-ctp-error/50 hover:text-ctp-error transition-colors cursor-pointer px-1"
           >
             x

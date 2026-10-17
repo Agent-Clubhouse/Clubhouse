@@ -98,7 +98,7 @@ export function HostSwitcher({ satellites, activeHostId, needsByHost, onSwitch, 
         <span className="truncate font-medium text-ctp-text">{active ? active.alias : 'Local'}</span>
         {active && active.state !== 'connected' && <span className="text-ctp-overlay1">{STATE_LABEL[active.state]}</span>}
         {elsewhere > 0 && (
-          <span className="ml-auto text-ctp-warning" title={`${elsewhere} waiting on other hosts`}>{elsewhere} elsewhere</span>
+          <span className="ml-auto text-ctp-warning">{elsewhere} elsewhere<span className="sr-only">, waiting on other hosts</span></span>
         )}
         <span className={`${elsewhere > 0 ? '' : 'ml-auto'} text-ctp-overlay1`}>{Chevron}</span>
       </button>

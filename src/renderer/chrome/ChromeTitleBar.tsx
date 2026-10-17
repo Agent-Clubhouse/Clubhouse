@@ -10,6 +10,7 @@ import { holdChromeSurface, reportChromeFeature } from './telemetry';
 import { computeOverflow } from './titlebar/overflow';
 import { titleBarPadding } from './titlebar/platform';
 import { useClickOutside } from './sidebar/useClickOutside';
+import { Tooltip } from '../components/Tooltip';
 
 /**
  * Title bar for the new chrome (docs/chrome-redesign-spec.md §4.2): the drag
@@ -44,6 +45,7 @@ const TitleTab = React.memo(function TitleTab({ tab, isActive, projectId, onSele
   const badge = useTabBadge(tab.id, projectId);
   const disabled = tab.disabled === true;
   return (
+    <Tooltip content={tab.disabledReason} disabled={measure || !disabled || !tab.disabledReason}>
     <button
       type="button"
       role={measure ? undefined : 'tab'}
@@ -53,7 +55,6 @@ const TitleTab = React.memo(function TitleTab({ tab, isActive, projectId, onSele
       data-testid={measure ? undefined : `explorer-tab-${tab.id}`}
       data-tab-id={measure ? tab.id : undefined}
       data-active={measure ? undefined : isActive}
-      title={disabled ? tab.disabledReason : tab.label}
       onClick={disabled ? undefined : () => onSelect(tab.id)}
       className={`no-drag flex-shrink-0 h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs whitespace-nowrap transition-colors duration-100 [&_svg]:w-[15px] [&_svg]:h-[15px] ${
         disabled
@@ -67,6 +68,7 @@ const TitleTab = React.memo(function TitleTab({ tab, isActive, projectId, onSele
       <span>{tab.label}</span>
       {badge && !disabled && <Badge type={badge.type} value={badge.value} inline />}
     </button>
+    </Tooltip>
   );
 });
 
@@ -74,12 +76,12 @@ function MenuTab({ tab, projectId, onSelect }: { tab: TabEntry; projectId: strin
   const badge = useTabBadge(tab.id, projectId);
   const disabled = tab.disabled === true;
   return (
+    <Tooltip content={tab.disabledReason} disabled={!disabled || !tab.disabledReason} side="left">
     <button
       type="button"
       role="menuitem"
       aria-disabled={disabled || undefined}
       data-testid={`explorer-tab-${tab.id}`}
-      title={disabled ? tab.disabledReason : undefined}
       onClick={disabled ? undefined : () => onSelect(tab.id)}
       className={`w-full px-3 py-1.5 flex items-center gap-2 text-left text-xs [&_svg]:w-[14px] [&_svg]:h-[14px] ${
         disabled ? 'opacity-40 cursor-not-allowed text-ctp-subtext0' : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer'
@@ -89,6 +91,7 @@ function MenuTab({ tab, projectId, onSelect }: { tab: TabEntry; projectId: strin
       <span className="truncate">{tab.label}</span>
       {badge && !disabled && <span className="ml-auto"><Badge type={badge.type} value={badge.value} inline /></span>}
     </button>
+    </Tooltip>
   );
 }
 
@@ -271,10 +274,10 @@ export function ChromeTitleBar() {
       data-testid="chrome-title-bar"
       className={`h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center gap-1 pr-3 ${titleBarPadding(window.clubhouse.platform)}`}
     >
+      <Tooltip content={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'} shortcutAction="toggle-sidebar">
       <button
         type="button"
         onClick={onToggleSidebar}
-        title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
         aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
         aria-pressed={!sidebarCollapsed}
         data-testid="chrome-sidebar-toggle"
@@ -282,6 +285,7 @@ export function ChromeTitleBar() {
       >
         {SidebarIcon}
       </button>
+      </Tooltip>
 
       {/* The tab area takes the free width; what the tabs leave stays draggable. */}
       <div ref={containerRef} className="relative flex-1 min-w-0 self-stretch flex items-center ml-1">

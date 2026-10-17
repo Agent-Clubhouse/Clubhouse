@@ -5,6 +5,45 @@ import { LOG_LEVEL_PRIORITY } from '../../../shared/types';
 import { Toggle } from '../../components/Toggle';
 import { Spinner } from '../../components/Spinner';
 import { TelemetrySettingsSection } from './TelemetrySettingsSection';
+import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
+
+const RETENTION_TIERS: { id: LogRetention; label: string; desc: string }[] = [
+  { id: 'low', label: 'Low', desc: '3 days, up to 50 MB' },
+  { id: 'medium', label: 'Medium', desc: '7 days, up to 200 MB' },
+  { id: 'high', label: 'High', desc: '30 days, up to 500 MB' },
+  { id: 'unlimited', label: 'Unlimited', desc: 'No limits on age or size' },
+];
+
+/** A 28px segmented control, one choice at a time. */
+function Segmented<T extends string>({ value, options, onChange, disabled, 'aria-label': ariaLabel, mono }: {
+  value: T;
+  options: { id: T; label: string; title?: string }[];
+  onChange: (v: T) => void;
+  disabled?: boolean;
+  'aria-label': string;
+  mono?: boolean;
+}) {
+  return (
+    <div role="radiogroup" aria-label={ariaLabel} className={`flex h-7 p-0.5 gap-0.5 rounded-md border border-surface-1 ${disabled ? 'opacity-40' : ''}`}>
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          role="radio"
+          aria-checked={value === o.id}
+          title={o.title}
+          disabled={disabled}
+          onClick={() => onChange(o.id)}
+          className={`px-2 rounded text-xs transition-colors focus-ring ${mono ? 'font-mono' : ''} ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'} ${
+            value === o.id ? 'bg-surface-1 text-ctp-text' : 'text-ctp-overlay1 hover:text-ctp-text'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function LoggingSettingsView() {
   const { settings, namespaces, logPath, loadSettings, saveSettings } = useLoggingStore();
@@ -27,129 +66,68 @@ export function LoggingSettingsView() {
     return settings.namespaces[ns] !== false;
   };
 
+  const retentionTier = RETENTION_TIERS.find((t) => t.id === settings.retention);
+
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-4">Logging</h2>
+    <SettingsPage title="Logging" description="Logs are stored on your local disk only and are never transmitted.">
+      <div className="mt-[22px]">
+        {logPath && (
+          <SettingsField
+            label="Log location"
+            help={
+              <button
+                type="button"
+                onClick={() => window.clubhouse.file.showInFolder(logPath)}
+                className="text-ctp-link hover:underline cursor-pointer font-mono text-left break-all"
+              >
+                {logPath}
+              </button>
+            }
+          />
+        )}
 
-        {/* Privacy banner */}
-        <div className="rounded-md bg-surface-0 border border-surface-1 px-4 py-3 mb-5">
-          <p className="text-xs text-ctp-subtext1">
-            Logs are stored on your local disk only and are never transmitted.
-          </p>
-        </div>
+        <SettingsField label="Write logs" help="Write structured log entries to disk.">
+          <Toggle aria-label="Write logs" checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
+        </SettingsField>
 
-        <div className="space-y-5">
-          {/* Log path */}
-          {logPath && (
-            <div className="flex items-center justify-between py-2">
-              <div>
-                <div className="text-sm text-ctp-text font-medium">Log Location</div>
-                <button
-                  type="button"
-                  onClick={() => window.clubhouse.file.showInFolder(logPath)}
-                  className="text-xs text-ctp-link hover:underline mt-0.5 cursor-pointer"
-                >
-                  {logPath}
-                </button>
-              </div>
-            </div>
-          )}
+        <SettingsField label="Retention" help={retentionTier?.desc}>
+          <Segmented
+            aria-label="Retention"
+            value={settings.retention}
+            options={RETENTION_TIERS.map((t) => ({ id: t.id, label: t.label, title: t.desc }))}
+            onChange={(v) => saveSettings({ retention: v })}
+            disabled={!settings.enabled}
+          />
+        </SettingsField>
 
-          {/* Master toggle */}
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm text-ctp-text font-medium">Enable Logging</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">Write structured log entries to disk</div>
-            </div>
-            <Toggle checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
-          </div>
-
-          {/* Retention tier */}
-          <div className="border-t border-surface-0" />
-          <div>
-            <div className="text-sm text-ctp-text font-medium mb-3">Retention</div>
-            <div className="grid grid-cols-2 gap-3">
-              {([
-                { id: 'low' as LogRetention, label: 'Low', desc: '3 days, up to 50 MB' },
-                { id: 'medium' as LogRetention, label: 'Medium', desc: '7 days, up to 200 MB' },
-                { id: 'high' as LogRetention, label: 'High', desc: '30 days, up to 500 MB' },
-                { id: 'unlimited' as LogRetention, label: 'Unlimited', desc: 'No limits on age or size' },
-              ]).map((tier) => {
-                const selected = settings.retention === tier.id;
-                const disabled = !settings.enabled;
-                return (
-                  <button
-                    key={tier.id}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => saveSettings({ retention: tier.id })}
-                    className={`
-                      rounded-md border px-3 py-2 text-left transition-colors cursor-pointer
-                      ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
-                      ${selected ? 'border-ctp-accent bg-surface-0' : 'border-surface-1 bg-surface-0/50 hover:border-surface-2'}
-                    `}
-                  >
-                    <div className="text-sm text-ctp-text font-medium">{tier.label}</div>
-                    <div className="text-xs text-ctp-subtext0 mt-0.5">{tier.desc}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Minimum log level */}
-          <div className="border-t border-surface-0" />
-          <div>
-            <div className="text-sm text-ctp-text font-medium mb-3">Minimum Level</div>
-            <div className="flex gap-2">
-              {(Object.keys(LOG_LEVEL_PRIORITY) as LogLevel[]).map((level) => {
-                const selected = settings.minLogLevel === level;
-                const disabled = !settings.enabled;
-                return (
-                  <button
-                    key={level}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => saveSettings({ minLogLevel: level })}
-                    className={`
-                      rounded-md border px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer
-                      ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
-                      ${selected ? 'border-ctp-accent bg-surface-0 text-ctp-text' : 'border-surface-1 bg-surface-0/50 text-ctp-subtext0 hover:border-surface-2'}
-                    `}
-                  >
-                    {level}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {namespaces.length > 0 && (
-            <>
-              <div className="border-t border-surface-0" />
-
-              <div>
-                <div className="text-sm text-ctp-text font-medium mb-3">Namespaces</div>
-                <div className="space-y-3">
-                  {namespaces.map((ns) => (
-                    <div key={ns} className="flex items-center justify-between py-1">
-                      <div className="text-sm text-ctp-subtext1 font-mono">{ns}</div>
-                      <Toggle
-                        checked={isNamespaceEnabled(ns)}
-                        onChange={(v) => handleNamespaceToggle(ns, v)}
-                        disabled={!settings.enabled}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        <TelemetrySettingsSection />
+        <SettingsField label="Minimum level" help="Entries below this level are not written.">
+          <Segmented
+            aria-label="Minimum level"
+            mono
+            value={settings.minLogLevel}
+            options={(Object.keys(LOG_LEVEL_PRIORITY) as LogLevel[]).map((level) => ({ id: level, label: level }))}
+            onChange={(v) => saveSettings({ minLogLevel: v })}
+            disabled={!settings.enabled}
+          />
+        </SettingsField>
       </div>
-    </div>
+
+      {namespaces.length > 0 && (
+        <SettingsSection title="Namespaces">
+          {namespaces.map((ns) => (
+            <SettingsField key={ns} label={<span className="font-mono text-xs text-ctp-subtext1">{ns}</span>}>
+              <Toggle
+                aria-label={ns}
+                checked={isNamespaceEnabled(ns)}
+                onChange={(v) => handleNamespaceToggle(ns, v)}
+                disabled={!settings.enabled}
+              />
+            </SettingsField>
+          ))}
+        </SettingsSection>
+      )}
+
+      <TelemetrySettingsSection />
+    </SettingsPage>
   );
 }

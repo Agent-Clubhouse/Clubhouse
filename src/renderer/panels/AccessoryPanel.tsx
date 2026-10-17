@@ -39,26 +39,26 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
 
   const app: SettingsCategory[] = [
     { label: 'About', page: 'about' },
-    { label: 'Orchestrators & Agents', page: 'orchestrators' },
+    { label: 'Orchestrators & agents', page: 'orchestrators' },
     { label: 'Profiles', page: 'profiles' },
     { label: 'Display & UI', page: 'display' },
-    { label: 'External Editor', page: 'editor' },
-    { label: 'Keyboard Shortcuts', page: 'keyboard-shortcuts' },
-    { label: 'Notifications & Alerts', page: 'notifications' },
+    { label: 'External editor', page: 'editor' },
+    { label: 'Keyboard shortcuts', page: 'keyboard-shortcuts' },
+    { label: 'Notifications & alerts', page: 'notifications' },
     { label: 'Plugins', page: 'plugins' },
-    ...(showAnnex ? [{ label: 'Annex', page: 'annex' as SettingsSubPage }, { label: 'Annex Control', page: 'annex-control' as SettingsSubPage }] : []),
+    ...(showAnnex ? [{ label: 'Annex', page: 'annex' as SettingsSubPage }, { label: 'Annex control', page: 'annex-control' as SettingsSubPage }] : []),
     { label: 'Clubhouse MCP', page: 'mcp' },
     ...(showGoobers ? [{ label: 'Goobers', page: 'goobers' as SettingsSubPage }] : []),
     { label: 'Updates', page: 'updates' },
     { label: 'Logging', page: 'logging' },
     { label: 'Feedback', page: 'feedback' },
     ...(showExperimental ? [{ label: 'Experimental', page: 'experimental' as SettingsSubPage }] : []),
-    { label: "What's New", page: 'whats-new' },
+    { label: "What's new", page: 'whats-new' },
   ];
   const project: SettingsCategory[] = [
-    { label: 'Project Settings', page: 'project' },
-    { label: 'Orchestrators & Agents', page: 'orchestrators' },
-    { label: 'Notifications & Alerts', page: 'notifications' },
+    { label: 'General', page: 'project' },
+    { label: 'Orchestrators & agents', page: 'orchestrators' },
+    { label: 'Notifications & alerts', page: 'notifications' },
     { label: 'Plugins', page: 'plugins' },
   ];
   return { app, project };
@@ -94,8 +94,8 @@ function SettingsCategoryNav() {
   return (
     <div className="flex flex-col bg-ctp-base border-r border-surface-0 h-full min-h-0 overflow-hidden">
       <div className="px-3 py-2 border-b border-surface-0">
-        <span className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">
-          {isApp ? 'App Settings' : 'Project Settings'}
+        <span className="text-xs font-semibold text-ctp-subtext0">
+          {isApp ? 'App settings' : 'Project settings'}
         </span>
       </div>
       <nav className="py-1 flex-1 flex flex-col min-h-0 overflow-y-auto">
@@ -128,7 +128,11 @@ function PluginSidebarPanel({ pluginId }: { pluginId: string }) {
   );
 }
 
-export function AccessoryPanel() {
+/**
+ * `bare` drops the panel's own background and right border, for hosts that
+ * already draw them (the new chrome's sidebar, spec #2023).
+ */
+export function AccessoryPanel({ bare = false }: { bare?: boolean } = {}) {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activePluginId = explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
   const activePluginEntry = usePluginStore((s) => activePluginId ? s.plugins[activePluginId] : undefined);
@@ -136,9 +140,13 @@ export function AccessoryPanel() {
   const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
   const isRemoteProject = activeProjectId ? isRemoteProjectId(activeProjectId) : false;
 
+  const frame = bare
+    ? 'flex flex-col h-full min-h-0 overflow-hidden'
+    : 'flex flex-col bg-ctp-base border-r border-surface-0 h-full min-h-0 overflow-hidden';
+
   if (explorerTab === 'agents') {
     return (
-      <div className="flex flex-col bg-ctp-base border-r border-surface-0 h-full min-h-0 overflow-hidden">
+      <div className={frame}>
         <AgentList />
       </div>
     );
@@ -169,7 +177,7 @@ export function AccessoryPanel() {
 
     if (layout === 'sidebar-content') {
       return (
-        <div className="flex flex-col bg-ctp-base border-r border-surface-0 h-full min-h-0 overflow-hidden">
+        <div className={frame} data-testid="accessory-plugin-panel">
           <PluginSidebarPanel pluginId={activePluginId} />
         </div>
       );

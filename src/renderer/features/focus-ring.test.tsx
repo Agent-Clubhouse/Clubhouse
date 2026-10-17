@@ -53,8 +53,8 @@ describe('HelpSearchInput — focus ring (VQ-FI-01)', () => {
 
 describe('CommandPaletteInput — focus ring (VQ-FI-01)', () => {
   it('command palette input carries focus-ring class (was: bare outline-none, WCAG failure)', () => {
-    render(<CommandPaletteInput />);
-    const input = screen.getByPlaceholderText('Type to search...');
+    render(<CommandPaletteInput listboxId="results" />);
+    const input = screen.getByRole('combobox');
     expect(input.className).toContain('focus-ring');
     assertNoAdHocFocusPattern(input);
   });

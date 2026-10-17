@@ -83,7 +83,7 @@ import type { TelemetryRuntime } from '../telemetry/types';
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
 
-import { getBuffer, getBufferSnapshot, getSerializedBuffer, getLastActivity, isRunning, spawn, spawnShell, resize, write, writeBinary, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
+import { getBuffer, getBufferSnapshot, getSerializedBuffer, getLastActivity, isRunning, spawn, spawnShell, resize, write, writeBinary, gracefulKill, isShellBusy, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as headlessTerminal from './pty-headless-terminal';
@@ -376,6 +376,35 @@ describe('pty-manager', () => {
     it('registers onExit handler', async () => {
       await spawnShell('shell-exit', '/project');
       expect(mockProcess.onExit).toHaveBeenCalled();
+    });
+  });
+
+  describe('isShellBusy', () => {
+    const proc = mockProcess as typeof mockProcess & { process?: string };
+    afterEach(() => { delete proc.process; });
+
+    it('is false for a session that is not running', () => {
+      expect(isShellBusy('no-such-shell')).toBe(false);
+    });
+
+    it.skipIf(process.platform === 'win32')('is false at the prompt and true while a command runs', async () => {
+      await spawnShell('shell-busy', '/project');
+      const shell = (process.env.SHELL || '/bin/zsh').split('/').pop()!;
+      proc.process = `-${shell}`;
+      expect(isShellBusy('shell-busy')).toBe(false);
+      proc.process = 'node';
+      expect(isShellBusy('shell-busy')).toBe(true);
+    });
+
+    it.skipIf(process.platform === 'win32')('is true when the foreground process is unknown', async () => {
+      await spawnShell('shell-unknown', '/project');
+      proc.process = '';
+      expect(isShellBusy('shell-unknown')).toBe(true);
+    });
+
+    it.runIf(process.platform === 'win32')('is true on Windows, which does not report the foreground process', async () => {
+      await spawnShell('shell-win', 'C:\\project');
+      expect(isShellBusy('shell-win')).toBe(true);
     });
   });
 

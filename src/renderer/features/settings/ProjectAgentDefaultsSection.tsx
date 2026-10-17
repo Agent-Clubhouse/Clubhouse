@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useId, useState, useCallback, useMemo, type ReactNode } from 'react';
 
 import type { SourceControlProvider, ProjectConfigBreakdown, ProvenancedConfigItem } from '../../../shared/types';
 import { SourceSkillsSection } from './SourceSkillsSection';
@@ -7,6 +7,25 @@ import { useProfileStore } from '../../stores/profileStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { PERSONA_TEMPLATES } from '../personas';
+import { Toggle } from '../../components/Toggle';
+import { Modal } from '../../components/Modal';
+import {
+  SettingsSection, SettingsField, SettingsBlock,
+  settingsInput, settingsTextArea, settingsLabel, settingsHelp,
+} from './SettingsLayout';
+import { Button } from '../../components/Button';
+
+const CODE_CLASS = 'font-mono text-ctp-subtext1';
+const SELECT_CLASS = `${settingsInput} w-[220px]`;
+const TEXT_INPUT_CLASS = `${settingsInput} w-[220px] font-mono`;
+const CLUBHOUSE_WILDCARDS = [
+  '@@AgentName', '@@StandbyBranch', '@@Path', '@@BuildCommand', '@@TestCommand',
+  '@@LintCommand', '@@SourceControlProvider', '@@Mission', '@@Persona',
+];
+
+function Code({ children }: { children: ReactNode }) {
+  return <code className={CODE_CLASS}>{children}</code>;
+}
 
 interface ProjectAgentDefaults {
   instructions?: string;
@@ -28,25 +47,17 @@ interface Props {
   clubhouseMode?: boolean;
 }
 
-// ── Provenance badge ─────────────────────────────────────────────────────
+// ── Provenance meta text ─────────────────────────────────────────────────
 
-function ProvenanceBadge({ item, isOrphan }: { item: ProvenancedConfigItem; isOrphan?: boolean }) {
+function ProvenanceMeta({ item, isOrphan }: { item: ProvenancedConfigItem; isOrphan?: boolean }) {
   const p = item.provenance;
   if (p.source === 'user') return null;
   if (p.source === 'built-in') {
-    return (
-      <span className="text-[9px] px-1.5 py-0.5 rounded bg-ctp-accent/15 text-ctp-accent border border-ctp-accent/20">
-        built-in
-      </span>
-    );
+    return <span className="text-xs text-ctp-overlay1">Built-in</span>;
   }
   return (
-    <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
-      isOrphan
-        ? 'bg-ctp-peach/15 text-ctp-peach border-ctp-peach/20'
-        : 'bg-ctp-mauve/15 text-ctp-mauve border-ctp-mauve/20'
-    }`}>
-      {isOrphan ? '(orphan) ' : ''}plugin: {p.pluginId}
+    <span className={`text-xs ${isOrphan ? 'text-ctp-warning' : 'text-ctp-overlay1'}`}>
+      {isOrphan ? 'Orphaned plugin' : 'Plugin'} <span className="font-mono">{p.pluginId}</span>
     </span>
   );
 }
@@ -55,31 +66,35 @@ function ProvenanceBadge({ item, isOrphan }: { item: ProvenancedConfigItem; isOr
 
 function RemoveButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
   return (
-    <button
+    <Button
       onClick={onClick}
       disabled={disabled}
-      className="text-ctp-subtext0 hover:text-ctp-error p-0.5 cursor-pointer transition-colors disabled:opacity-30 flex-shrink-0"
+      kind="quiet" className="w-7 px-0 text-ctp-subtext0 hover:text-ctp-error flex-shrink-0"
       title="Remove this item"
+      aria-label="Remove this item"
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <line x1="18" y1="6" x2="6" y2="18" />
         <line x1="6" y1="6" x2="18" y2="18" />
       </svg>
-    </button>
+    </Button>
   );
 }
 
 // ── Confirmation dialog ──────────────────────────────────────────────────
 
 function ConfirmDialog({
+  open,
   title,
   message,
   onConfirm,
   onCancel,
   confirming,
   confirmLabel = 'Remove',
-  confirmingLabel = 'Removing...',
+  confirmingLabel = 'Removing…',
+  testId,
 }: {
+  open: boolean;
   title: string;
   message: string;
   onConfirm: () => void;
@@ -87,34 +102,27 @@ function ConfirmDialog({
   confirming?: boolean;
   confirmLabel?: string;
   confirmingLabel?: string;
+  testId?: string;
 }) {
   return (
-    // eslint-disable-next-line no-restricted-syntax
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
-      <div className="bg-ctp-base border border-surface-1 rounded-xl p-6 max-w-md mx-4 shadow-xl">
-        <h3 className="text-sm font-semibold text-ctp-text mb-2">{title}</h3>
-        <p className="text-xs text-ctp-subtext0 mb-4">{message}</p>
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="px-3 py-1.5 text-xs rounded-lg bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={confirming}
-            className="px-3 py-1.5 text-xs rounded-lg bg-ctp-red text-white hover:bg-ctp-red/80 cursor-pointer transition-colors"
-          >
-            {confirming ? confirmingLabel : confirmLabel}
-          </button>
-        </div>
+    <Modal open={open} onClose={onCancel} title={title} width="w-[420px] max-w-[calc(100vw-32px)]" footer={
+      <>
+        <Button onClick={onCancel} kind="ghost">
+          Cancel
+        </Button>
+        <Button onClick={onConfirm} disabled={confirming} kind="danger-solid">
+          {confirming ? confirmingLabel : confirmLabel}
+        </Button>
+      </>
+    }>
+      <div data-testid={testId}>
+        <p className={settingsHelp}>{message}</p>
       </div>
-    </div>
+    </Modal>
   );
 }
 
-// ── Orphan banner ────────────────────────────────────────────────────────
+// ── Orphaned plugin injections ───────────────────────────────────────────
 
 function OrphanBanner({
   orphanedPluginIds,
@@ -151,40 +159,25 @@ function OrphanBanner({
   };
 
   return (
-    <div className="p-3 rounded-lg bg-ctp-peach/5 border border-ctp-peach/30">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-ctp-peach mb-1">
-            Orphaned plugin injections detected
-          </p>
-          <p className="text-xs text-ctp-subtext0 mb-2">
-            These uninstalled plugins left configs in your project defaults:
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {orphanedPluginIds.map((id) => (
-              <div key={id} className="flex items-center gap-1">
-                <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach">{id}</span>
-                <button
-                  onClick={() => handleClean(id)}
-                  disabled={cleaning !== null}
-                  className="text-xs px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
-                >
-                  {cleaning === id ? 'Cleaning...' : 'Clean up'}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+    <div data-testid="orphan-plugin-injections">
+      <SettingsField
+        label={<span className="text-ctp-warning">Orphaned plugin injections</span>}
+        help="These uninstalled plugins left configs in your project defaults."
+      >
         {orphanedPluginIds.length > 1 && (
-          <button
-            onClick={handleCleanAll}
-            disabled={cleaning !== null}
-            className="shrink-0 text-xs px-2 py-1 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50 transition-colors"
-          >
-            {cleaning ? 'Cleaning...' : 'Clean all'}
-          </button>
+          <Button onClick={handleCleanAll} disabled={cleaning !== null} kind="danger">
+            {cleaning ? 'Cleaning…' : 'Clean all'}
+          </Button>
         )}
-      </div>
+      </SettingsField>
+      {orphanedPluginIds.map((id) => (
+        <div key={id} className="flex items-center gap-4 h-[34px] pl-5 border-t border-surface-0">
+          <span className="flex-1 min-w-0 truncate text-xs font-mono text-ctp-text">{id}</span>
+          <Button onClick={() => handleClean(id)} disabled={cleaning !== null} kind="ghost">
+            {cleaning === id ? 'Cleaning…' : 'Clean up'}
+          </Button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -205,28 +198,21 @@ function ConfigItemList({
   const orphanSet = useMemo(() => new Set(orphanedPluginIds), [orphanedPluginIds]);
 
   if (items.length === 0) {
-    return <p className="text-xs text-ctp-subtext0/60 py-1">None configured.</p>;
+    return <p className={`${settingsHelp} py-1`}>None configured.</p>;
   }
 
   return (
-    <div className="space-y-1">
+    <div>
       {items.map((item) => {
         const isPlugin = item.provenance.source === 'plugin';
         const isOrphan = isPlugin && orphanSet.has((item.provenance as { source: 'plugin'; pluginId: string }).pluginId);
         return (
-          <div
-            key={item.id}
-            className={`flex items-center justify-between py-1.5 px-2 rounded border ${
-              isOrphan
-                ? 'bg-ctp-peach/5 border-ctp-peach/20'
-                : 'bg-surface-0 border-surface-1'
-            }`}
-          >
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <span className="text-sm text-ctp-text font-mono truncate">{item.label}</span>
-              <ProvenanceBadge item={item} isOrphan={isOrphan} />
+          <div key={item.id} className="flex items-center gap-3 min-h-[34px] border-t border-surface-0">
+            <div className="flex items-baseline gap-2 min-w-0 flex-1">
+              <span className="text-xs text-ctp-text font-mono truncate">{item.label}</span>
+              <ProvenanceMeta item={item} isOrphan={isOrphan} />
             </div>
-            {(isPlugin || item.provenance.source !== 'built-in') && isPlugin && (
+            {isPlugin && (
               <RemoveButton
                 onClick={() => onRemove(item)}
                 disabled={removing !== null}
@@ -264,6 +250,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const profiles = useProfileStore((s) => s.profiles);
   const loadProfiles = useProfileStore((s) => s.loadProfiles);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const idBase = useId();
 
   // Provenance breakdown state
   const [breakdown, setBreakdown] = useState<ProjectConfigBreakdown | null>(null);
@@ -450,80 +437,45 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const hasPluginPerms = pluginAllowRules.length > 0 || pluginDenyRules.length > 0;
   const hasPluginMcp = pluginMcpServers.length > 0;
 
+  const activeProfile = profiles.find((p) => p.id === profileId);
+  const coveredNames = activeProfile
+    ? Object.keys(activeProfile.orchestrators).map(
+        (id) => allOrchestrators.find((o) => o.id === id)?.displayName || id
+      )
+    : [];
+  const markDirty = () => setDirty(true);
+
   return (
-    <div className="space-y-2 mb-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">
-          Default Agent Settings
-        </h3>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowResetConfirm(true)}
-            className="text-xs px-3 py-1 rounded transition-colors bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer"
-          >
-            Reset to Defaults
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!dirty || saving}
-            className={`text-xs px-3 py-1 rounded transition-colors ${
-              dirty
-                ? 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
-                : 'bg-surface-1 text-ctp-subtext0 cursor-default'
-            }`}
-          >
-            {saving ? 'Saving...' : 'Save Defaults'}
-          </button>
-        </div>
-      </div>
+    <div data-testid="project-agent-defaults-section">
+      <SettingsSection
+        title="Default agent settings"
+        actions={
+          <>
+            <Button onClick={() => setShowResetConfirm(true)} kind="quiet">
+              Reset to defaults
+            </Button>
+            <Button onClick={handleSave} disabled={!dirty || saving} kind="primary">
+              {saving ? 'Saving…' : 'Save defaults'}
+            </Button>
+          </>
+        }
+      >
+        <p className={`${settingsHelp} mb-2`}>
+          {clubhouseMode
+            ? 'Clubhouse Mode is on. These settings are live-managed and pushed to agent worktrees each time an agent wakes.'
+            : 'These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.'}
+        </p>
+        {clubhouseMode && (
+          <div className="mb-2">
+            <p className="text-xs flex flex-wrap gap-x-2.5 gap-y-0.5">
+              {CLUBHOUSE_WILDCARDS.map((w) => <Code key={w}>{w}</Code>)}
+            </p>
+            <p className={`${settingsHelp} mt-1`}>
+              Full reference in <Code>.clubhouse/clubhouse-mode.md</Code> in this project.
+            </p>
+          </div>
+        )}
 
-      {/* Reset confirmation dialog */}
-      {showResetConfirm && (
-        <ConfirmDialog
-          title="Reset to Defaults?"
-          message="This will replace all project-level agent default settings (instructions, permissions, and commands) with the built-in defaults. Plugin-injected configs will be preserved. Any user customizations will be lost."
-          onConfirm={handleReset}
-          onCancel={() => setShowResetConfirm(false)}
-          confirming={resetting}
-          confirmLabel="Reset"
-          confirmingLabel="Resetting..."
-        />
-      )}
-
-      {/* Remove item confirmation dialog */}
-      {removeTarget && (
-        <ConfirmDialog
-          title="Remove Plugin Injection?"
-          message={`Remove "${removeTarget.label}" injected by plugin "${removeTarget.provenance.source === 'plugin' ? removeTarget.provenance.pluginId : 'unknown'}"? The plugin may re-inject it on next activation.`}
-          onConfirm={handleRemoveItem}
-          onCancel={() => setRemoveTarget(null)}
-          confirming={removing !== null}
-        />
-      )}
-
-      <div className="space-y-4">
-        {/* Mode note */}
-        <div className={`text-xs flex items-start gap-1.5 rounded-lg px-3 py-2 ${
-          clubhouseMode
-            ? 'text-ctp-success bg-ctp-success/10 border border-ctp-success/20'
-            : 'text-ctp-subtext0/60 bg-ctp-mantle border border-surface-0'
-        }`}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="16" x2="12" y2="12" />
-            <line x1="12" y1="8" x2="12.01" y2="8" />
-          </svg>
-          <span>
-            {clubhouseMode
-              ? <>
-                  <strong>Clubhouse Mode active.</strong> These settings are live-managed and pushed to agent worktrees on each wake. Wildcards: <code className="bg-ctp-success/10 px-0.5 rounded">@@AgentName</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@StandbyBranch</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@Path</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@BuildCommand</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@TestCommand</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@LintCommand</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@SourceControlProvider</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@Mission</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@Persona</code>. Full reference: <code className="bg-ctp-success/10 px-0.5 rounded">.clubhouse/clubhouse-mode.md</code> in this project.
-                </>
-              : 'These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.'
-            }
-          </span>
-        </div>
-
-        {/* Orphan banner */}
         {orphanedPluginIds.length > 0 && (
           <OrphanBanner
             orphanedPluginIds={orphanedPluginIds}
@@ -532,248 +484,235 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           />
         )}
 
-        {/* Source Control Provider */}
-        <div>
-          <label className="block text-xs text-ctp-subtext0 mb-1">Source Control Provider</label>
+        <SettingsField
+          label="Source control provider"
+          help={<>Replaces <Code>@@SourceControlProvider</Code> in skill templates and controls conditional blocks.</>}
+          htmlFor={`${idBase}-scp`}
+        >
           <select
+            id={`${idBase}-scp`}
             value={sourceControlProvider}
-            onChange={(e) => { setSourceControlProvider(e.target.value as SourceControlProvider); setDirty(true); }}
-            className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-              text-ctp-text focus-ring-dim"
+            onChange={(e) => { setSourceControlProvider(e.target.value as SourceControlProvider); markDirty(); }}
+            className={SELECT_CLASS}
           >
             <option value="github">GitHub (gh CLI)</option>
             <option value="azure-devops">Azure DevOps (az CLI)</option>
           </select>
-          <p className="text-xs text-ctp-subtext0/60 mt-1">
-            Replaces <code className="bg-surface-0 px-0.5 rounded">@@SourceControlProvider</code> in skill templates and controls conditional blocks.
-          </p>
-        </div>
+        </SettingsField>
 
-        {/* Default Profile */}
-        {profiles.length > 0 && (() => {
-          const activeProfile = profiles.find((p) => p.id === profileId);
-          const coveredNames = activeProfile
-            ? Object.keys(activeProfile.orchestrators).map(
-                (id) => allOrchestrators.find((o) => o.id === id)?.displayName || id
-              )
-            : [];
-          return (
-            <div>
-              <label className="block text-xs text-ctp-subtext0 mb-1">Default Profile</label>
-              <select
-                value={profileId || ''}
-                onChange={(e) => { setProfileId(e.target.value || undefined); setDirty(true); }}
-                className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-                  text-ctp-text focus-ring-dim"
-              >
-                <option value="">None (default credentials)</option>
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-              <p className="text-xs text-ctp-subtext0/60 mt-1">
-                Profile env vars are injected when agents in this project spawn.
-                {activeProfile && ' Only orchestrators configured in the profile appear in agent creation.'}
-              </p>
-              {coveredNames.length > 0 && (
-                <p className="text-xs text-ctp-accent/80 mt-1">
-                  Covers: {coveredNames.join(', ')}
-                </p>
-              )}
-            </div>
-          );
-        })()}
+        {profiles.length > 0 && (
+          <SettingsField
+            label="Default profile"
+            help={
+              <>
+                Profile env vars are injected when agents in this project start.
+                {activeProfile && ' Agent creation only offers the orchestrators the profile configures.'}
+                {coveredNames.length > 0 && <span className="block mt-px">Covers {coveredNames.join(', ')}.</span>}
+              </>
+            }
+            htmlFor={`${idBase}-profile`}
+          >
+            <select
+              id={`${idBase}-profile`}
+              value={profileId || ''}
+              onChange={(e) => { setProfileId(e.target.value || undefined); markDirty(); }}
+              className={SELECT_CLASS}
+            >
+              <option value="">None (default credentials)</option>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </SettingsField>
+        )}
 
-        {/* Command Prefix */}
-        <div>
-          <label className="block text-xs text-ctp-subtext0 mb-1">Command Prefix</label>
+        <SettingsField
+          label="Command prefix"
+          help={<>Shell command run before the agent CLI, like <Code>. ./init.ps1</Code>. It runs in the same shell, so exported variables and PATH changes reach the agent.</>}
+          htmlFor={`${idBase}-prefix`}
+        >
           <input
+            id={`${idBase}-prefix`}
             value={commandPrefix}
-            onChange={(e) => { setCommandPrefix(e.target.value); setDirty(true); }}
+            onChange={(e) => { setCommandPrefix(e.target.value); markDirty(); }}
             placeholder=". ./init.sh"
-            className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
+            className={TEXT_INPUT_CLASS}
             spellCheck={false}
           />
-          <p className="text-xs text-ctp-subtext0/60 mt-1">
-            Shell command prepended before the agent CLI binary. Use this to source environment setup scripts (e.g. <code className="bg-surface-0 px-0.5 rounded">. ./init.ps1</code>). Runs in the same shell so exported variables and PATH changes are inherited by the agent.
-          </p>
-        </div>
+        </SettingsField>
 
-        {/* Build / Test / Lint Commands */}
-        <div>
-          <label className="block text-xs text-ctp-subtext0 mb-1">Project Commands</label>
-          <p className="text-xs text-ctp-subtext0/60 mb-2">
-            Configure the commands agents use to build, test, and lint your project. These replace <code className="bg-surface-0 px-0.5 rounded">@@BuildCommand</code>, <code className="bg-surface-0 px-0.5 rounded">@@TestCommand</code>, and <code className="bg-surface-0 px-0.5 rounded">@@LintCommand</code> in skills.
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="block text-xs text-ctp-subtext0/60 mb-0.5">Build</label>
-              <input
-                value={buildCommand}
-                onChange={(e) => { setBuildCommand(e.target.value); setDirty(true); }}
-                placeholder="npm run build"
-                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
-                spellCheck={false}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-ctp-subtext0/60 mb-0.5">Test</label>
-              <input
-                value={testCommand}
-                onChange={(e) => { setTestCommand(e.target.value); setDirty(true); }}
-                placeholder="npm test"
-                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
-                spellCheck={false}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-ctp-subtext0/60 mb-0.5">Lint</label>
-              <input
-                value={lintCommand}
-                onChange={(e) => { setLintCommand(e.target.value); setDirty(true); }}
-                placeholder="npm run lint"
-                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
-                spellCheck={false}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Default Mission */}
-        <div>
-          <label className="block text-xs text-ctp-subtext0 mb-1">Default Mission</label>
-          <p className="text-xs text-ctp-subtext0/60 mb-2">
-            ID of a markdown file under <code className="bg-surface-0 px-0.5 rounded">.clubhouse/missions/</code> (e.g. <code className="bg-surface-0 px-0.5 rounded">implement-and-ship</code>). Its content replaces <code className="bg-surface-0 px-0.5 rounded">@@Mission</code> wherever it appears in instructions, skills, or permissions. Per-agent <code className="bg-surface-0 px-0.5 rounded">mission</code> in <code className="bg-surface-0 px-0.5 rounded">.clubhouse/agents.json</code> overrides this. Leave blank for no mission.
-          </p>
+        <SettingsField
+          label="Default mission"
+          help={
+            <>
+              ID of a markdown file in <Code>.clubhouse/missions/</Code>, like <Code>implement-and-ship</Code>. Its content
+              replaces <Code>@@Mission</Code> in instructions, skills and permissions. An agent&apos;s own <Code>mission</Code> in{' '}
+              <Code>.clubhouse/agents.json</Code> wins. Leave blank for no mission.
+            </>
+          }
+          htmlFor={`${idBase}-mission`}
+        >
           <input
+            id={`${idBase}-mission`}
             value={mission}
-            onChange={(e) => { setMission(e.target.value); setDirty(true); }}
+            onChange={(e) => { setMission(e.target.value); markDirty(); }}
             placeholder="implement-and-ship"
-            className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus-ring"
+            className={TEXT_INPUT_CLASS}
             spellCheck={false}
           />
-        </div>
+        </SettingsField>
 
-        {/* Default Persona */}
-        <div>
-          <label className="block text-xs text-ctp-subtext0 mb-1">Default Persona</label>
+        <SettingsField
+          label="Default persona"
+          help={
+            <>
+              Used by every agent in this project that has no persona of its own. Override it in agent settings or in{' '}
+              <Code>.clubhouse/agents.json</Code> (see <Code>.clubhouse/clubhouse-mode.md</Code>). Resolves
+              to <Code>@@Persona</Code>, and is appended to CLAUDE.md when the template lacks that token.
+            </>
+          }
+          htmlFor={`${idBase}-persona`}
+        >
           <select
+            id={`${idBase}-persona`}
             value={persona}
-            onChange={(e) => { setPersona(e.target.value); setDirty(true); }}
-            className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2 text-ctp-text focus-ring-dim"
+            onChange={(e) => { setPersona(e.target.value); markDirty(); }}
+            className={SELECT_CLASS}
           >
             <option value="">None</option>
             {PERSONA_TEMPLATES.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
-          <p className="text-xs text-ctp-subtext0/60 mt-1">
-            Applied to every agent in this project unless an agent has its own persona set. Override per-agent in agent settings, or by editing <code className="bg-surface-0 px-0.5 rounded">.clubhouse/agents.json</code> — see <code className="bg-surface-0 px-0.5 rounded">.clubhouse/clubhouse-mode.md</code>. Resolves to <code className="bg-surface-0 px-0.5 rounded">@@Persona</code> and (when the template lacks that token) is auto-appended to CLAUDE.md.
-          </p>
-        </div>
+        </SettingsField>
 
-        {/* Default Free Agent Mode */}
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
+        <SettingsField
+          label="Free agent mode by default"
+          help={freeAgentMode
+            ? <span className="text-ctp-error">New agents will skip all permission prompts by default.</span>
+            : 'Start new agents with permission prompts skipped.'}
+        >
+          <Toggle
+            aria-label="Free agent mode by default"
             checked={freeAgentMode}
-            onChange={(e) => { setFreeAgentMode(e.target.checked); setDirty(true); }}
-            className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-red-500"
+            onChange={(v) => { setFreeAgentMode(v); markDirty(); }}
           />
-          <span className="text-xs text-ctp-subtext0">Free Agent Mode by default</span>
-        </label>
-        {freeAgentMode && (
-          <p className="text-xs text-ctp-error pl-6">
-            New agents will skip all permission prompts by default.
-          </p>
-        )}
+        </SettingsField>
+      </SettingsSection>
 
-        {/* Default instructions — user-editable portion */}
-        <div>
-          <label className="block text-xs text-ctp-subtext0 mb-1">Default Instructions</label>
+      <SettingsSection title="Project commands">
+        <p className={`${settingsHelp} mb-2`}>
+          Commands agents use to build, test and lint the project. They replace <Code>@@BuildCommand</Code>,{' '}
+          <Code>@@TestCommand</Code> and <Code>@@LintCommand</Code> in skills.
+        </p>
+        <SettingsField label="Build" htmlFor={`${idBase}-build`}>
+          <input
+            id={`${idBase}-build`}
+            value={buildCommand}
+            onChange={(e) => { setBuildCommand(e.target.value); markDirty(); }}
+            placeholder="npm run build"
+            className={TEXT_INPUT_CLASS}
+            spellCheck={false}
+          />
+        </SettingsField>
+        <SettingsField label="Test" htmlFor={`${idBase}-test`}>
+          <input
+            id={`${idBase}-test`}
+            value={testCommand}
+            onChange={(e) => { setTestCommand(e.target.value); markDirty(); }}
+            placeholder="npm test"
+            className={TEXT_INPUT_CLASS}
+            spellCheck={false}
+          />
+        </SettingsField>
+        <SettingsField label="Lint" htmlFor={`${idBase}-lint`}>
+          <input
+            id={`${idBase}-lint`}
+            value={lintCommand}
+            onChange={(e) => { setLintCommand(e.target.value); markDirty(); }}
+            placeholder="npm run lint"
+            className={TEXT_INPUT_CLASS}
+            spellCheck={false}
+          />
+        </SettingsField>
+      </SettingsSection>
+
+      <SettingsSection title="Default instructions">
+        <SettingsBlock>
           <textarea
+            aria-label="Default instructions"
             value={breakdown ? breakdown.userInstructions : instructions}
             onChange={(e) => {
               if (breakdown) {
                 setBreakdown({ ...breakdown, userInstructions: e.target.value });
               }
               setInstructions(e.target.value);
-              setDirty(true);
+              markDirty();
             }}
-            placeholder="Default CLAUDE.md content for new agents..."
-            className="w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring"
+            placeholder="Default CLAUDE.md content for new agents…"
+            className={`${settingsTextArea} h-28`}
             spellCheck={false}
           />
-        </div>
+        </SettingsBlock>
 
-        {/* Plugin instruction blocks — read-only with attribution */}
+        {/* Plugin instruction blocks: read-only with attribution */}
         {breakdown && breakdown.pluginInstructionBlocks.length > 0 && (
-          <div>
-            <label className="block text-xs text-ctp-subtext0 mb-1">Plugin Instructions</label>
-            <div className="space-y-2">
-              {breakdown.pluginInstructionBlocks.map((block) => {
-                const isOrphan = block.provenance.source === 'plugin' &&
-                  orphanedPluginIds.includes(block.provenance.pluginId);
-                return (
-                  <div
-                    key={block.id}
-                    className={`rounded-lg border ${
-                      isOrphan
-                        ? 'bg-ctp-peach/5 border-ctp-peach/20'
-                        : 'bg-ctp-mauve/5 border-ctp-mauve/20'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-inherit">
-                      <div className="flex items-center gap-2">
-                        <ProvenanceBadge item={block} isOrphan={isOrphan} />
-                      </div>
-                      <RemoveButton
-                        onClick={() => setRemoveTarget(block)}
-                        disabled={removing !== null}
-                      />
-                    </div>
-                    <pre className="px-3 py-2 text-[11px] text-ctp-subtext0 font-mono whitespace-pre-wrap overflow-x-auto max-h-32 overflow-y-auto">
-                      {block.value}
-                    </pre>
+          <SettingsBlock>
+            <div className={settingsLabel}>Plugin instructions</div>
+            {breakdown.pluginInstructionBlocks.map((block) => {
+              const isOrphan = block.provenance.source === 'plugin' &&
+                orphanedPluginIds.includes(block.provenance.pluginId);
+              return (
+                <div key={block.id} className="border-t border-surface-0">
+                  <div className="flex items-center justify-between min-h-[34px]">
+                    <ProvenanceMeta item={block} isOrphan={isOrphan} />
+                    <RemoveButton
+                      onClick={() => setRemoveTarget(block)}
+                      disabled={removing !== null}
+                    />
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                  <pre className="pb-2 text-[11px] text-ctp-subtext0 font-mono whitespace-pre-wrap overflow-x-auto max-h-32 overflow-y-auto">
+                    {block.value}
+                  </pre>
+                </div>
+              );
+            })}
+          </SettingsBlock>
         )}
+      </SettingsSection>
 
-        {/* Default permissions — user-editable portion */}
-        <div className="space-y-2">
-          <label className="block text-xs text-ctp-subtext0">Default Permissions</label>
+      <SettingsSection title="Default permissions">
+        <SettingsBlock className="space-y-2.5">
           <div>
-            <label className="block text-xs text-ctp-subtext0/60 mb-0.5">Allowed tools (one per line)</label>
+            <label htmlFor={`${idBase}-allow`} className={settingsLabel}>Allowed tools, one per line</label>
             <textarea
+              id={`${idBase}-allow`}
               value={userAllowRules}
-              onChange={(e) => { setPermAllow(e.target.value); setDirty(true); }}
+              onChange={(e) => { setPermAllow(e.target.value); markDirty(); }}
               placeholder={"Bash(git checkout:*)\nBash(git pull:*)\nBash(npm run:*)"}
-              className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring"
+              className={`${settingsTextArea} h-16`}
               spellCheck={false}
             />
           </div>
           <div>
-            <label className="block text-xs text-ctp-subtext0/60 mb-0.5">Auto-deny tools (one per line)</label>
+            <label htmlFor={`${idBase}-deny`} className={settingsLabel}>Auto-deny tools, one per line</label>
             <textarea
+              id={`${idBase}-deny`}
               value={userDenyRules}
-              onChange={(e) => { setPermDeny(e.target.value); setDirty(true); }}
+              onChange={(e) => { setPermDeny(e.target.value); markDirty(); }}
               placeholder={"WebFetch\nBash(curl *)"}
-              className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring"
+              className={`${settingsTextArea} h-16`}
               spellCheck={false}
             />
           </div>
-        </div>
+        </SettingsBlock>
 
-        {/* Plugin permission rules — read-only with attribution */}
+        {/* Plugin permission rules: read-only with attribution */}
         {hasPluginPerms && (
-          <div>
-            <label className="block text-xs text-ctp-subtext0 mb-1">Plugin Permissions</label>
+          <SettingsBlock className="space-y-2">
             {pluginAllowRules.length > 0 && (
-              <div className="mb-2">
-                <span className="text-xs text-ctp-subtext0/60">Allow rules:</span>
+              <div>
+                <div className={settingsLabel}>Plugin allow rules</div>
                 <ConfigItemList
                   items={pluginAllowRules}
                   orphanedPluginIds={orphanedPluginIds}
@@ -784,7 +723,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             )}
             {pluginDenyRules.length > 0 && (
               <div>
-                <span className="text-xs text-ctp-subtext0/60">Deny rules:</span>
+                <div className={settingsLabel}>Plugin deny rules</div>
                 <ConfigItemList
                   items={pluginDenyRules}
                   orphanedPluginIds={orphanedPluginIds}
@@ -793,62 +732,85 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
                 />
               </div>
             )}
-          </div>
+          </SettingsBlock>
         )}
+      </SettingsSection>
 
-        {/* Default MCP JSON — user-editable portion */}
-        <div>
-          <label className="block text-xs text-ctp-subtext0 mb-1">Default .mcp.json</label>
+      <SettingsSection title="Default .mcp.json">
+        <SettingsBlock>
           <textarea
+            aria-label="Default .mcp.json"
             value={userMcpJson}
-            onChange={(e) => { setMcpJson(e.target.value); setDirty(true); }}
+            onChange={(e) => { setMcpJson(e.target.value); markDirty(); }}
             placeholder='{\n  "mcpServers": {}\n}'
-            className="w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring"
+            className={`${settingsTextArea} h-20`}
             spellCheck={false}
           />
-        </div>
+        </SettingsBlock>
 
-        {/* Plugin MCP servers — read-only with attribution */}
+        {/* Plugin MCP servers: read-only with attribution */}
         {hasPluginMcp && (
-          <div>
-            <label className="block text-xs text-ctp-subtext0 mb-1">Plugin MCP Servers</label>
+          <SettingsBlock>
+            <div className={settingsLabel}>Plugin MCP servers</div>
             <ConfigItemList
               items={pluginMcpServers}
               orphanedPluginIds={orphanedPluginIds}
               onRemove={setRemoveTarget}
               removing={removing}
             />
-          </div>
+          </SettingsBlock>
         )}
+      </SettingsSection>
 
-        {/* Source Skills — with provenance badges above the editor */}
-        {breakdown && breakdown.skills.length > 0 && (
-          <div>
-            <label className="block text-xs text-ctp-subtext0 mb-1">Managed Skills</label>
-            <ConfigItemList
-              items={breakdown.skills}
-              orphanedPluginIds={orphanedPluginIds}
-              onRemove={setRemoveTarget}
-              removing={removing}
-            />
-          </div>
-        )}
-        <SourceSkillsSection projectPath={projectPath} />
+      {/* Managed skills (provenance) above the source skill list */}
+      {breakdown && breakdown.skills.length > 0 && (
+        <SettingsSection title="Managed skills">
+          <ConfigItemList
+            items={breakdown.skills}
+            orphanedPluginIds={orphanedPluginIds}
+            onRemove={setRemoveTarget}
+            removing={removing}
+          />
+        </SettingsSection>
+      )}
+      <SourceSkillsSection projectPath={projectPath} />
 
-        {/* Source Agent Definitions — with provenance badges above the editor */}
-        {breakdown && breakdown.agentTemplates.length > 0 && (
-          <div>
-            <label className="block text-xs text-ctp-subtext0 mb-1">Managed Agent Definitions</label>
-            <ConfigItemList
-              items={breakdown.agentTemplates}
-              orphanedPluginIds={orphanedPluginIds}
-              onRemove={setRemoveTarget}
-              removing={removing}
-            />
-          </div>
-        )}
-        <SourceAgentTemplatesSection projectPath={projectPath} />
-      </div>
+      {/* Managed agent definitions (provenance) above the source list */}
+      {breakdown && breakdown.agentTemplates.length > 0 && (
+        <SettingsSection title="Managed agent definitions">
+          <ConfigItemList
+            items={breakdown.agentTemplates}
+            orphanedPluginIds={orphanedPluginIds}
+            onRemove={setRemoveTarget}
+            removing={removing}
+          />
+        </SettingsSection>
+      )}
+      <SourceAgentTemplatesSection projectPath={projectPath} />
+
+      <ConfirmDialog
+        open={showResetConfirm}
+        title="Reset to defaults?"
+        message="This replaces every project-level agent default (instructions, permissions and commands) with the built-in defaults. Plugin-injected configs stay. Your customizations will be lost."
+        onConfirm={handleReset}
+        onCancel={() => setShowResetConfirm(false)}
+        confirming={resetting}
+        confirmLabel="Reset"
+        confirmingLabel="Resetting…"
+        testId="reset-defaults-confirm"
+      />
+
+      <ConfirmDialog
+        open={removeTarget !== null}
+        title="Remove plugin injection?"
+        message={removeTarget
+          ? `Remove "${removeTarget.label}", injected by the plugin "${removeTarget.provenance.source === 'plugin' ? removeTarget.provenance.pluginId : 'unknown'}"? The plugin may inject it again the next time it activates.`
+          : ''}
+        onConfirm={handleRemoveItem}
+        onCancel={() => setRemoveTarget(null)}
+        confirming={removing !== null}
+        testId="remove-injection-confirm"
+      />
     </div>
   );
 }

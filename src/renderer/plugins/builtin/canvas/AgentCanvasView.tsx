@@ -3,8 +3,8 @@ import type { AgentCanvasView as AgentCanvasViewType, CanvasView } from './canva
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import { AddAgentDialog } from '../../../features/agents/AddAgentDialog';
 import { WidgetPicker, projectRows, type PickerRow, type PickerSection } from './WidgetPicker';
-import { StatusDot } from '../../../chrome/sidebar/AgentRow';
-import { cardDot, DOT_WORD } from './CanvasView';
+import { StatusDot, DOT_LABEL } from '../../../features/agents/agent-status';
+import { cardDot } from './canvas-card-status';
 import { AgentView } from '../../../features/agents/chat/AgentView';
 
 interface AgentCanvasViewProps {
@@ -227,7 +227,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
             <AgentAvatar agentId={agent.id} size="2xs" />
           </>
         ),
-        meta: DOT_WORD[dot],
+        meta: DOT_LABEL[dot],
         muted: dot === 'sleeping',
         testId: `canvas-agent-pick-${agent.id}`,
         onSelect: () => handlePickAgent(agent),

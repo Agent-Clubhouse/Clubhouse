@@ -71,6 +71,7 @@ Status as of 2026-10-16:
   - `LegacyShell`: today's `TitleBar` + `RailSection` + `ProjectPanelLayout`, unchanged.
   - `ChromeShell`: new, `src/renderer/chrome/ChromeShell.tsx`.
 - Banners, dialogs, the command palette and toasts stay shared outside both shells.
+- Views inside the pane (sleeping, headless, finished quick agent, settings pages and the like) are restyled in both shells. Only the frame and layout (title bar, sidebar, where things live) are gated on the flag.
 - The main process also reads the flag at window creation for the Linux overlay (§4.7). On Linux, toggling the flag requires a restart, and the settings toggle says so.
 
 ### 4.2 New modules (`src/renderer/chrome/`)

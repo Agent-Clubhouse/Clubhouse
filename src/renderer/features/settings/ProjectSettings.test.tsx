@@ -92,7 +92,7 @@ describe('ProjectSettings', () => {
       // so removing the project doesn't violate Rules of Hooks.
       resetStores();
       const { rerender } = render(<ProjectSettings />);
-      expect(screen.getByText('Project Settings')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: 'my-project' })).toBeInTheDocument();
 
       // Remove the project from the store
       useProjectStore.setState({ projects: [], activeProjectId: null });
@@ -103,10 +103,17 @@ describe('ProjectSettings', () => {
   });
 
   describe('rendering', () => {
-    it('renders Project Settings heading', () => {
+    it('renders the project name as the page title', () => {
       resetStores();
       render(<ProjectSettings />);
-      expect(screen.getByText('Project Settings')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: 'my-project' })).toBeInTheDocument();
+      expect(screen.getByText(/Project settings ·/)).toBeInTheDocument();
+    });
+
+    it('uses displayName for the page title when set', () => {
+      resetStores({ displayName: 'My Project' });
+      render(<ProjectSettings />);
+      expect(screen.getByRole('heading', { level: 2, name: 'My Project' })).toBeInTheDocument();
     });
 
     it('renders the project path', () => {
@@ -225,28 +232,27 @@ describe('ProjectSettings', () => {
       expect(mockUpdateProject).toHaveBeenCalledWith('proj-1', { color: 'emerald' });
     });
 
-    it('shows check mark on selected color', () => {
+    it('marks the selected color', () => {
       resetStores({ color: 'indigo' });
       render(<ProjectSettings />);
-      const indigoBtn = screen.getByTitle('Indigo');
-      const svg = indigoBtn.querySelector('svg');
-      expect(svg).toBeInTheDocument();
+      expect(screen.getByTitle('Indigo')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTitle('Indigo').className).toContain('outline-ctp-text');
+      expect(screen.getByTitle('Emerald')).toHaveAttribute('aria-pressed', 'false');
     });
 
     it('defaults to indigo when no color is set', () => {
       resetStores({ color: undefined });
       const _indigoBtn = render(<ProjectSettings />);
-      // Indigo should show check when no color set
-      const svg = screen.getByTitle('Indigo').querySelector('svg');
-      expect(svg).toBeInTheDocument();
+      // Indigo should be selected when no color set
+      expect(screen.getByTitle('Indigo')).toHaveAttribute('aria-pressed', 'true');
     });
   });
 
   describe('icon management', () => {
-    it('renders Choose Image button', () => {
+    it('renders Choose image button', () => {
       resetStores();
       render(<ProjectSettings />);
-      expect(screen.getByText('Choose Image')).toBeInTheDocument();
+      expect(screen.getByText('Choose image…')).toBeInTheDocument();
     });
 
     it('opens image crop dialog when image is picked', async () => {
@@ -254,7 +260,7 @@ describe('ProjectSettings', () => {
       resetStores();
       render(<ProjectSettings />);
 
-      fireEvent.click(screen.getByText('Choose Image'));
+      fireEvent.click(screen.getByText('Choose image…'));
 
       expect(await screen.findByTestId('image-crop-dialog')).toBeInTheDocument();
     });
@@ -264,7 +270,7 @@ describe('ProjectSettings', () => {
       resetStores();
       render(<ProjectSettings />);
 
-      fireEvent.click(screen.getByText('Choose Image'));
+      fireEvent.click(screen.getByText('Choose image…'));
 
       await waitFor(() => {
         expect(screen.queryByTestId('image-crop-dialog')).toBeNull();
@@ -276,7 +282,7 @@ describe('ProjectSettings', () => {
       resetStores();
       render(<ProjectSettings />);
 
-      fireEvent.click(screen.getByText('Choose Image'));
+      fireEvent.click(screen.getByText('Choose image…'));
       const confirmBtn = await screen.findByTestId('crop-confirm');
       fireEvent.click(confirmBtn);
 
@@ -311,18 +317,21 @@ describe('ProjectSettings', () => {
     });
   });
 
-  describe('danger zone', () => {
-    it('renders Close Project and Reset Project buttons', () => {
+  describe('remove project', () => {
+    it('renders Close project and Reset project rows', () => {
       resetStores();
       render(<ProjectSettings />);
-      expect(screen.getByText('Close Project')).toBeInTheDocument();
-      expect(screen.getByText('Reset Project')).toBeInTheDocument();
+      expect(screen.getByText('Remove project')).toBeInTheDocument();
+      expect(screen.getByText('Close project')).toBeInTheDocument();
+      expect(screen.getByText('Reset project')).toBeInTheDocument();
+      expect(screen.getByText('Close…')).toBeInTheDocument();
+      expect(screen.getByText('Reset…')).toBeInTheDocument();
     });
 
-    it('clicking Close Project removes project and closes settings', async () => {
+    it('clicking Close removes project and closes settings', async () => {
       resetStores();
       render(<ProjectSettings />);
-      fireEvent.click(screen.getByText('Close Project'));
+      fireEvent.click(screen.getByText('Close…'));
 
       await waitFor(() => {
         expect(showConfirmDialog).toHaveBeenCalled();
@@ -331,17 +340,17 @@ describe('ProjectSettings', () => {
       });
     });
 
-    it('clicking Reset Project shows confirmation dialog', () => {
+    it('clicking Reset shows confirmation dialog', () => {
       resetStores();
       render(<ProjectSettings />);
-      fireEvent.click(screen.getByText('Reset Project'));
+      fireEvent.click(screen.getByText('Reset…'));
       expect(screen.getByTestId('reset-dialog')).toBeInTheDocument();
     });
 
     it('confirming reset calls resetProject API', async () => {
       resetStores();
       render(<ProjectSettings />);
-      fireEvent.click(screen.getByText('Reset Project'));
+      fireEvent.click(screen.getByText('Reset…'));
       fireEvent.click(screen.getByTestId('reset-confirm'));
 
       await waitFor(() => {
@@ -354,17 +363,18 @@ describe('ProjectSettings', () => {
     it('canceling reset closes dialog', () => {
       resetStores();
       render(<ProjectSettings />);
-      fireEvent.click(screen.getByText('Reset Project'));
+      fireEvent.click(screen.getByText('Reset…'));
       expect(screen.getByTestId('reset-dialog')).toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId('reset-cancel'));
       expect(screen.queryByTestId('reset-dialog')).toBeNull();
     });
 
-    it('shows danger zone description', () => {
+    it('shows close and reset help text', () => {
       resetStores();
       render(<ProjectSettings />);
-      expect(screen.getByText(/Close removes the project from Clubhouse/)).toBeInTheDocument();
+      expect(screen.getByText('Removes my-project from the sidebar. Files on disk stay.')).toBeInTheDocument();
+      expect(screen.getByText(/Also deletes the \.clubhouse folder/)).toBeInTheDocument();
     });
   });
 
@@ -455,7 +465,7 @@ describe('ProjectSettings', () => {
       resetStores();
       render(<ProjectSettings />);
       expect(await screen.findByText('mywrapper')).toBeInTheDocument();
-      expect(await screen.findByText('Default MCPs')).toBeInTheDocument();
+      expect(await screen.findByText('Default MCPs for new agents')).toBeInTheDocument();
       expect(screen.getByText('Filesystem')).toBeInTheDocument();
       expect(screen.queryByText('Refresh')).toBeNull();
     });
@@ -485,7 +495,7 @@ describe('ProjectSettings', () => {
       expect(await screen.findByTitle('Refresh catalog')).toBeInTheDocument();
     });
 
-    it('shows NEW badge on entries that are not in snapshot', async () => {
+    it('shows New on entries that are not in snapshot', async () => {
       setupWrapperState({
         wrapper: wrapperWithRefresh,
         catalog: [
@@ -503,8 +513,8 @@ describe('ProjectSettings', () => {
       resetStores();
       render(<ProjectSettings />);
       await screen.findByText('New One');
-      // NEW badge text appears
-      expect(screen.getByText('new')).toBeInTheDocument();
+      // "New" state word appears
+      expect(screen.getByText('New')).toBeInTheDocument();
     });
 
     it('renders diff banner with correct count text when entries differ', async () => {
@@ -525,8 +535,8 @@ describe('ProjectSettings', () => {
       resetStores();
       render(<ProjectSettings />);
       // 1 changed (a) + 1 new (b)
-      expect(await screen.findByText('1 new · 1 changed')).toBeInTheDocument();
-      expect(screen.getByText('Got it')).toBeInTheDocument();
+      expect(await screen.findByText('1 new and 1 changed since you last looked.')).toBeInTheDocument();
+      expect(screen.getByText('Mark as seen')).toBeInTheDocument();
     });
 
     it('shows REMOVED entry only when in selection', async () => {
@@ -546,7 +556,7 @@ describe('ProjectSettings', () => {
       render(<ProjectSettings />);
       await screen.findByText('Kept');
       expect(screen.getByText('Gone')).toBeInTheDocument();
-      expect(screen.getByText('removed')).toBeInTheDocument();
+      expect(screen.getByText('Removed from the catalog')).toBeInTheDocument();
     });
 
     it('hides banner when no diff exists', async () => {
@@ -560,10 +570,11 @@ describe('ProjectSettings', () => {
       resetStores();
       render(<ProjectSettings />);
       await screen.findByText('A');
-      expect(screen.queryByText('Got it')).toBeNull();
+      expect(screen.queryByText('Mark as seen')).toBeNull();
+      expect(screen.getByText('No changes since you last looked.')).toBeInTheDocument();
     });
 
-    it('clicking Got it writes snapshot and reloads', async () => {
+    it('clicking Mark as seen writes snapshot and reloads', async () => {
       const catalog = [{ id: 'a', name: 'A', description: 'a' }];
       setupWrapperState({
         wrapper: wrapperWithRefresh,
@@ -573,7 +584,7 @@ describe('ProjectSettings', () => {
       });
       resetStores();
       render(<ProjectSettings />);
-      const button = await screen.findByText('Got it');
+      const button = await screen.findByText('Mark as seen');
       fireEvent.click(button);
       await waitFor(() => {
         expect(window.clubhouse.project.writeWrapperCatalogSnapshot).toHaveBeenCalledWith(
@@ -680,7 +691,7 @@ describe('ProjectSettings', () => {
       });
     });
 
-    it('clicking Remove Wrapper button shows confirm dialog without firing delete', async () => {
+    it('clicking the Remove wrapper button shows confirm dialog without firing delete', async () => {
       setupWrapperState({
         wrapper: wrapperNoRefresh,
         catalog: [],
@@ -689,7 +700,7 @@ describe('ProjectSettings', () => {
       render(<ProjectSettings />);
       const removeBtn = await screen.findByTestId('remove-wrapper-button');
       fireEvent.click(removeBtn);
-      expect(screen.getByText('Remove Launch Wrapper?')).toBeInTheDocument();
+      expect(screen.getByText('Remove launch wrapper?')).toBeInTheDocument();
       expect(window.clubhouse.project.writeLaunchWrapper).not.toHaveBeenCalled();
     });
 

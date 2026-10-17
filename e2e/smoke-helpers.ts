@@ -105,7 +105,7 @@ export async function navigateToDisplaySettings(window: Page) {
   await displayBtn.click();
   await window.waitForTimeout(500);
 
-  const colorThemeHeading = window.locator('text=Color Theme').first();
+  const colorThemeHeading = window.locator('text=Color theme').first();
   await expect(colorThemeHeading).toBeVisible({ timeout: 5_000 });
 }
 

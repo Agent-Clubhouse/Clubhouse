@@ -1,9 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useUIStore } from '../../stores/uiStore';
 import type { BlueprintSummary } from '../../../shared/blueprint-summary';
-import { importBlueprint as legacyImportBlueprint, validateBlueprint } from '../../plugins/builtin/canvas/canvas-blueprint';
-import { importBlueprint as manifestImportBlueprint } from './blueprint-import';
-import { parseAnyBlueprint, buildWireDefinitionsFromResult } from './parse-blueprint';
+import { applyParsedBlueprint, parseAnyBlueprint } from './parse-blueprint';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../plugins/builtin/canvas/main';
 import { createScopedStorage } from '../../plugins/plugin-api-storage';
 import { useProjectStore } from '../../stores/projectStore';
@@ -139,6 +137,24 @@ export function BlueprintGallery() {
     return sortBlueprints(searched, sortMode);
   }, [blueprints, search, sortMode]);
 
+  /**
+   * Gallery cards and "Open from file…" import the same way as canvas drop
+   * and paste: parse (either format), plan the wires, then apply to the
+   * target canvas store.
+   */
+  const importData = useCallback(async (data: unknown) => {
+    const { store, storage, projectId: targetProjectId } = resolveTarget();
+    const parsed = parseAnyBlueprint(data, {
+      agents: Object.values(useAgentStore.getState().agents),
+      projects: useProjectStore.getState().projects.map((p) => ({ id: p.id, name: p.name, path: p.path })),
+      activeProjectId: targetProjectId,
+    });
+    await applyParsedBlueprint(parsed, {
+      insertCanvas: (canvas) => store.getState().loadAndInsertCanvas(canvas, storage),
+      addWireDefinition: (wire) => store.getState().addWireDefinition(wire),
+    });
+  }, [resolveTarget]);
+
   const handleImport = useCallback(async (bp: BlueprintSummary) => {
     setImporting(bp.filePath);
     try {
@@ -148,57 +164,14 @@ export function BlueprintGallery() {
         : await window.clubhouse.blueprint.read(bp.filePath);
       if (!data) throw new Error('Failed to read blueprint file');
 
-      const { store, storage, projectId: targetProjectId } = resolveTarget();
-
-      // Use manifest-aware import for BlueprintManifest files (preserves agent bindings/wires)
-      if (data && typeof data === 'object' && 'schemaVersion' in data) {
-        const agents = Object.values(useAgentStore.getState().agents);
-        const projects = useProjectStore.getState().projects.map((p) => ({
-          id: p.id,
-          name: p.name,
-          path: p.path,
-        }));
-        const result = manifestImportBlueprint(data as any, agents, projects, targetProjectId);
-        await store.getState().loadAndInsertCanvas(result.canvas, storage);
-        // Restore wire definitions from the import
-        for (const wire of result.pendingWires) {
-          const sourceViewId = result.refIdToViewId.get(wire.sourceRef);
-          const targetViewId = result.refIdToViewId.get(wire.targetRef);
-          if (sourceViewId && targetViewId) {
-            const sourceView = result.canvas.views.find((v) => v.id === sourceViewId);
-            const targetView = result.canvas.views.find((v) => v.id === targetViewId);
-            if (sourceView && targetView && sourceView.type === 'agent') {
-              const agentView = sourceView as any;
-              if (agentView.agentId) {
-                const targetKind: 'browser' | 'agent' | 'terminal' | 'group-project' =
-                  targetView.type === 'agent' ? 'agent' : 'browser';
-                store.getState().addWireDefinition({
-                  agentId: agentView.agentId,
-                  targetId: targetViewId,
-                  targetKind,
-                  label: `${wire.sourceRef} → ${wire.targetRef}`,
-                  agentName: wire.sourceRef,
-                  targetName: wire.targetRef,
-                });
-              }
-            }
-          }
-        }
-      } else {
-        // Legacy blueprint format (no agent bindings)
-        const validationError = validateBlueprint(data);
-        if (validationError) throw new Error(validationError);
-        const canvas = legacyImportBlueprint(data as any);
-        await store.getState().loadAndInsertCanvas(canvas, storage);
-      }
-
+      await importData(data);
       close();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setImporting(null);
     }
-  }, [resolveTarget, close]);
+  }, [importData, close]);
 
   const handleOpenFromFile = useCallback(async () => {
     setError(null);
@@ -210,28 +183,14 @@ export function BlueprintGallery() {
         throw new Error(result.error || 'Failed to read file');
       }
 
-      const agents = Object.values(useAgentStore.getState().agents);
-      const projects = useProjectStore.getState().projects.map((p) => ({
-        id: p.id, name: p.name, path: p.path,
-      }));
-      const { store, storage, projectId: targetProjectId } = resolveTarget();
-      const parsed = parseAnyBlueprint(result.data, {
-        agents,
-        projects,
-        activeProjectId: targetProjectId,
-      });
-
-      await store.getState().loadAndInsertCanvas(parsed.canvas, storage);
-      for (const wire of buildWireDefinitionsFromResult(parsed)) {
-        store.getState().addWireDefinition(wire);
-      }
+      await importData(result.data);
       close();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setImporting(null);
     }
-  }, [resolveTarget, close]);
+  }, [importData, close]);
 
   const handleDelete = useCallback(async (bp: BlueprintSummary) => {
     // Built-in templates are not file-backed and cannot be deleted.

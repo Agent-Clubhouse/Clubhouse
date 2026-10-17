@@ -7,6 +7,8 @@ import type { ProjectFold } from '../chromeStore';
 import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
 import { reportChromeFeature } from '../telemetry';
 import type { ActionDef } from '../../features/agents/useAgentRowActions';
+import { Tooltip } from '../../components/Tooltip';
+import { TruncatedLabel } from '../../components/TruncatedLabel';
 
 /**
  * One project in the sidebar tree: a header (chevron, square, name, roll-up,
@@ -38,7 +40,7 @@ const PlusIcon = (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
 );
 
-function ProjectSquare({ project, iconUrl }: { project: Project; iconUrl?: string }) {
+export function ProjectSquare({ project, iconUrl }: { project: Project; iconUrl?: string }) {
   const label = project.displayName || project.name;
   const hex = getAgentColorHex(project.color);
   if (project.emoji) {
@@ -235,53 +237,55 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
           data-active={isActiveProject}
           aria-current={headerSelected ? 'true' : undefined}
           onClick={() => onSelectProject(project.id)}
-          title={label}
           className="min-w-0 flex-1 h-full flex items-center gap-2 text-left cursor-pointer"
         >
           <ProjectSquare project={project} iconUrl={iconUrl} />
-          <span className={`text-[13px] font-semibold truncate ${isActiveProject ? 'text-ctp-text' : 'text-ctp-subtext1'}`}>{label}</span>
+          <TruncatedLabel text={label} className={`text-[13px] font-semibold ${isActiveProject ? 'text-ctp-text' : 'text-ctp-subtext1'}`} />
         </button>
         {/* Actions show on hover and on keyboard focus anywhere in the header; the roll-up shows otherwise. */}
         <span className="flex-shrink-0 hidden group-hover:flex group-focus-within:flex items-center gap-1 pr-1.5 text-xs text-ctp-subtext0">
-          <button
-            type="button"
-            tabIndex={-1}
-            title={pinned ? 'Unpin project' : 'Pin to top'}
-            aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
-            aria-pressed={pinned}
-            onClick={() => onTogglePinned(project.id)}
-            className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1 ${pinned ? 'text-ctp-text' : ''}`}
-          >
-            {PinIcon}
-          </button>
-          {onNewAgent && (
+          <Tooltip content={pinned ? 'Unpin project' : 'Pin to top'}>
             <button
               type="button"
               tabIndex={-1}
-              title="New agent"
-              aria-label={`New agent in ${label}`}
-              onClick={() => onNewAgent(project.id)}
+              aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
+              aria-pressed={pinned}
+              onClick={() => onTogglePinned(project.id)}
+              className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1 ${pinned ? 'text-ctp-text' : ''}`}
+            >
+              {PinIcon}
+            </button>
+          </Tooltip>
+          {onNewAgent && (
+            <Tooltip content="New agent">
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label={`New agent in ${label}`}
+                onClick={() => onNewAgent(project.id)}
+                className="w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1"
+              >
+                {PlusIcon}
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip content="Project menu">
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label={`Menu for ${label}`}
+              data-testid={`project-menu-button-${project.id}`}
+              onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); openMenu(r.right, r.bottom); }}
               className="w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1"
             >
-              {PlusIcon}
+              {MoreIcon}
             </button>
-          )}
-          <button
-            type="button"
-            tabIndex={-1}
-            title="Project menu"
-            aria-label={`Menu for ${label}`}
-            data-testid={`project-menu-button-${project.id}`}
-            onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); openMenu(r.right, r.bottom); }}
-            className="w-6 h-6 rounded flex items-center justify-center cursor-pointer hover:bg-surface-1"
-          >
-            {MoreIcon}
-          </button>
+          </Tooltip>
         </span>
         <span className="flex-shrink-0 flex group-hover:hidden group-focus-within:hidden items-center gap-1 pr-1.5 text-xs text-ctp-subtext0">
           {pinned && <span className="text-ctp-overlay0">pinned</span>}
-          {rollup.working > 0 && <span className="flex items-center gap-1" title={`${rollup.working} working`}><span className="w-1.5 h-1.5 rounded-full bg-ctp-success" />{rollup.working}</span>}
-          {rollup.waiting > 0 && <span className="flex items-center gap-1 text-ctp-warning" title={`${rollup.waiting} waiting on you`}><span className="w-1.5 h-1.5 rounded-full bg-ctp-warning" />{rollup.waiting}</span>}
+          {rollup.working > 0 && <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-ctp-success" aria-hidden="true" />{rollup.working}<span className="sr-only"> working</span></span>}
+          {rollup.waiting > 0 && <span className="flex items-center gap-1 text-ctp-warning"><span className="w-1.5 h-1.5 rounded-full bg-ctp-warning" aria-hidden="true" />{rollup.waiting}<span className="sr-only"> waiting on you</span></span>}
           {rollup.working === 0 && rollup.waiting === 0 && collapsed && agents.length > 0 && <span>{agents.length}</span>}
         </span>
       </div>
@@ -353,23 +357,23 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
                     data-testid={`finished-quick-row-${c.id}`}
                     onClick={() => onSelectCompleted(project.id, c.id)}
                     onKeyDown={(e) => { if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); onDismissCompleted(project.id, c.id); } }}
-                    title={c.summary || c.mission}
                     className="min-w-0 flex-1 h-full flex items-center gap-2 text-left cursor-pointer"
                   >
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c.exitCode === 0 ? 'bg-ctp-info' : 'bg-ctp-error'}`} aria-hidden="true" />
                     <span className="text-[13px] text-ctp-subtext1 truncate">{c.name}</span>
-                    <span className="text-xs text-ctp-overlay1 truncate min-w-0">{c.summary || c.mission}</span>
+                    <TruncatedLabel text={c.summary || c.mission || ''} className="text-xs text-ctp-overlay1 min-w-0" />
                   </button>
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    title="Dismiss"
-                    aria-label={`Dismiss ${c.name}`}
-                    onClick={() => onDismissCompleted(project.id, c.id)}
-                    className="w-6 h-6 flex-shrink-0 rounded flex items-center justify-center text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-1 cursor-pointer"
-                  >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                  </button>
+                  <Tooltip content="Dismiss">
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={`Dismiss ${c.name}`}
+                      onClick={() => onDismissCompleted(project.id, c.id)}
+                      className="w-6 h-6 flex-shrink-0 rounded flex items-center justify-center text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-1 cursor-pointer"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                    </button>
+                  </Tooltip>
                 </div>
               ))}
             </>

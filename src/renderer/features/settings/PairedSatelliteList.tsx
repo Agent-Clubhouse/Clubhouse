@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { SatelliteConnection } from '../../stores/annexClientStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { getAgentColorHex } from '../../../shared/name-generator';
+import { Button } from '../../components/Button';
 
 interface Props {
   satellites: SatelliteConnection[];
@@ -16,15 +17,15 @@ function StatusDot({ state, lastError }: { state: SatelliteConnection['state']; 
     discovering: 'bg-ctp-info animate-pulse',
     disconnected: 'bg-surface-2',
   };
-  return <span className={`w-2 h-2 rounded-full ${isIncompatible ? 'bg-ctp-error' : colors[state] || 'bg-surface-2'}`} />;
+  return <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isIncompatible ? 'bg-ctp-error' : colors[state] || 'bg-surface-2'}`} />;
 }
 
 function stateLabel(state: SatelliteConnection['state'], lastError?: string | null): string {
   if (lastError?.toLowerCase().includes('incompatible')) return 'Incompatible';
   switch (state) {
     case 'connected': return 'Connected';
-    case 'connecting': return 'Connecting...';
-    case 'discovering': return 'Discovering...';
+    case 'connecting': return 'Connecting…';
+    case 'discovering': return 'Discovering…';
     case 'disconnected': return 'Offline';
   }
 }
@@ -43,26 +44,27 @@ export function PairedSatelliteList({ satellites }: Props) {
   });
 
   return (
-    <div className="space-y-2">
+    <div data-testid="paired-satellite-list">
       {sorted.map((sat) => (
         <div
           key={sat.id}
-          className="flex items-center justify-between py-2 px-3 rounded bg-surface-0"
+          className="flex items-center gap-3 min-h-[46px] py-2 border-t border-surface-0"
         >
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
             <div
-              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-              style={{ backgroundColor: getAgentColorHex(sat.color) }}
+              className="w-[18px] h-[18px] rounded flex items-center justify-center text-xs font-bold leading-none shrink-0"
+              style={{ backgroundColor: `${getAgentColorHex(sat.color)}33`, color: getAgentColorHex(sat.color) }}
+              aria-hidden="true"
             >
-              {sat.alias.slice(0, 2).toUpperCase()}
+              {sat.alias.slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0">
-              <div className="text-sm text-ctp-text font-medium truncate">{sat.alias}</div>
-              <div className="flex items-center gap-1.5 text-xs text-ctp-subtext0">
+              <div className="text-[13px] text-ctp-text truncate">{sat.alias}</div>
+              <div className="flex items-center gap-1.5 text-xs text-ctp-overlay1 min-w-0">
                 <StatusDot state={sat.state} lastError={sat.lastError} />
                 <span>{stateLabel(sat.state, sat.lastError)}</span>
                 {sat.lastError && sat.state === 'disconnected' && (
-                  <span className="text-ctp-error ml-1 truncate">({sat.lastError})</span>
+                  <span className="text-ctp-error truncate">({sat.lastError})</span>
                 )}
               </div>
             </div>
@@ -70,51 +72,34 @@ export function PairedSatelliteList({ satellites }: Props) {
 
           <div className="flex gap-1.5 shrink-0">
             {sat.state === 'disconnected' && (
-              <button
-                onClick={() => retry(sat.fingerprint)}
-                className="px-2 py-1 text-xs rounded bg-surface-1 hover:bg-surface-2
-                  transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
-              >
+              <Button onClick={() => retry(sat.fingerprint)} kind="ghost">
                 Retry
-              </button>
+              </Button>
             )}
             {sat.state === 'connected' && (
-              <button
-                onClick={() => disconnect(sat.fingerprint)}
-                className="px-2 py-1 text-xs rounded bg-surface-1 hover:bg-surface-2
-                  transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
-              >
+              <Button onClick={() => disconnect(sat.fingerprint)} kind="ghost">
                 Disconnect
-              </button>
+              </Button>
             )}
             {confirmForget === sat.fingerprint ? (
-              <div className="flex gap-1">
-                <button
+              <>
+                <Button onClick={() => setConfirmForget(null)} kind="ghost">
+                  Cancel
+                </Button>
+                <Button
                   onClick={() => {
                     forgetSatellite(sat.fingerprint);
                     setConfirmForget(null);
                   }}
-                  className="px-2 py-1 text-xs rounded bg-ctp-error hover:bg-ctp-error
-                    transition-colors cursor-pointer text-white font-medium"
+                  kind="danger"
                 >
                   Confirm
-                </button>
-                <button
-                  onClick={() => setConfirmForget(null)}
-                  className="px-2 py-1 text-xs rounded bg-surface-1 hover:bg-surface-2
-                    transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
-                >
-                  Cancel
-                </button>
-              </div>
+                </Button>
+              </>
             ) : (
-              <button
-                onClick={() => setConfirmForget(sat.fingerprint)}
-                className="px-2 py-1 text-xs rounded bg-surface-1 hover:bg-surface-2
-                  transition-colors cursor-pointer text-ctp-error hover:text-ctp-error"
-              >
+              <Button onClick={() => setConfirmForget(sat.fingerprint)} kind="danger">
                 Forget
-              </button>
+              </Button>
             )}
           </div>
         </div>

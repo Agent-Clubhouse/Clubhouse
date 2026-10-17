@@ -31,6 +31,12 @@
   --color-ctp-mauve: rgb(var(--ctp-accent2));
   --color-ctp-yellow: rgb(var(--ctp-warning));
 
+  /* Provider brand tints for the agent mascots (#2019). Each theme can override them. */
+  --color-brand-claude: rgb(var(--brand-claude));
+  --color-brand-claude-ink: rgb(var(--brand-claude-ink));
+  --color-brand-copilot: rgb(var(--brand-copilot));
+  --color-brand-codex: rgb(var(--brand-codex));
+
   /* Semantic status tokens — use these instead of raw palette classes like text-yellow-400 */
   --color-status-warning: rgb(var(--ctp-warning));
   --color-status-error: rgb(var(--ctp-error));
@@ -85,6 +91,14 @@
   --ctp-badge-amber: 251 191 36;
   --ctp-badge-indigo: 99 102 241;
   --ctp-badge-sky: 14 165 233;
+
+  /* Provider brand tints for the mascots: Claude coral (with a dark ink for its
+     eyes), Copilot purple, and Codex in the text color so it flips with the theme.
+     Themes set brandClaude / brandClaudeInk / brandCopilot / brandCodex to tune them. */
+  --brand-claude: 217 119 87;
+  --brand-claude-ink: 48 26 19;
+  --brand-copilot: 137 87 229;
+  --brand-codex: var(--ctp-text);
 
   /* highlight.js token colors — use CSS vars where a theme token maps cleanly */
   --hljs-keyword: rgb(var(--ctp-accent2));

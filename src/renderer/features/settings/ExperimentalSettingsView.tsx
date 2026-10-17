@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
+import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 /** Feature definitions for the experimental settings page. */
 const EXPERIMENTAL_FEATURES: Array<{
@@ -9,7 +11,7 @@ const EXPERIMENTAL_FEATURES: Array<{
 }> = [
   {
     id: 'themeGradients',
-    label: 'Theme Gradients & Fonts',
+    label: 'Theme gradients & fonts',
     description: 'Allow themes to define custom font families and background gradients. Requires app restart.',
   },
   {
@@ -58,57 +60,33 @@ export function ExperimentalSettingsView() {
   if (!loaded) return null;
 
   return (
-    <div className="h-full overflow-y-auto bg-ctp-base p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">Experimental</h2>
-        <p className="text-sm text-ctp-subtext0 mb-4">
-          These features are unstable and may be buggy. Use at your own risk.
-        </p>
+    <SettingsPage
+      title="Experimental"
+      description="These features are unstable and may be buggy. Use at your own risk."
+    >
+      <p className="text-xs text-ctp-overlay1 mt-3">
+        Experimental features may change or go away in future releases. Turning one on or off may need a restart to take full effect.
+      </p>
 
-        {/* Disclaimer banner */}
-        <div className="rounded-lg border border-ctp-peach/30 bg-ctp-peach/5 px-4 py-3 mb-6">
-          <p className="text-sm text-ctp-peach font-medium mb-1">Beta Features</p>
-          <p className="text-xs text-ctp-subtext1">
-            Experimental features may change or be removed in future releases.
-            Toggling a feature on or off may require an app restart to take full effect.
-          </p>
-        </div>
+      <SettingsSection title="Features">
+        {EXPERIMENTAL_FEATURES.map(({ id, label, description }) => (
+          <SettingsField key={id} label={label} help={description}>
+            <Toggle
+              aria-label={label}
+              checked={!!settings[id]}
+              onChange={(enabled) => handleToggle(id, enabled)}
+            />
+          </SettingsField>
+        ))}
+      </SettingsSection>
 
-        {/* Feature toggles */}
-        <div className="space-y-3 mb-6">
-          <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Features</h3>
-          {EXPERIMENTAL_FEATURES.map(({ id, label, description }) => (
-            <div key={id} className="flex items-center justify-between py-2">
-              <div>
-                <div className="text-sm text-ctp-text font-medium">{label}</div>
-                <div className="text-xs text-ctp-subtext0 mt-0.5">{description}</div>
-              </div>
-              <Toggle
-                checked={!!settings[id]}
-                onChange={(enabled) => handleToggle(id, enabled)}
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* Restart button */}
-        <div className="border-t border-surface-0 pt-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-ctp-text">Restart App</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">
-                Restart Clubhouse to apply experimental feature changes.
-              </div>
-            </div>
-            <button
-              onClick={handleRestart}
-              className="px-4 py-1.5 text-sm rounded bg-surface-0 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
-            >
-              Restart
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      <SettingsSection title="Apply changes">
+        <SettingsField label="Restart Clubhouse" help="Restart Clubhouse to apply experimental feature changes.">
+          <Button onClick={handleRestart} kind="ghost">
+            Restart
+          </Button>
+        </SettingsField>
+      </SettingsSection>
+    </SettingsPage>
   );
 }

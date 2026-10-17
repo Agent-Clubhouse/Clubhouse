@@ -880,6 +880,12 @@ export interface TerminalAPI {
   kill(sessionId: string): Promise<void>;
   /** Get buffered output for replay on reconnect. */
   getBuffer(sessionId: string): Promise<string>;
+  /**
+   * True when the shell is running a command (not just sitting at its prompt),
+   * so closing it would interrupt work. Also true when it can't be told
+   * (Windows, remote projects). False for a session that isn't running.
+   */
+  isBusy(sessionId: string): Promise<boolean>;
   /** Subscribe to terminal data output. */
   onData(sessionId: string, callback: (data: string) => void): Disposable;
   /** Subscribe to terminal exit events. */

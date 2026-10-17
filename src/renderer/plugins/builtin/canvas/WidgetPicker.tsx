@@ -121,17 +121,7 @@ export function WidgetPicker({
   let index = -1;
   return (
     <div className="flex flex-col h-full p-2 gap-0.5" data-testid={testId}>
-      {onBack && (
-        <button
-          type="button"
-          onClick={onBack}
-          className="self-start h-7 px-2 -ml-0.5 rounded-md flex items-center gap-1 text-xs text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text transition-colors"
-          data-testid="canvas-picker-back"
-        >
-          {BackIcon}
-          {backLabel}
-        </button>
-      )}
+      {onBack && <PickerBack onBack={onBack} label={backLabel} />}
       {total > 0 && (
         <label className="mb-1.5 h-7 px-2 rounded-md border border-surface-1 bg-ctp-base flex items-center gap-1.5 text-ctp-overlay1 focus-within:border-surface-2">
           {SearchIcon}
@@ -249,4 +239,19 @@ export function projectRows(
     testId: opts.testIdPrefix ? `${opts.testIdPrefix}${p.id}` : undefined,
     onSelect: () => onSelect(p.id),
   }));
+}
+
+/** The Back row at the top of a two-step picker. */
+export function PickerBack({ onBack, label = 'Back' }: { onBack: () => void; label?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      className="self-start h-7 px-2 -ml-0.5 rounded-md flex items-center gap-1 text-xs text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text transition-colors"
+      data-testid="canvas-picker-back"
+    >
+      {BackIcon}
+      {label}
+    </button>
+  );
 }

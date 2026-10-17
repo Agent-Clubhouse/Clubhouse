@@ -61,10 +61,13 @@ describe('Browser MainPanel', () => {
     expect(screen.getByTestId('browser-devtools-btn')).toBeInTheDocument();
   });
 
-  it('shows empty state when no URL entered', () => {
+  it('shows the empty state on the theme, not a white slab, when no URL entered', () => {
     const api = createBrowserAPI();
     render(<MainPanel api={api} />);
-    expect(screen.getByText('Enter a URL above to browse')).toBeInTheDocument();
+    const empty = screen.getByTestId('browser-empty-state');
+    expect(screen.getByText('Open a page')).toBeInTheDocument();
+    expect(empty.className).not.toContain('bg-white');
+    expect(empty.closest('.bg-white')).toBeNull();
   });
 
   it('shows error when navigating to blocked localhost', () => {
@@ -184,40 +187,23 @@ describe('Browser SidebarPanel', () => {
     browserState.reset();
   });
 
-  it('renders "Protocols" header', () => {
-    const api = createBrowserAPI();
-    render(<SidebarPanel api={api} />);
-    expect(screen.getByText('Protocols')).toBeInTheDocument();
-  });
-
   it('renders "History" header', () => {
     const api = createBrowserAPI();
     render(<SidebarPanel api={api} />);
     expect(screen.getByText('History')).toBeInTheDocument();
   });
 
-  it('shows "No pages visited yet" when history is empty', () => {
+  it('says where pages will show up when history is empty', () => {
     const api = createBrowserAPI();
     render(<SidebarPanel api={api} />);
-    expect(screen.getByText('No pages visited yet')).toBeInTheDocument();
+    expect(screen.getByText('Pages you open show up here.')).toBeInTheDocument();
   });
 
-  it('shows HTTPS protocol as always enabled', () => {
-    const api = createBrowserAPI();
+  it('sums up the allowed protocols in one line at the bottom, not a block in the list', () => {
+    const api = createBrowserAPI({ allowLocalhost: true });
     render(<SidebarPanel api={api} />);
-    expect(screen.getByText('HTTPS')).toBeInTheDocument();
-  });
-
-  it('shows Localhost protocol status', () => {
-    const api = createBrowserAPI();
-    render(<SidebarPanel api={api} />);
-    expect(screen.getByText('Localhost')).toBeInTheDocument();
-  });
-
-  it('shows File protocol status', () => {
-    const api = createBrowserAPI();
-    render(<SidebarPanel api={api} />);
-    expect(screen.getByText('File')).toBeInTheDocument();
+    expect(screen.getByTestId('browser-protocols')).toHaveTextContent('Opens https and localhost addresses.');
+    expect(screen.queryByText('Protocols')).not.toBeInTheDocument();
   });
 
   it('shows history entries when pages visited', () => {

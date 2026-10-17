@@ -18,6 +18,14 @@ import { useRemoteProjectStore, parseNamespacedId } from '../stores/remoteProjec
 import { useAnnexClientStore } from '../stores/annexClientStore';
 
 export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): AgentsAPI {
+  // A local agent's sessions live under its own project. App-scope plugins
+  // (Review, Canvas) have no ctx.projectPath, so fall back to that project.
+  const sessionProjectPath = (agentId: string): string | undefined => {
+    if (ctx.projectPath) return ctx.projectPath;
+    const projectId = useAgentStore.getState().agents[agentId]?.projectId;
+    return projectId ? useProjectStore.getState().projects.find((p) => p.id === projectId)?.path : undefined;
+  };
+
   return {
     list(): AgentInfo[] {
       const localAgents = useAgentStore.getState().agents;
@@ -284,7 +292,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
         }
       }
 
-      const projectPath = ctx.projectPath;
+      const projectPath = sessionProjectPath(agentId);
       if (!projectPath) return [];
       const agent = useAgentStore.getState().agents[agentId];
       try {
@@ -311,7 +319,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
         }
       }
 
-      const projectPath = ctx.projectPath;
+      const projectPath = sessionProjectPath(agentId);
       if (!projectPath) return null;
       const agent = useAgentStore.getState().agents[agentId];
       try {
@@ -339,7 +347,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
         }
       }
 
-      const projectPath = ctx.projectPath;
+      const projectPath = sessionProjectPath(agentId);
       if (!projectPath) return null;
       const agent = useAgentStore.getState().agents[agentId];
       try {

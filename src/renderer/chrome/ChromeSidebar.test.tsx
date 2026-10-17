@@ -159,7 +159,7 @@ describe('ChromeSidebar', () => {
     registerAppPlugin('goobers', 'Goobers');
     usePluginStore.setState({ appEnabled: ['canvas', 'review', 'goobers'] });
     render(<ChromeSidebar />);
-    fireEvent.click(screen.getByTitle('Canvas'));
+    fireEvent.click(screen.getByTestId('app-row-canvas'));
     expect(useUIStore.getState().explorerTab).toBe('plugin:app:canvas');
     expect(screen.queryByText('Goobers', { selector: '[role=menuitem]' })).toBeNull();
     fireEvent.click(screen.getByLabelText('More app views'));
@@ -173,6 +173,21 @@ describe('ChromeSidebar', () => {
     fireEvent.mouseEnter(header);
     fireEvent.click(screen.getByLabelText('New agent in Goobers'));
     expect(useChromeDialogStore.getState().request).toEqual({ kind: 'durable', projectId: 'p2' });
+  });
+
+  it('puts the app-wide notices slot above the footer', () => {
+    render(<ChromeSidebar />);
+    const slot = screen.getByTestId('sidebar-notices');
+    expect(slot.nextElementSibling).toContainElement(screen.getByTestId('nav-settings'));
+  });
+
+  it('labels footer icon buttons with a Tooltip instead of title=', () => {
+    render(<ChromeSidebar />);
+    const settings = screen.getByTestId('nav-settings');
+    expect(settings).not.toHaveAttribute('title');
+    fireEvent.keyDown(document, { key: 'Tab' });
+    act(() => { settings.focus(); });
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings');
   });
 
   it('keeps the footer test ids', () => {
@@ -197,6 +212,27 @@ describe('ChromeSidebar', () => {
     render(<ChromeSidebar />);
     expect(screen.getByTestId('app-row-canvas')).toBeTruthy();
     expect(screen.getByTestId('app-row-review')).toBeTruthy();
+  });
+
+  it('opens Review from Needs you with Needs you only for that visit, and plainly from the app row', () => {
+    registerAppPlugin('review', 'Review');
+    usePluginStore.setState({ appEnabled: ['review'] });
+    render(<ChromeSidebar />);
+    fireEvent.click(within(screen.getByTestId('needs-you')).getByText('Review'));
+    expect(useUIStore.getState().explorerTab).toBe('plugin:app:review');
+    expect(useChromeStore.getState().appLaunch).toMatchObject({ id: 'review', params: { needsYouOnly: true } });
+    fireEvent.click(screen.getByTestId('app-row-review'));
+    expect(useChromeStore.getState().appLaunch).toMatchObject({ id: 'review', params: {} });
+  });
+
+  it('selects the agent Review is showing while Review is open', () => {
+    registerAppPlugin('review', 'Review');
+    usePluginStore.setState({ appEnabled: ['review'] });
+    useUIStore.setState({ explorerTab: 'plugin:app:review' });
+    act(() => useChromeStore.getState().setAppViewAgent('a1'));
+    render(<ChromeSidebar />);
+    expect(screen.getByTestId('agent-item-a1').getAttribute('data-active')).toBe('true');
+    act(() => useChromeStore.getState().setAppViewAgent(null));
   });
 
   describe('drag to reorder', () => {

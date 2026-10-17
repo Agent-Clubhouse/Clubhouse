@@ -107,6 +107,11 @@ export function createTerminalAPI(ctx: PluginContext): TerminalAPI {
       }
       return window.clubhouse.pty.getBuffer(fullId(sessionId));
     },
+    async isBusy(sessionId: string): Promise<boolean> {
+      // Satellites don't report the foreground process yet; assume busy.
+      if (isRemote && remoteParts) return true;
+      return window.clubhouse.pty.isShellBusy(fullId(sessionId));
+    },
     onData(sessionId: string, callback: (data: string) => void): Disposable {
       const fid = fullId(sessionId);
       if (isRemote && remoteParts) {

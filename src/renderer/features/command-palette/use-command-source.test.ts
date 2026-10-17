@@ -16,6 +16,7 @@ const mockSaveAnnexSettings = vi.fn();
 const mockOpenQuickAgentDialog = vi.fn();
 const mockOpenBlueprintGallery = vi.fn();
 const mockPickAndAddProject = vi.fn();
+const mockOpenProjectSettings = vi.fn();
 
 const projectStoreState = {
   projects: [
@@ -24,6 +25,7 @@ const projectStoreState = {
   ],
   setActiveProject: mockSetActiveProject,
   activeProjectId: 'p1' as string | null,
+  projectIcons: {} as Record<string, string>,
 };
 
 vi.mock('../../stores/projectStore', () => ({
@@ -35,7 +37,8 @@ vi.mock('../../stores/projectStore', () => ({
 
 vi.mock('../../stores/agentStore', () => ({
   useAgentStore: (selector: any) => selector({
-    agents: { 'a1': { id: 'a1', projectId: 'p1', kind: 'durable', name: 'TestAgent' } },
+    agents: { 'a1': { id: 'a1', projectId: 'p1', kind: 'durable', name: 'TestAgent', status: 'sleeping' } },
+    agentDetailedStatus: {},
     setActiveAgent: mockSetActiveAgent,
   }),
 }));
@@ -50,7 +53,15 @@ const uiStoreState = {
   openAbout: mockOpenAbout,
   openQuickAgentDialog: mockOpenQuickAgentDialog,
   openBlueprintGallery: mockOpenBlueprintGallery,
+  openProjectSettings: mockOpenProjectSettings,
 };
+
+vi.mock('../../panels/AccessoryPanel', () => ({
+  useSettingsCategories: () => ({
+    app: [{ label: 'About', page: 'about' }, { label: 'Display & UI', page: 'display' }, { label: 'Updates', page: 'updates' }],
+    project: [{ label: 'Project Settings', page: 'project' }, { label: 'Plugins', page: 'plugins' }],
+  }),
+}));
 
 vi.mock('../../stores/uiStore', () => ({
   useUIStore: Object.assign(
@@ -197,8 +208,8 @@ describe('useCommandSource', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:toggle-annex-server');
     expect(item).toBeDefined();
-    expect(item.label).toBe('Enable Annex Server');
-    expect(item.category).toBe('Actions');
+    expect(item.label).toBe('Enable Annex server');
+    expect(item.category).toBe('Commands');
   });
 
   it('includes toggle annex server action with Disable label when enableServer is true', async () => {
@@ -207,7 +218,7 @@ describe('useCommandSource', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:toggle-annex-server');
     expect(item).toBeDefined();
-    expect(item.label).toBe('Disable Annex Server');
+    expect(item.label).toBe('Disable Annex server');
   });
 
   it('toggle annex server calls saveSettings with toggled enableServer', async () => {
@@ -225,7 +236,7 @@ describe('useCommandSource', () => {
     const item = findItem(result.current, 'action:annex-show-pin');
     expect(item).toBeDefined();
     expect(item.label).toBe('Show Annex PIN');
-    expect(item.category).toBe('Actions');
+    expect(item.category).toBe('Commands');
   });
 
   it('show annex PIN includes PIN in detail when enabled', async () => {
@@ -259,8 +270,8 @@ describe('useCommandSource', () => {
     const { result } = renderHook(() => useCommandSource());
     const item = findItem(result.current, 'action:agent-config');
     expect(item).toBeDefined();
-    expect(item.label).toBe('Agent Config');
-    expect(item.category).toBe('Actions');
+    expect(item.label).toBe('Agent config');
+    expect(item.category).toBe('Commands');
     expect(item.keywords).toContain('clubhouse');
   });
 
@@ -282,14 +293,14 @@ describe('useCommandSource', () => {
     expect(mockSetSettingsSubPage).toHaveBeenCalledWith('orchestrators');
   });
 
-  // ── Spaces resolution tests ──────────────────────────
+  // ── Canvas resolution tests ──────────────────────────
 
-  it('all space items have # type indicator and Spaces category', () => {
+  it('all canvas items have the canvas icon and Canvases category', () => {
     const { result } = renderHook(() => useCommandSource());
-    const spaceItems = result.current.filter((i: any) => i.category === 'Spaces');
+    const spaceItems = result.current.filter((i: any) => i.category === 'Canvases');
     expect(spaceItems.length).toBeGreaterThan(0);
     for (const item of spaceItems) {
-      expect(item.typeIndicator).toBe('#');
+      expect(item.icon).toBe('canvas');
     }
   });
 
@@ -330,29 +341,29 @@ describe('useCommandSource', () => {
 
   // ── Canvas resolution tests ─────────────────────────────────────────
 
-  it('includes project canvases and app canvases as Spaces items', () => {
+  it('includes project canvases and app canvases as Canvases items', () => {
     const { result } = renderHook(() => useCommandSource());
     const projectCanvas = findItem(result.current, 'canvas:project:pc1');
     const appCanvas = findItem(result.current, 'canvas:app:ac1');
     expect(projectCanvas).toBeDefined();
     expect(projectCanvas.label).toBe('ProjectCanvas1');
-    expect(projectCanvas.category).toBe('Spaces');
-    expect(projectCanvas.typeIndicator).toBe('#');
+    expect(projectCanvas.category).toBe('Canvases');
+    expect(projectCanvas.icon).toBe('canvas');
     expect(appCanvas).toBeDefined();
     expect(appCanvas.label).toBe('AppCanvas1');
-    expect(appCanvas.category).toBe('Spaces');
+    expect(appCanvas.category).toBe('Canvases');
   });
 
-  it('marks the active project canvas with Canvas · Active detail', () => {
+  it('marks the open project canvas in its detail', () => {
     const { result } = renderHook(() => useCommandSource());
     const projectCanvas = findItem(result.current, 'canvas:project:pc1');
-    expect(projectCanvas.detail).toBe('Canvas · Active');
+    expect(projectCanvas.detail).toBe('Test, open');
   });
 
-  it('labels app canvases with Canvas · Home detail', () => {
+  it('labels app canvases App canvas, never Home', () => {
     const { result } = renderHook(() => useCommandSource());
     const appCanvas = findItem(result.current, 'canvas:app:ac1');
-    expect(appCanvas.detail).toBe('Canvas · Home');
+    expect(appCanvas.detail).toBe('App canvas');
   });
 
   it('project canvas execution switches to project, navigates to canvas tab, and activates canvas', () => {
@@ -390,9 +401,9 @@ describe('useCommandSource', () => {
 
     const oc1 = findItem(result.current, 'canvas:project:p2:oc1');
     expect(oc1.label).toBe('OtherCanvas1');
-    expect(oc1.detail).toBe('Canvas · Other');
-    expect(oc1.category).toBe('Spaces');
-    expect(oc1.typeIndicator).toBe('#');
+    expect(oc1.detail).toBe('Other');
+    expect(oc1.category).toBe('Canvases');
+    expect(oc1.icon).toBe('canvas');
   });
 
   it('cross-project canvas execution pre-writes active canvas to storage then switches', async () => {
@@ -425,14 +436,52 @@ describe('useCommandSource', () => {
     expect(mockSetExplorerTab).toHaveBeenCalledWith('plugin:canvas', 'p2');
   });
 
-  it('never lists Hub items, and canvas items show Canvas prefix in detail', () => {
+  it('never lists Hub items, and canvas items sit in the Canvases group', () => {
     const { result } = renderHook(() => useCommandSource());
     expect(result.current.filter((i: any) => i.id.startsWith('hub:'))).toHaveLength(0);
     const canvasItems = result.current.filter((i: any) => i.id.startsWith('canvas:'));
-
+    expect(canvasItems.length).toBeGreaterThan(0);
     for (const canvas of canvasItems) {
-      expect(canvas.detail).toMatch(/^Canvas/);
+      expect(canvas.category).toBe('Canvases');
+      expect(canvas.detail ?? '').not.toMatch(/Canvas ·|Home/);
     }
+  });
+
+  // ── Settings: every page from useSettingsCategories ─────────
+
+  it('lists Open settings with the settings shortcut, and every app page', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const open = findItem(result.current, 'settings:open');
+    expect(open.label).toBe('Open settings');
+    expect(open.category).toBe('Settings');
+    expect(findItem(result.current, 'settings:display').shortcut).toBeUndefined();
+    for (const page of ['about', 'display', 'updates']) {
+      expect(findItem(result.current, `settings:${page}`).detail).toBe('App');
+    }
+  });
+
+  it("lists each project's settings pages, for searching only", () => {
+    const { result } = renderHook(() => useCommandSource());
+    const item = findItem(result.current, 'settings:p2:plugins');
+    expect(item.detail).toBe('Other');
+    expect(item.searchOnly).toBe(true);
+    item.execute();
+    expect(mockOpenProjectSettings).toHaveBeenCalledWith('p2');
+    expect(mockSetSettingsSubPage).toHaveBeenCalledWith('plugins');
+  });
+
+  it('Open settings only opens, never closes, settings', () => {
+    uiStoreState.explorerTab = 'settings';
+    const { result } = renderHook(() => useCommandSource());
+    findItem(result.current, 'settings:open').execute();
+    expect(mockToggleSettings).not.toHaveBeenCalled();
+  });
+
+  it('agents carry the sidebar status word in their detail', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const agent = findItem(result.current, 'agent:a1');
+    expect(agent.dot).toBe('sleeping');
+    expect(agent.detail).toBe('Test · Sleeping');
   });
 
   // ── Canvas gating: items hidden when canvas plugin disabled ─────────
@@ -455,8 +504,8 @@ describe('useCommandSource', () => {
     const { result } = renderHook(() => useCommandSource());
     const item = findItem(result.current, 'action:import-blueprint');
     expect(item).toBeDefined();
-    expect(item.label).toBe('Import Blueprint');
-    expect(item.category).toBe('Actions');
+    expect(item.label).toBe('Import blueprint');
+    expect(item.category).toBe('Commands');
   });
 
   it('import-blueprint calls openBlueprintGallery', () => {
@@ -470,8 +519,8 @@ describe('useCommandSource', () => {
     const { result } = renderHook(() => useCommandSource());
     const item = findItem(result.current, 'action:export-blueprint');
     expect(item).toBeDefined();
-    expect(item.label).toBe('Export Canvas as Blueprint');
-    expect(item.category).toBe('Actions');
+    expect(item.label).toBe('Export canvas as blueprint');
+    expect(item.category).toBe('Commands');
   });
 
   // ── The Assistant was removed: no palette entry, even with a stale flag ──

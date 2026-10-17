@@ -13,8 +13,9 @@ vi.mock('./tool-registry', () => ({
   sanitizeId: (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_'),
 }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+const { getAllWindows } = vi.hoisted(() => ({ getAllWindows: vi.fn((): unknown[] => []) }));
 vi.mock('electron', () => ({
-  BrowserWindow: { getAllWindows: vi.fn(() => []) },
+  BrowserWindow: { getAllWindows },
 }));
 
 import {
@@ -22,6 +23,7 @@ import {
   listPluginTools,
   registerPluginTools,
   removePluginTools,
+  resolvePluginToolCall,
 } from './plugin-tool-registry';
 
 function makeManifest(id: string, permissions: PluginManifest['permissions'] = []): PluginManifest {
@@ -102,5 +104,48 @@ describe('plugin-tool-registry', () => {
       { name: 'tool1', description: 'A test tool', inputSchema: { type: 'object', properties: {} } },
     ])).not.toThrow();
     expect(listPluginTools('test-plugin')).toEqual(['plugin__test_plugin__tool1']);
+  });
+
+  describe('in-flight tool calls', () => {
+    const send = vi.fn();
+    beforeEach(() => {
+      send.mockReset();
+      getAllWindows.mockReturnValue([{ webContents: { send } }]);
+    });
+
+    /** Start a call to `pluginId`'s first tool, as an agent would through the MCP bridge. */
+    function startCall(pluginId: string) {
+      registerTrustedManifest(pluginId, makeManifest(pluginId, ['mcp.tools']));
+      registerPluginTools(pluginId, [{ name: 'lookup', description: 'd', inputSchema: {} }]);
+      const handler = vi.mocked(registerToolTemplate).mock.calls.at(-1)![3] as (t: string, a: string, args: object) => Promise<unknown>;
+      const result = handler('target', 'agent', { key: 'x' });
+      const { callId } = send.mock.calls.at(-1)![1] as { callId: string };
+      return { result, callId };
+    }
+
+    it('uses unguessable call ids', () => {
+      const { callId } = startCall('my-plugin');
+      expect(callId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    });
+
+    it('removing a plugin settles its in-flight calls at once instead of after the timeout', async () => {
+      vi.useFakeTimers();
+      try {
+        const mine = startCall('my-plugin');
+        const other = startCall('other-plugin');
+
+        removePluginTools('my-plugin');
+
+        await expect(mine.result).resolves.toEqual({
+          content: [{ type: 'text', text: 'Plugin my-plugin was removed before answering the tool call' }],
+          isError: true,
+        });
+        // Another plugin's call is untouched and still answerable.
+        resolvePluginToolCall(other.callId, { content: [{ type: 'text', text: 'ok' }] });
+        await expect(other.result).resolves.toEqual({ content: [{ type: 'text', text: 'ok' }] });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

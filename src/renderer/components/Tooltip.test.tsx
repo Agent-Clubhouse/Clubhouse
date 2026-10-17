@@ -173,5 +173,19 @@ describe('Tooltip', () => {
     fireEvent.keyDown(trigger, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('with onlyWhenTruncated, opens only when the text overflows', () => {
+    render(<Tooltip content="A long project name" onlyWhenTruncated><span tabIndex={0}>A long project name</span></Tooltip>);
+    const el = screen.getByText('A long project name');
+    fireEvent.mouseEnter(el);
+    act(() => { vi.advanceTimersByTime(TOOLTIP_DELAY_MS); });
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    fireEvent.mouseLeave(el);
+    Object.defineProperty(el, 'scrollWidth', { value: 200, configurable: true });
+    Object.defineProperty(el, 'clientWidth', { value: 100, configurable: true });
+    fireEvent.mouseEnter(el);
+    act(() => { vi.advanceTimersByTime(TOOLTIP_DELAY_MS); });
+    expect(screen.getByRole('tooltip')).toHaveTextContent('A long project name');
+  });
 });
 

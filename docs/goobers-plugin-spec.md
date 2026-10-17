@@ -723,7 +723,7 @@ export const manifest: PluginManifest = {
 - **Not registered on Windows** (§7.8).
 
 The panel body imports `goobersStore` directly — the established precedent
-(`review/main.ts` imports `remoteProjectStore`; `group-project/main.ts` imports
+(`review/host.ts` re-exports the stores Review uses; `group-project/main.ts` imports
 `groupProjectStore`).
 
 ### 8.2 Layout

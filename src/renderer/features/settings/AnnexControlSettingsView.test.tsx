@@ -43,7 +43,7 @@ describe('AnnexControlSettingsView', () => {
 
   it('renders without crash', () => {
     render(<AnnexControlSettingsView />);
-    expect(screen.getByText('Annex Control')).toBeInTheDocument();
+    expect(screen.getByText('Annex control')).toBeInTheDocument();
   });
 
   it('calls loadSatellites and loadAnnexSettings on mount', () => {
@@ -85,51 +85,51 @@ describe('AnnexControlSettingsView', () => {
   describe('purge flow', () => {
     it('shows "Forget All Satellites" button initially', () => {
       render(<AnnexControlSettingsView />);
-      expect(screen.getByRole('button', { name: 'Forget All Satellites' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Forget all satellites' })).toBeInTheDocument();
     });
 
     it('shows confirmation buttons when forget button clicked', () => {
       render(<AnnexControlSettingsView />);
-      fireEvent.click(screen.getByRole('button', { name: 'Forget All Satellites' }));
-      expect(screen.getByRole('button', { name: 'Confirm Reset' })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Forget all satellites' }));
+      expect(screen.getByRole('button', { name: 'Confirm reset' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     });
 
     it('calls forgetAllSatellites when confirm clicked', () => {
       render(<AnnexControlSettingsView />);
-      fireEvent.click(screen.getByRole('button', { name: 'Forget All Satellites' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm Reset' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Forget all satellites' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm reset' }));
       expect(mockForgetAllSatellites).toHaveBeenCalledTimes(1);
     });
 
     it('hides confirmation after confirm clicked', async () => {
       render(<AnnexControlSettingsView />);
-      fireEvent.click(screen.getByRole('button', { name: 'Forget All Satellites' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm Reset' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Forget all satellites' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm reset' }));
       await waitFor(() => {
-        expect(screen.queryByRole('button', { name: 'Confirm Reset' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Confirm reset' })).not.toBeInTheDocument();
       });
     });
 
     it('cancels confirmation when cancel clicked', () => {
       render(<AnnexControlSettingsView />);
-      fireEvent.click(screen.getByRole('button', { name: 'Forget All Satellites' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Forget all satellites' }));
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       expect(mockForgetAllSatellites).not.toHaveBeenCalled();
-      expect(screen.getByRole('button', { name: 'Forget All Satellites' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Forget all satellites' })).toBeInTheDocument();
     });
 
     it('protects against rapid double-click of forgetAllSatellites', () => {
       render(<AnnexControlSettingsView />);
-      const forgetBtn = screen.getByRole('button', { name: 'Forget All Satellites' });
-      const confirmBtn = () => screen.queryByRole('button', { name: 'Confirm Reset' });
+      const forgetBtn = screen.getByRole('button', { name: 'Forget all satellites' });
+      const confirmBtn = () => screen.queryByRole('button', { name: 'Confirm reset' });
       
       // First click - show confirmation
       fireEvent.click(forgetBtn);
       expect(confirmBtn()).toBeInTheDocument();
 
       // Rapid double-click on confirm button
-      const confirmElement = screen.getByRole('button', { name: 'Confirm Reset' });
+      const confirmElement = screen.getByRole('button', { name: 'Confirm reset' });
       fireEvent.click(confirmElement);
       fireEvent.click(confirmElement);
 
@@ -141,12 +141,12 @@ describe('AnnexControlSettingsView', () => {
   describe('paired satellites section', () => {
     it('shows "Paired Satellites" heading', () => {
       render(<AnnexControlSettingsView />);
-      expect(screen.getByText('Paired Satellites')).toBeInTheDocument();
+      expect(screen.getByText('Paired satellites')).toBeInTheDocument();
     });
 
     it('shows "Add Satellite" and "Scan" buttons', () => {
       render(<AnnexControlSettingsView />);
-      expect(screen.getByRole('button', { name: 'Add Satellite' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Add satellite' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Scan' })).toBeInTheDocument();
     });
 
@@ -163,7 +163,7 @@ describe('AnnexControlSettingsView', () => {
 
     it('toggles pairing wizard visibility', () => {
       render(<AnnexControlSettingsView />);
-      const addBtn = screen.getByRole('button', { name: 'Add Satellite' });
+      const addBtn = screen.getByRole('button', { name: 'Add satellite' });
       fireEvent.click(addBtn);
       expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
       fireEvent.click(addBtn);

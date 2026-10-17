@@ -2,12 +2,16 @@
 //
 // Detects whether arbitrary JSON data is a legacy CanvasBlueprint or a
 // modern BlueprintManifest, validates it, and routes it to the correct
-// importer. Used by drag-and-drop, paste, the Blueprint Gallery, and the
-// "Open from file…" picker so all four entry points share one code path.
+// importer. Used by drag-and-drop, paste, the Blueprint Gallery cards and the
+// "Open from file…" picker, so all four entry points share one code path:
+// parseAnyBlueprint produces the canvas and its wire plan
+// (blueprint-wire-plan.ts), and applyParsedBlueprint is the only place an
+// import touches a canvas store.
 
-import type { CanvasInstance, AgentCanvasView, PluginCanvasView } from '../../plugins/builtin/canvas/canvas-types';
+import type { CanvasInstance } from '../../plugins/builtin/canvas/canvas-types';
 import type { McpBindingEntry } from '../../stores/mcpBindingStore';
 import type { BlueprintWire } from '../../../shared/blueprint-types';
+import { EMPTY_WIRE_PLAN, planBlueprintWires, type BlueprintWirePlan } from './blueprint-wire-plan';
 import { importBlueprint as legacyImportBlueprint, validateBlueprint as legacyValidate } from '../../plugins/builtin/canvas/canvas-blueprint';
 import { importBlueprint as manifestImportBlueprint, type ExistingProject, type AgentStubInfo, type ProjectMatchResult } from './blueprint-import';
 import type { Agent } from '../../../shared/types';
@@ -61,7 +65,9 @@ export interface ParseContext {
 export interface ParseResult {
   format: BlueprintFormat;
   canvas: CanvasInstance;
-  /** Manifest-only: wires waiting to be wired up to bound agents. */
+  /** What the blueprint's wires become: created now, deferred until a stub is bound, or skipped. */
+  wires: BlueprintWirePlan;
+  /** Manifest-only: the blueprint's wires as written. */
   pendingWires: BlueprintWire[];
   /** Manifest-only: blueprint refId → runtime view ID. */
   refIdToViewId: Map<string, string>;
@@ -94,6 +100,7 @@ export function parseAnyBlueprint(data: unknown, ctx?: ParseContext): ParseResul
     return {
       format,
       canvas: result.canvas,
+      wires: planBlueprintWires(result.pendingWires, result.refIdToViewId, result.canvas.views),
       pendingWires: result.pendingWires,
       refIdToViewId: result.refIdToViewId,
       stubs: result.stubs,
@@ -107,6 +114,8 @@ export function parseAnyBlueprint(data: unknown, ctx?: ParseContext): ParseResul
   return {
     format,
     canvas,
+    // Legacy blueprints carry no wires.
+    wires: EMPTY_WIRE_PLAN,
     pendingWires: [],
     refIdToViewId: new Map(),
     stubs: [],
@@ -128,51 +137,20 @@ export function parseAnyBlueprintText(text: string, ctx?: ParseContext): ParseRe
   return parseAnyBlueprint(data, ctx);
 }
 
-// ── Wire materialisation ────────────────────────────────────────────
+// ── Applying an import ──────────────────────────────────────────────
+
+/** Where an import lands: the canvas store of the gallery's target or the canvas being dropped/pasted on. */
+export interface BlueprintImportTarget {
+  insertCanvas: (canvas: CanvasInstance) => void | Promise<void>;
+  addWireDefinition: (wire: McpBindingEntry) => void;
+}
 
 /**
- * Convert manifest pendingWires into runtime McpBindingEntry rows so the
- * canvas store can register them. Wires whose source view has no bound agent
- * are skipped — they remain in `pendingWires` until the user binds an agent.
- *
- * This is a thin wrapper around the resolution logic that previously lived
- * inline in BlueprintGallery. Centralising it means drag/drop, paste, gallery,
- * and open-from-file all restore wires the same way.
+ * Insert the imported canvas, then add the wires its plan creates. Deferred
+ * and skipped wires are left in `result.wires` for the caller to report or
+ * resolve later.
  */
-export function buildWireDefinitionsFromResult(result: ParseResult): McpBindingEntry[] {
-  const entries: McpBindingEntry[] = [];
-  if (result.pendingWires.length === 0) return entries;
-
-  const viewById = new Map(result.canvas.views.map((v) => [v.id, v]));
-
-  for (const wire of result.pendingWires) {
-    const sourceViewId = result.refIdToViewId.get(wire.sourceRef);
-    const targetViewId = result.refIdToViewId.get(wire.targetRef);
-    if (!sourceViewId || !targetViewId) continue;
-
-    const sourceView = viewById.get(sourceViewId);
-    const targetView = viewById.get(targetViewId);
-    if (!sourceView || !targetView || sourceView.type !== 'agent') continue;
-
-    const agentView = sourceView as AgentCanvasView;
-    if (!agentView.agentId) continue;
-
-    const targetKind: McpBindingEntry['targetKind'] =
-      targetView.type === 'agent' ? 'agent'
-      : targetView.type === 'plugin' && (targetView as PluginCanvasView).pluginWidgetType.includes('group-project') ? 'group-project'
-      : 'browser';
-
-    entries.push({
-      agentId: agentView.agentId,
-      targetId: targetViewId,
-      targetKind,
-      label: `${wire.sourceRef} → ${wire.targetRef}`,
-      agentName: wire.sourceRef,
-      targetName: wire.targetRef,
-      instructions: wire.instructions,
-      disabledTools: wire.disabledTools,
-    });
-  }
-
-  return entries;
+export async function applyParsedBlueprint(result: ParseResult, target: BlueprintImportTarget): Promise<void> {
+  await target.insertCanvas(result.canvas);
+  for (const wire of result.wires.create) target.addWireDefinition(wire);
 }

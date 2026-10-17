@@ -415,6 +415,7 @@ async function spawnPtyAgent(
       sessionId: params.sessionId,
       agentFile: params.agentFile,
       agentSource: params.agentSource ? expandHome(params.agentSource) : undefined,
+      interactive: params.kind === 'durable',
     })),
   ]));
 

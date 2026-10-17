@@ -45,7 +45,7 @@ test.describe('Settings Persistence — Theme', () => {
   });
 
   test('theme selection heading is visible', async () => {
-    const themeHeading = window.locator('text=Color Theme');
+    const themeHeading = window.locator('text=Color theme');
     await expect(themeHeading).toBeVisible({ timeout: 5_000 });
   });
 
@@ -89,8 +89,7 @@ test.describe('Settings Persistence — Theme', () => {
 
   test('selected theme button has visual indicator after returning', async () => {
     const draculaBtn = window.locator('button:has-text("Dracula")').first();
-    const classes = await draculaBtn.getAttribute('class');
-    expect(classes).toContain('ring-ctp-accent');
+    await expect(draculaBtn).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('theme persists after switching projects (project-b roundtrip)', async () => {
@@ -143,20 +142,20 @@ test.describe('Settings Persistence — Toggle', () => {
   });
 
   test('toggling "Home" changes its state', async () => {
-    const homeToggle = window.locator('button[role="switch"]').first();
+    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
     await expect(homeToggle).toBeVisible({ timeout: 3_000 });
 
-    const beforeState = await homeToggle.getAttribute('data-on');
+    const beforeState = await homeToggle.getAttribute('aria-checked');
     await homeToggle.click();
     await window.waitForTimeout(300);
 
-    const afterState = await homeToggle.getAttribute('data-on');
+    const afterState = await homeToggle.getAttribute('aria-checked');
     expect(afterState).not.toBe(beforeState);
   });
 
   test('localStorage verification for clubhouse_view_prefs', async () => {
-    const homeToggle = window.locator('button[role="switch"]').first();
-    const currentState = await homeToggle.getAttribute('data-on');
+    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
+    const currentState = await homeToggle.getAttribute('aria-checked');
 
     const storedPrefs = await window.evaluate(() => {
       const raw = localStorage.getItem('clubhouse_view_prefs');
@@ -167,24 +166,24 @@ test.describe('Settings Persistence — Toggle', () => {
   });
 
   test('toggle state persists after navigating away and back', async () => {
-    const homeToggle = window.locator('button[role="switch"]').first();
-    const stateBeforeNav = await homeToggle.getAttribute('data-on');
+    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
+    const stateBeforeNav = await homeToggle.getAttribute('aria-checked');
 
     await navigateToSmokeProject(window);
     await openSettings(window);
     await navigateToDisplaySettings(window);
 
     const stateAfterReturn = await window
-      .locator('button[role="switch"]')
+      .locator('[role="switch"][aria-label="Home"]')
       .first()
-      .getAttribute('data-on');
+      .getAttribute('aria-checked');
     expect(stateAfterReturn).toBe(stateBeforeNav);
   });
 
   test('restore original toggle state', async () => {
-    const homeToggle = window.locator('button[role="switch"]').first();
+    const homeToggle = window.locator('[role="switch"][aria-label="Home"]').first();
     await expect(homeToggle).toBeVisible({ timeout: 3_000 });
-    const currentState = await homeToggle.getAttribute('data-on');
+    const currentState = await homeToggle.getAttribute('aria-checked');
 
     // Default is "true", so restore if changed
     if (currentState === 'false') {

@@ -886,6 +886,12 @@ export interface ThemeColors {
   overlay: string;
   overlay0: string;
   overlay1: string;
+  /** Mascot brand tints (#2019). Unset falls back to the defaults in index.css. */
+  brandClaude?: string;
+  brandClaudeInk?: string;
+  brandCopilot?: string;
+  /** Unset means the theme's text color. */
+  brandCodex?: string;
 }
 
 export interface HljsColors {
