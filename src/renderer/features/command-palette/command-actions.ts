@@ -3,6 +3,8 @@ import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { usePanelStore } from '../../stores/panelStore';
+import { useChromeStore } from '../../chrome/chromeStore';
+import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../agents/AgentTerminal';
 
 export interface CommandAction {
@@ -33,7 +35,9 @@ export function getCommandActions(): CommandAction[] {
     },
     {
       id: 'toggle-sidebar',
-      execute: () => usePanelStore.getState().toggleExplorerCollapse(),
+      execute: () => (isNewChromeEnabled()
+        ? useChromeStore.getState().toggleSidebar()
+        : usePanelStore.getState().toggleExplorerCollapse()),
     },
     {
       id: 'toggle-accessory',

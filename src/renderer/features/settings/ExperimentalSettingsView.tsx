@@ -13,6 +13,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     description: 'Allow themes to define custom font families and background gradients. Requires app restart.',
   },
   {
+    id: 'newChrome',
+    label: 'New layout',
+    description: 'One resizable sidebar for projects and agents, with project tabs in the title bar. Work in progress. Requires app restart.',
+  },
+  {
     id: 'goobers',
     label: 'Goobers',
     description: 'Monitor and control a local Goobers instance from an app-level panel. Not available on Windows. Requires app restart.',
