@@ -2,9 +2,15 @@
  * Export-pipeline processors and exporter decorators. Loaded only inside the
  * SDK chunk (imported from sdk.ts).
  *
- * Span pipeline:  Redaction → SessionCap → [ErrorTail at Errors level] → Batch → ObservedSpanExporter → destination
- * Log pipeline:   Redaction (in place) → SessionCap → Batch → ObservedLogExporter → destination
- * Metric pipeline: Views (allowlist, cardinality) → PeriodicReader → ObservedMetricExporter → destination
+ * Sampling, redaction and the session caps are global; after them the
+ * pipeline fans out to every enabled destination (spec §6.11):
+ *
+ * Span pipeline:  Redaction → SessionCap → FanOut → per destination:
+ *                 Filter → [ErrorTail at Errors level] → Batch → [ResourceCopy] → ObservedSpanExporter
+ * Log pipeline:   Redaction (in place) → SessionCap → FanOut → per destination:
+ *                 Filter → Batch → [ResourceCopy] → ObservedLogExporter
+ * Metric pipeline: Views (allowlist, cardinality) → one PeriodicReader per destination →
+ *                 FilteredMetricExporter → ObservedMetricExporter
  */
 import { context, SpanStatusCode, type Context } from '@opentelemetry/api';
 import { ExportResultCode, suppressTracing, type ExportResult } from '@opentelemetry/core';
@@ -16,6 +22,7 @@ import { classifyExportError, sanitizeAttributes } from './redaction';
 import type { Scrubber } from './scrubber';
 import type { SessionCaps } from './caps';
 import type { PreviewItem, PreviewTee } from './preview-tee';
+import type { CompiledFilter } from './filters';
 
 type Signal = 'traces' | 'metrics' | 'logs';
 
@@ -138,6 +145,36 @@ export class ErrorTailSpanProcessor extends ForwardingSpanProcessor {
   }
 }
 
+/** Hands every span to each destination's chain. */
+export class FanOutSpanProcessor implements SpanProcessor {
+  constructor(private readonly children: SpanProcessor[]) {}
+  onStart(span: Span, parentContext: Context): void {
+    for (const c of this.children) c.onStart(span, parentContext);
+  }
+  onEnd(span: ReadableSpan): void {
+    for (const c of this.children) c.onEnd(span);
+  }
+  async forceFlush(): Promise<void> {
+    // One destination failing must not cut another's flush short.
+    await Promise.allSettled(this.children.map((c) => c.forceFlush()));
+  }
+  async shutdown(): Promise<void> {
+    await Promise.allSettled(this.children.map((c) => c.shutdown()));
+  }
+}
+
+/** One destination's filter: spans it doesn't take never reach its batch. */
+export class FilterSpanProcessor extends ForwardingSpanProcessor {
+  constructor(next: SpanProcessor, private readonly filter: CompiledFilter) {
+    super(next);
+  }
+  onEnd(span: ReadableSpan): void {
+    if (this.filter.span({ name: span.name, attributes: span.attributes, isError: span.status.code === SpanStatusCode.ERROR })) {
+      this.next.onEnd(span);
+    }
+  }
+}
+
 // --- Logs -------------------------------------------------------------------
 
 export class RedactionLogProcessor implements LogRecordProcessor {
@@ -174,10 +211,40 @@ export class RedactionLogProcessor implements LogRecordProcessor {
   }
 }
 
+/** Hands every (already redacted) log record to each destination's chain. */
+export class FanOutLogProcessor implements LogRecordProcessor {
+  constructor(private readonly children: LogRecordProcessor[]) {}
+  onEmit(record: SdkLogRecord, ctx?: Context): void {
+    for (const c of this.children) c.onEmit(record, ctx);
+  }
+  async forceFlush(): Promise<void> {
+    // One destination failing must not cut another's flush short.
+    await Promise.allSettled(this.children.map((c) => c.forceFlush()));
+  }
+  async shutdown(): Promise<void> {
+    await Promise.allSettled(this.children.map((c) => c.shutdown()));
+  }
+}
+
+export class FilterLogProcessor implements LogRecordProcessor {
+  constructor(private readonly next: LogRecordProcessor, private readonly filter: CompiledFilter) {}
+  onEmit(record: SdkLogRecord, ctx?: Context): void {
+    if (this.filter.log({ name: record.eventName ?? '', attributes: record.attributes })) this.next.onEmit(record, ctx);
+  }
+  forceFlush(): Promise<void> {
+    return this.next.forceFlush();
+  }
+  shutdown(): Promise<void> {
+    return this.next.shutdown();
+  }
+}
+
 // --- Exporter decorators ----------------------------------------------------
 
 export interface ObserveHooks {
   tee?: PreviewTee;
+  /** The destination these exports go to; tags preview items. */
+  destination?: string;
   onFailure(signal: Signal, httpClass: ReturnType<typeof classifyExportError>): void;
   /** Every export result, success or failure (the Settings test event reads these). */
   onResult?(signal: Signal, result: ExportResult): void;
@@ -212,7 +279,7 @@ export class ObservedSpanExporter implements SpanExporter {
   constructor(private readonly inner: SpanExporter, private readonly hooks: ObserveHooks) {}
   export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
     for (const s of spans) {
-      this.hooks.tee?.push({ signal: 'traces', name: s.name, time: hrToMs(s.startTime), attributes: scalarAttrs(s.attributes) });
+      this.hooks.tee?.push({ signal: 'traces', destination: this.hooks.destination, name: s.name, time: hrToMs(s.startTime), attributes: scalarAttrs(s.attributes) });
     }
     suppressed(() => this.inner.export(spans, observe('traces', this.hooks, resultCallback)));
   }
@@ -228,7 +295,7 @@ export class ObservedLogExporter implements LogRecordExporter {
   constructor(private readonly inner: LogRecordExporter, private readonly hooks: ObserveHooks) {}
   export(logs: ReadableLogRecord[], resultCallback: (result: ExportResult) => void): void {
     for (const l of logs) {
-      this.hooks.tee?.push({ signal: 'logs', name: l.eventName ?? '', time: hrToMs(l.hrTime), attributes: scalarAttrs(l.attributes) });
+      this.hooks.tee?.push({ signal: 'logs', destination: this.hooks.destination, name: l.eventName ?? '', time: hrToMs(l.hrTime), attributes: scalarAttrs(l.attributes) });
     }
     suppressed(() => this.inner.export(logs, observe('logs', this.hooks, resultCallback)));
   }
@@ -260,6 +327,7 @@ export class ObservedMetricExporter implements PushMetricExporter {
         for (const dp of metric.dataPoints as Array<{ attributes: Record<string, unknown>; value: unknown; endTime: [number, number] }>) {
           this.hooks.tee?.push({
             signal: 'metrics',
+            destination: this.hooks.destination,
             name: metric.descriptor.name,
             time: hrToMs(dp.endTime),
             attributes: scalarAttrs(dp.attributes),
@@ -278,3 +346,87 @@ export class ObservedMetricExporter implements PushMetricExporter {
   }
 }
 
+
+// --- Per-destination exporter decorators --------------------------------------
+
+/** Copy chosen resource attributes onto each item's own attributes. */
+function withResourceAttrs<T extends { attributes: Record<string, unknown>; resource: { attributes: Record<string, unknown> } }>(
+  item: T,
+  keys: readonly string[],
+): T {
+  const extra: Record<string, unknown> = {};
+  for (const k of keys) {
+    const v = item.resource.attributes[k];
+    if (v !== undefined && !(k in item.attributes)) extra[k] = v;
+  }
+  if (Object.keys(extra).length === 0) return item;
+  // A view over the shared item: other destinations keep seeing the original.
+  return Object.create(item, { attributes: { value: { ...item.attributes, ...extra }, enumerable: true } }) as T;
+}
+
+/**
+ * For backends that keep only a few resource attributes: copies the chosen
+ * ones onto every span. The span is shared with other destinations, so this
+ * works on a per-destination view, never in place.
+ */
+export class ResourceCopySpanExporter implements SpanExporter {
+  constructor(private readonly inner: SpanExporter, private readonly keys: readonly string[]) {}
+  export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
+    this.inner.export(spans.map((s) => withResourceAttrs(s as ReadableSpan & { attributes: Record<string, unknown> }, this.keys)), resultCallback);
+  }
+  shutdown(): Promise<void> {
+    return this.inner.shutdown();
+  }
+  forceFlush(): Promise<void> {
+    return this.inner.forceFlush?.() ?? Promise.resolve();
+  }
+}
+
+/** Log-record counterpart of ResourceCopySpanExporter. */
+export class ResourceCopyLogExporter implements LogRecordExporter {
+  constructor(private readonly inner: LogRecordExporter, private readonly keys: readonly string[]) {}
+  export(logs: ReadableLogRecord[], resultCallback: (result: ExportResult) => void): void {
+    this.inner.export(logs.map((l) => withResourceAttrs(l as ReadableLogRecord & { attributes: Record<string, unknown> }, this.keys)), resultCallback);
+  }
+  shutdown(): Promise<void> {
+    return this.inner.shutdown();
+  }
+  forceFlush(): Promise<void> {
+    return this.inner.forceFlush?.() ?? Promise.resolve();
+  }
+}
+
+/**
+ * One destination's metric filter. Each destination has its own reader, so
+ * this only drops whole metric streams it doesn't take; temporality and
+ * aggregation preferences come from the wrapped exporter.
+ */
+export class FilteredMetricExporter implements PushMetricExporter {
+  constructor(private readonly inner: PushMetricExporter, private readonly filter: CompiledFilter) {
+    if (inner.selectAggregationTemporality) {
+      this.selectAggregationTemporality = inner.selectAggregationTemporality.bind(inner);
+    }
+    if (inner.selectAggregation) {
+      this.selectAggregation = inner.selectAggregation.bind(inner);
+    }
+  }
+  selectAggregationTemporality?: PushMetricExporter['selectAggregationTemporality'];
+  selectAggregation?: PushMetricExporter['selectAggregation'];
+
+  export(metrics: ResourceMetrics, resultCallback: (result: ExportResult) => void): void {
+    const scopeMetrics = metrics.scopeMetrics
+      .map((scope) => ({ ...scope, metrics: scope.metrics.filter((m) => this.filter.metric(m.descriptor.name)) }))
+      .filter((scope) => scope.metrics.length > 0);
+    if (scopeMetrics.length === 0) {
+      resultCallback({ code: ExportResultCode.SUCCESS });
+      return;
+    }
+    this.inner.export({ ...metrics, scopeMetrics }, resultCallback);
+  }
+  forceFlush(): Promise<void> {
+    return this.inner.forceFlush();
+  }
+  shutdown(): Promise<void> {
+    return this.inner.shutdown();
+  }
+}

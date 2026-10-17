@@ -10,7 +10,7 @@ import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 import * as http from 'http';
 import * as https from 'https';
 import type { LookupAddress, LookupOptions } from 'dns';
-import type { DestinationExporters } from './types';
+import type { DestinationExporters, OtlpExportersInput } from './types';
 
 export interface OtlpDestinationOptions {
   /** Validated base URL (HTTPS, or HTTP to a literal loopback host). */
@@ -72,19 +72,36 @@ export function signalUrl(endpoint: string, signal: 'traces' | 'metrics' | 'logs
   return `${endpoint.replace(/\/+$/, '')}/v1/${signal}`;
 }
 
-export function createOtlpExporters(opts: OtlpDestinationOptions): DestinationExporters {
-  const headers = { ...(opts.headers ?? {}) };
-  const httpAgentOptions = createAgentFactory(opts.reservedPorts);
+/**
+ * OTLP/HTTP exporters from per-signal options. Any kind that speaks OTLP
+ * builds on this: the user-configured OTLP destination below, and kinds whose
+ * URL and (possibly async) headers come from their adapter. Plaintext HTTP is
+ * pinned to loopback and kept off Clubhouse's own ports either way.
+ */
+export function createOtlpExportersWith(input: OtlpExportersInput): DestinationExporters {
+  const httpAgentOptions = createAgentFactory(input.reservedPorts);
+  const traces = input.options('traces');
+  const metrics = input.options('metrics');
+  const logs = input.options('logs');
   return {
-    spanExporter: new OTLPTraceExporter({ url: signalUrl(opts.endpoint, 'traces'), headers, httpAgentOptions }),
+    spanExporter: new OTLPTraceExporter({ url: traces.url, headers: traces.headers, httpAgentOptions }),
     metricExporter: new OTLPMetricExporter({
-      url: signalUrl(opts.endpoint, 'metrics'),
-      headers,
+      url: metrics.url,
+      headers: metrics.headers,
       httpAgentOptions,
-      temporalityPreference: opts.temporality === 'delta'
+      temporalityPreference: input.temporality === 'delta'
         ? AggregationTemporalityPreference.DELTA
         : AggregationTemporalityPreference.CUMULATIVE,
     }),
-    logExporter: new OTLPLogExporter({ url: signalUrl(opts.endpoint, 'logs'), headers, httpAgentOptions }),
+    logExporter: new OTLPLogExporter({ url: logs.url, headers: logs.headers, httpAgentOptions }),
   };
+}
+
+export function createOtlpExporters(opts: OtlpDestinationOptions): DestinationExporters {
+  const headers = { ...(opts.headers ?? {}) };
+  return createOtlpExportersWith({
+    options: (signal) => ({ url: signalUrl(opts.endpoint, signal), headers }),
+    temporality: opts.temporality ?? 'cumulative',
+    reservedPorts: opts.reservedPorts,
+  });
 }

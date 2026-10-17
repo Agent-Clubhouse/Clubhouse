@@ -1,18 +1,25 @@
 /**
- * Settings actions behind window.clubhouse.telemetrySettings (spec §6.8).
- * Every action validates here, in main; the renderer is not trusted, and it
- * only ever receives a masked TelemetryStatus.
+ * Settings actions behind window.clubhouse.telemetrySettings (spec §6.8,
+ * §6.11). Every action validates here, in main; the renderer is not trusted,
+ * and it only ever receives a masked TelemetryStatus.
+ *
+ * Several destinations can be enabled at once, each with its own switch,
+ * level and preset. Consent names every host that will receive data.
  */
 import { app } from 'electron';
 import {
   TELEMETRY_CONSENT_VERSION,
+  TELEMETRY_FILTER_PRESETS,
   type OtlpHeaderInput,
   type OtlpTemporality,
   type TelemetryAcknowledgements,
   type TelemetryActionResult,
   type TelemetryConfirmation,
-  type TelemetryDestinationKind,
+  type TelemetryDestinationEntry,
+  type TelemetryDestinationHealth,
+  type TelemetryDestinationStatus,
   type TelemetryEnableResult,
+  type TelemetryFilterPreset,
   type TelemetryPreviewItem,
   type TelemetryStatus,
   type TelemetryTestReport,
@@ -22,16 +29,21 @@ import {
   describeDestinationError,
   disableTelemetry,
   enableTelemetry,
+  getActiveDestinations,
+  getDestinationStartError,
   getLastStartError,
   isRunning,
   restartTelemetry,
   sendTestEvent,
 } from './bootstrap';
+import { getAdapter, resolveEntry } from './destinations/registry';
 import { getRuntime } from './facade';
 import { createIdentity } from './ids';
 import { countOfflineItems, deleteOfflineData, getOfflineDir } from './offline';
 import { getSecureStorageState, readSecrets, updateSecrets, type TelemetrySecrets } from './secret-store';
 import {
+  enabledDestinations,
+  findDestination,
   getTelemetrySettings,
   HEADER_TOKEN_RE,
   isExperimentEnabled,
@@ -39,9 +51,9 @@ import {
   migrateLegacySecrets,
   parseConnectionString,
   RESERVED_HEADERS,
-  resolveDestination,
   updateTelemetrySettings,
   validateDestination,
+  withDestination,
   type TelemetrySettings,
 } from './settings';
 import type { ExportRecord } from './types';
@@ -59,10 +71,50 @@ async function prepare(): Promise<{ settings: TelemetrySettings; secrets: Teleme
   return { settings: getTelemetrySettings(), secrets: await readSecrets() };
 }
 
+function hostOf(entry: TelemetryDestinationEntry, settings: TelemetrySettings, secrets: TelemetrySecrets): string | undefined {
+  const { validation } = resolveEntry(entry, settings, secrets);
+  return 'host' in validation ? validation.host : undefined;
+}
+
+export function describeTestFailure(record: ExportRecord, kind: TelemetryDestinationEntry['kind']): string {
+  const specific = getAdapter(kind).describeFailure?.(record);
+  if (specific) return specific;
+  const s = record.httpStatus;
+  const code = record.errorCode ?? '';
+  if (s === 401 || s === 403) return `Rejected (HTTP ${s}). Check the headers.`;
+  if (s === 404) return 'Not found (HTTP 404). Check the base path: Clubhouse appends /v1/traces, /v1/metrics and /v1/logs.';
+  if (s === 415) return 'Rejected (HTTP 415). This backend does not accept OTLP over HTTP/JSON.';
+  if (s !== undefined) return `Rejected (HTTP ${s}).`;
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'Could not resolve the host. Check the address and any proxy settings.';
+  if (code === 'ECONNREFUSED') return 'Connection refused. Is the collector running?';
+  if (/CERT|SSL|TLS/i.test(code) || /certificate|tls/i.test(record.errorMessage ?? '')) {
+    return 'The TLS connection failed. Check the endpoint certificate.';
+  }
+  return record.errorMessage ? `Export failed: ${record.errorMessage}` : 'Export failed.';
+}
+
+function healthOf(entry: TelemetryDestinationEntry, consented: boolean): TelemetryDestinationHealth {
+  if (!entry.enabled || !consented) return { state: 'off' };
+  const active = getActiveDestinations().some((d) => d.id === entry.id);
+  if (!active) {
+    const message = getDestinationStartError(entry.id) ?? (isRunning() ? undefined : getLastStartError());
+    return message ? { state: 'error', message } : { state: 'pending' };
+  }
+  const h = getRuntime()?.destinationHealth()[entry.id];
+  if (!h) return { state: 'pending' };
+  if (h.lastFailure) {
+    return { state: 'failing', lastSuccessAt: h.lastSuccessAt, lastFailureAt: h.lastFailureAt, message: describeTestFailure(h.lastFailure, entry.kind) };
+  }
+  return { state: h.lastSuccessAt ? 'ok' : 'pending', lastSuccessAt: h.lastSuccessAt, lastFailureAt: h.lastFailureAt };
+}
+
 export async function getStatus(): Promise<TelemetryStatus> {
   const { settings, secrets } = await prepare();
-  const azureDest = resolveDestination({ ...settings, destination: 'azure' }, secrets);
-  const azureCs = azureDest?.kind === 'azure' ? azureDest.connectionString : undefined;
+  const consented = settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
+  const azureEntry = findDestination(settings, 'azure');
+  const otlpEntry = findDestination(settings, 'otlp');
+  const merged: TelemetrySecrets = { ...legacySecrets(settings), ...secrets };
+  const azureCs = merged.connectionString;
   const parts = azureCs ? parseConnectionString(azureCs) : {};
   let azureHost: string | undefined;
   try {
@@ -70,41 +122,59 @@ export async function getStatus(): Promise<TelemetryStatus> {
   } catch {
     azureHost = undefined;
   }
+  const otlp = otlpEntry?.otlp ?? { endpoint: '', headerNames: [], temporality: 'cumulative' as OtlpTemporality };
   let otlpHost: string | undefined;
   try {
-    otlpHost = settings.otlpEndpoint ? new URL(settings.otlpEndpoint).host : undefined;
+    otlpHost = otlp.endpoint ? new URL(otlp.endpoint).host : undefined;
   } catch {
     otlpHost = undefined;
   }
-  const headerValues: Record<string, string> = { ...(legacySecrets(settings).otlpHeaders ?? {}), ...(secrets.otlpHeaders ?? {}) };
+  const headerValues: Record<string, string> = merged.otlpHeaders ?? {};
+  const active = new Set(getActiveDestinations().map((d) => d.id));
+  const destinations: TelemetryDestinationStatus[] = settings.destinations.map((entry) => {
+    const { config } = resolveEntry(entry, settings, secrets);
+    return {
+      id: entry.id,
+      kind: entry.kind,
+      label: getAdapter(entry.kind).label,
+      enabled: entry.enabled && consented,
+      level: entry.level,
+      preset: entry.preset,
+      configured: config !== null,
+      host: hostOf(entry, settings, secrets),
+      active: active.has(entry.id),
+      health: healthOf(entry, consented),
+      offlineQueue: getAdapter(entry.kind).usesOfflineQueue === true,
+    };
+  });
+  const anyEnabled = destinations.some((d) => d.enabled);
   return {
     available: isExperimentEnabled(),
     // A Phase 1 file can be enabled without recorded consent; it isn't
     // exporting, so show it as off until the user turns it on (and consents).
-    enabled: settings.enabled && settings.consentVersion >= TELEMETRY_CONSENT_VERSION,
+    enabled: anyEnabled,
     running: isRunning(),
-    destination: settings.destination,
-    level: settings.level,
+    destinations,
     sampleRate: settings.sampleRate,
-    otlpTemporality: settings.otlpTemporality,
     azure: {
       configured: !!azureCs,
       ikeyLast4: parts.instrumentationkey ? last4(parts.instrumentationkey) : undefined,
       host: azureHost,
     },
     otlp: {
-      configured: !!settings.otlpEndpoint,
-      endpoint: settings.otlpEndpoint,
+      configured: !!otlp.endpoint,
+      endpoint: otlp.endpoint,
       host: otlpHost,
-      headers: settings.otlpHeaderNames.map((name) => ({ name, last4: last4(headerValues[name] ?? '') })),
-      confirmedHost: settings.otlpConfirmedHost,
+      headers: otlp.headerNames.map((name) => ({ name, last4: last4(headerValues[name] ?? '') })),
+      confirmedHost: otlpEntry?.confirmedHost,
+      temporality: otlp.temporality,
     },
     installId: settings.installId,
-    consentAccepted: settings.consentVersion >= TELEMETRY_CONSENT_VERSION,
+    consentAccepted: consented,
     secureStorage: getSecureStorageState(),
     weakStorageAccepted: settings.weakStorageAccepted === true,
-    offlineItems: await countOfflineItems(getOfflineDir()),
-    lastError: settings.enabled && settings.consentVersion >= TELEMETRY_CONSENT_VERSION ? getLastStartError() : undefined,
+    offlineItems: azureEntry ? await countOfflineItems(getOfflineDir()) : 0,
+    lastError: anyEnabled && !isRunning() ? getLastStartError() : undefined,
   };
 }
 
@@ -114,6 +184,24 @@ async function fail(reason: string, message: string): Promise<TelemetryActionRes
 
 async function done(): Promise<TelemetryActionResult> {
   return { ok: true, status: await getStatus() };
+}
+
+/**
+ * Bring the running exporter in line with the settings: stop when nothing is
+ * enabled, start when something newly is, restart otherwise. `clearOffline`
+ * drops Azure's queue (its resource changed or it was turned off), so nothing
+ * queued for one resource is ever sent to another (spec §6.8).
+ */
+async function applyRuntime({ clearOffline = false } = {}): Promise<boolean> {
+  const settings = getTelemetrySettings();
+  if (enabledDestinations(settings).length === 0 || settings.consentVersion < TELEMETRY_CONSENT_VERSION) {
+    if (isRunning()) await disableTelemetry();
+    else if (clearOffline) await deleteOfflineData().catch(() => {});
+    return true;
+  }
+  if (isRunning()) return restartTelemetry({ clearOffline });
+  if (clearOffline) await deleteOfflineData().catch(() => {});
+  return enableTelemetry();
 }
 
 /** Secure storage gate shared by both secret-saving actions. */
@@ -151,7 +239,7 @@ export async function saveAzureConnectionString(
   await updateSecrets((s) => ({ ...s, connectionString: connectionString.trim() }));
   if (storage === 'weak_ok') await updateTelemetrySettings((s) => ({ ...s, weakStorageAccepted: true }));
   // A new resource: nothing queued for the old one may be sent to it.
-  if (isRunning() && settings.destination === 'azure') await restartTelemetry({ clearOffline: true });
+  if (isRunning() && findDestination(settings, 'azure')?.enabled) await restartTelemetry({ clearOffline: true });
   return done();
 }
 
@@ -159,7 +247,7 @@ export async function saveAzureConnectionString(
  * Clearing must also remove a not-yet-migrated Phase 1 plaintext secret
  * (it stays in the file when secure storage is unavailable).
  */
-async function dropLegacyDestination(kind: TelemetryDestinationKind): Promise<void> {
+async function dropLegacyDestination(kind: TelemetryDestinationEntry['kind']): Promise<void> {
   const legacy = getTelemetrySettings().legacyDestination;
   if (!legacy || (legacy.kind === 'otlp' ? 'otlp' : 'azure') !== kind) return;
   await updateTelemetrySettings((s) => {
@@ -170,13 +258,11 @@ async function dropLegacyDestination(kind: TelemetryDestinationKind): Promise<vo
 }
 
 export async function clearAzureConnectionString(): Promise<TelemetryActionResult> {
-  const { settings } = await prepare();
-  if (settings.enabled && settings.destination === 'azure') {
-    await updateTelemetrySettings((s) => ({ ...s, enabled: false }));
-    await disableTelemetry();
-  }
+  await prepare();
+  await updateTelemetrySettings((s) => withDestination(s, 'azure', (d) => ({ ...d, enabled: false })));
   await updateSecrets((s) => ({ ...s, connectionString: undefined }));
   await dropLegacyDestination('azure');
+  await applyRuntime({ clearOffline: true });
   return done();
 }
 
@@ -187,6 +273,7 @@ export interface OtlpConfigInput {
 
 export async function saveOtlpConfig(input: OtlpConfigInput, ack?: TelemetryAcknowledgements): Promise<TelemetryEnableResult> {
   const { settings, secrets } = await prepare();
+  const entry = findDestination(settings, 'otlp');
   const names = input.headers.map((h) => h.name.trim());
   if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) {
     return fail('duplicate_header_name', 'Each header name can be used only once.');
@@ -215,95 +302,108 @@ export async function saveOtlpConfig(input: OtlpConfigInput, ack?: TelemetryAckn
   }
 
   // Changing the host of a running OTLP export needs a fresh confirmation.
-  const hostChanged = validation.host !== settings.otlpConfirmedHost;
-  const activeOtlp = settings.enabled && settings.destination === 'otlp';
+  const hostChanged = validation.host !== entry?.confirmedHost;
+  const activeOtlp = entry?.enabled === true && settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
   if (activeOtlp && hostChanged && ack?.host !== validation.host) {
-    return { ok: false, reason: 'needs_confirmation', needs: ['destination'], host: validation.host, status: await getStatus() };
+    return { ok: false, reason: 'needs_confirmation', needs: ['destination'], host: validation.host, hosts: [validation.host], status: await getStatus() };
   }
 
   await updateSecrets((s) => ({ ...s, otlpHeaders: Object.keys(values).length ? values : undefined }));
-  await updateTelemetrySettings((s) => ({
-    ...s,
-    otlpEndpoint: endpoint,
-    otlpHeaderNames: names,
-    otlpConfirmedHost: ack?.host === validation.host ? validation.host : s.otlpConfirmedHost,
-  }));
-  if (activeOtlp && isRunning()) await restartTelemetry({ clearOffline: hostChanged });
+  await updateTelemetrySettings((s) => withDestination(s, 'otlp', (d) => ({
+    ...d,
+    otlp: { endpoint, headerNames: names, temporality: d.otlp?.temporality ?? 'cumulative' },
+    confirmedHost: ack?.host === validation.host ? validation.host : d.confirmedHost,
+  })));
+  if (activeOtlp && isRunning()) await restartTelemetry();
   return done();
 }
 
 export async function clearOtlpConfig(): Promise<TelemetryActionResult> {
-  const { settings } = await prepare();
-  if (settings.enabled && settings.destination === 'otlp') {
-    await updateTelemetrySettings((s) => ({ ...s, enabled: false }));
-    await disableTelemetry();
-  }
+  await prepare();
   await updateSecrets((s) => ({ ...s, otlpHeaders: undefined }));
-  await updateTelemetrySettings((s) => ({ ...s, otlpEndpoint: '', otlpHeaderNames: [], otlpConfirmedHost: undefined }));
+  await updateTelemetrySettings((s) => withDestination(s, 'otlp', (d) => ({
+    ...d,
+    enabled: false,
+    otlp: { endpoint: '', headerNames: [], temporality: d.otlp?.temporality ?? 'cumulative' },
+    confirmedHost: undefined,
+  })));
   await dropLegacyDestination('otlp');
+  await applyRuntime();
   return done();
 }
 
 /**
- * Turn a destination on or off. Turning on asks (via `needs`) for consent the
- * first time, for the OTLP host on first use or after it changed, for a
- * switch away from the other destination, and for weak secret storage. The
- * renderer repeats the call with `ack` once the user confirms.
+ * Turn one destination on or off; the others keep running. Turning one on
+ * asks (via `needs`) for consent the first time, naming every host that will
+ * then receive data; for a user-entered host on first use or after it
+ * changed; and for weak secret storage. The renderer repeats the call with
+ * `ack` once the user confirms.
  */
 export async function setEnabled(
-  destination: TelemetryDestinationKind,
+  destinationId: string,
   enabled: boolean,
   ack: TelemetryAcknowledgements = {},
 ): Promise<TelemetryEnableResult> {
   const { settings, secrets } = await prepare();
+  const entry = findDestination(settings, destinationId);
+  if (!entry) return fail('unknown_destination', 'Unknown destination.');
   if (!enabled) {
-    if (settings.enabled && settings.destination === destination) {
-      await updateTelemetrySettings((s) => ({ ...s, enabled: false }));
-      await disableTelemetry();
-    }
+    await updateTelemetrySettings((s) => withDestination(s, destinationId, (d) => ({ ...d, enabled: false })));
+    await applyRuntime({ clearOffline: getAdapter(entry.kind).usesOfflineQueue === true });
     return done();
   }
   if (!isExperimentEnabled()) return fail('not_available', 'Telemetry export is an experimental feature. Turn it on in Experimental settings first.');
 
-  const dest = resolveDestination({ ...settings, destination }, secrets);
-  const validation = validateDestination(dest);
-  if (!dest || !('host' in validation)) {
-    return fail('not_configured', destination === 'azure' ? 'Save a connection string first.' : 'Save an OTLP endpoint first.');
+  const { config, validation } = resolveEntry(entry, settings, secrets);
+  if (!config || !('host' in validation)) {
+    return fail('not_configured', entry.kind === 'azure' ? 'Save a connection string first.' : 'Save an OTLP endpoint first.');
   }
 
+  const consented = settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
+  // Everything that will be sending once this is confirmed: other enabled
+  // destinations start too if consent is only being given now.
+  const hosts = [
+    ...enabledDestinations(settings).filter((d) => d.id !== destinationId).map((d) => hostOf(d, settings, secrets)),
+    validation.host,
+  ].filter((h): h is string => !!h);
+
   const needs: TelemetryConfirmation[] = [];
-  if (settings.consentVersion < TELEMETRY_CONSENT_VERSION && !ack.consent) needs.push('consent');
-  const switching = settings.enabled && settings.destination !== destination;
+  if (!consented && !ack.consent) needs.push('consent');
   const hostConfirmed = ack.host === validation.host;
-  if (switching && !hostConfirmed) needs.push('switch_destination');
-  if (destination === 'otlp' && settings.otlpConfirmedHost !== validation.host && !hostConfirmed && !switching) {
-    needs.push('destination');
-  }
-  const usesSecrets = destination === 'azure' || Object.keys(dest.kind === 'otlp' ? dest.headers ?? {} : {}).length > 0;
+  if (entry.kind === 'otlp' && entry.confirmedHost !== validation.host && !hostConfirmed) needs.push('destination');
+  const usesSecrets = entry.kind === 'azure' || Object.keys((config as { headers?: Record<string, string> }).headers ?? {}).length > 0;
   if (usesSecrets && getSecureStorageState() === 'weak' && !settings.weakStorageAccepted && !ack.weakStorage) {
     needs.push('weak_storage');
   }
   if (needs.length) {
-    return { ok: false, reason: 'needs_confirmation', needs, host: validation.host, status: await getStatus() };
+    return { ok: false, reason: 'needs_confirmation', needs, host: validation.host, hosts: [...new Set(hosts)], status: await getStatus() };
   }
 
   await updateTelemetrySettings((s) => ({
-    ...s,
-    enabled: true,
-    destination,
+    ...withDestination(s, destinationId, (d) => ({
+      ...d,
+      enabled: true,
+      confirmedHost: d.kind === 'otlp' ? validation.host : d.confirmedHost,
+    })),
+    // Phase 1 files can hold an enabled entry from before consent was asked;
+    // consenting now covers every host listed, so keep those as they are.
     consentVersion: Math.max(s.consentVersion, TELEMETRY_CONSENT_VERSION),
-    otlpConfirmedHost: destination === 'otlp' ? validation.host : s.otlpConfirmedHost,
     weakStorageAccepted: s.weakStorageAccepted || ack.weakStorage === true,
   }));
-  const ok = switching || isRunning() ? await restartTelemetry({ clearOffline: switching }) : await enableTelemetry();
-  if (!ok) return fail('start_failed', getLastStartError() ?? 'Telemetry failed to start.');
+  const ok = await applyRuntime();
+  if (!ok || !getActiveDestinations().some((d) => d.id === destinationId)) {
+    return fail('start_failed', getDestinationStartError(destinationId) ?? getLastStartError() ?? 'Telemetry failed to start.');
+  }
   return done();
 }
 
-export async function setLevel(level: TelemetryLevel): Promise<TelemetryActionResult> {
+/** A destination's level and preset. */
+export async function setFilter(destinationId: string, level: TelemetryLevel, preset: TelemetryFilterPreset): Promise<TelemetryActionResult> {
   if (!TELEMETRY_LEVELS.includes(level)) return fail('invalid_level', 'Unknown telemetry level.');
-  await prepare();
-  await updateTelemetrySettings((s) => ({ ...s, level }));
+  if (!TELEMETRY_FILTER_PRESETS.includes(preset)) return fail('invalid_preset', 'Unknown filter preset.');
+  const { settings } = await prepare();
+  if (!findDestination(settings, destinationId)) return fail('unknown_destination', 'Unknown destination.');
+  await updateTelemetrySettings((s) => withDestination(s, destinationId, (d) => ({ ...d, level, preset })));
   if (isRunning()) await restartTelemetry();
   return done();
 }
@@ -321,11 +421,17 @@ export async function setAdvanced(input: AdvancedInput): Promise<TelemetryAction
   if (input.otlpTemporality !== undefined && input.otlpTemporality !== 'cumulative' && input.otlpTemporality !== 'delta') {
     return fail('invalid_temporality', 'Unknown metric temporality.');
   }
-  await updateTelemetrySettings((s) => ({
-    ...s,
-    ...(input.sampleRate !== undefined ? { sampleRate: input.sampleRate } : {}),
-    ...(input.otlpTemporality !== undefined ? { otlpTemporality: input.otlpTemporality } : {}),
-  }));
+  await updateTelemetrySettings((s) => {
+    let next = { ...s, ...(input.sampleRate !== undefined ? { sampleRate: input.sampleRate } : {}) };
+    const temporality = input.otlpTemporality;
+    if (temporality !== undefined) {
+      next = withDestination(next, 'otlp', (d) => ({
+        ...d,
+        otlp: { endpoint: d.otlp?.endpoint ?? '', headerNames: d.otlp?.headerNames ?? [], temporality },
+      }));
+    }
+    return next;
+  });
   if (isRunning()) await restartTelemetry();
   return done();
 }
@@ -343,40 +449,26 @@ export async function clearOfflineQueue(): Promise<TelemetryActionResult> {
   return done();
 }
 
-/** Turns telemetry off and removes the install id, salt and offline queue. */
+/** Turns every destination off and removes the install id, salt and offline queue. */
 export async function deleteLocalData(): Promise<TelemetryActionResult> {
   await prepare();
-  await updateTelemetrySettings((s) => ({ ...s, enabled: false }));
+  await updateTelemetrySettings((s) => ({ ...s, destinations: s.destinations.map((d) => ({ ...d, enabled: false })) }));
   await disableTelemetry({ deleteLocalData: true });
   return done();
 }
 
-export function describeTestFailure(record: ExportRecord, destination: TelemetryDestinationKind): string {
-  const s = record.httpStatus;
-  const code = record.errorCode ?? '';
-  if (s === 400 && destination === 'azure') return 'Rejected (HTTP 400). Check the instrumentation key in the connection string.';
-  if ((s === 401 || s === 403) && destination === 'azure') {
-    return `Rejected (HTTP ${s}). Local authentication is probably disabled on this resource; Entra ID sign-in is not supported yet.`;
-  }
-  if (s === 401 || s === 403) return `Rejected (HTTP ${s}). Check the headers.`;
-  if (s === 404) return 'Not found (HTTP 404). Check the base path: Clubhouse appends /v1/traces, /v1/metrics and /v1/logs.';
-  if (s === 415) return 'Rejected (HTTP 415). This backend does not accept OTLP over HTTP/JSON.';
-  if (s !== undefined) return `Rejected (HTTP ${s}).`;
-  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'Could not resolve the host. Check the address and any proxy settings.';
-  if (code === 'ECONNREFUSED') return 'Connection refused. Is the collector running?';
-  if (/CERT|SSL|TLS/i.test(code) || /certificate|tls/i.test(record.errorMessage ?? '')) {
-    return 'The TLS connection failed. Check the endpoint certificate.';
-  }
-  return record.errorMessage ? `Export failed: ${record.errorMessage}` : 'Export failed.';
-}
-
-export async function sendTest(): Promise<TelemetryTestReport> {
+/** Send a test span and event to one destination only, and report its results. */
+export async function sendTest(destinationId: string): Promise<TelemetryTestReport> {
   const { settings } = await prepare();
-  if (!isRunning()) return { ok: false, message: 'Turn telemetry on to send a test event.' };
-  const result = await sendTestEvent();
+  const entry = findDestination(settings, destinationId);
+  if (!entry) return { ok: false, message: 'Unknown destination.' };
+  if (!isRunning() || !getActiveDestinations().some((d) => d.id === destinationId)) {
+    return { ok: false, message: 'Turn this destination on to send a test event.' };
+  }
+  const result = await sendTestEvent(destinationId);
   const failed = result.exports?.find((r) => !r.ok);
   if (failed) {
-    return { ok: false, latencyMs: result.latencyMs, httpStatus: failed.httpStatus, message: describeTestFailure(failed, settings.destination) };
+    return { ok: false, latencyMs: result.latencyMs, httpStatus: failed.httpStatus, message: describeTestFailure(failed, entry.kind) };
   }
   if (!result.exports?.length) return { ok: false, latencyMs: result.latencyMs, message: 'No response from the destination within 10 seconds.' };
   return { ok: true, latencyMs: result.latencyMs, message: 'Accepted' };

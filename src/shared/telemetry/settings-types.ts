@@ -7,26 +7,58 @@
  */
 import type { TelemetryLevel } from './attributes';
 
+/**
+ * Destination kinds. Each kind has an adapter in
+ * src/main/telemetry/destinations/registry.ts; adding a kind means adding it
+ * here, to `clubhouse.telemetry.destination` in the attribute registry, and
+ * one adapter.
+ */
 export type TelemetryDestinationKind = 'azure' | 'otlp';
+export const TELEMETRY_DESTINATION_KINDS: readonly TelemetryDestinationKind[] = ['azure', 'otlp'];
 export type OtlpTemporality = 'cumulative' | 'delta';
+
+/**
+ * What a destination receives on top of its level (spec §6.11).
+ * `all`: everything its level allows. `user_activity`: errors and exceptions,
+ * crashes, feature use and the agent and chat lifecycle, without Detailed
+ * high-volume spans and with almost no metrics.
+ */
+export type TelemetryFilterPreset = 'all' | 'user_activity';
+export const TELEMETRY_FILTER_PRESETS: readonly TelemetryFilterPreset[] = ['all', 'user_activity'];
+
+/** OTLP destination settings (no secrets; header values are in the secret store). */
+export interface OtlpDestinationSettings {
+  /** Base URL; `/v1/{traces,metrics,logs}` are appended. */
+  endpoint: string;
+  /** Header names only. */
+  headerNames: string[];
+  temporality: OtlpTemporality;
+}
+
+/** One configured destination. Several can be enabled at once. */
+export interface TelemetryDestinationEntry {
+  /** Stable id. One destination per kind today, so the id is the kind. */
+  id: string;
+  kind: TelemetryDestinationKind;
+  enabled: boolean;
+  level: TelemetryLevel;
+  preset: TelemetryFilterPreset;
+  /** Key of this destination's secrets in telemetry-secret.bin (defaults to the id). */
+  secretRef?: string;
+  /** The host the user last confirmed sending to (kinds with user-entered endpoints). */
+  confirmedHost?: string;
+  otlp?: OtlpDestinationSettings;
+}
 
 /** Bump when what we collect widens materially; forces re-consent. */
 export const TELEMETRY_CONSENT_VERSION = 1;
 
 /** Persisted in telemetry-settings.json (0600). Secrets live in telemetry-secret.bin. */
 export interface TelemetrySettingsFile {
-  enabled: boolean;
-  destination: TelemetryDestinationKind;
-  level: TelemetryLevel;
-  /** Advanced trace sample rate in (0, 1]. */
+  /** Every known destination, enabled or not, in display order. */
+  destinations: TelemetryDestinationEntry[];
+  /** Advanced trace sample rate in (0, 1]. Sampling is global, not per destination. */
   sampleRate: number;
-  /** OTLP base URL; `/v1/{traces,metrics,logs}` are appended. */
-  otlpEndpoint: string;
-  /** Header names only; values are in the secret store. */
-  otlpHeaderNames: string[];
-  otlpTemporality: OtlpTemporality;
-  /** The OTLP host the user last confirmed sending to. */
-  otlpConfirmedHost?: string;
   /** Highest consent version the user accepted (0 = never). */
   consentVersion: number;
   /** User accepted weak (basic_text) secret storage on Linux. */
@@ -39,16 +71,42 @@ export interface TelemetrySettingsFile {
 
 export type SecureStorageState = 'available' | 'weak' | 'unavailable';
 
+/** A destination's export health, from its own export results this session. */
+export interface TelemetryDestinationHealth {
+  /** off: not enabled. pending: enabled, nothing exported yet. error: could not start. */
+  state: 'off' | 'pending' | 'ok' | 'failing' | 'error';
+  lastSuccessAt?: number;
+  lastFailureAt?: number;
+  /** Plain-words reason for the last failure or start error. */
+  message?: string;
+}
+
+export interface TelemetryDestinationStatus {
+  id: string;
+  kind: TelemetryDestinationKind;
+  label: string;
+  enabled: boolean;
+  level: TelemetryLevel;
+  preset: TelemetryFilterPreset;
+  configured: boolean;
+  /** Where data goes, shown in consent and on the panel. */
+  host?: string;
+  /** Exporting in the current session. */
+  active: boolean;
+  health: TelemetryDestinationHealth;
+  /** Items wait in the offline queue when the network is down (Azure only). */
+  offlineQueue: boolean;
+}
+
 export interface TelemetryStatus {
   /** `experimental.telemetry` is on; the section is hidden otherwise. */
   available: boolean;
+  /** At least one destination is enabled (with consent recorded). */
   enabled: boolean;
   /** An exporter is running right now. */
   running: boolean;
-  destination: TelemetryDestinationKind;
-  level: TelemetryLevel;
+  destinations: TelemetryDestinationStatus[];
   sampleRate: number;
-  otlpTemporality: OtlpTemporality;
   azure: { configured: boolean; ikeyLast4?: string; host?: string };
   otlp: {
     configured: boolean;
@@ -56,6 +114,7 @@ export interface TelemetryStatus {
     host?: string;
     headers: Array<{ name: string; last4: string }>;
     confirmedHost?: string;
+    temporality: OtlpTemporality;
   };
   installId?: string;
   consentAccepted: boolean;
@@ -78,11 +137,20 @@ export interface TelemetryAcknowledgements {
   weakStorage?: boolean;
 }
 
-export type TelemetryConfirmation = 'consent' | 'destination' | 'weak_storage' | 'switch_destination';
+export type TelemetryConfirmation = 'consent' | 'destination' | 'weak_storage';
 
 export type TelemetryEnableResult =
   | TelemetryActionResult
-  | { ok: false; reason: 'needs_confirmation'; needs: TelemetryConfirmation[]; host?: string; status: TelemetryStatus };
+  | {
+      ok: false;
+      reason: 'needs_confirmation';
+      needs: TelemetryConfirmation[];
+      /** The host being turned on (the one `ack.host` must name). */
+      host?: string;
+      /** Every host that would receive data once this is confirmed, for the consent dialog. */
+      hosts?: string[];
+      status: TelemetryStatus;
+    };
 
 export interface OtlpHeaderInput {
   name: string;
@@ -99,6 +167,8 @@ export interface TelemetryTestReport {
 
 export interface TelemetryPreviewItem {
   signal: 'traces' | 'metrics' | 'logs';
+  /** The destination the item was sent to. */
+  destination?: string;
   name: string;
   time: number;
   attributes: Record<string, string | number | boolean>;

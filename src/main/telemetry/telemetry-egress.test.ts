@@ -22,29 +22,28 @@ const dnsCjs = createRequire(__filename)('dns') as typeof import('dns');
 const originalLookup = dnsCjs.lookup;
 
 interface FakeSettings {
-  enabled: boolean;
-  level: 'errors' | 'standard' | 'detailed';
-  destination: 'azure' | 'otlp';
+  destinations: Array<Record<string, unknown>>;
   sampleRate: number;
-  otlpEndpoint: string;
-  otlpHeaderNames: string[];
-  otlpTemporality: 'cumulative' | 'delta';
   consentVersion: number;
   installId?: string;
   hashSalt?: string;
   lastVersion?: string;
 }
 
-const BASE: FakeSettings = {
-  enabled: false,
-  level: 'standard',
-  destination: 'azure',
-  sampleRate: 1,
-  otlpEndpoint: '',
-  otlpHeaderNames: [],
-  otlpTemporality: 'cumulative',
-  consentVersion: 1,
-};
+/** Settings with the given destinations enabled (current multi-destination shape). */
+function fakeSettings(enabled: { azure?: boolean; otlp?: { endpoint: string; headerNames?: string[] } }): FakeSettings {
+  return {
+    destinations: [
+      { id: 'azure', kind: 'azure', enabled: enabled.azure === true, level: 'standard', preset: 'all' },
+      {
+        id: 'otlp', kind: 'otlp', enabled: !!enabled.otlp, level: 'standard', preset: 'all',
+        otlp: { endpoint: enabled.otlp?.endpoint ?? '', headerNames: enabled.otlp?.headerNames ?? [], temporality: 'cumulative' },
+      },
+    ],
+    sampleRate: 1,
+    consentVersion: 1,
+  };
+}
 
 const state = vi.hoisted(() => ({
   settings: {} as Record<string, unknown>,
@@ -79,7 +78,7 @@ vi.mock('../services/log-service', () => ({
   },
 }));
 
-import { disableTelemetry, initTelemetry, recordAppSession, sendTestEvent, whenStarted } from './bootstrap';
+import { disableTelemetry, getActiveDestinations, initTelemetry, recordAppSession, sendTestEvent, whenStarted } from './bootstrap';
 import { tel } from './facade';
 import { createAzureExporters, isOneSettingsNeutralized, STATSBEAT_ENV_FLAGS } from './destinations/azure';
 import { createOtlpExporters } from './destinations/otlp';
@@ -213,8 +212,10 @@ async function exerciseAllSignals(): Promise<void> {
   expect(await whenStarted()).toBe(true);
   recordAppSession();
   tel.exception(new Error(`failed reading ${os.homedir()}/secret on ${os.hostname()}`), { origin: 'main', handled: true });
-  const result = await sendTestEvent(10_000);
-  expect(result.ok).toBe(true);
+  for (const id of getActiveDestinations().map((d) => d.id)) {
+    const result = await sendTestEvent(id, 10_000);
+    expect(result.ok).toBe(true);
+  }
 }
 
 describe('telemetry egress allowlist', () => {
@@ -238,7 +239,7 @@ describe('telemetry egress allowlist', () => {
         else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev;
       });
     }
-    state.settings = { ...BASE, enabled: true, destination: 'azure' };
+    state.settings = fakeSettings({ azure: true }) as unknown as Record<string, unknown>;
     state.secrets = {
       connectionString: `InstrumentationKey=00000000-0000-4000-8000-000000000001;IngestionEndpoint=https://127.0.0.1:${port}/`,
     };
@@ -264,7 +265,7 @@ describe('telemetry egress allowlist', () => {
 
   it('OTLP destination only contacts the configured endpoint, as HTTP/JSON', async () => {
     port = httpPort;
-    state.settings = { ...BASE, enabled: true, destination: 'otlp', otlpEndpoint: `http://127.0.0.1:${port}`, otlpHeaderNames: ['x-api-key'] };
+    state.settings = fakeSettings({ otlp: { endpoint: `http://127.0.0.1:${port}`, headerNames: ['x-api-key'] } }) as unknown as Record<string, unknown>;
     state.secrets = { otlpHeaders: { 'x-api-key': 'k' } };
 
     await exerciseAllSignals();
@@ -285,7 +286,7 @@ describe('telemetry egress allowlist', () => {
 describe('OTLP loopback hardening', () => {
   it('resolves localhost through the pinned lookup, never the system resolver', async () => {
     port = httpPort;
-    state.settings = { ...BASE, enabled: true, destination: 'otlp', otlpEndpoint: `http://localhost:${port}` };
+    state.settings = fakeSettings({ otlp: { endpoint: `http://localhost:${port}` } }) as unknown as Record<string, unknown>;
     state.secrets = {};
     await exerciseAllSignals();
     expect(received.length).toBeGreaterThan(0);

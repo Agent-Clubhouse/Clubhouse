@@ -267,6 +267,7 @@ export const ATTR = {
   // Telemetry self-observation (§4.15)
   telemetrySignal: enumAttr('clubhouse.telemetry.signal', ['traces', 'metrics', 'logs']),
   httpClass: enumAttr('clubhouse.http.class', ['2xx', '3xx', '4xx', '5xx', 'network', 'timeout']),
+  /** A destination kind. Add new kinds here too (settings-types.ts TelemetryDestinationKind). */
   telemetryDestination: enumAttr('clubhouse.telemetry.destination', ['azure', 'otlp']),
 
   // Agents (§5.1 examples; instrumented from Phase 3)
@@ -1064,8 +1065,8 @@ export const METRICS = {
     kind: 'counter',
     unit: '{export}',
     level: 'errors',
-    description: 'Failed exporter batches',
-    attributes: ['clubhouse.telemetry.signal', 'clubhouse.http.class'],
+    description: 'Failed exporter batches, by signal, HTTP class and destination kind',
+    attributes: ['clubhouse.telemetry.signal', 'clubhouse.http.class', 'clubhouse.telemetry.destination'],
   },
   // Workspace (§4.7–4.10, Phase 5)
   'clubhouse.projects.count': {

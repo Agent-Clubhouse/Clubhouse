@@ -29,22 +29,23 @@ import { buildResourceAttributes, type ResourceInputs } from './resource';
 import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { createScrubber } from './scrubber';
 import {
+  enabledDestinations,
   getTelemetrySettings,
   hasDestinationConfigured,
   isExperimentEnabled,
   migrateLegacySecrets,
-  normalizeLevel,
   normalizeSampleRate,
-  resolveDestination,
   updateTelemetrySettings,
-  validateDestination,
-  type DestinationConfig,
   type TelemetrySettings,
 } from './settings';
 import { readSecrets } from './secret-store';
 import type { ExportRecord } from './types';
-import { loadAzureDestination, loadOtlpDestination, loadSdk } from './lazy-chunks';
-import type { DestinationExporters } from './destinations/types';
+import { loadSdk } from './lazy-chunks';
+import type { SdkDestination } from './destinations/types';
+import { getAdapter, resolveEntry } from './destinations/registry';
+import { recordingLevel } from './filters';
+import type { TelemetryLevel } from '../../shared/telemetry/attributes';
+import type { TelemetryDestinationKind } from '../../shared/telemetry/settings-types';
 import { setStartupKind } from './lifecycle';
 
 const LOG_NS = 'core:telemetry';
@@ -54,19 +55,21 @@ const instanceId = randomUUID();
 
 let starting: Promise<boolean> | null = null;
 let pruneTimer: NodeJS.Timeout | null = null;
-let activeDestination: DestinationConfig['kind'] | null = null;
+/** Destinations exporting in the current runtime. */
+let activeDestinations: Array<{ id: string; kind: TelemetryDestinationKind }> = [];
+/** Per destination id: why it could not start this time. */
+let destinationStartErrors = new Map<string, string>();
 
 let lastStartError: string | undefined;
 
 /**
- * Synchronous pre-check, safe before `ready`: the flag is on, telemetry is
- * enabled and a destination looks configured. Secrets are decrypted and
+ * Synchronous pre-check, safe before `ready`: the flag is on, consent is
+ * recorded and some enabled destination looks configured. Secrets are decrypted and
  * validated in start(), after `ready`.
  */
 export function isTelemetryConfigured(settings: TelemetrySettings = getTelemetrySettings()): boolean {
   return (
     isExperimentEnabled() &&
-    settings.enabled === true &&
     // Consent is recorded before anything is exported. Phase 1 files predate
     // it (consentVersion 0), so those users are asked once in Settings.
     settings.consentVersion >= TELEMETRY_CONSENT_VERSION &&
@@ -83,8 +86,19 @@ export function isRunning(): boolean {
   return getRuntime() !== null;
 }
 
-export function getActiveDestination(): DestinationConfig['kind'] | null {
-  return activeDestination;
+/** Destinations exporting right now, in settings order. */
+export function getActiveDestinations(): ReadonlyArray<{ id: string; kind: TelemetryDestinationKind }> {
+  return activeDestinations;
+}
+
+/** Why an enabled destination is not exporting, if it failed to start. */
+export function getDestinationStartError(id: string): string | undefined {
+  return destinationStartErrors.get(id);
+}
+
+/** The level the SDK records at for these settings: the most verbose enabled destination. */
+export function configuredRecordingLevel(settings: TelemetrySettings = getTelemetrySettings()): TelemetryLevel {
+  return recordingLevel(enabledDestinations(settings).map((d) => d.level));
 }
 
 const START_ERRORS: Record<string, string> = {
@@ -160,20 +174,6 @@ async function ensureIdentity(settings: TelemetrySettings): Promise<TelemetryIde
   return identity;
 }
 
-async function loadExporters(dest: DestinationConfig, settings: TelemetrySettings): Promise<DestinationExporters> {
-  if (dest.kind === 'azure') {
-    const { createAzureExporters } = await loadAzureDestination();
-    return createAzureExporters({ connectionString: dest.connectionString, storageDirectory: getOfflineDir() });
-  }
-  const { createOtlpExporters } = await loadOtlpDestination();
-  return createOtlpExporters({
-    endpoint: dest.endpoint,
-    headers: dest.headers,
-    reservedPorts: clubhousePorts,
-    temporality: settings.otlpTemporality,
-  });
-}
-
 function startOfflinePrune(): void {
   stopOfflinePrune();
   const prune = () => {
@@ -204,16 +204,44 @@ async function start(): Promise<boolean> {
       });
     });
     const settings = getTelemetrySettings();
-    const destination = resolveDestination(settings, await readSecrets());
-    const validation = validateDestination(destination);
-    if (!destination || !validation.ok) {
-      lastStartError = describeDestinationError('reason' in validation ? validation.reason : 'missing_destination');
+    const secrets = await readSecrets();
+    const errors = new Map<string, string>();
+    const ctx = { offlineDir: getOfflineDir(), reservedPorts: clubhousePorts };
+    // Each enabled destination starts on its own: one that is misconfigured
+    // or fails to load never stops the others.
+    const built = await Promise.all(enabledDestinations(settings).map(async (entry): Promise<SdkDestination | null> => {
+      const { adapter, config, validation } = resolveEntry(entry, settings, secrets);
+      if (!config || !validation.ok) {
+        errors.set(entry.id, describeDestinationError('reason' in validation ? validation.reason : 'missing_destination'));
+        return null;
+      }
+      try {
+        const exporters = await adapter.createExporters(config, entry, ctx);
+        return {
+          id: entry.id,
+          kind: entry.kind,
+          exporters,
+          filter: { level: entry.level, preset: entry.preset },
+          copyResourceAttributes: adapter.copyResourceAttributes,
+        };
+      } catch (err) {
+        errors.set(entry.id, 'This destination failed to start. See the local log for details.');
+        appLog(LOG_NS, 'warn', 'Telemetry destination failed to start', {
+          meta: { destination: entry.id, error: err instanceof Error ? err.message : String(err) },
+        });
+        return null;
+      }
+    }));
+    const destinations = built.filter((d): d is SdkDestination => d !== null);
+    destinationStartErrors = errors;
+    if (destinations.length === 0) {
+      lastStartError = errors.values().next().value ?? describeDestinationError('missing_destination');
       abortPending();
       return false;
     }
     const identity = await ensureIdentity(settings);
-    const level = normalizeLevel(settings.level);
-    const [{ startSdk }, exporters] = await Promise.all([loadSdk(), loadExporters(destination, settings)]);
+    const level = recordingLevel(destinations.map((d) => d.filter.level));
+    const { startSdk } = await loadSdk();
 
     const homeDir = os.homedir();
     let username: string | undefined;
@@ -226,7 +254,7 @@ async function start(): Promise<boolean> {
     const runtime = startSdk({
       level,
       sampleRate: normalizeSampleRate(settings.sampleRate),
-      exporters,
+      destinations,
       hashSalt: Buffer.from(identity.hashSalt, 'base64'),
       scrub: createScrubber({ homeDir, username, hostname: os.hostname() }),
       resourceAttributes: buildResourceAttributes({
@@ -245,12 +273,12 @@ async function start(): Promise<boolean> {
       }),
       diagLog: (lvl, message) => appLog(LOG_NS, lvl, `OpenTelemetry: ${message}`),
     });
-    activeDestination = destination.kind;
+    activeDestinations = destinations.map((d) => ({ id: d.id, kind: d.kind as TelemetryDestinationKind }));
     lastStartError = undefined;
     setRuntime(runtime);
-    if (destination.kind === 'azure') startOfflinePrune();
+    if (activeDestinations.some((d) => getAdapter(d.kind).usesOfflineQueue)) startOfflinePrune();
     appLog(LOG_NS, 'info', 'Telemetry export started', {
-      meta: { destination: destination.kind, level, initMs: Date.now() - t0 },
+      meta: { destinations: activeDestinations.map((d) => d.id).join(','), level, initMs: Date.now() - t0 },
     });
     return true;
   } catch (err) {
@@ -330,8 +358,15 @@ export async function enableTelemetry(): Promise<boolean> {
     starting = null;
   });
   const ok = await starting;
-  if (ok) tel.event('clubhouse.telemetry.enabled', activeDestination ? [ATTR.telemetryDestination(activeDestination)] : []);
+  if (ok) emitEnabled();
   return ok;
+}
+
+/** `clubhouse.telemetry.enabled`, once per active destination kind (spec §6.11). */
+function emitEnabled(): void {
+  for (const kind of new Set(activeDestinations.map((d) => d.kind))) {
+    tel.event('clubhouse.telemetry.enabled', [ATTR.telemetryDestination(kind)]);
+  }
 }
 
 /**
@@ -349,7 +384,7 @@ async function stopRuntime({ emitDisabled, clearOffline }: { emitDisabled: boole
   }
   abortPending();
   stopOfflinePrune();
-  activeDestination = null;
+  activeDestinations = [];
   if (clearOffline) await deleteOfflineData().catch(() => {});
 }
 
@@ -366,7 +401,9 @@ export async function restartTelemetry({ clearOffline = false } = {}): Promise<b
   starting = start().finally(() => {
     starting = null;
   });
-  return starting;
+  const ok = await starting;
+  if (ok) emitEnabled();
+  return ok;
 }
 
 export async function disableTelemetry({ deleteLocalData = false } = {}): Promise<void> {
@@ -391,17 +428,21 @@ export interface TestEventResult {
 
 /**
  * `clubhouse.telemetry.test` (spec §6.8): a span and an event, then a flush.
- * The Settings "Send test event" button reports the exporter results.
+ * Both carry the target's kind in `clubhouse.telemetry.destination`, and the
+ * destination filters let them through only to that destination, so each
+ * destination's "Send test event" tests just that destination.
  */
-export async function sendTestEvent(timeoutMs = 10_000): Promise<TestEventResult> {
+export async function sendTestEvent(destinationId: string, timeoutMs = 10_000): Promise<TestEventResult> {
   if (starting) await starting;
   const rt = getRuntime();
-  if (!rt) return { ok: false, reason: 'not_enabled' };
+  const target = activeDestinations.find((d) => d.id === destinationId);
+  if (!rt || !target) return { ok: false, reason: 'not_enabled' };
+  const attrs = [ATTR.telemetryDestination(target.kind)];
   const t0 = Date.now();
-  tel.flow('clubhouse.telemetry.test', {}, (): void => undefined);
-  tel.event('clubhouse.telemetry.test', activeDestination ? [ATTR.telemetryDestination(activeDestination)] : []);
+  tel.flow('clubhouse.telemetry.test', { attrs }, (): void => undefined);
+  tel.event('clubhouse.telemetry.test', attrs);
   await rt.forceFlush(timeoutMs);
-  const exports = rt.recentExports(t0).filter((r) => r.signal !== 'metrics');
+  const exports = rt.recentExports(t0).filter((r) => r.signal !== 'metrics' && r.destination === destinationId);
   return { ok: exports.length > 0 && exports.every((r) => r.ok), latencyMs: Date.now() - t0, exports };
 }
 

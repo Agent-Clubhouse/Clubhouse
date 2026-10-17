@@ -47,7 +47,7 @@ import {
 } from './telemetry/lifecycle';
 import { onRendererReady } from './telemetry/renderer-bridge';
 import { registerTelemetryRendererHandlers } from './ipc/telemetry-renderer-handlers';
-import { getTelemetrySettings } from './telemetry/settings';
+import { configuredRecordingLevel } from './telemetry/bootstrap';
 import { installAgentTelemetry } from './telemetry/agent-telemetry';
 import { installChatTelemetry } from './telemetry/chat-telemetry';
 import { installIpcTelemetry } from './telemetry/ipc-telemetry';
@@ -85,7 +85,7 @@ initTelemetry();
 // Both are inert while telemetry is off.
 registerTelemetryRendererHandlers({
   getMainWebContentsId: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : undefined),
-  getConfiguredLevel: () => getTelemetrySettings().level,
+  getConfiguredLevel: () => configuredRecordingLevel(),
 });
 installCrashTelemetry();
 installLifecycleTelemetry();

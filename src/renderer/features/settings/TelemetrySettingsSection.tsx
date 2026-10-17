@@ -1,8 +1,8 @@
 /**
  * Settings → Logging → Telemetry export (docs/telemetry-otel-spec.md §6.8).
  *
- * The App Insights panel leads with only the toggle, the connection string
- * and Send test event. OTLP lives in its own "Other destinations" panel.
+ * Each destination has its own panel with its own switch, level, preset,
+ * health and Send test event; several can be on at once (spec §6.11).
  * Secrets never come back from main: the status carries masked forms only.
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -14,8 +14,9 @@ import type {
   OtlpHeaderInput,
   TelemetryAcknowledgements,
   TelemetryConfirmation,
-  TelemetryDestinationKind,
+  TelemetryDestinationStatus,
   TelemetryEnableResult,
+  TelemetryFilterPreset,
   TelemetryPreviewItem,
   TelemetryStatus,
   TelemetryTestReport,
@@ -26,6 +27,27 @@ const LEVELS: Array<{ id: TelemetryLevel; label: string; desc: string }> = [
   { id: 'standard', label: 'Standard', desc: 'Errors plus lifecycle, flows and metrics' },
   { id: 'detailed', label: 'Detailed', desc: 'Standard plus high-volume detail' },
 ];
+
+const PRESETS: Array<{ id: TelemetryFilterPreset; label: string; desc: string }> = [
+  { id: 'all', label: 'Everything at this level', desc: 'All flows, events and metrics the level allows' },
+  {
+    id: 'user_activity',
+    label: 'User activity and errors',
+    desc: 'Errors, crashes, feature use, agent and chat lifecycle and permission decisions; no high-volume spans and almost no metrics',
+  },
+];
+
+function healthText(d: TelemetryDestinationStatus): { text: string; bad: boolean } | null {
+  const h = d.health;
+  const at = (ms?: number) => (ms ? new Date(ms).toLocaleTimeString() : '');
+  switch (h.state) {
+    case 'ok': return { text: `Sending · last export ${at(h.lastSuccessAt)}`, bad: false };
+    case 'pending': return { text: 'On · waiting for the first export', bad: false };
+    case 'failing': return { text: `Failing: ${h.message ?? 'export failed'}`, bad: true };
+    case 'error': return { text: `Not sending: ${h.message ?? 'could not start'}`, bad: true };
+    default: return null;
+  }
+}
 
 /** Spec §5.5. Shown in the consent step and in "Learn what's sent". */
 export const NEVER_SENT = [
@@ -51,8 +73,10 @@ const isLoopbackHost = (host?: string) => !!host && /^(localhost|127\.0\.0\.1|\[
 interface PendingConfirm {
   needs: TelemetryConfirmation[];
   host?: string;
-  /** Destination the user is turning on or saving. */
-  target: TelemetryDestinationKind;
+  /** Every host that would receive data, for the consent step. */
+  hosts?: string[];
+  /** Destination id the user is turning on or saving. */
+  target: string;
   retry: (ack: TelemetryAcknowledgements) => Promise<TelemetryEnableResult>;
   onSuccess?: (status: TelemetryStatus) => void;
 }
@@ -68,9 +92,9 @@ const linkClass = 'text-xs text-ctp-link hover:underline cursor-pointer';
 
 export function TelemetrySettingsSection() {
   const [status, setStatus] = useState<TelemetryStatus | null>(null);
-  const [error, setError] = useState<{ panel: TelemetryDestinationKind | 'general'; message: string } | null>(null);
+  const [error, setError] = useState<{ panel: string; message: string } | null>(null);
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
-  const [test, setTest] = useState<{ panel: TelemetryDestinationKind; report: TelemetryTestReport | 'sending' } | null>(null);
+  const [test, setTest] = useState<{ panel: string; report: TelemetryTestReport | 'sending' } | null>(null);
   const [preview, setPreview] = useState<TelemetryPreviewItem[] | null>(null);
   const [learnOpen, setLearnOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -106,8 +130,8 @@ export function TelemetrySettingsSection() {
   }, [syncOtlpForm]);
 
   const handleResult = useCallback(async (
-    panel: TelemetryDestinationKind | 'general',
-    target: TelemetryDestinationKind,
+    panel: string,
+    target: string,
     run: (ack: TelemetryAcknowledgements) => Promise<TelemetryEnableResult>,
     ack: TelemetryAcknowledgements = {},
     onSuccess?: (status: TelemetryStatus) => void,
@@ -120,7 +144,7 @@ export function TelemetrySettingsSection() {
       return true;
     }
     if ('needs' in result) {
-      setConfirm({ needs: result.needs, host: result.host, target, retry: run, onSuccess });
+      setConfirm({ needs: result.needs, host: result.host, hosts: result.hosts, target, retry: run, onSuccess });
       return false;
     }
     setError({ panel, message: 'message' in result ? result.message : 'Something went wrong.' });
@@ -129,15 +153,18 @@ export function TelemetrySettingsSection() {
 
   if (!status || !status.available) return null;
 
-  const azureOn = status.enabled && status.destination === 'azure';
-  const otlpOn = status.enabled && status.destination === 'otlp';
+  const dest = (id: string) => status.destinations.find((d) => d.id === id);
+  const azure = dest('azure');
+  const otlp = dest('otlp');
+  const azureOn = azure?.enabled === true;
+  const otlpOn = otlp?.enabled === true;
 
   const confirmAndRetry = async () => {
     if (!confirm) return;
     const ack: TelemetryAcknowledgements = {};
     if (confirm.needs.includes('consent')) ack.consent = true;
     if (confirm.needs.includes('weak_storage')) ack.weakStorage = true;
-    if (confirm.needs.includes('destination') || confirm.needs.includes('switch_destination')) ack.host = confirm.host;
+    if (confirm.needs.includes('destination') || confirm.needs.includes('consent')) ack.host = confirm.host;
     const pending = confirm;
     setConfirm(null);
     await handleResult(pending.target, pending.target, pending.retry, ack, pending.onSuccess);
@@ -153,14 +180,14 @@ export function TelemetrySettingsSection() {
   const saveOtlp = () => handleResult('otlp', 'otlp', (ack) =>
     api().saveOtlp({ endpoint, headers: headers.map(({ name, value }) => ({ name, value: value || undefined })) }, ack), {}, syncOtlpForm);
 
-  const runTest = async (panel: TelemetryDestinationKind) => {
+  const runTest = async (panel: string) => {
     setTest({ panel, report: 'sending' });
-    setTest({ panel, report: await api().sendTest() });
+    setTest({ panel, report: await api().sendTest(panel) });
   };
 
   const openPreview = async () => setPreview(await api().getPreview());
 
-  const testLine = (panel: TelemetryDestinationKind) => {
+  const testLine = (panel: string) => {
     if (!test || test.panel !== panel) return null;
     if (test.report === 'sending') return <span className="text-xs text-ctp-subtext0">Sending…</span>;
     const r = test.report;
@@ -172,7 +199,7 @@ export function TelemetrySettingsSection() {
     );
   };
 
-  const errorLine = (panel: TelemetryDestinationKind | 'general') =>
+  const errorLine = (panel: string) =>
     error?.panel === panel ? <p className="text-xs text-ctp-red mt-2" role="alert">{error.message}</p> : null;
 
   return (
@@ -180,7 +207,7 @@ export function TelemetrySettingsSection() {
       <div className="border-t border-surface-0 mb-6" />
       <h2 className="text-lg font-semibold text-ctp-text mb-1">Telemetry export</h2>
       <p className="text-sm text-ctp-subtext0 mb-1">
-        Send anonymized diagnostics to your own Azure Application Insights. Nothing is sent to the Clubhouse maintainers. Off by default.
+        Send anonymized diagnostics to your own Azure Application Insights, an OpenTelemetry backend, or both, each with its own level. Nothing is sent to the Clubhouse maintainers. Off by default.
       </p>
       <p className="text-xs text-ctp-subtext0 mb-4">
         Telemetry is separate from local logging, and each has its own switch.{' '}
@@ -233,46 +260,31 @@ export function TelemetrySettingsSection() {
           )}
           {errorLine('azure')}
         </div>
+        {azure && (
+          <DestinationControls
+            dest={azure}
+            onFilter={(level, preset) => void handleResult('azure', 'azure', () => api().setFilter('azure', level, preset))}
+          />
+        )}
         <div className="flex items-center gap-3">
-          <button type="button" className={buttonClass} disabled={!azureOn || !status.running} onClick={() => void runTest('azure')}>Send test event</button>
+          <button type="button" className={buttonClass} disabled={!azure?.active} onClick={() => void runTest('azure')}>Send test event</button>
           {testLine('azure')}
         </div>
       </section>
 
       {status.enabled && status.lastError && <p className="text-xs text-ctp-red mt-2" role="alert">{status.lastError}</p>}
 
-      {/* Level, preview */}
-      <div className="mt-5">
-        <div className="text-sm text-ctp-text font-medium mb-3">Level</div>
-        <div className="grid grid-cols-3 gap-3" role="radiogroup" aria-label="Telemetry level">
-          {LEVELS.map((level) => {
-            const selected = status.level === level.id;
-            return (
-              <button
-                key={level.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => void handleResult('general', status.destination, () => api().setLevel(level.id))}
-                className={`rounded-md border px-3 py-2 text-left transition-colors cursor-pointer ${selected ? 'border-ctp-accent bg-surface-0' : 'border-surface-1 bg-surface-0/50 hover:border-surface-2'}`}
-              >
-                <div className="text-sm text-ctp-text font-medium">{level.label}</div>
-                <div className="text-xs text-ctp-subtext0 mt-0.5">{level.desc}</div>
-              </button>
-            );
-          })}
-        </div>
-        <div className="mt-3">
-          <button type="button" className={linkClass} onClick={() => void openPreview()}>Preview data</button>
-          {status.destination === 'azure' && (
-            <>
-              <span className="text-xs text-ctp-subtext0 mx-2">·</span>
-              <button type="button" className={linkClass} onClick={() => void window.clubhouse.app.openExternalUrl(WORKBOOK_DOCS_URL)}>
-                Get the Clubhouse Workbook
-              </button>
-            </>
-          )}
-        </div>
+      {/* Preview, Workbook */}
+      <div className="mt-3">
+        <button type="button" className={linkClass} onClick={() => void openPreview()}>Preview data</button>
+        {azureOn && (
+          <>
+            <span className="text-xs text-ctp-subtext0 mx-2">·</span>
+            <button type="button" className={linkClass} onClick={() => void window.clubhouse.app.openExternalUrl(WORKBOOK_DOCS_URL)}>
+              Get the Clubhouse Workbook
+            </button>
+          </>
+        )}
         {errorLine('general')}
       </div>
 
@@ -280,7 +292,7 @@ export function TelemetrySettingsSection() {
       <section className="rounded-md border border-surface-1 px-4 py-4 space-y-4 mt-6" aria-label="Other destinations">
         <div>
           <div className="text-sm text-ctp-text font-medium">Other destinations</div>
-          <div className="text-xs text-ctp-subtext0 mt-0.5">Send to an OpenTelemetry (OTLP) backend instead of Application Insights.</div>
+          <div className="text-xs text-ctp-subtext0 mt-0.5">Send to an OpenTelemetry (OTLP) backend, on its own or alongside Application Insights.</div>
         </div>
         <div className="flex items-center justify-between">
           <div className="text-sm text-ctp-text">Send to OTLP</div>
@@ -337,9 +349,15 @@ export function TelemetrySettingsSection() {
           {status.otlp.configured && (
             <button type="button" className={buttonClass} onClick={() => void handleResult('otlp', 'otlp', () => api().clearOtlp(), {}, syncOtlpForm)}>Clear</button>
           )}
-          <button type="button" className={buttonClass} disabled={!otlpOn || !status.running} onClick={() => void runTest('otlp')}>Send test event</button>
+          <button type="button" className={buttonClass} disabled={!otlp?.active} onClick={() => void runTest('otlp')}>Send test event</button>
           {testLine('otlp')}
         </div>
+        {otlp && (
+          <DestinationControls
+            dest={otlp}
+            onFilter={(level, preset) => void handleResult('otlp', 'otlp', () => api().setFilter('otlp', level, preset))}
+          />
+        )}
         {errorLine('otlp')}
       </section>
 
@@ -362,7 +380,7 @@ export function TelemetrySettingsSection() {
             <button
               type="button"
               className={buttonClass}
-              onClick={() => void handleResult('general', status.destination, () => api().setAdvanced({ sampleRate: Number(sampleRate) }), {}, (s) => setSampleRate(String(s.sampleRate)))}
+              onClick={() => void handleResult('general', 'general', () => api().setAdvanced({ sampleRate: Number(sampleRate) }), {}, (s) => setSampleRate(String(s.sampleRate)))}
             >
               Apply
             </button>
@@ -374,8 +392,8 @@ export function TelemetrySettingsSection() {
                 <input
                   type="radio"
                   name="telemetry-temporality"
-                  checked={status.otlpTemporality === t}
-                  onChange={() => void handleResult('general', status.destination, () => api().setAdvanced({ otlpTemporality: t }))}
+                  checked={status.otlp.temporality === t}
+                  onChange={() => void handleResult('general', 'general', () => api().setAdvanced({ otlpTemporality: t }))}
                 />
                 {t === 'cumulative' ? 'Cumulative' : 'Delta'}
               </label>
@@ -389,7 +407,7 @@ export function TelemetrySettingsSection() {
             <button type="button" className={`${linkClass} mt-1`} onClick={() => setConfirmReset(true)}>Reset telemetry ID</button>
           </div>
           <div className="text-sm text-ctp-text">
-            Offline queue: {status.offlineItems} {status.offlineItems === 1 ? 'item' : 'items'}{' '}
+            Offline queue (Application Insights only): {status.offlineItems} {status.offlineItems === 1 ? 'item' : 'items'}{' '}
             <button type="button" className={linkClass} onClick={() => setConfirmClearQueue(true)}>Clear</button>
           </div>
           <div>
@@ -424,7 +442,7 @@ export function TelemetrySettingsSection() {
         onCancel={() => setConfirmReset(false)}
         onConfirm={() => {
           setConfirmReset(false);
-          void handleResult('general', status.destination, () => api().resetId());
+          void handleResult('general', 'general', () => api().resetId());
         }}
       />
       <ConfirmDestructiveAction
@@ -435,7 +453,7 @@ export function TelemetrySettingsSection() {
         onCancel={() => setConfirmClearQueue(false)}
         onConfirm={() => {
           setConfirmClearQueue(false);
-          void handleResult('general', status.destination, () => api().clearOffline());
+          void handleResult('general', 'general', () => api().clearOffline());
         }}
       />
       <ConfirmDestructiveAction
@@ -446,7 +464,7 @@ export function TelemetrySettingsSection() {
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() => {
           setConfirmDelete(false);
-          void handleResult('general', status.destination, () => api().deleteLocalData());
+          void handleResult('general', 'general', () => api().deleteLocalData());
         }}
       />
     </div>
@@ -465,7 +483,7 @@ function WhatsSent() {
         <ul className="list-disc pl-5 space-y-0.5">{NEVER_SENT.map((s) => <li key={s}>{s}</li>)}</ul>
       </div>
       <p className="text-xs text-ctp-subtext0">
-        Everything goes only to the destination you configure. Preview data shows each item exactly as it was sent.
+        Everything goes only to the destinations you turn on. Preview data shows each item exactly as it was sent, and where.
       </p>
     </div>
   );
@@ -478,14 +496,7 @@ function ConfirmDialog({ confirm, onCancel, onConfirm }: { confirm: PendingConfi
   return (
     <Modal open onClose={onCancel} title="Before telemetry starts" width="w-[480px]">
       <div className="space-y-4 text-sm text-ctp-subtext1" data-testid="telemetry-confirm">
-        {confirm.needs.includes('switch_destination') && (
-          <p>
-            Telemetry will go to {loopback ? `a collector on this computer (${host})` : host} instead of{' '}
-            {confirm.target === 'otlp' ? 'Application Insights' : 'your OTLP backend'}. Anything queued for the old destination is deleted.
-            {confirm.target === 'otlp' && !loopback && " Clubhouse can't see or control what this service does with it."}
-          </p>
-        )}
-        {confirm.needs.includes('destination') && (
+        {confirm.needs.includes('destination') && !confirm.needs.includes('consent') && (
           loopback
             ? <p>Telemetry will be sent to a collector on this computer ({host}).</p>
             : <p>Telemetry will be sent to {host}. Clubhouse can't see or control what this service does with it.</p>
@@ -497,7 +508,13 @@ function ConfirmDialog({ confirm, onCancel, onConfirm }: { confirm: PendingConfi
         )}
         {confirm.needs.includes('consent') && (
           <div>
-            <p className="mb-2">Telemetry sends anonymized diagnostics to the destination you chose. It never sends:</p>
+            <p className="mb-1">Telemetry will be sent to:</p>
+            <ul className="list-disc pl-5 space-y-0.5 mb-3" data-testid="telemetry-confirm-hosts">
+              {(confirm.hosts?.length ? confirm.hosts : host ? [host] : []).map((h) => (
+                <li key={h} className="font-mono">{isLoopbackHost(h) ? `${h} (a collector on this computer)` : h}</li>
+              ))}
+            </ul>
+            <p className="mb-2">Clubhouse can't see or control what these services do with it. It sends anonymized diagnostics and never sends:</p>
             <ul className="list-disc pl-5 space-y-0.5">{NEVER_SENT.map((s) => <li key={s}>{s}</li>)}</ul>
           </div>
         )}
@@ -507,5 +524,50 @@ function ConfirmDialog({ confirm, onCancel, onConfirm }: { confirm: PendingConfi
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** A destination's level, preset and health, inside its panel. */
+function DestinationControls({ dest, onFilter }: {
+  dest: TelemetryDestinationStatus;
+  onFilter: (level: TelemetryLevel, preset: TelemetryFilterPreset) => void;
+}) {
+  const health = healthText(dest);
+  const levelDesc = LEVELS.find((l) => l.id === dest.level)?.desc;
+  const presetDesc = PRESETS.find((p) => p.id === dest.preset)?.desc;
+  return (
+    <div className="space-y-3" data-testid={`telemetry-filter-${dest.id}`}>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="text-sm text-ctp-text">
+          <span className="block mb-1.5">Level</span>
+          <select
+            aria-label={`${dest.label} level`}
+            className={inputClass}
+            value={dest.level}
+            onChange={(e) => onFilter(e.target.value as TelemetryLevel, dest.preset)}
+          >
+            {LEVELS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+          </select>
+          {levelDesc && <span className="block text-xs text-ctp-subtext0 mt-1">{levelDesc}</span>}
+        </label>
+        <label className="text-sm text-ctp-text">
+          <span className="block mb-1.5">What to send</span>
+          <select
+            aria-label={`${dest.label} filter`}
+            className={inputClass}
+            value={dest.preset}
+            onChange={(e) => onFilter(dest.level, e.target.value as TelemetryFilterPreset)}
+          >
+            {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+          {presetDesc && <span className="block text-xs text-ctp-subtext0 mt-1">{presetDesc}</span>}
+        </label>
+      </div>
+      {health && (
+        <p className={`text-xs ${health.bad ? 'text-ctp-red' : 'text-ctp-subtext1'}`} data-testid={`telemetry-health-${dest.id}`}>
+          {health.text}
+        </p>
+      )}
+    </div>
   );
 }

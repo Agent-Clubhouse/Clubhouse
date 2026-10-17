@@ -6,7 +6,13 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { TELEMETRY_LEVELS, type TelemetryLevel } from '../../shared/telemetry/attributes';
-import type { OtlpHeaderInput, TelemetryAcknowledgements } from '../../shared/telemetry/settings-types';
+import {
+  TELEMETRY_DESTINATION_KINDS,
+  TELEMETRY_FILTER_PRESETS,
+  type OtlpHeaderInput,
+  type TelemetryAcknowledgements,
+  type TelemetryFilterPreset,
+} from '../../shared/telemetry/settings-types';
 import * as control from '../telemetry/control';
 import { booleanArg, objectArg, stringArg, withValidatedArgs, type ArgValidator } from './validation';
 
@@ -14,9 +20,17 @@ function invalid(argName: string, message: string): never {
   throw new Error(`Invalid argument ${argName}: ${message}`);
 }
 
-const destinationArg: ArgValidator<'azure' | 'otlp'> = (value, argName) => {
-  if (value !== 'azure' && value !== 'otlp') invalid(argName, 'must be "azure" or "otlp"');
-  return value;
+/** Destination ids are the kinds today (one destination per kind). */
+const destinationArg: ArgValidator<string> = (value, argName) => {
+  if (typeof value !== 'string' || !(TELEMETRY_DESTINATION_KINDS as readonly string[]).includes(value)) {
+    invalid(argName, `must be one of ${TELEMETRY_DESTINATION_KINDS.join(', ')}`);
+  }
+  return value as string;
+};
+
+const presetArg: ArgValidator<TelemetryFilterPreset> = (value, argName) => {
+  if (!TELEMETRY_FILTER_PRESETS.includes(value as TelemetryFilterPreset)) invalid(argName, `must be one of ${TELEMETRY_FILTER_PRESETS.join(', ')}`);
+  return value as TelemetryFilterPreset;
 };
 
 const levelArg: ArgValidator<TelemetryLevel> = (value, argName) => {
@@ -77,9 +91,12 @@ export function registerTelemetrySettingsHandlers(): void {
     [destinationArg, booleanArg(), ackArg],
     (_e, destination, enabled, ack) => control.setEnabled(destination, enabled, ack),
   ));
-  ipcMain.handle(IPC.TELEMETRY_SETTINGS.SET_LEVEL, withValidatedArgs([levelArg], (_e, level) => control.setLevel(level)));
+  ipcMain.handle(IPC.TELEMETRY_SETTINGS.SET_FILTER, withValidatedArgs(
+    [destinationArg, levelArg, presetArg],
+    (_e, destination, level, preset) => control.setFilter(destination, level, preset),
+  ));
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.SET_ADVANCED, withValidatedArgs([advancedArg], (_e, input) => control.setAdvanced(input)));
-  ipcMain.handle(IPC.TELEMETRY_SETTINGS.SEND_TEST, () => control.sendTest());
+  ipcMain.handle(IPC.TELEMETRY_SETTINGS.SEND_TEST, withValidatedArgs([destinationArg], (_e, destination) => control.sendTest(destination)));
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.GET_PREVIEW, () => control.getPreview());
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.RESET_ID, () => control.resetInstallId());
   ipcMain.handle(IPC.TELEMETRY_SETTINGS.CLEAR_OFFLINE, () => control.clearOfflineQueue());

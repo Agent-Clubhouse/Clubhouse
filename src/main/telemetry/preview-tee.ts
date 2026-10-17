@@ -6,6 +6,8 @@
 
 export interface PreviewItem {
   signal: 'traces' | 'metrics' | 'logs';
+  /** The destination it was sent to. */
+  destination?: string;
   name: string;
   /** Epoch milliseconds. */
   time: number;

@@ -11,6 +11,12 @@
  * object as `legacyDestination` until `migrateLegacySecrets()` (after app
  * ready) has moved it into the secret store and rewritten the file without
  * it, so no save can drop the only copy.
+ *
+ * Phase 2 had one active destination (`enabled` + `destination` + `level`
+ * and flat `otlp*` fields). Since multi-destination export, the file holds a
+ * `destinations` list, one entry per kind, each with its own switch, level
+ * and preset; `migrate()` converts the Phase 2 shape with no change in what
+ * is sent.
  */
 import * as fs from 'fs';
 import { app } from 'electron';
@@ -18,7 +24,14 @@ import { createManagedSettings } from '../services/managed-settings';
 import * as experimentalSettings from '../services/experimental-settings';
 import { TELEMETRY_SETTINGS } from '../../shared/settings-definitions';
 import { TELEMETRY_LEVELS, type TelemetryLevel } from '../../shared/telemetry/attributes';
-import type { TelemetrySettingsFile } from '../../shared/telemetry/settings-types';
+import {
+  TELEMETRY_DESTINATION_KINDS,
+  TELEMETRY_FILTER_PRESETS,
+  type OtlpTemporality,
+  type TelemetryDestinationEntry,
+  type TelemetryDestinationKind,
+  type TelemetrySettingsFile,
+} from '../../shared/telemetry/settings-types';
 import { getSecretPath, getSecureStorageState, updateSecrets, type TelemetrySecrets } from './secret-store';
 
 export const EXPERIMENTAL_FLAG = 'telemetry';
@@ -51,11 +64,88 @@ export interface TelemetrySettings extends TelemetrySettingsFile {
 
 export const DEFAULT_TELEMETRY_SETTINGS: TelemetrySettings = { ...TELEMETRY_SETTINGS.defaults };
 
-/** Convert a Phase 1 file (destination object) to the Phase 2 shape. */
+/** The Phase 2 flat fields, before the destinations list. */
+interface Phase2Fields {
+  enabled?: unknown;
+  destination?: unknown;
+  level?: unknown;
+  otlpEndpoint?: unknown;
+  otlpHeaderNames?: unknown;
+  otlpTemporality?: unknown;
+  otlpConfirmedHost?: unknown;
+}
+
+const PHASE2_KEYS: Array<keyof Phase2Fields> = [
+  'enabled', 'destination', 'level', 'otlpEndpoint', 'otlpHeaderNames', 'otlpTemporality', 'otlpConfirmedHost',
+];
+
+function defaultEntry(kind: TelemetryDestinationKind): TelemetryDestinationEntry {
+  const entry: TelemetryDestinationEntry = { id: kind, kind, enabled: false, level: 'standard', preset: 'all' };
+  if (kind === 'otlp') entry.otlp = { endpoint: '', headerNames: [], temporality: 'cumulative' };
+  return entry;
+}
+
+function normalizeTemporality(v: unknown): OtlpTemporality {
+  return v === 'delta' ? 'delta' : 'cumulative';
+}
+
+/** Repair one stored entry; unknown kinds are dropped. */
+function normalizeEntry(raw: unknown): TelemetryDestinationEntry | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const kind = r.kind as TelemetryDestinationKind;
+  if (!TELEMETRY_DESTINATION_KINDS.includes(kind)) return null;
+  const entry: TelemetryDestinationEntry = {
+    ...defaultEntry(kind),
+    id: typeof r.id === 'string' && r.id ? r.id : kind,
+    enabled: r.enabled === true,
+    level: normalizeLevel(r.level),
+    preset: TELEMETRY_FILTER_PRESETS.includes(r.preset as never) ? (r.preset as TelemetryDestinationEntry['preset']) : 'all',
+  };
+  if (typeof r.secretRef === 'string') entry.secretRef = r.secretRef;
+  if (typeof r.confirmedHost === 'string') entry.confirmedHost = r.confirmedHost;
+  if (kind === 'otlp') {
+    const o = (r.otlp && typeof r.otlp === 'object' ? r.otlp : {}) as Record<string, unknown>;
+    entry.otlp = {
+      endpoint: typeof o.endpoint === 'string' ? o.endpoint : '',
+      headerNames: Array.isArray(o.headerNames) ? o.headerNames.filter((n): n is string => typeof n === 'string') : [],
+      temporality: normalizeTemporality(o.temporality),
+    };
+  }
+  return entry;
+}
+
+/**
+ * Phase 2 → destinations list. Exactly one destination was active; it stays
+ * the only enabled one, with the same level, so nothing changes in what is
+ * sent or where.
+ */
+function fromPhase2(p: Phase2Fields): TelemetryDestinationEntry[] {
+  const active: TelemetryDestinationKind = p.destination === 'otlp' ? 'otlp' : 'azure';
+  const level = normalizeLevel(p.level);
+  return TELEMETRY_DESTINATION_KINDS.map((kind) => {
+    const entry = { ...defaultEntry(kind), level, enabled: p.enabled === true && kind === active };
+    if (kind === 'otlp') {
+      entry.otlp = {
+        endpoint: typeof p.otlpEndpoint === 'string' ? p.otlpEndpoint : '',
+        headerNames: Array.isArray(p.otlpHeaderNames) ? p.otlpHeaderNames.filter((n): n is string => typeof n === 'string') : [],
+        temporality: normalizeTemporality(p.otlpTemporality),
+      };
+      if (typeof p.otlpConfirmedHost === 'string') entry.confirmedHost = p.otlpConfirmedHost;
+    }
+    return entry;
+  });
+}
+
+/**
+ * Convert any earlier file to the current shape: Phase 1 (destination object
+ * with a plaintext secret) → Phase 2 (flat fields) → destinations list.
+ */
 export function migrateTelemetrySettings(raw: Record<string, unknown>): TelemetrySettings {
-  const settings = { ...raw } as unknown as TelemetrySettings & { destination: unknown };
+  const settings = { ...raw } as Record<string, unknown>;
   const legacy = settings.destination;
   if (legacy && typeof legacy === 'object') {
+    // Phase 1: the destination object, possibly holding a plaintext secret.
     const d = legacy as LegacyDestination;
     settings.legacyDestination = d;
     settings.destination = d.kind === 'otlp' ? 'otlp' : 'azure';
@@ -72,14 +162,26 @@ export function migrateTelemetrySettings(raw: Record<string, unknown>): Telemetr
         // Invalid endpoint: validation reports it on start.
       }
     }
-  } else if (legacy === null || (legacy !== 'azure' && legacy !== 'otlp')) {
-    settings.destination = 'azure';
   }
-  if (!TELEMETRY_LEVELS.includes(settings.level)) settings.level = 'standard';
-  if (!Array.isArray(settings.otlpHeaderNames)) settings.otlpHeaderNames = [];
-  if (settings.otlpTemporality !== 'delta') settings.otlpTemporality = 'cumulative';
+
+  // The settings store merges the defaults (which carry a `destinations`
+  // list) over the file before migrating, so the Phase 2 keys, which the
+  // current shape never has, are what mark an older file.
+  const isPhase2 = PHASE2_KEYS.some((key) => key in settings);
+  let entries: TelemetryDestinationEntry[];
+  if (isPhase2 || !Array.isArray(settings.destinations)) {
+    entries = fromPhase2(settings as Phase2Fields);
+  } else {
+    entries = settings.destinations.map(normalizeEntry).filter((e): e is TelemetryDestinationEntry => e !== null);
+  }
+  for (const key of PHASE2_KEYS) delete settings[key];
+  // Every kind has an entry, in a stable order, so the UI can list them all.
+  const byKind = new Map(entries.map((e) => [e.kind, e]));
+  settings.destinations = TELEMETRY_DESTINATION_KINDS.map((kind) => byKind.get(kind) ?? defaultEntry(kind));
+
   if (typeof settings.consentVersion !== 'number') settings.consentVersion = 0;
-  return settings as TelemetrySettings;
+  if (typeof settings.sampleRate !== 'number') settings.sampleRate = 1;
+  return settings as unknown as TelemetrySettings;
 }
 
 const managed = createManagedSettings<TelemetrySettings>(TELEMETRY_SETTINGS as typeof TELEMETRY_SETTINGS & { defaults: TelemetrySettings }, {
@@ -127,30 +229,60 @@ export async function migrateLegacySecrets(): Promise<boolean> {
   return true;
 }
 
-/** Destination plus secrets, ready for validation and the exporters. */
-export function resolveDestination(settings: TelemetrySettings, secrets: TelemetrySecrets): DestinationConfig | null {
-  const merged: TelemetrySecrets = { ...legacySecrets(settings), ...secrets };
-  if (settings.destination === 'azure') {
-    return merged.connectionString ? { kind: 'azure', connectionString: merged.connectionString } : null;
-  }
-  if (!settings.otlpEndpoint) return null;
-  const headers: Record<string, string> = {};
-  for (const name of settings.otlpHeaderNames) {
-    const value = merged.otlpHeaders?.[name];
-    if (typeof value === 'string') headers[name] = value;
-  }
-  return { kind: 'otlp', endpoint: settings.otlpEndpoint, headers };
+/** A destination entry by id (or kind, which is the id today). */
+export function findDestination(settings: TelemetrySettings, id: string): TelemetryDestinationEntry | undefined {
+  return settings.destinations.find((d) => d.id === id);
 }
 
-/** Cheap, synchronous pre-check used before `ready` (no decryption). */
-export function hasDestinationConfigured(settings: TelemetrySettings): boolean {
-  if (settings.legacyDestination) return true;
-  if (settings.destination === 'otlp') return !!settings.otlpEndpoint;
+/** Enabled entries, in display order. */
+export function enabledDestinations(settings: TelemetrySettings): TelemetryDestinationEntry[] {
+  return settings.destinations.filter((d) => d.enabled);
+}
+
+/** Replace one entry by id, keeping the others. */
+export function withDestination(
+  settings: TelemetrySettings,
+  id: string,
+  fn: (entry: TelemetryDestinationEntry) => TelemetryDestinationEntry,
+): TelemetrySettings {
+  return { ...settings, destinations: settings.destinations.map((d) => (d.id === id ? fn(d) : d)) };
+}
+
+/** One destination plus its secrets, ready for validation and the exporters. */
+export function resolveDestination(entry: TelemetryDestinationEntry | undefined, settings: TelemetrySettings, secrets: TelemetrySecrets): DestinationConfig | null {
+  if (!entry) return null;
+  const merged: TelemetrySecrets = { ...legacySecrets(settings), ...secrets };
+  if (entry.kind === 'azure') {
+    return merged.connectionString ? { kind: 'azure', connectionString: merged.connectionString } : null;
+  }
+  if (entry.kind === 'otlp') {
+    if (!entry.otlp?.endpoint) return null;
+    const headers: Record<string, string> = {};
+    for (const name of entry.otlp.headerNames) {
+      const value = merged.otlpHeaders?.[name];
+      if (typeof value === 'string') headers[name] = value;
+    }
+    return { kind: 'otlp', endpoint: entry.otlp.endpoint, headers };
+  }
+  return null;
+}
+
+/** Cheap, synchronous pre-check of one entry, used before `ready` (no decryption). */
+export function isEntryConfigured(entry: TelemetryDestinationEntry, settings: TelemetrySettings): boolean {
+  if (entry.kind === 'otlp') {
+    return !!entry.otlp?.endpoint || (settings.legacyDestination?.kind === 'otlp');
+  }
+  if (settings.legacyDestination && settings.legacyDestination.kind !== 'otlp') return true;
   try {
     return fs.existsSync(getSecretPath());
   } catch {
     return false;
   }
+}
+
+/** Some enabled destination looks configured. */
+export function hasDestinationConfigured(settings: TelemetrySettings): boolean {
+  return enabledDestinations(settings).some((d) => isEntryConfigured(d, settings));
 }
 
 export function isExperimentEnabled(): boolean {
