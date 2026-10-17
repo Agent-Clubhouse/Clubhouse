@@ -319,8 +319,8 @@ test.describe('Plugin Settings', () => {
 
   test('built-in plugins have toggle switches that are enabled', async () => {
     // Toggles for built-in plugins — they should be in the "on" state
-    // The toggle is a button with bg-ctp-accent class when enabled
-    const toggles = window.locator('.bg-ctp-accent.rounded-full');
+    // The toggle is a role="switch" button, aria-checked when enabled
+    const toggles = window.locator('button[role="switch"][aria-checked="true"]');
     await expect(toggles.first()).toBeVisible({ timeout: 5_000 });
     const count = await toggles.count();
     // At least 3 toggles for the built-in plugins

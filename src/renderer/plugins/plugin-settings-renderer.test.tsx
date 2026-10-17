@@ -35,7 +35,7 @@ describe('PluginSettingsRenderer', () => {
     render(<PluginSettingsRenderer pluginId={PLUGIN_ID} settings={settings} scope={SCOPE} />);
     expect(screen.getByText('Dark Mode')).toBeInTheDocument();
 
-    const toggle = screen.getByRole('button');
+    const toggle = screen.getByRole('switch');
     expect(toggle).toHaveAttribute('data-on', 'false');
 
     fireEvent.click(toggle);
@@ -127,7 +127,7 @@ describe('PluginSettingsRenderer', () => {
     ];
 
     render(<PluginSettingsRenderer pluginId={PLUGIN_ID} settings={settings} scope={SCOPE} />);
-    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(screen.getByRole('switch'));
 
     await waitFor(() => {
       expect(storageWrite).toHaveBeenCalledWith(

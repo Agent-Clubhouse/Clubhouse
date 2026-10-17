@@ -106,7 +106,7 @@ describe('TelemetrySettingsSection', () => {
     expect(dialog).toHaveTextContent('File paths, repository URLs and branch names');
     fireEvent.click(within(dialog).getByText('Continue'));
     await waitFor(() => expect(setEnabled).toHaveBeenLastCalledWith('azure', true, { consent: true, host: 'h.applicationinsights.azure.com' }));
-    expect(await screen.findByLabelText('Send telemetry to Application Insights')).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByLabelText('Send telemetry to Application Insights')).toHaveAttribute('aria-checked', 'true');
   });
 
   it('names the OTLP host before sending, with loopback wording for a local collector', async () => {
@@ -224,8 +224,8 @@ describe('TelemetrySettingsSection', () => {
     render(<TelemetrySettingsSection />);
     expect(await screen.findByTestId('telemetry-health-azure')).toHaveTextContent('Sending · last export');
     expect(screen.getByTestId('telemetry-health-otlp')).toHaveTextContent('Failing: Connection refused. Is the collector running?');
-    expect(screen.getByLabelText('Send telemetry to Application Insights')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByLabelText('Send telemetry to OTLP')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Send telemetry to Application Insights')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByLabelText('Send telemetry to OTLP')).toHaveAttribute('aria-checked', 'true');
   });
 
   it('clears the typed connection string after a weak-storage confirmed save', async () => {

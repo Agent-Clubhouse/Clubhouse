@@ -24,7 +24,7 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
   const canConfirm = confirmText === projectName;
 
   return (
-    <Modal open={true} onClose={onCancel} width="w-full max-w-md mx-4">
+    <Modal open={true} onClose={onCancel} aria-label="Reset project" width="w-full max-w-md mx-4">
         <div className="space-y-4">
           <h3 className="text-lg font-semibold text-ctp-error">Reset Project</h3>
           <p className="text-sm text-ctp-subtext1">

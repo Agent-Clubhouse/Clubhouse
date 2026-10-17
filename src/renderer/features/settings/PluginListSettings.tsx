@@ -12,6 +12,7 @@ import type { CustomMarketplace } from '../../../shared/marketplace-types';
 import { DEPRECATED_PLUGIN_API_VERSIONS } from '../../../shared/marketplace-types';
 import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
 import { showConfirmDialog } from '../../plugins/PluginDialog';
+import { Toggle } from '../../components/Toggle';
 
 const RISK_ORDER: Record<PermissionRiskLevel, number> = { safe: 0, elevated: 1, dangerous: 2 };
 
@@ -521,22 +522,7 @@ function PluginRow({
               </svg>
             </button>
           )}
-          <button
-            onClick={onToggle}
-            disabled={isIncompatible}
-            className={`
-              relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
-              ${isIncompatible ? 'opacity-50 cursor-not-allowed' : ''}
-              ${enabled ? 'bg-ctp-accent' : 'bg-surface-2'}
-            `}
-          >
-            <span
-              className={`
-                absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
-                ${enabled ? 'translate-x-4' : 'translate-x-0'}
-              `}
-            />
-          </button>
+          <Toggle checked={enabled} onChange={() => onToggle()} disabled={isIncompatible} aria-label={`Enable ${entry.manifest.name}`} />
         </div>
       </div>
       {projectPath && (
@@ -676,20 +662,7 @@ function CustomMarketplaceManager() {
                         <line x1="6" y1="6" x2="18" y2="18" />
                       </svg>
                     </button>
-                    <button
-                      onClick={() => handleToggle(m.id, !m.enabled)}
-                      className={`
-                        relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
-                        ${m.enabled ? 'bg-ctp-accent' : 'bg-surface-2'}
-                      `}
-                    >
-                      <span
-                        className={`
-                          absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
-                          ${m.enabled ? 'translate-x-4' : 'translate-x-0'}
-                        `}
-                      />
-                    </button>
+                    <Toggle checked={m.enabled} onChange={(v) => handleToggle(m.id, v)} aria-label={`Enable ${m.name}`} />
                   </div>
                 </div>
               ))}
@@ -1134,20 +1107,7 @@ export function PluginListSettings() {
               <h3 className="text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider">Beta</h3>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-ctp-subtext0">Show beta plugins</span>
-                <button
-                  onClick={handleBetaPluginsToggle}
-                  className={`
-                    relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
-                    ${showBetaPlugins ? 'bg-ctp-accent' : 'bg-surface-2'}
-                  `}
-                >
-                  <span
-                    className={`
-                      absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
-                      ${showBetaPlugins ? 'translate-x-4' : 'translate-x-0'}
-                    `}
-                  />
-                </button>
+                <Toggle checked={showBetaPlugins} onChange={() => handleBetaPluginsToggle()} aria-label="Show beta plugins" />
               </div>
             </div>
             <p className="text-xs text-ctp-subtext0 mb-3">
@@ -1164,21 +1124,7 @@ export function PluginListSettings() {
                 <h3 className="text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider">External</h3>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-ctp-subtext0">Enable External Plugins</span>
-                  <button
-                    onClick={handleExternalToggle}
-                    data-testid="external-plugins-toggle"
-                    className={`
-                      relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
-                      ${externalPluginsEnabled ? 'bg-ctp-accent' : 'bg-surface-2'}
-                    `}
-                  >
-                    <span
-                      className={`
-                        absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
-                        ${externalPluginsEnabled ? 'translate-x-4' : 'translate-x-0'}
-                      `}
-                    />
-                  </button>
+                  <Toggle checked={externalPluginsEnabled} onChange={() => handleExternalToggle()} aria-label="Enable external plugins" data-testid="external-plugins-toggle" />
                 </div>
               </div>
               <p className="text-xs text-ctp-subtext0 mb-3">

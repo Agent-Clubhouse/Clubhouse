@@ -2,6 +2,7 @@ import { useMemo, useCallback } from 'react';
 import { useUpdateStore } from '../../stores/updateStore';
 import { renderMarkdownSafe } from '../../utils/safe-markdown';
 import { Modal } from '../../components/Modal';
+import { Button } from '../../components/Button';
 
 export function WhatsNewDialog() {
   const whatsNew = useUpdateStore((s) => s.whatsNew);
@@ -21,35 +22,17 @@ export function WhatsNewDialog() {
     <Modal
       open={!!showWhatsNew && !!whatsNew && !!html}
       onClose={handleDismiss}
+      title={`What's new in v${whatsNew?.version}`}
       width="w-[520px]"
       backdropTestId="whats-new-backdrop"
+      testId="whats-new-dialog"
+      footer={<Button kind="primary" onClick={handleDismiss} data-testid="whats-new-got-it">Got it</Button>}
     >
-      <div data-testid="whats-new-dialog">
-        {/* Header */}
-        <div className="-mx-5 -mt-5 px-6 pt-5 pb-3 border-b border-surface-0 mb-4">
-          <h2 className="text-lg font-semibold text-ctp-text">
-            What&apos;s New in v{whatsNew?.version}
-          </h2>
-        </div>
-
-        {/* Body */}
-        <div className="-mx-5 px-6 overflow-y-auto max-h-[50vh]">
-          <div
-            className="help-content"
-            dangerouslySetInnerHTML={{ __html: html ?? '' }}
-          />
-        </div>
-
-        {/* Footer */}
-        <div className="-mx-5 -mb-5 px-6 py-4 border-t border-surface-0 flex justify-end mt-4">
-          <button
-            onClick={handleDismiss}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-ctp-accent hover:bg-ctp-accent/80 text-white transition-colors cursor-pointer"
-            data-testid="whats-new-got-it"
-          >
-            Got it
-          </button>
-        </div>
+      <div className="overflow-y-auto max-h-[50vh]">
+        <div
+          className="help-content"
+          dangerouslySetInnerHTML={{ __html: html ?? '' }}
+        />
       </div>
     </Modal>
   );
