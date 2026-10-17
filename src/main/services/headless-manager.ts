@@ -17,6 +17,7 @@ import { HeadlessOutputKind } from '../orchestrators/types';
 import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
 import { validateSpawnCwd } from './pty-manager';
+import { agentKillStage, agentOutput, agentRunStarted, agentSwept } from '../telemetry/agent-telemetry';
 
 /** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
 let maxTranscriptBytes = 10 * 1024 * 1024; // 10 MB
@@ -82,6 +83,7 @@ const staleSweeper = new StaleSweeper<HeadlessSession>(sessions, {
     appLog('core:headless', 'warn', 'Stale headless session detected, cleaning up', {
       meta: { agentId, exitCode: session.process.exitCode },
     });
+    agentSwept(agentId);
     const exitCode = session.process.exitCode ?? 1;
     const { onExitCallback } = session;
     cleanupHeadlessSession(agentId);
@@ -378,6 +380,7 @@ function setupStdoutHandler(
   proc.stdout?.on('data', (chunk: Buffer) => {
     const str = decoder.write(chunk);
     io.stdoutBytes += chunk.length;
+    agentOutput(agentId, chunk.length);
     if (io.stdoutBytes === chunk.length) {
       // First stdout chunk — log it for diagnostics
       appLog('core:headless', 'info', `First stdout data`, {
@@ -570,6 +573,7 @@ export async function spawnHeadless(
 
   const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit, createEventNormalizer);
   sessions.set(agentId, session);
+  agentRunStarted(agentId, 'headless');
 
   const logStream = fs.createWriteStream(transcriptPath, { flags: 'w' });
   logStream.on('error', (err: Error) => {
@@ -605,6 +609,7 @@ export function kill(agentId: string): void {
   if (session.killTimer) clearTimeout(session.killTimer);
 
   const proc = session.process;
+  agentKillStage(agentId, 'sigterm');
 
   try {
     proc.kill('SIGTERM');
@@ -615,6 +620,7 @@ export function kill(agentId: string): void {
   session.killTimer = setTimeout(() => {
     const current = sessions.get(agentId);
     if (current && current.process === proc) {
+      agentKillStage(agentId, 'sigkill');
       try { proc.kill('SIGKILL'); } catch { /* dead */ }
       cleanupHeadlessSession(agentId);
     }
