@@ -28,8 +28,13 @@ import { resolveStructuredSpawn, type StructuredSpawnCommand } from './structure
  */
 export const COPILOT_ACP_ARGS: readonly string[] = ['--acp', '--stdio', '--no-auto-update'];
 
-/** Versions whose ACP behaviour the fixtures and probes cover. Newer is "untested", not broken. */
-export const COPILOT_ACP_TESTED_RANGE = { min: '1.0.92', max: '1.0.98' } as const;
+/**
+ * Versions whose ACP behaviour the fixtures and probes cover. Newer is
+ * "untested", not broken. 1.0.82 is what the Homebrew/WinGet shim runs under
+ * `--no-auto-update` (its bundled runtime); its handshake is recorded in
+ * test/chat-fixtures/copilot/handshake-1.0.82.jsonl.
+ */
+export const COPILOT_ACP_TESTED_RANGE = { min: '1.0.82', max: '1.0.98' } as const;
 
 /** Copilot's ACP mode ids are URIs ending in one of these fragments. */
 export type CopilotModeKind = 'agent' | 'plan' | 'autopilot';
@@ -184,6 +189,7 @@ const COPILOT_MODE_BASE = 'https://agentclientprotocol.com/protocol/session-mode
  */
 export const COPILOT_PERMISSION_LEVELS: AcpPermissionLevels = {
   live: ['plan', 'ask', 'full_access'],
+  names: { plan: 'Plan', ask: 'Agent', full_access: 'Agent, allow all' },
   current(state) {
     const mode = state.modes?.currentModeId ?? stringOption(state.configOptions, 'mode');
     const kind = mode ? copilotModeKind(mode) : undefined;
@@ -214,8 +220,15 @@ function stringOption(options: SessionConfigOption[], id: string): string | unde
   return option?.type === 'select' ? option.currentValue : undefined;
 }
 
+/** Copilot's model options carry the legacy premium-request multiplier ("0.33x", "1x", …). */
+export function copilotModelCostHint(meta: Meta | undefined): string | undefined {
+  const usage = meta?.copilotUsage;
+  return typeof usage === 'string' && usage ? usage : undefined;
+}
+
 export const COPILOT_ACP_PROFILE: AcpAgentProfile = {
   id: 'copilot',
+  modelCostHint: copilotModelCostHint,
   capabilities: copilotAcpCapabilities,
   normalizeConfigOptions: dedupeCopilotConfigOptions,
   normalizeLegacyModels: dedupeCopilotLegacyModels,
