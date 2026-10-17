@@ -9,6 +9,8 @@ interface ProjectState {
   gitStatus: Record<string, boolean>; // projectId -> hasGit
   projectIcons: Record<string, string>; // projectId -> data URL
   setActiveProject: (id: string | null) => void;
+  /** False until the first loadProjects settles, so an empty list can be told from "not loaded yet". */
+  projectsLoaded: boolean;
   loadProjects: () => Promise<void>;
   addProject: (path: string) => Promise<Project>;
   removeProject: (id: string) => Promise<void>;
@@ -25,6 +27,7 @@ interface ProjectState {
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
+  projectsLoaded: false,
   activeProjectId: null,
   gitStatus: {},
   projectIcons: {},
@@ -41,8 +44,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   loadProjects: async () => {
-    const projects = await window.clubhouse.project.list();
-    set({ projects });
+    let projects: Project[];
+    try {
+      projects = await window.clubhouse.project.list();
+    } catch (err) {
+      set({ projectsLoaded: true });
+      throw err;
+    }
+    set({ projects, projectsLoaded: true });
     // Check git status for all projects
     for (const p of projects) {
       get().checkGit(p.id, p.path);

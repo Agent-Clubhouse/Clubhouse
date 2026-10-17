@@ -141,6 +141,8 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   // Telemetry enabled/level changes are broadcast main→renderer (telemetry spec §6.2).
   'IPC.TELEMETRY.STATE_CHANGED',
   'IPC.GOOBERS.DATA_INVALIDATED',
+  // Chat → Terminal / driver fallback notices are broadcast main→renderer from chat-spawn.ts.
+  'IPC.CHAT.RUNTIME_NOTICE',
 ]);
 
 /**

@@ -10,6 +10,8 @@ import { IPC } from '../../shared/ipc-channels';
 import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry } from '../../shared/types';
 import { createSettingsStore } from './settings-store';
 import { appLog, flush as flushLogs } from './log-service';
+import { applyRemoteCliDenylist } from './agent-runtime/chat-version-policy';
+import { isChatEnabled } from './chat-runtime-settings';
 import { pathExists } from './fs-utils';
 import { flushBeforeExit } from '../telemetry/facade';
 import { recordApplyVerification, recordUpdateApply, recordUpdateCheck, recordUpdateDownload } from '../telemetry/update-telemetry';
@@ -608,6 +610,18 @@ export async function checkForUpdates(
     appLog('update:check', 'info', 'Fetched manifest', {
       meta: { sourceUrl, manifestVersion: manifest.version },
     });
+
+    // Chat's remote kill switch: known-bad CLI versions ride on the manifest,
+    // whether or not this build has an update to apply. Only with chat on, so
+    // terminal-only users never get the file; the startup check fills it in
+    // after chat is turned on.
+    if (isChatEnabled()) {
+      applyRemoteCliDenylist(manifest.chatCliDenylist).catch((err) => {
+        appLog('update:check', 'warn', 'Saving the chat CLI denylist failed', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      });
+    }
 
     if (!isNewerVersion(manifest.version, currentVersion)) {
       appLog('update:check', 'info', 'App is up to date', {
