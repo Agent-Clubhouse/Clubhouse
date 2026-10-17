@@ -21,6 +21,8 @@ export interface ProjectTreeProps {
   completedByProject: Record<string, CompletedQuickAgent[]>;
   activeProjectId: string | null;
   activeAgentId: string | null;
+  /** The project whose header is selected (project-root scope), if any. */
+  projectScopeId: string | null;
   selectedCompletedId: string | null;
   onReorder: (orderedIds: string[]) => void;
   onSelectProject: (projectId: string) => void;
@@ -109,7 +111,8 @@ export function ProjectTree(props: ProjectTreeProps) {
       sleepingOpen={foldSet.has(foldKey(project.id, 'sleeping'))}
       finishedOpen={foldSet.has(foldKey(project.id, 'finished'))}
       activeProjectId={activeProjectId}
-      activeAgentId={activeAgentId}
+      activeAgentId={props.projectScopeId === project.id ? null : activeAgentId}
+      headerSelected={props.projectScopeId === project.id && activeProjectId === project.id}
       selectedCompletedId={selectedCompletedId}
       onSelectProject={props.onSelectProject}
       onToggleCollapsed={onToggleCollapsed}

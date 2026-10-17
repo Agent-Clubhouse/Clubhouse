@@ -209,6 +209,45 @@ describe('Terminal MainPanel', () => {
     });
   });
 
+  describe('new chrome scope', () => {
+    beforeEach(async () => {
+      const { useChromeFlagStore } = await import('../../../chrome/chromeFlag');
+      const { useChromeStore } = await import('../../../chrome/chromeStore');
+      const { useProjectStore } = await import('../../../stores/projectStore');
+      const { useAgentStore } = await import('../../../stores/agentStore');
+      useChromeFlagStore.setState({ enabled: true });
+      useChromeStore.setState({ projectScopeId: null });
+      useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'proj', path: '/project' }] as never, activeProjectId: 'proj-1' });
+      useAgentStore.setState({
+        agents: { a1: { id: 'a1', projectId: 'proj-1', name: 'snazzy-fox', kind: 'durable', status: 'running', color: 'blue', worktreePath: '/project/.clubhouse/agents/snazzy-fox' } as never },
+        activeAgentId: 'a1',
+      });
+    });
+
+    afterEach(async () => {
+      const { useChromeFlagStore } = await import('../../../chrome/chromeFlag');
+      useChromeFlagStore.setState({ enabled: false });
+    });
+
+    it('opens the selected agent worktree terminal', async () => {
+      const api = createTerminalAPI();
+      render(<MainPanel api={api} />);
+      await waitFor(() => {
+        expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:agent:snazzy-fox', '/project/.clubhouse/agents/snazzy-fox');
+      });
+    });
+
+    it('opens the project root terminal when the project header is selected', async () => {
+      const { useChromeStore } = await import('../../../chrome/chromeStore');
+      useChromeStore.setState({ projectScopeId: 'proj-1' });
+      const api = createTerminalAPI();
+      render(<MainPanel api={api} />);
+      await waitFor(() => {
+        expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:project', '/project');
+      });
+    });
+  });
+
   it('reconnects existing session via getBuffer instead of re-spawning', async () => {
     const api = createTerminalAPI('$ previous output\n');
     render(<MainPanel api={api} />);

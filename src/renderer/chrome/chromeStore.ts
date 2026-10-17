@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { reportChromeActionFailed } from './telemetry';
 import { isNewChromeEnabled } from './chromeFlag';
+import { useAgentStore } from '../stores/agentStore';
 
 /**
  * State for the new chrome shell. Persisted under its own key so the legacy
@@ -31,6 +32,12 @@ interface PersistedChromeState {
 }
 
 export interface ChromeState {
+  /**
+   * The project whose header is selected, which makes the project root the
+   * scope (spec §4.5). Null when an agent row is the selection. Not persisted.
+   */
+  projectScopeId: string | null;
+  setProjectScope: (projectId: string | null) => void;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   lastProjectId: string | null;
@@ -126,6 +133,11 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     // With the flag off the legacy shell runs and this store is never used, so
     // don't touch localStorage at startup.
     ...(isNewChromeEnabled() ? loadChromeState() : DEFAULTS),
+    projectScopeId: null,
+
+    setProjectScope: (projectId) => {
+      if (get().projectScopeId !== projectId) set({ projectScopeId: projectId });
+    },
 
     resizeSidebar: (delta) => {
       const { sidebarWidth, sidebarCollapsed } = get();
@@ -203,3 +215,18 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     },
   };
 });
+
+/**
+ * Whatever makes an agent active (a sidebar row, a notification, the palette,
+ * switch-agent-N, a popout, the plugin API, a spawn) ends the project scope, so
+ * the header highlight and the scoped tabs move to that agent (spec §4.5). A
+ * header selection clears the project's active agent, so this never undoes it.
+ * Started by ChromeBody, so it only runs in the new shell. Returns the unsubscribe.
+ */
+export function syncProjectScopeWithActiveAgent(): () => void {
+  return useAgentStore.subscribe((state, prev) => {
+    if (state.activeAgentId && state.activeAgentId !== prev.activeAgentId) {
+      useChromeStore.getState().setProjectScope(null);
+    }
+  });
+}
