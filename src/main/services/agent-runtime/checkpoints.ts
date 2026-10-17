@@ -18,6 +18,12 @@
  * Files are written by `git checkout-index` from a temporary index, so
  * symlinks, file modes, LFS and other filters and line endings come back the
  * way git would check them out. If writing fails, the backup is restored.
+ * Line endings follow checkout rules, not the bytes that were on disk: with
+ * core.autocrlf=true a file stored with LF comes back with CRLF.
+ *
+ * A nested repository with no commits yet (an agent ran `git init` in a
+ * subfolder) can't be added to a tree; it's left out and noted like a large
+ * file instead of failing the whole checkpoint.
  *
  * The refs are ordinary refs: `git push --mirror` pushes refs/clubhouse/*
  * along with everything else. Plain `git push` and `git push --all` don't.
@@ -39,6 +45,7 @@ export const MAX_UNTRACKED_BYTES = 10 * 1024 * 1024;
 /** Upper bound for one git command, so a hung process can't block a repository's queue forever. */
 const GIT_TIMEOUT_MS = 120_000;
 const SKIPPED_PREFIX = 'Skipped-large: ';
+const SKIPPED_REPO_PREFIX = 'Skipped-repo: ';
 
 /** Identity for checkpoint commits, so they work without user git config. */
 const COMMIT_ENV = {
@@ -60,7 +67,8 @@ function git(cwd: string, args: string[], opts: GitOptions = {}): Promise<string
   return new Promise((resolve, reject) => {
     const child = execFile('git', args, {
       cwd,
-      env: { ...process.env, ...opts.env, GIT_TERMINAL_PROMPT: '0' },
+      // English messages: some failures are recognised by their text.
+      env: { ...process.env, ...opts.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
       maxBuffer: 64 * 1024 * 1024,
       encoding: 'utf-8',
       timeout: GIT_TIMEOUT_MS,
@@ -170,46 +178,79 @@ async function largeUntracked(root: string, env: Record<string, string>): Promis
   return large;
 }
 
-async function addAll(root: string, env: Record<string, string>, skipped: string[]): Promise<void> {
-  if (!skipped.length) {
+async function addOnce(root: string, env: Record<string, string>, excluded: string[]): Promise<void> {
+  if (!excluded.length) {
     await git(root, ['add', '-A', '--', '.'], { env });
     return;
   }
-  const specs = ['.', ...skipped.map((p) => `:(exclude,literal)${p}`)];
+  const specs = ['.', ...excluded.map((p) => `:(exclude,literal)${p}`)];
   await git(root, ['add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'], { env, input: specs.join('\0') });
 }
 
+/** Nested repositories `git add` refused because they have no commit yet. */
+function reposWithoutCommits(message: string): string[] {
+  return [...message.matchAll(/'([^']+)' does not have a commit checked out/g)].map((m) => m[1].replace(/\/+$/, ''));
+}
+
+/** `git add -A`, leaving out large files and any nested repository with no commits. Returns those repositories. */
+async function addAll(root: string, env: Record<string, string>, large: string[]): Promise<string[]> {
+  const repos: string[] = [];
+  for (;;) {
+    try {
+      await addOnce(root, env, [...large, ...repos]);
+      return repos;
+    } catch (err) {
+      const found = reposWithoutCommits(err instanceof Error ? err.message : String(err)).filter((p) => !repos.includes(p));
+      if (!found.length) throw err;
+      repos.push(...found);
+    }
+  }
+}
+
+interface Snapshot {
+  tree: string;
+  /** Untracked files over the size cap. */
+  skipped: string[];
+  /** Nested repositories with no commits. */
+  repos: string[];
+}
+
 /** Tree of the current working tree (tracked + untracked, minus ignored and large untracked files). */
-async function snapshotTree(root: string): Promise<{ tree: string; skipped: string[] }> {
+async function snapshotTree(root: string): Promise<Snapshot> {
   const indexFile = tempIndexPath();
   const env = { GIT_INDEX_FILE: indexFile };
   try {
     await seedIndex(root, indexFile);
     let skipped: string[];
+    let repos: string[];
     try {
       skipped = await largeUntracked(root, env);
-      await addAll(root, env, skipped);
+      repos = await addAll(root, env, skipped);
     } catch {
       // A copied index git can't use here (unusual extensions): start over from HEAD.
       await seedFromHead(root, indexFile);
       skipped = await largeUntracked(root, env);
-      await addAll(root, env, skipped);
+      repos = await addAll(root, env, skipped);
     }
-    return { tree: (await git(root, ['write-tree'], { env })).trim(), skipped };
+    return { tree: (await git(root, ['write-tree'], { env })).trim(), skipped, repos };
   } finally {
     await fsp.rm(indexFile, { force: true });
   }
 }
 
 async function commitSnapshot(root: string, message: string): Promise<string> {
-  const { tree, skipped } = await snapshotTree(root);
+  const { tree, skipped, repos } = await snapshotTree(root);
   let parentArgs: string[] = [];
   try {
     parentArgs = ['-p', (await git(root, ['rev-parse', '--verify', 'HEAD'])).trim()];
   } catch {
     // No HEAD yet.
   }
-  const body = skipped.length ? `\n\n${skipped.map((p) => SKIPPED_PREFIX + JSON.stringify(p)).join('\n')}\n` : '\n';
+  const notes = [
+    ...skipped.map((p) => SKIPPED_PREFIX + JSON.stringify(p)),
+    ...repos.map((p) => SKIPPED_REPO_PREFIX + JSON.stringify(p)),
+  ];
+  const body = notes.length ? `\n\n${notes.join('\n')}\n` : '\n';
   return (await git(root, ['commit-tree', tree, ...parentArgs, '-F', '-'], { env: COMMIT_ENV, input: message + body })).trim();
 }
 
@@ -237,14 +278,15 @@ export function deleteRef(root: string, ref: string): Promise<void> {
   });
 }
 
-/** Large untracked files a checkpoint left out. */
-export async function readSkipped(root: string, commit: string): Promise<string[]> {
+/** What a checkpoint left out: large untracked files and nested repositories with no commits. */
+export async function readSkipped(root: string, commit: string): Promise<{ large: string[]; repos: string[] }> {
   const body = await git(root, ['show', '-s', '--format=%B', commit]);
-  const out: string[] = [];
+  const out = { large: [] as string[], repos: [] as string[] };
   for (const line of body.split('\n')) {
-    if (!line.startsWith(SKIPPED_PREFIX)) continue;
+    const list = line.startsWith(SKIPPED_PREFIX) ? out.large : line.startsWith(SKIPPED_REPO_PREFIX) ? out.repos : null;
+    if (!list) continue;
     try {
-      out.push(JSON.parse(line.slice(SKIPPED_PREFIX.length)) as string);
+      list.push(JSON.parse(line.slice(line.indexOf(': ') + 2)) as string);
     } catch {
       // Not ours.
     }

@@ -189,6 +189,11 @@ export function ChangesPanel({ agentId, sessionId, refreshKey, onClose }: Change
             Not tracked (over 10 MB, untracked): {changes.skippedLarge.join(', ')}. Revert leaves them alone.
           </p>
         ) : null}
+        {changes?.skippedRepos?.length ? (
+          <p className="text-[11.5px] text-ctp-overlay1" data-testid="chat-changes-skipped-repos">
+            Not tracked (git repositories with no commits yet): {changes.skippedRepos.join(', ')}. Revert leaves them alone.
+          </p>
+        ) : null}
         {result && (
           <div className="text-[12px] text-ctp-subtext0 flex flex-col gap-1" data-testid="chat-changes-revert-result">
             <span>

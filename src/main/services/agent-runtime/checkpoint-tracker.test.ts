@@ -34,7 +34,7 @@ vi.mock('./index', () => ({
 }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 
-import { captureBeforePrompt, clearCheckpointCaches, getChanges, handleChatEventForCheckpoints, listTurns, revertTurn, undoRevert } from './checkpoint-tracker';
+import { captureBeforePrompt, clearCheckpointCaches, getChanges, handleChatEventForCheckpoints, isRevertRunning, listTurns, revertTurn, undoRevert, whenCheckpointsIdle } from './checkpoint-tracker';
 
 let repo: string;
 let seq = 0;
@@ -67,6 +67,8 @@ beforeEach(() => {
   reg.state = 'idle';
   clearCheckpointCaches();
   git('init', '-q', '-b', 'main');
+  // Windows runners default to core.autocrlf=true; these tests compare exact bytes.
+  git('config', 'core.autocrlf', 'false');
   git('config', 'user.email', 'dev@example.com');
   git('config', 'user.name', 'Dev');
   fs.writeFileSync(path.join(repo, 'a.txt'), 'one\n');
@@ -74,8 +76,10 @@ beforeEach(() => {
   git('commit', '-q', '-m', 'init');
 });
 
-afterEach(() => {
-  fs.rmSync(repo, { recursive: true, force: true });
+afterEach(async () => {
+  // Pruning runs after turn_ended in the background; on Windows deleting the repo under it fails with EBUSY.
+  await whenCheckpointsIdle();
+  fs.rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 describe('checkpoint tracker', () => {
@@ -135,13 +139,25 @@ describe('checkpoint tracker', () => {
     // While agent-2 is mid-turn, agent-1 can't revert.
     handleChatEventForCheckpoints(turnEvent('turn_ended', 'turn-a', 'agent-1'));
     await settle(async () => !!(await listTurns('agent-1'))[0]?.end);
-    await expect(revertTurn('agent-1', 'turn-a')).rejects.toThrow(/Another agent is mid-turn/);
+    await expect(revertTurn('agent-1', 'turn-a')).rejects.toThrow(/Another agent is working in this worktree/);
   });
 
   it('marks a turn shared with a live terminal agent in the same worktree', async () => {
     reg.others.set('term-1', { cwd: repo, runtime: 'pty' });
     await runTurn('turn-t', () => fs.writeFileSync(path.join(repo, 'a.txt'), 'x\n'));
     expect((await listTurns('agent-1'))[0].shared).toBe(true);
+    // ...and refuses to revert while it's still there.
+    await expect(revertTurn('agent-1', 'turn-t')).rejects.toThrow(/Another agent is working in this worktree/);
+    expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf-8')).toBe('x\n');
+  });
+
+  it('reports a revert in progress so new prompts can wait for it', async () => {
+    await runTurn('turn-p', () => fs.writeFileSync(path.join(repo, 'a.txt'), 'x\n'));
+    expect(await isRevertRunning('agent-1')).toBe(false);
+    const reverting = revertTurn('agent-1', 'turn-p');
+    await settle(() => isRevertRunning('agent-1'));
+    await reverting;
+    expect(await isRevertRunning('agent-1')).toBe(false);
   });
 
   it('does not mark turns shared for agents in other worktrees', async () => {

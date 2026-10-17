@@ -108,7 +108,7 @@ export function handleChatEventForCheckpoints(event: ChatEvent): void {
   // Close the turn as soon as it ends, so a revert right after isn't refused.
   const ending = phase === 'end' ? openTurns.get(agentId) : undefined;
   if (ending) openTurns.delete(agentId);
-  void (async () => {
+  track((async () => {
     const root = await rootFor(agentId);
     if (!root) return;
     try {
@@ -140,7 +140,7 @@ export function handleChatEventForCheckpoints(event: ChatEvent): void {
     } catch (err) {
       warn('Checkpoint failed', { agentId, turnId, phase }, err);
     }
-  })();
+  })());
 }
 
 interface TurnRefs extends CheckpointTurn {
@@ -201,25 +201,56 @@ export async function getChanges(agentId: string, scope: ChangesScope, filePath?
   }
   const files = await diffFiles(root, from, to);
   const patch = filePath ? await diffPatch(root, from, to, filePath) : undefined;
-  const skipped = [...new Set([...await readSkipped(root, from), ...(to ? await readSkipped(root, to) : [])])];
+  const notes = [await readSkipped(root, from), ...(to ? [await readSkipped(root, to)] : [])];
+  const skipped = [...new Set(notes.flatMap((n) => n.large))];
+  const repos = [...new Set(notes.flatMap((n) => n.repos))];
   return {
     available: true,
     files,
     ...(patch !== undefined ? { patch } : {}),
     ...(skipped.length ? { skippedLarge: skipped } : {}),
+    ...(repos.length ? { skippedRepos: repos } : {}),
     live: to === undefined,
   };
 }
 
-/** Refuse while this agent, or another chat agent in the same worktree, is mid-turn. */
+/**
+ * Refuse while this agent is mid-turn, or while any other agent works in the
+ * same worktree: a chat agent mid-turn, or a live terminal or headless agent,
+ * whose edits a revert could overwrite or be overwritten by.
+ */
 async function assertQuiet(agentId: string, root: string): Promise<void> {
   const runtime = getAgentRuntime(agentId);
   if (openTurns.has(agentId) || (runtime?.kind === 'chat' && BUSY_STATES.has(runtime.getState()))) {
     throw new Error('Wait for the agent to finish its turn before changing its files');
   }
-  for (const [id, turn] of openTurns) {
-    if (id !== agentId && turn.root === root) throw new Error('Another agent is mid-turn in this worktree; try again when it finishes');
+  if ((await neighbours(agentId, root)).length) {
+    throw new Error('Another agent is working in this worktree; try again when it finishes');
   }
+}
+
+/** Worktrees with a revert or undo in progress. */
+const reverting = new Map<string, number>();
+
+async function whileReverting<T>(root: string, fn: () => Promise<T>): Promise<T> {
+  reverting.set(root, (reverting.get(root) ?? 0) + 1);
+  try {
+    return await fn();
+  } finally {
+    const n = (reverting.get(root) ?? 1) - 1;
+    if (n) reverting.set(root, n);
+    else reverting.delete(root);
+  }
+}
+
+/**
+ * True while a revert is changing this agent's worktree. New user prompts are
+ * refused meanwhile; other prompts wait behind it anyway, because the
+ * pre-prompt snapshot queues after the revert on the repository.
+ */
+export async function isRevertRunning(agentId: string): Promise<boolean> {
+  const root = await rootFor(agentId);
+  return !!root && reverting.has(root);
 }
 
 async function findTurn(agentId: string, turnId: string): Promise<{ root: string; turn: TurnRefs }> {
@@ -239,13 +270,13 @@ export async function revertTurn(agentId: string, turnId: string, force = false)
   const { root, turn } = await findTurn(agentId, turnId);
   if (!turn.end) throw new Error('That turn has no end checkpoint yet; wait for it to finish');
   await assertQuiet(agentId, root);
-  const { before, after, ...result } = await revertChanges(root, turn.start, turn.end, {
+  const { before, after, ...result } = await whileReverting(root, () => revertChanges(root, turn.start, turn.end, {
     force,
     backupRefs: {
       before: checkpointRef(agentId, turn.sessionId, turnId, 'pre-revert'),
       after: checkpointRef(agentId, turn.sessionId, turnId, 'post-revert'),
     },
-  });
+  }));
   appLog('core:chat', 'info', 'Reverted turn', {
     meta: { agentId, turnId, reverted: result.reverted.length, conflicts: result.conflicts.length, skipped: result.skipped.length, force, backup: before, after },
   });
@@ -258,7 +289,8 @@ export async function undoRevert(agentId: string, turnId: string): Promise<Rever
   if (!turn.preRevert || !turn.postRevert) throw new Error('Nothing to undo for that turn');
   await assertQuiet(agentId, root);
   // Same operation as a revert: restore the backup, refusing files changed since the post-revert tree.
-  const result = await revertChanges(root, turn.preRevert, turn.postRevert);
+  const { preRevert, postRevert } = turn;
+  const result = await whileReverting(root, () => revertChanges(root, preRevert, postRevert));
   if (!result.conflicts.length && !result.skipped.length) {
     await deleteRef(root, checkpointRef(agentId, turn.sessionId, turnId, 'pre-revert'));
     await deleteRef(root, checkpointRef(agentId, turn.sessionId, turnId, 'post-revert'));
@@ -269,9 +301,22 @@ export async function undoRevert(agentId: string, turnId: string): Promise<Rever
   return { reverted: result.reverted, conflicts: result.conflicts, skipped: result.skipped, undoable: !!(result.conflicts.length || result.skipped.length) };
 }
 
+/** Background checkpoint work started by chat events. */
+const inFlight = new Set<Promise<void>>();
+function track(work: Promise<void>): void {
+  inFlight.add(work);
+  void work.finally(() => inFlight.delete(work));
+}
+
+/** Resolves once background checkpoint work has finished. For tests and shutdown. */
+export async function whenCheckpointsIdle(): Promise<void> {
+  while (inFlight.size) await Promise.allSettled([...inFlight]);
+}
+
 /** For tests. */
 export function clearCheckpointCaches(): void {
   rootCache.clear();
   pendingStart.clear();
   openTurns.clear();
+  reverting.clear();
 }

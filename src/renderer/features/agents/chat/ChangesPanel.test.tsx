@@ -88,11 +88,12 @@ describe('ChangesPanel', () => {
   });
 
   it('reports files left alone and large untracked files', async () => {
-    chat.getChanges = vi.fn(async () => ({ ...turnChanges, skippedLarge: ['video.mov'] }));
+    chat.getChanges = vi.fn(async () => ({ ...turnChanges, skippedLarge: ['video.mov'], skippedRepos: ['scratch'] }));
     chat.revertTurn = vi.fn(async () => ({ reverted: ['src/app.ts'], conflicts: [], skipped: ['dist/out.js'] }));
     renderPanel();
     await screen.findByText('src/app.ts');
     expect(screen.getByTestId('chat-changes-skipped-large')).toHaveTextContent('video.mov');
+    expect(screen.getByTestId('chat-changes-skipped-repos')).toHaveTextContent('scratch');
     fireEvent.click(screen.getByRole('button', { name: 'Revert last turn' }));
     fireEvent.click(screen.getByRole('button', { name: 'Revert' }));
     expect(await screen.findByTestId('chat-changes-revert-skipped')).toHaveTextContent('dist/out.js');

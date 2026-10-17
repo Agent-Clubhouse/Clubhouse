@@ -36,6 +36,8 @@ export interface ChangesResult {
   live?: boolean;
   /** Untracked files too large to checkpoint; they don't show here and a revert never touches them. */
   skippedLarge?: string[];
+  /** Nested git repositories with no commits yet; git can't record them, so they don't show here either. */
+  skippedRepos?: string[];
 }
 
 export interface RevertResult {

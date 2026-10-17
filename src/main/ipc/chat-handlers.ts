@@ -9,7 +9,7 @@ import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRunti
 import { PERMISSION_LEVELS } from '../../shared/chat';
 import { getAgentRuntime, isChatAgent, readChatTranscript, onChatEvent, resolveChatDriver } from '../services/agent-runtime';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
-import { handleChatEventForCheckpoints, listTurns, getChanges, revertTurn, undoRevert, type ChangesScope } from '../services/agent-runtime/checkpoint-tracker';
+import { handleChatEventForCheckpoints, listTurns, getChanges, revertTurn, undoRevert, isRevertRunning, type ChangesScope } from '../services/agent-runtime/checkpoint-tracker';
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -51,8 +51,11 @@ export function registerChatHandlers(): void {
     [stringArg(), stringArg({ minLength: 1 }), stringArg({ optional: true })],
     async (_event, agentId, text, delivery) => {
       const requested = delivery && DELIVERIES.has(delivery) ? (delivery as 'auto' | MessageDelivery) : 'auto';
+      const runtime = requireChatRuntime(agentId);
+      // The agent would start editing files the revert is restoring.
+      if (await isRevertRunning(agentId)) throw new Error('Wait for the revert to finish before sending');
       const content: ContentBlock[] = [{ type: 'text', text }];
-      return requireChatRuntime(agentId).sendMessage(content, { source: 'user', delivery: requested });
+      return runtime.sendMessage(content, { source: 'user', delivery: requested });
     },
   ));
 

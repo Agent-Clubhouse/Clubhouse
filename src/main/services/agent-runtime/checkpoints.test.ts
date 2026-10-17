@@ -36,6 +36,8 @@ function read(file: string): string | null {
 beforeEach(() => {
   repo = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-checkpoints-'));
   git('init', '-q', '-b', 'main');
+  // Windows runners default to core.autocrlf=true; these tests compare exact bytes.
+  git('config', 'core.autocrlf', 'false');
   git('config', 'user.email', 'dev@example.com');
   git('config', 'user.name', 'Dev');
   write('src/app.ts', 'export const a = 1;\n');
@@ -264,7 +266,7 @@ describe('git checkpoints', () => {
     const end = await createCheckpoint(repo, checkpointRef('a', 's', 't', 'end'), 'end');
 
     expect(git('ls-tree', '-r', '--name-only', end).split('\n')).not.toContain('big.bin');
-    expect(await readSkipped(repo, end)).toEqual(['big.bin']);
+    expect(await readSkipped(repo, end)).toEqual({ large: ['big.bin'], repos: [] });
     const result = await revertChanges(repo, start, end);
     expect(result.reverted).toEqual(['small.txt']);
     expect(fs.existsSync(path.join(repo, 'big.bin'))).toBe(true);
@@ -284,7 +286,8 @@ describe('git checkpoints', () => {
 
   it('uses paths relative to the repository root from a subdirectory', async () => {
     const sub = path.join(repo, 'src');
-    expect(await repoRoot(sub)).toBe(fs.realpathSync(repo));
+    // Windows: git reports C:/Users/runneradmin/..., tmpdir may be C:\\Users\\RUNNER~1\\...
+    expect(fs.realpathSync.native((await repoRoot(sub)) as string)).toBe(fs.realpathSync.native(repo));
   });
 
   it('seeds the snapshot from the user\'s index without changing it', async () => {
@@ -302,6 +305,27 @@ describe('git checkpoints', () => {
     write('src/app.ts', 'export const a = 8;\n');
     const commit = await createCheckpoint(repo, checkpointRef('a', 's', 't', 'start'), 'start');
     expect(git('show', `${commit}:src/app.ts`)).toBe('export const a = 8;');
+  });
+
+  it('leaves out a nested repository with no commits instead of failing the checkpoint', async () => {
+    fs.mkdirSync(path.join(repo, 'scratch'));
+    execFileSync('git', ['init', '-q'], { cwd: path.join(repo, 'scratch') });
+    write('scratch/a.txt', 'inside\n');
+    write('notes.txt', 'outside\n');
+    const commit = await createCheckpoint(repo, checkpointRef('a', 's', 't', 'start'), 'start');
+    const files = git('ls-tree', '-r', '--name-only', commit).split('\n');
+    expect(files).toContain('notes.txt');
+    expect(files.some((f) => f.startsWith('scratch'))).toBe(false);
+    expect(await readSkipped(repo, commit)).toEqual({ large: [], repos: ['scratch'] });
+  });
+
+  it('restores line endings the way checkout would (LF stored, autocrlf=true gives CRLF)', async () => {
+    git('config', 'core.autocrlf', 'true');
+    const start = await createCheckpoint(repo, checkpointRef('a', 's', 't', 'start'), 'start');
+    write('src/app.ts', 'agent edit\n');
+    const end = await createCheckpoint(repo, checkpointRef('a', 's', 't', 'end'), 'end');
+    await revertChanges(repo, start, end);
+    expect(read('src/app.ts')).toBe('export const a = 1;\r\n');
   });
 
   it('pins plain diff output whatever the user\'s diff config says', async () => {
