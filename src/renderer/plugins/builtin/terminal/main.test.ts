@@ -198,8 +198,8 @@ describe('makeSessionId', () => {
     expect(makeSessionId('proj-abc', 'project')).toBe('terminal:proj-abc:project');
   });
 
-  it('agent produces terminal:<projectId>:agent:<name>', () => {
-    expect(makeSessionId('proj-abc', 'agent', 'snazzy-fox')).toBe('terminal:proj-abc:agent:snazzy-fox');
+  it('agent produces terminal:<projectId>:agent:<agentId>', () => {
+    expect(makeSessionId('proj-abc', 'agent', 'agent-1')).toBe('terminal:proj-abc:agent:agent-1');
   });
 
   it('project and agent IDs never collide even if agent name is "project"', () => {

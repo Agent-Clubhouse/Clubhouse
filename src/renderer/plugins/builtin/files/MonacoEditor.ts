@@ -66,6 +66,19 @@ export function disposeAllModels(): void {
   modelCache.clear();
 }
 
+/**
+ * Dispose every model without unsaved edits. Files calls this when the scope
+ * changes, since a worktree outside the project reuses the same relative paths
+ * as the root and a cached model would show the other checkout's content.
+ */
+export function disposeCleanModels(): void {
+  for (const [filePath, cached] of modelCache) {
+    if (cached.model.getValue() !== cached.savedContent) continue;
+    cached.model.dispose();
+    modelCache.delete(filePath);
+  }
+}
+
 export function updateSavedContent(filePath: string, content: string): void {
   const cached = modelCache.get(filePath);
   if (cached) {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { FileViewer, clearFileCache } from './FileViewer';
+import { FileViewer, clearFileCache, revealLabel } from './FileViewer';
 import { fileState } from './state';
 import { createMockAPI } from '../../testing';
 
@@ -189,18 +189,25 @@ describe('FileViewer', () => {
     });
   });
 
-  it('shows "Open in Finder" button that calls api.files.showInFolder()', async () => {
+  it('the strip menu reveals the file with api.files.showInFolder()', async () => {
     const api = createViewerAPI();
     render(<FileViewer api={api} />);
 
     selectFile('hello.ts');
 
-    await waitFor(() => {
-      expect(screen.getByText('Open in Finder')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText('Open in Finder'));
+    fireEvent.click(await screen.findByTestId('files-file-menu-btn'));
+    fireEvent.click(screen.getByRole('menuitem', { name: revealLabel() }));
     expect(api.files.showInFolder).toHaveBeenCalledWith('hello.ts');
+  });
+
+  it('shows the reveal button on the binary file message', async () => {
+    const api = createViewerAPI();
+    render(<FileViewer api={api} />);
+
+    selectFile('data.bin');
+
+    fireEvent.click(await screen.findByText(revealLabel()));
+    expect(api.files.showInFolder).toHaveBeenCalledWith('data.bin');
   });
 
   it('shows binary file message for unsupported formats', async () => {
@@ -214,7 +221,7 @@ describe('FileViewer', () => {
     });
   });
 
-  it('shows status bar with line/column and language for text files', async () => {
+  it('puts the path and cursor position in the one tab strip, with no header or status bar', async () => {
     const api = createViewerAPI();
     render(<FileViewer api={api} />);
 
@@ -224,13 +231,14 @@ describe('FileViewer', () => {
       expect(screen.getByText('Ln 1, Col 1')).toBeInTheDocument();
     });
 
-    // Status bar should show TypeScript language
-    expect(screen.getByText('TypeScript')).toBeInTheDocument();
-    // Status bar should show encoding
-    expect(screen.getByText('UTF-8')).toBeInTheDocument();
+    const strip = screen.getByTestId('files-tab-strip');
+    expect(strip).toContainElement(screen.getByTestId('files-cursor'));
+    expect(strip).toContainElement(screen.getByTestId('files-active-path'));
+    expect(screen.getByTestId('files-active-path')).toHaveTextContent('hello.ts');
+    expect(screen.queryByText('UTF-8')).not.toBeInTheDocument();
   });
 
-  it('does not show status bar for binary files', async () => {
+  it('does not show the cursor position for binary files', async () => {
     const api = createViewerAPI();
     render(<FileViewer api={api} />);
 

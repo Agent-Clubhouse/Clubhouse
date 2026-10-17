@@ -12,9 +12,14 @@ describe('isListTab', () => {
   it('is false for full-layout tabs, Terminal, app views and core tabs', () => {
     expect(isListTab('plugin:canvas', 'full')).toBe(false);
     expect(isListTab('plugin:terminal', 'sidebar-content')).toBe(false);
+    expect(isListTab('plugin:terminal', 'sidebar-content', { remote: false })).toBe(false);
     expect(isListTab('plugin:app:goobers', undefined)).toBe(false);
     expect(isListTab('agents', undefined)).toBe(false);
     expect(isListTab('settings', undefined)).toBe(false);
+  });
+
+  it('keeps Terminal\'s targets list for remote projects, which have no scope', () => {
+    expect(isListTab('plugin:terminal', 'sidebar-content', { remote: true })).toBe(true);
   });
 });
 

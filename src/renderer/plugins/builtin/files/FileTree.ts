@@ -4,26 +4,22 @@ import type { FileNode } from '../../../../shared/types';
 import { fileState } from './state';
 import { getFileIconColor } from './file-icons';
 import { fuzzyMatch } from '../../../features/command-palette/fuzzy-match';
-import { useChromeScope } from '../../../chrome/scope';
+import { PopupMenu, type MenuItem } from '../../../chrome/sidebar/ProjectMenu';
+import { formatBinding } from '../../../stores/keyboardShortcutsStore';
+import { useFilesScope } from './filesScope';
 
 // ── Icons ──────────────────────────────────────────────────────────────
-
-const RefreshIcon = React.createElement('svg', {
-  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
-  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-}, React.createElement('polyline', { points: '23 4 23 10 17 10' }),
-   React.createElement('path', { d: 'M20.49 15a9 9 0 1 1-2.12-9.36L23 10' }));
 
 const FolderIcon = React.createElement('svg', {
   width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-  className: 'text-ctp-info flex-shrink-0',
+  className: 'text-ctp-overlay1 flex-shrink-0',
 }, React.createElement('path', { d: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z' }));
 
 const FolderOpenIcon = React.createElement('svg', {
   width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-  className: 'text-ctp-info flex-shrink-0',
+  className: 'text-ctp-overlay1 flex-shrink-0',
 }, React.createElement('path', { d: 'M5 19a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4l2 3h9a2 2 0 0 1 2 2v1' }),
    React.createElement('path', { d: 'M22 10H10a2 2 0 0 0-2 2l-1 7h15l1-7a2 2 0 0 0-2-2z' }));
 
@@ -37,13 +33,13 @@ const FileIcon = (color: string) => React.createElement('svg', {
 const ChevronRight = React.createElement('svg', {
   width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-  className: 'flex-shrink-0',
+  className: 'flex-shrink-0 text-ctp-overlay0',
 }, React.createElement('polyline', { points: '9 18 15 12 9 6' }));
 
 const ChevronDown = React.createElement('svg', {
   width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-  className: 'flex-shrink-0',
+  className: 'flex-shrink-0 text-ctp-overlay0',
 }, React.createElement('polyline', { points: '6 9 12 15 18 9' }));
 
 const NewFileIcon = React.createElement('svg', {
@@ -54,30 +50,17 @@ const NewFileIcon = React.createElement('svg', {
    React.createElement('line', { x1: 12, y1: 18, x2: 12, y2: 12 }),
    React.createElement('line', { x1: 9, y1: 15, x2: 15, y2: 15 }));
 
-const NewFolderIcon = React.createElement('svg', {
-  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
-  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-}, React.createElement('path', { d: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z' }),
-   React.createElement('line', { x1: 12, y1: 11, x2: 12, y2: 17 }),
-   React.createElement('line', { x1: 9, y1: 14, x2: 15, y2: 14 }));
-
-const ExpandAllIcon = React.createElement('svg', {
-  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
-  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-}, React.createElement('polyline', { points: '6 6 12 12 18 6' }),
-   React.createElement('polyline', { points: '6 12 12 18 18 12' }));
-
-const CollapseAllIcon = React.createElement('svg', {
-  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
-  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-}, React.createElement('polyline', { points: '6 18 12 12 18 18' }),
-   React.createElement('polyline', { points: '6 12 12 6 18 12' }));
-
 const SearchIcon = React.createElement('svg', {
   width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
    React.createElement('line', { x1: 21, y1: 21, x2: 16.65, y2: 16.65 }));
+
+const MoreIcon = React.createElement('svg', {
+  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'currentColor',
+}, React.createElement('circle', { cx: 5, cy: 12, r: 1.6 }),
+   React.createElement('circle', { cx: 12, cy: 12, r: 1.6 }),
+   React.createElement('circle', { cx: 19, cy: 12, r: 1.6 }));
 
 const GitBranchIcon = React.createElement('svg', {
   width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none',
@@ -102,7 +85,7 @@ function GitBadge({ status }: { status: string }) {
   }
 
   return React.createElement('span', {
-    className: `text-xs font-bold ${color} ml-auto flex-shrink-0 pl-1`,
+    className: `font-mono text-[11px] font-semibold ${color} ml-auto flex-shrink-0 pl-1`,
   }, letter);
 }
 
@@ -303,11 +286,11 @@ const TreeNode = React.memo(function TreeNodeInner({
   const bgClass = isDropTarget
     ? 'bg-ctp-accent/20 text-ctp-text ring-1 ring-inset ring-ctp-accent/50'
     : isSelected
-      ? 'bg-surface-1 text-ctp-text font-medium'
+      ? 'bg-surface-0 text-ctp-text'
       : isMultiSelected
         ? 'bg-ctp-accent/15 text-ctp-text'
         : isFocused
-          ? 'bg-surface-1 text-ctp-text'
+          ? 'bg-surface-0 text-ctp-text'
           : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text';
 
   const handleClick = (e: React.MouseEvent) => {
@@ -334,7 +317,7 @@ const TreeNode = React.memo(function TreeNodeInner({
 
   const chevron = node.isDirectory
     ? (isExpanded ? ChevronDown : ChevronRight)
-    : React.createElement('span', { className: 'w-3' });
+    : React.createElement('span', { className: 'w-3 flex-shrink-0' });
 
   const nameEl = filterMatches && filterMatches.length > 0
     ? React.createElement(HighlightedName, { name: node.name, matches: filterMatches })
@@ -343,8 +326,8 @@ const TreeNode = React.memo(function TreeNodeInner({
   const elements: React.ReactNode[] = [
     React.createElement('div', {
       key: node.path,
-      className: `flex items-center gap-1 px-2 py-0.5 cursor-pointer select-none text-xs rounded-sm ${bgClass} transition-colors`,
-      style: { paddingLeft: `${8 + depth * 12}px` },
+      className: `mx-1.5 h-7 flex items-center gap-1.5 pr-2.5 cursor-pointer select-none text-[13px] rounded-md ${bgClass} transition-colors`,
+      style: { paddingLeft: `${10 + depth * 14}px` },
       onClick: handleClick,
       onDoubleClick: handleDoubleClick,
       onContextMenu: (e: React.MouseEvent) => onContextMenu(e, node),
@@ -434,73 +417,25 @@ const TreeNode = React.memo(function TreeNodeInner({
 
 // ── Context menu ──────────────────────────────────────────────────────
 
-interface ContextMenuProps {
-  x: number;
-  y: number;
-  node: FileNode;
-  multiSelectCount: number;
-  onClose: () => void;
-  onAction: (action: string) => void;
-}
-
-function ContextMenu({ x, y, node: _node, multiSelectCount, onClose, onAction }: ContextMenuProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
-
-  const isMulti = multiSelectCount > 1;
-  const items = isMulti
-    ? [
-        { label: `Delete ${multiSelectCount} items`, action: 'deleteSelected' },
-      ]
-    : [
-        { label: 'New File', action: 'newFile' },
-        { label: 'New Folder', action: 'newFolder' },
-        { label: 'Rename', action: 'rename' },
-        { label: 'Copy', action: 'copy' },
-        { label: 'Delete', action: 'delete' },
-      ];
-
-  const style = useMemo(() => {
-    const menuWidth = 160;
-    const menuHeight = items.length * 24 + 8; // items × 24px + 8px padding
-    return {
-      left: Math.min(x, window.innerWidth - menuWidth - 8),
-      top: Math.min(y, window.innerHeight - menuHeight - 8),
-    };
-  }, [x, y, items.length]);
-
-  return React.createElement('div', {
-    ref: menuRef,
-    className: 'fixed z-dropdown bg-ctp-mantle border border-surface-0 rounded shadow-lg py-1 min-w-[140px]',
-    style,
-  },
-    ...items.map((item) =>
-      React.createElement('button', {
-        key: item.action,
-        className: `w-full text-left px-2.5 py-1 mx-1 rounded-sm text-xs transition-colors ${
-          item.action === 'delete' || item.action === 'deleteSelected'
-            ? 'text-ctp-error hover:bg-ctp-error/10'
-            : 'text-ctp-subtext1 hover:bg-surface-1 hover:text-ctp-text'
-        }`,
-        style: { width: 'calc(100% - 8px)' },
-        onClick: () => { onAction(item.action); onClose(); },
-      }, item.label),
-    ),
-  );
+/** The tree's right-click actions, for the shared PopupMenu. */
+function contextMenuItems(multiSelectCount: number, onAction: (action: string) => void): MenuItem[] {
+  const item = (id: string, label: string): MenuItem => ({ id, label, onSelect: () => onAction(id) });
+  if (multiSelectCount > 1) return [item('deleteSelected', `Delete ${multiSelectCount} items`)];
+  return [
+    item('newFile', 'New file'),
+    item('newFolder', 'New folder'),
+    item('rename', 'Rename'),
+    item('copy', 'Copy'),
+    item('delete', 'Delete'),
+  ];
 }
 
 // ── FileTree (SidebarPanel) ───────────────────────────────────────────
 
-export function FileTree({ api }: { api: PluginAPI }) {
+export function FileTree({ api: rawApi }: { api: PluginAPI }) {
+  // New chrome: the root, search and git badges follow the sidebar selection
+  // (agent worktree or project root) and the worktree picker is hidden (spec §4.5).
+  const { api, root: scopeRoot } = useFilesScope(rawApi);
   const [tree, setTree] = useState<FileNode[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
@@ -512,10 +447,6 @@ export function FileTree({ api }: { api: PluginAPI }) {
   // editor tab.  Used so the toolbar's New File/Folder targets the folder the
   // user picked, not the editor's parent dir.  Wave 10 #2.
   const [navSelectedPath, setNavSelectedPath] = useState<string | null>(null);
-  // New chrome: the root follows the sidebar selection (agent worktree or
-  // project root) and the worktree picker is hidden (spec §4.5).
-  const scope = useChromeScope(api.context.projectId);
-  const scopeRoot = scope ? scope.relativeRoot : null;
   const scopeRootRef = useRef(scopeRoot);
   scopeRootRef.current = scopeRoot;
   const [rootPath, setRootPath] = useState<string>(() => scopeRoot ?? '.');
@@ -1283,6 +1214,25 @@ export function FileTree({ api }: { api: PluginAPI }) {
 
   const selectionCount = multiSelectedPaths.size;
 
+  const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
+  const searchShortcut = formatBinding('Meta+Shift+F');
+  const refreshAll = () => { loadTree(); loadGitStatus(); loadBranch(); loadWorktrees(); };
+  const moreItems: MenuItem[] = [
+    { id: 'new-folder', label: 'New folder', onSelect: handleNewFolder },
+    { id: 'expand-all', label: 'Expand all', onSelect: expandAll },
+    { id: 'collapse-all', label: 'Collapse all', onSelect: collapseAll },
+    { id: 'search', label: `Search across files (${searchShortcut})`, onSelect: () => fileState.setSearchMode(true) },
+    { id: 'refresh', label: 'Refresh', onSelect: refreshAll },
+  ];
+
+  const iconButton = (props: Record<string, unknown>, icon: React.ReactElement) =>
+    React.createElement('button', {
+      type: 'button',
+      className: 'w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-md text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0 transition-colors focus-ring',
+      ...props,
+    }, icon);
+
   return React.createElement('div', {
     ref: containerRef,
     className: 'flex flex-col h-full bg-ctp-mantle text-ctp-text select-none focus-ring-inset',
@@ -1292,130 +1242,99 @@ export function FileTree({ api }: { api: PluginAPI }) {
     onFocus: handleFocus,
     onDragEnter: handleDragEnter,
   },
-    // Header
+    // Header: one row (filter, new file, more). The classic layout adds its worktree picker above it.
     React.createElement('div', {
-      className: 'flex flex-col border-b border-surface-0 flex-shrink-0',
+      className: 'flex flex-col flex-shrink-0 pt-1.5',
     },
-      // Row 1: Branch + Worktree selector
-      React.createElement('div', {
-        className: 'flex items-center gap-2 px-3 py-1',
-      },
-        // Branch indicator — show worktree branch or "No Worktree" for agent dirs without one
-        (currentBranch || rootPath !== '.')
-          ? React.createElement('div', {
-              className: 'flex items-center gap-1 text-xs text-ctp-subtext0 flex-shrink-0',
-              title: currentBranch ? `Branch: ${currentBranch}` : 'No worktree',
-            },
-              GitBranchIcon,
-              React.createElement('span', { className: 'truncate max-w-[80px]' },
-                currentBranch || 'No Worktree'),
-            )
-          : null,
+      // Classic layout only: branch and worktree picker. In the new chrome the
+      // sidebar selection picks the worktree and the scope line names it.
+      scopeRoot === null && (currentBranch || rootPath !== '.' || worktrees.length > 0)
+        ? React.createElement('div', {
+            className: 'flex items-center gap-2 px-3.5 pb-1.5 text-xs',
+          },
+            (currentBranch || rootPath !== '.')
+              ? React.createElement('div', {
+                  className: 'flex items-center gap-1 text-ctp-overlay1 flex-shrink-0',
+                  title: currentBranch ? `Branch: ${currentBranch}` : 'No worktree',
+                },
+                  GitBranchIcon,
+                  React.createElement('span', { className: 'truncate max-w-[120px]' },
+                    currentBranch || 'No worktree'),
+                )
+              : null,
+            worktrees.length > 0
+              ? React.createElement('select', {
+                  className: 'flex-1 min-w-0 h-7 text-xs bg-surface-0 text-ctp-text border-none rounded-md px-1.5 cursor-pointer truncate focus-ring',
+                  value: rootPath,
+                  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => handleRootChange(e.target.value),
+                  title: 'Switch worktree root',
+                },
+                  React.createElement('option', { value: '.' }, '/ (root)'),
+                  ...worktrees.map((wt) =>
+                    React.createElement('option', {
+                      key: wt,
+                      value: `.clubhouse/agents/${wt}`,
+                    }, wt),
+                  ),
+                )
+              : null,
+          )
+        : null,
 
-        // Worktree selector
-        worktrees.length > 0 && scopeRoot === null
-          ? React.createElement('select', {
-              className: 'flex-1 min-w-0 text-xs bg-surface-0 text-ctp-text border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none',
-              value: rootPath,
-              onChange: (e: React.ChangeEvent<HTMLSelectElement>) => handleRootChange(e.target.value),
-              title: 'Switch worktree root',
-            },
-              React.createElement('option', { value: '.' }, '/ (root)'),
-              ...worktrees.map((wt) =>
-                React.createElement('option', {
-                  key: wt,
-                  value: `.clubhouse/agents/${wt}`,
-                }, wt),
-              ),
-            )
-          : React.createElement('span', { className: 'flex-1 text-xs font-medium' }, 'Files'),
-      ),
-
-      // Row 2: Toolbar buttons
       React.createElement('div', {
-        className: 'flex items-center justify-end gap-0.5 px-2 pb-1',
+        className: 'flex items-center gap-1 px-2 pb-1.5',
       },
-        // Selection count badge
-        selectionCount > 1
-          ? React.createElement('span', {
-              className: 'text-xs text-ctp-accent font-medium mr-auto pl-1',
-              title: `${selectionCount} items selected`,
-            }, `${selectionCount} selected`)
-          : null,
-        // New File
-        React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
-          onClick: handleNewFile,
-          title: 'New File',
-        }, NewFileIcon),
-        // New Folder
-        React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
-          onClick: handleNewFolder,
-          title: 'New Folder',
-        }, NewFolderIcon),
-        // Separator
-        React.createElement('div', { className: 'w-px h-3 bg-surface-0 mx-0.5' }),
-        // Expand All
-        React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
-          onClick: expandAll,
-          title: 'Expand All',
-        }, ExpandAllIcon),
-        // Collapse All
-        React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
-          onClick: collapseAll,
-          title: 'Collapse All',
-        }, CollapseAllIcon),
-        // Separator
-        React.createElement('div', { className: 'w-px h-3 bg-surface-0 mx-0.5' }),
-        // Search
-        React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
-          onClick: () => fileState.setSearchMode(true),
-          title: 'Search Across Files (Cmd+Shift+F)',
-        }, SearchIcon),
-        // Separator
-        React.createElement('div', { className: 'w-px h-3 bg-surface-0 mx-0.5' }),
-        // Refresh
-        React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
-          onClick: () => { loadTree(); loadGitStatus(); loadBranch(); loadWorktrees(); },
-          title: 'Refresh',
-        }, RefreshIcon),
-      ),
-
-      // Row 3: Filter input
-      React.createElement('div', {
-        className: 'flex items-center gap-1 px-2 pb-1',
-      },
-        React.createElement('div', { className: 'relative flex-1' },
+        React.createElement('div', { className: 'relative flex-1 min-w-0' },
+          React.createElement('span', {
+            className: 'absolute left-2 top-1/2 -translate-y-1/2 text-ctp-overlay1 pointer-events-none flex',
+            'aria-hidden': true,
+          }, SearchIcon),
           React.createElement('input', {
             type: 'text',
-            placeholder: 'Filter files…',
+            placeholder: 'Filter files',
             value: filterText,
             onChange: (e: React.ChangeEvent<HTMLInputElement>) => setFilterText(e.target.value),
             onKeyDown: (e: React.KeyboardEvent) => e.stopPropagation(), // prevent tree keyboard nav while typing
-            className: 'w-full bg-surface-0 text-ctp-text placeholder:text-ctp-subtext0 text-xs rounded px-2 py-0.5 focus-ring-dim pr-5',
+            className: 'w-full h-7 bg-surface-0 text-ctp-text placeholder:text-ctp-overlay1 text-xs rounded-md pl-7 pr-6 focus-ring-dim',
             'aria-label': 'Filter files',
           }),
           filterText
             ? React.createElement('button', {
-                className: 'absolute right-1 top-1/2 -translate-y-1/2 text-ctp-subtext0 hover:text-ctp-text leading-none',
+                type: 'button',
+                className: 'absolute right-1.5 top-1/2 -translate-y-1/2 text-ctp-overlay1 hover:text-ctp-text leading-none',
                 onClick: () => setFilterText(''),
                 title: 'Clear filter',
                 tabIndex: -1,
-              }, '×')
+              }, '\u00D7')
             : null,
         ),
+        iconButton({ onClick: handleNewFile, title: 'New file', 'aria-label': 'New file' }, NewFileIcon),
+        iconButton({
+          ref: moreBtnRef,
+          title: 'More file actions',
+          'aria-label': 'More file actions',
+          'aria-haspopup': 'menu',
+          'aria-expanded': moreMenu !== null,
+          'data-testid': 'files-more-btn',
+          onClick: () => {
+            const r = moreBtnRef.current?.getBoundingClientRect();
+            setMoreMenu(moreMenu ? null : { x: (r?.right ?? 0) - 180, y: (r?.bottom ?? 0) + 4 });
+          },
+        }, MoreIcon),
       ),
+
+      selectionCount > 1
+        ? React.createElement('div', {
+            className: 'px-3.5 pb-1 text-xs text-ctp-overlay1',
+            title: `${selectionCount} items selected`,
+          }, `${selectionCount} selected`)
+        : null,
     ),
 
     // Tree
-    React.createElement('div', { className: 'flex-1 overflow-auto py-1' },
+    React.createElement('div', { className: 'flex-1 overflow-auto pb-1' },
       displayTree.length === 0
-        ? React.createElement('div', { className: 'px-3 py-4 text-xs text-ctp-subtext0 text-center' },
+        ? React.createElement('div', { className: 'px-3.5 py-1 text-xs text-ctp-overlay1' },
             filterText ? 'No matching files' : 'No files found',
           )
         : displayTree.map((node) =>
@@ -1446,13 +1365,25 @@ export function FileTree({ api }: { api: PluginAPI }) {
 
     // Context menu
     contextMenu
-      ? React.createElement(ContextMenu, {
-          x: contextMenu.x,
-          y: contextMenu.y,
-          node: contextMenu.node,
-          multiSelectCount: multiSelectedPaths.size > 1 ? multiSelectedPaths.size : 0,
+      ? React.createElement(PopupMenu, {
+          items: contextMenuItems(
+            multiSelectedPaths.size > 1 ? multiSelectedPaths.size : 0,
+            (action: string) => handleContextAction(action, contextMenu.node),
+          ),
+          position: { x: contextMenu.x, y: contextMenu.y },
+          label: 'File actions',
+          testId: 'files-tree-menu',
           onClose: () => setContextMenu(null),
-          onAction: (action: string) => handleContextAction(action, contextMenu.node),
+        })
+      : null,
+
+    moreMenu
+      ? React.createElement(PopupMenu, {
+          items: moreItems,
+          position: moreMenu,
+          label: 'More file actions',
+          testId: 'files-more-menu',
+          onClose: () => { setMoreMenu(null); moreBtnRef.current?.focus(); },
         })
       : null,
   );

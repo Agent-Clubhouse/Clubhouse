@@ -5,6 +5,24 @@ import { fileState } from './state';
 import { createMockAPI } from '../../testing';
 import type { FileNode } from '../../../../shared/types';
 
+/** A tree row's highlight for the selected or keyboard-focused item (hover: variants excluded). */
+const ACTIVE = /(^|\s)bg-surface-0(\s|$)/;
+
+function activeRow(container: HTMLElement): Element | null {
+  return Array.from(container.querySelectorAll('[role="treeitem"]')).find((el) => ACTIVE.test(el.className)) ?? null;
+}
+
+/**
+ * The toolbar's buttons: New file stays visible; the rest live in the More menu.
+ * Returns an element to click: the menu item (opening the menu first).
+ */
+function getByTitleOrMenu(label: string): HTMLElement {
+  if (!screen.queryByRole('menu', { name: 'More file actions' })) {
+    fireEvent.click(screen.getByTestId('files-more-btn'));
+  }
+  return screen.getByRole('menuitem', { name: label });
+}
+
 const MOCK_TREE: FileNode[] = [
   {
     name: 'src',
@@ -135,7 +153,7 @@ describe('FileTree', () => {
     render(<FileTree api={api} />);
     await screen.findByText('src'); // wait for initial load
 
-    const refreshBtn = screen.getByTitle('Refresh');
+    const refreshBtn = getByTitleOrMenu('Refresh');
     fireEvent.click(refreshBtn);
 
     // readTree is called on mount (root + worktrees) and on refresh
@@ -174,10 +192,10 @@ describe('FileTree', () => {
     fireEvent.contextMenu(srcDir);
 
     await waitFor(() => {
-      expect(screen.getByText('New File')).toBeInTheDocument();
+      expect(screen.getByText('New file')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText('New File'));
+    fireEvent.click(screen.getByText('New file'));
 
     await waitFor(() => {
       expect(showInput).toHaveBeenCalledWith('File name');
@@ -221,7 +239,7 @@ describe('FileTree', () => {
 
     // Focus should move to the first item with the visible highlight
     await waitFor(() => {
-      const focused = container.querySelector('[class*="bg-surface-1"]');
+      const focused = activeRow(container);
       expect(focused).not.toBeNull();
     });
   });
@@ -297,7 +315,7 @@ describe('FileTree', () => {
       { name: 'agent-two', path: '/project/.clubhouse/agents/agent-two', isDirectory: true },
     ];
 
-    fireEvent.click(screen.getByTitle('Refresh'));
+    fireEvent.click(getByTitleOrMenu('Refresh'));
 
     await waitFor(() => {
       expect(screen.getByRole('option', { name: 'agent-two' })).toBeInTheDocument();
@@ -331,7 +349,7 @@ describe('FileTree', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('No Worktree')).toBeInTheDocument();
+      expect(screen.getByText('No worktree')).toBeInTheDocument();
     });
   });
 
@@ -357,11 +375,11 @@ describe('FileTree', () => {
 
     await screen.findByText('src');
 
-    expect(screen.getByTitle('New File')).toBeInTheDocument();
-    expect(screen.getByTitle('New Folder')).toBeInTheDocument();
-    expect(screen.getByTitle('Expand All')).toBeInTheDocument();
-    expect(screen.getByTitle('Collapse All')).toBeInTheDocument();
-    expect(screen.getByTitle('Refresh')).toBeInTheDocument();
+    expect(screen.getByTitle('New file')).toBeInTheDocument();
+    expect(getByTitleOrMenu('New folder')).toBeInTheDocument();
+    expect(getByTitleOrMenu('Expand all')).toBeInTheDocument();
+    expect(getByTitleOrMenu('Collapse all')).toBeInTheDocument();
+    expect(getByTitleOrMenu('Refresh')).toBeInTheDocument();
   });
 
   it('does not show the "changes won\'t appear" footer', async () => {
@@ -478,7 +496,7 @@ describe('FileTree — folder expansion stability', () => {
     });
 
     // Trigger a refresh (simulates manual refresh button click)
-    fireEvent.click(screen.getByTitle('Refresh'));
+    fireEvent.click(getByTitleOrMenu('Refresh'));
 
     // Children should still be visible after refresh
     await waitFor(() => {
@@ -537,7 +555,7 @@ describe('FileTree — folder expansion stability', () => {
     await waitFor(() => expect(screen.getByText('guide.md')).toBeInTheDocument());
 
     // Trigger refresh
-    fireEvent.click(screen.getByTitle('Refresh'));
+    fireEvent.click(getByTitleOrMenu('Refresh'));
 
     // Both expanded folders should preserve their children
     await waitFor(() => {
@@ -561,7 +579,7 @@ describe('FileTree — folder expansion stability', () => {
     await waitFor(() => expect(screen.queryByText('index.ts')).not.toBeInTheDocument());
 
     // Trigger refresh
-    fireEvent.click(screen.getByTitle('Refresh'));
+    fireEvent.click(getByTitleOrMenu('Refresh'));
 
     // src should remain collapsed
     await waitFor(() => {
@@ -760,7 +778,7 @@ describe('FileTree — file structure rendering', () => {
     expect(await screen.findByText('src')).toBeInTheDocument();
 
     // Click expand all
-    fireEvent.click(screen.getByTitle('Expand All'));
+    fireEvent.click(getByTitleOrMenu('Expand all'));
 
     await waitFor(() => {
       expect(screen.getByText('src')).toBeInTheDocument();
@@ -786,7 +804,7 @@ describe('FileTree — file structure rendering', () => {
     await waitFor(() => expect(screen.getByText('guide.md')).toBeInTheDocument());
 
     // Collapse all
-    fireEvent.click(screen.getByTitle('Collapse All'));
+    fireEvent.click(getByTitleOrMenu('Collapse all'));
 
     await waitFor(() => {
       expect(screen.queryByText('index.ts')).not.toBeInTheDocument();
@@ -849,7 +867,7 @@ describe('FileTree — file structure rendering', () => {
     await waitFor(() => expect(screen.getByText('App.tsx')).toBeInTheDocument());
 
     // Refresh — both levels should survive
-    fireEvent.click(screen.getByTitle('Refresh'));
+    fireEvent.click(getByTitleOrMenu('Refresh'));
 
     await waitFor(() => {
       expect(screen.getByText('components')).toBeInTheDocument();
@@ -898,7 +916,7 @@ describe('FileTree — flicker prevention', () => {
       expect(fileState.selectedPath).toBe('README.md');
       // The selected node should still have the selected background
       const selected = document.querySelector('[data-path="/project/README.md"]');
-      expect(selected?.className).toContain('bg-surface-1');
+      expect(selected?.className).toMatch(ACTIVE);
     });
   });
 
@@ -949,7 +967,7 @@ describe('FileTree — flicker prevention', () => {
 
     // Trigger a second load before the first completes (via refresh button)
     await vi.advanceTimersByTimeAsync(100);
-    fireEvent.click(screen.getByTitle('Refresh'));
+    fireEvent.click(getByTitleOrMenu('Refresh'));
 
     // Advance past both loads
     await vi.advanceTimersByTimeAsync(600);
@@ -984,7 +1002,7 @@ describe('FileTree — keyboard navigation', () => {
 
     await waitFor(() => {
       const docsNode = container.querySelector('[data-path="/project/docs"]');
-      expect(docsNode?.className).toContain('bg-surface-1');
+      expect(docsNode?.className).toMatch(ACTIVE);
     });
   });
 
@@ -1009,7 +1027,7 @@ describe('FileTree — keyboard navigation', () => {
 
     await waitFor(() => {
       const pkgNode = container.querySelector('[data-path="/project/package.json"]');
-      expect(pkgNode?.className).toContain('bg-surface-1');
+      expect(pkgNode?.className).toMatch(ACTIVE);
     });
   });
 
@@ -1030,7 +1048,7 @@ describe('FileTree — keyboard navigation', () => {
 
     await waitFor(() => {
       const srcNode = container.querySelector('[data-path="/project/src"]');
-      expect(srcNode?.className).toContain('bg-surface-1');
+      expect(srcNode?.className).toMatch(ACTIVE);
     });
   });
 
@@ -1048,7 +1066,7 @@ describe('FileTree — keyboard navigation', () => {
 
     await waitFor(() => {
       const pkgNode = container.querySelector('[data-path="/project/package.json"]');
-      expect(pkgNode?.className).toContain('bg-surface-1');
+      expect(pkgNode?.className).toMatch(ACTIVE);
     });
   });
 
@@ -1166,13 +1184,13 @@ describe('FileTree — keyboard navigation', () => {
     await waitFor(() => {
       const srcNode = container.querySelector('[data-path="/project/src"]');
       // Focused items use the same solid highlight as the explorer pane
-      expect(srcNode?.className).toContain('bg-surface-1');
+      expect(srcNode?.className).toMatch(ACTIVE);
       expect(srcNode?.className).toContain('text-ctp-text');
     });
 
     // Non-focused items should NOT have the highlight background
     const docsNode = container.querySelector('[data-path="/project/docs"]');
-    expect(docsNode?.className).not.toContain('bg-surface-1');
+    expect(docsNode?.className).not.toMatch(ACTIVE);
   });
 });
 
@@ -1296,7 +1314,7 @@ describe('FileTree — accessibility', () => {
     const readmeNode = container.querySelector('[data-path="/project/README.md"]') as HTMLElement;
     expect(readmeNode.className).toContain('hover:bg-surface-0');
     expect(readmeNode.className).toContain('hover:text-ctp-text');
-    expect(readmeNode.className).toContain('rounded-sm');
+    expect(readmeNode.className).toContain('rounded-md');
     expect(readmeNode.className).toContain('transition-colors');
   });
 
@@ -1309,44 +1327,21 @@ describe('FileTree — accessibility', () => {
 
     await waitFor(() => {
       const readmeNode = container.querySelector('[data-path="/project/README.md"]') as HTMLElement;
-      expect(readmeNode.className).toContain('bg-surface-1');
-      expect(readmeNode.className).toContain('font-medium');
+      expect(readmeNode.className).toMatch(ACTIVE);
     });
   });
 
-  it('context menu items have rounded hover styling', async () => {
+  it('context menu uses the shared PopupMenu', async () => {
     const api = createFilesAPI();
     render(<FileTree api={api} />);
 
     const readme = await screen.findByText('README.md');
     fireEvent.contextMenu(readme);
 
-    await waitFor(() => {
-      expect(screen.getByText('Rename')).toBeInTheDocument();
-    });
-
-    const renameButton = screen.getByText('Rename');
-    expect(renameButton.className).toContain('text-ctp-subtext1');
-    expect(renameButton.className).toContain('hover:bg-surface-1');
-    expect(renameButton.className).toContain('hover:text-ctp-text');
-    expect(renameButton.className).toContain('rounded-sm');
-    expect(renameButton.className).toContain('transition-colors');
-  });
-
-  it('context menu delete item has themed hover', async () => {
-    const api = createFilesAPI();
-    render(<FileTree api={api} />);
-
-    const readme = await screen.findByText('README.md');
-    fireEvent.contextMenu(readme);
-
-    await waitFor(() => {
-      expect(screen.getByText('Delete')).toBeInTheDocument();
-    });
-
-    const deleteButton = screen.getByText('Delete');
-    expect(deleteButton.className).toContain('text-ctp-error');
-    expect(deleteButton.className).toContain('hover:bg-ctp-error/10');
+    const menu = await screen.findByRole('menu', { name: 'File actions' });
+    expect(menu).toHaveAttribute('data-testid', 'files-tree-menu');
+    expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument();
   });
 });
 
@@ -1368,7 +1363,7 @@ describe('FileTree — focus follows click', () => {
     fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
     await waitFor(() => {
       const srcNode = container.querySelector('[data-path="/project/src"]');
-      expect(srcNode?.className).toContain('bg-surface-1');
+      expect(srcNode?.className).toMatch(ACTIVE);
     });
 
     // Now click README.md — focus should move there, src should lose highlight
@@ -1376,10 +1371,10 @@ describe('FileTree — focus follows click', () => {
 
     await waitFor(() => {
       const readmeNode = container.querySelector('[data-path="/project/README.md"]');
-      expect(readmeNode?.className).toContain('bg-surface-1');
+      expect(readmeNode?.className).toMatch(ACTIVE);
 
       const srcNode = container.querySelector('[data-path="/project/src"]');
-      expect(srcNode?.className).not.toContain('bg-surface-1');
+      expect(srcNode?.className).not.toMatch(ACTIVE);
     });
   });
 
@@ -1396,7 +1391,7 @@ describe('FileTree — focus follows click', () => {
 
     await waitFor(() => {
       const docsNode = container.querySelector('[data-path="/project/docs"]');
-      expect(docsNode?.className).toContain('bg-surface-1');
+      expect(docsNode?.className).toMatch(ACTIVE);
     });
 
     // Click src directory — focus should move to src
@@ -1405,11 +1400,11 @@ describe('FileTree — focus follows click', () => {
     await waitFor(() => {
       // src gets the focused highlight (toggleExpand sets focusedPath)
       const srcNode = container.querySelector('[data-path="/project/src"]');
-      expect(srcNode?.className).toContain('bg-surface-1');
+      expect(srcNode?.className).toMatch(ACTIVE);
 
       // docs should lose highlight
       const docsNode = container.querySelector('[data-path="/project/docs"]');
-      expect(docsNode?.className).not.toContain('bg-surface-1');
+      expect(docsNode?.className).not.toMatch(ACTIVE);
     });
   });
 
@@ -1423,7 +1418,7 @@ describe('FileTree — focus follows click', () => {
 
     await waitFor(() => {
       const readmeNode = container.querySelector('[data-path="/project/README.md"]');
-      expect(readmeNode?.className).toContain('bg-surface-1');
+      expect(readmeNode?.className).toMatch(ACTIVE);
     });
 
     // Verify fileState tab was opened permanently
@@ -1456,7 +1451,7 @@ describe('FileTree — filter/search', () => {
     render(<FileTree api={api} />);
 
     await screen.findByText('src');
-    expect(screen.getByPlaceholderText('Filter files…')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Filter files')).toBeInTheDocument();
   });
 
   it('typing in filter shows only matching files', async () => {
@@ -1465,7 +1460,7 @@ describe('FileTree — filter/search', () => {
 
     await screen.findByText('src');
 
-    const filterInput = screen.getByPlaceholderText('Filter files…');
+    const filterInput = screen.getByPlaceholderText('Filter files');
     fireEvent.change(filterInput, { target: { value: 'README' } });
 
     await waitFor(() => {
@@ -1482,7 +1477,7 @@ describe('FileTree — filter/search', () => {
 
     await screen.findByText('src');
 
-    const filterInput = screen.getByPlaceholderText('Filter files…');
+    const filterInput = screen.getByPlaceholderText('Filter files');
     fireEvent.change(filterInput, { target: { value: 'xyznotexists' } });
 
     await waitFor(() => {
@@ -1496,7 +1491,7 @@ describe('FileTree — filter/search', () => {
 
     await screen.findByText('src');
 
-    const filterInput = screen.getByPlaceholderText('Filter files…');
+    const filterInput = screen.getByPlaceholderText('Filter files');
     fireEvent.change(filterInput, { target: { value: 'README' } });
 
     await waitFor(() => {
@@ -1518,7 +1513,7 @@ describe('FileTree — filter/search', () => {
 
     await screen.findByText('src');
 
-    const filterInput = screen.getByPlaceholderText('Filter files…');
+    const filterInput = screen.getByPlaceholderText('Filter files');
     fireEvent.change(filterInput, { target: { value: 'README' } });
 
     await waitFor(() => {
@@ -1547,7 +1542,7 @@ describe('FileTree — filter/search', () => {
     await waitFor(() => expect(screen.queryByText('index.ts')).not.toBeInTheDocument());
 
     // Now filter — src's children are loaded, so filter can find them
-    const filterInput = screen.getByPlaceholderText('Filter files…');
+    const filterInput = screen.getByPlaceholderText('Filter files');
     fireEvent.change(filterInput, { target: { value: 'index' } });
 
     await waitFor(() => {
@@ -1561,15 +1556,15 @@ describe('FileTree — filter/search', () => {
 
     await screen.findByText('src');
 
-    const filterInput = screen.getByPlaceholderText('Filter files…');
+    const filterInput = screen.getByPlaceholderText('Filter files');
     fireEvent.change(filterInput, { target: { value: 'r' } });
 
     // ArrowDown on the input should not move tree focus
-    const focusedBefore = container.querySelector('[class*="bg-surface-1"]');
+    const focusedBefore = activeRow(container);
     fireEvent.keyDown(filterInput, { key: 'ArrowDown' });
 
     // Tree focus should not change
-    const focusedAfter = container.querySelector('[class*="bg-surface-1"]');
+    const focusedAfter = activeRow(container);
     expect(focusedBefore).toBe(focusedAfter);
   });
 });
@@ -1592,7 +1587,7 @@ describe('FileTree — multi-select', () => {
 
     await waitFor(() => {
       const readmeNode = container.querySelector('[data-path="/project/README.md"]');
-      expect(readmeNode?.className).toContain('bg-surface-1');
+      expect(readmeNode?.className).toMatch(ACTIVE);
     });
 
     // Cmd+Click package.json to add to selection
@@ -1674,7 +1669,7 @@ describe('FileTree — multi-select', () => {
     await waitFor(() => {
       expect(screen.getByText('Delete 2 items')).toBeInTheDocument();
       // Single-select items should not appear
-      expect(screen.queryByText('New File')).not.toBeInTheDocument();
+      expect(screen.queryByText('New file')).not.toBeInTheDocument();
     });
   });
 });
@@ -1819,7 +1814,7 @@ describe('FileTree — toolbar new-file targets nav-selected folder', () => {
     fireEvent.click(screen.getByText('src'));
 
     // Click the toolbar New File button
-    const newFileBtn = container.querySelector('[title="New File"]')!;
+    const newFileBtn = container.querySelector('[title="New file"]')!;
     fireEvent.click(newFileBtn);
 
     await waitFor(() => {
@@ -1843,8 +1838,8 @@ describe('FileTree — toolbar new-file targets nav-selected folder', () => {
 
     // Right-click on src — context menu New File
     fireEvent.contextMenu(srcDir);
-    await waitFor(() => expect(screen.getByText('New File')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('New File'));
+    await waitFor(() => expect(screen.getByText('New file')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('New file'));
 
     await waitFor(() => {
       expect(writeFile).toHaveBeenCalledWith('src/newfile.ts', '');
@@ -1891,7 +1886,7 @@ describe('FileTree — reveal active file', () => {
 
     await waitFor(() => {
       const indexNode = container.querySelector('[data-path="/project/src/index.ts"]');
-      expect(indexNode?.className).toContain('bg-surface-1');
+      expect(indexNode?.className).toMatch(ACTIVE);
     });
   });
 
