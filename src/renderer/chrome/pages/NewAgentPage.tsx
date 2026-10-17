@@ -10,6 +10,8 @@ import { useModelOptions } from '../../hooks/useModelOptions';
 import { PERSONA_TEMPLATES } from '../../features/personas';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
 import { Toggle } from '../../components/Toggle';
+import { Button } from '../../components/Button';
+import { Tooltip } from '../../components/Tooltip';
 import { createDurableAgent } from '../../features/agents/create-agent';
 import { useChromeStore, type NewAgentRequest } from '../chromeStore';
 import { useChromeDialogStore } from '../sidebar/ChromeAgentDialogs';
@@ -271,15 +273,9 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
                 spellCheck={false}
                 autoComplete="off"
               />
-              <button
-                type="button"
-                title="Randomize"
-                aria-label="Randomize name"
-                onClick={() => setName(generateDurableName())}
-                className="w-7 h-7 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer focus-ring"
-              >
-                {RandomizeIcon}
-              </button>
+              <Tooltip content="Randomize">
+                <Button kind="quiet" aria-label="Randomize name" icon={RandomizeIcon} onClick={() => setName(generateDurableName())} className="focus-ring" />
+              </Tooltip>
             </Row>
             <Row label="Color">
               <div role="radiogroup" aria-label="Color" className="inline-flex items-center gap-1.5">
@@ -377,7 +373,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
               ? <>Branch <span className={mono}>{name.trim() || 'name'}/standby</span> from the current branch, checked out in <span className={mono}>.clubhouse/agents/{name.trim() || 'name'}</span>.</>
               : 'Works in the project folder, on whatever branch is checked out there.'}
           >
-            <Toggle checked={useWorktree} onChange={setUseWorktree} ariaLabel="Own worktree and branch" />
+            <Toggle checked={useWorktree} onChange={setUseWorktree} aria-label="Own worktree and branch" />
             <span className="text-[13px] text-ctp-text">Own worktree and branch</span>
           </Row>
         )}
@@ -388,7 +384,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
             ? `${selectedOrch?.displayName ?? 'This orchestrator'} doesn't support it.`
             : durable ? 'Skips every permission prompt. Off unless you trust this agent with the project.' : 'Skips every permission prompt.'}
         >
-          <Toggle checked={supportsPermissions && freeAgentMode} onChange={setFreeAgentMode} disabled={!supportsPermissions} ariaLabel="Free Agent Mode" />
+          <Toggle checked={supportsPermissions && freeAgentMode} onChange={setFreeAgentMode} disabled={!supportsPermissions} aria-label="Free Agent Mode" />
           <span className={`text-[13px] ${supportsPermissions ? 'text-ctp-text' : 'text-ctp-overlay1'}`}>Free Agent Mode</span>
         </Row>
 
@@ -417,21 +413,10 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
             </button>
           )}
           <span className="ml-auto text-xs text-ctp-overlay1">{IS_MAC ? '⌘↵' : 'Ctrl+Enter'}</span>
-          <button
-            type="button"
-            onClick={close}
-            className="h-7 px-3 rounded-md border border-surface-1 text-xs font-medium text-ctp-text hover:bg-surface-0 cursor-pointer focus-ring"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            data-testid="new-agent-submit"
-            disabled={!canSubmit}
-            className="h-7 px-3 rounded-md bg-ctp-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer focus-ring disabled:opacity-40 disabled:cursor-not-allowed"
-          >
+          <Button kind="ghost" onClick={close} className="focus-ring">Cancel</Button>
+          <Button kind="primary" type="submit" data-testid="new-agent-submit" disabled={!canSubmit} className="focus-ring">
             {durable ? 'Create' : 'Start'}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

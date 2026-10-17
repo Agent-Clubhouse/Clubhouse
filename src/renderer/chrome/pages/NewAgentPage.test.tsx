@@ -47,7 +47,7 @@ describe('NewAgentPage', () => {
     expect(screen.getByTestId('new-agent-project').textContent).toContain('Clubhouse');
     expect(screen.getByText('Starts on Clubhouse, selected in the sidebar.')).toBeTruthy();
     expect(screen.getByTestId('new-agent-name')).toHaveFocus();
-    await waitFor(() => expect(screen.getByLabelText('Own worktree and branch').getAttribute('aria-pressed')).toBe('true'));
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Own worktree and branch' }).getAttribute('aria-checked')).toBe('true'));
     const name = (screen.getByTestId('new-agent-name') as HTMLInputElement).value;
     expect(screen.getByText(`${name}/standby`)).toBeTruthy();
     expect(screen.getByTestId('new-agent-submit').textContent).toBe('Create');
