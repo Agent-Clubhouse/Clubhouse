@@ -225,7 +225,16 @@ describe('startSdk', () => {
   });
 
   it('emits events as customEvents-routed log records with the name as body', async () => {
-    const { rt, logs } = setup();
+    const logs = new InMemoryLogRecordExporter();
+    const { rt } = setup('standard', {
+      exporters: undefined,
+      destinations: [{
+        id: 'azure',
+        kind: 'azure',
+        filter: { level: 'standard', preset: 'all' },
+        exporters: { spanExporter: new InMemorySpanExporter(), logExporter: logs, metricExporter: new InMemoryMetricExporter(AggregationTemporality.DELTA) },
+      }],
+    });
     active = rt;
     rt.event('clubhouse.telemetry.test', [ATTR.telemetryDestination('azure')]);
     await rt.forceFlush(1000);
@@ -234,6 +243,8 @@ describe('startSdk', () => {
     expect(record.attributes).toEqual({
       'clubhouse.telemetry.destination': 'azure',
       'microsoft.custom_event.name': 'clubhouse.telemetry.test',
+      // Stamped per destination (the shared resource carries no level).
+      'clubhouse.telemetry.level': 'standard',
     });
   });
 

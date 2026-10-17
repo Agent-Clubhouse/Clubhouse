@@ -490,7 +490,7 @@ export const IPC = {
     SAVE_OTLP: 'telemetry-settings:save-otlp',
     CLEAR_OTLP: 'telemetry-settings:clear-otlp',
     SET_ENABLED: 'telemetry-settings:set-enabled',
-    SET_LEVEL: 'telemetry-settings:set-level',
+    SET_FILTER: 'telemetry-settings:set-filter',
     SET_ADVANCED: 'telemetry-settings:set-advanced',
     SEND_TEST: 'telemetry-settings:send-test',
     GET_PREVIEW: 'telemetry-settings:get-preview',

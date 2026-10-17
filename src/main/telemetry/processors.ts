@@ -2,9 +2,20 @@
  * Export-pipeline processors and exporter decorators. Loaded only inside the
  * SDK chunk (imported from sdk.ts).
  *
- * Span pipeline:  Redaction → SessionCap → [ErrorTail at Errors level] → Batch → ObservedSpanExporter → destination
- * Log pipeline:   Redaction (in place) → SessionCap → Batch → ObservedLogExporter → destination
- * Metric pipeline: Views (allowlist, cardinality) → PeriodicReader → ObservedMetricExporter → destination
+ * Sampling, redaction and the session caps are global; after them the
+ * pipeline fans out to every enabled destination (spec §6.11):
+ *
+ * Span pipeline:  Redaction → FanOut → per destination:
+ *                 [ErrorTail at Errors level] → Filter → SessionCap → Batch → Stamp → ObservedSpanExporter
+ * Log pipeline:   Redaction (in place) → FanOut → per destination:
+ *                 Filter → SessionCap → Batch → Stamp → ObservedLogExporter
+ *
+ * The error tail runs before the filter so a failing trace is kept even when
+ * the filter drops its root. Session caps are per destination and counted
+ * after its filter, so high-volume export to one destination never uses up
+ * another's budget.
+ * Metric pipeline: Views (allowlist, cardinality) → one PeriodicReader per destination →
+ *                 FilteredMetricExporter → ObservedMetricExporter
  */
 import { context, SpanStatusCode, type Context } from '@opentelemetry/api';
 import { ExportResultCode, suppressTracing, type ExportResult } from '@opentelemetry/core';
@@ -16,6 +27,7 @@ import { classifyExportError, sanitizeAttributes } from './redaction';
 import type { Scrubber } from './scrubber';
 import type { SessionCaps } from './caps';
 import type { PreviewItem, PreviewTee } from './preview-tee';
+import type { CompiledFilter } from './filters';
 
 type Signal = 'traces' | 'metrics' | 'logs';
 
@@ -138,13 +150,44 @@ export class ErrorTailSpanProcessor extends ForwardingSpanProcessor {
   }
 }
 
+/** Hands every span to each destination's chain. */
+export class FanOutSpanProcessor implements SpanProcessor {
+  constructor(private readonly children: SpanProcessor[]) {}
+  onStart(span: Span, parentContext: Context): void {
+    for (const c of this.children) c.onStart(span, parentContext);
+  }
+  onEnd(span: ReadableSpan): void {
+    for (const c of this.children) c.onEnd(span);
+  }
+  async forceFlush(): Promise<void> {
+    // One destination failing must not cut another's flush short.
+    await Promise.allSettled(this.children.map((c) => c.forceFlush()));
+  }
+  async shutdown(): Promise<void> {
+    await Promise.allSettled(this.children.map((c) => c.shutdown()));
+  }
+}
+
+/** One destination's filter: spans it doesn't take never reach its batch. */
+export class FilterSpanProcessor extends ForwardingSpanProcessor {
+  constructor(next: SpanProcessor, private readonly filter: CompiledFilter) {
+    super(next);
+  }
+  onEnd(span: ReadableSpan): void {
+    if (this.filter.span({ name: span.name, attributes: span.attributes, isError: span.status.code === SpanStatusCode.ERROR })) {
+      this.next.onEnd(span);
+    }
+  }
+}
+
 // --- Logs -------------------------------------------------------------------
 
 export class RedactionLogProcessor implements LogRecordProcessor {
   constructor(
     private readonly next: LogRecordProcessor,
     private readonly hooks: PipelineHooks,
-    private readonly caps: SessionCaps,
+    /** Optional: the multi-destination pipeline caps per destination instead (SessionCapLogProcessor). */
+    private readonly caps?: SessionCaps,
   ) {}
 
   onEmit(record: SdkLogRecord, ctx?: Context): void {
@@ -161,7 +204,7 @@ export class RedactionLogProcessor implements LogRecordProcessor {
     Object.assign(bag, attributes);
     // Body is always the event name, never a message.
     record.setBody(eventName);
-    if (!this.caps.tryAcquire('logs')) return;
+    if (this.caps && !this.caps.tryAcquire('logs')) return;
     this.next.onEmit(record, ctx);
   }
 
@@ -174,10 +217,60 @@ export class RedactionLogProcessor implements LogRecordProcessor {
   }
 }
 
+/** Hands every (already redacted) log record to each destination's chain. */
+export class FanOutLogProcessor implements LogRecordProcessor {
+  constructor(private readonly children: LogRecordProcessor[]) {}
+  onEmit(record: SdkLogRecord, ctx?: Context): void {
+    for (const c of this.children) c.onEmit(record, ctx);
+  }
+  async forceFlush(): Promise<void> {
+    // One destination failing must not cut another's flush short.
+    await Promise.allSettled(this.children.map((c) => c.forceFlush()));
+  }
+  async shutdown(): Promise<void> {
+    await Promise.allSettled(this.children.map((c) => c.shutdown()));
+  }
+}
+
+export class FilterLogProcessor implements LogRecordProcessor {
+  constructor(private readonly next: LogRecordProcessor, private readonly filter: CompiledFilter) {}
+  onEmit(record: SdkLogRecord, ctx?: Context): void {
+    if (this.filter.log({ name: record.eventName ?? '', attributes: record.attributes })) this.next.onEmit(record, ctx);
+  }
+  forceFlush(): Promise<void> {
+    return this.next.forceFlush();
+  }
+  shutdown(): Promise<void> {
+    return this.next.shutdown();
+  }
+}
+
+/** One destination's log budget for the session. */
+export class SessionCapLogProcessor implements LogRecordProcessor {
+  constructor(private readonly next: LogRecordProcessor, private readonly caps: SessionCaps) {}
+  onEmit(record: SdkLogRecord, ctx?: Context): void {
+    if (this.caps.tryAcquire('logs')) this.next.onEmit(record, ctx);
+  }
+  forceFlush(): Promise<void> {
+    return this.next.forceFlush();
+  }
+  shutdown(): Promise<void> {
+    return this.next.shutdown();
+  }
+}
+
 // --- Exporter decorators ----------------------------------------------------
 
 export interface ObserveHooks {
   tee?: PreviewTee;
+  /**
+   * An export with no result after this long is recorded as a failure (so a
+   * hanging destination shows as failing). The real result, if it ever
+   * arrives, is still recorded. Default 30 s.
+   */
+  exportTimeoutMs?: number;
+  /** The destination these exports go to; tags preview items. */
+  destination?: string;
   onFailure(signal: Signal, httpClass: ReturnType<typeof classifyExportError>): void;
   /** Every export result, success or failure (the Settings test event reads these). */
   onResult?(signal: Signal, result: ExportResult): void;
@@ -187,8 +280,17 @@ function hrToMs(t: [number, number]): number {
   return t[0] * 1000 + t[1] / 1e6;
 }
 
+export const DEFAULT_EXPORT_TIMEOUT_MS = 30_000;
+
 function observe(signal: Signal, hooks: ObserveHooks, cb: (r: ExportResult) => void): (r: ExportResult) => void {
+  const timer = setTimeout(() => {
+    const error = Object.assign(new Error('Export timed out'), { code: 'ETIMEDOUT' });
+    hooks.onFailure(signal, classifyExportError(error));
+    hooks.onResult?.(signal, { code: ExportResultCode.FAILED, error });
+  }, hooks.exportTimeoutMs ?? DEFAULT_EXPORT_TIMEOUT_MS);
+  timer.unref?.();
   return (result) => {
+    clearTimeout(timer);
     if (result.code !== ExportResultCode.SUCCESS) hooks.onFailure(signal, classifyExportError(result.error));
     hooks.onResult?.(signal, result);
     cb(result);
@@ -212,7 +314,7 @@ export class ObservedSpanExporter implements SpanExporter {
   constructor(private readonly inner: SpanExporter, private readonly hooks: ObserveHooks) {}
   export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
     for (const s of spans) {
-      this.hooks.tee?.push({ signal: 'traces', name: s.name, time: hrToMs(s.startTime), attributes: scalarAttrs(s.attributes) });
+      this.hooks.tee?.push({ signal: 'traces', destination: this.hooks.destination, name: s.name, time: hrToMs(s.startTime), attributes: scalarAttrs(s.attributes) });
     }
     suppressed(() => this.inner.export(spans, observe('traces', this.hooks, resultCallback)));
   }
@@ -228,7 +330,7 @@ export class ObservedLogExporter implements LogRecordExporter {
   constructor(private readonly inner: LogRecordExporter, private readonly hooks: ObserveHooks) {}
   export(logs: ReadableLogRecord[], resultCallback: (result: ExportResult) => void): void {
     for (const l of logs) {
-      this.hooks.tee?.push({ signal: 'logs', name: l.eventName ?? '', time: hrToMs(l.hrTime), attributes: scalarAttrs(l.attributes) });
+      this.hooks.tee?.push({ signal: 'logs', destination: this.hooks.destination, name: l.eventName ?? '', time: hrToMs(l.hrTime), attributes: scalarAttrs(l.attributes) });
     }
     suppressed(() => this.inner.export(logs, observe('logs', this.hooks, resultCallback)));
   }
@@ -260,6 +362,7 @@ export class ObservedMetricExporter implements PushMetricExporter {
         for (const dp of metric.dataPoints as Array<{ attributes: Record<string, unknown>; value: unknown; endTime: [number, number] }>) {
           this.hooks.tee?.push({
             signal: 'metrics',
+            destination: this.hooks.destination,
             name: metric.descriptor.name,
             time: hrToMs(dp.endTime),
             attributes: scalarAttrs(dp.attributes),
@@ -278,3 +381,136 @@ export class ObservedMetricExporter implements PushMetricExporter {
   }
 }
 
+
+// --- Per-destination exporter decorators --------------------------------------
+
+/**
+ * What a destination adds to every span and log record it receives: its own
+ * `clubhouse.telemetry.level` (the resource can only carry one value), and
+ * any resource attributes it copies onto items for backends that keep few
+ * resource attributes.
+ */
+export interface DestinationStamp {
+  attributes: Record<string, string>;
+  copyResourceAttributes: readonly string[];
+}
+
+function stampAttributes(
+  attrs: Record<string, unknown>,
+  resource: { attributes: Record<string, unknown> },
+  stamp: DestinationStamp,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...attrs };
+  for (const k of stamp.copyResourceAttributes) {
+    const v = resource.attributes[k];
+    if (v !== undefined && !(k in out)) out[k] = v;
+  }
+  for (const [k, v] of Object.entries(stamp.attributes)) if (!(k in out)) out[k] = v;
+  return out;
+}
+
+/**
+ * Per-destination copy of a shared span. A plain object with every
+ * ReadableSpan field, so exporters that spread, clone or serialize it keep
+ * the stamped attributes, and other destinations keep seeing the original.
+ */
+function stampSpan(span: ReadableSpan, stamp: DestinationStamp): ReadableSpan {
+  const spanContext = span.spanContext();
+  return {
+    name: span.name,
+    kind: span.kind,
+    spanContext: () => spanContext,
+    parentSpanContext: span.parentSpanContext,
+    startTime: span.startTime,
+    endTime: span.endTime,
+    status: span.status,
+    attributes: stampAttributes(span.attributes, span.resource, stamp) as ReadableSpan['attributes'],
+    links: span.links,
+    events: span.events,
+    duration: span.duration,
+    ended: span.ended,
+    resource: span.resource,
+    instrumentationScope: span.instrumentationScope,
+    droppedAttributesCount: span.droppedAttributesCount,
+    droppedEventsCount: span.droppedEventsCount,
+    droppedLinksCount: span.droppedLinksCount,
+  };
+}
+
+/** Per-destination copy of a shared log record (see stampSpan). */
+function stampLog(log: ReadableLogRecord, stamp: DestinationStamp): ReadableLogRecord {
+  return {
+    hrTime: log.hrTime,
+    hrTimeObserved: log.hrTimeObserved,
+    spanContext: log.spanContext,
+    severityText: log.severityText,
+    severityNumber: log.severityNumber,
+    body: log.body,
+    eventName: log.eventName,
+    resource: log.resource,
+    instrumentationScope: log.instrumentationScope,
+    attributes: stampAttributes(log.attributes, log.resource, stamp) as ReadableLogRecord['attributes'],
+    droppedAttributesCount: log.droppedAttributesCount,
+  };
+}
+
+export class StampSpanExporter implements SpanExporter {
+  constructor(private readonly inner: SpanExporter, private readonly stamp: DestinationStamp) {}
+  export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
+    this.inner.export(spans.map((s) => stampSpan(s, this.stamp)), resultCallback);
+  }
+  shutdown(): Promise<void> {
+    return this.inner.shutdown();
+  }
+  forceFlush(): Promise<void> {
+    return this.inner.forceFlush?.() ?? Promise.resolve();
+  }
+}
+
+export class StampLogExporter implements LogRecordExporter {
+  constructor(private readonly inner: LogRecordExporter, private readonly stamp: DestinationStamp) {}
+  export(logs: ReadableLogRecord[], resultCallback: (result: ExportResult) => void): void {
+    this.inner.export(logs.map((l) => stampLog(l, this.stamp)), resultCallback);
+  }
+  shutdown(): Promise<void> {
+    return this.inner.shutdown();
+  }
+  forceFlush(): Promise<void> {
+    return this.inner.forceFlush?.() ?? Promise.resolve();
+  }
+}
+
+/**
+ * One destination's metric filter. Each destination has its own reader, so
+ * this only drops whole metric streams it doesn't take; temporality and
+ * aggregation preferences come from the wrapped exporter.
+ */
+export class FilteredMetricExporter implements PushMetricExporter {
+  constructor(private readonly inner: PushMetricExporter, private readonly filter: CompiledFilter) {
+    if (inner.selectAggregationTemporality) {
+      this.selectAggregationTemporality = inner.selectAggregationTemporality.bind(inner);
+    }
+    if (inner.selectAggregation) {
+      this.selectAggregation = inner.selectAggregation.bind(inner);
+    }
+  }
+  selectAggregationTemporality?: PushMetricExporter['selectAggregationTemporality'];
+  selectAggregation?: PushMetricExporter['selectAggregation'];
+
+  export(metrics: ResourceMetrics, resultCallback: (result: ExportResult) => void): void {
+    const scopeMetrics = metrics.scopeMetrics
+      .map((scope) => ({ ...scope, metrics: scope.metrics.filter((m) => this.filter.metric(m.descriptor.name)) }))
+      .filter((scope) => scope.metrics.length > 0);
+    if (scopeMetrics.length === 0) {
+      resultCallback({ code: ExportResultCode.SUCCESS });
+      return;
+    }
+    this.inner.export({ ...metrics, scopeMetrics }, resultCallback);
+  }
+  forceFlush(): Promise<void> {
+    return this.inner.forceFlush();
+  }
+  shutdown(): Promise<void> {
+    return this.inner.shutdown();
+  }
+}

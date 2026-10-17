@@ -65,6 +65,8 @@ export interface ReplaySpan {
 /** One exporter result, kept briefly for the Settings test event. */
 export interface ExportRecord {
   signal: 'traces' | 'metrics' | 'logs';
+  /** The destination id the batch went to. */
+  destination?: string;
   ok: boolean;
   /** Epoch ms when the result arrived. */
   at: number;
@@ -72,6 +74,13 @@ export interface ExportRecord {
   /** Error code (`ENOTFOUND`, `CERT_HAS_EXPIRED`, ...) or name. */
   errorCode?: string;
   errorMessage?: string;
+}
+
+export interface DestinationHealthRecord {
+  lastSuccessAt?: number;
+  lastFailureAt?: number;
+  /** The most recent failed export among signals whose latest export failed. */
+  lastFailure?: ExportRecord;
 }
 
 /** A root span and its direct children, all with explicit times (startup, shutdown). */
@@ -101,6 +110,8 @@ export interface TelemetryRuntime {
   preview(): PreviewItem[];
   /** Export results that arrived at or after `sinceMs`, oldest first. */
   recentExports(sinceMs: number): ExportRecord[];
+  /** Per destination id: the latest success and failure this session. */
+  destinationHealth(): Record<string, DestinationHealthRecord>;
   forceFlush(timeoutMs: number): Promise<void>;
   shutdown(timeoutMs: number): Promise<void>;
 }

@@ -482,7 +482,7 @@ vi.stubGlobal('clubhouse', {
     saveOtlp: async () => ({ ok: false }),
     clearOtlp: async () => ({ ok: false }),
     setEnabled: async () => ({ ok: false }),
-    setLevel: async () => ({ ok: false }),
+    setFilter: async () => ({ ok: false }),
     setAdvanced: async () => ({ ok: false }),
     sendTest: async () => ({ ok: false, message: '' }),
     getPreview: async () => [],

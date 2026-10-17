@@ -80,7 +80,8 @@ async function expectLegacySecretHandled(dir: string, encryption: boolean): Prom
   if (encryption) {
     expect(secretExists).toBe(true);
     expect(settingsText).not.toContain('InstrumentationKey');
-    expect(JSON.parse(settingsText).destination).toBe('azure');
+    // Migrated to the multi-destination shape: Azure is the one enabled destination.
+    expect(JSON.parse(settingsText).destinations.find((d: { id: string }) => d.id === 'azure')).toMatchObject({ enabled: true });
   } else {
     expect(secretExists).toBe(false);
     expect(settingsText).toContain('InstrumentationKey');

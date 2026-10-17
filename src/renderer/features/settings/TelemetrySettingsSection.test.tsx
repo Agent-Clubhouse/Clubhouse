@@ -1,18 +1,35 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { TelemetrySettingsSection, WORKBOOK_DOCS_URL } from './TelemetrySettingsSection';
-import type { TelemetryStatus } from '../../../shared/telemetry/settings-types';
+import type { TelemetryDestinationStatus, TelemetryStatus } from '../../../shared/telemetry/settings-types';
 
-function makeStatus(overrides: Partial<TelemetryStatus> = {}): TelemetryStatus {
+function destStatus(id: 'azure' | 'otlp', overrides: Partial<TelemetryDestinationStatus> = {}): TelemetryDestinationStatus {
+  return {
+    id,
+    kind: id,
+    label: id === 'azure' ? 'Azure Application Insights' : 'OpenTelemetry (OTLP)',
+    enabled: false,
+    level: 'standard',
+    preset: 'all',
+    configured: false,
+    active: false,
+    health: { state: 'off' },
+    offlineQueue: id === 'azure',
+    ...overrides,
+  };
+}
+
+function makeStatus(
+  overrides: Partial<TelemetryStatus> = {},
+  dests: { azure?: Partial<TelemetryDestinationStatus>; otlp?: Partial<TelemetryDestinationStatus> } = {},
+): TelemetryStatus {
   return {
     available: true,
     enabled: false,
     running: false,
-    destination: 'azure',
-    level: 'standard',
+    destinations: [destStatus('azure', dests.azure), destStatus('otlp', dests.otlp)],
     sampleRate: 1,
-    otlpTemporality: 'cumulative',
     azure: { configured: false },
-    otlp: { configured: false, endpoint: '', headers: [] },
+    otlp: { configured: false, endpoint: '', headers: [], temporality: 'cumulative' },
     consentAccepted: false,
     secureStorage: 'available',
     weakStorageAccepted: false,
@@ -76,20 +93,24 @@ describe('TelemetrySettingsSection', () => {
     const configured = makeStatus({ azure: { configured: true, ikeyLast4: 'abcd', host: 'h.applicationinsights.azure.com' } });
     const api = mockApi(configured);
     const setEnabled = vi.spyOn(api, 'setEnabled')
-      .mockResolvedValueOnce({ ok: false, reason: 'needs_confirmation', needs: ['consent'], host: 'h.applicationinsights.azure.com', status: configured })
-      .mockResolvedValueOnce({ ok: true, status: makeStatus({ ...configured, enabled: true, running: true, consentAccepted: true }) });
+      .mockResolvedValueOnce({ ok: false, reason: 'needs_confirmation', needs: ['consent'], host: 'h.applicationinsights.azure.com', hosts: ['h.applicationinsights.azure.com'], status: configured })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: makeStatus({ azure: configured.azure, enabled: true, running: true, consentAccepted: true }, { azure: { enabled: true, active: true, configured: true } }),
+      });
     render(<TelemetrySettingsSection />);
     fireEvent.click(await screen.findByLabelText('Send telemetry to Application Insights'));
     const dialog = await screen.findByTestId('telemetry-confirm');
-    expect(dialog).toHaveTextContent('It never sends');
+    expect(dialog).toHaveTextContent('never sends');
+    expect(within(screen.getByTestId('telemetry-confirm-hosts')).getByText('h.applicationinsights.azure.com')).toBeInTheDocument();
     expect(dialog).toHaveTextContent('File paths, repository URLs and branch names');
     fireEvent.click(within(dialog).getByText('Continue'));
-    await waitFor(() => expect(setEnabled).toHaveBeenLastCalledWith('azure', true, { consent: true }));
+    await waitFor(() => expect(setEnabled).toHaveBeenLastCalledWith('azure', true, { consent: true, host: 'h.applicationinsights.azure.com' }));
     expect(await screen.findByLabelText('Send telemetry to Application Insights')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('names the OTLP host before sending, with loopback wording for a local collector', async () => {
-    const status = makeStatus({ consentAccepted: true, otlp: { configured: true, endpoint: 'http://localhost:4318', host: 'localhost:4318', headers: [] } });
+    const status = makeStatus({ consentAccepted: true, otlp: { configured: true, endpoint: 'http://localhost:4318', host: 'localhost:4318', headers: [], temporality: 'cumulative' } });
     const api = mockApi(status);
     const setEnabled = vi.spyOn(api, 'setEnabled')
       .mockResolvedValueOnce({ ok: false, reason: 'needs_confirmation', needs: ['destination'], host: 'localhost:4318', status })
@@ -103,7 +124,7 @@ describe('TelemetrySettingsSection', () => {
   });
 
   it('keeps stored header values masked and only sends values the user typed', async () => {
-    const status = makeStatus({ otlp: { configured: true, endpoint: 'https://otlp.example.com', host: 'otlp.example.com', headers: [{ name: 'x-api-key', last4: '1234' }] } });
+    const status = makeStatus({ otlp: { configured: true, endpoint: 'https://otlp.example.com', host: 'otlp.example.com', headers: [{ name: 'x-api-key', last4: '1234' }], temporality: 'cumulative' } });
     const api = mockApi(status);
     const saveOtlp = vi.spyOn(api, 'saveOtlp').mockResolvedValue({ ok: true, status });
     render(<TelemetrySettingsSection />);
@@ -117,22 +138,34 @@ describe('TelemetrySettingsSection', () => {
   });
 
   it('reports the test event result with status and latency', async () => {
-    const api = mockApi(makeStatus({ enabled: true, running: true, consentAccepted: true, azure: { configured: true, ikeyLast4: 'abcd', host: 'h' } }));
-    vi.spyOn(api, 'sendTest').mockResolvedValue({ ok: false, httpStatus: 400, latencyMs: 412, message: 'Rejected (HTTP 400). Check the instrumentation key in the connection string.' });
+    const api = mockApi(makeStatus(
+      { enabled: true, running: true, consentAccepted: true, azure: { configured: true, ikeyLast4: 'abcd', host: 'h' } },
+      { azure: { enabled: true, active: true, configured: true } },
+    ));
+    const sendTest = vi.spyOn(api, 'sendTest').mockResolvedValue({ ok: false, httpStatus: 400, latencyMs: 412, message: 'Rejected (HTTP 400). Check the instrumentation key in the connection string.' });
     render(<TelemetrySettingsSection />);
-    fireEvent.click(within(await screen.findByRole('region', { name: 'Azure Application Insights' })).getByText('Send test event'));
+    // OTLP isn't exporting, so only App Insights can be tested.
+    expect(within(await screen.findByRole('region', { name: 'Other destinations' })).getByText('Send test event')).toBeDisabled();
+    fireEvent.click(within(screen.getByRole('region', { name: 'Azure Application Insights' })).getByText('Send test event'));
+    await waitFor(() => expect(sendTest).toHaveBeenCalledWith('azure'));
     expect(await screen.findByTestId('telemetry-test-result-azure')).toHaveTextContent('Rejected (HTTP 400). Check the instrumentation key in the connection string. (HTTP 400, 412 ms)');
   });
 
-  it('changes the level and shows the preview of what was sent', async () => {
+  it('sets each destination its own level and preset, and shows the preview of what was sent', async () => {
     const status = makeStatus();
     const api = mockApi(status);
-    const setLevel = vi.spyOn(api, 'setLevel').mockResolvedValue({ ok: true, status: { ...status, level: 'errors' } });
-    vi.spyOn(api, 'getPreview').mockResolvedValue([{ signal: 'logs', name: 'clubhouse.telemetry.test', time: 1, attributes: { 'clubhouse.telemetry.destination': 'azure' } }]);
+    const setFilter = vi.spyOn(api, 'setFilter')
+      .mockResolvedValueOnce({ ok: true, status: makeStatus({}, { azure: { level: 'errors' } }) })
+      .mockResolvedValueOnce({ ok: true, status: makeStatus({}, { azure: { level: 'errors' }, otlp: { preset: 'user_activity' } }) });
+    vi.spyOn(api, 'getPreview').mockResolvedValue([{ signal: 'logs', destination: 'azure', name: 'clubhouse.telemetry.test', time: 1, attributes: { 'clubhouse.telemetry.destination': 'azure' } }]);
     render(<TelemetrySettingsSection />);
-    fireEvent.click(await screen.findByRole('radio', { name: /Errors only/ }));
-    await waitFor(() => expect(setLevel).toHaveBeenCalledWith('errors'));
-    expect(await screen.findByRole('radio', { name: /Errors only/ })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.change(await screen.findByLabelText('Azure Application Insights level'), { target: { value: 'errors' } });
+    await waitFor(() => expect(setFilter).toHaveBeenCalledWith('azure', 'errors', 'all'));
+    expect(await screen.findByLabelText('Azure Application Insights level')).toHaveValue('errors');
+    fireEvent.change(screen.getByLabelText('OpenTelemetry (OTLP) filter'), { target: { value: 'user_activity' } });
+    await waitFor(() => expect(setFilter).toHaveBeenLastCalledWith('otlp', 'standard', 'user_activity'));
+    expect(await screen.findByLabelText('OpenTelemetry (OTLP) filter')).toHaveValue('user_activity');
+    expect(screen.getByLabelText('Azure Application Insights level')).toHaveValue('errors');
     fireEvent.click(screen.getByText('Preview data'));
     expect(await screen.findByTestId('telemetry-preview')).toHaveTextContent('clubhouse.telemetry.test');
   });
@@ -149,15 +182,32 @@ describe('TelemetrySettingsSection', () => {
     expect(await screen.findByText('22222222-2222-4222-8222-222222222222')).toBeInTheDocument();
   });
 
-  it('warns that Clubhouse cannot control a non-local OTLP host when switching from App Insights', async () => {
-    const status = makeStatus({ enabled: true, consentAccepted: true, otlp: { configured: true, endpoint: 'https://otlp.example.com', host: 'otlp.example.com', headers: [] } });
+  it('lists every host that will receive data in the consent dialog', async () => {
+    const status = makeStatus({ otlp: { configured: true, endpoint: 'https://otlp.example.com', host: 'otlp.example.com', headers: [], temporality: 'cumulative' } });
     const api = mockApi(status);
-    vi.spyOn(api, 'setEnabled').mockResolvedValueOnce({ ok: false, reason: 'needs_confirmation', needs: ['switch_destination'], host: 'otlp.example.com', status });
+    vi.spyOn(api, 'setEnabled').mockResolvedValueOnce({
+      ok: false, reason: 'needs_confirmation', needs: ['consent', 'destination'], host: 'otlp.example.com',
+      hosts: ['westus2-1.in.applicationinsights.azure.com', 'otlp.example.com'], status,
+    });
     render(<TelemetrySettingsSection />);
     fireEvent.click(await screen.findByLabelText('Send telemetry to OTLP'));
-    const dialog = await screen.findByTestId('telemetry-confirm');
-    expect(dialog).toHaveTextContent('instead of Application Insights');
-    expect(dialog).toHaveTextContent("Clubhouse can't see or control what this service does with it.");
+    const hosts = await screen.findByTestId('telemetry-confirm-hosts');
+    expect(within(hosts).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'westus2-1.in.applicationinsights.azure.com', 'otlp.example.com',
+    ]);
+    expect(screen.getByTestId('telemetry-confirm')).toHaveTextContent("Clubhouse can't see or control what these services do with it.");
+  });
+
+  it('shows each destination its own health, and both can be on at once', async () => {
+    mockApi(makeStatus({ enabled: true, running: true, consentAccepted: true }, {
+      azure: { enabled: true, active: true, configured: true, health: { state: 'ok', lastSuccessAt: Date.now() } },
+      otlp: { enabled: true, active: true, configured: true, health: { state: 'failing', message: 'Connection refused. Is the collector running?' } },
+    }));
+    render(<TelemetrySettingsSection />);
+    expect(await screen.findByTestId('telemetry-health-azure')).toHaveTextContent('Sending · last export');
+    expect(screen.getByTestId('telemetry-health-otlp')).toHaveTextContent('Failing: Connection refused. Is the collector running?');
+    expect(screen.getByLabelText('Send telemetry to Application Insights')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Send telemetry to OTLP')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('clears the typed connection string after a weak-storage confirmed save', async () => {
@@ -181,14 +231,28 @@ describe('TelemetrySettingsSection', () => {
   it('keeps unsaved OTLP edits when another setting changes, and marks unusable toggles disabled', async () => {
     const status = makeStatus();
     const api = mockApi(status);
-    vi.spyOn(api, 'setLevel').mockResolvedValue({ ok: true, status: { ...status, level: 'detailed' } });
+    vi.spyOn(api, 'setFilter').mockResolvedValue({ ok: true, status: makeStatus({}, { azure: { level: 'detailed' } }) });
     render(<TelemetrySettingsSection />);
     expect(await screen.findByLabelText('Send telemetry to OTLP')).toBeDisabled();
     expect(screen.getByLabelText('Send telemetry to OTLP')).toHaveAttribute('aria-disabled', 'true');
     fireEvent.change(screen.getByLabelText('Endpoint'), { target: { value: 'https://draft.example.com' } });
-    fireEvent.click(screen.getByRole('radio', { name: /Detailed/ }));
-    expect(await screen.findByRole('radio', { name: /Detailed/ })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.change(screen.getByLabelText('Azure Application Insights level'), { target: { value: 'detailed' } });
+    expect(await screen.findByLabelText('Azure Application Insights level')).toHaveValue('detailed');
     expect(screen.getByLabelText('Endpoint')).toHaveValue('https://draft.example.com');
+  });
+
+  it('shows a start error under the destination that failed, and keeps OTLP temporality in its panel', async () => {
+    const api = mockApi(makeStatus({ enabled: true, running: true, consentAccepted: true }, {
+      azure: { enabled: true, active: true, configured: true, health: { state: 'ok', lastSuccessAt: Date.now() } },
+      otlp: { enabled: true, active: false, configured: true, health: { state: 'error', message: 'The endpoint is not a valid URL.' } },
+    }));
+    const setAdvanced = vi.spyOn(api, 'setAdvanced').mockResolvedValue({ ok: true, status: makeStatus() });
+    render(<TelemetrySettingsSection />);
+    const otlp = await screen.findByRole('region', { name: 'Other destinations' });
+    expect(within(otlp).getByTestId('telemetry-health-otlp')).toHaveTextContent('Not sending: The endpoint is not a valid URL.');
+    expect(within(screen.getByRole('region', { name: 'Azure Application Insights' })).queryByText(/not a valid URL/)).toBeNull();
+    fireEvent.click(within(otlp).getByLabelText('Delta'));
+    await waitFor(() => expect(setAdvanced).toHaveBeenCalledWith({ otlpTemporality: 'delta' }));
   });
 
   it('confirms before clearing the offline queue', async () => {
@@ -196,7 +260,7 @@ describe('TelemetrySettingsSection', () => {
     const api = mockApi(status);
     const clearOffline = vi.spyOn(api, 'clearOffline').mockResolvedValue({ ok: true, status: { ...status, offlineItems: 0 } });
     render(<TelemetrySettingsSection />);
-    expect(await screen.findByText(/Offline queue: 4 items/)).toBeInTheDocument();
+    expect(await screen.findByText(/Offline queue \(Application Insights only\): 4 items/)).toBeInTheDocument();
     fireEvent.click(within(screen.getByText(/Offline queue/)).getByText('Clear'));
     expect(clearOffline).not.toHaveBeenCalled();
     expect(screen.getByText('Clear the offline queue?')).toBeInTheDocument();
@@ -206,15 +270,15 @@ describe('TelemetrySettingsSection', () => {
   });
 
   it('links App Insights users to the Workbook docs page in the browser', async () => {
-    mockApi(makeStatus({ destination: 'azure' }));
+    mockApi(makeStatus({}, { azure: { enabled: true } }));
     const open = vi.spyOn(window.clubhouse.app, 'openExternalUrl').mockResolvedValue(undefined as never);
     render(<TelemetrySettingsSection />);
     fireEvent.click(await screen.findByText('Get the Clubhouse Workbook'));
     expect(open).toHaveBeenCalledWith(WORKBOOK_DOCS_URL);
   });
 
-  it('hides the Workbook link for OTLP', async () => {
-    mockApi(makeStatus({ destination: 'otlp' }));
+  it('hides the Workbook link when only OTLP is on', async () => {
+    mockApi(makeStatus({}, { otlp: { enabled: true } }));
     render(<TelemetrySettingsSection />);
     await screen.findByText('Preview data');
     expect(screen.queryByText('Get the Clubhouse Workbook')).toBeNull();

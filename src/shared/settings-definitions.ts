@@ -91,13 +91,11 @@ export const TELEMETRY_SETTINGS: SettingsDefinition<TelemetrySettingsFile> = {
   key: 'telemetry',
   filename: 'telemetry-settings.json',
   defaults: {
-    enabled: false,
-    destination: 'azure',
-    level: 'standard',
+    destinations: [
+      { id: 'azure', kind: 'azure', enabled: false, level: 'standard', preset: 'all' },
+      { id: 'otlp', kind: 'otlp', enabled: false, level: 'standard', preset: 'all', otlp: { endpoint: '', headerNames: [], temporality: 'cumulative' } },
+    ],
     sampleRate: 1,
-    otlpEndpoint: '',
-    otlpHeaderNames: [],
-    otlpTemporality: 'cumulative',
     consentVersion: 0,
   },
 };

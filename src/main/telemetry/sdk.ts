@@ -48,17 +48,26 @@ import {
   type TelAttr,
   type TelemetryLevel,
 } from '../../shared/telemetry/attributes';
-import type { DestinationExporters } from './destinations/types';
+import type { DestinationExporters, SdkDestination } from './destinations/types';
+import { compileFilter } from './filters';
 import { hashId } from './ids';
 import { SessionCaps } from './caps';
 import { PreviewTee } from './preview-tee';
 import {
   ErrorTailSpanProcessor,
+  FanOutLogProcessor,
+  FanOutSpanProcessor,
+  FilteredMetricExporter,
+  FilterLogProcessor,
+  FilterSpanProcessor,
   ObservedLogExporter,
   ObservedMetricExporter,
   ObservedSpanExporter,
   RedactionLogProcessor,
   RedactionSpanProcessor,
+  SessionCapLogProcessor,
+  StampLogExporter,
+  StampSpanExporter,
   SessionCapSpanProcessor,
   type PipelineHooks,
 } from './processors';
@@ -73,6 +82,7 @@ import type {
   ExceptionOptions,
   FlowExtras,
   FlowOptions,
+  DestinationHealthRecord,
   ReplaySpan,
   SpanHandle,
   TelemetryRuntime,
@@ -80,16 +90,25 @@ import type {
 import { ForwardedError, errorTypeOf } from './types';
 
 export interface SdkOptions {
+  /**
+   * What the SDK records: the most verbose level among the destinations
+   * (filters.recordingLevel). Each destination's own filter narrows it.
+   */
   level: TelemetryLevel;
   sampleRate: number;
   resourceAttributes: Attributes;
-  exporters: DestinationExporters;
+  /** Every enabled destination; spans, logs and metrics fan out to each (spec §6.11). */
+  destinations?: SdkDestination[];
+  /** Shorthand for one destination at `level` with no preset (tests). */
+  exporters?: DestinationExporters;
   hashSalt: Buffer;
   scrub: Scrubber;
   /** Local diagnostics sink for OTel/exporter warnings (never exported). */
   diagLog?: (level: 'warn' | 'error', message: string) => void;
   /** Overrides for tests. */
   metricExportIntervalMs?: number;
+  /** An export with no result after this long counts as failed for health (default 30 s). */
+  exportTimeoutMs?: number;
   batchDelayMs?: number;
   sessionCaps?: { traces: number; logs: number };
 }
@@ -187,21 +206,44 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
   context.setGlobalContextManager(contextManager);
 
   const resource = resourceFromAttributes(opts.resourceAttributes);
-  const tee = new PreviewTee();
+
+  const destinations: SdkDestination[] = opts.destinations ?? (opts.exporters
+    ? [{ id: 'default', kind: 'default', exporters: opts.exporters, filter: { level, preset: 'all' } }]
+    : []);
 
   const exportLog: ExportRecord[] = [];
-  const recordExport = (signal: ExportRecord['signal'], result: ExportResult): void => {
+  const health = new Map<string, DestinationHealthRecord>();
+  const failingSignals = new Map<string, Map<ExportRecord['signal'], ExportRecord>>();
+  const recordExport = (destination: string, signal: ExportRecord['signal'], result: ExportResult): void => {
     const err = result.error as { statusCode?: unknown; code?: unknown; name?: unknown; message?: unknown } | undefined;
     const status = typeof err?.statusCode === 'number' ? err.statusCode : typeof err?.code === 'number' ? err.code : undefined;
-    exportLog.push({
+    const record: ExportRecord = {
       signal,
+      destination,
       ok: result.code === ExportResultCode.SUCCESS,
       at: Date.now(),
       httpStatus: status,
       errorCode: typeof err?.code === 'string' ? err.code : typeof err?.name === 'string' ? err.name : undefined,
       errorMessage: typeof err?.message === 'string' ? err.message.slice(0, 300) : undefined,
-    });
-    if (exportLog.length > 50) exportLog.shift();
+    };
+    exportLog.push(record);
+    if (exportLog.length > 100) exportLog.shift();
+    // A destination is failing while any signal's latest export failed: a
+    // working metrics export doesn't hide spans that can't get through.
+    const failing = failingSignals.get(destination) ?? new Map<ExportRecord['signal'], ExportRecord>();
+    failingSignals.set(destination, failing);
+    const h = health.get(destination) ?? {};
+    if (record.ok) {
+      h.lastSuccessAt = record.at;
+      failing.delete(signal);
+    } else {
+      h.lastFailureAt = record.at;
+      failing.set(signal, record);
+    }
+    const latest = [...failing.values()].sort((x, y) => y.at - x.at)[0];
+    if (latest) h.lastFailure = latest;
+    else delete h.lastFailure;
+    health.set(destination, h);
   };
 
   // --- Metrics ---
@@ -214,17 +256,26 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     attributesProcessors: [createAllowListAttributesProcessor([...def.attributes])],
     aggregationCardinalityLimit: METRIC_CARDINALITY_LIMIT,
   }));
-  const metricReader = new PeriodicExportingMetricReader({
-    // observeHooks is defined below; it is only called after the first export.
-    exporter: new ObservedMetricExporter(opts.exporters.metricExporter, {
-      tee,
-      onFailure: (signal, httpClass) => observeHooks.onFailure(signal, httpClass),
-      onResult: (signal, result) => recordExport(signal, result),
-    }),
+  // observeHooks is defined below; the readers only call it after the first export.
+  // One preview buffer per destination, so a busy one never pushes another's items out.
+  const tees = new Map(destinations.map((d) => [d.id, new PreviewTee()]));
+  const hooksFor = (dest: SdkDestination) => ({
+    tee: tees.get(dest.id),
+    destination: dest.id,
+    exportTimeoutMs: opts.exportTimeoutMs,
+    onFailure: (signal: 'traces' | 'metrics' | 'logs', httpClass: ReturnType<typeof classifyExportError>) =>
+      observeHooks.onFailure(dest, signal, httpClass),
+    onResult: (signal: 'traces' | 'metrics' | 'logs', result: ExportResult) => recordExport(dest.id, signal, result),
+  });
+  const filters = new Map(destinations.map((d) => [d.id, compileFilter(d.filter, d.id)]));
+  // One reader per destination: each keeps its own temporality (from its
+  // exporter) and its own filter.
+  const metricReaders = destinations.map((dest) => new PeriodicExportingMetricReader({
+    exporter: new FilteredMetricExporter(new ObservedMetricExporter(dest.exporters.metricExporter, hooksFor(dest)), filters.get(dest.id)!),
     exportIntervalMillis: opts.metricExportIntervalMs ?? 60_000,
     exportTimeoutMillis: Math.min(30_000, opts.metricExportIntervalMs ?? 30_000),
-  });
-  const meterProvider = new MeterProvider({ resource, views, readers: [metricReader] });
+  }));
+  const meterProvider = new MeterProvider({ resource, views, readers: metricReaders });
   const meter = meterProvider.getMeter(SCOPE);
   const counters = new Map<string, Counter | Histogram | Gauge>();
   function instrument(name: MetricName): Counter | Histogram | Gauge {
@@ -249,22 +300,37 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     scrub,
     onDropped: (signal, n) => droppedCounter.add(n, toAttributes([ATTR.telemetrySignal(signal)])),
   };
-  const caps = new SessionCaps(opts.sessionCaps, (signal) => hooks.onDropped(signal, 1));
+  // One budget per destination, spent after its filter (spec §6.4, §6.11).
+  const capsFor = new Map(destinations.map((d) => [d.id, new SessionCaps(opts.sessionCaps, (signal) => hooks.onDropped(signal, 1))]));
   const observeHooks = {
-    tee,
-    onResult: recordExport,
-    onFailure: (signal: 'traces' | 'metrics' | 'logs', httpClass: ReturnType<typeof classifyExportError>) =>
-      failureCounter.add(1, toAttributes([ATTR.telemetrySignal(signal), ATTR.httpClass(httpClass)])),
+    onFailure: (dest: SdkDestination, signal: 'traces' | 'metrics' | 'logs', httpClass: ReturnType<typeof classifyExportError>) =>
+      failureCounter.add(1, toAttributes([
+        ATTR.telemetrySignal(signal),
+        ATTR.httpClass(httpClass),
+        ATTR.telemetryDestination(dest.kind as Parameters<typeof ATTR.telemetryDestination>[0]),
+      ])),
   };
 
-  // --- Traces ---
-  const batchSpans = new BatchSpanProcessor(new ObservedSpanExporter(opts.exporters.spanExporter, observeHooks), {
-    maxExportBatchSize: 256,
-    scheduledDelayMillis: opts.batchDelayMs ?? 5000,
+  const stampFor = (dest: SdkDestination) => ({
+    attributes: { 'clubhouse.telemetry.level': dest.filter.level },
+    copyResourceAttributes: dest.copyResourceAttributes ?? [],
   });
-  let spanTail: SpanProcessor = batchSpans;
-  if (level === 'errors') spanTail = new ErrorTailSpanProcessor(spanTail);
-  const spanPipeline = new RedactionSpanProcessor(new SessionCapSpanProcessor(spanTail, caps), hooks);
+
+  // --- Traces ---
+  const spanChains = destinations.map((dest) => {
+    const filter = filters.get(dest.id)!;
+    const exporter = new StampSpanExporter(new ObservedSpanExporter(dest.exporters.spanExporter, hooksFor(dest)), stampFor(dest));
+    let chain: SpanProcessor = new BatchSpanProcessor(exporter, {
+      maxExportBatchSize: 256,
+      scheduledDelayMillis: opts.batchDelayMs ?? 5000,
+    });
+    chain = new FilterSpanProcessor(new SessionCapSpanProcessor(chain, capsFor.get(dest.id)!), filter);
+    // Before the filter, so a failing trace whose root the filter drops still
+    // forwards its failing children.
+    if (filter.errorTail) chain = new ErrorTailSpanProcessor(chain);
+    return chain;
+  });
+  const spanPipeline = new RedactionSpanProcessor(new FanOutSpanProcessor(spanChains), hooks);
   const tracerProvider = new BasicTracerProvider({
     resource,
     sampler: new FlowSampler(opts.sampleRate),
@@ -273,14 +339,17 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
   const tracer = tracerProvider.getTracer(SCOPE);
 
   // --- Logs ---
-  const batchLogs = new BatchLogRecordProcessor({
-    exporter: new ObservedLogExporter(opts.exporters.logExporter, observeHooks),
-    maxExportBatchSize: 256,
-    scheduledDelayMillis: opts.batchDelayMs ?? 5000,
+  const logChains = destinations.map((dest) => {
+    const exporter = new StampLogExporter(new ObservedLogExporter(dest.exporters.logExporter, hooksFor(dest)), stampFor(dest));
+    return new FilterLogProcessor(new SessionCapLogProcessor(new BatchLogRecordProcessor({
+      exporter,
+      maxExportBatchSize: 256,
+      scheduledDelayMillis: opts.batchDelayMs ?? 5000,
+    }), capsFor.get(dest.id)!), filters.get(dest.id)!);
   });
   const loggerProvider = new LoggerProvider({
     resource,
-    processors: [new RedactionLogProcessor(batchLogs, hooks, caps)],
+    processors: [new RedactionLogProcessor(new FanOutLogProcessor(logChains), hooks)],
   });
   const logger = loggerProvider.getLogger(SCOPE);
 
@@ -517,9 +586,11 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       return context.with(context.active().setValue(REMOTE_PARENT, holder), fn);
     },
 
-    preview: () => tee.snapshot(),
+    preview: () => [...tees.values()].flatMap((t) => t.snapshot()).sort((a, b) => a.time - b.time),
 
     recentExports: (sinceMs) => exportLog.filter((r) => r.at >= sinceMs),
+
+    destinationHealth: () => Object.fromEntries([...health].map(([id, h]) => [id, { ...h }])),
 
     async forceFlush(timeoutMs) {
       if (shutDown) return;
@@ -539,7 +610,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       );
       context.disable();
       diag.disable();
-      tee.clear();
+      for (const t of tees.values()) t.clear();
     },
   };
 }

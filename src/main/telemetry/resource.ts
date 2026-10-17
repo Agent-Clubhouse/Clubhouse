@@ -4,7 +4,7 @@
  * `service.instance.id` is set explicitly, otherwise the Azure exporter falls
  * back to os.hostname() for cloud_RoleInstance.
  */
-import { TELEMETRY_SCHEMA_VERSION, type TelemetryLevel } from '../../shared/telemetry/attributes';
+import { TELEMETRY_SCHEMA_VERSION } from '../../shared/telemetry/attributes';
 
 export interface ResourceInputs {
   appVersion: string;
@@ -16,7 +16,6 @@ export interface ResourceInputs {
   electronVersion: string;
   installId: string;
   instanceId: string;
-  level: TelemetryLevel;
   annexRole: 'none' | 'satellite' | 'controller' | 'both';
   /** Which chrome shell this session runs (docs/chrome-redesign-spec.md §8). Fixed for the session. */
   uiChrome: 'legacy' | 'v2';
@@ -37,7 +36,6 @@ export const RESOURCE_KEYS = [
   'process.runtime.version',
   'clubhouse.electron.version',
   'clubhouse.telemetry.schema',
-  'clubhouse.telemetry.level',
   'clubhouse.annex.role',
   'clubhouse.ui.chrome',
 ] as const;
@@ -83,7 +81,6 @@ export function buildResourceAttributes(input: ResourceInputs): Record<(typeof R
     'process.runtime.version': input.nodeVersion,
     'clubhouse.electron.version': input.electronVersion,
     'clubhouse.telemetry.schema': TELEMETRY_SCHEMA_VERSION,
-    'clubhouse.telemetry.level': input.level,
     'clubhouse.annex.role': input.annexRole,
     'clubhouse.ui.chrome': input.uiChrome,
   };
