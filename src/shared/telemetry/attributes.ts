@@ -1030,7 +1030,10 @@ export const EVENTS = {
   'clubhouse.mcp.tools_list': { level: 'standard' },
   // appLog bridge (§6.6, Phase 7): opt-in log sites, exported as these events
   // with their declared attributes only, never the message or meta.
-  /** Annex controller: a satellite stopped answering heartbeats. */
+  /**
+   * Annex controller: a satellite stopped answering heartbeats. The Errors-level
+   * signal; `clubhouse.annex.disconnects{reason}` is the Standard-level breakdown.
+   */
   'clubhouse.annex.heartbeat_timeout': { level: 'errors' },
   /** A permission request still pending past the stuck threshold. Attributes: `clubhouse.agent.id_hash`. */
   'clubhouse.agent.permission.stuck': { level: 'errors' },
