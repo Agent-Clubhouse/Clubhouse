@@ -1,0 +1,103 @@
+name: Nightly macOS
+
+# Full macOS validation once a night. PRs and pushes to main only run a
+# targeted macOS job (validate.yml, docs/ci.md), so this is the run that
+# catches macOS-only regressions everywhere else. On failure it files or
+# updates one tracking issue (label `nightly-macos`) listing the failing tests
+# from the JUnit results, and the first passing night closes it.
+
+on:
+  schedule:
+    - cron: '0 8 * * *' # 08:00 UTC, after the 07:00 Linux/Windows nightly
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-macos
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit + Component Tests (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test -- --reporter=default --reporter=junit --outputFile.junit=junit/unit.xml
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: junit-unit
+          path: junit/
+
+  e2e:
+    name: E2E + Annex E2E (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build app
+        run: npx electron-forge package
+      - name: Run E2E tests
+        run: npx playwright test --config=playwright.config.ts --reporter=line,junit
+        env:
+          PLAYWRIGHT_IGNORE_ANNEX: '1'
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: junit/e2e.xml
+      - name: Run Annex E2E tests
+        if: ${{ !cancelled() }}
+        run: npx playwright test e2e/annex-v2/ --reporter=line,junit
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: junit/annex.xml
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: junit-e2e
+          path: junit/
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: playwright-traces-macos
+          path: test-results/
+
+  report:
+    needs: [unit, e2e]
+    if: ${{ always() && !cancelled() }}
+    name: File or update the tracking issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: junit-*
+          path: junit/
+      - name: Report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ (needs.unit.result == 'success' && needs.e2e.result == 'success') && 'success' || 'failure' }}
+        run: >-
+          node scripts/ci/nightly-report.mjs
+          --junit-dir junit
+          --outcome "$OUTCOME"
+          --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
