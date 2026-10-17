@@ -760,6 +760,12 @@ export interface UpdateManifest {
   releaseMessage?: string;
   mandatory?: boolean;
   artifacts: Record<string, UpdateArtifact>;
+  /**
+   * Known-bad chat CLI versions (remote kill switch). Entries look like
+   * `{ driver?, provider?, versions?, range?: { from?, to? }, reason }` and
+   * are validated on receipt (chat-version-policy.ts).
+   */
+  chatCliDenylist?: unknown;
 }
 
 export interface UpdateStatus {

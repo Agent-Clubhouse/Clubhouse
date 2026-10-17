@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { settingsChanged } from '../telemetry/feature-events';
 import { IPC } from '../../shared/ipc-channels';
 import * as marketplaceService from '../services/marketplace-service';
 import * as pluginUpdateService from '../services/plugin-update-service';
@@ -112,6 +113,7 @@ export function registerMarketplaceHandlers(): void {
     })],
     async (_event, settings) => {
       await marketplaceService.saveMarketplaceSettings(settings);
+      settingsChanged('marketplace');
     },
   ));
 }

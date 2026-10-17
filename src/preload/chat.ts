@@ -33,6 +33,13 @@ export const chat = {
       ipcRenderer.invoke(IPC.CHAT.REVERT_TURN, agentId, turnId, force),
     undoRevert: (agentId: string, turnId: string): Promise<RevertResult> =>
       ipcRenderer.invoke(IPC.CHAT.UNDO_REVERT, agentId, turnId),
+    /** An agent didn't get the chat it asked for: it fell back to another driver or the terminal. */
+    onRuntimeNotice: (callback: (agentId: string, notice: { level: 'info' | 'warn'; code: string; message: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, notice: { level: 'info' | 'warn'; code: string; message: string }) =>
+        callback(agentId, notice);
+      ipcRenderer.on(IPC.CHAT.RUNTIME_NOTICE, listener);
+      return () => { ipcRenderer.removeListener(IPC.CHAT.RUNTIME_NOTICE, listener); };
+    },
     onEvent: (callback: (event: ChatEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, chatEvent: ChatEvent) => callback(chatEvent);
       ipcRenderer.on(IPC.CHAT.EVENT, listener);

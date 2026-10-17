@@ -157,6 +157,8 @@ export const IPC = {
     GET_CHANGES: 'chat:get-changes',
     REVERT_TURN: 'chat:revert-turn',
     UNDO_REVERT: 'chat:undo-revert',
+    /** Main → Renderer: an agent didn't get the chat it asked for (driver or terminal fallback). */
+    RUNTIME_NOTICE: 'chat:runtime-notice',
   },
   FILE: {
     READ_TREE: 'file:read-tree',

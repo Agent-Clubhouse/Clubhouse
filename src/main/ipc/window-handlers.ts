@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron';
+import { popoutOpened } from '../telemetry/feature-events';
 import { IPC } from '../../shared/ipc-channels';
 import { getSettings as getThemeSettings } from '../services/theme-service';
 import { getThemeColorsForTitleBar } from '../title-bar-colors';
@@ -155,6 +156,7 @@ export function registerWindowHandlers(): void {
       },
     })],
     (_event, params) => {
+    popoutOpened(params.type);
     const themeColors = getThemeColors();
     const isWin = process.platform === 'win32';
 
