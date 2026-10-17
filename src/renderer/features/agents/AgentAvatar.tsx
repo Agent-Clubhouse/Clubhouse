@@ -2,46 +2,6 @@ import { useAgentStore } from '../../stores/agentStore';
 import { Agent } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 
-/* ── Orchestrator glyph ─────────────────────────────────────────── */
-
-const ORCHESTRATOR_LETTER: Record<string, string> = {
-  'claude-code': 'C',
-  'codex-cli': 'X',
-  'copilot-cli': 'G',
-};
-
-const ORCHESTRATOR_NAME: Record<string, string> = {
-  'claude-code': 'Claude Code',
-  'codex-cli': 'Codex',
-  'copilot-cli': 'GitHub Copilot',
-};
-
-export function orchestratorDisplayName(orchestrator?: string): string {
-  if (!orchestrator) return 'Claude Code';
-  return ORCHESTRATOR_NAME[orchestrator] ?? orchestrator;
-}
-
-/**
- * A neutral 14px glyph for the provider, shown beside the model (#2025).
- * Monochrome on purpose: the avatar carries the agent's color, not the brand's.
- */
-export function OrchestratorGlyph({ orchestrator }: { orchestrator?: string }) {
-  const id = orchestrator || 'claude-code';
-  const letter = ORCHESTRATOR_LETTER[id] ?? (id[0] ?? '?').toUpperCase();
-  const name = orchestratorDisplayName(id);
-  return (
-    <span
-      role="img"
-      aria-label={name}
-      title={name}
-      data-testid="orchestrator-glyph"
-      className="flex-shrink-0 w-[14px] h-[14px] rounded grid place-items-center bg-surface-0 text-ctp-overlay1 text-[8.5px] font-semibold leading-none"
-    >
-      {letter}
-    </span>
-  );
-}
-
 interface Props {
   agent: Agent;
   size?: '2xs' | 'xs' | 'sm' | 'md' | 'lg';
@@ -103,8 +63,8 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
       );
     }
 
-    // Initials on the agent color. The provider shows as OrchestratorGlyph
-    // beside the model instead of a brand mascot in the avatar (#2025).
+    // Initials on the agent color. The provider shows as the neutral
+    // OrchestratorGlyph beside the model instead of a brand mascot (#2025).
     const initials = agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
     return (
       <div

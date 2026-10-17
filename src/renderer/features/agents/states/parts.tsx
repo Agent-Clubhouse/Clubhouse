@@ -7,29 +7,23 @@
  */
 
 import type { ReactNode } from 'react';
-import { OrchestratorGlyph } from '../AgentAvatar';
+import { OrchestratorGlyph } from '../pane/AgentPaneToolbar';
+import { DOT_LABEL, StatusDot, type AgentDot } from '../agent-status';
 import { splitPath } from './format';
 
+/** The states these views show, in the app's one status vocabulary (agent-status.tsx, #2018). */
 export type StateDotKind = 'working' | 'needs' | 'error' | 'sleeping' | 'done';
 
-const DOT_CLASS: Record<StateDotKind, string> = {
-  working: 'bg-ctp-success',
-  needs: 'bg-ctp-warning',
-  error: 'bg-ctp-error',
-  sleeping: 'border-[1.5px] border-ctp-overlay0',
-  done: 'bg-ctp-info',
-};
-
-export const STATE_WORD: Record<StateDotKind, string> = {
-  working: 'Working',
-  needs: 'Needs you',
-  error: 'Error',
-  sleeping: 'Sleeping',
-  done: 'Done',
+const TO_DOT: Record<StateDotKind, AgentDot> = {
+  working: 'working',
+  needs: 'needs',
+  error: 'error',
+  sleeping: 'sleeping',
+  done: 'idle',
 };
 
 export function StateDot({ kind }: { kind: StateDotKind }) {
-  return <span className={`w-2 h-2 rounded-full flex-shrink-0 ${DOT_CLASS[kind]}`} aria-hidden="true" />;
+  return <StatusDot dot={TO_DOT[kind]} />;
 }
 
 /** The pane toolbar: status dot, one word and a detail on the left, actions on the right. */
@@ -41,11 +35,11 @@ export function StateToolbar({ status, detail, right, testId }: {
 }) {
   return (
     <div
-      className="h-8 flex-shrink-0 flex items-center gap-2 pl-3.5 pr-2.5 border-b border-surface-0 text-xs text-ctp-overlay1 min-w-0"
+      className="h-8 flex-shrink-0 flex items-center gap-2 pl-3.5 pr-1.5 border-b border-surface-0 bg-ctp-base text-xs text-ctp-overlay1 min-w-0"
       data-testid={testId}
     >
       <StateDot kind={status} />
-      <span className="text-ctp-text" data-testid="state-word">{STATE_WORD[status]}</span>
+      <span className="text-ctp-text" data-testid="state-word">{DOT_LABEL[TO_DOT[status]]}</span>
       {detail && <span className="truncate min-w-0">{detail}</span>}
       {right && <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">{right}</div>}
     </div>
@@ -56,7 +50,7 @@ export function StateToolbar({ status, detail, right, testId }: {
 export function ModelLabel({ orchestrator, model }: { orchestrator?: string; model?: string }) {
   return (
     <span className="flex items-center gap-1.5 text-xs text-ctp-overlay1 whitespace-nowrap">
-      <OrchestratorGlyph orchestrator={orchestrator} />
+      <OrchestratorGlyph orchestrator={orchestrator || 'claude-code'} />
       <span>{model && model !== 'default' ? model : 'default model'}</span>
     </span>
   );

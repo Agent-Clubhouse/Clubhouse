@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { AgentAvatar, AgentAvatarWithRing, OrchestratorGlyph } from './AgentAvatar';
+import { AgentAvatar, AgentAvatarWithRing } from './AgentAvatar';
 import { useAgentStore } from '../../stores/agentStore';
 import type { Agent } from '../../../shared/types';
 
@@ -222,18 +222,3 @@ describe('AgentAvatarWithRing', () => {
   });
 });
 
-describe('OrchestratorGlyph', () => {
-  it.each([
-    ['claude-code', 'C', 'Claude Code'],
-    ['codex-cli', 'X', 'Codex'],
-    ['copilot-cli', 'G', 'GitHub Copilot'],
-    [undefined, 'C', 'Claude Code'],
-    ['opencode', 'O', 'opencode'],
-  ])('draws %s as a neutral letter', (orchestrator, letter, name) => {
-    render(<OrchestratorGlyph orchestrator={orchestrator} />);
-    const glyph = screen.getByRole('img', { name });
-    expect(glyph).toHaveTextContent(letter);
-    expect(glyph.className).toContain('text-ctp-overlay1');
-    expect(glyph.getAttribute('style')).toBeNull();
-  });
-});
