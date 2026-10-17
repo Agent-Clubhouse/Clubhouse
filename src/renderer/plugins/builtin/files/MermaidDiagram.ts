@@ -103,6 +103,9 @@ export function MermaidDiagram({ code }: MermaidDiagramProps): React.ReactElemen
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: 'strict',
+          // Keep existing diagrams stable across Mermaid 12's new defaults.
+          layout: 'dagre',
+          look: 'classic',
           theme: 'base',
           darkMode: themeType === 'dark',
           fontFamily: 'inherit',

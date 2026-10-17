@@ -115,11 +115,14 @@ function makeFakeSettings(initial: GoobersSettings): ManagedSettings<GoobersSett
   };
 }
 
-/** Real fs.promises calls chain several sequential awaits (stat, stat, readFile) —
- *  a single setImmediate can land between the first and second, so flush with
- *  a real timer instead of a microtask/next-tick. */
-function flush(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 20));
+const reconciliations: Promise<void>[] = [];
+const activeServices = new Set<GoobersService>();
+
+/** Await real filesystem reconciliation before allowing follow-up callbacks to
+ * settle. A fixed delay alone races stat/readFile on busy CI workers. */
+async function flush(): Promise<void> {
+  await Promise.all(reconciliations);
+  await new Promise((resolve) => setTimeout(resolve, 20));
 }
 
 function defaultSettings(overrides: Partial<GoobersSettings> = {}): GoobersSettings {
@@ -149,6 +152,20 @@ const realPlatform = process.platform;
 // block) explicitly re-pin 'win32' as the first line of their own test body,
 // which runs after this beforeEach and overrides it.
 beforeEach(() => {
+  reconciliations.length = 0;
+  activeServices.clear();
+  // Observe the real operation without replacing any validation or liveness
+  // behavior. subscribe() intentionally does not return its completion promise.
+  const prototype = GoobersService.prototype as unknown as {
+    reconcile(settings: GoobersSettings): Promise<void>;
+  };
+  const reconcile = prototype.reconcile;
+  vi.spyOn(prototype, 'reconcile').mockImplementation(function (this: GoobersService, settings) {
+    activeServices.add(this);
+    const completion = reconcile.call(this, settings);
+    reconciliations.push(completion);
+    return completion;
+  });
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'goobers-service-test-'));
   Object.defineProperty(process, 'platform', { value: 'darwin' });
   mockGetAllWindows.mockReset().mockReturnValue([]);
@@ -158,10 +175,16 @@ beforeEach(() => {
   mockStartEventStream.mockReset().mockImplementation(() => ({ close: vi.fn() }));
 });
 
-afterEach(() => {
-  fs.rmSync(tmpRoot, { recursive: true, force: true });
-  vi.restoreAllMocks();
-  Object.defineProperty(process, 'platform', { value: realPlatform });
+afterEach(async () => {
+  try {
+    await Promise.all(reconciliations);
+  } finally {
+    // A prior service's poll must never consume the next test's mock snapshot.
+    for (const service of activeServices) service.teardown();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    vi.restoreAllMocks();
+    Object.defineProperty(process, 'platform', { value: realPlatform });
+  }
 });
 
 describe('validateInstanceRoot', () => {
@@ -987,8 +1010,9 @@ describe('GoobersService — address-watch race, M21', () => {
     const service = new GoobersService(settings);
 
     service.subscribe();
-    await flush();
-    expect(service.isWatchingAddressFileForTests).toBe(true);
+    await vi.waitFor(() => {
+      expect(service.isWatchingAddressFileForTests).toBe(true);
+    }, { timeout: 2_000 });
     expect(service.isPollingForTests).toBe(false);
 
     // The file appears — but the daemon is captured mid-startup, not yet
@@ -1095,7 +1119,10 @@ describe('GoobersService — daemon-start-unknown (M17)', () => {
     const settings = makeFakeSettings(defaultSettings({ instanceRoot: tmpRoot, binaryPath, manageDaemon: true }));
     const service = new GoobersService(settings);
     service.subscribe();
-    await flush();
+    await vi.waitFor(() => {
+      expect(service.getBinaryPathForTests()).toBe(binaryPath);
+      expect(service.getState().daemon.state).toBe('not-running');
+    }, { timeout: 2_000 });
 
     vi.mocked(startDaemon).mockResolvedValueOnce({
       ok: false,
@@ -1499,9 +1526,9 @@ describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => 
     vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
 
     service.subscribe();
-    await flush();
-
-    expect(service.getState().lastError?.code).toBe('auth-required');
+    await vi.waitFor(() => {
+      expect(service.getState().lastError?.code).toBe('auth-required');
+    }, { timeout: 2_000 });
     expect(service.getState().daemon.state).toBe('running'); // §14.1 — /readyz already confirmed this
     expect(service.isPollingForTests).toBe(false);
     expect(service.isWatchingAddressFileForTests).toBe(false);
@@ -1515,8 +1542,9 @@ describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => 
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
     service.subscribe();
-    await flush();
-    expect(service.isPollingForTests).toBe(true); // connected fine — polling started normally
+    await vi.waitFor(() => {
+      expect(service.isPollingForTests).toBe(true);
+    }, { timeout: 2_000 });
 
     // Simulate the next 5s tick observing a 401, by directly driving the same
     // private sequence the poll interval calls (refreshConnectionOnce then
@@ -1544,8 +1572,10 @@ describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => 
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
     service.subscribe();
-    await flush();
-    expect(service.getState().lastError?.code).toBe('auth-required');
+    // subscribe() validates real files asynchronously; wait for its result.
+    await vi.waitFor(() => {
+      expect(service.getState().lastError?.code).toBe('auth-required');
+    }, { timeout: 2_000 });
 
     vi.mocked(startDaemon).mockResolvedValueOnce({ ok: false, error: 'lock-contention', holderKind: 'daemon' });
     vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
@@ -1574,8 +1604,10 @@ describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => 
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
     service.subscribe();
-    await flush();
-    expect(service.getState().lastError?.code).toBe('auth-required');
+    // subscribe() validates real files asynchronously; wait for its result.
+    await vi.waitFor(() => {
+      expect(service.getState().lastError?.code).toBe('auth-required');
+    }, { timeout: 2_000 });
     expect(service.isPollingForTests).toBe(false);
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
@@ -1639,8 +1671,9 @@ describe('GoobersService — 503 recovering (M20)', () => {
     // then crashes and comes back up recovering, not a fresh connect.
     vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
     service.subscribe();
-    await flush();
-    expect(service.isPollingForTests).toBe(true);
+    await vi.waitFor(() => {
+      expect(service.isPollingForTests).toBe(true);
+    }, { timeout: 2_000 });
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(recoveringSnapshot());
     const svc = service as unknown as {
@@ -1670,7 +1703,9 @@ describe('GoobersService — 503 recovering (M20)', () => {
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
     service.subscribe();
-    await flush();
+    await vi.waitFor(() => {
+      expect(service.isPollingForTests).toBe(true);
+    }, { timeout: 2_000 });
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(recoveringSnapshot());
     const svc = service as unknown as {
@@ -1704,8 +1739,10 @@ describe('GoobersService — 503 recovering (M20)', () => {
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(recoveringSnapshot());
     service.subscribe();
-    await flush();
-    expect(service.getState().lastError?.code).toBe('recovering');
+    // Real file validation must finish before daemon control is exercised.
+    await vi.waitFor(() => {
+      expect(service.getState().lastError?.code).toBe('recovering');
+    }, { timeout: 2_000 });
 
     vi.mocked(stopDaemon).mockResolvedValueOnce({ ok: true });
     const stopResult = await service.daemonStop();

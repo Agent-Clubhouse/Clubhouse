@@ -27,6 +27,10 @@ const AGENTS_JSON_DIR = path.join(FIXTURE_DIR, '.clubhouse');
 const AGENTS_JSON = path.join(AGENTS_JSON_DIR, 'agents.json');
 const AGENT_ID = 'lifecycle_test_agent_001';
 
+// These assertions share one lifecycle. A retry must replay the wake and exit,
+// rather than passing the final assertion against a newly sleeping agent.
+test.describe.configure({ mode: 'serial' });
+
 // ---------------------------------------------------------------------------
 // Fixture helpers
 // ---------------------------------------------------------------------------
@@ -114,7 +118,7 @@ let window: Page;
 test.beforeAll(async () => {
   writeLifecycleAgent();
 
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: {} }));
 
   await installLifecycleStub(electronApp);
   await addProject(electronApp, window, FIXTURE_DIR);
@@ -177,6 +181,10 @@ test.describe('Agent Lifecycle — Wake to Running', () => {
 
 test.describe('Agent Lifecycle — Exit to Sleeping', () => {
   test('process exit transitions agent back to sleeping state', async () => {
+    // A durable agent exiting within three seconds is intentionally treated as
+    // a startup error. Model a normal run without relying on CI wall-clock speed.
+    const now = await window.evaluate(() => Date.now());
+    await window.clock.setFixedTime(now + 3_001);
     await simulatePtyExit(electronApp, AGENT_ID);
 
     // Renderer handles pty:exit → store sets status sleeping → SleepingAgent renders

@@ -48,30 +48,10 @@ async function stubDialogForPath(dirPath: string) {
 
 /** Navigate to the canvas panel for the active project. */
 async function navigateToCanvas(win: Page) {
-  // Attempt programmatic navigation via the UI store first; fall back to clicking
-  await win.evaluate(() => {
-    const w = window as unknown as {
-      __zustand_uiStore?: {
-        getState: () => { setExplorerTab: (tab: string, projectId?: string) => void };
-      };
-    };
-    if (w.__zustand_uiStore) {
-      w.__zustand_uiStore.getState().setExplorerTab('plugin:canvas');
-    }
-  });
-
-  const canvasPanel = win.locator('[data-testid="canvas-panel"]');
-  const visible = await canvasPanel.isVisible({ timeout: 3_000 }).catch(() => false);
-  if (!visible) {
-    const canvasBtn = win
-      .locator('button, [role="tab"]')
-      .filter({ hasText: /canvas/i })
-      .first();
-    if (await canvasBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await canvasBtn.click();
-    }
-  }
-  await expect(canvasPanel).toBeVisible({ timeout: 10_000 });
+  const canvasTab = win.locator('[data-testid="explorer-tab-plugin:canvas"]');
+  await expect(canvasTab).toBeVisible({ timeout: 10_000 });
+  await canvasTab.click();
+  await expect(win.locator('[data-testid="canvas-panel"]')).toBeVisible({ timeout: 10_000 });
 }
 
 /**
@@ -98,7 +78,7 @@ async function waitForEmptyCanvas(win: Page) {
 }
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: {} }));
 
   // Add the project once — reused across all tests
   await stubDialogForPath(FIXTURE_PROJECT);
@@ -124,11 +104,8 @@ test.describe('Canvas golden path', () => {
     await expect(addBtn).toBeVisible({ timeout: 5_000 });
     await addBtn.click();
     const addNew = window.locator('[data-testid="canvas-add-new"]');
-    const menuVisible = await addNew.isVisible({ timeout: 2_000 }).catch(() => false);
-    if (menuVisible) {
-      await expect(addNew).toBeVisible({ timeout: 3_000 });
-      await addNew.click();
-    }
+    await expect(addNew).toBeVisible({ timeout: 3_000 });
+    await addNew.click();
     await waitForEmptyCanvas(window);
   });
 
