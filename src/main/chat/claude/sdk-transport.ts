@@ -178,10 +178,17 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
   }
 }
 
-/** Session helpers over the CLI's on-disk JSONL (SDK `listSessions` / `getSessionMessages`). */
-export async function listClaudeSessions(cwd: string, opts?: { limit?: number; offset?: number }) {
+/**
+ * Session helpers over the CLI's on-disk JSONL (SDK `listSessions` / `getSessionMessages`).
+ *
+ * `includeWorktrees` defaults to false here (the SDK defaults to true): each
+ * Clubhouse agent runs in its own worktree, so its sessions are the ones for
+ * that cwd. Including worktrees also makes the SDK resolve and run
+ * `git worktree list`, which can take seconds on Windows.
+ */
+export async function listClaudeSessions(cwd: string, opts?: { limit?: number; offset?: number; includeWorktrees?: boolean }) {
   const sdk = await loadClaudeAgentSdk();
-  return sdk.listSessions({ dir: cwd, limit: opts?.limit, offset: opts?.offset });
+  return sdk.listSessions({ dir: cwd, limit: opts?.limit, offset: opts?.offset, includeWorktrees: opts?.includeWorktrees ?? false });
 }
 
 export async function readClaudeSession(sessionId: string, cwd: string, opts?: { limit?: number; offset?: number }) {
