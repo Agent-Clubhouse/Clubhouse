@@ -293,6 +293,7 @@ describe('Claude contract mapping helpers', () => {
     expect(levelFromClaudeMode('dontAsk')).toBe('ask');
     expect(levelFromClaudeMode('manual')).toBe('ask');
     expect(claudeCapabilities('full_access').liveLevels).toContain('full_access');
+    expect(claudeCapabilities('ask').permissionExtras).toEqual({ denyMessage: true, updatedInput: true });
     expect(claudeCapabilities('auto').liveLevels).not.toContain('full_access');
   });
 
