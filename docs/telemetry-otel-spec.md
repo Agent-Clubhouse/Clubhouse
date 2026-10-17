@@ -355,6 +355,21 @@ Structured mode (`structured-manager.ts` and its StreamJson, ACP and Codex adapt
 
 Metrics: `c.agent.turn.duration` (s), `c.agent.tokens` counter (unit `{token}`, split by `gen_ai.token.type` = `input`/`output`), `c.agent.cost` (USD, from headless `result.total_cost_usd` or chat usage events where present).
 
+**As built** (`src/main/telemetry/chat-telemetry.ts`, one subscriber on the chat event bus; chat imports nothing from telemetry):
+
+- `c.agent.turn` is replayed at `turn_ended` with explicit times. Span attributes are integers, so time to first token is `c.turn.time_to_first_token_ms` on the span and `c.agent.turn.time_to_first_token` (s) as a histogram. The first token is the main agent's first streamed reply or thinking text. Subagent text doesn't count.
+- `error.type` for a failed turn is the stop reason when it is `max_tokens` or `refusal`, otherwise the last chat `error` code in the turn. Chat's closed `ChatErrorCode` set is part of `ERROR_TYPES`.
+- `c.agent.cost` carries `c.cost.estimate` (bool), because Claude on a subscription reports an API-price estimate.
+- Tool calls feed `c.agent.tool_calls` once per call when it completes or fails, through the same built-in bucket list as hooks.
+- Chat permissions reuse `c.agent.permission` and `c.agent.permission.wait` with `c.permission.path=chat` and `c.permission.source` (`desktop`/`annex`). A `cancelled` decision is reported as `deny`.
+- `c.chat.protocol.unknown` is a counter by `c.chat.driver` and `c.chat.protocol.kind`. The native method or field name isn't sent, because attributes are closed enums and there is no per-driver allowlist yet.
+- `c.agent.turn.stalled` counts a turn with no event for 5 minutes, once per turn. Time spent waiting on a permission or a question doesn't count.
+- `session_started` opens a `chat` agent run (`c.agent.runtime=chat`) that the exit broadcast closes. A context clear stays in the same run.
+- Not mapped yet:
+  - `c.chat.rpc`: the bus carries no protocol calls.
+  - `c.chat.start`: it belongs in the 4b spawn tree around `tryStartChatAgent` in `agent-system.ts`, so chat code stays telemetry-free.
+- The Workbook has a Chat tab for these signals.
+
 #### Permissions (hook path and chat path)
 
 | Span | Boundaries | Attributes | Level |

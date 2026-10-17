@@ -10,7 +10,8 @@
  *
  * The spawn tree (provider resolution, materialization, MCP injection) and the
  * agent kind come with Phase 4b on top of the AgentRuntime seam (#1950). Chat
- * runs are mapped from the chat event bus later (spec §9.1).
+ * runs open here from the chat event bus (chat-telemetry.ts, spec §9.1) and
+ * close on the same exit broadcast.
  *
  * No OpenTelemetry imports: part of the main bundle. The orchestrator lookup
  * is injected at install time so the runtime managers don't pick up a
@@ -22,7 +23,7 @@ import { isTelemetryActive, replaySpan, tel } from './facade';
 
 export { recordBinaryLookup, recordHookEvent, recordMcpToolCall, recordPermission, toolBucket } from './agent-signals';
 
-type Runtime = 'pty' | 'headless';
+type Runtime = 'pty' | 'headless' | 'chat';
 type Orchestrator = Parameters<typeof ATTR.orchestrator>[0];
 type KillStage = Parameters<typeof ATTR.killStage>[0];
 type ExitClass = Parameters<typeof ATTR.agentExitClass>[0];
@@ -68,6 +69,11 @@ export function agentRunStarted(agentId: string, runtime: Runtime, atMs = Date.n
     bytes: 0,
     swept: false,
   });
+}
+
+/** True while a run is open for this agent (chat sessions use it so a context clear doesn't restart the run). */
+export function hasActiveRun(agentId: string): boolean {
+  return runs.has(agentId);
 }
 
 /** PTY only: the shell accepted the agent command. */
