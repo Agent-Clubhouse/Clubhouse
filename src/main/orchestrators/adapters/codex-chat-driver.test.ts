@@ -524,6 +524,72 @@ describe('CodexChatDriver', () => {
     expect(events[2]).toEqual({ type: 'permission_resolved', data: { requestId: '0', decision: 'cancelled', by: 'agent' } });
   });
 
+  it('a crash after interrupt() ends the turn as cancelled, with no error', async () => {
+    useServer({ 'turn/interrupt': () => ({ result: {} }) });
+    const { session, take, rest } = await startSession();
+    await take(1);
+    server.send(fx.completedTurnNotifications[1]);
+    await take(1);
+
+    await session.interrupt();
+    server.exit(1); // dies before turn/completed confirms the interrupt
+
+    expect(await rest()).toEqual([
+      { type: 'turn_ended', data: { stopReason: 'cancelled' } },
+      { type: 'session_ended', data: { reason: 'error', exitCode: 1 } },
+    ]);
+  });
+
+  it('a failed interrupt leaves a later crash reported as an error', async () => {
+    useServer({ 'turn/interrupt': () => ({ error: { code: -32600, message: 'no such turn' } }) });
+    const { session, take, rest } = await startSession();
+    await take(1);
+    server.send(fx.completedTurnNotifications[1]);
+    await take(1);
+
+    await expect(session.interrupt()).rejects.toThrow('no such turn');
+    server.exit(1);
+
+    expect((await rest()).map((e) => e.type === 'turn_ended' ? `turn_ended:${e.data.stopReason}` : e.type))
+      .toEqual(['error', 'turn_ended:error', 'session_ended']);
+  });
+
+  it('a signal kill mid-turn names the signal', async () => {
+    const { take, rest } = await startSession();
+    await take(1);
+    server.send(fx.completedTurnNotifications[1]);
+    await take(1);
+
+    server.proc.emit('exit', null, 'SIGKILL');
+
+    expect(await rest()).toEqual([
+      { type: 'error', data: { code: 'process_exited', message: 'Codex app-server exited on SIGKILL during a turn', fatal: true } },
+      { type: 'turn_ended', data: { stopReason: 'error' } },
+      { type: 'session_ended', data: { reason: 'error', message: 'Codex app-server exited on SIGKILL' } },
+    ]);
+  });
+
+  it('a crash cancels an open question', async () => {
+    const { take, rest } = await startSession();
+    await take(1);
+    server.send(fx.completedTurnNotifications[1]);
+    server.send({
+      method: 'item/tool/requestUserInput',
+      id: 8,
+      params: {
+        threadId: fx.THREAD_ID, turnId: fx.TURN_ID, itemId: 'q', isBlocking: true, autoResolutionMs: null,
+        questions: [{ id: 'q1', header: '', question: 'Which?', isOther: true, isSecret: false, options: null }],
+      },
+    });
+    await take(2);
+
+    server.exit(1);
+
+    const events = await rest();
+    expect(events.map((e) => e.type)).toEqual(['error', 'turn_ended', 'question_resolved', 'session_ended']);
+    expect(events[2]).toEqual({ type: 'question_resolved', data: { requestId: '8', answers: {}, cancelled: true } });
+  });
+
   it('a crash after the turn finished adds no turn_ended', async () => {
     const { take, rest } = await startSession();
     await take(1);

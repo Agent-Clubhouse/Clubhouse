@@ -171,6 +171,8 @@ class CodexChatSession implements ChatDriverSession {
   private closing = false;
   /** Between a turn_started and its turn_ended on this chat's thread. */
   private turnRunning = false;
+  /** interrupt() was sent for the running turn and it hasn't ended yet. */
+  private interrupting = false;
   private exited: Promise<void>;
   /** Overrides applied on the next turn/start (Codex keeps them for later turns too). */
   private nextTurn: Partial<TurnStartParams> = {};
@@ -211,14 +213,17 @@ class CodexChatSession implements ChatDriverSession {
         // Close out what the dead process can no longer finish, as the Claude
         // and ACP drivers do: the running turn, then any open approvals.
         if (this.turnRunning) {
-          if (!this.closing) {
+          // A turn the user already asked to stop (close or interrupt) ends
+          // as cancelled even if the process dies before confirming it.
+          const cancelled = this.closing || this.interrupting;
+          if (!cancelled) {
             const how = code !== null ? ` with code ${code}` : signal ? ` on ${signal}` : '';
             this.emit({
               type: 'error',
               data: { code: 'process_exited', message: `Codex app-server exited${how} during a turn`, fatal: true },
             });
           }
-          this.emit({ type: 'turn_ended', data: { stopReason: this.closing ? 'cancelled' : 'error' } });
+          this.emit({ type: 'turn_ended', data: { stopReason: cancelled ? 'cancelled' : 'error' } });
         }
         this.mapper.cancelOpenRequests().forEach((e) => this.emit(e));
         this.emit({
@@ -333,7 +338,13 @@ class CodexChatSession implements ChatDriverSession {
   async interrupt(): Promise<void> {
     const threadId = this.requireThread();
     if (!this.client.getActiveTurnId(threadId)) return;
-    await this.client.turnInterrupt(threadId);
+    this.interrupting = true;
+    try {
+      await this.client.turnInterrupt(threadId);
+    } catch (err) {
+      this.interrupting = false;
+      throw err;
+    }
   }
 
   /** Codex approvals carry only a decision, so denial messages and edited inputs are dropped. */
@@ -396,7 +407,10 @@ class CodexChatSession implements ChatDriverSession {
 
   private emit(event: ChatEventDraft): void {
     if (event.type === 'turn_started') this.turnRunning = true;
-    else if (event.type === 'turn_ended') this.turnRunning = false;
+    else if (event.type === 'turn_ended') {
+      this.turnRunning = false;
+      this.interrupting = false;
+    }
     if (this.early) this.early.push(event);
     else this.queue.push(event);
   }
