@@ -1,8 +1,6 @@
 import type { AgentInfo, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
 import type { Agent, AgentDetailedStatus } from '../../../../shared/types';
-import { agentDot, type AgentDot } from '../../../chrome/sidebar/treeModel';
-import { DOT_LABEL } from '../../../chrome/sidebar/AgentRow';
-import { isRemoteAgentId } from './host';
+import { agentDot, DOT_LABEL, isRemoteAgentId, type AgentDot } from './host';
 
 /**
  * Pure rules behind Review (#2021): the status word for an agent, why the list

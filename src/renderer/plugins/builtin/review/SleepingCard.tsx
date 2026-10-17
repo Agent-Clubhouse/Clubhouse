@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { AgentInfo, PluginAPI } from '../../../../shared/plugin-types';
 import type { SessionEvent, SessionSummary } from '../../../../shared/session-types';
-import { Button, Toggle } from './host';
-import { StatusDot } from '../../../chrome/sidebar/AgentRow';
+import { Button, Toggle, StatusDot } from './host';
 import { formatDuration } from '../../../chrome/sidebar/AgentHoverCard';
 import { ReviewAvatar, Svg, Icon, useProjectName } from './reviewUi';
 import { timeAgo } from './reviewModel';

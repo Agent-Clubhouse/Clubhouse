@@ -1,7 +1,6 @@
 import React from 'react';
 import type { AgentInfo, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
-import { StatusDot } from '../../../chrome/sidebar/AgentRow';
-import { Button, Toggle, useAnnexClientStore, parseNamespacedId, isRemoteAgentId } from './host';
+import { Button, Toggle, useAnnexClientStore, parseNamespacedId, isRemoteAgentId, StatusDot } from './host';
 import { ReviewAvatar, Svg, Icon } from './reviewUi';
 import { agentCount, describeAgents, reviewDot, statusWord, type EmptyCause } from './reviewModel';
 

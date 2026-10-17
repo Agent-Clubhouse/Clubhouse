@@ -4,8 +4,8 @@
  * reaches past the plugin API for the 18px chrome avatar, the shared Toggle,
  * Button and PopupMenu, the new chrome's selection and New agent dialog, focusing
  * the terminal on Return, and waking with a resumed session and a prompt, which
- * `api.agents.resume` doesn't offer. Pure chrome helpers (StatusDot, DOT_LABEL,
- * agentDot, formatDuration) are imported directly where they're used.
+ * `api.agents.resume` doesn't offer. The status vocabulary (StatusDot, DOT_LABEL,
+ * agentDot) comes from here too; formatDuration is imported directly.
  */
 export { Toggle } from '../../../components/Toggle';
 export { Button } from '../../../components/Button';
@@ -19,3 +19,4 @@ export { useChromeStore } from '../../../chrome/chromeStore';
 export { useChromeFlagStore } from '../../../chrome/chromeFlag';
 export { useChromeDialogStore } from '../../../chrome/sidebar/ChromeAgentDialogs';
 export { FOCUS_ACTIVE_TERMINAL_EVENT } from '../../../features/agents/AgentTerminal';
+export { StatusDot, DOT_LABEL, agentDot, type AgentDot } from '../../../features/agents/agent-status';

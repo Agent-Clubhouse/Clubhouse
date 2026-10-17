@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AgentInfo, PluginAPI, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
-import { StatusDot } from '../../../chrome/sidebar/AgentRow';
 import {
   Button, PopupMenu, Toggle, useProjectStore, isRemoteAgentId, type MenuItem,
-  useChromeStore, useChromeFlagStore, useChromeDialogStore, FOCUS_ACTIVE_TERMINAL_EVENT,
+  useChromeStore, useChromeFlagStore, useChromeDialogStore, FOCUS_ACTIVE_TERMINAL_EVENT, StatusDot,
 } from './host';
 import { reviewNav } from './commands';
 import { clampIndex, filterAgents, filterNeedsAttention, filterRemoteAgents, resolveIndex } from './filters';
