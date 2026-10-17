@@ -331,9 +331,8 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
                   <div className="h-6 flex items-center px-2 text-xs text-ctp-overlay1">Direction</div>
                   <div className="flex gap-0.5 px-1 pb-1" data-testid="layout-direction-picker">
                     {DIRECTIONS.map((dir) => (
-                      <Tooltip content={dir.charAt(0) + dir.slice(1).toLowerCase()}>
+                      <Tooltip key={dir} content={dir.charAt(0) + dir.slice(1).toLowerCase()}>
                         <button
-                          key={dir}
                           onClick={() => {
                             setDirection(dir);
                             if (onAutolayout) onAutolayout({ algorithm, direction: dir });

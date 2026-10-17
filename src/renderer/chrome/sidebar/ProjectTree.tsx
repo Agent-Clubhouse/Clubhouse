@@ -5,6 +5,7 @@ import { ProjectGroup } from './ProjectGroup';
 import { moveProject, orderProjects } from './treeModel';
 import { partitionIdle } from '../projectActivity';
 import { reportChromeFeature } from '../telemetry';
+import { Tooltip } from '../../components/Tooltip';
 
 /**
  * The project tree (docs/chrome-redesign-spec.md §2, §4.2): pinned projects
@@ -272,10 +273,10 @@ export function ProjectTree(props: ProjectTreeProps) {
       <div className="flex-shrink-0 flex items-center px-3 pt-2 pb-1 border-t border-surface-0">
         <span className="text-xs font-semibold text-ctp-subtext0">Projects</span>
         <span className="ml-auto text-xs text-ctp-overlay1">{projects.length}</span>
+        <Tooltip content={allCollapsed ? 'Expand all projects' : 'Collapse all projects'}>
         <button
           type="button"
           data-testid="project-collapse-all"
-          title={allCollapsed ? 'Expand all projects' : 'Collapse all projects'}
           aria-label={allCollapsed ? 'Expand all projects' : 'Collapse all projects'}
           onClick={() => { toggleCollapseAll(projectIds); reportChromeFeature('project_collapse_all'); }}
           className="ml-1.5 w-6 h-6 rounded flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
@@ -283,6 +284,7 @@ export function ProjectTree(props: ProjectTreeProps) {
         >
           {CollapseAllIcon}
         </button>
+        </Tooltip>
       </div>
       <div
         ref={treeRef}
@@ -298,6 +300,7 @@ export function ProjectTree(props: ProjectTreeProps) {
         {active.map((p) => renderGroup(p))}
         {idle.length > 0 && (
           <>
+            <Tooltip content={`No activity in ${idleDays} days`} disabled={idleDays <= 0} side="right">
             <button
               type="button"
               role="treeitem"
@@ -307,12 +310,12 @@ export function ProjectTree(props: ProjectTreeProps) {
               data-tree-toggle
               data-testid="idle-projects"
               onClick={() => { toggleIdleOpen(); reportChromeFeature('idle_toggle'); }}
-              title={idleDays > 0 ? `No activity in ${idleDays} days` : undefined}
               className="h-7 mx-1.5 mt-1 px-1.5 rounded-md flex items-center gap-1.5 text-xs text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0/60 cursor-pointer focus-ring"
             >
               <Chevron open={idleOpen} />
               <span>{idle.length} idle project{idle.length === 1 ? '' : 's'}</span>
             </button>
+            </Tooltip>
             {idleOpen && idle.map((p) => renderGroup(p, true))}
           </>
         )}

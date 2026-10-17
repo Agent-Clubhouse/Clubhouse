@@ -10,7 +10,7 @@ import type { TerminalIO } from '../../../features/terminal/ShellTerminal';
 import { ShellTerminal } from '../../../features/terminal/ShellTerminal';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { satellitePtyDataBus, satellitePtyExitBus } from '../../../stores/annexClientStore';
-import { WidgetPicker, projectRows } from '../canvas/WidgetPicker';
+import { WidgetPicker, PickerBack, projectRows } from '../canvas/WidgetPicker';
 
 type TerminalStatus = 'starting' | 'running' | 'exited';
 
@@ -239,8 +239,11 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
 
     if (loadingWorktrees) {
       return (
-        <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs">
-          Loading worktrees&hellip;
+        <div className="flex flex-col h-full p-2">
+          {isAppMode && <PickerBack onBack={handleBackToProjects} label="Projects" />}
+          <div className="flex flex-1 items-center justify-center text-ctp-subtext0 text-xs">
+            Loading worktrees&hellip;
+          </div>
         </div>
       );
     }

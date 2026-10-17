@@ -74,7 +74,6 @@ export function NeedsYouStrip({ items, onSelect, onReview }: {
         type="button"
         onClick={() => onSelect(items[0].agent)}
         className="min-w-0 flex-1 h-full flex items-center gap-2 text-left cursor-pointer"
-        title={`${items.length} waiting on you`}
       >
         <StatusDot dot="needs" />
         <span className="flex items-center">

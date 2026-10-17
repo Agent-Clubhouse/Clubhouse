@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import { fileState } from './state';
 import type { Tab, ScrollState } from './state';
 import { TabBar } from './TabBar';
-import { MonacoEditor, disposeModel, updateSavedContent, getModelContent } from './MonacoEditor';
+import { MonacoEditor, disposeModel, disposeCleanModels, updateSavedContent, getModelContent } from './MonacoEditor';
+import { useFilesScope } from './filesScope';
+import { PopupMenu, type MenuEntry } from '../../../components/PopupMenu';
 import { MarkdownPreview } from './MarkdownPreview';
 import { BINARY_EXTENSIONS, IMAGE_EXTENSIONS, EXT_TO_LANG } from './file-icons';
 import { tel } from '../../../telemetry';
@@ -36,15 +38,44 @@ interface LoadedFile {
   fileType: FileType;
 }
 
+/**
+ * The key for a file in the caches below and in Monaco's model cache: the
+ * checkout's directory plus the path. Paths are relative to the Files API's
+ * root, and a worktree outside the project reuses the root's relative paths,
+ * so the path alone would let one checkout's content or unsaved edits show
+ * (and be saved) in another.
+ */
+export function fileKey(root: string, relativePath: string): string {
+  return `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/${relativePath}`;
+}
+
 // Module-level cache shared across component mounts; cleared on plugin deactivation.
 const _fileCache = new Map<string, LoadedFile>();
 
 // Track the mtime of the last file we saved, so watch events from our own writes are ignored.
 const _savedMtimes = new Map<string, number>();
 
+// Scopes whose saved tabs were read back this activation (see the restore effect).
+const _restoredScopes = new Set<string | null>();
+
 export function clearFileCache(): void {
   _fileCache.clear();
   _savedMtimes.clear();
+  _restoredScopes.clear();
+}
+
+/** Where a scope's open tabs are saved. The project root keeps the original key. */
+export function tabStateKey(scopeKey: string | null): string {
+  return scopeKey ? `files:tabState:${scopeKey}` : 'files:tabState';
+}
+
+function isMac(): boolean {
+  return typeof window !== 'undefined' && window.clubhouse?.platform === 'darwin';
+}
+
+/** The platform's name for revealing a file in the system file manager. */
+export function revealLabel(): string {
+  return isMac() ? 'Open in Finder' : 'Show in folder';
 }
 
 // ── Unsaved Changes Dialog ────────────────────────────────────────────
@@ -94,49 +125,59 @@ function UnsavedDialog({ fileName, onSave, onDiscard, onCancel }: UnsavedDialogP
 
 function OpenInFinderButton({ api, relativePath }: { api: PluginAPI; relativePath: string }) {
   return React.createElement('button', {
-    className: 'px-3 py-1.5 text-xs bg-surface-0 text-ctp-text rounded hover:bg-surface-1 transition-colors',
+    type: 'button',
+    className: 'h-7 px-2.5 text-xs bg-surface-0 text-ctp-text rounded-md hover:bg-surface-1 transition-colors focus-ring',
     onClick: () => api.files.showInFolder(relativePath),
-  }, 'Open in Finder');
+  }, revealLabel());
 }
 
-// ── Editor Status Bar ─────────────────────────────────────────────────
+// ── Strip menu ────────────────────────────────────────────────────────
 
-function displayLanguage(lang: string): string {
-  // Full display names for all Monaco language IDs used in EXT_TO_LANG
-  const names: Record<string, string> = {
-    typescript: 'TypeScript', javascript: 'JavaScript', python: 'Python',
-    markdown: 'Markdown', html: 'HTML', css: 'CSS', scss: 'SCSS',
-    json: 'JSON', yaml: 'YAML', xml: 'XML', rust: 'Rust', go: 'Go',
-    java: 'Java', kotlin: 'Kotlin', swift: 'Swift', csharp: 'C#',
-    cpp: 'C++', shell: 'Shell', sql: 'SQL', ruby: 'Ruby', php: 'PHP',
-    lua: 'Lua', dart: 'Dart', dockerfile: 'Dockerfile', graphql: 'GraphQL',
-    ini: 'INI', plaintext: 'Plain Text',
-  };
-  // Fallback: capitalize first letter (all expected IDs are single lowercase words)
-  return names[lang] ?? lang.charAt(0).toUpperCase() + lang.slice(1);
-}
+const MoreIcon = React.createElement('svg', {
+  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'currentColor',
+},
+  React.createElement('circle', { cx: 5, cy: 12, r: 1.6 }),
+  React.createElement('circle', { cx: 12, cy: 12, r: 1.6 }),
+  React.createElement('circle', { cx: 19, cy: 12, r: 1.6 }),
+);
 
-interface EditorStatusBarProps {
-  line: number;
-  column: number;
-  language: string;
-}
-
-function EditorStatusBar({ line, column, language }: EditorStatusBarProps) {
-  return React.createElement('div', {
-    className: 'flex items-center justify-between px-3 py-0.5 border-t border-surface-0 bg-ctp-mantle flex-shrink-0 text-xs text-ctp-subtext0 select-none',
-  },
-    React.createElement('span', null, `Ln ${line}, Col ${column}`),
-    React.createElement('div', { className: 'flex items-center gap-3' },
-      React.createElement('span', null, displayLanguage(language)),
-      React.createElement('span', null, 'UTF-8'),
-    ),
+function FileMenuButton({ items }: { items: MenuEntry[] }) {
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const ref = useRef<HTMLButtonElement>(null);
+  return React.createElement(React.Fragment, null,
+    React.createElement('button', {
+      ref,
+      type: 'button',
+      className: 'w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-md text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0 transition-colors focus-ring',
+      title: 'File actions',
+      'aria-label': 'File actions',
+      'aria-haspopup': 'menu',
+      'aria-expanded': position !== null,
+      'data-testid': 'files-file-menu-btn',
+      onClick: () => {
+        const r = ref.current?.getBoundingClientRect();
+        setPosition(position ? null : { x: (r?.right ?? 0) - 180, y: (r?.bottom ?? 0) + 4 });
+      },
+    }, MoreIcon),
+    position
+      ? React.createElement(PopupMenu, {
+          items,
+          position,
+          label: 'File actions',
+          testId: 'files-file-menu',
+          onClose: () => { setPosition(null); ref.current?.focus(); },
+        })
+      : null,
   );
 }
 
 // ── FileViewer (MainPanel) ────────────────────────────────────────────
 
-export function FileViewer({ api }: { api: PluginAPI }) {
+export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
+  // New chrome: files and saved tabs follow the sidebar selection (spec §4.5).
+  const { api, key: scopeKey, root: scopeRoot } = useFilesScope(rawApi);
+  const checkoutRoot = api.context.projectPath || '';
+  const keyOf = useCallback((relativePath: string) => fileKey(checkoutRoot, relativePath), [checkoutRoot]);
   const [activeTab, setActiveTab] = useState<Tab | undefined>(fileState.getActiveTab());
   const [loadedFile, setLoadedFile] = useState<LoadedFile | null>(null);
   const [previewMode, setPreviewMode] = useState<'preview' | 'source'>('preview');
@@ -166,7 +207,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
 
   const loadFile = useCallback(async (relativePath: string): Promise<LoadedFile> => {
     // Check cache first
-    const cached = _fileCache.get(relativePath);
+    const cached = _fileCache.get(keyOf(relativePath));
     if (cached) return cached;
 
     const ext = getExtension(relativePath);
@@ -210,9 +251,9 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       result.fileType = 'none';
     }
 
-    _fileCache.set(relativePath, result);
+    _fileCache.set(keyOf(relativePath), result);
     return result;
-  }, [api]);
+  }, [api, keyOf]);
 
   // Load file when active tab changes
   useEffect(() => {
@@ -238,34 +279,51 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     return () => { cancelled = true; };
   }, [activeTab?.filePath, loadFile]);
 
-  // ── Persist tab state ─────────────────────────────────────────────
+  // ── Tabs per scope ────────────────────────────────────────────────
 
+  // Switch to this scope's tabs, reading its saved ones back the first time.
+  // Saving waits until the read is done so an empty set never overwrites them.
   useEffect(() => {
-    const persist = () => {
-      const data = fileState.serialize();
-      api.storage.project.write('files:tabState', JSON.stringify(data)).catch(() => {});
-    };
-
-    return fileState.subscribe(persist);
-  }, [api]);
-
-  // Restore tabs on mount
-  useEffect(() => {
+    if (fileState.scopeKey !== scopeKey) {
+      // Caches are keyed by checkout, so this only frees memory; the save
+      // times are dropped so a stale one never hides an external change.
+      _fileCache.clear();
+      _savedMtimes.clear();
+      disposeCleanModels();
+    }
+    fileState.setScope(scopeKey);
+    if (_restoredScopes.has(scopeKey)) return;
     let cancelled = false;
     async function restore() {
       try {
-        const raw = await api.storage.project.read('files:tabState');
-        if (cancelled || !raw || typeof raw !== 'string') return;
-        const data = JSON.parse(raw);
-        if (data && data.tabs && Array.isArray(data.tabs)) {
-          fileState.restore(data);
+        const raw = await api.storage.project.read(tabStateKey(scopeKey));
+        if (cancelled || fileState.scopeKey !== scopeKey) return;
+        if (raw && typeof raw === 'string') {
+          const data = JSON.parse(raw);
+          if (data && data.tabs && Array.isArray(data.tabs)) {
+            _restoredScopes.add(scopeKey);
+            fileState.restore(data);
+            return;
+          }
         }
       } catch {
         // Fresh start — no persisted tabs
       }
+      if (!cancelled) _restoredScopes.add(scopeKey);
     }
     restore();
     return () => { cancelled = true; };
+  }, [api, scopeKey]);
+
+  useEffect(() => {
+    const persist = () => {
+      const key = fileState.scopeKey;
+      if (!_restoredScopes.has(key)) return;
+      const data = fileState.serialize();
+      api.storage.project.write(tabStateKey(key), JSON.stringify(data)).catch(() => {});
+    };
+
+    return fileState.subscribe(persist);
   }, [api]);
 
   // ── Tab close handler (with dirty check) ──────────────────────────
@@ -285,18 +343,18 @@ export function FileViewer({ api }: { api: PluginAPI }) {
         tabId,
         pendingAction: () => {
           // Dispose the Monaco model for this file
-          disposeModel(tab.filePath);
-          _fileCache.delete(tab.filePath);
+          disposeModel(keyOf(tab.filePath));
+          _fileCache.delete(keyOf(tab.filePath));
           fileState.closeTab(tabId);
         },
       });
       return;
     }
 
-    disposeModel(tab.filePath);
-    _fileCache.delete(tab.filePath);
+    disposeModel(keyOf(tab.filePath));
+    _fileCache.delete(keyOf(tab.filePath));
     fileState.closeTab(tabId);
-  }, []);
+  }, [keyOf]);
 
   // ── Save file ─────────────────────────────────────────────────────
 
@@ -305,15 +363,15 @@ export function FileViewer({ api }: { api: PluginAPI }) {
   const recordSavedMtime = useCallback(async (filePath: string) => {
     try {
       const stat = await api.files.stat(filePath);
-      _savedMtimes.set(filePath, stat.modifiedAt);
+      _savedMtimes.set(keyOf(filePath), stat.modifiedAt);
     } catch {
-      _savedMtimes.delete(filePath);
+      _savedMtimes.delete(keyOf(filePath));
     }
-  }, [api]);
+  }, [api, keyOf]);
 
   /** Write the editor content to disk. Returns false (and surfaces the error) on failure. */
   const saveFile = useCallback(async (filePath: string): Promise<boolean> => {
-    const content = getModelContent(filePath);
+    const content = getModelContent(keyOf(filePath));
     if (content === null) {
       api.ui.showError('Failed to save: editor content is unavailable');
       return false;
@@ -325,14 +383,14 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       return false;
     }
     await recordSavedMtime(filePath);
-    updateSavedContent(filePath, content);
+    updateSavedContent(keyOf(filePath), content);
     const tab = fileState.getTabByPath(filePath);
     if (tab) {
       fileState.setTabDirty(tab.id, false);
     }
     fileState.triggerRefresh();
     return true;
-  }, [api, recordSavedMtime]);
+  }, [api, recordSavedMtime, keyOf]);
 
   // ── Dirty change handler ──────────────────────────────────────────
 
@@ -353,16 +411,16 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       return false;
     }
     await recordSavedMtime(activeTab.filePath);
-    updateSavedContent(activeTab.filePath, newContent);
+    updateSavedContent(keyOf(activeTab.filePath), newContent);
     fileState.setTabDirty(activeTab.id, false);
     fileState.triggerRefresh();
     // Update cache
-    const cached = _fileCache.get(activeTab.filePath);
+    const cached = _fileCache.get(keyOf(activeTab.filePath));
     if (cached) {
       cached.content = newContent;
     }
     return true;
-  }, [api, recordSavedMtime, activeTab?.id, activeTab?.filePath]);
+  }, [api, recordSavedMtime, keyOf, activeTab?.id, activeTab?.filePath]);
 
   // ── Scroll state handler ──────────────────────────────────────────
 
@@ -392,12 +450,12 @@ export function FileViewer({ api }: { api: PluginAPI }) {
 
         try {
           const stat = await api.files.stat(evt.path);
-          const knownMtime = _savedMtimes.get(evt.path);
+          const knownMtime = _savedMtimes.get(keyOf(evt.path));
           // If mtime matches our last save, this is our own write — skip
           if (knownMtime !== undefined && stat.modifiedAt === knownMtime) continue;
 
           // External change: reload content and update Monaco's saved baseline
-          const cached = _fileCache.get(evt.path);
+          const cached = _fileCache.get(keyOf(evt.path));
           if (!cached || (cached.fileType !== 'text' && cached.fileType !== 'markdown')) continue;
 
           // Unsaved edits now sit on top of a file that changed on disk.
@@ -405,8 +463,8 @@ export function FileViewer({ api }: { api: PluginAPI }) {
 
           const newContent = await api.files.readFile(evt.path);
           cached.content = newContent;
-          _savedMtimes.set(evt.path, stat.modifiedAt);
-          updateSavedContent(evt.path, newContent);
+          _savedMtimes.set(keyOf(evt.path), stat.modifiedAt);
+          updateSavedContent(keyOf(evt.path), newContent);
           // Monaco now shows dirty only when editor content differs from newContent
         } catch {
           // File may have been deleted or be temporarily unreadable
@@ -414,7 +472,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       }
     });
     return () => disposable.dispose();
-  }, [api]);
+  }, [api, keyOf]);
 
   // ── Reveal in tree ────────────────────────────────────────────────
 
@@ -463,7 +521,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
         ? React.createElement(TabBar, { api, onCloseTab: handleCloseTab, onRevealInTree: handleRevealInTree })
         : null,
       React.createElement('div', {
-        className: 'flex flex-col items-center justify-center flex-1 text-ctp-subtext0',
+        className: 'flex flex-col items-center justify-center flex-1 text-ctp-overlay1',
       },
         React.createElement('svg', {
           width: 40, height: 40, viewBox: '0 0 24 24', fill: 'none',
@@ -473,8 +531,8 @@ export function FileViewer({ api }: { api: PluginAPI }) {
           React.createElement('path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }),
           React.createElement('polyline', { points: '14 2 14 8 20 8' }),
         ),
-        React.createElement('p', { className: 'text-xs' }, 'Select a file to view'),
-        React.createElement('p', { className: 'text-xs mt-1 opacity-60' }, 'Click a file in the sidebar'),
+        React.createElement('p', { className: 'text-[13px] text-ctp-text' }, 'Select a file to view'),
+        React.createElement('p', { className: 'text-xs mt-1' }, 'Click a file in the sidebar'),
       ),
     );
   }
@@ -485,8 +543,8 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     },
       React.createElement(TabBar, { api, onCloseTab: handleCloseTab, onRevealInTree: handleRevealInTree }),
       React.createElement('div', {
-        className: 'flex items-center justify-center flex-1 text-ctp-subtext0 text-xs',
-      }, 'Loading...'),
+        className: 'flex items-center justify-center flex-1 text-ctp-overlay1 text-xs',
+      }, 'Loading'),
     );
   }
 
@@ -494,51 +552,51 @@ export function FileViewer({ api }: { api: PluginAPI }) {
   const ext = getExtension(activeTab.filePath);
   const lang = getLanguage(ext);
 
-  // File header (below tab bar)
-  const header = React.createElement('div', {
-    className: 'flex items-center justify-between px-3 py-1.5 border-b border-surface-0 bg-ctp-mantle flex-shrink-0',
-  },
-    React.createElement('div', { className: 'flex items-center gap-2 min-w-0' },
-      React.createElement('span', { className: 'text-xs font-medium text-ctp-text truncate' }, fileName),
-      activeTab.isDirty
-        ? React.createElement('span', {
-            className: 'w-2 h-2 rounded-full bg-ctp-warning flex-shrink-0',
-            title: 'Unsaved changes',
-          })
-        : null,
-      lang !== 'plaintext'
-        ? React.createElement('span', {
-            className: 'text-xs px-1.5 py-0.5 rounded bg-surface-0 text-ctp-subtext0 flex-shrink-0',
-          }, lang)
-        : null,
-    ),
-    React.createElement('div', { className: 'flex items-center gap-2 flex-shrink-0' },
-      // Preview/Source toggle for markdown and SVG
-      (loadedFile.fileType === 'markdown' || loadedFile.fileType === 'svg')
-        ? React.createElement('div', { className: 'flex items-center bg-surface-0 rounded text-xs' },
-            React.createElement('button', {
-              className: `px-2 py-0.5 rounded ${previewMode === 'preview' ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0'}`,
-              onClick: () => setPreviewMode('preview'),
-            }, 'Preview'),
-            React.createElement('button', {
-              className: `px-2 py-0.5 rounded ${previewMode === 'source' ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0'}`,
-              onClick: () => setPreviewMode('source'),
-            }, 'Source'),
-          )
-        : null,
-      React.createElement('span', {
-        className: 'text-xs text-ctp-subtext0 truncate max-w-[200px]',
-        title: activeTab.filePath,
-      }, activeTab.filePath),
-      React.createElement(OpenInFinderButton, { api, relativePath: activeTab.filePath }),
-    ),
+  // True when the Monaco editor is the active view (drives the cursor position)
+  const isEditorVisible = loadedFile.fileType === 'text' ||
+    ((loadedFile.fileType === 'markdown' || loadedFile.fileType === 'svg') && previewMode === 'source');
+
+  // The path below the tree's root: a worktree's files without its folder prefix.
+  const displayPath = scopeRoot && scopeRoot !== '.' && activeTab.filePath.startsWith(`${scopeRoot}/`)
+    ? activeTab.filePath.slice(scopeRoot.length + 1)
+    : activeTab.filePath;
+
+  const segment = (mode: 'preview' | 'source', label: string) => React.createElement('button', {
+    type: 'button',
+    className: `h-6 px-2 rounded text-xs transition-colors ${previewMode === mode ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0 hover:text-ctp-text'}`,
+    'aria-pressed': previewMode === mode,
+    onClick: () => setPreviewMode(mode),
+  }, label);
+
+  const divider = React.createElement('span', { className: 'w-px h-3.5 bg-surface-1 flex-shrink-0', 'aria-hidden': true });
+
+  // Right side of the tab strip: what the breadcrumb can't show
+  const trailing = React.createElement(React.Fragment, null,
+    (loadedFile.fileType === 'markdown' || loadedFile.fileType === 'svg')
+      ? React.createElement('div', { className: 'flex items-center gap-0.5 p-0.5 rounded-md bg-surface-0 flex-shrink-0' },
+          segment('preview', 'Preview'),
+          segment('source', 'Source'),
+        )
+      : null,
+    React.createElement('span', {
+      className: 'font-mono text-[11.5px] truncate min-w-0',
+      title: activeTab.filePath,
+      'data-testid': 'files-active-path',
+    }, displayPath),
+    isEditorVisible ? divider : null,
+    isEditorVisible
+      ? React.createElement('span', { className: 'flex-shrink-0 whitespace-nowrap', 'data-testid': 'files-cursor' }, `Ln ${cursorLine}, Col ${cursorColumn}`)
+      : null,
+    React.createElement(FileMenuButton, {
+      items: [
+        { id: 'reveal-os', label: revealLabel(), onSelect: () => { api.files.showInFolder(activeTab.filePath).catch(() => {}); } },
+        { id: 'copy-path', label: 'Copy path', onSelect: () => { navigator.clipboard.writeText(activeTab.filePath).catch(() => {}); } },
+        { id: 'reveal-tree', label: 'Reveal in file tree', onSelect: () => handleRevealInTree(activeTab.filePath) },
+      ],
+    }),
   );
 
   let body: React.ReactElement;
-
-  // True when the Monaco editor is the active view (drives status bar visibility)
-  const isEditorVisible = loadedFile.fileType === 'text' ||
-    ((loadedFile.fileType === 'markdown' || loadedFile.fileType === 'svg') && previewMode === 'source');
 
   switch (loadedFile.fileType) {
     case 'binary':
@@ -585,12 +643,12 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       } else {
         body = React.createElement('div', { className: 'flex-1 min-h-0' },
           React.createElement(MonacoEditor, {
-            key: activeTab.filePath,
+            key: keyOf(activeTab.filePath),
             value: loadedFile.content,
             language: 'xml',
             onSave: handleSave,
             onDirtyChange: handleDirtyChange,
-            filePath: activeTab.filePath,
+            filePath: keyOf(activeTab.filePath),
             initialScrollState: activeTab.scrollState,
             onScrollStateChange: handleScrollStateChange,
             scrollToLine,
@@ -608,12 +666,12 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       } else {
         body = React.createElement('div', { className: 'flex-1 min-h-0' },
           React.createElement(MonacoEditor, {
-            key: activeTab.filePath,
+            key: keyOf(activeTab.filePath),
             value: loadedFile.content,
             language: 'markdown',
             onSave: handleSave,
             onDirtyChange: handleDirtyChange,
-            filePath: activeTab.filePath,
+            filePath: keyOf(activeTab.filePath),
             initialScrollState: activeTab.scrollState,
             onScrollStateChange: handleScrollStateChange,
             scrollToLine,
@@ -626,12 +684,12 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     default: // text
       body = React.createElement('div', { className: 'flex-1 min-h-0' },
         React.createElement(MonacoEditor, {
-          key: activeTab.filePath,
+          key: keyOf(activeTab.filePath),
           value: loadedFile.content,
           language: lang,
           onSave: handleSave,
           onDirtyChange: handleDirtyChange,
-          filePath: activeTab.filePath,
+          filePath: keyOf(activeTab.filePath),
           initialScrollState: activeTab.scrollState,
           onScrollStateChange: handleScrollStateChange,
           scrollToLine,
@@ -648,12 +706,8 @@ export function FileViewer({ api }: { api: PluginAPI }) {
   return React.createElement('div', {
     className: 'flex flex-col h-full bg-ctp-base relative',
   },
-    React.createElement(TabBar, { api, onCloseTab: handleCloseTab, onRevealInTree: handleRevealInTree }),
-    header,
+    React.createElement(TabBar, { api, onCloseTab: handleCloseTab, onRevealInTree: handleRevealInTree, trailing }),
     body,
-    isEditorVisible
-      ? React.createElement(EditorStatusBar, { line: cursorLine, column: cursorColumn, language: lang })
-      : null,
     // Unsaved changes dialog
     unsavedDialog
       ? React.createElement(UnsavedDialog, {

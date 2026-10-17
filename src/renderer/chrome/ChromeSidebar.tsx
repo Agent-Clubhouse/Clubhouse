@@ -27,6 +27,9 @@ import { hostOf, switchHost } from './hosts';
 import { useChromeStore } from './chromeStore';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
+import { AppNotices } from '../features/app/AppNotices';
+import { Tooltip } from '../components/Tooltip';
+import { TruncatedLabel } from '../components/TruncatedLabel';
 
 /**
  * Sidebar for the new chrome (docs/chrome-redesign-spec.md §2, §4.2): the host
@@ -68,18 +71,20 @@ function MenuButton({ label, testId, children, items, disabled }: {
   useClickOutside(ref, open, close);
   return (
     <div ref={ref} className="relative">
-      <button
-        type="button"
-        data-testid={testId}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
-        className="h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs font-medium text-ctp-accent bg-ctp-accent/15 hover:bg-ctp-accent/25 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-        title={label}
-      >
-        {children}
-      </button>
+      <Tooltip content={label} disabled={open}>
+        <button
+          type="button"
+          data-testid={testId}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={label}
+          disabled={disabled}
+          onClick={() => setOpen((o) => !o)}
+          className="h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs font-medium text-ctp-accent bg-ctp-accent/15 hover:bg-ctp-accent/25 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {children}
+        </button>
+      </Tooltip>
       {open && (
         <div role="menu" className="absolute right-0 top-8 z-dropdown min-w-[180px] py-1 rounded-lg border border-surface-1 bg-ctp-mantle shadow-xl">
           {items.map((item) => (
@@ -116,10 +121,9 @@ function AppRow({ inline, overflow, explorerTab, onOpen }: {
         const rail = entry.manifest.contributes!.railItem!;
         const active = explorerTab === `plugin:app:${entry.manifest.id}`;
         return (
+          <Tooltip key={entry.manifest.id} content={rail.title || rail.label} disabled={!rail.title || rail.title === rail.label}>
           <button
-            key={entry.manifest.id}
             type="button"
-            title={rail.title || rail.label}
             data-testid={`app-row-${entry.manifest.id}`}
             data-active={active}
             onClick={() => onOpen(entry.manifest.id)}
@@ -128,23 +132,26 @@ function AppRow({ inline, overflow, explorerTab, onOpen }: {
             }`}
           >
             {railIcon(entry)}
-            <span className="truncate">{rail.label}</span>
+            {/* With a distinct title the outer Tooltip already says it all; don't open a second. */}
+            {rail.title && rail.title !== rail.label ? <span className="truncate">{rail.label}</span> : <TruncatedLabel text={rail.label} />}
           </button>
+          </Tooltip>
         );
       })}
       {overflow.length > 0 && (
         <div ref={moreRef} className="relative">
-          <button
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={moreOpen}
-            title="More app views"
-            aria-label="More app views"
-            onClick={() => setMoreOpen((o) => !o)}
-            className="h-[30px] w-[30px] rounded-md border border-surface-0 flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0/60 hover:text-ctp-text cursor-pointer"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
-          </button>
+          <Tooltip content="More app views" disabled={moreOpen}>
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-label="More app views"
+              onClick={() => setMoreOpen((o) => !o)}
+              className="h-[30px] w-[30px] rounded-md border border-surface-0 flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0/60 hover:text-ctp-text cursor-pointer"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+            </button>
+          </Tooltip>
           {moreOpen && (
             <div role="menu" className="absolute right-0 top-9 z-dropdown min-w-[180px] py-1 rounded-lg border border-surface-1 bg-ctp-mantle shadow-xl">
               {overflow.map((entry) => (
@@ -513,38 +520,41 @@ export function ChromeSidebar() {
         />
       </div>
 
+      <AppNotices variant="card" />
+
       <div className="flex-shrink-0 h-10 border-t border-surface-0 flex items-center gap-1 px-2">
+        <Tooltip content="Add project" side="top" shortcutAction="add-project">
         <button
           type="button"
           onClick={addProject}
-          title="Add project"
           data-testid="nav-add-project"
           className="h-7 px-2 rounded-md flex items-center gap-1.5 text-xs text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           Add project
         </button>
+        </Tooltip>
         <span className="flex-1" />
         {bottomItems.map((entry) => {
           const rail = entry.manifest.contributes!.railItem!;
           return (
-            <button
-              key={entry.manifest.id}
-              type="button"
-              title={rail.title || rail.label}
-              aria-label={rail.label}
-              onClick={() => openAppItem(entry.manifest.id)}
-              className="w-7 h-7 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer [&_svg]:w-[15px] [&_svg]:h-[15px]"
-            >
-              {railIcon(entry)}
-            </button>
+            <Tooltip key={entry.manifest.id} content={rail.title || rail.label} side="top">
+              <button
+                type="button"
+                aria-label={rail.label}
+                onClick={() => openAppItem(entry.manifest.id)}
+                className="w-7 h-7 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer [&_svg]:w-[15px] [&_svg]:h-[15px]"
+              >
+                {railIcon(entry)}
+              </button>
+            </Tooltip>
           );
         })}
         <FeedbackButton variant="sidebar" />
+        <Tooltip content="Help" side="top" shortcutAction="toggle-help">
         <button
           type="button"
           onClick={toggleHelp}
-          title="Help"
           aria-label="Help"
           data-testid="nav-help"
           data-active={explorerTab === 'help'}
@@ -554,10 +564,11 @@ export function ChromeSidebar() {
             <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" />
           </svg>
         </button>
+        </Tooltip>
+        <Tooltip content="Settings" side="top" shortcutAction="toggle-settings">
         <button
           type="button"
           onClick={toggleSettings}
-          title="Settings"
           aria-label="Settings"
           data-testid="nav-settings"
           data-active={explorerTab === 'settings'}
@@ -568,6 +579,7 @@ export function ChromeSidebar() {
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </button>
+        </Tooltip>
       </div>
 
       <ChromeAgentDialogs />

@@ -6,6 +6,7 @@ import { holdChromeSurface, reportChromeFeature, type ChromeSurface } from '../t
 import { AgentHoverCard } from './AgentHoverCard';
 import type { AgentDot } from './treeModel';
 import { StatusDot } from '../../features/agents/agent-status';
+import { Tooltip } from '../../components/Tooltip';
 
 /**
  * One 30px agent row (docs/chrome-redesign-spec.md §2): status dot, 18px
@@ -149,7 +150,6 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
                 role="img"
                 aria-label="Free Agent Mode: all permissions bypassed"
                 className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-ctp-error ring-1 ring-ctp-mantle"
-                title="Free Agent Mode: all permissions bypassed"
               />
             )}
           </span>
@@ -161,11 +161,11 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
           )}
         </div>
         {actions.length > 0 && (
+          <Tooltip content="More actions">
           <button
             type="button"
             tabIndex={-1}
             data-testid="action-overflow"
-            title="More actions"
             aria-label={`More actions for ${agent.name}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -176,6 +176,7 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
           >
             <OverflowIcon />
           </button>
+          </Tooltip>
         )}
       </div>
       {menu && <AgentContextMenu actions={menuActions} position={menu} onClose={() => setMenu(null)} />}

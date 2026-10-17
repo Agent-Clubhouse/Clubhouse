@@ -31,6 +31,12 @@ export interface ChromeScope {
   agentName?: string;
   /** True when the scope is an agent's own worktree. */
   isWorktree: boolean;
+  /**
+   * The branch checked out in `cwd`, when the renderer knows it: the agent's
+   * branch for a worktree. Undefined for the project root, which nothing in
+   * the stores tracks; read it from git when it matters.
+   */
+  branch?: string;
 }
 
 /** `path` relative to `root`, or '.' when they are the same or `path` is outside `root`. */
@@ -65,6 +71,7 @@ export function resolveChromeScope(
     agentId: agent.id,
     agentName: agent.name,
     isWorktree: true,
+    ...(agent.branch ? { branch: agent.branch } : {}),
   };
 }
 

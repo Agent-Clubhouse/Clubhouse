@@ -128,7 +128,11 @@ function PluginSidebarPanel({ pluginId }: { pluginId: string }) {
   );
 }
 
-export function AccessoryPanel() {
+/**
+ * `bare` drops the panel's own background and right border, for hosts that
+ * already draw them (the new chrome's sidebar, spec #2023).
+ */
+export function AccessoryPanel({ bare = false }: { bare?: boolean } = {}) {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activePluginId = explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
   const activePluginEntry = usePluginStore((s) => activePluginId ? s.plugins[activePluginId] : undefined);
@@ -136,9 +140,13 @@ export function AccessoryPanel() {
   const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
   const isRemoteProject = activeProjectId ? isRemoteProjectId(activeProjectId) : false;
 
+  const frame = bare
+    ? 'flex flex-col h-full min-h-0 overflow-hidden'
+    : 'flex flex-col bg-ctp-base border-r border-surface-0 h-full min-h-0 overflow-hidden';
+
   if (explorerTab === 'agents') {
     return (
-      <div className="flex flex-col bg-ctp-base border-r border-surface-0 h-full min-h-0 overflow-hidden">
+      <div className={frame}>
         <AgentList />
       </div>
     );
@@ -169,7 +177,7 @@ export function AccessoryPanel() {
 
     if (layout === 'sidebar-content') {
       return (
-        <div className="flex flex-col bg-ctp-base border-r border-surface-0 h-full min-h-0 overflow-hidden">
+        <div className={frame} data-testid="accessory-plugin-panel">
           <PluginSidebarPanel pluginId={activePluginId} />
         </div>
       );

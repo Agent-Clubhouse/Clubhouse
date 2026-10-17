@@ -43,6 +43,7 @@ export const mockPty = {
   resize: vi.fn(),
   kill: vi.fn(),
   getBuffer: vi.fn(),
+  isShellBusy: vi.fn(),
   onData: vi.fn(),
   onExit: vi.fn(),
 };
@@ -222,6 +223,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       resize: noop,
       kill: asyncNoop,
       getBuffer: async () => '',
+      isBusy: async () => false,
       onData: () => ({ dispose: noop }),
       onExit: () => ({ dispose: noop }),
       ShellTerminal: noop as unknown as PluginAPI['terminal']['ShellTerminal'],

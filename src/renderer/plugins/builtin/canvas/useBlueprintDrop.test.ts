@@ -363,6 +363,26 @@ describe('useBlueprintDrop', () => {
     });
   });
 
+  describe('applying the import fails', () => {
+    it('reports a failed apply on drop through onError', async () => {
+      onImport.mockRejectedValueOnce(new Error('Canvas store is read-only'));
+      renderDropHook();
+      await act(async () => {
+        container.dispatchEvent(createDragEvent('drop', [createMockFile('blueprint.json', VALID_LEGACY_JSON)]));
+      });
+      expect(onError).toHaveBeenCalledWith('Canvas store is read-only');
+    });
+
+    it('reports a failed apply on paste through onError, and still consumes the paste', async () => {
+      onImport.mockRejectedValueOnce(new Error('Canvas store is read-only'));
+      renderDropHook();
+      const event = createPasteEvent(VALID_LEGACY_JSON);
+      await act(async () => { container.dispatchEvent(event); });
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledWith('Canvas store is read-only');
+    });
+  });
+
   describe('event handling', () => {
     it('prevents default on dragover for .json files', () => {
       renderDropHook();

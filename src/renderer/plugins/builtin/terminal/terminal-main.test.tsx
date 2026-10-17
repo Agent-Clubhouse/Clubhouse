@@ -1,13 +1,13 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MainPanel, SidebarPanel, activate, deactivate } from './main';
-import { terminalState } from './state';
+import { terminalState, MAX_TERMINAL_SESSIONS } from './state';
 import { createMockAPI, createMockContext } from '../../testing';
 import type { AgentInfo } from '../../../../shared/plugin-types';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-function createTerminalAPI(bufferContent = '') {
+function createTerminalAPI(bufferContent = '', busy: (sessionId: string) => boolean = () => false) {
   const onExitHandlers: ((code: number) => void)[] = [];
 
   return createMockAPI({
@@ -17,6 +17,7 @@ function createTerminalAPI(bufferContent = '') {
       resize: vi.fn(),
       kill: vi.fn(async () => {}),
       getBuffer: vi.fn(async () => bufferContent),
+      isBusy: vi.fn(async (sessionId: string) => busy(sessionId)),
       onData: () => ({ dispose: () => {} }),
       onExit: vi.fn((_sessionId: string, cb: (code: number) => void) => {
         onExitHandlers.push(cb);
@@ -81,6 +82,7 @@ function createSidebarAPI(agents: AgentInfo[] = []) {
       resize: vi.fn(),
       kill: vi.fn(async () => {}),
       getBuffer: vi.fn(async () => ''),
+      isBusy: vi.fn(async () => false),
       onData: () => ({ dispose: () => {} }),
       onExit: vi.fn(() => ({ dispose: () => {} })),
       ShellTerminal: ({ sessionId }: { sessionId: string }) =>
@@ -106,11 +108,11 @@ describe('Terminal MainPanel', () => {
     terminalState.reset();
   });
 
-  it('shows "Starting..." before spawn completes', () => {
+  it('shows "Starting" before spawn completes', () => {
     const api = createTerminalAPI();
     render(<MainPanel api={api} />);
-    expect(screen.getByText('Starting terminal...')).toBeInTheDocument();
-    expect(screen.getByText('Starting...')).toBeInTheDocument();
+    expect(screen.getByText('Starting terminal')).toBeInTheDocument();
+    expect(screen.getByTestId('terminal-status')).toHaveTextContent('Starting');
   });
 
   it('shows "Running" + ShellTerminal after spawn', async () => {
@@ -181,16 +183,18 @@ describe('Terminal MainPanel', () => {
     });
   });
 
-  it('shows "Terminal — Project" header when no target or project target selected', async () => {
+  it('shows the cwd and "project root" in the toolbar, not the breadcrumb again', async () => {
     const api = createTerminalAPI();
     render(<MainPanel api={api} />);
 
     await waitFor(() => {
-      expect(screen.getByText('Terminal \u2014 Project')).toBeInTheDocument();
+      expect(screen.getByTestId('terminal-cwd')).toHaveTextContent('/project');
     });
+    expect(screen.getByTestId('terminal-root-note')).toHaveTextContent('project root');
+    expect(screen.queryByText('Terminal \u2014 Project')).not.toBeInTheDocument();
   });
 
-  it('shows "Terminal — {name}" header when agent target selected', async () => {
+  it('shows the worktree cwd when an agent target is selected', async () => {
     // Pre-set an agent target before rendering
     act(() => {
       terminalState.setActiveTarget({
@@ -205,8 +209,67 @@ describe('Terminal MainPanel', () => {
     render(<MainPanel api={api} />);
 
     await waitFor(() => {
-      expect(screen.getByText('Terminal \u2014 snazzy-fox')).toBeInTheDocument();
+      expect(screen.getByTestId('terminal-cwd')).toHaveTextContent('/project/.clubhouse/agents/snazzy-fox');
     });
+    expect(screen.queryByTestId('terminal-root-note')).not.toBeInTheDocument();
+  });
+
+  async function showTargets(count: number) {
+    for (let i = 0; i < count; i++) {
+      act(() => {
+        terminalState.setActiveTarget({ sessionId: `terminal:proj-1:agent:a${i}`, label: `a${i}`, cwd: `/wt/a${i}`, kind: 'agent' });
+      });
+      await waitFor(() => expect(screen.getByText(`Shell: terminal:proj-1:agent:a${i}`)).toBeInTheDocument());
+    }
+  }
+
+  it('closes the least recently shown idle shell past MAX_TERMINAL_SESSIONS', async () => {
+    const api = createTerminalAPI();
+    render(<MainPanel api={api} />);
+    await waitFor(() => expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:project', '/project'));
+
+    await showTargets(MAX_TERMINAL_SESSIONS);
+
+    // The project shell was shown first and is now one past the cap.
+    await waitFor(() => expect(api.terminal.kill).toHaveBeenCalledWith('terminal:proj-1:project'));
+    expect(api.terminal.kill).toHaveBeenCalledTimes(1);
+    expect(terminalState.sessionCount('proj-1')).toBe(MAX_TERMINAL_SESSIONS);
+  });
+
+  it('never closes a shell that is running a command, and says when every one is busy', async () => {
+    const api = createTerminalAPI('', () => true);
+    const notice = vi.spyOn(api.ui, 'showNotice');
+    render(<MainPanel api={api} />);
+    await waitFor(() => expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:project', '/project'));
+
+    await showTargets(MAX_TERMINAL_SESSIONS);
+
+    await waitFor(() => expect(notice).toHaveBeenCalledTimes(1));
+    expect(api.terminal.kill).not.toHaveBeenCalled();
+    expect(terminalState.sessionCount('proj-1')).toBe(MAX_TERMINAL_SESSIONS + 1);
+  });
+
+  it('skips a busy shell and closes the next idle one', async () => {
+    const api = createTerminalAPI('', (sid) => sid === 'terminal:proj-1:project');
+    render(<MainPanel api={api} />);
+    await waitFor(() => expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:project', '/project'));
+
+    await showTargets(MAX_TERMINAL_SESSIONS);
+
+    await waitFor(() => expect(api.terminal.kill).toHaveBeenCalledWith('terminal:proj-1:agent:a0'));
+    expect(api.terminal.kill).not.toHaveBeenCalledWith('terminal:proj-1:project');
+  });
+
+  it('closes the shell of an agent that was deleted', async () => {
+    const { api, triggerAgentChange } = createSidebarAPI([DURABLE_AGENT, SECOND_DURABLE]);
+    render(<MainPanel api={api} />);
+    await waitFor(() => expect(api.terminal.spawn).toHaveBeenCalled());
+
+    (api.agents.list as ReturnType<typeof vi.fn>).mockReturnValue([SECOND_DURABLE]);
+    act(() => { triggerAgentChange(); });
+
+    await waitFor(() => expect(api.terminal.kill).toHaveBeenCalledWith('terminal:proj-1:agent:agent-1'));
+    expect(api.terminal.kill).not.toHaveBeenCalledWith('terminal:proj-1:agent:agent-2');
   });
 
   describe('new chrome scope', () => {
@@ -229,12 +292,27 @@ describe('Terminal MainPanel', () => {
       useChromeFlagStore.setState({ enabled: false });
     });
 
-    it('opens the selected agent worktree terminal', async () => {
+    it('opens the selected agent worktree terminal, keyed by agent id', async () => {
       const api = createTerminalAPI();
       render(<MainPanel api={api} />);
       await waitFor(() => {
-        expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:agent:snazzy-fox', '/project/.clubhouse/agents/snazzy-fox');
+        expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:agent:a1', '/project/.clubhouse/agents/snazzy-fox');
       });
+      expect(screen.queryByTestId('terminal-root-note')).not.toBeInTheDocument();
+    });
+
+    it('says an agent without a worktree fell back to the project root', async () => {
+      const { useAgentStore } = await import('../../../stores/agentStore');
+      useAgentStore.setState({
+        agents: { a1: { id: 'a1', projectId: 'proj-1', name: 'faithful-urchin', kind: 'durable', status: 'running', color: 'blue' } as never },
+        activeAgentId: 'a1',
+      });
+      const api = createTerminalAPI();
+      render(<MainPanel api={api} />);
+      await waitFor(() => {
+        expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:project', '/project');
+      });
+      expect(screen.getByTestId('terminal-root-note')).toHaveTextContent('faithful-urchin has no worktree, so this is the project root');
     });
 
     it('opens the project root terminal when the project header is selected', async () => {
@@ -266,7 +344,7 @@ describe('Terminal MainPanel', () => {
     render(<MainPanel api={api} />);
 
     await waitFor(() => {
-      expect(screen.getByText('Terminal \u2014 Project')).toBeInTheDocument();
+      expect(screen.getByTestId('terminal-cwd')).toHaveTextContent('/project');
     });
 
     // Switch to agent target
@@ -280,7 +358,7 @@ describe('Terminal MainPanel', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Terminal \u2014 snazzy-fox')).toBeInTheDocument();
+      expect(screen.getByTestId('terminal-cwd')).toHaveTextContent('/project/.clubhouse/agents/snazzy-fox');
       expect(screen.getByText('Shell: terminal:proj-1:agent:snazzy-fox')).toBeInTheDocument();
     });
   });
@@ -405,14 +483,14 @@ describe('Terminal SidebarPanel', () => {
     const { api } = createSidebarAPI([DURABLE_AGENT]);
     const { container } = render(<SidebarPanel api={api} />);
 
-    // Project is auto-selected — its button should have the active class with font-medium
+    // Project is auto-selected — its row is marked current
     const buttons = container.querySelectorAll('button');
     const projectBtn = Array.from(buttons).find((b) => b.textContent?.includes('Project'))!;
-    expect(projectBtn.className).toContain('font-medium');
+    expect(projectBtn).toHaveAttribute('aria-current', 'true');
 
-    // Agent row should NOT have active class
+    // Agent row is not
     const agentBtn = Array.from(buttons).find((b) => b.textContent?.includes('snazzy-fox'))!;
-    expect(agentBtn.className).not.toContain('font-medium');
+    expect(agentBtn).not.toHaveAttribute('aria-current');
   });
 
   it('disposes onAnyChange subscription on unmount', () => {
@@ -449,16 +527,16 @@ describe('Terminal cross-panel integration', () => {
 
     // Wait for MainPanel to spawn project terminal
     await waitFor(() => {
-      expect(screen.getByText('Terminal \u2014 Project')).toBeInTheDocument();
+      expect(screen.getByText('Shell: terminal:proj-1:project')).toBeInTheDocument();
     });
 
     // Click agent in sidebar
     const agentRow = screen.getByText('snazzy-fox');
     fireEvent.click(agentRow);
 
-    // MainPanel should react
+    // MainPanel should react, keyed by the agent's id
     await waitFor(() => {
-      expect(screen.getByText('Terminal \u2014 snazzy-fox')).toBeInTheDocument();
+      expect(screen.getByText('Shell: terminal:proj-1:agent:agent-1')).toBeInTheDocument();
     });
   });
 
