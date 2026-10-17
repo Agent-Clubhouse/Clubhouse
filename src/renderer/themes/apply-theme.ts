@@ -9,6 +9,16 @@ export function hexToRgbChannels(hex: string): string {
   return `${r} ${g} ${b}`;
 }
 
+/** The mascot brand tints (#2019); each is optional on a theme. */
+function brandColorMap(theme: ThemeDefinition): Record<string, string | undefined> {
+  return {
+    '--brand-claude': theme.colors.brandClaude,
+    '--brand-claude-ink': theme.colors.brandClaudeInk,
+    '--brand-copilot': theme.colors.brandCopilot,
+    '--brand-codex': theme.colors.brandCodex,
+  };
+}
+
 export interface ApplyThemeOptions {
   /** When true, apply experimental font and gradient CSS variables from the theme. */
   experimentalGradients?: boolean;
@@ -44,6 +54,18 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
 
   for (const [varName, hex] of Object.entries(colorMap)) {
     if (hex === undefined) continue;
+    const rgb = hexToRgbChannels(hex);
+    s.setProperty(varName, rgb);
+    cache[varName] = rgb;
+  }
+
+  // Optional brand tints: clear an unset one so the previous theme's value
+  // doesn't linger and the index.css default applies.
+  for (const [varName, hex] of Object.entries(brandColorMap(theme))) {
+    if (hex === undefined) {
+      s.removeProperty(varName);
+      continue;
+    }
     const rgb = hexToRgbChannels(hex);
     s.setProperty(varName, rgb);
     cache[varName] = rgb;
@@ -190,6 +212,13 @@ export function themeToStyleVars(theme: ThemeDefinition): Record<string, string>
 
   for (const [varName, hex] of Object.entries(colorMap)) {
     if (hex !== undefined) vars[varName] = hexToRgbChannels(hex);
+  }
+  for (const [varName, hex] of Object.entries(brandColorMap(theme))) {
+    if (hex !== undefined) vars[varName] = hexToRgbChannels(hex);
+  }
+  // A zone's own text color, so Codex flips with the zone's theme.
+  if (theme.colors.brandCodex === undefined && theme.colors.text) {
+    vars['--brand-codex'] = hexToRgbChannels(theme.colors.text);
   }
 
   return vars;

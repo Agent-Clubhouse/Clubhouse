@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { AgentAvatar, AgentAvatarWithRing } from './AgentAvatar';
+import { AgentAvatar, AgentAvatarWithRing, OrchestratorGlyph } from './AgentAvatar';
 import { useAgentStore } from '../../stores/agentStore';
 import type { Agent } from '../../../shared/types';
 
@@ -126,29 +126,10 @@ describe('AgentAvatar', () => {
     expect(img).toHaveAttribute('src', 'data:image/png;base64,store-icon');
   });
 
-  it('renders orchestrator mini icon for claude-code agents without custom icon', () => {
-    const { container } = render(
-      <AgentAvatar agent={makeAgent({ orchestrator: 'claude-code' })} />,
-    );
-    // Should render SVG mini icon, not initials
-    expect(container.querySelector('svg')).toBeInTheDocument();
-    expect(screen.queryByText('BF')).not.toBeInTheDocument();
-  });
-
-  it('renders orchestrator mini icon for copilot-cli agents without custom icon', () => {
-    const { container } = render(
-      <AgentAvatar agent={makeAgent({ orchestrator: 'copilot-cli' })} />,
-    );
-    expect(container.querySelector('svg')).toBeInTheDocument();
-    expect(screen.queryByText('BF')).not.toBeInTheDocument();
-  });
-
-  it('renders orchestrator mini icon for codex-cli agents without custom icon', () => {
-    const { container } = render(
-      <AgentAvatar agent={makeAgent({ orchestrator: 'codex-cli' })} />,
-    );
-    expect(container.querySelector('svg')).toBeInTheDocument();
-    expect(screen.queryByText('BF')).not.toBeInTheDocument();
+  it.each(['claude-code', 'copilot-cli', 'codex-cli'])('renders initials, not a brand mascot, for %s agents (#2025)', (orchestrator) => {
+    const { container } = render(<AgentAvatar agent={makeAgent({ orchestrator })} />);
+    expect(screen.getByText('BF')).toBeInTheDocument();
+    expect(container.querySelector('svg')).not.toBeInTheDocument();
   });
 
   it('prefers custom icon over orchestrator mini icon', () => {
@@ -238,5 +219,21 @@ describe('AgentAvatarWithRing', () => {
     expect(styledEl).toBeTruthy();
     // Waking is Starting in the shared status palette (agent-status.tsx)
     expect(styledEl!.getAttribute('style')).toContain('rgb(var(--ctp-info))');
+  });
+});
+
+describe('OrchestratorGlyph', () => {
+  it.each([
+    ['claude-code', 'C', 'Claude Code'],
+    ['codex-cli', 'X', 'Codex'],
+    ['copilot-cli', 'G', 'GitHub Copilot'],
+    [undefined, 'C', 'Claude Code'],
+    ['opencode', 'O', 'opencode'],
+  ])('draws %s as a neutral letter', (orchestrator, letter, name) => {
+    render(<OrchestratorGlyph orchestrator={orchestrator} />);
+    const glyph = screen.getByRole('img', { name });
+    expect(glyph).toHaveTextContent(letter);
+    expect(glyph.className).toContain('text-ctp-overlay1');
+    expect(glyph.getAttribute('style')).toBeNull();
   });
 });

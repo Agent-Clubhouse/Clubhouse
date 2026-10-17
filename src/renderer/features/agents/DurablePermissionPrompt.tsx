@@ -92,7 +92,7 @@ export function DurablePermissionPrompt({ agentId }: Props) {
     // Surface the tail of a refused decision even after the prompt clears.
     return error ? (
       <div
-        className="absolute bottom-2 left-2 right-2 z-20 rounded-lg border border-surface-1 bg-surface-0/95 px-3 py-2 text-xs text-ctp-subtext0 shadow-lg backdrop-blur-sm"
+        className="absolute bottom-2 left-2 right-2 z-raised rounded-lg border border-surface-1 bg-surface-0/95 px-3 py-2 text-xs text-ctp-subtext0 shadow-lg backdrop-blur-sm"
         data-testid="permission-prompt-error"
         role="status"
       >
@@ -106,7 +106,7 @@ export function DurablePermissionPrompt({ agentId }: Props) {
 
   return (
     <div
-      className="absolute bottom-2 left-2 right-2 z-20 rounded-lg border border-ctp-yellow/40 bg-surface-0/95 shadow-lg backdrop-blur-sm overflow-hidden"
+      className="absolute bottom-2 left-2 right-2 z-raised rounded-lg border border-ctp-yellow/40 bg-surface-0/95 shadow-lg backdrop-blur-sm overflow-hidden"
       data-testid="durable-permission-prompt"
       data-request-id={permission.requestId}
       role="alertdialog"

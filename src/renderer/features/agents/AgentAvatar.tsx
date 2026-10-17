@@ -1,71 +1,45 @@
 import { useAgentStore } from '../../stores/agentStore';
-import { Agent, OrchestratorId } from '../../../shared/types';
+import { Agent } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 
-/* ── Orchestrator mini icons for agent avatars ────────────────────── */
+/* ── Orchestrator glyph ─────────────────────────────────────────── */
 
-function ClaudeCodeMiniIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100">
-      <rect x="20" y="20" width="12" height="10" rx="2" fill="#d4896b" />
-      <rect x="68" y="20" width="12" height="10" rx="2" fill="#d4896b" />
-      <rect x="20" y="27" width="60" height="38" rx="3" fill="#d4896b" />
-      <rect x="10" y="36" width="10" height="14" rx="3" fill="#d4896b" />
-      <rect x="80" y="36" width="10" height="14" rx="3" fill="#d4896b" />
-      <path d="M 34 42 Q 38 37 42 42" stroke="#2a1f1a" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-      <path d="M 58 42 Q 62 37 66 42" stroke="#2a1f1a" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-      <rect x="24" y="65" width="9" height="14" rx="2" fill="#be7a5e" />
-      <rect x="35" y="65" width="9" height="14" rx="2" fill="#be7a5e" />
-      <rect x="56" y="65" width="9" height="14" rx="2" fill="#be7a5e" />
-      <rect x="67" y="65" width="9" height="14" rx="2" fill="#be7a5e" />
-    </svg>
-  );
+const ORCHESTRATOR_LETTER: Record<string, string> = {
+  'claude-code': 'C',
+  'codex-cli': 'X',
+  'copilot-cli': 'G',
+};
+
+const ORCHESTRATOR_NAME: Record<string, string> = {
+  'claude-code': 'Claude Code',
+  'codex-cli': 'Codex',
+  'copilot-cli': 'GitHub Copilot',
+};
+
+export function orchestratorDisplayName(orchestrator?: string): string {
+  if (!orchestrator) return 'Claude Code';
+  return ORCHESTRATOR_NAME[orchestrator] ?? orchestrator;
 }
 
-function CopilotMiniIcon({ size }: { size: number }) {
+/**
+ * A neutral 14px glyph for the provider, shown beside the model (#2025).
+ * Monochrome on purpose: the avatar carries the agent's color, not the brand's.
+ */
+export function OrchestratorGlyph({ orchestrator }: { orchestrator?: string }) {
+  const id = orchestrator || 'claude-code';
+  const letter = ORCHESTRATOR_LETTER[id] ?? (id[0] ?? '?').toUpperCase();
+  const name = orchestratorDisplayName(id);
   return (
-    <svg width={size} height={size} viewBox="0 0 100 100">
-      <ellipse cx="50" cy="42" rx="36" ry="30" fill="#1ABFAE" />
-      <rect x="22" y="42" width="56" height="26" rx="10" fill="#B8C8D8" />
-      <line x1="31" y1="54" x2="45" y2="54" stroke="#0a1830" strokeWidth="2.5" strokeLinecap="round" />
-      <line x1="55" y1="54" x2="69" y2="54" stroke="#0a1830" strokeWidth="2.5" strokeLinecap="round" />
-    </svg>
+    <span
+      role="img"
+      aria-label={name}
+      title={name}
+      data-testid="orchestrator-glyph"
+      className="flex-shrink-0 w-[14px] h-[14px] rounded grid place-items-center bg-surface-0 text-ctp-overlay1 text-[8.5px] font-semibold leading-none"
+    >
+      {letter}
+    </span>
   );
-}
-
-function CodexCliMiniIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100">
-      <ellipse cx="50" cy="32" rx="24" ry="20" fill="#E8E8EC" />
-      <ellipse cx="50" cy="36" rx="18" ry="12" fill="#0a0a14" />
-      <ellipse cx="40" cy="38" rx="5" ry="3" fill="#3a6a9a" opacity="0.4" />
-      <ellipse cx="60" cy="38" rx="5" ry="3" fill="#3a6a9a" opacity="0.4" />
-      <path d="M 30 50 Q 30 48 32 48 L 68 48 Q 70 48 70 50 L 63 82 Q 61 88 50 88 Q 39 88 37 82 Z" fill="#E0E0E8" />
-    </svg>
-  );
-}
-
-function GenericRobotMiniIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100">
-      <line x1="50" y1="14" x2="50" y2="6" stroke="#5a5a6e" strokeWidth="2" strokeLinecap="round" />
-      <circle cx="50" cy="5" r="3" fill="#3a3a4c" />
-      <rect x="28" y="14" width="44" height="28" rx="12" fill="#6a6a7e" />
-      <rect x="32" y="22" width="36" height="14" rx="5" fill="#3a3a4c" />
-      <line x1="38" y1="29" x2="44" y2="29" stroke="#8a8a9e" strokeWidth="2" strokeLinecap="round" />
-      <line x1="56" y1="29" x2="62" y2="29" stroke="#8a8a9e" strokeWidth="2" strokeLinecap="round" />
-      <rect x="26" y="48" width="48" height="30" rx="6" fill="#5a5a6e" />
-    </svg>
-  );
-}
-
-function OrchestratorMiniIcon({ orchestrator, size }: { orchestrator?: OrchestratorId; size: number }) {
-  switch (orchestrator) {
-    case 'claude-code': return <ClaudeCodeMiniIcon size={size} />;
-    case 'copilot-cli': return <CopilotMiniIcon size={size} />;
-    case 'codex-cli': return <CodexCliMiniIcon size={size} />;
-    default: return <GenericRobotMiniIcon size={size} />;
-  }
 }
 
 interface Props {
@@ -79,11 +53,11 @@ interface Props {
 
 const SIZE_CONFIG = {
   /** 18px, for the new chrome's 30px sidebar rows (no ring). */
-  '2xs': { outer: 'w-[18px] h-[18px]', inner: 'w-[18px] h-[18px]', font: 'text-[8px]', icon: 18, bolt: 8 },
-  xs: { outer: 'w-7 h-7', inner: 'w-5 h-5', font: 'text-[8px]', icon: 20, bolt: 8 },
-  sm: { outer: 'w-8 h-8', inner: 'w-6 h-6', font: 'text-[9px]', icon: 24, bolt: 10 },
-  md: { outer: 'w-9 h-9', inner: 'w-7 h-7', font: 'text-xs', icon: 28, bolt: 12 },
-  lg: { outer: 'w-14 h-14', inner: 'w-12 h-12', font: 'text-base', icon: 48, bolt: 16 },
+  '2xs': { outer: 'w-[18px] h-[18px]', inner: 'w-[18px] h-[18px]', font: 'text-[8px]', bolt: 8 },
+  xs: { outer: 'w-7 h-7', inner: 'w-5 h-5', font: 'text-[8px]', bolt: 8 },
+  sm: { outer: 'w-8 h-8', inner: 'w-6 h-6', font: 'text-[9px]', bolt: 10 },
+  md: { outer: 'w-9 h-9', inner: 'w-7 h-7', font: 'text-xs', bolt: 12 },
+  lg: { outer: 'w-14 h-14', inner: 'w-12 h-12', font: 'text-base', bolt: 16 },
 };
 
 export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, iconUrl }: Props) {
@@ -95,7 +69,6 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
   const outerSize = s.outer;
   const innerSize = s.inner;
   const fontSize = s.font;
-  const iconPx = s.icon;
 
   const renderContent = () => {
     if (agent.kind !== 'durable') {
@@ -130,19 +103,8 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
       );
     }
 
-    // Orchestrator-specific mini icon
-    if (agent.orchestrator) {
-      return (
-        <div
-          className={`${innerSize} rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center`}
-          style={{ backgroundColor: bgColor }}
-        >
-          <OrchestratorMiniIcon orchestrator={agent.orchestrator} size={iconPx} />
-        </div>
-      );
-    }
-
-    // Default initials
+    // Initials on the agent color. The provider shows as OrchestratorGlyph
+    // beside the model instead of a brand mascot in the avatar (#2025).
     const initials = agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
     return (
       <div
