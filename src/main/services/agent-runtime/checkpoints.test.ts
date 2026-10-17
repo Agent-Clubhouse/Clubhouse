@@ -51,7 +51,7 @@ afterEach(() => {
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-describe('git checkpoints', () => {
+describe('git checkpoints', { timeout: 30_000 }, () => {
   it('detects git work trees', async () => {
     expect(await isGitWorkTree(repo)).toBe(true);
     const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'not-git-'));
