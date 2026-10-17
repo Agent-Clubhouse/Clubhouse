@@ -74,6 +74,11 @@ vi.mock('fs/promises', () => ({
   stat: (...args: unknown[]) => mockStat(...args),
 }));
 
+import { ATTR } from '../../shared/telemetry/attributes';
+import { _activeRunsForTests, _resetAgentTelemetryForTests, installAgentTelemetry } from '../telemetry/agent-telemetry';
+import { setRuntime } from '../telemetry/facade';
+import type { TelemetryRuntime } from '../telemetry/types';
+
 // We need to import AFTER mocks are set up
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
@@ -646,6 +651,24 @@ describe('pty-manager', () => {
       kill('agent_kill');
       expect(mockProcess.kill).toHaveBeenCalled();
       expect(getBuffer('agent_kill')).toBe('');
+    });
+
+    it('ends the telemetry run (no exit broadcast follows a hard kill)', async () => {
+      const count = vi.fn();
+      setRuntime({ level: 'standard', count, replaySpan: vi.fn(), event: vi.fn(), exception: vi.fn() } as unknown as TelemetryRuntime);
+      installAgentTelemetry(() => 'claude-code');
+      try {
+        await spawnAndActivate('agent_kill_tel');
+        expect(_activeRunsForTests()).toBe(1);
+        kill('agent_kill_tel');
+        expect(_activeRunsForTests()).toBe(0);
+        expect(count).toHaveBeenCalledWith('clubhouse.agent.runs', 1, [
+          ATTR.agentRuntime('pty'), ATTR.orchestrator('claude-code'), ATTR.agentExitClass('killed_user'),
+        ]);
+      } finally {
+        setRuntime(null);
+        _resetAgentTelemetryForTests();
+      }
     });
 
     it('does nothing for unknown agent', () => {
