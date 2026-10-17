@@ -18,7 +18,7 @@
 //   --fake-max-delay-ms <n>    CLUBHOUSE_FAKE_CLI_MAX_DELAY_MS  cap for any single recorded gap (default 2000)
 //   --fake-lenient             CLUBHOUSE_FAKE_CLI_LENIENT=1 skip client messages that don't match instead of failing
 
-import { writeFileSync } from 'node:fs';
+import { renameSync, writeFileSync } from 'node:fs';
 import {
   clientRequestId,
   loadFixture,
@@ -73,10 +73,26 @@ const report = {
   exitCode: null,
 };
 
+const reportTmp = opts.report ? `${opts.report}.${process.pid}.tmp` : undefined;
+
+/**
+ * Rewrite the report atomically (temp file in the same directory, then
+ * rename) so a test polling it never reads half a file. Windows refuses the
+ * rename while a reader has the target open, so retry briefly.
+ */
 function writeReport() {
   if (!opts.report) return;
   try {
-    writeFileSync(opts.report, JSON.stringify(report, null, 2));
+    writeFileSync(reportTmp, JSON.stringify(report, null, 2));
+    for (let attempt = 0; ; attempt++) {
+      try {
+        renameSync(reportTmp, opts.report);
+        return;
+      } catch (err) {
+        if (attempt >= 20) throw err;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
+    }
   } catch {
     // Reporting is best-effort; never let it break the replay.
   }

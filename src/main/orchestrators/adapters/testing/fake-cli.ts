@@ -56,7 +56,8 @@ export interface FakeCli {
   /** Script path, fake-cli options, then `cliArgs`. */
   args: string[];
   reportPath: string;
-  readReport(): Promise<FakeCliReport>;
+  /** The latest report, retrying until it exists and parses. */
+  readReport(timeoutMs?: number): Promise<FakeCliReport>;
   /** Poll the report until `predicate` holds (default: fixture complete). */
   waitForReport(predicate?: (report: FakeCliReport) => boolean, timeoutMs?: number): Promise<FakeCliReport>;
   dispose(): Promise<void>;
@@ -71,30 +72,35 @@ export async function createFakeCli(fixture: string, opts: FakeCliOptions = {}):
   if (opts.lenient) args.push('--fake-lenient');
   args.push(...(opts.cliArgs ?? []));
 
-  const readReport = async (): Promise<FakeCliReport> =>
+  const parseReport = async (): Promise<FakeCliReport> =>
     JSON.parse(await fs.promises.readFile(reportPath, 'utf8')) as FakeCliReport;
+
+  /** Poll until the report parses and `predicate` holds, or the deadline passes. */
+  const pollReport = async (predicate: (r: FakeCliReport) => boolean, timeoutMs: number): Promise<FakeCliReport> => {
+    const deadline = Date.now() + timeoutMs;
+    let last: FakeCliReport | undefined;
+    let lastError: unknown;
+    for (;;) {
+      try {
+        last = await parseReport();
+        if (predicate(last)) return last;
+      } catch (err) {
+        // Not written yet. Writes are atomic, but stay tolerant of a torn read.
+        lastError = err;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`fake CLI report did not reach the expected state: ${last ? JSON.stringify(last) : String(lastError)}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+  };
 
   return {
     binary: process.execPath,
     args,
     reportPath,
-    readReport,
-    async waitForReport(predicate = (r) => r.complete, timeoutMs = 15_000) {
-      const deadline = Date.now() + timeoutMs;
-      let last: FakeCliReport | undefined;
-      for (;;) {
-        try {
-          last = await readReport();
-          if (predicate(last)) return last;
-        } catch {
-          // Not written yet, or caught mid-write.
-        }
-        if (Date.now() > deadline) {
-          throw new Error(`fake CLI report did not reach the expected state: ${JSON.stringify(last)}`);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 15));
-      }
-    },
+    readReport: (timeoutMs = 15_000) => pollReport(() => true, timeoutMs),
+    waitForReport: (predicate = (r) => r.complete, timeoutMs = 15_000) => pollReport(predicate, timeoutMs),
     async dispose() {
       await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     },
