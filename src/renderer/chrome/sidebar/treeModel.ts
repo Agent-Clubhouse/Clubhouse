@@ -22,12 +22,16 @@ export interface NeedsAttentionItem {
   agent: Agent;
   reason: 'permission' | 'tool_error' | 'error';
   message: string;
+  /** When the agent started waiting, for ordering across hosts. */
+  at: number;
+  /** The satellite the agent runs on; absent for the local host. */
+  hostId?: string;
+  hostLabel?: string;
 }
 
 /**
  * Agents waiting on the user, across every given project. Mirrors the old Home
  * "Needs attention" rule: a permission prompt, a failed tool, or an errored agent.
- * Local host only in Phase 1; Phase 3 adds connected satellites.
  */
 export function selectNeedsAttention(
   agents: Record<string, Agent>,
@@ -38,16 +42,45 @@ export function selectNeedsAttention(
   for (const agent of Object.values(agents)) {
     if (!projectIds.has(agent.projectId)) continue;
     const d = detailed[agent.id];
+    const at = d?.timestamp ?? 0;
     if (d?.state === 'needs_permission') {
-      items.push({ agent, reason: 'permission', message: d.message || (d.toolName ? `Wants to use ${d.toolName}` : 'Waiting for permission') });
+      items.push({ agent, at, reason: 'permission', message: d.message || (d.toolName ? `Wants to use ${d.toolName}` : 'Waiting for permission') });
     } else if (d?.state === 'tool_error') {
-      items.push({ agent, reason: 'tool_error', message: d.message || (d.toolName ? `${d.toolName} failed` : 'A tool failed') });
+      items.push({ agent, at, reason: 'tool_error', message: d.message || (d.toolName ? `${d.toolName} failed` : 'A tool failed') });
     } else if (agent.status === 'error') {
-      items.push({ agent, reason: 'error', message: agent.errorMessage || 'Stopped with an error' });
+      items.push({ agent, at, reason: 'error', message: agent.errorMessage || 'Stopped with an error' });
     }
   }
   // Oldest request first, so the queue reads in the order things happened.
-  return items.sort((a, b) => (detailed[a.agent.id]?.timestamp ?? 0) - (detailed[b.agent.id]?.timestamp ?? 0));
+  return items.sort((a, b) => a.at - b.at);
+}
+
+/**
+ * The same rule across every connected satellite (spec §2, hosts option 1), each
+ * item tagged with its host. Remote agents and statuses are keyed by namespaced
+ * id, and a satellite's projects by its id (remoteProjectStore).
+ */
+export function selectRemoteNeedsAttention(
+  satellites: ReadonlyArray<{ id: string; alias: string; state: string }>,
+  satelliteProjects: Record<string, ReadonlyArray<{ id: string }>>,
+  remoteAgents: Record<string, Agent>,
+  remoteDetailed: Record<string, AgentDetailedStatus>,
+): NeedsAttentionItem[] {
+  const items: NeedsAttentionItem[] = [];
+  for (const sat of satellites) {
+    if (sat.state !== 'connected') continue;
+    const projectIds = new Set((satelliteProjects[sat.id] ?? []).map((p) => p.id));
+    if (projectIds.size === 0) continue;
+    for (const item of selectNeedsAttention(remoteAgents, remoteDetailed, projectIds)) {
+      items.push({ ...item, hostId: sat.id, hostLabel: sat.alias });
+    }
+  }
+  return items;
+}
+
+/** Local and remote items in one queue, oldest first. */
+export function mergeNeedsAttention(...lists: NeedsAttentionItem[][]): NeedsAttentionItem[] {
+  return lists.flat().sort((a, b) => a.at - b.at);
 }
 
 /** Pinned projects first (in project order), then the rest (in project order). */

@@ -25,6 +25,7 @@ import {
   type ChatDriverSession,
   type ChatEvent,
   type ChatEventDraft,
+  type ChatEventDataMap,
   type ChatQuestionAnswers,
   type ChatSessionState,
   type PermissionResponseExtras,
@@ -81,6 +82,8 @@ export interface ChatAgentRuntimeOptions {
   onEnded?: (reason: SessionEndReason, exitCode: number) => void;
   /** Called whenever the CLI reports a native session id (for resume on the next wake). */
   onNativeSessionId?: (nativeSessionId: string) => void;
+  /** Notices written right after the first session_started (untested CLI version, driver fallback). */
+  startNotices?: Array<ChatEventDataMap['notice']>;
   now?: () => number;
   newId?: () => string;
 }
@@ -110,6 +113,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private ended = false;
   private systemPromptApplied = false;
+  private startNoticesEmitted = false;
   /** Serializes stamping so seq order matches transcript and bus order. */
   private emitChain: Promise<void> = Promise.resolve();
   private readonly now: () => number;
@@ -153,6 +157,10 @@ export class ChatAgentRuntime implements AgentRuntime {
         capabilities: session.capabilities,
       },
     });
+    if (!this.startNoticesEmitted) {
+      this.startNoticesEmitted = true;
+      for (const notice of this.opts.startNotices ?? []) await this.emit({ type: 'notice', data: notice });
+    }
     await this.setState('idle');
     this.armIdleTimer();
     void this.pump(session);

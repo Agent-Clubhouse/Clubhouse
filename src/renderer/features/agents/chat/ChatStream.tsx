@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import type { ChatCapabilities } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { buildStreamBlocks, type StreamBlock } from './view-model';
@@ -21,6 +21,33 @@ interface BlockProps {
   block: StreamBlock;
   turnNumber: number;
   capabilities: ChatCapabilities | null;
+  /** Set on the first block of a run of inline subagent work (subagents not nested): its subagent id. */
+  inlineSubagentId?: string;
+  /** Open the agent map at a subagent; omitted hides the jump links. */
+  onOpenSubagent?: (subagentId: string) => void;
+}
+
+/** The subagent a top-level block belongs to, when its work shows inline (ids_only, or nesting off). */
+function blockSubagentId(block: StreamBlock): string | undefined {
+  if (block.type === 'item') return 'subagentId' in block.item ? block.item.subagentId : undefined;
+  if (block.type === 'explore') {
+    const id = block.tools[0]?.subagentId;
+    return id && block.tools.every((t) => t.subagentId === id) ? id : undefined;
+  }
+  return undefined;
+}
+
+function SubagentJump({ subagentId, onOpen }: { subagentId: string; onOpen: (id: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(subagentId)}
+      className="self-start text-[11.5px] text-ctp-overlay1 hover:text-ctp-text underline-offset-2 hover:underline"
+      data-testid="chat-subagent-jump"
+    >
+      Subagent work: open in agent map
+    </button>
+  );
 }
 
 function sameItems<T>(a: readonly T[], b: readonly T[]): boolean {
@@ -34,6 +61,7 @@ function sameItems<T>(a: readonly T[], b: readonly T[]): boolean {
  */
 function sameBlock(prev: BlockProps, next: BlockProps): boolean {
   if (prev.turnNumber !== next.turnNumber || prev.capabilities !== next.capabilities) return false;
+  if (prev.inlineSubagentId !== next.inlineSubagentId || prev.onOpenSubagent !== next.onOpenSubagent) return false;
   const a = prev.block;
   const b = next.block;
   if (a.type === 'item' && b.type === 'item') return a.item === b.item;
@@ -42,9 +70,25 @@ function sameBlock(prev: BlockProps, next: BlockProps): boolean {
   return false;
 }
 
-const Block = memo(function Block({ block, turnNumber, capabilities }: BlockProps) {
+const Block = memo(function Block(props: BlockProps) {
+  const { block, inlineSubagentId, onOpenSubagent } = props;
+  if (block.type === 'subagent') return <SubagentCard block={block} onOpenInMap={onOpenSubagent} />;
+  const subagentId = blockSubagentId(block);
+  if (subagentId) {
+    // Inline subagent work: tag it so "Show in conversation" can find it.
+    return (
+      <div className="flex flex-col gap-1" data-subagent-id={subagentId}>
+        {inlineSubagentId && onOpenSubagent && <SubagentJump subagentId={inlineSubagentId} onOpen={onOpenSubagent} />}
+        <BlockBody {...props} />
+      </div>
+    );
+  }
+  return <BlockBody {...props} />;
+}, sameBlock);
+
+function BlockBody({ block, turnNumber, capabilities }: BlockProps) {
   if (block.type === 'explore') return <ExploreGroup tools={block.tools} />;
-  if (block.type === 'subagent') return <SubagentCard block={block} />;
+  if (block.type === 'subagent') return null;
   const item = block.item;
   switch (item.kind) {
     case 'user_message': return <UserMessage item={item} />;
@@ -58,17 +102,31 @@ const Block = memo(function Block({ block, turnNumber, capabilities }: BlockProp
     case 'session_divider': return <SessionDivider item={item} />;
     default: return null;
   }
-}, sameBlock);
+}
+
+/** A request to scroll the stream to a subagent's work; `nonce` repeats a jump to the same one. */
+export interface StreamJump {
+  subagentId: string;
+  nonce: number;
+}
+
+/** How long a jumped-to subagent stays outlined. */
+const JUMP_HIGHLIGHT_MS = 1600;
+const JUMP_HIGHLIGHT_CLASSES = ['outline', 'outline-1', 'outline-offset-2', 'outline-ctp-mauve/60', 'rounded-lg'];
 
 export interface ChatStreamProps {
   state: ChatViewState;
+  onOpenSubagent?: (subagentId: string) => void;
+  jump?: StreamJump | null;
+  /** Reports whether a jump found its target in the rendered conversation. */
+  onJumpResult?: (jump: StreamJump, found: boolean) => void;
   /** Announce finished replies to screen readers. Off for views that aren't the focused one. */
   announce?: boolean;
   /** Shown as "Show earlier" above the first message when earlier history wasn't loaded. */
   onShowEarlier?: () => void;
 }
 
-export function ChatStream({ state, announce = true, onShowEarlier }: ChatStreamProps) {
+export function ChatStream({ state, onOpenSubagent, jump, onJumpResult, announce = true, onShowEarlier }: ChatStreamProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const { items, subagents, capabilities } = state;
@@ -97,6 +155,38 @@ export function ChatStream({ state, announce = true, onShowEarlier }: ChatStream
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
   }, [blocks]);
 
+  // The first block of each consecutive run of inline subagent work gets a jump link.
+  const inlineJumps = useMemo(() => {
+    const m = new Map<string, string>();
+    let previous: string | undefined;
+    for (const b of blocks) {
+      const id = b.type === 'subagent' ? undefined : blockSubagentId(b);
+      if (id && id !== previous) m.set(b.key, id);
+      previous = id;
+    }
+    return m;
+  }, [blocks]);
+
+  useEffect(() => {
+    if (!jump) return;
+    const root = scroller.current;
+    const target = root?.querySelector<HTMLElement>(`[data-subagent-id="${CSS.escape(jump.subagentId)}"]`);
+    onJumpResult?.(jump, !!target);
+    if (!target) return;
+    pinned.current = false;
+    target.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    target.classList.add(...JUMP_HIGHLIGHT_CLASSES);
+    target.setAttribute('data-jump-highlight', 'true');
+    const clear = () => {
+      target.classList.remove(...JUMP_HIGHLIGHT_CLASSES);
+      target.removeAttribute('data-jump-highlight');
+    };
+    const t = setTimeout(clear, JUMP_HIGHLIGHT_MS);
+    // A newer jump (or unmount) clears this one's outline straight away.
+    return () => { clearTimeout(t); clear(); };
+    // Only a new jump re-runs this; a new onJumpResult callback alone isn't a jump.
+  }, [jump]);
+
   const onScroll = () => {
     const el = scroller.current;
     if (!el) return;
@@ -121,7 +211,14 @@ export function ChatStream({ state, announce = true, onShowEarlier }: ChatStream
           <div className="text-center text-[13px] text-ctp-overlay0 py-10">No messages yet. Send one to start.</div>
         )}
         {blocks.map((b) => (
-          <Block key={b.key} block={b} turnNumber={b.type === 'item' ? turnNumbers.get(b.item.id) ?? 0 : 0} capabilities={capabilities} />
+          <Block
+            key={b.key}
+            block={b}
+            turnNumber={b.type === 'item' ? turnNumbers.get(b.item.id) ?? 0 : 0}
+            capabilities={capabilities}
+            inlineSubagentId={inlineJumps.get(b.key)}
+            onOpenSubagent={onOpenSubagent}
+          />
         ))}
       </div>
     </div>
