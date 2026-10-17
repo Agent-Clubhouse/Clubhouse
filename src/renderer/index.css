@@ -321,41 +321,6 @@
   animation: attention-pulse 1.8s ease-in-out infinite;
 }
 
-/* Canvas: attention flash border — outside the card, never clips inner content */
-@keyframes canvas-attention-flash {
-  0%, 100% {
-    outline-color: rgb(var(--ctp-warning) / 0.9);
-    box-shadow: 0 0 12px 3px rgb(var(--ctp-warning) / 0.35), 0 4px 24px rgba(0, 0, 0, 0.5);
-  }
-  50% {
-    outline-color: rgb(var(--ctp-warning) / 0.35);
-    box-shadow: 0 0 4px 1px rgb(var(--ctp-warning) / 0.1), 0 4px 24px rgba(0, 0, 0, 0.5);
-  }
-}
-
-@keyframes canvas-error-flash {
-  0%, 100% {
-    outline-color: rgb(var(--ctp-error) / 0.9);
-    box-shadow: 0 0 12px 3px rgb(var(--ctp-error) / 0.35), 0 4px 24px rgba(0, 0, 0, 0.5);
-  }
-  50% {
-    outline-color: rgb(var(--ctp-error) / 0.35);
-    box-shadow: 0 0 4px 1px rgb(var(--ctp-error) / 0.1), 0 4px 24px rgba(0, 0, 0, 0.5);
-  }
-}
-
-.canvas-attention-warning {
-  outline: 2.5px solid rgb(var(--ctp-warning) / 0.9);
-  outline-offset: 2px;
-  animation: canvas-attention-flash 1.5s ease-in-out infinite;
-}
-
-.canvas-attention-error {
-  outline: 2.5px solid rgb(var(--ctp-error) / 0.9);
-  outline-offset: 2px;
-  animation: canvas-error-flash 1.5s ease-in-out infinite;
-}
-
 /* Headless agent: animated clubhouse */
 @keyframes window-glow {
   0%, 100% {
@@ -669,6 +634,66 @@
 
 .help-content td {
   color: rgb(var(--ctp-subtext1));
+}
+
+/* Help articles in the new shell (#2017): 13.5px body, 20px title, plain tables. */
+.help-content-chrome h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.help-content-chrome h2 {
+  font-size: 14px;
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
+
+.help-content-chrome h3 {
+  font-size: 13.5px;
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+.help-content-chrome p,
+.help-content-chrome ul,
+.help-content-chrome ol {
+  font-size: 13.5px;
+  line-height: 1.65;
+  margin-bottom: 12px;
+}
+
+.help-content-chrome li {
+  line-height: 1.65;
+}
+
+.help-content-chrome code {
+  font-size: 12px;
+}
+
+.help-content-chrome table {
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.help-content-chrome th,
+.help-content-chrome td {
+  border: 0;
+  border-top: 1px solid rgb(var(--ctp-surface0));
+  padding: 6px 12px 6px 0;
+  vertical-align: top;
+}
+
+.help-content-chrome th {
+  background: none;
+  border-top: 0;
+  color: rgb(var(--ctp-overlay1));
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.help-content-chrome strong {
+  font-weight: 500;
 }
 
 /* Chat message markdown (features/agents/chat) */

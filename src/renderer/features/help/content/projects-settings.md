@@ -2,7 +2,7 @@
 
 Configure how a project appears, which orchestrator it uses, and manage plugins.
 
-**Access:** Click the gear icon in the project header, or open **Settings > Project**.
+**Access:** Click the gear icon in the project header, or open Settings and switch to the project's **Project Settings** page.
 
 ## Appearance
 

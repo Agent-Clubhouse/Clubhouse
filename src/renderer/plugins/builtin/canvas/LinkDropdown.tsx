@@ -6,6 +6,7 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType } from './canvas-types';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { CANVAS_Z } from './canvas-chrome';
 
 interface LinkDropdownProps {
   /** The agent view that owns this dropdown. */
@@ -88,38 +89,38 @@ export function LinkDropdown({ agentView, views, onClose }: LinkDropdownProps) {
   return (
     <div
       ref={dropdownRef}
-      className="absolute top-full left-0 mt-1 w-56 bg-ctp-mantle border border-surface-2 rounded-lg shadow-xl overflow-hidden"
-      style={{ zIndex: 99999 }}
+      className="absolute top-full left-0 mt-1 w-56 py-1 bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl overflow-hidden"
+      style={{ zIndex: CANVAS_Z.popover }}
       onMouseDown={(e) => e.stopPropagation()}
       data-testid="link-dropdown"
     >
-      <div className="px-3 py-2 text-xs text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0">
-        Link to Widget
+      <div className="h-7 flex items-center px-3 text-xs text-ctp-overlay1">
+        Link to widget
       </div>
       {targets.length === 0 ? (
-        <div className="px-3 py-3 text-xs text-ctp-overlay0 italic">
-          No connectable widgets on canvas
+        <div className="px-3 py-1.5 text-xs text-ctp-overlay1">
+          No widgets on this canvas to link
         </div>
       ) : (
-        <div className="py-1 max-h-48 overflow-y-auto">
+        <div className="max-h-48 overflow-y-auto">
           {targets.map((target) => {
             const bound = isBound(target);
             return (
               <button
                 key={target.id}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
-                  bound
-                    ? 'text-ctp-accent bg-ctp-accent/10 hover:bg-ctp-accent/20'
-                    : 'text-ctp-text hover:bg-surface-1'
-                }`}
+                role="menuitemcheckbox"
+                aria-checked={bound}
+                className="w-full h-7 flex items-center gap-2 px-3 text-left text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
                 onClick={() => handleToggle(target)}
                 data-testid={`link-target-${target.id}`}
               >
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  bound ? 'bg-ctp-accent' : 'bg-ctp-overlay0'
-                }`} />
+                <span className="w-3.5 flex-shrink-0 flex items-center text-ctp-text" aria-hidden="true">
+                  {bound && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  )}
+                </span>
                 <span className="truncate">{targetLabel(target)}</span>
-                <span className="text-xs text-ctp-overlay0 flex-shrink-0 ml-auto">
+                <span className="text-xs text-ctp-overlay1 flex-shrink-0 ml-auto">
                   {targetKind(target)}
                 </span>
               </button>

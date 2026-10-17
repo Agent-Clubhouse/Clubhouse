@@ -12,6 +12,7 @@ import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlacehol
 import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 import { useUIStore } from '../../../stores/uiStore';
+import { useChromeFlagStore } from '../../../chrome/chromeFlag';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { usePluginStore } from '../../plugin-store';
 import { useAgentStore } from '../../../stores/agentStore';
@@ -172,15 +173,17 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     (s) => (s.pluginSettings[settingsKey]?.['create-bidirectional-wires'] as boolean) ?? true,
   );
 
-  // Dynamic title: show active canvas tab name
+  // Dynamic title: show active canvas tab name. The new chrome shows the
+  // canvas name in the strip, so the breadcrumb keeps "Project / Canvas".
   const activeCanvasName = canvases.find((c) => c.id === activeCanvasId)?.name;
+  const newChrome = useChromeFlagStore((s) => s.enabled);
   useEffect(() => {
-    if (activeCanvasName) {
+    if (activeCanvasName && !newChrome) {
       api.window.setTitle(activeCanvasName);
     } else {
       api.window.resetTitle();
     }
-  }, [api, activeCanvasName]);
+  }, [api, activeCanvasName, newChrome]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { findCanvasPopout } = usePopouts();
 
@@ -381,7 +384,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       type: 'canvas',
       canvasId,
       projectId: isAppMode ? undefined : api.context.projectId,
-      title: `Canvas — ${canvasName}`,
+      title: canvasName,
     });
   }, [isAppMode, api]);
 

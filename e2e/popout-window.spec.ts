@@ -199,9 +199,9 @@ test.describe('Pop-out Window Creation', () => {
       timeout: 10_000,
     });
 
-    // Title bar should indicate agent pop-out
+    // Title bar names the agent (#2018)
     await expect(page.locator('[data-testid="popout-title"]')).toContainText(
-      'Agent',
+      'alpha-popout',
       { timeout: 5_000 },
     );
 
