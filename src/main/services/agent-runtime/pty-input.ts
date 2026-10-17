@@ -143,3 +143,27 @@ export async function submitAfterPaste(
   await sleep(timing.finalCheckDelayMs);
 }
 
+
+/**
+ * Type one line and press Enter after a fixed delay. Kept byte-for-byte for
+ * the call sites that always used it (MCP send_file notifications).
+ */
+export async function writeLineThenEnter(agentId: string, line: string, delayMs: number): Promise<void> {
+  ptyManager.write(agentId, line);
+  await sleep(delayMs);
+  ptyManager.write(agentId, '\r');
+}
+
+/**
+ * Group-project inject delivery as it has always worked: a single line is
+ * typed with an immediate Enter; multi-line text is pasted and submitted.
+ */
+export async function injectPtyText(agentId: string, text: string, timing: PasteSubmitTiming): Promise<void> {
+  if (text.includes('\n')) {
+    await writeChunkedBracketedPaste(agentId, text, timing.chunkSize, timing.chunkDelayMs);
+    await submitAfterPaste(agentId, timing);
+  } else {
+    ptyManager.write(agentId, text);
+    ptyManager.write(agentId, '\r');
+  }
+}

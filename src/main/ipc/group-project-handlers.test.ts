@@ -61,12 +61,6 @@ vi.mock('../services/clubhouse-mcp/tools/agent-tools', () => ({
   writeChunkedBracketedPaste: (...args: unknown[]) => mockWriteChunkedBracketedPaste(...args),
   submitAfterPaste: (...args: unknown[]) => mockSubmitAfterPaste(...args),
 }));
-// INJECT_MESSAGE now delivers through the PTY agent runtime, which uses these helpers.
-vi.mock('../services/agent-runtime/pty-input', () => ({
-  writeChunkedBracketedPaste: (...args: unknown[]) => mockWriteChunkedBracketedPaste(...args),
-  submitAfterPaste: (...args: unknown[]) => mockSubmitAfterPaste(...args),
-  sleep: vi.fn(async () => undefined),
-}));
 
 vi.mock('../orchestrators', () => ({
   getProvider: vi.fn(() => undefined),
@@ -508,16 +502,19 @@ describe('group-project-handlers', () => {
     it('uses chunked paste for multi-line PTY messages', async () => {
       const handler = getHandler(IPC.GROUP_PROJECT.INJECT_MESSAGE);
       await handler(fakeEvent, 'agent-1', 'line1\nline2');
-      expect(mockWriteChunkedBracketedPaste.mock.calls[0].slice(0, 2)).toEqual(['agent-1', 'line1\nline2']);
-      expect(mockSubmitAfterPaste).toHaveBeenCalled();
+      // Terminal delivery is unchanged: a bracketed paste, then Enter.
+      const writes = mockPtyWrite.mock.calls.map((c) => c[1]);
+      expect(writes).toContain('\x1b[200~');
+      expect(writes).toContain('line1\nline2');
+      expect(writes).toContain('\x1b[201~');
+      expect(writes).toContain('\r');
     });
 
     it('uses simple write for single-line PTY messages', async () => {
       const handler = getHandler(IPC.GROUP_PROJECT.INJECT_MESSAGE);
       await handler(fakeEvent, 'agent-1', 'hello');
       expect(mockPtyWrite).toHaveBeenCalledWith('agent-1', 'hello');
-      expect(mockWriteChunkedBracketedPaste).not.toHaveBeenCalled();
-      expect(mockSubmitAfterPaste).toHaveBeenCalledWith('agent-1', expect.any(Object));
+      expect(mockPtyWrite).toHaveBeenCalledWith('agent-1', '\r');
     });
 
     it('rejects missing message', () => {

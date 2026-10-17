@@ -23,6 +23,26 @@ export function transcriptPath(agentId: string): string {
 
 /** Serialized appends per agent so lines never interleave. */
 const writeChains = new Map<string, Promise<void>>();
+/** Files already checked this process for a crash-torn last line. */
+const checkedForTornLine = new Set<string>();
+
+/** True when the file exists, is non-empty and doesn't end with a newline. */
+async function endsMidLine(file: string): Promise<boolean> {
+  let handle: fsp.FileHandle | undefined;
+  try {
+    handle = await fsp.open(file, 'r');
+    const { size } = await handle.stat();
+    if (size === 0) return false;
+    const buf = Buffer.alloc(1);
+    await handle.read(buf, 0, 1, size - 1);
+    return buf[0] !== 0x0a;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
+  } finally {
+    await handle?.close();
+  }
+}
 
 export function appendChatEvent(event: ChatEvent): Promise<void> {
   const file = transcriptPath(event.agentId);
@@ -32,7 +52,14 @@ export function appendChatEvent(event: ChatEvent): Promise<void> {
     .catch((): void => undefined)
     .then(async () => {
       await fsp.mkdir(path.dirname(file), { recursive: true });
-      await fsp.appendFile(file, line, 'utf-8');
+      // After a crash the last line can be torn. Start on a fresh line so the
+      // next event isn't glued onto it and lost with it.
+      let prefix = '';
+      if (!checkedForTornLine.has(file)) {
+        checkedForTornLine.add(file);
+        if (await endsMidLine(file)) prefix = '\n';
+      }
+      await fsp.appendFile(file, prefix + line, 'utf-8');
     });
   writeChains.set(file, next);
   return next;
@@ -52,11 +79,44 @@ export interface ReadTranscriptOptions {
   tail?: number;
 }
 
+/** Bytes read per step when reading a tail from the end of the file. */
+const TAIL_CHUNK_BYTES = 64 * 1024;
+
+/**
+ * Read only enough of the end of the file for `tail` lines, so frequent
+ * pollers (MCP read_output) don't parse the whole transcript each time.
+ */
+async function readTailText(file: string, tail: number): Promise<string> {
+  const handle = await fsp.open(file, 'r');
+  try {
+    const { size } = await handle.stat();
+    let position = size;
+    let text = '';
+    let newlines = 0;
+    while (position > 0 && newlines <= tail) {
+      const length = Math.min(TAIL_CHUNK_BYTES, position);
+      position -= length;
+      const buf = Buffer.alloc(length);
+      await handle.read(buf, 0, length, position);
+      const chunk = buf.toString('utf-8');
+      text = chunk + text;
+      for (let i = 0; i < chunk.length; i++) if (chunk.charCodeAt(i) === 10) newlines++;
+    }
+    // Drop a partial first line when we stopped mid-file (it may also split a UTF-8 sequence).
+    if (position > 0) text = text.slice(text.indexOf('\n') + 1);
+    return text;
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function readChatTranscript(agentId: string, opts: ReadTranscriptOptions = {}): Promise<ChatEvent[]> {
   await flushTranscript(agentId);
+  const file = transcriptPath(agentId);
   let raw: string;
   try {
-    raw = await fsp.readFile(transcriptPath(agentId), 'utf-8');
+    // A plain tail (no session filter) only needs the end of the file.
+    raw = opts.tail && !opts.sessionId ? await readTailText(file, opts.tail) : await fsp.readFile(file, 'utf-8');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw err;

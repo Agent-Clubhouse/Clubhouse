@@ -29,8 +29,9 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import * as fileService from './file-service';
 import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './session-reader';
-import { isSessionCapable } from '../orchestrators';
+import { isSessionCapable, getProvider } from '../orchestrators';
 import { getAgentRuntime, isChatAgent, onChatEvent } from './agent-runtime';
+import { injectPtyText } from './agent-runtime/pty-input';
 import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
 
@@ -1852,7 +1853,10 @@ async function handleGroupProjectInjectRoute(ctx: AnnexRouteContext): Promise<vo
     }
     try {
       const runtime = getAgentRuntime(agentId);
-      if (runtime) {
+      if (runtime?.kind === 'pty') {
+        const timing = getProvider(reg.orchestrator)?.getPasteSubmitTiming() ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
+        await injectPtyText(agentId, message, timing);
+      } else if (runtime) {
         await runtime.sendMessage(message, { source: 'annex' });
       }
       sendJson(ctx.res, 200, { ok: true });

@@ -337,7 +337,17 @@ describe('OrchestratorSettingsView', () => {
 
     function setChatFlag(on: boolean) {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue(on ? { chat: true } : {});
+      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
     }
+
+    it('is hidden on stable builds even when a Chat flag is saved', async () => {
+      setChatFlag(true);
+      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
+      render(<OrchestratorSettingsView />);
+      await waitFor(() => expect(window.clubhouse.app.isPreviewEligible).toHaveBeenCalled());
+      expect(screen.queryByText('Runtime')).not.toBeInTheDocument();
+      expect(getRuntimeSettings).not.toHaveBeenCalled();
+    });
 
     it('is hidden when the experimental Chat flag is off', async () => {
       setChatFlag(false);

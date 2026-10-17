@@ -378,6 +378,7 @@ describe('AgentSettingsView', () => {
 
     it('shows Provider default when no override is saved', async () => {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true });
+      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
       renderSettings();
       const select = await screen.findByLabelText('Runtime') as HTMLSelectElement;
       expect(select.value).toBe('');
@@ -386,6 +387,7 @@ describe('AgentSettingsView', () => {
 
     it('loads and persists the override, using null for Provider default', async () => {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true });
+      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
       (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ runtimeMode: 'terminal' });
       const updateMock = vi.fn().mockResolvedValue(undefined);
       (window.clubhouse.agent as any).updateDurableConfig = updateMock;
@@ -407,6 +409,7 @@ describe('AgentSettingsView', () => {
 
     it('is disabled with a tooltip while the agent is running', async () => {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ chat: true });
+      window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
       renderSettings({ status: 'running' });
       const select = await screen.findByLabelText('Runtime');
       expect(select).toBeDisabled();

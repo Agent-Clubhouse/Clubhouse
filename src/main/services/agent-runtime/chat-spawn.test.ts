@@ -22,7 +22,9 @@ vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => false) }));
 vi.mock('../materialization-service', () => ({ resolveProjectMcpServers: vi.fn(async () => ({})) }));
 const agentConfig = vi.hoisted(() => ({ updateSessionId: vi.fn(async () => {}) }));
 vi.mock('../agent-config', () => agentConfig);
-vi.mock('../agent-exit-broadcast', () => ({ broadcastAgentExit: vi.fn() }));
+const exitBroadcast = vi.hoisted(() => ({ broadcastAgentExit: vi.fn() }));
+vi.mock('../agent-exit-broadcast', () => exitBroadcast);
+vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../pty-manager', () => ({ isRunning: () => false }));
 vi.mock('../annex-permission-queue', () => ({ createPermission: vi.fn(), resolvePermission: vi.fn() }));
 
@@ -81,6 +83,30 @@ describe('chat spawn', () => {
     clearChatDrivers();
     expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
     expect(registry.setRuntime).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the terminal when the CLI binary cannot be found', async () => {
+    registerChatDriver(new FakeChatDriver());
+    const missing = { ...provider, getBinaryPath: () => { throw new Error('claude not found'); } } as unknown as OrchestratorProvider;
+    expect(await tryStartChatAgent(params, missing, undefined, undefined, null)).toBe(false);
+    expect(registry.setRuntime).not.toHaveBeenCalled();
+  });
+
+  it('closes the chat CLI without an exit broadcast when the mission cannot be sent', async () => {
+    const driver = new FakeChatDriver();
+    const realStart = driver.start.bind(driver);
+    driver.start = async (opts) => {
+      const session = await realStart(opts);
+      session.send = async () => { throw new Error('stdin closed'); };
+      return session;
+    };
+    registerChatDriver(driver);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+    expect(driver.last.closed).toBe(true);
+    expect(registry.setRuntime).toHaveBeenLastCalledWith('agent-1', 'pty');
+    expect(getAgentRuntime('agent-1')).toBeUndefined();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(exitBroadcast.broadcastAgentExit).not.toHaveBeenCalled();
   });
 
   it('starts a chat runtime with the user binary, the Clubhouse MCP bridge and agent env', async () => {

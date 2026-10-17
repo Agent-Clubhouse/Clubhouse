@@ -38,8 +38,12 @@ function useChatRuntimeSettings() {
     let cancelled = false;
     (async () => {
       try {
-        const experimental = await window.clubhouse.app.getExperimentalSettings();
-        if (cancelled || experimental?.chat !== true) return;
+        // Same gate as main: the flag only counts in preview-eligible builds.
+        const [experimental, eligible] = await Promise.all([
+          window.clubhouse.app.getExperimentalSettings(),
+          window.clubhouse.app.isPreviewEligible(),
+        ]);
+        if (cancelled || experimental?.chat !== true || !eligible) return;
         setChatEnabled(true);
         const settings = await window.clubhouse.chat.getRuntimeSettings();
         if (!cancelled) setRuntimeSettings(settings ?? {});

@@ -14,6 +14,9 @@ import { appLog } from '../../log-service';
 import { requireString, optionalString, numberWithDefault } from './validation';
 import { getAgentRuntime } from '../../agent-runtime';
 import { chatEventsToText } from '../../agent-runtime/chat-text';
+import { writeLineThenEnter } from '../../agent-runtime/pty-input';
+import { DEFAULT_PASTE_TIMING } from '../../agent-runtime/pty-runtime';
+import { getProvider } from '../../../orchestrators';
 
 // PTY input helpers moved to agent-runtime/pty-input; re-exported for existing importers.
 export { sleep, writeChunkedBracketedPaste, waitForBufferQuiescence, submitAfterPaste } from '../../agent-runtime/pty-input';
@@ -385,7 +388,13 @@ export function registerAgentTools(): void {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support input` }], isError: true };
         }
         const notice = `[TASK:${taskId}] [FROM:${senderLabel}] File delivered: ${filePath} — read this file for content from ${senderLabel}.`;
-        await runtime.sendMessage(notice, { source: 'mcp', taskId });
+        if (runtime.kind === 'pty') {
+          // Terminals keep the single fixed-delay Enter this tool has always sent.
+          const timing = getProvider(reg.orchestrator)?.getPasteSubmitTiming() ?? DEFAULT_PASTE_TIMING;
+          await writeLineThenEnter(targetId, notice, timing.initialDelayMs);
+        } else {
+          await runtime.sendMessage(notice, { source: 'mcp', taskId });
+        }
 
         return {
           content: [{

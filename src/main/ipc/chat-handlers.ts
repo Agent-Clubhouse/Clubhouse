@@ -5,7 +5,7 @@
  */
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import type { ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
+import type { ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
 import { PERMISSION_LEVELS } from '../../shared/chat';
 import { getAgentRuntime, readChatTranscript, onChatEvent } from '../services/agent-runtime';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
@@ -21,6 +21,9 @@ function requireChatRuntime(agentId: string) {
 }
 
 const DELIVERIES: ReadonlySet<string> = new Set(['auto', 'prompt', 'steer', 'queued']);
+const DRIVER_IDS: ReadonlySet<ChatDriverId> = new Set<ChatDriverId>([
+  'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_acp', 'copilot_sdk', 'acp',
+]);
 
 let unsubscribe: (() => void) | null = null;
 
@@ -93,7 +96,8 @@ export function registerChatHandlers(): void {
       const clean: ChatRuntimeSettings = {};
       for (const [provider, value] of Object.entries(settings)) {
         if (!value || (value.mode !== 'chat' && value.mode !== 'terminal')) continue;
-        clean[provider] = { mode: value.mode, ...(value.driver ? { driver: value.driver } : {}) };
+        const driver = value.driver && DRIVER_IDS.has(value.driver) ? value.driver : undefined;
+        clean[provider] = { mode: value.mode, ...(driver ? { driver } : {}) };
       }
       await chatRuntimeSettings.saveSettings(clean);
     },

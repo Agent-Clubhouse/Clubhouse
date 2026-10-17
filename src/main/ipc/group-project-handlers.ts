@@ -16,6 +16,9 @@ import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, digestS
 import type { DigestSince } from '../../shared/group-project-types';
 import { agentRegistry } from '../services/agent-registry';
 import { getAgentRuntime } from '../services/agent-runtime';
+import { injectPtyText } from '../services/agent-runtime/pty-input';
+import { getProvider } from '../orchestrators';
+import type { PasteSubmitTiming } from '../orchestrators';
 
 function broadcastChanged(): void {
   groupProjectRegistry.list().then((projects) => {
@@ -244,7 +247,13 @@ export function registerGroupProjectHandlers(): void {
 
       const runtime = getAgentRuntime(agentId as string);
       if (!runtime) throw new Error(`Agent runtime "${reg.runtime}" does not support input`);
-      await runtime.sendMessage(message as string, { source: 'group_project' });
+      if (runtime.kind === 'pty') {
+        const timing: PasteSubmitTiming = getProvider(reg.orchestrator)?.getPasteSubmitTiming()
+          ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
+        await injectPtyText(agentId as string, message as string, timing);
+      } else {
+        await runtime.sendMessage(message as string, { source: 'group_project' });
+      }
 
       return true;
     },

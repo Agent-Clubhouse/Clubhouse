@@ -411,8 +411,9 @@ export function AgentSettingsView({ agent }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    window.clubhouse.app.getExperimentalSettings()
-      .then((s) => { if (!cancelled) setChatFlagEnabled(s?.chat === true); })
+    // Same gate as main: the flag only counts in preview-eligible builds.
+    Promise.all([window.clubhouse.app.getExperimentalSettings(), window.clubhouse.app.isPreviewEligible()])
+      .then(([s, eligible]) => { if (!cancelled) setChatFlagEnabled(s?.chat === true && eligible === true); })
       .catch(() => { /* flag stays off */ });
     return () => { cancelled = true; };
   }, []);

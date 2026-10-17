@@ -42,6 +42,8 @@ import {
 import { appendChatEvent, readChatTranscript } from './chat-transcript';
 import { publishChatEvent } from './chat-event-bus';
 import * as permissionQueue from '../annex-permission-queue';
+import { broadcastToAllWindows } from '../../util/ipc-broadcast';
+import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 
 export const DEFAULT_CHAT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -168,6 +170,8 @@ export class ChatAgentRuntime implements AgentRuntime {
           type: 'error',
           data: { code: 'driver_stream_failed', message: err instanceof Error ? err.message : String(err), fatal: true },
         });
+        // Don't leave the CLI running behind a session we're about to end.
+        await session.close().catch((): void => undefined);
       }
     }
     // The stream ends when the CLI process exits. A replaced session (clearContext) is not an end.
@@ -325,6 +329,20 @@ export class ChatAgentRuntime implements AgentRuntime {
     }
   }
 
+  /**
+   * Tear down silently after a failed start: close the CLI, cancel timers and
+   * mirrored permissions, and never call onEnded or emit session_ended, so
+   * the caller can fall back to the terminal on the same agent id.
+   */
+  async abandon(): Promise<void> {
+    this.ended = true;
+    this.clearIdleTimer();
+    this.settleAllPermissions();
+    const session = this.session;
+    this.session = undefined;
+    if (session) await session.close().catch((): void => undefined);
+  }
+
   async stop(): Promise<void> {
     const session = this.session;
     this.session = undefined;
@@ -365,10 +383,11 @@ export class ChatAgentRuntime implements AgentRuntime {
     const pending = this.permissions.get(requestId);
     await session.respondPermission(requestId, optionId, extras);
     const option = pending?.options.find((o) => o.optionId === optionId);
-    this.settlePermission(requestId);
+    const decision = decisionFor(option);
+    this.settlePermission(requestId, decision === 'allow' ? 'allow' : 'deny');
     await this.emit({
       type: 'permission_resolved',
-      data: { requestId, optionId, decision: decisionFor(option), by: 'user' },
+      data: { requestId, optionId, decision, by: 'user' },
     });
     if (this.state === 'waiting_permission' && this.permissions.size === 0) await this.setState('running');
   }
@@ -480,6 +499,16 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.agentId, toolName, input, title, CHAT_PERMISSION_QUEUE_TIMEOUT_MS,
     );
     pending.queueRequestId = requestId;
+    // The desktop prompt is driven by these broadcasts, as for hook-driven requests.
+    broadcastToAllWindows(IPC.AGENT.PERMISSION_PENDING, this.agentId, {
+      requestId,
+      agentId: this.agentId,
+      toolName,
+      toolInput: input,
+      message: title,
+      createdAt: this.now(),
+      timeoutMs: CHAT_PERMISSION_QUEUE_TIMEOUT_MS,
+    });
     void decision.then(async (d) => {
       if (pending.settled || d === 'timeout' || !this.session) return;
       const option = d === 'allow'
@@ -487,6 +516,7 @@ export class ChatAgentRuntime implements AgentRuntime {
         : options.find((o) => o.kind === 'reject_once') ?? options.find((o) => o.kind === 'reject_always') ?? options.find((o) => o.kind === 'cancel_turn');
       if (!option) return;
       pending.settled = true;
+      broadcastToAllWindows(IPC.AGENT.PERMISSION_SETTLED, this.agentId, { requestId, agentId: this.agentId, decision: d });
       try {
         await this.session.respondPermission(chatRequestId, option.optionId);
         this.permissions.delete(chatRequestId);
@@ -503,14 +533,17 @@ export class ChatAgentRuntime implements AgentRuntime {
     });
   }
 
-  private settlePermission(chatRequestId: string): void {
+  /** Withdraw the mirrored queue entry after the request was answered in chat (or the session ended). */
+  private settlePermission(chatRequestId: string, decision: 'allow' | 'deny' | 'ask' = 'ask'): void {
     const pending = this.permissions.get(chatRequestId);
     if (!pending) return;
     pending.settled = true;
     this.permissions.delete(chatRequestId);
     if (pending.queueRequestId) {
-      // Drop the mirrored entry; its decision handler sees `settled` and does nothing.
-      permissionQueue.resolvePermission(pending.queueRequestId, 'deny', { expectedAgentId: this.agentId });
+      permissionQueue.cancelPermission(pending.queueRequestId, 'answered in chat', this.agentId);
+      broadcastToAllWindows(IPC.AGENT.PERMISSION_SETTLED, this.agentId, {
+        requestId: pending.queueRequestId, agentId: this.agentId, decision,
+      });
     }
   }
 

@@ -12,6 +12,8 @@ vi.mock('./chat-transcript', () => ({
   }),
 }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+const broadcasts = vi.hoisted(() => ({ calls: [] as unknown[][] }));
+vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...args: unknown[]) => { broadcasts.calls.push(args); } }));
 
 import { ChatAgentRuntime } from './chat-runtime';
 import { FakeChatDriver } from './fake-chat-driver';
@@ -51,6 +53,7 @@ function makeRuntime(driver: FakeChatDriver, extra: Partial<ConstructorParameter
 const STEERLESS: ChatCapabilities = { ...MINIMAL_CHAT_CAPABILITIES, steer: false, queue: 'client', interrupt: true };
 
 beforeEach(() => {
+  broadcasts.calls.length = 0;
   transcript.length = 0;
   removeAllChatEventListeners();
   permissionQueue.reset();
@@ -334,6 +337,48 @@ describe('ChatAgentRuntime', () => {
     const { runtime } = makeRuntime(driver, { systemPrompt: 'Native.' });
     await runtime.start('hi');
     expect(driver.last.sent[0].content).toEqual([{ type: 'text', text: 'hi' }]);
+  });
+
+  it('broadcasts pending and settled so the desktop prompt shows chat requests', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'permission_request', data: { requestId: 'p9', title: 'Run tests', toolName: 'Bash', options: [{ optionId: 'ok', kind: 'allow_once', label: 'Allow' }] } });
+    await flush();
+    const pendingCall = broadcasts.calls.find((c) => c[0] === 'agent:permission-pending');
+    expect(pendingCall?.[1]).toBe('agent-1');
+    expect(pendingCall?.[2]).toMatchObject({ toolName: 'Bash', message: 'Run tests' });
+
+    await runtime.respondPermission('p9', 'ok');
+    const settled = broadcasts.calls.find((c) => c[0] === 'agent:permission-settled');
+    expect(settled?.[2]).toMatchObject({ decision: 'allow' });
+    expect(permissionQueue.listPendingForAgent('agent-1')).toEqual([]);
+  });
+
+  it('closes the CLI when handling an event throws', async () => {
+    const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', STEERLESS);
+    const { runtime, onEnded } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    await flush();
+    await runtime.sendMessage('queued one', { source: 'user' });
+    driver.last.send = async () => { throw new Error('pipe broke'); };
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    expect(driver.last.closed).toBe(true);
+    expect(onEnded).toHaveBeenCalledWith('process_exit', 0);
+    expect(transcript.some((e) => e.type === 'error' && e.data.code === 'driver_stream_failed')).toBe(true);
+  });
+
+  it('abandons silently after a failed start', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime, onEnded } = makeRuntime(driver);
+    await runtime.start();
+    await runtime.abandon();
+    await flush();
+    expect(driver.last.closed).toBe(true);
+    expect(onEnded).not.toHaveBeenCalled();
+    expect(types()).not.toContain('session_ended');
   });
 
   it('rejects actions once ended', async () => {

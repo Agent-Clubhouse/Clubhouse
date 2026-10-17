@@ -85,7 +85,15 @@ export async function tryStartChatAgent(
     return false;
   }
   if (!provider.getBinaryPath) return false;
-  const binaryPath = provider.getBinaryPath();
+  let binaryPath: string;
+  try {
+    binaryPath = provider.getBinaryPath();
+  } catch (err) {
+    appLog('core:chat', 'warn', 'CLI binary not found for chat; using the terminal', {
+      meta: { agentId: params.agentId, provider: provider.id, error: err instanceof Error ? err.message : String(err) },
+    });
+    return false;
+  }
 
   const nonce = randomUUID();
   agentRegistry.setNonce(params.agentId, nonce);
@@ -171,6 +179,9 @@ export async function tryStartChatAgent(
   try {
     await runtime.start(params.mission);
   } catch (err) {
+    // Close the chat CLI without firing onEnded: the terminal fallback reuses
+    // this agent id, and a late untrack/exit broadcast would hit it.
+    await runtime.abandon();
     unregisterChatRuntime(params.agentId, runtime);
     agentRegistry.setRuntime(params.agentId, 'pty');
     configPipeline.restoreForAgent(params.agentId);

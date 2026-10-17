@@ -47,6 +47,22 @@ describe('chat transcript', () => {
     expect((await readChatTranscript('agent-1')).map((e) => e.seq)).toEqual([1]);
   });
 
+  it('starts a fresh line after a crash-torn last line instead of losing the next event', async () => {
+    fs.mkdirSync(path.dirname(transcriptPath('agent-torn')), { recursive: true });
+    fs.writeFileSync(transcriptPath('agent-torn'), JSON.stringify(ev(1, 's1', 'agent-torn')) + '\n{"v":2,"agentId":"agent-torn","se');
+    await appendChatEvent(ev(2, 's1', 'agent-torn'));
+    await appendChatEvent(ev(3, 's1', 'agent-torn'));
+    expect((await readChatTranscript('agent-torn')).map((e) => e.seq)).toEqual([1, 2, 3]);
+  });
+
+  it('reads a tail from the end of a large transcript', async () => {
+    const big = Array.from({ length: 3000 }, (_, i) => ev(i + 1, 's1', 'agent-big'));
+    fs.mkdirSync(path.dirname(transcriptPath('agent-big')), { recursive: true });
+    fs.writeFileSync(transcriptPath('agent-big'), big.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    const tail = await readChatTranscript('agent-big', { tail: 5 });
+    expect(tail.map((e) => e.seq)).toEqual([2996, 2997, 2998, 2999, 3000]);
+  });
+
   it('never lets an agent id escape the transcript directory', () => {
     const p = transcriptPath('../../etc/passwd');
     expect(path.dirname(p)).toBe(path.join(tmpRoot, 'agent-logs', 'chat'));
