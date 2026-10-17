@@ -71,15 +71,18 @@ export function numberArg(options: { integer?: boolean; min?: number; optional?:
   };
 }
 
-export function arrayArg<T>(itemValidator: ArgValidator<T>, options: { optional: true }): ArgValidator<T[] | undefined>;
-export function arrayArg<T>(itemValidator: ArgValidator<T>, options?: { optional?: false }): ArgValidator<T[]>;
-export function arrayArg<T>(itemValidator: ArgValidator<T>, options: { optional?: boolean } = {}): ArgValidator<T[] | undefined> {
-  const { optional = false } = options;
+export function arrayArg<T>(itemValidator: ArgValidator<T>, options: { optional: true; maxLength?: number }): ArgValidator<T[] | undefined>;
+export function arrayArg<T>(itemValidator: ArgValidator<T>, options?: { optional?: false; maxLength?: number }): ArgValidator<T[]>;
+export function arrayArg<T>(itemValidator: ArgValidator<T>, options: { optional?: boolean; maxLength?: number } = {}): ArgValidator<T[] | undefined> {
+  const { optional = false, maxLength } = options;
 
   return (value, argName) => {
     if (optional && value === undefined) return undefined;
     if (!Array.isArray(value)) {
       fail(argName, `must be an array, received ${describeType(value)}`);
+    }
+    if (maxLength !== undefined && value.length > maxLength) {
+      fail(argName, `must have at most ${maxLength} items, received ${value.length}`);
     }
     return value.map((item, index) => itemValidator(item, `${argName}[${index}]`));
   };
