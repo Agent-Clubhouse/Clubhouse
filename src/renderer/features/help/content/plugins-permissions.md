@@ -18,7 +18,7 @@ Clubhouse enforces a permission system that controls what each plugin can access
 | **projects** | List open projects, get active project info |
 | **commands** | Register and execute commands |
 | **events** | Subscribe to the application event bus |
-| **widgets** | Use shared UI components (AgentTerminal, AgentAvatar, etc.) |
+| **widgets** | Use shared UI components (AgentView, AgentTerminal, AgentAvatar, etc.) |
 | **logging** | Write structured entries to the application log |
 | **process** | Execute allowed CLI commands (requires `allowedCommands` list) |
 | **badges** | Set/clear badge indicators on tabs and rail items |

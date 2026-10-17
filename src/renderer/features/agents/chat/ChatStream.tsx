@@ -120,9 +120,13 @@ export interface ChatStreamProps {
   jump?: StreamJump | null;
   /** Reports whether a jump found its target in the rendered conversation. */
   onJumpResult?: (jump: StreamJump, found: boolean) => void;
+  /** Announce finished replies to screen readers. Off for views that aren't the focused one. */
+  announce?: boolean;
+  /** Shown as "Show earlier" above the first message when earlier history wasn't loaded. */
+  onShowEarlier?: () => void;
 }
 
-export function ChatStream({ state, onOpenSubagent, jump, onJumpResult }: ChatStreamProps) {
+export function ChatStream({ state, onOpenSubagent, jump, onJumpResult, announce = true, onShowEarlier }: ChatStreamProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const { items, subagents, capabilities } = state;
@@ -192,7 +196,17 @@ export function ChatStream({ state, onOpenSubagent, jump, onJumpResult }: ChatSt
   return (
     <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-7 pt-5 pb-2.5" data-testid="chat-stream">
       <div className="mx-auto w-full max-w-[740px] flex flex-col gap-2.5 min-h-full justify-end">
-        <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="chat-live-region">{announcement}</div>
+        {announce && <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="chat-live-region">{announcement}</div>}
+        {onShowEarlier && (
+          <button
+            type="button"
+            onClick={() => { pinned.current = false; onShowEarlier(); }}
+            className="self-center h-7 px-3 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px]"
+            data-testid="chat-show-earlier"
+          >
+            Show earlier
+          </button>
+        )}
         {blocks.length === 0 && (
           <div className="text-center text-[13px] text-ctp-overlay0 py-10">No messages yet. Send one to start.</div>
         )}

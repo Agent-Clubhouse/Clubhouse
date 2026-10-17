@@ -127,6 +127,9 @@ interface ChatHeaderProps {
   providerName: string;
   onSwitchToTerminal?: () => void;
   switching?: boolean;
+  /** Toggle for the Changes panel; omitted hides the button. */
+  onToggleChanges?: () => void;
+  changesOpen?: boolean;
   /** Toggle for the agent map, with its subagent count; omitted hides the button. */
   onToggleAgentMap?: () => void;
   agentMapOpen?: boolean;
@@ -136,7 +139,7 @@ interface ChatHeaderProps {
   agentMapToggleId?: string;
 }
 
-export function ChatHeader({ agent, state, providerName, onSwitchToTerminal, switching, onToggleAgentMap, agentMapOpen, subagentCount, agentMapPanelId, agentMapToggleId }: ChatHeaderProps) {
+export function ChatHeader({ agent, state, providerName, onSwitchToTerminal, switching, onToggleChanges, changesOpen, onToggleAgentMap, agentMapOpen, subagentCount, agentMapPanelId, agentMapToggleId }: ChatHeaderProps) {
   const caps = state.capabilities;
   const limits = caps?.limits ? state.usage.limits : [];
   const context = caps && caps.usage !== 'none' ? state.usage.context : null;
@@ -158,6 +161,17 @@ export function ChatHeader({ agent, state, providerName, onSwitchToTerminal, swi
       <div className="ml-auto flex items-center gap-2.5">
         {limits.map((l) => <LimitMeter key={l.window} limit={l} />)}
         {context && context.size > 0 && <ContextRing used={context.used} size={context.size} />}
+        {onToggleChanges && (
+          <button
+            type="button"
+            onClick={onToggleChanges}
+            aria-pressed={!!changesOpen}
+            className={`h-[26px] px-2.5 rounded-md text-[11.5px] ${changesOpen ? 'bg-surface-1 text-ctp-text' : 'bg-surface-0 text-ctp-overlay1 hover:text-ctp-text'}`}
+            data-testid="chat-changes-toggle"
+          >
+            Changes
+          </button>
+        )}
         {onToggleAgentMap && (
           <button
             type="button"
