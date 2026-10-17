@@ -29,6 +29,62 @@ export { _resetEnforcedViolations } from './plugin-api-shared';
 export { computeDataDir, computeWorkspaceRoot } from './plugin-api-files';
 export { _resetBadgeStoreCache } from './plugin-api-badges';
 
+// ── Plugin MCP tool lifetime ───────────────────────────────────────────
+//
+// Main keeps one tool set per plugin, but the loader activates one context
+// per plugin and project. Tools are removed when the last contributing
+// context for a plugin deactivates, not when any one of them does.
+
+/** Contexts that contributed MCP tools, per plugin. */
+const mcpContributors = new Map<string, Set<PluginContext>>();
+/** Live onToolCall handlers, per plugin, across its contexts. */
+const mcpHandlerCounts = new Map<string, number>();
+let mcpFallbackInstalled = false;
+
+function trackMcpContributor(ctx: PluginContext): void {
+  let contexts = mcpContributors.get(ctx.pluginId);
+  if (!contexts) {
+    contexts = new Set();
+    mcpContributors.set(ctx.pluginId, contexts);
+  }
+  if (contexts.has(ctx)) return;
+  contexts.add(ctx);
+  ensureMcpFallbackResponder();
+  ctx.subscriptions.push({
+    dispose() {
+      const current = mcpContributors.get(ctx.pluginId);
+      if (!current?.delete(ctx) || current.size > 0) return;
+      mcpContributors.delete(ctx.pluginId);
+      void window.clubhouse.pluginMcp.removeTools(ctx.pluginId).catch((): undefined => undefined);
+    },
+  });
+}
+
+/**
+ * Answers, with an error, any tool call for a plugin that has no live
+ * onToolCall handler: a call that arrives after its plugin deactivated, but
+ * before main has removed the tools, would otherwise wait out main's timeout.
+ * Installed once, for the renderer's lifetime.
+ */
+function ensureMcpFallbackResponder(): void {
+  if (mcpFallbackInstalled) return;
+  mcpFallbackInstalled = true;
+  window.clubhouse.pluginMcp.onToolCall((data) => {
+    if ((mcpHandlerCounts.get(data.pluginId) ?? 0) > 0) return;
+    window.clubhouse.pluginMcp.sendToolResult(data.callId, {
+      content: [{ type: 'text', text: `Plugin ${data.pluginId} has no active tool handler` }],
+      isError: true,
+    });
+  });
+}
+
+/** For tests: forget MCP tool lifetime state. */
+export function _resetPluginMcpStateForTests(): void {
+  mcpContributors.clear();
+  mcpHandlerCounts.clear();
+  mcpFallbackInstalled = false;
+}
+
 export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, manifest?: PluginManifest): PluginAPI {
   // Ref used to pass the fully-constructed API to createCanvasAPI without a circular reference.
   // By the time a plugin calls api.canvas.registerWidgetType(), api is already assigned.
@@ -50,9 +106,6 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     projectId: ctx.projectId,
     projectPath: ctx.projectPath,
   };
-
-  /** Whether this plugin's MCP tools get removed when it deactivates (set by mcp.contributeTools). */
-  let toolsCleanupRegistered = false;
 
   const api: PluginAPI = {
     project: gated(
@@ -150,17 +203,7 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       ctx.pluginId, manifest, () => ({
         async contributeTools(tools) {
           await window.clubhouse.pluginMcp.contributeTools(ctx.pluginId, tools);
-          // Tools outlive the plugin's onToolCall handler otherwise: once it
-          // deactivates, calls would wait out the timeout in main.
-          if (!toolsCleanupRegistered) {
-            toolsCleanupRegistered = true;
-            ctx.subscriptions.push({
-              dispose() {
-                toolsCleanupRegistered = false;
-                void window.clubhouse.pluginMcp.removeTools(ctx.pluginId).catch((): undefined => undefined);
-              },
-            });
-          }
+          trackMcpContributor(ctx);
         },
         async removeTools() {
           await window.clubhouse.pluginMcp.removeTools(ctx.pluginId);
@@ -169,6 +212,8 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
           return window.clubhouse.pluginMcp.listTools(ctx.pluginId);
         },
         onToolCall(handler) {
+          ensureMcpFallbackResponder();
+          mcpHandlerCounts.set(ctx.pluginId, (mcpHandlerCounts.get(ctx.pluginId) ?? 0) + 1);
           const cleanup = window.clubhouse.pluginMcp.onToolCall(async (data) => {
             if (data.pluginId !== ctx.pluginId) return;
             try {
@@ -181,7 +226,17 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
               });
             }
           });
-          const disposable = { dispose() { cleanup(); } };
+          let disposed = false;
+          const disposable = {
+            dispose() {
+              if (disposed) return;
+              disposed = true;
+              cleanup();
+              const left = (mcpHandlerCounts.get(ctx.pluginId) ?? 1) - 1;
+              if (left > 0) mcpHandlerCounts.set(ctx.pluginId, left);
+              else mcpHandlerCounts.delete(ctx.pluginId);
+            },
+          };
           ctx.subscriptions.push(disposable);
           return disposable;
         },

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act } from '@testing-library/react';
-import { createPluginAPI, _resetEnforcedViolations, computeDataDir } from './plugin-api-factory';
+import { _resetPluginMcpStateForTests, createPluginAPI, _resetEnforcedViolations, computeDataDir } from './plugin-api-factory';
 import {
   installMockWindowClubhouse,
   mockAgent,
@@ -4125,46 +4125,103 @@ describe('plugin-api-factory', () => {
     });
   });
 
-  describe('mcp tool cleanup on deactivation', () => {
+  describe('mcp tool lifetime', () => {
+    type ToolCall = { callId: string; pluginId: string; toolName: string; args: Record<string, unknown> };
     const bridge = window.clubhouse as unknown as { pluginMcp?: unknown };
     let original: unknown;
-    let pluginMcp: { contributeTools: ReturnType<typeof vi.fn>; removeTools: ReturnType<typeof vi.fn> };
+    let listeners: Array<(data: ToolCall) => void>;
+    let pluginMcp: {
+      contributeTools: ReturnType<typeof vi.fn>;
+      removeTools: ReturnType<typeof vi.fn>;
+      onToolCall: ReturnType<typeof vi.fn>;
+      sendToolResult: ReturnType<typeof vi.fn>;
+    };
 
     beforeEach(() => {
+      _resetPluginMcpStateForTests();
       original = bridge.pluginMcp;
-      pluginMcp = { contributeTools: vi.fn(async () => undefined), removeTools: vi.fn(async () => undefined) };
+      listeners = [];
+      pluginMcp = {
+        contributeTools: vi.fn(async () => undefined),
+        removeTools: vi.fn(async () => undefined),
+        onToolCall: vi.fn((listener: (data: ToolCall) => void) => {
+          listeners.push(listener);
+          return () => { listeners = listeners.filter((l) => l !== listener); };
+        }),
+        sendToolResult: vi.fn(),
+      };
       bridge.pluginMcp = pluginMcp;
     });
 
     afterEach(() => {
       bridge.pluginMcp = original;
+      _resetPluginMcpStateForTests();
     });
 
     const mcpManifest = () => makeAllPermsManifest({ permissions: ['mcp.tools'] as PluginManifest['permissions'] });
     const tool = { name: 't', description: 'd', inputSchema: { type: 'object' } };
+    const dispose = (ctx: PluginContext) => { for (const sub of ctx.subscriptions) sub.dispose(); };
+    const deliver = async (call: ToolCall) => { for (const l of [...listeners]) await l(call); };
 
     it('removes the contributed tools once when the plugin deactivates', async () => {
       const ctx = makeCtx();
       const api = createPluginAPI(ctx, undefined, mcpManifest());
-      const afterCreate = ctx.subscriptions.length;
 
       await api.mcp.contributeTools([tool]);
       await api.mcp.contributeTools([tool]);
       expect(pluginMcp.contributeTools).toHaveBeenCalledTimes(2);
-      expect(ctx.subscriptions.length).toBe(afterCreate + 1); // one cleanup, however often tools are contributed
 
-      for (const sub of ctx.subscriptions) sub.dispose();
+      dispose(ctx);
       expect(pluginMcp.removeTools).toHaveBeenCalledTimes(1);
       expect(pluginMcp.removeTools).toHaveBeenCalledWith(ctx.pluginId);
+    });
+
+    it('keeps the tools while another context of the same plugin is still active', async () => {
+      const a = makeCtx({ projectId: 'proj-a' });
+      const b = makeCtx({ projectId: 'proj-b' });
+      await createPluginAPI(a, undefined, mcpManifest()).mcp.contributeTools([tool]);
+      await createPluginAPI(b, undefined, mcpManifest()).mcp.contributeTools([tool]);
+
+      dispose(b); // closing project B
+      expect(pluginMcp.removeTools).not.toHaveBeenCalled();
+
+      dispose(a); // the last context goes
+      expect(pluginMcp.removeTools).toHaveBeenCalledTimes(1);
     });
 
     it('registers no cleanup for a plugin that never contributes tools', () => {
       const ctx = makeCtx();
       createPluginAPI(ctx, undefined, mcpManifest());
-      const afterCreate = ctx.subscriptions.length;
-      for (const sub of ctx.subscriptions) sub.dispose();
+      dispose(ctx);
       expect(pluginMcp.removeTools).not.toHaveBeenCalled();
-      expect(ctx.subscriptions.length).toBe(afterCreate);
+    });
+
+    it('answers a call that arrives after the plugin deactivated, instead of leaving it to time out', async () => {
+      const ctx = makeCtx();
+      const api = createPluginAPI(ctx, undefined, mcpManifest());
+      await api.mcp.contributeTools([tool]);
+      api.mcp.onToolCall(async () => ({ content: [{ type: 'text', text: 'live' }] }));
+
+      dispose(ctx); // handler gone; main has not processed removeTools yet
+      await deliver({ callId: 'late', pluginId: ctx.pluginId, toolName: 't', args: {} });
+
+      expect(pluginMcp.sendToolResult).toHaveBeenCalledTimes(1);
+      expect(pluginMcp.sendToolResult).toHaveBeenCalledWith('late', {
+        content: [{ type: 'text', text: `Plugin ${ctx.pluginId} has no active tool handler` }],
+        isError: true,
+      });
+    });
+
+    it('leaves calls to the live handler alone', async () => {
+      const ctx = makeCtx();
+      const api = createPluginAPI(ctx, undefined, mcpManifest());
+      await api.mcp.contributeTools([tool]);
+      api.mcp.onToolCall(async () => ({ content: [{ type: 'text', text: 'live' }] }));
+
+      await deliver({ callId: 'c1', pluginId: ctx.pluginId, toolName: 't', args: {} });
+
+      expect(pluginMcp.sendToolResult).toHaveBeenCalledTimes(1);
+      expect(pluginMcp.sendToolResult).toHaveBeenCalledWith('c1', { content: [{ type: 'text', text: 'live' }] });
     });
   });
 });

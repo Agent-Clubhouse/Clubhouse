@@ -673,8 +673,15 @@ describe('preload ↔ main composition', () => {
 
   it('the flag-gated MCP binding channels are all used by the preload, and register once MCP is enabled', () => {
     for (const ch of MCP_FLAG_GATED_INVOKES) expect(preloadInvoked.has(ch)).toBe(true);
-    vi.mocked(isMcpEnabledForAny).mockReturnValue(true);
-    registerMcpBindingHandlers();
+    const flag = vi.mocked(isMcpEnabledForAny);
+    const realFlag = flag.getMockImplementation();
+    flag.mockReturnValue(true);
+    try {
+      registerMcpBindingHandlers();
+    } finally {
+      // Scoped to this test, so no other test depends on run order.
+      flag.mockImplementation(realFlag!);
+    }
     const missing = [...MCP_FLAG_GATED_INVOKES].filter((ch) => !everHandled.has(ch));
     expect(missing).toEqual([]);
   });

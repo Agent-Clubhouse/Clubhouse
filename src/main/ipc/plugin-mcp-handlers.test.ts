@@ -4,6 +4,8 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn(), removeHandler: vi.fn(), removeListener: vi.fn() },
 }));
 
+vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
+
 vi.mock('../services/clubhouse-mcp/plugin-tool-registry', () => ({
   registerPluginTools: vi.fn(),
   removePluginTools: vi.fn(),
@@ -102,5 +104,17 @@ describe('registerPluginMcpHandlers registration', () => {
     (listener as (e: unknown, d: unknown) => void)({}, { callId: 'ptc_1', result });
 
     expect(resolvePluginToolCall).toHaveBeenCalledWith('ptc_1', result);
+  });
+
+  it.each([
+    ['null', null],
+    ['a missing callId', { result: { content: [] } }],
+    ['a result without content', { callId: 'c1', result: {} }],
+  ])('drops a malformed tool result (%s) without throwing', (_label, payload) => {
+    registerPluginMcpHandlers();
+    const [[, listener]] = vi.mocked(ipcMain.on).mock.calls;
+
+    expect(() => (listener as (e: unknown, d: unknown) => void)({}, payload)).not.toThrow();
+    expect(resolvePluginToolCall).not.toHaveBeenCalled();
   });
 });

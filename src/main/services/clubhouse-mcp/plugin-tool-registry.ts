@@ -7,6 +7,8 @@
  * Tool naming: plugin__<sanitized_plugin_id>__<tool_name>
  */
 
+import { randomUUID } from 'crypto';
+import { BrowserWindow } from 'electron';
 import type { McpToolDefinition, McpToolResult } from './types';
 import { registerToolTemplate, unregisterToolTemplate, sanitizeId } from './tool-registry';
 import { appLog } from '../log-service';
@@ -24,6 +26,7 @@ const pluginTools = new Map<string, PluginToolEntry[]>();
 
 /** Pending tool call resolvers — keyed by callId */
 const pendingCalls = new Map<string, {
+  pluginId: string;
   resolve: (result: McpToolResult) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -31,8 +34,6 @@ const pendingCalls = new Map<string, {
 
 /** Default timeout for plugin tool calls (30 seconds). */
 const TOOL_CALL_TIMEOUT_MS = 30_000;
-
-let callIdCounter = 0;
 
 /**
  * Register tools contributed by a plugin.
@@ -89,6 +90,18 @@ export function registerPluginTools(
  * Remove all tools contributed by a plugin.
  */
 export function removePluginTools(pluginId: string): void {
+  // Calls already sent to the plugin will never be answered once its tools
+  // are gone: settle them now instead of letting each wait out the timeout.
+  for (const [callId, pending] of pendingCalls) {
+    if (pending.pluginId !== pluginId) continue;
+    clearTimeout(pending.timer);
+    pendingCalls.delete(callId);
+    pending.resolve({
+      content: [{ type: 'text', text: `Plugin ${pluginId} was removed before answering the tool call` }],
+      isError: true,
+    });
+  }
+
   const existing = pluginTools.get(pluginId);
   if (existing) {
     for (const entry of existing) {
@@ -116,7 +129,7 @@ async function invokePluginToolHandler(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<McpToolResult> {
-  const callId = `ptc_${++callIdCounter}_${Date.now()}`;
+  const callId = randomUUID();
 
   return new Promise<McpToolResult>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -127,10 +140,9 @@ async function invokePluginToolHandler(
       });
     }, TOOL_CALL_TIMEOUT_MS);
 
-    pendingCalls.set(callId, { resolve, reject, timer });
+    pendingCalls.set(callId, { pluginId, resolve, reject, timer });
 
     // Send IPC to renderer — the renderer bridge will route to the plugin
-    const { BrowserWindow } = require('electron');
     const windows = BrowserWindow.getAllWindows();
     if (windows.length > 0) {
       windows[0].webContents.send(IPC.PLUGIN_MCP.TOOL_CALL, {
@@ -173,5 +185,4 @@ export function _resetForTesting(): void {
     clearTimeout(pending.timer);
   }
   pendingCalls.clear();
-  callIdCounter = 0;
 }

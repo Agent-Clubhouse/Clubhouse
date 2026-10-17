@@ -11,6 +11,7 @@ import {
   resolvePluginToolCall,
 } from '../services/clubhouse-mcp/plugin-tool-registry';
 import { withValidatedArgs, stringArg, arrayArg, objectArg } from './validation';
+import { appLog } from '../services/log-service';
 
 type PluginToolDef = { name: string; description: string; inputSchema: Record<string, unknown> };
 
@@ -35,9 +36,30 @@ function pluginToolArrayArg(): (value: unknown, argName: string) => PluginToolDe
 
 type ToolResultMessage = { callId: string; result: { content: Array<{ type: 'text'; text: string }>; isError?: boolean } };
 
-// Renderer sends back the result of a plugin tool call
-function onToolResult(_event: Electron.IpcMainEvent, data: ToolResultMessage): void {
-  resolvePluginToolCall(data.callId, data.result);
+const toolResultArg = objectArg<ToolResultMessage>({
+  validate: (msg, argName) => {
+    if (typeof msg.callId !== 'string' || !msg.callId) throw new Error(`${argName}.callId must be a non-empty string`);
+    const result = msg.result as unknown;
+    if (!result || typeof result !== 'object' || !Array.isArray((result as { content?: unknown }).content)) {
+      throw new Error(`${argName}.result.content must be an array`);
+    }
+  },
+});
+
+// Renderer sends back the result of a plugin tool call. A send has no reply
+// to carry an error, and a throw here would surface as an uncaught exception
+// in main, so a malformed message is logged and dropped.
+function onToolResult(_event: Electron.IpcMainEvent, data: unknown): void {
+  let message: ToolResultMessage;
+  try {
+    message = toolResultArg(data, 'toolResult');
+  } catch (err) {
+    appLog('core:mcp', 'warn', 'Ignoring malformed plugin tool result', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+    return;
+  }
+  resolvePluginToolCall(message.callId, message.result);
 }
 
 /**

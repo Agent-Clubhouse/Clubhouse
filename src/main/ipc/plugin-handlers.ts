@@ -172,11 +172,11 @@ export function registerPluginHandlers(): void {
   }));
 
   ipcMain.handle(IPC.PLUGIN.UNINSTALL, withValidatedArgs([stringArg()], async (_event, pluginId: string) => {
+    // First, so a failed uninstall can't leave the plugin's MCP tools listed
+    // for agents with no handler left to answer them.
+    removePluginTools(pluginId);
     await pluginDiscovery.uninstallPlugin(pluginId);
     pluginManifestRegistry.unregisterManifest(pluginId);
-    // Its MCP tools would otherwise stay listed for agents, and every call
-    // would wait out the tool-call timeout with no handler left to answer.
-    removePluginTools(pluginId);
   }));
 
   ipcMain.handle(IPC.PLUGIN.LIST_PROJECT_INJECTIONS, withValidatedArgs([stringArg(), stringArg()], async (_event, pluginId: string, projectPath: string) => {
