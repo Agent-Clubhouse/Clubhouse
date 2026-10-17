@@ -32,7 +32,7 @@ const SMOKE_ENTRY = './src/main/chat/claude/__fixtures__/sdk-bundle-smoke.ts';
 const FAKE_CLAUDE = path.join(root, 'src/main/chat/claude/__fixtures__/fake-claude.mjs');
 
 /** Load the TypeScript webpack config with a minimal transpile-only hook. */
-function loadMainConfig() {
+export function loadMainConfig() {
   const ts = require('typescript');
   const previous = require.extensions['.ts'];
   require.extensions['.ts'] = (module, filename) => {
@@ -51,7 +51,7 @@ function loadMainConfig() {
   }
 }
 
-function build(config) {
+export function build(config) {
   const webpack = require('webpack');
   return new Promise((resolve, reject) => {
     webpack(config, (err, stats) => {

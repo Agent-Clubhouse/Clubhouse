@@ -17,6 +17,7 @@ describe('registerBuiltinChatDrivers', () => {
       'claude-code:claude_stream_json',
       'codex-cli:codex_app_server',
       'copilot-cli:copilot_acp',
+      'copilot-cli:copilot_sdk',
     ]);
     expect(resolveChatDriver('claude-code')?.id).toBe('claude_agent_sdk');
     expect(resolveChatDriver('claude-code', 'claude_stream_json')?.id).toBe('claude_stream_json');
@@ -40,8 +41,8 @@ describe('registerBuiltinChatDrivers', () => {
   it('registers copilot_acp for the Copilot CLI', () => {
     registerBuiltinChatDrivers();
     expect(resolveChatDriver('copilot-cli')?.id).toBe('copilot_acp');
-    // No Copilot SDK driver registered yet, so asking for it falls back to ACP.
-    expect(resolveChatDriver('copilot-cli', 'copilot_sdk')?.id).toBe('copilot_acp');
+    // ACP stays the default; the SDK driver runs only when a setting asks for it.
+    expect(resolveChatDriver('copilot-cli', 'copilot_sdk')?.id).toBe('copilot_sdk');
   });
 
   it('unregisters what it registered', () => {
