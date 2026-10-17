@@ -75,17 +75,25 @@ export function ChromeBody() {
 
   useEffect(() => syncProjectScopeWithActiveAgent(), []);
 
-  // The New agent page covers the pane until something else is opened: another
-  // tab, project, agent or host (#2031). Changes the page makes itself while
-  // busy (adding a project, the creating placeholder) become the new baseline.
-  const newAgentBusy = useChromeStore((s) => s.newAgentBusy);
-  const navKey = `${explorerTab}|${activeProjectId}|${activeAgentId}|${activeHostId}`;
-  const openedAt = useRef<string | null>(null);
+  // The New agent page covers the pane until the user opens something else:
+  // another tab, project, agent or host (#2031), from the sidebar, the palette
+  // or a shortcut. The one exception is a selection the page makes itself, the
+  // project it just added or the agent it is creating: one that didn't exist
+  // when it went busy. That becomes the new baseline.
+  const knownIds = useChromeStore((s) => s.newAgentKnownIds);
+  const opened = useRef<{ tab: string; project: string | null; agent: string | null; host: string | null } | null>(null);
   useEffect(() => {
-    if (!newAgent) { openedAt.current = null; return; }
-    if (openedAt.current === null || newAgentBusy) openedAt.current = navKey;
-    else if (openedAt.current !== navKey) useChromeStore.getState().closeNewAgent();
-  }, [newAgent, newAgentBusy, navKey]);
+    if (!newAgent) { opened.current = null; return; }
+    const now = { tab: explorerTab, project: activeProjectId, agent: activeAgentId, host: activeHostId };
+    const base = opened.current;
+    if (!base) { opened.current = now; return; }
+    if (base.tab === now.tab && base.project === now.project && base.agent === now.agent && base.host === now.host) return;
+    const own = !!knownIds && base.tab === now.tab && base.host === now.host
+      && (now.project === base.project || (!!now.project && !knownIds.projectIds.includes(now.project)))
+      && (now.agent === base.agent || now.agent === null || !knownIds.agentIds.includes(now.agent));
+    if (own) opened.current = now;
+    else useChromeStore.getState().closeNewAgent();
+  }, [newAgent, knownIds, explorerTab, activeProjectId, activeAgentId, activeHostId]);
   const showNewAgent = !!newAgent && !activeHostId;
   useEffect(() => syncProjectActivityWithAgents(), []);
 

@@ -71,6 +71,14 @@ describe('openNewAgentPage', () => {
     expect(useUIStore.getState().quickAgentDialogOpen).toBe(false);
   });
 
+  it('returns false with no projects, even in the new shell', () => {
+    useChromeFlagStore.setState({ enabled: true });
+    useProjectStore.setState({ projects: [], activeProjectId: null });
+    expect(openNewAgentPage('durable', undefined, { onClosed: () => {} })).toBe(false);
+    expect(useChromeStore.getState().newAgent).toBeNull();
+    expect(useUIStore.getState().quickAgentDialogOpen).toBe(false);
+  });
+
   it('tells the previous opener nothing was made when a new open replaces it', () => {
     useChromeFlagStore.setState({ enabled: true });
     const onClosed = vi.fn();

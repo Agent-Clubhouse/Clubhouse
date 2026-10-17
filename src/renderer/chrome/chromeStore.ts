@@ -61,14 +61,39 @@ export interface NewAgentRequest extends NewAgentOptions {
   seq: number;
 }
 
-/** What an opener of the New agent page can ask for (#2031; canvas uses all three). */
+/**
+ * What an opener of the New agent page can ask for (#2031; canvas uses all three).
+ *
+ * Contract: `onClosed` fires exactly once, after any creation in flight has
+ * settled, with the new agent's id or null. `onCreated`, when the agent was
+ * made, fires just before it. Leaving the page while it is creating doesn't
+ * cancel the creation; the opener still hears how it ended.
+ */
 export interface NewAgentOptions {
-  /** Called with the new agent's id once it exists. Not called on cancel or failure. */
+  /** Called with the new agent's id once it exists, before onClosed. Not called on cancel or failure. */
   onCreated?: (agentId: string) => void;
-  /** Called once when the page goes away: with the new agent's id, or null if nothing was made. */
+  /** Called once when the page is gone and nothing is in flight: with the new agent's id, or null if nothing was made. */
   onClosed?: (createdAgentId: string | null) => void;
   /** After creating, stay on the view underneath instead of opening the agent. */
   stayInView?: boolean;
+}
+
+/** Pages closed from outside while creating: their onClosed waits for settleNewAgent. */
+const unsettled = new WeakSet<NewAgentRequest>();
+
+function endNewAgent(request: NewAgentRequest, inFlight: boolean, createdAgentId: string | null): void {
+  if (inFlight) unsettled.add(request);
+  else request.onClosed?.(createdAgentId);
+}
+
+/**
+ * A New agent page that was closed or replaced while creating reports how the
+ * creation ended. A no-op for a page that is still open or already settled.
+ */
+export function settleNewAgent(request: NewAgentRequest, createdAgentId: string | null): void {
+  if (!unsettled.delete(request)) return;
+  if (createdAgentId) request.onCreated?.(createdAgentId);
+  request.onClosed?.(createdAgentId);
 }
 
 export interface ChromeState {
@@ -83,12 +108,21 @@ export interface ChromeState {
   setTitleTabs: (tabs: Array<{ id: string; disabled?: boolean }>) => void;
   /** The New agent page in the pane, while it is open. Not persisted. */
   newAgent: NewAgentRequest | null;
-  /** The page is creating an agent: selection changes it causes (adding a project, the creating placeholder) don't close it. */
+  /** The page is creating an agent or adding a project. */
   newAgentBusy: boolean;
+  /**
+   * Project and agent ids that existed when the page last went busy. Selecting
+   * one that didn't (the project it added, its creating placeholder) is the
+   * page's own doing and doesn't close it; anything else does (ChromeBody).
+   */
+  newAgentKnownIds: { projectIds: string[]; agentIds: string[] } | null;
   openNewAgent: (kind: NewAgentRequest['kind'], projectId?: string, options?: NewAgentOptions) => void;
-  /** Close the page; `createdAgentId` is passed to the opener's onClosed. */
+  /**
+   * Close the page. From the page itself, `createdAgentId` goes to onClosed.
+   * Closed from outside while busy, onClosed waits for settleNewAgent.
+   */
   closeNewAgent: (createdAgentId?: string | null) => void;
-  setNewAgentBusy: (busy: boolean) => void;
+  setNewAgentBusy: (busy: boolean, known?: { projectIds: string[]; agentIds: string[] }) => void;
   /**
    * The latest request to open an app view (Canvas, Review) with options for
    * that visit, such as Review's "Needs you only" from Needs you. The view reads
@@ -263,19 +297,25 @@ export const useChromeStore = create<ChromeState>((set, get) => {
 
     newAgent: null,
     newAgentBusy: false,
+    newAgentKnownIds: null,
     openNewAgent: (kind, projectId, options = {}) => {
       const previous = get().newAgent;
-      set({ newAgent: { ...options, kind, projectId, seq: (previous?.seq ?? 0) + 1 }, newAgentBusy: false });
-      // A new open replaces the one showing, which ends with nothing made.
-      previous?.onClosed?.(null);
+      const previousBusy = get().newAgentBusy;
+      set({ newAgent: { ...options, kind, projectId, seq: (previous?.seq ?? 0) + 1 }, newAgentBusy: false, newAgentKnownIds: null });
+      // A new open replaces the one showing; it ends now, or when its creation settles.
+      if (previous) endNewAgent(previous, previousBusy, null);
     },
     closeNewAgent: (createdAgentId = null) => {
       const request = get().newAgent;
       if (!request) return;
-      set({ newAgent: null, newAgentBusy: false });
-      request.onClosed?.(createdAgentId);
+      const busy = get().newAgentBusy;
+      set({ newAgent: null, newAgentBusy: false, newAgentKnownIds: null });
+      endNewAgent(request, busy && createdAgentId === null, createdAgentId);
     },
-    setNewAgentBusy: (busy) => { if (get().newAgentBusy !== busy) set({ newAgentBusy: busy }); },
+    setNewAgentBusy: (busy, known) => {
+      if (busy && known) set({ newAgentBusy: true, newAgentKnownIds: known });
+      else if (get().newAgentBusy !== busy) set({ newAgentBusy: busy });
+    },
     appLaunch: null,
     launchApp: (id, params = {}) => set({ appLaunch: { id, params, seq: (get().appLaunch?.seq ?? 0) + 1 } }),
     appViewAgentId: null,

@@ -13,7 +13,7 @@ import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
 import { Tooltip } from '../../components/Tooltip';
 import { createDurableAgent } from '../../features/agents/create-agent';
-import { useChromeStore, type NewAgentRequest } from '../chromeStore';
+import { useChromeStore, settleNewAgent, type NewAgentRequest } from '../chromeStore';
 import { useChromeDialogStore } from '../sidebar/ChromeAgentDialogs';
 import { openStartPage } from '../startPage';
 import { ProjectPicker } from './ProjectPicker';
@@ -158,16 +158,26 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     ? !!name.trim() && isGit !== null
     : !!mission.trim() && (model !== 'custom' || !!customModel.trim()));
 
-  // The page stays up, busy, until the agent exists; a failure is shown here with the form intact.
+  // The page stays up, busy, until the agent exists; a failure is shown here
+  // with the form intact. If the user left (or another New agent replaced this
+  // one) meanwhile, only the opener hears how it ended: no navigation, and the
+  // page now showing is left alone.
+  const stillOpen = () => useChromeStore.getState().newAgent === request;
+  const goBusy = () => setBusy(true, {
+    projectIds: useProjectStore.getState().projects.map((p) => p.id),
+    agentIds: Object.keys(useAgentStore.getState().agents),
+  });
   const finish = (projectIdDone: string, agentId: string) => {
-    close(agentId);
+    if (!stillOpen()) { settleNewAgent(request, agentId); return; }
     request.onCreated?.(agentId);
+    close(agentId);
     if (!request.stayInView) {
       openStartPage(projectIdDone);
       selectAgent(projectIdDone, agentId);
     }
   };
   const failed = (message: string) => {
+    if (!stillOpen()) { settleNewAgent(request, null); return; }
     setBusy(false);
     setError(message);
   };
@@ -175,7 +185,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const submit = () => {
     if (!project || !canSubmit) return;
     setError(null);
-    setBusy(true);
+    goBusy();
     const target = project;
     if (durable) {
       reportChromeFeature('new_agent_create');
@@ -221,13 +231,13 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     }
   };
 
-  // Adding a project makes it active; busy keeps that from closing the page.
+  // Adding a project makes it active; that selection is the page's own and doesn't close it.
   const addProject = () => {
-    setBusy(true);
+    goBusy();
     pickAndAddProject()
-      .then((added) => { if (added) setProjectId(added.id); })
+      .then((added) => { if (added && stillOpen()) setProjectId(added.id); })
       .catch((err) => reportChromeActionFailed('add_project', err))
-      .finally(() => setBusy(false));
+      .finally(() => { if (stillOpen()) setBusy(false); else settleNewAgent(request, null); });
   };
 
   const openTemplates = () => {

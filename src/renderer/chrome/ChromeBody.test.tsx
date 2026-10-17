@@ -25,7 +25,7 @@ beforeEach(() => {
     activeAgentId: 'a1',
   });
   useQuickAgentStore.setState({ selectedCompletedId: null });
-  useChromeStore.setState({ projectScopeId: null, newAgent: null, newAgentBusy: false });
+  useChromeStore.setState({ projectScopeId: null, newAgent: null, newAgentBusy: false, newAgentKnownIds: null });
 });
 
 afterEach(() => useChromeFlagStore.setState({ enabled: false }));
@@ -41,15 +41,44 @@ describe('ChromeBody', () => {
     expect(screen.queryByTestId('new-agent-page')).toBeNull();
   });
 
-  it('keeps the New agent page through selection changes it makes while busy', () => {
+  const goBusy = () => useChromeStore.getState().setNewAgentBusy(true, {
+    projectIds: useProjectStore.getState().projects.map((p) => p.id),
+    agentIds: Object.keys(useAgentStore.getState().agents),
+  });
+
+  it('keeps the New agent page through its own creating placeholder', () => {
     render(<ChromeBody />);
-    act(() => { useChromeStore.getState().openNewAgent('durable'); useChromeStore.getState().setNewAgentBusy(true); });
-    // Adding a project activates it; the creating placeholder becomes the active agent.
-    act(() => useProjectStore.setState({ activeProjectId: 'p1' }));
-    act(() => useAgentStore.setState({ activeAgentId: 'tmp' }));
-    act(() => useChromeStore.getState().setNewAgentBusy(false));
+    act(() => { useChromeStore.getState().openNewAgent('durable'); goBusy(); });
+    act(() => useAgentStore.setState({ activeAgentId: 'tmp-creating' }));
     expect(useChromeStore.getState().newAgent).not.toBeNull();
     act(() => useUIStore.setState({ explorerTab: 'help' }));
+    expect(useChromeStore.getState().newAgent).toBeNull();
+  });
+
+  it('keeps the page when the project it added becomes active and busy clears at once', () => {
+    render(<ChromeBody />);
+    act(() => { useChromeStore.getState().openNewAgent('durable'); goBusy(); });
+    act(() => {
+      useProjectStore.setState((s) => ({ projects: [...s.projects, { id: 'p9', name: 'New', path: '/new' }] as never, activeProjectId: 'p9' }));
+      useAgentStore.setState({ activeAgentId: null });
+      useChromeStore.getState().setNewAgentBusy(false);
+    });
+    expect(useChromeStore.getState().newAgent).not.toBeNull();
+  });
+
+  it('closes the page for navigation the user makes while it is busy', () => {
+    useAgentStore.setState((s) => ({ agents: { ...s.agents, a2: { id: 'a2', projectId: 'p1', name: 'other', kind: 'durable', status: 'running', color: 'blue' } as never } }));
+    render(<ChromeBody />);
+    act(() => { useChromeStore.getState().openNewAgent('durable'); goBusy(); });
+    // The palette or ⌥⌘N switches to an agent that already existed.
+    act(() => useAgentStore.setState({ activeAgentId: 'a2' }));
+    expect(useChromeStore.getState().newAgent).toBeNull();
+  });
+
+  it('closes the page for a tab change while busy (⌘1–9, title-bar tabs)', () => {
+    render(<ChromeBody />);
+    act(() => { useChromeStore.getState().openNewAgent('quick'); goBusy(); });
+    act(() => useUIStore.setState({ explorerTab: 'plugin:files' }));
     expect(useChromeStore.getState().newAgent).toBeNull();
   });
 

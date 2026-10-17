@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 
 vi.mock('../../hooks/useModelOptions', () => ({
   useModelOptions: () => ({ options: [{ id: 'default', label: 'Default' }, { id: 'opus', label: 'Opus' }], loading: false }),
@@ -75,7 +75,7 @@ describe('NewAgentPage', () => {
   });
 
   it('creates a durable agent with the form, then opens it', async () => {
-    render(<NewAgentPage request={req()} />);
+    openWith({});
     await waitFor(() => expect(screen.getByLabelText('Own worktree and branch')).toBeTruthy());
     fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'keen-heron' } });
     fireEvent.click(screen.getByRole('radio', { name: 'Emerald' }));
@@ -130,7 +130,7 @@ describe('NewAgentPage', () => {
   };
   const openWith = (over: Partial<NewAgentRequest>) => {
     const request = req(over);
-    useChromeStore.setState({ newAgent: request, newAgentBusy: false });
+    useChromeStore.setState({ newAgent: request, newAgentBusy: false, newAgentKnownIds: null });
     return render(<NewAgentPage request={request} />);
   };
 
@@ -186,6 +186,53 @@ describe('NewAgentPage', () => {
     expect(screen.getByTestId('new-agent-submit').textContent).toBe('Creating…');
     expect((screen.getByText('Cancel') as HTMLButtonElement).disabled).toBe(true);
     expect(useChromeStore.getState().newAgentBusy).toBe(true);
+  });
+
+  describe('leaving while it creates', () => {
+    const deferred = <T,>() => { let resolve!: (v: T) => void; let reject!: (e: unknown) => void; const promise = new Promise<T>((r, j) => { resolve = r; reject = j; }); return { promise, resolve, reject }; };
+
+    it('onClosed waits for the creation, onCreated comes first, and nothing navigates', async () => {
+      const pending = deferred<string | null>();
+      createDurableAgent.mockReturnValue(pending.promise);
+      const events: string[] = [];
+      openWith({ onCreated: (id) => events.push(`created:${id}`), onClosed: (id) => events.push(`closed:${id}`) });
+      await submitWhenReady();
+      // The user goes to Help.
+      act(() => { useUIStore.setState({ explorerTab: 'help' }); useChromeStore.getState().closeNewAgent(); });
+      expect(events).toEqual([]);
+      await act(async () => { pending.resolve('a-late'); await pending.promise; });
+      expect(events).toEqual(['created:a-late', 'closed:a-late']);
+      expect(useUIStore.getState().explorerTab).toBe('help');
+      expect(useAgentStore.getState().activeAgentId).not.toBe('a-late');
+    });
+
+    it('leaves a page opened meanwhile alone', async () => {
+      const pending = deferred<string | null>();
+      createDurableAgent.mockReturnValue(pending.promise);
+      const first = vi.fn();
+      openWith({ onClosed: first });
+      await submitWhenReady();
+      act(() => useChromeStore.getState().openNewAgent('quick', 'p2'));
+      const second = useChromeStore.getState().newAgent;
+      await act(async () => { pending.resolve('a-late'); await pending.promise; });
+      expect(useChromeStore.getState().newAgent).toBe(second);
+      expect(first).toHaveBeenCalledExactlyOnceWith('a-late');
+    });
+
+    it('a failure after leaving ends with onClosed(null) and no onCreated', async () => {
+      const pending = deferred<string>();
+      spawnQuickAgent.mockReturnValue(pending.promise);
+      const onCreated = vi.fn();
+      const onClosed = vi.fn();
+      openWith({ kind: 'quick', onCreated, onClosed });
+      fireEvent.change(screen.getByTestId('new-agent-mission'), { target: { value: 'x' } });
+      await submitWhenReady();
+      act(() => useChromeStore.getState().closeNewAgent());
+      expect(onClosed).not.toHaveBeenCalled();
+      await act(async () => { pending.reject(new Error('nope')); await pending.promise.catch(() => {}); });
+      expect(onClosed).toHaveBeenCalledExactlyOnceWith(null);
+      expect(onCreated).not.toHaveBeenCalled();
+    });
   });
 
   it('adding a project from the picker selects it and keeps the page', async () => {
