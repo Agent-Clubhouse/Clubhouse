@@ -27,6 +27,12 @@ export const mainConfig: Configuration = {
   ],
   resolve: {
     extensions: ['.js', '.ts', '.jsx', '.tsx', '.css', '.json'],
+    alias: {
+      // The Copilot SDK only loads koffi (native FFI, prebuilt binaries for every
+      // platform) for its in-process runtime host, which Clubhouse never uses.
+      // An empty module keeps those binaries out of the bundle.
+      koffi: false,
+    },
   },
   externals: {
     'node-pty': 'commonjs node-pty',
