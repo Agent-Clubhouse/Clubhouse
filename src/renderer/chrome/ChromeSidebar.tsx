@@ -1,24 +1,29 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
+import { useAgentStore } from '../stores/agentStore';
+import { useQuickAgentStore } from '../stores/quickAgentStore';
+import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { usePluginStore } from '../plugins/plugin-store';
+import { useOrderedShallow } from '../hooks/useOrderedShallow';
 import type { PluginRegistryEntry } from '../../shared/plugin-types';
-import type { Project } from '../../shared/types';
-import { getAgentColorHex } from '../../shared/name-generator';
+import type { Agent } from '../../shared/types';
 import { sanitizeSvg } from '../utils/sanitize-svg';
-import { AgentList } from '../features/agents/AgentList';
+import { ProjectTree } from './sidebar/ProjectTree';
+import { NeedsYou } from './sidebar/NeedsYou';
+import { ChromeAgentDialogs, useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
+import { selectNeedsAttention } from './sidebar/treeModel';
+import { useChromeStore } from './chromeStore';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
 
 /**
- * Sidebar for the new chrome, Phase 1a (docs/chrome-redesign-spec.md §7).
+ * Sidebar for the new chrome, Phase 1b (docs/chrome-redesign-spec.md §2, §4.2):
+ * Canvas and Review, search and New, “Needs you”, the project tree, and a
+ * footer. The host switcher arrives in Phase 3; lists and the start page in Phase 2.
  *
- * This first cut keeps behavior identical to the legacy shell while the shell
- * itself lands: an app row for app-level plugin views, a compact project list,
- * the active project's existing agent list, and a footer. Phase 1b replaces the
- * project list and agent list with the project tree and 30px rows.
- *
- * Test IDs are the legacy ones where the element means the same thing (§9):
- * `project-<id>`, `nav-add-project`, `nav-help`, `nav-settings`.
+ * Legacy test IDs are kept where the element means the same thing (§9):
+ * `project-<id>`, `agent-item-<id>`, `agent-list`, `nav-add-project`,
+ * `nav-help`, `nav-settings`.
  */
 
 const PLUGIN_FALLBACK_ICON = (
@@ -27,42 +32,133 @@ const PLUGIN_FALLBACK_ICON = (
   </svg>
 );
 
-const rowClass = (active: boolean) =>
-  `w-full h-7 px-2 rounded-md flex items-center gap-2 text-[13px] text-left cursor-pointer transition-colors duration-100 ${
-    active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0/60 hover:text-ctp-text'
-  }`;
+/** App-level items that get the inline buttons; every other top rail item goes in the overflow menu. */
+const INLINE_APP_ITEMS = ['canvas', 'review'];
 
-const ProjectSquare = React.memo(function ProjectSquare({ project, iconUrl }: { project: Project; iconUrl?: string }) {
-  const label = project.displayName || project.name;
-  const hex = getAgentColorHex(project.color);
-  if (project.emoji) {
-    return <span className="w-[18px] h-[18px] rounded flex-shrink-0 flex items-center justify-center text-[12px]" style={{ backgroundColor: `${hex}26` }} aria-hidden="true">{project.emoji}</span>;
-  }
-  if (project.icon && iconUrl) {
-    return <img src={iconUrl} alt="" draggable={false} className="w-[18px] h-[18px] rounded flex-shrink-0 object-cover" />;
-  }
+const railIcon = (entry: PluginRegistryEntry) => {
+  const icon = entry.manifest.contributes!.railItem!.icon;
+  return icon ? <span className="flex items-center" dangerouslySetInnerHTML={{ __html: sanitizeSvg(icon) }} /> : PLUGIN_FALLBACK_ICON;
+};
+
+function useClickOutside(ref: React.RefObject<HTMLElement | null>, open: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [ref, open, onClose]);
+}
+
+function MenuButton({ label, testId, children, items, disabled }: {
+  label: string;
+  testId: string;
+  children: React.ReactNode;
+  items: Array<{ label: string; onSelect: () => void }>;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useClickOutside(ref, open, close);
   return (
-    <span className="w-[18px] h-[18px] rounded flex-shrink-0 flex items-center justify-center text-xs font-bold" style={{ backgroundColor: `${hex}33`, color: hex }} aria-hidden="true">
-      {label.charAt(0).toUpperCase()}
-    </span>
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        data-testid={testId}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        className="h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs font-medium text-ctp-accent bg-ctp-accent/15 hover:bg-ctp-accent/25 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        title={label}
+      >
+        {children}
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-8 z-dropdown min-w-[180px] py-1 rounded-lg border border-surface-1 bg-ctp-mantle shadow-xl">
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); item.onSelect(); }}
+              className="w-full px-3 py-1.5 text-left text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
-});
+}
 
-function AppItemButton({ entry, active, onOpen }: { entry: PluginRegistryEntry; active: boolean; onOpen: (id: string) => void }) {
-  const rail = entry.manifest.contributes!.railItem!;
+function AppRow({ inline, overflow, explorerTab, onOpen }: {
+  inline: PluginRegistryEntry[];
+  overflow: PluginRegistryEntry[];
+  explorerTab: string;
+  onOpen: (id: string) => void;
+}) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setMoreOpen(false), []);
+  useClickOutside(moreRef, moreOpen, close);
+  if (inline.length === 0 && overflow.length === 0) return null;
   return (
-    <button
-      type="button"
-      title={rail.title || rail.label}
-      onClick={() => onOpen(entry.manifest.id)}
-      data-active={active}
-      className={`${rowClass(active)} [&_svg]:w-[15px] [&_svg]:h-[15px]`}
-    >
-      <span className="flex-shrink-0 flex items-center text-ctp-subtext0">
-        {rail.icon ? <span dangerouslySetInnerHTML={{ __html: sanitizeSvg(rail.icon) }} /> : PLUGIN_FALLBACK_ICON}
-      </span>
-      <span className="truncate">{rail.label}</span>
-    </button>
+    <nav aria-label="App views" className="flex-shrink-0 px-2 pb-2 flex items-center gap-1.5">
+      {inline.map((entry) => {
+        const rail = entry.manifest.contributes!.railItem!;
+        const active = explorerTab === `plugin:app:${entry.manifest.id}`;
+        return (
+          <button
+            key={entry.manifest.id}
+            type="button"
+            title={rail.title || rail.label}
+            data-active={active}
+            onClick={() => onOpen(entry.manifest.id)}
+            className={`flex-1 min-w-0 h-[30px] px-2 rounded-md border flex items-center gap-1.5 text-[13px] font-medium cursor-pointer [&_svg]:w-[15px] [&_svg]:h-[15px] ${
+              active ? 'border-surface-2 bg-surface-0 text-ctp-text' : 'border-surface-0 text-ctp-subtext1 hover:bg-surface-0/60 hover:text-ctp-text'
+            }`}
+          >
+            {railIcon(entry)}
+            <span className="truncate">{rail.label}</span>
+          </button>
+        );
+      })}
+      {overflow.length > 0 && (
+        <div ref={moreRef} className="relative">
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            title="More app views"
+            aria-label="More app views"
+            onClick={() => setMoreOpen((o) => !o)}
+            className="h-[30px] w-[30px] rounded-md border border-surface-0 flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0/60 hover:text-ctp-text cursor-pointer"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+          </button>
+          {moreOpen && (
+            <div role="menu" className="absolute right-0 top-9 z-dropdown min-w-[180px] py-1 rounded-lg border border-surface-1 bg-ctp-mantle shadow-xl">
+              {overflow.map((entry) => (
+                <button
+                  key={entry.manifest.id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setMoreOpen(false); onOpen(entry.manifest.id); }}
+                  className="w-full px-3 py-1.5 flex items-center gap-2 text-left text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer [&_svg]:w-[14px] [&_svg]:h-[14px]"
+                >
+                  {railIcon(entry)}
+                  {entry.manifest.contributes!.railItem!.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </nav>
   );
 }
 
@@ -72,16 +168,23 @@ export function ChromeSidebar() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const pickAndAddProject = useProjectStore((s) => s.pickAndAddProject);
+  const reorderProjects = useProjectStore((s) => s.reorderProjects);
   const explorerTab = useUIStore((s) => s.explorerTab);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
   const toggleHelp = useUIStore((s) => s.toggleHelp);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
+  const agents = useAgentStore(useOrderedShallow((s) => s.agents));
+  const detailed = useAgentStore((s) => s.agentDetailedStatus);
+  const activeAgentId = useAgentStore((s) => s.activeAgentId);
+  const setActiveAgent = useAgentStore((s) => s.setActiveAgent);
+  const completedByProject = useQuickAgentStore((s) => s.completedAgents);
+  const selectedCompletedId = useQuickAgentStore((s) => s.selectedCompletedId);
   const plugins = usePluginStore((s) => s.plugins);
   const appEnabled = usePluginStore((s) => s.appEnabled);
+  const setProjectCollapsed = useChromeStore((s) => s.setProjectCollapsed);
 
-  // Same visibility rule as the legacy rail: app-enabled, app or dual scope,
-  // not incompatible, and contributes a rail item.
-  const { topItems, bottomItems } = useMemo(() => {
+  // App-level plugin items, same visibility rule as the legacy rail.
+  const { inlineItems, overflowItems, bottomItems } = useMemo(() => {
     const items = appEnabled
       .map((id) => plugins[id])
       .filter((entry): entry is PluginRegistryEntry => {
@@ -90,31 +193,81 @@ export function ChromeSidebar() {
         if (entry.status === 'incompatible') return false;
         return !!entry.manifest.contributes?.railItem;
       });
+    const top = items.filter((e) => (e.manifest.contributes!.railItem!.position ?? 'top') === 'top');
     return {
-      topItems: items.filter((e) => (e.manifest.contributes!.railItem!.position ?? 'top') === 'top'),
+      inlineItems: INLINE_APP_ITEMS.map((id) => top.find((e) => e.manifest.id === id)).filter((e): e is PluginRegistryEntry => !!e),
+      overflowItems: top.filter((e) => !INLINE_APP_ITEMS.includes(e.manifest.id)),
       bottomItems: items.filter((e) => e.manifest.contributes!.railItem!.position === 'bottom'),
     };
   }, [appEnabled, plugins]);
 
-  const inProjectView = explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
+  // Local agents grouped by project (satellites arrive with the host switcher, Phase 3).
+  const localProjectIds = useMemo(() => new Set(projects.map((p) => p.id)), [projects]);
+  const agentsByProject = useMemo(() => {
+    const map: Record<string, Agent[]> = {};
+    for (const agent of Object.values(agents)) {
+      if (!localProjectIds.has(agent.projectId) || agent.kind === 'companion') continue;
+      (map[agent.projectId] ??= []).push(agent);
+    }
+    return map;
+  }, [agents, localProjectIds]);
+  const needs = useMemo(() => selectNeedsAttention(agents, detailed, localProjectIds), [agents, detailed, localProjectIds]);
+  const projectNames = useMemo(() => Object.fromEntries(projects.map((p) => [p.id, p.displayName || p.name])), [projects]);
+  const reviewEnabled = inlineItems.some((e) => e.manifest.id === 'review');
 
-  const openAppItem = (id: string) => {
+  const openAppItem = useCallback((id: string) => {
     setExplorerTab(`plugin:app:${id}`);
     reportChromeFeature('app_item_open');
-  };
+  }, [setExplorerTab]);
 
-  const selectProject = (id: string) => {
-    setActiveProject(id);
-    // Leaving an app-level view for a project returns to that project's tabs.
-    if (!inProjectView && explorerTab !== 'settings') {
-      useUIStore.getState().restoreProjectView(id);
-    }
+  const isProjectTab = explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
+
+  const selectProject = useCallback((projectId: string) => {
+    setActiveProject(projectId);
+    setProjectCollapsed(projectId, false);
+    if (!isProjectTab) useUIStore.getState().restoreProjectView(projectId);
     reportChromeFeature('project_select');
-  };
+  }, [setActiveProject, setProjectCollapsed, isProjectTab]);
+
+  const selectAgent = useCallback((agent: Agent) => {
+    useQuickAgentStore.getState().selectCompleted(null);
+    if (useProjectStore.getState().activeProjectId !== agent.projectId) setActiveProject(agent.projectId);
+    // Recording 'agents' for the project keeps the project-switch effect from restoring another tab.
+    setExplorerTab('agents', agent.projectId);
+    setActiveAgent(agent.id, agent.projectId);
+  }, [setActiveProject, setExplorerTab, setActiveAgent]);
+
+  const selectCompleted = useCallback((projectId: string, completedId: string) => {
+    if (useProjectStore.getState().activeProjectId !== projectId) setActiveProject(projectId);
+    setExplorerTab('agents', projectId);
+    setActiveAgent(null, projectId);
+    useQuickAgentStore.getState().selectCompleted(completedId);
+  }, [setActiveProject, setExplorerTab, setActiveAgent]);
+
+  const dismissCompleted = useCallback((projectId: string, completedId: string) => {
+    useQuickAgentStore.getState().dismissCompleted(projectId, completedId);
+  }, []);
+  const clearCompleted = useCallback((projectId: string) => {
+    useQuickAgentStore.getState().clearCompleted(projectId);
+  }, []);
+
+  const onReorder = useCallback((ids: string[]) => {
+    reorderProjects(ids).catch((err) => reportChromeActionFailed('reorder_projects', err));
+  }, [reorderProjects]);
+
+  const onNewAgent = useCallback((projectId: string) => {
+    useChromeDialogStore.getState().openNewAgent(projectId);
+  }, []);
 
   const addProject = () => {
     pickAndAddProject().catch((err) => reportChromeActionFailed('add_project', err));
   };
+
+  const newItems = activeProjectId ? [
+    { label: 'Durable agent…', onSelect: () => useChromeDialogStore.getState().openNewAgent(activeProjectId) },
+    { label: 'Agent from a template…', onSelect: () => useChromeDialogStore.getState().openGallery(activeProjectId) },
+    { label: 'Quick agent…', onSelect: () => useUIStore.getState().openQuickAgentDialog() },
+  ] : [];
 
   return (
     <aside
@@ -122,58 +275,65 @@ export function ChromeSidebar() {
       aria-label="Sidebar"
       className="h-full min-h-0 flex flex-col bg-ctp-mantle border-r border-surface-0 overflow-hidden"
     >
-      {topItems.length > 0 && (
-        <nav aria-label="App views" className="flex-shrink-0 px-1.5 pt-2 pb-1 flex flex-col gap-px">
-          {topItems.map((entry) => (
-            <AppItemButton
-              key={entry.manifest.id}
-              entry={entry}
-              active={explorerTab === `plugin:app:${entry.manifest.id}`}
-              onOpen={openAppItem}
-            />
-          ))}
-        </nav>
-      )}
+      <div className="flex-shrink-0 px-2 pt-2 pb-2 flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => useCommandPaletteStore.getState().open()}
+          data-testid="chrome-search"
+          className="flex-1 min-w-0 h-7 px-2 rounded-md bg-surface-0 flex items-center gap-2 text-xs text-ctp-overlay1 hover:text-ctp-subtext1 cursor-pointer"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
+          <span>Search</span>
+          <kbd className="ml-auto text-xs text-ctp-overlay1">{window.clubhouse.platform === 'darwin' ? '⌘K' : 'Ctrl+K'}</kbd>
+        </button>
+        <MenuButton label="New agent" testId="chrome-new" items={newItems} disabled={!activeProjectId}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          New
+        </MenuButton>
+      </div>
 
-      <div className="flex-shrink-0 flex items-center justify-between px-3 pt-2 pb-1">
-        <span className="text-xs font-semibold text-ctp-subtext0">Projects</span>
+      <AppRow inline={inlineItems} overflow={overflowItems} explorerTab={explorerTab} onOpen={openAppItem} />
+
+      <NeedsYou
+        items={needs}
+        projectNames={projectNames}
+        activeAgentId={activeAgentId}
+        onSelect={selectAgent}
+        onReview={reviewEnabled ? () => openAppItem('review') : undefined}
+      />
+
+      <div className="flex-1 min-h-0 flex flex-col">
+        <ProjectTree
+          projects={projects}
+          projectIcons={projectIcons}
+          agentsByProject={agentsByProject}
+          detailed={detailed}
+          completedByProject={completedByProject}
+          activeProjectId={isProjectTab ? activeProjectId : null}
+          activeAgentId={isProjectTab ? activeAgentId : null}
+          selectedCompletedId={selectedCompletedId}
+          onReorder={onReorder}
+          onSelectProject={selectProject}
+          onNewAgent={onNewAgent}
+          onSelectAgent={selectAgent}
+          onSelectCompleted={selectCompleted}
+          onDismissCompleted={dismissCompleted}
+          onClearCompleted={clearCompleted}
+        />
+      </div>
+
+      <div className="flex-shrink-0 h-10 border-t border-surface-0 flex items-center gap-1 px-2">
         <button
           type="button"
           onClick={addProject}
           title="Add project"
-          aria-label="Add project"
           data-testid="nav-add-project"
-          className="w-6 h-6 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
+          className="h-7 px-2 rounded-md flex items-center gap-1.5 text-xs text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          Add project
         </button>
-      </div>
-
-      <nav aria-label="Projects" className="flex-shrink-0 max-h-[40%] overflow-y-auto px-1.5 pb-1 flex flex-col gap-px">
-        {projects.map((p) => {
-          const active = p.id === activeProjectId && inProjectView;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => selectProject(p.id)}
-              data-testid={`project-${p.id}`}
-              data-active={p.id === activeProjectId}
-              title={p.displayName || p.name}
-              className={rowClass(active)}
-            >
-              <ProjectSquare project={p} iconUrl={projectIcons[p.id]} />
-              <span className="truncate font-medium">{p.displayName || p.name}</span>
-            </button>
-          );
-        })}
-      </nav>
-
-      <div className="flex-1 min-h-0 border-t border-surface-0 overflow-hidden">
-        {activeProjectId && inProjectView ? <AgentList /> : null}
-      </div>
-
-      <div className="flex-shrink-0 h-10 border-t border-surface-0 flex items-center gap-1 px-2">
+        <span className="flex-1" />
         {bottomItems.map((entry) => {
           const rail = entry.manifest.contributes!.railItem!;
           return (
@@ -185,11 +345,10 @@ export function ChromeSidebar() {
               onClick={() => openAppItem(entry.manifest.id)}
               className="w-7 h-7 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer [&_svg]:w-[15px] [&_svg]:h-[15px]"
             >
-              {rail.icon ? <span dangerouslySetInnerHTML={{ __html: sanitizeSvg(rail.icon) }} /> : PLUGIN_FALLBACK_ICON}
+              {railIcon(entry)}
             </button>
           );
         })}
-        <span className="flex-1" />
         <button
           type="button"
           onClick={toggleHelp}
@@ -218,6 +377,8 @@ export function ChromeSidebar() {
           </svg>
         </button>
       </div>
+
+      <ChromeAgentDialogs />
     </aside>
   );
 }

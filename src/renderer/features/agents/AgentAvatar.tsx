@@ -70,7 +70,7 @@ function OrchestratorMiniIcon({ orchestrator, size }: { orchestrator?: Orchestra
 
 interface Props {
   agent: Agent;
-  size?: 'xs' | 'sm' | 'md' | 'lg';
+  size?: '2xs' | 'xs' | 'sm' | 'md' | 'lg';
   showRing?: boolean;
   ringColor?: string;
   /** Override icon URL (e.g. for remote agents whose icons are in a different store) */
@@ -78,6 +78,8 @@ interface Props {
 }
 
 const SIZE_CONFIG = {
+  /** 18px, for the new chrome's 30px sidebar rows (no ring). */
+  '2xs': { outer: 'w-[18px] h-[18px]', inner: 'w-[18px] h-[18px]', font: 'text-[8px]', icon: 18, bolt: 8 },
   xs: { outer: 'w-7 h-7', inner: 'w-5 h-5', font: 'text-[8px]', icon: 20, bolt: 8 },
   sm: { outer: 'w-8 h-8', inner: 'w-6 h-6', font: 'text-[9px]', icon: 24, bolt: 10 },
   md: { outer: 'w-9 h-9', inner: 'w-7 h-7', font: 'text-xs', icon: 28, bolt: 12 },
@@ -114,7 +116,7 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
           className={`${innerSize} rounded-full flex items-center justify-center flex-shrink-0`}
           style={{ backgroundColor: `${bgColor}20` }}
         >
-          <span className={size === 'sm' ? 'text-sm' : 'text-base'} role="img">{agent.emoji}</span>
+          <span className={size === '2xs' ? 'text-xs' : size === 'sm' ? 'text-sm' : 'text-base'} role="img">{agent.emoji}</span>
         </div>
       );
     }
