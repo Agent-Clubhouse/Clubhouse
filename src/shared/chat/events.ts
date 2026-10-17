@@ -251,6 +251,8 @@ export interface ChatEventDataMap {
    */
   session_info: {
     nativeSessionId?: string;
+    /** Conversation title from the provider (ACP session_info_update, Codex thread name, Claude summary). */
+    title?: string;
     capabilities?: Partial<ChatCapabilities>;
     cliVersion?: string;
     model?: string;

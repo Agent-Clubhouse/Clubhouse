@@ -14,7 +14,9 @@ export type ChatDriverId =
   | 'claude_stream_json'
   | 'codex_app_server'
   | 'copilot_acp'
-  | 'copilot_sdk';
+  | 'copilot_sdk'
+  /** Any other ACP agent (Gemini CLI, etc.) through the generic ACP driver. */
+  | 'acp';
 
 /**
  * Clubhouse's five-level permission ladder. Each driver maps these to its
@@ -49,6 +51,11 @@ export interface ChatCapabilities {
   liveLevels: readonly PermissionLevel[];
   /** How the user logs in when auth is missing. */
   login: 'api' | 'terminal' | 'none';
+  /**
+   * The driver can pass a system prompt natively (CLI flag or protocol field).
+   * When false, the runtime prepends it to the first user message instead.
+   */
+  systemPrompt: boolean;
 }
 
 /** Conservative baseline: a driver starts from this and turns on what it supports. */
@@ -67,4 +74,5 @@ export const MINIMAL_CHAT_CAPABILITIES: ChatCapabilities = Object.freeze({
   modelSwitch: 'none',
   liveLevels: [],
   login: 'terminal',
+  systemPrompt: false,
 }) as ChatCapabilities;

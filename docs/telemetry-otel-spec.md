@@ -305,7 +305,7 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
   - `c.orchestrator` (`claude-code`/`codex-cli`/`copilot-cli`/`other`)
   - `c.agent.runtime` (`pty`/`headless`/`chat`)
   - `c.agent.runtime.reason` (`requested`/`fallback_no_mission`/`fallback_not_capable`/`default`)
-  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`, later `copilot_sdk`), from chat's capability record. Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
+  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`/`acp` for other ACP agents, later `copilot_sdk`), from chat's capability record. Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
   - `c.agent.resume` (bool)
   - `c.model.family` (bucketed against `MODEL_OPTIONS`: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`)
   - `c.agent.uses_worktree`, `c.clubhouse_mode`, `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool)

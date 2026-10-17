@@ -27,7 +27,7 @@ CLI ⇄ protocol client ⇄ ChatDriverSession ──ChatEventDraft──▶ chat
 - **Additive only** within `v: 2`. Consumers ignore unknown event types and fields.
 - **Order by `seq`**, which is per chat session and starts at 1. Don't order by `ts`.
 - **Ids are Clubhouse's.** `sessionId` and `turnId` are Clubhouse ids. Native ids travel as `nativeSessionId` (on `session_started` / `session_info`) and `nativeTurnId` (on `turn_started`).
-- **Late facts** (session id, capabilities, CLI version) arrive as `session_info`, which overrides what `session_started` said.
+- **Late facts** (session id, capabilities, CLI version, title) arrive as `session_info`, which overrides what `session_started` said. Drivers emit `cliVersion` from their handshake as soon as they know it (the version-range check and `c.provider.cli_version` read it).
 - **Clubhouse owns history.** The transcript of `ChatEvent`s is what the chat renders. The CLI's native session id is used only to resume the model's context.
 - **Drivers stay thin.** They translate protocol traffic and report capabilities. Lifecycle, queueing for drivers without native queues, checkpoints, transcripts and fallback live in the chat runtime.
 - **Capabilities, not provider checks.** If a feature differs by provider, add a field to `ChatCapabilities`.
