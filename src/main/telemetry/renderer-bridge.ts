@@ -127,7 +127,7 @@ export function handleRendererReady(sender: Pick<WebContents, 'id'>): void {
 
 /**
  * Wire the bridge's dependencies and start broadcasting state changes. The
- * IPC registrations themselves live in src/main/ipc/telemetry-handlers.ts.
+ * IPC registrations themselves live in src/main/ipc/telemetry-renderer-handlers.ts.
  */
 export function initRendererBridge(bridgeDeps: RendererBridgeDeps): void {
   deps = bridgeDeps;

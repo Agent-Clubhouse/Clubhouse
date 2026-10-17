@@ -34,7 +34,7 @@ import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
 import * as projectStore from './services/project-store';
 import { initTelemetry, recordAppSession, flushBeforeExit } from './telemetry';
 import { installCrashTelemetry, reportMainProcessError } from './telemetry/crash-handlers';
-import { registerTelemetryHandlers } from './ipc/telemetry-handlers';
+import { registerTelemetryRendererHandlers } from './ipc/telemetry-renderer-handlers';
 import { getTelemetrySettings } from './telemetry/settings';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
@@ -65,7 +65,7 @@ if (process.env.CLUBHOUSE_USER_DATA) {
 initTelemetry();
 // Renderer → main telemetry IPC and crash/hang signals (spec §4.2, §6.2).
 // Both are inert while telemetry is off.
-registerTelemetryHandlers({
+registerTelemetryRendererHandlers({
   getMainWebContentsId: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : undefined),
   getConfiguredLevel: () => getTelemetrySettings().level,
 });

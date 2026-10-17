@@ -21,7 +21,7 @@ import {
   getTelemetryState,
   onRendererReady,
 } from './renderer-bridge';
-import { registerTelemetryHandlers } from '../ipc/telemetry-handlers';
+import { registerTelemetryRendererHandlers } from '../ipc/telemetry-renderer-handlers';
 import { ForwardedError, type TelemetryRuntime } from './types';
 
 function fakeRuntime(): TelemetryRuntime {
@@ -47,7 +47,7 @@ beforeEach(() => {
   handlers.on.clear();
   handlers.handle.clear();
   broadcast.mockClear();
-  registerTelemetryHandlers({ getMainWebContentsId: () => MAIN_ID, getConfiguredLevel: () => 'standard' });
+  registerTelemetryRendererHandlers({ getMainWebContentsId: () => MAIN_ID, getConfiguredLevel: () => 'standard' });
 });
 
 afterEach(() => {

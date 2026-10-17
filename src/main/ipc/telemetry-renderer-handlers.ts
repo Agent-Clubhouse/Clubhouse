@@ -13,7 +13,7 @@ import {
  * src/main/index.ts, before any window exists, so no renderer message is
  * missed. All three are inert while telemetry is off.
  */
-export function registerTelemetryHandlers(deps: RendererBridgeDeps): void {
+export function registerTelemetryRendererHandlers(deps: RendererBridgeDeps): void {
   initRendererBridge(deps);
   // Fire-and-forget batches; the bridge re-validates every item.
   ipcMain.on(IPC.TELEMETRY.EMIT, (event, raw: unknown) => handleRendererEmit(event.sender, raw));
