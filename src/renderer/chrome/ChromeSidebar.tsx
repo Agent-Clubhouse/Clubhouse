@@ -33,7 +33,6 @@ import { useChromeStore, type AppLaunchParams } from './chromeStore';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
 import { AppNotices } from '../features/app/AppNotices';
-import { Tooltip } from '../components/Tooltip';
 import { TruncatedLabel } from '../components/TruncatedLabel';
 
 /**
