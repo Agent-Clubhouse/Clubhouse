@@ -378,6 +378,83 @@ describe('CodexChatDriver', () => {
     expect(server.requests('review/start')).toHaveLength(0);
   });
 
+  it('rejects a malformed command without calling Codex', async () => {
+    const { session } = await startSession();
+
+    await expect(session.send([{ type: 'text', text: '/review branch --upload-pack=x' }], 'prompt')).rejects.toThrow('Usage: /review branch <name>');
+    expect(server.requests('review/start')).toHaveLength(0);
+    expect(server.requests('turn/start')).toHaveLength(0);
+  });
+
+  it('refuses /compact while a turn is running', async () => {
+    const { session } = await startSession();
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+
+    await expect(session.send([{ type: 'text', text: '/compact' }], 'prompt')).rejects.toThrow('before running /compact');
+    expect(server.requests('thread/compact/start')).toHaveLength(0);
+  });
+
+  it('a second command sent before the review turn has started is refused, until that turn ends', async () => {
+    const { session } = await startSession();
+
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+    // review/start answered, but turn/started hasn't arrived yet.
+    await expect(session.send([{ type: 'text', text: '/review' }], 'prompt')).rejects.toThrow('before running /review');
+
+    server.send({ method: 'turn/completed', params: { threadId: fx.THREAD_ID, turn: { ...fx.turnStartResult.turn, status: 'completed' } } });
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+    expect(server.requests('review/start')).toHaveLength(2);
+  });
+
+  it('a review turn that ends before review/start answers does not block later commands', async () => {
+    useServer({
+      'review/start': () => {
+        server.send({ method: 'turn/completed', params: { threadId: fx.THREAD_ID, turn: { ...fx.turnStartResult.turn, status: 'completed' } } });
+        return { result: { turn: fx.turnStartResult.turn, reviewThreadId: fx.THREAD_ID } };
+      },
+    });
+    const { session } = await startSession();
+
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+    await session.send([{ type: 'text', text: '/compact' }], 'prompt');
+
+    expect(server.requests('thread/compact/start')).toHaveLength(1);
+  });
+
+  it('a failed review/start does not block later commands', async () => {
+    let fail = true;
+    useServer({ 'review/start': () => (fail ? { error: { code: -32600, message: 'not a git repository' } } : { result: { turn: fx.turnStartResult.turn, reviewThreadId: fx.THREAD_ID } }) });
+    const { session } = await startSession();
+
+    await expect(session.send([{ type: 'text', text: '/review' }], 'prompt')).rejects.toThrow('not a git repository');
+    fail = false;
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+    expect(server.requests('review/start')).toHaveLength(2);
+  });
+
+  it('a command refused mid-turn runs once that turn ends (queued, then drained)', async () => {
+    const { session } = await startSession();
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+    await expect(session.send([{ type: 'text', text: '/review' }], 'prompt')).rejects.toThrow();
+
+    server.send(fx.interruptedTurnCompleted); // the running turn ends
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+
+    expect(server.requests('review/start')).toHaveLength(1);
+  });
+
+  it('review/start does not consume pending model or level overrides', async () => {
+    const { session } = await startSession();
+    await session.setModel('gpt-5');
+
+    await session.send([{ type: 'text', text: '/review' }], 'prompt');
+    expect(server.requests('review/start')[0].params).not.toHaveProperty('model');
+    server.send({ method: 'turn/completed', params: { threadId: fx.THREAD_ID, turn: { ...fx.turnStartResult.turn, status: 'completed' } } });
+
+    await session.send([{ type: 'text', text: 'next' }], 'prompt');
+    expect(server.requests('turn/start')[0].params).toMatchObject({ model: 'gpt-5' });
+  });
+
   it('sends an unknown /word to the model as an ordinary prompt', async () => {
     const { session } = await startSession();
 
@@ -571,10 +648,16 @@ describe('codex driver helpers', () => {
     const t = (text: string) => parseCodexSlashCommand([{ type: 'text', text }]);
     expect(t('/compact')).toEqual({ name: 'compact' });
     expect(t('  /review  ')).toEqual({ name: 'review', target: { type: 'uncommittedChanges' } });
-    expect(t('/compact now')).toBeUndefined();
     expect(t('/reviewer')).toBeUndefined();
     expect(t('please /review')).toBeUndefined();
-    expect(t('/review commit not-a-sha')).toEqual({ name: 'review', target: { type: 'custom', instructions: 'commit not-a-sha' } });
+    // Malformed arguments to a known command are errors, not instructions.
+    expect(t('/compact now')).toEqual({ name: 'invalid', error: '/compact takes no arguments' });
+    expect(t('/review branch')).toEqual({ name: 'invalid', error: 'Usage: /review branch <name>' });
+    expect(t('/review branch a b')).toEqual({ name: 'invalid', error: 'Usage: /review branch <name>' });
+    expect(t('/review branch -c')).toEqual({ name: 'invalid', error: 'Usage: /review branch <name>' });
+    expect(t('/review commit not-a-sha')).toEqual({ name: 'invalid', error: 'Usage: /review commit <sha>' });
+    expect(t('/review commit')).toEqual({ name: 'invalid', error: 'Usage: /review commit <sha>' });
+    expect(t('/review the branch handling')).toEqual({ name: 'review', target: { type: 'custom', instructions: 'the branch handling' } });
     expect(parseCodexSlashCommand([{ type: 'text', text: '/review' }, { type: 'file', path: 'a.ts' }])).toBeUndefined();
   });
 

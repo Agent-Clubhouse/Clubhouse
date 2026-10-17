@@ -67,7 +67,9 @@ export const CODEX_SLASH_COMMANDS: readonly AvailableCommand[] = Object.freeze([
 
 export type CodexSlashCommand =
   | { name: 'review'; target: ReviewTarget }
-  | { name: 'compact' };
+  | { name: 'compact' }
+  /** A known command with arguments it can't take; `send` rejects it with this message. */
+  | { name: 'invalid'; error: string };
 
 /**
  * A message that is exactly one of CODEX_SLASH_COMMANDS, parsed. Anything else
@@ -79,14 +81,24 @@ export function parseCodexSlashCommand(content: ContentBlock[]): CodexSlashComma
   if (!match) return undefined;
   const [, name, rest = ''] = match;
   const arg = rest.trim();
-  if (name === 'compact' && !arg) return { name: 'compact' };
+  if (name === 'compact') return arg ? { name: 'invalid', error: '/compact takes no arguments' } : { name: 'compact' };
   if (name !== 'review') return undefined;
-  const branch = /^branch\s+(\S+)$/.exec(arg);
-  if (branch) return { name: 'review', target: { type: 'baseBranch', branch: branch[1] } };
-  const commit = /^commit\s+([0-9a-f]{4,40})$/i.exec(arg);
-  if (commit) return { name: 'review', target: { type: 'commit', sha: commit[1], title: null } };
-  if (arg) return { name: 'review', target: { type: 'custom', instructions: arg } };
-  return { name: 'review', target: { type: 'uncommittedChanges' } };
+  if (!arg) return { name: 'review', target: { type: 'uncommittedChanges' } };
+  const [mode, ...values] = arg.split(/\s+/);
+  if (mode === 'branch') {
+    // A leading '-' would read as an option to git, never a branch name.
+    if (values.length !== 1 || values[0].startsWith('-')) {
+      return { name: 'invalid', error: 'Usage: /review branch <name>' };
+    }
+    return { name: 'review', target: { type: 'baseBranch', branch: values[0] } };
+  }
+  if (mode === 'commit') {
+    if (values.length !== 1 || !/^[0-9a-f]{4,40}$/i.test(values[0])) {
+      return { name: 'invalid', error: 'Usage: /review commit <sha>' };
+    }
+    return { name: 'review', target: { type: 'commit', sha: values[0], title: null } };
+  }
+  return { name: 'review', target: { type: 'custom', instructions: arg } };
 }
 
 /** How long close() waits for the process to exit before giving up. */
@@ -210,6 +222,12 @@ class CodexChatSession implements ChatDriverSession {
   private exited: Promise<void>;
   /** Overrides applied on the next turn/start (Codex keeps them for later turns too). */
   private nextTurn: Partial<TurnStartParams> = {};
+  /** A slash command was sent and its turn hasn't ended (see send()). */
+  private commandRunning = false;
+  /** The turn a /review started, once review/start has answered. */
+  private commandTurnId: string | undefined;
+  /** The last turn that ended here, so a late review/start reply can't re-block commands. */
+  private lastEndedTurnId: string | undefined;
   /** The sandbox policy Codex resolved for the thread, used as the base for level changes. */
   private threadSandbox: SandboxPolicy | undefined;
 
@@ -331,16 +349,32 @@ class CodexChatSession implements ChatDriverSession {
     const threadId = this.requireThread();
     const command = parseCodexSlashCommand(content);
     if (command) {
-      // Each command starts its own turn, so it can't join a running one.
-      if (this.client.getActiveTurnId(threadId)) {
+      if (command.name === 'invalid') throw new Error(command.error);
+      // Each command starts its own turn, so it can't join a running one. A
+      // command already sent counts as running until its turn ends, which
+      // closes the gap before turn/started arrives.
+      if (this.client.getActiveTurnId(threadId) || this.commandRunning) {
         throw new Error(`Finish or stop the current turn before running /${command.name}`);
       }
-      if (command.name === 'compact') {
-        await this.compact();
-      } else {
-        // Inline: the review runs on this thread, so its turn and items
-        // stream into this chat rather than a detached review thread.
-        await this.client.request('review/start', { threadId, target: command.target, delivery: 'inline' });
+      this.commandRunning = true;
+      try {
+        if (command.name === 'compact') {
+          await this.compact();
+          this.commandRunning = false;
+        } else {
+          // Inline: the review runs on this thread, so its turn and items
+          // stream into this chat rather than a detached review thread.
+          // review/start takes no model or approval settings: a pending
+          // setModel/setLevel stays queued for the next turn/start, and the
+          // review runs with the thread's current ones.
+          const result = await this.client.request('review/start', { threadId, target: command.target, delivery: 'inline' });
+          const turn = result?.turn;
+          if (turn?.status === 'inProgress' && turn.id !== this.lastEndedTurnId) this.commandTurnId = turn.id;
+          else this.commandRunning = false;
+        }
+      } catch (err) {
+        this.commandRunning = false;
+        throw err;
       }
       return 'prompt';
     }
@@ -417,6 +451,14 @@ class CodexChatSession implements ChatDriverSession {
 
   private onNotification(notification: ServerNotification): void {
     const threadId = threadOf(notification.params);
+    if (notification.method === 'turn/completed' && threadId === this.threadId) {
+      const ended = notification.params.turn.id;
+      this.lastEndedTurnId = ended;
+      if (ended === this.commandTurnId) {
+        this.commandTurnId = undefined;
+        this.commandRunning = false;
+      }
+    }
     const events = this.mapper.mapNotification(notification);
     // Account-level notifications have no thread and always apply.
     if (!this.threadId || threadId === undefined || threadId === this.threadId) {
