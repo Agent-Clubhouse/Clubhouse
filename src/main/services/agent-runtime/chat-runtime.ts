@@ -105,6 +105,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   private capabilities: ChatCapabilities | undefined;
   private readonly queued: Array<{ content: ContentBlock[]; source: MessageSource }> = [];
   private readonly permissions = new Map<string, PendingPermission>();
+  /** Questions awaiting an answer, so a late or duplicate answer is ignored. */
+  private readonly questions = new Set<string>();
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private ended = false;
   private systemPromptApplied = false;
@@ -219,7 +221,11 @@ export class ChatAgentRuntime implements AgentRuntime {
         this.mirrorPermission(draft.data.requestId, draft.data.toolName ?? draft.data.title, draft.data.rawInput, draft.data.title, draft.data.options);
         break;
       case 'question':
+        this.questions.add(draft.data.requestId);
         await this.setState('waiting_input');
+        break;
+      case 'question_resolved':
+        this.questions.delete(draft.data.requestId);
         break;
     }
   }
@@ -381,7 +387,15 @@ export class ChatAgentRuntime implements AgentRuntime {
   async respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> {
     const session = this.requireSession();
     const pending = this.permissions.get(requestId);
-    await session.respondPermission(requestId, optionId, extras);
+    // Already answered (another view, the desktop prompt or Annex got there first): nothing to do.
+    if (!pending || pending.settled) return;
+    pending.settled = true;
+    try {
+      await session.respondPermission(requestId, optionId, extras);
+    } catch (err) {
+      pending.settled = false;
+      throw err;
+    }
     const option = pending?.options.find((o) => o.optionId === optionId);
     const decision = decisionFor(option);
     this.settlePermission(requestId, decision === 'allow' ? 'allow' : 'deny');
@@ -393,7 +407,15 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   async answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void> {
-    await this.requireSession().answerQuestion(requestId, answers);
+    const session = this.requireSession();
+    // Already answered from another view: nothing to do.
+    if (!this.questions.delete(requestId)) return;
+    try {
+      await session.answerQuestion(requestId, answers);
+    } catch (err) {
+      this.questions.add(requestId);
+      throw err;
+    }
     await this.emit({ type: 'question_resolved', data: { requestId, answers } });
     if (this.state === 'waiting_input') await this.setState('running');
   }
@@ -549,6 +571,7 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   private settleAllPermissions(): void {
     for (const id of [...this.permissions.keys()]) this.settlePermission(id);
+    this.questions.clear();
   }
 }
 

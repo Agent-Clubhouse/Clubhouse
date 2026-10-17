@@ -73,7 +73,7 @@ function PopoutAgentBody({ agent, projectId }: { agent: Agent; projectId?: strin
       {/* Content area */}
       <div className={`flex-1 min-h-0 overflow-hidden relative ${inChat ? 'order-2' : ''}`}>
         {isRunning ? (
-          <AgentView agentId={agentId} focused />
+          <AgentView agentId={agentId} focused context="popout" />
         ) : (
           <SleepingAgent agent={agent} />
         )}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { initChatEventListener } from '../../stores/chatStore';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { PopoutAgentView } from './PopoutAgentView';
 import { PopoutCanvasView } from './PopoutCanvasView';
 import type { Agent, AgentHookEvent } from '../../../shared/types';
@@ -143,6 +144,8 @@ export function PopoutWindow() {
 
   useEffect(() => {
     loadTheme();
+    // Provider display names for the chat header (the main window loads these at startup).
+    void useOrchestratorStore.getState().loadSettings();
   }, [loadTheme]);
 
   const params = window.clubhouse.window?.getPopoutParams();

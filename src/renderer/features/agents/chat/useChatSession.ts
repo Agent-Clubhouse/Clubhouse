@@ -53,12 +53,28 @@ export function useChatLoading(agentId: string): boolean {
   return useChatStore((s) => !!s.loading[agentId]);
 }
 
-/** Load the agent's transcript once per mount; live events merge on top. */
-export function useChatTranscript(agentId: string): void {
+/**
+ * Load the agent's transcript unless the store already has it. Live events
+ * keep loaded state current, so a remount (a canvas card zooming, a second
+ * view of the same agent) reuses it instead of re-reading and flashing a
+ * loading state. `tail` reads only the last events; a view that wants the
+ * whole history (no tail) reloads state that came from a tail.
+ */
+export function useChatTranscript(agentId: string, tail?: number): void {
   const loadTranscript = useChatStore((s) => s.loadTranscript);
   useEffect(() => {
-    void loadTranscript(agentId);
-  }, [agentId, loadTranscript]);
+    const s = useChatStore.getState();
+    if (s.loading[agentId]) return;
+    if (s.agents[agentId] && (tail !== undefined || !s.partial[agentId])) return;
+    void loadTranscript(agentId, tail);
+  }, [agentId, tail, loadTranscript]);
+}
+
+/** Whether earlier history exists that wasn't loaded, and a way to load all of it. */
+export function useEarlierHistory(agentId: string): { partial: boolean; loadAll: () => void } {
+  const partial = useChatStore((s) => !!s.partial[agentId]);
+  const loadTranscript = useChatStore((s) => s.loadTranscript);
+  return { partial, loadAll: useCallback(() => { void loadTranscript(agentId); }, [agentId, loadTranscript]) };
 }
 
 function reportFailure(what: string, err: unknown): void {

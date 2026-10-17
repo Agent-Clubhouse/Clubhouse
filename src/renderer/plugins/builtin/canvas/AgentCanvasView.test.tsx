@@ -11,6 +11,12 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 // Mock AddAgentDialog with a minimal stub that auto-submits via a button so
 // we can drive handleCreateDurable without rendering the full form (which has
 // orchestrator/model store dependencies that would balloon test setup).
+vi.mock('../../../features/agents/chat/AgentView', () => ({
+  AgentView: ({ agentId, zoneThemeId, context }: { agentId: string; zoneThemeId?: string; context?: string }) => (
+    <div data-testid="agent-view" data-zone-theme={zoneThemeId} data-context={context}>{agentId}</div>
+  ),
+}));
+
 vi.mock('../../../features/agents/AddAgentDialog', () => ({
   AddAgentDialog: ({ onCreate, error }: {
     onCreate: (
@@ -131,34 +137,17 @@ describe('AgentCanvasView', () => {
     expect(screen.queryByText('Assign an agent')).toBeNull();
   });
 
-  it('falls back to the terminal widget on hosts without AgentView', () => {
-    const view = makeView({
-      agentId: 'agent-1',
-      displayName: 'Alpha',
-    });
-
-    const api = stubApi({
-      agents: [{ id: 'agent-1', name: 'Alpha', status: 'running', kind: 'durable', projectId: 'proj-1' }],
-    });
-
-    render(<AgentCanvasView view={view} api={api} onUpdate={noop} />);
-
-    expect(screen.getByTestId('agent-terminal')).toBeTruthy();
-  });
-
-  it('shows the runtime-aware AgentView when the host has it', () => {
+  it('shows the runtime-aware AgentView in canvas mode when the agent is running', () => {
     const view = makeView({ agentId: 'agent-1', displayName: 'Alpha' });
     const api = stubApi({
       agents: [{ id: 'agent-1', name: 'Alpha', status: 'running', kind: 'durable', projectId: 'proj-1' }],
     });
-    (api.widgets as { AgentView?: unknown }).AgentView = ({ agentId, zoneThemeId }: { agentId: string; zoneThemeId?: string }) => (
-      <div data-testid="agent-view" data-zone-theme={zoneThemeId}>{agentId}</div>
-    );
 
     render(<AgentCanvasView view={view} api={api} onUpdate={noop} zoneThemeId="latte" />);
 
-    expect(screen.getByTestId('agent-view')).toHaveAttribute('data-zone-theme', 'latte');
-    expect(screen.queryByTestId('agent-terminal')).toBeNull();
+    const card = screen.getByTestId('agent-view');
+    expect(card).toHaveAttribute('data-zone-theme', 'latte');
+    expect(card).toHaveAttribute('data-context', 'canvas');
   });
 
   it('shows sleeping widget when agent is found and sleeping', () => {

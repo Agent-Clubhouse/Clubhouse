@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import type { Agent } from '../../../../shared/types';
 import type { ChatEvent } from '../../../../shared/chat';
 import { foldChatEvents, useChatStore, type ChatViewState } from '../../../stores/chatStore';
-import { ChatView, ChatViewBody } from './ChatView';
+import { CANVAS_TRANSCRIPT_TAIL, ChatView, ChatViewBody } from './ChatView';
 import { useChatDraftStore, type ChatActions } from './useChatSession';
 import { chatFixture, FIXTURE_AGENT_ID, PROFILES, type FixtureProvider } from './fixtures';
 
@@ -380,7 +380,67 @@ describe('ChatView failures', () => {
 
 describe('ChatView (store-bound)', () => {
   beforeEach(() => {
-    useChatStore.setState({ agents: {}, loading: {} });
+    useChatStore.setState({ agents: {}, loading: {}, partial: {}, answering: {} });
+  });
+
+  it('reuses loaded state when a view remounts, as a canvas card does when zooming', async () => {
+    const read = vi.fn(async () => chatFixture('claude', 'conversation'));
+    vi.mocked(window.clubhouse.chat).readTranscript = read;
+    const first = render(<ChatView agent={agent} context="canvas" />);
+    await screen.findByTestId('chat-turn-footer');
+    expect(read).toHaveBeenCalledWith(FIXTURE_AGENT_ID, CANVAS_TRANSCRIPT_TAIL);
+    first.unmount();
+    render(<ChatView agent={agent} context="canvas" />);
+    expect(screen.getByTestId('chat-turn-footer')).toBeInTheDocument();
+    expect(screen.queryByText('Loading the conversation…')).not.toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the view context, and keeps canvas cards out of the screen-reader live region', async () => {
+    vi.mocked(window.clubhouse.chat).readTranscript = vi.fn(async () => chatFixture('claude', 'conversation'));
+    render(<><ChatView agent={agent} /><ChatView agent={agent} context="canvas" /></>);
+    const views = await screen.findAllByTestId('chat-view');
+    expect(views.map((v) => v.getAttribute('data-view-context'))).toEqual(['main', 'canvas']);
+    expect(screen.getAllByTestId('chat-live-region')).toHaveLength(1);
+  });
+
+  it('offers Show earlier when a tail cut history off, and loads all of it', async () => {
+    const events = chatFixture('claude', 'conversation');
+    const read = vi.fn(async (_id: string, tail?: number) => (tail ? events.slice(-tail) : events));
+    vi.mocked(window.clubhouse.chat).readTranscript = read as typeof window.clubhouse.chat.readTranscript;
+    // A tail as long as what comes back counts as cut off.
+    await act(async () => { await useChatStore.getState().loadTranscript(FIXTURE_AGENT_ID, 3); });
+    render(<ChatView agent={agent} context="canvas" />);
+    fireEvent.click(screen.getByTestId('chat-show-earlier'));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith(FIXTURE_AGENT_ID, undefined));
+    await waitFor(() => expect(screen.queryByTestId('chat-show-earlier')).not.toBeInTheDocument());
+  });
+
+  it('a main view reloads the whole history over state that came from a tail', async () => {
+    const read = vi.fn(async () => chatFixture('claude', 'conversation'));
+    vi.mocked(window.clubhouse.chat).readTranscript = read;
+    useChatStore.setState({ partial: { [FIXTURE_AGENT_ID]: true } });
+    await act(async () => { await useChatStore.getState().loadTranscript(FIXTURE_AGENT_ID, 3); });
+    read.mockClear();
+    render(<ChatView agent={agent} />);
+    await waitFor(() => expect(read).toHaveBeenCalledWith(FIXTURE_AGENT_ID, undefined));
+  });
+
+  it('disables an approval in every view while one view\'s answer is in flight, and sends it once', async () => {
+    const events = chatFixture('codex', 'approval');
+    vi.mocked(window.clubhouse.chat).readTranscript = vi.fn(async () => events);
+    let finish!: () => void;
+    const respond = vi.fn(() => new Promise<void>((r) => { finish = r; }));
+    vi.mocked(window.clubhouse.chat).respondPermission = respond;
+    render(<><ChatView agent={agent} /><ChatView agent={agent} context="canvas" /></>);
+    const cards = await screen.findAllByTestId('chat-permission');
+    expect(cards).toHaveLength(2);
+    const [first, second] = cards.map((c) => within(c).getAllByRole('button')[0]);
+    fireEvent.click(first);
+    await waitFor(() => expect(second).toBeDisabled());
+    fireEvent.click(second);
+    expect(respond).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(); });
   });
 
   it('loads the transcript and applies live events on top', async () => {

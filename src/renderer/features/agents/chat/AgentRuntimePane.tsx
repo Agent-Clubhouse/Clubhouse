@@ -20,6 +20,7 @@ import { useToastStore } from '../../../stores/toastStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
 import { RuntimeSwitch } from './ChatHeader';
+import type { ChatViewContext } from './ChatView';
 import { isRunningState } from './view-model';
 
 const ChatView = lazy(() => import('./ChatView'));
@@ -46,8 +47,9 @@ export function resetChatFlagCache(): void {
   runtimeCache.clear();
 }
 
-export function useChatFlag(): boolean {
-  const [on, setOn] = useState(() => flagValue ?? false);
+/** The Chat flag, or null until it has loaded once this app session. */
+export function useChatFlag(): boolean | null {
+  const [on, setOn] = useState<boolean | null>(() => flagValue);
   useEffect(() => {
     let cancelled = false;
     void loadChatFlag().then((v) => { if (!cancelled) setOn(v); });
@@ -61,10 +63,13 @@ const NO_CHAT: ChatAgentRuntimeInfo = { chat: false, chatAvailable: false };
 /** Last known runtime per agent: a pane remounting for an agent starts from it instead of NO_CHAT. */
 const runtimeCache = new Map<string, ChatAgentRuntimeInfo>();
 
-/** Which runtime the agent is in, re-checked when it starts, stops or opens a chat session. */
-export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRuntimeInfo {
+/**
+ * Which runtime the agent is in, re-checked when it starts, stops or opens a
+ * chat session. Null while the first answer for an eligible agent is pending.
+ */
+export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRuntimeInfo | null {
   // Tagged with the agent id, so a result for a different agent is never shown.
-  const [entry, setEntry] = useState(() => ({ agentId: agent.id, info: runtimeCache.get(agent.id) ?? NO_CHAT }));
+  const [entry, setEntry] = useState<{ agentId: string; info: ChatAgentRuntimeInfo | null }>(() => ({ agentId: agent.id, info: runtimeCache.get(agent.id) ?? null }));
   const chatSession = useChatStore((s) => s.agents[agent.id]?.sessionId ?? null);
   const remote = isRemoteProjectId(agent.projectId);
   const eligible = enabled && !remote && agent.kind === 'durable';
@@ -81,7 +86,8 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
       .catch(() => apply(NO_CHAT));
     return () => { cancelled = true; };
   }, [eligible, agent.id, agent.orchestrator, agent.status, chatSession]);
-  if (!eligible || entry.agentId !== agent.id) return eligible ? runtimeCache.get(agent.id) ?? NO_CHAT : NO_CHAT;
+  if (!eligible) return NO_CHAT;
+  if (entry.agentId !== agent.id) return runtimeCache.get(agent.id) ?? null;
   return entry.info;
 }
 
@@ -108,11 +114,20 @@ interface Props {
    * leave switching to the main pane.
    */
   canSwitch?: boolean;
+  /** Where the chat view is shown, for its behaviour and data-view-context. */
+  context?: ChatViewContext;
 }
 
-export function AgentRuntimePane({ agent, terminal, canSwitch = true }: Props) {
+/** Shown instead of the terminal while it isn't known yet whether this agent runs in chat. */
+function RuntimePending() {
+  return <div className="h-full bg-ctp-base" data-testid="agent-runtime-pending" aria-busy="true" />;
+}
+
+export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 'main' }: Props) {
   const flag = useChatFlag();
-  const info = useAgentRuntimeInfo(agent, flag);
+  const info = useAgentRuntimeInfo(agent, flag === true);
+  // Only a local durable agent can be in chat; everything else is the terminal from the first paint.
+  const couldBeChat = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId);
   // Busy in either runtime: chat from its events, the terminal from hook status.
   const chatBusy = useChatStore((s) => isRunningState(s.agents[agent.id]?.state ?? null));
   const hookState = useAgentStore((s) => s.agentDetailedStatus[agent.id]?.state);
@@ -133,7 +148,9 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true }: Props) {
     }
   }, [agent]);
 
-  if (!flag) return <>{terminal}</>;
+  if (flag === false || !couldBeChat) return <>{terminal}</>;
+  // Flag or runtime still loading: a terminal here would flash before ChatView replaces it.
+  if (flag === null || info === null) return <RuntimePending />;
 
   const requestSwitch = (mode: AgentRuntimeMode) => {
     const busy = mode === 'terminal' ? chatBusy : terminalBusy;
@@ -156,7 +173,7 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true }: Props) {
     return (
       <>
         <Suspense fallback={<div className="h-full bg-ctp-base" />}>
-          <ChatView agent={agent} switching={switching} onSwitchToTerminal={canSwitch ? () => requestSwitch('terminal') : undefined} />
+          <ChatView agent={agent} context={context} switching={switching} onSwitchToTerminal={canSwitch ? () => requestSwitch('terminal') : undefined} />
         </Suspense>
         {confirmDialog}
       </>

@@ -10,14 +10,20 @@
 import { useMemo, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { PermissionLevel } from '../../../../shared/chat';
-import { createChatViewState, type ChatViewState } from '../../../stores/chatStore';
+import { createChatViewState, useAnswering, type ChatViewState } from '../../../stores/chatStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { ChatHeader } from './ChatHeader';
 import { ChatStream } from './ChatStream';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { Composer, QueueList, TaskList } from './Composer';
-import { useChatActions, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, type ChatActions } from './useChatSession';
+import { useChatActions, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions } from './useChatSession';
 import { implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
+
+/** Where a ChatView is shown; several can show the same agent at once. */
+export type ChatViewContext = 'main' | 'popout' | 'canvas' | 'plugin';
+
+/** Canvas cards read only the end of the transcript; "Show earlier" loads the rest. */
+export const CANVAS_TRANSCRIPT_TAIL = 1500;
 
 export interface ChatViewBodyProps {
   agent: Agent;
@@ -27,6 +33,9 @@ export interface ChatViewBodyProps {
   loading?: boolean;
   onSwitchToTerminal?: () => void;
   switching?: boolean;
+  context?: ChatViewContext;
+  /** Set when earlier history wasn't loaded. */
+  onShowEarlier?: () => void;
 }
 
 function ProtocolDriftNote({ counts }: { counts: Record<string, number> }) {
@@ -57,10 +66,13 @@ function PlanHandoff({ state, onImplement }: { state: ChatViewState; onImplement
   );
 }
 
-export function ChatViewBody({ agent, state, actions, providerName, loading, onSwitchToTerminal, switching }: ChatViewBodyProps) {
+export function ChatViewBody({ agent, state, actions, providerName, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier }: ChatViewBodyProps) {
   const running = isRunningState(state.state);
   const permission = state.pendingPermissions[0];
   const question = state.pendingQuestions[0];
+  // An answer sent from another view of this agent disables the card here too.
+  const permissionBusy = useAnswering(agent.id, permission?.requestId ?? '');
+  const questionBusy = useAnswering(agent.id, question?.requestId ?? '');
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
   const [draft, setDraft] = useChatDraft(agent.id);
@@ -94,13 +106,14 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
       <PermissionCard
         key={permission.requestId}
         request={permission}
+        busy={permissionBusy}
         plan={plan}
         queueSize={state.pendingPermissions.length}
         onRespond={actions.respondPermission}
       />
     );
   } else if (question) {
-    dock = <QuestionCard key={question.requestId} request={question} onAnswer={actions.answerQuestion} />;
+    dock = <QuestionCard key={question.requestId} request={question} busy={questionBusy} onAnswer={actions.answerQuestion} />;
   } else {
     dock = (
       <>
@@ -126,9 +139,10 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-state={state.state ?? 'none'}>
+    <div className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-view-context={context} data-state={state.state ?? 'none'}>
       <ChatHeader agent={agent} state={state} providerName={providerName} onSwitchToTerminal={onSwitchToTerminal} switching={switching} />
-      <ChatStream state={state} />
+      {/* Canvas cards stay quiet: the focused view announces replies, not every card on the board. */}
+      <ChatStream state={state} announce={context !== 'canvas'} onShowEarlier={onShowEarlier} />
       <div className="flex-shrink-0 px-7 pb-4 flex justify-center" data-testid="chat-dock">
         <div className="w-full max-w-[740px] flex flex-col gap-2">
           <ProtocolDriftNote counts={state.protocolUnknown} />
@@ -145,11 +159,13 @@ export interface ChatViewProps {
   agent: Agent;
   onSwitchToTerminal?: () => void;
   switching?: boolean;
+  context?: ChatViewContext;
 }
 
 /** ChatView bound to the chat store. */
-export function ChatView({ agent, onSwitchToTerminal, switching }: ChatViewProps) {
-  useChatTranscript(agent.id);
+export function ChatView({ agent, onSwitchToTerminal, switching, context = 'main' }: ChatViewProps) {
+  useChatTranscript(agent.id, context === 'canvas' ? CANVAS_TRANSCRIPT_TAIL : undefined);
+  const earlier = useEarlierHistory(agent.id);
   const stored = useChatState(agent.id);
   const loading = useChatLoading(agent.id);
   const actions = useChatActions(agent.id);
@@ -166,6 +182,8 @@ export function ChatView({ agent, onSwitchToTerminal, switching }: ChatViewProps
       loading={loading && !stored}
       onSwitchToTerminal={onSwitchToTerminal}
       switching={switching}
+      context={context}
+      onShowEarlier={earlier.partial ? earlier.loadAll : undefined}
     />
   );
 }

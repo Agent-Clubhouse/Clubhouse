@@ -661,6 +661,10 @@ interface ChatStoreState {
   agents: Record<string, ChatViewState>;
   /** Agents whose transcript is being read. */
   loading: Record<string, boolean>;
+  /** Agents whose state came from a tail of the transcript; earlier events weren't read. */
+  partial: Record<string, boolean>;
+  /** Permission or question answers in flight, keyed `${agentId}:${requestId}`, so every view disables the card. */
+  answering: Record<string, true>;
 
   loadTranscript: (agentId: string, tail?: number) => Promise<void>;
   applyEvent: (event: ChatEvent) => void;
@@ -680,64 +684,100 @@ interface ChatStoreState {
  */
 const pendingLive = new Map<string, ChatEvent[]>();
 
-export const useChatStore = create<ChatStoreState>((set, get) => ({
-  agents: {},
-  loading: {},
+function answerKey(agentId: string, requestId: string): string {
+  return `${agentId}:${requestId}`;
+}
 
-  loadTranscript: async (agentId, tail) => {
-    pendingLive.set(agentId, []);
-    set((s) => ({ loading: { ...s.loading, [agentId]: true } }));
-    let events: ChatEvent[] = [];
+export const useChatStore = create<ChatStoreState>((set, get) => {
+  /**
+   * Send an answer once: a second click, in this view or another one showing
+   * the same agent, while the first is in flight is ignored.
+   */
+  const answerOnce = async (agentId: string, requestId: string, send: () => Promise<void>): Promise<void> => {
+    const key = answerKey(agentId, requestId);
+    if (get().answering[key]) return;
+    set((s) => ({ answering: { ...s.answering, [key]: true } }));
     try {
-      events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
-    } catch {
-      // Treat an unreadable transcript as empty; live events still apply.
+      await send();
+    } finally {
+      set((s) => {
+        const answering = { ...s.answering };
+        delete answering[key];
+        return { answering };
+      });
     }
-    const buffered = pendingLive.get(agentId) ?? [];
-    pendingLive.delete(agentId);
-    // The transcript is authoritative, so rebuild from it rather than merging
-    // into whatever live state existed before the load started.
-    const fromTranscript = foldChatEvents(undefined, agentId, events);
-    const next = foldChatEvents(fromTranscript, agentId, buffered);
-    set((s) => {
-      const loading = { ...s.loading };
-      delete loading[agentId];
-      return { agents: { ...s.agents, [agentId]: next }, loading };
-    });
-  },
+  };
 
-  applyEvent: (event) => {
-    const buffer = pendingLive.get(event.agentId);
-    if (buffer) {
-      buffer.push(event);
-      return;
-    }
-    const prev = get().agents[event.agentId];
-    const next = reduceChatEvent(prev, event);
-    if (next === prev) return;
-    set((s) => ({ agents: { ...s.agents, [event.agentId]: next } }));
-  },
+  return {
+    agents: {},
+    loading: {},
+    partial: {},
+    answering: {},
 
-  reset: (agentId) => {
-    pendingLive.delete(agentId);
-    set((s) => {
-      const agents = { ...s.agents };
-      const loading = { ...s.loading };
-      delete agents[agentId];
-      delete loading[agentId];
-      return { agents, loading };
-    });
-  },
+    loadTranscript: async (agentId, tail) => {
+      pendingLive.set(agentId, []);
+      set((s) => ({ loading: { ...s.loading, [agentId]: true } }));
+      let events: ChatEvent[] = [];
+      try {
+        events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
+      } catch {
+        // Treat an unreadable transcript as empty; live events still apply.
+      }
+      const buffered = pendingLive.get(agentId) ?? [];
+      pendingLive.delete(agentId);
+      // The transcript is authoritative, so rebuild from it rather than merging
+      // into whatever live state existed before the load started.
+      const fromTranscript = foldChatEvents(undefined, agentId, events);
+      const next = foldChatEvents(fromTranscript, agentId, buffered);
+      // A tail that came back full may have cut earlier events off.
+      const cut = tail !== undefined && events.length >= tail;
+      set((s) => {
+        const loading = { ...s.loading };
+        delete loading[agentId];
+        return { agents: { ...s.agents, [agentId]: next }, loading, partial: { ...s.partial, [agentId]: cut } };
+      });
+    },
 
-  send: (agentId, text, delivery) => window.clubhouse.chat.sendMessage(agentId, text, delivery),
-  interrupt: (agentId) => window.clubhouse.chat.interrupt(agentId),
-  respondPermission: (agentId, requestId, optionId, extras) =>
-    window.clubhouse.chat.respondPermission(agentId, requestId, optionId, extras),
-  answerQuestion: (agentId, requestId, answers) =>
-    window.clubhouse.chat.answerQuestion(agentId, requestId, answers),
-  setLevel: (agentId, level) => window.clubhouse.chat.setLevel(agentId, level),
-  setModel: (agentId, modelId, effort) => window.clubhouse.chat.setModel(agentId, modelId, effort),
-}));
+    applyEvent: (event) => {
+      const buffer = pendingLive.get(event.agentId);
+      if (buffer) {
+        buffer.push(event);
+        return;
+      }
+      const prev = get().agents[event.agentId];
+      const next = reduceChatEvent(prev, event);
+      if (next === prev) return;
+      set((s) => ({ agents: { ...s.agents, [event.agentId]: next } }));
+    },
+
+    reset: (agentId) => {
+      pendingLive.delete(agentId);
+      set((s) => {
+        const agents = { ...s.agents };
+        const loading = { ...s.loading };
+        const partial = { ...s.partial };
+        delete agents[agentId];
+        delete loading[agentId];
+        delete partial[agentId];
+        return { agents, loading, partial };
+      });
+    },
+
+    send: (agentId, text, delivery) => window.clubhouse.chat.sendMessage(agentId, text, delivery),
+    interrupt: (agentId) => window.clubhouse.chat.interrupt(agentId),
+    respondPermission: (agentId, requestId, optionId, extras) =>
+      answerOnce(agentId, requestId, () => window.clubhouse.chat.respondPermission(agentId, requestId, optionId, extras)),
+    answerQuestion: (agentId, requestId, answers) =>
+      answerOnce(agentId, requestId, () => window.clubhouse.chat.answerQuestion(agentId, requestId, answers)),
+    setLevel: (agentId, level) => window.clubhouse.chat.setLevel(agentId, level),
+    setModel: (agentId, modelId, effort) => window.clubhouse.chat.setModel(agentId, modelId, effort),
+  };
+});
+
+/** True while an answer to this request is in flight from any view. */
+export function useAnswering(agentId: string, requestId: string): boolean {
+  return useChatStore((s) => !!s.answering[answerKey(agentId, requestId)]);
+}
 
 /** Subscribe the store to live chat events from the main process. Returns the unsubscribe. */
 export function initChatEventListener(): () => void {

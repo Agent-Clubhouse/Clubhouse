@@ -42,6 +42,11 @@ export interface ViewportControlsResult {
   panStartRef: React.RefObject<{ x: number; y: number; panX: number; panY: number }>;
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+}
+
 export function useViewportControls({
   viewport,
   views,
@@ -82,6 +87,8 @@ export function useViewportControls({
     selectedViewIds: string[],
     onClearSelection: () => void,
   ) => {
+    // Typing in a card (a chat composer, a search box) isn't a canvas gesture.
+    if (isEditableTarget(e.target)) return;
     if (e.key === 'Escape') {
       if (currentSelectedViewId || selectedViewIds.length > 0) {
         e.preventDefault();
