@@ -3,7 +3,7 @@
 ## Provenance
 
 - Upstream repository: https://github.com/masra91/framebriar
-- Source: `37282a360c4cae6e85c82a4a4b36b755e7624f0a`, fetched `origin/main`.
+- Source: `9dda098eb8ffef89a71dfb7a4452fc6c1166d249`, fetched `origin/main`. Access behavior was introduced by ancestor `37282a360c4cae6e85c82a4a4b36b755e7624f0a`; all eleven vendored runtime files are byte-identical between these commits.
 - Previous Clubhouse pin: `0c8b67a5884e5cb3dc47205f77bae33f1123ec21`.
 - Clubhouse base: `2c26a643f8c5ca7b7b3efe9d9164a825b3accbda`.
 - Distribution remains the existing source-vendoring mechanism, not a published npm version upgrade.
@@ -13,11 +13,11 @@
 Reproduce the import and verify against an upstream checkout containing the source commit:
 
 ```sh
-node scripts/vendor-framebriar.mjs --from /path/to/framebriar --commit 37282a360c4cae6e85c82a4a4b36b755e7624f0a
+node scripts/vendor-framebriar.mjs --from /path/to/framebriar --commit 9dda098eb8ffef89a71dfb7a4452fc6c1166d249
 node scripts/vendor-framebriar.mjs --check --from /path/to/framebriar
 ```
 
-The upstream `docs/general-feedback-sdk-pin.json` still names `82eb54c` and is not the source of this manifest. The local upstream checkout also contained an unpushed packaging commit (`7c97dfe`) when inspected; it was not used.
+The initial fetched main was `37282a3`; its browser manifest still named `82eb54c` and was not used. Upstream then merged packaging (`7c97dfe`) and documentation cleanup into `9dda098`, removing that stale manifest. This final pin uses the newer main, verified to contain the same SDK runtime bytes.
 
 ## Behavior and boundaries
 
@@ -40,5 +40,7 @@ The deployed backend revision and deduplication capability were not verified. Th
 - Pinned upstream `tests/node-adapter.test.mjs` and `tests/correlation.test.mjs`: 19 passed, including lost-reply recovery against the real in-memory issuer with exactly one enrollment. Test-only secure storage and transport; no hosted or OS-keyring acceptance claim.
 - Full repository lint: zero errors (existing warnings remain).
 - Production TypeScript check: passed.
+- Webpack app build: passed. Packaging initially stopped at an Electron download because sandbox DNS was unavailable; a network-enabled local package run and PR builds are tracked in the PR.
+- Full local suite was attempted under the sandbox, which denied loopback listeners and process inspection/cleanup (`EPERM`). Normal PR CI provides the complete platform suite/E2E result.
 
 Full suite, packaging, and PR CI results are recorded in the PR. No test media or build artifacts are committed.

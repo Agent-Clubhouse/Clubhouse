@@ -1,6 +1,6 @@
 {
   "repo": "https://github.com/masra91/framebriar",
-  "commit": "37282a360c4cae6e85c82a4a4b36b755e7624f0a",
+  "commit": "9dda098eb8ffef89a71dfb7a4452fc6c1166d249",
   "vendoredAt": "2026-10-17",
   "files": {
     "adapters/browser/otel-exporter.mjs": "8daf0ec59417a724ab82614c83397c20f330a22978f864927cdb6459b5f1857b",
