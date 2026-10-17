@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { isNewChromeEnabled } from '../chrome/chromeFlag';
 import { CHROME_STORAGE_KEY } from '../chrome/storageKey';
+import { reportChromeActionFailed } from '../chrome/telemetry';
 
 /** The legacy shell's overrides. The new shell never writes it (docs/chrome-redesign-spec.md §5.3). */
 const OVERRIDES_KEY = 'clubhouse_keyboard_shortcut_overrides';
@@ -92,7 +93,10 @@ function saveChromeOverrides(overrides: ShortcutOverrides): void {
     try { state = raw ? JSON.parse(raw) ?? {} : {}; } catch { /* corrupt: chromeStore rewrites its own fields */ }
     state.shortcuts = { version: CHROME_SHORTCUTS_VERSION, overrides };
     localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify(state));
-  } catch { /* ignore */ }
+  } catch (err) {
+    console.warn('[store:shortcuts] Failed to persist new-layout shortcut overrides (quota?):', err instanceof Error ? err.message : err);
+    reportChromeActionFailed('shortcut_save', err);
+  }
 }
 
 function saveOverrides(overrides: ShortcutOverrides): void {
@@ -169,9 +173,17 @@ export const CHROME_SHORTCUTS: ShortcutSpec[] = [
 /** Ids whose legacy overrides carry into the new shell: the shared actions and switch-agent-N. */
 const SEEDABLE_IDS = new Set([...SHARED_IDS, ...Array.from({ length: 9 }, (_, i) => `switch-agent-${i + 1}`)]);
 
-/** The new shell's first overrides: the legacy ones that mean the same thing there. Retired ids are left out. */
+const LEGACY_DEFAULTS = new Map(LEGACY_SHORTCUTS.map((s) => [s.id, s.defaultBinding]));
+
+/**
+ * The new shell's first overrides: the legacy ones that mean the same thing
+ * there. Retired ids are left out, and so is an "override" that only restates
+ * the legacy default (⌘1 re-recorded for switch-agent-1), which would otherwise
+ * take the new shell's ⌘1 from the Agents tab.
+ */
 export function seedChromeOverrides(legacy: ShortcutOverrides): ShortcutOverrides {
-  return Object.fromEntries(Object.entries(legacy).filter(([id]) => SEEDABLE_IDS.has(id)));
+  return Object.fromEntries(Object.entries(legacy).filter(([id, binding]) =>
+    SEEDABLE_IDS.has(id) && binding !== LEGACY_DEFAULTS.get(id)));
 }
 
 /**
@@ -220,13 +232,11 @@ interface KeyboardShortcutsState {
   startEditing: (id: string) => void;
   stopEditing: () => void;
   getBindingForAction: (actionId: string) => string;
-  /** Re-read the active shell's set and overrides (also seeds the new shell on its first run). */
-  reload: () => void;
 }
 
 export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, get) => {
   // Each shell edits its own set and storage (spec §5.3); the layout is fixed per session.
-  let shell = loadForActiveShell();
+  const shell = loadForActiveShell();
   const build = (overrides: ShortcutOverrides) => buildShortcuts(shell.definitions, overrides, { resolveCollisions: shell.chrome });
   const save = (overrides: ShortcutOverrides) => (shell.chrome ? saveChromeOverrides(overrides) : saveOverrides(overrides));
   return {
@@ -251,10 +261,6 @@ export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, ge
       save({});
     },
 
-    reload: () => {
-      shell = loadForActiveShell();
-      set({ overrides: shell.overrides, shortcuts: build(shell.overrides), editingId: null });
-    },
 
     startEditing: (id) => set({ editingId: id }),
     stopEditing: () => set({ editingId: null }),
