@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CODEX_CHAT_CAPABILITIES, CodexChatEventMapper, codexErrorCode, toCodexInput } from './codex-chat-events';
+import { CodexChatEventMapper, codexErrorCode, toCodexInput } from './codex-chat-events';
 import { isChatEvent, CHAT_CONTRACT_VERSION, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ServerNotification } from './codex-protocol';
 import * as fx from './codex-protocol/__fixtures__/app-server-session';
@@ -297,9 +297,5 @@ describe('codex chat helpers', () => {
       { type: 'image', url: 'data:image/png;base64,AAAA' },
       { type: 'mention', name: 'src/a.ts', path: 'src/a.ts' },
     ]);
-  });
-
-  it('advertises steer, interrupt, native resume and limits', () => {
-    expect(CODEX_CHAT_CAPABILITIES).toMatchObject({ steer: true, interrupt: true, resume: 'native', limits: true, usage: 'tokens' });
   });
 });

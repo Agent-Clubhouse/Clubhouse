@@ -5,7 +5,6 @@
 // stamp and publish. It holds only the state the translation needs (streamed
 // plan text, open permission requests and their native decisions).
 
-import type { ChatCapabilities } from '../../../shared/chat/capabilities';
 import type {
   ChatEventDraft,
   ChatSessionState,
@@ -36,26 +35,6 @@ import {
   type TurnStatus,
   type UserInput,
 } from './codex-protocol';
-
-/** What the Codex app-server driver supports live (app-server v2, stable surface). */
-export const CODEX_CHAT_CAPABILITIES: ChatCapabilities = Object.freeze({
-  steer: true,
-  queue: 'client',
-  interrupt: true,
-  resume: 'native',
-  fork: true,
-  rewind: false,
-  planApproval: false,
-  questions: false,
-  subagents: 'ids_only',
-  usage: 'tokens',
-  limits: true,
-  images: true,
-  slashCommands: false,
-  modelSwitch: 'per_turn',
-  liveLevels: ['ask', 'auto_edit', 'auto', 'full_access'],
-  login: 'terminal',
-}) as ChatCapabilities;
 
 type Item<T extends ThreadItem['type']> = Extract<ThreadItem, { type: T }>;
 

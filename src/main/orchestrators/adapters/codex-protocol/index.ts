@@ -37,6 +37,8 @@ export { CODEX_APP_SERVER_SCHEMA_VERSION, CODEX_APP_SERVER_GENERATE_COMMAND } fr
 export { CODEX_SERVER_NOTIFICATION_METHODS, CODEX_SERVER_REQUEST_METHODS };
 
 export type { ClientRequest, InitializeResponse, ServerNotification, ServerRequest };
+export type { ThreadStartResponse, ThreadResumeResponse };
+export type { JsonValue } from './generated/serde_json/JsonValue';
 export type { InitializeParams } from './generated/InitializeParams';
 export type { ClientInfo } from './generated/ClientInfo';
 export type { RequestId } from './generated/RequestId';

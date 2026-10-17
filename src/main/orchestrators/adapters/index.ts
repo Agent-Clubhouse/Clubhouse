@@ -14,3 +14,5 @@ export {
   textInput,
 } from './codex-app-server-client';
 export type { CodexAppServerClientOpts } from './codex-app-server-client';
+export { CodexChatDriver, CODEX_CHAT_CAPABILITIES } from './codex-chat-driver';
+export { CodexChatEventMapper } from './codex-chat-events';
