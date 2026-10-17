@@ -407,15 +407,18 @@ describe('ChatAgentRuntime', () => {
     expect(transcript.some((e) => e.type === 'error' && e.data.code === 'driver_stream_failed')).toBe(true);
   });
 
-  it('abandons silently after a failed start', async () => {
+  it('abandons after a failed start without firing onEnded, ending the session as a fallback', async () => {
     const driver = new FakeChatDriver();
     const { runtime, onEnded } = makeRuntime(driver);
     await runtime.start();
     await runtime.abandon();
+    await runtime.abandon();
     await flush();
     expect(driver.last.closed).toBe(true);
     expect(onEnded).not.toHaveBeenCalled();
-    expect(types()).not.toContain('session_ended');
+    const ended = transcript.filter((e) => e.type === 'session_ended');
+    expect(ended).toHaveLength(1);
+    expect(ended[0].data).toMatchObject({ reason: 'fallback' });
   });
 
   it('runs the pre-prompt hook before new prompts but not before steering', async () => {
