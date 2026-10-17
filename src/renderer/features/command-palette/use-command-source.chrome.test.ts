@@ -47,7 +47,7 @@ describe('palette in the new shell', () => {
     expect(list.find((i) => i.id === 'host:local')?.label).toBe('Switch to Local');
     expect(list.find((i) => i.id === 'host:s1')).toMatchObject({ label: 'Switch to Studio', category: 'Hosts' });
     expect(list.find((i) => i.id === `project:${rp}`)?.detail).toBe('on Studio');
-    expect(list.find((i) => i.id === `agent:${ra}`)?.detail).toBe('Site on Studio · Idle');
+    expect(list.find((i) => i.id === `agent:${ra}`)?.detail).toBe('Site on Studio · Done');
   });
 
   it('opening a satellite’s agent switches host and selects it', () => {
