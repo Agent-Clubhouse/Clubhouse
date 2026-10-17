@@ -81,7 +81,9 @@ describe('Clubhouse Workbook', () => {
   it('ships an ARM wrapper and alert rules that match the generator (run scripts/build-workbook-arm.mjs)', async () => {
     const { buildAll } = await import('../scripts/build-workbook-arm.mjs');
     for (const [file, content] of Object.entries(buildAll() as Record<string, string>)) {
-      expect(await fs.promises.readFile(path.join(path.dirname(WORKBOOK), file), 'utf-8'), file).toBe(content);
+      // Windows checkouts may convert to CRLF; the generator writes LF.
+      const onDisk = (await fs.promises.readFile(path.join(path.dirname(WORKBOOK), file), 'utf-8')).replace(/\r\n/g, '\n');
+      expect(onDisk, file).toBe(content);
     }
     const deploy = JSON.parse(await fs.promises.readFile(path.join(path.dirname(WORKBOOK), 'azuredeploy.json'), 'utf-8'));
     expect(JSON.parse(deploy.resources[0].properties.serializedData)).toEqual(await loadWorkbook());
