@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { AgentHookEvent } from '../../../../shared/types';
 import { TimelineBuilder, type RunTotals, type Step, type TranscriptEventLike } from './timeline';
 
-const PAGE_SIZE = 100;
 /** How recently a hook must have fired for us to consider hooks "active" and skip polling. */
 const HOOK_ACTIVE_THRESHOLD_MS = 5_000;
 /** Fallback poll interval, used only when hooks are not firing. */
@@ -27,6 +26,7 @@ export function useRunTranscript(agentId: string, live: boolean): RunTranscript 
   const [state, setState] = useState<RunTranscript>(() => ({ steps: [], totals: emptyTotals(), toolTick: 0 }));
   const builderRef = useRef<TimelineBuilder>(new TimelineBuilder());
   const notesRef = useRef<Step[]>([]);
+  /** Byte cursor into the transcript file. */
   const offsetRef = useRef(0);
   const tickRef = useRef(0);
   const rafRef = useRef(0);
@@ -63,16 +63,22 @@ export function useRunTranscript(agentId: string, live: boolean): RunTranscript 
       try {
         while (!cancelled) {
           again = false;
-          const page = await window.clubhouse.agent.readTranscriptPage(agentId, offsetRef.current, PAGE_SIZE);
-          if (cancelled || !page) return;
-          if (page.events.length === 0) {
-            if (page.totalEvents > offsetRef.current) offsetRef.current = page.totalEvents;
-            return;
+          // Byte cursor from main: complete lines only, malformed lines skipped,
+          // so rows are never duplicated or dropped.
+          const chunk = await window.clubhouse.agent.readTranscriptFrom(agentId, offsetRef.current);
+          if (cancelled || !chunk) return;
+          if (chunk.reset) {
+            builderRef.current = new TimelineBuilder();
+            notesRef.current = [];
           }
-          offsetRef.current += page.events.length;
-          builderRef.current.push(page.events as TranscriptEventLike[]);
-          publish();
-          if (offsetRef.current >= page.totalEvents) return;
+          offsetRef.current = chunk.cursor;
+          if (chunk.events.length) {
+            builderRef.current.push(chunk.events as TranscriptEventLike[]);
+            publish();
+          } else if (chunk.reset) {
+            publish();
+          }
+          if (!chunk.more) return;
         }
       } catch {
         // telemetry-exempt: the transcript isn't written yet; the next hook or poll retries
@@ -121,14 +127,14 @@ function emptyTotals(): RunTotals {
   return { toolCalls: 0, inputTokens: 0, outputTokens: 0, summary: null, resultIsError: false };
 }
 
-/** Re-render every second while `active`, for elapsed times. */
-export function useNow(active: boolean): number {
+/** Re-render every `intervalMs` while `active`, for elapsed and relative times. */
+export function useNow(active: boolean, intervalMs = 1000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     setNow(Date.now());
     if (!active) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
     return () => clearInterval(id);
-  }, [active]);
+  }, [active, intervalMs]);
   return now;
 }

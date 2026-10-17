@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { installTranscriptShim } from './transcript-test-utils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { HeadlessRunFinished } from './HeadlessRunFinished';
 import { useAgentStore } from '../../../stores/agentStore';
@@ -30,7 +31,9 @@ const done: CompletedQuickAgent = {
 
 const spawnQuickAgent = vi.fn();
 
+let transcript: ReturnType<typeof installTranscriptShim>;
 beforeEach(() => {
+  transcript = installTranscriptShim();
   vi.clearAllMocks();
   spawnQuickAgent.mockResolvedValue('q2');
   useAgentStore.setState({
@@ -38,7 +41,7 @@ beforeEach(() => {
     spawnQuickAgent,
   });
   useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'p', path: '/projects/p' }] });
-  window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(async (_id: string, offset: number) => offset > 0
+  transcript.page = vi.fn().mockImplementation(async (_id: string, offset: number) => offset > 0
     ? { events: [], totalEvents: 2 }
     : {
       events: [
@@ -74,7 +77,8 @@ describe('HeadlessRunFinished', () => {
     render(<HeadlessRunFinished completed={done} onDismiss={vi.fn()} />);
     fireEvent.click(screen.getByTestId('run-review-button'));
     expect(await screen.findByTestId('run-file-diff')).toBeInTheDocument();
-    expect(window.clubhouse.git.diff).toHaveBeenCalledWith('/wt', 'src/a.ts', false);
+    // Base sha against the working tree: the same span the +/- sizes count, so a run that committed still shows its diff
+    expect(window.clubhouse.git.diff).toHaveBeenCalledWith('/wt', 'src/a.ts', false, 'abc123');
   });
 
   it('Delete asks first', () => {
@@ -105,7 +109,7 @@ describe('HeadlessRunFinished', () => {
     };
 
     it('shows the error kept after exit and where it stopped', async () => {
-      window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(async (_id: string, offset: number) => offset > 0
+      transcript.page = vi.fn().mockImplementation(async (_id: string, offset: number) => offset > 0
         ? { events: [], totalEvents: 1 }
         : { events: [{ type: 'assistant', _ts: T0 + 1000, message: { content: [{ type: 'tool_use', id: 'x', name: 'Edit', input: { file_path: '/wt/src/a.ts' } }] } }], totalEvents: 1 });
       render(<HeadlessRunFinished completed={failed} onDismiss={vi.fn()} />);

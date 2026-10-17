@@ -35,7 +35,8 @@ export function HeadlessRunFinished({ completed, onDismiss, onDelete, onRetried,
   const parentName = useAgentStore((s) => (completed.parentAgentId ? s.agents[completed.parentAgentId]?.name : undefined));
   const projects = useProjectStore((s) => s.projects);
   const { steps, totals: parsed } = useRunTranscript(completed.id, false);
-  const now = useNow(true);
+  // Only "finished 2m ago" moves, so a slow tick is enough
+  const now = useNow(true, 30_000);
   const [inset, setInset] = useState<{ kind: 'transcript' } | { kind: 'file'; path: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -143,7 +144,7 @@ export function HeadlessRunFinished({ completed, onDismiss, onDelete, onRetried,
         inset={inset?.kind === 'transcript'
           ? <TranscriptInset agentId={completed.id} onClose={() => setInset(null)} />
           : inset?.kind === 'file' && cwd
-            ? <FileDiffInset cwd={cwd} path={inset.path} onClose={() => setInset(null)} />
+            ? <FileDiffInset cwd={cwd} path={inset.path} base={completed.baseSha} onClose={() => setInset(null)} />
             : undefined}
       />
       {onDelete && (

@@ -270,25 +270,34 @@ export async function push(dirPath: string): Promise<GitOpResult> {
   });
 }
 
+/**
+ * A file's `original` (at `base`, default HEAD) and `modified` (index when
+ * `staged`, else the working tree) contents. A run monitor passes the sha the
+ * run started from, so commits the run made show in the diff.
+ */
 export async function getFileDiff(
   dirPath: string,
   filePath: string,
-  staged: boolean
+  staged: boolean,
+  base?: string,
 ): Promise<{ original: string; modified: string }> {
-  return gitOp('diff', async () => ({ value: await readFileDiff(dirPath, filePath, staged) }));
+  return gitOp('diff', async () => ({ value: await readFileDiff(dirPath, filePath, staged, base) }));
 }
 
 async function readFileDiff(
   dirPath: string,
   filePath: string,
-  staged: boolean
+  staged: boolean,
+  base?: string,
 ): Promise<{ original: string; modified: string }> {
   validateFilePath(filePath);
+  const ref = base || 'HEAD';
+  if (ref.startsWith('-') || ref.includes(':') || ref.includes('\0')) throw new Error(`Invalid base: ${ref}`);
 
-  // Get the HEAD version (empty for new/untracked files)
+  // The version at the base (empty for files added since)
   let original = '';
   try {
-    original = await gitExec(['show', `HEAD:${filePath}`], dirPath, undefined, 'diff');
+    original = await gitExec(['show', `${ref}:${filePath}`], dirPath, undefined, 'diff');
   } catch {
     // File doesn't exist in HEAD (new/untracked) — leave empty
   }

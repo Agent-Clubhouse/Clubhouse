@@ -231,8 +231,10 @@ function add(a: [number, number], b: [number, number]): [number, number] {
 
 /* ── Describing a tool step ───────────────────────────────────────── */
 
-const READ_TOOLS = new Set(['Read', 'NotebookRead', 'LS', 'read_file', 'view']);
+const READ_TOOLS = new Set(['Read', 'NotebookRead', 'read_file', 'view']);
 const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'search', 'grep', 'glob', 'find']);
+/** Listing a folder isn't reading a file: folded with reads, but counted on its own. */
+const LIST_TOOLS = new Set(['LS', 'list_directory']);
 const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'NotebookEdit', 'apply_patch', 'str_replace', 'edit_file']);
 const WRITE_TOOLS = new Set(['Write', 'create_file', 'write_file']);
 const SHELL_TOOLS = new Set(['Bash', 'shell', 'bash', 'run_shell_command', 'BashOutput']);
@@ -268,17 +270,26 @@ function firstLine(s: string, max = 120): string {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
-/** First file named in an apply_patch input (a path, or a patch body). */
-function patchPath(input: Record<string, unknown>): string {
+/**
+ * First file named in an apply_patch input (a path, or a patch body). A
+ * `*** Move to:` under the first file means it now lives at the new path.
+ */
+export function patchPath(input: Record<string, unknown>): string {
   const direct = str(input.path) || str(input.file_path);
   if (direct) return direct;
   const body = str(input.patch) || str(input.input) || str(input.command);
-  const m = body.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/m);
-  return m ? m[1].trim() : '';
+  const lines = body.split('\n');
+  const first = lines.findIndex((l) => /^\*\*\* (?:Add|Update|Delete) File: /.test(l));
+  if (first < 0) return '';
+  const name = lines[first].replace(/^\*\*\* (?:Add|Update|Delete) File: /, '').trim();
+  const next = lines.slice(first + 1).find((l) => l.startsWith('*** '));
+  const moved = next?.match(/^\*\*\* Move to: (.+)$/);
+  return moved ? moved[1].trim() : name;
 }
 
+/** Reads, searches and folder listings fold together. */
 export function isReadOrSearch(name: string): boolean {
-  return READ_TOOLS.has(name) || SEARCH_TOOLS.has(name);
+  return READ_TOOLS.has(name) || SEARCH_TOOLS.has(name) || LIST_TOOLS.has(name);
 }
 
 /** Relative to the run's directory when inside it. */
@@ -295,6 +306,11 @@ export function describeTool(step: ToolStep, base?: string): ToolDescription {
     const p = rel(str(input.file_path) || str(input.notebook_path) || str(input.path), base);
     const { name: n, dir } = splitDir(p);
     return { verb: 'Read', active: 'Reading', target: n || 'a file', detail: dir, mono: false, glyph: 'file' };
+  }
+  if (LIST_TOOLS.has(name)) {
+    const p = rel(str(input.path) || str(input.dir_path), base);
+    const { name: n, dir } = splitDir(p);
+    return { verb: 'Listed', active: 'Listing', target: n || 'a folder', detail: dir, mono: false, glyph: 'file' };
   }
   if (SEARCH_TOOLS.has(name)) {
     const pattern = str(input.pattern) || str(input.query) || str(input.glob);
@@ -326,28 +342,49 @@ export function describeTool(step: ToolStep, base?: string): ToolDescription {
   return { verb: name, active: name, target: firstLine(firstString, 80), detail: '', mono: true, glyph: 'tool' };
 }
 
-/** "Read 6 files", "Searched 2 patterns", "Read 4 files, searched 2". */
+/** "Read 6 files", "Searched 2 patterns", "Read 4 files, searched 2, listed 1 folder". */
 export function describeFold(steps: ToolStep[]): string {
   const reads = steps.filter((s) => READ_TOOLS.has(s.name)).length;
-  const searches = steps.length - reads;
-  const files = (n: number) => `${n} ${n === 1 ? 'file' : 'files'}`;
-  if (!searches) return `Read ${files(reads)}`;
-  if (!reads) return `Searched ${searches} ${searches === 1 ? 'pattern' : 'patterns'}`;
-  return `Read ${files(reads)}, searched ${searches}`;
+  const lists = steps.filter((s) => LIST_TOOLS.has(s.name)).length;
+  const searches = steps.length - reads - lists;
+  const n = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+  const parts: string[] = [];
+  if (reads) parts.push(`read ${n(reads, 'file', 'files')}`);
+  if (searches) parts.push(reads ? `searched ${searches}` : `searched ${n(searches, 'pattern', 'patterns')}`);
+  if (lists) parts.push(`listed ${n(lists, 'folder', 'folders')}`);
+  const text = parts.join(', ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** Fold runs of two or more consecutive reads and searches into one row. */
+/** stderr lines the live view mixes into the steps (see useRunTranscript). */
+function isNote(s: Step): boolean {
+  return s.kind === 'text' && s.id.startsWith('note:');
+}
+
+/**
+ * Fold runs of two or more consecutive reads, searches and listings into one
+ * row. A step that failed or hasn't finished (running, or where a run
+ * stopped) stays on its own row so it's never hidden in a fold, and stderr
+ * lines arriving mid-run don't split the fold: they follow it.
+ */
 export function foldSteps(steps: Step[]): TimelineRow[] {
   const rows: TimelineRow[] = [];
   let run: ToolStep[] = [];
+  let notes: Step[] = [];
   const flush = () => {
     if (run.length >= 2) rows.push({ kind: 'fold', id: `fold:${run[0].id}`, ts: run[0].ts, steps: run });
     else rows.push(...run);
+    rows.push(...(notes as TimelineRow[]));
     run = [];
+    notes = [];
   };
   for (const s of steps) {
-    if (s.kind === 'tool' && isReadOrSearch(s.name)) {
+    if (s.kind === 'tool' && isReadOrSearch(s.name) && !s.isError && s.endTs !== undefined) {
       run.push(s);
+      continue;
+    }
+    if (run.length && isNote(s)) {
+      notes.push(s);
       continue;
     }
     flush();

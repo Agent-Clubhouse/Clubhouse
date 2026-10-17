@@ -110,7 +110,7 @@ export function HeadlessAgentView({ agent, stacked }: Props) {
         inset={inset?.kind === 'transcript'
           ? <TranscriptInset agentId={agent.id} onClose={() => setInset(null)} />
           : inset?.kind === 'file' && cwd
-            ? <FileDiffInset cwd={cwd} path={inset.path} onClose={() => setInset(null)} />
+            ? <FileDiffInset cwd={cwd} path={inset.path} base={agent.runBaseSha} onClose={() => setInset(null)} />
             : undefined}
       />
       <ConfirmDestructiveAction

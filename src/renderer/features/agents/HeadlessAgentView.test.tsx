@@ -1,4 +1,5 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
+import { installTranscriptShim } from './states/transcript-test-utils';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HeadlessAgentView } from './HeadlessAgentView';
 import { useAgentStore } from '../../stores/agentStore';
@@ -36,14 +37,16 @@ async function flushAsyncWork() {
 }
 
 describe('HeadlessAgentView', () => {
+  let transcript: ReturnType<typeof installTranscriptShim>;
   beforeEach(() => {
     vi.useFakeTimers();
+    transcript = installTranscriptShim();
     vi.clearAllMocks();
     resetStore();
     // Mock IPC calls
     window.clubhouse.agent.onHookEvent = vi.fn(() => vi.fn());
     window.clubhouse.agent.readTranscript = vi.fn().mockResolvedValue('');
-    window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({
+    transcript.page = vi.fn().mockResolvedValue({
       events: [],
       totalEvents: 0,
     });
@@ -115,7 +118,7 @@ describe('HeadlessAgentView', () => {
       hookCallback = cb;
       return vi.fn();
     });
-    window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(async (_agentId: string, offset: number) => {
+    transcript.page = vi.fn().mockImplementation(async (_agentId: string, offset: number) => {
       if (!transcriptReady) {
         return { events: [], totalEvents: 0 };
       }
@@ -161,7 +164,7 @@ describe('HeadlessAgentView', () => {
   });
 
   it('polls transcript pages incrementally instead of rereading from the beginning', async () => {
-    window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(async (_agentId: string, offset: number) => {
+    transcript.page = vi.fn().mockImplementation(async (_agentId: string, offset: number) => {
       if (offset === 0) {
         return {
           events: [
@@ -202,7 +205,7 @@ describe('HeadlessAgentView', () => {
     });
     await flushAsyncWork();
 
-    const offsets = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls
+    const offsets = vi.mocked(transcript.page).mock.calls
       .map(([, offset]) => offset);
 
     expect(offsets.filter((offset) => offset === 0)).toHaveLength(1);
@@ -217,7 +220,7 @@ describe('HeadlessAgentView', () => {
       hookCallback = cb;
       return vi.fn();
     });
-    window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({
+    transcript.page = vi.fn().mockResolvedValue({
       events: [],
       totalEvents: 0,
     });
@@ -226,7 +229,7 @@ describe('HeadlessAgentView', () => {
 
     // Initial mount triggers one sync
     await flushAsyncWork();
-    const callsAfterMount = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    const callsAfterMount = vi.mocked(transcript.page).mock.calls.length;
 
     // Fire hook event to mark hooks as active
     act(() => {
@@ -237,7 +240,7 @@ describe('HeadlessAgentView', () => {
       });
     });
     await flushAsyncWork();
-    const callsAfterHook = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    const callsAfterHook = vi.mocked(transcript.page).mock.calls.length;
 
     // Fire another hook at t=3s to keep hooks "active"
     await act(async () => {
@@ -251,7 +254,7 @@ describe('HeadlessAgentView', () => {
       });
     });
     await flushAsyncWork();
-    const callsAfterSecondHook = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    const callsAfterSecondHook = vi.mocked(transcript.page).mock.calls.length;
 
     // Advance to t=7.5s — the fallback poll at t=5s should have been suppressed
     // because the second hook at t=3s keeps lastHookTimestamp within the 5s threshold
@@ -259,7 +262,7 @@ describe('HeadlessAgentView', () => {
       await vi.advanceTimersByTimeAsync(4500);
     });
     await flushAsyncWork();
-    const callsAfterPolling = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    const callsAfterPolling = vi.mocked(transcript.page).mock.calls.length;
 
     // Only hook-triggered syncs should have occurred, no fallback polls
     expect(callsAfterPolling).toBe(callsAfterSecondHook);
@@ -273,7 +276,7 @@ describe('HeadlessAgentView', () => {
       hookCallback = cb;
       return vi.fn();
     });
-    window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({
+    transcript.page = vi.fn().mockResolvedValue({
       events: [],
       totalEvents: 0,
     });
@@ -290,7 +293,7 @@ describe('HeadlessAgentView', () => {
       });
     });
     await flushAsyncWork();
-    const callsAfterHook = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    const callsAfterHook = vi.mocked(transcript.page).mock.calls.length;
 
     // Advance past both the hook active threshold and fallback poll interval
     // so polling resumes (hook at t=0 is stale by t=10s, and the t=10s poll fires)
@@ -298,14 +301,14 @@ describe('HeadlessAgentView', () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
     await flushAsyncWork();
-    const callsAfterThreshold = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    const callsAfterThreshold = vi.mocked(transcript.page).mock.calls.length;
 
     // Fallback polling should have resumed and made additional calls
     expect(callsAfterThreshold).toBeGreaterThan(callsAfterHook);
   });
 
   it('does not aggressively poll during startup — only initial sync and fallback', async () => {
-    window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({
+    transcript.page = vi.fn().mockResolvedValue({
       events: [],
       totalEvents: 0,
     });
@@ -314,7 +317,7 @@ describe('HeadlessAgentView', () => {
     await flushAsyncWork();
 
     // Initial mount sync
-    const callsAfterMount = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    const callsAfterMount = vi.mocked(transcript.page).mock.calls.length;
     expect(callsAfterMount).toBe(1);
 
     // Advance 4.9s — no fallback poll should have fired yet (interval is 5s)
@@ -322,7 +325,7 @@ describe('HeadlessAgentView', () => {
       await vi.advanceTimersByTimeAsync(4900);
     });
     await flushAsyncWork();
-    const callsBefore5s = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    const callsBefore5s = vi.mocked(transcript.page).mock.calls.length;
     expect(callsBefore5s).toBe(1);
 
     // Advance past the 5s fallback interval — exactly one fallback poll should fire
@@ -330,7 +333,7 @@ describe('HeadlessAgentView', () => {
       await vi.advanceTimersByTimeAsync(200);
     });
     await flushAsyncWork();
-    const callsAfter5s = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    const callsAfter5s = vi.mocked(transcript.page).mock.calls.length;
     expect(callsAfter5s).toBe(2);
   });
 
@@ -340,7 +343,7 @@ describe('HeadlessAgentView', () => {
       hookCallback = cb;
       return vi.fn();
     });
-    window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({
+    transcript.page = vi.fn().mockResolvedValue({
       events: [],
       totalEvents: 0,
     });
@@ -415,17 +418,19 @@ describe('HeadlessAgentView', () => {
   it('keeps tool input: shows the file, folds consecutive reads, and pairs results by id', async () => {
     const t0 = Date.now();
     resetStore(t0);
-    window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(async (_id: string, offset: number) => offset > 0
-      ? { events: [], totalEvents: 5 }
+    transcript.page = vi.fn().mockImplementation(async (_id: string, offset: number) => offset > 0
+      ? { events: [], totalEvents: 7 }
       : {
         events: [
           { type: 'assistant', _ts: t0 + 1000, message: { content: [{ type: 'tool_use', id: 'a', name: 'Read', input: { file_path: '/wt/src/one.ts' } }] } },
+          { type: 'user', _ts: t0 + 1500, message: { content: [{ type: 'tool_result', tool_use_id: 'a' }] } },
           { type: 'assistant', _ts: t0 + 2000, message: { content: [{ type: 'tool_use', id: 'b', name: 'Read', input: { file_path: '/wt/src/two.ts' } }] } },
+          { type: 'user', _ts: t0 + 2500, message: { content: [{ type: 'tool_result', tool_use_id: 'b' }] } },
           { type: 'assistant', _ts: t0 + 3000, message: { content: [{ type: 'tool_use', id: 'c', name: 'Edit', input: { file_path: '/wt/src/one.ts' } }] } },
           { type: 'user', _ts: t0 + 4000, message: { content: [{ type: 'tool_result', tool_use_id: 'c' }] } },
           { type: 'assistant', _ts: t0 + 5000, message: { content: [{ type: 'tool_use', id: 'd', name: 'Bash', input: { command: 'npm test' } }] } },
         ],
-        totalEvents: 5,
+        totalEvents: 7,
       });
     window.clubhouse.git.diffNumstat = vi.fn().mockResolvedValue([{ path: 'src/one.ts', added: 12, removed: 3, binary: false }]);
     render(<HeadlessAgentView agent={{ ...headlessAgent, runCwd: '/wt', runBaseSha: 'abc123' }} />);
@@ -453,12 +458,15 @@ describe('HeadlessAgentView', () => {
   });
 
   it('expands a fold to list each read', async () => {
-    window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(async (_id: string, offset: number) => offset > 0
-      ? { events: [], totalEvents: 1 }
-      : { events: [{ type: 'assistant', message: { content: [
-        { type: 'tool_use', id: 'a', name: 'Read', input: { file_path: 'a.ts' } },
-        { type: 'tool_use', id: 'b', name: 'Grep', input: { pattern: 'TODO' } },
-      ] } }], totalEvents: 1 });
+    transcript.page = vi.fn().mockImplementation(async (_id: string, offset: number) => offset > 0
+      ? { events: [], totalEvents: 2 }
+      : { events: [
+        { type: 'assistant', message: { content: [
+          { type: 'tool_use', id: 'a', name: 'Read', input: { file_path: 'a.ts' } },
+          { type: 'tool_use', id: 'b', name: 'Grep', input: { pattern: 'TODO' } },
+        ] } },
+        { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'a' }, { type: 'tool_result', tool_use_id: 'b' }] } },
+      ], totalEvents: 2 });
     render(<HeadlessAgentView agent={headlessAgent} />);
     await flushAsyncWork();
     fireEvent.click(screen.getByRole('button', { name: /Read 1 file, searched 1/ }));

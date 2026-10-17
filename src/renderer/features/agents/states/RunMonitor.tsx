@@ -16,7 +16,8 @@ import {
 import { DiffStat, FileRow, SectionHead, StateDot, StateToolbar, type StateDotKind } from './parts';
 import { formatAgo, formatDuration, formatUsd, plural } from './format';
 import { formatTokens } from '../chat/view-model';
-import { orchestratorDisplayName } from '../AgentAvatar';
+import { getOrchestratorLabel } from '../orchestrator-colors';
+import { matchStat } from './useDiffStats';
 
 /** Below this width the summary column moves under the timeline. */
 export const STACK_BELOW_PX = 800;
@@ -126,10 +127,7 @@ function Time({ ts, start }: { ts: number; start: number }) {
 
 function statFor(path: string | undefined, stats: Map<string, ChangedFileStat>): ChangedFileStat | undefined {
   if (!path) return undefined;
-  const hit = stats.get(path);
-  if (hit) return hit;
-  for (const [p, s] of stats) if (p.endsWith(`/${path}`) || path.endsWith(`/${p}`)) return s;
-  return undefined;
+  return stats.get(path) ?? matchStat(path, [...stats.values()]);
 }
 
 function ToolRow({ step, ctx, nested }: { step: ToolStep; ctx: RowContext; nested?: boolean }) {
@@ -260,7 +258,7 @@ export function RunMonitor({ run, steps, totals, files, cwd, now, actions, stack
   const meta = [
     run.name,
     run.parentName ? `quick agent from ${run.parentName}` : 'quick agent',
-    orchestratorDisplayName(run.orchestrator),
+    getOrchestratorLabel(run.orchestrator || 'claude-code'),
     run.model && run.model !== 'default' ? run.model : null,
     run.startedAt ? `started ${startedLabel(run.startedAt, now)}` : null,
   ].filter(Boolean).join(' · ');

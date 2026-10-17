@@ -105,7 +105,7 @@ describe('TimelineBuilder', () => {
 });
 
 function tool(name: string, input: Record<string, unknown> = {}, id = name + Math.random()): ToolStep {
-  return { kind: 'tool', id, ts: T0, name, input };
+  return { kind: 'tool', id, ts: T0, name, input, endTs: T0 + 1 };
 }
 
 describe('foldSteps', () => {
@@ -119,6 +119,30 @@ describe('foldSteps', () => {
     expect(rows.map((r) => r.kind)).toEqual(['fold', 'text', 'tool', 'tool']);
     expect(rows[0].kind === 'fold' && rows[0].steps).toHaveLength(3);
   });
+
+  it('keeps a failed read on its own row', () => {
+    const rows = foldSteps([tool('Read'), { ...tool('Read'), isError: true }, tool('Read'), tool('Read')]);
+    expect(rows.map((r) => r.kind)).toEqual(['tool', 'tool', 'fold']);
+    expect(rows[1]).toMatchObject({ isError: true });
+  });
+
+  it('keeps the running or stopped-at read on its own row', () => {
+    const rows = foldSteps([tool('Read'), tool('Grep'), { ...tool('Read'), endTs: undefined }]);
+    expect(rows.map((r) => r.kind)).toEqual(['fold', 'tool']);
+  });
+
+  it('stderr lines inside a run of reads follow the fold instead of splitting it', () => {
+    const note = { kind: 'text' as const, id: 'note:1:5', ts: T0, text: 'warning: slow disk' };
+    const rows = foldSteps([tool('Read'), note, tool('Read'), tool('Grep')]);
+    expect(rows.map((r) => r.kind)).toEqual(['fold', 'text']);
+    expect(rows[0].kind === 'fold' && rows[0].steps).toHaveLength(3);
+    expect(rows[1]).toBe(note);
+  });
+
+  it('an ordinary text step still ends the fold', () => {
+    const rows = foldSteps([tool('Read'), tool('Read'), { kind: 'text', id: 'text:1', ts: T0, text: 'Now I know.' }, tool('Read'), tool('Read')]);
+    expect(rows.map((r) => r.kind)).toEqual(['fold', 'text', 'fold']);
+  });
 });
 
 describe('describeFold', () => {
@@ -126,6 +150,12 @@ describe('describeFold', () => {
     expect(describeFold([tool('Read'), tool('Read')])).toBe('Read 2 files');
     expect(describeFold([tool('Grep'), tool('Glob')])).toBe('Searched 2 patterns');
     expect(describeFold([tool('Read'), tool('Grep')])).toBe('Read 1 file, searched 1');
+  });
+
+  it('does not count a folder listing as a read', () => {
+    expect(describeFold([tool('Read'), tool('LS')])).toBe('Read 1 file, listed 1 folder');
+    expect(describeFold([tool('LS'), tool('LS')])).toBe('Listed 2 folders');
+    expect(describeTool(tool('LS', { path: '/wt/src' }), '/wt')).toMatchObject({ verb: 'Listed', target: 'src' });
   });
 });
 
@@ -145,6 +175,8 @@ describe('describeTool', () => {
     expect(describeTool(tool('shell', { command: 'ls' }))).toMatchObject({ verb: 'Ran', target: 'ls' });
     expect(describeTool(tool('apply_patch', { path: 'src/a.ts' }))).toMatchObject({ verb: 'Edited', changedPath: 'src/a.ts' });
     expect(describeTool(tool('apply_patch', { patch: '*** Begin Patch\n*** Update File: src/b.ts\n@@' }))).toMatchObject({ changedPath: 'src/b.ts' });
+    expect(describeTool(tool('apply_patch', { patch: '*** Begin Patch\n*** Update File: src/old.ts\n*** Move to: src/new.ts\n@@' }))).toMatchObject({ changedPath: 'src/new.ts', target: 'new.ts' });
+    expect(describeTool(tool('apply_patch', { patch: '*** Begin Patch\n*** Update File: a.ts\n@@\n*** Add File: b.ts\n*** Move to: c.ts' }))).toMatchObject({ changedPath: 'a.ts' });
   });
 
   it('falls back to the tool name and its first string input', () => {

@@ -3,8 +3,12 @@ import { DiffCard } from '../chat/ToolBlocks';
 import { TranscriptViewer } from '../TranscriptViewer';
 import { Button } from '../../../components/Button';
 
-/** Inline diff of one changed file, against HEAD, shown above the activity. */
-export function FileDiffInset({ cwd, path, onClose }: { cwd: string; path: string; onClose: () => void }) {
+/**
+ * Inline diff of one changed file, shown above the activity: the run's base
+ * sha (or HEAD without one) against the working tree, the same span the diff
+ * sizes count, so commits the run made show up.
+ */
+export function FileDiffInset({ cwd, path, base, onClose }: { cwd: string; path: string; base?: string; onClose: () => void }) {
   const [diff, setDiff] = useState<{ original: string; modified: string } | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -12,11 +16,11 @@ export function FileDiffInset({ cwd, path, onClose }: { cwd: string; path: strin
     let cancelled = false;
     setDiff(null);
     setFailed(false);
-    window.clubhouse.git.diff(cwd, path, false)
+    window.clubhouse.git.diff(cwd, path, false, base)
       .then((d: { original: string; modified: string }) => { if (!cancelled) setDiff(d); })
       .catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; };
-  }, [cwd, path]);
+  }, [cwd, path, base]);
 
   return (
     <section aria-label={`Changes in ${path}`} data-testid="run-file-diff">

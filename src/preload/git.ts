@@ -21,8 +21,9 @@ export const git = {
     ipcRenderer.invoke(IPC.GIT.COMMIT, dirPath, message),
   push: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.PUSH, dirPath),
   pull: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.PULL, dirPath),
-  diff: (dirPath: string, filePath: string, staged: boolean) =>
-    ipcRenderer.invoke(IPC.GIT.DIFF, dirPath, filePath, staged),
+  /** `base` (a sha) replaces HEAD as the original side. */
+  diff: (dirPath: string, filePath: string, staged: boolean, base?: string) =>
+    ipcRenderer.invoke(IPC.GIT.DIFF, dirPath, filePath, staged, base),
   createBranch: (dirPath: string, branchName: string) =>
     ipcRenderer.invoke(IPC.GIT.CREATE_BRANCH, dirPath, branchName),
   stash: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.STASH, dirPath),

@@ -327,6 +327,21 @@ describe('getFileDiff', () => {
     expect(diff.modified).toBe('disk content');
   });
 
+  it('reads the original side at a given base instead of HEAD', async () => {
+    const shown: string[] = [];
+    mockGitExec((args) => { shown.push(args[1]); return 'at base\n'; });
+    vi.mocked(fs.promises.readFile).mockResolvedValue('now');
+    const diff = await getFileDiff(DIR, 'file.ts', false, 'abc1234');
+    expect(shown).toContain('abc1234:file.ts');
+    expect(diff).toEqual({ original: 'at base\n', modified: 'now' });
+  });
+
+  it('rejects a base that looks like a flag or a path spec', async () => {
+    mockGitExec(() => '');
+    await expect(getFileDiff(DIR, 'file.ts', false, '--output=x')).rejects.toThrow();
+    await expect(getFileDiff(DIR, 'file.ts', false, 'HEAD:other')).rejects.toThrow();
+  });
+
   it('new file returns empty original', async () => {
     mockGitExecError('not found');
     vi.mocked(fs.promises.readFile).mockResolvedValue('new file content');
