@@ -13,6 +13,8 @@ vi.mock('fs', async () => {
       readFile: vi.fn(),
       unlink: vi.fn(),
       stat: vi.fn(),
+      lstat: vi.fn(),
+      realpath: vi.fn(),
     },
   };
 });
@@ -1248,7 +1250,10 @@ describe('getHeadSha', () => {
 describe('getDiffNumstat', () => {
   const ROOT = path.join(path.sep, 'test', 'root');
 
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fs.promises.realpath).mockImplementation((async (p: string) => p) as any);
+  });
 
   function mockRepo(diff: string, untracked: string, calls: Array<{ args: string[]; cwd: string }> = []) {
     vi.mocked(execFile).mockImplementation(
@@ -1267,8 +1272,8 @@ describe('getDiffNumstat', () => {
   it('diffs the working tree against the base from the repo root and adds untracked files', async () => {
     const calls: Array<{ args: string[]; cwd: string }> = [];
     mockRepo('4\t2\tsrc/a.ts\x00', 'new.txt\x00big.bin\x00', calls);
-    vi.mocked(fs.promises.stat).mockImplementation((async (p: string) => ({
-      isFile: () => true,
+    vi.mocked(fs.promises.lstat).mockImplementation((async (p: string) => ({
+      isFile: () => true, isSymbolicLink: () => false,
       size: p.endsWith('big.bin') ? 2 * 1024 * 1024 : 10,
     })) as any);
     vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from('one\ntwo\nthree\n') as any);
@@ -1294,7 +1299,7 @@ describe('getDiffNumstat', () => {
 
   it('marks untracked files containing NUL as binary', async () => {
     mockRepo('', 'blob\x00');
-    vi.mocked(fs.promises.stat).mockResolvedValue({ isFile: () => true, size: 3 } as any);
+    vi.mocked(fs.promises.lstat).mockResolvedValue({ isFile: () => true, isSymbolicLink: () => false, size: 3 } as any);
     vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from([1, 0, 2]) as any);
     expect(await getDiffNumstat(DIR)).toEqual([{ path: 'blob', added: 0, removed: 0, binary: true }]);
   });
@@ -1318,7 +1323,7 @@ describe('getDiffNumstat', () => {
 
   it('reuses untracked line counts while size and mtime are unchanged (2s poll)', async () => {
     mockRepo('', 'cached-once.txt\x00');
-    vi.mocked(fs.promises.stat).mockResolvedValue({ isFile: () => true, size: 4, mtimeMs: 111 } as any);
+    vi.mocked(fs.promises.lstat).mockResolvedValue({ isFile: () => true, isSymbolicLink: () => false, size: 4, mtimeMs: 111 } as any);
     vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from('a\nb\n') as any);
     await getDiffNumstat(DIR);
     const second = await getDiffNumstat(DIR);
@@ -1329,12 +1334,27 @@ describe('getDiffNumstat', () => {
   it('reads at most 200 untracked files per call; the rest list without counts', async () => {
     const names = Array.from({ length: 205 }, (_, i) => `budget-${i}.txt`);
     mockRepo('', names.join('\x00') + '\x00');
-    vi.mocked(fs.promises.stat).mockResolvedValue({ isFile: () => true, size: 2, mtimeMs: 7 } as any);
+    vi.mocked(fs.promises.lstat).mockResolvedValue({ isFile: () => true, isSymbolicLink: () => false, size: 2, mtimeMs: 7 } as any);
     vi.mocked(fs.promises.readFile).mockResolvedValue(Buffer.from('x\n') as any);
     const result = await getDiffNumstat(DIR);
     expect(result).toHaveLength(205);
     expect(fs.promises.readFile).toHaveBeenCalledTimes(200);
     expect(result[204]).toEqual({ path: 'budget-204.txt', added: 0, removed: 0, binary: false });
+  });
+
+  it('counts an untracked symlink as 0 lines without following or reading it', async () => {
+    mockRepo('', 'link-out\x00');
+    vi.mocked(fs.promises.lstat).mockResolvedValue({ isFile: () => false, isSymbolicLink: () => true, size: 10 } as any);
+    expect(await getDiffNumstat(DIR)).toEqual([{ path: 'link-out', added: 0, removed: 0, binary: false }]);
+    expect(fs.promises.readFile).not.toHaveBeenCalled();
+  });
+
+  it('skips a file whose real path is outside the worktree (through a linked folder)', async () => {
+    mockRepo('', 'linked-dir/secret.txt\x00');
+    vi.mocked(fs.promises.lstat).mockResolvedValue({ isFile: () => true, isSymbolicLink: () => false, size: 10, mtimeMs: 1 } as any);
+    vi.mocked(fs.promises.realpath).mockImplementation((async (p: string) => (p === ROOT ? ROOT : path.join(path.sep, 'etc', 'secret.txt'))) as any);
+    expect(await getDiffNumstat(DIR)).toEqual([{ path: 'linked-dir/secret.txt', added: 0, removed: 0, binary: false }]);
+    expect(fs.promises.readFile).not.toHaveBeenCalled();
   });
 
   it('rejects a base that looks like a flag without running git', async () => {
