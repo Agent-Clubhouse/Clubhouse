@@ -215,7 +215,7 @@ describe('FeedbackService (fake SDK)', () => {
       let access = { ...ACCESS, state: 'disconnected' as const, connected: false, enrolled: false, canCapture: false };
       fb.access.status = () => access as never;
       fb.access.connect.mockImplementationOnce(async () => {
-        clock.t += 10_050;
+        clock.t += 142_050;
         access = { ...access, state: 'connection-uncertain' as never, notice: 'connection-uncertain' };
         return false;
       });
@@ -223,7 +223,7 @@ describe('FeedbackService (fake SDK)', () => {
       expect(find('Feedback connect started')?.[2]).toEqual({ from: 'disconnected' });
       const [level, , meta] = find('Feedback connect failed')!;
       expect(level).toBe('warn');
-      expect(meta).toMatchObject({ durationMs: 10_050, state: 'connection-uncertain', notice: 'connection-uncertain' });
+      expect(meta).toMatchObject({ durationMs: 142_050, state: 'connection-uncertain', notice: 'connection-uncertain' });
       expect(meta!.reason).toMatch(/timed out.*retry the same one/);
       expect(JSON.stringify(entries)).not.toContain(INVITE);
     });
@@ -438,6 +438,50 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       await s.shutdown();
     }
   });
+
+  it('recovers a lost redeem reply through the SDK without exposing credentials or enabling SDK telemetry', async () => {
+    const srv = server();
+    const requests: Array<Record<string, string>> = [];
+    const logs: unknown[] = [];
+    let reply: Response | undefined;
+    let fb: Framebriar | undefined;
+    // Simulated idempotent backend; the upstream issuer is exercised separately.
+    const fetchImpl: typeof fetch = async (url, init) => {
+      if (String(url).endsWith('/redeem')) {
+        requests.push(JSON.parse(String(init!.body)));
+        if (reply) return reply;
+        reply = await srv.fetchImpl(url, init);
+        throw new TypeError('reply lost after redemption');
+      }
+      return srv.fetchImpl(url, init);
+    };
+    const s = new FeedbackService({
+      safeStorage, dataDir, appVersion: '0.42.0-beta.1', isOnline: () => true,
+      log: (...entry) => logs.push(entry),
+      create: (opts) => {
+        fb = createFramebriar({ ...opts, endpoint: 'https://fb.example/api', fetchImpl });
+        return fb;
+      },
+    });
+    try {
+      expect(await s.connect('i'.repeat(43))).toMatchObject({ connected: true, status: { canCapture: true } });
+      expect(requests).toHaveLength(2);
+      expect(requests[0].attemptId).toMatch(/^[A-Za-z0-9_-]{16,64}$/);
+      expect(requests[1]).toEqual(requests[0]);
+      expect(fb!.telemetry).toBeUndefined();
+      expect(srv.calls).toEqual(['POST /v1/access/redeem']);
+      expect(JSON.stringify(s.status())).not.toMatch(/attemptId|refreshToken|invitation/);
+      expect(JSON.stringify(logs)).not.toContain('i'.repeat(43));
+      expect(JSON.stringify(logs)).not.toContain(requests[0].attemptId);
+      expect(JSON.stringify(logs)).not.toContain('r'.repeat(43));
+      // The host-owned OTLP destination remains available only through its existing access gate.
+      expect(await s.telemetryExport()!.options('logs').headers()).toEqual({ authorization: `Bearer ${'t'.repeat(43)}` });
+      await s.disconnect();
+      expect(s.telemetryExport()).toBeNull();
+    } finally {
+      await s.shutdown();
+    }
+  });
 });
 
 describe('connectFailureReason', () => {
@@ -450,7 +494,10 @@ describe('connectFailureReason', () => {
   it('separates refusal, storage failure, timeout and other uncertain outcomes', () => {
     expect(connectFailureReason(INVITE, 'disconnected', 'access-required', 'access-required', 300)).toMatch(/server refused/);
     expect(connectFailureReason(INVITE, 'disconnected', 'storage-unavailable', null, 300)).toMatch(/secure storage/);
-    expect(connectFailureReason(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 9_999)).toMatch(/timed out/);
+    expect(connectFailureReason(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 9_999)).toMatch(/^request failed/);
+    expect(connectFailureReason(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 44_499)).toMatch(/^request failed/);
+    expect(connectFailureReason(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 44_500)).toMatch(/45 s per call and retries twice/);
+    expect(connectFailureReason(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 142_000)).toMatch(/may have timed out/);
     expect(connectFailureReason(INVITE, 'disconnected', 'connection-uncertain', 'connection-uncertain', 800)).toMatch(/^request failed/);
     expect(connectFailureReason(INVITE, 'disconnected', 'disconnected', null, 800)).toBe('unknown');
   });
