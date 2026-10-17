@@ -99,6 +99,14 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     return paths;
   }
 
+  /**
+   * The user's installed `claude`, for the chat transports. They always run
+   * this binary, never the Agent SDK's bundled one.
+   */
+  resolveBinary(): string {
+    return this.findBinary();
+  }
+
   protected getInstructionsPath(worktreePath: string): string {
     return path.join(worktreePath, 'CLAUDE.md');
   }
