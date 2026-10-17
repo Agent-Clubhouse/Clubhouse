@@ -1,5 +1,6 @@
 import { useUpdateStore } from '../../stores/updateStore';
 import { Toggle } from '../../components/Toggle';
+import { SettingsPage, SettingsField, settingsButton } from './SettingsLayout';
 
 export function UpdateSettingsView() {
   const settings = useUpdateStore((s) => s.settings);
@@ -10,96 +11,70 @@ export function UpdateSettingsView() {
 
   const stateLabel: Record<string, string> = {
     idle: 'Up to date',
-    checking: 'Checking...',
-    downloading: 'Downloading...',
+    checking: 'Checking…',
+    downloading: 'Downloading…',
     ready: 'Update ready',
-    error: 'Error',
+    error: 'Update failed',
   };
 
   const showManualDownload = status.artifactUrl && (status.state === 'ready' || status.state === 'error');
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">Updates</h2>
-        <p className="text-sm text-ctp-subtext0 mb-6">
-          Manage automatic update checks and downloads.
-        </p>
-
-        {/* Auto-update toggle */}
-        <div className="flex items-center justify-between py-3 border-b border-surface-0">
-          <div>
-            <div className="text-sm text-ctp-text font-medium">Automatic updates</div>
-            <div className="text-xs text-ctp-subtext0 mt-0.5">
-              Check for updates every 4 hours and download in the background
-            </div>
-          </div>
+    <SettingsPage title="Updates" description="Automatic update checks and downloads.">
+      <div className="mt-[22px]">
+        <SettingsField label="Automatic updates" help="Check for updates every 4 hours and download in the background.">
           <Toggle
+            ariaLabel="Automatic updates"
             checked={settings.autoUpdate}
             onChange={(v) => saveSettings({ ...settings, autoUpdate: v })}
           />
-        </div>
+        </SettingsField>
 
-        {/* Preview channel toggle */}
-        <div className="flex items-center justify-between py-3 border-b border-surface-0">
-          <div>
-            <div className="text-sm text-ctp-text font-medium">Preview versions</div>
-            <div className="text-xs text-ctp-subtext0 mt-0.5">
-              Get early access to upcoming features before they are officially released
-            </div>
-          </div>
+        <SettingsField label="Preview versions" help="Get upcoming features early, before they are officially released.">
           <Toggle
+            ariaLabel="Preview versions"
             checked={settings.previewChannel}
             onChange={(v) => saveSettings({ ...settings, previewChannel: v })}
           />
-        </div>
+        </SettingsField>
 
-        {/* Status */}
-        <div className="py-3 border-b border-surface-0">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-ctp-text font-medium">Status</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">
-                {stateLabel[status.state] || status.state}
-                {status.state === 'downloading' && ` (${status.downloadProgress}%)`}
-                {status.state === 'ready' && status.availableVersion && ` — v${status.availableVersion}`}
-                {status.state === 'error' && status.error && ` — ${status.error}`}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {showManualDownload && (
-                <button
-                  onClick={openUpdateDownload}
-                  className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
-                    transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
-                  data-testid="settings-manual-download-btn"
-                >
-                  Download manually
-                </button>
-              )}
-              <button
-                onClick={checkForUpdates}
-                disabled={status.state === 'checking' || status.state === 'downloading'}
-                className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
-                  transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
-                  text-ctp-subtext1 hover:text-ctp-text"
-              >
-                {status.state === 'checking' ? 'Checking...' : 'Check now'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <SettingsField
+          label="Status"
+          help={
+            <span className={status.state === 'error' ? 'text-ctp-error' : undefined}>
+              {stateLabel[status.state] || status.state}
+              {status.state === 'downloading' && ` (${status.downloadProgress}%)`}
+              {status.state === 'ready' && status.availableVersion && ` (v${status.availableVersion})`}
+              {status.state === 'error' && status.error && `. ${status.error}`}
+            </span>
+          }
+        >
+          {showManualDownload && (
+            <button
+              type="button"
+              onClick={openUpdateDownload}
+              className={settingsButton.quiet}
+              data-testid="settings-manual-download-btn"
+            >
+              Download manually
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={checkForUpdates}
+            disabled={status.state === 'checking' || status.state === 'downloading'}
+            className={settingsButton.ghost}
+          >
+            {status.state === 'checking' ? 'Checking…' : 'Check now'}
+          </button>
+        </SettingsField>
 
-        {/* Last check */}
         {settings.lastCheck && (
-          <div className="py-3 border-b border-surface-0">
-            <div className="text-sm text-ctp-text font-medium">Last checked</div>
-            <div className="text-xs text-ctp-subtext0 mt-0.5">
-              {new Date(settings.lastCheck).toLocaleString()}
-            </div>
-          </div>
+          <SettingsField label="Last checked">
+            <span className="text-xs text-ctp-subtext1">{new Date(settings.lastCheck).toLocaleString()}</span>
+          </SettingsField>
         )}
       </div>
-    </div>
+    </SettingsPage>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -6,809 +6,47 @@ import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
 import { activatePlugin, deactivatePlugin, refreshCommunityPlugins, approvePluginPermissions, rejectPluginPermissions } from '../../plugins/plugin-loader';
 import { CANVAS_SUB_PLUGIN_IDS } from '../../plugins/builtin';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
-import type { PluginPermission, PermissionRiskLevel, PluginRegistryEntry } from '../../../shared/plugin-types';
-import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
+import type { PluginRegistryEntry } from '../../../shared/plugin-types';
+import { PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { CustomMarketplace } from '../../../shared/marketplace-types';
 import { DEPRECATED_PLUGIN_API_VERSIONS } from '../../../shared/marketplace-types';
 import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
 import { showConfirmDialog } from '../../plugins/PluginDialog';
+import { Toggle } from '../../components/Toggle';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
 
-const RISK_ORDER: Record<PermissionRiskLevel, number> = { safe: 0, elevated: 1, dangerous: 2 };
-
-const RISK_COLORS: Record<PermissionRiskLevel, string> = {
-  safe: 'bg-ctp-success/20 text-ctp-success',
-  elevated: 'bg-yellow-500/20 text-yellow-400',
-  dangerous: 'bg-ctp-error/20 text-ctp-error',
-};
-
-function sortPermissionsByRisk(perms: PluginPermission[]): PluginPermission[] {
-  return [...perms].sort((a, b) => {
-    const ra = PERMISSION_RISK_LEVELS[a] ?? 'safe';
-    const rb = PERMISSION_RISK_LEVELS[b] ?? 'safe';
-    return RISK_ORDER[ra] - RISK_ORDER[rb];
-  });
-}
-
-const CROSS_PROJECT_PERMISSIONS: readonly PluginPermission[] = [
-  'agent-config.cross-project',
-  'workspace.cross-project',
-];
-
-const POPUP_ESTIMATED_HEIGHT = 200;
-
-function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
-  const [open, setOpen] = useState(false);
-  const [flipAbove, setFlipAbove] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
-
-  const permissions = entry.manifest.permissions;
-  if (!permissions || permissions.length === 0) return null;
-
-  const isAppScoped = entry.manifest.scope === 'app';
-  const hasCrossProjectPerm = permissions.some((p) => CROSS_PROJECT_PERMISSIONS.includes(p));
-
-  const handleToggle = () => {
-    if (!open && btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
-      setFlipAbove(rect.bottom + POPUP_ESTIMATED_HEIGHT > window.innerHeight);
-    }
-    setOpen(!open);
-  };
-
-  const rect = btnRef.current?.getBoundingClientRect();
-  const sorted = sortPermissionsByRisk(permissions);
-
-  const popupStyle: React.CSSProperties | undefined = rect
-    ? flipAbove
-      ? { bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right }
-      : { top: rect.bottom + 4, right: window.innerWidth - rect.right }
-    : undefined;
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        ref={btnRef}
-        onClick={handleToggle}
-        className="flex items-center justify-center w-4 h-4 rounded-full text-xs font-semibold text-ctp-subtext0 hover:text-ctp-text bg-surface-1 hover:bg-surface-2 cursor-pointer"
-        title="View permissions"
-      >
-        i
-      </button>
-      {open && (
-        <div
-          data-testid="permission-popup"
-          className="fixed z-dropdown w-72 p-3 rounded-lg bg-ctp-mantle border border-surface-1 shadow-lg"
-          style={popupStyle}
-        >
-          <p className="text-xs font-semibold text-ctp-subtext1 mb-2">Permissions</p>
-          {isAppScoped && hasCrossProjectPerm && (
-            <p className="text-xs text-ctp-peach mb-2" data-testid="app-scope-cross-project-note">
-              This is an app-scoped plugin — cross-project access is implicit and does not require per-project enablement.
-            </p>
-          )}
-          <div className="space-y-1.5">
-            {sorted.map((perm: PluginPermission) => {
-              const risk = PERMISSION_RISK_LEVELS[perm];
-              const isCrossProject = CROSS_PROJECT_PERMISSIONS.includes(perm);
-              return (
-                <div key={perm}>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-mono text-ctp-accent">{perm}</span>
-                    {risk !== 'safe' && (
-                      <span className={`text-[9px] px-1 py-0.5 rounded font-medium uppercase ${RISK_COLORS[risk]}`}>
-                        {risk}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-ctp-subtext0">
-                    {isAppScoped && isCrossProject
-                      ? PERMISSION_DESCRIPTIONS[perm].replace(
-                          /where the plugin is (?:also )?enabled/,
-                          'across all projects (app-scoped — no bilateral consent required)',
-                        )
-                      : PERMISSION_DESCRIPTIONS[perm]}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SourceBadge({ entry }: { entry: PluginRegistryEntry }) {
-  if (entry.source === 'builtin') {
-    return (
-      <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent">Built-in</span>
-    );
-  }
-  if (entry.source === 'marketplace') {
-    return (
-      <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success">Official</span>
-    );
-  }
-  if (entry.source === 'community') {
-    return (
-      <span className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0">Community</span>
-    );
-  }
+/** Plain source word shown in a plugin's meta line. */
+export function pluginSourceLabel(entry: PluginRegistryEntry): string | null {
+  if (entry.source === 'builtin') return 'Built-in';
+  if (entry.source === 'marketplace') return 'Official';
+  if (entry.source === 'community') return 'Community';
   return null;
 }
 
-/** Phase label for inline update progress. */
-const UPDATE_PHASE_LABELS: Record<string, string> = {
-  downloading: 'Downloading...',
-  installing: 'Installing...',
-  reloading: 'Reloading...',
-};
-
-/** What a plugin has injected into a specific project. */
-interface ProjectInjections {
-  skills: string[];
-  agentTemplates: string[];
-  hasInstructions: boolean;
-  permissionAllowCount: number;
-  permissionDenyCount: number;
-  mcpServerNames: string[];
-}
-
-function hasAnyInjections(inj: ProjectInjections): boolean {
-  return (
-    inj.skills.length > 0 ||
-    inj.agentTemplates.length > 0 ||
-    inj.hasInstructions ||
-    inj.permissionAllowCount > 0 ||
-    inj.permissionDenyCount > 0 ||
-    inj.mcpServerNames.length > 0
-  );
+/** "Built-in · 1.0.0" */
+export function pluginMetaText(entry: PluginRegistryEntry): string {
+  const source = pluginSourceLabel(entry);
+  return [source, entry.manifest.version].filter(Boolean).join(' · ');
 }
 
 /**
- * Banner shown in project context when orphaned injections from uninstalled plugins
- * are detected. Provides a one-click cleanup for each orphaned plugin.
+ * Enable/disable logic shared by the plugin list and the plugin detail page.
+ * Scope follows the settings context: app-wide in app settings, per project
+ * in a project's settings.
  */
-function OrphanInjectionsBanner({
-  projectPath,
-  knownPluginIds,
-}: {
-  projectPath: string;
-  knownPluginIds: string[];
-}) {
-  const [orphans, setOrphans] = useState<string[] | null>(null);
-  const [cleaning, setCleaning] = useState<string | null>(null);
-
-  const knownPluginIdsSerialized = JSON.stringify(knownPluginIds.slice().sort());
-  const load = useCallback(async () => {
-    try {
-      const ids = await window.clubhouse.plugin.listOrphanedPluginIds(projectPath, knownPluginIds);
-      setOrphans(ids);
-    } catch {
-      setOrphans([]);
-    }
-  }, [projectPath, knownPluginIdsSerialized]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  if (!orphans || orphans.length === 0) return null;
-
-  const handleClean = async (pluginId: string) => {
-    setCleaning(pluginId);
-    try {
-      await window.clubhouse.plugin.cleanupProjectInjections(pluginId, projectPath);
-      await load();
-    } catch {
-      // ignore
-    } finally {
-      setCleaning(null);
-    }
-  };
-
-  const handleCleanAll = async () => {
-    for (const id of orphans) {
-      setCleaning(id);
-      try {
-        await window.clubhouse.plugin.cleanupProjectInjections(id, projectPath);
-      } catch { /* ignore */ }
-    }
-    setCleaning(null);
-    await load();
-  };
-
-  return (
-    <div
-      className="mb-4 p-3 rounded-lg bg-ctp-peach/5 border border-ctp-peach/30"
-      data-testid="orphan-injections-banner"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-ctp-peach mb-1">
-            Orphaned plugin injections detected
-          </p>
-          <p className="text-[11px] text-ctp-subtext0 mb-2">
-            The following uninstalled plugins left injections (skills, instructions, permissions, or MCP servers) in this project:
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {orphans.map((id) => (
-              <div key={id} className="flex items-center gap-1">
-                <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach">{id}</span>
-                <button
-                  onClick={() => handleClean(id)}
-                  disabled={cleaning !== null}
-                  className="text-xs px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
-                  data-testid={`clean-orphan-btn-${id}`}
-                >
-                  {cleaning === id ? 'Cleaning…' : 'Clean up'}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-        {orphans.length > 1 && (
-          <button
-            onClick={handleCleanAll}
-            disabled={cleaning !== null}
-            className="shrink-0 text-[11px] px-2 py-1 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
-            data-testid="clean-all-orphans-btn"
-          >
-            {cleaning ? 'Cleaning…' : 'Clean all'}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function PluginInjectionsPanel({
-  pluginId,
-  projectPath,
-  onCleaned,
-}: {
-  pluginId: string;
-  projectPath: string;
-  onCleaned?: () => void;
-}) {
-  const [injections, setInjections] = useState<ProjectInjections | null>(null);
-  const [cleaning, setCleaning] = useState(false);
-  const [cleanError, setCleanError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const data = await window.clubhouse.plugin.listProjectInjections(pluginId, projectPath);
-      setInjections(data);
-    } catch {
-      setInjections(null);
-    }
-  }, [pluginId, projectPath]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  if (!injections || !hasAnyInjections(injections)) return null;
-
-  const handleClean = async () => {
-    setCleaning(true);
-    setCleanError(null);
-    try {
-      await window.clubhouse.plugin.cleanupProjectInjections(pluginId, projectPath);
-      await load();
-      onCleaned?.();
-    } catch (err) {
-      setCleanError(err instanceof Error ? err.message : 'Cleanup failed');
-    } finally {
-      setCleaning(false);
-    }
-  };
-
-  return (
-    <div
-      className="mt-2 p-2 rounded bg-surface-0 border border-surface-1 text-[11px] text-ctp-subtext0"
-      data-testid={`injections-panel-${pluginId}`}
-    >
-      <div className="flex items-center justify-between mb-1">
-        <span className="font-medium text-ctp-subtext1">Active injections in this project</span>
-        <button
-          onClick={handleClean}
-          disabled={cleaning}
-          className="text-xs px-1.5 py-0.5 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer disabled:opacity-50"
-          data-testid={`clean-injections-btn-${pluginId}`}
-        >
-          {cleaning ? 'Cleaning...' : 'Remove all'}
-        </button>
-      </div>
-      {cleanError && (
-        <p className="text-xs text-ctp-error mb-1">{cleanError}</p>
-      )}
-      <ul className="space-y-0.5 list-disc list-inside">
-        {injections.skills.map((s) => (
-          <li key={`skill-${s}`}>Skill: <span className="font-mono text-ctp-text">{s}</span></li>
-        ))}
-        {injections.agentTemplates.map((t) => (
-          <li key={`tpl-${t}`}>Agent template: <span className="font-mono text-ctp-text">{t}</span></li>
-        ))}
-        {injections.hasInstructions && <li>Agent instructions block</li>}
-        {injections.permissionAllowCount > 0 && (
-          <li>{injections.permissionAllowCount} allow permission rule{injections.permissionAllowCount !== 1 ? 's' : ''}</li>
-        )}
-        {injections.permissionDenyCount > 0 && (
-          <li>{injections.permissionDenyCount} deny permission rule{injections.permissionDenyCount !== 1 ? 's' : ''}</li>
-        )}
-        {injections.mcpServerNames.map((m) => (
-          <li key={`mcp-${m}`}>MCP server: <span className="font-mono text-ctp-text">{m}</span></li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function PluginRow({
-  entry,
-  enabled,
-  onToggle,
-  onOpenSettings,
-  onUninstall,
-  onUpdate,
-  hasSettings,
-  updateVersion,
-  updatePhase,
-  updateError,
-  projectPath,
-}: {
-  entry: PluginRegistryEntry;
-  enabled: boolean;
-  onToggle: () => void;
-  onOpenSettings: () => void;
-  onUninstall?: () => void;
-  onUpdate?: () => void;
-  hasSettings: boolean;
-  updateVersion?: string;
-  updatePhase?: string;
-  updateError?: string;
-  /** When set, shows the injections panel for this project */
-  projectPath?: string;
-}) {
-  const isIncompatible = entry.status === 'incompatible';
-  const isErrored = entry.status === 'errored';
-  const isPendingApproval = entry.status === 'pending-approval';
-  const isUpdating = !!updatePhase;
-
-  return (
-    <div className={`py-3 px-4 rounded-lg bg-ctp-mantle border ${isPendingApproval ? 'border-ctp-peach/40' : 'border-surface-0'}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-ctp-text">{entry.manifest.name}</span>
-            <span className="text-xs text-ctp-subtext0">v{entry.manifest.version}</span>
-            <SourceBadge entry={entry} />
-            <span className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">API {entry.manifest.engine.api}</span>
-            <PermissionInfoPopup entry={entry} />
-            {isIncompatible && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
-            )}
-            {!isIncompatible && DEPRECATED_PLUGIN_API_VERSIONS[entry.manifest.engine.api] && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400" title={`API ${entry.manifest.engine.api} will be removed in ${DEPRECATED_PLUGIN_API_VERSIONS[entry.manifest.engine.api]}`}>Deprecated API</span>
-            )}
-            {isErrored && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Error</span>
-            )}
-            {isPendingApproval && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach" data-testid={`pending-badge-${entry.manifest.id}`}>
-                New permissions
-              </span>
-            )}
-            {updateVersion && !isUpdating && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success" data-testid={`update-badge-${entry.manifest.id}`}>
-                v{updateVersion} available
-              </span>
-            )}
-            {isUpdating && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent animate-pulse" data-testid={`update-phase-${entry.manifest.id}`}>
-                {UPDATE_PHASE_LABELS[updatePhase] || 'Updating...'}
-              </span>
-            )}
-          </div>
-          {entry.manifest.description && (
-            <p className="text-xs text-ctp-subtext0 mt-0.5 truncate">{entry.manifest.description}</p>
-          )}
-          {updateError && (
-            <p className="text-xs text-ctp-peach mt-0.5">Update failed: {updateError}</p>
-          )}
-          {entry.error && (() => {
-            const newlineIdx = entry.error.indexOf('\n');
-            const message = newlineIdx >= 0 ? entry.error.slice(0, newlineIdx) : entry.error;
-            const stack = newlineIdx >= 0 ? entry.error.slice(newlineIdx + 1) : null;
-            return (
-              <div className="mt-1">
-                <p className="text-xs text-ctp-error">{message}</p>
-                {stack && (
-                  <details className="mt-1">
-                    <summary className="text-xs text-ctp-error/70 cursor-pointer">View details</summary>
-                    <pre className="text-xs text-ctp-error/70 bg-surface-0 p-2 rounded mt-1 overflow-auto max-h-32 whitespace-pre-wrap">{stack}</pre>
-                  </details>
-                )}
-              </div>
-            );
-          })()}
-          {isPendingApproval && entry.pendingPermissions && (
-            <div className="mt-2 p-2 rounded bg-ctp-peach/5 border border-ctp-peach/20" data-testid={`pending-approval-${entry.manifest.id}`}>
-              <p className="text-xs text-ctp-peach font-medium mb-1">
-                This update requires new permissions:
-              </p>
-              <div className="flex flex-wrap gap-1 mb-2">
-                {entry.pendingPermissions.map((perm) => {
-                  const risk = PERMISSION_RISK_LEVELS[perm];
-                  return (
-                    <span
-                      key={perm}
-                      className={`text-xs px-1.5 py-0.5 rounded font-mono ${
-                        risk === 'dangerous'
-                          ? 'bg-ctp-error/20 text-ctp-error'
-                          : 'bg-yellow-500/20 text-yellow-400'
-                      }`}
-                    >
-                      {perm}
-                    </span>
-                  );
-                })}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => approvePluginPermissions(entry.manifest.id)}
-                  className="text-[11px] px-2 py-1 rounded bg-ctp-accent/20 text-ctp-accent hover:bg-ctp-accent/30 cursor-pointer"
-                  data-testid={`approve-btn-${entry.manifest.id}`}
-                >
-                  Approve & Activate
-                </button>
-                <button
-                  onClick={() => rejectPluginPermissions(entry.manifest.id)}
-                  className="text-[11px] px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 cursor-pointer"
-                  data-testid={`reject-btn-${entry.manifest.id}`}
-                >
-                  Reject
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2 ml-3 shrink-0">
-          {onUpdate && updateVersion && !isUpdating && (
-            <button
-              onClick={onUpdate}
-              className="text-[11px] px-2 py-1 rounded bg-ctp-success/20 text-ctp-success hover:bg-ctp-success/30 cursor-pointer"
-              title={`Update to v${updateVersion}`}
-              data-testid={`update-btn-${entry.manifest.id}`}
-            >
-              Update
-            </button>
-          )}
-          {enabled && hasSettings && (
-            <button
-              onClick={onOpenSettings}
-              className="p-1.5 rounded hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text cursor-pointer"
-              title="Plugin settings"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </button>
-          )}
-          {onUninstall && (
-            <button
-              onClick={onUninstall}
-              className="p-1.5 rounded hover:bg-ctp-error/10 text-ctp-subtext0 hover:text-ctp-error cursor-pointer"
-              title="Uninstall plugin"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              </svg>
-            </button>
-          )}
-          <button
-            onClick={onToggle}
-            disabled={isIncompatible}
-            className={`
-              relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
-              ${isIncompatible ? 'opacity-50 cursor-not-allowed' : ''}
-              ${enabled ? 'bg-ctp-accent' : 'bg-surface-2'}
-            `}
-          >
-            <span
-              className={`
-                absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
-                ${enabled ? 'translate-x-4' : 'translate-x-0'}
-              `}
-            />
-          </button>
-        </div>
-      </div>
-      {projectPath && (
-        <PluginInjectionsPanel
-          pluginId={entry.manifest.id}
-          projectPath={projectPath}
-        />
-      )}
-    </div>
-  );
-}
-
-function CustomMarketplaceManager() {
-  const [marketplaces, setMarketplaces] = useState<CustomMarketplace[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(false);
-  const [addName, setAddName] = useState('');
-  const [addUrl, setAddUrl] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
-
-  const loadMarketplaces = async () => {
-    try {
-      const list = await window.clubhouse.marketplace.listCustomMarketplaces();
-      setMarketplaces(list);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadMarketplaces();
-  }, []);
-
-  const handleAdd = async () => {
-    if (!addName.trim() || !addUrl.trim()) return;
-    setAdding(true);
-    setAddError(null);
-    try {
-      await window.clubhouse.marketplace.addCustomMarketplace({
-        name: addName.trim(),
-        url: addUrl.trim(),
-      });
-      setAddName('');
-      setAddUrl('');
-      await loadMarketplaces();
-    } catch (err: unknown) {
-      setAddError(err instanceof Error ? err.message : 'Failed to add marketplace');
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const handleRemove = async (id: string) => {
-    const m = marketplaces.find((x) => x.id === id);
-    if (!m) return;
-    const { promise } = showConfirmDialog(`Remove custom marketplace "${m.name}"?`);
-    const confirmed = await promise;
-    if (!confirmed) return;
-    try {
-      await window.clubhouse.marketplace.removeCustomMarketplace({ id });
-      await loadMarketplaces();
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleToggle = async (id: string, enabled: boolean) => {
-    try {
-      await window.clubhouse.marketplace.toggleCustomMarketplace({ id, enabled });
-      await loadMarketplaces();
-    } catch {
-      // ignore
-    }
-  };
-
-  if (loading) return null;
-
-  return (
-    <div className="mb-6">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1 text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider cursor-pointer hover:text-ctp-text"
-        data-testid="custom-marketplace-toggle"
-      >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={`transition-transform ${expanded ? 'rotate-90' : ''}`}
-        >
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-        Custom Plugin Stores ({marketplaces.length})
-      </button>
-
-      {expanded && (
-        <div className="mt-3 space-y-3">
-          <p className="text-xs text-ctp-subtext0">
-            Register private or third-party plugin registries for automatic discovery, install, and updates.
-            Each store should host a <code className="text-xs font-mono bg-surface-0 px-1 py-0.5 rounded">registry.json</code> following the Workshop format.
-          </p>
-
-          {/* Existing marketplaces */}
-          {marketplaces.length > 0 && (
-            <div className="space-y-2">
-              {marketplaces.map((m) => (
-                <div
-                  key={m.id}
-                  className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0"
-                  data-testid={`custom-marketplace-${m.id}`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-ctp-text">{m.name}</span>
-                      {!m.enabled && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0">Disabled</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-ctp-subtext0 truncate mt-0.5" title={m.url}>{m.url}</p>
-                  </div>
-                  <div className="flex items-center gap-2 ml-3">
-                    <button
-                      onClick={() => handleRemove(m.id)}
-                      className="p-1 rounded hover:bg-ctp-error/10 text-ctp-subtext0 hover:text-ctp-error cursor-pointer"
-                      title="Remove marketplace"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleToggle(m.id, !m.enabled)}
-                      className={`
-                        relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
-                        ${m.enabled ? 'bg-ctp-accent' : 'bg-surface-2'}
-                      `}
-                    >
-                      <span
-                        className={`
-                          absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
-                          ${m.enabled ? 'translate-x-4' : 'translate-x-0'}
-                        `}
-                      />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Add form */}
-          <div className="p-3 rounded-lg bg-surface-0 border border-surface-1 space-y-2">
-            <p className="text-xs font-medium text-ctp-subtext1">Add Custom Plugin Store</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={addName}
-                onChange={(e) => setAddName(e.target.value)}
-                placeholder="Store name"
-                className="flex-1 px-2 py-1.5 rounded bg-ctp-base border border-surface-1 text-xs text-ctp-text placeholder:text-ctp-subtext0 focus-ring"
-                data-testid="custom-marketplace-name"
-              />
-              <input
-                type="text"
-                value={addUrl}
-                onChange={(e) => setAddUrl(e.target.value)}
-                placeholder="Registry URL (e.g. https://...registry.json)"
-                className="flex-[2] px-2 py-1.5 rounded bg-ctp-base border border-surface-1 text-xs text-ctp-text placeholder:text-ctp-subtext0 focus-ring"
-                data-testid="custom-marketplace-url"
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
-              />
-              <button
-                onClick={handleAdd}
-                disabled={adding || !addName.trim() || !addUrl.trim()}
-                className="px-3 py-1.5 rounded bg-ctp-accent text-white text-xs font-medium hover:bg-ctp-accent/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                data-testid="custom-marketplace-add"
-              >
-                {adding ? 'Adding...' : 'Add'}
-              </button>
-            </div>
-            {addError && (
-              <p className="text-xs text-ctp-error">{addError}</p>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function PluginListSettings() {
-  const plugins = usePluginStore((s) => s.plugins);
+export function usePluginEnableToggle() {
   const projectEnabled = usePluginStore((s) => s.projectEnabled);
   const appEnabled = usePluginStore((s) => s.appEnabled);
-  const externalPluginsEnabled = usePluginStore((s) => s.externalPluginsEnabled);
-  const showBetaPlugins = usePluginStore((s) => s.showBetaPlugins);
-  const setShowBetaPlugins = usePluginStore((s) => s.setShowBetaPlugins);
   const enableForProject = usePluginStore((s) => s.enableForProject);
   const disableForProject = usePluginStore((s) => s.disableForProject);
   const enableApp = usePluginStore((s) => s.enableApp);
   const disableApp = usePluginStore((s) => s.disableApp);
-  const setExternalPluginsEnabled = usePluginStore((s) => s.setExternalPluginsEnabled);
-  const openPluginSettings = useUIStore((s) => s.openPluginSettings);
   const settingsContext = useUIStore((s) => s.settingsContext);
-  const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
-  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
-
-  // Plugin update state
-  const updates = usePluginUpdateStore((s) => s.updates);
-  const updating = usePluginUpdateStore((s) => s.updating);
-  const updateErrors = usePluginUpdateStore((s) => s.updateErrors);
-  const checking = usePluginUpdateStore((s) => s.checking);
-  const lastCheck = usePluginUpdateStore((s) => s.lastCheck);
-  const checkForUpdates = usePluginUpdateStore((s) => s.checkForUpdates);
-  const updatePlugin = usePluginUpdateStore((s) => s.updatePlugin);
-  const updateAll = usePluginUpdateStore((s) => s.updateAll);
-
-  const [restartHint, setRestartHint] = useState(false);
-  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
-  const [scanning, setScanning] = useState(false);
-  const [scanResult, setScanResult] = useState<string | null>(null);
-
-  // Auto-refresh community plugins on mount so the list is always current.
-  // Pass active project context so project-scoped plugins re-activate
-  // for the current project (Mission 69). Mount-only effect — capturing
-  // initial activeProjectId is intentional.
-  useEffect(() => {
-    if (externalPluginsEnabled) {
-      const activeProj = activeProjectId
-        ? projects.find((p) => p.id === activeProjectId)
-        : undefined;
-      refreshCommunityPlugins({
-        activeProjectId: activeProjectId ?? undefined,
-        activeProjectPath: activeProj?.path,
-      }).catch(() => {});
-    }
-  }, []);
 
   const isAppContext = settingsContext === 'app';
   const projectId = isAppContext ? undefined : settingsContext;
   const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
-
-  const allPlugins = Object.values(plugins);
-  const filteredPlugins = allPlugins.filter((entry) => {
-    if (isAppContext) {
-      return true;
-    }
-    const scopeMatch = entry.manifest.scope === 'project' || entry.manifest.scope === 'dual';
-    return scopeMatch && appEnabled.includes(entry.manifest.id);
-  });
-
-  // Split into builtin and external sections (local computation, safe from Zustand gotcha)
-  // Hide canvas sub-plugins (group-project, sticky-note) unless canvas is enabled;
-  // also hide plugins that require MCP when MCP is off
-  const canvasEnabled = appEnabled.includes('canvas');
-  const builtinPlugins = filteredPlugins.filter((e) => {
-    if (e.source !== 'builtin') return false;
-    if (CANVAS_SUB_PLUGIN_IDS.has(e.manifest.id) && !canvasEnabled) return false;
-    if (e.manifest.requiresMcp && !mcpEnabled) return false;
-    return true;
-  });
-  const externalPlugins = filteredPlugins.filter((e) => e.source === 'community' || e.source === 'marketplace');
 
   const isEnabled = (pluginId: string): boolean => {
     if (isAppContext) {
@@ -817,7 +55,7 @@ export function PluginListSettings() {
     return projectId ? (projectEnabled[projectId] || []).includes(pluginId) : false;
   };
 
-  const handleToggle = async (pluginId: string) => {
+  const toggle = async (pluginId: string) => {
     const enabled = isEnabled(pluginId);
     if (enabled) {
       // When disabling canvas, also disable its sub-plugins
@@ -898,6 +136,599 @@ export function PluginListSettings() {
       } catch { /* ignore */ }
     }
   };
+
+  return { isEnabled, toggle };
+}
+
+/** Phase label for inline update progress. */
+const UPDATE_PHASE_LABELS: Record<string, string> = {
+  downloading: 'Downloading…',
+  installing: 'Installing…',
+  reloading: 'Reloading…',
+};
+
+function GearIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+/** What a plugin has injected into a specific project. */
+interface ProjectInjections {
+  skills: string[];
+  agentTemplates: string[];
+  hasInstructions: boolean;
+  permissionAllowCount: number;
+  permissionDenyCount: number;
+  mcpServerNames: string[];
+}
+
+function hasAnyInjections(inj: ProjectInjections): boolean {
+  return (
+    inj.skills.length > 0 ||
+    inj.agentTemplates.length > 0 ||
+    inj.hasInstructions ||
+    inj.permissionAllowCount > 0 ||
+    inj.permissionDenyCount > 0 ||
+    inj.mcpServerNames.length > 0
+  );
+}
+
+/**
+ * Shown in project context when uninstalled plugins left injections behind.
+ * Provides a one-click cleanup for each orphaned plugin.
+ */
+function OrphanInjectionsBanner({
+  projectPath,
+  knownPluginIds,
+}: {
+  projectPath: string;
+  knownPluginIds: string[];
+}) {
+  const [orphans, setOrphans] = useState<string[] | null>(null);
+  const [cleaning, setCleaning] = useState<string | null>(null);
+
+  const knownPluginIdsSerialized = JSON.stringify(knownPluginIds.slice().sort());
+  const load = useCallback(async () => {
+    try {
+      const ids = await window.clubhouse.plugin.listOrphanedPluginIds(projectPath, knownPluginIds);
+      setOrphans(ids);
+    } catch {
+      setOrphans([]);
+    }
+  }, [projectPath, knownPluginIdsSerialized]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!orphans || orphans.length === 0) return null;
+
+  const handleClean = async (pluginId: string) => {
+    setCleaning(pluginId);
+    try {
+      await window.clubhouse.plugin.cleanupProjectInjections(pluginId, projectPath);
+      await load();
+    } catch {
+      // ignore
+    } finally {
+      setCleaning(null);
+    }
+  };
+
+  const handleCleanAll = async () => {
+    for (const id of orphans) {
+      setCleaning(id);
+      try {
+        await window.clubhouse.plugin.cleanupProjectInjections(id, projectPath);
+      } catch { /* ignore */ }
+    }
+    setCleaning(null);
+    await load();
+  };
+
+  return (
+    <SettingsSection
+      title="Left behind by removed plugins"
+      meta={String(orphans.length)}
+      actions={orphans.length > 1 ? (
+        <button
+          onClick={handleCleanAll}
+          disabled={cleaning !== null}
+          className={settingsButton.ghost}
+          data-testid="clean-all-orphans-btn"
+        >
+          {cleaning ? 'Cleaning…' : 'Clean all'}
+        </button>
+      ) : undefined}
+    >
+      <div data-testid="orphan-injections-banner">
+        <p className="text-xs text-ctp-warning mb-1.5">
+          These uninstalled plugins left skills, instructions, permissions or MCP servers in this project.
+        </p>
+        {orphans.map((id) => (
+          <div key={id} className="flex items-center gap-3 h-9 border-t border-surface-0">
+            <span className="flex-1 min-w-0 truncate text-xs font-mono text-ctp-text">{id}</span>
+            <button
+              onClick={() => handleClean(id)}
+              disabled={cleaning !== null}
+              className={settingsButton.ghost}
+              data-testid={`clean-orphan-btn-${id}`}
+            >
+              {cleaning === id ? 'Cleaning…' : 'Clean up'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </SettingsSection>
+  );
+}
+
+function PluginInjectionsPanel({
+  pluginId,
+  projectPath,
+  onCleaned,
+}: {
+  pluginId: string;
+  projectPath: string;
+  onCleaned?: () => void;
+}) {
+  const [injections, setInjections] = useState<ProjectInjections | null>(null);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanError, setCleanError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await window.clubhouse.plugin.listProjectInjections(pluginId, projectPath);
+      setInjections(data);
+    } catch {
+      setInjections(null);
+    }
+  }, [pluginId, projectPath]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!injections || !hasAnyInjections(injections)) return null;
+
+  const handleClean = async () => {
+    setCleaning(true);
+    setCleanError(null);
+    try {
+      await window.clubhouse.plugin.cleanupProjectInjections(pluginId, projectPath);
+      await load();
+      onCleaned?.();
+    } catch (err) {
+      setCleanError(err instanceof Error ? err.message : 'Cleanup failed');
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  const parts: string[] = [
+    ...injections.skills.map((s) => `skill ${s}`),
+    ...injections.agentTemplates.map((t) => `agent template ${t}`),
+    ...(injections.hasInstructions ? ['agent instructions'] : []),
+    ...(injections.permissionAllowCount > 0
+      ? [`${injections.permissionAllowCount} allow rule${injections.permissionAllowCount !== 1 ? 's' : ''}`]
+      : []),
+    ...(injections.permissionDenyCount > 0
+      ? [`${injections.permissionDenyCount} deny rule${injections.permissionDenyCount !== 1 ? 's' : ''}`]
+      : []),
+    ...injections.mcpServerNames.map((m) => `MCP server ${m}`),
+  ];
+
+  return (
+    <div className="mt-1 flex items-center gap-3" data-testid={`injections-panel-${pluginId}`}>
+      <p className="flex-1 min-w-0 text-xs text-ctp-overlay1">
+        Added {parts.join(', ')} to this project.
+        {cleanError && <span className="text-ctp-error"> {cleanError}</span>}
+      </p>
+      <button
+        onClick={handleClean}
+        disabled={cleaning}
+        className={settingsButton.quiet}
+        data-testid={`clean-injections-btn-${pluginId}`}
+      >
+        {cleaning ? 'Removing…' : 'Remove all'}
+      </button>
+    </div>
+  );
+}
+
+function PluginRow({
+  entry,
+  enabled,
+  onToggle,
+  onOpenSettings,
+  onUninstall,
+  onUpdate,
+  updateVersion,
+  updatePhase,
+  updateError,
+  projectPath,
+}: {
+  entry: PluginRegistryEntry;
+  enabled: boolean;
+  onToggle: () => void;
+  onOpenSettings: () => void;
+  onUninstall?: () => void;
+  onUpdate?: () => void;
+  updateVersion?: string;
+  updatePhase?: string;
+  updateError?: string;
+  /** When set, shows what this plugin added to the project */
+  projectPath?: string;
+}) {
+  const id = entry.manifest.id;
+  const name = entry.manifest.name;
+  const isIncompatible = entry.status === 'incompatible';
+  const isPendingApproval = entry.status === 'pending-approval';
+  const isUpdating = !!updatePhase;
+  const api = entry.manifest.engine?.api;
+  const deprecatedRemoval = api !== undefined ? DEPRECATED_PLUGIN_API_VERSIONS[api] : undefined;
+
+  const errorMessage = entry.error
+    ? (entry.error.indexOf('\n') >= 0 ? entry.error.slice(0, entry.error.indexOf('\n')) : entry.error)
+    : null;
+  const errorStack = entry.error && entry.error.indexOf('\n') >= 0
+    ? entry.error.slice(entry.error.indexOf('\n') + 1)
+    : null;
+
+  return (
+    <div className="py-2 border-t border-surface-0" data-testid={`plugin-row-${id}`}>
+      <div className="flex items-center gap-4 min-h-9">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 min-w-0">
+            <span className="text-[13px] text-ctp-text truncate">{name}</span>
+            <span className="text-xs text-ctp-overlay1 whitespace-nowrap" data-testid={`plugin-meta-${id}`}>
+              {pluginMetaText(entry)}
+            </span>
+          </div>
+          {entry.manifest.description && (
+            <p className="text-xs text-ctp-overlay1 mt-px truncate">{entry.manifest.description}</p>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={onOpenSettings}
+            className={settingsButton.icon}
+            title="Plugin settings"
+            aria-label={`${name} settings`}
+            data-testid={`plugin-settings-btn-${id}`}
+          >
+            <GearIcon />
+          </button>
+          {onUninstall && (
+            <button
+              onClick={onUninstall}
+              className={settingsButton.icon}
+              title="Uninstall plugin"
+              aria-label={`Uninstall ${name}`}
+            >
+              <TrashIcon />
+            </button>
+          )}
+          <Toggle
+            checked={enabled}
+            onChange={onToggle}
+            disabled={isIncompatible}
+            ariaLabel={name}
+          />
+        </div>
+      </div>
+
+      {/* One plain line per thing that needs action. Nothing when all is well. */}
+      {isIncompatible && !errorMessage && (
+        <p className="text-xs text-ctp-error mt-0.5">Doesn&apos;t work with this version of Clubhouse.</p>
+      )}
+      {!isIncompatible && deprecatedRemoval && (
+        <p className="text-xs text-ctp-warning mt-0.5" data-testid={`deprecated-api-${id}`}>
+          Uses plugin API {api}, which stops loading in {deprecatedRemoval}.
+        </p>
+      )}
+      {errorMessage && (
+        <div className="mt-0.5">
+          <p className="text-xs text-ctp-error">{errorMessage}</p>
+          {errorStack && (
+            <details className="mt-0.5">
+              <summary className="text-xs text-ctp-overlay1 cursor-pointer hover:text-ctp-text">View details</summary>
+              <pre className="text-xs text-ctp-overlay1 bg-ctp-crust border border-surface-0 p-2 rounded-md mt-1 overflow-auto max-h-32 whitespace-pre-wrap">{errorStack}</pre>
+            </details>
+          )}
+        </div>
+      )}
+      {isPendingApproval && entry.pendingPermissions && (
+        <div className="mt-1 flex items-center gap-3" data-testid={`pending-approval-${id}`}>
+          <p className="flex-1 min-w-0 text-xs text-ctp-warning">
+            This update needs more permissions:{' '}
+            {entry.pendingPermissions.map((perm, i) => (
+              <span key={perm}>
+                {i > 0 && ', '}
+                <span className={`font-mono ${PERMISSION_RISK_LEVELS[perm] === 'dangerous' ? 'text-ctp-error' : ''}`}>{perm}</span>
+              </span>
+            ))}
+          </p>
+          <button
+            onClick={() => rejectPluginPermissions(id)}
+            className={settingsButton.quiet}
+            data-testid={`reject-btn-${id}`}
+          >
+            Reject
+          </button>
+          <button
+            onClick={() => approvePluginPermissions(id)}
+            className={settingsButton.ghost}
+            data-testid={`approve-btn-${id}`}
+          >
+            Approve and turn on
+          </button>
+        </div>
+      )}
+      {updateVersion && !isUpdating && (
+        <div className="mt-1 flex items-center gap-3" data-testid={`update-badge-${id}`}>
+          <p className="flex-1 min-w-0 text-xs text-ctp-success">Version {updateVersion} is available.</p>
+          {onUpdate && (
+            <button
+              onClick={onUpdate}
+              className={settingsButton.ghost}
+              title={`Update to ${updateVersion}`}
+              data-testid={`update-btn-${id}`}
+            >
+              Update
+            </button>
+          )}
+        </div>
+      )}
+      {isUpdating && (
+        <p className="text-xs text-ctp-overlay1 mt-0.5" data-testid={`update-phase-${id}`}>
+          {UPDATE_PHASE_LABELS[updatePhase] || 'Updating…'}
+        </p>
+      )}
+      {updateError && (
+        <p className="text-xs text-ctp-error mt-0.5">Update failed. {updateError}</p>
+      )}
+      {projectPath && (
+        <PluginInjectionsPanel pluginId={id} projectPath={projectPath} />
+      )}
+    </div>
+  );
+}
+
+function CustomMarketplaceManager() {
+  const [marketplaces, setMarketplaces] = useState<CustomMarketplace[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [addName, setAddName] = useState('');
+  const [addUrl, setAddUrl] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const loadMarketplaces = async () => {
+    try {
+      const list = await window.clubhouse.marketplace.listCustomMarketplaces();
+      setMarketplaces(list);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMarketplaces();
+  }, []);
+
+  const handleAdd = async () => {
+    if (!addName.trim() || !addUrl.trim()) return;
+    setAdding(true);
+    setAddError(null);
+    try {
+      await window.clubhouse.marketplace.addCustomMarketplace({
+        name: addName.trim(),
+        url: addUrl.trim(),
+      });
+      setAddName('');
+      setAddUrl('');
+      await loadMarketplaces();
+    } catch (err: unknown) {
+      setAddError(err instanceof Error ? err.message : 'Failed to add marketplace');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRemove = async (id: string) => {
+    const m = marketplaces.find((x) => x.id === id);
+    if (!m) return;
+    const { promise } = showConfirmDialog(`Remove custom marketplace "${m.name}"?`);
+    const confirmed = await promise;
+    if (!confirmed) return;
+    try {
+      await window.clubhouse.marketplace.removeCustomMarketplace({ id });
+      await loadMarketplaces();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleToggle = async (id: string, enabled: boolean) => {
+    try {
+      await window.clubhouse.marketplace.toggleCustomMarketplace({ id, enabled });
+      await loadMarketplaces();
+    } catch {
+      // ignore
+    }
+  };
+
+  if (loading) return null;
+
+  return (
+    <SettingsSection title="Plugin stores" meta={String(marketplaces.length)}>
+      <div data-testid="custom-marketplace-section">
+        <p className={`${settingsHelp} mb-2`}>
+          Private or third-party registries to discover, install and update plugins from.
+          Each store hosts a <code className="font-mono text-ctp-subtext1">registry.json</code> in the Workshop format.
+        </p>
+        {marketplaces.map((m) => (
+          <div
+            key={m.id}
+            className="flex items-center gap-4 min-h-[46px] py-2 border-t border-surface-0"
+            data-testid={`custom-marketplace-${m.id}`}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[13px] text-ctp-text">{m.name}</span>
+                {!m.enabled && <span className="text-xs text-ctp-overlay1">Off</span>}
+              </div>
+              <p className="text-xs text-ctp-overlay1 truncate mt-px" title={m.url}>{m.url}</p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={() => handleRemove(m.id)}
+                className={settingsButton.icon}
+                title="Remove marketplace"
+                aria-label={`Remove ${m.name}`}
+              >
+                <CloseIcon />
+              </button>
+              <Toggle
+                checked={m.enabled}
+                onChange={(v) => handleToggle(m.id, v)}
+                ariaLabel={`Use ${m.name}`}
+              />
+            </div>
+          </div>
+        ))}
+        <SettingsBlock>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={addName}
+              onChange={(e) => setAddName(e.target.value)}
+              placeholder="Store name"
+              aria-label="Store name"
+              className={`${settingsInput} flex-1 min-w-0`}
+              data-testid="custom-marketplace-name"
+            />
+            <input
+              type="text"
+              value={addUrl}
+              onChange={(e) => setAddUrl(e.target.value)}
+              placeholder="Registry URL, e.g. https://…/registry.json"
+              aria-label="Registry URL"
+              className={`${settingsInput} flex-[2] min-w-0`}
+              data-testid="custom-marketplace-url"
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
+            />
+            <button
+              onClick={handleAdd}
+              disabled={adding || !addName.trim() || !addUrl.trim()}
+              className={settingsButton.ghost}
+              data-testid="custom-marketplace-add"
+            >
+              {adding ? 'Adding…' : 'Add store'}
+            </button>
+          </div>
+          {addError && <p className="text-xs text-ctp-error mt-1.5">{addError}</p>}
+        </SettingsBlock>
+      </div>
+    </SettingsSection>
+  );
+}
+
+export function PluginListSettings() {
+  const plugins = usePluginStore((s) => s.plugins);
+  const appEnabled = usePluginStore((s) => s.appEnabled);
+  const externalPluginsEnabled = usePluginStore((s) => s.externalPluginsEnabled);
+  const showBetaPlugins = usePluginStore((s) => s.showBetaPlugins);
+  const setShowBetaPlugins = usePluginStore((s) => s.setShowBetaPlugins);
+  const disableApp = usePluginStore((s) => s.disableApp);
+  const setExternalPluginsEnabled = usePluginStore((s) => s.setExternalPluginsEnabled);
+  const openPluginSettings = useUIStore((s) => s.openPluginSettings);
+  const settingsContext = useUIStore((s) => s.settingsContext);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const projects = useProjectStore((s) => s.projects);
+  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
+  const { isEnabled, toggle: handleToggle } = usePluginEnableToggle();
+
+  // Plugin update state
+  const updates = usePluginUpdateStore((s) => s.updates);
+  const updating = usePluginUpdateStore((s) => s.updating);
+  const updateErrors = usePluginUpdateStore((s) => s.updateErrors);
+  const checking = usePluginUpdateStore((s) => s.checking);
+  const lastCheck = usePluginUpdateStore((s) => s.lastCheck);
+  const checkForUpdates = usePluginUpdateStore((s) => s.checkForUpdates);
+  const updatePlugin = usePluginUpdateStore((s) => s.updatePlugin);
+  const updateAll = usePluginUpdateStore((s) => s.updateAll);
+
+  const [restartHint, setRestartHint] = useState(false);
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
+  const [storesOpen, setStoresOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<string | null>(null);
+
+  // Auto-refresh community plugins on mount so the list is always current.
+  // Pass active project context so project-scoped plugins re-activate
+  // for the current project (Mission 69). Mount-only effect — capturing
+  // initial activeProjectId is intentional.
+  useEffect(() => {
+    if (externalPluginsEnabled) {
+      const activeProj = activeProjectId
+        ? projects.find((p) => p.id === activeProjectId)
+        : undefined;
+      refreshCommunityPlugins({
+        activeProjectId: activeProjectId ?? undefined,
+        activeProjectPath: activeProj?.path,
+      }).catch(() => {});
+    }
+  }, []);
+
+  const isAppContext = settingsContext === 'app';
+  const projectId = isAppContext ? undefined : settingsContext;
+  const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
+
+  const allPlugins = Object.values(plugins);
+  const filteredPlugins = allPlugins.filter((entry) => {
+    if (isAppContext) {
+      return true;
+    }
+    const scopeMatch = entry.manifest.scope === 'project' || entry.manifest.scope === 'dual';
+    return scopeMatch && appEnabled.includes(entry.manifest.id);
+  });
+
+  // Split into builtin and external sections (local computation, safe from Zustand gotcha)
+  // Hide canvas sub-plugins (group-project, sticky-note) unless canvas is enabled;
+  // also hide plugins that require MCP when MCP is off
+  const canvasEnabled = appEnabled.includes('canvas');
+  const builtinPlugins = filteredPlugins.filter((e) => {
+    if (e.source !== 'builtin') return false;
+    if (CANVAS_SUB_PLUGIN_IDS.has(e.manifest.id) && !canvasEnabled) return false;
+    if (e.manifest.requiresMcp && !mcpEnabled) return false;
+    return true;
+  });
+  const externalPlugins = filteredPlugins.filter((e) => e.source === 'community' || e.source === 'marketplace');
 
   const handleExternalToggle = async () => {
     const newValue = !externalPluginsEnabled;
@@ -1036,14 +867,10 @@ export function PluginListSettings() {
     }
   };
 
-  const hasSettings = (entry: PluginRegistryEntry): boolean => {
-    return !!(entry.manifest.settingsPanel || (entry.manifest.contributes?.settings && entry.manifest.contributes.settings.length > 0));
-  };
-
   const getUpdateInfo = (pluginId: string) => updates.find((u) => u.pluginId === pluginId);
 
   const renderPluginList = (entries: PluginRegistryEntry[], showUninstall: boolean) => (
-    <div className="space-y-2">
+    <div>
       {entries.map((entry) => {
         const updateInfo = getUpdateInfo(entry.manifest.id);
         const phase = updating[entry.manifest.id];
@@ -1057,7 +884,6 @@ export function PluginListSettings() {
             onOpenSettings={() => openPluginSettings(entry.manifest.id)}
             onUninstall={showUninstall ? () => handleUninstall(entry.manifest.id) : undefined}
             onUpdate={updateInfo ? () => updatePlugin(entry.manifest.id) : undefined}
-            hasSettings={hasSettings(entry)}
             updateVersion={updateInfo?.latestVersion}
             updatePhase={phase}
             updateError={error}
@@ -1068,210 +894,173 @@ export function PluginListSettings() {
     </div>
   );
 
+  const projectName = project?.displayName || project?.name || 'this project';
+
+  const description = isAppContext ? (
+    <>
+      Turn plugins on for the app. Project plugins also need turning on in each project.
+      Find and share plugins in the{' '}
+      <a
+        href="https://github.com/Agent-Clubhouse/Clubhouse-Workshop"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-ctp-accent hover:underline"
+        data-testid="workshop-link"
+      >
+        Clubhouse Workshop
+      </a>.
+    </>
+  ) : (
+    `Turn plugins on for ${projectName}. Only plugins turned on for the app appear here. Install and remove plugins in app settings.`
+  );
+
+  const headerActions = isAppContext ? (
+    <>
+      <button
+        onClick={() => setStoresOpen((v) => !v)}
+        className={settingsButton.ghost}
+        aria-expanded={storesOpen}
+        data-testid="custom-marketplace-toggle"
+      >
+        Plugin stores…
+      </button>
+      <button
+        onClick={() => setMarketplaceOpen(true)}
+        className={settingsButton.primary}
+        data-testid="marketplace-button"
+      >
+        Browse marketplace
+      </button>
+    </>
+  ) : undefined;
+
   return (
-    <div className="h-full overflow-y-auto bg-ctp-base p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">
-          {isAppContext ? 'Plugins' : 'Project Plugins'}
-        </h2>
-        <p className="text-xs text-ctp-subtext0 mb-4">
-          {isAppContext
-            ? 'Enable plugins to make them available. Project-scoped plugins also need to be enabled per project.'
-            : `Enable plugins for ${project?.displayName || project?.name || 'this project'}. Only plugins enabled at the app level appear here.`}
-        </p>
-        {!isAppContext && (
-          <p className="text-xs text-ctp-subtext0/70 mb-4 italic">
-            To install or manage external plugins, go to the app-level Plugin settings.
-          </p>
-        )}
-        {isAppContext && (
-          <div className="mb-6">
-            <p className="text-xs text-ctp-subtext0 mb-3">
-              Discover and share plugins at the{' '}
-              <a
-                href="https://github.com/Agent-Clubhouse/Clubhouse-Workshop"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-ctp-accent hover:underline"
-                data-testid="workshop-link"
-              >
-                Clubhouse Workshop
-              </a>.
-            </p>
-            <button
-              onClick={() => setMarketplaceOpen(true)}
-              className="px-3 py-1.5 rounded bg-ctp-accent text-white text-xs font-medium hover:bg-ctp-accent/90 cursor-pointer"
-              data-testid="marketplace-button"
+    <SettingsPage title="Plugins" description={description} actions={headerActions}>
+      {/* Custom plugin stores (app context only), opened from the header */}
+      {isAppContext && storesOpen && <CustomMarketplaceManager />}
+
+      {/* Orphaned injections (project context only) */}
+      {!isAppContext && project?.path && (
+        <OrphanInjectionsBanner
+          projectPath={project.path}
+          knownPluginIds={Object.keys(plugins)}
+        />
+      )}
+
+      {builtinPlugins.length > 0 && (
+        <SettingsSection title="Built-in" meta={String(builtinPlugins.length)}>
+          {renderPluginList(builtinPlugins, false)}
+        </SettingsSection>
+      )}
+
+      {isAppContext && (
+        <>
+          <SettingsSection title="From the marketplace" meta={String(externalPlugins.length)}>
+            <SettingsField
+              label="Allow external plugins"
+              help={restartHint
+                ? <span className="text-ctp-warning">Restart Clubhouse for this change to take full effect.</span>
+                : 'Plugins from the Clubhouse Workshop and custom stores.'}
             >
-              View Plugin Marketplace
-            </button>
-          </div>
-        )}
-
-        {/* Custom marketplace management (app context only) */}
-        {isAppContext && <CustomMarketplaceManager />}
-
-        {/* Orphaned injection banner (project context only) */}
-        {!isAppContext && project?.path && (
-          <OrphanInjectionsBanner
-            projectPath={project.path}
-            knownPluginIds={Object.keys(plugins)}
-          />
-        )}
-
-        {/* Built-in section */}
-        {builtinPlugins.length > 0 && (
-          <>
-            <h3 className="text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider mb-3">Built-in</h3>
-            {renderPluginList(builtinPlugins, false)}
-          </>
-        )}
-
-        {/* Beta plugins toggle (app context only) */}
-        {isAppContext && (
-          <div className={`${builtinPlugins.length > 0 ? 'mt-6 pt-6 border-t border-surface-1' : ''}`}>
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider">Beta</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-ctp-subtext0">Show beta plugins</span>
-                <button
-                  onClick={handleBetaPluginsToggle}
-                  className={`
-                    relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
-                    ${showBetaPlugins ? 'bg-ctp-accent' : 'bg-surface-2'}
-                  `}
-                >
-                  <span
-                    className={`
-                      absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
-                      ${showBetaPlugins ? 'translate-x-4' : 'translate-x-0'}
-                    `}
-                  />
-                </button>
-              </div>
-            </div>
-            <p className="text-xs text-ctp-subtext0 mb-3">
-              Show available beta versions from the official plugin registry.
-            </p>
-          </div>
-        )}
-
-        {/* Master switch + External section (app context only) */}
-        {isAppContext && (
-          <>
-            <div className={`mt-6 pt-6 border-t border-surface-1`}>
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider">External</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-ctp-subtext0">Enable External Plugins</span>
-                  <button
-                    onClick={handleExternalToggle}
-                    data-testid="external-plugins-toggle"
-                    className={`
-                      relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
-                      ${externalPluginsEnabled ? 'bg-ctp-accent' : 'bg-surface-2'}
-                    `}
-                  >
-                    <span
-                      className={`
-                        absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
-                        ${externalPluginsEnabled ? 'translate-x-4' : 'translate-x-0'}
-                      `}
-                    />
-                  </button>
-                </div>
-              </div>
-              <p className="text-xs text-ctp-subtext0 mb-3">
-                Allow loading plugins from <code className="text-xs font-mono bg-surface-0 px-1 py-0.5 rounded">~/.clubhouse/plugins/</code>.
-              </p>
-              {restartHint && (
-                <p className="text-xs text-ctp-peach mb-3">Restart Clubhouse for this change to take full effect.</p>
-              )}
-              <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <button
-                  onClick={checkForUpdates}
-                  disabled={checking}
-                  className="text-[11px] px-2 py-1 rounded border border-ctp-success/30 text-ctp-success hover:bg-ctp-success/10 cursor-pointer disabled:opacity-50"
-                  data-testid="check-updates-button"
-                >
-                  {checking ? 'Checking...' : 'Check for Updates'}
-                </button>
-                {updates.length > 1 && (
-                  <button
-                    onClick={updateAll}
-                    disabled={Object.keys(updating).length > 0}
-                    className="text-[11px] px-2 py-1 rounded border border-ctp-success/30 text-ctp-success hover:bg-ctp-success/10 cursor-pointer disabled:opacity-50"
-                    data-testid="update-all-button"
-                  >
-                    Update All ({updates.length})
-                  </button>
-                )}
-                <button
-                  onClick={handleScanNewPlugins}
-                  disabled={scanning}
-                  className="text-[11px] px-2 py-1 rounded border border-ctp-accent/30 text-ctp-accent hover:bg-ctp-accent/10 cursor-pointer disabled:opacity-50"
-                  data-testid="scan-plugins-button"
-                >
-                  {scanning ? 'Scanning...' : 'Reload Local Plugins'}
-                </button>
-                {externalPlugins.length > 0 && (
-                  <button
-                    onClick={handleUninstallAll}
-                    className="text-[11px] px-2 py-1 rounded border border-ctp-error/30 text-ctp-error hover:bg-ctp-error/10 cursor-pointer"
-                  >
-                    Uninstall All
-                  </button>
-                )}
-              </div>
-              {lastCheck && (
-                <p className="text-xs text-ctp-subtext0/70 mb-2" data-testid="last-check-time">
-                  Last checked: {new Date(lastCheck).toLocaleString()}
-                </p>
-              )}
-              {scanResult && (
-                <p className="text-xs text-ctp-subtext0 mb-3">{scanResult}</p>
-              )}
-            </div>
-
+              <span data-testid="external-plugins-toggle" className="inline-flex">
+                <Toggle
+                  checked={externalPluginsEnabled}
+                  onChange={handleExternalToggle}
+                  ariaLabel="Allow external plugins"
+                />
+              </span>
+            </SettingsField>
             {externalPlugins.length > 0 ? (
               renderPluginList(externalPlugins, true)
             ) : (
-              <p className="text-xs text-ctp-subtext0">
-                {externalPluginsEnabled
-                  ? 'No external plugins installed. Place plugins in ~/.clubhouse/plugins/ and restart.'
-                  : 'Enable external plugins above to discover and load community plugins.'}
-              </p>
+              <SettingsBlock>
+                <p className={settingsHelp}>
+                  {externalPluginsEnabled
+                    ? 'No external plugins installed. Browse the marketplace, or put plugins in ~/.clubhouse/plugins/ and restart.'
+                    : 'Allow external plugins to find and load plugins from the marketplace.'}
+                </p>
+              </SettingsBlock>
             )}
-            <p className="text-xs text-ctp-subtext0/70 mt-3 italic">
-              Some plugins may also need to be enabled per-project in that project's plugin settings.
-            </p>
-          </>
-        )}
+          </SettingsSection>
 
-        {/* External section in project context (no master switch, no uninstall) */}
-        {!isAppContext && externalPlugins.length > 0 && (
-          <>
-            {builtinPlugins.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-surface-1">
-                <h3 className="text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider mb-3">External</h3>
-              </div>
+          <SettingsSection title="Updates and local plugins">
+            <SettingsField
+              label="Plugin updates"
+              help={lastCheck
+                ? <span data-testid="last-check-time">Last checked {new Date(lastCheck).toLocaleString()}.</span>
+                : 'Check the marketplace and your stores for newer versions.'}
+            >
+              {updates.length > 1 && (
+                <button
+                  onClick={updateAll}
+                  disabled={Object.keys(updating).length > 0}
+                  className={settingsButton.ghost}
+                  data-testid="update-all-button"
+                >
+                  Update all ({updates.length})
+                </button>
+              )}
+              <button
+                onClick={checkForUpdates}
+                disabled={checking}
+                className={settingsButton.ghost}
+                data-testid="check-updates-button"
+              >
+                {checking ? 'Checking…' : 'Check for updates'}
+              </button>
+            </SettingsField>
+            <SettingsField label="Beta versions" help="Offer beta versions from the official plugin registry.">
+              <Toggle
+                checked={showBetaPlugins}
+                onChange={handleBetaPluginsToggle}
+                ariaLabel="Show beta plugins"
+              />
+            </SettingsField>
+            <SettingsField
+              label="Local plugins"
+              help={scanResult ?? <>Load plugins you put in <code className="font-mono">~/.clubhouse/plugins/</code>.</>}
+            >
+              <button
+                onClick={handleScanNewPlugins}
+                disabled={scanning}
+                className={settingsButton.ghost}
+                data-testid="scan-plugins-button"
+              >
+                {scanning ? 'Reloading…' : 'Reload'}
+              </button>
+            </SettingsField>
+            {externalPlugins.length > 0 && (
+              <SettingsField
+                label="Uninstall all external plugins"
+                help="Deletes them from disk and removes what they added to projects."
+              >
+                <button onClick={handleUninstallAll} className={settingsButton.danger}>
+                  Uninstall all…
+                </button>
+              </SettingsField>
             )}
-            {renderPluginList(externalPlugins, false)}
-          </>
-        )}
+          </SettingsSection>
+        </>
+      )}
 
-        {/* Empty state when no plugins at all */}
-        {filteredPlugins.length === 0 && (
-          <p className="text-sm text-ctp-subtext0">
-            No {isAppContext ? '' : 'project-scoped '}plugins installed.
-            Place plugins in <code className="text-xs font-mono bg-surface-0 px-1 py-0.5 rounded">~/.clubhouse/plugins/</code> and restart.
-          </p>
-        )}
-      </div>
+      {/* External plugins in project context (no master switch, no uninstall) */}
+      {!isAppContext && externalPlugins.length > 0 && (
+        <SettingsSection title="From the marketplace" meta={String(externalPlugins.length)}>
+          {renderPluginList(externalPlugins, false)}
+        </SettingsSection>
+      )}
+
+      {/* Empty state when no plugins at all */}
+      {filteredPlugins.length === 0 && (
+        <p className={`${settingsHelp} mt-4`}>
+          No {isAppContext ? '' : 'project '}plugins installed.
+          Put plugins in <code className="font-mono">~/.clubhouse/plugins/</code> and restart.
+        </p>
+      )}
 
       {marketplaceOpen && (
         <PluginMarketplaceDialog onClose={() => setMarketplaceOpen(false)} />
       )}
-    </div>
+    </SettingsPage>
   );
 }

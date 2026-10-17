@@ -294,33 +294,26 @@ test.describe('Plugin Settings', () => {
     await expect(window.locator('text=Files').first()).toBeVisible({ timeout: 3_000 });
   });
 
-  test('built-in plugins show "Built-in" badge', async () => {
-    // Each built-in plugin should have a "Built-in" badge — wait for render before counting
-    const badges = window.locator('text=Built-in');
+  test('built-in plugins show "Built-in" in their meta line', async () => {
+    // Each built-in plugin row has plain meta text "Built-in · <version>"
+    const badges = window.locator('[data-testid^="plugin-meta-"]', { hasText: 'Built-in' });
     await expect(badges.first()).toBeVisible({ timeout: 5_000 });
     const count = await badges.count();
     // At least 3 for canvas, terminal, files
     expect(count).toBeGreaterThanOrEqual(3);
   });
 
-  test('built-in plugins show version and API version', async () => {
-    // Plugins should display version info (v1.0.0) — use auto-retrying assertion for CI stability
-    const versionLabels = window.locator('text=v1.0.0');
+  test('built-in plugins show their version', async () => {
+    // Rows show "Built-in · 1.0.0"; the API version is no longer shown on rows
+    const versionLabels = window.locator('[data-testid^="plugin-meta-"]', { hasText: '1.0.0' });
     await expect(versionLabels.first()).toBeVisible({ timeout: 5_000 });
     const count = await versionLabels.count();
     expect(count).toBeGreaterThanOrEqual(3);
-
-    // API version badge (API 0.8) — built-in plugins upgraded to v0.8
-    const apiLabels = window.locator('text=API 0.8');
-    await expect(apiLabels.first()).toBeVisible({ timeout: 5_000 });
-    const apiCount = await apiLabels.count();
-    expect(apiCount).toBeGreaterThanOrEqual(3);
   });
 
   test('built-in plugins have toggle switches that are enabled', async () => {
-    // Toggles for built-in plugins — they should be in the "on" state
-    // The toggle is a button with bg-ctp-accent class when enabled
-    const toggles = window.locator('.bg-ctp-accent.rounded-full');
+    // Toggles for built-in plugins should be in the "on" state
+    const toggles = window.locator('[data-testid^="plugin-row-"] button[aria-pressed="true"]');
     await expect(toggles.first()).toBeVisible({ timeout: 5_000 });
     const count = await toggles.count();
     // At least 3 toggles for the built-in plugins
@@ -337,14 +330,13 @@ test.describe('Plugin Settings', () => {
   test('Marketplace button is visible in app-context settings', async () => {
     const marketplaceBtn = window.locator('[data-testid="marketplace-button"]');
     await expect(marketplaceBtn).toBeVisible({ timeout: 3_000 });
-    await expect(marketplaceBtn).toContainText('View Plugin Marketplace');
+    await expect(marketplaceBtn).toContainText('Browse marketplace');
   });
 
   test('External plugins section shows toggle switch', async () => {
     // The external plugins master switch should be visible
-    // Use exact match to avoid hitting the paragraph "Enable external plugins above to discover..."
-    const externalLabel = window.getByText('Enable External Plugins', { exact: true });
-    await expect(externalLabel).toBeVisible({ timeout: 3_000 });
+    const externalToggle = window.locator('[data-testid="external-plugins-toggle"] button[aria-label="Allow external plugins"]');
+    await expect(externalToggle).toBeVisible({ timeout: 3_000 });
   });
 
   test('navigating away and back preserves plugin settings state', async () => {
@@ -380,7 +372,7 @@ test.describe('Plugin Marketplace Dialog', () => {
     await openSettings();
     await navigateToPluginsSettings();
 
-    // Click the "View Plugin Marketplace" button
+    // Click the "Browse marketplace" button
     const marketplaceBtn = window.locator('[data-testid="marketplace-button"]');
     await marketplaceBtn.click();
     await window.waitForTimeout(500);
@@ -391,7 +383,8 @@ test.describe('Plugin Marketplace Dialog', () => {
   });
 
   test('Marketplace dialog shows title', async () => {
-    const title = window.locator('[data-testid="marketplace-dialog"] h3:has-text("Plugin Marketplace")');
+    // The shared Modal renders its title as an h2 above the dialog body
+    const title = window.locator('[data-testid="marketplace-overlay"] h2:has-text("Plugin marketplace")');
     await expect(title).toBeVisible({ timeout: 5_000 });
   });
 
@@ -420,7 +413,7 @@ test.describe('Plugin Marketplace Dialog', () => {
     const loadingMsg = window.locator('text=Loading marketplace...');
     const errorMsg = window.locator('text=Failed to load marketplace');
     const noPluginsMsg = window.locator('text=No plugins available.');
-    const pluginCards = window.locator('[data-testid="marketplace-dialog"] .space-y-3 > div');
+    const pluginCards = window.locator('[data-testid="marketplace-list"] [data-testid^="marketplace-plugin-"]');
 
     // Wait for loading to finish
     await window.waitForTimeout(5_000);

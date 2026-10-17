@@ -20,7 +20,7 @@ describe('ResetProjectDialog', () => {
 
   it('renders without crash', () => {
     render(<ResetProjectDialog {...defaultProps} />);
-    expect(screen.getByText('Reset Project')).toBeInTheDocument();
+    expect(screen.getByText('Reset project')).toBeInTheDocument();
   });
 
   it('shows project name in warning text', () => {
@@ -84,7 +84,7 @@ describe('ResetProjectDialog', () => {
 
   it('does not call onCancel when dialog content is clicked', () => {
     render(<ResetProjectDialog {...defaultProps} />);
-    fireEvent.click(screen.getByText('Reset Project'));
+    fireEvent.click(screen.getByText('Reset project'));
     expect(defaultProps.onCancel).not.toHaveBeenCalled();
   });
 });

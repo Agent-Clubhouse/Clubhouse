@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
+import { settingsButton, settingsInput } from './SettingsLayout';
 import type { TelemetryLevel } from '../../../shared/telemetry/attributes';
 import type {
   OtlpHeaderInput,
@@ -88,8 +89,11 @@ const api = () => window.clubhouse.telemetrySettings;
 /** Opened in the browser by the user; Clubhouse makes no request itself (spec §6.10). */
 export const WORKBOOK_DOCS_URL = 'https://github.com/Agent-Clubhouse/Clubhouse/blob/main/docs/telemetry/workbook/README.md';
 
-const inputClass = 'w-full rounded-md border border-surface-1 bg-surface-0 px-2.5 py-1.5 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent';
-const buttonClass = 'rounded-md border border-surface-1 bg-surface-0 px-3 py-1.5 text-sm text-ctp-text hover:border-surface-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
+const inputClass = `${settingsInput} w-full`;
+const buttonClass = settingsButton.ghost;
+const panelClass = 'mt-[22px] pt-3 border-t border-surface-0 space-y-3';
+const panelTitleClass = 'text-[13px] font-semibold text-ctp-text';
+const rowLabelClass = 'text-[13px] text-ctp-text';
 const linkClass = 'text-xs text-ctp-link hover:underline cursor-pointer';
 
 export function TelemetrySettingsSection() {
@@ -194,42 +198,41 @@ export function TelemetrySettingsSection() {
 
   const testLine = (panel: string) => {
     if (!test || test.panel !== panel) return null;
-    if (test.report === 'sending') return <span className="text-xs text-ctp-subtext0">Sending…</span>;
+    if (test.report === 'sending') return <span className="text-xs text-ctp-overlay1">Sending…</span>;
     const r = test.report;
     const detail = [r.httpStatus ? `HTTP ${r.httpStatus}` : null, r.latencyMs !== undefined ? `${r.latencyMs} ms` : null].filter(Boolean).join(', ');
     return (
-      <span className={`text-xs ${r.ok ? 'text-ctp-subtext1' : 'text-ctp-red'}`} data-testid={`telemetry-test-result-${panel}`}>
+      <span className={`text-xs ${r.ok ? 'text-ctp-subtext1' : 'text-ctp-error'}`} data-testid={`telemetry-test-result-${panel}`}>
         {r.ok ? '✓ ' : ''}{r.message}{detail ? ` (${detail})` : ''}
       </span>
     );
   };
 
   const errorLine = (panel: string) =>
-    error?.panel === panel ? <p className="text-xs text-ctp-red mt-2" role="alert">{error.message}</p> : null;
+    error?.panel === panel ? <p className="text-xs text-ctp-error mt-2" role="alert">{error.message}</p> : null;
 
   return (
     <div className="mt-8" data-testid="telemetry-settings">
-      <div className="border-t border-surface-0 mb-6" />
-      <h2 className="text-lg font-semibold text-ctp-text mb-1">Telemetry export</h2>
-      <p className="text-sm text-ctp-subtext0 mb-1">
+      <h2 className="text-[15px] font-semibold text-ctp-text mb-1">Telemetry export</h2>
+      <p className="text-xs text-ctp-overlay1 mb-1">
         Send anonymized diagnostics to your own Azure Application Insights, an OpenTelemetry backend, or both, each with its own level. Nothing is sent to the Clubhouse maintainers. Off by default.
       </p>
-      <p className="text-xs text-ctp-subtext0 mb-4">
+      <p className="text-xs text-ctp-overlay1">
         Telemetry is separate from local logging, and each has its own switch.{' '}
         <button type="button" className={linkClass} onClick={() => setLearnOpen(true)}>Learn what's sent</button>
       </p>
 
       {status.secureStorage === 'unavailable' && (
-        <p className="text-xs text-ctp-subtext1 mb-4">
+        <p className="text-xs text-ctp-warning mt-2">
           Secure storage is not available on this system, so a connection string or header values can't be saved.
         </p>
       )}
 
       {/* Azure Application Insights */}
-      <section className="rounded-md border border-surface-1 px-4 py-4 space-y-4" aria-label="Azure Application Insights">
-        <div className="text-sm text-ctp-text font-medium">Azure Application Insights</div>
+      <section className={panelClass} aria-label="Azure Application Insights">
+        <div className={panelTitleClass}>Azure Application Insights</div>
         <div className="flex items-center justify-between">
-          <div className="text-sm text-ctp-text">Send telemetry</div>
+          <div className={rowLabelClass}>Send telemetry</div>
           <Toggle
             ariaLabel="Send telemetry to Application Insights"
             checked={azureOn}
@@ -238,10 +241,10 @@ export function TelemetrySettingsSection() {
           />
         </div>
         <div>
-          <label className="text-sm text-ctp-text block mb-1.5" htmlFor="telemetry-cs">Connection string</label>
+          <label className="block text-xs text-ctp-overlay1 mb-1" htmlFor="telemetry-cs">Connection string</label>
           {status.azure.configured && !replacingCs ? (
             <div className="flex items-center gap-3">
-              <span className="text-sm text-ctp-subtext1 font-mono" data-testid="telemetry-cs-masked">
+              <span className="text-xs text-ctp-subtext1 font-mono" data-testid="telemetry-cs-masked">
                 IKey …{status.azure.ikeyLast4} · {status.azure.host}
               </span>
               <button type="button" className={linkClass} onClick={() => setReplacingCs(true)}>Replace</button>
@@ -283,7 +286,7 @@ export function TelemetrySettingsSection() {
         <button type="button" className={linkClass} onClick={() => void openPreview()}>Preview data</button>
         {azureOn && (
           <>
-            <span className="text-xs text-ctp-subtext0 mx-2">·</span>
+            <span className="text-xs text-ctp-overlay1 mx-2">·</span>
             <button type="button" className={linkClass} onClick={() => void window.clubhouse.app.openExternalUrl(WORKBOOK_DOCS_URL)}>
               Get the Clubhouse Workbook
             </button>
@@ -293,13 +296,13 @@ export function TelemetrySettingsSection() {
       </div>
 
       {/* Other destinations */}
-      <section className="rounded-md border border-surface-1 px-4 py-4 space-y-4 mt-6" aria-label="Other destinations">
+      <section className={panelClass} aria-label="Other destinations">
         <div>
-          <div className="text-sm text-ctp-text font-medium">Other destinations</div>
-          <div className="text-xs text-ctp-subtext0 mt-0.5">Send to an OpenTelemetry (OTLP) backend, on its own or alongside Application Insights.</div>
+          <div className={panelTitleClass}>Other destinations</div>
+          <div className="text-xs text-ctp-overlay1 mt-px">Send to an OpenTelemetry (OTLP) backend, on its own or alongside Application Insights.</div>
         </div>
         <div className="flex items-center justify-between">
-          <div className="text-sm text-ctp-text">Send to OTLP</div>
+          <div className={rowLabelClass}>Send to OTLP</div>
           <Toggle
             ariaLabel="Send telemetry to OTLP"
             checked={otlpOn}
@@ -308,7 +311,7 @@ export function TelemetrySettingsSection() {
           />
         </div>
         <div>
-          <label className="text-sm text-ctp-text block mb-1.5" htmlFor="telemetry-otlp-endpoint">Endpoint</label>
+          <label className="block text-xs text-ctp-overlay1 mb-1" htmlFor="telemetry-otlp-endpoint">Endpoint</label>
           <input
             id="telemetry-otlp-endpoint"
             className={inputClass}
@@ -317,10 +320,10 @@ export function TelemetrySettingsSection() {
             value={endpoint}
             onChange={(e) => setEndpoint(e.target.value)}
           />
-          <p className="text-xs text-ctp-subtext0 mt-1">HTTPS is required, except for a collector on this computer.</p>
+          <p className="text-xs text-ctp-overlay1 mt-1">HTTPS is required, except for a collector on this computer.</p>
         </div>
         <div>
-          <div className="text-sm text-ctp-text mb-1.5">Headers</div>
+          <div className="text-xs text-ctp-overlay1 mb-1">Headers</div>
           <div className="space-y-2">
             {headers.map((h, i) => (
               <div key={i} className="flex gap-2">
@@ -347,7 +350,7 @@ export function TelemetrySettingsSection() {
           </div>
           <button type="button" className={`${linkClass} mt-2`} onClick={() => setHeaders([...headers, { name: '' }])}>Add header</button>
         </div>
-        <div className="text-sm text-ctp-subtext1">Protocol: HTTP/JSON</div>
+        <div className="text-xs text-ctp-overlay1">Protocol: HTTP/JSON</div>
         <div className="flex items-center gap-3 flex-wrap">
           <button type="button" className={buttonClass} disabled={!endpoint.trim()} onClick={() => void saveOtlp()}>Save</button>
           {status.otlp.configured && (
@@ -356,9 +359,9 @@ export function TelemetrySettingsSection() {
         </div>
         {errorLine('otlp')}
         <div className="flex items-center gap-4">
-          <span className="text-sm text-ctp-text">Metric temporality</span>
+          <span className={rowLabelClass}>Metric temporality</span>
           {(['cumulative', 'delta'] as const).map((t) => (
-            <label key={t} className="text-sm text-ctp-subtext1 flex items-center gap-1.5 cursor-pointer">
+            <label key={t} className="text-xs text-ctp-subtext1 flex items-center gap-1.5 cursor-pointer">
               <input
                 type="radio"
                 name="telemetry-temporality"
@@ -383,13 +386,13 @@ export function TelemetrySettingsSection() {
 
       {/* Clubhouse developer (Framebriar), through Feedback */}
       {framebriar && (
-        <section className="rounded-md border border-surface-1 px-4 py-4 space-y-4 mt-4" aria-label={framebriar.label} data-testid="telemetry-panel-framebriar">
-          <div className="text-sm text-ctp-text font-medium">{framebriar.label}</div>
-          <p className="text-xs text-ctp-subtext0">
+        <section className={panelClass} aria-label={framebriar.label} data-testid="telemetry-panel-framebriar">
+          <div className={panelTitleClass}>{framebriar.label}</div>
+          <p className="text-xs text-ctp-overlay1">
             User activity and errors can also go to the Clubhouse developer, so feedback reports come with context. Once you confirm the developer&apos;s host, this sends only while Feedback is connected and another destination here is on. Switch it off to stop it until you switch it back on.
           </p>
           <div className="flex items-center justify-between">
-            <div className="text-sm text-ctp-text">Send telemetry</div>
+            <div className={rowLabelClass}>Send telemetry</div>
             <Toggle
               ariaLabel="Send telemetry to the Clubhouse developer"
               checked={framebriar.enabled}
@@ -413,11 +416,11 @@ export function TelemetrySettingsSection() {
       )}
 
       {/* Advanced */}
-      <details className="mt-6">
-        <summary className="text-sm text-ctp-text font-medium cursor-pointer">Advanced</summary>
-        <div className="mt-4 space-y-4 pl-1">
+      <details className="mt-[22px] pt-3 border-t border-surface-0">
+        <summary className="text-[13px] font-semibold text-ctp-text cursor-pointer">Advanced</summary>
+        <div className="mt-3 space-y-3">
           <div className="flex items-center gap-2">
-            <label className="text-sm text-ctp-text w-44" htmlFor="telemetry-sample-rate">Trace sample rate</label>
+            <label className="text-[13px] text-ctp-text w-44" htmlFor="telemetry-sample-rate">Trace sample rate</label>
             <input
               id="telemetry-sample-rate"
               type="number"
@@ -436,14 +439,14 @@ export function TelemetrySettingsSection() {
               Apply
             </button>
           </div>
-          <div className="text-sm text-ctp-text">
-            Install ID <span className="font-mono text-ctp-subtext1">{status.installId ?? 'created when telemetry is first turned on'}</span>
-            <div className="text-xs text-ctp-subtext0 mt-0.5">
+          <div className="text-[13px] text-ctp-text">
+            Install ID <span className="font-mono text-xs text-ctp-subtext1">{status.installId ?? 'created when telemetry is first turned on'}</span>
+            <div className="text-xs text-ctp-overlay1 mt-px">
               Random, not derived from this computer. Resetting it also rotates the hash salt, so nothing sent before can be linked to anything sent after.
             </div>
             <button type="button" className={`${linkClass} mt-1`} onClick={() => setConfirmReset(true)}>Reset telemetry ID</button>
           </div>
-          <div className="text-sm text-ctp-text">
+          <div className="text-[13px] text-ctp-text">
             Offline queue (Application Insights only): {status.offlineItems} {status.offlineItems === 1 ? 'item' : 'items'}{' '}
             <button type="button" className={linkClass} onClick={() => setConfirmClearQueue(true)}>Clear</button>
           </div>
@@ -461,11 +464,11 @@ export function TelemetrySettingsSection() {
 
       <Modal open={preview !== null} onClose={() => setPreview(null)} title="Preview data" width="w-[640px]">
         {preview && preview.length === 0 ? (
-          <p className="text-sm text-ctp-subtext0">
+          <p className="text-[13px] text-ctp-subtext1">
             Nothing has been exported in this session yet. Turn telemetry on, or send a test event, to see exactly what leaves this computer.
           </p>
         ) : (
-          <pre className="text-xs text-ctp-subtext1 bg-surface-0 rounded-md p-3 max-h-[60vh] overflow-auto" data-testid="telemetry-preview">
+          <pre className="text-xs text-ctp-subtext1 bg-ctp-crust border border-surface-0 rounded-md p-3 max-h-[60vh] overflow-auto" data-testid="telemetry-preview">
             {JSON.stringify(preview, null, 2)}
           </pre>
         )}
@@ -510,16 +513,16 @@ export function TelemetrySettingsSection() {
 
 function WhatsSent() {
   return (
-    <div className="space-y-4 text-sm text-ctp-subtext1">
+    <div className="space-y-4 text-[13px] text-ctp-subtext1">
       <div>
-        <div className="text-ctp-text font-medium mb-1">Sent</div>
+        <div className="text-ctp-text font-semibold mb-1">Sent</div>
         <ul className="list-disc pl-5 space-y-0.5">{SENT.map((s) => <li key={s}>{s}</li>)}</ul>
       </div>
       <div>
-        <div className="text-ctp-text font-medium mb-1">Never sent</div>
+        <div className="text-ctp-text font-semibold mb-1">Never sent</div>
         <ul className="list-disc pl-5 space-y-0.5">{NEVER_SENT.map((s) => <li key={s}>{s}</li>)}</ul>
       </div>
-      <p className="text-xs text-ctp-subtext0">
+      <p className="text-xs text-ctp-overlay1">
         Everything goes only to the destinations you turn on. Preview data shows each item exactly as it was sent, and where.
       </p>
     </div>
@@ -532,7 +535,7 @@ function ConfirmDialog({ confirm, onCancel, onConfirm }: { confirm: PendingConfi
   const loopback = isLoopbackHost(host);
   return (
     <Modal open onClose={onCancel} title="Before telemetry starts" width="w-[480px]">
-      <div className="space-y-4 text-sm text-ctp-subtext1" data-testid="telemetry-confirm">
+      <div className="space-y-4 text-[13px] text-ctp-subtext1" data-testid="telemetry-confirm">
         {confirm.needs.includes('destination') && !confirm.needs.includes('consent') && (
           loopback
             ? <p>Telemetry will be sent to a collector on this computer ({host}).</p>
@@ -555,9 +558,9 @@ function ConfirmDialog({ confirm, onCancel, onConfirm }: { confirm: PendingConfi
             <ul className="list-disc pl-5 space-y-0.5">{NEVER_SENT.map((s) => <li key={s}>{s}</li>)}</ul>
           </div>
         )}
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex justify-end gap-2 mt-4">
           <button type="button" className={buttonClass} onClick={onCancel}>Cancel</button>
-          <button type="button" className={`${buttonClass} border-ctp-accent`} onClick={onConfirm}>Continue</button>
+          <button type="button" className={settingsButton.primary} onClick={onConfirm}>Continue</button>
         </div>
       </div>
     </Modal>
@@ -575,8 +578,8 @@ function DestinationControls({ dest, onFilter }: {
   return (
     <div className="space-y-3" data-testid={`telemetry-filter-${dest.id}`}>
       <div className="grid grid-cols-2 gap-3">
-        <label className="text-sm text-ctp-text">
-          <span className="block mb-1.5">Level</span>
+        <label className="text-xs text-ctp-text">
+          <span className="block text-xs text-ctp-overlay1 mb-1">Level</span>
           <select
             aria-label={`${dest.label} level`}
             className={inputClass}
@@ -585,10 +588,10 @@ function DestinationControls({ dest, onFilter }: {
           >
             {LEVELS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
           </select>
-          {levelDesc && <span className="block text-xs text-ctp-subtext0 mt-1">{levelDesc}</span>}
+          {levelDesc && <span className="block text-xs text-ctp-overlay1 mt-1">{levelDesc}</span>}
         </label>
-        <label className="text-sm text-ctp-text">
-          <span className="block mb-1.5">What to send</span>
+        <label className="text-xs text-ctp-text">
+          <span className="block text-xs text-ctp-overlay1 mb-1">What to send</span>
           <select
             aria-label={`${dest.label} filter`}
             className={inputClass}
@@ -597,11 +600,11 @@ function DestinationControls({ dest, onFilter }: {
           >
             {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
-          {presetDesc && <span className="block text-xs text-ctp-subtext0 mt-1">{presetDesc}</span>}
+          {presetDesc && <span className="block text-xs text-ctp-overlay1 mt-1">{presetDesc}</span>}
         </label>
       </div>
       {health && (
-        <p className={`text-xs ${health.bad ? 'text-ctp-red' : 'text-ctp-subtext1'}`} data-testid={`telemetry-health-${dest.id}`}>
+        <p className={`text-xs ${health.bad ? 'text-ctp-error' : 'text-ctp-subtext1'}`} data-testid={`telemetry-health-${dest.id}`}>
           {health.text}
         </p>
       )}

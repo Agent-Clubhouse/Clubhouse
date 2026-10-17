@@ -14,6 +14,8 @@ import { refreshCommunityPlugins } from '../../plugins/plugin-loader';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { PluginPermission, PermissionRiskLevel } from '../../../shared/plugin-types';
 import { Spinner } from '../../components/Spinner';
+import { Modal } from '../../components/Modal';
+import { settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -23,28 +25,25 @@ function formatBytes(bytes: number): string {
 
 const RISK_ORDER: Record<PermissionRiskLevel, number> = { safe: 0, elevated: 1, dangerous: 2 };
 
-const RISK_COLORS: Record<PermissionRiskLevel, string> = {
-  safe: 'bg-ctp-success/20 text-ctp-success',
-  elevated: 'bg-status-warning/20 text-status-warning',
-  dangerous: 'bg-ctp-error/20 text-ctp-error',
+/** Plain-language risk words, matching the plugin detail page. */
+const RISK_WORDS: Record<PermissionRiskLevel, string> = {
+  safe: 'Read only',
+  elevated: 'Can change things',
+  dangerous: 'Can bypass safety',
+};
+
+const RISK_TEXT: Record<PermissionRiskLevel, string> = {
+  safe: 'text-ctp-overlay1',
+  elevated: 'text-ctp-subtext1',
+  dangerous: 'text-ctp-error',
 };
 
 function sortPermissionsByRisk(perms: string[]): string[] {
   return [...perms].sort((a, b) => {
     const ra = PERMISSION_RISK_LEVELS[a as PluginPermission] ?? 'safe';
     const rb = PERMISSION_RISK_LEVELS[b as PluginPermission] ?? 'safe';
-    return RISK_ORDER[ra] - RISK_ORDER[rb];
+    return RISK_ORDER[rb] - RISK_ORDER[ra];
   });
-}
-
-function RiskBadge({ permission }: { permission: string }) {
-  const level = PERMISSION_RISK_LEVELS[permission as PluginPermission];
-  if (!level || level === 'safe') return null;
-  return (
-    <span className={`text-[9px] px-1 py-0.5 rounded font-medium uppercase ${RISK_COLORS[level]}`}>
-      {level}
-    </span>
-  );
 }
 
 type FilterTab = 'all' | 'featured' | 'official';
@@ -61,148 +60,104 @@ interface PluginCardProps {
 }
 
 function PluginCard({ plugin, featured, installed, installing, onInstall, betaPlugin, installingBeta, onInstallBeta }: PluginCardProps) {
+  const [showPerms, setShowPerms] = useState(false);
   const release = plugin.releases[plugin.latest];
   if (!release) return null;
 
   const compatible = SUPPORTED_PLUGIN_API_VERSIONS.includes(release.api);
   const deprecatedRemoval = DEPRECATED_PLUGIN_API_VERSIONS[release.api];
-  const [showPerms, setShowPerms] = useState(false);
+  const maxRisk = release.permissions.reduce<PermissionRiskLevel>((max, p) => {
+    const r = PERMISSION_RISK_LEVELS[p as PluginPermission] ?? 'safe';
+    return RISK_ORDER[r] > RISK_ORDER[max] ? r : max;
+  }, 'safe');
+
+  const meta = [
+    plugin.official ? 'Official' : null,
+    plugin.marketplaceName ?? null,
+    plugin.latest,
+    `by ${plugin.author}`,
+    formatBytes(release.size),
+  ].filter(Boolean).join(' · ');
 
   return (
-    <div className="p-4 rounded-lg bg-ctp-mantle border border-surface-0">
-      <div className="flex items-start justify-between gap-3">
+    <div className="py-2.5 border-t border-surface-0" data-testid={`marketplace-plugin-${plugin.id}`}>
+      <div className="flex items-start gap-4">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-ctp-text">{plugin.name}</span>
-            <span className="text-xs text-ctp-subtext0">v{plugin.latest}</span>
-            {plugin.official && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success">Official</span>
-            )}
-            {plugin.marketplaceName && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">
-                {plugin.marketplaceName}
-              </span>
-            )}
-            <span className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">
-              API {release.api}
-            </span>
-            {!compatible && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
-            )}
-            {compatible && deprecatedRemoval && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-status-warning/20 text-status-warning" title={`API ${release.api} will be removed in ${deprecatedRemoval}`}>Deprecated</span>
-            )}
-            {installed && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent">Installed</span>
-            )}
+          <div className="flex items-baseline gap-2 min-w-0 flex-wrap">
+            <span className="text-[13px] text-ctp-text">{plugin.name}</span>
+            <span className="text-xs text-ctp-overlay1">{meta}</span>
           </div>
-          <p className="text-xs text-ctp-subtext0 mt-1">{plugin.description}</p>
-          <div className="flex items-center gap-3 mt-2 text-xs text-ctp-subtext0">
-            <span>by {plugin.author}</span>
-            <span>{formatBytes(release.size)}</span>
-          </div>
+          <p className="text-xs text-ctp-overlay1 mt-px">{plugin.description}</p>
           {plugin.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {plugin.tags.map((tag) => (
-                <span key={tag} className="text-xs px-1.5 py-0.5 rounded bg-surface-0 text-ctp-subtext0">
-                  {tag}
-                </span>
-              ))}
-            </div>
+            <p className="text-xs text-ctp-overlay0 mt-px">{plugin.tags.join(', ')}</p>
           )}
           {featured && (
-            <p className="text-[11px] text-ctp-accent mt-2 italic">{featured.reason}</p>
+            <p className="text-xs text-ctp-subtext1 mt-0.5">{featured.reason}</p>
+          )}
+          {!compatible && (
+            <p className="text-xs text-ctp-error mt-0.5">
+              Uses plugin API {release.api}, which this version of Clubhouse can&apos;t load.
+            </p>
+          )}
+          {compatible && deprecatedRemoval && (
+            <p className="text-xs text-ctp-warning mt-0.5">
+              Uses plugin API {release.api}, which stops loading in {deprecatedRemoval}.
+            </p>
           )}
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-end gap-1 shrink-0">
           <button
             onClick={onInstall}
             disabled={installed || installing || !compatible}
-            className={`
-              px-3 py-1.5 rounded text-xs font-medium transition-colors cursor-pointer
-              ${installed
-                ? 'bg-surface-1 text-ctp-subtext0 cursor-default'
-                : !compatible
-                  ? 'bg-surface-1 text-ctp-subtext0 cursor-not-allowed opacity-50'
-                  : installing
-                    ? 'bg-ctp-accent/50 text-white cursor-wait'
-                    : 'bg-ctp-accent text-white hover:bg-ctp-accent/90'}
-            `}
+            className={installed ? settingsButton.quiet : settingsButton.primary}
           >
-            {installed ? 'Installed' : installing ? 'Installing...' : 'Install'}
+            {installed ? 'Installed' : installing ? 'Installing…' : 'Install'}
           </button>
-          {release.permissions.length > 0 && (() => {
-            const maxRisk = release.permissions.reduce<PermissionRiskLevel>((max, p) => {
-              const r = PERMISSION_RISK_LEVELS[p as PluginPermission] ?? 'safe';
-              return RISK_ORDER[r] > RISK_ORDER[max] ? r : max;
-            }, 'safe');
-            return (
-              <div className="flex items-center gap-1.5">
-                {maxRisk !== 'safe' && (
-                  <span className={`text-[9px] px-1 py-0.5 rounded font-medium uppercase ${RISK_COLORS[maxRisk]}`}>
-                    {maxRisk}
-                  </span>
-                )}
-                <button
-                  onClick={() => setShowPerms(!showPerms)}
-                  className="text-xs text-ctp-subtext0 hover:text-ctp-text cursor-pointer"
-                >
-                  {showPerms ? 'Hide' : 'View'} permissions ({release.permissions.length})
-                </button>
-              </div>
-            );
-          })()}
+          {release.permissions.length > 0 && (
+            <button
+              onClick={() => setShowPerms(!showPerms)}
+              className={`text-xs cursor-pointer hover:text-ctp-text ${RISK_TEXT[maxRisk]}`}
+              aria-expanded={showPerms}
+            >
+              {maxRisk !== 'safe' ? `${RISK_WORDS[maxRisk]} · ` : ''}{showPerms ? 'Hide' : 'View'} permissions ({release.permissions.length})
+            </button>
+          )}
         </div>
       </div>
       {showPerms && release.permissions.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-surface-0 space-y-1.5">
-          {sortPermissionsByRisk(release.permissions).map((perm) => (
-            <div key={perm}>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-mono text-ctp-accent">{perm}</span>
-                <RiskBadge permission={perm} />
+        <div className="mt-2">
+          {sortPermissionsByRisk(release.permissions).map((perm) => {
+            const level = PERMISSION_RISK_LEVELS[perm as PluginPermission] ?? 'safe';
+            return (
+              <div key={perm} className="flex items-center gap-3 h-[30px] border-t border-surface-0">
+                <span className="w-[190px] flex-none truncate font-mono text-xs text-ctp-text">{perm}</span>
+                <span className="flex-1 min-w-0 truncate text-xs text-ctp-overlay1">
+                  {(PERMISSION_DESCRIPTIONS[perm as PluginPermission] || 'Unknown permission').replace(/ \([^)]*\)$/, '')}
+                </span>
+                <span className={`flex-none text-xs ${RISK_TEXT[level]}`}>{RISK_WORDS[level]}</span>
               </div>
-              <p className="text-xs text-ctp-subtext0">
-                {PERMISSION_DESCRIPTIONS[perm as PluginPermission] || 'Unknown permission'}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       {betaPlugin && (() => {
         const betaRelease = betaPlugin.releases[betaPlugin.latest];
         const betaCompatible = betaRelease ? SUPPORTED_PLUGIN_API_VERSIONS.includes(betaRelease.api) : false;
         return (
-          <div className="mt-3 pt-3 border-t border-surface-0 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-mauve/20 text-ctp-mauve font-medium">
-                Beta available: v{betaPlugin.latest}
-              </span>
-              {betaPlugin.marketplaceName && (
-                <span className="text-xs text-ctp-subtext0">from {betaPlugin.marketplaceName}</span>
+          <div className="mt-1.5 flex items-center gap-3">
+            <p className="flex-1 min-w-0 text-xs text-ctp-subtext1">
+              Beta {betaPlugin.latest} is available
+              {betaPlugin.marketplaceName ? ` from ${betaPlugin.marketplaceName}` : ''}.
+              {!betaCompatible && betaRelease && (
+                <span className="text-ctp-error"> Uses plugin API {betaRelease.api}, which this version can&apos;t load.</span>
               )}
-              {betaRelease && (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">
-                  API {betaRelease.api}
-                </span>
-              )}
-              {!betaCompatible && (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-error/20 text-ctp-error">Incompatible</span>
-              )}
-            </div>
+            </p>
             <button
               onClick={onInstallBeta}
               disabled={installingBeta || !betaCompatible}
-              className={`
-                px-3 py-1.5 rounded text-xs font-medium transition-colors cursor-pointer shrink-0
-                ${!betaCompatible
-                  ? 'bg-surface-1 text-ctp-subtext0 cursor-not-allowed opacity-50'
-                  : installingBeta
-                    ? 'bg-ctp-mauve/50 text-white cursor-wait'
-                    : 'bg-ctp-mauve/80 text-white hover:bg-ctp-mauve'}
-              `}
+              className={settingsButton.ghost}
             >
-              {installingBeta ? 'Installing...' : 'Install Beta'}
+              {installingBeta ? 'Installing…' : 'Install beta'}
             </button>
           </div>
         );
@@ -439,121 +394,98 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
   const customErrorEntries = Object.entries(customErrors);
 
   return (
-    <div
-      // eslint-disable-next-line no-restricted-syntax
-      className="fixed inset-0 z-modal flex items-center justify-center bg-black/60"
-      onClick={onClose}
-      data-testid="marketplace-overlay"
+    <Modal
+      open
+      onClose={onClose}
+      title="Plugin marketplace"
+      width="w-full max-w-2xl mx-4"
+      backdropTestId="marketplace-overlay"
     >
-      <div
-        className="bg-ctp-base border border-surface-2 rounded-xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col"
-        style={{ maxHeight: '80vh' }}
-        onClick={(e) => e.stopPropagation()}
-        data-testid="marketplace-dialog"
-      >
+      <div className="flex flex-col max-h-[70vh] -mt-1" data-testid="marketplace-dialog">
         {/* Header */}
-        <div className="p-6 pb-4 border-b border-surface-1">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-ctp-text">Plugin Marketplace</h3>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text cursor-pointer"
-              data-testid="marketplace-close"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-
+        <div className="pb-3">
           {registryVersionWarning && (
-            <div className="mb-3 p-2 rounded bg-ctp-peach/20 border border-ctp-peach/40 text-xs text-ctp-peach">
+            <p className="mb-2 text-xs text-ctp-warning">
               A newer registry format is available. Update Clubhouse for the best experience.
-            </div>
+            </p>
           )}
 
           {customErrorEntries.length > 0 && (
-            <div className="mb-3 p-2 rounded bg-ctp-error/10 border border-ctp-error/30 text-xs text-ctp-error">
+            <div className="mb-2 text-xs text-ctp-error">
               {customErrorEntries.map(([id, err]) => {
                 const mkt = customMarketplaces.find((m) => m.id === id);
                 return (
-                  <p key={id}>Failed to load "{mkt?.name || id}": {err}</p>
+                  <p key={id}>Couldn&apos;t load &ldquo;{mkt?.name || id}&rdquo;. {err}</p>
                 );
               })}
             </div>
           )}
 
           {showRestartPrompt && (
-            <div className="mb-3 p-2 rounded bg-ctp-accent/10 border border-ctp-accent/30 text-xs text-ctp-text flex items-center justify-between gap-2">
-              <span>Beta installed. Restart required to load the new version.</span>
+            <div className="mb-2 flex items-center gap-3">
+              <p className="flex-1 min-w-0 text-xs text-ctp-text">Beta installed. Restart Clubhouse to load the new version.</p>
               <button
                 onClick={() => window.clubhouse.app.restart()}
-                className="px-2 py-1 rounded bg-ctp-accent text-white text-xs hover:bg-ctp-accent/90 cursor-pointer shrink-0"
+                className={settingsButton.primary}
               >
                 Restart now
               </button>
             </div>
           )}
 
-          {/* Search */}
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search plugins..."
-            className="w-full px-3 py-2 rounded-lg bg-surface-0 border border-surface-1 text-sm text-ctp-text placeholder:text-ctp-subtext0 focus-ring"
-            data-testid="marketplace-search"
-          />
-
-          {/* Tabs */}
-          <div className="flex gap-1 mt-3">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`
-                  px-3 py-1 rounded text-xs font-medium transition-colors cursor-pointer
-                  ${activeTab === tab.key
-                    ? 'bg-ctp-accent text-white'
-                    : 'bg-surface-0 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1'}
-                `}
-                data-testid={`marketplace-tab-${tab.key}`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search plugins…"
+              aria-label="Search plugins"
+              className={`${settingsInput} flex-1 min-w-0`}
+              data-testid="marketplace-search"
+            />
+            <div role="tablist" aria-label="Filter plugins" className="flex h-7 p-0.5 gap-0.5 rounded-md border border-surface-1 shrink-0">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  role="tab"
+                  aria-selected={activeTab === tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`px-2 rounded text-xs cursor-pointer transition-colors ${
+                    activeTab === tab.key ? 'bg-surface-1 text-ctp-text' : 'text-ctp-overlay1 hover:text-ctp-text'
+                  }`}
+                  data-testid={`marketplace-tab-${tab.key}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 pt-4">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {loading && (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center gap-2 py-12">
               <Spinner />
-              <p className="text-sm text-ctp-subtext0">Loading marketplace...</p>
+              <p className={settingsHelp}>Loading marketplace...</p>
             </div>
           )}
 
           {error && (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-center">
-                <p className="text-sm text-ctp-error mb-2">Failed to load marketplace</p>
-                <p className="text-xs text-ctp-subtext0">{error}</p>
-              </div>
+            <div className="py-12 text-center">
+              <p className="text-[13px] text-ctp-error mb-1">Failed to load marketplace</p>
+              <p className={settingsHelp}>{error}</p>
             </div>
           )}
 
           {!loading && !error && filteredPlugins.length === 0 && (
-            <div className="flex items-center justify-center py-12">
-              <p className="text-sm text-ctp-subtext0">
-                {search ? 'No plugins match your search.' : 'No plugins available.'}
-              </p>
-            </div>
+            <p className={`${settingsHelp} py-12 text-center`}>
+              {search ? 'No plugins match your search.' : 'No plugins available.'}
+            </p>
           )}
 
           {!loading && !error && filteredPlugins.length > 0 && (
-            <div className="space-y-3">
+            <div data-testid="marketplace-list">
               {filteredPlugins.map((plugin) => (
                 <div key={plugin.id}>
                   <PluginCard
@@ -570,10 +502,10 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
                     }}
                   />
                   {installErrors[plugin.id] && (
-                    <p className="text-xs text-ctp-error mt-1 px-1">{installErrors[plugin.id]}</p>
+                    <p className="text-xs text-ctp-error -mt-1 mb-2">{installErrors[plugin.id]}</p>
                   )}
                   {betaInstallErrors[plugin.id] && (
-                    <p className="text-xs text-ctp-error mt-1 px-1">{betaInstallErrors[plugin.id]}</p>
+                    <p className="text-xs text-ctp-error -mt-1 mb-2">{betaInstallErrors[plugin.id]}</p>
                   )}
                 </div>
               ))}
@@ -582,19 +514,20 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-surface-1 flex items-center justify-between">
-          <p className="text-xs text-ctp-subtext0">
+        <div className="flex items-center justify-between gap-2 mt-4">
+          <p className={settingsHelp}>
             {data ? `${allPlugins.length} plugin(s) available` : ''}
-            {customPlugins.length > 0 ? ` (${customPlugins.length} from custom registries)` : ''}
+            {customPlugins.length > 0 ? `, ${customPlugins.length} from custom stores` : ''}
           </p>
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded bg-surface-0 border border-surface-2 text-sm text-ctp-text hover:bg-surface-1 cursor-pointer"
+            className={settingsButton.ghost}
+            data-testid="marketplace-close"
           >
             Close
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

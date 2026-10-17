@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useOrchestratorStore, DEFAULT_HOOK_SERVER_ORCHESTRATOR } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
@@ -7,15 +7,25 @@ import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { useFreeAgentSettingsStore } from '../../stores/freeAgentSettingsStore';
 import { Toggle } from '../../components/Toggle';
+import { Modal } from '../../components/Modal';
 import { useUIStore } from '../../stores/uiStore';
 import { noteExplicitTerminalChoice } from '../agents/chat/chat-default-tip';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 import type { AgentRuntimeMode, ChatRuntimeSettings } from '../../../shared/chat';
 
 interface Props {
   projectId?: string;
 }
+
+const CLUBHOUSE_WILDCARDS = [
+  '@@AgentName', '@@StandbyBranch', '@@Path', '@@SourceControlProvider',
+  '@@BuildCommand', '@@TestCommand', '@@LintCommand', '@@Mission', '@@Persona',
+];
+
+const SELECT_CLASS = `${settingsInput} w-[200px]`;
+const CODE_CLASS = 'font-mono text-ctp-subtext1';
 
 // ── Per-provider Chat / Terminal runtime (experimental 'chat' flag) ──────
 
@@ -80,7 +90,7 @@ function useChatRuntimeSettings() {
 
 function RuntimeModeControl({ value, onChange }: { value: AgentRuntimeMode; onChange: (mode: AgentRuntimeMode) => void }) {
   return (
-    <div role="radiogroup" aria-label="Runtime" className="inline-flex rounded-lg bg-surface-0 border border-surface-2 p-0.5">
+    <div role="radiogroup" aria-label="Runtime" className="flex h-7 p-0.5 gap-0.5 rounded-md border border-surface-1">
       {RUNTIME_MODE_OPTIONS.map((opt) => {
         const selected = opt.value === value;
         return (
@@ -90,10 +100,8 @@ function RuntimeModeControl({ value, onChange }: { value: AgentRuntimeMode; onCh
             role="radio"
             aria-checked={selected}
             onClick={() => { if (!selected) onChange(opt.value); }}
-            className={`px-2.5 py-0.5 text-xs rounded-md transition-colors cursor-pointer ${
-              selected
-                ? 'bg-ctp-accent text-white'
-                : 'text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1'
+            className={`px-2 rounded text-xs cursor-pointer transition-colors ${
+              selected ? 'bg-surface-1 text-ctp-text' : 'text-ctp-overlay1 hover:text-ctp-text'
             }`}
           >
             {opt.label}
@@ -131,12 +139,13 @@ function AppAgentSettings() {
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
   const { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode } = useChatRuntimeSettings();
+  const idBase = useId();
 
   // Deep link (uiStore.openRuntimeSettings): scroll to the provider's runtime
-  // row and outline it briefly. Falls back to the provider's card when the
-  // row isn't shown (provider disabled). The focus is one-shot: it's cleared
-  // once used, when there's nothing to scroll to (chat off, unknown provider)
-  // and when this page unmounts, so it can't fire on a later visit.
+  // row and outline it briefly. Falls back to the provider's row when the
+  // runtime row isn't shown (provider disabled). The focus is one-shot: it's
+  // cleared once used, when there's nothing to scroll to (chat off, unknown
+  // provider) and when this page unmounts, so it can't fire on a later visit.
   const settingsFocus = useUIStore((s) => s.settingsFocus);
   const setSettingsFocus = useUIStore((s) => s.setSettingsFocus);
   const runtimeRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -191,151 +200,106 @@ function AppAgentSettings() {
 
   return (
     <>
-      {/* Quick Agent Mode dropdown */}
-      <div className="space-y-3 mb-6">
-        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Quick Agents</h3>
-        <div className="space-y-2">
-          <label className="block text-sm text-ctp-text">Default Quick Agent Mode</label>
+      <SettingsSection title="Quick agents">
+        <SettingsField
+          label="Default quick agent mode"
+          help="How quick agents run. Headless is faster and gives richer summaries."
+          htmlFor={`${idBase}-quick-mode`}
+        >
           <select
+            id={`${idBase}-quick-mode`}
             value={defaultMode}
             onChange={(e) => setDefaultMode(e.target.value as SpawnMode)}
-            className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-              text-ctp-text focus-ring-dim"
+            className={SELECT_CLASS}
           >
             <option value="interactive">Interactive</option>
             <option value="headless">Headless</option>
           </select>
-          <p className="text-xs text-ctp-subtext0">
-            How quick agents run by default. Headless runs faster with richer summaries.
-          </p>
-        </div>
-        <div className="space-y-2">
-          <label className="block text-sm text-ctp-text">Free Agent Permission Mode</label>
+        </SettingsField>
+        <SettingsField
+          label="Free agent permission mode"
+          help={<>Skip all bypasses every check. Auto uses a safety classifier and needs <code className={CODE_CLASS}>--permission-mode</code> support in your CLI.</>}
+          htmlFor={`${idBase}-free-mode`}
+        >
           <select
+            id={`${idBase}-free-mode`}
             value={freeAgentDefaultMode}
             onChange={(e) => setFreeAgentDefaultMode(e.target.value as FreeAgentPermissionMode)}
-            className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-              text-ctp-text focus-ring-dim"
+            className={SELECT_CLASS}
           >
-            <option value="skip-all">Skip All Permissions (default)</option>
+            <option value="skip-all">Skip all permissions (default)</option>
             <option value="auto">Auto (requires CLI support)</option>
           </select>
-          <p className="text-xs text-ctp-subtext0">
-            How agents handle permissions in Free Agent mode. Skip All bypasses all checks; Auto uses a safety classifier (requires <code className="text-ctp-subtext1">--permission-mode</code> support in your CLI).
-          </p>
-        </div>
-      </div>
+        </SettingsField>
+      </SettingsSection>
 
-      {/* Clubhouse Mode toggle */}
-      <div className="space-y-3 mb-6">
-        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Durable Agents</h3>
-        <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
-          <div className="flex items-center gap-2.5">
-            <span className="text-ctp-subtext1">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                <path d="M2 17l10 5 10-5" />
-                <path d="M2 12l10 5 10-5" />
-              </svg>
-            </span>
-            <div>
-              <div className="text-sm text-ctp-text">Clubhouse Mode</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">
-                Centrally manage agent instructions, permissions, and MCP config. Settings are pushed to worktrees on agent wake.
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={handleClubhouseToggle}
-            className="toggle-track"
-            data-on={String(clubhouseEnabled)}
-          >
-            <span className="toggle-knob" />
-          </button>
-        </div>
+      <SettingsSection title="Durable agents">
+        <SettingsField
+          label="Clubhouse Mode"
+          help="Manage agent instructions, permissions and MCP config in one place. Clubhouse pushes them to worktrees when an agent wakes."
+          testId="clubhouse-mode-row"
+        >
+          <Toggle ariaLabel="Clubhouse Mode" checked={clubhouseEnabled} onChange={handleClubhouseToggle} />
+        </SettingsField>
         {clubhouseEnabled && (
-          <div className="px-3 py-2 rounded-lg bg-ctp-warning/10 border border-ctp-warning/20 text-xs text-ctp-warning space-y-1">
-            <div>
-              Wildcards in project defaults are resolved per-agent on each wake:{' '}
-              <code className="bg-ctp-warning/10 px-1 rounded">@@AgentName</code>,{' '}
-              <code className="bg-ctp-warning/10 px-1 rounded">@@StandbyBranch</code>,{' '}
-              <code className="bg-ctp-warning/10 px-1 rounded">@@Path</code>,{' '}
-              <code className="bg-ctp-warning/10 px-1 rounded">@@SourceControlProvider</code>,{' '}
-              <code className="bg-ctp-warning/10 px-1 rounded">@@BuildCommand</code>,{' '}
-              <code className="bg-ctp-warning/10 px-1 rounded">@@TestCommand</code>,{' '}
-              <code className="bg-ctp-warning/10 px-1 rounded">@@LintCommand</code>,{' '}
-              <code className="bg-ctp-warning/10 px-1 rounded">@@Mission</code>,{' '}
-              <code className="bg-ctp-warning/10 px-1 rounded">@@Persona</code>.
-            </div>
-            <div>
-              Each Clubhouse-enabled project gets a generated self-edit guide at <code className="bg-ctp-warning/10 px-1 rounded">.clubhouse/clubhouse-mode.md</code> covering every setting on disk.
-            </div>
-          </div>
+          <SettingsBlock>
+            <p className={settingsHelp}>
+              Project defaults can use these wildcards, resolved for each agent when it wakes.
+            </p>
+            <p className="text-xs mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5">
+              {CLUBHOUSE_WILDCARDS.map((w) => <code key={w} className={CODE_CLASS}>{w}</code>)}
+            </p>
+            <p className={`${settingsHelp} mt-1.5`}>
+              Each project with Clubhouse Mode on gets a self-edit guide at <code className={CODE_CLASS}>.clubhouse/clubhouse-mode.md</code> that covers every setting on disk.
+            </p>
+          </SettingsBlock>
         )}
         {clubhouseEnabled && (
-          <div className="space-y-1 pl-3">
-            <label className="block text-xs text-ctp-subtext0">Default Source Control Provider</label>
+          <SettingsField
+            label="Default source control provider"
+            help="Used by every project unless it sets its own."
+            htmlFor={`${idBase}-scp`}
+          >
             <select
+              id={`${idBase}-scp`}
               value={clubhouseScp}
               onChange={(e) => setClubhouseScp(e.target.value as SourceControlProvider)}
-              className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-                text-ctp-text focus-ring-dim"
+              className={SELECT_CLASS}
             >
               <option value="github">GitHub (gh CLI)</option>
               <option value="azure-devops">Azure DevOps (az CLI)</option>
             </select>
-            <p className="text-xs text-ctp-subtext0/60">
-              App-wide default. Projects can override in their own settings.
-            </p>
-          </div>
+          </SettingsField>
         )}
+        <SettingsField
+          label="Prompt for session name on quit"
+          help="Ask to name the session when a durable agent stops. Projects can override this."
+        >
+          <Toggle ariaLabel="Prompt for session name on quit" checked={promptForName} onChange={setPromptForName} />
+        </SettingsField>
+      </SettingsSection>
 
-        {/* Session name prompt */}
-        <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
-          <div>
-            <div className="text-sm text-ctp-text">Prompt for Session Name on Quit</div>
-            <div className="text-xs text-ctp-subtext0 mt-0.5">
-              Ask to name a session when a durable agent stops (default for all projects)
-            </div>
-          </div>
-          <Toggle checked={promptForName} onChange={setPromptForName} />
-        </div>
-      </div>
-
-      {/* Confirmation dialog */}
-      {showConfirm && (
-        // eslint-disable-next-line no-restricted-syntax
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
-          <div className="bg-ctp-base border border-surface-1 rounded-xl p-6 max-w-md mx-4 shadow-xl">
-            <h3 className="text-sm font-semibold text-ctp-text mb-2">Enable Clubhouse Mode?</h3>
-            <p className="text-xs text-ctp-subtext0 mb-4">
-              This will overwrite agent settings in worktrees with project-level defaults on each agent wake.
-              We recommend committing or backing up your current agent configurations first.
-            </p>
-            <p className="text-xs text-ctp-subtext0 mb-4">
-              Default templates with wildcard support will be created if no project defaults exist yet.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowConfirm(false)}
-                className="px-3 py-1.5 text-xs rounded-lg bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmEnable}
-                className="px-3 py-1.5 text-xs rounded-lg bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer transition-colors"
-              >
-                Enable
-              </button>
-            </div>
+      <Modal open={showConfirm} onClose={() => setShowConfirm(false)} title="Enable Clubhouse Mode?" width="w-[420px] max-w-[calc(100vw-32px)]">
+        <div data-testid="clubhouse-mode-confirm">
+          <p className={`${settingsHelp} mb-2`}>
+            This will overwrite agent settings in worktrees with project-level defaults each time an agent wakes.
+            Commit or back up your current agent configurations first.
+          </p>
+          <p className={settingsHelp}>
+            Projects without defaults get starter templates that use wildcards.
+          </p>
+          <div className="flex justify-end gap-2 mt-4">
+            <button type="button" onClick={() => setShowConfirm(false)} className={settingsButton.ghost}>
+              Cancel
+            </button>
+            <button type="button" onClick={confirmEnable} className={settingsButton.primary}>
+              Enable
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
-      {/* Orchestrators */}
-      <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Orchestrators</h3>
-      <div className="space-y-3">
+      <SettingsSection title="Orchestrators">
         {allOrchestrators.map((o) => {
           const isEnabled = enabled.includes(o.id);
           const avail = availability[o.id];
@@ -345,124 +309,96 @@ function AppAgentSettings() {
           // 1. turning ON something not installed
           // 2. turning OFF the last working (available) orchestrator
           const toggleDisabled = (isOnlyEnabled && !notInstalled) || (!!notInstalled && !isEnabled);
-          // The expansion only renders when the orchestrator is enabled. The
+          const toggleTitle = !!notInstalled && !isEnabled
+            ? 'CLI not found. Install it to enable.'
+            : isOnlyEnabled && !notInstalled ? 'At least one orchestrator must be enabled' : undefined;
+          // The sub-rows only render when the orchestrator is enabled. The
           // hook server option shows only for hook-capable orchestrators, the
-          // runtime option only with the experimental Chat flag.  Resolve the
+          // runtime option only with the experimental Chat flag. Resolve the
           // effective hook pref reactively from the subscribed prefs map.
           const hookCapable = !!o.capabilities?.hooks;
           const showExpansion = isEnabled && (hookCapable || chatEnabled);
           const hookServerOn = hookServerPrefs[o.id] ?? (o.id === DEFAULT_HOOK_SERVER_ORCHESTRATOR);
           const runtimeMode = runtimeSettings[o.id]?.mode ?? DEFAULT_RUNTIME_MODE;
+          const statusWord = avail?.available ? 'Installed' : avail ? 'Not found' : 'Checking';
 
           return (
-            <div key={o.id} ref={(el) => { cardRefs.current[o.id] = el; }} className="rounded-lg bg-ctp-mantle border border-surface-0">
-              <div className="flex items-center justify-between py-2 px-3">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                      avail?.available ? 'bg-ctp-success' : avail ? 'bg-ctp-error' : 'bg-ctp-overlay0'
-                    }`}
-                    title={avail?.available ? 'CLI found' : avail?.error || 'Checking...'}
+            <div key={o.id} ref={(el) => { cardRefs.current[o.id] = el; }} data-testid={`orchestrator-row-${o.id}`}>
+              <SettingsField
+                label={
+                  <span className="flex items-baseline gap-2">
+                    <span>{o.displayName}</span>
+                    <span className="text-xs text-ctp-overlay1 inline-flex items-center gap-1.5">
+                      <span
+                        className={`inline-block w-2 h-2 rounded-full self-center ${
+                          avail?.available ? 'bg-ctp-success' : avail ? 'bg-ctp-error' : 'bg-ctp-overlay0'
+                        }`}
+                        title={avail?.available ? 'CLI found' : avail?.error || 'Checking...'}
+                      />
+                      {statusWord}
+                      {o.badge && <span>· {o.badge}</span>}
+                    </span>
+                  </span>
+                }
+                help={avail && !avail.available && avail.error ? avail.error : undefined}
+              >
+                <span title={toggleTitle} data-testid={`orchestrator-toggle-${o.id}`}>
+                  <Toggle
+                    ariaLabel={o.displayName}
+                    checked={isEnabled}
+                    onChange={(v) => setEnabled(o.id, v)}
+                    disabled={toggleDisabled}
                   />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-ctp-text">{o.displayName}</span>
-                      {o.badge && (
-                        <span className="px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider rounded-full bg-ctp-accent/20 text-ctp-accent border border-ctp-accent/30 shadow-[0_0_6px_rgba(var(--ctp-accent),0.3)]">
-                          {o.badge}
-                        </span>
-                      )}
-                    </div>
-                    {avail && !avail.available && avail.error && (
-                      <div className="text-xs text-ctp-subtext0 mt-0.5">{avail.error}</div>
-                    )}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setEnabled(o.id, !isEnabled)}
-                  disabled={toggleDisabled}
-                  className="toggle-track"
-                  data-on={String(isEnabled)}
-                  title={!!notInstalled && !isEnabled ? 'CLI not found — install to enable' : isOnlyEnabled && !notInstalled ? 'At least one orchestrator must be enabled' : undefined}
-                >
-                  <span className="toggle-knob" />
-                </button>
-              </div>
+                </span>
+              </SettingsField>
 
               {showExpansion && (
-                <div className="border-t border-surface-0 px-3 py-2.5 pl-8 space-y-2.5">
+                <div className="pl-5">
                   {chatEnabled && (
                     <div
                       ref={(el) => { runtimeRowRefs.current[o.id] = el; }}
-                      className={`flex items-center justify-between gap-3 rounded-md transition-[outline-color] ${
-                        highlightedRuntime === o.id ? 'outline outline-1 outline-offset-4 outline-ctp-accent' : 'outline-transparent'
+                      className={`rounded-md transition-[outline-color] ${
+                        highlightedRuntime === o.id ? 'outline outline-1 outline-offset-2 outline-ctp-accent' : 'outline-transparent'
                       }`}
                       data-testid={`runtime-mode-${o.id}`}
                       data-highlighted={highlightedRuntime === o.id ? 'true' : undefined}
                     >
-                      <div className="min-w-0">
-                        <div className="text-xs text-ctp-text font-medium">Runtime</div>
-                        <div className="text-[11px] text-ctp-subtext0 mt-0.5">
-                          Agents for this provider open in chat. Switch to Terminal to use the CLI's own
-                          interface. Chat needs a supported CLI; until then agents open in the terminal.
-                        </div>
-                      </div>
-                      <div className="flex-shrink-0">
+                      <SettingsField
+                        label="Runtime"
+                        help="Agents for this provider open in chat. Switch to Terminal to use the CLI's own interface. Chat needs a supported CLI; until then agents open in the terminal."
+                      >
                         <RuntimeModeControl
                           value={runtimeMode}
                           onChange={(mode) => setRuntimeMode(o.id, mode)}
                         />
-                      </div>
+                      </SettingsField>
                     </div>
                   )}
                   {hookCapable && (
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-xs text-ctp-text font-medium">Hook server</div>
-                        <div className="text-[11px] text-ctp-subtext0 mt-0.5">
-                          Receives this orchestrator's hook callbacks (permission requests, tool
-                          events). When off, no hooks are injected into its agents and remote
-                          permissions/observability are unavailable. Toggling off strips hooks from
-                          running agents, which need a restart to take full effect.
-                        </div>
-                      </div>
-                      <div className="flex-shrink-0">
-                        <Toggle
-                          checked={hookServerOn}
-                          onChange={(v) => setHookServerEnabled(o.id, v)}
-                        />
-                      </div>
-                    </div>
+                    <SettingsField
+                      label="Hook server"
+                      help="Receives this orchestrator's hook callbacks, like permission requests and tool events. When off, its agents get no hooks, so remote permissions and observability stop working. Running agents need a restart for the change to take full effect."
+                    >
+                      <Toggle
+                        ariaLabel={`Hook server for ${o.displayName}`}
+                        checked={hookServerOn}
+                        onChange={(v) => setHookServerEnabled(o.id, v)}
+                      />
+                    </SettingsField>
                   )}
                 </div>
               )}
             </div>
           );
         })}
-      </div>
 
-      {allOrchestrators.length === 0 && (
-        <p className="text-sm text-ctp-subtext0">No orchestrators registered.</p>
-      )}
+        {allOrchestrators.length === 0 && (
+          <SettingsBlock>
+            <p className={settingsHelp}>No orchestrators registered.</p>
+          </SettingsBlock>
+        )}
+      </SettingsSection>
     </>
-  );
-}
-
-// ── Reusable dropdown row for project defaults ──────────────────────────
-
-const DROPDOWN_SELECT_CLASS = 'w-48 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2 text-ctp-text focus-ring-dim';
-
-function DefaultRow({ label, description, children }: { label: string; description: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between py-2.5">
-      <div className="flex-1 min-w-0 mr-4 overflow-hidden">
-        <div className="text-sm text-ctp-text truncate">{label}</div>
-        <div className="text-xs text-ctp-subtext0 mt-0.5">{description}</div>
-      </div>
-      <div className="flex-shrink-0 relative">
-        {children}
-      </div>
-    </div>
   );
 }
 
@@ -474,6 +410,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
+  const idBase = useId();
 
   const headlessDefaultMode = useHeadlessStore((s) => s.defaultMode);
   const headlessOverrides = useHeadlessStore((s) => s.projectOverrides);
@@ -548,7 +485,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   // Free agent permission mode
   const freeAgentOverride = freeAgentOverrides[projectPath];
   const currentFreeAgentMode = freeAgentOverride !== undefined ? freeAgentOverride : 'global';
-  const freeAgentGlobalLabel = freeAgentGlobalMode === 'auto' ? 'Auto' : 'Skip All';
+  const freeAgentGlobalLabel = freeAgentGlobalMode === 'auto' ? 'Auto' : 'Skip all';
   const handleFreeAgentModeChange = (value: string) => {
     if (value === 'global') clearFreeAgentProjectMode(projectPath);
     else setFreeAgentProjectMode(projectPath, value as FreeAgentPermissionMode);
@@ -567,96 +504,95 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
     mcpSaveSettings({ projectOverrides: Object.keys(updated).length > 0 ? updated : undefined });
   };
 
+  const onOff = (v: boolean) => (v ? 'On' : 'Off');
+
   return (
     <>
-      {/* Project Defaults */}
-      <div className="space-y-1 mb-6">
-        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">Project Defaults</h3>
-
-        {/* Default Orchestrator */}
+      <SettingsSection title="Project defaults">
         {enabledOrchestrators.length > 1 && (
-          <DefaultRow label="Default Orchestrator" description="Orchestrator for agents in this project">
+          <SettingsField label="Default orchestrator" help="Orchestrator for agents in this project." htmlFor={`${idBase}-orch`}>
             <select
+              id={`${idBase}-orch`}
               value={currentOrchestrator}
               onChange={(e) => updateProject(project.id, { orchestrator: e.target.value })}
-              className={DROPDOWN_SELECT_CLASS}
+              className={SELECT_CLASS}
             >
               {enabledOrchestrators.map((o) => (
                 <option key={o.id} value={o.id}>{o.displayName}</option>
               ))}
             </select>
-          </DefaultRow>
+          </SettingsField>
         )}
 
-        {/* Quick Agent Mode */}
-        <DefaultRow label="Quick Agent Mode" description="How quick agents spawn in this project">
+        <SettingsField label="Quick agent mode" help="How quick agents start in this project." htmlFor={`${idBase}-quick`}>
           <select
+            id={`${idBase}-quick`}
             value={currentHeadlessMode}
             onChange={(e) => handleHeadlessModeChange(e.target.value)}
-            className={DROPDOWN_SELECT_CLASS}
+            className={SELECT_CLASS}
           >
-            <option value="global">Global Default ({headlessDefaultMode.charAt(0).toUpperCase() + headlessDefaultMode.slice(1)})</option>
+            <option value="global">Global default ({headlessDefaultMode.charAt(0).toUpperCase() + headlessDefaultMode.slice(1)})</option>
             <option value="interactive">Interactive</option>
             <option value="headless">Headless</option>
           </select>
-        </DefaultRow>
+        </SettingsField>
 
-        {/* Free Agent Permission Mode */}
-        <DefaultRow label="Free Agent Permission Mode" description="Permission handling for agents in Free Agent mode">
+        <SettingsField label="Free agent permission mode" help="How agents in Free Agent mode handle permissions." htmlFor={`${idBase}-free`}>
           <select
+            id={`${idBase}-free`}
             value={currentFreeAgentMode}
             onChange={(e) => handleFreeAgentModeChange(e.target.value)}
-            className={DROPDOWN_SELECT_CLASS}
+            className={SELECT_CLASS}
           >
-            <option value="global">Global Default ({freeAgentGlobalLabel})</option>
+            <option value="global">Global default ({freeAgentGlobalLabel})</option>
             <option value="auto">Auto</option>
-            <option value="skip-all">Skip All Permissions</option>
+            <option value="skip-all">Skip all permissions</option>
           </select>
-        </DefaultRow>
+        </SettingsField>
 
-        {/* Session Name on Quit */}
-        <DefaultRow label="Session Name on Quit" description="Prompt to name sessions when agents stop">
+        <SettingsField label="Session name on quit" help="Ask to name the session when an agent stops." htmlFor={`${idBase}-session`}>
           <select
+            id={`${idBase}-session`}
             value={currentSessionMode}
             onChange={(e) => handleSessionModeChange(e.target.value)}
-            className={DROPDOWN_SELECT_CLASS}
+            className={SELECT_CLASS}
           >
-            <option value="global">Global Default ({sessionPromptGlobal ? 'On' : 'Off'})</option>
+            <option value="global">Global default ({onOff(sessionPromptGlobal)})</option>
             <option value="on">On</option>
             <option value="off">Off</option>
           </select>
-        </DefaultRow>
+        </SettingsField>
 
-        {/* Clubhouse Mode */}
-        <DefaultRow label="Clubhouse Mode" description="Manage agent config centrally and push to worktrees">
+        <SettingsField label="Clubhouse Mode" help="Manage agent config in one place and push it to worktrees." htmlFor={`${idBase}-clubhouse`}>
           <select
+            id={`${idBase}-clubhouse`}
             value={currentClubhouseMode}
             onChange={(e) => handleClubhouseModeChange(e.target.value)}
-            className={DROPDOWN_SELECT_CLASS}
+            className={SELECT_CLASS}
           >
-            <option value="global">Global Default ({clubhouseGlobal ? 'On' : 'Off'})</option>
+            <option value="global">Global default ({onOff(clubhouseGlobal)})</option>
             <option value="on">On</option>
             <option value="off">Off</option>
           </select>
-        </DefaultRow>
+        </SettingsField>
 
-        {/* MCP Override — visible when global MCP enabled */}
+        {/* MCP override, shown when the app-wide MCP bridge is on */}
         {mcpLoaded && mcpGlobalEnabled && (
-          <DefaultRow label="MCP Override" description="Override MCP bridge injection for this project">
+          <SettingsField label="MCP override" help="Override MCP bridge injection for this project." htmlFor={`${idBase}-mcp`}>
             <select
+              id={`${idBase}-mcp`}
               value={currentMcpMode}
               onChange={(e) => handleMcpModeChange(e.target.value)}
-              className={DROPDOWN_SELECT_CLASS}
+              className={SELECT_CLASS}
             >
-              <option value="global">Global Default ({mcpGlobalEnabled ? 'On' : 'Off'})</option>
+              <option value="global">Global default ({onOff(mcpGlobalEnabled)})</option>
               <option value="on">On</option>
               <option value="off">Off</option>
             </select>
-          </DefaultRow>
+          </SettingsField>
         )}
-      </div>
+      </SettingsSection>
 
-      {/* Default Agent Settings */}
       <ProjectAgentDefaultsSection projectPath={project.path} clubhouseMode={clubhouseEffective} />
     </>
   );
@@ -666,20 +602,16 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
 
 export function OrchestratorSettingsView({ projectId }: Props) {
   return (
-    <div className="h-full overflow-y-auto bg-ctp-base p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">Orchestrators & Agents</h2>
-        <p className="text-sm text-ctp-subtext0 mb-6">
-          {projectId
-            ? 'Configure orchestrator and agent behavior for this project.'
-            : 'Configure orchestrator backends and agent behavior.'}
-        </p>
-
-        {projectId
-          ? <ProjectAgentSettings projectId={projectId} />
-          : <AppAgentSettings />
-        }
-      </div>
-    </div>
+    <SettingsPage
+      title="Orchestrators & agents"
+      description={projectId
+        ? 'Configure orchestrator and agent behavior for this project.'
+        : 'Configure orchestrator backends and agent behavior.'}
+    >
+      {projectId
+        ? <ProjectAgentSettings projectId={projectId} />
+        : <AppAgentSettings />
+      }
+    </SettingsPage>
   );
 }

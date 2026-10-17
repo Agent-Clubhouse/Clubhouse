@@ -47,11 +47,11 @@ describe('SourceSkillsSection', () => {
     });
   });
 
-  it('shows create view when + Skill clicked', async () => {
+  it('shows create view when New skill clicked', async () => {
     render(<SourceSkillsSection projectPath={projectPath} />);
     await waitFor(() => screen.getByText('deploy'));
-    fireEvent.click(screen.getByText('+ Skill'));
-    expect(screen.getByText('New Skill')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('New skill'));
+    expect(screen.getByRole('heading', { name: 'New skill' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('skill-name (lowercase, hyphens)')).toBeInTheDocument();
   });
 
@@ -60,7 +60,7 @@ describe('SourceSkillsSection', () => {
     await waitFor(() => screen.getByText('deploy'));
     const deleteButtons = screen.getAllByTitle('Delete skill');
     fireEvent.click(deleteButtons[0]);
-    expect(screen.getByText('Delete Skill')).toBeInTheDocument();
+    expect(screen.getByText('Delete skill?')).toBeInTheDocument();
   });
 
   it('cancels delete dialog', async () => {
@@ -69,15 +69,15 @@ describe('SourceSkillsSection', () => {
     const deleteButtons = screen.getAllByTitle('Delete skill');
     fireEvent.click(deleteButtons[0]);
     fireEvent.click(screen.getByText('Cancel'));
-    expect(screen.queryByText('Delete Skill')).not.toBeInTheDocument();
+    expect(screen.queryByText('Delete skill?')).not.toBeInTheDocument();
   });
 
   it('cancels create view', async () => {
     render(<SourceSkillsSection projectPath={projectPath} />);
     await waitFor(() => screen.getByText('deploy'));
-    fireEvent.click(screen.getByText('+ Skill'));
+    fireEvent.click(screen.getByText('New skill'));
     fireEvent.click(screen.getByText('Cancel'));
-    expect(screen.queryByText('New Skill')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'New skill' })).not.toBeInTheDocument();
   });
 
   it('shows folder path hint', () => {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FeedbackStatus } from '../../../shared/feedback-types';
 import { FEEDBACK_NOTICE_TEXT, useFeedbackStore } from '../../stores/feedbackStore';
 import { FeedbackTelemetryPrompt, type TelemetryShareAsk } from './FeedbackTelemetryPrompt';
+import { SettingsPage, SettingsSection, SettingsField, settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
 
 /**
  * After connecting, offer the Framebriar telemetry destination when export is already on
@@ -70,10 +71,13 @@ export function FeedbackSettingsView() {
 
   if (!status) {
     return (
-      <div className="h-full overflow-y-auto bg-ctp-base p-6" data-testid="feedback-settings">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">Feedback</h2>
-        <p className="text-sm text-ctp-subtext0">{loaded ? 'Feedback isn\'t available right now.' : 'Loading…'}</p>
-      </div>
+      <SettingsPage
+        title="Feedback"
+        description={loaded ? 'Feedback isn\'t available right now.' : 'Loading…'}
+        testId="feedback-settings"
+      >
+        {null}
+      </SettingsPage>
     );
   }
 
@@ -96,7 +100,7 @@ export function FeedbackSettingsView() {
       }
     } catch (err) {
       // telemetry-exempt: shown to the user
-      setMessage(`Couldn't connect: ${err instanceof Error ? err.message : String(err)}`);
+      setMessage(`Couldn't connect. ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -108,12 +112,12 @@ export function FeedbackSettingsView() {
     try {
       const result = await window.clubhouse.feedback.disconnect();
       setStatus(result.status);
-      if (!result.forgotten) setMessage('Couldn\'t disconnect: the saved access couldn\'t be removed from secure storage.');
+      if (!result.forgotten) setMessage('Couldn\'t disconnect. The saved access couldn\'t be removed from secure storage.');
       else if (result.revoked === false) setMessage('Disconnected here. The server couldn\'t be told; the access will lapse on its own.');
       else setMessage('Disconnected.');
     } catch (err) {
       // telemetry-exempt: shown to the user
-      setMessage(`Couldn't disconnect: ${err instanceof Error ? err.message : String(err)}`);
+      setMessage(`Couldn't disconnect. ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -137,46 +141,47 @@ export function FeedbackSettingsView() {
   const stateText = STATE_TEXT[status.state];
 
   return (
-    <div className="h-full overflow-y-auto bg-ctp-base p-6" data-testid="feedback-settings">
-      <div className="max-w-2xl space-y-5">
-        <div>
-          <h2 className="text-lg font-semibold text-ctp-text mb-1">Feedback</h2>
-          <p className="text-sm text-ctp-subtext0">
-            Connecting lets you send feedback and screenshots to the developer.
-          </p>
-          <p className="text-sm text-ctp-subtext0 mt-1">
-            If telemetry export is on (Settings, Logging), Clubhouse then asks whether to share user activity and errors with the developer too, with the same redaction as your own export. Nothing is shared unless you agree.
-          </p>
-        </div>
+    <SettingsPage
+      title="Feedback"
+      description="Connecting lets you send feedback and screenshots to the developer."
+      testId="feedback-settings"
+    >
+      <p className={`${settingsHelp} mt-3`}>
+        If telemetry export is on (Settings, Logging), Clubhouse then asks whether to share user activity and errors with the developer too, with the same redaction as your own export. Nothing is shared unless you agree.
+      </p>
 
-        {storageUnavailable && (
-          <p className="text-sm text-ctp-subtext1" data-testid="feedback-storage-unavailable">
-            Feedback needs your {keyringName()} to keep its credential safe, and it isn't available. Clubhouse never stores the credential in plain text.
-          </p>
-        )}
+      {storageUnavailable && (
+        <p className="text-xs text-ctp-warning mt-3" data-testid="feedback-storage-unavailable">
+          Feedback needs your {keyringName()} to keep its credential safe, and it isn&apos;t available. Clubhouse never stores the credential in plain text.
+        </p>
+      )}
 
-        {status.notice && (
-          <p className="text-sm text-ctp-warning" role="status" data-testid="feedback-notice">{FEEDBACK_NOTICE_TEXT[status.notice]}</p>
-        )}
+      {status.notice && (
+        <p className="text-xs text-ctp-warning mt-3" role="status" data-testid="feedback-notice">{FEEDBACK_NOTICE_TEXT[status.notice]}</p>
+      )}
 
+      <SettingsSection title="Connection">
         {status.connected ? (
-          <div className="flex items-center justify-between gap-3" data-testid="feedback-connected">
-            <div className="text-sm text-ctp-text">
-              Connected{expires ? <span className="text-ctp-subtext0"> · access expires {expires}</span> : null}
-            </div>
+          <SettingsField
+            testId="feedback-connected"
+            label={<>Connected{expires ? <span className="text-ctp-overlay1"> · access expires {expires}</span> : null}</>}
+          >
             <button
               type="button"
               onClick={() => void disconnect()}
               disabled={busy}
-              className="px-3 py-1.5 text-sm rounded-md bg-surface-0 text-ctp-text hover:bg-surface-1 disabled:opacity-50"
+              className={settingsButton.ghost}
             >
               Disconnect
             </button>
-          </div>
+          </SettingsField>
         ) : (
-          <form onSubmit={(e) => void connect(e)} className="space-y-2" data-testid="feedback-connect-form">
-            <label htmlFor="feedback-invitation" className="block text-sm text-ctp-text">Invitation</label>
-            <div className="flex gap-2">
+          <form onSubmit={(e) => void connect(e)} data-testid="feedback-connect-form">
+            <SettingsField
+              label="Invitation"
+              htmlFor="feedback-invitation"
+              help={status.enrolled && expires ? `Previous access expires ${expires}.` : 'Paste the invitation you were sent. No URL or key needed.'}
+            >
               <input
                 id="feedback-invitation"
                 ref={inputRef}
@@ -185,49 +190,45 @@ export function FeedbackSettingsView() {
                 spellCheck={false}
                 disabled={busy || storageUnavailable}
                 placeholder="Paste the invitation you were sent"
-                className="flex-1 px-3 py-1.5 text-sm rounded-md bg-ctp-mantle border border-surface-1 text-ctp-text placeholder:text-ctp-overlay0 disabled:opacity-50"
+                className={`${settingsInput} w-[240px]`}
               />
               <button
                 type="submit"
                 disabled={busy || storageUnavailable}
-                className="px-3 py-1.5 text-sm rounded-md bg-ctp-accent text-white disabled:opacity-50"
+                className={settingsButton.primary}
               >
                 Connect
               </button>
-            </div>
-            {status.enrolled && expires && (
-              <p className="text-xs text-ctp-subtext0">Previous access expires {expires}.</p>
-            )}
+            </SettingsField>
           </form>
         )}
 
         {/* Offline, expired or revoked access is still an enrollment: Disconnect clears it and its notice. */}
         {!status.connected && (status.enrolled || status.notice) && (
-          <div className="flex items-center justify-between gap-3" data-testid="feedback-enrolled">
-            <div className="text-sm text-ctp-subtext0">Feedback access is saved on this computer.</div>
+          <SettingsField testId="feedback-enrolled" label="Saved access" help="Feedback access is saved on this computer.">
             <button
               type="button"
               onClick={() => void disconnect()}
               disabled={busy}
-              className="px-3 py-1.5 text-sm rounded-md bg-surface-0 text-ctp-text hover:bg-surface-1 disabled:opacity-50"
+              className={settingsButton.ghost}
             >
               Disconnect
             </button>
-          </div>
+          </SettingsField>
         )}
+      </SettingsSection>
 
-        {stateText && <p className="text-sm text-ctp-subtext0" data-testid="feedback-state">{stateText}</p>}
-        {message && <p className="text-sm text-ctp-subtext1" role="status" data-testid="feedback-message">{message}</p>}
+      {stateText && <p className={`${settingsHelp} mt-2`} data-testid="feedback-state">{stateText}</p>}
+      {message && <p className="text-xs text-ctp-subtext1 mt-2" role="status" data-testid="feedback-message">{message}</p>}
 
-        {shareAsk && <FeedbackTelemetryPrompt ask={shareAsk} onShare={() => void share()} onDecline={declineShare} />}
+      {shareAsk && <FeedbackTelemetryPrompt ask={shareAsk} onShare={() => void share()} onDecline={declineShare} />}
 
-        {(status.outbox.pending > 0 || status.outbox.blocked > 0) && (
-          <p className="text-sm text-ctp-subtext0" data-testid="feedback-outbox">
-            {status.outbox.pending > 0 && `${status.outbox.pending} ${status.outbox.pending === 1 ? 'report is' : 'reports are'} saved and waiting to send.`}
-            {status.outbox.blocked > 0 && ` ${status.outbox.blocked} couldn't be delivered and are kept on this computer.`}
-          </p>
-        )}
-      </div>
-    </div>
+      {(status.outbox.pending > 0 || status.outbox.blocked > 0) && (
+        <p className={`${settingsHelp} mt-2`} data-testid="feedback-outbox">
+          {status.outbox.pending > 0 && `${status.outbox.pending} ${status.outbox.pending === 1 ? 'report is' : 'reports are'} saved and waiting to send.`}
+          {status.outbox.blocked > 0 && ` ${status.outbox.blocked} couldn't be delivered and are kept on this computer.`}
+        </p>
+      )}
+    </SettingsPage>
   );
 }

@@ -7,6 +7,7 @@ import {
   SlotAssignment,
 } from '../../../shared/types';
 import { Toggle } from '../../components/Toggle';
+import { SettingsField, SettingsSection, settingsButton, settingsInput, settingsHelp } from './SettingsLayout';
 
 // ── Volume Slider ─────────────────────────────────────────────────────
 
@@ -22,7 +23,7 @@ export function VolumeSlider({ value, onChange, disabled }: { value: number; onC
         disabled={disabled}
         className="w-24 h-1 accent-ctp-accent cursor-pointer"
       />
-      <span className="text-xs text-ctp-subtext0 w-8 text-right">{value}%</span>
+      <span className="text-xs text-ctp-overlay1 w-8 text-right tabular-nums">{value}%</span>
     </div>
   );
 }
@@ -59,9 +60,9 @@ export function SlotDropdown({
       value={selectedPackId ?? ''}
       onChange={(e) => onChange(e.target.value || null)}
       disabled={disabled}
-      className="px-2 py-1 text-xs rounded-md bg-surface-2 text-ctp-text border border-surface-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed min-w-[120px]"
+      className={`${settingsInput} cursor-pointer disabled:cursor-not-allowed min-w-[140px]`}
     >
-      <option value="">OS Default</option>
+      <option value="">System default</option>
       {options.map((opt) => (
         <option key={opt.packId} value={opt.packId}>
           {opt.label}
@@ -99,11 +100,7 @@ export function SoundEventRow({
   };
 
   return (
-    <div className="flex items-center justify-between py-2">
-      <div className="flex-1 min-w-0">
-        <div className="text-sm text-ctp-text font-medium">{SOUND_EVENT_LABELS[event]}</div>
-      </div>
-      <div className="flex items-center gap-3">
+    <SettingsField label={SOUND_EVENT_LABELS[event]}>
         <SlotDropdown
           event={event}
           packs={packs}
@@ -128,7 +125,7 @@ export function SoundEventRow({
             type="button"
             onClick={() => previewSound(slotPackId, event)}
             disabled={disabled || !eventSettings.enabled}
-            className="px-2 py-1 text-xs font-medium rounded-md bg-surface-2 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            className={settingsButton.ghost}
           >
             Preview
           </button>
@@ -144,9 +141,9 @@ export function SoundEventRow({
             });
           }}
           disabled={disabled}
+          ariaLabel={`${SOUND_EVENT_LABELS[event]} sound`}
         />
-      </div>
-    </div>
+    </SettingsField>
   );
 }
 
@@ -162,49 +159,26 @@ export function SoundPackCard({
   onDelete?: () => void;
 }) {
   const events = Object.keys(pack.sounds) as SoundEvent[];
+  const meta = [
+    pack.source === 'plugin' ? 'From a plugin' : null,
+    pack.author ? `by ${pack.author}` : null,
+    `${events.length} ${events.length === 1 ? 'sound' : 'sounds'}`,
+  ].filter(Boolean).join(' · ');
 
   return (
-    <div className="p-3 rounded-lg border border-surface-1 bg-surface-0">
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-ctp-text">{pack.name}</span>
-          {pack.source === 'plugin' && (
-            <span className="px-1.5 py-0.5 text-xs font-medium bg-surface-2 text-ctp-subtext0 rounded">Plugin</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onApplyAll}
-            className="px-2 py-1 text-xs font-medium rounded-md bg-ctp-accent text-white hover:bg-ctp-accent/80 transition-colors cursor-pointer"
-          >
-            Apply All
-          </button>
-          {onDelete && (
-            <button
-              type="button"
-              onClick={onDelete}
-              className="text-xs text-ctp-subtext0 hover:text-ctp-error transition-colors cursor-pointer"
-            >
-              Delete
-            </button>
-          )}
-        </div>
-      </div>
-      {pack.description && (
-        <p className="text-xs text-ctp-subtext0 mb-1">{pack.description}</p>
+    <SettingsField
+      label={<>{pack.name}<span className="ml-2 text-xs text-ctp-overlay1">{meta}</span></>}
+      help={pack.description || undefined}
+    >
+      <button type="button" onClick={onApplyAll} className={settingsButton.ghost}>
+        Apply to all
+      </button>
+      {onDelete && (
+        <button type="button" onClick={onDelete} className={settingsButton.danger}>
+          Delete
+        </button>
       )}
-      {pack.author && (
-        <p className="text-xs text-ctp-subtext0 mb-1">by {pack.author}</p>
-      )}
-      <div className="flex gap-1.5 flex-wrap">
-        {events.map((event) => (
-          <span key={event} className="px-1.5 py-0.5 text-xs bg-surface-1 text-ctp-subtext0 rounded">
-            {SOUND_EVENT_LABELS[event]}
-          </span>
-        ))}
-      </div>
-    </div>
+    </SettingsField>
   );
 }
 
@@ -234,59 +208,49 @@ export function ProjectSoundOverrideSection({ projectId, packs }: { projectId: s
   };
 
   return (
-    <div className="space-y-3">
-      <h3 className="text-md font-semibold text-ctp-text">Sound Pack Override</h3>
-      <p className="text-xs text-ctp-subtext0">Override sounds for this project. Each slot can use a different pack.</p>
-
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          type="button"
-          onClick={clearOverrides}
-          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer
-            ${!hasOverrides ? 'bg-ctp-accent text-white' : 'bg-surface-2 text-ctp-text hover:bg-surface-1'}`}
+    <SettingsSection title="Sound pack override">
+      <SettingsField label="Sounds for this project" help="Each slot can use a different pack.">
+        <select
+          aria-label="Sound pack for this project"
+          value=""
+          onChange={(e) => {
+            if (e.target.value === '__global') clearOverrides();
+            else if (e.target.value) applyAllForProject(e.target.value);
+          }}
+          className={`${settingsInput} cursor-pointer min-w-[160px]`}
         >
-          Use Global Default
-        </button>
-        {packs.map((pack) => (
-          <button
-            key={pack.id}
-            type="button"
-            onClick={() => applyAllForProject(pack.id)}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
-          >
-            Apply All: {pack.name}
-          </button>
-        ))}
-      </div>
+          <option value="" disabled>{hasOverrides ? 'Custom' : 'Global default'}</option>
+          <option value="__global">Use global default</option>
+          {packs.map((pack) => (
+            <option key={pack.id} value={pack.id}>Apply all: {pack.name}</option>
+          ))}
+        </select>
+      </SettingsField>
 
-      {hasOverrides && (
-        <div className="space-y-1 mt-3">
-          {ALL_SOUND_EVENTS.map((event) => {
-            const slotPackId = projectSlots?.[event]?.packId ?? null;
-            return (
-              <div key={event} className="flex items-center justify-between py-1">
-                <span className="text-xs text-ctp-text">{SOUND_EVENT_LABELS[event]}</span>
-                <SlotDropdown
-                  event={event}
-                  packs={packs}
-                  selectedPackId={slotPackId}
-                  onChange={(packId) => {
-                    const overrides = { ...settings.projectOverrides };
-                    const slots = { ...(overrides[projectId]?.slotAssignments ?? {}) };
-                    if (packId) {
-                      slots[event] = { packId };
-                    } else {
-                      delete slots[event];
-                    }
-                    overrides[projectId] = { slotAssignments: slots };
-                    saveSettings({ projectOverrides: overrides });
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+      {hasOverrides && ALL_SOUND_EVENTS.map((event) => {
+        const slotPackId = projectSlots?.[event]?.packId ?? null;
+        return (
+          <SettingsField key={event} label={SOUND_EVENT_LABELS[event]}>
+            <SlotDropdown
+              event={event}
+              packs={packs}
+              selectedPackId={slotPackId}
+              onChange={(packId) => {
+                const overrides = { ...settings.projectOverrides };
+                const slots = { ...(overrides[projectId]?.slotAssignments ?? {}) };
+                if (packId) {
+                  slots[event] = { packId };
+                } else {
+                  delete slots[event];
+                }
+                overrides[projectId] = { slotAssignments: slots };
+                saveSettings({ projectOverrides: overrides });
+              }}
+            />
+          </SettingsField>
+        );
+      })}
+      {!hasOverrides && <p className={`${settingsHelp} pt-1`}>This project uses the global sounds.</p>}
+    </SettingsSection>
   );
 }

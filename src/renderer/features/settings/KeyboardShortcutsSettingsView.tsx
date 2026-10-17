@@ -8,6 +8,24 @@ import {
 import { pluginHotkeyRegistry, PluginShortcut } from '../../plugins/plugin-hotkeys';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
+import { Toggle } from '../../components/Toggle';
+import { SettingsPage, SettingsSection, SettingsField, settingsButton } from './SettingsLayout';
+
+const ROW = 'flex items-center gap-3 min-h-[30px] py-1 border-t border-surface-0';
+const KBD = 'inline-flex items-center px-1.5 h-5 rounded border border-surface-1 text-xs font-mono text-ctp-subtext1';
+const KBD_BUTTON = `${KBD} cursor-pointer hover:bg-surface-0 hover:text-ctp-text transition-colors focus-ring`;
+const RECORDING = 'inline-flex items-center px-1.5 h-5 rounded border border-ctp-accent text-xs text-ctp-accent animate-pulse';
+
+function ResetIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+    </svg>
+  );
+}
+
+const RESET_BUTTON = 'w-5 h-5 inline-flex items-center justify-center rounded text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0 cursor-pointer focus-ring';
 
 function ShortcutRow({ shortcut }: { shortcut: ShortcutDefinition }) {
   const editingId = useKeyboardShortcutsStore((s) => s.editingId);
@@ -45,38 +63,32 @@ function ShortcutRow({ shortcut }: { shortcut: ShortcutDefinition }) {
   }, [isEditing, handleKeyDown]);
 
   return (
-    <div className="flex items-center justify-between py-2" data-testid={`shortcut-row-${shortcut.id}`}>
-      <span className="flex flex-col">
-        <span className="text-sm text-ctp-text">{shortcut.label}</span>
+    <div className={ROW} data-testid={`shortcut-row-${shortcut.id}`}>
+      <span className="flex-1 min-w-0 flex flex-col">
+        <span className="text-[13px] text-ctp-text">{shortcut.label}</span>
         {shortcut.conflictWith && (
           <span className="text-xs text-ctp-warning">
             Unbound because {formatBinding(shortcut.defaultBinding)} is set for {conflictLabel ?? shortcut.conflictWith}
           </span>
         )}
       </span>
-      <div className="flex items-center gap-2">
-        {isEditing ? (
-          <span className="text-xs text-ctp-accent bg-surface-1 px-2 py-1 rounded border border-ctp-accent animate-pulse">
-            Press a key combo...
-          </span>
-        ) : (
-          <button
-            onClick={() => startEditing(shortcut.id)}
-            className="text-xs text-ctp-subtext1 bg-surface-0 px-2 py-1 rounded hover:bg-surface-1 cursor-pointer transition-colors"
-          >
-            {shortcut.currentBinding ? formatBinding(shortcut.currentBinding) : 'Unbound'}
-          </button>
-        )}
+      <div className="flex-shrink-0 flex items-center gap-1.5">
         {isModified && !isEditing && (
           <button
+            type="button"
             onClick={() => resetBinding(shortcut.id)}
-            className="text-xs text-ctp-subtext0 hover:text-ctp-text cursor-pointer"
+            className={RESET_BUTTON}
             title="Reset to default"
+            aria-label="Reset to default"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
-            </svg>
+            <ResetIcon />
+          </button>
+        )}
+        {isEditing ? (
+          <span className={RECORDING}>Press a key combo…</span>
+        ) : (
+          <button type="button" onClick={() => startEditing(shortcut.id)} className={KBD_BUTTON}>
+            {shortcut.currentBinding ? formatBinding(shortcut.currentBinding) : 'Unbound'}
           </button>
         )}
       </div>
@@ -112,31 +124,25 @@ function PluginShortcutRow({ shortcut }: { shortcut: PluginShortcut }) {
   }, [isEditing, handleKeyDown]);
 
   return (
-    <div className="flex items-center justify-between py-2">
-      <span className="text-sm text-ctp-text">{shortcut.title}</span>
-      <div className="flex items-center gap-2">
-        {isEditing ? (
-          <span className="text-xs text-ctp-accent bg-surface-1 px-2 py-1 rounded border border-ctp-accent animate-pulse">
-            Press a key combo...
-          </span>
-        ) : (
-          <button
-            onClick={() => setIsEditing(true)}
-            className="text-xs text-ctp-subtext1 bg-surface-0 px-2 py-1 rounded hover:bg-surface-1 cursor-pointer transition-colors"
-          >
-            {shortcut.currentBinding ? formatBinding(shortcut.currentBinding) : 'Unbound'}
-          </button>
-        )}
+    <div className={ROW}>
+      <span className="flex-1 min-w-0 text-[13px] text-ctp-text">{shortcut.title}</span>
+      <div className="flex-shrink-0 flex items-center gap-1.5">
         {isModified && !isEditing && (
           <button
+            type="button"
             onClick={() => pluginHotkeyRegistry.resetBinding(shortcut.fullCommandId)}
-            className="text-xs text-ctp-subtext0 hover:text-ctp-text cursor-pointer"
+            className={RESET_BUTTON}
             title="Reset to default"
+            aria-label="Reset to default"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
-            </svg>
+            <ResetIcon />
+          </button>
+        )}
+        {isEditing ? (
+          <span className={RECORDING}>Press a key combo…</span>
+        ) : (
+          <button type="button" onClick={() => setIsEditing(true)} className={KBD_BUTTON}>
+            {shortcut.currentBinding ? formatBinding(shortcut.currentBinding) : 'Unbound'}
           </button>
         )}
       </div>
@@ -182,65 +188,44 @@ export function KeyboardShortcutsSettingsView() {
   );
 
   return (
-    <div className="h-full overflow-y-auto bg-ctp-base p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">Keyboard Shortcuts</h2>
-        <p className="text-sm text-ctp-subtext0 mb-6">
-          Customize keyboard shortcuts. Click a binding to record a new one.
-        </p>
+    <SettingsPage
+      title="Keyboard shortcuts"
+      description="Click a binding to record a new one."
+      actions={hasAnyOverride ? (
+        <button type="button" onClick={resetAll} className={settingsButton.ghost}>
+          Reset all to defaults
+        </button>
+      ) : undefined}
+    >
+      <SettingsSection title="Compatibility">
+        <SettingsField
+          label="Clipboard compatibility"
+          help="Use explicit clipboard handling for terminal paste. Turn this on if paste does not work on your platform."
+        >
+          <Toggle ariaLabel="Clipboard compatibility" checked={clipboardCompat} onChange={(v) => saveClipboard(v)} />
+        </SettingsField>
+      </SettingsSection>
 
-        {/* Clipboard Compatibility */}
-        <div className="space-y-3 mb-6">
-          <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Compatibility</h3>
-          <div className="flex items-center justify-between py-1.5">
-            <div>
-              <div className="text-sm text-ctp-text">Enable Clipboard Compatibility</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">
-                Use explicit clipboard handling for terminal paste. Enable this if paste does not work on your platform.
-              </div>
+      {Object.entries(grouped).map(([category, items]) => (
+        <SettingsSection key={category} title={category}>
+          {items.map((shortcut) => (
+            <ShortcutRow key={shortcut.id} shortcut={shortcut} />
+          ))}
+        </SettingsSection>
+      ))}
+
+      {Object.keys(pluginGrouped).length > 0 && (
+        <SettingsSection title="Plugins">
+          {Object.entries(pluginGrouped).map(([pluginName, items]) => (
+            <div key={pluginName}>
+              <div className="text-xs text-ctp-overlay1 pt-2.5 pb-1 border-t border-surface-0">{pluginName}</div>
+              {items.map((ps) => (
+                <PluginShortcutRow key={ps.fullCommandId} shortcut={ps} />
+              ))}
             </div>
-            <button
-              onClick={() => saveClipboard(!clipboardCompat)}
-              className="toggle-track"
-              data-on={String(clipboardCompat)}
-            >
-              <span className="toggle-knob" />
-            </button>
-          </div>
-        </div>
-
-        {Object.entries(grouped).map(([category, items]) => (
-          <div key={category} className="space-y-1 mb-6">
-            <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">{category}</h3>
-            {items.map((shortcut) => (
-              <ShortcutRow key={shortcut.id} shortcut={shortcut} />
-            ))}
-          </div>
-        ))}
-
-        {Object.keys(pluginGrouped).length > 0 && (
-          <>
-            <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2 mt-8">Plugins</h3>
-            {Object.entries(pluginGrouped).map(([pluginName, items]) => (
-              <div key={pluginName} className="space-y-1 mb-4">
-                <h4 className="text-xs text-ctp-subtext1 mb-1">{pluginName}</h4>
-                {items.map((ps) => (
-                  <PluginShortcutRow key={ps.fullCommandId} shortcut={ps} />
-                ))}
-              </div>
-            ))}
-          </>
-        )}
-
-        {hasAnyOverride && (
-          <button
-            onClick={resetAll}
-            className="text-sm text-ctp-subtext0 hover:text-ctp-text cursor-pointer transition-colors"
-          >
-            Reset All to Defaults
-          </button>
-        )}
-      </div>
-    </div>
+          ))}
+        </SettingsSection>
+      )}
+    </SettingsPage>
   );
 }

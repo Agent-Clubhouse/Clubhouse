@@ -59,7 +59,7 @@ describe('PairedSatelliteList', () => {
 
   it('renders empty list when no satellites', () => {
     const { container } = render(<PairedSatelliteList satellites={[]} />);
-    const listContainer = container.querySelector('.space-y-2');
+    const listContainer = container.querySelector('[data-testid="paired-satellite-list"]');
     expect(listContainer?.children.length).toBe(0);
   });
 

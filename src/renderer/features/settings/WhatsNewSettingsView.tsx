@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useUpdateStore } from '../../stores/updateStore';
 import { renderMarkdownSafe } from '../../utils/safe-markdown';
+import { SettingsPage, settingsHelp } from './SettingsLayout';
 
 export function WhatsNewSettingsView() {
   const markdown = useUpdateStore((s) => s.versionHistoryMarkdown);
@@ -18,27 +19,26 @@ export function WhatsNewSettingsView() {
   }, [markdown]);
 
   return (
-    <div className="h-full overflow-y-auto p-6" data-testid="whats-new-settings">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">What&apos;s New</h2>
-        <p className="text-sm text-ctp-subtext0 mb-6">
-          Release notes for recent versions of Clubhouse.
-        </p>
-
+    <SettingsPage
+      title="What's new"
+      description="Release notes for recent versions of Clubhouse."
+      testId="whats-new-settings"
+    >
+      <div className="mt-[22px] pt-3 border-t border-surface-0">
         {loading && (
-          <div className="text-sm text-ctp-subtext0" data-testid="whats-new-loading">
-            Loading version history...
+          <div className={settingsHelp} data-testid="whats-new-loading">
+            Loading version history…
           </div>
         )}
 
         {error && (
-          <div className="text-sm text-ctp-error" data-testid="whats-new-error">
-            Failed to load version history: {error}
+          <div className="text-xs text-ctp-error" data-testid="whats-new-error">
+            Couldn&apos;t load version history. {error}
           </div>
         )}
 
         {!loading && !error && !html && (
-          <div className="text-sm text-ctp-subtext0" data-testid="whats-new-empty">
+          <div className={settingsHelp} data-testid="whats-new-empty">
             No version history available.
           </div>
         )}
@@ -51,6 +51,6 @@ export function WhatsNewSettingsView() {
           />
         )}
       </div>
-    </div>
+    </SettingsPage>
   );
 }

@@ -72,21 +72,21 @@ describe('OrchestratorSettingsView', () => {
   beforeEach(resetStores);
 
   describe('app-level settings (no projectId)', () => {
-    it('renders the Orchestrators & Agents heading', () => {
+    it('renders the Orchestrators & agents heading', () => {
       render(<OrchestratorSettingsView />);
-      expect(screen.getByText('Orchestrators & Agents')).toBeInTheDocument();
+      expect(screen.getByText('Orchestrators & agents')).toBeInTheDocument();
       expect(screen.getByText('Configure orchestrator backends and agent behavior.')).toBeInTheDocument();
     });
 
     it('renders Clubhouse Mode toggle', () => {
       render(<OrchestratorSettingsView />);
       expect(screen.getByText('Clubhouse Mode')).toBeInTheDocument();
-      expect(screen.getByText(/Centrally manage agent/)).toBeInTheDocument();
+      expect(screen.getByText(/Manage agent instructions, permissions and MCP config/)).toBeInTheDocument();
     });
 
-    it('renders Default Quick Agent Mode dropdown', () => {
+    it('renders Default quick agent mode dropdown', () => {
       render(<OrchestratorSettingsView />);
-      expect(screen.getByText('Default Quick Agent Mode')).toBeInTheDocument();
+      expect(screen.getByText('Default quick agent mode')).toBeInTheDocument();
     });
 
     it('renders Quick Agent Mode dropdown with interactive and headless options', () => {
@@ -105,10 +105,10 @@ describe('OrchestratorSettingsView', () => {
       expect(options.every((o) => o.getAttribute('value') !== 'structured')).toBe(true);
     });
 
-    it('renders Quick Agents section before Clubhouse Mode', () => {
+    it('renders Quick agents section before Durable agents', () => {
       render(<OrchestratorSettingsView />);
-      const quickAgents = screen.getByText('Quick Agents');
-      const clubhouse = screen.getByText('Durable Agents');
+      const quickAgents = screen.getByText('Quick agents');
+      const clubhouse = screen.getByText('Durable agents');
       expect(quickAgents.compareDocumentPosition(clubhouse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeGreaterThan(0);
     });
 
@@ -122,11 +122,9 @@ describe('OrchestratorSettingsView', () => {
       it('shows confirmation dialog when enabling', () => {
         render(<OrchestratorSettingsView />);
         // Find the toggle button for Clubhouse Mode (first toggle-track)
-        const toggleButtons = screen.getAllByRole('button');
-        const clubhouseToggle = toggleButtons.find((btn) =>
-          btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'false'
-        );
-        if (clubhouseToggle) fireEvent.click(clubhouseToggle);
+        const clubhouseToggle = screen.getByRole('button', { name: 'Clubhouse Mode' });
+        expect(clubhouseToggle).toHaveAttribute('aria-pressed', 'false');
+        fireEvent.click(clubhouseToggle);
 
         expect(screen.getByText('Enable Clubhouse Mode?')).toBeInTheDocument();
         expect(screen.getByText(/overwrite agent settings/)).toBeInTheDocument();
@@ -137,11 +135,9 @@ describe('OrchestratorSettingsView', () => {
         useClubhouseModeStore.setState({ setEnabled });
 
         render(<OrchestratorSettingsView />);
-        const toggleButtons = screen.getAllByRole('button');
-        const clubhouseToggle = toggleButtons.find((btn) =>
-          btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'false'
-        );
-        if (clubhouseToggle) fireEvent.click(clubhouseToggle);
+        const clubhouseToggle = screen.getByRole('button', { name: 'Clubhouse Mode' });
+        expect(clubhouseToggle).toHaveAttribute('aria-pressed', 'false');
+        fireEvent.click(clubhouseToggle);
         fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
 
         expect(setEnabled).toHaveBeenCalledWith(true);
@@ -149,11 +145,9 @@ describe('OrchestratorSettingsView', () => {
 
       it('cancels confirmation dialog', () => {
         render(<OrchestratorSettingsView />);
-        const toggleButtons = screen.getAllByRole('button');
-        const clubhouseToggle = toggleButtons.find((btn) =>
-          btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'false'
-        );
-        if (clubhouseToggle) fireEvent.click(clubhouseToggle);
+        const clubhouseToggle = screen.getByRole('button', { name: 'Clubhouse Mode' });
+        expect(clubhouseToggle).toHaveAttribute('aria-pressed', 'false');
+        fireEvent.click(clubhouseToggle);
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
         expect(screen.queryByText('Enable Clubhouse Mode?')).not.toBeInTheDocument();
@@ -164,11 +158,7 @@ describe('OrchestratorSettingsView', () => {
         useClubhouseModeStore.setState({ enabled: true, setEnabled });
 
         render(<OrchestratorSettingsView />);
-        // Find the Clubhouse Mode toggle by traversing from the "Clubhouse Mode" text
-        const clubhouseLabel = screen.getByText('Clubhouse Mode');
-        const clubhouseSection = clubhouseLabel.closest('.flex.items-center.justify-between');
-        const clubhouseToggle = clubhouseSection?.querySelector('.toggle-track');
-        if (clubhouseToggle) fireEvent.click(clubhouseToggle);
+        fireEvent.click(screen.getByRole('button', { name: 'Clubhouse Mode' }));
 
         expect(setEnabled).toHaveBeenCalledWith(false);
         expect(screen.queryByText('Enable Clubhouse Mode?')).not.toBeInTheDocument();
@@ -224,7 +214,7 @@ describe('OrchestratorSettingsView', () => {
         expect(screen.getByText('CLI not found at /usr/bin/claude')).toBeInTheDocument();
       });
 
-      it('shows badge when present', () => {
+      it('shows the status word and badge as plain meta text', () => {
         useOrchestratorStore.setState({
           allOrchestrators: [{
             id: 'claude-code',
@@ -235,7 +225,8 @@ describe('OrchestratorSettingsView', () => {
           }],
         });
         render(<OrchestratorSettingsView />);
-        expect(screen.getByText('default')).toBeInTheDocument();
+        expect(screen.getByText('· default')).toBeInTheDocument();
+        expect(screen.getByText('Installed')).toBeInTheDocument();
       });
 
       it('shows empty state when no orchestrators', () => {
@@ -254,10 +245,8 @@ describe('OrchestratorSettingsView', () => {
             availability: { 'claude-code': { available: false, error: 'CLI not found' } },
           });
           render(<OrchestratorSettingsView />);
-          const toggleButtons = screen.getAllByRole('button');
-          const orchToggle = toggleButtons.find((btn) =>
-            btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'true'
-          );
+          const orchToggle = screen.getByRole('button', { name: 'Claude Code' });
+          expect(orchToggle).toHaveAttribute('aria-pressed', 'true');
           expect(orchToggle).toBeTruthy();
           expect(orchToggle).not.toBeDisabled();
         });
@@ -285,14 +274,12 @@ describe('OrchestratorSettingsView', () => {
             },
           });
           render(<OrchestratorSettingsView />);
-          // Find the claude-code toggle specifically: not-installed orchs show an error message
-          // beneath them — navigate from that error text up to the row's toggle button
-          const errorText = screen.getByText('CLI not found');
-          const row = errorText.closest('.flex.items-center.justify-between');
-          const claudeToggle = row?.querySelector('.toggle-track');
-          expect(claudeToggle).toBeTruthy();
+          // Not-installed orchestrators show the error under their name.
+          expect(screen.getByText('CLI not found')).toBeInTheDocument();
+          const claudeToggle = screen.getByRole('button', { name: 'Claude Code' });
           expect(claudeToggle).toBeDisabled();
-          expect(claudeToggle).toHaveAttribute('title', 'CLI not found — install to enable');
+          // The reason is on the toggle's wrapper (a disabled button gets no hover).
+          expect(screen.getByTestId('orchestrator-toggle-claude-code')).toHaveAttribute('title', 'CLI not found. Install it to enable.');
         });
 
         it('toggle is NOT disabled for last enabled orchestrator when it is not installed', () => {
@@ -302,10 +289,8 @@ describe('OrchestratorSettingsView', () => {
             availability: { 'claude-code': { available: false, error: 'CLI not found' } },
           });
           render(<OrchestratorSettingsView />);
-          const toggleButtons = screen.getAllByRole('button');
-          const orchToggle = toggleButtons.find((btn) =>
-            btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'true'
-          );
+          const orchToggle = screen.getByRole('button', { name: 'Claude Code' });
+          expect(orchToggle).toHaveAttribute('aria-pressed', 'true');
           expect(orchToggle).not.toBeDisabled();
         });
 
@@ -315,12 +300,10 @@ describe('OrchestratorSettingsView', () => {
             availability: { 'claude-code': { available: true } },
           });
           render(<OrchestratorSettingsView />);
-          const toggleButtons = screen.getAllByRole('button');
-          const orchToggle = toggleButtons.find((btn) =>
-            btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'true'
-          );
+          const orchToggle = screen.getByRole('button', { name: 'Claude Code' });
+          expect(orchToggle).toHaveAttribute('aria-pressed', 'true');
           expect(orchToggle).toBeDisabled();
-          expect(orchToggle).toHaveAttribute('title', 'At least one orchestrator must be enabled');
+          expect(screen.getByTestId('orchestrator-toggle-claude-code')).toHaveAttribute('title', 'At least one orchestrator must be enabled');
         });
       });
     });
@@ -500,7 +483,7 @@ describe('OrchestratorSettingsView', () => {
 
     it('renders Quick Agent Mode dropdown', () => {
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.getByText('Quick Agent Mode')).toBeInTheDocument();
+      expect(screen.getByText('Quick agent mode')).toBeInTheDocument();
     });
 
     it('renders ProjectAgentDefaultsSection', () => {
@@ -517,7 +500,7 @@ describe('OrchestratorSettingsView', () => {
 
     it('does not show orchestrator picker with single orchestrator', () => {
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.queryByText('Default Orchestrator')).not.toBeInTheDocument();
+      expect(screen.queryByText('Default orchestrator')).not.toBeInTheDocument();
     });
 
     it('shows orchestrator picker with multiple orchestrators', () => {
@@ -529,13 +512,13 @@ describe('OrchestratorSettingsView', () => {
         ],
       });
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.getByText('Default Orchestrator')).toBeInTheDocument();
+      expect(screen.getByText('Default orchestrator')).toBeInTheDocument();
     });
 
     it('returns null for invalid project', () => {
       const { container: _container } = render(<OrchestratorSettingsView projectId="nonexistent" />);
       // Should still render the outer wrapper but ProjectAgentSettings returns null
-      expect(screen.getByText('Orchestrators & Agents')).toBeInTheDocument();
+      expect(screen.getByText('Orchestrators & agents')).toBeInTheDocument();
       expect(screen.queryByText('Clubhouse Mode')).not.toBeInTheDocument();
     });
 
@@ -550,20 +533,11 @@ describe('OrchestratorSettingsView', () => {
         }
       });
 
-      it('DefaultRow label container has overflow-hidden to prevent hit box overlap', () => {
+      it('each project override select is labelled by its row', () => {
+        useMcpSettingsStore.setState({ enabled: true });
         render(<OrchestratorSettingsView projectId="proj-1" />);
-        const label = screen.getByText('Quick Agent Mode');
-        const labelContainer = label.parentElement!;
-        expect(labelContainer.className).toContain('overflow-hidden');
-      });
-
-      it('DefaultRow select container has relative positioning for stacking context', () => {
-        render(<OrchestratorSettingsView projectId="proj-1" />);
-        // All project override selects should be in a relative container
-        const selects = screen.getAllByRole('combobox');
-        for (const select of selects) {
-          const container = select.parentElement!;
-          expect(container.className).toContain('relative');
+        for (const name of ['Quick agent mode', 'Free agent permission mode', 'Session name on quit', 'Clubhouse Mode', 'MCP override']) {
+          expect(screen.getByLabelText(name).tagName).toBe('SELECT');
         }
       });
 
@@ -572,12 +546,8 @@ describe('OrchestratorSettingsView', () => {
         useClubhouseModeStore.setState({ enabled: true, setProjectOverride });
 
         render(<OrchestratorSettingsView projectId="proj-1" />);
-        // Find the Clubhouse Mode dropdown — its label text is in the DefaultRow
-        const clubhouseLabel = screen.getByText('Clubhouse Mode');
-        const row = clubhouseLabel.closest('.flex.items-center.justify-between');
-        const select = row?.querySelector('select');
-        expect(select).toBeTruthy();
-        fireEvent.change(select!, { target: { value: 'on' } });
+        const select = screen.getByLabelText('Clubhouse Mode');
+        fireEvent.change(select, { target: { value: 'on' } });
         expect(setProjectOverride).toHaveBeenCalledWith('/home/user/my-app', true);
       });
     });

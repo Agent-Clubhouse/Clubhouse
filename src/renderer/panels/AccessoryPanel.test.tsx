@@ -79,10 +79,10 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     unmount();
   });
 
-  it('shows External Editor nav item in app settings', async () => {
+  it('shows External editor nav item in app settings', async () => {
     window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);
     render(<AccessoryPanel />);
-    expect(screen.getByText('External Editor')).toBeInTheDocument();
+    expect(screen.getByText('External editor')).toBeInTheDocument();
   });
 
   it('always shows Clubhouse MCP nav item (no longer experimental)', async () => {

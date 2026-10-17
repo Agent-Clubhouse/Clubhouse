@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAnnexClientStore, type DiscoveredService } from '../../stores/annexClientStore';
+import { settingsButton, settingsInput } from './SettingsLayout';
 
 type WizardStep = 'scanning' | 'pin-entry' | 'result';
 
@@ -60,17 +61,14 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-surface-1 bg-surface-0/50 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-sm font-medium text-ctp-text">
-          {step === 'scanning' && 'Discovered Services'}
-          {step === 'pin-entry' && `Pair with ${selectedService?.alias || 'Service'}`}
-          {step === 'result' && 'Pairing Result'}
+    <div className="py-2.5 border-t border-surface-0">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[13px] font-semibold text-ctp-text">
+          {step === 'scanning' && 'Discovered services'}
+          {step === 'pin-entry' && `Pair with ${selectedService?.alias || 'service'}`}
+          {step === 'result' && 'Pairing result'}
         </div>
-        <button
-          onClick={onClose}
-          className="text-xs text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer"
-        >
+        <button type="button" onClick={onClose} className={settingsButton.quiet}>
           Close
         </button>
       </div>
@@ -78,46 +76,41 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
       {step === 'scanning' && (
         <>
           {discoveredServices.length === 0 ? (
-            <div className="text-xs text-ctp-subtext0 py-4 text-center">
-              No services found on the network. Make sure the satellite has Annex enabled.
-            </div>
+            <p className="text-xs text-ctp-overlay1 py-2">
+              No services found on the network. Make sure the satellite has Annex turned on.
+            </p>
           ) : (
-            <ul className="space-y-2 mb-3">
+            <ul className="mb-2">
               {discoveredServices.map((svc) => (
-                <li key={svc.fingerprint}>
+                <li key={svc.fingerprint} className="border-t border-surface-0 first:border-t-0">
                   <button
+                    type="button"
                     onClick={() => handleSelectService(svc)}
-                    className="w-full text-left px-3 py-2 rounded bg-surface-1 hover:bg-surface-2
-                      transition-colors cursor-pointer group"
+                    className="w-full text-left flex items-center gap-3 px-2 py-1.5 rounded-md hover:bg-surface-0
+                      transition-colors cursor-pointer group focus-ring"
                   >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm text-ctp-text font-medium">{svc.alias}</div>
-                        <div className="text-xs text-ctp-subtext0">{svc.host}</div>
-                      </div>
-                      <span className="text-xs text-ctp-subtext0 group-hover:text-ctp-text transition-colors">
-                        Pair
-                      </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] text-ctp-text truncate">{svc.alias}</div>
+                      <div className="text-xs text-ctp-overlay1 font-mono truncate">{svc.host}</div>
                     </div>
+                    <span className="text-xs text-ctp-overlay1 group-hover:text-ctp-text transition-colors">
+                      Pair
+                    </span>
                   </button>
                 </li>
               ))}
             </ul>
           )}
-          <button
-            onClick={handleRefresh}
-            className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
-              transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
-          >
+          <button type="button" onClick={handleRefresh} className={settingsButton.ghost}>
             Refresh
           </button>
         </>
       )}
 
       {step === 'pin-entry' && (
-        <div className="space-y-3">
-          <p className="text-xs text-ctp-subtext0">
-            Enter the PIN shown on <span className="font-medium text-ctp-text">{selectedService?.alias}</span>:
+        <div className="space-y-2">
+          <p className="text-xs text-ctp-overlay1">
+            Enter the PIN shown on <span className="text-ctp-text">{selectedService?.alias}</span>.
           </p>
           <div className="flex gap-2">
             <input
@@ -129,49 +122,44 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
               onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
               onKeyDown={handlePinKeyDown}
               placeholder="000000"
-              className="flex-1 px-3 py-2 text-sm rounded bg-surface-1 border border-surface-2
-                text-ctp-text placeholder:text-ctp-overlay0 focus-ring
-                tracking-widest text-center font-mono"
+              aria-label="Pairing PIN"
+              className={`${settingsInput} w-[140px] tracking-widest text-center font-mono`}
             />
             <button
+              type="button"
               onClick={handlePair}
               disabled={pairing || pin.length < 4}
-              className="px-4 py-2 text-xs rounded bg-ctp-accent text-white font-medium
-                hover:bg-ctp-accent/80 transition-colors cursor-pointer
-                disabled:opacity-50 disabled:cursor-not-allowed"
+              className={settingsButton.primary}
             >
-              {pairing ? 'Pairing...' : 'Pair'}
+              {pairing ? 'Pairing…' : 'Pair'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setStep('scanning'); setSelectedService(null); }}
+              className={settingsButton.quiet}
+            >
+              Back
             </button>
           </div>
-          <button
-            onClick={() => { setStep('scanning'); setSelectedService(null); }}
-            className="text-xs text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer"
-          >
-            Back
-          </button>
         </div>
       )}
 
       {step === 'result' && (
-        <div className="space-y-3">
-          <div className={`text-sm ${resultSuccess ? 'text-ctp-green' : 'text-ctp-red'}`}>
+        <div className="space-y-2">
+          <div className={`text-xs ${resultSuccess ? 'text-ctp-success' : 'text-ctp-error'}`}>
             {resultMessage}
           </div>
           <div className="flex gap-2">
             {!resultSuccess && (
               <button
+                type="button"
                 onClick={() => { setPin(''); setStep('pin-entry'); }}
-                className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
-                  transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
+                className={settingsButton.ghost}
               >
-                Try Again
+                Try again
               </button>
             )}
-            <button
-              onClick={onClose}
-              className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
-                transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
-            >
+            <button type="button" onClick={onClose} className={settingsButton.ghost}>
               {resultSuccess ? 'Done' : 'Cancel'}
             </button>
           </div>

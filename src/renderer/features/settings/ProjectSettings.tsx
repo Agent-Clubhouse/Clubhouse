@@ -12,8 +12,19 @@ import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import type { LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../../../shared/types';
 import { showConfirmDialog } from '../../plugins/PluginDialog';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
+import { Spinner } from '../../components/Spinner';
+import {
+  SettingsPage,
+  SettingsSection,
+  SettingsField,
+  SettingsBlock,
+  settingsButton,
+  settingsInput,
+  settingsLabel,
+  settingsHelp,
+} from './SettingsLayout';
 
-function NameAndPathSection({ projectId }: { projectId: string }) {
+function NameField({ projectId }: { projectId: string }) {
   const { projects, updateProject } = useProjectStore();
   const project = projects.find((p) => p.id === projectId);
 
@@ -41,35 +52,26 @@ function NameAndPathSection({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="space-y-2 mb-6">
-      <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider">Name</label>
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
-          placeholder={project.name}
-          className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-            text-ctp-text placeholder:text-ctp-subtext0/40
-            focus-ring-dim"
-        />
-        {dirty && (
-          <button
-            onClick={save}
-            className="px-3 py-1.5 text-xs rounded-lg bg-ctp-accent/20 border border-ctp-accent/40
-              text-ctp-accent hover:bg-ctp-accent/30 cursor-pointer transition-colors"
-          >
-            Save
-          </button>
-        )}
-      </div>
-      <p className="text-xs text-ctp-subtext0 font-mono truncate" title={project.path}>{project.path}</p>
-    </div>
+    <SettingsField label="Name" help="Shown in the sidebar and title bar." htmlFor="project-settings-name">
+      {dirty && (
+        <button onClick={save} className={settingsButton.primary}>
+          Save
+        </button>
+      )}
+      <input
+        id="project-settings-name"
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
+        placeholder={project.name}
+        className={`${settingsInput} w-[220px]`}
+      />
+    </SettingsField>
   );
 }
 
-function AppearanceSection({ projectId }: { projectId: string }) {
+function AppearanceFields({ projectId }: { projectId: string }) {
   const { projects, projectIcons, updateProject, pickProjectImage, saveCroppedProjectIcon } = useProjectStore();
   const project = projects.find((p) => p.id === projectId);
   const [cropImageDataUrl, setCropImageDataUrl] = useState<string | null>(null);
@@ -116,48 +118,39 @@ function AppearanceSection({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="space-y-4 mb-6">
-      {/* Icon */}
-      <div>
-        <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">Icon</label>
-        <div className="flex items-center gap-3 relative">
-          <div className="w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0"
+    <>
+      <SettingsField label="Icon">
+        <div className="relative flex items-center gap-2">
+          {/* Project color is data, so the preview tint comes from its hex. */}
+          <div
+            className="w-6 h-6 rounded-md overflow-hidden flex items-center justify-center flex-shrink-0"
             style={hasImage ? undefined : hasEmoji ? { backgroundColor: `${hex}15` } : { backgroundColor: `${hex}20`, color: hex }}
           >
             {hasEmoji ? (
-              <span className="text-2xl" role="img">{project.emoji}</span>
+              <span className="text-sm leading-none" role="img">{project.emoji}</span>
             ) : hasImage ? (
               <img src={iconDataUrl} alt={label} className="w-full h-full object-cover" />
             ) : (
-              <span className="text-xl font-bold">{label.charAt(0).toUpperCase()}</span>
+              <span className="text-xs font-semibold">{label.charAt(0).toUpperCase()}</span>
             )}
           </div>
-          <button
-            onClick={handlePickImage}
-            className="px-3 py-1.5 text-xs rounded-lg bg-surface-0 border border-surface-2
-              text-ctp-text hover:bg-surface-1 cursor-pointer transition-colors"
-          >
-            Choose Image
-          </button>
-          <button
-            ref={emojiButtonRef}
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className="px-3 py-1.5 text-xs rounded-lg bg-surface-0 border border-surface-2
-              text-ctp-text hover:bg-surface-1 cursor-pointer transition-colors"
-          >
-            Choose Emoji
-          </button>
           {(hasImage || hasEmoji) && (
-            <button
-              onClick={handleRemoveIcon}
-              className="px-3 py-1.5 text-xs rounded-lg bg-surface-0 border border-surface-2
-                text-ctp-subtext0 hover:text-ctp-error hover:border-ctp-error/50 cursor-pointer transition-colors"
-            >
+            <button onClick={handleRemoveIcon} className={settingsButton.quiet}>
               Remove
             </button>
           )}
+          <button
+            ref={emojiButtonRef}
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className={settingsButton.ghost}
+          >
+            Choose emoji…
+          </button>
+          <button onClick={handlePickImage} className={settingsButton.ghost}>
+            Choose image…
+          </button>
           {showEmojiPicker && (
-            <div className="absolute top-12 left-0 z-dropdown">
+            <div className="absolute top-9 right-0 z-dropdown">
               <EmojiPicker
                 onSelect={handleEmojiSelect}
                 onClose={() => setShowEmojiPicker(false)}
@@ -165,7 +158,7 @@ function AppearanceSection({ projectId }: { projectId: string }) {
             </div>
           )}
         </div>
-      </div>
+      </SettingsField>
 
       {/* Image crop dialog */}
       {cropImageDataUrl && (
@@ -177,38 +170,28 @@ function AppearanceSection({ projectId }: { projectId: string }) {
         />
       )}
 
-      {/* Color */}
-      <div>
-        <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">Color</label>
-        <div className="flex items-center gap-2">
+      <SettingsField label="Color">
+        <div className="flex items-center gap-2.5" role="group" aria-label="Project color">
           {AGENT_COLORS.map((c) => {
             const isSelected = project.color === c.id || (!project.color && c.id === 'indigo');
             return (
               <button
                 key={c.id}
                 title={c.label}
+                aria-label={c.label}
+                aria-pressed={isSelected}
                 onClick={() => updateProject(project.id, { color: c.id })}
-                className={`
-                  w-7 h-7 rounded-full flex items-center justify-center cursor-pointer
-                  transition-all duration-150
-                  ${isSelected ? 'ring-2 ring-offset-2 ring-offset-ctp-base' : 'hover:scale-110'}
-                `}
-                style={{
-                  backgroundColor: c.hex,
-                  ...(isSelected ? { ringColor: c.hex } : {}),
-                }}
-              >
-                {isSelected && (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                )}
-              </button>
+                className={`w-[18px] h-[18px] rounded-full cursor-pointer focus-ring ${
+                  isSelected ? 'outline outline-2 outline-ctp-text outline-offset-2' : ''
+                }`}
+                // Swatch colors are data from the agent palette.
+                style={{ backgroundColor: c.hex }}
+              />
             );
           })}
         </div>
-      </div>
-    </div>
+      </SettingsField>
+    </>
   );
 }
 
@@ -263,12 +246,13 @@ function LaunchWrapperSection({ projectId, projectPath }: { projectId: string; p
   if (!loaded) return null;
   if (!wrapper) {
     return (
-      <div className="mb-6">
-        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Launch Wrapper</h3>
-        <p className="text-xs text-ctp-subtext0">
-          No launch wrapper configured. A plugin can set one up automatically.
-        </p>
-      </div>
+      <SettingsSection title="Launch wrapper">
+        <SettingsBlock>
+          <p className={settingsHelp}>
+            No launch wrapper configured. A plugin can set one up automatically.
+          </p>
+        </SettingsBlock>
+      </SettingsSection>
     );
   }
 
@@ -339,109 +323,104 @@ function LaunchWrapperSection({ projectId, projectPath }: { projectId: string; p
     await load();
   };
 
+  const catalogHelp = hasDiff
+    ? `${joinCounts([
+      newCount ? `${newCount} new` : '',
+      changedCount ? `${changedCount} changed` : '',
+      removedCount ? `${removedCount} removed` : '',
+    ])} since you last looked.`
+    : 'No changes since you last looked.';
+
   return (
-    <div className="mb-6">
-      <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Launch Wrapper</h3>
-      <div className="rounded-lg border border-surface-2 p-3 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-ctp-success" />
-            <span className="text-sm text-ctp-text font-mono">{wrapper.binary}</span>
-            {wrapper.refreshCommandId && (
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                title="Refresh catalog"
-                className="text-xs text-ctp-subtext0 hover:text-ctp-text cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-wait"
-              >
-                {refreshing ? '…' : '⟳'} Refresh
-              </button>
-            )}
-          </div>
+    <SettingsSection title="Launch wrapper" meta={<span className="font-mono">{wrapper.binary}</span>}>
+      <SettingsField
+        label="Catalog"
+        help={<span className={hasDiff ? 'text-ctp-warning' : undefined}>{catalogHelp}</span>}
+      >
+        {wrapper.refreshCommandId && (
           <button
-            onClick={() => setConfirmRemove(true)}
-            className="flex items-center gap-1 text-xs text-ctp-error/70 hover:text-ctp-error cursor-pointer transition-colors"
-            data-testid="remove-wrapper-button"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh catalog"
+            className={`${settingsButton.quiet} disabled:cursor-wait`}
           >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
-            </svg>
-            Remove Wrapper
+            {refreshing ? <Spinner size="xs" /> : <RefreshIcon />}
+            Refresh
           </button>
-        </div>
-        <ConfirmDestructiveAction
-          open={confirmRemove}
-          title="Remove Launch Wrapper?"
-          description="This will permanently remove: wrapper configuration, environment overrides, command arguments, and tool filters."
-          confirmLabel="Remove Wrapper"
-          onConfirm={() => { setConfirmRemove(false); void handleRemoveWrapper(); }}
-          onCancel={() => setConfirmRemove(false)}
-        />
+        )}
         {hasDiff && (
-          <div className="flex items-center justify-between rounded border border-ctp-yellow/30 bg-ctp-yellow/10 px-2 py-1.5 text-xs text-ctp-yellow">
-            <span>
-              {[
-                newCount && `${newCount} new`,
-                changedCount && `${changedCount} changed`,
-                removedCount && `${removedCount} removed`,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </span>
-            <button
-              onClick={handleAcknowledge}
-              className="text-xs text-ctp-yellow hover:text-ctp-yellow/70 cursor-pointer"
-            >
-              Got it
-            </button>
-          </div>
+          <button onClick={handleAcknowledge} className={settingsButton.ghost}>
+            Mark as seen
+          </button>
         )}
-        {diffEntries.length > 0 && (
-          <div>
-            <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
-              Default MCPs
-            </label>
-            <div className="grid grid-cols-2 gap-1">
-              {diffEntries.map((entry) => {
-                const checked = defaultMcps.includes(entry.id);
-                const isRemoved = entry.state === 'removed';
-                return (
-                  <label
-                    key={entry.id}
-                    className={`flex items-center gap-2 py-1 px-2 rounded hover:bg-surface-0 cursor-pointer ${
-                      isRemoved ? 'opacity-70' : ''
-                    }`}
-                    title={entry.description}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleMcp(entry.id)}
-                      className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-ctp-accent focus:ring-ctp-accent"
-                    />
-                    <span className="text-xs text-ctp-text truncate flex items-center gap-1.5">
-                      {entry.name}
-                      {entry.state === 'new' && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-green/15 text-ctp-green uppercase tracking-wider">new</span>
-                      )}
-                      {entry.state === 'changed' && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-yellow/15 text-ctp-yellow uppercase tracking-wider">changed</span>
-                      )}
-                      {entry.state === 'removed' && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-red/15 text-ctp-red uppercase tracking-wider">removed</span>
-                      )}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-            <p className="text-xs text-ctp-subtext0/50 mt-1.5 italic">
-              Configure per-MCP parameters in each agent&apos;s settings.
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
+        <button
+          onClick={() => setConfirmRemove(true)}
+          className={settingsButton.danger}
+          data-testid="remove-wrapper-button"
+        >
+          Remove…
+        </button>
+      </SettingsField>
+      <ConfirmDestructiveAction
+        open={confirmRemove}
+        title="Remove launch wrapper?"
+        description="This permanently removes the wrapper configuration, environment overrides, command arguments and tool filters."
+        confirmLabel="Remove wrapper"
+        onConfirm={() => { setConfirmRemove(false); void handleRemoveWrapper(); }}
+        onCancel={() => setConfirmRemove(false)}
+      />
+      {diffEntries.length > 0 && (
+        <div className="mt-2.5">
+          <div className={settingsLabel}>Default MCPs for new agents</div>
+          {diffEntries.map((entry) => {
+            const checked = defaultMcps.includes(entry.id);
+            const stateWord = MCP_STATE_WORDS[entry.state as keyof typeof MCP_STATE_WORDS];
+            return (
+              <label
+                key={entry.id}
+                className="flex items-center gap-2 h-[30px] border-t border-surface-0 cursor-pointer"
+                title={entry.description}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleMcp(entry.id)}
+                  className="w-3.5 h-3.5 flex-shrink-0 accent-ctp-accent"
+                />
+                <span className="text-[13px] text-ctp-text truncate">{entry.name}</span>
+                {stateWord && (
+                  <span className={`text-xs flex-shrink-0 ${stateWord.cls}`}>{stateWord.label}</span>
+                )}
+              </label>
+            );
+          })}
+          <p className={`${settingsHelp} pt-2 border-t border-surface-0`}>
+            Set per-MCP parameters in each agent&apos;s settings.
+          </p>
+        </div>
+      )}
+    </SettingsSection>
+  );
+}
+
+const MCP_STATE_WORDS = {
+  new: { label: 'New', cls: 'text-ctp-success' },
+  changed: { label: 'Changed', cls: 'text-ctp-warning' },
+  removed: { label: 'Removed from the catalog', cls: 'text-ctp-error' },
+} as const;
+
+/** "a", "a and b", "a, b and c". */
+function joinCounts(parts: string[]): string {
+  const list = parts.filter(Boolean);
+  if (list.length <= 1) return list.join('');
+  return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 12a9 9 0 1 1-3-6.7" /><polyline points="21 3 21 9 15 9" />
+    </svg>
   );
 }
 
@@ -450,17 +429,20 @@ function BlueprintBundleSection({ projectId, projectPath, projectName }: { proje
 
   return (
     <>
-      <div className="mb-6 rounded-lg border border-surface-0 p-4 space-y-3">
-        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Blueprint Bundle</h3>
-        <p className="text-xs text-ctp-subtext0">Export all canvases in this project as a single blueprint bundle for sharing or backup.</p>
-        <button
-          onClick={() => setShowExportDialog(true)}
-          className="px-4 py-2 text-sm rounded-lg bg-surface-1 border border-surface-2 text-ctp-text hover:bg-surface-2 cursor-pointer transition-colors"
-          data-testid="export-bundle-button"
+      <SettingsSection title="Blueprint bundle">
+        <SettingsField
+          label="Export canvases"
+          help="Every canvas in this project as one bundle, for sharing or backup."
         >
-          Export All Canvases as Bundle
-        </button>
-      </div>
+          <button
+            onClick={() => setShowExportDialog(true)}
+            className={settingsButton.ghost}
+            data-testid="export-bundle-button"
+          >
+            Export…
+          </button>
+        </SettingsField>
+      </SettingsSection>
 
       {showExportDialog && (
         <BlueprintBundleExportDialogLoader
@@ -525,7 +507,7 @@ function BlueprintBundleExportDialogLoader({
   );
 }
 
-function DangerZone({ projectId, projectPath, projectName }: { projectId: string; projectPath: string; projectName: string }) {
+function RemoveProjectSection({ projectId, projectPath, projectName }: { projectId: string; projectPath: string; projectName: string }) {
   const removeProject = useProjectStore((s) => s.removeProject);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
   const [showResetDialog, setShowResetDialog] = useState(false);
@@ -545,28 +527,18 @@ function DangerZone({ projectId, projectPath, projectName }: { projectId: string
 
   return (
     <>
-      <div className="rounded-lg border border-ctp-error/30 p-4 space-y-3">
-        <h3 className="text-xs text-ctp-error uppercase tracking-wider">Danger Zone</h3>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleClose}
-            className="px-4 py-2 text-sm rounded-lg bg-ctp-error/10 border border-ctp-error/30
-              text-ctp-error hover:bg-ctp-error/20 cursor-pointer transition-colors"
-          >
-            Close Project
+      <SettingsSection title="Remove project">
+        <SettingsField label="Close project" help={`Removes ${projectName} from the sidebar. Files on disk stay.`}>
+          <button onClick={handleClose} className={settingsButton.ghost}>
+            Close…
           </button>
-          <button
-            onClick={() => setShowResetDialog(true)}
-            className="px-4 py-2 text-sm rounded-lg bg-ctp-error/10 border border-ctp-error/30
-              text-ctp-error hover:bg-ctp-error/20 cursor-pointer transition-colors"
-          >
-            Reset Project
+        </SettingsField>
+        <SettingsField label="Reset project" help="Also deletes the .clubhouse folder: agents, canvases and settings.">
+          <button onClick={() => setShowResetDialog(true)} className={settingsButton.danger}>
+            Reset…
           </button>
-        </div>
-        <p className="text-xs text-ctp-subtext0">
-          Close removes the project from Clubhouse. Reset also deletes all <span className="font-mono">.clubhouse/</span> data.
-        </p>
-      </div>
+        </SettingsField>
+      </SettingsSection>
 
       {showResetDialog && (
         <ResetProjectDialog
@@ -589,16 +561,20 @@ export function ProjectSettings({ projectId }: { projectId?: string }) {
     return <div className="p-4 text-ctp-subtext0 text-sm">Select a project</div>;
   }
 
+  const name = project.displayName || project.name;
+
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-4">Project Settings</h2>
-        <NameAndPathSection projectId={project.id} />
-        <AppearanceSection projectId={project.id} />
-        <LaunchWrapperSection projectId={project.id} projectPath={project.path} />
-        <BlueprintBundleSection projectId={project.id} projectPath={project.path} projectName={project.displayName || project.name} />
-        <DangerZone projectId={project.id} projectPath={project.path} projectName={project.displayName || project.name} />
+    <SettingsPage
+      title={name}
+      description={<>Project settings · <span className="font-mono" title={project.path}>{project.path}</span></>}
+    >
+      <div className="mt-4">
+        <NameField projectId={project.id} />
+        <AppearanceFields projectId={project.id} />
       </div>
-    </div>
+      <LaunchWrapperSection projectId={project.id} projectPath={project.path} />
+      <BlueprintBundleSection projectId={project.id} projectPath={project.path} projectName={name} />
+      <RemoveProjectSection projectId={project.id} projectPath={project.path} projectName={name} />
+    </SettingsPage>
   );
 }

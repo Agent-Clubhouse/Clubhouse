@@ -60,9 +60,9 @@ describe('ConfigChangesDialog', () => {
       // Make the computation hang
       mockComputeConfigDiff.mockReturnValue(new Promise(() => {}));
       resetStore();
-      const { container } = render(<ConfigChangesDialog />);
-      // spinner is a div with animate-spin
-      expect(container.querySelector('.animate-spin')).toBeInTheDocument();
+      render(<ConfigChangesDialog />);
+      // spinner is a div with animate-spin; the Modal portals into document.body
+      expect(document.body.querySelector('.animate-spin')).toBeInTheDocument();
     });
   });
 
@@ -97,8 +97,8 @@ describe('ConfigChangesDialog', () => {
       render(<ConfigChangesDialog />);
 
       expect(await screen.findByText('Instructions')).toBeInTheDocument();
-      expect(screen.getByText('Permissions (Allow)')).toBeInTheDocument();
-      expect(screen.getByText('MCP Servers')).toBeInTheDocument();
+      expect(screen.getByText('Allowed permissions')).toBeInTheDocument();
+      expect(screen.getByText('MCP servers')).toBeInTheDocument();
     });
 
     it('renders item labels', async () => {
@@ -270,7 +270,7 @@ describe('ConfigChangesDialog', () => {
       render(<ConfigChangesDialog />);
 
       await screen.findByText('Save to Clubhouse');
-      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.keyDown(document, { key: 'Escape' });
 
       expect(mockCloseDialog).toHaveBeenCalled();
     });

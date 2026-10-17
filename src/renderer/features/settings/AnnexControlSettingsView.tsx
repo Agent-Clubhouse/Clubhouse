@@ -4,6 +4,7 @@ import { useAnnexStore } from '../../stores/annexStore';
 import { Toggle } from '../../components/Toggle';
 import { PairedSatelliteList } from './PairedSatelliteList';
 import { PairingWizard } from './PairingWizard';
+import { SettingsPage, SettingsSection, SettingsField, settingsButton } from './SettingsLayout';
 
 export function AnnexControlSettingsView() {
   const satellites = useAnnexClientStore((s) => s.satellites);
@@ -22,101 +23,78 @@ export function AnnexControlSettingsView() {
   }, [loadSatellites, loadAnnexSettings]);
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">Annex Control</h2>
-        <p className="text-sm text-ctp-subtext0 mb-6">
-          Control other Clubhouse instances on your local network.
-        </p>
-
-        {/* Connect to satellites toggle */}
-        <div className="flex items-center justify-between py-3 border-b border-surface-0">
-          <div>
-            <div className="text-sm text-ctp-text font-medium">Connect to satellites</div>
-            <div className="text-xs text-ctp-subtext0 mt-0.5">
-              Discover and control other Clubhouse instances on the network
-            </div>
-          </div>
-          <div data-testid="annex-client-toggle">
+    <SettingsPage title="Annex control" description="Control other Clubhouse instances on your local network.">
+      <div className="mt-[22px]">
+        <SettingsField label="Connect to satellites" help="Discover and control other Clubhouse instances on the network.">
+          <div data-testid="annex-client-toggle" className="flex">
             <Toggle
+              ariaLabel="Connect to satellites"
               checked={annexSettings.enableClient}
               onChange={(v) => saveAnnexSettings({ ...annexSettings, enableClient: v })}
             />
           </div>
-        </div>
+        </SettingsField>
+      </div>
 
-        {/* Paired satellites */}
-        <div className="py-3 border-b border-surface-0">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm text-ctp-text font-medium">Paired Satellites</div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowPairing((v) => !v)}
-                className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
-                  transition-colors cursor-pointer text-ctp-text font-medium border border-ctp-accent"
-              >
-                {showPairing ? 'Cancel' : 'Add Satellite'}
-              </button>
-              <button
-                onClick={scan}
-                className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
-                  transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
-              >
-                Scan
-              </button>
-            </div>
-          </div>
+      <SettingsSection
+        title="Paired satellites"
+        meta={satellites.length > 0 ? String(satellites.length) : undefined}
+        actions={
+          <>
+            <button type="button" onClick={scan} className={settingsButton.quiet}>
+              Scan
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPairing((v) => !v)}
+              className={showPairing ? settingsButton.ghost : settingsButton.primary}
+            >
+              {showPairing ? 'Cancel' : 'Add satellite'}
+            </button>
+          </>
+        }
+      >
+        {satellites.length === 0 && !showPairing ? (
+          <p className="text-xs text-ctp-overlay1 py-3 border-t border-surface-0">
+            No paired satellites. Click Add satellite to pair with another Clubhouse instance.
+          </p>
+        ) : (
+          <PairedSatelliteList satellites={satellites} />
+        )}
 
-          {satellites.length === 0 && !showPairing ? (
-            <div className="text-xs text-ctp-subtext0 py-4 text-center">
-              No paired satellites. Click "Add Satellite" to pair with another Clubhouse instance.
-            </div>
-          ) : (
-            <PairedSatelliteList satellites={satellites} />
-          )}
+        {showPairing && (
+          <PairingWizard onClose={() => setShowPairing(false)} />
+        )}
+      </SettingsSection>
 
-          {showPairing && (
-            <PairingWizard onClose={() => setShowPairing(false)} />
-          )}
-        </div>
-
-        {/* Purge control config */}
-        <div className="mt-6 py-3 border-t border-surface-0">
-          <div className="text-sm text-ctp-text font-medium mb-1">Reset Annex Control</div>
-          <div className="text-xs text-ctp-subtext0 mb-3">
-            Disconnect and forget all paired satellites. You will need to re-pair each device.
-          </div>
+      <SettingsSection title="Reset">
+        <SettingsField
+          label="Reset Annex control"
+          help="Disconnect and forget all paired satellites. You will need to pair each device again."
+        >
           {confirmPurge ? (
-            <div className="flex gap-2">
+            <>
+              <button type="button" onClick={() => setConfirmPurge(false)} className={settingsButton.ghost}>
+                Cancel
+              </button>
               <button
+                type="button"
                 onClick={() => {
                   forgetAllSatellites();
                   setConfirmPurge(false);
                 }}
-                className="px-3 py-1.5 text-xs rounded bg-ctp-error hover:bg-ctp-error
-                  transition-colors cursor-pointer text-white font-medium"
+                className={settingsButton.danger}
               >
-                Confirm Reset
+                Confirm reset
               </button>
-              <button
-                onClick={() => setConfirmPurge(false)}
-                className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
-                  transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
-              >
-                Cancel
-              </button>
-            </div>
+            </>
           ) : (
-            <button
-              onClick={() => setConfirmPurge(true)}
-              className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
-                transition-colors cursor-pointer text-ctp-error hover:text-ctp-error"
-            >
-              Forget All Satellites
+            <button type="button" onClick={() => setConfirmPurge(true)} className={settingsButton.danger}>
+              Forget all satellites
             </button>
           )}
-        </div>
-      </div>
-    </div>
+        </SettingsField>
+      </SettingsSection>
+    </SettingsPage>
   );
 }
