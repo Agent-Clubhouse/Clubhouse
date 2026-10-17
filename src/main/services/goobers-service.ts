@@ -32,6 +32,17 @@ import { API_VERSION, type RunList, type TelemetryErrorsPage, type WorkItemPage,
 import type { GoobersSettings } from '../../shared/types';
 import { GOOBERS_POLL_FALLBACK_INTERVAL_MS } from '../../shared/goobers-types';
 import type { GoobersConnectionState, GoobersDaemonStatus, RunListQuery } from '../../shared/goobers-types';
+import {
+  daemonFlow,
+  markFresh,
+  recordActivated,
+  recordLivenessChange,
+  recordPollDone,
+  recordPollSkipped,
+  recordStreamMode,
+  recordStreamReconnect,
+  recordStreamTerminal,
+} from '../telemetry/goobers-telemetry';
 
 const RUNS_FETCH_TIMEOUT_MS = 10_000;
 
@@ -390,11 +401,13 @@ export class GoobersService {
   }
 
   private async activate(): Promise<void> {
+    const startMs = Date.now();
     this.registerSettings();
     this.registerFocusListener();
     this.registerTeardown();
     this.lastKnownSettings = this.settings.getSettings();
     await this.reconcile(this.lastKnownSettings);
+    recordActivated(startMs, this.state);
   }
 
   private registerFocusListener(): void {
@@ -475,11 +488,18 @@ export class GoobersService {
       // M32 (#1888): a slow refreshConnectionOnce() (RUNS_FETCH_TIMEOUT_MS
       // is 10s, double the default 5s interval) must not let the next tick
       // stack a second overlapping probe on top of it.
-      if (this.pollInFlight) return;
+      if (this.pollInFlight) {
+        recordPollSkipped();
+        return;
+      }
       this.pollInFlight = true;
+      const pollStartMs = Date.now();
       void this.refreshConnectionOnce(settings)
         .then(() => this.afterPollTick(settings))
-        .finally(() => { this.pollInFlight = false; });
+        .finally(() => {
+          this.pollInFlight = false;
+          recordPollDone(pollStartMs);
+        });
     }, this.pollIntervalMs);
   }
 
@@ -611,6 +631,7 @@ export class GoobersService {
    */
   private updateStreamStatus(status: GoobersConnectionState['stream']): void {
     if (this.state.stream === status) return;
+    recordStreamMode(status);
     this.state = { ...this.state, stream: status, lastUpdatedAt: new Date().toISOString() };
     broadcastToAllWindows(IPC.GOOBERS.STATE_CHANGED, this.state);
   }
@@ -668,6 +689,7 @@ export class GoobersService {
         // instance.concurrency/counts by definition, so treat every
         // invalidation as instance-affecting rather than trusting a model
         // tag the feed never repeats.
+        markFresh(invalidation.models);
         this.scheduleInstanceRefresh(settings);
         broadcastToAllWindows(IPC.GOOBERS.DATA_INVALIDATED, {
           models: invalidation.models,
@@ -686,10 +708,12 @@ export class GoobersService {
         // this same handle, so this is 'reconnecting', not a fallback to
         // plain polling (#1888).
         this.eventStreamConnected = false;
+        recordStreamReconnect();
         this.updateStreamStatus('reconnecting');
         this.setPollInterval(POLL_INTERVAL_MS, settings);
       },
       onTerminal: (reason) => {
+        recordStreamTerminal(reason);
         this.eventStreamTerminal = reason;
         this.eventStreamHandle = null;
         this.eventStreamConnected = false;
@@ -729,7 +753,20 @@ export class GoobersService {
    * concern (e.g. an unresolved binaryPath) still applies — an unresolvable
    * binaryPath must never block monitoring of an already-running daemon (§4.1).
    */
+  /** Liveness probe and state fold. Telemetry records transitions and instance freshness around it. */
   private async refreshConnectionOnce(
+    settings: GoobersSettings,
+    fallbackError: { code: string; message: string } | null = null,
+  ): Promise<void> {
+    const prev = this.state;
+    await this.refreshConnectionState(settings, fallbackError);
+    recordLivenessChange(prev, this.state);
+    if (this.state.daemon.state === 'running' && (this.state.connection === 'connected' || this.state.connection === 'degraded')) {
+      markFresh(['instance']);
+    }
+  }
+
+  private async refreshConnectionState(
     settings: GoobersSettings,
     fallbackError: { code: string; message: string } | null = null,
   ): Promise<void> {
@@ -1043,6 +1080,7 @@ export class GoobersService {
       if (!body) {
         return { error: { code: 'runs-fetch-failed', message: 'GET /api/v1/runs returned an unparseable body' } };
       }
+      markFresh(['run']);
       return body;
     } catch (err) {
       return { error: { code: 'runs-fetch-failed', message: err instanceof Error ? err.message : String(err) } };
@@ -1161,7 +1199,11 @@ export class GoobersService {
    * `goobers-daemon.ts`; this just wires the service's known root/binary
    * and folds the observed result back into `state`.
    */
-  async daemonStart(): Promise<{ ok: boolean; error?: string; holderKind?: 'daemon' | 'manual'; outcome?: 'unknown' }> {
+  daemonStart(): Promise<{ ok: boolean; error?: string; holderKind?: 'daemon' | 'manual'; outcome?: 'unknown' }> {
+    return daemonFlow('start', 'daemon-start-failed', () => this.daemonStartImpl());
+  }
+
+  private async daemonStartImpl(): Promise<{ ok: boolean; error?: string; holderKind?: 'daemon' | 'manual'; outcome?: 'unknown' }> {
     if (!this.isSupportedPlatform) return { ok: false, error: 'unsupported-platform' };
     if (isLifecycleBusy()) return { ok: false, error: 'lifecycle-busy' };
 
@@ -1225,7 +1267,11 @@ export class GoobersService {
    * stopped — enters `stopping`/`draining: true` and keeps polling liveness
    * (reusing the normal poll loop) until the API actually stops responding.
    */
-  async daemonStop(): Promise<{ ok: boolean; error?: string; alreadyStopped?: boolean }> {
+  daemonStop(): Promise<{ ok: boolean; error?: string; alreadyStopped?: boolean }> {
+    return daemonFlow('stop', 'daemon-stop-failed', () => this.daemonStopImpl());
+  }
+
+  private async daemonStopImpl(): Promise<{ ok: boolean; error?: string; alreadyStopped?: boolean }> {
     if (!this.isSupportedPlatform) return { ok: false, error: 'unsupported-platform' };
     if (isLifecycleBusy()) return { ok: false, error: 'lifecycle-busy' };
 

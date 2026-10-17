@@ -532,6 +532,19 @@ The 7 errors and 31 warnings in §2.1 (identity request errors, WS errors, heart
 | `c.goobers.daemon.start` / `.stop` | `goobers-daemon.ts:133`, `:197`. `c.outcome`; `error.type ∈ {lock_contention, exited_before_ready, ready_timeout, binary_not_found, binary_not_executable, invalid_root}` | S |
 | `c.goobers.sse.connect` | with `c.sse.terminal_reason ∈ {auth_required, no_read_model, schema_changed}`; reconnect counter | S |
 
+**As shipped in Phase 6b:**
+
+- **Codes keep the code's spelling.** Enum values use hyphens (`not-running`, `auth-required`, `recovery-stalled`). There is no `recovering` daemon state: recovery is `starting` with error code `recovering`. Only codes are exported, never messages, because those interpolate the instance root, the daemon address and instance ids.
+- **`c.goobers.liveness`** is an event on any change of (`c.goobers.state`, `c.goobers.connection`, `c.goobers.error`), measured around every liveness probe (`refreshConnectionOnce`).
+- **`c.goobers.activate`** runs from activation to the end of the first reconcile.
+- **`c.goobers.daemon.start` / `.stop`** are flows. A ready timeout is `timeout`; a failure is `error.type = goobers_daemon_failed`, with the service's code in `c.goobers.error` (free-text start errors become `daemon-start-failed`).
+- **The SSE stream** is metrics plus an event:
+  - `c.goobers.stream.mode` event on every stream-status change (`live`/`reconnecting`/`polling`/`unavailable`)
+  - `c.goobers.sse.reconnects` counter
+  - `c.goobers.sse.terminals` counter by `c.sse.terminal_reason` (`auth-required`/`no-read-model`/`schema-changed`)
+- **`c.goobers.data.age`** (gauge, s) is sampled per model (`instance`/`run`/`workflow`) at each poll tick, so only while the panel is watched. A model counts as fresh on a successful running probe (instance), a 200 from `listRuns` (run), or a stream invalidation naming it.
+- **The poll loop** (Detailed only) is `c.goobers.polls`, `c.goobers.poll.skipped` (the previous tick was still running) and `c.goobers.poll.duration`.
+
 ### 4.14 Settings and feature usage
 
 These are low-volume **event records** (level S) and land in `customEvents`:
@@ -788,6 +801,11 @@ tel.event('clubhouse.app.safe_mode', [ATTR.safeModeTrigger('crash_loop_detected'
 tel.exception(err, { origin: 'main', handled: false });
 ```
 
+- **Detailed level (Phase 6b).** Three span types exist only at Detailed:
+  - `c.agent.tool_call`: hook-server `pre_tool` paired with the next `post_tool`/`tool_error` for the same agent and tool name, since hook payloads carry no tool-use id; at most 32 pending per agent, cleared at exit.
+  - `c.ipc.invoke`: every `ipcMain.handle` invoke, wrapped once at startup, with `c.ipc.channel` from the fixed IPC constants. Below Detailed the wrapper is a level check and a direct call.
+  - `c.annex.rest` (§4.12).
+  Arguments, results and paths are never recorded.
 - When telemetry is disabled, `tel.*` are no-op functions that run `fn` directly. That is one property read and a branch, so hot-adjacent code (hook server) pays nothing measurable.
 - `tel.flow` also accepts an existing `AbortSignal` and marks `cancelled` on abort.
 - Thrown errors are recorded via `tel.exception` (sanitized) and rethrown unchanged. Instrumentation never changes control flow.

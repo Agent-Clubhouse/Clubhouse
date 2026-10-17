@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { app, BrowserWindow, powerMonitor, session, net, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, powerMonitor, session, net, protocol } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, stopAllWatches } from './services/file-watch-service';
@@ -50,6 +50,7 @@ import { getTelemetrySettings } from './telemetry/settings';
 import { getSettings as getExperimentalSettings } from './services/experimental-settings';
 import { NEW_CHROME_ARG, NEW_CHROME_FLAG } from '../shared/chrome-flag';
 import { installAgentTelemetry } from './telemetry/agent-telemetry';
+import { installIpcTelemetry } from './telemetry/ipc-telemetry';
 import { getAgentOrchestrator } from './services/agent-registry';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
@@ -87,6 +88,8 @@ registerTelemetryRendererHandlers({
 installCrashTelemetry();
 installLifecycleTelemetry();
 installAgentTelemetry(getAgentOrchestrator);
+// Before any ipcMain.handle registration, so every invoke handler is wrapped.
+installIpcTelemetry(ipcMain);
 // The startup span (§4.1) ends when the main window's initApp() resolves.
 onRendererReady((atMs, marks) => completeStartup(marks, undefined, atMs));
 

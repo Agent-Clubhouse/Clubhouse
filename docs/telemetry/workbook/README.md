@@ -21,8 +21,9 @@ A one-click **Deploy to Azure** button and optional alert rules come in Phase 7.
 | Data integrity | Write failures and write time by store, recoveries by store and action, saves blocked by data-loss guards, flush-barrier waits |
 | Agents | Spawns and spawn failures by orchestrator, runtime and error; spawn time and spawn steps; CLI binary lookup by tier; how runs end; readiness; kills by trigger and stage; kill escalations; tool calls by bucket; Clubhouse MCP tool calls; permission waits; shoulder tap deliveries; durable create and delete |
 | Annex | Pairing results; connects by address family; connect and discovery failures; identity regenerations and TLS fallbacks; reconnects by attempt; disconnects by reason; heartbeat RTT; control requests denied; remote spawns; the satellite event stream by type; connected clients; snapshot build and replays; REST routes (Detailed level) |
+| Goobers | Data age by model; stream mode changes; stream reconnects and terminal stops; liveness transitions; activation and daemon control; the poll loop (Detailed level) |
 
-Permission panels live on the Agents tab. Plugins, Workspace and Goobers tabs are added with telemetry Phases 5–6, in the same PRs as the instrumentation they chart.
+Permission panels live on the Agents tab. Plugins and Workspace tabs are added with telemetry Phase 5. Detailed-level panels (tool-call time on Agents, slowest IPC invokes on Reliability, REST routes on Annex) stay empty below the Detailed level, in the same PRs as the instrumentation they chart.
 
 ## Keeping it in sync
 

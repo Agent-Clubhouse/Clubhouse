@@ -6,7 +6,7 @@
  * branch: flows run `fn` directly. While the SDK chunk is loading at startup,
  * calls are buffered (max 500) and replayed once the runtime is ready.
  */
-import type { EventName, MetricName, SpanName, TelAttr } from '../../shared/telemetry/attributes';
+import type { EventName, MetricName, SpanName, TelAttr, TelemetryLevel } from '../../shared/telemetry/attributes';
 import {
   NOOP_SPAN,
   errorTypeOf,
@@ -197,6 +197,11 @@ export function currentTraceparent(): string | undefined {
 export function withRemoteParent<T>(traceparent: string | undefined, fn: () => T): T {
   if (!runtime?.withRemoteParent || typeof traceparent !== 'string') return fn();
   return runtime.withRemoteParent(traceparent, fn);
+}
+
+/** The running level, or null while telemetry is off or still starting. */
+export function telemetryLevel(): TelemetryLevel | null {
+  return runtime?.level ?? null;
 }
 
 /** True while telemetry is running or starting. */
