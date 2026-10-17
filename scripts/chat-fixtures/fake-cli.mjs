@@ -61,6 +61,7 @@ const { header, entries } = await loadFixture(opts.fixture);
 const protocol = header.protocol;
 
 const report = {
+  pid: process.pid,
   fixture: opts.fixture,
   protocol,
   argv: opts.cliArgs,
