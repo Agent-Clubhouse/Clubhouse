@@ -298,7 +298,8 @@ export function useCommandSource(): CommandItem[] {
   const tabShortcut = (tabId: string) => {
     if (!isNewChromeEnabled()) return undefined;
     const i = titleTabs.findIndex((t) => t.id === tabId);
-    return i >= 0 && i < 9 ? getShortcut(shortcuts, `tab-${i + 1}`) : undefined;
+    // ⌘N skips a disabled tab, so don't advertise it there.
+    return i >= 0 && i < 9 && !titleTabs[i].disabled ? getShortcut(shortcuts, `tab-${i + 1}`) : undefined;
   };
 
   const navigationItems = useMemo((): CommandItem[] => {

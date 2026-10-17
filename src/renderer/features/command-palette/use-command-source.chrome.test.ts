@@ -64,6 +64,11 @@ describe('palette in the new shell', () => {
     expect(list.find((i) => i.id === 'nav:plugin:files')?.shortcut).toBeTruthy();
   });
 
+  it('shows no shortcut on a disabled tab', () => {
+    useChromeStore.setState({ titleTabs: [{ id: 'agents' }, { id: 'plugin:files', disabled: true }] });
+    expect(items().find((i) => i.id === 'nav:plugin:files')?.shortcut).toBeUndefined();
+  });
+
   it('adds none of this in the legacy shell', () => {
     useChromeFlagStore.setState({ enabled: false });
     const list = items();
