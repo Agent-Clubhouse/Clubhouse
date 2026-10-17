@@ -8,6 +8,7 @@ import { ensureGitignore } from '../services/agent-config';
 import { readLaunchWrapper, writeLaunchWrapper, readMcpCatalog, writeMcpCatalog, readDefaultMcps, writeDefaultMcps, readMcpConfigs, writeMcpConfigs, readWrapperCatalogSnapshot, writeWrapperCatalogSnapshot } from '../services/agent-settings-service';
 import { appLog } from '../services/log-service';
 import { isInsideGitRepo } from '../services/git-service';
+import { tel } from '../telemetry/facade';
 import { arrayArg, objectArg, stringArg, withValidatedArgs } from './validation';
 import { assertAllowedPath } from '../services/path-sandbox';
 import type { IpcResponse } from '../../shared/ipc-types';
@@ -17,21 +18,23 @@ export function registerProjectHandlers(): void {
     return projectStore.list();
   });
 
-  ipcMain.handle(IPC.PROJECT.ADD, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
-    const project = await projectStore.add(dirPath);
-    try {
-      await ensureGitignore(dirPath);
-    } catch (err) {
-      appLog('core:project', 'warn', 'ensureGitignore failed (non-fatal)', {
-        meta: { dirPath, error: err instanceof Error ? err.message : String(err) },
-      });
-    }
-    return project;
-  }));
+  ipcMain.handle(IPC.PROJECT.ADD, withValidatedArgs([stringArg()], (_event, dirPath: string) =>
+    tel.flow('clubhouse.project.add', {}, async () => {
+      const project = await projectStore.add(dirPath);
+      try {
+        await tel.step('clubhouse.project.add.ensure_gitignore', () => ensureGitignore(dirPath));
+      } catch (err) {
+        appLog('core:project', 'warn', 'ensureGitignore failed (non-fatal)', {
+          meta: { dirPath, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+      return project;
+    }),
+  ));
 
-  ipcMain.handle(IPC.PROJECT.REMOVE, withValidatedArgs([stringArg()], async (_event, id: string) => {
-    return projectStore.remove(id);
-  }));
+  ipcMain.handle(IPC.PROJECT.REMOVE, withValidatedArgs([stringArg()], (_event, id: string) =>
+    tel.flow('clubhouse.project.remove', {}, () => projectStore.remove(id)),
+  ));
 
   ipcMain.handle(IPC.PROJECT.PICK_DIR, async (): Promise<IpcResponse<typeof IPC.PROJECT.PICK_DIR>> => {
     const win = BrowserWindow.getFocusedWindow();
@@ -48,17 +51,20 @@ export function registerProjectHandlers(): void {
     return isInsideGitRepo(dirPath);
   }));
 
-  ipcMain.handle(IPC.PROJECT.GIT_INIT, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
-    try {
-      execSync('git init', { cwd: dirPath, encoding: 'utf-8' });
-      return true;
-    } catch (err) {
-      appLog('core:project', 'error', 'git init failed', {
-        meta: { dirPath, error: err instanceof Error ? err.message : String(err) },
-      });
-      return false;
-    }
-  }));
+  // execSync blocks the main process; the span makes that cost visible (spec §4.7).
+  ipcMain.handle(IPC.PROJECT.GIT_INIT, withValidatedArgs([stringArg()], (_event, dirPath: string) =>
+    tel.flow('clubhouse.project.git_init', {}, () => {
+      try {
+        execSync('git init', { cwd: dirPath, encoding: 'utf-8' });
+        return true;
+      } catch (err) {
+        appLog('core:project', 'error', 'git init failed', {
+          meta: { dirPath, error: err instanceof Error ? err.message : String(err) },
+        });
+        return false;
+      }
+    }, { classify: (ok) => (ok ? 'ok' : { error: 'git_init_failed' }) }),
+  ));
 
   ipcMain.handle(IPC.PROJECT.UPDATE, withValidatedArgs([stringArg(), objectArg<Record<string, unknown>>()], async (_event, id: string, updates: Record<string, unknown>) => {
     return projectStore.update(id, updates as any);

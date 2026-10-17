@@ -101,6 +101,22 @@
             "style": "link"
           },
           {
+            "id": "workspace",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Workspace",
+            "subTarget": "workspace",
+            "style": "link"
+          },
+          {
+            "id": "plugins",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Plugins and canvas",
+            "subTarget": "plugins",
+            "style": "link"
+          },
+          {
             "id": "chat",
             "cellValue": "selectedTab",
             "linkTarget": "parameter",
@@ -523,6 +539,284 @@
         "value": "integrity"
       },
       "name": "tab-integrity"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Projects, git, files and the editor (spec \u00a74.7\u20134.9; regression hot spots H5 and H8). Query text, paths, branch names and git output are never collected."
+            },
+            "name": "text-workspace"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name startswith \"clubhouse.git.\" and name != \"clubhouse.git.status.slow\"\n| extend op = tostring(customDimensions[\"clubhouse.git.op\"])\n| summarize ops = sum(itemCount), failed = sumif(itemCount, success == false), p50_ms = round(percentile(duration, 50)), p95_ms = round(percentile(duration, 95)) by op\n| extend failure_pct = round(100.0 * failed / ops, 2)\n| order by ops desc",
+              "size": 0,
+              "title": "Git operations by type",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Git operations by type"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name startswith \"clubhouse.git.\" and success == false\n| extend op = tostring(customDimensions[\"clubhouse.git.op\"]), error = tostring(customDimensions[\"error.type\"]), timed_out = tostring(customDimensions[\"clubhouse.git.timed_out\"])\n| summarize failures = sum(itemCount), installs = dcount(user_Id) by op, error, timed_out\n| order by failures desc",
+              "size": 0,
+              "title": "Git failures by type and error",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Git failures by type and error"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.git.status.duration\"\n| extend files = tostring(customDimensions[\"clubhouse.git.status.file_count_bucket\"])\n| summarize polls = sum(valueCount), avg_ms = round(1000 * sum(valueSum) / sum(valueCount), 1), max_ms = round(1000 * max(valueMax), 1) by files\n| order by files asc",
+              "size": 0,
+              "title": "Git status poll time by changed files (ms)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Git status poll time by changed files (ms)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.git.status.slow\"\n| summarize slow_polls = sum(itemCount), installs = dcount(user_Id) by bin(timestamp, 1d)",
+              "size": 0,
+              "title": "Slow git status polls (over 2 s, Detailed level)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "barchart"
+            },
+            "name": "Slow git status polls (over 2 s, Detailed level)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "dependencies\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.git.worktree_add\", \"clubhouse.git.worktree_remove\")\n| summarize count = sum(itemCount), failed = sumif(itemCount, success == false), p95_ms = round(percentile(duration, 95)) by name",
+              "size": 0,
+              "title": "Worktree create and remove",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Worktree create and remove"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.project.add\", \"clubhouse.project.remove\", \"clubhouse.project.git_init\")\n| summarize count = sum(itemCount), failed = sumif(itemCount, success == false), p95_ms = round(percentile(duration, 95)) by name",
+              "size": 0,
+              "title": "Project add, remove and git init",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Project add, remove and git init"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.projects.count\"\n| summarize projects = max(valueMax) by user_Id\n| summarize installs = count(), p50 = percentile(projects, 50), p90 = percentile(projects, 90), max = max(projects)",
+              "size": 0,
+              "title": "Projects per install",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Projects per install"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.file.ops\"\n| extend op = tostring(customDimensions[\"clubhouse.file.op\"]), result = tostring(customDimensions[\"clubhouse.file.result\"]), error = tostring(customDimensions[\"error.type\"])\n| summarize ops = sum(value) by op, result, error\n| order by ops desc",
+              "size": 0,
+              "title": "File operations by result",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "File operations by result"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.file.path_denied\"\n| summarize denials = sum(value) by bin(timestamp, 1d)",
+              "size": 0,
+              "title": "Sandbox denials",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "barchart"
+            },
+            "name": "Sandbox denials"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.file.tree.read\"\n| extend nodes = tostring(customDimensions[\"clubhouse.tree.node_count_bucket\"]), hit_cap = tostring(customDimensions[\"clubhouse.tree.hit_cap\"])\n| summarize reads = sum(itemCount), p50_ms = round(percentile(duration, 50)), p95_ms = round(percentile(duration, 95)) by nodes, hit_cap",
+              "size": 0,
+              "title": "File tree reads by size",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "File tree reads by size"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.search.query\"\n| extend engine = tostring(customDimensions[\"clubhouse.search.engine\"]), truncated = tostring(customDimensions[\"clubhouse.search.truncated\"]), error = tostring(customDimensions[\"error.type\"])\n| summarize searches = sum(itemCount), failed = sumif(itemCount, success == false), p50_ms = round(percentile(duration, 50)), p95_ms = round(percentile(duration, 95)) by engine, truncated, error",
+              "size": 0,
+              "title": "Search by engine",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Search by engine"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.file_watch.active\", \"clubhouse.file_watch.errors\")\n| extend error = tostring(customDimensions[\"error.type\"])\n| summarize avg = round(avg(value), 1), max = max(valueMax), total = sum(value) by name, error",
+              "size": 0,
+              "title": "File watches",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "File watches"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "union\n  (requests | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name in (\"clubhouse.editor.monaco_load\", \"clubhouse.editor.open_external\")\n     | extend editor = tostring(customDimensions[\"clubhouse.editor.bucket\"])\n     | summarize count = sum(itemCount), failed = sumif(itemCount, success == false), p95_ms = round(percentile(duration, 95)) by name, editor),\n  (customEvents | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.editor.save_conflict\"\n     | summarize count = sum(itemCount) by name)",
+              "size": 0,
+              "title": "Editor: Monaco load, external editor, save conflicts",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Editor: Monaco load, external editor, save conflicts"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "workspace"
+      },
+      "name": "tab-workspace"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Plugin activation and canvas loading (spec \u00a74.10; hot spots H10 and H11). Built-in plugins are named; others are counted together as other."
+            },
+            "name": "text-plugins"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.plugin.activate\"\n| extend plugin = tostring(customDimensions[\"clubhouse.plugin.ref\"]), origin = tostring(customDimensions[\"clubhouse.plugin.origin\"]), outcome = tostring(customDimensions[\"clubhouse.outcome\"])\n| summarize activations = sum(itemCount), failed = sumif(itemCount, success == false), p50_ms = round(percentile(duration, 50)), p95_ms = round(percentile(duration, 95)) by plugin, origin\n| extend failure_pct = round(100.0 * failed / activations, 2)\n| order by activations desc",
+              "size": 0,
+              "title": "Plugin activations by plugin",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Plugin activations by plugin"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.plugin.activate\" and success == false\n| extend error = tostring(customDimensions[\"error.type\"]), origin = tostring(customDimensions[\"clubhouse.plugin.origin\"]), api = tostring(customDimensions[\"clubhouse.plugin.api_version\"])\n| summarize failures = sum(itemCount), installs = dcount(user_Id) by error, origin, api\n| order by failures desc",
+              "size": 0,
+              "title": "Activation failures by error",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Activation failures by error"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.plugin.activate\"\n| extend attempt = toint(customDimensions[\"clubhouse.attempt\"])\n| summarize activations = sum(itemCount), failed = sumif(itemCount, success == false) by attempt\n| order by attempt asc",
+              "size": 0,
+              "title": "Activation retries",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Activation retries"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.plugin.protocol.requests\"\n| extend result = tostring(customDimensions[\"clubhouse.plugin.protocol.result\"])\n| summarize requests = sum(value) by result",
+              "size": 0,
+              "title": "Plugin module requests by result",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Plugin module requests by result"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.canvas.load\"\n| extend result = tostring(customDimensions[\"clubhouse.canvas.load.result\"]), views = tostring(customDimensions[\"clubhouse.canvas.view.count_bucket\"])\n| summarize loads = sum(itemCount), installs = dcount(user_Id), p95_ms = round(percentile(duration, 95)) by result, views\n| order by loads desc",
+              "size": 0,
+              "title": "Canvas loads by result",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Canvas loads by result"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "plugins"
+      },
+      "name": "tab-plugins"
     },
     {
       "type": 12,

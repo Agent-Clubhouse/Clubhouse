@@ -59,6 +59,10 @@ vi.mock('fs/promises', () => ({
   readdir: vi.fn(async () => []),
 }));
 
+const chatGate = vi.hoisted(() => ({ enabled: true, apply: vi.fn(async () => {}) }));
+vi.mock('./chat-runtime-settings', () => ({ isChatEnabled: () => chatGate.enabled }));
+vi.mock('./agent-runtime/chat-version-policy', () => ({ applyRemoteCliDenylist: chatGate.apply }));
+
 // ---------------------------------------------------------------------------
 // Imports
 // ---------------------------------------------------------------------------
@@ -138,6 +142,22 @@ describe('checkForUpdates', () => {
     mockSettings.lastCheck = null;
     mockSettings.dismissedVersion = null;
     mockSettings.lastSeenVersion = '0.25.0';
+  });
+
+  it('hands the manifest chat CLI denylist to the chat version policy when chat is on', async () => {
+    chatGate.enabled = true;
+    chatGate.apply.mockImplementation(async () => {});
+    const chatCliDenylist = [{ provider: 'claude-code', versions: ['2.1.250'], reason: 'hangs' }];
+    mockHttpsGet(200, JSON.stringify(makeManifest('0.0.0', { chatCliDenylist })));
+    await checkForUpdates(true);
+    expect(chatGate.apply).toHaveBeenCalledWith(chatCliDenylist);
+
+    chatGate.apply.mockClear();
+    chatGate.enabled = false;
+    mockHttpsGet(200, JSON.stringify(makeManifest('0.0.0', { chatCliDenylist })));
+    await checkForUpdates(true);
+    expect(chatGate.apply).not.toHaveBeenCalled();
+    chatGate.enabled = true;
   });
 
   it('skips check when autoUpdate is false and not manual', async () => {
