@@ -5,7 +5,8 @@ import * as path from 'path';
 
 const userData = vi.hoisted(() => ({ dir: '' }));
 vi.mock('electron', () => ({
-  app: { getPath: () => userData.dir, getVersion: () => '0.43.0', isPackaged: false },
+  app: { getPath: () => userData.dir, getVersion: () => '0.43.0', isPackaged: false, on: vi.fn(), whenReady: () => Promise.resolve() },
+  powerMonitor: { on: vi.fn() },
   ipcMain: { on: vi.fn(), handle: vi.fn() },
 }));
 vi.mock('../services/project-store', () => ({ list: async () => [{}, {}, {}] }));
@@ -137,6 +138,17 @@ describe('unclean exits', () => {
     fs.writeFileSync(file(), JSON.stringify({ clean: false }));
     checkPreviousSession(true);
     expect(rt.event).toHaveBeenCalledWith('clubhouse.app.unclean_exit', [ATTR.previousExit('crash_loop')]);
+  });
+
+  it('marks the session clean on OS shutdown or logoff, not only on quit', async () => {
+    const electron = await import('electron');
+    fs.writeFileSync(file(), JSON.stringify({ clean: true }));
+    checkPreviousSession(false);
+    await Promise.resolve();
+    const shutdown = (electron.powerMonitor.on as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === 'shutdown')?.[1];
+    expect(shutdown).toBeTypeOf('function');
+    shutdown();
+    expect(JSON.parse(fs.readFileSync(file(), 'utf-8')).clean).toBe(true);
   });
 
   it('stays quiet after a clean exit and marks the next exit clean', async () => {

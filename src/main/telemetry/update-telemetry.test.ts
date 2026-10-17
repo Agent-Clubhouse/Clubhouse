@@ -57,6 +57,12 @@ describe('update records', () => {
     expect(rt.count).toHaveBeenCalledWith('clubhouse.update.failures', 1, [ATTR.updatePhase('apply_on_quit'), ATTR.errorType('apply_failed')]);
   });
 
+  it('skips install-kind detection entirely while telemetry is off', async () => {
+    setRuntime(null);
+    await recordApplyVerification(true);
+    expect(rt.event).not.toHaveBeenCalled();
+  });
+
   it('reports whether the last applied update took, with the install kind', async () => {
     await recordApplyVerification(false);
     expect(rt.event).toHaveBeenCalledWith('clubhouse.update.apply_verified', [ATTR.applyVerified('not_taken'), ATTR.installKind('dev')]);

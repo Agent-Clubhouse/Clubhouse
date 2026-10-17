@@ -794,6 +794,12 @@ interface ApplyOptions {
    * attempt marker) has to happen here or it never runs.
    */
   beforeExit?: () => Promise<void>;
+  /**
+   * Runs synchronously right before a relaunch path's telemetry flush: the
+   * point past which the handler only spawns and exits. Telemetry records the
+   * apply here so the flush that follows exports it.
+   */
+  onCommit?: () => void;
 }
 
 async function prepareApply(updateStatus: UpdateStatus, logScope: string): Promise<ApplyContext> {
@@ -822,7 +828,7 @@ async function recordSuccessfulApply(context: ApplyContext): Promise<void> {
   });
 }
 
-export async function applyMacUpdate(context: ApplyContext, { relaunch, beforeExit }: ApplyOptions): Promise<boolean> {
+export async function applyMacUpdate(context: ApplyContext, { relaunch, beforeExit, onCommit }: ApplyOptions): Promise<boolean> {
   const { downloadPath } = context;
   if (!downloadPath) return false;
   const appBundlePath = app.getPath('exe').replace(/\/Contents\/MacOS\/.*$/, '');
@@ -844,7 +850,10 @@ export async function applyMacUpdate(context: ApplyContext, { relaunch, beforeEx
     await fsp.writeFile(script, buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, script), { mode: 0o755 });
   }
   // Flush telemetry before the updater starts: app.exit() skips before-quit.
-  if (relaunch) await flushBeforeExit();
+  if (relaunch) {
+    onCommit?.();
+    await flushBeforeExit();
+  }
   const child = spawn('bash', [script], { detached: true, stdio: 'ignore' });
   await waitForChildSpawn(child);
   child.unref();
@@ -856,7 +865,7 @@ export async function applyMacUpdate(context: ApplyContext, { relaunch, beforeEx
   return true;
 }
 
-export async function applyWindowsUpdate(context: ApplyContext, { relaunch, beforeExit }: ApplyOptions): Promise<boolean> {
+export async function applyWindowsUpdate(context: ApplyContext, { relaunch, beforeExit, onCommit }: ApplyOptions): Promise<boolean> {
   const updateExe = getSquirrelUpdateExePath();
   if (!await pathExists(updateExe)) {
     throw new Error('Update.exe not found. Please reinstall the app from https://www.agent-clubhouse.com/reinstall');
@@ -872,6 +881,7 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch, befo
     flushLogs();
     // Before --processStart: the relaunched instance must not race this one
     // for the single-instance lock while telemetry flushes.
+    onCommit?.();
     await flushBeforeExit();
     const child = spawn(updateExe, ['--processStart', appExeName], {
       detached: true,
@@ -905,7 +915,7 @@ function waitForChildSpawn(child: ReturnType<typeof spawn>): Promise<void> {
   });
 }
 
-export async function applyLinuxUpdate(context: ApplyContext, { relaunch, beforeExit }: ApplyOptions): Promise<boolean> {
+export async function applyLinuxUpdate(context: ApplyContext, { relaunch, beforeExit, onCommit }: ApplyOptions): Promise<boolean> {
   const { downloadPath } = context;
   if (!downloadPath || !await pathExists(downloadPath)) return false;
 
@@ -917,6 +927,7 @@ export async function applyLinuxUpdate(context: ApplyContext, { relaunch, before
     if (relaunch) {
       await beforeExit?.();
       app.relaunch();
+      onCommit?.();
       await flushBeforeExit();
       app.exit(0);
     }
@@ -931,6 +942,7 @@ export async function applyLinuxUpdate(context: ApplyContext, { relaunch, before
   if (relaunch) {
     await beforeExit?.();
     app.relaunch();
+    onCommit?.();
     await flushBeforeExit();
     app.exit(0);
   }
@@ -983,13 +995,21 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
   const recordOnce = async (): Promise<void> => {
     if (recorded) return;
     recorded = true;
-    // Before the handler's flush and exit, so the apply span is exported.
-    recordUpdateApply({ startMs: applyStartMs, mode: 'relaunch', ok: true });
     await recordSuccessfulApply(context);
+  };
+  // The handlers call onCommit right before their telemetry flush (they flush
+  // before beforeExit on macOS and Windows), so the apply span is exported.
+  // Past that point a handler only spawns and exits; a spawn failure there is
+  // rare and still reaches the catch below, after this span went out.
+  let spanRecorded = false;
+  const onCommit = (): void => {
+    if (spanRecorded) return;
+    spanRecorded = true;
+    recordUpdateApply({ startMs: applyStartMs, mode: 'relaunch', ok: true });
   };
 
   try {
-    const applied = await applyPlatformUpdate(context, { relaunch: true, beforeExit: recordOnce });
+    const applied = await applyPlatformUpdate(context, { relaunch: true, beforeExit: recordOnce, onCommit });
     if (applied) {
       await recordOnce();
       return;
@@ -997,7 +1017,7 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appLog('update:apply', 'error', `Failed to apply update: ${msg}`);
-    if (!recorded) recordUpdateApply({ startMs: applyStartMs, mode: 'relaunch', ok: false, error: err });
+    if (!spanRecorded) recordUpdateApply({ startMs: applyStartMs, mode: 'relaunch', ok: false, error: err });
     if (process.platform === 'linux') {
       if (context.downloadPath) {
         try {
@@ -1016,6 +1036,8 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
     setState('error', { error: `Update failed: ${msg}`, availableVersion: context.version, artifactUrl: context.artifactUrl });
     throw err;
   }
+  // No platform handler applied the update; this relaunch is the fallback.
+  if (!spanRecorded) recordUpdateApply({ startMs: applyStartMs, mode: 'relaunch', ok: false });
   app.relaunch();
   await flushBeforeExit();
   app.exit(0);

@@ -5,7 +5,7 @@
  * matters for apply: the platform handlers exit the process themselves.
  */
 import { ATTR } from '../../shared/telemetry/attributes';
-import { replaySpan, tel } from './facade';
+import { isTelemetryActive, replaySpan, tel } from './facade';
 import { getInstallKind } from './install-kind';
 import type { ErrorType } from './types';
 
@@ -89,6 +89,8 @@ export function recordUpdateApply(opts: { startMs: number; mode: 'relaunch' | 'o
  * marker was written (#1920).
  */
 export async function recordApplyVerification(taken: boolean): Promise<void> {
+  // Install-kind detection touches the filesystem (and `rpm` on Linux); never do it with telemetry off.
+  if (!isTelemetryActive()) return;
   const kind = await getInstallKind();
   tel.event('clubhouse.update.apply_verified', [
     ATTR.applyVerified(taken ? 'verified' : 'not_taken'),

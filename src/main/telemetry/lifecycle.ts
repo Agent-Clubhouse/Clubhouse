@@ -11,7 +11,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
+import { app, powerMonitor } from 'electron';
 import { ATTR, type SpanName, type TelAttr } from '../../shared/telemetry/attributes';
 import type { RendererReadyMarks } from '../../shared/telemetry/renderer-protocol';
 import { isTelemetryActive, onIntentionalExit, onRuntimeChange, replaySpanTree, tel } from './facade';
@@ -218,6 +218,20 @@ export function installLifecycleTelemetry(): void {
   if (installed) return;
   installed = true;
   onIntentionalExit(markCleanExit);
+  // OS shutdown, restart or logoff ends the app without before-quit. That is
+  // not a crash: mark the session clean (macOS/Linux: powerMonitor 'shutdown';
+  // Windows: each window's 'session-end').
+  // powerMonitor can't be used before app ready, and this runs at module load.
+  void app.whenReady?.().then(() => {
+    try {
+      powerMonitor.on('shutdown', markCleanExit);
+    } catch {
+      // Not available on this platform or in tests.
+    }
+  });
+  app.on?.('browser-window-created', (_event, win) => {
+    win.on('session-end', markCleanExit);
+  });
   onRuntimeChange(() => {
     if (!isTelemetryActive() && snapshotTimer) {
       clearInterval(snapshotTimer);

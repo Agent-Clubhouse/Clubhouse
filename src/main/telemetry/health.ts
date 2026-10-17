@@ -11,8 +11,8 @@
  *
  * Nothing runs while telemetry is off.
  */
-import { monitorEventLoopDelay, type IntervalHistogram } from 'perf_hooks';
-import { app } from 'electron';
+import { monitorEventLoopDelay, performance, type IntervalHistogram } from 'perf_hooks';
+import { app, powerMonitor } from 'electron';
 import { ATTR, blockedFlowAttr } from '../../shared/telemetry/attributes';
 import { currentFlow, isTelemetryActive, onRuntimeChange, tel } from './facade';
 
@@ -21,6 +21,8 @@ export const WATCHDOG_INTERVAL_MS = 500;
 export const STALL_THRESHOLD_MS = 2000;
 /** At most one stall event per window, so a wedged process can't flood. */
 export const STALL_EVENT_MIN_GAP_MS = 60_000;
+/** Event-loop sampling resolution. Coarse on purpose: ~10 wakeups/s, not 50, on battery. */
+export const LOOP_DELAY_RESOLUTION_MS = 100;
 
 type ProcessType = Parameters<typeof ATTR.processType>[0];
 
@@ -66,8 +68,12 @@ export function sampleHealth(metrics: Electron.ProcessMetric[] = app.getAppMetri
   for (const [type, pct] of cpu) tel.count('clubhouse.process.cpu', pct, [ATTR.processType(type)]);
 }
 
-/** Watchdog tick. Exported for tests. */
-export function watchdogTick(now = Date.now()): void {
+/**
+ * Watchdog tick. Uses a monotonic clock so wall-clock jumps don't look like
+ * stalls; resetWatchdog() is also called on system resume, since some
+ * platforms' monotonic clocks keep counting through sleep. Exported for tests.
+ */
+export function watchdogTick(now = performance.now()): void {
   const late = now - lastTick - WATCHDOG_INTERVAL_MS;
   lastTick = now;
   if (late < STALL_THRESHOLD_MS || now - lastStallEvent < STALL_EVENT_MIN_GAP_MS) return;
@@ -75,10 +81,15 @@ export function watchdogTick(now = Date.now()): void {
   tel.event('clubhouse.process.eventloop_blocked', [blockedFlowAttr(currentFlow() ?? 'none')]);
 }
 
+/** Forget the last tick, e.g. after the machine slept. */
+export function resetWatchdog(now = performance.now()): void {
+  lastTick = now;
+}
+
 function start(): void {
   if (sampleTimer) return;
   try {
-    histogram = monitorEventLoopDelay({ resolution: 20 });
+    histogram = monitorEventLoopDelay({ resolution: LOOP_DELAY_RESOLUTION_MS });
     histogram.enable();
   } catch {
     histogram = null;
@@ -91,7 +102,7 @@ function start(): void {
     }
   }, SAMPLE_INTERVAL_MS);
   sampleTimer.unref?.();
-  lastTick = Date.now();
+  resetWatchdog();
   watchdog = setInterval(() => watchdogTick(), WATCHDOG_INTERVAL_MS);
   watchdog.unref?.();
 }
@@ -114,10 +125,17 @@ export function installHealthTelemetry(): void {
   const sync = (): void => (isTelemetryActive() ? start() : stop());
   onRuntimeChange(sync);
   sync();
+  try {
+    // A sleeping laptop isn't a stalled main thread.
+    powerMonitor.on('resume', () => resetWatchdog());
+    powerMonitor.on('unlock-screen', () => resetWatchdog());
+  } catch {
+    // powerMonitor is unavailable before app ready in some test setups.
+  }
 }
 
 /** Test-only reset. */
-export function _resetHealthForTests(now = Date.now()): void {
+export function _resetHealthForTests(now = performance.now()): void {
   stop();
   installed = false;
   lastTick = now;

@@ -49,7 +49,7 @@ describe('auto-update-service', () => {
       expect(handler).toHaveBeenNthCalledWith(1, expect.objectContaining({
         downloadPath: readyStatus.downloadPath,
         version: readyStatus.availableVersion,
-      }), { relaunch: true, beforeExit: expect.any(Function) });
+      }), { relaunch: true, beforeExit: expect.any(Function), onCommit: expect.any(Function) });
       expect(handler).toHaveBeenNthCalledWith(2, expect.objectContaining({
         downloadPath: readyStatus.downloadPath,
         version: readyStatus.availableVersion,

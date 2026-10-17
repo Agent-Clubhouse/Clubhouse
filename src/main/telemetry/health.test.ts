@@ -67,6 +67,14 @@ describe('process health', () => {
     expect(rt.event).toHaveBeenLastCalledWith('clubhouse.process.eventloop_blocked', [blockedFlowAttr('none')]);
   });
 
+  it('does not report a stall across a sleep once resume resets the watchdog', async () => {
+    const { resetWatchdog } = await import('./health');
+    watchdogTick(1000);
+    resetWatchdog(5_000_000); // woke up an hour+ later
+    watchdogTick(5_000_000 + WATCHDOG_INTERVAL_MS);
+    expect(rt.event).not.toHaveBeenCalled();
+  });
+
   it('ignores normal timer jitter', () => {
     watchdogTick(WATCHDOG_INTERVAL_MS + 50);
     expect(rt.event).not.toHaveBeenCalled();
