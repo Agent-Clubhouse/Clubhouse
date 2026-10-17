@@ -478,6 +478,22 @@ describe('CodexChatEventMapper', () => {
     });
   });
 
+  it('cancelOpenRequests resolves every open approval and question once', () => {
+    mapper.mapServerRequest(fx.commandApprovalRequest);
+    mapper.mapServerRequest({
+      method: 'item/tool/requestUserInput',
+      id: 5,
+      params: { ...at, itemId: 'q', isBlocking: true, autoResolutionMs: null, questions: [] },
+    });
+
+    expect(mapper.cancelOpenRequests()).toEqual([
+      { type: 'permission_resolved', data: { requestId: '0', decision: 'cancelled', by: 'agent' } },
+      { type: 'question_resolved', data: { requestId: '5', answers: {}, cancelled: true } },
+    ]);
+    expect(mapper.cancelOpenRequests()).toEqual([]);
+    expect(mapper.resolvePermission('0', 'accept')).toBeUndefined();
+  });
+
   it('maps unrecognized messages to protocol_unknown', () => {
     expect(mapper.mapUnrecognized({ kind: 'notification', method: 'thread/new', params: {} })).toEqual([
       { type: 'protocol_unknown', data: { driver: 'codex_app_server', kind: 'notification', name: 'thread/new' } },
