@@ -91,6 +91,28 @@ describe('chat driver health', () => {
     done();
   });
 
+  it('keys health by command prefix too, and probes through it', async () => {
+    const { bin, done } = tempBinary();
+    const d = new FakeChatDriver();
+    expect(driverHealthKey(d, 'bin', undefined, 'wsl -e')).not.toBe(driverHealthKey(d, 'bin'));
+    const calls: unknown[][] = [];
+    d.probe = async (...args: unknown[]) => { calls.push(args); return { handshakeOk: true, capabilities: d.capabilities }; };
+    await probeDriver(d, bin, { A: '1' }, 'wsl -e');
+    expect(calls).toEqual([[bin, { A: '1' }, { commandPrefix: 'wsl -e' }]]);
+    done();
+  });
+
+  it('neither caches nor counts a probe that needs a login, so logging in takes effect next time', async () => {
+    const { bin, done } = tempBinary();
+    const driver = new FakeChatDriver();
+    let probes = 0;
+    driver.probe = async () => { probes++; return { handshakeOk: true, needsLogin: true, loginHint: 'Run codex login', capabilities: driver.capabilities }; };
+    for (let i = 0; i < DRIVER_FAILURE_THRESHOLD + 1; i++) await probeDriver(driver, bin);
+    expect(probes).toBe(DRIVER_FAILURE_THRESHOLD + 1);
+    expect(driverPausedReason(driverHealthKey(driver, bin))).toBeUndefined();
+    done();
+  });
+
   it('treats a throwing probe as a failed handshake', async () => {
     const driver = new FakeChatDriver();
     driver.probe = async () => { throw new Error('spawn ENOENT'); };

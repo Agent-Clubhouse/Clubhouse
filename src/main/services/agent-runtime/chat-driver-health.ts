@@ -6,7 +6,8 @@
  *
  * - Handshake probes are cached per key (re-probed when the binary changes
  *   on disk), so the zero-token handshake runs once per CLI install rather
- *   than on every wake. Concurrent callers share one in-flight probe, so a
+ *   than on every wake. A probe that reports a missing login isn't cached
+ *   or counted as a failure, so logging in takes effect on the next wake. Concurrent callers share one in-flight probe, so a
  *   burst of agents waking at launch costs one probe and, if it fails, one
  *   failure.
  * - Handshake and spawn-level failures pause a key after a few in a row:
@@ -34,12 +35,12 @@ const health = new Map<string, Health>();
 const probes = new Map<string, { mtimeMs: number; probe: ChatDriverProbe }>();
 const inFlight = new Map<string, Promise<ChatDriverProbe>>();
 
-/** Health and probe-cache key: driver, binary and the profile env it runs with. */
-export function driverHealthKey(driver: Pick<ChatDriver, 'id'>, binaryPath: string, env?: Record<string, string>): string {
+/** Health and probe-cache key: driver, binary, the profile env it runs with and any command prefix it's launched through. */
+export function driverHealthKey(driver: Pick<ChatDriver, 'id'>, binaryPath: string, env?: Record<string, string>, commandPrefix?: string): string {
   const envHash = env && Object.keys(env).length
     ? createHash('sha1').update(JSON.stringify(Object.entries(env).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))).digest('hex').slice(0, 12)
     : '-';
-  return `${driver.id}\0${binaryPath}\0${envHash}`;
+  return `${driver.id}\0${binaryPath}\0${envHash}${commandPrefix ? `\0${commandPrefix}` : ''}`;
 }
 
 export function recordDriverFailure(key: string, reason: string, now = Date.now()): void {
@@ -67,9 +68,10 @@ function binaryMtime(binaryPath: string): number | undefined {
   }
 }
 
-async function runProbe(driver: ChatDriver, binaryPath: string, env: Record<string, string> | undefined): Promise<ChatDriverProbe> {
+async function runProbe(driver: ChatDriver, binaryPath: string, env: Record<string, string> | undefined, commandPrefix: string | undefined): Promise<ChatDriverProbe> {
   try {
-    return await driver.probe(binaryPath, env);
+    // Launched the way start() will be, through the profile's command prefix.
+    return await driver.probe(binaryPath, env, commandPrefix ? { commandPrefix } : undefined);
   } catch (err) { // telemetry-exempt: a throwing probe is a failed handshake, recorded by the caller and reported by chat-spawn
     return { handshakeOk: false, capabilities: MINIMAL_CHAT_CAPABILITIES, error: err instanceof Error ? err.message : String(err) };
   }
@@ -80,17 +82,20 @@ async function runProbe(driver: ChatDriver, binaryPath: string, env: Record<stri
  * Concurrent calls for one key share a probe; a failed probe is not cached
  * and counts one failure for the key.
  */
-export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record<string, string>): Promise<ChatDriverProbe> {
-  const key = driverHealthKey(driver, binaryPath, env);
+export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record<string, string>, commandPrefix?: string): Promise<ChatDriverProbe> {
+  const key = driverHealthKey(driver, binaryPath, env, commandPrefix);
   const mtimeMs = binaryMtime(binaryPath);
   const cached = probes.get(key);
   if (cached && mtimeMs !== undefined && cached.mtimeMs === mtimeMs) return Promise.resolve(cached.probe);
   const pending = inFlight.get(key);
   if (pending) return pending;
 
-  const probe = runProbe(driver, binaryPath, env).then((result) => {
+  const probe = runProbe(driver, binaryPath, env, commandPrefix).then((result) => {
     inFlight.delete(key);
-    if (result.handshakeOk) {
+    if (result.handshakeOk && result.needsLogin) {
+      // Healthy CLI, user not logged in: probe again next time rather than caching or pausing.
+      probes.delete(key);
+    } else if (result.handshakeOk) {
       if (mtimeMs !== undefined) probes.set(key, { mtimeMs, probe: result });
     } else {
       probes.delete(key);

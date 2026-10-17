@@ -486,7 +486,9 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
 describe('claudeTurnErrorCode', () => {
   it('prefers the API error, then terminal reason, then stop reason', () => {
     expect(claudeTurnErrorCode('rate_limit', 'prompt_too_long')).toBe('rate_limited');
-    expect(claudeTurnErrorCode('billing_error')).toBe('auth_required');
+    expect(claudeTurnErrorCode('billing_error')).toBe('account_issue');
+    expect(claudeTurnErrorCode('account_on_hold')).toBe('account_issue');
+    expect(claudeTurnErrorCode('authentication_failed')).toBe('auth_required');
     expect(claudeTurnErrorCode('overloaded')).toBe('unknown');
     expect(claudeTurnErrorCode(undefined, 'blocking_limit')).toBe('rate_limited');
     expect(claudeTurnErrorCode(undefined, 'api_error', 'refusal')).toBe('refusal');

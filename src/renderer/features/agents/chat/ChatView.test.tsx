@@ -821,3 +821,14 @@ describe('ChatView permission extras', () => {
     expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow');
   });
 });
+
+describe('ChatView login banner', () => {
+  it('offers the terminal when the CLI reports it needs a login', () => {
+    const events = extend(chatFixture('codex', 'conversation'), { type: 'error', data: { code: 'auth_required', message: 'Not logged in', fatal: true } });
+    const onSwitchToTerminal = vi.fn();
+    render(<ChatViewBody agent={agent} state={fold(events)} actions={makeActions()} providerName="Codex" onSwitchToTerminal={onSwitchToTerminal} />);
+    expect(screen.getByTestId('chat-login-banner')).toHaveTextContent('This CLI needs you to log in.');
+    fireEvent.click(screen.getByRole('button', { name: 'Log in in the terminal' }));
+    expect(onSwitchToTerminal).toHaveBeenCalled();
+  });
+});

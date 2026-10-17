@@ -129,8 +129,8 @@ export class AcpChatDriver implements ChatDriver {
   }
 
   /** `initialize` only: no session, no prompt, no tokens. */
-  async probe(binaryPath: string, env?: Record<string, string>): Promise<ChatDriverProbe> {
-    const cmd = this.spec.spawn({ binary: binaryPath });
+  async probe(binaryPath: string, env?: Record<string, string>, opts?: { commandPrefix?: string }): Promise<ChatDriverProbe> {
+    const cmd = this.spec.spawn({ binary: binaryPath, commandPrefix: opts?.commandPrefix });
     const session = new AcpSession({ ...cmd, env, profile: this.spec.profile, onLog: this.log });
     try {
       const caps = await session.start();
