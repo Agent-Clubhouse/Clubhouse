@@ -110,13 +110,18 @@ function redactionPairs(opts) {
   const patterns = opts.redactions.filter(([from]) => from instanceof RegExp);
   if (opts.defaultRedactions) {
     // Each directory as given and resolved: macOS reports /var/… for the
-    // temp dir while tools print /private/var/….
+    // temp dir while tools print /private/var/…, and Windows runners give a
+    // short-name temp path.
     for (const [dir, to] of [[process.cwd(), REDACTED_CWD], [homedir(), REDACTED_HOME], [tmpdir(), REDACTED_TMP]]) {
       literals.push([dir, to]);
-      try {
-        const real = realpathSync(dir);
-        if (real !== dir) literals.push([real, to]);
-      } catch {}
+      // The native resolver also expands Windows 8.3 short names
+      // (C:\Users\RUNNER~1\…), which the JS one leaves alone.
+      for (const resolve of [realpathSync.native, realpathSync]) {
+        try {
+          const real = resolve(dir);
+          if (!literals.some(([from]) => from === real)) literals.push([real, to]);
+        } catch {}
+      }
     }
     patterns.push(...SECRET_REDACTIONS);
   }

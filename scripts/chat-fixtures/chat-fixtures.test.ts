@@ -307,7 +307,9 @@ describe('record', () => {
     const text = await fs.promises.readFile(out, 'utf8');
     expect(text).not.toContain('jane@corp');
     expect(text).not.toContain('sk-ant-');
-    expect(text).not.toContain(tmpReal);
+    // As it would appear inside JSON (escaped backslashes on Windows). On
+    // Linux the temp dir is /tmp, the placeholder itself, so skip it there.
+    if (tmpReal !== '/tmp') expect(text).not.toContain(JSON.stringify(tmpReal).slice(1, -1));
     const recorded = await loadFixture(out);
     expect(recorded.entries[1].msg.result).toEqual({
       account: { email: 'user@example.com' },
