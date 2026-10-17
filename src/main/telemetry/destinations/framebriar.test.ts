@@ -79,13 +79,13 @@ describe('Framebriar export gate', () => {
     expect(await auth.authorize('traces')).toBe(true);
     expect(auth.headers('traces')).toEqual({ authorization: 'Bearer tok' });
     now = null; // Disconnected, or Feedback stopped.
-    expect(await auth.authorize('traces')).toBe(false);
+    expect(await auth.authorize('traces')).toBe('not-connected');
     now = live({ sessionId: 's-other' }); // A new Feedback session: this exporter is stale.
-    expect(await auth.authorize('logs')).toBe(false);
+    expect(await auth.authorize('logs')).toBe('session-changed');
     now = live({ host: 'elsewhere.example.net' });
-    expect(await auth.authorize('logs')).toBe(false);
+    expect(await auth.authorize('logs')).toBe('session-changed');
     now = live({}, null); // Enrolled but no token (offline): don't send for a 401.
-    expect(await auth.authorize('metrics')).toBe(false);
+    expect(await auth.authorize('metrics')).toBe('no-token');
     expect(auth.headers('metrics')).toEqual({});
   });
 
@@ -98,11 +98,23 @@ describe('Framebriar export gate', () => {
     await new Promise<void>((r) => g.metricExporter.export({ resource: { attributes: {} }, scopeMetrics: [] } as never, (res) => { results.push(res as never); r(); }));
     expect(seen.spans).toHaveLength(0);
     expect(seen.metrics).toHaveLength(0);
-    expect(results.map((x) => [x.code, x.error?.message])).toEqual([[1, FRAMEBRIAR_NOT_CONNECTED], [1, FRAMEBRIAR_NOT_CONNECTED]]);
+    expect(results.map((x) => [x.code, x.error?.message, (x.error as Error & { code?: string })?.code]))
+      .toEqual([[1, FRAMEBRIAR_NOT_CONNECTED, 'not-connected'], [1, FRAMEBRIAR_NOT_CONNECTED, 'not-connected']]);
     ok = true;
     await new Promise<void>((r) => g.logExporter.export([{ resource: { attributes: {} } }] as never, () => r()));
     expect(seen.logs).toHaveLength(1);
     expect(g.metricExporter.selectAggregationTemporality!(InstrumentType.COUNTER)).toBe(AggregationTemporality.DELTA);
+  });
+
+  it('tags a refused batch with why, so export health and the log can say', async () => {
+    const { exporters } = recorder();
+    const codes: unknown[] = [];
+    const exportOnce = (g: DestinationExporters) =>
+      new Promise<void>((r) => g.spanExporter.export([{ resource: { attributes: {} } }] as never, (res) => { codes.push((res.error as Error & { code?: string })?.code); r(); }));
+    await exportOnce(gated(exporters, async () => 'no-token'));
+    await exportOnce(gated(exporters, async () => 'session-changed'));
+    await exportOnce(gated(exporters, async () => { throw new Error('boom'); }));
+    expect(codes).toEqual(['no-token', 'session-changed', 'check-failed']);
   });
 });
 

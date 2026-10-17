@@ -193,6 +193,36 @@ describe('review fixes', () => {
     expect(spanNames(b)).toEqual(['clubhouse.project.add.ensure_gitignore']);
   });
 
+  it('logs a destination signal once when it starts failing and once when it recovers', async () => {
+    const s = sink();
+    let fail = true;
+    const flaky: SpanExporter = {
+      export: (spans: ReadableSpan[], cb) => (fail
+        ? cb({ code: ExportResultCode.FAILED, error: Object.assign(new Error('Feedback is not connected'), { code: 'no-token' }) })
+        : s.spans.export(spans, cb)),
+      shutdown: async () => {},
+    };
+    const logged: Array<[string, string, Record<string, unknown>]> = [];
+    const r = start([{ ...dest('framebriar', 'framebriar', s, 'standard'), exporters: { spanExporter: flaky, logExporter: s.logs, metricExporter: s.metrics } }], {
+      exportLog: (level, message, meta) => logged.push([level, message, meta]),
+    });
+    for (let i = 0; i < 2; i++) {
+      r.flow('clubhouse.agent.spawn', {}, () => undefined);
+      await r.forceFlush(1000);
+    }
+    fail = false;
+    for (let i = 0; i < 2; i++) {
+      r.flow('clubhouse.agent.spawn', {}, () => undefined);
+      await r.forceFlush(1000);
+    }
+    const spans = logged.filter(([, m]) => m.endsWith('(traces)'));
+    expect(spans.map(([l, m]) => [l, m])).toEqual([
+      ['warn', 'Telemetry export to framebriar failing (traces)'],
+      ['info', 'Telemetry export to framebriar recovered (traces)'],
+    ]);
+    expect(spans[0][2]).toMatchObject({ destination: 'framebriar', signal: 'traces', errorCode: 'no-token', errorMessage: 'Feedback is not connected' });
+  });
+
   it('gives each destination its own session budget: one exhausting it never starves the other', async () => {
     const a = sink();
     const b = sink();

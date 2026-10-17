@@ -296,6 +296,7 @@ async function start(): Promise<boolean> {
         uiChrome: uiChrome(),
       }),
       diagLog: (lvl, message) => appLog(LOG_NS, lvl, `OpenTelemetry: ${message}`),
+      exportLog: (lvl, message, meta) => appLog(LOG_NS, lvl, message, { meta }),
     });
     activeDestinations = destinations.map((d) => ({ id: d.id, kind: d.kind as TelemetryDestinationKind }));
     lastStartError = undefined;

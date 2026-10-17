@@ -105,6 +105,11 @@ export interface SdkOptions {
   scrub: Scrubber;
   /** Local diagnostics sink for OTel/exporter warnings (never exported). */
   diagLog?: (level: 'warn' | 'error', message: string) => void;
+  /**
+   * Local log of export health changes (never exported): once when a destination's
+   * signal starts failing and once when it recovers, not per batch.
+   */
+  exportLog?: (level: 'info' | 'warn', message: string, meta: Record<string, unknown>) => void;
   /** Overrides for tests. */
   metricExportIntervalMs?: number;
   /** An export with no result after this long counts as failed for health (default 30 s). */
@@ -233,6 +238,14 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     const failing = failingSignals.get(destination) ?? new Map<ExportRecord['signal'], ExportRecord>();
     failingSignals.set(destination, failing);
     const h = health.get(destination) ?? {};
+    const wasFailing = failing.has(signal);
+    if (opts.exportLog && record.ok === wasFailing) {
+      const { ok: _ok, at: _at, ...meta } = record;
+      try {
+        if (record.ok) opts.exportLog('info', `Telemetry export to ${destination} recovered (${signal})`, meta);
+        else opts.exportLog('warn', `Telemetry export to ${destination} failing (${signal})`, meta);
+      } catch { /* telemetry-exempt: a logger must never break export health */ }
+    }
     if (record.ok) {
       h.lastSuccessAt = record.at;
       failing.delete(signal);
