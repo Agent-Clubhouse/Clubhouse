@@ -103,8 +103,12 @@ export async function initApp(): Promise<() => void> {
   cleanups.push(() => clearTimeout(whatsNewTimer));
 
   // 6. Show onboarding on first launch (delayed). The new shell has no
-  // onboarding modal: its first-run page is the welcome (#2024).
-  if (!useOnboardingStore.getState().completed && !isNewChromeEnabled()) {
+  // onboarding modal: its first-run page is the welcome (#2024), so it counts
+  // as done there, and turning the new shell off later doesn't bring the
+  // modal up over an existing workspace.
+  if (!useOnboardingStore.getState().completed && isNewChromeEnabled()) {
+    useOnboardingStore.getState().dismissOnboarding();
+  } else if (!useOnboardingStore.getState().completed) {
     const onboardingTimer = setTimeout(() => {
       useOnboardingStore.getState().startOnboarding();
     }, 500);
