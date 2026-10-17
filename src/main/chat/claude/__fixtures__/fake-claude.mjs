@@ -10,11 +10,18 @@
 // Scripted turns (user text):
 //   hello  partial deltas, then the assistant text, then a success result
 //   tool   Bash tool_use + can_use_tool; the result text reports the decision
+//   ask    AskUserQuestion via can_use_tool; the result text reports the answers
+//   sub    a Task subagent: task_started, its own text and tool call, then the report
 //   limit  rate_limit_event before the result
 //   novel  an unknown system subtype (drift) before the result
 //   crash  exit 3 mid-turn
 //   quit   a large final assistant message and result, then exit 0 at once
 //   other  result.result = "echo:<text>|priority:<p>|shouldQuery:<b>"
+//
+// A `priority: "later"` message sent while a turn runs waits for that turn to
+// end, as the CLI's queue does. Any other message sent mid-turn is a steer: it
+// folds into the running turn, whose final text then ends with
+// "|steered:<texts>".
 
 import { writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -38,6 +45,10 @@ let msgCounter = 0;
 let ctlCounter = 0;
 /** request_id → resolver for outstanding can_use_tool requests. */
 const pendingPermissions = new Map();
+/** The running turn, so `priority: "later"` messages can wait for it. */
+let turnInFlight = null;
+/** Steer texts folded into the running turn. */
+let steered = [];
 
 const out = (obj) => process.stdout.write(JSON.stringify(obj) + '\n');
 const base = () => ({ session_id: sessionId, uuid: `uuid-${++msgCounter}` });
@@ -58,6 +69,16 @@ function result(text, extra = {}) {
     ...base(),
     ...extra,
   });
+}
+
+/** Report a decision as assistant text and as the result, so both raw and contract-level tests can see it. */
+function say(text) {
+  if (steered.length) {
+    text += `|steered:${steered.join(',')}`;
+    steered = [];
+  }
+  out({ type: 'assistant', message: { id: `msg_say_${msgCounter}`, role: 'assistant', content: [{ type: 'text', text }] }, parent_tool_use_id: null, ...base() });
+  result(text);
 }
 
 function ensureInit() {
@@ -120,11 +141,30 @@ async function runTurn(msg) {
     if (decision.cancelled) return; // interrupt already ended the turn
     if (decision.behavior === 'allow') {
       out({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'file.txt' }] }, tool_use_result: { stdout: 'file.txt', stderr: '' }, parent_tool_use_id: null, ...base() });
-      result(`allowed:${JSON.stringify(decision.updatedInput)}:${JSON.stringify(decision.updatedPermissions ?? null)}`);
+      say(`allowed:${JSON.stringify(decision.updatedInput)}:${JSON.stringify(decision.updatedPermissions ?? null)}`);
     } else {
       out({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: decision.message, is_error: true }] }, parent_tool_use_id: null, ...base() });
-      result(`denied:${decision.message}`);
+      say(`denied:${decision.message}`);
     }
+    return;
+  }
+
+  if (text === 'ask') {
+    const input = { questions: [{ question: 'Which DB?', header: 'DB', options: [{ label: 'Postgres', description: 'SQL' }, { label: 'SQLite' }], multiSelect: false }] };
+    out({ type: 'assistant', message: { id: 'msg_ask', role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_ask', name: 'AskUserQuestion', input }] }, parent_tool_use_id: null, ...base() });
+    const decision = await askPermission({ tool_name: 'AskUserQuestion', input, tool_use_id: 'toolu_ask', permission_suggestions: [] });
+    if (decision.cancelled) return;
+    say(`answers:${JSON.stringify(decision.updatedInput?.answers ?? null)}`);
+    return;
+  }
+
+  if (text === 'sub') {
+    out({ type: 'assistant', message: { id: 'msg_task', role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_task', name: 'Task', input: { description: 'Explore repo', subagent_type: 'Explore' } }] }, parent_tool_use_id: null, ...base() });
+    out({ type: 'system', subtype: 'task_started', task_id: 'task-1', tool_use_id: 'toolu_task', description: 'Explore repo', subagent_type: 'Explore', ...base() });
+    out({ type: 'assistant', message: { id: 'msg_sub', role: 'assistant', content: [{ type: 'text', text: 'Looking around' }, { type: 'tool_use', id: 'toolu_sub_read', name: 'Read', input: { file_path: 'README.md' } }] }, parent_tool_use_id: 'toolu_task', ...base() });
+    out({ type: 'system', subtype: 'task_notification', task_id: 'task-1', tool_use_id: 'toolu_task', status: 'completed', ...base() });
+    out({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_task', content: 'Found it' }] }, parent_tool_use_id: null, ...base() });
+    result('sub done');
     return;
   }
 
@@ -214,6 +254,17 @@ rl.on('line', (line) => {
     }
     return;
   }
-  if (msg.type === 'user') void runTurn(msg);
+  if (msg.type !== 'user') return;
+  if (turnInFlight && msg.priority !== 'later') {
+    const content = msg.message?.content;
+    steered.push(typeof content === 'string' ? content : (content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join(''));
+    return;
+  }
+  if (msg.priority === 'later' && turnInFlight) {
+    const prev = turnInFlight;
+    turnInFlight = prev.then(() => runTurn(msg));
+    return;
+  }
+  turnInFlight = runTurn(msg).finally(() => { turnInFlight = null; });
 });
 rl.on('close', () => process.exit(0));
