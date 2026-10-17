@@ -74,32 +74,38 @@ updates:
         versions: [">=44.0.0"]
       - dependency-name: "@electron-forge/*"
         versions: [">=8.0.0"]
-      # OpenTelemetry JS 3.0 / 0.300 is at release candidate. Adopt only after
-      # @azure/monitor-opentelemetry-exporter ships a compatible beta.
+      # The OTel packages and the Azure exporter move as one pinned train
+      # (docs/telemetry-otel-spec.md §6.3): exporter 1.0.0-beta.46 needs
+      # sdk-logs/api-logs ^0.221.0 (a 0.x caret pins the minor), and the OTLP
+      # exporters 0.221 pin the stable SDKs to exactly 2.10.0. Any bump past
+      # these installs a second SDK copy (see #1940). Upgrade the whole train
+      # by hand when the exporter accepts a newer one, and raise these together.
       - dependency-name: "@opentelemetry/*"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "@azure/monitor-opentelemetry-exporter"
+        versions: [">1.0.0-beta.46"]
       - dependency-name: "@opentelemetry/api"
         versions: [">=2.0.0"]
       - dependency-name: "@opentelemetry/sdk-trace-base"
-        versions: [">=3.0.0"]
+        versions: [">=2.11.0"]
       - dependency-name: "@opentelemetry/sdk-metrics"
-        versions: [">=3.0.0"]
+        versions: [">=2.11.0"]
       - dependency-name: "@opentelemetry/resources"
-        versions: [">=3.0.0"]
+        versions: [">=2.11.0"]
       - dependency-name: "@opentelemetry/core"
-        versions: [">=3.0.0"]
+        versions: [">=2.11.0"]
       - dependency-name: "@opentelemetry/context-async-hooks"
-        versions: [">=3.0.0"]
+        versions: [">=2.11.0"]
       - dependency-name: "@opentelemetry/sdk-logs"
-        versions: [">=0.300.0"]
+        versions: [">=0.222.0"]
       - dependency-name: "@opentelemetry/api-logs"
-        versions: [">=0.300.0"]
+        versions: [">=0.222.0"]
       - dependency-name: "@opentelemetry/exporter-trace-otlp-http"
-        versions: [">=0.300.0"]
+        versions: [">=0.222.0"]
       - dependency-name: "@opentelemetry/exporter-metrics-otlp-http"
-        versions: [">=0.300.0"]
+        versions: [">=0.222.0"]
       - dependency-name: "@opentelemetry/exporter-logs-otlp-http"
-        versions: [">=0.300.0"]
+        versions: [">=0.222.0"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
