@@ -63,6 +63,30 @@ async function quitAndWait(electronApp: Awaited<ReturnType<typeof launchApp>>['e
   await electronApp.close();
 }
 
+/** Whether the app's main process can encrypt with safeStorage (false on keyring-less Linux runners). */
+async function secureStorageAvailable(electronApp: Awaited<ReturnType<typeof launchApp>>['electronApp']): Promise<boolean> {
+  return electronApp.evaluate(({ safeStorage }) => safeStorage.isEncryptionAvailable());
+}
+
+/**
+ * With encryption available, the Phase 1 plaintext secret must have moved to
+ * telemetry-secret.bin and be gone from telemetry-settings.json. Without it,
+ * by design the plaintext stays put (it is the only copy) and no secret file
+ * is created.
+ */
+async function expectLegacySecretHandled(dir: string, encryption: boolean): Promise<void> {
+  const settingsText = await fs.promises.readFile(path.join(dir, 'telemetry-settings.json'), 'utf-8');
+  const secretExists = fs.existsSync(path.join(dir, 'telemetry-secret.bin'));
+  if (encryption) {
+    expect(secretExists).toBe(true);
+    expect(settingsText).not.toContain('InstrumentationKey');
+    expect(JSON.parse(settingsText).destination).toBe('azure');
+  } else {
+    expect(secretExists).toBe(false);
+    expect(settingsText).toContain('InstrumentationKey');
+  }
+}
+
 function expectNoMachineIdentifiers(received: Received[]): void {
   const all = received.map((r) => r.body).join('\n');
   expect(all).not.toContain(os.hostname());
@@ -154,6 +178,7 @@ test.describe('Telemetry export', () => {
         },
       });
       await expect(launched.window.locator('body')).toBeVisible();
+      const encryption = await secureStorageAvailable(launched.electronApp);
       await quitAndWait(launched.electronApp);
 
       const tracks = mock.received.filter((r) => r.url.startsWith('/v2.1/track'));
@@ -165,13 +190,8 @@ test.describe('Telemetry export', () => {
       // Only the configured endpoint's ingestion path was ever hit.
       for (const r of mock.received) expect(r.url.startsWith('/v2.1/track')).toBe(true);
 
-      // The seeded file is the Phase 1 shape with a plaintext secret. Once
-      // secure storage takes it, the plaintext is wiped from the settings file.
-      const dir = launched.userDataDir!;
-      expect(fs.existsSync(path.join(dir, 'telemetry-secret.bin'))).toBe(true);
-      const settingsText = await fs.promises.readFile(path.join(dir, 'telemetry-settings.json'), 'utf-8');
-      expect(settingsText).not.toContain('InstrumentationKey');
-      expect(JSON.parse(settingsText).destination).toBe('azure');
+      // The seeded file is the Phase 1 shape with a plaintext secret.
+      await expectLegacySecretHandled(launched.userDataDir!, encryption);
     } finally {
       delete process.env.CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST;
       if (prevCa === undefined) delete process.env.NODE_EXTRA_CA_CERTS;
@@ -201,14 +221,13 @@ test.describe('Telemetry export', () => {
     });
     try {
       await expect(window.locator('body')).toBeVisible();
-      const dir = userDataDir!;
-      // Migration runs after ready regardless of flags; wait for it.
-      await expect.poll(() => fs.existsSync(path.join(dir, 'telemetry-secret.bin')), { timeout: 15_000 }).toBe(true);
-      await expect.poll(
-        async () => (await fs.promises.readFile(path.join(dir, 'telemetry-settings.json'), 'utf-8')).includes('InstrumentationKey'),
-        { timeout: 15_000 },
-      ).toBe(false);
+      const encryption = await secureStorageAvailable(electronApp);
+      if (encryption) {
+        // Migration runs after ready regardless of flags; wait for it.
+        await expect.poll(() => fs.existsSync(path.join(userDataDir!, 'telemetry-secret.bin')), { timeout: 15_000 }).toBe(true);
+      }
       await quitAndWait(electronApp);
+      await expectLegacySecretHandled(userDataDir!, encryption);
       expect(mock.received).toEqual([]);
     } finally {
       await electronApp.close().catch(() => {});
