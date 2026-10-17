@@ -17,6 +17,9 @@ import type {
 } from '../../shared/marketplace-types';
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
 import { isValidPluginId } from '../../shared/manifest-validator';
+import { tel } from '../telemetry/facade';
+import { classifyFetchError } from '../telemetry/workspace';
+import { ATTR } from '../../shared/telemetry/attributes';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -90,10 +93,29 @@ function broadcastStatus(): void {
 // Core update check
 // ---------------------------------------------------------------------------
 
-export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> {
+type UpdateTrigger = Parameters<typeof ATTR.updateTrigger>[0];
+
+/** The last failed check's error, for telemetry classification only. */
+let lastCheckError: unknown;
+
+/**
+ * Check for plugin updates, measured as `clubhouse.plugin.update_check`
+ * (spec §4.11) with the trigger and the available/incompatible counts.
+ * A call while a check is already running returns its state, unmeasured.
+ */
+export async function checkForPluginUpdates(trigger: UpdateTrigger = 'manual'): Promise<PluginUpdateCheckResult> {
   if (status.checking) {
     return { updates: status.updates, incompatibleUpdates: status.incompatibleUpdates, checkedAt: status.lastCheck || new Date().toISOString() };
   }
+  lastCheckError = undefined;
+  return tel.flow('clubhouse.plugin.update_check', { attrs: [ATTR.updateTrigger(trigger)] }, async (span) => {
+    const result = await checkForPluginUpdatesNow();
+    span.set(ATTR.updatesAvailable(result.updates.length), ATTR.updatesIncompatible(result.incompatibleUpdates.length));
+    return result;
+  }, { classify: () => (lastCheckError !== undefined ? { error: classifyFetchError(lastCheckError) } : 'ok') });
+}
+
+async function checkForPluginUpdatesNow(): Promise<PluginUpdateCheckResult> {
 
   status = { ...status, checking: true, error: null };
   broadcastStatus();
@@ -159,6 +181,7 @@ export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> 
 
     return { updates, incompatibleUpdates, checkedAt };
   } catch (err) {
+    lastCheckError = err;
     const msg = err instanceof Error ? err.message : String(err);
     appLog('marketplace:updates', 'error', `Plugin update check failed: ${msg}`);
     status = { ...status, checking: false, error: msg };
@@ -171,7 +194,21 @@ export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> 
 // Update a single plugin
 // ---------------------------------------------------------------------------
 
+/** `clubhouse.plugin.update` (spec §4.11); the install runs as a child span. */
 export async function updatePlugin(pluginId: string): Promise<PluginUpdateResult> {
+  return tel.flow('clubhouse.plugin.update', {
+    attrs: [ATTR.pluginRef('other'), ATTR.pluginIdHash(pluginId), ATTR.pluginOrigin('marketplace')],
+  }, () => updatePluginNow(pluginId), {
+    classify: (r) => {
+      if (r.success) return 'ok';
+      if (r.error?.startsWith('Invalid plugin id')) return { error: 'invalid_id' };
+      if (r.error === 'No update available for this plugin') return { error: 'no_update_available' };
+      return { error: 'install_failed' };
+    },
+  });
+}
+
+async function updatePluginNow(pluginId: string): Promise<PluginUpdateResult> {
   // Installed ids come from on-disk manifests, which are not validated; never
   // let one name a path outside the plugins root.
   if (!isValidPluginId(pluginId)) {
@@ -257,12 +294,12 @@ export function startPeriodicPluginUpdateChecks(): void {
 
   // Delayed initial check
   setTimeout(() => {
-    checkForPluginUpdates().catch(() => {});
+    checkForPluginUpdates('startup').catch(() => {});
   }, STARTUP_DELAY_MS);
 
   // Periodic checks
   checkTimer = setInterval(() => {
-    checkForPluginUpdates().catch(() => {});
+    checkForPluginUpdates('periodic').catch(() => {});
   }, CHECK_INTERVAL_MS);
 }
 

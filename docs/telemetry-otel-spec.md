@@ -483,6 +483,8 @@ Failures here often come back as return values (`false`, `[]`) rather than excep
 
 Custom marketplace names and URLs are never sent. The config snapshot carries only `c.marketplace.custom.count`.
 
+**As implemented (Phase 5b).** `c.registry.kind` is `official` or `custom`; the featured list is fetched inside the official span. `c.plugin.install` records `c.install.failure_stage` and `c.size_bucket` (download size) as attributes, with `error.type=install_failed`, and no child spans. A plugin update's install runs as its child. Plugins are identified as `c.plugin.ref=other` plus `c.plugin.id_hash`, as in Phase 5a. `c.plugin.update_check` uses `c.update.trigger` (`startup`/`periodic`/`manual`) and the two counts. A check requested while one is running is not measured.
+
 ### 4.12 Annex (satellite / controller)
 
 The architecture and the telemetry stance on Annex are in §7. Instrumentation:
@@ -530,6 +532,8 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 | `c.theme.changed` | `c.theme.kind` (`builtin`/`plugin`), `c.theme.builtin_id` if built-in |
 | `c.popout.opened` | `c.popout.type` |
 | `c.telemetry.*` | `enabled`, `level_changed`, `disabled` (sent as the last record before shutdown of the exporter), `test` |
+
+**As implemented (Phase 5b, main-process call sites).** `c.settings.changed` carries `c.settings.key` only, from a static list covering the managed settings and the legacy settings handlers, with no field names or values. `c.theme.changed` adds `c.theme.builtin_id=other` for plugin themes. `c.popout.opened` and `c.blueprint.exported` / `c.blueprint.imported` (with `c.outcome`) come from main. Page views, the command palette, onboarding and help topics are renderer call sites, owned by the refresh (§9.1).
 
 ### 4.15 Process health, renderer performance and pipeline health (added in revision 2)
 

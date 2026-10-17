@@ -29,6 +29,7 @@
 import { ipcMain } from 'electron';
 import { createSettingsStore, SettingsStore } from './settings-store';
 import { SettingsDefinition, settingsChannels } from '../../shared/settings-definitions';
+import { settingsChanged, type SettingsKey } from '../telemetry/feature-events';
 
 export interface ManagedSettings<T> {
   /** Read current settings from disk (with defaults fallback). */
@@ -90,6 +91,7 @@ export function createManagedSettings<T>(
 
       ipcMain.handle(channels.save, async (_event: Electron.IpcMainInvokeEvent, settings: T, ...extraArgs: unknown[]) => {
         await store.save(settings);
+        settingsChanged(definition.key as SettingsKey);
         options?.onSave?.(settings, ...extraArgs);
       });
     },
