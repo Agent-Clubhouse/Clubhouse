@@ -120,6 +120,7 @@ export function AgentRuntimePane({ agent, terminal }: Props) {
     try {
       await switchAgentRuntime(agent, mode);
     } catch (err) {
+      // telemetry-exempt: shown to the user; chat stays independent of telemetry (research §7.3), which maps chat events itself.
       useToastStore.getState().addToast(`Couldn't switch to ${mode === 'chat' ? 'Chat' : 'Terminal'}: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setSwitching(false);

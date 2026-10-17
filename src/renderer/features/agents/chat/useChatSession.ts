@@ -73,6 +73,7 @@ export function useChatActions(agentId: string): ChatActions {
       try {
         return { ok: true, value: await fn(...args) };
       } catch (err) {
+        // telemetry-exempt: shown to the user; chat stays independent of telemetry (research §7.3), which maps chat events itself.
         reportFailure(what, err);
         return { ok: false };
       }
