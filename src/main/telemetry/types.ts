@@ -91,6 +91,13 @@ export interface TelemetryRuntime {
   activeTraceIds(): TraceIds | undefined;
   replaySpan(span: ReplaySpan): void;
   replayTree(tree: ReplayTree): void;
+  /** W3C `traceparent` of the active recording span, for Annex propagation (spec §7). */
+  traceparent(): string | undefined;
+  /**
+   * Run `fn` so that the next root flow it starts continues the remote trace
+   * in `traceparent` (once; later root flows start their own traces).
+   */
+  withRemoteParent<T>(traceparent: string, fn: () => T): T;
   preview(): PreviewItem[];
   /** Export results that arrived at or after `sinceMs`, oldest first. */
   recentExports(sinceMs: number): ExportRecord[];

@@ -210,6 +210,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
     },
     widgets: {
       AgentTerminal: noop as unknown as PluginAPI['widgets']['AgentTerminal'],
+      AgentView: noop as unknown as PluginAPI['widgets']['AgentView'],
       SleepingAgent: noop as unknown as PluginAPI['widgets']['SleepingAgent'],
       AgentAvatar: noop as unknown as PluginAPI['widgets']['AgentAvatar'],
       QuickAgentGhost: noop as unknown as PluginAPI['widgets']['QuickAgentGhost'],

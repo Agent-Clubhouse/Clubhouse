@@ -196,6 +196,24 @@ export function replaySpanTree(tree: ReplayTree): void {
   else if (pending) buffer((rt) => rt.replayTree(tree));
 }
 
+/**
+ * W3C `traceparent` for the active span, or undefined when telemetry is off
+ * or nothing is recording. Only random ids and the sampled flag (spec §7).
+ */
+export function currentTraceparent(): string | undefined {
+  return runtime?.traceparent?.();
+}
+
+/**
+ * Run `fn` so the next root flow it starts continues a trace received from an
+ * Annex peer. A no-op wrapper when telemetry is off or `traceparent` is
+ * missing or malformed: this install's own settings decide (spec §7 rule 2).
+ */
+export function withRemoteParent<T>(traceparent: string | undefined, fn: () => T): T {
+  if (!runtime?.withRemoteParent || typeof traceparent !== 'string') return fn();
+  return runtime.withRemoteParent(traceparent, fn);
+}
+
 /** True while telemetry is running or starting. */
 export function isTelemetryActive(): boolean {
   return runtime !== null || pending !== null;
