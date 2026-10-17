@@ -39,6 +39,9 @@ const SAMPLES: Record<keyof typeof ATTR, { good: TelAttr; key: string }> = {
   rendererGoneReason: { good: ATTR.rendererGoneReason('oom'), key: 'clubhouse.renderer.gone_reason' },
   childProcessType: { good: ATTR.childProcessType('GPU'), key: 'clubhouse.child_process.type' },
   childProcessGoneReason: { good: ATTR.childProcessGoneReason('crashed'), key: 'clubhouse.child_process.gone_reason' },
+  uiSurface: { good: ATTR.uiSurface('sidebar_list'), key: 'clubhouse.ui.surface' },
+  uiFeature: { good: ATTR.uiFeature('tab_select'), key: 'clubhouse.ui.feature' },
+  uiAction: { good: ATTR.uiAction('add_project'), key: 'clubhouse.ui.action' },
 };
 
 describe('telemetry attribute registry', () => {
@@ -89,6 +92,9 @@ describe('telemetry attribute registry', () => {
         "clubhouse.startup.kind",
         "clubhouse.telemetry.destination",
         "clubhouse.telemetry.signal",
+        "clubhouse.ui.action",
+        "clubhouse.ui.feature",
+        "clubhouse.ui.surface",
         "clubhouse.update.from_version",
         "clubhouse.view",
         "clubhouse.window.kind",

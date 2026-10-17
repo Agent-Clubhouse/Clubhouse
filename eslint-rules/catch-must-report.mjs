@@ -4,14 +4,15 @@
  * A `catch` that swallows an error, or turns it into a toast, must also tell
  * telemetry. A catch block passes when it:
  *   - rethrows (contains a `throw`), or
- *   - calls `tel.<anything>(...)` or `reportMainProcessError(...)`, or
+ *   - calls `tel.<anything>(...)`, `reportMainProcessError(...)` or
+ *     `reportChromeActionFailed(...)` (which emits clubhouse.ui.action_failed), or
  *   - carries a `// telemetry-exempt: <reason>` comment explaining why not.
  *
  * Nested functions inside the catch don't count: a `throw` or `tel.` call
  * there doesn't run when the catch does.
  */
 const EXEMPT = /telemetry-exempt:\s*\S/;
-const REPORTERS = new Set(['reportMainProcessError']);
+const REPORTERS = new Set(['reportMainProcessError', 'reportChromeActionFailed']);
 
 function isFunction(node) {
   return node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression';

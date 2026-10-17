@@ -33,6 +33,9 @@ import { SatelliteDashboard } from './features/annex/SatelliteDashboard';
 import { useLockStore } from './stores/lockStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from './stores/remoteProjectStore';
 import { AnnexDisabledView } from './panels/AnnexDisabledView';
+import { useChromeFlagStore } from './chrome/chromeFlag';
+import { ChromeTitleBar } from './chrome/ChromeTitleBar';
+import { ChromeBody } from './chrome/ChromeBody';
 
 export function App() {
   // ── Routing state (minimal selectors for view switching) ────────────────
@@ -41,6 +44,8 @@ export function App() {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activeHostId = useUIStore((s) => s.activeHostId);
   const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
+  // New chrome shell (experimental, read once at startup; docs/chrome-redesign-spec.md §4.1)
+  const isNewChrome = useChromeFlagStore((s) => s.enabled);
 
   // ── Resume banner state ──────────────────────────────────────────────────
   const resumingAgents = useAgentStore((s) => s.resumingAgents);
@@ -270,6 +275,36 @@ export function App() {
       bannerOffset={bannerHeight}
     />
   );
+
+  if (isNewChrome) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+        {lockOverlay}
+        <ChromeTitleBar />
+        <div ref={bannerRef}>
+          <PermissionViolationBanner />
+          <UpdateBanner />
+          <ResumeBanner
+            sessions={resumeSessions}
+            onManualResume={(agentId) => {
+              console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
+            }}
+            onDismiss={() => useAgentStore.getState().clearResumingAgents()}
+          />
+          <PluginUpdateBanner />
+          <GitBanner />
+        </div>
+        <ChromeBody />
+        <CommandPalette />
+        <QuickAgentDialog />
+        <BlueprintGallery />
+        <WhatsNewDialog />
+        <OnboardingModal />
+        <ConfigChangesDialog />
+        <ToastContainer />
+      </div>
+    );
+  }
 
   if (isHome) {
     return (

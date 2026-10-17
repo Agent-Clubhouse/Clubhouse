@@ -68,6 +68,7 @@ const CONDITION_LABELS: Record<string, string> = {
   isHome: 'Home',
   isAppPlugin: 'AppPlugin',
   isHelp: 'Help',
+  isNewChrome: 'Chrome',
 };
 
 /**
@@ -311,10 +312,10 @@ const initializerSource = readFileSync(join(__dirname, 'app-initializer.ts'), 'u
 describe('App.tsx – global dialog presence in all return paths', () => {
   const returnPaths = findReturnPaths(appFn);
 
-  it('should have exactly 4 JSX return blocks (Home, AppPlugin, Help, MainProject)', () => {
-    expect(returnPaths.length).toBe(4);
+  it('should have exactly 5 JSX return blocks (Chrome, Home, AppPlugin, Help, MainProject)', () => {
+    expect(returnPaths.length).toBe(5);
     const labels = returnPaths.map((p) => p.label).sort();
-    expect(labels).toEqual(['AppPlugin', 'Help', 'Home', 'MainProject']);
+    expect(labels).toEqual(['AppPlugin', 'Chrome', 'Help', 'Home', 'MainProject']);
   });
 
   const requiredDialogs = [
@@ -360,14 +361,15 @@ describe('App.tsx – global dialog presence in all return paths', () => {
 describe('App.tsx – selector discipline', () => {
   const selectors = findStoreSelectors(appFn.body!);
 
-  it('should have at most 15 store selector calls (routing + lock state + resume + annex)', () => {
+  it('should have at most 16 store selector calls (routing + lock state + resume + annex + chrome flag)', () => {
     // After extracting TitleBar, RailSection, and ProjectPanelLayout:
     // projects, activeProjectId, explorerTab = 3 selectors
     // Annex V2 routing: activeHostId, pluginMatchState = 2 selectors
     // Annex V2 lock state: locked, paused, alias, icon, color, fingerprint, togglePause, unlock = 8 selectors
     // Session resume: resumingAgents, agents = 2 selectors (agents may already be counted)
     // Individual selectors avoid Zustand reference-inequality re-render loops
-    expect(selectors.length).toBeLessThanOrEqual(15);
+    // New chrome flag: 1 selector (read once at startup, never changes in a session)
+    expect(selectors.length).toBeLessThanOrEqual(16);
   });
 
   it('should NOT subscribe to agentStore for event handler functions', () => {

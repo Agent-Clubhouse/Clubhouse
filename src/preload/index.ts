@@ -24,9 +24,12 @@ import { hookServer } from './hookServer';
 import { goobers } from './goobers';
 import { telemetrySettings } from './telemetrySettings';
 import { telemetry } from './telemetry';
+import { NEW_CHROME_ARG } from '../shared/chrome-flag';
 
 export const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
+  /** True when main started this window with the new chrome layout (fixed for the session). */
+  newChromeLayout: process.argv.includes(NEW_CHROME_ARG),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   /**
    * Generic settings bridge — routes get/save by definition key.

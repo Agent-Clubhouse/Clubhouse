@@ -26,6 +26,7 @@ import {
 import { createIdentity, isValidIdentity, type TelemetryIdentity } from './ids';
 import { deleteOfflineData, getOfflineDir, OFFLINE_PRUNE_INTERVAL_MS, pruneOfflineDir } from './offline';
 import { buildResourceAttributes, type ResourceInputs } from './resource';
+import { NEW_CHROME_FLAG } from '../../shared/chrome-flag';
 import { createScrubber } from './scrubber';
 import {
   getTelemetrySettings,
@@ -114,6 +115,21 @@ function annexRole(): ResourceInputs['annexRole'] {
     // Settings unreadable: report none.
   }
   return 'none';
+}
+
+/**
+ * The chrome shell for this session. The renderer reads the same experimental
+ * flag once at startup and switching takes effect on the next launch, so the
+ * value cannot change mid-session (docs/chrome-redesign-spec.md §4.1, §8).
+ */
+function uiChrome(): ResourceInputs['uiChrome'] {
+  try {
+    const { getSettings } = require('../services/experimental-settings') as typeof import('../services/experimental-settings');
+    return getSettings()[NEW_CHROME_FLAG] === true ? 'v2' : 'legacy';
+  } catch {
+    // Settings unreadable: the renderer falls back to the legacy shell too.
+    return 'legacy';
+  }
 }
 
 /** Ports of Clubhouse's own loopback servers; OTLP must never post into them. */
@@ -224,6 +240,7 @@ async function start(): Promise<boolean> {
         instanceId,
         level,
         annexRole: annexRole(),
+        uiChrome: uiChrome(),
       }),
       diagLog: (lvl, message) => appLog(LOG_NS, lvl, `OpenTelemetry: ${message}`),
     });

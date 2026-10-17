@@ -11,6 +11,8 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import { isTelemetryEnabled, onTelemetryEnabledChange, tel } from './facade';
 
 export type TelemetryView = Parameters<typeof ATTR.view>[0];
+/** Where in the new chrome the user is (`clubhouse.ui.surface`); null in the legacy shell. */
+export type TelemetrySurface = Parameters<typeof ATTR.uiSurface>[0];
 
 export const AGGREGATE_INTERVAL_MS = 60_000;
 /** Durations sampled per view per interval; the counter still counts every frame. */
@@ -22,7 +24,9 @@ interface Bucket {
 }
 
 let currentView: TelemetryView = 'other';
-const buckets = new Map<TelemetryView, Bucket>();
+let currentSurface: TelemetrySurface | null = null;
+/** Keyed by view and surface; at most 8 views x 10 surfaces, well under the 200-set cap. */
+const buckets = new Map<string, Bucket & { view: TelemetryView; surface: TelemetrySurface | null }>();
 let observer: PerformanceObserver | null = null;
 let interval: ReturnType<typeof setInterval> | null = null;
 
@@ -34,13 +38,28 @@ export function getTelemetryView(): TelemetryView {
   return currentView;
 }
 
+/** Set by the new chrome (docs/chrome-redesign-spec.md §8); the legacy shell leaves it null. */
+export function setTelemetrySurface(surface: TelemetrySurface | null): void {
+  currentSurface = surface;
+}
+
+export function getTelemetrySurface(): TelemetrySurface | null {
+  return currentSurface;
+}
+
+/** The surface as attributes for signals that carry it beside `clubhouse.view`. */
+export function surfaceAttrs(surface: TelemetrySurface | null = currentSurface) {
+  return surface ? [ATTR.uiSurface(surface)] : [];
+}
+
 /** Record one long frame. Exported for tests. */
-export function recordLongFrame(durationMs: number, view: TelemetryView = currentView): void {
+export function recordLongFrame(durationMs: number, view: TelemetryView = currentView, surface: TelemetrySurface | null = currentSurface): void {
   if (!isTelemetryEnabled()) return;
-  let b = buckets.get(view);
+  const key = `${view}|${surface ?? ''}`;
+  let b = buckets.get(key);
   if (!b) {
-    b = { count: 0, samples: [] };
-    buckets.set(view, b);
+    b = { count: 0, samples: [], view, surface };
+    buckets.set(key, b);
   }
   b.count++;
   if (b.samples.length < MAX_DURATION_SAMPLES) b.samples.push(durationMs);
@@ -48,10 +67,11 @@ export function recordLongFrame(durationMs: number, view: TelemetryView = curren
 
 /** Send and reset the aggregates. Exported for tests. */
 export function flushLongFrames(): void {
-  for (const [view, b] of buckets) {
+  for (const b of buckets.values()) {
     if (b.count === 0) continue;
-    tel.count('clubhouse.renderer.long_frames', b.count, [ATTR.view(view)]);
-    for (const ms of b.samples) tel.count('clubhouse.renderer.long_frame.duration', ms / 1000, [ATTR.view(view)]);
+    const attrs = [ATTR.view(b.view), ...surfaceAttrs(b.surface)];
+    tel.count('clubhouse.renderer.long_frames', b.count, attrs);
+    for (const ms of b.samples) tel.count('clubhouse.renderer.long_frame.duration', ms / 1000, attrs);
   }
   buckets.clear();
 }
@@ -104,4 +124,5 @@ export function _resetLongFramesForTests(): void {
   subscribed?.();
   subscribed = null;
   currentView = 'other';
+  currentSurface = null;
 }

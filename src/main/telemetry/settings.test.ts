@@ -119,6 +119,7 @@ describe('resource attributes', () => {
     instanceId: 'run-1',
     level: 'standard',
     annexRole: 'none',
+    uiChrome: 'legacy',
   });
 
   it('sets exactly the documented keys, with service.instance.id explicit', () => {

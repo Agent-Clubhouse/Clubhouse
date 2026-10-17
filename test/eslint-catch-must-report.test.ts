@@ -13,6 +13,7 @@ tester.run('catch-must-report', catchMustReport as never, {
     'function f() { try { a(); } catch (e) { tel.exception(e, { handled: true }); return null; } }',
     'try { a(); } catch (e) { tel?.event("x"); }',
     'try { a(); } catch (e) { reportMainProcessError(e, "uncaught"); }',
+    'try { a(); } catch (e) { reportChromeActionFailed("add_project", e); }',
     'function f() { try { a(); } catch { /* telemetry-exempt: probing for an optional file */ return false; } }',
     'try { a(); } catch {\n  // telemetry-exempt: best-effort cleanup\n}',
     'try { a(); } catch (e) { if (bad(e)) throw new Error("wrapped"); }',
