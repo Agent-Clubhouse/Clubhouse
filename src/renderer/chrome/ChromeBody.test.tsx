@@ -6,6 +6,7 @@ vi.mock('./ChromeSidebar', () => ({ ChromeSidebar: () => <div data-testid="chrom
 vi.mock('../panels/MainContentView', () => ({ MainContentView: () => <div data-testid="main-content" /> }));
 vi.mock('./pages/ProjectStartPage', () => ({ ProjectStartPage: ({ project }: { project: { id: string } }) => <div data-testid="start-page">{project.id}</div> }));
 vi.mock('./pages/FirstRun', () => ({ FirstRun: () => <div data-testid="first-run" /> }));
+vi.mock('./pages/NewAgentPage', () => ({ NewAgentPage: ({ request }: { request: { kind: string } }) => <div data-testid="new-agent-page">{request.kind}</div> }));
 
 import { ChromeBody } from './ChromeBody';
 import { useChromeFlagStore } from './chromeFlag';
@@ -24,12 +25,22 @@ beforeEach(() => {
     activeAgentId: 'a1',
   });
   useQuickAgentStore.setState({ selectedCompletedId: null });
-  useChromeStore.setState({ projectScopeId: null });
+  useChromeStore.setState({ projectScopeId: null, newAgent: null });
 });
 
 afterEach(() => useChromeFlagStore.setState({ enabled: false }));
 
 describe('ChromeBody', () => {
+  it('shows the New agent page over the pane until something else opens', () => {
+    useUIStore.setState({ explorerTab: 'settings' });
+    render(<ChromeBody />);
+    act(() => useChromeStore.getState().openNewAgent('quick'));
+    expect(screen.getByTestId('new-agent-page').textContent).toBe('quick');
+    act(() => useUIStore.setState({ explorerTab: 'help' }));
+    expect(useChromeStore.getState().newAgent).toBeNull();
+    expect(screen.queryByTestId('new-agent-page')).toBeNull();
+  });
+
   it('shows the selected agent on the Agents tab', () => {
     render(<ChromeBody />);
     expect(screen.getByTestId('main-content')).toBeTruthy();

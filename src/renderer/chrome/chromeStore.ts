@@ -52,6 +52,15 @@ export interface AppLaunch {
   seq: number;
 }
 
+/** What the New agent page opens with (#2031). */
+export interface NewAgentRequest {
+  kind: 'durable' | 'quick';
+  /** Preselected project; otherwise the page picks the selected or last-used one. */
+  projectId?: string;
+  /** Bumped on every open so the form starts fresh even when it was already showing. */
+  seq: number;
+}
+
 export interface ChromeState {
   /**
    * The project whose header is selected, which makes the project root the
@@ -63,6 +72,10 @@ export interface ChromeState {
   titleTabs: Array<{ id: string; disabled?: boolean }>;
   setTitleTabs: (tabs: Array<{ id: string; disabled?: boolean }>) => void;
   /** Set by ⌘⇧N for the start page to focus its composer, which clears it. Not persisted. */
+  /** The New agent page in the pane, while it is open. Not persisted. */
+  newAgent: NewAgentRequest | null;
+  openNewAgent: (kind: NewAgentRequest['kind'], projectId?: string) => void;
+  closeNewAgent: () => void;
   composerFocusPending: boolean;
   requestComposer: () => void;
   consumeComposerFocus: () => void;
@@ -237,6 +250,10 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       const same = current.length === tabs.length && current.every((t, i) => t.id === tabs[i].id && !!t.disabled === !!tabs[i].disabled);
       if (!same) set({ titleTabs: tabs });
     },
+
+    newAgent: null,
+    openNewAgent: (kind, projectId) => set({ newAgent: { kind, projectId, seq: (get().newAgent?.seq ?? 0) + 1 } }),
+    closeNewAgent: () => { if (get().newAgent) set({ newAgent: null }); },
 
     composerFocusPending: false,
     requestComposer: () => set({ composerFocusPending: true }),

@@ -5,7 +5,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useChromeStore } from '../chromeStore';
-import { useChromeDialogStore } from '../sidebar/ChromeAgentDialogs';
+import { openNewAgentPage } from '../startPage';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
 import type { Agent, CompletedQuickAgent, Project } from '../../../shared/types';
 
@@ -215,7 +215,6 @@ function FinishedList({ projectId }: { projectId: string }) {
 
 export function ProjectStartPage({ project }: { project: Project }) {
   const openProjectSettings = useUIStore((s) => s.openProjectSettings);
-  const openNewAgent = useChromeDialogStore((s) => s.openNewAgent);
 
   return (
     <div className="h-full overflow-y-auto bg-ctp-base" data-testid="start-page">
@@ -227,7 +226,7 @@ export function ProjectStartPage({ project }: { project: Project }) {
           </div>
           <Composer project={project} />
           <div className="flex gap-4">
-            <button type="button" onClick={() => { openNewAgent(project.id); reportChromeFeature('new_agent_open'); }} className={linkClass}>
+            <button type="button" onClick={() => { openNewAgentPage('durable', project.id); reportChromeFeature('new_agent_open'); }} className={linkClass}>
               New durable agent…
             </button>
             <button type="button" data-testid="start-page-settings" onClick={() => openProjectSettings(project.id)} className={linkClass}>

@@ -20,25 +20,20 @@ export function openStartPage(projectId: string): void {
 }
 
 /**
- * ⌘⇧N. In the new shell it opens the start page composer for the selected
- * project (spec §4.3, §5.3). The legacy shell, a satellite host, or no local
- * project keeps the Quick Agent dialog.
+ * The New agent page (#2031) with `kind` chosen, in the new shell on the local
+ * host. Elsewhere (the legacy shell, a satellite, no projects yet) the Quick
+ * Agent dialog stays the way in.
  */
-export function openNewQuickAgent(): void {
+export function openNewAgentPage(kind: 'durable' | 'quick', projectId?: string): void {
   const ui = useUIStore.getState();
-  if (!isNewChromeEnabled() || ui.activeHostId) {
+  if (!isNewChromeEnabled() || ui.activeHostId || useProjectStore.getState().projects.length === 0) {
     ui.openQuickAgentDialog();
     return;
   }
-  const { projects, activeProjectId } = useProjectStore.getState();
-  const { lastProjectId } = useChromeStore.getState();
-  const has = (id: string | null | undefined): id is string => !!id && projects.some((p) => p.id === id);
-  const projectId = has(activeProjectId) ? activeProjectId : has(lastProjectId) ? lastProjectId : projects[0]?.id;
-  if (!projectId) {
-    ui.openQuickAgentDialog();
-    return;
-  }
-  openStartPage(projectId);
-  useChromeStore.getState().requestComposer();
+  useChromeStore.getState().openNewAgent(kind, projectId);
 }
 
+/** ⌘⇧N: the New agent page with Durable chosen, like the sidebar's New button (#2031). */
+export function openNewAgentFromShortcut(): void {
+  openNewAgentPage('durable');
+}

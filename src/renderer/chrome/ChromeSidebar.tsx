@@ -29,6 +29,7 @@ import { selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention }
 import { HostSwitcher, LOCAL_HOST } from './sidebar/HostSwitcher';
 import { useClickOutside } from './sidebar/useClickOutside';
 import { hostOf, switchHost } from './hosts';
+import { openNewAgentPage } from './startPage';
 import { useChromeStore, type AppLaunchParams } from './chromeStore';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
@@ -66,7 +67,7 @@ function MenuButton({ label, testId, children, items, disabled }: {
   label: string;
   testId: string;
   children: React.ReactNode;
-  items: Array<{ label: string; onSelect: () => void }>;
+  items: Array<{ label: string; shortcut?: string; onSelect: () => void }>;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -97,9 +98,10 @@ function MenuButton({ label, testId, children, items, disabled }: {
               type="button"
               role="menuitem"
               onClick={() => { setOpen(false); item.onSelect(); }}
-              className="w-full px-3 py-1.5 text-left text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
+              className="w-full px-3 py-1.5 flex items-center gap-4 text-left text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
             >
               {item.label}
+              {item.shortcut && <kbd className="ml-auto font-sans text-ctp-overlay1">{item.shortcut}</kbd>}
             </button>
           ))}
         </div>
@@ -409,6 +411,7 @@ export function ChromeSidebar() {
   // Every open goes through launchApp, so a plain open ends a visit that Needs you started.
   const openAppItem = useCallback((id: string, params?: AppLaunchParams) => {
     useChromeStore.getState().launchApp(id, params);
+    useChromeStore.getState().closeNewAgent();
     setExplorerTab(`plugin:app:${id}`);
     reportChromeFeature('app_item_open');
   }, [setExplorerTab]);
@@ -430,6 +433,7 @@ export function ChromeSidebar() {
   // The project's remembered agent is cleared too, so the project-switch effect
   // (App.tsx restoreProjectAgent) doesn't reselect it and end the project scope.
   const selectProject = useCallback((projectId: string) => {
+    useChromeStore.getState().closeNewAgent();
     setActiveProject(projectId);
     setActiveAgent(null, projectId);
     setProjectScope(projectId);
@@ -442,6 +446,7 @@ export function ChromeSidebar() {
   // scope (Terminal, Files, Git) the tab stays; otherwise the agent opens.
   // An agent on another host switches the host first (a remote Needs you row).
   const openAgent = useCallback((agent: Agent, keepTab: boolean) => requestLeaveAgentSettings(() => {
+    useChromeStore.getState().closeNewAgent();
     useQuickAgentStore.getState().selectCompleted(null);
     switchHost(hostOf(agent.projectId));
     setProjectScope(null);
@@ -510,6 +515,7 @@ export function ChromeSidebar() {
   }, []);
 
   const selectCompleted = useCallback((projectId: string, completedId: string) => {
+    useChromeStore.getState().closeNewAgent();
     setProjectScope(null);
     if (useProjectStore.getState().activeProjectId !== projectId) setActiveProject(projectId);
     setExplorerTab('agents', projectId);
@@ -531,10 +537,12 @@ export function ChromeSidebar() {
     reportChromeFeature('project_reorder');
   }, [reorderProjects]);
 
+  // A project's +, and each New menu item, open the New agent page with that kind chosen (#2031).
   const onNewAgent = useCallback((projectId: string) => {
-    useChromeDialogStore.getState().openNewAgent(projectId);
+    openNewAgentPage('durable', projectId);
     reportChromeFeature('new_agent_open');
   }, []);
+  const newAgentBinding = useKeyboardShortcutsStore((s) => s.shortcuts['new-quick-agent']?.currentBinding);
 
   // Nothing here matched: hand the query to the palette, which searches everything.
   const searchEverything = () => {
@@ -546,11 +554,16 @@ export function ChromeSidebar() {
     pickAndAddProject().catch((err) => reportChromeActionFailed('add_project', err));
   };
 
-  const newItems = activeProjectId ? [
-    { label: 'Durable agent…', onSelect: () => useChromeDialogStore.getState().openNewAgent(activeProjectId) },
-    { label: 'Agent from a template…', onSelect: () => useChromeDialogStore.getState().openGallery(activeProjectId) },
-    { label: 'Quick agent…', onSelect: () => useUIStore.getState().openQuickAgentDialog() },
-  ] : [];
+  const templateProjectId = activeProjectId ?? projects[0]?.id;
+  const newItems = [
+    {
+      label: 'Durable agent…',
+      shortcut: newAgentBinding ? formatBinding(newAgentBinding) : undefined,
+      onSelect: () => { openNewAgentPage('durable'); reportChromeFeature('new_agent_open'); },
+    },
+    { label: 'Quick agent…', onSelect: () => { openNewAgentPage('quick'); reportChromeFeature('new_agent_open'); } },
+    ...(templateProjectId ? [{ label: 'Agent from a template…', onSelect: () => useChromeDialogStore.getState().openGallery(templateProjectId) }] : []),
+  ];
 
   // The breadcrumb, or Esc inside the sidebar, returns from a list or Settings to Agents (spec §4.6).
   const backToAgents = () => {
@@ -593,7 +606,7 @@ export function ChromeSidebar() {
       <div className="flex-shrink-0 px-2 pb-2 flex items-center gap-1.5">
         <SidebarFilter value={filter} onChange={changeFilter} />
         <PaletteButton onOpen={() => { useCommandPaletteStore.getState().open(); reportChromeFeature('search_open'); }} />
-        <MenuButton label="New agent" testId="chrome-new" items={newItems} disabled={!activeProjectId || isRemoteHost}>
+        <MenuButton label="New agent" testId="chrome-new" items={newItems} disabled={projects.length === 0 || isRemoteHost}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           New
         </MenuButton>
