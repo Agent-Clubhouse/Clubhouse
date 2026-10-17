@@ -62,6 +62,12 @@ export interface ExportRecord {
   errorMessage?: string;
 }
 
+/** A root span and its direct children, all with explicit times (startup, shutdown). */
+export interface ReplayTree {
+  root: ReplaySpan;
+  children: ReplaySpan[];
+}
+
 export interface TelemetryRuntime {
   readonly level: TelemetryLevel;
   flow<T>(name: SpanName, opts: FlowOptions, fn: (span: SpanHandle) => T, extras?: FlowExtras<T>): T;
@@ -70,6 +76,7 @@ export interface TelemetryRuntime {
   event(name: EventName, attrs?: TelAttr[]): void;
   exception(error: unknown, opts: ExceptionOptions): void;
   replaySpan(span: ReplaySpan): void;
+  replayTree(tree: ReplayTree): void;
   preview(): PreviewItem[];
   /** Export results that arrived at or after `sinceMs`, oldest first. */
   recentExports(sinceMs: number): ExportRecord[];

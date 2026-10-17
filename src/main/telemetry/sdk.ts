@@ -15,6 +15,7 @@ import {
   trace,
   type Attributes,
   type Counter,
+  type Gauge,
   type Histogram,
   type Span,
 } from '@opentelemetry/api';
@@ -180,13 +181,18 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
   });
   const meterProvider = new MeterProvider({ resource, views, readers: [metricReader] });
   const meter = meterProvider.getMeter(SCOPE);
-  const counters = new Map<string, Counter | Histogram>();
-  function instrument(name: MetricName): Counter | Histogram {
+  const counters = new Map<string, Counter | Histogram | Gauge>();
+  function instrument(name: MetricName): Counter | Histogram | Gauge {
     let inst = counters.get(name);
     if (!inst) {
       const def: MetricDef = METRICS[name];
       const options = { unit: def.unit, description: def.description };
-      inst = def.kind === 'histogram' ? meter.createHistogram(name, options) : meter.createCounter(name, options);
+      inst =
+        def.kind === 'histogram'
+          ? meter.createHistogram(name, options)
+          : def.kind === 'gauge'
+            ? meter.createGauge(name, options)
+            : meter.createCounter(name, options);
       counters.set(name, inst);
     }
     return inst;
@@ -373,6 +379,34 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       span.setAttributes(toAttributes(attrs));
       if (s.outcome === 'error') span.setStatus({ code: SpanStatusCode.ERROR });
       span.end(s.endMs);
+    },
+
+    replayTree({ root, children }) {
+      if (!levelAllows(spanLevel, SPANS[root.name].level)) return;
+      const rootSpan = tracer.startSpan(root.name, {
+        kind: SPANS[root.name].root ? SpanKind.SERVER : SpanKind.INTERNAL,
+        startTime: root.startMs,
+        attributes: toAttributes(root.attrs),
+      }, context.active());
+      const parentCtx = trace.setSpan(context.active(), rootSpan);
+      for (const c of children) {
+        if (!levelAllows(spanLevel, SPANS[c.name].level)) continue;
+        const child = tracer.startSpan(c.name, {
+          kind: SpanKind.INTERNAL,
+          startTime: c.startMs,
+          attributes: toAttributes(c.attrs),
+        }, parentCtx);
+        const cAttrs = [ATTR.outcome(c.outcome)];
+        if (c.errorType) cAttrs.push(ATTR.errorType(c.errorType));
+        child.setAttributes(toAttributes(cAttrs));
+        if (c.outcome === 'error') child.setStatus({ code: SpanStatusCode.ERROR });
+        child.end(c.endMs);
+      }
+      const rAttrs = [ATTR.outcome(root.outcome)];
+      if (root.errorType) rAttrs.push(ATTR.errorType(root.errorType));
+      rootSpan.setAttributes(toAttributes(rAttrs));
+      if (root.outcome === 'error') rootSpan.setStatus({ code: SpanStatusCode.ERROR });
+      rootSpan.end(root.endMs);
     },
 
     preview: () => tee.snapshot(),

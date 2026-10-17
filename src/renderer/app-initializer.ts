@@ -59,10 +59,12 @@ async function loadAllSettings(): Promise<void> {
  */
 export async function initApp(): Promise<() => void> {
   const cleanups: (() => void)[] = [];
+  const initStartMs = Date.now();
 
   // 1. Load all settings first — stores must be populated before anything
   //    that reads from them.
   await loadAllSettings();
+  const settingsLoadedMs = Date.now();
 
   // 2. Initialize plugin system (must be after settings are loaded)
   try {
@@ -76,6 +78,8 @@ export async function initApp(): Promise<() => void> {
       'error',
     );
   }
+
+  const pluginsReadyMs = Date.now();
 
   // 3. Set up badge side effects AFTER settings are loaded, so subscriptions
   //    see the correct initial state.
@@ -120,7 +124,7 @@ export async function initApp(): Promise<() => void> {
   });
 
   // 8. Tell main the app is ready: the end of the startup span (spec §4.1).
-  markRendererReady();
+  markRendererReady({ initStartMs, settingsLoadedMs, pluginsReadyMs });
 
   return () => {
     for (const cleanup of cleanups) {

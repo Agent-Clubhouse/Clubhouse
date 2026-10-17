@@ -22,6 +22,12 @@ vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
+const telEvent = vi.hoisted(() => vi.fn());
+vi.mock('../telemetry', () => ({
+  tel: { event: telEvent },
+  ATTR: { safeModeTrigger: (v: string) => ({ key: 'clubhouse.safe_mode.trigger', kind: 'enum', value: v }) },
+}));
+
 import * as fs from 'fs';
 import { dialog } from 'electron';
 import { appLog } from './log-service';
@@ -368,3 +374,31 @@ describe('safe-mode', () => {
   });
 });
 
+
+describe('safe-mode telemetry', () => {
+  beforeEach(() => telEvent.mockClear());
+
+  it('reports a forced safe mode as cli_flag', () => {
+    handleSafeModeStartup(true);
+    expect(telEvent).toHaveBeenCalledWith('clubhouse.app.safe_mode', [
+      { key: 'clubhouse.safe_mode.trigger', kind: 'enum', value: 'cli_flag' },
+    ]);
+  });
+
+  it('reports the user choice after a crash loop', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ timestamp: 1, attempt: 3, lastEnabledPlugins: [] }));
+    vi.mocked(dialog.showMessageBoxSync).mockReturnValue(1);
+    handleSafeModeStartup(false);
+    expect(telEvent).toHaveBeenCalledWith('clubhouse.app.safe_mode', [
+      { key: 'clubhouse.safe_mode.trigger', kind: 'enum', value: 'user_declined' },
+    ]);
+  });
+
+  it('sends nothing on a normal start', () => {
+    vi.mocked(fs.readFileSync).mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
+    handleSafeModeStartup(false);
+    expect(telEvent).not.toHaveBeenCalled();
+  });
+});

@@ -17,6 +17,6 @@ export function registerTelemetryRendererHandlers(deps: RendererBridgeDeps): voi
   initRendererBridge(deps);
   // Fire-and-forget batches; the bridge re-validates every item.
   ipcMain.on(IPC.TELEMETRY.EMIT, (event, raw: unknown) => handleRendererEmit(event.sender, raw));
-  ipcMain.on(IPC.TELEMETRY.RENDERER_READY, (event) => handleRendererReady(event.sender));
+  ipcMain.on(IPC.TELEMETRY.RENDERER_READY, (event, marks: unknown) => handleRendererReady(event.sender, marks));
   ipcMain.handle(IPC.TELEMETRY.GET_STATE, () => getTelemetryState());
 }

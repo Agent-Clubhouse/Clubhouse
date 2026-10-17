@@ -17,6 +17,8 @@ import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import {
   DISABLED_STATE,
   parseRendererBatch,
+  parseRendererReadyMarks,
+  type RendererReadyMarks,
   type RendererItem,
   type TelemetryState,
 } from '../../shared/telemetry/renderer-protocol';
@@ -36,7 +38,8 @@ export interface RendererBridgeDeps {
 let deps: RendererBridgeDeps | null = null;
 let registered = false;
 let rendererReadyAt: number | null = null;
-const readyListeners = new Set<(atMs: number) => void>();
+let rendererReadyMarks: RendererReadyMarks = {};
+const readyListeners = new Set<(atMs: number, marks: RendererReadyMarks) => void>();
 
 export function windowKindFor(sender: Pick<WebContents, 'id'>): WindowKind {
   return deps && sender.id === deps.getMainWebContentsId() ? 'main' : 'popout';
@@ -95,8 +98,8 @@ export function dispatchRendererItems(items: RendererItem[], kind: WindowKind): 
 }
 
 /** Called once the main window's renderer finished initApp(). */
-export function onRendererReady(listener: (atMs: number) => void): () => void {
-  if (rendererReadyAt !== null) listener(rendererReadyAt);
+export function onRendererReady(listener: (atMs: number, marks: RendererReadyMarks) => void): () => void {
+  if (rendererReadyAt !== null) listener(rendererReadyAt, rendererReadyMarks);
   readyListeners.add(listener);
   return () => readyListeners.delete(listener);
 }
@@ -113,12 +116,13 @@ export function handleRendererEmit(sender: Pick<WebContents, 'id'>, raw: unknown
 }
 
 /** Handle `telemetry:renderer-ready`: main window only, first one wins. */
-export function handleRendererReady(sender: Pick<WebContents, 'id'>): void {
+export function handleRendererReady(sender: Pick<WebContents, 'id'>, rawMarks?: unknown): void {
   if (windowKindFor(sender) !== 'main' || rendererReadyAt !== null) return;
   rendererReadyAt = Date.now();
+  rendererReadyMarks = parseRendererReadyMarks(rawMarks);
   for (const l of readyListeners) {
     try {
-      l(rendererReadyAt);
+      l(rendererReadyAt, rendererReadyMarks);
     } catch {
       // Listeners must not break the handler.
     }
@@ -141,5 +145,6 @@ export function _resetRendererBridgeForTests(): void {
   deps = null;
   registered = false;
   rendererReadyAt = null;
+  rendererReadyMarks = {};
   readyListeners.clear();
 }
