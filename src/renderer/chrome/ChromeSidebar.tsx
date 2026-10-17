@@ -25,6 +25,7 @@ import { useClickOutside } from './sidebar/useClickOutside';
 import { hostOf, switchHost } from './hosts';
 import { useChromeStore } from './chromeStore';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
+import { FeedbackButton } from '../features/feedback/FeedbackButton';
 
 /**
  * Sidebar for the new chrome (docs/chrome-redesign-spec.md §2, §4.2): the host
@@ -534,6 +535,7 @@ export function ChromeSidebar() {
             </button>
           );
         })}
+        <FeedbackButton variant="sidebar" />
         <button
           type="button"
           onClick={toggleHelp}

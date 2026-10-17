@@ -475,6 +475,18 @@ vi.stubGlobal('clubhouse', {
   hookServer: {
     onAgentsNeedRestart: () => noop,
   },
+  feedback: {
+    getStatus: async () => ({
+      started: false, state: 'disconnected', connected: false, enrolled: false, canCapture: false, notice: null, expiresAt: null,
+      storage: { available: true }, outbox: { state: 'checking', pending: 0, blocked: 0, bytes: 0, maxItems: 10, maxBytes: 33554432 }, received: [],
+    }),
+    connect: async () => ({ connected: false }),
+    disconnect: async () => ({ forgotten: true, revoked: null }),
+    capture: async () => ({ draftId: 'draft', preview: null }),
+    send: async () => ({ id: 'report', status: 'saved-local' }),
+    cancel: asyncNoop,
+    onStatusChanged: () => noop,
+  },
   telemetrySettings: {
     getStatus: async () => ({ available: false }),
     saveAzure: async () => ({ ok: false }),

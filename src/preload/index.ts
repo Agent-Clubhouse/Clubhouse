@@ -23,6 +23,7 @@ import { canvas } from './canvas';
 import { hookServer } from './hookServer';
 import { goobers } from './goobers';
 import { telemetrySettings } from './telemetrySettings';
+import { feedback } from './feedback';
 import { telemetry } from './telemetry';
 import { NEW_CHROME_ARG } from '../shared/chrome-flag';
 import { chat } from './chat';
@@ -70,6 +71,7 @@ export const api = {
   ...hookServer,
   ...goobers,
   ...telemetrySettings,
+  ...feedback,
   ...telemetry,
   ...chat,
 };

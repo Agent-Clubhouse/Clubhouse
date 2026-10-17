@@ -498,6 +498,16 @@ export const IPC = {
     CLEAR_OFFLINE: 'telemetry-settings:clear-offline',
     DELETE_LOCAL_DATA: 'telemetry-settings:delete-local-data',
   },
+  FEEDBACK: {
+    GET_STATUS: 'feedback:get-status',
+    CONNECT: 'feedback:connect',
+    DISCONNECT: 'feedback:disconnect',
+    CAPTURE: 'feedback:capture',
+    SEND: 'feedback:send',
+    CANCEL: 'feedback:cancel',
+    /** Main → renderer broadcast: FeedbackStatus after any access, outbox or receipt change. */
+    STATUS_CHANGED: 'feedback:status-changed',
+  },
   GOOBERS: {
     GET_STATE: 'goobers:get-state',
     VALIDATE_ROOT: 'goobers:validate-root',

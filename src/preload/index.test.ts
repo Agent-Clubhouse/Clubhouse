@@ -33,6 +33,7 @@ import { mcpBinding } from './mcpBinding';
 import { hookServer } from './hookServer';
 import { goobers } from './goobers';
 import { telemetrySettings } from './telemetrySettings';
+import { feedback } from './feedback';
 import { telemetry } from './telemetry';
 import { chat } from './chat';
 import { plugin } from './plugin';
@@ -79,6 +80,7 @@ describe('preload IPC bridge', () => {
       hookServer,
       goobers,
       telemetrySettings,
+      feedback,
       telemetry,
       chat,
     ];

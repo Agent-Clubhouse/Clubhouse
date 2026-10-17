@@ -1,0 +1,72 @@
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetFeedbackStore } from '../../stores/feedbackStore';
+import { FeedbackSettingsView } from './FeedbackSettingsView';
+import { feedbackStatus, setFeedback } from '../feedback/feedback-test-utils';
+
+const disconnected = feedbackStatus({ state: 'disconnected', connected: false, enrolled: false, canCapture: false, expiresAt: null });
+
+beforeEach(() => {
+  window.clubhouse.feedback.connect = vi.fn();
+  window.clubhouse.feedback.disconnect = vi.fn();
+});
+afterEach(() => resetFeedbackStore());
+
+describe('FeedbackSettingsView', () => {
+  it('points to the Experimental switch when Feedback is off', () => {
+    setFeedback(false);
+    render(<FeedbackSettingsView />);
+    expect(screen.getByTestId('feedback-settings').textContent).toMatch(/Turn on Feedback in Settings, Experimental/);
+    expect(screen.queryByLabelText('Invitation')).toBeNull();
+  });
+
+  it('connects with an invitation only, clearing the field at once', async () => {
+    setFeedback(true, disconnected);
+    let resolve!: (v: unknown) => void;
+    vi.mocked(window.clubhouse.feedback.connect).mockReturnValue(new Promise((r) => { resolve = r; }) as never);
+    render(<FeedbackSettingsView />);
+    expect(screen.getByTestId('feedback-settings').textContent).toContain('Connecting lets you send feedback and screenshots to the developer.');
+    const input = screen.getByLabelText('Invitation') as HTMLInputElement;
+    expect(input.type).toBe('password');
+    fireEvent.change(input, { target: { value: '  the-invitation  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    // Cleared before the redemption finishes.
+    expect(input.value).toBe('');
+    expect(window.clubhouse.feedback.connect).toHaveBeenCalledWith('the-invitation');
+    await act(async () => { resolve({ connected: true, status: feedbackStatus() }); });
+    expect(screen.getByTestId('feedback-connected').textContent).toMatch(/Connected · access expires/);
+  });
+
+  it('shows the connection, its expiry and Disconnect', async () => {
+    setFeedback(true);
+    vi.mocked(window.clubhouse.feedback.disconnect).mockResolvedValue({ forgotten: true, revoked: true, status: disconnected });
+    render(<FeedbackSettingsView />);
+    expect(screen.getByTestId('feedback-connected').textContent).toContain('2026');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Disconnect' })); });
+    expect(screen.getByTestId('feedback-message').textContent).toBe('Disconnected.');
+    expect(screen.getByLabelText('Invitation')).toBeTruthy();
+  });
+
+  it.each([
+    ['expired', /access expired/],
+    ['access-required', /revoked/],
+    ['connection-uncertain', /couldn't confirm/],
+  ] as const)('shows the %s notice', (notice, text) => {
+    setFeedback(true, feedbackStatus({ ...disconnected, enrolled: true, canCapture: true, notice }));
+    render(<FeedbackSettingsView />);
+    expect(screen.getByTestId('feedback-notice').textContent).toMatch(text);
+  });
+
+  it('explains when the system keyring is unavailable, and disables Connect', () => {
+    setFeedback(true, feedbackStatus({ ...disconnected, state: 'storage-unavailable', storage: { available: false, reason: 'plaintext-backend' } }));
+    render(<FeedbackSettingsView />);
+    expect(screen.getByTestId('feedback-storage-unavailable').textContent).toMatch(/never stores the credential in plain text/);
+    expect(screen.getByRole('button', { name: 'Connect' }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('shows feedback waiting to send and blocked reports', () => {
+    setFeedback(true, feedbackStatus({ outbox: { ...feedbackStatus().outbox, pending: 2, blocked: 1 } }));
+    render(<FeedbackSettingsView />);
+    expect(screen.getByTestId('feedback-outbox').textContent).toMatch(/2 reports are saved and waiting to send\. 1 couldn't be delivered/);
+  });
+});

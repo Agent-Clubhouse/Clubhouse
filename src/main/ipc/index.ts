@@ -19,6 +19,7 @@ import { registerSettingsHandlers } from './settings-handlers';
 import { registerBlueprintHandlers } from './blueprint-handlers';
 import { registerGoobersHandlers } from './goobers-handlers';
 import { registerTelemetrySettingsHandlers } from './telemetry-settings-handlers';
+import { registerFeedbackHandlers } from './feedback-handlers';
 import * as hookServer from '../services/hook-server';
 import { registerBuiltinProviders, getAllProviders } from '../orchestrators';
 import { registerBuiltinChatDrivers } from '../services/agent-runtime/builtin-chat-drivers';
@@ -70,6 +71,7 @@ export function registerAllHandlers(): void {
   registerBlueprintHandlers();
   registerGoobersHandlers();
   registerTelemetrySettingsHandlers();
+  registerFeedbackHandlers();
 
   // Start the hook server for agent status events.  The server stays enabled
   // for the app's lifetime; whether a given agent actually has Clubhouse hooks
