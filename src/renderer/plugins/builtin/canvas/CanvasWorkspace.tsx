@@ -38,6 +38,7 @@ import { useZoneManager } from './useZoneManager';
 import { useCanvasContextMenu } from './useCanvasContextMenu';
 import { ZoomedViewOverlay } from './ZoomedViewOverlay';
 import { PinnedWidgetBar } from './PinnedWidgetBar';
+import { CANVAS_Z } from './canvas-chrome';
 
 interface CanvasWorkspaceProps {
   views: CanvasView[];
@@ -717,7 +718,7 @@ export function CanvasWorkspace({
               top: Math.min(selectionRect.startY, selectionRect.currentY),
               width: Math.abs(selectionRect.currentX - selectionRect.startX),
               height: Math.abs(selectionRect.currentY - selectionRect.startY),
-              zIndex: 99998,
+              zIndex: CANVAS_Z.worldTop,
             }}
             data-testid="canvas-selection-rect"
           />
@@ -733,7 +734,7 @@ export function CanvasWorkspace({
           return (
             <div
               className="absolute pointer-events-none bg-ctp-accent text-ctp-base text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center"
-              style={{ left: badgeX, top: badgeY, zIndex: 99997 }}
+              style={{ left: badgeX, top: badgeY, zIndex: CANVAS_Z.worldBadge }}
               data-testid="canvas-multi-drag-badge"
             >
               {selectedViewIds.length}
@@ -745,7 +746,8 @@ export function CanvasWorkspace({
       {/* Satellite pause overlay */}
       {isAnySatellitePaused && (
         <div
-          className="absolute inset-0 z-[9998] flex items-center justify-center bg-ctp-crust/80 backdrop-blur-sm"
+          className="absolute inset-0 flex items-center justify-center bg-ctp-crust/80 backdrop-blur-sm"
+          style={{ zIndex: CANVAS_Z.paneOverlay }}
           data-testid="canvas-satellite-paused-overlay"
         >
           <div className="text-center">
@@ -764,7 +766,8 @@ export function CanvasWorkspace({
       {/* Blueprint drag-drop overlay */}
       {isBlueprintDragOver && (
         <div
-          className="absolute inset-0 z-[9997] flex items-center justify-center bg-ctp-accent/10 border-2 border-dashed border-ctp-accent/50 pointer-events-none"
+          className="absolute inset-0 flex items-center justify-center bg-ctp-accent/10 border-2 border-dashed border-ctp-accent/50 pointer-events-none"
+          style={{ zIndex: CANVAS_Z.blueprintDrop }}
           data-testid="canvas-blueprint-drop-overlay"
         >
           <div className="text-center">
@@ -873,29 +876,30 @@ export function CanvasWorkspace({
         <MenuPortal>
           <div
             ref={viewMenuRef}
-            className="fixed z-canvas-overlay min-w-[180px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1 backdrop-blur-none"
+            role="menu"
+            className="fixed z-canvas-overlay min-w-[200px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1"
             style={{ left: viewContextMenu.x, top: viewContextMenu.y }}
             data-testid="view-context-menu"
           >
             <button
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
+              className="w-full h-7 flex items-center gap-2 px-3 text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text transition-colors text-left"
               onClick={() => handleSetLayoutCenter(viewContextMenu.viewId)}
               data-testid="view-context-menu-set-layout-center"
             >
-              <span className="w-4 text-center text-ctp-overlay0">
+              <span className="w-4 flex-shrink-0 flex items-center justify-center text-ctp-overlay1">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <circle cx="12" cy="12" r="10" />
                   <circle cx="12" cy="12" r="3" />
                 </svg>
               </span>
-              {layoutCenterId === viewContextMenu.viewId ? 'Remove as Layout Center' : 'Set as Layout Center'}
+              {layoutCenterId === viewContextMenu.viewId ? 'Remove as layout center' : 'Set as layout center'}
             </button>
             <button
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
+              className="w-full h-7 flex items-center gap-2 px-3 text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text transition-colors text-left"
               onClick={() => handleCenterViewFromMenu(viewContextMenu.viewId, handleCenterView)}
               data-testid="view-context-menu-center-view"
             >
-              <span className="w-4 text-center text-ctp-overlay0">
+              <span className="w-4 flex-shrink-0 flex items-center justify-center text-ctp-overlay1">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <circle cx="12" cy="12" r="3" />
                   <line x1="12" y1="2" x2="12" y2="6" />
@@ -904,7 +908,7 @@ export function CanvasWorkspace({
                   <line x1="18" y1="12" x2="22" y2="12" />
                 </svg>
               </span>
-              Center in Viewport
+              Center in viewport
             </button>
           </div>
         </MenuPortal>

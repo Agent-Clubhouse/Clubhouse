@@ -116,7 +116,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
   const setAlgorithm = useCallback((alg: ElkAlgorithm) => onElkAlgorithmChange?.(alg), [onElkAlgorithmChange]);
   const setDirection = useCallback((dir: LayeredDirection) => onElkDirectionChange?.(dir), [onElkDirectionChange]);
 
-  const btnClass = 'w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors';
+  const btnClass = 'w-7 h-7 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors';
 
   const handleLayout = useCallback(() => {
     if (!onAutolayout) return;
@@ -132,7 +132,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
 
   return (
     <div
-      className="absolute top-3 right-3 flex items-center gap-1 bg-ctp-mantle/90 rounded-lg border border-surface-0 px-1.5 py-1 shadow-sm z-raised"
+      className="absolute top-2.5 right-2.5 flex items-center gap-0.5 bg-ctp-mantle rounded-lg border border-surface-1 p-0.5 z-raised"
       data-testid="canvas-controls"
     >
       {/* Attention cycling */}
@@ -141,47 +141,35 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
           <div className="flex items-center gap-0.5" data-testid="canvas-attention-cycler">
             <button
               onClick={goPrev}
-              className="w-5 h-5 flex items-center justify-center rounded text-ctp-warning hover:bg-ctp-warning/20 transition-colors"
+              className={btnClass}
               title="Previous attention item"
               data-testid="canvas-attention-prev"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6" />
               </svg>
             </button>
             <div
-              className="flex items-center gap-1 px-1"
-              title={`${count} card${count !== 1 ? 's' : ''} need${count === 1 ? 's' : ''} attention`}
+              className="flex items-center gap-1.5 px-1"
+              title={`${count} card${count !== 1 ? 's' : ''} need${count === 1 ? 's' : ''} you`}
             >
-              {/* Exclamation icon */}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-ctp-warning">
-                <path
-                  d="M12 2L2 22h20L12 2z"
-                  fill="currentColor"
-                  fillOpacity="0.15"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                />
-                <line x1="12" y1="10" x2="12" y2="14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <circle cx="12" cy="17.5" r="1" fill="currentColor" />
-              </svg>
-              <span className="text-xs font-mono text-ctp-warning min-w-[2ch] text-center">
-                {count}
+              <span className="w-2 h-2 rounded-full bg-ctp-warning flex-shrink-0" aria-hidden="true" />
+              <span className="text-xs text-ctp-text whitespace-nowrap">
+                {count} need{count === 1 ? 's' : ''} you
               </span>
             </div>
             <button
               onClick={goNext}
-              className="w-5 h-5 flex items-center justify-center rounded text-ctp-warning hover:bg-ctp-warning/20 transition-colors"
+              className={btnClass}
               title="Next attention item"
               data-testid="canvas-attention-next"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </button>
           </div>
-          <div className="w-px h-4 bg-surface-0 mx-0.5" />
+          <div className="w-px h-4 bg-surface-1 mx-0.5" />
         </>
       )}
 
@@ -191,11 +179,11 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
           <div className="flex items-center gap-0.5" data-testid="canvas-anchor-cycler">
             <button
               onClick={anchorPrev}
-              className="w-5 h-5 flex items-center justify-center rounded text-ctp-accent hover:bg-ctp-accent/20 transition-colors"
+              className={btnClass}
               title="Previous anchor"
               data-testid="canvas-anchor-prev"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6" />
               </svg>
             </button>
@@ -204,34 +192,34 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
               title={`${anchorCount} anchor${anchorCount !== 1 ? 's' : ''}`}
             >
               {/* Anchor icon */}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-ctp-accent" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-ctp-overlay1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="5" r="3" />
                 <line x1="12" y1="8" x2="12" y2="22" />
                 <path d="M5 12H2a10 10 0 0 0 20 0h-3" />
               </svg>
-              <span className="text-xs font-mono text-ctp-accent min-w-[2ch] text-center">
+              <span className="text-xs text-ctp-subtext1 min-w-[2ch] text-center">
                 {anchorCount}
               </span>
             </div>
             <button
               onClick={anchorNext}
-              className="w-5 h-5 flex items-center justify-center rounded text-ctp-accent hover:bg-ctp-accent/20 transition-colors"
+              className={btnClass}
               title="Next anchor"
               data-testid="canvas-anchor-next"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </button>
           </div>
-          <div className="w-px h-4 bg-surface-0 mx-0.5" />
+          <div className="w-px h-4 bg-surface-1 mx-0.5" />
         </>
       )}
 
       {/* Search */}
       {hasViews && <CanvasSearch views={views} onSelectView={onSelectView} />}
 
-      {hasViews && <div className="w-px h-4 bg-surface-0 mx-0.5" />}
+      {hasViews && <div className="w-px h-4 bg-surface-1 mx-0.5" />}
 
       {/* Center viewport */}
       <button
@@ -270,7 +258,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
           <button
             onClick={handleLayout}
             className={btnClass}
-            title={`Auto Layout (${ALGORITHM_LABELS[algorithm]}${algorithm === 'layered' || algorithm === 'mrtree' ? ' ' + DIRECTION_LABELS[direction] : ''})`}
+            title={`Auto layout (${ALGORITHM_LABELS[algorithm]}${algorithm === 'layered' || algorithm === 'mrtree' ? ' ' + DIRECTION_LABELS[direction] : ''})`}
             data-testid="canvas-auto-layout"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -284,7 +272,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
           </button>
           <button
             onClick={() => setShowLayoutMenu(!showLayoutMenu)}
-            className="w-4 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
+            className="w-4 h-7 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
             title="Layout options"
             data-testid="canvas-auto-layout-menu-toggle"
           >
@@ -294,27 +282,25 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
           </button>
           {showLayoutMenu && (
             <div
-              className="absolute top-full right-0 mt-1 w-56 bg-ctp-mantle border border-surface-0 rounded-lg shadow-lg p-2 z-dropdown"
+              className="absolute top-full right-0 mt-1 w-60 bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl p-1 z-dropdown"
               data-testid="canvas-auto-layout-menu"
             >
-              <div className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1.5 px-1">Auto Layout</div>
+              <div className="h-6 flex items-center px-2 text-xs text-ctp-overlay1">Auto layout</div>
               {ALGORITHMS.map((alg) => (
                 <button
                   key={alg}
                   onClick={() => handleAlgorithmSelect(alg)}
-                  className={`w-full text-left px-2 py-1.5 rounded text-[11px] transition-colors flex items-center justify-between ${
-                    algorithm === alg
-                      ? 'bg-ctp-accent/15 text-ctp-accent font-medium'
-                      : 'text-ctp-text hover:bg-surface-1'
-                  }`}
+                  role="menuitemradio"
+                  aria-checked={algorithm === alg}
+                  className="w-full text-left px-2 py-1.5 rounded-md text-xs text-ctp-text hover:bg-surface-0 transition-colors flex items-center justify-between"
                   data-testid={`layout-algorithm-${alg}`}
                 >
                   <div>
                     <div>{ALGORITHM_LABELS[alg]}</div>
-                    <div className="text-[9px] text-ctp-subtext0 mt-0.5">{ALGORITHM_DESCRIPTIONS[alg]}</div>
+                    <div className="text-xs text-ctp-overlay1">{ALGORITHM_DESCRIPTIONS[alg]}</div>
                   </div>
                   {algorithm === alg && (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                   )}
@@ -324,9 +310,9 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
               {/* Direction picker for layered/mrtree */}
               {(algorithm === 'layered' || algorithm === 'mrtree') && (
                 <>
-                  <div className="w-full h-px bg-surface-0 my-1.5" />
-                  <div className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1 px-1">Direction</div>
-                  <div className="flex gap-1 px-1" data-testid="layout-direction-picker">
+                  <div className="w-full h-px bg-surface-0 my-1" />
+                  <div className="h-6 flex items-center px-2 text-xs text-ctp-overlay1">Direction</div>
+                  <div className="flex gap-0.5 px-1 pb-1" data-testid="layout-direction-picker">
                     {DIRECTIONS.map((dir) => (
                       <button
                         key={dir}
@@ -334,10 +320,11 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
                           setDirection(dir);
                           if (onAutolayout) onAutolayout({ algorithm, direction: dir });
                         }}
-                        className={`flex-1 text-center text-sm py-1 rounded transition-colors ${
+                        aria-pressed={direction === dir}
+                        className={`flex-1 h-7 text-center text-[13px] rounded-md transition-colors ${
                           direction === dir
-                            ? 'bg-ctp-accent text-ctp-crust font-semibold'
-                            : 'bg-surface-0 text-ctp-subtext0 hover:text-ctp-text'
+                            ? 'bg-surface-1 text-ctp-text'
+                            : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text'
                         }`}
                         title={dir.charAt(0) + dir.slice(1).toLowerCase()}
                         data-testid={`layout-direction-${dir.toLowerCase()}`}
@@ -352,13 +339,13 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
               {/* Radial hint */}
               {algorithm === 'radial' && (
                 <>
-                  <div className="w-full h-px bg-surface-0 my-1.5" />
-                  <div className="text-xs text-ctp-subtext0 px-1">
+                  <div className="w-full h-px bg-surface-0 my-1" />
+                  <div className="text-xs text-ctp-overlay1 px-2 py-1">
                     {hasSelection
-                      ? 'Radiates from selected card'
+                      ? 'Radiates from the selected card'
                       : layoutCenterId
-                        ? 'Using stored layout center (right-click card to change)'
-                        : 'Select a card or right-click → Set as Layout Center'}
+                        ? 'Radiates from the layout center. Right-click a card to change it.'
+                        : 'Select a card, or right-click one and choose Set as layout center.'}
                   </div>
                 </>
               )}
@@ -368,7 +355,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
       )}
 
       {/* Divider */}
-      <div className="w-px h-4 bg-surface-0 mx-0.5" />
+      <div className="w-px h-4 bg-surface-1 mx-0.5" />
 
       {/* Zoom controls */}
       <button
@@ -383,7 +370,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
       </button>
       <button
         onClick={onZoomReset}
-        className="min-w-[3rem] h-6 flex items-center justify-center rounded text-xs text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors font-mono"
+        className="min-w-[3rem] h-7 px-1 flex items-center justify-center rounded-md text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text transition-colors tabular-nums"
         title="Reset zoom"
         data-testid="canvas-zoom-reset"
       >

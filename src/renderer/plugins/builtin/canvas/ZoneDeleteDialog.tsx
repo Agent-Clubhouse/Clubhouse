@@ -4,6 +4,8 @@
  */
 
 import React from 'react';
+import { Modal } from '../../../components/Modal';
+import { BUTTON } from './canvas-chrome';
 
 interface ZoneDeleteDialogProps {
   zoneName: string;
@@ -14,36 +16,25 @@ interface ZoneDeleteDialogProps {
 
 export function ZoneDeleteDialog({ zoneName, containedCount, onConfirm, onCancel }: ZoneDeleteDialogProps) {
   return (
-    <div className="fixed inset-0 z-canvas-dialog flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-ctp-base border border-surface-2 rounded-lg p-5 max-w-sm shadow-xl">
-        <h3 className="text-sm font-semibold text-ctp-text mb-2">
-          Delete Zone &ldquo;{zoneName}&rdquo;?
-        </h3>
-        <p className="text-xs text-ctp-subtext0 mb-4">
-          This zone contains {containedCount} widget{containedCount !== 1 ? 's' : ''}.
-          Zone wires will be removed.
+    // Stop mousedown here: React bubbles portal events through this tree, and
+    // the canvas workspace would read a click in the dialog as a board click.
+    <div onMouseDown={(e) => e.stopPropagation()}>
+      <Modal open onClose={onCancel} title={`Delete ${zoneName}?`} width="w-[380px]" backdropTestId="zone-delete-dialog">
+        <p className="text-xs text-ctp-subtext1 mb-4">
+          This zone holds {containedCount} widget{containedCount !== 1 ? 's' : ''}. Its wires are removed either way.
         </p>
         <div className="flex gap-2 justify-end">
-          <button
-            className="px-3 py-1.5 text-xs rounded bg-surface-1 text-ctp-text hover:bg-surface-2 transition-colors"
-            onClick={onCancel}
-          >
+          <button type="button" className={BUTTON.quiet} onClick={onCancel}>
             Cancel
           </button>
-          <button
-            className="px-3 py-1.5 text-xs rounded bg-surface-1 text-ctp-text hover:bg-surface-2 transition-colors"
-            onClick={() => onConfirm(false)}
-          >
-            Keep Widgets
+          <button type="button" className={BUTTON.ghost} onClick={() => onConfirm(false)}>
+            Keep widgets
           </button>
-          <button
-            className="px-3 py-1.5 text-xs rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30 transition-colors"
-            onClick={() => onConfirm(true)}
-          >
-            Remove All
+          <button type="button" className={BUTTON.danger} onClick={() => onConfirm(true)}>
+            Delete widgets too
           </button>
         </div>
-      </div>
+      </Modal>
     </div>
   );
 }

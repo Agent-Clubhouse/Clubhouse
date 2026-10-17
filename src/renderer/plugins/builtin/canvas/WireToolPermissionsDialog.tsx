@@ -6,6 +6,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { Toggle } from '../../../components/Toggle';
 import { GROUP_PROJECT_TOOL_SUFFIXES } from '../../../../shared/group-project-permissions';
+import { BUTTON, CANVAS_Z } from './canvas-chrome';
 
 /** Known tool suffixes for each target kind. */
 const TOOL_SUFFIXES: Record<string, string[]> = {
@@ -123,36 +124,33 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
     <div
       ref={backdropRef}
       className="fixed inset-0 bg-black/50 flex items-center justify-center"
-      style={{ zIndex: "var(--z-index-top)" }}
+      style={{ zIndex: CANVAS_Z.dialog }}
       onMouseDown={handleBackdropMouseDown}
       onClick={handleBackdropClick}
       data-testid="wire-tool-permissions-dialog"
     >
-      <div className="bg-ctp-mantle border border-surface-2 rounded-lg shadow-2xl w-[360px] max-h-[80vh] flex flex-col overflow-hidden">
+      <div role="dialog" aria-modal="true" aria-label="Tool permissions" className="bg-ctp-mantle border border-surface-1 rounded-lg shadow-2xl w-[360px] max-h-[80vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-4 py-3 bg-ctp-base border-b border-surface-0">
-          <div className="text-sm text-ctp-text font-medium">Tool Permissions</div>
-          <div className="text-xs text-ctp-subtext0 mt-0.5">
-            {binding.label} ({binding.targetKind})
-          </div>
+        <div className="px-4 py-3 border-b border-surface-0">
+          <div className="text-[13px] text-ctp-text font-medium">Tool permissions</div>
+          <div className="text-xs text-ctp-overlay1 truncate">{binding.label}</div>
         </div>
 
         {/* Bulk actions */}
-        <div className="px-4 pt-2 flex gap-2">
+        <div className="px-3 pt-2 flex gap-1">
           <button
             onClick={handleEnableAll}
-            className="text-xs text-ctp-accent hover:underline"
+            className={BUTTON.quiet}
             data-testid="wire-permissions-enable-all"
           >
-            Enable All
+            Turn all on
           </button>
-          <span className="text-xs text-ctp-overlay0">|</span>
           <button
             onClick={handleDisableAll}
-            className="text-xs text-ctp-red hover:underline"
+            className={BUTTON.quiet}
             data-testid="wire-permissions-disable-all"
           >
-            Disable All
+            Turn all off
           </button>
         </div>
 
@@ -163,15 +161,15 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
             return (
               <div
                 key={suffix}
-                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-surface-1 transition-colors"
+                className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-0 transition-colors"
                 data-testid={`wire-permission-${suffix}`}
               >
                 <div className="flex-1 min-w-0">
-                  <div className={`text-xs font-medium ${isEnabled ? 'text-ctp-text' : 'text-ctp-overlay0'}`}>
+                  <div className={`text-[13px] ${isEnabled ? 'text-ctp-text' : 'text-ctp-subtext0'}`}>
                     {toolLabel(suffix)}
                   </div>
                   {TOOL_HINTS[suffix] && (
-                    <div className="text-xs text-ctp-overlay0 truncate">
+                    <div className="text-xs text-ctp-overlay1 truncate">
                       {TOOL_HINTS[suffix]}
                     </div>
                   )}
@@ -184,20 +182,20 @@ export function WireToolPermissionsDialog({ binding, onSave, onClose }: WireTool
 
         {/* Footer */}
         <div className="px-4 py-3 border-t border-surface-0 flex items-center justify-between">
-          <span className="text-xs text-ctp-overlay0">
-            {enabledCount}/{suffixes.length} enabled
+          <span className="text-xs text-ctp-overlay1">
+            {enabledCount} of {suffixes.length} on
           </span>
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="px-3 py-1.5 text-xs text-ctp-subtext0 hover:bg-surface-1 rounded transition-colors"
+              className={BUTTON.quiet}
               data-testid="wire-permissions-cancel"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
-              className="px-3 py-1.5 text-xs text-white bg-ctp-accent hover:bg-ctp-accent/80 rounded transition-colors"
+              className={BUTTON.primary}
               data-testid="wire-permissions-save"
             >
               Save

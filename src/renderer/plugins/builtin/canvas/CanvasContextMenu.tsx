@@ -10,6 +10,7 @@ import { MenuPortal } from './MenuPortal';
 import { useDismissibleLayer } from './useDismissibleLayer';
 import { sanitizeSvg } from '../../../utils/sanitize-svg';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
+import { AGENT_ICON, ANCHOR_ICON, ZONE_ICON } from './canvas-icons';
 
 /** A menu item can either be a built-in view type or a qualified plugin widget type string. */
 export type ContextMenuSelection =
@@ -23,17 +24,26 @@ interface CanvasContextMenuProps {
   onDismiss: () => void;
 }
 
-// SVG icons for built-in items — 18×18 Lucide-style to match plugin widget icons
-const AGENT_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
-const ANCHOR_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></svg>`;
-const ZONE_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`;
+/**
+ * Sentence-case a widget label: "Git Diff" becomes "Git diff". Words with a
+ * capital past the first letter (GitHub, PRs) are names and stay as they are.
+ */
+export function sentenceCase(label: string): string {
+  return label
+    .split(' ')
+    .map((word, i) => (i === 0 || /[A-Z]/.test(word.slice(1)) ? word : word.toLowerCase()))
+    .join(' ');
+}
 
-/** Built-in view types that are not provided by plugins. */
-const BUILTIN_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }> = [
-  { type: 'agent', label: 'Add Agent View', icon: AGENT_ICON },
-  { type: 'anchor', label: 'Add Anchor', icon: ANCHOR_ICON },
-  { type: 'zone', label: 'Add Zone', icon: ZONE_ICON },
+/** Built-in view types that are not provided by plugins. Agent leads; anchor and zone follow the widgets. */
+const AGENT_ITEM = { type: 'agent' as CanvasViewType, label: 'Agent', icon: AGENT_ICON };
+const LAYOUT_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }> = [
+  { type: 'anchor', label: 'Anchor', icon: ANCHOR_ICON },
+  { type: 'zone', label: 'Zone', icon: ZONE_ICON },
 ];
+
+const ROW = 'w-full h-7 flex items-center gap-2 px-3 text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text transition-colors text-left';
+const ICON = 'w-4 flex-shrink-0 flex items-center justify-center text-ctp-overlay1 [&_svg]:w-3.5 [&_svg]:h-3.5';
 
 export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -72,48 +82,53 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
     });
   }, [onSelect]);
 
+  const builtinRow = ({ type, label, icon }: { type: CanvasViewType; label: string; icon: string }) => (
+    <button
+      key={type}
+      type="button"
+      role="menuitem"
+      className={ROW}
+      onClick={(e) => { e.stopPropagation(); handleBuiltinSelect(type); }}
+      data-testid={`canvas-context-menu-${type}`}
+    >
+      <span className={ICON} dangerouslySetInnerHTML={{ __html: sanitizeSvg(icon) }} />
+      {label}
+    </button>
+  );
+
   return (
     <MenuPortal>
       <div
         ref={menuRef}
-        className="fixed z-canvas-overlay min-w-[180px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1 backdrop-blur-none"
+        role="menu"
+        aria-label="Add to canvas"
+        className="fixed z-canvas-overlay min-w-[200px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1"
         style={{ left: x, top: y }}
         data-testid="canvas-context-menu"
       >
-        {/* Built-in view types */}
-        {BUILTIN_ITEMS.map(({ type, label, icon }) => (
+        {builtinRow(AGENT_ITEM)}
+
+        {/* Plugin-provided widgets */}
+        {visibleWidgets.map((widget) => (
           <button
-            key={type}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
-            onClick={(e) => { e.stopPropagation(); handleBuiltinSelect(type); }}
-            data-testid={`canvas-context-menu-${type}`}
+            key={widget.qualifiedType}
+            type="button"
+            role="menuitem"
+            className={ROW}
+            onClick={(e) => { e.stopPropagation(); handlePluginSelect(widget); }}
+            data-testid={`canvas-context-menu-${widget.qualifiedType}`}
           >
-            <span className="w-4 text-center text-ctp-overlay0" dangerouslySetInnerHTML={{ __html: sanitizeSvg(icon) }} />
-            {label}
+            <span className={ICON}>
+              {widget.declaration.icon
+                ? <span className="flex" dangerouslySetInnerHTML={{ __html: sanitizeSvg(widget.declaration.icon) }} />
+                : '+'}
+            </span>
+            {sentenceCase(widget.declaration.label)}
           </button>
         ))}
 
-        {/* Plugin-provided widgets */}
-        {visibleWidgets.length > 0 && (
-          <>
-            <div className="border-t border-surface-0 my-1" />
-            {visibleWidgets.map((widget) => (
-              <button
-                key={widget.qualifiedType}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
-                onClick={(e) => { e.stopPropagation(); handlePluginSelect(widget); }}
-                data-testid={`canvas-context-menu-${widget.qualifiedType}`}
-              >
-                <span className="w-4 text-center text-ctp-overlay0">
-                  {widget.declaration.icon
-                    ? <span dangerouslySetInnerHTML={{ __html: sanitizeSvg(widget.declaration.icon) }} />
-                    : '+'}
-                </span>
-                Add {widget.declaration.label}
-              </button>
-            ))}
-          </>
-        )}
+        <div className="border-t border-surface-0 my-1" role="separator" />
+        {LAYOUT_ITEMS.map(builtinRow)}
       </div>
     </MenuPortal>
   );

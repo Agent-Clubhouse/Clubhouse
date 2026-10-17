@@ -5,6 +5,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
+import { BUTTON, CANVAS_Z } from './canvas-chrome';
 
 /** Known tool suffixes for each target kind. */
 const TOOL_SUFFIXES: Record<string, string[]> = {
@@ -91,34 +92,32 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
     <div
       ref={backdropRef}
       className="fixed inset-0 bg-black/50 flex items-center justify-center"
-      style={{ zIndex: "var(--z-index-top)" }}
+      style={{ zIndex: CANVAS_Z.dialog }}
       onMouseDown={handleBackdropMouseDown}
       onClick={handleBackdropClick}
       data-testid="wire-instructions-dialog"
     >
-      <div className="bg-ctp-mantle border border-surface-2 rounded-lg shadow-2xl w-[420px] max-h-[80vh] flex flex-col overflow-hidden">
+      <div role="dialog" aria-modal="true" aria-label="Wire instructions" className="bg-ctp-mantle border border-surface-1 rounded-lg shadow-2xl w-[420px] max-h-[80vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-4 py-3 bg-ctp-base border-b border-surface-0">
-          <div className="text-sm text-ctp-text font-medium">Wire Instructions</div>
-          <div className="text-xs text-ctp-subtext0 mt-0.5">
-            {binding.label} ({binding.targetKind})
-          </div>
+        <div className="px-4 py-3 border-b border-surface-0">
+          <div className="text-[13px] text-ctp-text font-medium">Wire instructions</div>
+          <div className="text-xs text-ctp-overlay1 truncate">{binding.label}</div>
         </div>
 
         {/* Tool selector */}
         <div className="px-4 pt-3">
-          <label className="text-xs text-ctp-subtext1 uppercase tracking-wider font-medium">
+          <label className="text-xs text-ctp-subtext1">
             Apply to
           </label>
           <select
             value={selectedTool}
             onChange={(e) => setSelectedTool(e.target.value)}
-            className="mt-1 w-full bg-ctp-base border border-surface-2 rounded px-2 py-1.5 text-xs text-ctp-text focus-ring"
+            className="mt-1 w-full h-7 bg-ctp-base border border-surface-1 rounded-md px-2 text-xs text-ctp-text focus-ring"
             data-testid="wire-instructions-tool-select"
           >
             {dropdownOptions.map((suffix) => (
               <option key={suffix} value={suffix}>
-                {suffix === '*' ? 'All Tools' : toolLabel(suffix)}
+                {suffix === '*' ? 'All tools' : toolLabel(suffix)}
                 {drafts[suffix]?.trim() ? ' *' : ''}
               </option>
             ))}
@@ -132,32 +131,32 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
             value={currentValue}
             onChange={(e) => handleTextChange(e.target.value)}
             placeholder={`e.g. "Do not transmit raw telemetry over this connection"`}
-            className="w-full h-32 bg-ctp-base border border-surface-2 rounded px-2.5 py-2 text-xs text-ctp-text placeholder:text-ctp-overlay0 resize-none focus-ring"
+            className="w-full h-32 bg-ctp-base border border-surface-1 rounded-md px-2.5 py-2 text-xs text-ctp-text placeholder:text-ctp-overlay1 resize-none focus-ring"
             data-testid="wire-instructions-textarea"
           />
-          <div className="text-xs text-ctp-overlay0 mt-1">
+          <div className="text-xs text-ctp-overlay1 mt-1">
             {selectedTool === '*'
-              ? 'Applied to all tools on this wire unless overridden per-tool.'
-              : `Applied only to the ${toolLabel(selectedTool)} tool.`}
+              ? 'Applies to every tool on this wire unless a tool has its own.'
+              : `Applies only to ${toolLabel(selectedTool)}.`}
           </div>
         </div>
 
         {/* Footer */}
         <div className="px-4 py-3 border-t border-surface-0 flex items-center justify-between">
-          <span className="text-xs text-ctp-overlay0">
+          <span className="text-xs text-ctp-overlay1">
             {instructionCount > 0 ? `${instructionCount} instruction${instructionCount > 1 ? 's' : ''} set` : 'No instructions set'}
           </span>
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="px-3 py-1.5 text-xs text-ctp-subtext0 hover:bg-surface-1 rounded transition-colors"
+              className={BUTTON.quiet}
               data-testid="wire-instructions-cancel"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
-              className="px-3 py-1.5 text-xs text-white bg-ctp-accent hover:bg-ctp-accent/80 rounded transition-colors"
+              className={BUTTON.primary}
               data-testid="wire-instructions-save"
             >
               Save
