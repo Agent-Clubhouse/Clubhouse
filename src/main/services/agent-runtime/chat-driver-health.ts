@@ -19,6 +19,8 @@
 import { createHash } from 'crypto';
 import * as fs from 'fs';
 import { MINIMAL_CHAT_CAPABILITIES, type ChatDriver, type ChatDriverProbe } from '../../../shared/chat';
+import { appLog } from '../log-service';
+import { ATTR } from '../../../shared/telemetry/attributes';
 
 /** Consecutive failures that pause a driver key. */
 export const DRIVER_FAILURE_THRESHOLD = 3;
@@ -90,6 +92,7 @@ export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record
   const pending = inFlight.get(key);
   if (pending) return pending;
 
+  const startedAt = Date.now();
   const probe = runProbe(driver, binaryPath, env, commandPrefix).then((result) => {
     inFlight.delete(key);
     if (result.handshakeOk && result.needsLogin) {
@@ -100,6 +103,19 @@ export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record
     } else {
       probes.delete(key);
       recordDriverFailure(key, `handshake failed: ${result.error ?? 'unknown error'}`);
+      // One record per actual probe (concurrent callers share it). Raw errors
+      // and binary paths stay local; never log/export the environment or key.
+      appLog('core:chat', 'warn', 'Chat handshake probe failed', {
+        meta: {
+          driver: driver.id, provider: driver.provider, binary: binaryPath,
+          elapsedMs: Date.now() - startedAt,
+          error: result.error, errorCode: result.errorCode ?? 'unknown',
+        },
+        telemetry: {
+          event: 'clubhouse.chat.probe_failed',
+          attrs: [ATTR.chatDriver(driver.id), ATTR.errorType(result.errorCode ?? 'unknown')],
+        },
+      });
     }
     return result;
   });

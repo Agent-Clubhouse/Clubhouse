@@ -800,8 +800,41 @@ describe('CodexChatDriver', () => {
 
     const probe = await new CodexChatDriver().probe('codex');
 
-    expect(probe).toMatchObject({ handshakeOk: false, capabilities: MINIMAL_CHAT_CAPABILITIES });
+    expect(probe).toMatchObject({ handshakeOk: false, capabilities: MINIMAL_CHAT_CAPABILITIES, errorCode: 'protocol_error' });
     expect(probe.error).toContain('boom');
+  });
+
+  it.each([
+    [127, 'env: node: No such file or directory', 'spawn_failed', 'Node.js was not found on the Codex launch PATH'],
+    [127, 'some other command was not found', 'process_exited', 'Process exited with code 127'],
+    [1, 'invalid configuration', 'process_exited', 'Process exited with code 1'],
+  ])('classifies exit %s (%s) without exposing stderr in the fallback', async (code, stderr, errorCode, message) => {
+    useServer({ initialize: () => {
+      server.proc.stderr.emit('data', stderr);
+      server.exit(code);
+      return { result: {} };
+    } });
+    const probe = await new CodexChatDriver().probe('codex');
+    expect(probe).toMatchObject({ handshakeOk: false, errorCode });
+    expect(probe.error).toContain(message);
+    expect(probe.error).not.toContain(stderr);
+  });
+
+  it('classifies a missing executable as a spawn failure', async () => {
+    mockSpawn.mockImplementation(() => { throw Object.assign(new Error('missing binary'), { code: 'ENOENT' }); });
+    expect(await new CodexChatDriver().probe('codex')).toMatchObject({ handshakeOk: false, errorCode: 'spawn_failed' });
+  });
+
+  it('classifies a handshake timeout', async () => {
+    vi.useFakeTimers();
+    server.proc.stdin.write.mockImplementation(() => true);
+    try {
+      const result = new CodexChatDriver().probe('codex');
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(await result).toMatchObject({ handshakeOk: false, errorCode: 'rpc_timeout' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

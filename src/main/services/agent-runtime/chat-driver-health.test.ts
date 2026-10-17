@@ -1,7 +1,10 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+import { appLog } from '../log-service';
+import { ATTR } from '../../../shared/telemetry/attributes';
 import { FakeChatDriver } from './fake-chat-driver';
 import {
   DRIVER_FAILURE_THRESHOLD,
@@ -15,6 +18,7 @@ import {
 } from './chat-driver-health';
 
 afterEach(() => clearDriverHealth());
+beforeEach(() => vi.clearAllMocks());
 
 function tempBinary(): { bin: string; done: () => void } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-probe-'));
@@ -24,6 +28,27 @@ function tempBinary(): { bin: string; done: () => void } {
 }
 
 describe('chat driver health', () => {
+  it('logs one failed probe with local diagnostics and only bounded telemetry fields', async () => {
+    const driver = new FakeChatDriver('codex_app_server');
+    driver.probe = async () => ({
+      handshakeOk: false, capabilities: driver.capabilities,
+      error: 'private stderr /private/install', errorCode: 'spawn_failed',
+    });
+    await Promise.all(Array.from({ length: 3 }, () => probeDriver(driver, '/private/codex', { SECRET_TOKEN: 'secret-value' })));
+    expect(appLog).toHaveBeenCalledTimes(1);
+    expect(appLog).toHaveBeenCalledWith('core:chat', 'warn', 'Chat handshake probe failed', {
+      meta: {
+        driver: driver.id, provider: driver.provider, binary: '/private/codex',
+        elapsedMs: expect.any(Number), error: 'private stderr /private/install', errorCode: 'spawn_failed',
+      },
+      telemetry: {
+        event: 'clubhouse.chat.probe_failed',
+        attrs: [ATTR.chatDriver('codex_app_server'), ATTR.errorType('spawn_failed')],
+      },
+    });
+    expect(JSON.stringify(vi.mocked(appLog).mock.calls)).not.toContain('secret-value');
+  });
+
   it('pauses a key after repeated failures, then lets it try again', () => {
     const t0 = 1_000_000;
     const key = 'k';
