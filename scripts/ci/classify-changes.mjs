@@ -27,8 +27,8 @@ const UNIT_TEST_ONLY = [/\.test\.tsx?$/, /\/__fixtures__\//, /\/__mocks__\//, /^
 
 /**
  * Changes that need the macOS app built and launched (the "macOS build" job):
- * packaging and signing inputs, and the CI that runs it. Everything else
- * macOS-specific is unit-level and runs in the macOS unit job on every PR.
+ * packaging and signing inputs, window and app chrome, and the CI that runs
+ * it. The macOS unit job runs on every code PR regardless.
  */
 const MACOS_BUILD_PATHS = [
   /^forge\.config\.ts$/,
@@ -37,21 +37,37 @@ const MACOS_BUILD_PATHS = [
   /^assets\/.*\.icns$/,
   /^\.github\/workflows\/validate\.yml$/,
   /^scripts\/ci\//,
+  // Window and app chrome, whose macOS look and behaviour (traffic lights,
+  // the app menu) only show in a launched app.
+  /^src\/main\/menu\.ts$/,
+  /^src\/renderer\/chrome\//,
 ];
 
 /**
- * Where a darwin change shows up only in a launched app: window chrome, the
- * app menu and dock, the preload bridge, and the renderer.
+ * A changed line, in any non-test source file, that touches macOS-only
+ * behaviour. Matching changed lines rather than whole files keeps an
+ * unrelated edit to a file with a darwin branch elsewhere from counting.
  */
-const MACOS_UI_FILES = [
-  /^src\/renderer\//,
-  /^src\/preload\//,
-  /^src\/main\/index\.ts$/,
-  /^src\/main\/ipc\/(window|app)-handlers\.ts$/,
-];
-
-/** A changed line that touches macOS-only behaviour. */
-const MACOS_MARKERS = /['"]darwin['"]|\bsafeStorage\b|\bsystemPreferences\b|\btitleBarStyle\b|\btrafficLightPosition\b|\bapp\.dock\b|\bsetVibrancy\b|\bosxSign\b|\bosxNotarize\b|\bisMac\b|\bmetaKey\b/;
+const MACOS_MARKERS = new RegExp([
+  String.raw`['"]darwin['"]`,
+  String.raw`\bsafeStorage\b`,
+  String.raw`\bsystemPreferences\b`,
+  // window chrome
+  String.raw`\btitleBarStyle\b`,
+  String.raw`\btitleBarOverlay\b`,
+  String.raw`\bhiddenInset\b`,
+  String.raw`\btrafficLightPosition\b`,
+  String.raw`\bapp\.dock\b`,
+  String.raw`\bsetVibrancy\b`,
+  // keyboard: Cmd on macOS
+  String.raw`\bisMac\b`,
+  String.raw`\bmetaKey\b`,
+  String.raw`\bCmdOrCtrl\b`,
+  // macOS install locations, packaging and signing
+  String.raw`/opt/homebrew`,
+  String.raw`\bosxSign\b`,
+  String.raw`\bosxNotarize\b`,
+].join('|'));
 
 /** Dependency changes that alter what gets built for macOS (Electron, native modules, packaging). */
 const PACKAGING_DEPENDENCY = new RegExp([
@@ -97,7 +113,7 @@ export function classify(files, changedLines = new Map()) {
     const lines = (f) => changedLines.get(f) ?? [];
     const byPath = changed.find((f) => matchesAny(MACOS_BUILD_PATHS, f));
     const byDependency = changed.find((f) => /^package(-lock)?\.json$/.test(f) && lines(f).some((l) => PACKAGING_DEPENDENCY.test(l)));
-    const byMarker = changed.find((f) => matchesAny(MACOS_UI_FILES, f) && !isTest(f) && lines(f).some((l) => MACOS_MARKERS.test(l)));
+    const byMarker = changed.find((f) => /^src\/.*\.(ts|tsx)$/.test(f) && !isTest(f) && lines(f).some((l) => MACOS_MARKERS.test(l)));
     if (byPath) reason = `path ${byPath}`;
     else if (byDependency) reason = `Electron or native-module dependency change in ${byDependency}`;
     else if (byMarker) reason = `macOS-specific lines changed in ${byMarker}`;

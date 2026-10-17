@@ -40,21 +40,36 @@ describe('classify-changes', () => {
       .toEqual({ docsOnly: false, e2e: true, macosBuild: false });
   });
 
-  it('unit-level macOS code (auto-update, keychain, shell) needs only the macOS unit job', () => {
-    for (const file of ['src/main/services/auto-update-apply.ts', 'src/main/telemetry/secret-store.ts', 'src/main/util/shell.ts']) {
-      expect(run(diff({ [file]: ["+  if (process.platform === 'darwin') return;"] }))).toMatchObject({ macosBuild: false });
+  it('unit-level macOS files edited without macOS-specific lines need only the macOS unit job', () => {
+    for (const file of ['src/main/services/auto-update-apply.ts', 'src/main/telemetry/secret-store.ts', 'src/main/util/shell.ts', 'src/main/services/file-watch-service.ts']) {
+      expect(run(diff({ [file]: ['+  const retries = 3;'] }))).toMatchObject({ macosBuild: false });
     }
   });
 
-  it('the macOS build by path: packaging inputs and the CI itself', () => {
-    for (const file of ['forge.config.ts', 'entitlements.plist', 'scripts/fix-node-pty.js', 'assets/icon.icns', '.github/workflows/validate.yml', 'scripts/ci/classify-changes.mjs']) {
+  it.each([
+    ["  if (process.platform === 'darwin') return;"],
+    ['  const isMac = platform === "mac";'],
+    ['  if (e.metaKey && e.key === "k") open();'],
+    ["  accelerator: 'CmdOrCtrl+Shift+N',"],
+    ["  const brew = '/opt/homebrew/bin/claude';"],
+    ["  titleBarStyle: 'hiddenInset',"],
+    ['  titleBarOverlay: { height: 30 },'],
+    ['  trafficLightPosition: { x: 12, y: 10 },'],
+    ['  app.dock.setBadge(String(n));'],
+    ['  safeStorage.encryptString(token)'],
+  ])('a changed source line with a macOS marker needs the macOS build: %s', (line) => {
+    expect(run(diff({ 'src/main/services/anything.ts': [`+${line}`] }))).toMatchObject({ macosBuild: true });
+  });
+
+  it('the macOS build by path: packaging inputs, the app menu, renderer chrome and the CI itself', () => {
+    for (const file of ['forge.config.ts', 'entitlements.plist', 'scripts/fix-node-pty.js', 'assets/icon.icns', '.github/workflows/validate.yml', 'scripts/ci/classify-changes.mjs', 'src/main/menu.ts', 'src/renderer/chrome/ChromeBody.tsx']) {
       expect(run(diff({ [file]: ['+x'] }))).toMatchObject({ macosBuild: true, macosBuildReason: `path ${file}` });
     }
   });
 
   it('the macOS build for darwin lines in window chrome, preload or the renderer', () => {
-    expect(run(diff({ 'src/renderer/chrome/ChromeTitleBar.tsx': ["+  if (platform === 'darwin') return <TrafficLights />;"] })))
-      .toMatchObject({ macosBuild: true, macosBuildReason: 'macOS-specific lines changed in src/renderer/chrome/ChromeTitleBar.tsx' });
+    expect(run(diff({ 'src/renderer/features/agents/AgentTitle.tsx': ["+  if (platform === 'darwin') return <TrafficLightSpacer />;"] })))
+      .toMatchObject({ macosBuild: true, macosBuildReason: 'macOS-specific lines changed in src/renderer/features/agents/AgentTitle.tsx' });
     expect(run(diff({ 'src/main/ipc/window-handlers.ts': ["+    titleBarStyle: 'hiddenInset',"] }))).toMatchObject({ macosBuild: true });
     expect(run(diff({ 'src/renderer/features/editor/keys.ts': ['+  if (e.metaKey) save();'] }))).toMatchObject({ macosBuild: true });
   });
@@ -64,7 +79,7 @@ describe('classify-changes', () => {
   });
 
   it('darwin in a test (a platform mock) does not need the macOS build', () => {
-    expect(run(diff({ 'src/renderer/chrome/ChromeTitleBar.test.tsx': ["+Object.defineProperty(process, 'platform', { value: 'darwin' });"] })))
+    expect(run(diff({ 'src/renderer/features/agents/AgentTitle.test.tsx': ["+Object.defineProperty(process, 'platform', { value: 'darwin' });"] })))
       .toMatchObject({ macosBuild: false });
   });
 

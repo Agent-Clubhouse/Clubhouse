@@ -41,8 +41,11 @@ on:
 
 # PRs: a newer push supersedes the running validation. main/nightly: let every
 # run finish so each merged commit gets a full result.
+#
+# Only the `full-ci` label should start a run. Any other label gets a group of
+# its own, so it can't cancel the real run, and stops at the `changes` job.
 concurrency:
-  group: validate-${{ github.ref }}-${{ github.event_name }}
+  group: validate-${{ github.ref }}-${{ github.event_name }}${{ github.event.action == 'labeled' && github.event.label.name != 'full-ci' && format('-label-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -70,7 +73,7 @@ jobs:
   #   macos_build  run the macOS build job
   changes:
     needs: dependency-preflight
-    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
     name: Plan the run
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -241,7 +244,7 @@ jobs:
         with:
           name: webpack-${{ matrix.os }}
           path: .webpack/
-          retention-days: 1
+          retention-days: 3
           include-hidden-files: true
 
   e2e:
@@ -348,8 +351,8 @@ jobs:
 
   # macOS job 1 of 2: every code PR, ~3 min. The unit tests for code that
   # behaves differently on macOS (Squirrel.Mac apply, keychain, login shell,
-  # FSEvents, window chrome, Cmd shortcuts), plus the tests related to the
-  # change, on a real Mac. Everything else is platform-independent and runs on
+  # /opt/homebrew CLI paths, FSEvents watchers, window chrome and the app
+  # menu, Cmd shortcuts), plus the tests related to the change, on a real Mac. Everything else is platform-independent and runs on
   # Linux and Windows.
   macos-unit:
     needs: changes
@@ -379,6 +382,8 @@ jobs:
           src/main/ipc/app-handlers
           src/main/orchestrators/shared
           src/main/services/goobers-service
+          src/main/services/file-watch-service
+          src/main/menu
           src/renderer/chrome
           src/renderer/features/terminal/clipboard
           src/renderer/stores/keyboardShortcutsStore

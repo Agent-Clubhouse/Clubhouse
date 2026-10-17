@@ -19,6 +19,10 @@ The rules, in short:
 | Push to `main` | everything, plus the Linux package smoke test | macOS unit, plus macOS build if the push is macOS-relevant |
 | Daily, 07:00 UTC | everything | macOS unit and macOS build. This catches runner-image and Xcode drift that no change would trigger, for about 12 macOS minutes a day. |
 
+**Pushes to main are an accepted tradeoff toward the macOS cut.** They run the same reduced macOS set as a PR: macOS unit, plus macOS build when the merged diff is macOS-relevant. The complete macOS matrix doesn't run on merges. Together with the daily run of both macOS jobs, that's the deliberate trade for the cut in macOS minutes.
+
+**Labels:** only the `full-ci` label starts a run. Any other label gets its own concurrency group, so it can't cancel a run in progress, and it stops at the `changes` job.
+
 ## Deciding what a change needs
 
 The `changes` job classifies the diff with `node scripts/ci/classify-changes.mjs`. For a PR it diffs the base against the head; for a push to main it diffs `before` against the new head. With no usable base, for example a new branch, it runs everything. The step summary prints the decision and the reason.
@@ -26,15 +30,26 @@ The `changes` job classifies the diff with `node scripts/ci/classify-changes.mjs
 - **Docs-only:** everything under `docs/`, `notes/`, top-level `*.md`, `.github` templates, or `LICENSE`. `paths-ignore` skips these PRs before any runner starts. Markdown under `src/` is bundled app content, so it doesn't count as docs.
 - **E2E:** every change except docs and unit tests (`*.test.ts(x)`, `__fixtures__`, `__mocks__`, `test/`).
 - **macOS build:** any one of these.
-  - **A packaging input:** `forge.config.ts`, `entitlements.plist`, `scripts/fix-node-pty.js` or `.icns` icons. The CI files themselves count too.
+  - **A packaging input:** `forge.config.ts`, `entitlements.plist`, `scripts/fix-node-pty.js` or `.icns` icons.
+  - **Window and app chrome:** `src/main/menu.ts` (the app menu) and anything under `src/renderer/chrome/`.
+  - **The CI files themselves.**
   - **A dependency change** to Electron, node-pty, `@electron/*` or `@electron-forge/*`, in `package.json` or the lockfile, including lockfile `resolved` URLs.
-  - **A changed line touching macOS behaviour** in window chrome, the app menu, preload or the renderer: `'darwin'`, `titleBarStyle`, `trafficLightPosition`, `app.dock`, `setVibrancy`, `safeStorage`, `systemPreferences`, `isMac`, `metaKey`, `osxSign` or `osxNotarize`. An unrelated edit to a file with a darwin branch elsewhere doesn't count, and neither does a darwin platform mock in a test.
+  - **A changed line in any non-test source file** that touches macOS behaviour:
+    - `'darwin'`, `safeStorage`, `systemPreferences`;
+    - window chrome: `titleBarStyle`, `titleBarOverlay`, `hiddenInset`, `trafficLightPosition`, `app.dock`, `setVibrancy`;
+    - Cmd shortcuts: `isMac`, `metaKey`, `CmdOrCtrl`;
+    - macOS install paths and signing: `/opt/homebrew`, `osxSign`, `osxNotarize`.
 
-macOS code that runs at unit level needs no classification, because the macOS unit job runs on every code PR. That covers auto-update, the keychain, the login shell and FSEvents.
+    An unrelated edit to a file with a darwin branch elsewhere doesn't count, and neither does a darwin platform mock in a test.
 
-Over the 67 PRs measured below, macOS build would have run on **8 (12%)**:
+The macOS unit job needs no classification, because it runs on every code PR. Its fixed test list covers auto-update, the keychain, the login shell, the CLI paths, the FSEvents watchers (`goobers-service`, `file-watch-service`), the app menu, window chrome and shortcuts. `vitest related` adds the change's own tests.
+
+The Squirrel code in `src/main/index.ts` is the Windows installer hook (`electron-squirrel-startup`). The macOS update path lives in `auto-update-service`, which the macOS unit job tests on every PR.
+
+Over the 67 PRs measured below, macOS build would have run on **12 (18%)**:
+- window and renderer chrome: 5;
+- darwin lines in telemetry install-kind, resource and bootstrap code: 3;
 - the Electron bump in #1941;
-- title bar, sidebar inset, start page and Meta-key changes: 4;
 - CI changes: 3.
 
 ## The two macOS jobs
@@ -45,7 +60,8 @@ Over the 67 PRs measured below, macOS build would have run on **8 (12%)**:
   - `secret-store` (keychain) and `install-kind`;
   - `shell` (zsh login env), and `shared` (the `/opt/homebrew` CLI paths);
   - `window-handlers` and `app-handlers`;
-  - `goobers-service` (FSEvents timing);
+  - `goobers-service` and `file-watch-service` (FSEvents);
+  - `menu` (the app menu);
   - `renderer/chrome`;
   - the terminal `clipboard` and `keyboardShortcutsStore` (Cmd versus Ctrl).
 - **`vitest related` for the changed source files.**
@@ -123,12 +139,12 @@ These are per-job medians from the table above. The proposed figures are estimat
 |---|---|---|---|---|---|---|
 | **Before** (pre-#1984: E2E on all 3 OSes) | 30.5 | 27.5 | 27.8 | 85.8 | 4 | macOS E2E: 14.2 run, ~20.4 with the median queue, ~52 at p90 |
 | **Now** (#1984 + #1995: no E2E on PRs, no macOS) | 6.6 | 7.5 | 0 | 14.1 | 0 | Windows unit, 6.1 |
-| **Proposed** | ~22.6 | ~27.1 | ~3.6 average (2.5 always, plus 9.3 on 12%) | ~53 | 1, or 2 for 12% of PRs | Windows build then E2E shard, ~10.5 |
+| **Proposed** | ~22.6 | ~27.1 | ~4.2 average (2.5 always, plus 9.3 on 18%) | ~54 | 1, or 2 for 18% of PRs | Windows build then E2E shard, ~10.5 |
 
 Proposed against before, with the same coverage:
-- **Total compute:** −38%.
+- **Total compute:** −37%.
 - **Long pole:** −26% on run time alone, or −49% once the median macOS queue is counted.
-- **macOS minutes:** 27.8 → ~3.6 average (−87%), with at most ~12 in the worst case.
+- **macOS minutes:** 27.8 → ~4.2 average (−85%), with at most ~12 in the worst case.
 - **macOS jobs:** at most 2 per PR, both shorter than the Linux/Windows critical path.
 
 With demand down from 4 macOS jobs per PR to ~1.1, the macOS queue that drove the p90 should drain too.
@@ -140,7 +156,7 @@ Proposed against now: more compute, because E2E returns to every PR. Today, PRs 
 | | Linux | Windows | macOS | Total |
 |---|---|---|---|---|
 | Before and now (full matrix) | 30.5 | 27.5 | 27.8 | 85.8 |
-| Proposed | ~29.0 (with the package smoke test) | ~27.1 | ~3.6 average | ~60 (−30%) |
+| Proposed | ~29.0 (with the package smoke test) | ~27.1 | ~4.2 average | ~60 (−30%) |
 
 ### If E2E should stay opt-in on PRs
 
