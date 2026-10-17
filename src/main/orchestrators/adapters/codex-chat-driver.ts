@@ -5,7 +5,7 @@
 // the session lifecycle.
 
 import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type PermissionLevel } from '../../../shared/chat/capabilities';
-import type { ChatEventDraft, ChatQuestionAnswers, ContentBlock, MessageDelivery } from '../../../shared/chat/events';
+import type { AvailableCommand, ChatEventDraft, ChatQuestionAnswers, ContentBlock, MessageDelivery } from '../../../shared/chat/events';
 import type {
   ChatDriver,
   ChatDriverProbe,
@@ -20,6 +20,7 @@ import {
   type AskForApproval,
   type JsonValue,
   type SandboxMode,
+  type ReviewTarget,
   type SandboxPolicy,
   type ServerNotification,
   type ThreadResumeResponse,
@@ -48,8 +49,45 @@ const codexCapabilities: ChatCapabilities = {
   login: 'terminal',
   // thread/start takes developerInstructions.
   systemPrompt: true,
+  // app-server doesn't parse slash commands in prompt text (the TUI does);
+  // the driver handles CODEX_SLASH_COMMANDS itself.
+  slashCommands: true,
 };
 export const CODEX_CHAT_CAPABILITIES: ChatCapabilities = Object.freeze(codexCapabilities);
+
+/** Slash commands the driver runs through app-server methods, as the composer lists them. */
+export const CODEX_SLASH_COMMANDS: readonly AvailableCommand[] = Object.freeze([
+  {
+    name: 'review',
+    description: 'Review your changes: uncommitted by default, or against a branch or commit',
+    inputHint: '[branch <name> | commit <sha> | instructions]',
+  },
+  { name: 'compact', description: 'Summarize the conversation to free up context' },
+]);
+
+export type CodexSlashCommand =
+  | { name: 'review'; target: ReviewTarget }
+  | { name: 'compact' };
+
+/**
+ * A message that is exactly one of CODEX_SLASH_COMMANDS, parsed. Anything else
+ * (including an unknown `/word`) is an ordinary prompt.
+ */
+export function parseCodexSlashCommand(content: ContentBlock[]): CodexSlashCommand | undefined {
+  if (content.length !== 1 || content[0].type !== 'text') return undefined;
+  const match = /^\/(\w+)(?:\s+([\s\S]*))?$/.exec(content[0].text.trim());
+  if (!match) return undefined;
+  const [, name, rest = ''] = match;
+  const arg = rest.trim();
+  if (name === 'compact' && !arg) return { name: 'compact' };
+  if (name !== 'review') return undefined;
+  const branch = /^branch\s+(\S+)$/.exec(arg);
+  if (branch) return { name: 'review', target: { type: 'baseBranch', branch: branch[1] } };
+  const commit = /^commit\s+([0-9a-f]{4,40})$/i.exec(arg);
+  if (commit) return { name: 'review', target: { type: 'commit', sha: commit[1], title: null } };
+  if (arg) return { name: 'review', target: { type: 'custom', instructions: arg } };
+  return { name: 'review', target: { type: 'uncommittedChanges' } };
+}
 
 /** How long close() waits for the process to exit before giving up. */
 const CLOSE_TIMEOUT_MS = 5_000;
@@ -274,6 +312,7 @@ class CodexChatSession implements ChatDriverSession {
         capabilities: this.capabilities,
       },
     });
+    this.queue.push({ type: 'commands_available', data: { commands: [...CODEX_SLASH_COMMANDS] } });
     const version = cliVersion ?? result.thread.cliVersion;
     if (version && version !== CODEX_APP_SERVER_SCHEMA_VERSION) {
       this.queue.push({
@@ -290,6 +329,21 @@ class CodexChatSession implements ChatDriverSession {
 
   async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
     const threadId = this.requireThread();
+    const command = parseCodexSlashCommand(content);
+    if (command) {
+      // Each command starts its own turn, so it can't join a running one.
+      if (this.client.getActiveTurnId(threadId)) {
+        throw new Error(`Finish or stop the current turn before running /${command.name}`);
+      }
+      if (command.name === 'compact') {
+        await this.compact();
+      } else {
+        // Inline: the review runs on this thread, so its turn and items
+        // stream into this chat rather than a detached review thread.
+        await this.client.request('review/start', { threadId, target: command.target, delivery: 'inline' });
+      }
+      return 'prompt';
+    }
     const input = toCodexInput(content);
     if (delivery === 'steer' && this.client.getActiveTurnId(threadId)) {
       try {
