@@ -142,4 +142,19 @@ describe('KeyboardShortcutsSettingsView', () => {
     render(<KeyboardShortcutsSettingsView />);
     expect(mockLoadClipboard).toHaveBeenCalled();
   });
+
+  it('shows an action left unbound by a conflicting user binding', () => {
+    useKeyboardShortcutsStore.setState((st) => ({
+      shortcuts: {
+        ...st.shortcuts,
+        'tab-1': { id: 'tab-1', label: 'Agents Tab', category: 'Tabs', defaultBinding: 'Meta+1', currentBinding: '', conflictWith: 'toggle-help' },
+        'toggle-help': { id: 'toggle-help', label: 'Toggle Help', category: 'General', defaultBinding: 'Meta+Shift+/', currentBinding: 'Meta+1' },
+      },
+    }));
+    render(<KeyboardShortcutsSettingsView />);
+    const row = screen.getByTestId('shortcut-row-tab-1');
+    expect(row.textContent).toContain('Unbound');
+    expect(row.textContent).toContain('Toggle Help');
+    expect(row.querySelector('[title="Reset to default"]')).toBeNull();
+  });
 });

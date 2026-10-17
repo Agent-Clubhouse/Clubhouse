@@ -10,15 +10,22 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { PermissionLevel } from '../../../../shared/chat';
-import { createChatViewState, type ChatViewState } from '../../../stores/chatStore';
+import { createChatViewState, useAnswering, type ChatViewState } from '../../../stores/chatStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { ChatHeader } from './ChatHeader';
 import { ChatStream, type StreamJump } from './ChatStream';
+import { ChangesPanel } from './ChangesPanel';
 import { AgentMapPanel } from './AgentMapPanel';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { Composer, QueueList, TaskList } from './Composer';
-import { useChatActions, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, type ChatActions } from './useChatSession';
+import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions } from './useChatSession';
 import { buildAgentMap, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
+
+/** Where a ChatView is shown; several can show the same agent at once. */
+export type ChatViewContext = 'main' | 'popout' | 'canvas' | 'plugin';
+
+/** Canvas cards read only the end of the transcript; "Show earlier" loads the rest. */
+export const CANVAS_TRANSCRIPT_TAIL = 1500;
 
 export interface ChatViewBodyProps {
   agent: Agent;
@@ -28,6 +35,9 @@ export interface ChatViewBodyProps {
   loading?: boolean;
   onSwitchToTerminal?: () => void;
   switching?: boolean;
+  context?: ChatViewContext;
+  /** Set when earlier history wasn't loaded. */
+  onShowEarlier?: () => void;
 }
 
 function ProtocolDriftNote({ counts }: { counts: Record<string, number> }) {
@@ -37,6 +47,26 @@ function ProtocolDriftNote({ counts }: { counts: Record<string, number> }) {
   return (
     <div className="text-[12px] text-ctp-overlay1 px-1" title={names.join('\n')} data-testid="chat-protocol-unknown">
       This CLI sent {total} {total === 1 ? 'message' : 'messages'} Clubhouse doesn't recognize yet, so some activity may be missing here. The terminal view shows everything.
+    </div>
+  );
+}
+
+/** Shown after the CLI reports it needs a login: the terminal runs the CLI's own login flow. */
+function LoginBanner({ state, onSwitchToTerminal }: { state: ChatViewState; onSwitchToTerminal?: () => void }) {
+  const last = state.items[state.items.length - 1];
+  if (!last || last.kind !== 'error' || last.code !== 'auth_required') return null;
+  return (
+    <div className="flex items-center gap-2.5 flex-wrap text-[12.5px] text-ctp-subtext0 px-0.5" data-testid="chat-login-banner" role="status">
+      <span>This CLI needs you to log in.</span>
+      {onSwitchToTerminal && (
+        <button
+          type="button"
+          onClick={onSwitchToTerminal}
+          className="h-7 px-2.5 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium"
+        >
+          Log in in the terminal
+        </button>
+      )}
     </div>
   );
 }
@@ -58,13 +88,18 @@ function PlanHandoff({ state, onImplement }: { state: ChatViewState; onImplement
   );
 }
 
-export function ChatViewBody({ agent, state, actions, providerName, loading, onSwitchToTerminal, switching }: ChatViewBodyProps) {
+export function ChatViewBody({ agent, state, actions, providerName, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier }: ChatViewBodyProps) {
   const running = isRunningState(state.state);
   const permission = state.pendingPermissions[0];
   const question = state.pendingQuestions[0];
+  // An answer sent from another view of this agent disables the card here too.
+  const permissionBusy = useAnswering(agent.id, permission?.requestId ?? '');
+  const questionBusy = useAnswering(agent.id, question?.requestId ?? '');
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
   const [draft, setDraft] = useChatDraft(agent.id);
+  const [changesOpen, setChangesOpen] = useState(false);
+  const [attachments, setAttachments] = useChatAttachments(agent.id);
   const [agentMapOpen, setAgentMapOpen] = useState(false);
   const [selectedSubagent, setSelectedSubagent] = useState<string | null>(null);
   const [jump, setJump] = useState<StreamJump | null>(null);
@@ -74,6 +109,7 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   // The map exists only when the driver reports subagents and there are some.
   const hasAgentMap = agentMap.mode !== 'none' && agentMap.nodes.length > 0;
   const openSubagent = useCallback((subagentId: string) => {
+    setChangesOpen(false);
     setAgentMapOpen(true);
     setSelectedSubagent(subagentId);
   }, []);
@@ -94,19 +130,26 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
     requestAnimationFrame(() => document.getElementById(mapToggleId)?.focus());
   }, [mapToggleId]);
 
-  const onSend = (text: string, action: SendAction) => {
+  const onSend = (text: string, action: SendAction, blocks?: string[]) => {
+    const sentAttachments = attachments;
+    const send = (delivery: 'auto' | 'steer' | 'queued') => (blocks ? actions.send(text, delivery, blocks) : actions.send(text, delivery));
     void (async () => {
       let result;
-      if (action === 'steer') result = await actions.send(text, 'steer');
-      else if (action === 'queue') result = await actions.send(text, 'queued');
+      if (action === 'steer') result = await send('steer');
+      else if (action === 'queue') result = await send('queued');
       else if (action === 'stop_and_send') {
         // No steering: cancel the turn, then send. 'auto' queues it until the
         // cancelled turn has ended, so it becomes the next prompt.
         await actions.interrupt();
-        result = await actions.send(text, 'auto');
-      } else result = await actions.send(text, 'auto');
-      // Not sent: put the text back unless the user has started a new draft.
-      if (result === null && !useChatDraftStore.getState().drafts[agent.id]) setDraft(text);
+        result = await send('auto');
+      } else result = await send('auto');
+      // Not sent: put the draft back unless the user has started a new one.
+      if (result !== null) return;
+      const drafts = useChatDraftStore.getState();
+      if (!drafts.drafts[agent.id] && !drafts.attachments[agent.id]) {
+        setDraft(text);
+        if (blocks) setAttachments(sentAttachments);
+      }
     })();
   };
 
@@ -125,13 +168,14 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
         agentName={agent.name}
         extras={state.capabilities?.permissionExtras}
         request={permission}
+        busy={permissionBusy}
         plan={plan}
         queueSize={state.pendingPermissions.length}
         onRespond={actions.respondPermission}
       />
     );
   } else if (question) {
-    dock = <QuestionCard key={question.requestId} request={question} onAnswer={actions.answerQuestion} />;
+    dock = <QuestionCard key={question.requestId} request={question} busy={questionBusy} onAnswer={actions.answerQuestion} />;
   } else {
     dock = (
       <>
@@ -145,27 +189,37 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
           level={state.level}
           model={state.model}
           effort={state.effort}
+          models={state.models}
+          efforts={state.efforts}
+          levelNames={state.levelNames}
           commands={state.commands}
           text={draft}
           onTextChange={setDraft}
+          attachmentAgentId={agent.id}
+          attachments={attachments}
+          onAttachmentsChange={setAttachments}
           onSend={onSend}
           onStop={() => { void actions.interrupt(); }}
           onLevelChange={(l) => { void actions.setLevel(l); }}
+          onModelChange={actions.setModel ? (m, e) => { void actions.setModel?.(m, e); } : undefined}
         />
       </>
     );
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-state={state.state ?? 'none'}>
+    <div className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-view-context={context} data-state={state.state ?? 'none'}>
       <ChatHeader
         agent={agent}
         state={state}
         providerName={providerName}
         onSwitchToTerminal={onSwitchToTerminal}
         switching={switching}
+        onToggleChanges={() => { setAgentMapOpen(false); setChangesOpen((v) => !v); }}
+        changesOpen={changesOpen}
         {...(hasAgentMap && {
-          onToggleAgentMap: () => setAgentMapOpen((v) => !v),
+          // One side panel at a time, so the stream keeps its width.
+          onToggleAgentMap: () => { setChangesOpen(false); setAgentMapOpen((v) => !v); },
           agentMapOpen,
           subagentCount: agentMap.nodes.length,
           agentMapPanelId: mapPanelId,
@@ -174,16 +228,33 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
       />
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 min-w-0 flex flex-col">
-          <ChatStream state={state} onOpenSubagent={hasAgentMap ? openSubagent : undefined} jump={jump} onJumpResult={onJumpResult} />
+          {/* Canvas cards stay quiet: the focused view announces replies, not every card on the board. */}
+          <ChatStream
+            state={state}
+            onOpenSubagent={hasAgentMap ? openSubagent : undefined}
+            jump={jump}
+            onJumpResult={onJumpResult}
+            announce={context !== 'canvas'}
+            onShowEarlier={onShowEarlier}
+          />
           <div className="flex-shrink-0 px-7 pb-4 flex justify-center" data-testid="chat-dock">
             <div className="w-full max-w-[740px] flex flex-col gap-2">
               <ProtocolDriftNote counts={state.protocolUnknown} />
+              <LoginBanner state={state} onSwitchToTerminal={onSwitchToTerminal} />
               {state.plan.length > 0 && <TaskList entries={state.plan} />}
               {state.queued.length > 0 && <QueueList queued={state.queued} />}
               {dock}
             </div>
           </div>
         </div>
+        {changesOpen && (
+          <ChangesPanel
+            agentId={agent.id}
+            sessionId={state.sessionId}
+            refreshKey={`${state.turnId ?? 'idle'}:${state.state ?? ''}`}
+            onClose={() => setChangesOpen(false)}
+          />
+        )}
         {hasAgentMap && agentMapOpen && (
           <AgentMapPanel
             id={mapPanelId}
@@ -206,11 +277,13 @@ export interface ChatViewProps {
   agent: Agent;
   onSwitchToTerminal?: () => void;
   switching?: boolean;
+  context?: ChatViewContext;
 }
 
 /** ChatView bound to the chat store. */
-export function ChatView({ agent, onSwitchToTerminal, switching }: ChatViewProps) {
-  useChatTranscript(agent.id);
+export function ChatView({ agent, onSwitchToTerminal, switching, context = 'main' }: ChatViewProps) {
+  useChatTranscript(agent.id, context === 'canvas' ? CANVAS_TRANSCRIPT_TAIL : undefined);
+  const earlier = useEarlierHistory(agent.id);
   const stored = useChatState(agent.id);
   const loading = useChatLoading(agent.id);
   const actions = useChatActions(agent.id);
@@ -227,6 +300,8 @@ export function ChatView({ agent, onSwitchToTerminal, switching }: ChatViewProps
       loading={loading && !stored}
       onSwitchToTerminal={onSwitchToTerminal}
       switching={switching}
+      context={context}
+      onShowEarlier={earlier.partial ? earlier.loadAll : undefined}
     />
   );
 }

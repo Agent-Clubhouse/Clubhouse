@@ -64,4 +64,17 @@ describe('ExtractPersonaDialog', () => {
     expect(call[2]).toContain('Agent @@AgentName');
     expect(call[3]).toBe('user');
   });
+
+  it('extracts from the agent’s own project when another project is active', async () => {
+    useProjectStore.setState({
+      projects: [
+        { id: 'proj-1', name: 'my-project', path: '/home/user/project', color: 'indigo' },
+        { id: 'proj-2', name: 'active', path: '/home/user/active', color: 'blue' },
+      ] as never,
+      activeProjectId: 'proj-2',
+    });
+    render(<ExtractPersonaDialog />);
+    await waitFor(() => expect(window.clubhouse.agentSettings.extractAgentPersona).toHaveBeenCalled());
+    expect(window.clubhouse.agentSettings.extractAgentPersona).toHaveBeenCalledWith('/home/user/project', expect.anything());
+  });
 });

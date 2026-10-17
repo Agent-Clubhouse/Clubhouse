@@ -6,6 +6,8 @@ import { getGlobalPluginDataDir } from './plugin-storage';
 import * as agentSettings from './agent-settings-service';
 import { registerTrustedManifest } from './plugin-manifest-registry';
 import { pathExists } from './fs-utils';
+import { tel } from '../telemetry/facade';
+import { ATTR } from '../../shared/telemetry/attributes';
 
 function assertSafePluginId(pluginId: string): void {
   if (pluginId.includes('/') || pluginId.includes('\\') || pluginId.includes('..') || pluginId.includes('\0')) {
@@ -117,7 +119,14 @@ export async function refreshManifestFromDisk(pluginId: string): Promise<PluginM
   }
 }
 
+/** `clubhouse.plugin.uninstall` (spec §4.11); the id is hashed. */
 export async function uninstallPlugin(pluginId: string): Promise<void> {
+  return tel.flow('clubhouse.plugin.uninstall', {
+    attrs: [ATTR.pluginRef('other'), ATTR.pluginIdHash(pluginId)],
+  }, () => uninstallPluginNow(pluginId));
+}
+
+async function uninstallPluginNow(pluginId: string): Promise<void> {
   assertSafePluginId(pluginId);
   const pluginDir = path.join(getCommunityPluginsDir(), pluginId);
 

@@ -145,6 +145,7 @@ export const IPC = {
     EVENT: 'chat:event',                                       // Main → Renderer
     READ_TRANSCRIPT: 'chat:read-transcript',
     SEND_MESSAGE: 'chat:send-message',
+    STAGE_ATTACHMENT: 'chat:stage-attachment',
     INTERRUPT: 'chat:interrupt',
     RESPOND_PERMISSION: 'chat:respond-permission',
     ANSWER_QUESTION: 'chat:answer-question',
@@ -153,6 +154,12 @@ export const IPC = {
     GET_RUNTIME_SETTINGS: 'chat:get-runtime-settings',
     SAVE_RUNTIME_SETTINGS: 'chat:save-runtime-settings',
     GET_AGENT_RUNTIME: 'chat:get-agent-runtime',
+    LIST_CHECKPOINTS: 'chat:list-checkpoints',
+    GET_CHANGES: 'chat:get-changes',
+    REVERT_TURN: 'chat:revert-turn',
+    UNDO_REVERT: 'chat:undo-revert',
+    /** Main → Renderer: an agent didn't get the chat it asked for (driver or terminal fallback). */
+    RUNTIME_NOTICE: 'chat:runtime-notice',
   },
   FILE: {
     READ_TREE: 'file:read-tree',

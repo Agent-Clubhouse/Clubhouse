@@ -25,6 +25,7 @@ import {
   type ChatDriverSession,
   type ChatEvent,
   type ChatEventDraft,
+  type ChatEventDataMap,
   type ChatQuestionAnswers,
   type ChatSessionState,
   type PermissionResponseExtras,
@@ -47,6 +48,8 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 
 export const DEFAULT_CHAT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+/** Longest a pre-prompt hook (checkpoint) may delay a prompt. */
+const BEFORE_PROMPT_TIMEOUT_MS = 5000;
 /** Chat permission requests wait for the user; the queue entry only needs to outlive them. */
 const CHAT_PERMISSION_QUEUE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
@@ -76,11 +79,18 @@ export interface ChatAgentRuntimeOptions {
    * the runtime prepends it to the first message sent.
    */
   systemPrompt?: string;
+  /**
+   * Awaited (up to a few seconds) before each new prompt is sent, e.g. to
+   * checkpoint the working tree. Never blocks steering into a running turn.
+   */
+  beforePrompt?: () => Promise<void>;
   idleTimeoutMs?: number;
   /** Called once when the runtime ends for good (stop, idle timeout or process exit). */
   onEnded?: (reason: SessionEndReason, exitCode: number) => void;
   /** Called whenever the CLI reports a native session id (for resume on the next wake). */
   onNativeSessionId?: (nativeSessionId: string) => void;
+  /** Notices written right after the first session_started (untested CLI version, driver fallback). */
+  startNotices?: Array<ChatEventDataMap['notice']>;
   now?: () => number;
   newId?: () => string;
 }
@@ -105,9 +115,12 @@ export class ChatAgentRuntime implements AgentRuntime {
   private capabilities: ChatCapabilities | undefined;
   private readonly queued: Array<{ content: ContentBlock[]; source: MessageSource }> = [];
   private readonly permissions = new Map<string, PendingPermission>();
+  /** Questions awaiting an answer, so a late or duplicate answer is ignored. */
+  private readonly questions = new Set<string>();
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private ended = false;
   private systemPromptApplied = false;
+  private startNoticesEmitted = false;
   /** Serializes stamping so seq order matches transcript and bus order. */
   private emitChain: Promise<void> = Promise.resolve();
   private readonly now: () => number;
@@ -151,6 +164,10 @@ export class ChatAgentRuntime implements AgentRuntime {
         capabilities: session.capabilities,
       },
     });
+    if (!this.startNoticesEmitted) {
+      this.startNoticesEmitted = true;
+      for (const notice of this.opts.startNotices ?? []) await this.emit({ type: 'notice', data: notice });
+    }
     await this.setState('idle');
     this.armIdleTimer();
     void this.pump(session);
@@ -219,7 +236,11 @@ export class ChatAgentRuntime implements AgentRuntime {
         this.mirrorPermission(draft.data.requestId, draft.data.toolName ?? draft.data.title, draft.data.rawInput, draft.data.title, draft.data.options);
         break;
       case 'question':
+        this.questions.add(draft.data.requestId);
         await this.setState('waiting_input');
+        break;
+      case 'question_resolved':
+        this.questions.delete(draft.data.requestId);
         break;
     }
   }
@@ -300,9 +321,21 @@ export class ChatAgentRuntime implements AgentRuntime {
     }
 
     this.clearIdleTimer();
+    if (wanted === 'prompt') await this.runBeforePrompt();
     const delivered = await session.send(outgoing, wanted);
     await this.emit({ type: 'user_message', data: { messageId, content: blocks, source: opts.source, delivery: delivered } });
     return { delivery: delivered, messageId };
+  }
+
+  private async runBeforePrompt(): Promise<void> {
+    if (!this.opts.beforePrompt) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, BEFORE_PROMPT_TIMEOUT_MS); });
+    try {
+      await Promise.race([this.opts.beforePrompt().catch((): void => undefined), timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /** Prepend the system prompt once, for drivers that can't pass it natively. The transcript keeps the user's own text. */
@@ -317,6 +350,8 @@ export class ChatAgentRuntime implements AgentRuntime {
     const next = this.queued.shift();
     if (!next || !this.session) return;
     this.clearIdleTimer();
+    await this.runBeforePrompt();
+    if (!this.session) return;
     await this.session.send(next.content, 'prompt');
   }
 
@@ -330,17 +365,24 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   /**
-   * Tear down silently after a failed start: close the CLI, cancel timers and
-   * mirrored permissions, and never call onEnded or emit session_ended, so
-   * the caller can fall back to the terminal on the same agent id.
+   * Tear down after a failed start: close the CLI and cancel timers and
+   * mirrored permissions. It never calls onEnded (no untrack, no exit
+   * broadcast), so the caller can fall back to the terminal on the same agent
+   * id. If a session had started, it ends with reason 'fallback', so
+   * consumers (the renderer, telemetry) don't keep it open.
    */
   async abandon(): Promise<void> {
+    if (this.ended) return;
     this.ended = true;
     this.clearIdleTimer();
     this.settleAllPermissions();
     const session = this.session;
     this.session = undefined;
-    if (session) await session.close().catch((): void => undefined);
+    if (session) {
+      await this.emit({ type: 'session_ended', data: { reason: 'fallback', message: 'Chat start failed; using the terminal' } });
+      await this.emitChain;
+      await session.close().catch((): void => undefined);
+    }
   }
 
   async stop(): Promise<void> {
@@ -381,7 +423,15 @@ export class ChatAgentRuntime implements AgentRuntime {
   async respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> {
     const session = this.requireSession();
     const pending = this.permissions.get(requestId);
-    await session.respondPermission(requestId, optionId, extras);
+    // Already answered (another view, the desktop prompt or Annex got there first): nothing to do.
+    if (!pending || pending.settled) return;
+    pending.settled = true;
+    try {
+      await session.respondPermission(requestId, optionId, extras);
+    } catch (err) {
+      pending.settled = false;
+      throw err;
+    }
     const option = pending?.options.find((o) => o.optionId === optionId);
     const decision = decisionFor(option);
     this.settlePermission(requestId, decision === 'allow' ? 'allow' : 'deny');
@@ -393,7 +443,15 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   async answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void> {
-    await this.requireSession().answerQuestion(requestId, answers);
+    const session = this.requireSession();
+    // Already answered from another view: nothing to do.
+    if (!this.questions.delete(requestId)) return;
+    try {
+      await session.answerQuestion(requestId, answers);
+    } catch (err) {
+      this.questions.add(requestId);
+      throw err;
+    }
     await this.emit({ type: 'question_resolved', data: { requestId, answers } });
     if (this.state === 'waiting_input') await this.setState('running');
   }
@@ -549,6 +607,7 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   private settleAllPermissions(): void {
     for (const id of [...this.permissions.keys()]) this.settlePermission(id);
+    this.questions.clear();
   }
 }
 

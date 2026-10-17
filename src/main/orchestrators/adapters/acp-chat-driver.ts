@@ -7,6 +7,8 @@ import type {
   ChatDriverStartOptions,
 } from '../../../shared/chat/runtime';
 import { AsyncQueue } from './async-queue';
+import { RpcError } from './acp-client';
+import { ACP_ERROR_CODES } from './acp-schema';
 import { AcpSession, GENERIC_ACP_PROFILE, type AcpAgentProfile, type AcpSessionEvent } from './acp-session';
 import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
 import type { InitializeResponse } from './acp-schema';
@@ -127,8 +129,8 @@ export class AcpChatDriver implements ChatDriver {
   }
 
   /** `initialize` only: no session, no prompt, no tokens. */
-  async probe(binaryPath: string, env?: Record<string, string>): Promise<ChatDriverProbe> {
-    const cmd = this.spec.spawn({ binary: binaryPath });
+  async probe(binaryPath: string, env?: Record<string, string>, opts?: { commandPrefix?: string }): Promise<ChatDriverProbe> {
+    const cmd = this.spec.spawn({ binary: binaryPath, commandPrefix: opts?.commandPrefix });
     const session = new AcpSession({ ...cmd, env, profile: this.spec.profile, onLog: this.log });
     try {
       const caps = await session.start();
@@ -178,7 +180,27 @@ export class AcpChatDriver implements ChatDriver {
       if (skipped.length) this.log('warn', 'MCP servers not expressible over ACP', { skipped });
       const setup = { cwd: opts.cwd, mcpServers: servers };
       if (opts.resumeNativeSessionId) {
-        await session.resumeSession(opts.resumeNativeSessionId, setup);
+        try {
+          await session.resumeSession(opts.resumeNativeSessionId, setup);
+        } catch (err) {
+          // The agent no longer has the session and answers "resource not found"
+          // (Copilot, for one, doesn't persist a session that never got a prompt).
+          // Clubhouse's transcript still has the history; start a fresh native
+          // session and say so. Applies to every ACP agent, not just Copilot.
+          if (!(err instanceof RpcError) || err.code !== ACP_ERROR_CODES.resourceNotFound) throw err;
+          this.log('warn', 'Native session not found; starting a new one', { sessionId: opts.resumeNativeSessionId });
+          // Drop anything the failed load replayed before it gave up.
+          buffered.length = 0;
+          queue.push({
+            type: 'notice',
+            data: {
+              level: 'info',
+              code: 'resume_unavailable',
+              message: 'The agent no longer has this conversation, so it continues in a new session without the earlier context.',
+            },
+          });
+          await session.newSession(setup);
+        }
       } else {
         await session.newSession(setup);
       }
@@ -196,17 +218,9 @@ export class AcpChatDriver implements ChatDriver {
         this.log('warn', 'Permission level not available over ACP; keeping the agent default', { level: opts.level });
       }
 
-      mapper = new AcpChatEventMapper(this.id, levels);
+      mapper = new AcpChatEventMapper(this.id, { profile: session.agentProfile });
       const state = session.getState();
-      const cliVersion = session.initializeResponse?.agentInfo?.version;
-      queue.push({
-        type: 'session_info',
-        data: {
-          ...(state.sessionId && { nativeSessionId: state.sessionId }),
-          ...(cliVersion && { cliVersion }),
-          ...(state.title && { title: state.title }),
-        },
-      });
+      queue.push(mapper.initialInfo(state, session.initializeResponse?.agentInfo?.version));
       // Session-scoped state that arrived during setup. Replayed copies count:
       // Copilot's trailing command list can land while session/load still reads as replay.
       for (const event of buffered.splice(0)) {
@@ -281,6 +295,19 @@ export const COPILOT_ACP_LAUNCH: AcpLaunchSpec = {
 
 export function createCopilotAcpChatDriver(log?: Log): AcpChatDriver {
   return new AcpChatDriver(COPILOT_ACP_LAUNCH, log);
+}
+
+/**
+ * Register Copilot's chat driver with the chat runtime's registry
+ * (`registerChatDriver` in services/agent-runtime/chat-drivers.ts). Copilot
+ * has one chat mode today; the Copilot SDK driver will register ahead of it
+ * (docs/copilot-sdk-driver.md). Returns the unregister function.
+ */
+export function registerCopilotChatDrivers(
+  register: (driver: ChatDriver) => () => void,
+  log?: Log,
+): () => void {
+  return register(createCopilotAcpChatDriver(log));
 }
 
 /**

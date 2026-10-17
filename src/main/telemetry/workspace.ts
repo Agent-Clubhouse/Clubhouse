@@ -110,3 +110,25 @@ export function classifySearchError(err: unknown): Extract<ErrorType, 'timeout' 
   if (/regex parse error|error parsing regex|unclosed|invalid regular expression/i.test(message) || err instanceof SyntaxError) return 'bad_regex';
   return 'rg_failed';
 }
+
+/** Registry and asset fetch failures (§4.11), from the thrown error. */
+export function classifyFetchError(err: unknown): Extract<ErrorType, 'timeout' | 'invalid_json' | 'http_4xx' | 'http_5xx' | 'network'> {
+  const e = (err ?? {}) as { name?: unknown; message?: unknown };
+  if (e.name === 'TimeoutError' || e.name === 'AbortError') return 'timeout';
+  if (err instanceof SyntaxError) return 'invalid_json';
+  const status = typeof e.message === 'string' ? /:\s(\d{3})\b/.exec(e.message)?.[1] : undefined;
+  if (status?.startsWith('4')) return 'http_4xx';
+  if (status?.startsWith('5')) return 'http_5xx';
+  return 'network';
+}
+
+/** Byte counts as the registry's `clubhouse.size_bucket` values. */
+export function byteSizeBucket(bytes: number): '0' | '<1KB' | '<100KB' | '<1MB' | '<10MB' | '<100MB' | '>=100MB' {
+  if (!(bytes > 0)) return '0';
+  if (bytes < 1024) return '<1KB';
+  if (bytes < 100 * 1024) return '<100KB';
+  if (bytes < 1024 * 1024) return '<1MB';
+  if (bytes < 10 * 1024 * 1024) return '<10MB';
+  if (bytes < 100 * 1024 * 1024) return '<100MB';
+  return '>=100MB';
+}

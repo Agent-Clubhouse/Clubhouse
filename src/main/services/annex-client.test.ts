@@ -106,6 +106,8 @@ vi.mock('https', async (importOriginal) => {
 });
 
 import * as annexClient from './annex-client';
+import { setRuntime } from '../telemetry/facade';
+import type { TelemetryRuntime } from '../telemetry/types';
 import * as annexPeers from './annex-peers';
 import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
@@ -1370,6 +1372,56 @@ describe('annex-client', () => {
       // Backward compat: truthy check still works
       expect(!!result).toBe(true);
     });
+
+    it('adds a traceparent (tc) to agent:spawn and agent:wake only while telemetry is on', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+      mockHttpGetIdentity({ fingerprint: 'PP:QQ:RR:SS', alias: 'Paired Mac', icon: 'server', color: 'green', publicKey: 'paired-pub-key' });
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS', alias: 'Paired Mac', icon: 'server', color: 'green',
+        publicKey: 'paired-pub-key', pairedAt: '2024-01-01', lastSeen: '2024-01-01',
+      });
+      const sent: string[] = [];
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.socket = makeMockSocket('PP:QQ:RR:SS');
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') setTimeout(cb, 0);
+          return this;
+        });
+        this.send = vi.fn((d: string) => { sent.push(d); });
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await new Promise((r) => setTimeout(r, 50));
+
+      const tc = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
+      const flows: string[] = [];
+      setRuntime({
+        level: 'standard',
+        flow: (name: string, _o: unknown, fn: () => unknown) => { flows.push(name); return fn(); },
+        traceparent: () => tc,
+        replaySpan: vi.fn(),
+        count: vi.fn(),
+      } as unknown as TelemetryRuntime);
+      try {
+        annexClient.sendToSatellite('PP:QQ:RR:SS', { type: 'agent:spawn', payload: { projectId: 'p', prompt: 'x' } });
+        annexClient.sendToSatellite('PP:QQ:RR:SS', { type: 'pty:input', payload: { data: 'y' } });
+      } finally {
+        setRuntime(null);
+      }
+      annexClient.sendToSatellite('PP:QQ:RR:SS', { type: 'agent:wake', payload: { agentId: 'a' } });
+
+      const last3 = sent.slice(-3).map((d) => JSON.parse(d));
+      expect(last3[0]).toMatchObject({ type: 'agent:spawn', tc });
+      expect(last3[1].tc).toBeUndefined();
+      expect(last3[2].tc).toBeUndefined();
+      expect(flows).toEqual(['clubhouse.annex.remote_spawn']);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -1513,6 +1565,61 @@ describe('annex-client', () => {
       const satsAfter = annexClient.getSatellites();
       expect(satsAfter[0].state).toBe('disconnected');
       expect(satsAfter[0].lastError).toBe('Heartbeat ping failed');
+
+      vi.useRealTimers();
+    });
+
+    it('bridges a pong timeout to telemetry with no attributes', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+      const { appLog } = await import('./log-service');
+
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let openCb: (() => void) | null = null;
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.socket = makeMockSocket('PP:QQ:RR:SS');
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      vi.useFakeTimers();
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await vi.advanceTimersByTimeAsync(0);
+      openCb!();
+      vi.mocked(appLog).mockClear();
+
+      // One heartbeat ping, then no pong within the 10s timeout.
+      vi.advanceTimersByTime(30_000 + 10_000);
+
+      expect(annexClient.getSatellites()[0].lastError).toBe('Heartbeat timeout');
+      const call = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Heartbeat pong timeout — closing connection');
+      expect(call?.[3]).toMatchObject({ telemetry: { event: 'clubhouse.annex.heartbeat_timeout' } });
+      expect((call?.[3] as { telemetry: { attrs?: unknown } }).telemetry.attrs).toBeUndefined();
 
       vi.useRealTimers();
     });

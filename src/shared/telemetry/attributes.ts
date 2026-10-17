@@ -7,8 +7,11 @@
  * every exported item against this file and drops anything not declared here.
  * See docs/telemetry-otel-spec.md §5.
  *
- * This module has no runtime dependencies so the renderer can share it later.
+ * Its only import is the IPC channel constants (themselves dependency-free),
+ * so the renderer can share it.
  */
+
+import { IPC } from '../ipc-channels';
 
 /** Bump on breaking attribute changes; exported as `clubhouse.telemetry.schema`. */
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
@@ -117,9 +120,33 @@ export const ERROR_TYPES = [
   'redirect_blocked',
   'apply_spawn_failed',
   'apply_failed',
+  // Chat turns (§4.4 chat turns): chat's closed ChatErrorCode set (src/shared/chat/events.ts)
+  'max_tokens',
+  'refusal',
+  'rpc_timeout',
+  'process_exited',
+  'spawn_failed',
+  'unhandled_server_request',
+  'protocol_error',
+  'driver_stream_failed',
+  'auth_required',
+  'rate_limited',
+  'context_overflow',
+  'tool_failed',
   // Agents (§4.4, Phase 4)
   'mcp_tool_error',
   'mcp_tool_threw',
+  // Agents: create, spawn, delete, shoulder taps (§4.4, Phase 4b)
+  'orchestrator_unknown',
+  'preflight_failed',
+  'cwd_invalid',
+  'pty_spawn_failed',
+  'headless_no_pid',
+  'chat_start_failed',
+  'materialize_failed',
+  'worktree_failed',
+  'delete_failed',
+  'tap_undelivered',
   // Workspace (§4.7–4.10, Phase 5)
   'not_a_repo',
   'validation',
@@ -148,6 +175,25 @@ export const ERROR_TYPES = [
   'create_failed',
   'canvas_unreadable',
   'canvas_load_failed',
+  // Workspace 5b (§4.11)
+  'invalid_json',
+  'invalid_id',
+  'install_failed',
+  'no_update_available',
+  // Annex (§4.12, Phase 6)
+  'identity_unreachable',
+  'identity_invalid',
+  'pair_rejected',
+  'cert_missing',
+  'cert_mismatch',
+  'protocol_incompatible',
+  'auth_rejected',
+  'ws_error',
+  'handshake_timeout',
+  'not_connected',
+  'send_failed',
+  // Goobers (§4.13, Phase 6b)
+  'goobers_daemon_failed',
 ] as const;
 
 export const OUTCOMES = ['ok', 'error', 'cancelled', 'timeout', 'skipped'] as const;
@@ -174,6 +220,20 @@ export const GIT_OPS = [
 ] as const;
 export type GitOp = (typeof GIT_OPS)[number];
 
+/**
+ * Managed and legacy settings domains (§4.14). The key only, never values;
+ * chat runtime settings are left to the chat telemetry mapping (§9.1).
+ */
+export const SETTINGS_KEYS = [
+  'clipboard', 'editor', 'mcp', 'security', 'goobers', 'annex', 'notifications', 'orchestrators', 'headless',
+  'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'clubhouse_mode', 'experimental', 'marketplace', 'theme',
+] as const;
+
+/** Built-in theme ids (shared/types.ts BuiltinThemeId); plugin themes report `other`. */
+export const BUILTIN_THEME_IDS = [
+  'catppuccin-mocha', 'catppuccin-latte', 'solarized-dark', 'terminal', 'nord', 'dracula', 'tokyo-night', 'gruvbox-dark', 'cyberpunk',
+] as const;
+
 /** Supported plugin API versions, kept in sync with the manifest validator. */
 export const PLUGIN_API_VERSION_VALUES: readonly string[] = SUPPORTED_PLUGIN_API_VERSIONS.map(String);
 
@@ -183,6 +243,17 @@ export const BUILTIN_PLUGIN_IDS = [
 ] as const;
 
 // --- The registry -----------------------------------------------------------
+
+/** Every channel string in the IPC constants (nested groups flattened). */
+function ipcChannelNames(): string[] {
+  const out = new Set<string>();
+  const walk = (o: unknown): void => {
+    if (typeof o === 'string') out.add(o);
+    else if (o && typeof o === 'object') for (const v of Object.values(o)) walk(v);
+  };
+  walk(IPC);
+  return [...out].sort();
+}
 
 export const ATTR = {
   // Cross-cutting (§3.2)
@@ -201,7 +272,7 @@ export const ATTR = {
   // Agents (§5.1 examples; instrumented from Phase 3)
   agentKind: enumAttr('clubhouse.agent.kind', ['durable', 'quick', 'companion']),
   orchestrator: enumAttr('clubhouse.orchestrator', ['claude-code', 'codex-cli', 'copilot-cli', 'other']),
-  agentRuntime: enumAttr('clubhouse.agent.runtime', ['pty', 'headless']),
+  agentRuntime: enumAttr('clubhouse.agent.runtime', ['pty', 'headless', 'chat']),
   exitCode: intAttr('process.exit.code'),
   agentIdHash: hashAttr('clubhouse.agent.id_hash'),
   sizeBucket: enumAttr('clubhouse.size_bucket', ['0', '<1KB', '<100KB', '<1MB', '<10MB', '<100MB', '>=100MB']),
@@ -246,10 +317,14 @@ export const ATTR = {
     'needs_you_select', 'project_collapse', 'project_collapse_all', 'project_pin', 'project_reorder',
     'fold_toggle', 'completed_dismiss', 'completed_clear', 'new_agent_open', 'search_open',
     'start_page_start', 'completed_open', 'first_run_add', 'first_run_drop',
+    'host_switch', 'host_retry', 'host_settings_open', 'needs_you_remote_select',
+    'more_menu_open', 'more_menu_pick',
+    'row_menu_open', 'hover_card_action',
+    'project_menu_open', 'agent_reorder', 'idle_toggle',
   ]),
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [
-    'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save', 'agent_create', 'agent_start',
+    'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save', 'agent_create', 'agent_start', 'shortcut_save', 'reorder_agents',
   ]),
   // App lifecycle (§4.1, Phase 3b)
   shutdownStep: enumAttr('clubhouse.shutdown.step', [
@@ -293,6 +368,26 @@ export const ATTR = {
   ]),
   persistGuardReason: enumAttr('clubhouse.persist.guard_reason', ['not_hydrated', 'verify_empty']),
 
+  // Chat (§4.4 chat turns, §9.1): mapped from the chat event bus. Numbers and
+  // closed enums only; never message text, tool inputs or paths.
+  /** The chat transport, from the driver's `session_started` (research §7). */
+  chatDriver: enumAttr('clubhouse.chat.driver', [
+    'claude_agent_sdk', 'claude_stream_json', 'codex_app_server', 'copilot_acp', 'copilot_sdk', 'acp',
+  ]),
+  turnEndReason: enumAttr('clubhouse.turn.end_reason', ['complete', 'error', 'cancelled', 'timeout']),
+  turnToolCalls: intAttr('clubhouse.turn.tool_calls'),
+  /** Attributes are integers, so the span carries milliseconds; the histogram is in seconds. */
+  turnTimeToFirstTokenMs: intAttr('clubhouse.turn.time_to_first_token_ms'),
+  genAiInputTokens: intAttr('gen_ai.usage.input_tokens'),
+  genAiOutputTokens: intAttr('gen_ai.usage.output_tokens'),
+  genAiTokenType: enumAttr('gen_ai.token.type', ['input', 'output']),
+  /** The cost is an API-price estimate (e.g. Claude on a subscription), not a bill. */
+  costEstimate: boolAttr('clubhouse.cost.estimate'),
+  /** What kind of native message a driver didn't recognize (protocol drift, §12 H2). */
+  chatProtocolKind: enumAttr('clubhouse.chat.protocol.kind', ['request', 'notification', 'field']),
+  permissionPath: enumAttr('clubhouse.permission.path', ['hook', 'chat']),
+  permissionSource: enumAttr('clubhouse.permission.source', ['desktop', 'annex']),
+
   // Agents (§4.4, Phase 4)
   agentExitClass: enumAttr('clubhouse.agent.exit.class', [
     'completed', 'failed', 'early_failure', 'killed_user', 'killed_escalated', 'stale_swept', 'replaced',
@@ -330,6 +425,27 @@ export const ATTR = {
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
   binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),
+  // Phase 4b: spawn, create, delete, kill, shoulder taps
+  agentResume: boolAttr('clubhouse.agent.resume'),
+  usesWorktree: boolAttr('clubhouse.agent.uses_worktree'),
+  mcpEnabled: boolAttr('clubhouse.mcp.enabled'),
+  hooksEnabled: boolAttr('clubhouse.hooks.enabled'),
+  profileActive: boolAttr('clubhouse.profile.active'),
+  wrapperApplied: boolAttr('clubhouse.wrapper.applied'),
+  /** Bucketed from the model string; never the raw model name. */
+  modelFamily: enumAttr('clubhouse.model.family', ['opus', 'sonnet', 'haiku', 'gpt-5', 'default', 'other']),
+  /**
+   * Who asked for a kill. Renderer kills over the agent IPC (including
+   * quick-agent auto-stop) are `user`; `other` is a kill that reached the
+   * runtime managers without a known caller (terminal IPC, force-kill).
+   */
+  killTrigger: enumAttr('clubhouse.kill.trigger', ['user', 'agent_tool', 'annex', 'shutdown', 'other']),
+  deleteMode: enumAttr('clubhouse.agent.delete.mode', [
+    'standard', 'commit_push', 'cleanup_branch', 'save_patch', 'force', 'unregister',
+  ]),
+  tapBroadcast: boolAttr('clubhouse.tap.broadcast'),
+  targetsCount: intAttr('clubhouse.targets.count'),
+  deliveryResult: enumAttr('clubhouse.delivery.result', ['delivered', 'not_running', 'unsupported_runtime']),
   // Workspace (§4.7–4.10, Phase 5). Counts are bucketed with countBucket().
   gitOp: enumAttr('clubhouse.git.op', GIT_OPS),
   gitTimedOut: boolAttr('clubhouse.git.timed_out'),
@@ -357,6 +473,121 @@ export const ATTR = {
   canvasLoadResult: enumAttr('clubhouse.canvas.load.result', ['ok', 'new', 'recovered_from_backup', 'degraded', 'unreadable', 'failed']),
   canvasCount: intAttr('clubhouse.canvas.count'),
   canvasViewCount: enumAttr('clubhouse.canvas.view.count_bucket', COUNT_BUCKETS),
+
+  // Workspace 5b: marketplace, plugin updates, settings and feature events (§4.11, §4.14)
+  registryKind: enumAttr('clubhouse.registry.kind', ['official', 'custom']),
+  cacheHit: boolAttr('clubhouse.cache.hit'),
+  httpStatusCode: intAttr('http.response.status_code'),
+  installFailureStage: enumAttr('clubhouse.install.failure_stage', ['invalid_id', 'download_http', 'integrity', 'extract', 'no_manifest', 'swap', 'restore']),
+  updatesAvailable: intAttr('clubhouse.updates.available.count'),
+  updatesIncompatible: intAttr('clubhouse.updates.incompatible.count'),
+  settingsKey: enumAttr('clubhouse.settings.key', SETTINGS_KEYS),
+  themeBuiltinId: enumAttr('clubhouse.theme.builtin_id', [...BUILTIN_THEME_IDS, 'other']),
+  popoutType: enumAttr('clubhouse.popout.type', ['agent', 'canvas']),
+  /**
+   * A bulletin post (§12 H8): `evicted_message` when the topic's own cap
+   * dropped older messages, `evicted_topic` when the board-wide cap dropped
+   * messages from other topics, `rejected` for an oversized body.
+   */
+  bulletinPostResult: enumAttr('clubhouse.bulletin.post.result', ['ok', 'evicted_message', 'evicted_topic', 'rejected']),
+  mcpToolsCount: enumAttr('clubhouse.mcp.tools.count_bucket', COUNT_BUCKETS),
+  mcpToolsEmpty: boolAttr('clubhouse.mcp.tools.empty'),
+
+  // Annex (§4.12, §7, Phase 6). Peer identity is never an attribute: no
+  // fingerprints, aliases, hosts, addresses or ports.
+  annexRole: enumAttr('clubhouse.annex.role', ['satellite', 'controller']),
+  annexTls: boolAttr('clubhouse.annex.tls'),
+  annexAuthMode: enumAttr('clubhouse.annex.auth_mode', ['mtls', 'bearer']),
+  /** mTLS clients are desktop controllers; bearer clients are the mobile app. */
+  annexClientKind: enumAttr('clubhouse.annex.client.kind', ['desktop', 'mobile']),
+  /** Address family of the peer address used, never the address (§12 H9). */
+  addrFamily: enumAttr('clubhouse.net.addr_family', ['ipv4', 'ipv6', 'hostname']),
+  annexPairResult: enumAttr('clubhouse.annex.pair.result', [
+    'ok', 'invalid_pin', 'rate_limited', 'locked', 'invalid_key', 'invalid_request', 'identity_not_ready', 'other',
+  ]),
+  annexDisconnectReason: enumAttr('clubhouse.annex.disconnect.reason', [
+    'heartbeat_timeout', 'heartbeat_failed', 'ws_error', 'connection_closed', 'user', 'other',
+  ]),
+  attemptBucket: enumAttr('clubhouse.attempt_bucket', ['1', '2', '3-5', '6-10', '>10']),
+  /** Event types the satellite streams; anything unlisted is `other`. */
+  annexEventType: enumAttr('clubhouse.annex.event.type', [
+    'pty:data', 'pty:exit', 'hook:event', 'chat:event', 'permission:request', 'permission:response',
+    'agent:spawned', 'agent:woken', 'agent:completed', 'snapshot', 'canvas:state', 'theme:changed',
+    'group-project:list', 'group-project:changed', 'bulletin:message', 'other',
+  ]),
+  annexRemoteAction: enumAttr('clubhouse.annex.remote.action', ['spawn', 'wake']),
+  annexControlChannel: enumAttr('clubhouse.annex.control.channel', ['ws', 'rest']),
+  annexReplayResult: enumAttr('clubhouse.annex.replay.result', ['ok', 'gap', 'send_failed']),
+  identityRegenReason: enumAttr('clubhouse.annex.identity.reason', ['corrupt', 'reset']),
+  /**
+   * Satellite REST route template, from ANNEX_HTTP_ROUTE_TABLE (a test keeps
+   * them in sync); never a concrete path or query.
+   */
+  // Goobers (§4.13, §12 H12, Phase 6b). Codes only, never messages: most
+  // messages interpolate the instance root, address or instance ids.
+  goobersDaemonState: enumAttr('clubhouse.goobers.state', ['running', 'not-running', 'starting', 'stopping', 'unknown']),
+  goobersConnection: enumAttr('clubhouse.goobers.connection', ['idle', 'connecting', 'connected', 'degraded', 'error']),
+  goobersError: enumAttr('clubhouse.goobers.error', [
+    'none', 'unsupported-platform', 'not-configured', 'not-a-goobers-instance-root', 'decommissioned-root',
+    'invalid-instance-id', 'instance-id-unreadable', 'invalid-root', 'binary-not-found', 'binary-not-executable',
+    'non-loopback-address', 'unexpected-readyz-status', 'identity-check-failed', 'identity-unverifiable',
+    'identity-mismatch', 'auth-required', 'recovering', 'recovery-stalled', 'degraded', 'lifecycle-busy',
+    'daemon-control-disabled', 'daemon-start-failed', 'daemon-start-unknown', 'daemon-stop-failed', 'other',
+  ]),
+  goobersStreamMode: enumAttr('clubhouse.goobers.stream.mode', ['live', 'reconnecting', 'polling', 'unavailable']),
+  goobersModel: enumAttr('clubhouse.goobers.model', ['instance', 'run', 'workflow']),
+  sseTerminalReason: enumAttr('clubhouse.sse.terminal_reason', ['auth-required', 'no-read-model', 'schema-changed']),
+  /**
+   * IPC channel, from the fixed IPC constants; never a dynamic name. Channels
+   * built at runtime (e.g. per-key managed-settings channels) are `other`.
+   */
+  ipcChannel: enumAttr('clubhouse.ipc.channel', [...ipcChannelNames(), 'other']),
+  annexRoute: enumAttr('clubhouse.annex.route', [
+    'GET /api/v1/identity',
+    'GET /api/v1/status',
+    'GET /api/v1/projects',
+    'GET /api/v1/projects/:id/agents',
+    'GET /api/v1/agents/:id/buffer',
+    'GET /api/v1/projects/:id/files/tree',
+    'GET /api/v1/projects/:id/files/read',
+    'GET /api/v1/projects/:id/git/info',
+    'GET /api/v1/projects/:id/git/log',
+    'GET /api/v1/projects/:id/git/diff',
+    'GET /api/v1/projects/:id/git/show-commit',
+    'GET /api/v1/projects/:id/git/commit-diff',
+    'POST /api/v1/projects/:id/git/:op',
+    'GET /api/v1/agents/:id/sessions',
+    'GET /api/v1/agents/:id/sessions/:id/transcript',
+    'GET /api/v1/agents/:id/sessions/:id/summary',
+    'POST /api/v1/projects/:id/agents/quick',
+    'POST /api/v1/agents/:id/agents/quick',
+    'POST /api/v1/agents/:id/wake',
+    'POST /api/v1/agents/:id/permission-response',
+    'POST /api/v1/agents/:id/message',
+    'POST /api/v1/projects/:id/agents/durable',
+    'POST /api/v1/projects/:id/agents/:id/delete',
+    'GET /api/v1/projects/:id/agents/:id/worktree-status',
+    'GET /api/v1/group-projects',
+    'GET /api/v1/group-projects/:id',
+    'GET /api/v1/group-projects/:id/bulletin/digest',
+    'GET /api/v1/group-projects/:id/bulletin/topics/:id',
+    'GET /api/v1/group-projects/:id/bulletin/messages',
+    'POST /api/v1/group-projects/:id/bulletin/messages',
+    'POST /api/v1/group-projects/:id/shoulder-tap',
+    'POST /api/v1/group-projects/:id/polling',
+    'DELETE /api/v1/group-projects/:id/bulletin/topics/:id/messages/:id',
+    'DELETE /api/v1/group-projects/:id/bulletin/topics/:id',
+    'PATCH /api/v1/group-projects/:id/bulletin/topics/:id/protection',
+    'POST /api/v1/inject-message',
+    'GET /api/v1/group-projects/:id/members',
+    'PATCH /api/v1/group-projects/:id',
+    'GET /api/v1/icons/agent/:id',
+    'GET /api/v1/icons/project/:id',
+    'other',
+  ]),
+
+  // appLog bridge (§6.6, Phase 7)
+  configFormat: enumAttr('clubhouse.config.format', ['json', 'toml']),
 } as const;
 
 /**
@@ -416,6 +647,9 @@ export const SPANS = {
   'clubhouse.update.check': { level: 'standard', root: true },
   'clubhouse.update.download': { level: 'standard', root: true },
   'clubhouse.update.apply': { level: 'standard', root: true },
+  // Chat (§4.4 chat turns)
+  /** One chat turn, turn_started to turn_ended on the chat bus. */
+  'clubhouse.agent.turn': { level: 'standard', root: true },
   // Agents (§4.4, Phase 4)
   /** One agent process, spawn to exit (PTY or headless). Exported when it ends. */
   'clubhouse.agent.run': { level: 'standard', root: true },
@@ -423,6 +657,50 @@ export const SPANS = {
   'clubhouse.agent.permission': { level: 'standard', root: true },
   /** One Clubhouse MCP tool call served to an agent. */
   'clubhouse.mcp.tool_call': { level: 'standard', root: true },
+  // Goobers (§4.13, Phase 6b)
+  /** subscribe() → the first reconcile (liveness) result. */
+  'clubhouse.goobers.activate': { level: 'standard', root: true },
+  'clubhouse.goobers.daemon.start': { level: 'standard', root: true },
+  'clubhouse.goobers.daemon.stop': { level: 'standard', root: true },
+  /** One renderer ipcRenderer.invoke handled in main, per channel. Detailed only. */
+  'clubhouse.ipc.invoke': { level: 'detailed', root: true },
+  /** pre_tool → post_tool / tool_error from the hook server. Detailed only. */
+  'clubhouse.agent.tool_call': { level: 'detailed', root: true },
+  /** Durable agent creation (IPC entry → config written, persona applied). */
+  'clubhouse.agent.create': { level: 'standard', root: true },
+  'clubhouse.agent.persona_inject': { level: 'standard', root: false },
+  /** Durable agent deletion, any mode. */
+  'clubhouse.agent.delete': { level: 'standard', root: true },
+  /** spawnAgent entry → process launched (or the throw). */
+  'clubhouse.agent.spawn': { level: 'standard', root: true },
+  'clubhouse.provider.resolve': { level: 'standard', root: false },
+  'clubhouse.provider.check_availability': { level: 'standard', root: false },
+  'clubhouse.agent.materialize': { level: 'standard', root: false },
+  'clubhouse.agent.prepare_pty': { level: 'standard', root: false },
+  'clubhouse.hooks.configure': { level: 'standard', root: false },
+  'clubhouse.mcp.inject': { level: 'standard', root: false },
+  'clubhouse.provider.build_command': { level: 'standard', root: false },
+  'clubhouse.pty.spawn': { level: 'standard', root: false },
+  'clubhouse.headless.spawn': { level: 'standard', root: false },
+  /** Chat driver start inside a spawn; only when a chat start really began. */
+  'clubhouse.chat.start': { level: 'standard', root: false },
+  // Annex (§4.12, Phase 6)
+  /** Satellite start → both listeners up. */
+  'clubhouse.annex.server.start': { level: 'standard', root: true },
+  /** Pairing: client pairWithService, or the satellite's POST /pair. */
+  'clubhouse.annex.pair': { level: 'standard', root: true },
+  /** Controller: GET /identity for a discovered service. */
+  'clubhouse.annex.discover': { level: 'standard', root: true },
+  /** Controller: connectToSatellite → first snapshot (or failure). */
+  'clubhouse.annex.connect': { level: 'standard', root: true },
+  /** Controller: agent:spawn / agent:wake sent to a satellite; carries traceparent. */
+  'clubhouse.annex.remote_spawn': { level: 'standard', root: true },
+  /** Satellite REST request, per route template. Detailed only. */
+  'clubhouse.annex.rest': { level: 'detailed', root: true },
+  /** killAgent → exit. Replayed at exit; carries the trigger and the stage reached. */
+  'clubhouse.agent.kill': { level: 'standard', root: true },
+  /** One shoulder tap (direct or broadcast) to group-project members. */
+  'clubhouse.group.shoulder_tap': { level: 'standard', root: true },
   // Workspace (§4.7–4.10, Phase 5)
   'clubhouse.project.add': { level: 'standard', root: true },
   'clubhouse.project.add.ensure_gitignore': { level: 'standard', root: false },
@@ -454,6 +732,12 @@ export const SPANS = {
   'clubhouse.editor.monaco_load': { level: 'standard', root: true },
   'clubhouse.plugin.activate': { level: 'standard', root: true },
   'clubhouse.canvas.load': { level: 'standard', root: true },
+  // Workspace 5b (§4.11)
+  'clubhouse.marketplace.fetch_registry': { level: 'standard', root: true },
+  'clubhouse.plugin.install': { level: 'standard', root: true },
+  'clubhouse.plugin.update_check': { level: 'standard', root: true },
+  'clubhouse.plugin.update': { level: 'standard', root: true },
+  'clubhouse.plugin.uninstall': { level: 'standard', root: true },
 } as const satisfies Record<string, SpanDef>;
 export type SpanName = keyof typeof SPANS;
 
@@ -583,15 +867,46 @@ export const METRICS = {
     description: 'Time a flush waited on an in-flight write before writing newer state',
     attributes: ['clubhouse.persist.store'],
   },
+  // Chat (§4.4 chat turns, §12 H2)
+  'clubhouse.agent.turn.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Chat turn length, turn_started to turn_ended',
+    attributes: ['clubhouse.chat.driver', 'clubhouse.orchestrator', 'clubhouse.turn.end_reason'],
+  },
+  'clubhouse.agent.turn.time_to_first_token': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Chat turn start to the first streamed reply or thinking text',
+    attributes: ['clubhouse.chat.driver'],
+  },
+  'clubhouse.agent.tokens': {
+    kind: 'counter', unit: '{token}', level: 'standard',
+    description: 'Tokens used by chat turns, by type',
+    attributes: ['clubhouse.chat.driver', 'clubhouse.orchestrator', 'gen_ai.token.type'],
+  },
+  'clubhouse.agent.cost': {
+    kind: 'counter', unit: 'USD', level: 'standard',
+    description: 'Cost of chat turns where the provider reports one (estimates flagged)',
+    attributes: ['clubhouse.chat.driver', 'clubhouse.orchestrator', 'clubhouse.cost.estimate'],
+  },
+  'clubhouse.chat.protocol.unknown': {
+    kind: 'counter', unit: '{message}', level: 'errors',
+    description: 'Native protocol messages, items or fields a chat driver did not recognize (CLI drift)',
+    attributes: ['clubhouse.chat.driver', 'clubhouse.chat.protocol.kind'],
+  },
+  'clubhouse.agent.turn.stalled': {
+    kind: 'counter', unit: '{turn}', level: 'errors',
+    description: 'Chat turns with no event for 5 minutes while not waiting on the user',
+    attributes: ['clubhouse.chat.driver'],
+  },
   'clubhouse.agent.runs': {
     kind: 'counter', unit: '{run}', level: 'standard',
-    description: 'Agent runs that ended, by runtime, orchestrator and exit class',
-    attributes: ['clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
+    description: 'Agent runs that ended, by kind, runtime, orchestrator and exit class',
+    attributes: ['clubhouse.agent.kind', 'clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
   },
   'clubhouse.agent.run.duration': {
     kind: 'histogram', unit: 's', level: 'standard',
     description: 'Agent run length, spawn to exit',
-    attributes: ['clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
+    attributes: ['clubhouse.agent.kind', 'clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
   },
   'clubhouse.agent.time_to_shell_ready': {
     kind: 'histogram', unit: 's', level: 'standard',
@@ -626,7 +941,7 @@ export const METRICS = {
   'clubhouse.agent.permission.wait': {
     kind: 'histogram', unit: 's', level: 'standard',
     description: 'Time a permission request waited for a decision',
-    attributes: ['clubhouse.permission.decision', 'clubhouse.permission.result'],
+    attributes: ['clubhouse.permission.decision', 'clubhouse.permission.result', 'clubhouse.permission.path'],
   },
   'clubhouse.mcp.tool_calls': {
     kind: 'counter', unit: '{call}', level: 'standard',
@@ -642,6 +957,108 @@ export const METRICS = {
     kind: 'histogram', unit: 's', level: 'standard',
     description: 'Time to resolve an agent CLI binary, by lookup tier (login_shell blocks the main thread)',
     attributes: ['clubhouse.binary.lookup_tier'],
+  },
+  'clubhouse.agent.spawns': {
+    kind: 'counter', unit: '{spawn}', level: 'standard',
+    description: 'Agent spawn attempts by kind, orchestrator, runtime and outcome',
+    attributes: ['clubhouse.agent.kind', 'clubhouse.orchestrator', 'clubhouse.agent.runtime', 'clubhouse.outcome', 'error.type'],
+  },
+  'clubhouse.agent.spawn.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'spawnAgent entry to process launched',
+    attributes: ['clubhouse.agent.kind', 'clubhouse.orchestrator', 'clubhouse.agent.runtime'],
+  },
+  'clubhouse.group.shoulder_tap.deliveries': {
+    kind: 'counter', unit: '{delivery}', level: 'standard',
+    description: 'Shoulder tap deliveries by result and target runtime',
+    attributes: ['clubhouse.delivery.result', 'clubhouse.agent.runtime'],
+  },
+  // Annex (§4.12, Phase 6)
+  'clubhouse.annex.reconnects': {
+    kind: 'counter', unit: '{reconnect}', level: 'standard',
+    description: 'Controller reconnect attempts scheduled, by attempt',
+    attributes: ['clubhouse.attempt_bucket'],
+  },
+  'clubhouse.annex.reconnect.delay': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Backoff before a controller reconnect',
+    attributes: ['clubhouse.attempt_bucket'],
+  },
+  'clubhouse.annex.disconnects': {
+    kind: 'counter', unit: '{disconnect}', level: 'standard',
+    description: 'Controller disconnects from a satellite, by reason',
+    attributes: ['clubhouse.annex.disconnect.reason'],
+  },
+  'clubhouse.annex.heartbeat.rtt': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Controller ping → pong round trip',
+    attributes: [],
+  },
+  'clubhouse.annex.snapshot.build.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Satellite buildSnapshot time',
+    attributes: [],
+  },
+  'clubhouse.annex.events': {
+    kind: 'counter', unit: '{event}', level: 'standard',
+    description: 'Events the satellite streamed, per event type (counted once per broadcast, not per client)',
+    attributes: ['clubhouse.annex.event.type'],
+  },
+  'clubhouse.annex.events.bytes': {
+    kind: 'counter', unit: 'By', level: 'standard',
+    description: 'Serialized bytes of streamed events, per event type and broadcast',
+    attributes: ['clubhouse.annex.event.type'],
+  },
+  'clubhouse.annex.send_failures': {
+    kind: 'counter', unit: '{send}', level: 'standard',
+    description: 'Per-client WS sends that threw during a broadcast',
+    attributes: ['clubhouse.annex.event.type'],
+  },
+  'clubhouse.annex.clients': {
+    kind: 'gauge', unit: '{client}', level: 'standard',
+    description: 'WS clients connected to this satellite, by client kind',
+    attributes: ['clubhouse.annex.client.kind'],
+  },
+  'clubhouse.annex.control.denied': {
+    kind: 'counter', unit: '{request}', level: 'standard',
+    description: 'Control requests refused for lacking mTLS (§12 H9)',
+    attributes: ['clubhouse.annex.control.channel'],
+  },
+  'clubhouse.annex.replays': {
+    kind: 'counter', unit: '{replay}', level: 'standard',
+    description: 'Event replays requested by reconnecting clients, by result',
+    attributes: ['clubhouse.annex.replay.result'],
+  },
+  // Goobers (§4.13, Phase 6b)
+  'clubhouse.goobers.polls': {
+    kind: 'counter', unit: '{poll}', level: 'detailed',
+    description: 'Goobers liveness poll ticks that ran',
+    attributes: [],
+  },
+  'clubhouse.goobers.poll.skipped': {
+    kind: 'counter', unit: '{poll}', level: 'detailed',
+    description: 'Poll ticks skipped because the previous one was still running',
+    attributes: [],
+  },
+  'clubhouse.goobers.poll.duration': {
+    kind: 'histogram', unit: 's', level: 'detailed',
+    description: 'Goobers liveness poll time',
+    attributes: [],
+  },
+  'clubhouse.goobers.data.age': {
+    kind: 'gauge', unit: 's', level: 'standard',
+    description: 'Seconds since the last fresh payload, per model, sampled at each poll tick (§12 H12)',
+    attributes: ['clubhouse.goobers.model'],
+  },
+  'clubhouse.goobers.sse.reconnects': {
+    kind: 'counter', unit: '{reconnect}', level: 'standard',
+    description: 'Goobers event-stream drops that went back to reconnecting',
+    attributes: [],
+  },
+  'clubhouse.goobers.sse.terminals': {
+    kind: 'counter', unit: '{stream}', level: 'standard',
+    description: 'Goobers event streams that stopped for good this lifecycle, by reason',
+    attributes: ['clubhouse.sse.terminal_reason'],
   },
   'clubhouse.telemetry.export.failures': {
     kind: 'counter',
@@ -696,6 +1113,12 @@ export const METRICS = {
     description: 'clubhouse-plugin: module requests by result',
     attributes: ['clubhouse.plugin.protocol.result'],
   },
+  // Workspace 5b
+  'clubhouse.group.bulletin.posts': {
+    kind: 'counter', unit: '{post}', level: 'standard',
+    description: 'Bulletin posts by result, from any source (MCP or UI)',
+    attributes: ['clubhouse.bulletin.post.result'],
+  },
 } as const satisfies Record<string, MetricDef>;
 export type MetricName = keyof typeof METRICS;
 
@@ -727,6 +1150,14 @@ export const EVENTS = {
   'clubhouse.process.eventloop_blocked': { level: 'errors' },
   /** At startup: whether the last applied update actually took (§12 H6). */
   'clubhouse.update.apply_verified': { level: 'errors' },
+  /** This install's Annex identity was regenerated: paired peers will no longer trust it (§12 H9). */
+  'clubhouse.annex.identity.regenerated': { level: 'errors' },
+  /** The satellite could not set up TLS and serves plain HTTP (security-relevant, §4.12). */
+  'clubhouse.annex.tls_fallback': { level: 'errors' },
+  /** Goobers liveness changed (daemon state, connection or error code). Only on transitions. */
+  'clubhouse.goobers.liveness': { level: 'standard' },
+  /** The Goobers event stream changed mode (live / reconnecting / polling / unavailable). */
+  'clubhouse.goobers.stream.mode': { level: 'standard' },
   /** A store hit corruption or fell back to a backup (§12 H1). Silent today; always worth knowing. */
   'clubhouse.persist.recovery': { level: 'errors' },
   /** A data-loss guard blocked saves. Sent once per store and reason per session. */
@@ -734,6 +1165,29 @@ export const EVENTS = {
   // Workspace (§4.7–4.10, Phase 5)
   /** A file changed on disk while its editor tab had unsaved edits. */
   'clubhouse.editor.save_conflict': { level: 'errors' },
+  // Workspace 5b: settings and feature usage (§4.14), main-process call sites only.
+  /** Attributes: `clubhouse.settings.key`. Never values. */
+  'clubhouse.settings.changed': { level: 'standard' },
+  /** Attributes: `clubhouse.theme.kind`, `clubhouse.theme.builtin_id`. */
+  'clubhouse.theme.changed': { level: 'standard' },
+  /** Attributes: `clubhouse.popout.type`. */
+  'clubhouse.popout.opened': { level: 'standard' },
+  /** Attributes: `clubhouse.outcome`. */
+  'clubhouse.blueprint.exported': { level: 'standard' },
+  'clubhouse.blueprint.imported': { level: 'standard' },
+  /** An agent listed its MCP tools (§12 H8). Attributes: tool-count bucket, empty flag. */
+  'clubhouse.mcp.tools_list': { level: 'standard' },
+  // appLog bridge (§6.6, Phase 7): opt-in log sites, exported as these events
+  // with their declared attributes only, never the message or meta.
+  /**
+   * Annex controller: a satellite stopped answering heartbeats. The Errors-level
+   * signal; `clubhouse.annex.disconnects{reason}` is the Standard-level breakdown.
+   */
+  'clubhouse.annex.heartbeat_timeout': { level: 'errors' },
+  /** A permission request still pending past the stuck threshold. Attributes: `clubhouse.agent.id_hash`. */
+  'clubhouse.agent.permission.stuck': { level: 'errors' },
+  /** Restoring an agent's config file from its snapshot failed. Attributes: `clubhouse.config.format`. */
+  'clubhouse.config.restore_failed': { level: 'errors' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

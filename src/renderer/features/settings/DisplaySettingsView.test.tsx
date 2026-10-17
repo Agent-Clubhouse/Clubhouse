@@ -56,4 +56,18 @@ describe('DisplaySettingsView', () => {
     render(<DisplaySettingsView />);
     expect(screen.getByText('Home')).toBeInTheDocument();
   });
+
+  it('shows the idle window instead of Home in the new layout', async () => {
+    const { useChromeFlagStore } = await import('../../chrome/chromeFlag');
+    const { useChromeStore } = await import('../../chrome/chromeStore');
+    useChromeFlagStore.setState({ enabled: true });
+    try {
+      render(<DisplaySettingsView />);
+      expect(screen.queryByText('Home')).toBeNull();
+      fireEvent.change(screen.getByTestId('idle-days'), { target: { value: '30' } });
+      expect(useChromeStore.getState().idleDays).toBe(30);
+    } finally {
+      useChromeFlagStore.setState({ enabled: false });
+    }
+  });
 });

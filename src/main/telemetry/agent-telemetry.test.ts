@@ -8,6 +8,7 @@ import {
   EARLY_FAILURE_MS,
   _activeRunsForTests,
   _resetAgentTelemetryForTests,
+  agentKillRequested,
   agentKillStage,
   agentOutput,
   agentRunKilled,
@@ -16,6 +17,7 @@ import {
   agentSwept,
   classifyExit,
   installAgentTelemetry,
+  noteSpawnKind,
 } from './agent-telemetry';
 import { setRuntime } from './facade';
 import type { TelemetryRuntime } from './types';
@@ -98,6 +100,22 @@ describe('agent runs', () => {
       attrs: expect.arrayContaining([ATTR.agentExitClass('killed_user'), ATTR.killStage('sigkill')]),
     }));
     expect((rt.count as ReturnType<typeof vi.fn>).mock.calls.some((c) => c[0] === 'clubhouse.agent.kill.escalations')).toBe(false);
+  });
+
+  it('carries the kind spawnAgent noted, and replays a kill span from the request to the exit', () => {
+    noteSpawnKind('a5', 'durable');
+    agentRunStarted('a5', 'pty', 1000);
+    agentKillRequested('a5', 'agent_tool', 2000);
+    agentKillStage('a5', 'exit_command');
+    agentKillStage('a5', 'eof');
+    exitListeners.forEach((fn) => fn('a5', 0));
+    const counts = (rt.count as ReturnType<typeof vi.fn>).mock.calls;
+    expect(counts.find((c) => c[0] === 'clubhouse.agent.runs')?.[2]).toContainEqual(ATTR.agentKind('durable'));
+    const kill = (rt.replaySpan as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]).find((sp) => sp.name === 'clubhouse.agent.kill');
+    expect(kill).toMatchObject({ startMs: 2000, outcome: 'ok' });
+    expect(kill.attrs).toEqual(expect.arrayContaining([
+      ATTR.killTrigger('agent_tool'), ATTR.killStage('eof'), ATTR.agentExitClass('killed_user'),
+    ]));
   });
 
   it('closes a replaced run and labels a swept one', () => {

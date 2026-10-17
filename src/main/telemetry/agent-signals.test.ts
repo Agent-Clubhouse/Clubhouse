@@ -3,7 +3,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAttributeSpec } from '../../shared/telemetry/attributes';
 import { ATTR } from '../../shared/telemetry/attributes';
-import { recordBinaryLookup, recordHookEvent, recordMcpToolCall, recordPermission, toolBucket } from './agent-signals';
+import { _resetToolCallsForTests, MAX_PENDING_TOOL_CALLS, clearToolCalls, recordBinaryLookup, recordHookEvent, recordMcpToolCall, recordPermission, toolBucket } from './agent-signals';
 import { setRuntime } from './facade';
 import type { TelemetryRuntime } from './types';
 
@@ -16,7 +16,10 @@ beforeEach(() => {
   } as unknown as TelemetryRuntime;
   setRuntime(rt);
 });
-afterEach(() => setRuntime(null));
+afterEach(() => {
+  setRuntime(null);
+  _resetToolCallsForTests();
+});
 
 describe('toolBucket', () => {
   it.each([
@@ -44,10 +47,39 @@ describe('agent signals', () => {
     expect(calls).toContainEqual(['clubhouse.agent.hook_events', 1, [ATTR.orchestrator('other'), ATTR.hookKind('other')]]);
   });
 
+  it('pairs pre_tool with post_tool into a tool_call span at Detailed only', () => {
+    recordHookEvent('claude-code', 'pre_tool', 'Bash', 'a1', 1000);
+    recordHookEvent('claude-code', 'post_tool', 'Bash', 'a1', 1300);
+    expect(rt.replaySpan).not.toHaveBeenCalled(); // Standard level
+
+    (rt as { level: string }).level = 'detailed';
+    recordHookEvent('claude-code', 'pre_tool', 'Bash', 'a1', 2000);
+    recordHookEvent('claude-code', 'pre_tool', 'Edit', 'a1', 2100);
+    recordHookEvent('claude-code', 'tool_error', 'Edit', 'a1', 2500);
+    recordHookEvent('claude-code', 'post_tool', 'Bash', 'a1', 2600);
+    recordHookEvent('claude-code', 'post_tool', 'Read', 'a1', 2700); // no matching pre
+    const spans = (rt.replaySpan as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(spans.map((s) => [s.startMs, s.endMs, s.outcome, s.attrs[1]])).toEqual([
+      [2100, 2500, 'error', ATTR.toolBucket('Edit')],
+      [2000, 2600, 'ok', ATTR.toolBucket('Bash')],
+    ]);
+  });
+
+  it('caps pending tool calls per agent and clears them at exit', () => {
+    (rt as { level: string }).level = 'detailed';
+    for (let i = 0; i <= MAX_PENDING_TOOL_CALLS; i++) recordHookEvent('claude-code', 'pre_tool', `T${i}`, 'a2', i);
+    recordHookEvent('claude-code', 'post_tool', 'T0', 'a2', 100); // dropped by the cap
+    recordHookEvent('claude-code', 'pre_tool', 'Bash', 'a3', 0);
+    clearToolCalls('a3');
+    recordHookEvent('claude-code', 'post_tool', 'Bash', 'a3', 10);
+    expect(rt.replaySpan).not.toHaveBeenCalled();
+  });
+
   it('records the permission span and wait', () => {
     recordPermission({ startMs: Date.now() - 1500, orchestrator: 'claude-code', toolName: 'Edit', decision: 'ask', timedOut: true });
     expect(rt.replaySpan).toHaveBeenCalledWith(expect.objectContaining({ name: 'clubhouse.agent.permission', outcome: 'timeout' }));
-    expect(rt.count).toHaveBeenCalledWith('clubhouse.agent.permission.wait', expect.any(Number), [ATTR.permissionDecision('ask'), ATTR.permissionResult('timeout')]);
+    expect(rt.count).toHaveBeenCalledWith('clubhouse.agent.permission.wait', expect.any(Number), [ATTR.permissionDecision('ask'), ATTR.permissionResult('timeout'), ATTR.permissionPath('hook')]);
+    expect(vi.mocked(rt.replaySpan).mock.calls[0][0].attrs).toContainEqual(ATTR.permissionPath('hook'));
   });
 
   it('names Clubhouse MCP tools by suffix only, never the full name', () => {

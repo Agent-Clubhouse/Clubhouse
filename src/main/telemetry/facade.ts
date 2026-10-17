@@ -6,10 +6,13 @@
  * branch: flows run `fn` directly. While the SDK chunk is loading at startup,
  * calls are buffered (max 500) and replayed once the runtime is ready.
  */
-import type { EventName, MetricName, SpanName, TelAttr } from '../../shared/telemetry/attributes';
+import type { EventName, MetricName, SpanName, TelAttr, TelemetryLevel } from '../../shared/telemetry/attributes';
 import {
   NOOP_SPAN,
+  errorTypeOf,
+  tagError,
   type Classification,
+  type ErrorType,
   type ExceptionOptions,
   type FlowExtras,
   type FlowOptions,
@@ -17,6 +20,8 @@ import {
   type ReplayTree,
   type SpanHandle,
   type TelemetryRuntime,
+  type EventOptions,
+  type TraceIds,
 } from './types';
 
 export const PENDING_BUFFER_CAP = 500;
@@ -61,7 +66,7 @@ function bufferedSpan<T>(name: SpanName, opts: FlowOptions, fn: (s: SpanHandle) 
   try {
     result = fn(handle);
   } catch (err) {
-    record({ error: 'unknown' });
+    record({ error: errorTypeOf(err) });
     buffer((rt) => rt.exception(err, { origin: 'main', handled: false }));
     throw err;
   }
@@ -69,7 +74,7 @@ function bufferedSpan<T>(name: SpanName, opts: FlowOptions, fn: (s: SpanHandle) 
     Promise.resolve(result).then(
       (r) => record(classify(r)),
       (err) => {
-        record({ error: 'unknown' });
+        record({ error: errorTypeOf(err) });
         buffer((rt) => rt.exception(err, { origin: 'main', handled: false }));
       },
     );
@@ -104,9 +109,43 @@ function trackFlow<T>(name: SpanName, fn: (span: SpanHandle) => T): (span: SpanH
   };
 }
 
+/** The active span's trace and span ids, when telemetry is running. */
+export function currentTraceIds(): TraceIds | undefined {
+  // Called from appLog on every line; a logger must never throw, and runtimes
+  // built before activeTraceIds existed (test fakes) may not have it.
+  try {
+    return runtime?.activeTraceIds?.();
+  } catch {
+    return undefined;
+  }
+}
+
 /** The most recently started root flow still running, if any. */
 export function currentFlow(): SpanName | null {
   return activeFlows.length > 0 ? activeFlows[activeFlows.length - 1] : null;
+}
+
+export { tagError } from './types';
+
+/**
+ * Run `fn`, tagging anything it throws or rejects with `type` (see tagError).
+ * Returns `fn`'s own value: while telemetry is off it is a plain call, and a
+ * synchronous result is never wrapped in a promise.
+ */
+export function withErrorType<T>(type: ErrorType, fn: () => T): T {
+  if (!runtime && !pending) return fn();
+  let result: T;
+  try {
+    result = fn();
+  } catch (err) {
+    throw tagError(err, type);
+  }
+  if (isPromiseLike(result)) {
+    return Promise.resolve(result).catch((err: unknown) => {
+      throw tagError(err, type);
+    }) as T;
+  }
+  return result;
 }
 
 export const tel = {
@@ -129,9 +168,11 @@ export const tel = {
     else if (pending) buffer((rt) => rt.count(name, value, attrs));
   },
 
-  event(name: EventName, attrs?: TelAttr[]): void {
-    if (runtime) runtime.event(name, attrs);
-    else if (pending) buffer((rt) => rt.event(name, attrs));
+  event(name: EventName, attrs?: TelAttr[], opts?: EventOptions): void {
+    // Options only when given, so plain events keep their two-argument call shape.
+    const emit = (rt: TelemetryRuntime): void => (opts ? rt.event(name, attrs, opts) : rt.event(name, attrs));
+    if (runtime) emit(runtime);
+    else if (pending) buffer(emit);
   },
 
   exception(error: unknown, opts: ExceptionOptions): void {
@@ -153,6 +194,29 @@ export function replaySpan(span: ReplaySpan): void {
 export function replaySpanTree(tree: ReplayTree): void {
   if (runtime) runtime.replayTree(tree);
   else if (pending) buffer((rt) => rt.replayTree(tree));
+}
+
+/**
+ * W3C `traceparent` for the active span, or undefined when telemetry is off
+ * or nothing is recording. Only random ids and the sampled flag (spec §7).
+ */
+export function currentTraceparent(): string | undefined {
+  return runtime?.traceparent?.();
+}
+
+/**
+ * Run `fn` so the next root flow it starts continues a trace received from an
+ * Annex peer. A no-op wrapper when telemetry is off or `traceparent` is
+ * missing or malformed: this install's own settings decide (spec §7 rule 2).
+ */
+export function withRemoteParent<T>(traceparent: string | undefined, fn: () => T): T {
+  if (!runtime?.withRemoteParent || typeof traceparent !== 'string') return fn();
+  return runtime.withRemoteParent(traceparent, fn);
+}
+
+/** The running level, or null while telemetry is off or still starting. */
+export function telemetryLevel(): TelemetryLevel | null {
+  return runtime?.level ?? null;
 }
 
 /** True while telemetry is running or starting. */

@@ -11,6 +11,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import { appLog } from './log-service';
+import { recordIdentityRegenerated } from '../telemetry/annex-telemetry';
+
+/** Set when deleteIdentity removed a real identity, so the next one counts as a regeneration. */
+let identityWasReset = false;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -183,7 +187,11 @@ export function getOrCreateIdentity(): AnnexIdentity {
     const filePath = getIdentityPath();
     backupCorruptedIdentity(filePath);
     appLog('core:annex', 'error', 'Your device identity was reset - re-pair your devices');
+    recordIdentityRegenerated('corrupt');
+  } else if (identityWasReset) {
+    recordIdentityRegenerated('reset');
   }
+  identityWasReset = false;
 
   // Generate new identity
   cachedIdentity = generateIdentity();
@@ -225,6 +233,7 @@ export function deleteIdentity(): void {
   cachedIdentity = null;
   try {
     fs.unlinkSync(getIdentityPath());
+    identityWasReset = true;
     appLog('core:annex', 'info', 'Annex identity deleted');
   } catch {
     // File may not exist
@@ -236,4 +245,5 @@ export function deleteIdentity(): void {
  */
 export function resetForTests(): void {
   cachedIdentity = null;
+  identityWasReset = false;
 }

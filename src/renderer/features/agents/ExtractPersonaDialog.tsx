@@ -26,9 +26,11 @@ export function ExtractPersonaDialog() {
   const closeExtractPersonaDialog = useAgentStore((s) => s.closeExtractPersonaDialog);
   const agents = useAgentStore((s) => s.agents);
   const { projects, activeProjectId } = useProjectStore();
-  const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const agent = extractPersonaDialogAgent ? agents[extractPersonaDialogAgent] : null;
+  // The agent's own project: the new chrome's tree opens this dialog for agents
+  // outside the active project. The active project is the fallback.
+  const activeProject = projects.find((p) => p.id === (agent?.projectId ?? activeProjectId)) ?? projects.find((p) => p.id === activeProjectId);
   const projectPath = activeProject?.path;
 
   const [content, setContent] = useState('');

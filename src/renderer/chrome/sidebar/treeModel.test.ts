@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
-import { agentDot, groupProjectAgents, moveProject, orderProjects, projectRollup, selectNeedsAttention } from './treeModel';
+import { agentDot, groupProjectAgents, moveProject, orderProjects, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
 
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   id, projectId: 'p1', name: id, kind: 'durable', status: 'running', color: 'blue', ...over,
@@ -85,5 +85,35 @@ describe('groupProjectAgents and projectRollup', () => {
   it('counts working agents and agents waiting on the user', () => {
     const agents = [agent('a'), agent('b'), agent('c'), agent('d', { status: 'sleeping' })];
     expect(projectRollup(agents, { a: detail('working'), b: detail('needs_permission'), c: detail('idle') })).toEqual({ working: 1, waiting: 1 });
+  });
+});
+
+describe('selectRemoteNeedsAttention', () => {
+  const remoteAgent = (id: string, projectId: string) => ({ id, projectId, name: id, kind: 'durable', status: 'running', color: 'blue' }) as Agent;
+  const agents = {
+    'r||s1||a': remoteAgent('r||s1||a', 'r||s1||p'),
+    'r||s2||b': remoteAgent('r||s2||b', 'r||s2||p'),
+  };
+  const detailed = {
+    'r||s1||a': { state: 'needs_permission', message: 'Wants to push', timestamp: 5 },
+    'r||s2||b': { state: 'needs_permission', message: 'Wants to run', timestamp: 3 },
+  } as Record<string, AgentDetailedStatus>;
+  const projects = { s1: [{ id: 'r||s1||p' }], s2: [{ id: 'r||s2||p' }] };
+
+  it('tags items with their host and skips satellites that are not connected', () => {
+    const items = selectRemoteNeedsAttention(
+      [{ id: 's1', alias: 'Studio', state: 'connected' }, { id: 's2', alias: 'Attic', state: 'disconnected' }],
+      projects, agents, detailed,
+    );
+    expect(items.map((i) => [i.agent.id, i.hostId, i.hostLabel])).toEqual([['r||s1||a', 's1', 'Studio']]);
+  });
+
+  it('merges hosts into one queue, oldest first', () => {
+    const remote = selectRemoteNeedsAttention(
+      [{ id: 's1', alias: 'Studio', state: 'connected' }, { id: 's2', alias: 'Attic', state: 'connected' }],
+      projects, agents, detailed,
+    );
+    const local = [{ agent: remoteAgent('l', 'p1'), reason: 'error' as const, message: 'x', at: 4 }];
+    expect(mergeNeedsAttention(local, remote).map((i) => i.agent.id)).toEqual(['r||s2||b', 'l', 'r||s1||a']);
   });
 });

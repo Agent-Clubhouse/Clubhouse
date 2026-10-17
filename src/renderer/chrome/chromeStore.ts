@@ -1,13 +1,16 @@
 import { create } from 'zustand';
 import { reportChromeActionFailed } from './telemetry';
 import { isNewChromeEnabled } from './chromeFlag';
+import { CHROME_STORAGE_KEY } from './storageKey';
 import { useAgentStore } from '../stores/agentStore';
+import { touchMru } from './titlebar/overflow';
+import { ACTIVITY_WRITE_INTERVAL_MS, DEFAULT_IDLE_DAYS } from './projectActivity';
 
 /**
  * State for the new chrome shell. Persisted under its own key so the legacy
  * shell's `clubhouse_panel_sizes` is never touched (docs/chrome-redesign-spec.md §5).
  */
-export const CHROME_STORAGE_KEY = 'clubhouse_chrome_v2';
+export { CHROME_STORAGE_KEY };
 const STORAGE_VERSION = 2;
 
 export const SIDEBAR_MIN = 220;
@@ -29,6 +32,12 @@ interface PersistedChromeState {
   collapsedProjectIds?: string[];
   /** Keys of the form `${projectId}:${fold}` that the user expanded. Folds start closed. */
   expandedFolds?: string[];
+  /** Per project, title-bar tab ids by most recent use: the More menu's order. */
+  tabMru?: Record<string, string[]>;
+  /** Last activity per project, for the idle rule (§5.4). */
+  projectActivity?: Record<string, number>;
+  idleDays?: number;
+  idleOpen?: boolean;
 }
 
 export interface ChromeState {
@@ -38,6 +47,9 @@ export interface ChromeState {
    */
   projectScopeId: string | null;
   setProjectScope: (projectId: string | null) => void;
+  /** The title bar's tabs for the active project, in order, for ⌘1–9 (spec §5.3). Not persisted. */
+  titleTabs: Array<{ id: string; disabled?: boolean }>;
+  setTitleTabs: (tabs: Array<{ id: string; disabled?: boolean }>) => void;
   /** Set by ⌘⇧N for the start page to focus its composer, which clears it. Not persisted. */
   composerFocusPending: boolean;
   requestComposer: () => void;
@@ -48,6 +60,20 @@ export interface ChromeState {
   pinnedProjectIds: string[];
   collapsedProjectIds: string[];
   expandedFolds: string[];
+  tabMru: Record<string, string[]>;
+  projectActivity: Record<string, number>;
+  /** Days without activity before an unpinned project folds into "N idle projects"; 0 is never. */
+  idleDays: number;
+  /** Whether the "N idle projects" row is expanded. */
+  idleOpen: boolean;
+  /** Record activity in a project: an agent ran or woke, a quick agent started, a tab opened. */
+  markActivity: (projectId: string, at?: number) => void;
+  /** Record a time only for projects with none yet, so existing projects don't start out idle. */
+  seedActivity: (projectIds: string[], at?: number) => void;
+  setIdleDays: (days: number) => void;
+  toggleIdleOpen: () => void;
+  /** Record a tab opened in a project, for the More menu's order. */
+  touchTab: (projectId: string, tabId: string) => void;
   resizeSidebar: (delta: number) => void;
   setSidebarWidth: (width: number) => void;
   toggleSidebar: () => void;
@@ -60,10 +86,13 @@ export interface ChromeState {
   toggleFold: (projectId: string, fold: ProjectFold) => void;
   /** Drop pins, collapsed state and folds for projects that were removed. */
   forgetProjects: (projectIds: string[]) => void;
+  /** The same for every stored project id with a prefix: an unpaired satellite's projects. */
+  forgetProjectsWithPrefix: (prefix: string) => void;
 }
 
 type PersistedFields = Pick<ChromeState,
-  'sidebarWidth' | 'sidebarCollapsed' | 'lastProjectId' | 'pinnedProjectIds' | 'collapsedProjectIds' | 'expandedFolds'>;
+  'sidebarWidth' | 'sidebarCollapsed' | 'lastProjectId' | 'pinnedProjectIds' | 'collapsedProjectIds' | 'expandedFolds' | 'tabMru'
+  | 'projectActivity' | 'idleDays' | 'idleOpen'>;
 
 const DEFAULTS: PersistedFields = {
   sidebarWidth: SIDEBAR_DEFAULT,
@@ -72,12 +101,26 @@ const DEFAULTS: PersistedFields = {
   pinnedProjectIds: [],
   collapsedProjectIds: [],
   expandedFolds: [],
+  tabMru: {},
+  projectActivity: {},
+  idleDays: DEFAULT_IDLE_DAYS,
+  idleOpen: false,
+};
+
+const numberRecord = (value: unknown): Record<string, number> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter((e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1])));
 };
 
 export const foldKey = (projectId: string, fold: ProjectFold) => `${projectId}:${fold}`;
 
 const stringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+
+const stringArrayRecord = (value: unknown): Record<string, string[]> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, stringArray(v)]));
+};
 
 export function clampSidebarWidth(width: number): number {
   if (!Number.isFinite(width)) return SIDEBAR_DEFAULT;
@@ -97,10 +140,24 @@ export function loadChromeState(): PersistedFields {
       pinnedProjectIds: stringArray(parsed.pinnedProjectIds),
       collapsedProjectIds: stringArray(parsed.collapsedProjectIds),
       expandedFolds: stringArray(parsed.expandedFolds),
+      tabMru: stringArrayRecord(parsed.tabMru),
+      projectActivity: numberRecord(parsed.projectActivity),
+      idleDays: typeof parsed.idleDays === 'number' && parsed.idleDays >= 0 ? parsed.idleDays : DEFAULT_IDLE_DAYS,
+      idleOpen: parsed.idleOpen === true,
     };
   } catch {
     // telemetry-exempt: read at module load, before telemetry is connected; corrupt state falls back to defaults
     return { ...DEFAULTS };
+  }
+}
+
+function readStoredShortcuts(): unknown {
+  try {
+    const raw = localStorage.getItem(CHROME_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as { shortcuts?: unknown } | null)?.shortcuts : undefined;
+  } catch {
+    // telemetry-exempt: corrupt stored state is rewritten by this save
+    return undefined;
   }
 }
 
@@ -113,9 +170,15 @@ function persistChromeState(state: PersistedFields): void {
     pinnedProjectIds: state.pinnedProjectIds,
     collapsedProjectIds: state.collapsedProjectIds,
     expandedFolds: state.expandedFolds,
+    tabMru: state.tabMru,
+    projectActivity: state.projectActivity,
+    idleDays: state.idleDays,
+    idleOpen: state.idleOpen,
   };
   try {
-    localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify(payload));
+    // Keyboard shortcut overrides share the key but are written by their own store; keep them.
+    const shortcuts = readStoredShortcuts();
+    localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify(shortcuts === undefined ? payload : { ...payload, shortcuts }));
   } catch (err) {
     console.warn('[store:chrome] Failed to persist chrome state (quota?):', err instanceof Error ? err.message : err);
     reportChromeActionFailed('chrome_state_save', err);
@@ -143,6 +206,13 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       if (get().projectScopeId !== projectId) set({ projectScopeId: projectId });
     },
 
+    titleTabs: [],
+    setTitleTabs: (tabs) => {
+      const current = get().titleTabs;
+      const same = current.length === tabs.length && current.every((t, i) => t.id === tabs[i].id && !!t.disabled === !!tabs[i].disabled);
+      if (!same) set({ titleTabs: tabs });
+    },
+
     composerFocusPending: false,
     requestComposer: () => set({ composerFocusPending: true }),
     consumeComposerFocus: () => { if (get().composerFocusPending) set({ composerFocusPending: false }); },
@@ -153,6 +223,40 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       const next = clampSidebarWidth(sidebarWidth + delta);
       if (next === sidebarWidth) return;
       set({ sidebarWidth: next });
+      schedulePersist();
+    },
+
+    touchTab: (projectId, tabId) => {
+      // Opening one of a project's tabs is activity (§2 idle rule).
+      get().markActivity(projectId);
+      const current = get().tabMru[projectId] ?? [];
+      if (current[0] === tabId) return;
+      set({ tabMru: { ...get().tabMru, [projectId]: touchMru(current, tabId) } });
+      schedulePersist();
+    },
+
+    markActivity: (projectId, at = Date.now()) => {
+      const last = get().projectActivity[projectId];
+      if (last !== undefined && at - last < ACTIVITY_WRITE_INTERVAL_MS) return;
+      set({ projectActivity: { ...get().projectActivity, [projectId]: at } });
+      schedulePersist();
+    },
+
+    seedActivity: (projectIds, at = Date.now()) => {
+      const current = get().projectActivity;
+      const missing = projectIds.filter((id) => current[id] === undefined);
+      if (missing.length === 0) return;
+      set({ projectActivity: { ...current, ...Object.fromEntries(missing.map((id) => [id, at])) } });
+      schedulePersist();
+    },
+
+    setIdleDays: (days) => {
+      set({ idleDays: Math.max(0, Math.round(days)) });
+      schedulePersist();
+    },
+
+    toggleIdleOpen: () => {
+      set({ idleOpen: !get().idleOpen });
       schedulePersist();
     },
 
@@ -209,6 +313,19 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       schedulePersist();
     },
 
+    forgetProjectsWithPrefix: (prefix) => {
+      const s = get();
+      const stored = [
+        ...s.pinnedProjectIds,
+        ...s.collapsedProjectIds,
+        ...s.expandedFolds.map((key) => key.slice(0, key.lastIndexOf(':'))),
+        ...(s.lastProjectId ? [s.lastProjectId] : []),
+        ...Object.keys(s.tabMru),
+        ...Object.keys(s.projectActivity),
+      ];
+      get().forgetProjects([...new Set(stored.filter((id) => id.startsWith(prefix)))]);
+    },
+
     forgetProjects: (projectIds) => {
       if (projectIds.length === 0) return;
       const gone = new Set(projectIds);
@@ -218,11 +335,28 @@ export const useChromeStore = create<ChromeState>((set, get) => {
         collapsedProjectIds: s.collapsedProjectIds.filter((id) => !gone.has(id)),
         expandedFolds: s.expandedFolds.filter((key) => !gone.has(key.slice(0, key.lastIndexOf(':')))),
         lastProjectId: s.lastProjectId && gone.has(s.lastProjectId) ? null : s.lastProjectId,
+        tabMru: Object.fromEntries(Object.entries(s.tabMru).filter(([id]) => !gone.has(id))),
+        projectActivity: Object.fromEntries(Object.entries(s.projectActivity).filter(([id]) => !gone.has(id))),
       });
       schedulePersist();
     },
   };
 });
+
+/**
+ * Agents running or waking, and quick agents starting, are project activity
+ * for the idle rule (§2). Started by ChromeBody. Returns the unsubscribe.
+ */
+export function syncProjectActivityWithAgents(): () => void {
+  return useAgentStore.subscribe((state, prev) => {
+    if (state.agentSpawnedAt === prev.agentSpawnedAt) return;
+    for (const [id, at] of Object.entries(state.agentSpawnedAt)) {
+      if (prev.agentSpawnedAt[id] === at) continue;
+      const projectId = state.agents[id]?.projectId;
+      if (projectId) useChromeStore.getState().markActivity(projectId, at);
+    }
+  });
+}
 
 /**
  * Whatever makes an agent active (a sidebar row, a notification, the palette,

@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import type { Agent } from '../../../../shared/types';
 import type { ChatEvent } from '../../../../shared/chat';
 import { foldChatEvents, useChatStore, type ChatViewState } from '../../../stores/chatStore';
-import { ChatView, ChatViewBody } from './ChatView';
+import { CANVAS_TRANSCRIPT_TAIL, ChatView, ChatViewBody } from './ChatView';
 import { useChatDraftStore, type ChatActions } from './useChatSession';
 import { chatFixture, FIXTURE_AGENT_ID, PROFILES, type FixtureProvider } from './fixtures';
 
@@ -40,7 +40,7 @@ function renderFixture(p: FixtureProvider, scenario: Parameters<typeof chatFixtu
 }
 
 beforeEach(() => {
-  useChatDraftStore.setState({ drafts: {} });
+  useChatDraftStore.setState({ drafts: {}, attachments: {} });
 });
 
 /** Append events after a fixture, continuing its seq. */
@@ -340,6 +340,139 @@ describe('ChatView composer', () => {
   });
 });
 
+describe('ChatView attachments', () => {
+  const png = (name = 'shot.png') => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type: 'image/png' });
+  const paste = (files: File[]) => fireEvent.paste(screen.getByLabelText('Message'), { clipboardData: { files } });
+  /** Main's staging, faked: images are images, pasted when named like a paste, everything else a file. */
+  function stageLike(overrides: Partial<{ pasted: boolean; kind: 'image' | 'file' }> = {}) {
+    const stage = vi.fn(async (_agentId: string, f: File) => ({
+      id: `staged-${f.name}`, name: f.name, size: f.size,
+      kind: overrides.kind ?? (f.type.startsWith('image/') ? 'image' as const : 'file' as const),
+      pasted: overrides.pasted ?? f.name.startsWith('image'),
+      ...(f.type.startsWith('image/') ? { mimeType: f.type } : {}),
+    }));
+    window.clubhouse.chat.stageAttachment = stage as typeof window.clubhouse.chat.stageAttachment;
+    return stage;
+  }
+
+  it('stages a pasted image, shows a thumbnail and sends only its staged id', async () => {
+    const stage = stageLike();
+    const { actions } = renderFixture('claude', 'conversation');
+    paste([png('image.png')]);
+    const chip = await screen.findByTestId('chat-attachment');
+    expect(stage).toHaveBeenCalledWith(FIXTURE_AGENT_ID, expect.any(File), { imagesAllowed: true });
+    expect(chip.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/png;base64,/);
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'What is wrong here?' } });
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+    expect(actions.send).toHaveBeenCalledWith('What is wrong here?', 'auto', ['staged-image.png']);
+    expect(screen.queryByTestId('chat-attachment')).not.toBeInTheDocument();
+  });
+
+  it('sends dropped files without text, with a drop hint while dragging', async () => {
+    stageLike();
+    const { actions } = renderFixture('claude', 'conversation');
+    const composer = screen.getByTestId('chat-composer');
+    fireEvent.dragOver(composer, { dataTransfer: { types: ['Files'] } });
+    expect(screen.getByTestId('chat-drop-hint')).toHaveTextContent('Drop files to attach them');
+    const notes = new File(['# notes'], 'notes.md', { type: 'text/markdown' });
+    fireEvent.drop(composer, { dataTransfer: { files: [notes, png()], types: ['Files'] } });
+    expect(screen.queryByTestId('chat-drop-hint')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByTestId('chat-attachment')).toHaveLength(2));
+    fireEvent.click(screen.getByTestId('chat-send'));
+    expect(actions.send).toHaveBeenCalledWith('', 'auto', ['staged-notes.md', 'staged-shot.png']);
+  });
+
+  it('keeps the drop hint while dragging over the composer\'s own children', () => {
+    stageLike();
+    renderFixture('claude', 'conversation');
+    const composer = screen.getByTestId('chat-composer');
+    fireEvent.dragOver(composer, { dataTransfer: { types: ['Files'] } });
+    // jsdom's DragEvent drops relatedTarget; a MouseEvent of the same type carries it.
+    const leave = (relatedTarget: Element) => fireEvent(composer, new MouseEvent('dragleave', { bubbles: true, relatedTarget }));
+    leave(screen.getByLabelText('Message'));
+    expect(screen.getByTestId('chat-drop-hint')).toBeInTheDocument();
+    leave(document.body);
+    expect(screen.queryByTestId('chat-drop-hint')).not.toBeInTheDocument();
+  });
+
+  it('shows an image on disk as a file when the agent cannot take images', async () => {
+    stageLike({ pasted: false });
+    const state = fold(chatFixture('claude', 'conversation'));
+    const { actions } = renderState({ ...state, capabilities: { ...state.capabilities!, images: false } });
+    fireEvent.change(screen.getByTestId('chat-attach-input'), { target: { files: [png()] } });
+    const chip = await screen.findByTestId('chat-attachment');
+    expect(chip.querySelector('img')).toBeNull();
+    fireEvent.click(screen.getByTestId('chat-send'));
+    expect(actions.send).toHaveBeenCalledWith('', 'auto', ['staged-shot.png']);
+  });
+
+  it('explains why a pasted image cannot be attached when the agent cannot take images', async () => {
+    const stage = stageLike({ pasted: true });
+    const state = fold(chatFixture('claude', 'conversation'));
+    renderState({ ...state, capabilities: { ...state.capabilities!, images: false } });
+    paste([png('image.png')]);
+    expect(await screen.findByTestId('chat-attach-error')).toHaveTextContent("can't take pasted images");
+    // Staging is told, so it refuses before saving anything.
+    expect(stage).toHaveBeenCalledWith(FIXTURE_AGENT_ID, expect.any(File), { imagesAllowed: false });
+    expect(screen.queryByTestId('chat-attachment')).not.toBeInTheDocument();
+  });
+
+  it('shows main\'s reason when a file is refused', async () => {
+    window.clubhouse.chat.stageAttachment = vi.fn(async () => {
+      throw new Error("Error invoking remote method 'chat:stage-attachment': Error: Can't attach huge.bin: files must be 20 MB or smaller");
+    });
+    renderFixture('claude', 'conversation');
+    fireEvent.change(screen.getByTestId('chat-attach-input'), { target: { files: [new File(['x'], 'huge.bin')] } });
+    expect(await screen.findByTestId('chat-attach-error')).toHaveTextContent(/^Can't attach huge.bin: files must be 20 MB or smaller$/);
+  });
+
+  it('holds the 10-attachment cap across adds that are still staging', async () => {
+    stageLike();
+    renderFixture('claude', 'conversation');
+    const input = screen.getByTestId('chat-attach-input');
+    fireEvent.change(input, { target: { files: Array.from({ length: 6 }, (_, i) => new File(['x'], `a${i}.txt`)) } });
+    fireEvent.change(input, { target: { files: Array.from({ length: 6 }, (_, i) => new File(['x'], `b${i}.txt`)) } });
+    await waitFor(() => expect(screen.getAllByTestId('chat-attachment')).toHaveLength(10));
+    expect(screen.getByTestId('chat-attach-error')).toHaveTextContent('Attach at most 10 files at a time');
+  });
+
+  it('removes an attachment', async () => {
+    stageLike();
+    renderFixture('claude', 'conversation');
+    paste([png()]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove shot.png' }));
+    expect(screen.queryByTestId('chat-attachment')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-send')).toBeDisabled();
+  });
+
+  it('puts the text and attachments back when the message is not sent', async () => {
+    stageLike();
+    const actions = makeActions();
+    actions.send.mockResolvedValueOnce(null as never);
+    renderFixture('claude', 'conversation', actions);
+    paste([png()]);
+    await screen.findByTestId('chat-attachment');
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'look' } });
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+    expect(await screen.findByTestId('chat-attachment')).toHaveTextContent('shot.png');
+    expect(screen.getByLabelText('Message')).toHaveValue('look');
+  });
+
+  it('shows attachments on sent messages', () => {
+    const events = extend(chatFixture('claude', 'conversation'), {
+      type: 'user_message',
+      data: {
+        messageId: 'm-att', source: 'user', delivery: 'prompt',
+        content: [{ type: 'image', mimeType: 'image/png', path: '/tmp/x/shot.png' }, { type: 'file', path: '/work/repo/notes.md' }],
+      },
+    });
+    renderState(fold(events));
+    const chips = screen.getAllByTestId('chat-user-attachments').at(-1)!;
+    expect(chips).toHaveTextContent('shot.png');
+    expect(chips).toHaveTextContent('notes.md');
+  });
+});
+
 describe('ChatView subagents', () => {
   it.each(['claude', 'codex'] as const)('renders a subagent card with its work folded in (%s)', (p) => {
     renderFixture(p, 'subagents');
@@ -381,7 +514,67 @@ describe('ChatView failures', () => {
 
 describe('ChatView (store-bound)', () => {
   beforeEach(() => {
-    useChatStore.setState({ agents: {}, loading: {} });
+    useChatStore.setState({ agents: {}, loading: {}, partial: {}, answering: {} });
+  });
+
+  it('reuses loaded state when a view remounts, as a canvas card does when zooming', async () => {
+    const read = vi.fn(async () => chatFixture('claude', 'conversation'));
+    vi.mocked(window.clubhouse.chat).readTranscript = read;
+    const first = render(<ChatView agent={agent} context="canvas" />);
+    await screen.findByTestId('chat-turn-footer');
+    expect(read).toHaveBeenCalledWith(FIXTURE_AGENT_ID, CANVAS_TRANSCRIPT_TAIL);
+    first.unmount();
+    render(<ChatView agent={agent} context="canvas" />);
+    expect(screen.getByTestId('chat-turn-footer')).toBeInTheDocument();
+    expect(screen.queryByText('Loading the conversation…')).not.toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the view context, and keeps canvas cards out of the screen-reader live region', async () => {
+    vi.mocked(window.clubhouse.chat).readTranscript = vi.fn(async () => chatFixture('claude', 'conversation'));
+    render(<><ChatView agent={agent} /><ChatView agent={agent} context="canvas" /></>);
+    const views = await screen.findAllByTestId('chat-view');
+    expect(views.map((v) => v.getAttribute('data-view-context'))).toEqual(['main', 'canvas']);
+    expect(screen.getAllByTestId('chat-live-region')).toHaveLength(1);
+  });
+
+  it('offers Show earlier when a tail cut history off, and loads all of it', async () => {
+    const events = chatFixture('claude', 'conversation');
+    const read = vi.fn(async (_id: string, tail?: number) => (tail ? events.slice(-tail) : events));
+    vi.mocked(window.clubhouse.chat).readTranscript = read as typeof window.clubhouse.chat.readTranscript;
+    // A tail as long as what comes back counts as cut off.
+    await act(async () => { await useChatStore.getState().loadTranscript(FIXTURE_AGENT_ID, 3); });
+    render(<ChatView agent={agent} context="canvas" />);
+    fireEvent.click(screen.getByTestId('chat-show-earlier'));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith(FIXTURE_AGENT_ID, undefined));
+    await waitFor(() => expect(screen.queryByTestId('chat-show-earlier')).not.toBeInTheDocument());
+  });
+
+  it('a main view reloads the whole history over state that came from a tail', async () => {
+    const read = vi.fn(async () => chatFixture('claude', 'conversation'));
+    vi.mocked(window.clubhouse.chat).readTranscript = read;
+    useChatStore.setState({ partial: { [FIXTURE_AGENT_ID]: true } });
+    await act(async () => { await useChatStore.getState().loadTranscript(FIXTURE_AGENT_ID, 3); });
+    read.mockClear();
+    render(<ChatView agent={agent} />);
+    await waitFor(() => expect(read).toHaveBeenCalledWith(FIXTURE_AGENT_ID, undefined));
+  });
+
+  it('disables an approval in every view while one view\'s answer is in flight, and sends it once', async () => {
+    const events = chatFixture('codex', 'approval');
+    vi.mocked(window.clubhouse.chat).readTranscript = vi.fn(async () => events);
+    let finish!: () => void;
+    const respond = vi.fn(() => new Promise<void>((r) => { finish = r; }));
+    vi.mocked(window.clubhouse.chat).respondPermission = respond;
+    render(<><ChatView agent={agent} /><ChatView agent={agent} context="canvas" /></>);
+    const cards = await screen.findAllByTestId('chat-permission');
+    expect(cards).toHaveLength(2);
+    const [first, second] = cards.map((c) => within(c).getAllByRole('button')[0]);
+    fireEvent.click(first);
+    await waitFor(() => expect(second).toBeDisabled());
+    fireEvent.click(second);
+    expect(respond).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(); });
   });
 
   it('loads the transcript and applies live events on top', async () => {
@@ -484,6 +677,28 @@ describe('ChatView review fixes', () => {
     const firstChunk = events.findIndex((e) => e.type === 'agent_message_chunk');
     renderState(fold(events.slice(0, firstChunk + 1)));
     expect(screen.getByTestId('chat-live-region')).toBeEmptyDOMElement();
+  });
+});
+
+describe('ChatView changes panel', () => {
+  it('opens and closes the Changes panel from the header', async () => {
+    renderFixture('claude', 'conversation');
+    expect(screen.queryByTestId('chat-changes-panel')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
+    expect(await screen.findByTestId('chat-changes-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close changes' }));
+    expect(screen.queryByTestId('chat-changes-panel')).not.toBeInTheDocument();
+  });
+
+  it('shows one side panel at a time: Changes and the agent map', async () => {
+    renderFixture('claude', 'subagents');
+    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
+    expect(await screen.findByTestId('chat-changes-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
+    expect(screen.queryByTestId('chat-changes-panel')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
+    expect(await screen.findByTestId('chat-changes-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-agent-map-toggle')).toHaveAttribute('aria-expanded', 'false');
   });
 });
 
@@ -604,5 +819,16 @@ describe('ChatView permission extras', () => {
     expect(allow).not.toBeDisabled();
     fireEvent.click(allow);
     expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow');
+  });
+});
+
+describe('ChatView login banner', () => {
+  it('offers the terminal when the CLI reports it needs a login', () => {
+    const events = extend(chatFixture('codex', 'conversation'), { type: 'error', data: { code: 'auth_required', message: 'Not logged in', fatal: true } });
+    const onSwitchToTerminal = vi.fn();
+    render(<ChatViewBody agent={agent} state={fold(events)} actions={makeActions()} providerName="Codex" onSwitchToTerminal={onSwitchToTerminal} />);
+    expect(screen.getByTestId('chat-login-banner')).toHaveTextContent('This CLI needs you to log in.');
+    fireEvent.click(screen.getByRole('button', { name: 'Log in in the terminal' }));
+    expect(onSwitchToTerminal).toHaveBeenCalled();
   });
 });

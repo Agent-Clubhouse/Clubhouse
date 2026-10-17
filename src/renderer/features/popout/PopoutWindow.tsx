@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useAgentStore } from '../../stores/agentStore';
+import { initChatEventListener } from '../../stores/chatStore';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { PopoutAgentView } from './PopoutAgentView';
 import { PopoutCanvasView } from './PopoutCanvasView';
+import { isNewChromeEnabled } from '../../chrome/chromeFlag';
+import { PopoutTitleBar } from '../../chrome/titlebar/PopoutTitleBar';
 import type { Agent, AgentHookEvent } from '../../../shared/types';
 
 /**
@@ -75,7 +79,7 @@ function useAgentStateSync() {
           const incoming = raw as Agent;
           const current = currentAgents[id];
           // Don't regress from "running" to "sleeping" via broadcast — PTY
-          // data (step 5) is ground truth that the process is alive, and the
+          // data (step 6) is ground truth that the process is alive, and the
           // popout has its own onExit listener (step 3) for real exits.
           if (current?.status === 'running' && incoming.status === 'sleeping') {
             agents[id] = current;
@@ -91,7 +95,10 @@ function useAgentStateSync() {
       },
     );
 
-    // 5. Detect sleeping → running transitions via PTY data.
+    // 5. Chat events, for agents running in the chat runtime.
+    const removeChatListener = initChatEventListener();
+
+    // 6. Detect sleeping → running transitions via PTY data.
     //    When an agent is woken from the main window, the pop-out's store still
     //    shows 'sleeping'. Hook events may not arrive promptly (the agent might
     //    be idle at a prompt). PTY data is a reliable signal that the process is
@@ -122,6 +129,7 @@ function useAgentStateSync() {
 
     return () => {
       cancelled = true;
+      removeChatListener();
       removeHookListener();
       removeExitListener();
       removeStateListener();
@@ -135,9 +143,15 @@ function useAgentStateSync() {
 export function PopoutWindow() {
   const loadTheme = useThemeStore((s) => s.loadTheme);
   const ready = useAgentStateSync();
+  const agentName = useAgentStore((s) => {
+    const id = window.clubhouse.window?.getPopoutParams()?.agentId;
+    return id ? s.agents[id]?.name : undefined;
+  });
 
   useEffect(() => {
     loadTheme();
+    // Provider display names for the chat header (the main window loads these at startup).
+    void useOrchestratorStore.getState().loadSettings();
   }, [loadTheme]);
 
   const params = window.clubhouse.window?.getPopoutParams();
@@ -152,11 +166,15 @@ export function PopoutWindow() {
   return (
     <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col" data-testid="popout-window">
       {/* Title bar drag region */}
-      <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center" data-testid="popout-title-bar">
-        <span className="text-xs text-ctp-subtext0 select-none" data-testid="popout-title">
-          {params.type === 'agent' ? 'Agent' : 'Canvas'} — Pop-out
-        </span>
-      </div>
+      {isNewChromeEnabled() ? (
+        <PopoutTitleBar title={params.type === 'agent' ? (agentName || 'Agent') : 'Canvas'} />
+      ) : (
+        <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center" data-testid="popout-title-bar">
+          <span className="text-xs text-ctp-subtext0 select-none" data-testid="popout-title">
+            {params.type === 'agent' ? 'Agent' : 'Canvas'} — Pop-out
+          </span>
+        </div>
+      )}
       {/* Content */}
       <div className="flex-1 min-h-0">
         {!ready ? (

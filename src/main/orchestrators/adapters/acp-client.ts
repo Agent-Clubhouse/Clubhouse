@@ -55,6 +55,12 @@ export interface AcpClientOpts extends BaseRpcOpts {
    * and no client-side methods (no fs/*, no terminal/*).
    */
   initialize?: InitializeRequest;
+  /**
+   * Called synchronously when a response arrives, before its promise settles.
+   * Messages later in the same stdout chunk are dispatched before any awaiting
+   * code resumes, so this is the only exact boundary between them.
+   */
+  onResponse?: (id: number | string) => void;
 }
 
 /**
@@ -129,6 +135,11 @@ export class AcpClient extends NdjsonRpcBase<AcpClientOpts> {
     });
   }
 
+  /** Id of the request sent most recently. */
+  get lastRequestId(): number {
+    return this.nextId - 1;
+  }
+
   /** Send a JSON-RPC notification (no id, no response expected). */
   notify(method: string, params?: unknown): void {
     const msg: Record<string, unknown> = { jsonrpc: '2.0', method };
@@ -160,6 +171,7 @@ export class AcpClient extends NdjsonRpcBase<AcpClientOpts> {
       return;
     }
     this.pending.delete(response.id);
+    this.opts.onResponse?.(response.id);
 
     if (response.error) {
       this.log('error', `RPC error ← id=${response.id}`, {

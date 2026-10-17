@@ -17,6 +17,7 @@ vi.mock('./log-service', () => ({
 
 import * as fsp from 'fs/promises';
 import { pathExists } from './fs-utils';
+import { appLog } from './log-service';
 import {
   snapshotFile,
   restoreForAgent,
@@ -154,6 +155,32 @@ describe('config-pipeline', () => {
       vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({ hooks: {} }));
       await restoreForAgent('agent-2');
       expect(hasSnapshot('/project/.claude/settings.local.json')).toBe(false);
+    });
+  });
+
+  describe('restore failure telemetry', () => {
+    async function failRestore(filePath: string) {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('original');
+      await snapshotFile('agent-1', filePath);
+      // Reading the current file fails, then writing the original back fails too.
+      const denied = new Error(`EACCES: permission denied, open '${filePath}'`);
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(denied);
+      vi.mocked(fsp.writeFile).mockRejectedValueOnce(denied);
+      await restoreForAgent('agent-1');
+      const call = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Failed to restore');
+      return (call?.[3] as { telemetry?: { event: string; attrs?: Array<{ key: string; value: unknown }> } } | undefined)?.telemetry;
+    }
+
+    it.each([
+      ['/secret-project/.codex/config.toml', 'toml'],
+      ['/secret-project/.claude/settings.local.json', 'json'],
+    ])('%s sends only the file format (%s)', async (filePath, format) => {
+      const telemetry = await failRestore(filePath);
+      expect(telemetry).toEqual({
+        event: 'clubhouse.config.restore_failed',
+        attrs: [{ key: 'clubhouse.config.format', kind: 'enum', value: format }],
+      });
+      expect(JSON.stringify(telemetry)).not.toMatch(/secret-project|EACCES/);
     });
   });
 

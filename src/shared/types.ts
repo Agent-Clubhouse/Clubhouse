@@ -760,6 +760,12 @@ export interface UpdateManifest {
   releaseMessage?: string;
   mandatory?: boolean;
   artifacts: Record<string, UpdateArtifact>;
+  /**
+   * Known-bad chat CLI versions (remote kill switch). Entries look like
+   * `{ driver?, provider?, versions?, range?: { from?, to? }, reason }` and
+   * are validated on receipt (chat-version-policy.ts).
+   */
+  chatCliDenylist?: unknown;
 }
 
 export interface UpdateStatus {
@@ -818,6 +824,9 @@ export interface LogEntry {
   msg: string;
   projectId?: string;
   meta?: Record<string, unknown>;
+  /** Present while telemetry is on: the active trace, to match a remote trace (spec §6.6). */
+  traceId?: string;
+  spanId?: string;
 }
 
 export type LogRetention = 'low' | 'medium' | 'high' | 'unlimited';

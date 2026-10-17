@@ -6,6 +6,7 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { AgentRuntimePane, resetChatFlagCache } from './AgentRuntimePane';
 import { chatFixture, FIXTURE_AGENT_ID } from './fixtures';
+import { CHAT_DEFAULT_TIP_KEY } from './chat-default-tip';
 
 const agent: Agent = {
   id: FIXTURE_AGENT_ID,
@@ -80,6 +81,41 @@ describe('AgentRuntimePane', () => {
     expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
   });
 
+  it('hides the switch in both runtimes when switching is left to the main pane', async () => {
+    setFlag(true);
+    setRuntime(true, true);
+    api.chat.readTranscript = vi.fn(async () => chatFixture('codex', 'conversation'));
+    const { unmount } = render(<AgentRuntimePane agent={agent} terminal={terminal} canSwitch={false} />);
+    await screen.findByTestId('chat-view');
+    expect(screen.queryByTestId('runtime-switch')).not.toBeInTheDocument();
+    unmount();
+
+    setRuntime(false, true);
+    const { container } = render(<AgentRuntimePane agent={agent} terminal={terminal} canSwitch={false} />);
+    await waitFor(() => expect(container.firstChild).toBe(screen.queryByTestId('fake-terminal')));
+    expect(screen.queryByTestId('terminal-runtime-bar')).not.toBeInTheDocument();
+  });
+
+  it('shows a neutral placeholder, not the terminal, until the flag and runtime are known', async () => {
+    let answer!: (v: { chat: boolean; chatAvailable: boolean }) => void;
+    setFlag(true);
+    api.chat.getAgentRuntime = vi.fn(() => new Promise((r) => { answer = r; }));
+    api.chat.readTranscript = vi.fn(async () => chatFixture('codex', 'conversation'));
+    render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    expect(screen.getByTestId('agent-runtime-pending')).toBeInTheDocument();
+    expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
+    await waitFor(() => expect(api.chat.getAgentRuntime).toHaveBeenCalled());
+    await act(async () => { answer({ chat: true, chatAvailable: true }); });
+    await screen.findByTestId('chat-view');
+    expect(screen.queryByTestId('agent-runtime-pending')).not.toBeInTheDocument();
+  });
+
+  it('renders quick agents\' terminals from the first paint, even before the flag loads', () => {
+    setFlag(true);
+    render(<AgentRuntimePane agent={{ ...agent, kind: 'quick' }} terminal={terminal} />);
+    expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
+  });
+
   it('never offers chat for quick agents', async () => {
     setFlag(true);
     setRuntime(false, true);
@@ -108,6 +144,9 @@ describe('AgentRuntimePane', () => {
     expect(updateDurableConfig).toHaveBeenCalledWith('/work/clubhouse', FIXTURE_AGENT_ID, { runtimeMode: 'terminal' });
     expect(killAgent).toHaveBeenCalledWith(FIXTURE_AGENT_ID, '/work/clubhouse');
     expect(spawnDurableAgent).toHaveBeenCalledWith('proj-1', '/work/clubhouse', config, true);
+    // Choosing Terminal is explicit: the "Agents now open in Chat" tip is never needed again.
+    expect(localStorage.getItem(CHAT_DEFAULT_TIP_KEY)).toBe('chose_terminal');
+    localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
   });
 
   it('asks before switching during a turn', async () => {
@@ -164,7 +203,9 @@ describe('AgentRuntimePane', () => {
     api.chat.getAgentRuntime = vi.fn(() => new Promise(() => {}));
     render(<AgentRuntimePane agent={{ ...agent, id: 'other-agent' }} terminal={terminal} />);
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
+    // Unknown for this agent: neither its terminal nor the first agent's chat.
+    expect(screen.getByTestId('agent-runtime-pending')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-view')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,9 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
+import { settingsChanged, themeChanged } from '../telemetry/feature-events';
+
+vi.mock('../services/free-agent-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn(async () => {}) }));
+vi.mock('../services/session-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn(async () => {}) }));
+vi.mock('../telemetry/feature-events', () => ({ settingsChanged: vi.fn(), themeChanged: vi.fn(), popoutOpened: vi.fn(), blueprintTransfer: vi.fn(), recordToolsList: vi.fn() }));
 
 vi.mock('electron', () => ({
   app: {
@@ -299,6 +304,29 @@ describe('app-handlers', () => {
     expect(result).toEqual({ enabled: true });
   });
 
+  it.each([
+    [IPC.APP.SAVE_NOTIFICATION_SETTINGS, 'notifications'],
+    [IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, 'orchestrators'],
+    [IPC.APP.SAVE_HEADLESS_SETTINGS, 'headless'],
+    [IPC.APP.SAVE_FREE_AGENT_SETTINGS, 'free_agent'],
+    [IPC.APP.SAVE_BADGE_SETTINGS, 'badge'],
+    [IPC.APP.SAVE_CLIPBOARD_SETTINGS, 'clipboard'],
+    [IPC.APP.SAVE_UPDATE_SETTINGS, 'update'],
+    [IPC.LOG.SAVE_LOG_SETTINGS, 'logging'],
+    [IPC.APP.SAVE_SOUND_SETTINGS, 'sound'],
+    [IPC.APP.SAVE_SESSION_SETTINGS, 'session'],
+    [IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, 'clubhouse_mode'],
+    [IPC.APP.SAVE_EXPERIMENTAL_SETTINGS, 'experimental'],
+  ])('%s reports clubhouse.settings.changed with key %s', async (channel, key) => {
+    await handleHandlers.get(channel)!({}, {});
+    expect(settingsChanged).toHaveBeenCalledWith(key);
+  });
+
+  it('SAVE_THEME reports the theme change', async () => {
+    await handleHandlers.get(IPC.APP.SAVE_THEME)!({}, { themeId: 'nord' });
+    expect(themeChanged).toHaveBeenCalledWith('nord');
+  });
+
   it('SAVE_NOTIFICATION_SETTINGS delegates to notificationService', async () => {
     const handler = handleHandlers.get(IPC.APP.SAVE_NOTIFICATION_SETTINGS)!;
     await handler({}, { enabled: false });
@@ -360,6 +388,32 @@ describe('app-handlers', () => {
     expect(mockSetOverlay2).toHaveBeenCalledWith({ color: '#000', symbolColor: '#fff' });
 
     Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  it('UPDATE_TITLE_BAR_OVERLAY recolors Linux windows only in the new layout', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const { resetNewChromeCacheForTests } = await import('../window-chrome');
+    const experimental = await import('../services/experimental-settings');
+    const handler = handleHandlers.get(IPC.APP.UPDATE_TITLE_BAR_OVERLAY)!;
+    const mockSetOverlay = vi.fn();
+    try {
+      resetNewChromeCacheForTests();
+      vi.mocked(experimental.getSettings).mockReturnValue({} as never);
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ isDestroyed: () => false, setTitleBarOverlay: mockSetOverlay } as any]);
+      await handler({}, { color: '#000', symbolColor: '#fff' });
+      expect(mockSetOverlay).not.toHaveBeenCalled();
+
+      resetNewChromeCacheForTests();
+      vi.mocked(experimental.getSettings).mockReturnValue({ newChrome: true } as never);
+      await handler({}, { color: '#000', symbolColor: '#fff' });
+      expect(mockSetOverlay).toHaveBeenCalledWith({ color: '#000', symbolColor: '#fff' });
+    } finally {
+      resetNewChromeCacheForTests();
+      vi.mocked(experimental.getSettings).mockReturnValue({} as never);
+      vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
   });
 
   it('UPDATE_TITLE_BAR_OVERLAY skips destroyed windows', async () => {

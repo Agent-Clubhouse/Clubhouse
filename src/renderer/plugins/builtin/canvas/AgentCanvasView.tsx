@@ -4,6 +4,7 @@ import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import { AddAgentDialog } from '../../../features/agents/AddAgentDialog';
 import { EmptyState } from '../../../components/EmptyState';
 import { useWheelContainment } from '../../../hooks/useWheelContainment';
+import { AgentView } from '../../../features/agents/chat/AgentView';
 
 interface AgentCanvasViewProps {
   view: AgentCanvasViewType;
@@ -303,16 +304,14 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
     );
   }
 
-  // Agent assigned — show terminal or sleeping widget
+  // Agent assigned: its live view (chat or terminal), or the sleeping widget
   const isRunning = assignedAgent.status === 'running' || assignedAgent.status === 'creating';
 
   if (isRunning) {
     return (
       <div className="relative flex flex-col h-full">
-        {React.createElement(api.widgets.AgentTerminal, {
-          agentId: view.agentId,
-          zoneThemeId,
-        })}
+        {/* Built-in, so it uses AgentView directly: a canvas card reads a transcript tail and stays quiet for screen readers. */}
+        <AgentView agentId={view.agentId!} zoneThemeId={zoneThemeId} context="canvas" />
       </div>
     );
   }

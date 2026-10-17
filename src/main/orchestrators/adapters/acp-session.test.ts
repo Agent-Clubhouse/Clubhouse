@@ -6,7 +6,7 @@ vi.mock('child_process', () => ({
 }));
 
 import { spawn } from 'child_process';
-import { AcpSession, CLUBHOUSE_ACP_CLIENT_CAPABILITIES, GENERIC_ACP_PROFILE, type AcpSessionEvent, type AcpSessionOpts } from './acp-session';
+import { AcpSession, CLUBHOUSE_ACP_CLIENT_CAPABILITIES, GENERIC_ACP_PROFILE, SESSION_CLOSE_TIMEOUT_MS, type AcpSessionEvent, type AcpSessionOpts } from './acp-session';
 import { RpcError } from './acp-client';
 import { selectAcpProfile } from './copilot-acp';
 import {
@@ -196,6 +196,9 @@ describe('AcpSession against Copilot 1.0.92 recordings', () => {
     expect(replayer.written[1]).toMatchObject({ method: 'session/load', params: { sessionId: '5af70548-c3ac-4e25-b105-bec13faa1f20', cwd: CWD, mcpServers: [] } });
     const replayed = updates(events).filter((e) => e.replay).map((e) => e.update.sessionUpdate);
     expect(replayed).toEqual(expect.arrayContaining(['user_message_chunk', 'agent_message_chunk', 'tool_call', 'tool_call_update']));
+    // The command list that follows the load response in the same chunk is live, not replay.
+    const commandLists = updates(events, 'available_commands_update');
+    expect(commandLists.map((e) => e.replay)).toEqual([true, false]);
     expect(session.getState().configOptions.length).toBe(4);
     expect(replayer.errors).toEqual([]);
   });
@@ -245,6 +248,44 @@ describe('AcpSession as a generic ACP driver', () => {
     expect(updates(events)[0].replay).toBe(false);
     expect(session.getState().modes?.currentModeId).toBe('code');
     expect(replayer.errors).toEqual([]);
+  });
+
+  it('close() kills an agent that never answers session/close after a short wait, not the full RPC timeout', async () => {
+    const { session, proc } = setup([
+      ...genericStart({ sessionCapabilities: { close: {} } }),
+      ...genericNew(),
+      out(3, 'session/close'), // sent, never answered
+    ], { rpcTimeoutMs: 60_000 });
+    await session.start();
+    await session.newSession({ cwd: CWD });
+
+    vi.useFakeTimers();
+    try {
+      const closed = session.close();
+      await vi.advanceTimersByTimeAsync(SESSION_CLOSE_TIMEOUT_MS);
+      await closed;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(proc.kill).toHaveBeenCalled();
+  });
+
+  it('leaves no state behind when a load replays history and then fails', async () => {
+    const { session, events } = setup([
+      ...genericStart({ loadSession: true }),
+      out(2, 'session/load'),
+      update({ sessionUpdate: 'session_info_update', title: 'Old' }, 'gone'),
+      update({ sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'x', description: 'x' }] }, 'gone'),
+      update({ sessionUpdate: 'usage_update', used: 5, size: 10 }, 'gone'),
+      update({ sessionUpdate: 'tool_call', toolCallId: 't', title: 'old', status: 'pending' }, 'gone'),
+      inMsg({ id: 2, error: { code: -32002, message: 'Resource not found' } }),
+      ...genericNew(),
+    ]);
+    await session.start();
+    await expect(session.resumeSession('gone', { cwd: CWD })).rejects.toThrow(/Resource not found/);
+    expect(events.filter((e) => e.type === 'update').every((e) => e.type === 'update' && e.replay)).toBe(true);
+    const state = await session.newSession({ cwd: CWD });
+    expect(state).toMatchObject({ sessionId: 's1', title: null, availableCommands: [], context: null, modes: null, configOptions: [] });
   });
 
   it('rejects an agent that negotiates another protocol version', async () => {

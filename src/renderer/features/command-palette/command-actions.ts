@@ -7,6 +7,7 @@ import { useChromeStore } from '../../chrome/chromeStore';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../agents/AgentTerminal';
 import { openNewQuickAgent } from '../../chrome/startPage';
+import { groupProjectAgents } from '../../chrome/sidebar/treeModel';
 
 export interface CommandAction {
   id: string;
@@ -74,7 +75,8 @@ export function getCommandActions(): CommandAction[] {
     },
   ];
 
-  // switch-agent-1..9
+  // switch-agent-1..9. The new shell counts the sidebar's rows (spec §5.3):
+  // awake durable agents, running quick agents, then sleeping agents.
   for (let i = 1; i <= 9; i++) {
     actions.push({
       id: `switch-agent-${i}`,
@@ -83,15 +85,34 @@ export function getCommandActions(): CommandAction[] {
         const { activeProjectId } = useProjectStore.getState();
         if (!activeProjectId) return;
 
-        // Get durable agents for the active project in order
-        const durableAgents = Object.values(agents)
-          .filter((a) => a.projectId === activeProjectId && a.kind === 'durable');
+        const projectAgents = Object.values(agents).filter((a) => a.projectId === activeProjectId);
+        let ordered: typeof projectAgents;
+        if (isNewChromeEnabled()) {
+          const { durable, quick, sleeping } = groupProjectAgents(projectAgents);
+          ordered = [...durable, ...quick, ...sleeping];
+        } else {
+          // Get durable agents for the active project in order
+          ordered = projectAgents.filter((a) => a.kind === 'durable');
+        }
 
-        const target = durableAgents[i - 1];
+        const target = ordered[i - 1];
         if (target) {
           useUIStore.getState().setExplorerTab('agents', activeProjectId);
           useAgentStore.getState().setActiveAgent(target.id, activeProjectId);
         }
+      },
+    });
+  }
+
+  // tab-1..9: the new shell's title-bar tabs, in order (⌘1 is Agents).
+  for (let i = 1; i <= 9; i++) {
+    actions.push({
+      id: `tab-${i}`,
+      execute: () => {
+        const { activeProjectId } = useProjectStore.getState();
+        const tab = useChromeStore.getState().titleTabs[i - 1];
+        if (!activeProjectId || !tab || tab.disabled) return;
+        useUIStore.getState().setExplorerTab(tab.id, activeProjectId);
       },
     });
   }

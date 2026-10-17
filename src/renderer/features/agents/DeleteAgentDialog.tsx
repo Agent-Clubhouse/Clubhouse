@@ -61,22 +61,24 @@ export function DeleteAgentDialog() {
   const { deleteDialogAgent, closeDeleteDialog, executeDelete, agents } = useAgentStore();
   const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
   const { projects, activeProjectId } = useProjectStore();
-  const activeProject = projects.find((p) => p.id === activeProjectId);
   const sendAgentDeleteDurable = useAnnexClientStore((s) => s.sendAgentDeleteDurable);
   const requestWorktreeStatus = useAnnexClientStore((s) => s.requestWorktreeStatus);
 
   const isRemote = deleteDialogAgent ? isRemoteAgentId(deleteDialogAgent) : false;
   const remoteParts = deleteDialogAgent && isRemote ? parseNamespacedId(deleteDialogAgent) : null;
-  const remoteProjectParts = activeProjectId && isRemoteProjectId(activeProjectId) ? parseNamespacedId(activeProjectId) : null;
+  const agent = deleteDialogAgent
+    ? (isRemote ? remoteAgents[deleteDialogAgent] : agents[deleteDialogAgent])
+    : null;
+  // The agent's own project: the new chrome's tree opens this dialog for agents
+  // outside the active project. The active project is the fallback.
+  const ownProjectId = agent?.projectId ?? activeProjectId;
+  const activeProject = projects.find((p) => p.id === ownProjectId) ?? projects.find((p) => p.id === activeProjectId);
+  const remoteProjectParts = ownProjectId && isRemoteProjectId(ownProjectId) ? parseNamespacedId(ownProjectId) : null;
 
   const [status, setStatus] = useState<WorktreeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const agent = deleteDialogAgent
-    ? (isRemote ? remoteAgents[deleteDialogAgent] : agents[deleteDialogAgent])
-    : null;
 
   const fetchStatus = useCallback(async () => {
     if (!deleteDialogAgent) return;

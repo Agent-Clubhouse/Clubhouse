@@ -115,6 +115,38 @@
             "linkLabel": "Plugins and canvas",
             "subTarget": "plugins",
             "style": "link"
+          },
+          {
+            "id": "agents",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Agents",
+            "subTarget": "agents",
+            "style": "link"
+          },
+          {
+            "id": "annex",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Annex",
+            "subTarget": "annex",
+            "style": "link"
+          },
+          {
+            "id": "chat",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Chat",
+            "subTarget": "chat",
+            "style": "link"
+          },
+          {
+            "id": "goobers",
+            "cellValue": "selectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Goobers",
+            "subTarget": "goobers",
+            "style": "link"
           }
         ]
       },
@@ -329,6 +361,19 @@
               "visualization": "timechart"
             },
             "name": "Long frames by view"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.ipc.invoke\"\n| summarize invokes = sum(itemCount), failed = countif(success == false), p95_ms = round(percentile(duration, 95), 0), max_ms = round(max(duration), 0) by channel = tostring(customDimensions[\"clubhouse.ipc.channel\"])\n| top 25 by p95_ms desc",
+              "size": 0,
+              "title": "Slowest IPC invokes (Detailed level)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Slowest IPC invokes (Detailed level)"
           }
         ]
       },
@@ -713,6 +758,58 @@
               "visualization": "table"
             },
             "name": "Editor: Monaco load, external editor, save conflicts"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.settings.changed\"\n| extend area = tostring(customDimensions[\"clubhouse.settings.key\"])\n| summarize changes = sum(itemCount), installs = dcount(user_Id) by area\n| order by changes desc",
+              "size": 0,
+              "title": "Settings changed by area",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Settings changed by area"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.theme.changed\", \"clubhouse.popout.opened\", \"clubhouse.blueprint.exported\", \"clubhouse.blueprint.imported\")\n| extend detail = coalesce(tostring(customDimensions[\"clubhouse.theme.builtin_id\"]), tostring(customDimensions[\"clubhouse.popout.type\"]), tostring(customDimensions[\"clubhouse.outcome\"]))\n| summarize count = sum(itemCount), installs = dcount(user_Id) by name, detail\n| order by count desc",
+              "size": 0,
+              "title": "Feature use",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Feature use"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.group.bulletin.posts\"\n| extend result = tostring(customDimensions[\"clubhouse.bulletin.post.result\"])\n| summarize posts = sum(value) by result\n| order by posts desc",
+              "size": 0,
+              "title": "Bulletin posts by result",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Bulletin posts by result"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.mcp.tools_list\"\n| extend tools = tostring(customDimensions[\"clubhouse.mcp.tools.count_bucket\"]), empty = tostring(customDimensions[\"clubhouse.mcp.tools.empty\"])\n| summarize lists = sum(itemCount), installs = dcount(user_Id) by tools, empty",
+              "size": 0,
+              "title": "MCP tool lists, including empty ones",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "MCP tool lists, including empty ones"
           }
         ]
       },
@@ -800,6 +897,45 @@
               "visualization": "table"
             },
             "name": "Canvas loads by result"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.marketplace.fetch_registry\"\n| extend kind = tostring(customDimensions[\"clubhouse.registry.kind\"]), cache_hit = tostring(customDimensions[\"clubhouse.cache.hit\"]), status = tostring(customDimensions[\"http.response.status_code\"]), error = tostring(customDimensions[\"error.type\"])\n| summarize fetches = sum(itemCount), failed = sumif(itemCount, success == false), p95_ms = round(percentile(duration, 95)) by kind, cache_hit, status, error\n| order by fetches desc",
+              "size": 0,
+              "title": "Registry fetches",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Registry fetches"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.plugin.install\", \"clubhouse.plugin.update\", \"clubhouse.plugin.uninstall\")\n| extend stage = tostring(customDimensions[\"clubhouse.install.failure_stage\"]), error = tostring(customDimensions[\"error.type\"])\n| summarize count = sum(itemCount), failed = sumif(itemCount, success == false), p95_ms = round(percentile(duration, 95)) by name, stage, error\n| order by count desc",
+              "size": 0,
+              "title": "Plugin installs and updates",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Plugin installs and updates"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.plugin.update_check\"\n| extend trigger = tostring(customDimensions[\"clubhouse.update.trigger\"]), available = toint(customDimensions[\"clubhouse.updates.available.count\"]), incompatible = toint(customDimensions[\"clubhouse.updates.incompatible.count\"]), error = tostring(customDimensions[\"error.type\"])\n| summarize checks = sum(itemCount), failed = sumif(itemCount, success == false), avg_available = round(avg(available), 1), avg_incompatible = round(avg(incompatible), 1) by trigger, error",
+              "size": 0,
+              "title": "Plugin update checks",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Plugin update checks"
           }
         ]
       },
@@ -809,6 +945,627 @@
         "value": "plugins"
       },
       "name": "tab-plugins"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Agents (spec \u00a74.4): spawn health, how runs end, kills, tool and MCP traffic, permissions and shoulder taps. Durable create and delete are at the bottom."
+            },
+            "name": "text-agents"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.spawns\"\n| extend orchestrator = tostring(customDimensions[\"clubhouse.orchestrator\"]), runtime = tostring(customDimensions[\"clubhouse.agent.runtime\"]), kind = tostring(customDimensions[\"clubhouse.agent.kind\"]), outcome = tostring(customDimensions[\"clubhouse.outcome\"])\n| summarize spawns = sum(value), failed = sumif(value, outcome == \"error\") by orchestrator, runtime, kind\n| extend failure_pct = round(100.0 * failed / spawns, 2)\n| order by spawns desc",
+              "size": 0,
+              "title": "Spawns by orchestrator and runtime",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Spawns by orchestrator and runtime"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.spawns\"\n| where tostring(customDimensions[\"clubhouse.outcome\"]) == \"error\"\n| summarize failures = sum(value) by error = tostring(customDimensions[\"error.type\"]), orchestrator = tostring(customDimensions[\"clubhouse.orchestrator\"])\n| order by failures desc",
+              "size": 0,
+              "title": "Spawn failures by error",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Spawn failures by error"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.spawn\" and success == true\n| extend orchestrator = tostring(customDimensions[\"clubhouse.orchestrator\"]), runtime = tostring(customDimensions[\"clubhouse.agent.runtime\"])\n| summarize spawns = sum(itemCount), p50_s = round(percentile(duration, 50) / 1000, 2), p95_s = round(percentile(duration, 95) / 1000, 2) by orchestrator, runtime",
+              "size": 0,
+              "title": "Spawn time (s)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Spawn time (s)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "dependencies\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.provider.resolve\", \"clubhouse.provider.check_availability\", \"clubhouse.agent.materialize\", \"clubhouse.agent.prepare_pty\", \"clubhouse.hooks.configure\", \"clubhouse.mcp.inject\", \"clubhouse.provider.build_command\", \"clubhouse.pty.spawn\", \"clubhouse.headless.spawn\", \"clubhouse.chat.start\")\n| summarize p50_ms = percentile(duration, 50), p95_ms = percentile(duration, 95), failed = countif(success == false) by name\n| order by p95_ms desc",
+              "size": 0,
+              "title": "Spawn steps (p50 / p95 ms)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "barchart"
+            },
+            "name": "Spawn steps (p50 / p95 ms)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.provider.binary_lookup.duration\"\n| summarize lookups = sum(valueCount), avg_ms = round(1000 * sum(valueSum) / sum(valueCount), 1), max_ms = round(1000 * max(valueMax), 1) by tier = tostring(customDimensions[\"clubhouse.binary.lookup_tier\"])",
+              "size": 0,
+              "title": "CLI binary lookup by tier",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "CLI binary lookup by tier"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.runs\"\n| summarize runs = sum(value) by exit_class = tostring(customDimensions[\"clubhouse.agent.exit.class\"]), orchestrator = tostring(customDimensions[\"clubhouse.orchestrator\"]), runtime = tostring(customDimensions[\"clubhouse.agent.runtime\"])\n| order by runs desc",
+              "size": 0,
+              "title": "How runs end",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "How runs end"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.agent.time_to_shell_ready\", \"clubhouse.agent.time_to_first_output\")\n| summarize avg_s = round(sum(valueSum) / sum(valueCount), 2), max_s = round(max(valueMax), 1) by name, orchestrator = tostring(customDimensions[\"clubhouse.orchestrator\"])",
+              "size": 0,
+              "title": "Readiness (avg s)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Readiness (avg s)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.kill\"\n| summarize kills = sum(itemCount), p95_s = round(percentile(duration, 95) / 1000, 1) by trigger = tostring(customDimensions[\"clubhouse.kill.trigger\"]), stage = tostring(customDimensions[\"clubhouse.kill.stage_reached\"])\n| order by kills desc",
+              "size": 0,
+              "title": "Kills by trigger and stage reached",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Kills by trigger and stage reached"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.kill.escalations\"\n| summarize escalations = sum(value) by stage = tostring(customDimensions[\"clubhouse.kill.stage_reached\"])",
+              "size": 0,
+              "title": "Kill escalations",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Kill escalations"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.tool_calls\"\n| extend bucket = tostring(customDimensions[\"clubhouse.tool.bucket\"]), result = tostring(customDimensions[\"clubhouse.tool.result\"])\n| summarize calls = sum(value), errors = sumif(value, result == \"error\") by bucket, orchestrator = tostring(customDimensions[\"clubhouse.orchestrator\"])\n| extend error_pct = round(100.0 * errors / calls, 2)\n| order by calls desc",
+              "size": 0,
+              "title": "Tool calls by bucket",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Tool calls by bucket"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.mcp.tool_calls\"\n| extend kind = tostring(customDimensions[\"clubhouse.mcp.tool_kind\"]), tool = tostring(customDimensions[\"clubhouse.mcp.tool\"]), result = tostring(customDimensions[\"clubhouse.mcp.result\"])\n| summarize calls = sum(value), failed = sumif(value, result != \"ok\") by kind, tool\n| order by calls desc",
+              "size": 0,
+              "title": "Clubhouse MCP tool calls",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Clubhouse MCP tool calls"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.permission.wait\"\n| summarize requests = sum(valueCount), avg_s = round(sum(valueSum) / sum(valueCount), 1), max_s = round(max(valueMax), 1) by decision = tostring(customDimensions[\"clubhouse.permission.decision\"]), result = tostring(customDimensions[\"clubhouse.permission.result\"])",
+              "size": 0,
+              "title": "Permission waits",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Permission waits"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.group.shoulder_tap.deliveries\"\n| summarize deliveries = sum(value) by result = tostring(customDimensions[\"clubhouse.delivery.result\"]), runtime = tostring(customDimensions[\"clubhouse.agent.runtime\"])",
+              "size": 0,
+              "title": "Shoulder tap deliveries",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Shoulder tap deliveries"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.agent.create\", \"clubhouse.agent.delete\")\n| extend mode = tostring(customDimensions[\"clubhouse.agent.delete.mode\"]), outcome = tostring(customDimensions[\"clubhouse.outcome\"]), error = tostring(customDimensions[\"error.type\"])\n| summarize count = sum(itemCount), p95_s = round(percentile(duration, 95) / 1000, 1) by name, mode, outcome, error\n| order by name asc, count desc",
+              "size": 0,
+              "title": "Durable create and delete",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Durable create and delete"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.tool_call\"\n| extend bucket = tostring(customDimensions[\"clubhouse.tool.bucket\"])\n| summarize calls = sum(itemCount), errors = countif(success == false), p50_ms = percentile(duration, 50), p95_ms = percentile(duration, 95) by bucket, orchestrator = tostring(customDimensions[\"clubhouse.orchestrator\"])\n| order by p95_ms desc",
+              "size": 0,
+              "title": "Tool-call time by bucket (Detailed level)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Tool-call time by bucket (Detailed level)"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "agents"
+      },
+      "name": "tab-agents"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Annex (spec \u00a74.12, \u00a712 H9): pairing, connects by address family, reconnects and disconnects, identity regenerations, and the satellite's event stream. Satellite and controller rows come from different installs; `clubhouse.annex.role` tells them apart. REST route timings need the Detailed level."
+            },
+            "name": "text-annex"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.pair\"\n| summarize attempts = sum(itemCount) by role = tostring(customDimensions[\"clubhouse.annex.role\"]), result = tostring(customDimensions[\"clubhouse.annex.pair.result\"])\n| order by attempts desc",
+              "size": 0,
+              "title": "Pairing results",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Pairing results"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.connect\"\n| extend family = tostring(customDimensions[\"clubhouse.net.addr_family\"])\n| summarize connects = sum(itemCount), failed = sumif(itemCount, success == false), p95_s = round(percentile(duration, 95) / 1000, 2) by family\n| extend failure_pct = round(100.0 * failed / connects, 1)",
+              "size": 0,
+              "title": "Connects by address family",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Connects by address family"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.annex.connect\", \"clubhouse.annex.discover\") and success == false\n| summarize failures = sum(itemCount), installs = dcount(user_Id) by name, error = tostring(customDimensions[\"error.type\"]), family = tostring(customDimensions[\"clubhouse.net.addr_family\"])\n| order by failures desc",
+              "size": 0,
+              "title": "Connect and discovery failures",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Connect and discovery failures"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.annex.identity.regenerated\", \"clubhouse.annex.tls_fallback\")\n| summarize count = sum(itemCount), installs = dcount(user_Id) by name, reason = tostring(customDimensions[\"clubhouse.annex.identity.reason\"])",
+              "size": 0,
+              "title": "Identity regenerations and TLS fallbacks",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Identity regenerations and TLS fallbacks"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.annex.reconnects\", \"clubhouse.annex.reconnect.delay\")\n| extend attempt = tostring(customDimensions[\"clubhouse.attempt_bucket\"])\n| summarize reconnects = sumif(value, name == \"clubhouse.annex.reconnects\"), avg_delay_s = round(sumif(valueSum, name == \"clubhouse.annex.reconnect.delay\") / sumif(valueCount, name == \"clubhouse.annex.reconnect.delay\"), 1) by attempt\n| order by attempt asc",
+              "size": 0,
+              "title": "Reconnects by attempt",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Reconnects by attempt"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.disconnects\"\n| summarize disconnects = sum(value) by reason = tostring(customDimensions[\"clubhouse.annex.disconnect.reason\"])\n| order by disconnects desc",
+              "size": 0,
+              "title": "Disconnects by reason",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Disconnects by reason"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.heartbeat.rtt\"\n| summarize avg_ms = round(1000 * sum(valueSum) / sum(valueCount), 1), max_ms = round(1000 * max(valueMax), 1) by bin(timestamp, 1h)",
+              "size": 0,
+              "title": "Heartbeat round trip (ms)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Heartbeat round trip (ms)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.control.denied\"\n| summarize denied = sum(value), installs = dcount(user_Id) by channel = tostring(customDimensions[\"clubhouse.annex.control.channel\"])",
+              "size": 0,
+              "title": "Control requests denied (no mTLS)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Control requests denied (no mTLS)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.remote_spawn\"\n| summarize sends = sum(itemCount), failed = sumif(itemCount, success == false) by action = tostring(customDimensions[\"clubhouse.annex.remote.action\"]), error = tostring(customDimensions[\"error.type\"])",
+              "size": 0,
+              "title": "Remote spawns",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Remote spawns"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.annex.events\", \"clubhouse.annex.events.bytes\", \"clubhouse.annex.send_failures\")\n| extend type = tostring(customDimensions[\"clubhouse.annex.event.type\"])\n| summarize events = sumif(value, name == \"clubhouse.annex.events\"), mb = round(sumif(value, name == \"clubhouse.annex.events.bytes\") / 1048576, 2), send_failures = sumif(value, name == \"clubhouse.annex.send_failures\") by type\n| order by mb desc",
+              "size": 0,
+              "title": "Event stream by type",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Event stream by type"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.clients\"\n| summarize clients = max(valueMax) by bin(timestamp, 1h), kind = tostring(customDimensions[\"clubhouse.annex.client.kind\"])",
+              "size": 0,
+              "title": "Connected clients by kind",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Connected clients by kind"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let build = customMetrics | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.annex.snapshot.build.duration\" | summarize n = sum(valueCount), avg_ms = round(1000 * sum(valueSum) / sum(valueCount), 1) | extend item = \"snapshot build\";\nlet replays = customMetrics | where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version}) | where name == \"clubhouse.annex.replays\" | summarize n = sum(value), avg_ms = real(null) by item = strcat(\"replay: \", tostring(customDimensions[\"clubhouse.annex.replay.result\"]));\nunion build, replays",
+              "size": 0,
+              "title": "Snapshot build and replays",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Snapshot build and replays"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.annex.rest\"\n| extend route = tostring(customDimensions[\"clubhouse.annex.route\"]), http = tostring(customDimensions[\"clubhouse.http.class\"])\n| summarize requests = sum(itemCount), server_errors = sumif(itemCount, http == \"5xx\"), p95_ms = round(percentile(duration, 95), 0) by route\n| order by requests desc",
+              "size": 0,
+              "title": "REST routes (Detailed level)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "REST routes (Detailed level)"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "annex"
+      },
+      "name": "tab-annex"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Native chat (spec \u00a74.4 chat turns, \u00a79.1), mapped from the chat event bus. Protocol drift and stalled turns are the early warnings for a CLI release that broke a driver (\u00a712 H2)."
+            },
+            "name": "text-chat"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.turn\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), end_reason = tostring(customDimensions[\"clubhouse.turn.end_reason\"])\n| summarize turns = sum(itemCount), p50_s = round(percentile(duration, 50) / 1000, 1), p95_s = round(percentile(duration, 95) / 1000, 1) by driver, end_reason\n| order by turns desc",
+              "size": 0,
+              "title": "Chat turns by driver and end reason",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Chat turns by driver and end reason"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.turn\"\n| where tostring(customDimensions[\"clubhouse.turn.end_reason\"]) == \"error\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), error_type = tostring(customDimensions[\"error.type\"])\n| summarize turns = sum(itemCount) by driver, error_type, application_Version\n| order by turns desc",
+              "size": 0,
+              "title": "Failed chat turns by error type",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Failed chat turns by error type"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.turn\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), ttft_ms = toint(customDimensions[\"clubhouse.turn.time_to_first_token_ms\"])\n| where isnotnull(ttft_ms)\n| summarize p50_s = round(percentile(ttft_ms, 50) / 1000.0, 2), p95_s = round(percentile(ttft_ms, 95) / 1000.0, 2) by driver",
+              "size": 0,
+              "title": "Time to first token (s)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Time to first token (s)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.chat.protocol.unknown\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), kind = tostring(customDimensions[\"clubhouse.chat.protocol.kind\"])\n| summarize messages = sum(value) by driver, kind, application_Version\n| order by messages desc",
+              "size": 0,
+              "title": "Protocol drift by driver and version",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Protocol drift by driver and version"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.turn.stalled\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"])\n| summarize stalled = sum(value) by driver, bin(timestamp, 1d)",
+              "size": 0,
+              "title": "Stalled turns by driver",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Stalled turns by driver"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.tokens\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), token_type = tostring(customDimensions[\"gen_ai.token.type\"])\n| summarize tokens = sum(value) by driver, token_type",
+              "size": 0,
+              "title": "Tokens by driver",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Tokens by driver"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.agent.permission\"\n| where tostring(customDimensions[\"clubhouse.permission.path\"]) == \"chat\"\n| extend driver = tostring(customDimensions[\"clubhouse.chat.driver\"]), decision = tostring(customDimensions[\"clubhouse.permission.decision\"]), source = tostring(customDimensions[\"clubhouse.permission.source\"])\n| summarize requests = sum(itemCount), p50_s = round(percentile(duration, 50) / 1000, 1), p95_s = round(percentile(duration, 95) / 1000, 1) by driver, decision, source",
+              "size": 0,
+              "title": "Chat permission waits",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Chat permission waits"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "chat"
+      },
+      "name": "tab-chat"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "Goobers (experimental, spec \u00a74.13, \u00a712 H12): activation, liveness transitions, daemon control, event-stream mode and how stale the data shown is. Poll counts need the Detailed level."
+            },
+            "name": "text-goobers"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.goobers.data.age\"\n| summarize avg_s = round(sum(valueSum) / sum(valueCount), 1), max_s = round(max(valueMax), 0) by bin(timestamp, 1h), model = tostring(customDimensions[\"clubhouse.goobers.model\"])",
+              "size": 0,
+              "title": "Data age by model (s)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "timechart"
+            },
+            "name": "Data age by model (s)"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.goobers.stream.mode\"\n| summarize changes = sum(itemCount), installs = dcount(user_Id) by mode = tostring(customDimensions[\"clubhouse.goobers.stream.mode\"])",
+              "size": 0,
+              "title": "Stream mode changes",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Stream mode changes"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.goobers.sse.reconnects\", \"clubhouse.goobers.sse.terminals\")\n| summarize count = sum(value) by name, reason = tostring(customDimensions[\"clubhouse.sse.terminal_reason\"])",
+              "size": 0,
+              "title": "Stream reconnects and terminal stops",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Stream reconnects and terminal stops"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.goobers.liveness\"\n| summarize transitions = sum(itemCount), installs = dcount(user_Id) by state = tostring(customDimensions[\"clubhouse.goobers.state\"]), connection = tostring(customDimensions[\"clubhouse.goobers.connection\"]), error = tostring(customDimensions[\"clubhouse.goobers.error\"])\n| order by transitions desc",
+              "size": 0,
+              "title": "Liveness transitions",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Liveness transitions"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "requests\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.goobers.activate\", \"clubhouse.goobers.daemon.start\", \"clubhouse.goobers.daemon.stop\")\n| extend outcome = tostring(customDimensions[\"clubhouse.outcome\"]), error = tostring(customDimensions[\"clubhouse.goobers.error\"])\n| summarize count = sum(itemCount), p95_s = round(percentile(duration, 95) / 1000, 1) by name, outcome, error\n| order by name asc, count desc",
+              "size": 0,
+              "title": "Activation and daemon control",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Activation and daemon control"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.goobers.polls\", \"clubhouse.goobers.poll.skipped\", \"clubhouse.goobers.poll.duration\")\n| summarize polls = sumif(value, name == \"clubhouse.goobers.polls\"), skipped = sumif(value, name == \"clubhouse.goobers.poll.skipped\"), avg_ms = round(1000 * sumif(valueSum, name == \"clubhouse.goobers.poll.duration\") / sumif(valueCount, name == \"clubhouse.goobers.poll.duration\"), 0)",
+              "size": 0,
+              "title": "Poll loop (Detailed level)",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Poll loop (Detailed level)"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "goobers"
+      },
+      "name": "tab-goobers"
     }
   ],
   "fallbackResourceIds": [

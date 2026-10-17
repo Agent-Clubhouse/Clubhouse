@@ -11,8 +11,9 @@ import type {
   TurnEndItem,
   UserMessageItem,
 } from '../../../stores/chatStore';
-import type { ChatCapabilities } from '../../../../shared/chat';
-import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, PlanIcon } from './icons';
+import type { ChatCapabilities, ContentBlock } from '../../../../shared/chat';
+import { attachmentName } from './attachments';
+import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, FileIcon, ImageIcon, PlanIcon } from './icons';
 import { formatCost, formatDuration, formatTokens } from './view-model';
 
 /** Markdown re-renders at most this often while a message streams. */
@@ -55,6 +56,9 @@ const SOURCE_LABELS: Partial<Record<UserMessageItem['source'], string>> = {
 
 export function UserMessage({ item }: { item: UserMessageItem }) {
   const label = SOURCE_LABELS[item.source];
+  const attached = item.content
+    .map((block) => ({ block, name: attachmentName(block) }))
+    .filter((a): a is { block: ContentBlock; name: string } => a.name !== null);
   return (
     <div className="self-end max-w-[82%] flex flex-col items-end gap-1" data-testid="chat-user-message">
       {(label || item.delivery === 'steer') && (
@@ -62,9 +66,25 @@ export function UserMessage({ item }: { item: UserMessageItem }) {
           {[label, item.delivery === 'steer' ? 'Steered into the running turn' : null].filter(Boolean).join(' · ')}
         </span>
       )}
-      <div className="bg-surface-0 text-ctp-text rounded-xl rounded-br px-3 py-2 text-[13px] whitespace-pre-wrap break-words">
-        {item.text}
-      </div>
+      {attached.length > 0 && (
+        <div className="flex flex-wrap justify-end gap-1.5" data-testid="chat-user-attachments">
+          {attached.map(({ block, name }, i) => (
+            <span
+              key={i}
+              className="h-7 max-w-[220px] flex items-center gap-1.5 px-2 rounded-md bg-surface-0 text-[12px] text-ctp-subtext1"
+              title={block.type === 'file' ? block.path : block.type === 'image' ? block.path ?? name : name}
+            >
+              {block.type === 'image' ? <ImageIcon size={13} className="text-ctp-overlay1 flex-shrink-0" /> : <FileIcon size={13} className="text-ctp-overlay1 flex-shrink-0" />}
+              <span className="truncate min-w-0">{name}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {item.text && (
+        <div className="bg-surface-0 text-ctp-text rounded-xl rounded-br px-3 py-2 text-[13px] whitespace-pre-wrap break-words">
+          {item.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -135,6 +155,7 @@ export function NoticeRow({ item }: { item: NoticeItem }) {
 
 const ERROR_HINTS: Partial<Record<string, string>> = {
   auth_required: 'Sign in from the terminal view, then send your message again.',
+  account_issue: 'Check your account or billing with the provider; signing in again won\'t fix this.',
   rate_limited: 'The provider rate-limited this session.',
   context_overflow: 'The conversation no longer fits in the context window.',
   max_tokens: 'The reply hit the output token limit.',

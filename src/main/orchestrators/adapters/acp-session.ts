@@ -15,6 +15,7 @@ import {
   type ListSessionsResponse,
   type LoadSessionResponse,
   type McpServer,
+  type Meta,
   type NewSessionResponse,
   type PermissionOption,
   type PromptResponse,
@@ -31,10 +32,15 @@ import { parseSessionUpdate } from './acp-updates';
 import { deriveAcpCapabilities, type AcpDriverCapabilities } from './acp-capabilities';
 import type { PermissionLevel } from '../../../shared/chat/capabilities';
 
+/** How long close() waits for an agent to answer `session/close` before killing it. */
+export const SESSION_CLOSE_TIMEOUT_MS = 2_000;
+
 /** How an agent's native modes and options map onto Clubhouse's permission ladder. */
 export interface AcpPermissionLevels {
   /** Levels `apply` can switch to inside a live session. */
   live: readonly PermissionLevel[];
+  /** The agent's own name for each live level, for the UI. */
+  names?: Partial<Record<PermissionLevel, string>>;
   /** The level the session's current mode and options amount to, if any. */
   current(state: Readonly<AcpSessionState>): PermissionLevel | undefined;
   apply(session: AcpSession, level: PermissionLevel): Promise<void>;
@@ -55,6 +61,8 @@ export interface AcpAgentProfile {
   filterUpdate?(update: SessionUpdate, ctx: { openToolCallIds: ReadonlySet<string> }): SessionUpdate | null;
   /** Permission-ladder mapping. Without one, the session reports no levels. */
   permissionLevels?: AcpPermissionLevels;
+  /** A cost hint for a model option, from the agent's private `_meta`. */
+  modelCostHint?(meta: Meta | undefined): string | undefined;
 }
 
 const KNOWN_CLIENT_METHODS: ReadonlySet<string> = new Set(Object.values(ACP_CLIENT_METHODS));
@@ -154,6 +162,7 @@ export class AcpSession {
   private init: InitializeResponse | null = null;
   private caps: AcpDriverCapabilities | null = null;
   private replaying = false;
+  private loadRequestId: number | null = null;
   /** Pending while a prompt turn runs; `exit` waits for it so `turn_ended` comes first. */
   private turnSettled: Promise<void> | null = null;
   /** Agents may announce a new session's updates before answering session/new. */
@@ -191,6 +200,10 @@ export class AcpSession {
       onNotification: (method, params) => this.handleNotification(method, params),
       onServerRequest: (id, method, params) => this.handleServerRequest(id, method, params),
       onExit: (code, signal) => this.handleExit(code, signal),
+      onResponse: (id) => {
+        // Replay is over the moment session/load answers, even if later updates share its chunk.
+        if (id === this.loadRequestId) this.replaying = false;
+      },
     });
   }
 
@@ -276,11 +289,16 @@ export class AcpSession {
     const caps = this.requireStarted();
     if (caps.resume === 'resume') {
       this.state.sessionId = sessionId;
-      const res = (await this.client.request(ACP_AGENT_METHODS.sessionResume, {
-        sessionId,
-        ...this.sessionParams(setup),
-      })) as LoadSessionResponse;
-      this.applySessionSetup(res ?? {});
+      try {
+        const res = (await this.client.request(ACP_AGENT_METHODS.sessionResume, {
+          sessionId,
+          ...this.sessionParams(setup),
+        })) as LoadSessionResponse;
+        this.applySessionSetup(res ?? {});
+      } catch (err) {
+        this.resetSessionState();
+        throw err;
+      }
       return { method: 'resume' };
     }
     if (caps.resume === 'load') {
@@ -295,13 +313,21 @@ export class AcpSession {
     this.state.sessionId = sessionId;
     this.replaying = true;
     try {
-      const res = (await this.client.request(ACP_AGENT_METHODS.sessionLoad, {
+      const pending = this.client.request(ACP_AGENT_METHODS.sessionLoad, {
         sessionId,
         ...this.sessionParams(setup),
-      })) as LoadSessionResponse;
+      });
+      this.loadRequestId = this.client.lastRequestId;
+      const res = (await pending) as LoadSessionResponse;
       this.applySessionSetup(res ?? {});
+    } catch (err) {
+      // A load can replay part of the history and still fail. Leave nothing of
+      // that session behind, so a fallback session/new starts clean.
+      this.resetSessionState();
+      throw err;
     } finally {
       this.replaying = false;
+      this.loadRequestId = null;
       // Replayed tool calls are history, not work in progress.
       this.openToolCalls.clear();
     }
@@ -326,7 +352,9 @@ export class AcpSession {
     const sessionId = this.state.sessionId;
     if (sessionId && this.caps?.closeSession && this.client.alive) {
       try {
-        await this.client.request(ACP_AGENT_METHODS.sessionClose, { sessionId });
+        // Bounded: the process is killed right after either way, so an agent
+        // that never answers must not hold Stop for the full RPC timeout.
+        await this.client.request(ACP_AGENT_METHODS.sessionClose, { sessionId }, { timeoutMs: SESSION_CLOSE_TIMEOUT_MS });
       } catch (err) {
         this.log('warn', 'session/close failed', { error: (err as Error).message });
       }
@@ -573,6 +601,19 @@ export class AcpSession {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
+
+  private resetSessionState(): void {
+    Object.assign(this.state, {
+      sessionId: null,
+      modes: null,
+      configOptions: [],
+      legacyModels: null,
+      availableCommands: [],
+      title: null,
+      context: null,
+    });
+    this.openToolCalls.clear();
+  }
 
   private applySessionSetup(res: LoadSessionResponse): void {
     if (res.modes && Array.isArray(res.modes.availableModes)) this.state.modes = res.modes;

@@ -165,6 +165,47 @@ describe('CodexChatDriver', () => {
     });
   });
 
+  it('passes translated MCP servers and reports the ones Codex cannot run', async () => {
+    const onLog = vi.fn();
+    const session = await new CodexChatDriver({ onLog }).start({
+      ...baseOpts,
+      mcpServers: {
+        clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' } },
+        remote: { type: 'http', url: 'https://mcp.example.test/mcp', headers: { Authorization: 'Bearer x' } },
+        events: { type: 'sse', url: 'https://sse.example.test/sse' },
+      },
+    });
+    const iterator = session.events[Symbol.asyncIterator]();
+
+    expect(server.requests('thread/start')[0].params).toMatchObject({
+      config: {
+        mcp_servers: {
+          clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' } },
+          remote: { url: 'https://mcp.example.test/mcp', http_headers: { Authorization: 'Bearer x' } },
+        },
+      },
+    });
+    expect(Object.keys((server.requests('thread/start')[0].params as { config: { mcp_servers: object } }).config.mcp_servers))
+      .toEqual(['clubhouse', 'remote']);
+    // Find the notice among the opening events rather than at a fixed index,
+    // so other start-up events (commands_available) don't break this.
+    server.send({ method: 'thread/status/changed', params: { threadId: fx.THREAD_ID, status: { type: 'idle' } } });
+    const opening: ChatEventDraft[] = [];
+    for (let i = 0; i < 3; i++) opening.push((await iterator.next()).value as ChatEventDraft);
+    expect(opening[0]).toMatchObject({ type: 'session_started' });
+    expect(opening).toContainEqual({
+      type: 'notice',
+      data: { level: 'warn', code: 'mcp_servers_skipped', message: "Left out MCP servers Codex can't run: events (Codex has no SSE transport)" },
+    });
+    expect(onLog).toHaveBeenCalledWith('warn', 'MCP servers Codex cannot run were left out', { skipped: [{ name: 'events', reason: 'Codex has no SSE transport' }] });
+    await session.close();
+  });
+
+  it('sends no MCP config when there are no servers', async () => {
+    await startSession();
+    expect(server.requests('thread/start')[0].params).not.toHaveProperty('config');
+  });
+
   it('resumes a native thread', async () => {
     const { next } = await startSession({ resumeNativeSessionId: fx.THREAD_ID });
 
@@ -607,6 +648,137 @@ describe('CodexChatDriver', () => {
   it('a crash ends the stream with the exit code', async () => {
     const { take, rest } = await startSession();
     await skipStart(take);
+
+    server.exit(1);
+
+    expect(await rest()).toEqual([{ type: 'session_ended', data: { reason: 'error', exitCode: 1 } }]);
+  });
+
+  it('a crash mid-turn reports process_exited and ends the turn before the session', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+    expect(await take(1)).toMatchObject([{ type: 'turn_started' }]);
+
+    server.exit(1);
+
+    expect(await rest()).toEqual([
+      { type: 'error', data: { code: 'process_exited', message: 'Codex app-server exited with code 1 during a turn', fatal: true } },
+      { type: 'turn_ended', data: { stopReason: 'error' } },
+      { type: 'session_ended', data: { reason: 'error', exitCode: 1 } },
+    ]);
+  });
+
+  it('close mid-turn ends the turn as cancelled, with no error', async () => {
+    const { session, take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
+    await take(1);
+
+    await session.close();
+
+    expect(await rest()).toEqual([
+      { type: 'turn_ended', data: { stopReason: 'cancelled' } },
+      { type: 'session_ended', data: { reason: 'stopped' } },
+    ]);
+  });
+
+  it('a crash cancels open approvals so no card outlives the process', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
+    server.send(fx.commandApprovalRequest);
+    await take(2);
+
+    server.exit(1);
+
+    const events = await rest();
+    expect(events.map((e) => e.type)).toEqual(['error', 'turn_ended', 'permission_resolved', 'session_ended']);
+    expect(events[2]).toEqual({ type: 'permission_resolved', data: { requestId: '0', decision: 'cancelled', by: 'agent' } });
+  });
+
+  it('a crash after interrupt() ends the turn as cancelled, with no error', async () => {
+    useServer({ 'turn/interrupt': () => ({ result: {} }) });
+    const { session, take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
+    await take(1);
+
+    await session.interrupt();
+    server.exit(1); // dies before turn/completed confirms the interrupt
+
+    expect(await rest()).toEqual([
+      { type: 'turn_ended', data: { stopReason: 'cancelled' } },
+      { type: 'session_ended', data: { reason: 'error', exitCode: 1 } },
+    ]);
+  });
+
+  it('a failed interrupt leaves a later crash reported as an error', async () => {
+    useServer({ 'turn/interrupt': () => ({ error: { code: -32600, message: 'no such turn' } }) });
+    const { session, take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
+    await take(1);
+
+    await expect(session.interrupt()).rejects.toThrow('no such turn');
+    server.exit(1);
+
+    expect((await rest()).map((e) => e.type === 'turn_ended' ? `turn_ended:${e.data.stopReason}` : e.type))
+      .toEqual(['error', 'turn_ended:error', 'session_ended']);
+  });
+
+  it('a signal kill mid-turn names the signal', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
+    await take(1);
+
+    server.proc.emit('exit', null, 'SIGKILL');
+
+    expect(await rest()).toEqual([
+      { type: 'error', data: { code: 'process_exited', message: 'Codex app-server exited on SIGKILL during a turn', fatal: true } },
+      { type: 'turn_ended', data: { stopReason: 'error' } },
+      { type: 'session_ended', data: { reason: 'error', message: 'Codex app-server exited on SIGKILL' } },
+    ]);
+  });
+
+  it('a crash cancels an open question', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]);
+    server.send({
+      method: 'item/tool/requestUserInput',
+      id: 8,
+      params: {
+        threadId: fx.THREAD_ID, turnId: fx.TURN_ID, itemId: 'q', isBlocking: true, autoResolutionMs: null,
+        questions: [{ id: 'q1', header: '', question: 'Which?', isOther: true, isSecret: false, options: null }],
+      },
+    });
+    await take(2);
+
+    server.exit(1);
+
+    const events = await rest();
+    expect(events.map((e) => e.type)).toEqual(['error', 'turn_ended', 'question_resolved', 'session_ended']);
+    expect(events[2]).toEqual({ type: 'question_resolved', data: { requestId: '8', answers: {}, cancelled: true } });
+  });
+
+  it('a crash after the turn finished adds no turn_ended', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+    server.send(fx.interruptedTurnCompleted); // turn/completed for the same turn
+    await take(2);
+
+    server.exit(1);
+
+    expect(await rest()).toEqual([{ type: 'session_ended', data: { reason: 'error', exitCode: 1 } }]);
+  });
+
+  it('subagent turns do not count as the chat turn running', async () => {
+    const { take, rest } = await startSession();
+    await skipStart(take);
+    server.send({ method: 'turn/started', params: { threadId: 'subagent-thread', turn: { ...fx.turnStartResult.turn, id: 'sub-turn' } } });
 
     server.exit(1);
 

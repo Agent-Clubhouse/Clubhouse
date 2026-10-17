@@ -61,6 +61,7 @@ const { header, entries } = await loadFixture(opts.fixture);
 const protocol = header.protocol;
 
 const report = {
+  pid: process.pid,
   fixture: opts.fixture,
   protocol,
   argv: opts.cliArgs,
@@ -112,8 +113,27 @@ if (opts.cliArgs.includes('--version') && header.cli?.version) {
   process.stdout.write(`${header.cli.versionOutput ?? header.cli.version}\n`);
   finish(0);
 } else {
+  watchParent();
   writeReport();
   await replay();
+}
+
+/**
+ * Exit when whatever launched us dies. On Windows a driver runs the fake
+ * through cmd.exe (the `.cmd` shim), and killing cmd.exe leaves this node
+ * process behind with its stdin still open: it would keep replaying and keep
+ * its fixture and report files open, so a test's temp-dir cleanup fails.
+ */
+function watchParent() {
+  const parent = process.ppid;
+  const timer = setInterval(() => {
+    try {
+      process.kill(parent, 0);
+    } catch {
+      finish(0);
+    }
+  }, 250);
+  timer.unref();
 }
 
 async function replay() {

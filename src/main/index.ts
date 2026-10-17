@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { app, BrowserWindow, powerMonitor, session, net, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, powerMonitor, session, net, protocol } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, getActiveWatchCount, stopAllWatches } from './services/file-watch-service';
@@ -48,10 +48,12 @@ import {
 import { onRendererReady } from './telemetry/renderer-bridge';
 import { registerTelemetryRendererHandlers } from './ipc/telemetry-renderer-handlers';
 import { getTelemetrySettings } from './telemetry/settings';
-import { getSettings as getExperimentalSettings } from './services/experimental-settings';
-import { NEW_CHROME_ARG, NEW_CHROME_FLAG } from '../shared/chrome-flag';
 import { installAgentTelemetry } from './telemetry/agent-telemetry';
+import { installChatTelemetry } from './telemetry/chat-telemetry';
+import { installIpcTelemetry } from './telemetry/ipc-telemetry';
 import { getAgentOrchestrator } from './services/agent-registry';
+import { NEW_CHROME_ARG } from '../shared/chrome-flag';
+import { newChromeEnabled, titleBarOptions } from './window-chrome';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
 // workers indefinitely, starving every fs.promises operation after an agent
@@ -88,6 +90,10 @@ registerTelemetryRendererHandlers({
 installCrashTelemetry();
 installLifecycleTelemetry();
 installAgentTelemetry(getAgentOrchestrator);
+installChatTelemetry();
+// Before registerAllHandlers, so every app invoke handler is timed at the
+// Detailed level. Telemetry's own handlers (registered above) stay untimed.
+installIpcTelemetry(ipcMain);
 // The startup span (§4.1) ends when the main window's initApp() resolves.
 onRendererReady((atMs, marks) => completeStartup(marks, undefined, atMs));
 
@@ -170,18 +176,7 @@ function getThemeColors(): { bg: string; mantle: string; text: string } {
   }
 }
 
-/** Whether this session uses the new chrome layout (experimental flag, read once). */
-function newChromeEnabled(): boolean {
-  try {
-    return getExperimentalSettings()[NEW_CHROME_FLAG] === true;
-  } catch {
-    // Unreadable settings: start on the legacy layout, as the renderer would.
-    return false;
-  }
-}
-
 const createWindow = (): void => {
-  const isWin = process.platform === 'win32';
   const themeColors = getThemeColors();
 
   mainWindow = new BrowserWindow({
@@ -192,18 +187,9 @@ const createWindow = (): void => {
     show: false,
     icon: path.resolve(__dirname, 'icon.png'),
     autoHideMenuBar: true,
-    // macOS: hide the native title bar but keep traffic lights
-    // Windows: use titleBarOverlay to replace native title bar with themed controls
-    ...(isWin
-      ? {
-          titleBarStyle: 'hidden',
-          titleBarOverlay: {
-            color: themeColors.mantle,
-            symbolColor: themeColors.text,
-            height: 38,
-          },
-        }
-      : { titleBarStyle: 'hiddenInset' as const }),
+    // macOS keeps the traffic lights; Windows (and Linux in the new layout)
+    // draws themed controls over the app's title bar (window-chrome.ts).
+    ...titleBarOptions(process.platform, newChromeEnabled(), themeColors),
     backgroundColor: themeColors.bg,
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,

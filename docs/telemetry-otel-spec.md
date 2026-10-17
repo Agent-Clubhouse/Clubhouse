@@ -287,29 +287,32 @@ c.agent.permission        (root per permission request)
 c.agent.kill              (root; user/system kill trigger; Phase 4b)
 ```
 
-#### Create (`ipc/agent-handlers.ts:56` → `agent-config.ts:1069`)
+#### Create and delete (`ipc/agent-handlers.ts`)
 
-| Span | Children | Result enum | Level |
+Both flows start in the IPC handlers, so the git and config work below them (`agent-config.ts`) nests through the active context without that file knowing about the parent.
+
+| Span | Children | Attributes / result | Level |
 |---|---|---|---|
-| `c.agent.create` | `c.git.rev_parse`, `c.git.bootstrap_commit` (empty repo), `c.git.branch`, `c.git.worktree_add` (`:1131`), `c.agent_config.write`, `c.agent.apply_defaults`, `c.agent.persona_inject` | `error.type ∈ {worktree_failed, write_failed}`; non-fatal `c.warnings` list: `defaults_failed`, `persona_failed` | S |
+| `c.agent.create` | `c.git.worktree_create` (Phase 5, in `agent-config.ts`), `c.agent.persona_inject` | `c.agent.uses_worktree`, orchestrator; `error.type ∈ {worktree_failed, write_failed}`. A persona failure is non-fatal: the child span records it, the create stays `ok` | S |
+| `c.agent.delete` | `c.git.worktree_remove` (Phase 5) | `c.agent.delete.mode` (`standard`/`commit_push`/`cleanup_branch`/`save_patch`/`force`/`unregister`); a throw or a result with `ok: false` is `error.type = delete_failed` (cancelling the save-patch dialog returns before the flow and is not recorded) | S |
 
 Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`agentLifecycleSlice.ts:25`) starts a renderer span `c.agent.quick_launch` that is propagated into `SPAWN_AGENT` (§6.2). That is how the renderer-side work (summary instruction fetch, template expansion) gets measured.
 
 #### Spawn (`agent-system.ts:98`)
 
-- **Boundaries:** `spawnAgent` entry to the `return` after `AGENT_AWOKE` (`:269`, `:321` or `:328`), or the throw (`:115-121`, `:329-332`).
-- **Children:** listed in the tree above, with source lines in the agent survey. `provider.check_availability` matters most: it can run a **synchronous `execFileSync(shell -ilc which)` for up to 5 s on the main thread** (`orchestrators/shared.ts:100`). Codex also runs `codex --version` on every spawn. The span carries `c.binary.lookup_tier ∈ {cache, well_known, path_scan, login_shell}`.
+- **Boundaries:** `spawnAgent` entry to the process launched (after `AGENT_AWOKE`), or the throw. Recorded with `tel.flow` around the whole function; the children are `tel.step`s.
+- **Children:** `c.provider.resolve`, `c.provider.check_availability`, `c.agent.materialize` (Clubhouse Mode, non-fatal), then for PTY `c.agent.prepare_pty` with its three parallel children (`c.hooks.configure`, `c.mcp.inject`, `c.provider.build_command`) and `c.pty.spawn`, or `c.headless.spawn` for headless. `c.chat.start` covers a chat start from the moment a driver and CLI are found (`tryStartChatAgent`'s `onStarting`) to started or fallen back; a fallback to the terminal is `error.type = chat_start_failed`, and spawns that were never chat record no chat span. Turns and the rest of chat come from the chat event bus (§9.1). `provider.check_availability` matters most: it can run a **synchronous `execFileSync(shell -ilc which)` for up to 5 s on the main thread** (`orchestrators/shared.ts:100`), and Codex also runs `codex --version` on every spawn. The lookup tier is recorded on every lookup as `c.provider.binary_lookup.duration` (§4.4 metrics), not on the span.
 - **Attributes:**
   - `c.agent.kind` (`durable`/`quick`/`companion`)
   - `c.orchestrator` (`claude-code`/`codex-cli`/`copilot-cli`/`other`)
   - `c.agent.runtime` (`pty`/`headless`/`chat`)
-  - `c.agent.runtime.reason` (`requested`/`fallback_no_mission`/`fallback_not_capable`/`default`)
-  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`/`acp` for other ACP agents, later `copilot_sdk`), from chat's capability record. Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
+  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`/`acp` for other ACP agents, later `copilot_sdk`), from chat's capability record, added by the chat telemetry work (§9.1). Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
   - `c.agent.resume` (bool)
-  - `c.model.family` (bucketed against `MODEL_OPTIONS`: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`)
-  - `c.agent.uses_worktree`, `c.clubhouse_mode`, `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool)
-  - `c.agent.id_hash`, `c.agent.run.id_hash`
-- **`error.type`:** `orchestrator_unknown`, `binary_not_found`, `binary_check_failed`, `preflight_failed`, `cwd_invalid`, `pty_spawn_failed`, `headless_no_pid`, `chat_start_failed`, `materialize_failed` (non-fatal warning).
+  - `c.model.family` (bucketed from the model string: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`; the raw model is never sent)
+  - `c.clubhouse_mode`, `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
+  - Not recorded: `c.agent.runtime.reason` (the fallback decision is implicit in the runtime) and per-agent hashed IDs on spawn spans.
+- **`error.type`:** `orchestrator_unknown`, `preflight_failed` (CLI missing or unauthenticated), `cwd_invalid`, `pty_spawn_failed`, `headless_no_pid` (the span ends `error` though the call returns), `chat_start_failed`; `materialize_failed` on the non-fatal child only. Errors are typed with `tagError` / `withErrorType` at the throw site (§6.5); anything untagged is `unknown`.
+- **Metrics:** `c.agent.spawns` (counter: kind, orchestrator, runtime, outcome, `error.type`) and `c.agent.spawn.duration` (histogram, s, successful spawns only).
 
 #### Run, first output and readiness
 
@@ -355,6 +358,20 @@ Structured mode (`structured-manager.ts` and its StreamJson, ACP and Codex adapt
 
 Metrics: `c.agent.turn.duration` (s), `c.agent.tokens` counter (unit `{token}`, split by `gen_ai.token.type` = `input`/`output`), `c.agent.cost` (USD, from headless `result.total_cost_usd` or chat usage events where present).
 
+**As built** (`src/main/telemetry/chat-telemetry.ts`, one subscriber on the chat event bus; chat imports nothing from telemetry):
+
+- `c.agent.turn` is replayed at `turn_ended` with explicit times. Span attributes are integers, so time to first token is `c.turn.time_to_first_token_ms` on the span and `c.agent.turn.time_to_first_token` (s) as a histogram. The first token is the main agent's first streamed reply or thinking text. Subagent text doesn't count.
+- `error.type` for a failed turn is the stop reason when it is `max_tokens` or `refusal`, otherwise the last chat `error` code in the turn. Chat's closed `ChatErrorCode` set is part of `ERROR_TYPES`.
+- `c.agent.cost` carries `c.cost.estimate` (bool), because Claude on a subscription reports an API-price estimate.
+- Tool calls feed `c.agent.tool_calls` once per call when it completes or fails, through the same built-in bucket list as hooks.
+- Chat permissions reuse `c.agent.permission` and `c.agent.permission.wait` with `c.permission.path=chat` and `c.permission.source` (`desktop`/`annex`). A `cancelled` decision is reported as `deny`.
+- `c.chat.protocol.unknown` is a counter by `c.chat.driver` and `c.chat.protocol.kind`. The native method or field name isn't sent, because attributes are closed enums and there is no per-driver allowlist yet.
+- `c.agent.turn.stalled` counts a turn with no event for 5 minutes, once per turn. Time spent waiting on a permission or a question doesn't count.
+- `session_started` opens a `chat` agent run (`c.agent.runtime=chat`) that the exit broadcast closes. A context clear stays in the same run.
+- `c.chat.start` is not from the bus. It's a child of `c.agent.spawn` added in Phase 4b (#1978), recorded only when a chat driver actually starts.
+- Not mapped yet: `c.chat.rpc`, because the bus carries no protocol calls.
+- The Workbook has a Chat tab for these signals.
+
 #### Permissions (hook path and chat path)
 
 | Span | Boundaries | Attributes | Level |
@@ -365,13 +382,13 @@ Metrics: `c.agent.permission.wait` histogram (s; already computed as `elapsedMs`
 
 #### Exit and kill
 
-| Span | Boundaries | Attributes | Level |
-|---|---|---|---|
 Exits are classified on the `c.agent.run` span (above), not a separate span. Chat exits must also go through `broadcastAgentExit` (the structured-mode bypass, F1, was fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928)).
 
 | Span | Boundaries | Attributes | Level |
 |---|---|---|---|
-| `c.agent.kill` (Phase 4b) | `killAgent` on the agent-runtime seam → exit | `c.kill.trigger` (`user`/`quick_auto_stop`/`shutdown`/`replace`/`sweeper`), `c.kill.stage_reached` (`exit_command`/`eof`/`sigterm`/`sigkill`, from `gracefulKill`) | S |
+| `c.agent.kill` | `killAgent` (`agent-system.ts`) → the run's exit; replayed when the run ends, like `c.agent.run`. PTY and headless only | `c.kill.trigger`: `user` (agent IPC, which includes the renderer's quick-agent auto-stop), `agent_tool` (the `sleep_agent` MCP tool), `annex` (Annex kill and delete), `shutdown` (`killAll` at quit), `other` (a kill that reached the runtime managers without a known caller: terminal IPC, force-kill). Also `c.kill.stage_reached` (`exit_command`/`eof`/`sigterm`/`sigkill`) and `c.agent.exit.class` | S |
+
+The trigger is recorded where the caller is known, before the runtime manager is asked; the managers record `other` only when no trigger was set. Replacement and the stale sweeper are not kills; they show up as the run's exit class (`replaced`, `stale_swept`).
 
 `c.agent.exit.class` takes one of:
 
@@ -388,9 +405,9 @@ Exits are classified on the `c.agent.run` span (above), not a separate span. Cha
 
 #### Group projects and shoulder taps
 
-- `c.group.shoulder_tap` (S): `executeShoulderTap` (`group-project-shoulder-tap.ts:63`), with a child per target. Attributes: `c.delivery.result` (`delivered`/`not_running`/`unsupported_runtime`/`failed`), `c.agent.runtime`, `c.targets.count`.
-- `c.group.membership_sync` (S): `syncMemberships`. Attributes: join/leave counts.
-- `c.group.bulletin.posts` is not a separate counter: it is `c.mcp.tool_calls` filtered to `c.mcp.tool = post_bulletin`.
+- `c.group.shoulder_tap` (S): `executeShoulderTap`. Attributes: `c.tap.broadcast`, `c.targets.count`. No targets is `skipped`; every target failing is `error.type = tap_undelivered`. Per-target results are a counter, not child spans: `c.group.shoulder_tap.deliveries` by `c.delivery.result` (`delivered`/`not_running`/`unsupported_runtime`) and target `c.agent.runtime`.
+- `c.group.membership_sync`: not instrumented yet.
+- `c.group.bulletin.posts` (S) counts every post, from MCP or the UI, by `c.bulletin.post.result`: `ok`; `evicted_message` when the topic's own cap dropped older messages; `evicted_topic` when the board-wide cap dropped messages from other topics; `rejected` for an oversized body (Phase 5b, §12 H8). `c.mcp.tool_calls` with `c.mcp.tool = post_bulletin` still shows the MCP share, but without the eviction result.
 
 ### 4.5 Clubhouse MCP bridge (`clubhouse-mcp/`)
 
@@ -402,6 +419,8 @@ Exits are classified on the `c.agent.run` span (above), not a separate span. Cha
 | `c.mcp.tool_call.duration` histogram | tool kind | S |
 | `c.mcp.auth_rejected` counter | nonce 403s (`:71-82`) | E |
 | `c.mcp.sessions` gauge | SSE connections | D |
+
+`c.mcp.tools_list` event (S, Phase 5b): on every `tools/list`, with `c.mcp.tools.count_bucket` and `c.mcp.tools.empty`, never tool names (§12 H8, the empty-list bug #1544).
 
 The stdio relay `bridge/clubhouse-mcp-bridge.js` runs in the agent's process tree. It is **not** instrumented; there is nowhere safe for it to export from.
 
@@ -494,6 +513,8 @@ Failures here often come back as return values (`false`, `[]`) rather than excep
 
 Custom marketplace names and URLs are never sent. The config snapshot carries only `c.marketplace.custom.count`.
 
+**As implemented (Phase 5b).** Install failures before the staging steps (creating the plugins or staging directory) throw before any stage is tracked, so they are recorded as an `install_failed` span without `c.install.failure_stage`. `c.registry.kind` is `official` or `custom`; the featured list is fetched inside the official span. `c.plugin.install` records `c.install.failure_stage` and `c.size_bucket` (download size) as attributes, with `error.type=install_failed`, and no child spans. A plugin update's install runs as its child. Plugins are identified as `c.plugin.ref=other` plus `c.plugin.id_hash`, as in Phase 5a. `c.plugin.update_check` uses `c.update.trigger` (`startup`/`periodic`/`manual`) and the two counts. A check requested while one is running is not measured.
+
 ### 4.12 Annex (satellite / controller)
 
 The architecture and the telemetry stance on Annex are in §7. Instrumentation:
@@ -516,6 +537,19 @@ The architecture and the telemetry stance on Annex are in §7. Instrumentation:
 
 The 7 errors and 31 warnings in §2.1 (identity request errors, WS errors, heartbeat timeouts) map to `c.annex.discover`/`connect` errors and `c.annex.disconnects` respectively.
 
+**As shipped in Phase 6a** (where it differs from the table above):
+
+- `c.annex.server.start` is replayed when both listeners are up and carries `c.annex.tls` (bool). The TLS fallback is the E-level event `c.annex.tls_fallback`, not an `error.type`. mDNS publish failures and listen failures are not instrumented: neither server has an `'error'` listener today.
+- `c.annex.connect` runs from `connectToSatellite` to the next `snapshot`, without child spans. It carries `c.net.addr_family` (`ipv4`/`ipv6`/`hostname`), `c.annex.auth_mode` on success, and `error.type ∈ {cert_missing, cert_mismatch, protocol_incompatible, auth_rejected, handshake_timeout, ws_error}`. A connect the user cancels records nothing. `c.annex.discover` carries the address family and `identity_unreachable` / `identity_invalid`.
+- `c.annex.pair` on the controller wraps `pairWithService`. On the satellite it is replayed per `POST /pair` reply, with `error.type = pair_rejected` and the reason in `c.annex.pair.result`.
+- `c.annex.disconnects` is controller-side only. Its reasons are `heartbeat_timeout`, `heartbeat_failed`, `connection_closed`, `ws_error`, `user` and `other`. The client ignores close codes, so a satellite stop shows as `connection_closed`; a power resume reconnects sockets that were already down, so it is not a disconnect.
+- Recorded as metrics, not spans: `c.annex.snapshot.build.duration` (histogram) and `c.annex.replays` (counter by `ok`/`gap`/`send_failed`).
+- `c.annex.clients` (gauge) treats mTLS clients as `desktop` and bearer clients as `mobile`.
+- No permission scopes exist, so `c.annex.control.denied` is counted by channel (`ws`/`rest`): control messages and destructive routes that require mTLS.
+- `c.annex.remote_spawn` covers the send. The satellite's ack isn't correlated today, so the satellite's own `c.agent.spawn`, continued from the same trace, is the end-to-end view.
+- `c.annex.rest` (Detailed) carries `c.annex.route` (40 templates kept in sync with `ANNEX_HTTP_ROUTE_TABLE` by a test) and `c.http.class`. It continues an inbound `traceparent` header from mTLS controllers only.
+- `c.annex.events.bytes` counts UTF-8 bytes of the serialized message.
+
 ### 4.13 Goobers (`goobers-*.ts`)
 
 | Instrument | Notes | Level |
@@ -525,6 +559,19 @@ The 7 errors and 31 warnings in §2.1 (identity request errors, WS errors, heart
 | `c.goobers.polls` counter, `c.goobers.poll.skipped` counter, `c.goobers.poll.duration` histogram | the 5 s / 30 s poll loop. **No spans.** | D |
 | `c.goobers.daemon.start` / `.stop` | `goobers-daemon.ts:133`, `:197`. `c.outcome`; `error.type ∈ {lock_contention, exited_before_ready, ready_timeout, binary_not_found, binary_not_executable, invalid_root}` | S |
 | `c.goobers.sse.connect` | with `c.sse.terminal_reason ∈ {auth_required, no_read_model, schema_changed}`; reconnect counter | S |
+
+**As shipped in Phase 6b:**
+
+- **Codes keep the code's spelling.** Enum values use hyphens (`not-running`, `auth-required`, `recovery-stalled`). There is no `recovering` daemon state: recovery is `starting` with error code `recovering`. Only codes are exported, never messages, because those interpolate the instance root, the daemon address and instance ids.
+- **`c.goobers.liveness`** is an event on any change of (`c.goobers.state`, `c.goobers.connection`, `c.goobers.error`), measured around every liveness probe (`refreshConnectionOnce`).
+- **`c.goobers.activate`** runs from activation to the end of the first reconcile.
+- **`c.goobers.daemon.start` / `.stop`** are flows. A ready timeout is `timeout`; a failure is `error.type = goobers_daemon_failed`, with the service's code in `c.goobers.error` (free-text start errors become `daemon-start-failed`).
+- **The SSE stream** is metrics plus an event:
+  - `c.goobers.stream.mode` event on every stream-status change (`live`/`reconnecting`/`polling`/`unavailable`)
+  - `c.goobers.sse.reconnects` counter
+  - `c.goobers.sse.terminals` counter by `c.sse.terminal_reason` (`auth-required`/`no-read-model`/`schema-changed`)
+- **`c.goobers.data.age`** (gauge, s) is sampled per model (`instance`/`run`/`workflow`) at each poll tick, so only while the panel is watched. Freshness resets when the instance root changes. A model counts as fresh on a successful running probe (instance), a 200 from `listRuns` (run), or a stream invalidation naming it.
+- **The poll loop** (Detailed only) is `c.goobers.polls`, `c.goobers.poll.skipped` (the previous tick was still running) and `c.goobers.poll.duration`.
 
 ### 4.14 Settings and feature usage
 
@@ -541,6 +588,8 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 | `c.theme.changed` | `c.theme.kind` (`builtin`/`plugin`), `c.theme.builtin_id` if built-in |
 | `c.popout.opened` | `c.popout.type` |
 | `c.telemetry.*` | `enabled`, `level_changed`, `disabled` (sent as the last record before shutdown of the exporter), `test` |
+
+**As implemented (Phase 5b, main-process call sites).** `c.settings.changed` carries `c.settings.key` only, from a static list covering the managed settings and the legacy settings handlers, with no field names or values. `c.theme.changed` adds `c.theme.builtin_id=other` for plugin themes. `c.popout.opened` and `c.blueprint.exported` / `c.blueprint.imported` (with `c.outcome`) come from main. Page views, the command palette, onboarding and help topics are renderer call sites, owned by the refresh (§9.1).
 
 ### 4.15 Process health, renderer performance and pipeline health (added in revision 2)
 
@@ -782,9 +831,16 @@ tel.event('clubhouse.app.safe_mode', [ATTR.safeModeTrigger('crash_loop_detected'
 tel.exception(err, { origin: 'main', handled: false });
 ```
 
+- **Detailed level (Phase 6b).** Three span types exist only at Detailed:
+  - `c.agent.tool_call`: hook-server `pre_tool` paired with the next `post_tool`/`tool_error` for the same agent and tool name, since hook payloads carry no tool-use id; at most 32 pending per agent, cleared at exit.
+  - `c.ipc.invoke`: every app `ipcMain.handle` invoke, wrapped once at startup (telemetry's own handlers stay untimed), with `c.ipc.channel` from the fixed IPC constants; channels built at runtime are `other`. The span is replayed, not run as a flow: a rejected invoke gets an error outcome but no `c.exception` record (it is the handler's answer, not a crash), and a long async invoke is never blamed by the event-loop watchdog. Below Detailed the wrapper is a level check and a direct call.
+  - `c.annex.rest` (§4.12).
+  Arguments, results and paths are never recorded.
 - When telemetry is disabled, `tel.*` are no-op functions that run `fn` directly. That is one property read and a branch, so hot-adjacent code (hook server) pays nothing measurable.
 - `tel.flow` also accepts an existing `AbortSignal` and marks `cancelled` on abort.
 - Thrown errors are recorded via `tel.exception` (sanitized) and rethrown unchanged. Instrumentation never changes control flow.
+- A flow on a registered root span (`root: true`) and every replayed span or tree always start a new trace, whatever context is active; only `tel.step` nests under the active span. Process callbacks registered inside a flow (a PTY's `onExit`) keep that flow's context for the life of the process, so without this a run or kill replayed at exit would hang off a spawn trace that ended long before. `tel.exception` likewise attaches only to a span that is still recording.
+- A thrown error's `error.type` is `unknown` unless the error was typed at the throw site: `throw tagError(err, 'preflight_failed')`, or `withErrorType('pty_spawn_failed', () => spawn(...))` around a call. The tag is a non-enumerable symbol property, so the error the caller sees is otherwise unchanged. The first tag wins, so an inner, more specific type (`cwd_invalid`) survives an outer wrapper (`pty_spawn_failed`), and every span the error passes through records the same type.
 
 ### 6.6 Bridging `appLog` into OTel logs
 
@@ -814,6 +870,8 @@ The user asked for no straight port, so the bridge is **opt-in per call site**:
    - **The local JSONL also gains optional `traceId`/`spanId` fields when telemetry is on.** A user can then match a local log line to a remote trace when debugging, without any log content leaving the machine. This is a `LogEntry` type addition and is backward compatible.
 4. **Interaction with the logging settings.** The bridge sits **before** the logging `enabled`/namespace/min-level filters in `log()` (`log-service.ts:115`). Turning off local logging does not silently disable telemetry, and vice versa. Each has its own switch, and the UI says so.
 5. **Initial opt-in call sites** are the warn/error sites that map to §4 error classes without an existing span: Annex heartbeat timeout, permission stuck, project-store recovery, canvas unreadable, config-pipeline restore failure. Most other appLog errors are superseded by the flow spans' `error.type` and are not bridged.
+
+**As implemented (Phase 7).** `appLog(ns, level, msg, { meta, telemetry: { event, attrs } })`. `event` must be a registered event name and `attrs` registry attributes. The bridge runs in `log()` before the local filters, through `tel.event` with the mapped severity. `debug` is dropped. `meta` and `msg` are never read by the bridge. Local JSONL lines carry `traceId`/`spanId` while a span is active. The opt-in sites are Annex heartbeat timeout (`c.annex.heartbeat_timeout`), stuck permission (`c.agent.permission.stuck`, with `c.agent.id_hash`) and config restore failure (`c.config.restore_failed`, with `c.config.format`). Project-store recovery and canvas unreadable are already exported as `c.persist.recovery` (Phase 3c), so bridging them again would double-count.
 
 ### 6.7 Lifecycle: enable, disable, flush, offline
 
@@ -1047,6 +1105,7 @@ requests
    - `traceparent` contains only random IDs and a sampled flag, so receiving it reveals nothing.
    - If both installs point at the **same** App Insights resource (the common one-person, two-machines case), `c.annex.remote_spawn` on the controller and `c.agent.spawn` on the satellite appear as one end-to-end transaction. `clubhouse.annex.role` and `service.instance.id` tell them apart.
    - Protocol compatibility: `tc` is an optional field. Old satellites ignore unknown fields (they parse JSON loosely). Confirm this in Phase 6 against the dual-instance E2E.
+   - As shipped: the controller adds `tc` to `agent:spawn` / `agent:wake` (inside `c.annex.remote_spawn`) and a `traceparent` header to `satelliteHttpsRequest` while a span is recording. The satellite accepts only version `00` with the sampled flag set; an unsampled parent would make ParentBased sampling drop the satellite's own spans, so the satellite starts its own trace instead. A sampled parent is kept at the **satellite's own** sample rate: a declined one is continued unsampled, so it is dropped rather than recorded with the wrong `microsoft.sample_rate`, and the satellite records exactly its configured share. The REST header is honoured only from mTLS controllers, never from bearer (mobile) clients. The remote parent applies to the **next root flow only**: process callbacks registered under it can't hang later flows off the controller's trace.
 3. **No per-event spans for the event stream.** That includes PTY data fan-out, hook and chat event fan-out (`broadcastAndBuffer`), and controller-side `handleSatelliteMessage`. These are counters with byte totals (§4.12).
 4. **Peer identity is never an attribute.** No fingerprints, aliases, hostnames, IPs or ports. `c.annex.client.kind` (desktop/mobile) and peer counts are allowed.
 5. **The iOS app is out of scope.** If it later adopts OTel, it should reuse this registry's names for the shared flows (pair, connect, permission) and honor rule 2. Satellite-side spans already cover its server interactions.

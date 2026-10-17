@@ -5,7 +5,7 @@
  * import cycle through the agent registry.
  */
 import { ATTR } from '../../shared/telemetry/attributes';
-import { isTelemetryActive, replaySpan, tel } from './facade';
+import { isTelemetryActive, replaySpan, tel, telemetryLevel } from './facade';
 
 type Orchestrator = Parameters<typeof ATTR.orchestrator>[0];
 
@@ -27,13 +27,74 @@ export function toolBucket(toolName: string | undefined): Parameters<typeof ATTR
 
 const HOOK_KINDS = new Set(['pre_tool', 'post_tool', 'tool_error', 'stop', 'notification', 'permission_request']);
 
-/** One hook event from an agent CLI. Counters only; never a span or log per event. */
-export function recordHookEvent(orchestratorId: string | undefined, kind: string, toolName: string | undefined): void {
+/** Most pending tool calls kept per agent; older ones are dropped unrecorded. */
+export const MAX_PENDING_TOOL_CALLS = 32;
+
+interface PendingTool {
+  tool: string;
+  startMs: number;
+}
+
+/** Detailed level only: pre_tool events waiting for their post_tool, per agent id. */
+const pendingTools = new Map<string, PendingTool[]>();
+
+/**
+ * Detailed level: pair pre_tool with the next post_tool / tool_error for the
+ * same agent and tool name (hook payloads carry no tool-use id) and replay a
+ * `clubhouse.agent.tool_call` span. Parallel calls of one tool may pair out of
+ * order; durations stay right in aggregate.
+ */
+function trackToolCall(agentId: string, orchestrator: Orchestrator, kind: string, toolName: string | undefined, atMs: number): void {
+  const tool = toolName ?? '';
+  if (kind === 'pre_tool') {
+    const list = pendingTools.get(agentId) ?? [];
+    if (list.length >= MAX_PENDING_TOOL_CALLS) list.shift();
+    list.push({ tool, startMs: atMs });
+    pendingTools.set(agentId, list);
+    return;
+  }
+  if (kind !== 'post_tool' && kind !== 'tool_error') return;
+  const list = pendingTools.get(agentId);
+  const i = list?.findIndex((p) => p.tool === tool) ?? -1;
+  if (!list || i < 0) return;
+  const [pending] = list.splice(i, 1);
+  if (list.length === 0) pendingTools.delete(agentId);
+  replaySpan({
+    name: 'clubhouse.agent.tool_call',
+    startMs: pending.startMs,
+    endMs: Math.max(atMs, pending.startMs),
+    attrs: [ATTR.orchestrator(orchestrator), ATTR.toolBucket(toolBucket(toolName)), ATTR.toolResult(kind === 'post_tool' ? 'ok' : 'error')],
+    outcome: kind === 'post_tool' ? 'ok' : 'error',
+  });
+}
+
+/** Forget an agent's pending tool calls (its run ended). */
+export function clearToolCalls(agentId: string): void {
+  pendingTools.delete(agentId);
+}
+
+/** Test-only reset. */
+export function _resetToolCallsForTests(): void {
+  pendingTools.clear();
+}
+
+/**
+ * One hook event from an agent CLI. Counters only below the Detailed level;
+ * at Detailed, tool calls also become spans (trackToolCall).
+ */
+export function recordHookEvent(
+  orchestratorId: string | undefined,
+  kind: string,
+  toolName: string | undefined,
+  agentId?: string,
+  atMs = Date.now(),
+): void {
   if (!isTelemetryActive()) return;
   const orchestrator: Orchestrator =
     orchestratorId === 'claude-code' || orchestratorId === 'codex-cli' || orchestratorId === 'copilot-cli' ? orchestratorId : 'other';
   const hookKind = (HOOK_KINDS.has(kind) ? kind : 'other') as Parameters<typeof ATTR.hookKind>[0];
   tel.count('clubhouse.agent.hook_events', 1, [ATTR.orchestrator(orchestrator), ATTR.hookKind(hookKind)]);
+  if (agentId && telemetryLevel() === 'detailed') trackToolCall(agentId, orchestrator, kind, toolName, atMs);
   if (kind === 'post_tool' || kind === 'tool_error') {
     tel.count('clubhouse.agent.tool_calls', 1, [
       ATTR.orchestrator(orchestrator),
@@ -61,10 +122,10 @@ export function recordPermission(opts: {
     name: 'clubhouse.agent.permission',
     startMs: opts.startMs,
     endMs,
-    attrs: [ATTR.orchestrator(orchestrator), ATTR.toolBucket(toolBucket(opts.toolName)), decision, result],
+    attrs: [ATTR.orchestrator(orchestrator), ATTR.toolBucket(toolBucket(opts.toolName)), decision, result, ATTR.permissionPath('hook')],
     outcome: opts.timedOut ? 'timeout' : 'ok',
   });
-  tel.count('clubhouse.agent.permission.wait', (endMs - opts.startMs) / 1000, [decision, result]);
+  tel.count('clubhouse.agent.permission.wait', (endMs - opts.startMs) / 1000, [decision, result, ATTR.permissionPath('hook')]);
 }
 
 // --- Clubhouse MCP --------------------------------------------------------------
