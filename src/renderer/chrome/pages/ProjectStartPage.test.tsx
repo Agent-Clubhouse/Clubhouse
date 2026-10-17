@@ -40,7 +40,7 @@ beforeEach(() => {
     },
     selectedCompletedId: null,
   });
-  useChromeStore.setState({ projectScopeId: 'p1', composerRequest: 0 });
+  useChromeStore.setState({ projectScopeId: 'p1', composerFocusPending: false });
   useUIStore.setState({ explorerTab: 'agents' });
 });
 
@@ -78,14 +78,37 @@ describe('ProjectStartPage', () => {
     expect(spawnQuickAgent).not.toHaveBeenCalled();
   });
 
-  it('keeps the prompt and the selection when starting fails', async () => {
+  it('says so inline and keeps the prompt when starting fails before an agent exists', async () => {
     spawnQuickAgent.mockRejectedValueOnce(new Error('boom'));
     render(<ProjectStartPage project={project} />);
     type('Fix the build');
     fireEvent.click(screen.getByTestId('start-page-start'));
-    await waitFor(() => expect((screen.getByTestId('start-page-start') as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect(screen.getByTestId('start-page-error')).toBeTruthy());
+    expect((screen.getByTestId('start-page-start') as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByTestId('start-page-prompt') as HTMLTextAreaElement).value).toBe('Fix the build');
     expect(useChromeStore.getState().projectScopeId).toBe('p1');
+    type('Fix the build again');
+    expect(screen.queryByTestId('start-page-error')).toBeNull();
+  });
+
+  it('says so inline when the durable agent to wake is gone', async () => {
+    vi.spyOn(window.clubhouse.agent, 'listDurable').mockResolvedValue([] as never);
+    render(<ProjectStartPage project={project} />);
+    fireEvent.change(screen.getByTestId('start-page-run-as'), { target: { value: 'a2' } });
+    type('Pick up the review');
+    fireEvent.click(screen.getByTestId('start-page-start'));
+    await waitFor(() => expect(screen.getByTestId('start-page-error')).toBeTruthy());
+    expect(spawnDurableAgent).not.toHaveBeenCalled();
+  });
+
+  it('takes focus only when ⌘⇧N asked for it', () => {
+    const { unmount } = render(<ProjectStartPage project={project} />);
+    expect(document.activeElement).not.toBe(screen.getByTestId('start-page-prompt'));
+    unmount();
+    useChromeStore.setState({ composerFocusPending: true });
+    render(<ProjectStartPage project={project} />);
+    expect(document.activeElement).toBe(screen.getByTestId('start-page-prompt'));
+    expect(useChromeStore.getState().composerFocusPending).toBe(false);
   });
 
   it('lists finished quick agents to open, dismiss or clear', () => {

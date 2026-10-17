@@ -38,9 +38,10 @@ export interface ChromeState {
    */
   projectScopeId: string | null;
   setProjectScope: (projectId: string | null) => void;
-  /** Bumped to ask the start page to focus its composer (⌘⇧N). Not persisted. */
-  composerRequest: number;
+  /** Set by ⌘⇧N for the start page to focus its composer, which clears it. Not persisted. */
+  composerFocusPending: boolean;
   requestComposer: () => void;
+  consumeComposerFocus: () => void;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   lastProjectId: string | null;
@@ -142,8 +143,9 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       if (get().projectScopeId !== projectId) set({ projectScopeId: projectId });
     },
 
-    composerRequest: 0,
-    requestComposer: () => set({ composerRequest: get().composerRequest + 1 }),
+    composerFocusPending: false,
+    requestComposer: () => set({ composerFocusPending: true }),
+    consumeComposerFocus: () => { if (get().composerFocusPending) set({ composerFocusPending: false }); },
 
     resizeSidebar: (delta) => {
       const { sidebarWidth, sidebarCollapsed } = get();

@@ -37,7 +37,8 @@ function Composer({ project }: { project: Project }) {
   const spawnQuickAgent = useAgentStore((s) => s.spawnQuickAgent);
   const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
   const setProjectScope = useChromeStore((s) => s.setProjectScope);
-  const composerRequest = useChromeStore((s) => s.composerRequest);
+  const focusPending = useChromeStore((s) => s.composerFocusPending);
+  const consumeComposerFocus = useChromeStore((s) => s.consumeComposerFocus);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledIds = useOrchestratorStore((s) => s.enabled);
   const orchestrators = useMemo(() => allOrchestrators.filter((o) => enabledIds.includes(o.id)), [allOrchestrators, enabledIds]);
@@ -52,16 +53,22 @@ function Composer({ project }: { project: Project }) {
   const [orchestrator, setOrchestrator] = useState('');
   const [model, setModel] = useState('default');
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const resolvedOrchestrator = orchestrator || orchestrators[0]?.id || '';
   const { options: modelOptions } = useModelOptions(resolvedOrchestrator || undefined);
 
   // A different project is a different composer; a woken agent leaves the list.
-  useEffect(() => { setRunAs(QUICK); setPrompt(''); }, [project.id]);
+  useEffect(() => { setRunAs(QUICK); setPrompt(''); setFailed(false); }, [project.id]);
   useEffect(() => {
     if (runAs !== QUICK && !sleeping.some((a) => a.id === runAs)) setRunAs(QUICK);
   }, [runAs, sleeping]);
-  useEffect(() => { inputRef.current?.focus(); }, [composerRequest, project.id]);
+  // Only ⌘⇧N takes focus; opening the page from the tree leaves it in the tree.
+  useEffect(() => {
+    if (!focusPending) return;
+    inputRef.current?.focus();
+    consumeComposerFocus();
+  }, [focusPending, consumeComposerFocus]);
 
   const isQuick = runAs === QUICK;
   const canStart = prompt.trim().length > 0 && !busy;
@@ -70,6 +77,7 @@ function Composer({ project }: { project: Project }) {
     const mission = prompt.trim();
     if (!mission || busy) return;
     setBusy(true);
+    setFailed(false);
     reportChromeFeature('start_page_start');
     try {
       if (isQuick) {
@@ -84,7 +92,10 @@ function Composer({ project }: { project: Project }) {
       // The started agent is the new selection, so its worktree becomes the scope.
       setProjectScope(null);
     } catch (err) {
+      // A spawn that got as far as adding the agent selects it, errored, which
+      // ends the project scope and shows it. Anything earlier stays here.
       reportChromeActionFailed('agent_start', err);
+      setFailed(true);
     } finally {
       setBusy(false);
     }
@@ -97,7 +108,7 @@ function Composer({ project }: { project: Project }) {
         data-testid="start-page-prompt"
         aria-label={`What should an agent do in ${project.displayName || project.name}?`}
         value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
+        onChange={(e) => { setPrompt(e.target.value); setFailed(false); }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void start(); }
         }}
@@ -105,6 +116,11 @@ function Composer({ project }: { project: Project }) {
         rows={4}
         className="w-full bg-ctp-mantle border border-surface-1 rounded-lg px-3 py-2.5 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus-ring resize-none"
       />
+      {failed && (
+        <p role="alert" data-testid="start-page-error" className="text-xs text-ctp-error">
+          The agent didn’t start. Check the orchestrator in Settings, then try again.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <select aria-label="Run as" data-testid="start-page-run-as" value={runAs} onChange={(e) => setRunAs(e.target.value)} className={selectClass}>
           <option value={QUICK}>New quick agent</option>

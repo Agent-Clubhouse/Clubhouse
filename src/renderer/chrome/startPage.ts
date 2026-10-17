@@ -1,6 +1,7 @@
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
+import { useAgentStore } from '../stores/agentStore';
 import { useChromeStore } from './chromeStore';
 import { isNewChromeEnabled } from './chromeFlag';
 
@@ -12,6 +13,8 @@ export function openStartPage(projectId: string): void {
   const projects = useProjectStore.getState();
   if (projects.activeProjectId !== projectId) projects.setActiveProject(projectId);
   useQuickAgentStore.getState().selectCompleted(null);
+  // As a header click: no agent selected, so the project-switch restore keeps the scope.
+  useAgentStore.getState().setActiveAgent(null, projectId);
   useChromeStore.getState().setProjectScope(projectId);
   useUIStore.getState().setExplorerTab('agents', projectId);
 }

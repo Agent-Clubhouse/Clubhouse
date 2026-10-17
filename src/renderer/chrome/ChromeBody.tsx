@@ -44,6 +44,7 @@ function useShowsStartPage(projectId: string | null): boolean {
 
 export function ChromeBody() {
   const projects = useProjectStore((s) => s.projects);
+  const projectsLoaded = useProjectStore((s) => s.projectsLoaded);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activeHostId = useUIStore((s) => s.activeHostId);
@@ -79,7 +80,8 @@ export function ChromeBody() {
   const mode = useSidebarMode();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const startPage = useShowsStartPage(activeProjectId) && !!activeProject;
-  const firstRun = projects.length === 0 && !activeHostId;
+  // Not before the project list loads, or first run would flash on every launch.
+  const firstRun = projectsLoaded && projects.length === 0 && !activeHostId;
   const inPane = !isSettings && !isHelp && !appPluginId;
   const page = !inPane ? null : activeProjectId ? (startPage ? 'start_page' : null) : (firstRun ? 'first_run' : null);
 

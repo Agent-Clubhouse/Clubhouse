@@ -5,11 +5,12 @@ import { useChromeStore } from './chromeStore';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
+import { useAgentStore } from '../stores/agentStore';
 
 beforeEach(() => {
   useUIStore.setState({ explorerTab: 'plugin:files', activeHostId: null, quickAgentDialogOpen: false, projectExplorerTab: {} });
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'a', path: '/a' }, { id: 'p2', name: 'b', path: '/b' }] as never, activeProjectId: 'p2' });
-  useChromeStore.setState({ projectScopeId: null, composerRequest: 0, lastProjectId: null });
+  useChromeStore.setState({ projectScopeId: null, composerFocusPending: false, lastProjectId: null });
   useQuickAgentStore.setState({ selectedCompletedId: 'q1' });
 });
 
@@ -19,14 +20,15 @@ describe('openNewQuickAgent (⌘⇧N)', () => {
   it('opens the Quick Agent dialog in the legacy shell', () => {
     openNewQuickAgent();
     expect(useUIStore.getState().quickAgentDialogOpen).toBe(true);
-    expect(useChromeStore.getState().composerRequest).toBe(0);
+    expect(useChromeStore.getState().composerFocusPending).toBe(false);
   });
 
   it('opens the start page composer for the selected project in the new shell', () => {
     useChromeFlagStore.setState({ enabled: true });
     openNewQuickAgent();
     expect(useUIStore.getState()).toMatchObject({ explorerTab: 'agents', quickAgentDialogOpen: false });
-    expect(useChromeStore.getState()).toMatchObject({ projectScopeId: 'p2', composerRequest: 1 });
+    expect(useChromeStore.getState()).toMatchObject({ projectScopeId: 'p2', composerFocusPending: true });
+    expect(useAgentStore.getState().projectActiveAgent.p2).toBeNull();
     expect(useQuickAgentStore.getState().selectedCompletedId).toBeNull();
   });
 

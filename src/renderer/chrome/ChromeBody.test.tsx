@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 
 vi.mock('./ChromeSidebar', () => ({ ChromeSidebar: () => <div data-testid="chrome-sidebar" /> }));
 vi.mock('../panels/MainContentView', () => ({ MainContentView: () => <div data-testid="main-content" /> }));
@@ -18,7 +18,7 @@ import { useQuickAgentStore } from '../stores/quickAgentStore';
 beforeEach(() => {
   useChromeFlagStore.setState({ enabled: true });
   useUIStore.setState({ explorerTab: 'agents', activeHostId: null });
-  useProjectStore.setState({ projects: [{ id: 'p1', name: 'Clubhouse', path: '/ch' }] as never, activeProjectId: 'p1' });
+  useProjectStore.setState({ projects: [{ id: 'p1', name: 'Clubhouse', path: '/ch' }] as never, projectsLoaded: true, activeProjectId: 'p1' });
   useAgentStore.setState({
     agents: { a1: { id: 'a1', projectId: 'p1', name: 'gallant-swift', kind: 'durable', status: 'running', color: 'blue' } } as never,
     activeAgentId: 'a1',
@@ -42,6 +42,20 @@ describe('ChromeBody', () => {
     expect(screen.getByTestId('start-page').textContent).toBe('p1');
   });
 
+  it('leaves the start page for any agent that becomes active (a spawn, a notification, the palette)', () => {
+    useChromeStore.setState({ projectScopeId: 'p1' });
+    useAgentStore.setState({ activeAgentId: null });
+    render(<ChromeBody />);
+    expect(screen.getByTestId('start-page')).toBeTruthy();
+    // A failed quick-agent spawn adds and selects the errored agent.
+    act(() => useAgentStore.setState((s) => ({
+      agents: { ...s.agents, q9: { id: 'q9', projectId: 'p1', name: 'q9', kind: 'quick', status: 'error', color: 'gray' } as never },
+      activeAgentId: 'q9',
+    })));
+    expect(useChromeStore.getState().projectScopeId).toBeNull();
+    expect(screen.getByTestId('main-content')).toBeTruthy();
+  });
+
   it('shows the start page for a project with no agent selected', () => {
     useAgentStore.setState({ activeAgentId: null });
     render(<ChromeBody />);
@@ -60,6 +74,12 @@ describe('ChromeBody', () => {
     useUIStore.setState({ explorerTab: 'plugin:terminal' });
     render(<ChromeBody />);
     expect(screen.getByTestId('main-content')).toBeTruthy();
+  });
+
+  it('shows nothing until the project list has loaded', () => {
+    useProjectStore.setState({ projects: [], projectsLoaded: false, activeProjectId: null });
+    render(<ChromeBody />);
+    expect(screen.queryByTestId('first-run')).toBeNull();
   });
 
   it('shows first run with no projects', () => {
