@@ -48,6 +48,12 @@ export function reportChromeSurface(surface: ChromeSurface): void {
   setTelemetrySurface(surface);
 }
 
+/** The start page and first run are panes of their own: `clubhouse.view` is `other` (spec §8). */
+export function reportChromePage(page: 'start_page' | 'first_run'): void {
+  reportChromeSurface(page);
+  setTelemetryView('other');
+}
+
 export function getChromeSurface(): ChromeSurface {
   return currentSurface;
 }

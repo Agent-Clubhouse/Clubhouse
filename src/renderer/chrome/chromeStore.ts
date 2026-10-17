@@ -38,6 +38,9 @@ export interface ChromeState {
    */
   projectScopeId: string | null;
   setProjectScope: (projectId: string | null) => void;
+  /** Bumped to ask the start page to focus its composer (⌘⇧N). Not persisted. */
+  composerRequest: number;
+  requestComposer: () => void;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   lastProjectId: string | null;
@@ -138,6 +141,9 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     setProjectScope: (projectId) => {
       if (get().projectScopeId !== projectId) set({ projectScopeId: projectId });
     },
+
+    composerRequest: 0,
+    requestComposer: () => set({ composerRequest: get().composerRequest + 1 }),
 
     resizeSidebar: (delta) => {
       const { sidebarWidth, sidebarCollapsed } = get();

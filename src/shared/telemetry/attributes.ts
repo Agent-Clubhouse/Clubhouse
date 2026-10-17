@@ -186,10 +186,11 @@ export const ATTR = {
     'sidebar_toggle', 'sidebar_resize', 'tab_select', 'project_select', 'agent_select', 'app_item_open',
     'needs_you_select', 'project_collapse', 'project_collapse_all', 'project_pin', 'project_reorder',
     'fold_toggle', 'completed_dismiss', 'completed_clear', 'new_agent_open', 'search_open',
+    'start_page_start', 'completed_open', 'first_run_add', 'first_run_drop',
   ]),
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [
-    'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save', 'agent_create',
+    'add_project', 'reorder_projects', 'chrome_state_save', 'tab_order_save', 'agent_create', 'agent_start',
   ]),
   // App lifecycle (§4.1, Phase 3b)
   shutdownStep: enumAttr('clubhouse.shutdown.step', [
