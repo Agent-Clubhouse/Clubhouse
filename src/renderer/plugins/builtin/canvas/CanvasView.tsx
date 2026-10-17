@@ -518,7 +518,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
       ? `var(--shadow-depth), 0 0 0 2px rgb(var(--ctp-accent))`
       : isMultiSelected
         ? `var(--shadow-depth), 0 0 0 2px rgb(var(--ctp-accent))`
-        : `var(--shadow-depth), 0 0 0 1px var(--ctp-surface2)`;
+        : `var(--shadow-depth), 0 0 0 1px rgb(var(--ctp-surface2))`;
 
   // ── Compact anchor strip ──────────────────────────────────────
   if (view.type === 'anchor') {
@@ -699,7 +699,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
       {/* Layout center indicator */}
       {isLayoutCenter && (
         <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-ctp-accent rounded-full flex items-center justify-center z-10" title="Radial layout center">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--ctp-crust)" strokeWidth="3" strokeLinecap="round">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgb(var(--ctp-crust))" strokeWidth="3" strokeLinecap="round">
             <circle cx="12" cy="12" r="10" />
             <circle cx="12" cy="12" r="3" />
           </svg>

@@ -368,7 +368,7 @@ function AppAgentSettings() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-ctp-text">{o.displayName}</span>
                       {o.badge && (
-                        <span className="px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider rounded-full bg-ctp-accent/20 text-ctp-accent border border-ctp-accent/30 shadow-[0_0_6px_rgba(var(--ctp-accent),0.3)]">
+                        <span className="px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider rounded-full bg-ctp-accent/20 text-ctp-accent border border-ctp-accent/30">
                           {o.badge}
                         </span>
                       )}

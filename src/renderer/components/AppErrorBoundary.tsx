@@ -44,7 +44,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
           </p>
           <button
             type="button"
-            className="px-3 py-1.5 rounded bg-ctp-surface0 hover:bg-ctp-surface1 text-sm"
+            className="px-3 py-1.5 rounded bg-surface-0 hover:bg-surface-1 text-sm"
             onClick={() => window.location.reload()}
           >
             Reload window

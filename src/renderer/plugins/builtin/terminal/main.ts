@@ -7,10 +7,11 @@ import { useChromeScope } from '../../../chrome/scope';
 
 type TerminalStatus = 'starting' | 'running' | 'exited';
 
+/** Set by the mounted MainPanel so the `restart` command restarts its session. */
+let restartAction: (() => void) | null = null;
+
 export function activate(ctx: PluginContext, api: PluginAPI): void {
-  const disposable = api.commands.register('restart', () => {
-    // Fired from the header button — the MainPanel listens via a shared ref
-  });
+  const disposable = api.commands.register('restart', () => restartAction?.());
   ctx.subscriptions.push(disposable);
 
   // Register canvas widget for terminal
@@ -30,6 +31,7 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
 }
 
 export function deactivate(): void {
+  restartAction = null;
   terminalState.reset();
 }
 
@@ -227,6 +229,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     await api.terminal.kill(sessionId);
     spawnTerminal(sessionId, cwd);
   }, [api, sessionId, cwd, spawnTerminal]);
+
+  useEffect(() => {
+    const restart = () => { void handleRestart(); };
+    restartAction = restart;
+    return () => { if (restartAction === restart) restartAction = null; };
+  }, [handleRestart]);
 
   const ShellTerminal = api.terminal.ShellTerminal;
 

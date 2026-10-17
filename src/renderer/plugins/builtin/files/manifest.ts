@@ -25,7 +25,7 @@ export const manifest: PluginManifest = {
     commands: [
       { id: 'refresh', title: 'Refresh File Tree', defaultBinding: 'Meta+Shift+R' },
       { id: 'search', title: 'Search Across Files', defaultBinding: 'Meta+Shift+F' },
-      { id: 'close-tab', title: 'Close Active Tab', defaultBinding: 'Meta+Shift+W' },
+      { id: 'close-tab', title: 'Close Active Tab', defaultBinding: 'Meta+Alt+W' },
       { id: 'reopen-tab', title: 'Reopen Last Closed Tab', defaultBinding: 'Meta+Shift+L' },
       { id: 'next-tab', title: 'Next Tab', defaultBinding: 'Meta+Shift+]' },
       { id: 'prev-tab', title: 'Previous Tab', defaultBinding: 'Meta+Shift+[' },
@@ -79,7 +79,7 @@ export const manifest: PluginManifest = {
             '',
             '### Keyboard shortcuts',
             '- **Cmd+S / Ctrl+S** — Save the current file',
-            '- **Cmd+Shift+W** — Close active tab',
+            '- **Cmd+Alt+W** — Close active tab',
             '- **Cmd+Shift+L** — Reopen last closed tab',
             '- **Cmd+Shift+]** — Next tab',
             '- **Cmd+Shift+[** — Previous tab',

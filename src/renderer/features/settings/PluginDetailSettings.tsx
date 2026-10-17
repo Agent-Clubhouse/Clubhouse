@@ -14,6 +14,7 @@ export function PluginDetailSettings() {
   const pluginSettingsId = useUIStore((s) => s.pluginSettingsId);
   const _setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
   const settingsContext = useUIStore((s) => s.settingsContext);
+  const closePluginSettings = useUIStore((s) => s.closePluginSettings);
   const plugins = usePluginStore((s) => s.plugins);
   const modules = usePluginStore((s) => s.modules);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -35,7 +36,6 @@ export function PluginDetailSettings() {
     );
   }
 
-  const closePluginSettings = useUIStore((s) => s.closePluginSettings);
   const goBack = () => {
     closePluginSettings();
   };

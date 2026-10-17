@@ -13,7 +13,7 @@ export const manifest: PluginManifest = {
   permissions: ['terminal', 'commands', 'agents', 'canvas', 'annex', 'projects'],
   contributes: {
     tab: { label: 'Terminal', title: 'Terminal', icon: TERMINAL_ICON, layout: 'sidebar-content' },
-    commands: [{ id: 'restart', title: 'Restart Terminal', defaultBinding: 'Meta+Shift+T' }],
+    commands: [{ id: 'restart', title: 'Restart Terminal', defaultBinding: 'Meta+Alt+R' }],
     canvasWidgets: [
       {
         id: 'shell',
@@ -40,7 +40,7 @@ export const manifest: PluginManifest = {
             'If the shell process exits unexpectedly, the terminal will automatically reconnect and start a new session.',
             '',
             '### Restarting',
-            'Use the **Restart Terminal** command to kill the current session and start fresh.',
+            'Use the **Restart Terminal** command (**Cmd+Alt+R**) or the Restart button to kill the current session and start fresh.',
             '',
             '### Status indicators',
             'The terminal tab shows connection status: **running** when connected, **disconnected** when the session has ended.',

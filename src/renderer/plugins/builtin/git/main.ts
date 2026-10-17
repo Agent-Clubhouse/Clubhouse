@@ -23,17 +23,18 @@ function statusInfo(code: string): StatusInfo {
   if (c.startsWith('D') || c === 'D') return { label: 'Deleted', color: 'text-ctp-red', short: 'D' };
   if (c.startsWith('M') || c === 'M') return { label: 'Modified', color: 'text-ctp-yellow', short: 'M' };
   if (c.startsWith('R')) return { label: 'Renamed', color: 'text-ctp-mauve', short: 'R' };
-  if (c.startsWith('C')) return { label: 'Copied', color: 'text-ctp-teal', short: 'C' };
+  if (c.startsWith('C')) return { label: 'Copied', color: 'text-ctp-info', short: 'C' };
   return { label: 'Changed', color: 'text-ctp-overlay0', short: '~' };
 }
 
 // ── Activate / Deactivate ────────────────────────────────────────────
 
+/** Set by the mounted panel so the `refresh` command can re-fetch on demand. */
+let refreshAction: (() => void) | null = null;
+
 export function activate(ctx: PluginContext, api: PluginAPI): void {
   ctx.subscriptions.push(
-    api.commands.register('refresh', () => {
-      // Trigger re-fetch — the SidebarPanel polls via gitState
-    }),
+    api.commands.register('refresh', () => refreshAction?.()),
   );
 
   ctx.subscriptions.push(
@@ -52,6 +53,7 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
 }
 
 export function deactivate(): void {
+  refreshAction = null;
   gitState.reset();
 }
 
@@ -124,6 +126,12 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
       if (pollRef.current) clearInterval(pollRef.current);
       document.removeEventListener('visibilitychange', onVisibility);
     };
+  }, [fetchGitInfo, fetchLog]);
+
+  useEffect(() => {
+    const refresh = () => { fetchGitInfo(); fetchLog(); };
+    refreshAction = refresh;
+    return () => { if (refreshAction === refresh) refreshAction = null; };
   }, [fetchGitInfo, fetchLog]);
 
   // File actions

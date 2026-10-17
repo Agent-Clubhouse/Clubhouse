@@ -22,7 +22,7 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
     }),
   );
 
-  // Close active tab — Meta+Shift+W
+  // Close active tab — Meta+Alt+W
   ctx.subscriptions.push(
     api.commands.registerWithHotkey(
       'close-tab',
@@ -34,7 +34,7 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
         }
         // If dirty or pinned, the FileViewer handleCloseTab handles it with dialog
       },
-      'Meta+Shift+W',
+      'Meta+Alt+W',
     ),
   );
 
