@@ -4,7 +4,7 @@ import { InlineRename } from './InlineRename';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, ANCHOR_HEIGHT } from './canvas-types';
 import type { ProjectInfo, AgentInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
-import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
+import type { PluginAPI, CanvasWidgetMetadata, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType, generatePluginWidgetDisplayName, isWidgetPending, onRegistryChange, parsePluginWidgetType } from '../../canvas-widget-registry';
 import { usePluginStore } from '../../plugin-store';
@@ -12,6 +12,10 @@ import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { LinkDropdown } from './LinkDropdown';
 import { PendingWidgetPlaceholder } from './PendingWidgetPlaceholder';
+import { StatusDot } from '../../../chrome/sidebar/AgentRow';
+import type { AgentDot } from '../../../chrome/sidebar/treeModel';
+import { sanitizeSvg } from '../../../utils/sanitize-svg';
+import { AGENT_ICON } from './canvas-icons';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -27,6 +31,24 @@ export function buildProjectContext(view: CanvasView, projects: ProjectInfo[]): 
   const project = projects.find((p) => p.id === projectId);
   if (!project) return null;
   return project.name;
+}
+
+/**
+ * The status dot on an agent card: attention wins, then the agent's own state,
+ * matching the sidebar's dot (chrome/sidebar/treeModel.ts agentDot).
+ */
+export function cardDot(
+  agent: Pick<AgentInfo, 'status'>,
+  detailed: PluginAgentDetailedStatus | null | undefined,
+  attention: CanvasViewAttention | null | undefined,
+): AgentDot {
+  if (attention) return attention.level === 'error' ? 'error' : 'needs';
+  if (agent.status === 'error' || detailed?.state === 'tool_error') return 'error';
+  if (detailed?.state === 'needs_permission') return 'needs';
+  if (agent.status === 'sleeping') return 'sleeping';
+  if (agent.status === 'creating' || agent.status === 'spawning' || agent.status === 'waking') return 'starting';
+  if (detailed?.state === 'working') return 'working';
+  return 'idle';
 }
 
 // ── Resize direction types ──────────────────────────────────────────
@@ -193,6 +215,17 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
     return buildProjectContext(view, projects);
   }, [api, view]);
 
+  const agentDetailed = useMemo(
+    () => (agentInfo ? api.agents.getDetailedStatus(agentInfo.id) : null),
+    [api, agentInfo, agentTick],
+  );
+
+  // Icon for cards that have no agent: the plugin widget's icon, or the agent
+  // icon on an agent card still showing its picker.
+  const typeIcon = view.type === 'plugin'
+    ? getRegisteredWidgetType((view as PluginCanvasViewType).pluginWidgetType)?.declaration.icon
+    : view.type === 'agent' ? AGENT_ICON : undefined;
+
   const isAgentRunning = agentInfo != null && (agentInfo.status === 'running' || agentInfo.status === 'creating');
 
   const handleSleep = useCallback(async () => {
@@ -201,13 +234,13 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
     if (agentId) await api.agents.kill(agentId);
   }, [view, api]);
 
-  // ── Attention CSS class — uses outline so the glow goes OUTSIDE the card ──
+  // ── Attention: a static 1px peach or red border, no pulse or glow ──
 
-  const attentionClass = attention
+  const borderClass = attention
     ? attention.level === 'error'
-      ? 'canvas-attention-error'
-      : 'canvas-attention-warning'
-    : '';
+      ? 'border-ctp-error'
+      : 'border-ctp-warning'
+    : 'border-surface-2';
 
   // ── Drag ───────────────────────────────────────────────────────
 
@@ -528,7 +561,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
 
     return (
       <div
-        className={`absolute flex items-center bg-ctp-mantle border border-surface-0 rounded-lg select-none group/titlebar overflow-hidden ${attentionClass}`}
+        className={`absolute flex items-center bg-ctp-mantle border ${attention ? borderClass : 'border-surface-0'} rounded-lg select-none group/titlebar overflow-hidden`}
         style={{
           left: currentPos.x,
           top: currentPos.y,
@@ -536,7 +569,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
           height: ANCHOR_HEIGHT,
           zIndex: view.zIndex,
           transition: isDragActive ? 'box-shadow 0.15s ease' : 'width 150ms ease, box-shadow 0.15s ease',
-          ...(!attention && { boxShadow: selectionShadow }),
+          boxShadow: selectionShadow,
           ...(isDragActive && { willChange: 'transform' as const }),
           ...(dragOffset && { transform: `translate(${dragOffset.dx}px, ${dragOffset.dy}px)` }),
         }}
@@ -584,10 +617,6 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
         {/* Expanded content — hidden when collapsed */}
         {!isCollapsedVisually && (
           <>
-            <span className="text-xs text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none flex-shrink-0">
-              Anchor
-            </span>
-
             <div
               className="flex-1 min-w-0 px-1.5 cursor-grab active:cursor-grabbing"
               onMouseDown={handleDragStart}
@@ -606,10 +635,10 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
 
             <div className="flex items-center gap-0.5 flex-shrink-0 pr-2">
               <button
-                className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
+                className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
                   anchorView.autoCollapse
-                    ? 'text-ctp-accent bg-ctp-accent/10'
-                    : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
+                    ? 'text-ctp-text bg-surface-0'
+                    : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
                 }`}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -625,7 +654,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
                 </svg>
               </button>
               <button
-                className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-ctp-error/20 hover:text-ctp-error transition-colors"
+                className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
                 onClick={(e) => { e.stopPropagation(); onClose(); }}
                 onMouseDown={(e) => e.stopPropagation()}
                 title="Remove anchor"
@@ -669,7 +698,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
 
   return (
     <div
-      className={`absolute flex flex-col bg-ctp-base border border-surface-2 rounded-lg ${attentionClass}`}
+      className={`absolute flex flex-col bg-ctp-base border ${borderClass} rounded-lg`}
       style={{
         left: currentPos.x,
         top: currentPos.y,
@@ -677,7 +706,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
         height: currentSize.height,
         zIndex: view.zIndex,
         transition: 'box-shadow 0.15s ease',
-        ...(!attention && { boxShadow: selectionShadow }),
+        boxShadow: selectionShadow,
         ...(isDragActive && { willChange: 'transform' as const }),
         ...(dragOffset && { transform: `translate(${dragOffset.dx}px, ${dragOffset.dy}px)` }),
       }}
@@ -707,24 +736,40 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
       )}
       {/* Title bar — drag handle */}
       <div
-        className="group/titlebar flex items-center gap-1.5 px-2.5 py-1.5 bg-ctp-mantle border-b border-surface-0 cursor-grab active:cursor-grabbing flex-shrink-0 rounded-t-lg"
+        className="group/titlebar flex items-center gap-2 h-[30px] pl-2.5 pr-1 bg-ctp-mantle border-b border-surface-0 cursor-grab active:cursor-grabbing flex-shrink-0 rounded-t-lg"
         onMouseDown={handleDragStart}
         data-testid="canvas-view-titlebar"
       >
-        {/* Agent identity chip */}
-        {agentInfo && <AgentAvatar agentId={agentInfo.id} size="sm" showStatusRing />}
+        {/* Identity: an agent's status dot and 18px avatar, or the widget's icon */}
+        {agentInfo ? (
+          <>
+            <StatusDot dot={cardDot(agentInfo, agentDetailed, attention)} />
+            <AgentAvatar agentId={agentInfo.id} size="2xs" />
+          </>
+        ) : typeIcon ? (
+          <span
+            className="flex-shrink-0 flex items-center text-ctp-overlay1 [&_svg]:w-3.5 [&_svg]:h-3.5"
+            aria-hidden="true"
+            dangerouslySetInnerHTML={{ __html: sanitizeSvg(typeIcon) }}
+          />
+        ) : null}
 
-        <span className="text-xs text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none">
-          {formatViewType(view.type === 'plugin' ? (view as PluginCanvasViewType).pluginWidgetType.split(':').pop() || '' : view.type)}
-        </span>
         <InlineRename
           value={view.displayName || view.title}
           onCommit={(newName) => {
             onUpdate({ displayName: newName });
           }}
         />
+        {attention && (
+          <span
+            className={`text-xs flex-shrink-0 ${attention.level === 'error' ? 'text-ctp-error' : 'text-ctp-warning'}`}
+            data-testid="canvas-view-attention"
+          >
+            {attention.level === 'error' ? 'Error' : 'Needs you'}
+          </span>
+        )}
         {projectContext && (
-          <span className="text-xs text-ctp-overlay0 truncate flex-shrink-0">({projectContext})</span>
+          <span className="text-xs text-ctp-overlay1 truncate flex-shrink-0 max-w-[40%]">{projectContext}</span>
         )}
 
         {/* Quick action buttons */}
@@ -733,10 +778,10 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
           {mcpEnabled && view.type === 'agent' && (view as AgentCanvasViewType).agentId && (
             <div className="relative">
               <button
-                className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
+                className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
                   linkDropdownOpen
-                    ? 'text-ctp-accent bg-ctp-accent/10'
-                    : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
+                    ? 'text-ctp-text bg-surface-0'
+                    : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
                 }`}
                 onClick={(e) => { e.stopPropagation(); setLinkDropdownOpen(!linkDropdownOpen); }}
                 onMouseDown={(e) => e.stopPropagation()}
@@ -760,7 +805,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
           {/* MCP Wire drag button (agent views with assigned agent, when MCP enabled) */}
           {mcpEnabled && view.type === 'agent' && (view as AgentCanvasViewType).agentId && onStartWireDrag && (
             <button
-              className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
+              className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
               onMouseDown={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -778,7 +823,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
           )}
           {isAgentRunning && (
             <button
-              className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-ctp-accent/20 hover:text-ctp-accent transition-colors"
+              className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
               onClick={(e) => { e.stopPropagation(); handleSleep(); }}
               title="Sleep agent"
               data-testid="canvas-view-sleep"
@@ -789,7 +834,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
             </button>
           )}
           <button
-            className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
+            className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
             onClick={(e) => { e.stopPropagation(); onCenterView(); }}
             title="Center on this view"
             data-testid="canvas-view-center"
@@ -803,10 +848,10 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
             </svg>
           </button>
           <button
-            className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
+            className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
               isZoomed
-                ? 'text-ctp-accent bg-surface-1'
-                : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
+                ? 'text-ctp-text bg-surface-0'
+                : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
             }`}
             onClick={(e) => { e.stopPropagation(); onZoomView(); }}
             title={isZoomed ? 'Restore view' : 'Zoom view'}
@@ -836,10 +881,10 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
             const isPinned = !!(view.metadata as CanvasWidgetMetadata).__pinnedToControls;
             return (
               <button
-                className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
+                className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
                   isPinned
-                    ? 'text-ctp-accent bg-surface-1'
-                    : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
+                    ? 'text-ctp-text bg-surface-0'
+                    : 'text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text'
                 }`}
                 onClick={(e) => { e.stopPropagation(); handleUpdateMetadata({ __pinnedToControls: !isPinned }); }}
                 title={isPinned ? 'Unpin from toolbar' : 'Pin to toolbar'}
@@ -854,7 +899,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
             );
           })()}
           <button
-            className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-ctp-error/20 hover:text-ctp-error transition-colors"
+            className="w-6 h-6 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors"
             onClick={(e) => { e.stopPropagation(); onClose(); }}
             title="Close view"
             data-testid="canvas-view-close"

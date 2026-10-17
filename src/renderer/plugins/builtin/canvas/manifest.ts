@@ -32,13 +32,6 @@ export const manifest: PluginManifest = {
     storage: { scope: 'project-local' },
     settings: [
       {
-        key: 'cross-project-canvas',
-        type: 'boolean',
-        label: 'Cross-Project Canvas',
-        description: 'Show the cross-project canvas in the sidebar rail for managing views across all projects.',
-        default: true,
-      },
-      {
         key: 'bidirectional-wires',
         type: 'boolean',
         label: 'Bidirectional Wires',

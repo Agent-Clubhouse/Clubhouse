@@ -1,6 +1,7 @@
 import React, { useCallback, useState, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import type { CanvasInstance } from './canvas-types';
+import { PopupMenu, type MenuItem } from '../../../chrome/sidebar/ProjectMenu';
+import { PopOutIcon } from '../../../features/agents/useAgentRowActions';
 
 interface CanvasTabBarProps {
   canvases: CanvasInstance[];
@@ -14,6 +15,17 @@ interface CanvasTabBarProps {
   onExportBlueprint?: (canvasId: string) => void;
 }
 
+const PlusIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+
+/**
+ * The canvas strip (#2020): a 34px row of canvases styled like the title-bar
+ * tabs, a labeled New canvas button, and pop out on the right.
+ */
 export function CanvasTabBar({
   canvases,
   activeCanvasId,
@@ -25,44 +37,21 @@ export function CanvasTabBar({
   onPopOutCanvas,
   onExportBlueprint,
 }: CanvasTabBarProps) {
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
-  const addBtnRef = useRef<HTMLButtonElement>(null);
-  const addMenuDropdownRef = useRef<HTMLDivElement>(null);
-  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+  const [addMenuAt, setAddMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const activeCanvas = canvases.find((c) => c.id === activeCanvasId);
 
-  // Compute dropdown position when menu opens
-  useEffect(() => {
-    if (addMenuOpen && addBtnRef.current) {
-      const rect = addBtnRef.current.getBoundingClientRect();
-      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
-    }
-  }, [addMenuOpen]);
-
-  // Close add menu on outside click — checks both the button and the portal dropdown
-  useEffect(() => {
-    if (!addMenuOpen) return;
-    const handleClick = (e: MouseEvent) => {
-      if (
-        addBtnRef.current?.contains(e.target as Node) ||
-        addMenuDropdownRef.current?.contains(e.target as Node)
-      ) return;
-      setAddMenuOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [addMenuOpen]);
+  const addItems: MenuItem[] = [
+    { id: 'new', label: 'New canvas', onSelect: onAddCanvas },
+    { id: 'from-blueprint', label: 'From blueprint', onSelect: () => onAddFromBlueprint?.() },
+  ];
 
   return (
-    // Outer chrome — no overflow so the + button dropdown is not clipped.
-    // Tabs scroll inside their own inner container; the + button stays pinned
-    // at the right as a sibling. (Bug: Mission 68 added the dropdown but left
-    // it inside overflow-x-auto, which CSS promotes to overflow: auto on both
-    // axes, clipping the absolutely-positioned dropdown below the tab bar.)
     <div
-      className="flex items-center bg-ctp-mantle border-b border-surface-0 min-h-[32px] flex-shrink-0"
+      className="flex items-center gap-0.5 h-[34px] px-1.5 bg-ctp-base border-b border-surface-0 flex-shrink-0"
       data-testid="canvas-tab-bar"
     >
-      <div className="flex items-center gap-0.5 pl-1.5 py-1 overflow-x-auto flex-1 min-w-0">
+      {/* Tabs scroll on their own so the buttons on the right stay pinned. */}
+      <div role="tablist" aria-label="Canvases" className="flex items-center gap-0.5 overflow-x-auto min-w-0">
         {canvases.map((canvas) => (
           <CanvasTab
             key={canvas.id}
@@ -77,112 +66,40 @@ export function CanvasTabBar({
           />
         ))}
       </div>
-      {/* + button lives outside the scroll container so its dropdown is never clipped */}
-      <div className="flex-shrink-0 py-1 pl-0.5 pr-1.5">
-        <button
-          ref={addBtnRef}
-          onClick={() => {
-            if (onAddFromBlueprint) {
-              setAddMenuOpen(!addMenuOpen);
-            } else {
-              onAddCanvas();
-            }
-          }}
-          className="w-6 h-6 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors text-sm"
-          title="New canvas"
-          data-testid="canvas-add-button"
-        >
-          +
-        </button>
-        {/* Portalled to document.body so it escapes CanvasWorkspace's stacking context */}
-        {addMenuOpen && createPortal(
-          <div
-            ref={addMenuDropdownRef}
-            className="fixed bg-ctp-base border border-surface-0 rounded-lg shadow-lg py-1 min-w-[160px] z-dropdown"
-            style={{ top: menuPos.top, right: menuPos.right }}
-            data-testid="canvas-add-menu"
-          >
-            <button
-              onClick={() => { onAddCanvas(); setAddMenuOpen(false); }}
-              className="w-full px-3 py-1.5 text-xs text-ctp-text hover:bg-surface-0 text-left"
-              data-testid="canvas-add-new"
-            >
-              New Canvas
-            </button>
-            <button
-              onClick={() => { onAddFromBlueprint?.(); setAddMenuOpen(false); }}
-              className="w-full px-3 py-1.5 text-xs text-ctp-text hover:bg-surface-0 text-left"
-              data-testid="canvas-add-from-blueprint"
-            >
-              From Blueprint
-            </button>
-          </div>,
-          document.body
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Context menu ──────────────────────────────────────────────────────
-
-interface TabContextMenuProps {
-  x: number;
-  y: number;
-  onExportBlueprint: () => void;
-  onClose: () => void;
-}
-
-function TabContextMenu({ x, y, onExportBlueprint, onClose }: TabContextMenuProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleMouseDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('mousedown', handleMouseDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!menuRef.current) return;
-    const rect = menuRef.current.getBoundingClientRect();
-    if (rect.right > window.innerWidth) {
-      menuRef.current.style.left = `${window.innerWidth - rect.width - 8}px`;
-    }
-    if (rect.bottom > window.innerHeight) {
-      menuRef.current.style.top = `${window.innerHeight - rect.height - 8}px`;
-    }
-  }, []);
-
-  return (
-    <div
-      ref={menuRef}
-      className="fixed z-dropdown bg-ctp-mantle border border-surface-0 rounded-lg shadow-2xl py-1 min-w-[180px] text-[11px]"
-      style={{ left: x, top: y }}
-      data-testid="canvas-tab-context-menu"
-    >
       <button
-        className="w-full text-left px-3 py-1.5 hover:bg-surface-1 text-ctp-text transition-colors flex items-center gap-2"
-        onClick={() => { onExportBlueprint(); onClose(); }}
-        data-testid="canvas-tab-export-blueprint"
+        type="button"
+        // Keep the menu's outside-click handler from closing it before this click toggles it.
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          if (!onAddFromBlueprint) { onAddCanvas(); return; }
+          if (addMenuAt) { setAddMenuAt(null); return; }
+          const rect = e.currentTarget.getBoundingClientRect();
+          setAddMenuAt({ x: rect.left, y: rect.bottom + 4 });
+        }}
+        aria-haspopup={onAddFromBlueprint ? 'menu' : undefined}
+        aria-expanded={onAddFromBlueprint ? !!addMenuAt : undefined}
+        className="ml-1.5 flex-shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-surface-1 text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text transition-colors cursor-pointer"
+        data-testid="canvas-add-button"
       >
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M14 10v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3" />
-          <polyline points="8 2 8 10" />
-          <polyline points="4 6 8 2 12 6" />
-        </svg>
-        Export as Blueprint
+        {PlusIcon}
+        New canvas
       </button>
+      {addMenuAt && (
+        <PopupMenu items={addItems} position={addMenuAt} label="New canvas" testId="canvas-add" onClose={() => setAddMenuAt(null)} />
+      )}
+      <span className="flex-1" />
+      {onPopOutCanvas && activeCanvas && (
+        <button
+          type="button"
+          onClick={() => onPopOutCanvas(activeCanvas.id, activeCanvas.name)}
+          className="flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text transition-colors cursor-pointer"
+          title="Pop out canvas"
+          aria-label="Pop out canvas"
+          data-testid="canvas-tab-popout"
+        >
+          <PopOutIcon />
+        </button>
+      )}
     </div>
   );
 }
@@ -213,11 +130,15 @@ function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename, onP
     }
   }, [editing]);
 
-  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
+  const startRename = useCallback(() => {
     setEditValue(canvas.name);
     setEditing(true);
   }, [canvas.name]);
+
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    startRename();
+  }, [startRename]);
 
   const commitRename = useCallback(() => {
     const trimmed = editValue.trim();
@@ -233,30 +154,29 @@ function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename, onP
   }, [commitRename]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    if (!onExportBlueprint) return;
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY });
-  }, [onExportBlueprint]);
+  }, []);
 
-  const [hovered, setHovered] = useState(false);
+  const menuItems: MenuItem[] = [
+    { id: 'rename', label: 'Rename', onSelect: startRename },
+    ...(onPopOut ? [{ id: 'popout', label: 'Pop out', onSelect: onPopOut }] : []),
+    ...(onExportBlueprint ? [{ id: 'export-blueprint', label: 'Export as blueprint', onSelect: onExportBlueprint }] : []),
+    ...(canClose ? [{ id: 'close', label: 'Close canvas', onSelect: onRemove }] : []),
+  ];
 
   return (
     <>
       <div
-        className={`
-          group relative flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] cursor-pointer select-none
-          transition-colors duration-100 flex-shrink-0 max-w-[200px]
-          ${active
-            ? 'bg-surface-1 text-ctp-text shadow-sm'
-            : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text'
-          }
-        `}
+        role="tab"
+        aria-selected={active}
+        className={`group relative flex-shrink-0 max-w-[200px] h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs cursor-pointer select-none transition-colors duration-100 ${
+          active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text'
+        }`}
         onClick={onSelect}
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
         data-testid={`canvas-tab-${canvas.id}`}
       >
         {editing ? (
@@ -267,48 +187,38 @@ function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename, onP
             onBlur={commitRename}
             onKeyDown={handleKeyDown}
             onClick={(e) => e.stopPropagation()}
-            className="bg-surface-0/50 border-b border-ctp-accent outline-none text-[11px] text-ctp-text w-full min-w-[40px] px-0.5 rounded-sm"
+            className="bg-transparent outline-none text-xs text-ctp-text w-full min-w-[40px]"
             data-testid="canvas-tab-rename-input"
           />
         ) : (
           <span className="truncate">{canvas.name}</span>
         )}
 
-        {!editing && (active || hovered) && (
-          <div className="flex items-center gap-0.5 ml-0.5 flex-shrink-0">
-            {onPopOut && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onPopOut(); }}
-                className="w-4 h-4 flex items-center justify-center rounded text-[9px] text-ctp-overlay0 hover:bg-surface-2 hover:text-ctp-text"
-                title="Pop out canvas"
-                data-testid="canvas-tab-popout"
-              >
-                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="9 2 14 2 14 7" />
-                  <line x1="14" y1="2" x2="7" y2="9" />
-                  <path d="M12 9v5a1 1 0 01-1 1H3a1 1 0 01-1-1V5a1 1 0 011-1h5" />
-                </svg>
-              </button>
-            )}
-            {canClose && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onRemove(); }}
-                className="w-4 h-4 flex items-center justify-center rounded text-[9px] text-ctp-overlay0 hover:bg-ctp-error/20 hover:text-ctp-error"
-                title="Close canvas"
-                data-testid="canvas-tab-close"
-              >
-                &times;
-              </button>
-            )}
-          </div>
+        {!editing && canClose && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            className={`w-4 h-4 -mr-1 flex-shrink-0 flex items-center justify-center rounded text-ctp-overlay1 hover:bg-surface-1 hover:text-ctp-text ${
+              active ? '' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
+            }`}
+            title="Close canvas"
+            aria-label={`Close ${canvas.name}`}
+            data-testid="canvas-tab-close"
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         )}
       </div>
 
-      {contextMenu && onExportBlueprint && (
-        <TabContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          onExportBlueprint={onExportBlueprint}
+      {contextMenu && (
+        <PopupMenu
+          items={menuItems}
+          position={contextMenu}
+          label={canvas.name}
+          testId="canvas-tab-menu"
           onClose={() => setContextMenu(null)}
         />
       )}

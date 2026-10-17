@@ -246,8 +246,8 @@ describe('ZoomedViewOverlay', () => {
     expect(source).toContain('registered.descriptor.component');
   });
 
-  it('shows view type badge and title in header', () => {
-    expect(source).toContain('formatViewType(view.type)');
+  it('shows the title in the header without a type chip', () => {
+    expect(source).not.toContain('formatViewType(view.type)');
     expect(source).toContain('view.title');
   });
 
