@@ -50,6 +50,8 @@ import { registerTelemetryRendererHandlers } from './ipc/telemetry-renderer-hand
 import { getTelemetrySettings } from './telemetry/settings';
 import { getSettings as getExperimentalSettings } from './services/experimental-settings';
 import { NEW_CHROME_ARG, NEW_CHROME_FLAG } from '../shared/chrome-flag';
+import { installAgentTelemetry } from './telemetry/agent-telemetry';
+import { getAgentOrchestrator } from './services/agent-registry';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
 // workers indefinitely, starving every fs.promises operation after an agent
@@ -85,6 +87,7 @@ registerTelemetryRendererHandlers({
 });
 installCrashTelemetry();
 installLifecycleTelemetry();
+installAgentTelemetry(getAgentOrchestrator);
 // The startup span (§4.1) ends when the main window's initApp() resolves.
 onRendererReady((atMs, marks) => completeStartup(marks, undefined, atMs));
 

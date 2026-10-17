@@ -117,6 +117,9 @@ export const ERROR_TYPES = [
   'redirect_blocked',
   'apply_spawn_failed',
   'apply_failed',
+  // Agents (§4.4, Phase 4)
+  'mcp_tool_error',
+  'mcp_tool_threw',
   // Workspace (§4.7–4.10, Phase 5)
   'not_a_repo',
   'validation',
@@ -289,6 +292,43 @@ export const ATTR = {
   ]),
   persistGuardReason: enumAttr('clubhouse.persist.guard_reason', ['not_hydrated', 'verify_empty']),
 
+  // Agents (§4.4, Phase 4)
+  agentExitClass: enumAttr('clubhouse.agent.exit.class', [
+    'completed', 'failed', 'early_failure', 'killed_user', 'killed_escalated', 'stale_swept', 'replaced',
+  ]),
+  killStage: enumAttr('clubhouse.kill.stage_reached', ['exit_command', 'eof', 'sigterm', 'sigkill']),
+  hookKind: enumAttr('clubhouse.hook.kind', [
+    'pre_tool', 'post_tool', 'tool_error', 'stop', 'notification', 'permission_request', 'other',
+  ]),
+  /** Built-in tool names only; MCP tools are bucketed, never named (spec §4.4). */
+  toolBucket: enumAttr('clubhouse.tool.bucket', [
+    'Bash', 'Edit', 'MultiEdit', 'Write', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Agent', 'Task',
+    'TodoWrite', 'NotebookEdit', 'shell', 'apply_patch', 'mcp_clubhouse', 'mcp_other', 'other',
+  ]),
+  toolResult: enumAttr('clubhouse.tool.result', ['ok', 'error']),
+  permissionDecision: enumAttr('clubhouse.permission.decision', ['allow', 'deny', 'ask']),
+  permissionResult: enumAttr('clubhouse.permission.result', ['resolved', 'timeout']),
+  mcpToolKind: enumAttr('clubhouse.mcp.tool_kind', ['clubhouse', 'browser', 'terminal', 'group', 'plugin', 'global', 'other']),
+  /**
+   * The Clubhouse tool suffix (or global tool name) from this fixed list;
+   * anything else, and every plugin tool, is `other`. A test keeps it in sync
+   * with the tools registered under clubhouse-mcp/tools.
+   */
+  mcpTool: enumAttr('clubhouse.mcp.tool', [
+    // agent
+    'send_message', 'get_status', 'read_output', 'check_connectivity', 'send_file', 'clear_agent', 'compact_agent',
+    // browser
+    'navigate', 'screenshot', 'get_console', 'click', 'type', 'evaluate', 'get_page_content', 'get_accessibility_tree',
+    // group project
+    'list_members', 'post_bulletin', 'read_bulletin', 'read_topic', 'read_message', 'get_project_info',
+    'set_project_info', 'shoulder_tap', 'broadcast', 'wake_agent', 'sleep_agent', 'toggle_polling', 'query_polling',
+    'nudge_polling', 'clear_topic', 'delete_messages',
+    // global
+    'notify_user',
+    'other',
+  ]),
+  mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
+  binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),
   // Workspace (§4.7–4.10, Phase 5). Counts are bucketed with countBucket().
   gitOp: enumAttr('clubhouse.git.op', GIT_OPS),
   gitTimedOut: boolAttr('clubhouse.git.timed_out'),
@@ -375,6 +415,13 @@ export const SPANS = {
   'clubhouse.update.check': { level: 'standard', root: true },
   'clubhouse.update.download': { level: 'standard', root: true },
   'clubhouse.update.apply': { level: 'standard', root: true },
+  // Agents (§4.4, Phase 4)
+  /** One agent process, spawn to exit (PTY or headless). Exported when it ends. */
+  'clubhouse.agent.run': { level: 'standard', root: true },
+  /** A permission request on the hook path, request to decision. */
+  'clubhouse.agent.permission': { level: 'standard', root: true },
+  /** One Clubhouse MCP tool call served to an agent. */
+  'clubhouse.mcp.tool_call': { level: 'standard', root: true },
   // Workspace (§4.7–4.10, Phase 5)
   'clubhouse.project.add': { level: 'standard', root: true },
   'clubhouse.project.add.ensure_gitignore': { level: 'standard', root: false },
@@ -534,6 +581,66 @@ export const METRICS = {
     kind: 'histogram', unit: 's', level: 'standard',
     description: 'Time a flush waited on an in-flight write before writing newer state',
     attributes: ['clubhouse.persist.store'],
+  },
+  'clubhouse.agent.runs': {
+    kind: 'counter', unit: '{run}', level: 'standard',
+    description: 'Agent runs that ended, by runtime, orchestrator and exit class',
+    attributes: ['clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
+  },
+  'clubhouse.agent.run.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Agent run length, spawn to exit',
+    attributes: ['clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
+  },
+  'clubhouse.agent.time_to_shell_ready': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'PTY spawn to the shell accepting the agent command',
+    attributes: ['clubhouse.orchestrator'],
+  },
+  'clubhouse.agent.time_to_first_output': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Spawn to the first agent output',
+    attributes: ['clubhouse.agent.runtime', 'clubhouse.orchestrator'],
+  },
+  'clubhouse.pty.output.bytes': {
+    kind: 'counter', unit: 'By', level: 'standard',
+    description: 'Agent output volume, added once per run at exit (never per chunk)',
+    attributes: ['clubhouse.agent.runtime', 'clubhouse.orchestrator'],
+  },
+  'clubhouse.agent.kill.escalations': {
+    kind: 'counter', unit: '{kill}', level: 'standard',
+    description: 'Graceful kills that had to escalate past the exit command',
+    attributes: ['clubhouse.kill.stage_reached'],
+  },
+  'clubhouse.agent.hook_events': {
+    kind: 'counter', unit: '{event}', level: 'standard',
+    description: 'Hook events received from agent CLIs',
+    attributes: ['clubhouse.orchestrator', 'clubhouse.hook.kind'],
+  },
+  'clubhouse.agent.tool_calls': {
+    kind: 'counter', unit: '{call}', level: 'standard',
+    description: 'Agent tool calls by built-in tool bucket and result',
+    attributes: ['clubhouse.orchestrator', 'clubhouse.tool.bucket', 'clubhouse.tool.result'],
+  },
+  'clubhouse.agent.permission.wait': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Time a permission request waited for a decision',
+    attributes: ['clubhouse.permission.decision', 'clubhouse.permission.result'],
+  },
+  'clubhouse.mcp.tool_calls': {
+    kind: 'counter', unit: '{call}', level: 'standard',
+    description: 'Clubhouse MCP tool calls by tool and result',
+    attributes: ['clubhouse.mcp.tool_kind', 'clubhouse.mcp.tool', 'clubhouse.mcp.result'],
+  },
+  'clubhouse.mcp.tool_call.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Clubhouse MCP tool call latency',
+    attributes: ['clubhouse.mcp.tool_kind'],
+  },
+  'clubhouse.provider.binary_lookup.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Time to resolve an agent CLI binary, by lookup tier (login_shell blocks the main thread)',
+    attributes: ['clubhouse.binary.lookup_tier'],
   },
   'clubhouse.telemetry.export.failures': {
     kind: 'counter',

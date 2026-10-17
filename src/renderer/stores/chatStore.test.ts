@@ -532,3 +532,61 @@ describe('useChatStore', () => {
     expect(unsubscribe).toHaveBeenCalled();
   });
 });
+
+describe('reduceChatEvent: turn footers and diagnostics', () => {
+  let ev: ReturnType<typeof makeEmitter>;
+  beforeEach(() => { ev = makeEmitter(); });
+
+  it('closes each turn with a turn_end item and times it from turn_started', () => {
+    const s = fold([
+      sessionStarted(ev),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+      ev('turn_ended', { stopReason: 'end_turn', usage: { input: 10, output: 5 }, costUsd: 0.01 }, { turnId: 't1', seq: 10 }),
+    ]);
+    const end = s.items[s.items.length - 1];
+    expect(end).toMatchObject({ kind: 'turn_end', stopReason: 'end_turn', usage: { input: 10, output: 5 }, costUsd: 0.01, turnId: 't1' });
+    // ts is 1000 + seq: turn_started at seq 2, turn_ended at seq 10.
+    expect(end.kind === 'turn_end' && end.durationMs).toBe(8);
+    expect(s.turnStartedAt).toBeNull();
+  });
+
+  it('prefers the reported duration and falls back to the turn usage event', () => {
+    const s = fold([
+      sessionStarted(ev),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+      ev('usage', { scope: 'turn', tokens: { input: 7 }, costUsd: 0.2, costIsEstimate: true }, { turnId: 't1' }),
+      ev('turn_ended', { stopReason: 'error', durationMs: 1234 }, { turnId: 't1' }),
+    ]);
+    expect(s.items[s.items.length - 1]).toMatchObject({ kind: 'turn_end', stopReason: 'error', durationMs: 1234, usage: { input: 7 }, costUsd: 0.2, costIsEstimate: true });
+  });
+
+  it('does not carry the previous turn usage into the next turn', () => {
+    const s = fold([
+      sessionStarted(ev),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+      ev('usage', { scope: 'turn', tokens: { input: 7 } }, { turnId: 't1' }),
+      ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't1' }),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't2' }),
+      ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't2' }),
+    ]);
+    const ends = s.items.filter((i) => i.kind === 'turn_end');
+    expect(ends).toHaveLength(2);
+    expect(ends[1]).not.toHaveProperty('usage');
+  });
+
+  it('records turnStartedAt while a turn runs', () => {
+    const s = fold([sessionStarted(ev), ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' })]);
+    expect(s.turnStartedAt).toBe(1002);
+  });
+
+  it('counts protocol_unknown events by kind and name', () => {
+    const s = fold([
+      sessionStarted(ev),
+      ev('protocol_unknown', { driver: 'codex_app_server', kind: 'notification', name: 'item/new' }),
+      ev('protocol_unknown', { driver: 'codex_app_server', kind: 'notification', name: 'item/new' }),
+      ev('protocol_unknown', { driver: 'codex_app_server', kind: 'field', name: 'usage.x' }),
+    ]);
+    expect(s.protocolUnknown).toEqual({ 'notification:item/new': 2, 'field:usage.x': 1 });
+    expect(s.items).toEqual([]);
+  });
+});

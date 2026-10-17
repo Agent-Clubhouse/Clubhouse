@@ -122,6 +122,11 @@ export function registerGlobalTool(
   });
 }
 
+/** True if `name` is a registered global tool. */
+export function isGlobalTool(name: string): boolean {
+  return globalTools.has(name);
+}
+
 /** Sanitize an ID for use in tool names (replace non-alphanumeric with underscores). */
 export function sanitizeId(id: string): string {
   return id.replace(/[^a-zA-Z0-9]/g, '_');
