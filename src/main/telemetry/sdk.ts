@@ -68,6 +68,7 @@ import type {
   SpanHandle,
   TelemetryRuntime,
 } from './types';
+import { ForwardedError } from './types';
 
 export interface SdkOptions {
   level: TelemetryLevel;
@@ -103,6 +104,9 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
 }
 
 function errorTypeName(error: unknown): string {
+  if (error instanceof ForwardedError) {
+    return /^[A-Za-z_$][\w$.]{0,63}$/.test(error.forwardedType) ? error.forwardedType : 'Error';
+  }
   if (error instanceof Error) {
     const name = error.constructor?.name || error.name;
     return /^[A-Za-z_$][\w$.]{0,63}$/.test(name) ? name : 'Error';

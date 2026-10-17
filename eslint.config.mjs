@@ -1,6 +1,7 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import importX from 'eslint-plugin-import-x';
+import { catchMustReport } from './eslint-rules/catch-must-report.mjs';
 
 const builtinHostImportAllowlist = new Set([
   'src/renderer/plugins/builtin/agent-queue/main.ts',
@@ -184,6 +185,24 @@ export default tseslint.config(
       '.clubhouse/agents/**/dist/**',
       '.clubhouse/agents/**/node_modules/**',
     ],
+  },
+  {
+    // Swallowed errors must reach telemetry (telemetry spec §12.4). Warn on the
+    // existing code (about 530 catches in these trees); strict in new code.
+    // New UI trees (the chrome refresh lives in src/renderer/chrome) belong in
+    // the strict list below from their first commit.
+    files: ['src/renderer/features/**/*.{ts,tsx}', 'src/main/services/**/*.ts'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx'],
+    plugins: { 'clubhouse-telemetry': { rules: { 'catch-must-report': catchMustReport } } },
+    rules: { 'clubhouse-telemetry/catch-must-report': 'warn' },
+  },
+  {
+    // The telemetry pipeline itself is exempt: it can't report its own
+    // failures into itself without looping, so it logs locally instead.
+    files: ['src/renderer/chrome/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx'],
+    plugins: { 'clubhouse-telemetry': { rules: { 'catch-must-report': catchMustReport } } },
+    rules: { 'clubhouse-telemetry/catch-must-report': 'error' },
   },
   {
     // Telemetry attributes go through the typed registry (src/shared/telemetry/

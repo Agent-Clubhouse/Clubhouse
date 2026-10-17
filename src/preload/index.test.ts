@@ -32,6 +32,7 @@ import { blueprint } from './blueprint';
 import { mcpBinding } from './mcpBinding';
 import { hookServer } from './hookServer';
 import { goobers } from './goobers';
+import { telemetry } from './telemetry';
 import { plugin } from './plugin';
 import { profile } from './profile';
 import { marketplace } from './marketplace';
@@ -75,6 +76,7 @@ describe('preload IPC bridge', () => {
       canvas,
       hookServer,
       goobers,
+      telemetry,
     ];
     const expectedApi = {
       platform: api.platform,

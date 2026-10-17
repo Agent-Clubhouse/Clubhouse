@@ -33,6 +33,9 @@ import { getGlobalPluginDataDir } from './services/plugin-storage';
 import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
 import * as projectStore from './services/project-store';
 import { initTelemetry, recordAppSession, flushBeforeExit } from './telemetry';
+import { installCrashTelemetry, reportMainProcessError } from './telemetry/crash-handlers';
+import { registerTelemetryHandlers } from './ipc/telemetry-handlers';
+import { getTelemetrySettings } from './telemetry/settings';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
 // workers indefinitely, starving every fs.promises operation after an agent
@@ -60,6 +63,13 @@ if (process.env.CLUBHOUSE_USER_DATA) {
 // the userData override above; when enabled, the SDK chunk loads in the
 // background and never blocks `ready`. When disabled, nothing is imported.
 initTelemetry();
+// Renderer → main telemetry IPC and crash/hang signals (spec §4.2, §6.2).
+// Both are inert while telemetry is off.
+registerTelemetryHandlers({
+  getMainWebContentsId: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : undefined),
+  getConfiguredLevel: () => getTelemetrySettings().level,
+});
+installCrashTelemetry();
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
 // instead of "Electron" during development.
@@ -98,6 +108,7 @@ process.on('uncaughtException', (err) => {
   appLog('core:process', 'fatal', 'Uncaught exception', {
     meta: { error: err.message, stack: err.stack },
   });
+  reportMainProcessError(err, 'uncaught');
 });
 process.on('unhandledRejection', (reason) => {
   const msg = reason instanceof Error ? reason.message : String(reason);
@@ -105,6 +116,7 @@ process.on('unhandledRejection', (reason) => {
   appLog('core:process', 'error', 'Unhandled promise rejection', {
     meta: { error: msg, stack },
   });
+  reportMainProcessError(reason, 'unhandled-rejection');
 });
 
 

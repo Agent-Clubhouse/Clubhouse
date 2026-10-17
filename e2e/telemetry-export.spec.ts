@@ -171,6 +171,45 @@ test.describe('Telemetry export', () => {
     }
   });
 
+  test('renderer errors reach the exporter through main, without their message', async () => {
+    // Phase 3a: renderer facade → telemetry:emit → main re-validation → SDK.
+    const mock = await startMockIngestion();
+    const { electronApp, window, userDataDir } = await launchApp({
+      experimental: { telemetry: true },
+      userDataFiles: {
+        'telemetry-settings.json': {
+          enabled: true,
+          level: 'errors',
+          sampleRate: 1,
+          destination: { kind: 'otlp', endpoint: `http://127.0.0.1:${mock.port}` },
+        },
+      },
+    });
+    try {
+      await expect(window.locator('body')).toBeVisible();
+      // Give the renderer time to receive the enabled state from main.
+      await window.waitForTimeout(1000);
+      await window.evaluate(() => {
+        void Promise.reject(new TypeError('e2e-secret-renderer-message'));
+      });
+      // The renderer flushes its batch every 2 s.
+      await window.waitForTimeout(2500);
+      await quitAndWait(electronApp);
+
+      const logs = mock.received.filter((r) => r.url === '/v1/logs').map((r) => r.body).join('\n');
+      expect(logs).toContain('clubhouse.exception');
+      expect(logs).toContain('TypeError');
+      expect(logs).toContain('clubhouse.window.kind');
+      const all = mock.received.map((r) => r.body).join('\n');
+      expect(all).not.toContain('e2e-secret-renderer-message');
+      expectNoMachineIdentifiers(mock.received);
+    } finally {
+      await electronApp.close().catch(() => {});
+      mock.server.close();
+      if (userDataDir) fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
   test('flag on but not enabled: nothing exported and no install id created', async () => {
     const { electronApp, window, userDataDir } = await launchApp({ experimental: { telemetry: true } });
     try {
