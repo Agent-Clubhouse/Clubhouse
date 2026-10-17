@@ -61,7 +61,7 @@ export function InlineRename({ value, onCommit }: InlineRenameProps) {
         onBlur={handleCommit}
         onKeyDown={handleKeyDown}
         onMouseDown={(e) => e.stopPropagation()}
-        className="text-xs text-ctp-text bg-surface-0 border border-ctp-accent/40 rounded px-1 py-0 outline-none flex-1 min-w-0"
+        className="text-[13px] text-ctp-text bg-surface-0 border border-surface-2 rounded px-1 py-0 outline-none flex-1 min-w-0"
         data-testid="inline-rename-input"
       />
     );
@@ -69,7 +69,7 @@ export function InlineRename({ value, onCommit }: InlineRenameProps) {
 
   return (
     <div className="flex items-center gap-0.5 truncate flex-1 min-w-0">
-      <span className="text-xs text-ctp-subtext0 truncate" data-testid="inline-rename-display">{value}</span>
+      <span className="text-[13px] font-medium text-ctp-text truncate" data-testid="inline-rename-display">{value}</span>
       <button
         className="w-4 h-4 flex items-center justify-center rounded text-ctp-overlay0 hover:text-ctp-text opacity-0 group-hover/titlebar:opacity-100 transition-opacity flex-shrink-0"
         onClick={startEditing}

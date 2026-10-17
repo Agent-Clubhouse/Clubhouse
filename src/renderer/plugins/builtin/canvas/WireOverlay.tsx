@@ -10,28 +10,22 @@ import type { CanvasView, AgentCanvasView as AgentCanvasViewType } from './canva
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { computeWirePath, bezierPathWithOffsets, viewRect, closestEdgeMidpoint } from './wire-utils';
 import type { EdgeMidpoint } from './wire-utils';
-import { WireFlowDots, WireFlowDotFilters } from './WireFlowDots';
+import { WireFlowDots } from './WireFlowDots';
 import { useWirePhysics } from './useWirePhysics';
 import { useWireActivity } from './useWireActivity';
 import type { ZoneWireDefinition } from './zone-wire-store';
 import { buildViewIndex as buildContractIndex, resolveZoneWireViews } from './wire-render-contract';
 
-/** CSS animations for wire glow — ambient is subtle, active is vivid */
-const WIRE_GLOW_KEYFRAMES = `
-@keyframes wire-pulse {
-  0%, 100% { filter: drop-shadow(0 0 3px rgb(var(--wire-color) / 0.4)); }
-  50% { filter: drop-shadow(0 0 6px rgb(var(--wire-color) / 0.7)); }
-}
-@keyframes wire-pulse-active {
-  0%, 100% { filter: drop-shadow(0 0 6px rgb(var(--wire-color) / 0.8)); }
-  50% { filter: drop-shadow(0 0 12px rgb(var(--wire-color) / 1)); }
-}
-`;
-
-/** Unidirectional wire color (accent) */
-const UNI_COLOR = 'rgb(var(--ctp-accent, 137 180 250))';
-/** Bidirectional wire color (accent) */
-const BIDIR_COLOR = 'rgb(var(--ctp-accent, 137 180 250))';
+/**
+ * Wires are plain 1.5px lines in a neutral color (#2020): no glow and no pulse.
+ * Direction reads from the arrowheads and the dash; traffic reads from the
+ * flow dots.
+ */
+const WIRE_WIDTH = 1.5;
+/** Unidirectional wire color */
+const UNI_COLOR = 'rgb(var(--ctp-overlay0))';
+/** Bidirectional wire color */
+const BIDIR_COLOR = 'rgb(var(--ctp-overlay0))';
 
 /** Check whether a reverse binding exists (agent→target has a matching target→agent). */
 function isBidirectional(binding: McpBindingEntry, allBindings: McpBindingEntry[]): boolean {
@@ -82,19 +76,11 @@ const ZoneWireGroup = React.memo(function ZoneWireGroup({
         onClick={(e) => onZoneWireClick?.(wireId, e)}
         data-testid={`zone-wire-hitbox-${wireId}`}
       />
-      {/* Outer "bundle" stroke — wider, translucent */}
-      <path
-        d={path}
-        fill="none"
-        strokeWidth={6}
-        strokeLinecap="round"
-        style={{ stroke: ZONE_WIRE_COLOR, opacity: 0.25, pointerEvents: 'none' }}
-      />
       {/* Inner dashed stroke */}
       <path
         d={path}
         fill="none"
-        strokeWidth={2}
+        strokeWidth={WIRE_WIDTH}
         strokeLinecap="round"
         strokeDasharray="2 5"
         markerEnd="url(#zone-wire-arrow)"
@@ -176,9 +162,7 @@ const WireGroup = React.memo(function WireGroup({
     ? sleepingAgentIds.has(binding.agentId) || sleepingAgentIds.has(binding.targetId)
     : false;
 
-  const isActive = activity.startsWith('active');
   const wireColor = bidir ? BIDIR_COLOR : UNI_COLOR;
-  const wireColorVar = 'var(--ctp-accent, 137 180 250)';
   const fwdMarker = bidir ? 'url(#wire-arrow-fwd-bidir)' : 'url(#wire-arrow-fwd)';
   const revMarker = 'url(#wire-arrow-rev-bidir)';
 
@@ -188,7 +172,6 @@ const WireGroup = React.memo(function WireGroup({
       data-bidir={bidir ? 'true' : undefined}
       data-activity={activity}
       data-dimmed={isDimmed ? 'true' : undefined}
-      style={{ '--wire-color': wireColorVar } as React.CSSProperties}
     >
       {/* Invisible thick hitbox for click interaction */}
       <path
@@ -204,7 +187,7 @@ const WireGroup = React.memo(function WireGroup({
       <path
         d={path}
         fill="none"
-        strokeWidth={isActive ? 2.5 : 2}
+        strokeWidth={WIRE_WIDTH}
         strokeLinecap="round"
         strokeDasharray={bidir ? undefined : '8 4'}
         markerEnd={fwdMarker}
@@ -212,9 +195,8 @@ const WireGroup = React.memo(function WireGroup({
         style={{
           stroke: wireColor,
           pointerEvents: 'none',
-          animation: isDimmed ? 'none' : isActive ? 'wire-pulse-active 1.5s ease-in-out infinite' : 'wire-pulse 3s ease-in-out infinite',
           opacity: isDimmed ? 0.35 : 1,
-          transition: 'opacity 0.5s ease, stroke-width 0.3s ease',
+          transition: 'opacity 0.5s ease',
         }}
         data-testid={`wire-path-${wireKey}`}
       />
@@ -360,15 +342,12 @@ export const WireOverlay = React.memo(function WireOverlay({
       className="absolute top-0 left-0 pointer-events-none overflow-visible"
       style={{ width: 1, height: 1 }}
     >
-      <style>{WIRE_GLOW_KEYFRAMES}</style>
       <defs>
-        {/* Shared glow filters for flow dots (ambient + active) */}
-        <WireFlowDotFilters />
-        {/* Unidirectional arrowhead (accent color) */}
+        {/* Unidirectional arrowhead */}
         <marker id="wire-arrow-fwd" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
           <path d="M 1 1 L 7 4 L 1 7" fill="none" style={{ stroke: UNI_COLOR }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
-        {/* Bidirectional arrowheads (success color) */}
+        {/* Bidirectional arrowheads */}
         <marker id="wire-arrow-fwd-bidir" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
           <path d="M 1 1 L 7 4 L 1 7" fill="none" style={{ stroke: BIDIR_COLOR }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>

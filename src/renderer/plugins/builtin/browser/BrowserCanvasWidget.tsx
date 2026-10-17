@@ -10,15 +10,7 @@ import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { EmptyState } from '../../../components/EmptyState';
-
-function projectColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 55%, 55%)`;
-}
+import { WidgetPicker, projectRows } from '../canvas/WidgetPicker';
 
 export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata, size: _size }: CanvasWidgetComponentProps) {
   const isAppMode = api.context.mode === 'app';
@@ -160,36 +152,11 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
   // Step 1: Project picker (app mode only, no project selected)
   if (isAppMode && !projectId) {
     return (
-      <div className="flex flex-col h-full p-2">
-        <div className="text-xs font-medium text-ctp-subtext1 uppercase tracking-wider mb-2">
-          Select a project
-        </div>
-        {projects.length === 0 ? (
-          <EmptyState title="No projects open" compact />
-        ) : (
-          <div className="flex-1 overflow-y-auto space-y-1">
-            {projects.map((p) => {
-              const color = projectColor(p.name);
-              const initials = p.name.slice(0, 2).toUpperCase();
-              return (
-                <button
-                  key={p.id}
-                  className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg bg-surface-0 hover:bg-surface-1 text-left transition-colors"
-                  onClick={() => handleSelectProject(p.id)}
-                >
-                  <div
-                    className="w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
-                    style={{ backgroundColor: color }}
-                  >
-                    {initials}
-                  </div>
-                  <span className="text-[11px] text-ctp-text truncate">{p.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <WidgetPicker
+        searchPlaceholder="Find a project"
+        emptyText="No projects open"
+        sections={[{ id: 'projects', rows: projectRows(projects, handleSelectProject) }]}
+      />
     );
   }
 

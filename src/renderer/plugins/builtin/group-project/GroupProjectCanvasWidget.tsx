@@ -16,6 +16,7 @@ import { useGroupProjectContext, type GroupProjectContextValue, type GroupProjec
 import { useUIStore } from '../../../stores/uiStore';
 import { showApprovalDialog, showConfirmDialog } from '../../PluginDialog';
 import { WireToolPermissionsDialog } from '../canvas/WireToolPermissionsDialog';
+import { Button } from '../../../components/Button';
 import {
   GROUP_PROJECT_DEFAULT_DISABLED_TOOLS_VERSION,
   GROUP_PROJECT_CORE_TOOL_SUFFIXES,
@@ -60,9 +61,9 @@ export function GroupProjectCanvasWidget({
           </svg>
         </div>
         <div className="space-y-1">
-          <div className="text-xs font-medium text-ctp-subtext1">MCP Required</div>
-          <div className="text-xs text-ctp-overlay0 max-w-[200px]">
-            Group Project requires MCP to be enabled. Enable it in Settings &gt; MCP.
+          <div className="text-[13px] font-medium text-ctp-text">MCP required</div>
+          <div className="text-xs text-ctp-overlay1 max-w-[220px]">
+            Group projects need MCP. Turn it on in Settings, under MCP.
           </div>
         </div>
       </div>
@@ -137,28 +138,23 @@ function CreationForm({
   );
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-3 p-4">
-      <div className="text-xs text-ctp-subtext0 font-medium uppercase tracking-wider">
-        New Group Project
-      </div>
+    <div className="flex flex-col justify-center h-full gap-2 p-4">
+      <div className="text-[13px] font-medium text-ctp-text">New group project</div>
       <input
         type="text"
         value={name}
         onChange={(e) => { setName(e.target.value); if (error) setError(null); }}
         onKeyDown={handleKeyDown}
-        placeholder="Project name..."
-        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
+        placeholder="Project name"
+        aria-label="Project name"
+        className="w-full h-7 px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text placeholder:text-ctp-overlay1 focus-ring"
         autoFocus
       />
-      <button
-        onClick={handleCreate}
-        disabled={!name.trim() || creating}
-        className="px-4 py-1.5 text-xs font-medium bg-ctp-accent text-ctp-base rounded-md hover:opacity-90 disabled:opacity-40 transition-opacity"
-      >
-        {creating ? 'Creating...' : 'Create'}
-      </button>
+      <Button kind="primary" onClick={handleCreate} disabled={!name.trim() || creating} className="self-start">
+        {creating ? 'Creating…' : 'Create'}
+      </Button>
       {error && (
-        <div role="alert" className="w-full text-xs text-ctp-red bg-ctp-red/10 border border-ctp-red/30 rounded-md px-3 py-1.5">
+        <div role="alert" className="text-xs text-ctp-error">
           {error}
         </div>
       )}

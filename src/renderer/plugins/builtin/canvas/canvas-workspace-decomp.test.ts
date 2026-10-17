@@ -180,16 +180,10 @@ describe('useCanvasContextMenu', () => {
     expect(source).toContain('export function useCanvasContextMenu');
   });
 
-  it('calls useDismissibleLayer for view context menu', () => {
-    expect(source).toContain('useDismissibleLayer');
+  // The view menu renders on the shared PopupMenu, which dismisses on an
+  // outside click or Esc and keeps itself on screen.
+  it('exposes a dismiss handler for the view context menu', () => {
     expect(source).toContain('handleDismissViewContextMenu');
-  });
-
-  it('clamps view context menu position via useLayoutEffect', () => {
-    expect(source).toContain('useLayoutEffect');
-    expect(source).toContain('clampMenuPosition');
-    expect(source).toContain('window.innerWidth');
-    expect(source).toContain('window.innerHeight');
   });
 
   it('handleContextMenu checks e.target === e.currentTarget to avoid child events', () => {
@@ -246,8 +240,8 @@ describe('ZoomedViewOverlay', () => {
     expect(source).toContain('registered.descriptor.component');
   });
 
-  it('shows view type badge and title in header', () => {
-    expect(source).toContain('formatViewType(view.type)');
+  it('shows the title in the header without a type chip', () => {
+    expect(source).not.toContain('formatViewType(view.type)');
     expect(source).toContain('view.title');
   });
 
