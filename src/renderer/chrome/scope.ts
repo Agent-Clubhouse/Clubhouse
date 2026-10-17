@@ -15,6 +15,9 @@ import type { Agent, Project } from '../../shared/types';
  * Built-in plugins read this directly (spec §6). It is null with the flag off
  * and for remote projects, where plugins keep their own behavior.
  */
+/** Tabs that follow the scope: picking an agent on one of these keeps the tab. */
+export const SCOPE_FOLLOWING_TABS: ReadonlySet<string> = new Set(['plugin:terminal', 'plugin:files', 'plugin:git']);
+
 export interface ChromeScope {
   kind: 'agent' | 'project';
   projectId: string;

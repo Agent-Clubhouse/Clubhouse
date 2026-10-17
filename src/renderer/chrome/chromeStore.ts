@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { reportChromeActionFailed } from './telemetry';
 import { isNewChromeEnabled } from './chromeFlag';
+import { useAgentStore } from '../stores/agentStore';
 
 /**
  * State for the new chrome shell. Persisted under its own key so the legacy
@@ -214,3 +215,18 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     },
   };
 });
+
+/**
+ * Whatever makes an agent active (a sidebar row, a notification, the palette,
+ * switch-agent-N, a popout, the plugin API, a spawn) ends the project scope, so
+ * the header highlight and the scoped tabs move to that agent (spec §4.5). A
+ * header selection clears the project's active agent, so this never undoes it.
+ * Started by ChromeBody, so it only runs in the new shell. Returns the unsubscribe.
+ */
+export function syncProjectScopeWithActiveAgent(): () => void {
+  return useAgentStore.subscribe((state, prev) => {
+    if (state.activeAgentId && state.activeAgentId !== prev.activeAgentId) {
+      useChromeStore.getState().setProjectScope(null);
+    }
+  });
+}

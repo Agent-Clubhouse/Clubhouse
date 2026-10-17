@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, within, act } from '@testing-library/react';
 
@@ -25,7 +25,7 @@ import { useProjectStore } from '../stores/projectStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { usePluginStore } from '../plugins/plugin-store';
-import { useChromeStore, SIDEBAR_DEFAULT } from './chromeStore';
+import { useChromeStore, SIDEBAR_DEFAULT, syncProjectScopeWithActiveAgent } from './chromeStore';
 import type { PluginManifest, PluginSource } from '../../shared/plugin-types';
 import type { Agent } from '../../shared/types';
 
@@ -230,6 +230,11 @@ describe('ChromeSidebar', () => {
   });
 
   describe('scope and sidebar modes', () => {
+    // ChromeBody starts this in the app.
+    let stopSync: () => void;
+    beforeEach(() => { stopSync = syncProjectScopeWithActiveAgent(); });
+    afterEach(() => stopSync());
+
     function registerTab(id: string, label: string, layout?: 'full' | 'sidebar-content') {
       usePluginStore.getState().registerPlugin(
         { id, version: '0.1.0', apiVersion: 0.8, name: label, scope: 'project', contributes: { tab: { label, ...(layout ? { layout } : {}) } } } as unknown as PluginManifest,
@@ -246,6 +251,48 @@ describe('ChromeSidebar', () => {
       expect(screen.getByTestId('agent-item-a1').getAttribute('aria-current')).toBeNull();
       fireEvent.click(screen.getByTestId('agent-item-a1'));
       expect(useChromeStore.getState().projectScopeId).toBeNull();
+    });
+
+    it('keeps the project scope through the project-switch restore of a remembered agent', () => {
+      useAgentStore.setState({ projectActiveAgent: { p2: 'b1' } });
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('project-p2'));
+      // App.tsx runs restoreProjectAgent after the project changes.
+      act(() => useAgentStore.getState().restoreProjectAgent('p2'));
+      expect(useAgentStore.getState().activeAgentId).toBeNull();
+      expect(useChromeStore.getState().projectScopeId).toBe('p2');
+    });
+
+    it('ends the project scope when anything else makes an agent active', () => {
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('project-p1'));
+      expect(useChromeStore.getState().projectScopeId).toBe('p1');
+      // A notification click, the palette, switch-agent-N or a spawn.
+      act(() => useAgentStore.getState().setActiveAgent('a1', 'p1'));
+      expect(useChromeStore.getState().projectScopeId).toBeNull();
+      expect(screen.getByTestId('project-p1').getAttribute('aria-current')).toBeNull();
+    });
+
+    it('opens the agent from a tab that does not follow the scope', () => {
+      registerTab('canvas', 'Canvas', 'full');
+      useUIStore.setState({ explorerTab: 'plugin:canvas' });
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('agent-item-a1'));
+      expect(useUIStore.getState().explorerTab).toBe('agents');
+    });
+
+    it('returns to Agents on Esc from a list or Settings', () => {
+      registerTab('files', 'Files');
+      useUIStore.setState({ explorerTab: 'plugin:files' });
+      const { unmount } = render(<ChromeSidebar />);
+      fireEvent.keyDown(screen.getByTestId('list-breadcrumb'), { key: 'Escape' });
+      expect(useUIStore.getState().explorerTab).toBe('agents');
+      unmount();
+
+      useUIStore.setState({ explorerTab: 'settings', previousExplorerTab: 'plugin:git', settingsContext: 'app', settingsSubPage: 'about' });
+      render(<ChromeSidebar />);
+      fireEvent.keyDown(screen.getByTestId('settings-nav-app-about'), { key: 'Escape' });
+      expect(useUIStore.getState().explorerTab).toBe('plugin:git');
     });
 
     it('keeps a scope-following tab (Terminal) when an agent is selected', () => {

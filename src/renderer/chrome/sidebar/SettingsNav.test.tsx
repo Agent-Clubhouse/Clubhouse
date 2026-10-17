@@ -29,7 +29,7 @@ describe('SettingsNav', () => {
     render(<SettingsNav />);
     fireEvent.click(screen.getByTestId('settings-nav-project-p2'));
     expect(useUIStore.getState()).toMatchObject({ settingsContext: 'p2', settingsSubPage: 'project' });
-    fireEvent.click(screen.getByTestId('settings-nav-project-notifications'));
+    fireEvent.click(screen.getByTestId('settings-nav-project-page-notifications'));
     expect(useUIStore.getState()).toMatchObject({ settingsContext: 'p2', settingsSubPage: 'notifications' });
   });
 });

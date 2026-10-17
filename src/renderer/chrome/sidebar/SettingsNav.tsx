@@ -42,7 +42,7 @@ export function SettingsNav() {
         key={`${context}:${page}`}
         type="button"
         aria-current={active ? 'page' : undefined}
-        data-testid={`settings-nav-${context === 'app' ? 'app' : 'project'}-${page}`}
+        data-testid={context === 'app' ? `settings-nav-app-${page}` : `settings-nav-project-page-${page}`}
         onClick={() => open(context, page)}
         className={rowClass(active, indent)}
       >

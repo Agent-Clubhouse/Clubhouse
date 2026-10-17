@@ -9,7 +9,7 @@ import { AnnexDisabledView } from '../panels/AnnexDisabledView';
 import { HelpView } from '../features/help/HelpView';
 import { SatelliteDashboard } from '../features/annex/SatelliteDashboard';
 import { ChromeSidebar } from './ChromeSidebar';
-import { useChromeStore } from './chromeStore';
+import { useChromeStore, syncProjectScopeWithActiveAgent } from './chromeStore';
 import { useSidebarMode } from './listTabs';
 import { reportChromeSurface, reportChromeActionFailed, reportChromeView } from './telemetry';
 
@@ -75,6 +75,8 @@ export function ChromeBody() {
 
   const lastProjectId = useChromeStore((s) => s.lastProjectId);
   const setLastProjectId = useChromeStore((s) => s.setLastProjectId);
+
+  useEffect(() => syncProjectScopeWithActiveAgent(), []);
 
   // Remember the most recently active local project.
   useEffect(() => {
