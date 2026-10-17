@@ -6,6 +6,7 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { AgentRuntimePane, resetChatFlagCache } from './AgentRuntimePane';
 import { chatFixture, FIXTURE_AGENT_ID } from './fixtures';
+import { CHAT_DEFAULT_TIP_KEY } from './chat-default-tip';
 
 const agent: Agent = {
   id: FIXTURE_AGENT_ID,
@@ -108,6 +109,9 @@ describe('AgentRuntimePane', () => {
     expect(updateDurableConfig).toHaveBeenCalledWith('/work/clubhouse', FIXTURE_AGENT_ID, { runtimeMode: 'terminal' });
     expect(killAgent).toHaveBeenCalledWith(FIXTURE_AGENT_ID, '/work/clubhouse');
     expect(spawnDurableAgent).toHaveBeenCalledWith('proj-1', '/work/clubhouse', config, true);
+    // Choosing Terminal is explicit: the "Agents now open in Chat" tip is never needed again.
+    expect(localStorage.getItem(CHAT_DEFAULT_TIP_KEY)).toBe('chose_terminal');
+    localStorage.removeItem(CHAT_DEFAULT_TIP_KEY);
   });
 
   it('asks before switching during a turn', async () => {
