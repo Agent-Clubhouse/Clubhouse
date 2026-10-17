@@ -77,7 +77,7 @@ describe('KeyboardShortcutsSettingsView', () => {
 
   it('renders without crash', () => {
     render(<KeyboardShortcutsSettingsView />);
-    expect(screen.getByText('Keyboard Shortcuts')).toBeInTheDocument();
+    expect(screen.getByText('Keyboard shortcuts')).toBeInTheDocument();
   });
 
   it('groups shortcuts by category', () => {
@@ -95,12 +95,12 @@ describe('KeyboardShortcutsSettingsView', () => {
 
   it('shows clipboard compatibility toggle', () => {
     render(<KeyboardShortcutsSettingsView />);
-    expect(screen.getByText('Enable Clipboard Compatibility')).toBeInTheDocument();
+    expect(screen.getByText('Clipboard compatibility')).toBeInTheDocument();
   });
 
   it('hides Reset All button when no overrides exist', () => {
     render(<KeyboardShortcutsSettingsView />);
-    expect(screen.queryByText('Reset All to Defaults')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reset all to defaults')).not.toBeInTheDocument();
   });
 
   it('shows Reset All button when an override exists', () => {
@@ -117,7 +117,7 @@ describe('KeyboardShortcutsSettingsView', () => {
     });
 
     render(<KeyboardShortcutsSettingsView />);
-    expect(screen.getByText('Reset All to Defaults')).toBeInTheDocument();
+    expect(screen.getByText('Reset all to defaults')).toBeInTheDocument();
   });
 
   it('calls resetAll when Reset All button clicked', () => {
@@ -134,7 +134,7 @@ describe('KeyboardShortcutsSettingsView', () => {
     });
 
     render(<KeyboardShortcutsSettingsView />);
-    fireEvent.click(screen.getByText('Reset All to Defaults'));
+    fireEvent.click(screen.getByText('Reset all to defaults'));
     expect(mockResetAll).toHaveBeenCalled();
   });
 

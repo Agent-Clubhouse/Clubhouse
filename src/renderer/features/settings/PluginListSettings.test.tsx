@@ -79,7 +79,7 @@ describe('PluginListSettings', () => {
   it('renders the marketplace button in app context', () => {
     render(<PluginListSettings />);
     expect(screen.getByTestId('marketplace-button')).toBeInTheDocument();
-    expect(screen.getByText('View Plugin Marketplace')).toBeInTheDocument();
+    expect(screen.getByText('Browse marketplace')).toBeInTheDocument();
   });
 
   it('does not render marketplace button in project context', () => {
@@ -112,7 +112,7 @@ describe('PluginListSettings', () => {
     expect(screen.getByTestId('workshop-link')).toBeInTheDocument();
   });
 
-  it('renders "Official" badge for marketplace source plugins', () => {
+  it('shows "Official" in the meta line for marketplace source plugins', () => {
     usePluginStore.setState({
       plugins: {
         'market-plug': {
@@ -133,10 +133,10 @@ describe('PluginListSettings', () => {
     } as any);
 
     render(<PluginListSettings />);
-    expect(screen.getByText('Official')).toBeInTheDocument();
+    expect(screen.getByTestId('plugin-meta-market-plug')).toHaveTextContent('Official · 1.0.0');
   });
 
-  it('renders "Community" badge for community source plugins', () => {
+  it('shows "Community" in the meta line for community source plugins', () => {
     usePluginStore.setState({
       plugins: {
         'comm-plug': {
@@ -157,17 +157,18 @@ describe('PluginListSettings', () => {
     } as any);
 
     render(<PluginListSettings />);
-    expect(screen.getByText('Community')).toBeInTheDocument();
-    expect(screen.queryByText('Official')).not.toBeInTheDocument();
+    expect(screen.getByTestId('plugin-meta-comm-plug')).toHaveTextContent('Community · 1.0.0');
+    expect(screen.getByTestId('plugin-meta-comm-plug')).not.toHaveTextContent('Official');
   });
 
-  it('renders "Reload Local Plugins" button in app context', () => {
+  it('renders the local plugins "Reload" button in app context', () => {
     usePluginStore.setState({
       externalPluginsEnabled: true,
     } as any);
     render(<PluginListSettings />);
     expect(screen.getByTestId('scan-plugins-button')).toBeInTheDocument();
-    expect(screen.getByText('Reload Local Plugins')).toBeInTheDocument();
+    expect(screen.getByTestId('scan-plugins-button')).toHaveTextContent('Reload');
+    expect(screen.getByText('Local plugins')).toBeInTheDocument();
   });
 
   it('calls refreshCommunityPlugins when scan button is clicked', async () => {
@@ -269,7 +270,7 @@ describe('PluginListSettings', () => {
       // Reset call count after mount-time effects
       mockRefreshCommunityPlugins.mockClear();
 
-      fireEvent.click(screen.getByTestId('external-plugins-toggle'));
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow external plugins' }));
 
       await vi.waitFor(() => {
         expect(mockRefreshCommunityPlugins).toHaveBeenCalled();
@@ -288,7 +289,7 @@ describe('PluginListSettings', () => {
       });
       mockRefreshCommunityPlugins.mockClear();
 
-      fireEvent.click(screen.getByTestId('external-plugins-toggle'));
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow external plugins' }));
 
       // Give the handler time to run
       await new Promise((r) => setTimeout(r, 50));
@@ -306,7 +307,7 @@ describe('PluginListSettings', () => {
       render(<PluginListSettings />);
       mockRefreshCommunityPlugins.mockClear();
 
-      fireEvent.click(screen.getByTestId('external-plugins-toggle'));
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow external plugins' }));
 
       await vi.waitFor(() => {
         expect(mockRefreshCommunityPlugins).toHaveBeenCalledWith({
@@ -328,7 +329,7 @@ describe('PluginListSettings', () => {
       usePluginStore.setState({ externalPluginsEnabled: false } as any);
       render(<PluginListSettings />);
 
-      fireEvent.click(screen.getByTestId('external-plugins-toggle'));
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow external plugins' }));
 
       await vi.waitFor(() => {
         expect(mockStorageWrite).toHaveBeenCalledWith(
@@ -344,13 +345,13 @@ describe('PluginListSettings', () => {
   });
 
   describe('check for updates UI', () => {
-    it('renders "Check for Updates" button in app context with external plugins enabled', () => {
+    it('renders "Check for updates" button in app context with external plugins enabled', () => {
       usePluginStore.setState({
         externalPluginsEnabled: true,
       } as any);
       render(<PluginListSettings />);
       expect(screen.getByTestId('check-updates-button')).toBeInTheDocument();
-      expect(screen.getByText('Check for Updates')).toBeInTheDocument();
+      expect(screen.getByText('Check for updates')).toBeInTheDocument();
     });
 
     it('shows "Checking..." when check is in progress', () => {
@@ -359,7 +360,7 @@ describe('PluginListSettings', () => {
       } as any);
       usePluginUpdateStore.setState({ checking: true });
       render(<PluginListSettings />);
-      expect(screen.getByText('Checking...')).toBeInTheDocument();
+      expect(screen.getByText('Checking…')).toBeInTheDocument();
     });
 
     it('shows last check time when available', () => {
@@ -396,7 +397,7 @@ describe('PluginListSettings', () => {
       expect(screen.getByTestId('update-all-button')).toBeInTheDocument();
     });
 
-    it('shows per-plugin update badge and button when update available', () => {
+    it('shows a per-plugin update line and button when update available', () => {
       usePluginStore.setState({
         plugins: {
           'updatable': {
@@ -415,10 +416,10 @@ describe('PluginListSettings', () => {
       render(<PluginListSettings />);
       expect(screen.getByTestId('update-badge-updatable')).toBeInTheDocument();
       expect(screen.getByTestId('update-btn-updatable')).toBeInTheDocument();
-      expect(screen.getByText('v2.0.0 available')).toBeInTheDocument();
+      expect(screen.getByText('Version 2.0.0 is available.')).toBeInTheDocument();
     });
 
-    it('shows update phase badge when plugin is being updated', () => {
+    it('shows update phase line when plugin is being updated', () => {
       usePluginStore.setState({
         plugins: {
           'updating-plug': {
@@ -437,7 +438,7 @@ describe('PluginListSettings', () => {
       });
       render(<PluginListSettings />);
       expect(screen.getByTestId('update-phase-updating-plug')).toBeInTheDocument();
-      expect(screen.getByText('Downloading...')).toBeInTheDocument();
+      expect(screen.getByText('Downloading…')).toBeInTheDocument();
       // Update button should be hidden during update
       expect(screen.queryByTestId('update-btn-updating-plug')).not.toBeInTheDocument();
     });
@@ -457,12 +458,12 @@ describe('PluginListSettings', () => {
         updateErrors: { 'error-plug': 'Module syntax error' },
       });
       render(<PluginListSettings />);
-      expect(screen.getByText(/Update failed: Module syntax error/)).toBeInTheDocument();
+      expect(screen.getByText(/Update failed\. Module syntax error/)).toBeInTheDocument();
     });
   });
 
   describe('permission approval UI', () => {
-    it('shows pending-approval badge and approve/reject buttons', () => {
+    it('shows a pending-approval line with approve/reject buttons', () => {
       usePluginStore.setState({
         plugins: {
           'pending-plug': {
@@ -477,12 +478,64 @@ describe('PluginListSettings', () => {
         externalPluginsEnabled: true,
       } as any);
       render(<PluginListSettings />);
-      expect(screen.getByTestId('pending-badge-pending-plug')).toBeInTheDocument();
-      expect(screen.getByText('New permissions')).toBeInTheDocument();
       expect(screen.getByTestId('pending-approval-pending-plug')).toBeInTheDocument();
+      expect(screen.getByTestId('pending-approval-pending-plug')).toHaveTextContent('This update needs more permissions');
       expect(screen.getByTestId('approve-btn-pending-plug')).toBeInTheDocument();
       expect(screen.getByTestId('reject-btn-pending-plug')).toBeInTheDocument();
       expect(screen.getByText('process')).toBeInTheDocument();
+    });
+  });
+
+  describe('chrome-style rows', () => {
+    it('shows plain meta text instead of chips', () => {
+      render(<PluginListSettings />);
+      expect(screen.getByTestId('plugin-meta-test-builtin')).toHaveTextContent('Built-in · 1.0.0');
+      expect(screen.queryByText('API 0.5')).not.toBeInTheDocument();
+      expect(screen.queryByTitle('View permissions')).not.toBeInTheDocument();
+    });
+
+    it('shows a deprecation line for plugins on an old API', () => {
+      render(<PluginListSettings />);
+      expect(screen.getByTestId('deprecated-api-test-builtin')).toHaveTextContent(
+        'Uses plugin API 0.5, which stops loading in v0.39.',
+      );
+    });
+
+    it('shows no action line for a plugin on a current API', () => {
+      usePluginStore.setState({
+        plugins: {
+          fresh: {
+            manifest: { id: 'fresh', name: 'Fresh', version: '1.0.0', engine: { api: 0.8 }, scope: 'app' },
+            status: 'activated', source: 'builtin', pluginPath: '/builtin/fresh',
+          },
+        },
+        appEnabled: ['fresh'],
+      } as any);
+      render(<PluginListSettings />);
+      expect(screen.queryByTestId('deprecated-api-fresh')).not.toBeInTheDocument();
+    });
+
+    it('renders Built-in and From the marketplace sections with counts', () => {
+      render(<PluginListSettings />);
+      expect(screen.getByRole('heading', { level: 3, name: 'Built-in' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 3, name: 'From the marketplace' })).toBeInTheDocument();
+      expect(screen.getByText('Allow external plugins')).toBeInTheDocument();
+    });
+
+    it('opens plugin detail from the gear button', () => {
+      const openPluginSettings = vi.fn();
+      useUIStore.setState({ openPluginSettings } as any);
+      render(<PluginListSettings />);
+      fireEvent.click(screen.getByTestId('plugin-settings-btn-test-builtin'));
+      expect(openPluginSettings).toHaveBeenCalledWith('test-builtin');
+    });
+
+    it('toggles the plugin stores section from the header button', async () => {
+      (window as any).clubhouse.marketplace.listCustomMarketplaces = vi.fn(async () => []);
+      render(<PluginListSettings />);
+      expect(screen.queryByTestId('custom-marketplace-section')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('custom-marketplace-toggle'));
+      await screen.findByTestId('custom-marketplace-section');
     });
   });
 

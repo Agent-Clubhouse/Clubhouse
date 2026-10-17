@@ -28,7 +28,7 @@ describe('ExperimentalSettingsView', () => {
     await waitFor(() => {
       expect(screen.getByText('Experimental')).toBeInTheDocument();
     });
-    expect(screen.getByText('Beta Features')).toBeInTheDocument();
+    expect(screen.getByText(/may change or go away in future releases/)).toBeInTheDocument();
     expect(screen.getByText(/unstable and may be buggy/)).toBeInTheDocument();
   });
 
@@ -42,7 +42,7 @@ describe('ExperimentalSettingsView', () => {
   it('renders feature toggles', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {
-      expect(screen.getByText('Theme Gradients & Fonts')).toBeInTheDocument();
+      expect(screen.getByText('Theme gradients & fonts')).toBeInTheDocument();
     });
     // Removed features no longer have toggles
     expect(screen.queryByText('Structured Mode')).not.toBeInTheDocument();
@@ -66,9 +66,7 @@ describe('ExperimentalSettingsView', () => {
     });
     expect(screen.getByText(/native chat view\. The terminal stays available for every provider\./)).toBeInTheDocument();
 
-    const row = screen.getByText('Chat').closest('.flex.items-center.justify-between') as HTMLElement;
-    const toggle = row.querySelector('button.rounded-full') as HTMLElement;
-    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('switch', { name: 'Chat' }));
 
     await waitFor(() => {
       expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ goobers: true, chat: true });
@@ -81,8 +79,7 @@ describe('ExperimentalSettingsView', () => {
     await waitFor(() => {
       expect(screen.getByText('Telemetry export')).toBeInTheDocument();
     });
-    const row = screen.getByText('Telemetry export').closest('.flex.items-center.justify-between') as HTMLElement;
-    fireEvent.click(row.querySelector('button.rounded-full') as HTMLElement);
+    fireEvent.click(screen.getByRole('switch', { name: 'Telemetry export' }));
     await waitFor(() => {
       expect(mockSaveExperimentalSettings).toHaveBeenCalledWith({ telemetry: true });
     });
@@ -91,7 +88,7 @@ describe('ExperimentalSettingsView', () => {
   it('does not list Clubhouse MCP as experimental (promoted)', async () => {
     render(<ExperimentalSettingsView />);
     await waitFor(() => {
-      expect(screen.getByText('Theme Gradients & Fonts')).toBeInTheDocument();
+      expect(screen.getByText('Theme gradients & fonts')).toBeInTheDocument();
     });
     expect(screen.queryByText('Clubhouse MCP')).not.toBeInTheDocument();
   });
@@ -101,7 +98,7 @@ describe('ExperimentalSettingsView', () => {
     const { container } = render(<ExperimentalSettingsView />);
 
     await waitFor(() => {
-      expect(screen.getByText('Theme Gradients & Fonts')).toBeInTheDocument();
+      expect(screen.getByText('Theme gradients & fonts')).toBeInTheDocument();
     });
 
     // The Toggle component renders a button with a rounded-full class

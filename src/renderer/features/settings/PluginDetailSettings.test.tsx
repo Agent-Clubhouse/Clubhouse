@@ -12,8 +12,15 @@ vi.mock('../../plugins/plugin-api-factory', () => ({
   createPluginAPI: () => ({}),
 }));
 
+const mockActivatePlugin = vi.fn(async () => {});
+const mockDeactivatePlugin = vi.fn(async () => {});
 vi.mock('../../plugins/plugin-loader', () => ({
   getActiveContext: () => null,
+  activatePlugin: (...args: unknown[]) => mockActivatePlugin(...args),
+  deactivatePlugin: (...args: unknown[]) => mockDeactivatePlugin(...args),
+  refreshCommunityPlugins: vi.fn(async () => ({ discovered: [], refreshed: [], activated: [], incompatible: [] })),
+  approvePluginPermissions: vi.fn(),
+  rejectPluginPermissions: vi.fn(),
 }));
 
 vi.mock('../../plugins/plugin-settings-renderer', () => ({
@@ -37,6 +44,8 @@ function resetStores() {
   usePluginStore.setState({
     plugins: {},
     modules: {},
+    appEnabled: [],
+    projectEnabled: {},
   });
 
   useProjectStore.setState({
@@ -78,8 +87,8 @@ describe('PluginDetailSettings', () => {
     });
 
     render(<PluginDetailSettings />);
-    expect(screen.getByText('Test Plugin Settings')).toBeInTheDocument();
-    expect(screen.getByText('v1.0.0')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Test Plugin' })).toBeInTheDocument();
+    expect(screen.getByTestId('plugin-detail-meta')).toHaveTextContent('1.0.0');
   });
 
   it('shows permissions section when plugin has permissions', () => {
@@ -121,28 +130,47 @@ describe('PluginDetailSettings', () => {
     });
 
     render(<PluginDetailSettings />);
-    expect(screen.getByText('This plugin has no configurable settings.')).toBeInTheDocument();
+    expect(screen.getByText('This plugin has no settings.')).toBeInTheDocument();
   });
 
-  it('shows back button and calls closePluginSettings when clicked', () => {
+  it('has no in-pane back link (the sidebar keeps Plugins selected)', () => {
     useUIStore.setState({ pluginSettingsId: 'test-plugin' });
     usePluginStore.setState({
       plugins: {
         'test-plugin': {
-          manifest: {
-            id: 'test-plugin',
-            name: 'Test Plugin',
-            version: '1.0.0',
-            scope: 'dual',
-            permissions: [],
-          },
+          manifest: { id: 'test-plugin', name: 'Test Plugin', version: '1.0.0', scope: 'dual', permissions: [] },
         },
       } as any,
     });
 
     render(<PluginDetailSettings />);
-    fireEvent.click(screen.getByText('Back to Plugins'));
-    expect(mockClosePluginSettings).toHaveBeenCalled();
+    expect(screen.queryByText('Back to Plugins')).not.toBeInTheDocument();
+    expect(mockClosePluginSettings).not.toHaveBeenCalled();
+  });
+
+  it('shows the enabled state in the header and toggles it', async () => {
+    useUIStore.setState({ pluginSettingsId: 'test-plugin' });
+    usePluginStore.setState({
+      plugins: {
+        'test-plugin': {
+          manifest: { id: 'test-plugin', name: 'Test Plugin', version: '1.0.0', scope: 'dual', permissions: [] },
+          status: 'activated',
+          source: 'builtin',
+        },
+      } as any,
+      appEnabled: ['test-plugin'],
+    });
+    (window as any).clubhouse.plugin.storageWrite = vi.fn(async () => {});
+
+    render(<PluginDetailSettings />);
+    expect(screen.getByText('On')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: 'Turn on Test Plugin' }));
+    await vi.waitFor(() => {
+      expect(mockDeactivatePlugin).toHaveBeenCalledWith('test-plugin');
+    });
+    await vi.waitFor(() => {
+      expect(screen.getByText('Off')).toBeInTheDocument();
+    });
   });
 
   it('shows allowed commands when present', () => {
@@ -163,7 +191,7 @@ describe('PluginDetailSettings', () => {
     });
 
     render(<PluginDetailSettings />);
-    expect(screen.getByText('Allowed Commands')).toBeInTheDocument();
+    expect(screen.getByText('Allowed commands')).toBeInTheDocument();
     expect(screen.getByText('git')).toBeInTheDocument();
     expect(screen.getByText('npm')).toBeInTheDocument();
   });
@@ -190,5 +218,39 @@ describe('PluginDetailSettings', () => {
 
     render(<PluginDetailSettings />);
     expect(screen.getByTestId('plugin-settings-renderer')).toBeInTheDocument();
+  });
+
+  describe('status lines', () => {
+    const withEntry = (extra: Record<string, unknown>, manifest: Record<string, unknown> = {}) => {
+      useUIStore.setState({ pluginSettingsId: 'test-plugin' });
+      usePluginStore.setState({
+        plugins: {
+          'test-plugin': {
+            manifest: { id: 'test-plugin', name: 'Test Plugin', version: '1.0.0', scope: 'dual', permissions: [], ...manifest },
+            ...extra,
+          },
+        } as any,
+      });
+    };
+
+    it('lets you approve pending permissions from the detail page', () => {
+      withEntry({ status: 'pending-approval', pendingPermissions: ['terminal'] });
+      render(<PluginDetailSettings />);
+      expect(screen.getByTestId('pending-approval-test-plugin')).toHaveTextContent('terminal');
+      expect(screen.getByTestId('approve-btn-test-plugin')).toBeInTheDocument();
+      expect(screen.getByTestId('reject-btn-test-plugin')).toBeInTheDocument();
+    });
+
+    it('says "Error" for an errored plugin with no message', () => {
+      withEntry({ status: 'errored' });
+      render(<PluginDetailSettings />);
+      expect(screen.getByTestId('plugin-error-test-plugin')).toHaveTextContent('Error');
+    });
+
+    it('shows the plugin API version in the meta line', () => {
+      withEntry({}, { engine: { api: 0.8 } });
+      render(<PluginDetailSettings />);
+      expect(screen.getByTestId('plugin-detail-meta')).toHaveTextContent('Plugin API 0.8');
+    });
   });
 });

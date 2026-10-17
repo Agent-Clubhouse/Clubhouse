@@ -4,6 +4,7 @@ import { NotificationSettingsView } from './NotificationSettingsView';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useBadgeSettingsStore } from '../../stores/badgeSettingsStore';
 import { useSoundStore } from '../../stores/soundStore';
+import { useChromeFlagStore } from '../../chrome/chromeFlag';
 
 vi.mock('../../stores/badgeStore', () => ({
   useBadgeStore: Object.assign(vi.fn((sel: any) => sel({
@@ -85,17 +86,32 @@ describe('NotificationSettingsView', () => {
   it('renders notification toggles in app context', () => {
     resetStores();
     render(<NotificationSettingsView />);
-    expect(screen.getByText('Notifications & Alerts')).toBeInTheDocument();
-    expect(screen.getByText('Enable Notifications')).toBeInTheDocument();
-    expect(screen.getByText('Permission Needed')).toBeInTheDocument();
-    expect(screen.getByText('Agent Stopped')).toBeInTheDocument();
+    expect(screen.getByText('Notifications & alerts')).toBeInTheDocument();
+    expect(screen.getByText('Desktop notifications')).toBeInTheDocument();
+    expect(screen.getByText('An agent needs permission')).toBeInTheDocument();
+    expect(screen.getByText('An agent stops')).toBeInTheDocument();
+  });
+
+  it('shows project rail badges only in the classic layout', () => {
+    resetStores();
+    useChromeFlagStore.setState({ enabled: false });
+    const { unmount } = render(<NotificationSettingsView />);
+    expect(screen.getByText('Project rail badges')).toBeInTheDocument();
+    expect(screen.getByText('Counts on tabs, project icons and the Dock icon.')).toBeInTheDocument();
+    unmount();
+
+    useChromeFlagStore.setState({ enabled: true });
+    render(<NotificationSettingsView />);
+    expect(screen.queryByText('Project rail badges')).not.toBeInTheDocument();
+    expect(screen.getByText('Counts on title-bar tabs and the Dock icon.')).toBeInTheDocument();
+    useChromeFlagStore.setState({ enabled: false });
   });
 
   it('renders badge settings in project context', () => {
     resetStores();
     render(<NotificationSettingsView projectId="proj-1" />);
     expect(screen.getByText('Badges')).toBeInTheDocument();
-    expect(screen.getByText('Enable Badges')).toBeInTheDocument();
+    expect(screen.getByText('Show badges')).toBeInTheDocument();
   });
 
   describe('handleProjectToggle (badge override removal)', () => {

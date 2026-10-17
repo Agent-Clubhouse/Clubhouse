@@ -7,20 +7,24 @@ import { ALL_SOUND_EVENTS } from '../../../shared/types';
 import { Toggle } from '../../components/Toggle';
 import { SoundEventRow, SoundPackCard, ProjectSoundOverrideSection } from './sound-components';
 import { Spinner } from '../../components/Spinner';
+import { useChromeFlagStore } from '../../chrome/chromeFlag';
+import { SettingsPage, SettingsSection, SettingsField, settingsHelp } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 const TOGGLES: { key: keyof Omit<import('../../../shared/types').NotificationSettings, 'enabled' | 'playSound'>; label: string; description: string }[] = [
-  { key: 'permissionNeeded', label: 'Permission Needed', description: 'Notify when an agent is waiting for approval' },
-  { key: 'agentStopped', label: 'Agent Stopped', description: 'Notify when an agent has finished running' },
-  { key: 'agentIdle', label: 'Agent Idle', description: 'Notify when an agent is waiting for input' },
-  { key: 'agentError', label: 'Agent Error', description: 'Notify when a tool call fails' },
-  { key: 'agentRequestedAttention', label: 'Agent Requested Attention', description: 'Notify when an agent explicitly asks for you (via the notify_user tool)' },
+  { key: 'permissionNeeded', label: 'An agent needs permission', description: '' },
+  { key: 'agentStopped', label: 'An agent stops', description: '' },
+  { key: 'agentIdle', label: 'An agent is waiting for input', description: '' },
+  { key: 'agentError', label: 'A tool call fails', description: '' },
+  { key: 'agentRequestedAttention', label: 'An agent asks for me', description: 'When it calls the notify_user tool.' },
 ];
 
 // Three-state toggle for project overrides: global default / on / off
-function TriStateToggle({ value, onChange, disabled }: {
+function TriStateToggle({ value, onChange, disabled, 'aria-label': ariaLabel }: {
   value: boolean | undefined; // undefined = use global
   onChange: (v: boolean | undefined) => void;
   disabled?: boolean;
+  'aria-label'?: string;
 }) {
   const states: Array<{ label: string; val: boolean | undefined }> = [
     { label: 'Global', val: undefined },
@@ -29,16 +33,17 @@ function TriStateToggle({ value, onChange, disabled }: {
   ];
 
   return (
-    <div className={`flex rounded-md overflow-hidden border border-surface-1 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+    <div role="radiogroup" aria-label={ariaLabel} className={`flex h-7 p-0.5 gap-0.5 rounded-md border border-surface-1 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
       {states.map(({ label, val }) => (
         <button
           key={label}
           type="button"
+          role="radio"
+          aria-checked={value === val}
           onClick={() => !disabled && onChange(val)}
-          className={`
-            px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors
-            ${value === val ? 'bg-ctp-accent text-white' : 'bg-surface-0 text-ctp-subtext0 hover:bg-surface-1'}
-          `}
+          className={`px-2 rounded text-xs cursor-pointer transition-colors ${
+            value === val ? 'bg-surface-1 text-ctp-text' : 'text-ctp-overlay1 hover:text-ctp-text'
+          }`}
         >
           {label}
         </button>
@@ -47,14 +52,25 @@ function TriStateToggle({ value, onChange, disabled }: {
   );
 }
 
-const BADGE_TOGGLES: { key: keyof ResolvedBadgeSettings; label: string; description: string }[] = [
-  { key: 'pluginBadges', label: 'Plugin Badges', description: 'Show badge indicators from plugins' },
-  { key: 'projectRailBadges', label: 'Project Rail Badges', description: 'Show aggregated badges on project icons in the sidebar' },
-];
+function useBadgeToggles(): { key: keyof ResolvedBadgeSettings; label: string; description: string }[] {
+  // Nothing in the new layout reads projectRailBadges (it has no project rail), so hide it there.
+  const newChrome = useChromeFlagStore((s) => s.enabled);
+  return [
+    { key: 'pluginBadges', label: 'Plugin badges', description: 'Counts that plugins add to their tabs.' },
+    ...(newChrome ? [] : [{ key: 'projectRailBadges' as const, label: 'Project rail badges', description: 'Totals on project icons in the project rail.' }]),
+  ];
+}
+
+function useBadgesHelp(): string {
+  const newChrome = useChromeFlagStore((s) => s.enabled);
+  return newChrome ? 'Counts on title-bar tabs and the Dock icon.' : 'Counts on tabs, project icons and the Dock icon.';
+}
 
 function BadgeSettingsSection({ projectId }: { projectId?: string }) {
   const { enabled, pluginBadges, projectRailBadges, projectOverrides,
     saveAppSettings, setProjectOverride, clearProjectOverride, getProjectSettings } = useBadgeSettingsStore();
+  const badgeToggles = useBadgeToggles();
+  const badgesHelp = useBadgesHelp();
   const resolved = projectId
     ? getProjectSettings(projectId)
     : { enabled, pluginBadges, projectRailBadges };
@@ -81,84 +97,49 @@ function BadgeSettingsSection({ projectId }: { projectId?: string }) {
 
   if (projectId) {
     return (
-      <>
-        <h3 className="text-md font-semibold text-ctp-text mt-6 mb-4">Badges</h3>
-        <div className="space-y-5">
-          {/* Master toggle */}
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm text-ctp-text font-medium">Enable Badges</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">Show badge indicators on tabs and the project rail</div>
-            </div>
+      <SettingsSection title="Badges">
+        <SettingsField label="Show badges" help={badgesHelp}>
+          <TriStateToggle
+            aria-label="Show badges"
+            value={overrides?.enabled}
+            onChange={(v) => handleProjectToggle('enabled', v)}
+          />
+        </SettingsField>
+        {badgeToggles.map(({ key, label, description }) => (
+          <SettingsField key={key} label={label} help={description}>
             <TriStateToggle
-              value={overrides?.enabled}
-              onChange={(v) => handleProjectToggle('enabled', v)}
+              aria-label={label}
+              value={overrides?.[key]}
+              onChange={(v) => handleProjectToggle(key, v)}
+              disabled={!resolved.enabled}
             />
-          </div>
-
-          {BADGE_TOGGLES.map(({ key, label, description }) => (
-            <div key={key} className="flex items-center justify-between py-2">
-              <div>
-                <div className="text-sm text-ctp-text font-medium">{label}</div>
-                <div className="text-xs text-ctp-subtext0 mt-0.5">{description}</div>
-              </div>
-              <TriStateToggle
-                value={overrides?.[key]}
-                onChange={(v) => handleProjectToggle(key, v)}
-                disabled={!resolved.enabled}
-              />
-            </div>
-          ))}
-        </div>
-      </>
+          </SettingsField>
+        ))}
+      </SettingsSection>
     );
   }
 
   return (
-    <>
-      <h3 className="text-md font-semibold text-ctp-text mt-6 mb-4">Badges</h3>
-      <div className="space-y-5">
-        {/* Master toggle */}
-        <div className="flex items-center justify-between py-2">
-          <div>
-            <div className="text-sm text-ctp-text font-medium">Enable Badges</div>
-            <div className="text-xs text-ctp-subtext0 mt-0.5">Show badge indicators on tabs and the project rail</div>
-          </div>
-          <Toggle checked={resolved.enabled} onChange={(v) => handleAppToggle('enabled', v)} />
-        </div>
-
-        {BADGE_TOGGLES.map(({ key, label, description }) => (
-          <div key={key} className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm text-ctp-text font-medium">{label}</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">{description}</div>
-            </div>
-            <Toggle
-              checked={resolved[key]}
-              onChange={(v) => handleAppToggle(key, v)}
-              disabled={!resolved.enabled}
-            />
-          </div>
-        ))}
-
-        <div className="border-t border-surface-0" />
-
-        {/* Clear all badges */}
-        <div className="flex items-center justify-between py-2">
-          <div>
-            <div className="text-sm text-ctp-text font-medium">Clear All Badges</div>
-            <div className="text-xs text-ctp-subtext0 mt-0.5">Remove all badge indicators from tabs, projects, and the dock</div>
-          </div>
-          <button
-            type="button"
-            onClick={() => useBadgeStore.getState().clearAll()}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
-          >
-            Clear All
-          </button>
-        </div>
-      </div>
-    </>
+    <SettingsSection title="Badges">
+      <SettingsField label="Show badges" help={badgesHelp}>
+        <Toggle aria-label="Show badges" checked={resolved.enabled} onChange={(v) => handleAppToggle('enabled', v)} />
+      </SettingsField>
+      {badgeToggles.map(({ key, label, description }) => (
+        <SettingsField key={key} label={label} help={description}>
+          <Toggle
+            aria-label={label}
+            checked={resolved[key]}
+            onChange={(v) => handleAppToggle(key, v)}
+            disabled={!resolved.enabled}
+          />
+        </SettingsField>
+      ))}
+      <SettingsField label="Clear all badges" help="Remove every count from tabs, projects and the Dock.">
+        <Button onClick={() => useBadgeStore.getState().clearAll()} kind="ghost">
+          Clear
+        </Button>
+      </SettingsField>
+    </SettingsSection>
   );
 }
 
@@ -172,79 +153,54 @@ function AppSoundSection() {
 
   return (
     <>
-      <h3 className="text-md font-semibold text-ctp-text mt-6 mb-4">Sounds</h3>
+      <SettingsSection title="Sounds" meta="Pick a sound for each event. Mix sounds from different packs.">
+        {ALL_SOUND_EVENTS.map((event) => (
+          <SoundEventRow
+            key={event}
+            event={event}
+            packs={packs}
+          />
+        ))}
+      </SettingsSection>
 
-      {/* Per-slot sound selection */}
-      <div className="space-y-3 mb-6">
-        <h4 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Event Sounds</h4>
-        <p className="text-xs text-ctp-subtext0">
-          Choose which sound to play for each event. Mix and match sounds from different packs.
+      <SettingsSection
+        title="Sound packs"
+        actions={
+          <>
+            {Object.keys(settings.slotAssignments).length > 0 && (
+              <Button onClick={() => saveSettings({ slotAssignments: {} })} kind="quiet">
+                Reset to system sounds
+              </Button>
+            )}
+            <Button onClick={() => importPack()} kind="ghost">
+              Import pack…
+            </Button>
+          </>
+        }
+      >
+        <p className={`${settingsHelp} mb-2`}>
+          Drop sound files into <span className="font-mono">~/.clubhouse/sounds/&lt;pack-name&gt;/</span> or import a folder.
         </p>
-
-        <div className="space-y-1">
-          {ALL_SOUND_EVENTS.map((event) => (
-            <SoundEventRow
-              key={event}
-              event={event}
-              packs={packs}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="border-t border-surface-0 mb-6" />
-
-      {/* Sound Packs management */}
-      <div className="space-y-3">
-        <h4 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Sound Packs</h4>
-        <p className="text-xs text-ctp-subtext0">
-          Sound packs provide sounds for each slot. Use &quot;Apply All&quot; to set every slot from one pack, or mix and match above.
-          Drop sound files into ~/.clubhouse/sounds/&lt;pack-name&gt;/ or import a folder.
-        </p>
-
-        <div className="space-y-2">
-          {packs.map((pack) => (
-            <SoundPackCard
-              key={pack.id}
-              pack={pack}
-              onApplyAll={() => applyAllFromPack(pack.id)}
-              onDelete={pack.source === 'user' ? () => {
-                if (confirmDelete === pack.id) {
-                  deletePack(pack.id);
-                  setConfirmDelete(null);
-                } else {
-                  setConfirmDelete(pack.id);
-                  setTimeout(() => setConfirmDelete(null), 3000);
-                }
-              } : undefined}
-            />
-          ))}
-
-          {packs.length === 0 && (
-            <p className="text-xs text-ctp-subtext0 py-2">No sound packs installed. Import one to get started.</p>
-          )}
-        </div>
-
-        {/* Import button */}
-        <button
-          type="button"
-          onClick={() => importPack()}
-          className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
-        >
-          Import Sound Pack...
-        </button>
-
-        {/* Reset All to OS Default */}
-        {Object.keys(settings.slotAssignments).length > 0 && (
-          <button
-            type="button"
-            onClick={() => saveSettings({ slotAssignments: {} })}
-            className="ml-2 px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-subtext0 hover:bg-surface-1 transition-colors cursor-pointer"
-          >
-            Reset All to OS Default
-          </button>
+        {packs.map((pack) => (
+          <SoundPackCard
+            key={pack.id}
+            pack={pack}
+            onApplyAll={() => applyAllFromPack(pack.id)}
+            onDelete={pack.source === 'user' ? () => {
+              if (confirmDelete === pack.id) {
+                deletePack(pack.id);
+                setConfirmDelete(null);
+              } else {
+                setConfirmDelete(pack.id);
+                setTimeout(() => setConfirmDelete(null), 3000);
+              }
+            } : undefined}
+          />
+        ))}
+        {packs.length === 0 && (
+          <p className={`${settingsHelp} py-2 border-t border-surface-0`}>No sound packs installed. Import one to get started.</p>
         )}
-      </div>
+      </SettingsSection>
     </>
   );
 }
@@ -264,80 +220,51 @@ export function NotificationSettingsView({ projectId }: { projectId?: string }) 
   }, [loadSettings, loadBadgeSettings, loadSoundSettings, loadPacks]);
 
   if (!settings) {
-    return <div className="p-6 flex items-center gap-2 text-ctp-subtext0 text-sm"><Spinner size="sm" /> Loading\u2026</div>;
+    return <div className="p-6 flex items-center gap-2 text-ctp-subtext0 text-sm"><Spinner size="sm" /> Loading…</div>;
   }
 
   // Project context: badges + sound overrides
   if (projectId) {
     return (
-      <div className="h-full overflow-y-auto p-6">
-        <div className="max-w-2xl">
-          <h2 className="text-lg font-semibold text-ctp-text mb-4">Notifications & Alerts</h2>
-          <BadgeSettingsSection projectId={projectId} />
-
-          <div className="border-t border-surface-0 mt-6" />
-          <ProjectSoundOverrideSection projectId={projectId} packs={packs} />
-        </div>
-      </div>
+      <SettingsPage title="Notifications & alerts" description="Badges and sounds for this project. Global uses the app setting.">
+        <BadgeSettingsSection projectId={projectId} />
+        <ProjectSoundOverrideSection projectId={projectId} packs={packs} />
+      </SettingsPage>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-4">Notifications & Alerts</h2>
-
-        <div className="space-y-5">
-          {/* Master toggle */}
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm text-ctp-text font-medium">Enable Notifications</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">Show desktop notifications for agent events</div>
-            </div>
-            <Toggle checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
-          </div>
-
-          <div className="border-t border-surface-0" />
-
-          {/* Event toggles */}
-          {TOGGLES.map(({ key, label, description }) => (
-            <div key={key} className="flex items-center justify-between py-2">
-              <div>
-                <div className="text-sm text-ctp-text font-medium">{label}</div>
-                <div className="text-xs text-ctp-subtext0 mt-0.5">{description}</div>
-              </div>
-              <Toggle
-                checked={settings[key]}
-                onChange={(v) => saveSettings({ [key]: v })}
-                disabled={!settings.enabled}
-              />
-            </div>
-          ))}
-
-          <div className="border-t border-surface-0" />
-
-          {/* Test notification */}
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm text-ctp-text font-medium">Test Notification</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">Send a test notification to verify your system permissions</div>
-            </div>
-            <button
-              type="button"
-              onClick={() => window.clubhouse.app.sendNotification('Clubhouse', 'Notifications are working!', !settings.playSound)}
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
-            >
-              Send Test
-            </button>
-          </div>
-        </div>
-
-        <BadgeSettingsSection />
-
-        <div className="border-t border-surface-0 mt-6" />
-
-        <AppSoundSection />
+    <SettingsPage title="Notifications & alerts" description="Desktop notifications, badges and sounds for every project.">
+      <div className="mt-[22px]">
+        <SettingsField label="Desktop notifications" help="Show a system notification for the events below.">
+          <Toggle aria-label="Desktop notifications" checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
+        </SettingsField>
       </div>
-    </div>
+
+      <SettingsSection title="Notify me when">
+        {TOGGLES.map(({ key, label, description }) => (
+          <SettingsField key={key} label={label} help={description || undefined}>
+            <Toggle
+              aria-label={label}
+              checked={settings[key]}
+              onChange={(v) => saveSettings({ [key]: v })}
+              disabled={!settings.enabled}
+            />
+          </SettingsField>
+        ))}
+        <SettingsField label="Test notification" help="Check that your system lets Clubhouse notify you.">
+          <Button
+            onClick={() => window.clubhouse.app.sendNotification('Clubhouse', 'Notifications are working!', !settings.playSound)}
+            kind="ghost"
+          >
+            Send test
+          </Button>
+        </SettingsField>
+      </SettingsSection>
+
+      <BadgeSettingsSection />
+
+      <AppSoundSection />
+    </SettingsPage>
   );
 }

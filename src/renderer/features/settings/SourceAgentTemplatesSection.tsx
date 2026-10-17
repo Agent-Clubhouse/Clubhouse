@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { AgentTemplateEntry } from '../../../shared/types';
 import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
+import { Modal } from '../../components/Modal';
+import { SettingsSection, SettingsBlock, settingsInput, settingsHelp } from './SettingsLayout';
+import { Button } from '../../components/Button';
 
 interface Props {
   projectPath: string;
@@ -77,140 +80,138 @@ export function SourceAgentTemplatesSection({ projectPath }: Props) {
   // Editor view (create or edit)
   if (view === 'create' || view === 'edit') {
     const isCreate = view === 'create';
+    const saveDisabled = saving || (isCreate && !templateName.trim());
     return (
-      <section>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">
-            {isCreate ? 'New Agent Definition' : `Edit: ${editingTemplate}`}
-          </h3>
-          <div className="flex gap-2">
-            <button
+      <SettingsSection
+        title={isCreate ? 'New agent definition' : `Edit ${editingTemplate}`}
+        actions={
+          <>
+            <Button
               onClick={() => { setView('list'); setEditingTemplate(null); }}
-              className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
+              kind="quiet"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={isCreate ? handleSaveNew : handleSaveEdit}
-              disabled={saving || (isCreate && !templateName.trim())}
-              className={`text-xs px-3 py-1 rounded transition-colors ${
-                saving || (isCreate && !templateName.trim())
-                  ? 'bg-surface-1 text-ctp-subtext0 cursor-default'
-                  : 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
-              }`}
+              disabled={saveDisabled}
+              kind="primary"
             >
               {saving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </div>
-        {isCreate && (
-          <input
-            value={templateName}
-            onChange={(e) => setTemplateName(e.target.value)}
-            placeholder="agent-name (lowercase, hyphens)"
-            className="w-full mb-2 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring"
-            spellCheck={false}
+            </Button>
+          </>
+        }
+      >
+        <SettingsBlock className="space-y-2">
+          {isCreate && (
+            <input
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder="agent-name (lowercase, hyphens)"
+              aria-label="Name"
+              className={`${settingsInput} w-full font-mono`}
+              spellCheck={false}
+            />
+          )}
+          <SettingsMonacoEditor
+            value={editorContent}
+            language="markdown"
+            onChange={setEditorContent}
+            height="280px"
+            editorKey={isCreate ? 'new-source-agent' : `edit-source-${editingTemplate}`}
           />
-        )}
-        <SettingsMonacoEditor
-          value={editorContent}
-          language="markdown"
-          onChange={setEditorContent}
-          height="280px"
-          editorKey={isCreate ? 'new-source-agent' : `edit-source-${editingTemplate}`}
-        />
-      </section>
+        </SettingsBlock>
+      </SettingsSection>
     );
   }
 
   // List view
   return (
-    <section>
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Agent Definitions</h3>
-          <span className="text-xs text-ctp-subtext0/60 font-mono">.clubhouse/agent-templates/</span>
-        </div>
-        <button
-          onClick={handleCreate}
-          className="text-xs px-2 py-1 rounded transition-colors bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer"
-        >
-          + Agent
-        </button>
-      </div>
-
+    <SettingsSection
+      title="Agent definitions"
+      meta={<span className="font-mono">.clubhouse/agent-templates/</span>}
+      actions={
+        <Button onClick={handleCreate} kind="ghost">
+          New definition
+        </Button>
+      }
+    >
       {templates.length === 0 ? (
-        <p className="text-xs text-ctp-subtext0/60 py-2">No agent definitions found.</p>
+        <SettingsBlock>
+          <p className={settingsHelp}>No agent definitions found.</p>
+        </SettingsBlock>
       ) : (
-        <div className="space-y-1">
+        <div>
           {templates.map((tpl) => (
             <div
               key={tpl.name}
-              className="flex items-center justify-between py-1.5 px-2 rounded bg-surface-0 border border-surface-1"
+              className="flex items-center gap-3 min-h-[38px] border-t border-surface-0"
             >
               <button
+                type="button"
                 onClick={() => handleEdit(tpl.name)}
-                className="text-sm text-ctp-text font-mono truncate hover:text-ctp-accent cursor-pointer transition-colors text-left"
+                className="flex-1 min-w-0 text-[13px] text-ctp-text font-mono truncate hover:text-ctp-accent cursor-pointer transition-colors text-left"
                 title="Click to edit"
               >
                 {tpl.name}
               </button>
-              <div className="flex gap-1 flex-shrink-0 ml-2">
-                <button
+              <div className="flex gap-0.5 flex-shrink-0">
+                <Button
                   onClick={() => handleOpenFolder(tpl.path)}
-                  className="text-ctp-subtext0 hover:text-ctp-text p-1 cursor-pointer transition-colors"
+                  kind="quiet" className="w-7 px-0 text-ctp-subtext0"
                   title="Open in file manager"
+                  aria-label="Open {tpl.name} in file manager"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                   </svg>
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => setDeleteTarget(tpl.name)}
-                  className="text-ctp-subtext0 hover:text-ctp-error p-1 cursor-pointer transition-colors"
+                  kind="quiet" className="w-7 px-0 text-ctp-subtext0 hover:text-ctp-error"
                   title="Delete agent definition"
+                  aria-label="Delete agent definition {tpl.name}"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 6h18" />
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
                     <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                   </svg>
-                </button>
+                </Button>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Delete confirmation dialog */}
-      {deleteTarget && (
-        // eslint-disable-next-line no-restricted-syntax
-        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50">
-          <div className="bg-ctp-base border border-surface-1 rounded-lg p-4 max-w-sm mx-4 shadow-xl">
-            <h4 className="text-sm font-semibold text-ctp-text mb-2">Delete Agent Definition</h4>
-            <p className="text-xs text-ctp-subtext0 mb-1">
-              Are you sure you want to delete <span className="font-mono text-ctp-text">{deleteTarget}</span>?
-            </p>
-            <p className="text-xs text-ctp-error mb-4">
-              This will permanently delete the agent definition and cannot be undone.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="text-xs px-3 py-1.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDelete(deleteTarget)}
-                className="text-xs px-3 py-1.5 rounded bg-ctp-error/20 text-ctp-error hover:bg-ctp-error/30 cursor-pointer transition-colors border border-ctp-error/30"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
+      <Modal
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete agent definition?"
+        width="w-[400px] max-w-[calc(100vw-32px)]"
+        footer={
+          <>
+            <Button onClick={() => setDeleteTarget(null)} kind="ghost">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => { if (deleteTarget) handleDelete(deleteTarget); }}
+              kind="danger-solid"
+            >
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <div>
+          <p className={settingsHelp}>
+            Delete <span className="font-mono text-ctp-text">{deleteTarget}</span>?
+          </p>
+          <p className="text-xs text-ctp-error mt-1">
+            This permanently deletes the agent definition. You can’t undo this.
+          </p>
         </div>
-      )}
-    </section>
+      </Modal>
+    </SettingsSection>
   );
 }

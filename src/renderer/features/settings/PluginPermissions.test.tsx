@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
@@ -72,165 +72,20 @@ function resetStores() {
   });
 }
 
-describe('PluginListSettings — PermissionInfoPopup', () => {
+describe('PluginListSettings — rows stay plain', () => {
   beforeEach(resetStores);
 
-  it('renders (i) info icon for v0.5 plugin with permissions', () => {
+  it('does not show a permissions popup or API chip on the row', () => {
     render(<PluginListSettings />);
-    // The v0.5 plugin should have the info button
-    const buttons = screen.getAllByTitle('View permissions');
-    expect(buttons.length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByTitle('View permissions')).toBeNull();
+    expect(screen.queryByTestId('permission-popup')).toBeNull();
+    expect(screen.queryByText('API 0.5')).toBeNull();
+    expect(screen.queryByText('files.external')).toBeNull();
   });
 
-  it('clicking (i) icon opens popup with permission list', () => {
+  it('shows source and version as plain meta text', () => {
     render(<PluginListSettings />);
-    const infoButton = screen.getAllByTitle('View permissions')[0];
-    fireEvent.click(infoButton);
-
-    // Should show permission names
-    expect(screen.getByText('files')).toBeInTheDocument();
-    expect(screen.getByText('files.external')).toBeInTheDocument();
-    expect(screen.getByText('storage')).toBeInTheDocument();
-    expect(screen.getByText('notifications')).toBeInTheDocument();
-  });
-
-  it('popup shows human-readable descriptions for each permission', () => {
-    render(<PluginListSettings />);
-    const infoButton = screen.getAllByTitle('View permissions')[0];
-    fireEvent.click(infoButton);
-
-    // Check descriptions from PERMISSION_DESCRIPTIONS
-    expect(screen.getByText(PERMISSION_DESCRIPTIONS['files'])).toBeInTheDocument();
-    expect(screen.getByText(PERMISSION_DESCRIPTIONS['files.external'])).toBeInTheDocument();
-    expect(screen.getByText(PERMISSION_DESCRIPTIONS['storage'])).toBeInTheDocument();
-    expect(screen.getByText(PERMISSION_DESCRIPTIONS['notifications'])).toBeInTheDocument();
-  });
-
-  it('popup closes on outside click', () => {
-    render(<PluginListSettings />);
-    const infoButton = screen.getAllByTitle('View permissions')[0];
-    fireEvent.click(infoButton);
-
-    // Popup should be open
-    expect(screen.getByText('Permissions')).toBeInTheDocument();
-
-    // Click outside
-    fireEvent.mouseDown(document.body);
-
-    // Popup should close
-    expect(screen.queryByText(PERMISSION_DESCRIPTIONS['files'])).toBeNull();
-  });
-
-  it('clicking (i) icon twice toggles popup', () => {
-    render(<PluginListSettings />);
-    const infoButton = screen.getAllByTitle('View permissions')[0];
-
-    // Open
-    fireEvent.click(infoButton);
-    expect(screen.getByText('Permissions')).toBeInTheDocument();
-
-    // Close
-    fireEvent.click(infoButton);
-    expect(screen.queryByText(PERMISSION_DESCRIPTIONS['files'])).toBeNull();
-  });
-
-  it('shows API version badge for v0.5 plugin', () => {
-    render(<PluginListSettings />);
-    expect(screen.getByText('API 0.5')).toBeInTheDocument();
-  });
-
-  it('popup uses fixed positioning to escape overflow clipping', () => {
-    render(<PluginListSettings />);
-    const infoButton = screen.getAllByTitle('View permissions')[0];
-    fireEvent.click(infoButton);
-
-    const popup = screen.getByTestId('permission-popup');
-    expect(popup.className).toContain('fixed');
-    expect(popup.className).not.toContain('absolute');
-  });
-
-  it('shows app-scope cross-project note for app-scoped plugins with cross-project permissions', () => {
-    usePluginStore.setState({
-      plugins: {
-        'app-cross': makeEntry(appScopedCrossProjectManifest),
-      },
-      appEnabled: ['app-cross'],
-    });
-    render(<PluginListSettings />);
-    const infoButton = screen.getAllByTitle('View permissions')[0];
-    fireEvent.click(infoButton);
-
-    expect(screen.getByTestId('app-scope-cross-project-note')).toBeInTheDocument();
-    expect(screen.getByTestId('app-scope-cross-project-note').textContent).toContain(
-      'cross-project access is implicit',
-    );
-  });
-
-  it('does not show app-scope note for project-scoped plugins with cross-project permissions', () => {
-    usePluginStore.setState({
-      plugins: {
-        'proj-cross': makeEntry(projectScopedCrossProjectManifest),
-      },
-      appEnabled: ['proj-cross'],
-    });
-    render(<PluginListSettings />);
-    const infoButton = screen.getAllByTitle('View permissions')[0];
-    fireEvent.click(infoButton);
-
-    expect(screen.queryByTestId('app-scope-cross-project-note')).toBeNull();
-  });
-
-  it('rewrites cross-project permission descriptions for app-scoped plugins', () => {
-    usePluginStore.setState({
-      plugins: {
-        'app-cross': makeEntry(appScopedCrossProjectManifest),
-      },
-      appEnabled: ['app-cross'],
-    });
-    render(<PluginListSettings />);
-    const infoButton = screen.getAllByTitle('View permissions')[0];
-    fireEvent.click(infoButton);
-
-    // Should NOT contain the original bilateral consent wording
-    expect(screen.queryByText(/where the plugin is also enabled/)).toBeNull();
-    // Should contain the rewritten descriptions (one per cross-project permission)
-    const rewrittenDescs = screen.getAllByText(/across all projects \(app-scoped/);
-    expect(rewrittenDescs.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('flips popup above button when near viewport bottom', () => {
-    usePluginStore.setState({
-      plugins: {
-        'ext-plugin': makeEntry(v05Manifest),
-      },
-      appEnabled: ['ext-plugin'],
-    });
-    render(<PluginListSettings />);
-    const infoButton = screen.getAllByTitle('View permissions')[0];
-
-    // Mock getBoundingClientRect to return a position near the bottom of the viewport
-    const originalGetBCR = infoButton.getBoundingClientRect;
-    infoButton.getBoundingClientRect = () => ({
-      top: window.innerHeight - 30,
-      bottom: window.innerHeight - 10,
-      left: 100,
-      right: 120,
-      width: 20,
-      height: 20,
-      x: 100,
-      y: window.innerHeight - 30,
-      toJSON: () => ({}),
-    });
-
-    fireEvent.click(infoButton);
-
-    const popup = screen.getByTestId('permission-popup');
-    // When flipped, popup should have a `bottom` style (not `top`)
-    expect(popup.style.bottom).toBeDefined();
-    expect(popup.style.top).toBeFalsy();
-
-    // Restore
-    infoButton.getBoundingClientRect = originalGetBCR;
+    expect(screen.getByTestId('plugin-meta-ext-plugin')).toHaveTextContent('Community · 1.0.0');
   });
 });
 
@@ -249,6 +104,72 @@ describe('PluginDetailSettings — permissions section', () => {
     expect(screen.getByText('Permissions')).toBeInTheDocument();
   });
 
+  it('groups permissions by risk', () => {
+    render(<PluginDetailSettings />);
+    const elevated = screen.getByTestId('permission-group-elevated');
+    expect(elevated).toHaveTextContent('Can change things');
+    expect(elevated).toHaveTextContent('files.external');
+    const safe = screen.getByTestId('permission-group-safe');
+    expect(safe).toHaveTextContent('Read only');
+    expect(safe).toHaveTextContent('storage');
+    expect(safe).toHaveTextContent('notifications');
+    expect(screen.queryByTestId('permission-group-dangerous')).toBeNull();
+  });
+
+  it('shows the "Can bypass safety" group for dangerous permissions', () => {
+    usePluginStore.setState({
+      plugins: {
+        'app-cross': makeEntry(appScopedCrossProjectManifest),
+      },
+      appEnabled: ['app-cross'],
+    });
+    useUIStore.setState({ pluginSettingsId: 'app-cross' });
+    render(<PluginDetailSettings />);
+    const dangerous = screen.getByTestId('permission-group-dangerous');
+    expect(dangerous).toHaveTextContent('Can bypass safety');
+    expect(dangerous).toHaveTextContent('workspace.cross-project');
+    expect(screen.getByText('Can bypass safety').className).toContain('text-ctp-error');
+  });
+
+  it('shows app-scope cross-project note for app-scoped plugins with cross-project permissions', () => {
+    usePluginStore.setState({
+      plugins: {
+        'app-cross': makeEntry(appScopedCrossProjectManifest),
+      },
+      appEnabled: ['app-cross'],
+    });
+    useUIStore.setState({ pluginSettingsId: 'app-cross' });
+    render(<PluginDetailSettings />);
+    expect(screen.getByTestId('app-scope-cross-project-note').textContent).toContain(
+      'works across the whole app',
+    );
+  });
+
+  it('does not show app-scope note for project-scoped plugins with cross-project permissions', () => {
+    usePluginStore.setState({
+      plugins: {
+        'proj-cross': makeEntry(projectScopedCrossProjectManifest),
+      },
+      appEnabled: ['proj-cross'],
+    });
+    useUIStore.setState({ pluginSettingsId: 'proj-cross' });
+    render(<PluginDetailSettings />);
+    expect(screen.queryByTestId('app-scope-cross-project-note')).toBeNull();
+  });
+
+  it('rewrites cross-project permission descriptions for app-scoped plugins', () => {
+    usePluginStore.setState({
+      plugins: {
+        'app-cross': makeEntry(appScopedCrossProjectManifest),
+      },
+      appEnabled: ['app-cross'],
+    });
+    useUIStore.setState({ pluginSettingsId: 'app-cross' });
+    render(<PluginDetailSettings />);
+    expect(screen.queryByText(/where the plugin is also enabled/)).toBeNull();
+    expect(screen.getAllByText(/across all projects, since the plugin is app-wide/).length).toBeGreaterThanOrEqual(1);
+  });
+
   it('lists all declared permissions with descriptions', () => {
     render(<PluginDetailSettings />);
     // Permission names
@@ -264,7 +185,7 @@ describe('PluginDetailSettings — permissions section', () => {
 
   it('renders external roots section when externalRoots declared', () => {
     render(<PluginDetailSettings />);
-    expect(screen.getByText('External Roots')).toBeInTheDocument();
+    expect(screen.getByText('External roots')).toBeInTheDocument();
     expect(screen.getByText('data')).toBeInTheDocument();
     expect(screen.getByText('docs')).toBeInTheDocument();
   });
@@ -291,13 +212,13 @@ describe('PluginDetailSettings — permissions section', () => {
     useUIStore.setState({ pluginSettingsId: 'no-ext' });
     render(<PluginDetailSettings />);
     expect(screen.getByText('Permissions')).toBeInTheDocument();
-    expect(screen.queryByText('External Roots')).toBeNull();
+    expect(screen.queryByText('External roots')).toBeNull();
   });
 
   it('shows plugin name and version', () => {
     render(<PluginDetailSettings />);
-    expect(screen.getByText('Ext Plugin Settings')).toBeInTheDocument();
-    expect(screen.getByText('v1.0.0')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Ext Plugin' })).toBeInTheDocument();
+    expect(screen.getByTestId('plugin-detail-meta')).toHaveTextContent('Community · 1.0.0');
   });
 
   it('empty permissions array does not show permissions section', () => {
@@ -334,13 +255,13 @@ describe('PluginDetailSettings — permissions section', () => {
     });
     useUIStore.setState({ pluginSettingsId: 'process-plugin' });
     render(<PluginDetailSettings />);
-    expect(screen.getByText('Allowed Commands')).toBeInTheDocument();
+    expect(screen.getByText('Allowed commands')).toBeInTheDocument();
     expect(screen.getByText('gh')).toBeInTheDocument();
     expect(screen.getByText('node')).toBeInTheDocument();
   });
 
   it('does not render allowedCommands section when not declared', () => {
     render(<PluginDetailSettings />);
-    expect(screen.queryByText('Allowed Commands')).toBeNull();
+    expect(screen.queryByText('Allowed commands')).toBeNull();
   });
 });
