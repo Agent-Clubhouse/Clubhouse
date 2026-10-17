@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { PopoutAgentView } from './PopoutAgentView';
+import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
+import { chatFixture } from '../agents/chat/fixtures';
 
 vi.mock('../agents/AgentTerminal', () => ({
   AgentTerminal: ({ agentId, focused }: { agentId: string; focused?: boolean }) => (
@@ -15,6 +17,7 @@ vi.mock('../agents/SleepingAgent', () => ({
 }));
 
 vi.mock('../agents/AgentAvatar', () => ({
+  AgentAvatar: () => <div data-testid="chat-agent-avatar" />,
   AgentAvatarWithRing: ({ agent }: { agent: { name: string } }) => (
     <div data-testid="agent-avatar" data-name={agent.name} />
   ),
@@ -25,6 +28,7 @@ const mockAgents: Record<string, any> = {};
 vi.mock('../../stores/agentStore', () => ({
   useAgentStore: (selector: (s: any) => any) => selector({
     agents: mockAgents,
+    agentDetailedStatus: {},
     spawnDurableAgent: vi.fn(),
   }),
 }));
@@ -45,6 +49,35 @@ describe('PopoutAgentView', () => {
     window.clubhouse.pty.kill = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.pty.onExit = vi.fn().mockReturnValue(() => {});
     window.clubhouse.window.focusMain = vi.fn().mockResolvedValue(undefined);
+    resetChatFlagCache();
+    window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ chat: false })) as typeof window.clubhouse.app.getExperimentalSettings;
+  });
+
+  it('shows chat for an agent running in chat, with the action bar docked above it', async () => {
+    window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ chat: true })) as typeof window.clubhouse.app.getExperimentalSettings;
+    window.clubhouse.app.isPreviewEligible = vi.fn(async () => true);
+    window.clubhouse.chat.getAgentRuntime = vi.fn(async () => ({ chat: true, chatAvailable: true }));
+    window.clubhouse.chat.readTranscript = vi.fn(async () => chatFixture('codex', 'conversation'));
+    mockAgents['agent-1'] = {
+      id: 'agent-1', name: 'test-agent', status: 'running',
+      kind: 'durable', projectId: 'proj-1', color: 'red', orchestrator: 'codex-cli',
+    };
+    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
+    await screen.findByTestId('chat-view');
+    expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
+    // Switching runtimes stays in the main window.
+    expect(screen.queryByTestId('runtime-switch')).not.toBeInTheDocument();
+    expect(screen.getByTestId('popout-action-bar').className).not.toContain('absolute');
+    expect(screen.getByTestId('popout-stop-button')).toBeInTheDocument();
+  });
+
+  it('floats the action bar over the terminal', () => {
+    mockAgents['agent-1'] = {
+      id: 'agent-1', name: 'test-agent', status: 'running',
+      kind: 'durable', projectId: 'proj-1', color: 'red',
+    };
+    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
+    expect(screen.getByTestId('popout-action-bar').className).toContain('absolute');
   });
 
   it('renders "No agent specified" when no agentId', () => {

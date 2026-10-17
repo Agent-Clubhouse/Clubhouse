@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useAgentStore } from '../../stores/agentStore';
+import { initChatEventListener } from '../../stores/chatStore';
 import { PopoutAgentView } from './PopoutAgentView';
 import { PopoutCanvasView } from './PopoutCanvasView';
 import type { Agent, AgentHookEvent } from '../../../shared/types';
@@ -75,7 +76,7 @@ function useAgentStateSync() {
           const incoming = raw as Agent;
           const current = currentAgents[id];
           // Don't regress from "running" to "sleeping" via broadcast — PTY
-          // data (step 5) is ground truth that the process is alive, and the
+          // data (step 6) is ground truth that the process is alive, and the
           // popout has its own onExit listener (step 3) for real exits.
           if (current?.status === 'running' && incoming.status === 'sleeping') {
             agents[id] = current;
@@ -91,7 +92,10 @@ function useAgentStateSync() {
       },
     );
 
-    // 5. Detect sleeping → running transitions via PTY data.
+    // 5. Chat events, for agents running in the chat runtime.
+    const removeChatListener = initChatEventListener();
+
+    // 6. Detect sleeping → running transitions via PTY data.
     //    When an agent is woken from the main window, the pop-out's store still
     //    shows 'sleeping'. Hook events may not arrive promptly (the agent might
     //    be idle at a prompt). PTY data is a reliable signal that the process is
@@ -122,6 +126,7 @@ function useAgentStateSync() {
 
     return () => {
       cancelled = true;
+      removeChatListener();
       removeHookListener();
       removeExitListener();
       removeStateListener();

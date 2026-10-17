@@ -88,7 +88,7 @@ const NAVIGATION_API_METHODS: (keyof NavigationAPI)[] = [
 ];
 
 const WIDGETS_API_COMPONENTS: (keyof WidgetsAPI)[] = [
-  'AgentTerminal', 'SleepingAgent', 'AgentAvatar', 'QuickAgentGhost', 'PopoutPlaceholder',
+  'AgentTerminal', 'AgentView', 'SleepingAgent', 'AgentAvatar', 'QuickAgentGhost', 'PopoutPlaceholder',
 ];
 
 const TERMINAL_API_METHODS: (keyof TerminalAPI)[] = [

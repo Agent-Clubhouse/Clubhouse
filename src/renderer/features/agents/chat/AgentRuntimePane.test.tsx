@@ -80,6 +80,21 @@ describe('AgentRuntimePane', () => {
     expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
   });
 
+  it('hides the switch in both runtimes when switching is left to the main pane', async () => {
+    setFlag(true);
+    setRuntime(true, true);
+    api.chat.readTranscript = vi.fn(async () => chatFixture('codex', 'conversation'));
+    const { unmount } = render(<AgentRuntimePane agent={agent} terminal={terminal} canSwitch={false} />);
+    await screen.findByTestId('chat-view');
+    expect(screen.queryByTestId('runtime-switch')).not.toBeInTheDocument();
+    unmount();
+
+    setRuntime(false, true);
+    const { container } = render(<AgentRuntimePane agent={agent} terminal={terminal} canSwitch={false} />);
+    await waitFor(() => expect(container.firstChild).toBe(screen.queryByTestId('fake-terminal')));
+    expect(screen.queryByTestId('terminal-runtime-bar')).not.toBeInTheDocument();
+  });
+
   it('never offers chat for quick agents', async () => {
     setFlag(true);
     setRuntime(false, true);

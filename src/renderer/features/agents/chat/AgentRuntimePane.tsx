@@ -102,9 +102,15 @@ interface Props {
   agent: Agent;
   /** The terminal view, rendered unchanged when the agent isn't in chat. */
   terminal: ReactNode;
+  /**
+   * Show the Chat / Terminal switch. Views outside the main agent pane
+   * (popouts, canvas, plugins) render whichever runtime the agent is in and
+   * leave switching to the main pane.
+   */
+  canSwitch?: boolean;
 }
 
-export function AgentRuntimePane({ agent, terminal }: Props) {
+export function AgentRuntimePane({ agent, terminal, canSwitch = true }: Props) {
   const flag = useChatFlag();
   const info = useAgentRuntimeInfo(agent, flag);
   // Busy in either runtime: chat from its events, the terminal from hook status.
@@ -150,14 +156,14 @@ export function AgentRuntimePane({ agent, terminal }: Props) {
     return (
       <>
         <Suspense fallback={<div className="h-full bg-ctp-base" />}>
-          <ChatView agent={agent} switching={switching} onSwitchToTerminal={() => requestSwitch('terminal')} />
+          <ChatView agent={agent} switching={switching} onSwitchToTerminal={canSwitch ? () => requestSwitch('terminal') : undefined} />
         </Suspense>
         {confirmDialog}
       </>
     );
   }
 
-  if (!info.chatAvailable) return <>{terminal}</>;
+  if (!info.chatAvailable || !canSwitch) return <>{terminal}</>;
 
   return (
     <div className="flex flex-col h-full">

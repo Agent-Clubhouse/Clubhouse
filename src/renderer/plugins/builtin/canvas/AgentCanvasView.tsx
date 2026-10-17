@@ -303,13 +303,13 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
     );
   }
 
-  // Agent assigned — show terminal or sleeping widget
+  // Agent assigned: its live view (chat or terminal), or the sleeping widget
   const isRunning = assignedAgent.status === 'running' || assignedAgent.status === 'creating';
 
   if (isRunning) {
     return (
       <div className="relative flex flex-col h-full">
-        {React.createElement(api.widgets.AgentTerminal, {
+        {React.createElement(api.widgets.AgentView ?? api.widgets.AgentTerminal, {
           agentId: view.agentId,
           zoneThemeId,
         })}

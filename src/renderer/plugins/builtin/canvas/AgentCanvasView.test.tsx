@@ -131,7 +131,7 @@ describe('AgentCanvasView', () => {
     expect(screen.queryByText('Assign an agent')).toBeNull();
   });
 
-  it('shows terminal when agent is found and running', () => {
+  it('falls back to the terminal widget on hosts without AgentView', () => {
     const view = makeView({
       agentId: 'agent-1',
       displayName: 'Alpha',
@@ -144,6 +144,21 @@ describe('AgentCanvasView', () => {
     render(<AgentCanvasView view={view} api={api} onUpdate={noop} />);
 
     expect(screen.getByTestId('agent-terminal')).toBeTruthy();
+  });
+
+  it('shows the runtime-aware AgentView when the host has it', () => {
+    const view = makeView({ agentId: 'agent-1', displayName: 'Alpha' });
+    const api = stubApi({
+      agents: [{ id: 'agent-1', name: 'Alpha', status: 'running', kind: 'durable', projectId: 'proj-1' }],
+    });
+    (api.widgets as { AgentView?: unknown }).AgentView = ({ agentId, zoneThemeId }: { agentId: string; zoneThemeId?: string }) => (
+      <div data-testid="agent-view" data-zone-theme={zoneThemeId}>{agentId}</div>
+    );
+
+    render(<AgentCanvasView view={view} api={api} onUpdate={noop} zoneThemeId="latte" />);
+
+    expect(screen.getByTestId('agent-view')).toHaveAttribute('data-zone-theme', 'latte');
+    expect(screen.queryByTestId('agent-terminal')).toBeNull();
   });
 
   it('shows sleeping widget when agent is found and sleeping', () => {
