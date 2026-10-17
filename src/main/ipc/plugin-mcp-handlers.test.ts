@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('electron', () => ({
-  ipcMain: { handle: vi.fn(), on: vi.fn() },
+  ipcMain: { handle: vi.fn(), on: vi.fn(), removeHandler: vi.fn(), removeListener: vi.fn() },
 }));
 
 vi.mock('../services/clubhouse-mcp/plugin-tool-registry', () => ({
@@ -12,7 +12,8 @@ vi.mock('../services/clubhouse-mcp/plugin-tool-registry', () => ({
 }));
 
 import { ipcMain } from 'electron';
-import { registerPluginTools } from '../services/clubhouse-mcp/plugin-tool-registry';
+import { registerPluginTools, resolvePluginToolCall } from '../services/clubhouse-mcp/plugin-tool-registry';
+import { IPC } from '../../shared/ipc-channels';
 import { registerPluginMcpHandlers } from './plugin-mcp-handlers';
 
 describe('plugin-mcp-handlers', () => {
@@ -66,5 +67,40 @@ describe('plugin-mcp-handlers', () => {
       const bad = [{ name: 'tool', description: 'desc', inputSchema: [] }];
       expect(() => contributeHandler({} as any, 'my-plugin', bad)).toThrow('inputSchema must be an object');
     });
+  });
+});
+
+describe('registerPluginMcpHandlers registration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('replaces its own handlers and listener, so registering again never throws', () => {
+    registerPluginMcpHandlers();
+    registerPluginMcpHandlers();
+
+    const removed = vi.mocked(ipcMain.removeHandler).mock.calls.map(([ch]) => ch);
+    expect(removed).toEqual([
+      IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS, IPC.PLUGIN_MCP.REMOVE_TOOLS, IPC.PLUGIN_MCP.LIST_TOOLS,
+      IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS, IPC.PLUGIN_MCP.REMOVE_TOOLS, IPC.PLUGIN_MCP.LIST_TOOLS,
+    ]);
+    // Each removeHandler precedes its handle: a second handle() on a channel throws in Electron.
+    const removeOrder = vi.mocked(ipcMain.removeHandler).mock.invocationCallOrder;
+    const handleOrder = vi.mocked(ipcMain.handle).mock.invocationCallOrder;
+    expect(removeOrder[3]).toBeLessThan(handleOrder[3]);
+    // The same listener function is removed and re-added, so results never resolve twice.
+    const [[, onListener]] = vi.mocked(ipcMain.on).mock.calls;
+    expect(vi.mocked(ipcMain.removeListener).mock.calls[1]).toEqual([IPC.PLUGIN_MCP.TOOL_RESULT, onListener]);
+  });
+
+  it('routes a tool result from the renderer to the pending call', () => {
+    registerPluginMcpHandlers();
+    const [[channel, listener]] = vi.mocked(ipcMain.on).mock.calls;
+    expect(channel).toBe(IPC.PLUGIN_MCP.TOOL_RESULT);
+
+    const result = { content: [{ type: 'text' as const, text: 'ok' }] };
+    (listener as (e: unknown, d: unknown) => void)({}, { callId: 'ptc_1', result });
+
+    expect(resolvePluginToolCall).toHaveBeenCalledWith('ptc_1', result);
   });
 });

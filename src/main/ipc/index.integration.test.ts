@@ -13,6 +13,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // invoke them directly in tests.
 const handleHandlers = new Map<string, (...args: any[]) => any>();
 const onHandlers = new Map<string, (...args: any[]) => any>();
+const preloadInvoked = new Set<string>();
+const preloadSent = new Set<string>();
+// Every registration ever made in this file, never cleared: some handler
+// modules register once per process (a module-level guard), so a map that
+// is cleared between tests would miss them.
+const everHandled = new Set<string>();
+const everOn = new Set<string>();
 
 vi.mock('electron', () => ({
   app: {
@@ -31,15 +38,31 @@ vi.mock('electron', () => ({
   ipcMain: {
     handle: vi.fn((channel: string, handler: any) => {
       handleHandlers.set(channel, handler);
+      everHandled.add(channel);
     }),
     on: vi.fn(((channel: string, handler: any) => {
       onHandlers.set(channel, handler);
+      everOn.add(channel);
     }) as any),
+    removeHandler: vi.fn((channel: string) => { handleHandlers.delete(channel); }),
     once: vi.fn(),
     removeListener: vi.fn(),
     emit: vi.fn(),
   },
   shell: { openExternal: vi.fn(async () => {}) },
+  // The preload half, for the composition test below: the real preload API
+  // is imported and walked, and every channel it invokes or sends is recorded.
+  ipcRenderer: {
+    invoke: vi.fn((channel: string) => { preloadInvoked.add(channel); return Promise.resolve(undefined); }),
+    send: vi.fn((channel: string) => { preloadSent.add(channel); }),
+    sendSync: vi.fn((channel: string) => { preloadSent.add(channel); return undefined; }),
+    on: vi.fn(),
+    once: vi.fn(),
+    removeListener: vi.fn(),
+    removeAllListeners: vi.fn(),
+  },
+  contextBridge: { exposeInMainWorld: vi.fn() },
+  webUtils: { getPathForFile: vi.fn(() => '') },
 }));
 
 // ── child_process ──────────────────────────────────────────────────────
@@ -381,6 +404,13 @@ vi.mock('../title-bar-colors', () => ({
   getThemeColorsForTitleBar: vi.fn(() => ({ bg: '#000', mantle: '#111', text: '#fff' })),
 }));
 
+// ── MCP settings: real behaviour by default; the composition test turns the
+// MCP flag on to check the flag-gated binding handlers.
+vi.mock('../services/mcp-settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/mcp-settings')>();
+  return { ...actual, isMcpEnabledForAny: vi.fn(actual.isMcpEnabledForAny) };
+});
+
 // ── Imports ────────────────────────────────────────────────────────────
 import { IPC } from '../../shared/ipc-channels';
 import { registerAllHandlers } from './index';
@@ -390,6 +420,9 @@ import * as projectStore from '../services/project-store';
 import * as logService from '../services/log-service';
 import * as profileSettings from '../services/profile-settings';
 import { getAllowedCommands } from '../services/plugin-manifest-registry';
+import { isMcpEnabledForAny } from '../services/mcp-settings';
+import { registerMcpBindingHandlers } from './mcp-binding-handlers';
+import { registerTelemetryRendererHandlers } from './telemetry-renderer-handlers';
 
 // ════════════════════════════════════════════════════════════════════════
 // Tests
@@ -540,5 +573,116 @@ describe('registerAllHandlers — integration', () => {
     const profile = { id: 'prof2', name: 'Custom', orchestratorId: 'claude-code', env: { FOO: 'bar' } };
     await handler({}, profile);
     expect(profileSettings.saveProfile).toHaveBeenCalledWith(profile);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// Composition: every channel the preload uses has a handler in main
+// ════════════════════════════════════════════════════════════════════════
+//
+// ipc-channel-sync.test.ts checks that channel names appear in handler
+// files; that passes for a handler module nobody registers (#2054). This
+// test checks the real thing: it registers everything through
+// registerAllHandlers(), then calls every function on the real preload API
+// and requires a handler for each channel those calls invoke or send.
+
+/** Calls every function in the preload API tree, so it reaches ipcRenderer. */
+async function exercisePreloadApi(node: unknown, seen = new Set<unknown>()): Promise<void> {
+  if (!node || typeof node !== 'object' || seen.has(node)) return;
+  seen.add(node);
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    // The generic settings bridge builds `settings:<key>:get|save` from a
+    // runtime key; settings-definitions tests cover those channels.
+    if (node === preloadApi && key === 'settings') continue;
+    if (typeof value === 'function') {
+      try {
+        // Arguments are placeholders: the preload forwards them, and the
+        // test only cares which channel each call reaches.
+        const result = (value as (...args: unknown[]) => unknown)('x', 'x', 'x', 'x', 'x');
+        if (result && typeof (result as Promise<unknown>).then === 'function') {
+          await (result as Promise<unknown>).catch(() => undefined);
+        }
+      } catch {
+        // A function that rejects placeholder arguments before reaching IPC
+        // simply contributes no channel.
+      }
+    } else {
+      await exercisePreloadApi(value, seen);
+    }
+  }
+}
+
+/**
+ * Preload channels that main doesn't register a handler for today. Each is
+ * a real gap to fix in its own change. Keep this list exact: the test fails
+ * when one gains a handler, so it can't go stale.
+ */
+const KNOWN_UNHANDLED_INVOKES = new Set<string>([
+]);
+const KNOWN_UNHANDLED_SENDS = new Set<string>([
+]);
+
+/**
+ * Registered only while the MCP bridge is enabled for some project
+ * (registerMcpBindingHandlers checks isMcpEnabledForAny). The renderer only
+ * uses them in that state; a test below checks they register once enabled.
+ */
+const MCP_FLAG_GATED_INVOKES = new Set<string>([
+  IPC.MCP_BINDING.BIND,
+  IPC.MCP_BINDING.GET_BINDINGS,
+  IPC.MCP_BINDING.REGISTER_WEBVIEW,
+  IPC.MCP_BINDING.SET_DISABLED_TOOLS,
+  IPC.MCP_BINDING.SET_INSTRUCTIONS,
+  IPC.MCP_BINDING.UNBIND,
+  IPC.MCP_BINDING.UNREGISTER_WEBVIEW,
+]);
+
+let preloadApi: Record<string, unknown>;
+
+describe('preload ↔ main composition', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    handleHandlers.clear();
+    onHandlers.clear();
+    preloadInvoked.clear();
+    preloadSent.clear();
+    // Main's startup composition: registerAllHandlers(), plus the telemetry
+    // renderer handlers that src/main/index.ts registers before it.
+    registerAllHandlers();
+    registerTelemetryRendererHandlers({ getMainWebContentsId: () => undefined, getConfiguredLevel: () => 'off' as never });
+    preloadApi = (await import('../../preload/index')).api as unknown as Record<string, unknown>;
+    await exercisePreloadApi(preloadApi);
+  });
+
+  it('reaches a meaningful share of the preload API', () => {
+    // Guards the walk itself: if the preload mock stopped recording, every
+    // later assertion would pass vacuously.
+    expect(preloadInvoked.size).toBeGreaterThan(100);
+    expect(preloadSent.size).toBeGreaterThan(0);
+  });
+
+  it('every channel the preload invokes has an ipcMain.handle handler', () => {
+    const missing = [...preloadInvoked].filter((ch) => !everHandled.has(ch) && !MCP_FLAG_GATED_INVOKES.has(ch)).sort();
+    expect(missing).toEqual([...KNOWN_UNHANDLED_INVOKES].sort());
+  });
+
+  it('every channel the preload sends has an ipcMain.on listener', () => {
+    const missing = [...preloadSent].filter((ch) => !everOn.has(ch)).sort();
+    expect(missing).toEqual([...KNOWN_UNHANDLED_SENDS].sort());
+  });
+
+  it('the flag-gated MCP binding channels are all used by the preload, and register once MCP is enabled', () => {
+    for (const ch of MCP_FLAG_GATED_INVOKES) expect(preloadInvoked.has(ch)).toBe(true);
+    vi.mocked(isMcpEnabledForAny).mockReturnValue(true);
+    registerMcpBindingHandlers();
+    const missing = [...MCP_FLAG_GATED_INVOKES].filter((ch) => !everHandled.has(ch));
+    expect(missing).toEqual([]);
+  });
+
+  it('the plugin MCP channels are registered (#2054)', () => {
+    expect(handleHandlers.has(IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS)).toBe(true);
+    expect(handleHandlers.has(IPC.PLUGIN_MCP.REMOVE_TOOLS)).toBe(true);
+    expect(handleHandlers.has(IPC.PLUGIN_MCP.LIST_TOOLS)).toBe(true);
+    expect(onHandlers.has(IPC.PLUGIN_MCP.TOOL_RESULT)).toBe(true);
   });
 });

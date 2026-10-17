@@ -4124,4 +4124,47 @@ describe('plugin-api-factory', () => {
       }
     });
   });
+
+  describe('mcp tool cleanup on deactivation', () => {
+    const bridge = window.clubhouse as unknown as { pluginMcp?: unknown };
+    let original: unknown;
+    let pluginMcp: { contributeTools: ReturnType<typeof vi.fn>; removeTools: ReturnType<typeof vi.fn> };
+
+    beforeEach(() => {
+      original = bridge.pluginMcp;
+      pluginMcp = { contributeTools: vi.fn(async () => undefined), removeTools: vi.fn(async () => undefined) };
+      bridge.pluginMcp = pluginMcp;
+    });
+
+    afterEach(() => {
+      bridge.pluginMcp = original;
+    });
+
+    const mcpManifest = () => makeAllPermsManifest({ permissions: ['mcp.tools'] as PluginManifest['permissions'] });
+    const tool = { name: 't', description: 'd', inputSchema: { type: 'object' } };
+
+    it('removes the contributed tools once when the plugin deactivates', async () => {
+      const ctx = makeCtx();
+      const api = createPluginAPI(ctx, undefined, mcpManifest());
+      const afterCreate = ctx.subscriptions.length;
+
+      await api.mcp.contributeTools([tool]);
+      await api.mcp.contributeTools([tool]);
+      expect(pluginMcp.contributeTools).toHaveBeenCalledTimes(2);
+      expect(ctx.subscriptions.length).toBe(afterCreate + 1); // one cleanup, however often tools are contributed
+
+      for (const sub of ctx.subscriptions) sub.dispose();
+      expect(pluginMcp.removeTools).toHaveBeenCalledTimes(1);
+      expect(pluginMcp.removeTools).toHaveBeenCalledWith(ctx.pluginId);
+    });
+
+    it('registers no cleanup for a plugin that never contributes tools', () => {
+      const ctx = makeCtx();
+      createPluginAPI(ctx, undefined, mcpManifest());
+      const afterCreate = ctx.subscriptions.length;
+      for (const sub of ctx.subscriptions) sub.dispose();
+      expect(pluginMcp.removeTools).not.toHaveBeenCalled();
+      expect(ctx.subscriptions.length).toBe(afterCreate);
+    });
+  });
 });

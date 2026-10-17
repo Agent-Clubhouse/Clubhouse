@@ -33,7 +33,25 @@ function pluginToolArrayArg(): (value: unknown, argName: string) => PluginToolDe
   return inner;
 }
 
+type ToolResultMessage = { callId: string; result: { content: Array<{ type: 'text'; text: string }>; isError?: boolean } };
+
+// Renderer sends back the result of a plugin tool call
+function onToolResult(_event: Electron.IpcMainEvent, data: ToolResultMessage): void {
+  resolvePluginToolCall(data.callId, data.result);
+}
+
+/**
+ * Registers the plugin MCP channels. Idempotent: it replaces its own
+ * handlers and listener, since ipcMain.handle throws on a second handler for
+ * a channel. Permission is enforced in registerPluginTools, against the
+ * manifest main trusts (`mcp.tools`).
+ */
 export function registerPluginMcpHandlers(): void {
+  ipcMain.removeHandler(IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS);
+  ipcMain.removeHandler(IPC.PLUGIN_MCP.REMOVE_TOOLS);
+  ipcMain.removeHandler(IPC.PLUGIN_MCP.LIST_TOOLS);
+  ipcMain.removeListener(IPC.PLUGIN_MCP.TOOL_RESULT, onToolResult);
+
   ipcMain.handle(IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS, withValidatedArgs(
     [stringArg(), pluginToolArrayArg()],
     async (_event, pluginId: string, tools: PluginToolDef[]) => {
@@ -55,8 +73,5 @@ export function registerPluginMcpHandlers(): void {
     },
   ));
 
-  // Renderer sends back the result of a plugin tool call
-  ipcMain.on(IPC.PLUGIN_MCP.TOOL_RESULT, (_event, data: { callId: string; result: { content: Array<{ type: 'text'; text: string }>; isError?: boolean } }) => {
-    resolvePluginToolCall(data.callId, data.result);
-  });
+  ipcMain.on(IPC.PLUGIN_MCP.TOOL_RESULT, onToolResult);
 }

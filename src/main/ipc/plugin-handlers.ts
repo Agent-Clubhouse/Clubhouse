@@ -1,4 +1,5 @@
 import { app, ipcMain } from 'electron';
+import { removePluginTools } from '../services/clubhouse-mcp/plugin-tool-registry';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
@@ -173,6 +174,9 @@ export function registerPluginHandlers(): void {
   ipcMain.handle(IPC.PLUGIN.UNINSTALL, withValidatedArgs([stringArg()], async (_event, pluginId: string) => {
     await pluginDiscovery.uninstallPlugin(pluginId);
     pluginManifestRegistry.unregisterManifest(pluginId);
+    // Its MCP tools would otherwise stay listed for agents, and every call
+    // would wait out the tool-call timeout with no handler left to answer.
+    removePluginTools(pluginId);
   }));
 
   ipcMain.handle(IPC.PLUGIN.LIST_PROJECT_INJECTIONS, withValidatedArgs([stringArg(), stringArg()], async (_event, pluginId: string, projectPath: string) => {

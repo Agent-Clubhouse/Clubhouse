@@ -51,6 +51,9 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     projectPath: ctx.projectPath,
   };
 
+  /** Whether this plugin's MCP tools get removed when it deactivates (set by mcp.contributeTools). */
+  let toolsCleanupRegistered = false;
+
   const api: PluginAPI = {
     project: gated(
       projectAvailable && !!ctx.projectPath && !!ctx.projectId, scopeLabel, 'project', 'files',
@@ -147,6 +150,17 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       ctx.pluginId, manifest, () => ({
         async contributeTools(tools) {
           await window.clubhouse.pluginMcp.contributeTools(ctx.pluginId, tools);
+          // Tools outlive the plugin's onToolCall handler otherwise: once it
+          // deactivates, calls would wait out the timeout in main.
+          if (!toolsCleanupRegistered) {
+            toolsCleanupRegistered = true;
+            ctx.subscriptions.push({
+              dispose() {
+                toolsCleanupRegistered = false;
+                void window.clubhouse.pluginMcp.removeTools(ctx.pluginId).catch((): undefined => undefined);
+              },
+            });
+          }
         },
         async removeTools() {
           await window.clubhouse.pluginMcp.removeTools(ctx.pluginId);
