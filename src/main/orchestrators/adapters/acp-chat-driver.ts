@@ -1,0 +1,297 @@
+import type { ChatCapabilities, ChatDriverId, PermissionLevel } from '../../../shared/chat/capabilities';
+import type { ChatEventDraft, ContentBlock, MessageDelivery } from '../../../shared/chat/events';
+import type {
+  ChatDriver,
+  ChatDriverProbe,
+  ChatDriverSession,
+  ChatDriverStartOptions,
+} from '../../../shared/chat/runtime';
+import { AsyncQueue } from './async-queue';
+import { AcpSession, GENERIC_ACP_PROFILE, type AcpAgentProfile, type AcpSessionEvent } from './acp-session';
+import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
+import type { InitializeResponse } from './acp-schema';
+import { resolveStructuredSpawn, type StructuredSpawnCommand } from './structured-spawn';
+import { COPILOT_ACP_TESTED_RANGE, copilotVersionStatus, resolveCopilotAcpSpawn, selectAcpProfile } from './copilot-acp';
+
+type Log = (level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
+
+/** What differs between ACP agents at launch; everything else is the generic driver. */
+export interface AcpLaunchSpec {
+  id: ChatDriverId;
+  provider: string;
+  spawn(opts: { binary: string; extraArgs?: string[]; commandPrefix?: string }): StructuredSpawnCommand;
+  profile: AcpAgentProfile | ((init: InitializeResponse) => AcpAgentProfile);
+  /** Extra drafts after the handshake, e.g. an untested-version notice. */
+  handshakeNotices?(init: InitializeResponse): ChatEventDraft[];
+}
+
+const CLOSE_GRACE_MS = 5_000;
+
+class AcpChatDriverSession implements ChatDriverSession {
+  readonly events: AsyncIterable<ChatEventDraft>;
+  readonly capabilities: ChatCapabilities;
+  private exited = false;
+  private readonly exitWaiters: Array<() => void> = [];
+
+  constructor(
+    private readonly session: AcpSession,
+    queue: AsyncQueue<ChatEventDraft>,
+    capabilities: ChatCapabilities,
+    private readonly log: Log,
+  ) {
+    this.events = queue;
+    this.capabilities = capabilities;
+  }
+
+  get nativeSessionId(): string | undefined {
+    return this.session.getState().sessionId ?? undefined;
+  }
+
+  markExited(): void {
+    this.exited = true;
+    for (const resolve of this.exitWaiters.splice(0)) resolve();
+  }
+
+  async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
+    if (this.session.getState().turnInFlight) {
+      // ACP v1 can't steer or queue; the chat runtime queues (capabilities.queue === 'client').
+      throw new Error(`Cannot ${delivery} into a running ACP turn; queue it until the turn ends`);
+    }
+    this.runTurn(toAcpPrompt(content));
+    return 'prompt';
+  }
+
+  async interrupt(): Promise<void> {
+    this.session.cancel();
+  }
+
+  async respondPermission(requestId: string, optionId: string): Promise<void> {
+    this.session.respondToPermission(requestId, { optionId });
+  }
+
+  async answerQuestion(): Promise<void> {
+    throw new Error('ACP v1 agents do not ask structured questions');
+  }
+
+  async setLevel(level: PermissionLevel): Promise<void> {
+    const levels = this.session.agentProfile.permissionLevels;
+    if (!levels) throw new Error('This ACP agent has no permission levels');
+    await levels.apply(this.session, level);
+  }
+
+  async setModel(modelId: string, effort?: string): Promise<void> {
+    await this.session.setModel(modelId);
+    if (effort) await this.setEffort(effort);
+  }
+
+  /** ACP has no compaction method; agents that support it take `/compact` as prompt text. */
+  async compact(): Promise<void> {
+    if (!this.session.getState().availableCommands.some((c) => c.name === 'compact')) {
+      throw new Error('This ACP agent does not offer /compact');
+    }
+    await this.session.prompt('/compact');
+  }
+
+  async close(): Promise<void> {
+    const exited = this.exited ? Promise.resolve() : new Promise<void>((resolve) => this.exitWaiters.push(resolve));
+    await this.session.close();
+    await Promise.race([exited, new Promise((r) => setTimeout(r, CLOSE_GRACE_MS))]);
+  }
+
+  async setEffort(effort: string): Promise<void> {
+    const option = this.session.getState().configOptions.find((o) => o.category === 'thought_level');
+    if (!option) throw new Error('This ACP agent has no reasoning-effort option');
+    await this.session.setConfigOption(option.id, effort);
+  }
+
+  /** Prompts resolve when the turn ends; outcomes reach the stream as turn_ended. */
+  private runTurn(prompt: ReturnType<typeof toAcpPrompt>): void {
+    this.session.prompt(prompt).catch((err: Error) => {
+      this.log('warn', 'ACP prompt turn failed', { error: err.message });
+    });
+  }
+}
+
+/**
+ * Chat driver for an ACP agent: drives an `AcpSession` and translates its
+ * events into chat contract drafts. Lifecycle (session_started, state,
+ * transcripts, queueing) belongs to the chat runtime.
+ */
+export class AcpChatDriver implements ChatDriver {
+  readonly id: ChatDriverId;
+  readonly provider: string;
+
+  constructor(private readonly spec: AcpLaunchSpec, private readonly log: Log = () => undefined) {
+    this.id = spec.id;
+    this.provider = spec.provider;
+  }
+
+  /** `initialize` only: no session, no prompt, no tokens. */
+  async probe(binaryPath: string, env?: Record<string, string>): Promise<ChatDriverProbe> {
+    const cmd = this.spec.spawn({ binary: binaryPath });
+    const session = new AcpSession({ ...cmd, env, profile: this.spec.profile, onLog: this.log });
+    try {
+      const caps = await session.start();
+      return {
+        handshakeOk: true,
+        ...(caps.agent.version && { cliVersion: caps.agent.version }),
+        capabilities: toChatCapabilities(caps, undefined, session.agentProfile.permissionLevels),
+      };
+    } catch (err) {
+      return { handshakeOk: false, capabilities: toChatCapabilities(MINIMAL_ACP_CAPS), error: (err as Error).message };
+    } finally {
+      session.kill();
+    }
+  }
+
+  async start(opts: ChatDriverStartOptions): Promise<ChatDriverSession> {
+    const cmd = this.spec.spawn({ binary: opts.binaryPath, extraArgs: opts.extraArgs, commandPrefix: opts.commandPrefix });
+    const queue = new AsyncQueue<ChatEventDraft>();
+    let mapper: AcpChatEventMapper | null = null;
+    let driverSession: AcpChatDriverSession | null = null;
+    const buffered: AcpSessionEvent[] = [];
+
+    const session = new AcpSession({
+      ...cmd,
+      cwd: opts.cwd,
+      env: opts.env,
+      profile: this.spec.profile,
+      onLog: this.log,
+      onEvent: (event) => {
+        if (event.type === 'exit') {
+          // AcpSession emits exit only after a running turn's turn_ended, so nothing is cut off.
+          driverSession?.markExited();
+          queue.finish();
+          return;
+        }
+        if (!mapper) {
+          buffered.push(event);
+          return;
+        }
+        for (const draft of mapper.map(event, session.getState())) queue.push(draft);
+      },
+    });
+
+    try {
+      const caps = await session.start();
+      const { servers, skipped } = toAcpMcpServers(opts.mcpServers);
+      if (skipped.length) this.log('warn', 'MCP servers not expressible over ACP', { skipped });
+      const setup = { cwd: opts.cwd, mcpServers: servers };
+      if (opts.resumeNativeSessionId) {
+        await session.resumeSession(opts.resumeNativeSessionId, setup);
+      } else {
+        await session.newSession(setup);
+      }
+
+      const levels = session.agentProfile.permissionLevels;
+      driverSession = new AcpChatDriverSession(session, queue, toChatCapabilities(caps, session.getState(), levels), this.log);
+      for (const draft of this.spec.handshakeNotices?.(session.initializeResponse!) ?? []) queue.push(draft);
+
+      // Apply requested settings before mapping starts, so they aren't reported as changes.
+      if (opts.model) await driverSession.setModel(opts.model);
+      if (opts.effort) await driverSession.setEffort(opts.effort).catch((err: Error) => this.log('warn', 'Effort not applied', { error: err.message }));
+      if (levels && levels.live.includes(opts.level)) {
+        await levels.apply(session, opts.level);
+      } else {
+        this.log('warn', 'Permission level not available over ACP; keeping the agent default', { level: opts.level });
+      }
+
+      mapper = new AcpChatEventMapper(this.id, levels);
+      const state = session.getState();
+      const cliVersion = session.initializeResponse?.agentInfo?.version;
+      queue.push({
+        type: 'session_info',
+        data: {
+          ...(state.sessionId && { nativeSessionId: state.sessionId }),
+          ...(cliVersion && { cliVersion }),
+          ...(state.title && { title: state.title }),
+        },
+      });
+      // Session-scoped state that arrived during setup. Replayed copies count:
+      // Copilot's trailing command list can land while session/load still reads as replay.
+      for (const event of buffered.splice(0)) {
+        if (event.type === 'update'
+          && (event.update.sessionUpdate === 'available_commands_update' || event.update.sessionUpdate === 'usage_update')) {
+          for (const draft of mapper.map(event, state)) queue.push(draft);
+        } else if (event.type === 'unknown_update' || event.type === 'unknown_method') {
+          for (const draft of mapper.map(event, state)) queue.push(draft);
+        }
+      }
+      mapper.prime(session.getState());
+      return driverSession;
+    } catch (err) {
+      session.kill();
+      queue.finish();
+      throw err;
+    }
+  }
+}
+
+const MINIMAL_ACP_CAPS = {
+  driver: 'acp',
+  profile: 'generic',
+  agent: { name: 'unknown' },
+  protocolVersion: 0,
+  schemaVersion: '',
+  resume: 'none',
+  fork: false,
+  listSessions: false,
+  listIsMachineWide: false,
+  closeSession: false,
+  deleteSession: false,
+  cancel: true,
+  steer: false,
+  queue: 'client',
+  rewind: false,
+  planApproval: false,
+  subagents: 'none',
+  modes: false,
+  configOptions: false,
+  permissionOptionKinds: 'any',
+  permissionRules: 'protocol',
+  usage: { context: false, turnTokens: false, cost: false },
+  prompt: { image: false, audio: false, embeddedContext: false },
+  mcp: { stdio: true, http: false, sse: false },
+  slashCommands: false,
+  interactiveSlashCommands: false,
+  login: 'none',
+  clientFs: false,
+  quirks: [],
+} as const satisfies Parameters<typeof toChatCapabilities>[0];
+
+/** Copilot CLI over ACP (`copilot --acp --stdio --no-auto-update`). */
+export const COPILOT_ACP_LAUNCH: AcpLaunchSpec = {
+  id: 'copilot_acp',
+  provider: 'copilot-cli',
+  spawn: resolveCopilotAcpSpawn,
+  profile: selectAcpProfile,
+  handshakeNotices(init) {
+    const version = init.agentInfo?.version;
+    if (copilotVersionStatus(version) !== 'newer') return [];
+    return [{
+      type: 'notice',
+      data: {
+        level: 'info',
+        code: 'untested_cli_version',
+        message: `Copilot CLI ${version} is newer than the versions chat was tested with (up to ${COPILOT_ACP_TESTED_RANGE.max}).`,
+      },
+    }];
+  },
+};
+
+export function createCopilotAcpChatDriver(log?: Log): AcpChatDriver {
+  return new AcpChatDriver(COPILOT_ACP_LAUNCH, log);
+}
+
+/**
+ * Any other ACP agent (Gemini CLI, adapters for other CLIs): driver id `acp`.
+ * The agent's own ACP flags go in `agentArgs`; no agent-specific quirks apply.
+ */
+export function createGenericAcpChatDriver(provider: string, agentArgs: string[] = [], log?: Log): AcpChatDriver {
+  return new AcpChatDriver({
+    id: 'acp',
+    provider,
+    spawn: ({ binary, extraArgs, commandPrefix }) => resolveStructuredSpawn(binary, [...agentArgs, ...(extraArgs ?? [])], commandPrefix),
+    profile: GENERIC_ACP_PROFILE,
+  }, log);
+}
