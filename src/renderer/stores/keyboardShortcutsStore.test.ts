@@ -172,6 +172,11 @@ describe('eventToBinding', () => {
     expect(eventToBinding(makeEvent({ key: ',', metaKey: true }))).toBe('Meta+,');
   });
 
+  it('normalizes Cmd+Option+letter from e.code (macOS fires a symbol in e.key)', () => {
+    expect(eventToBinding(makeEvent({ key: '\u2211', code: 'KeyW', metaKey: true, altKey: true }))).toBe('Meta+Alt+W');
+    expect(eventToBinding(makeEvent({ key: '\u00AE', code: 'KeyR', metaKey: true, altKey: true }))).toBe('Meta+Alt+R');
+  });
+
   it('uppercases single letter keys', () => {
     expect(eventToBinding(makeEvent({ key: 'a', metaKey: true }))).toBe('Meta+A');
   });

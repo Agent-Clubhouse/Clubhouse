@@ -14,7 +14,7 @@ const indexCss = readFileSync(path.join(rendererRoot, 'index.css'), 'utf8');
 
 const UTILITY = String.raw`(?:bg|text|border(?:-[trblxy])?|ring(?:-offset)?|outline|fill|stroke|from|via|to|divide|placeholder|decoration|accent|caret|shadow)`;
 const THEME_CLASS = new RegExp(String.raw`(?<![\w-])${UTILITY}-((?:ctp|surface)-[a-z0-9]+(?:-[a-z0-9]+)*)`, 'g');
-const RUNTIME_CLASS = new RegExp(String.raw`(?<![\w-])${UTILITY}-\$\{`, 'g');
+const RUNTIME_CLASS = new RegExp(String.raw`(?<![\w-])${UTILITY}-(?:(?:ctp|surface)-)?\$\{`, 'g');
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

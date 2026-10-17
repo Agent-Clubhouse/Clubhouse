@@ -22,11 +22,10 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
     }),
   );
 
-  // Close active tab — Meta+Alt+W
+  // Close active tab — binding comes from the manifest
   ctx.subscriptions.push(
-    api.commands.registerWithHotkey(
+    api.commands.register(
       'close-tab',
-      'Close Active Tab',
       () => {
         const activeTab = fileState.getActiveTab();
         if (activeTab && !activeTab.isPinned && !activeTab.isDirty) {
@@ -34,7 +33,6 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
         }
         // If dirty or pinned, the FileViewer handleCloseTab handles it with dialog
       },
-      'Meta+Alt+W',
     ),
   );
 

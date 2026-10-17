@@ -309,6 +309,11 @@ export function eventToBinding(e: KeyboardEvent): string | null {
     key = ALT_DIGIT_MAP[key];
   }
 
+  // On macOS, Option+W fires key='∑' instead of 'w'. Take the letter from the physical key.
+  if (e.altKey && /^Key[A-Z]$/.test(e.code ?? '')) {
+    key = e.code.slice(3);
+  }
+
   if (key === ' ') key = 'Space';
   else if (key.length === 1) key = key.toUpperCase();
 

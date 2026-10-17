@@ -13,7 +13,7 @@ export const manifest: PluginManifest = {
   permissions: ['terminal', 'commands', 'agents', 'canvas', 'annex', 'projects'],
   contributes: {
     tab: { label: 'Terminal', title: 'Terminal', icon: TERMINAL_ICON, layout: 'sidebar-content' },
-    commands: [{ id: 'restart', title: 'Restart Terminal', defaultBinding: 'Meta+Alt+R' }],
+    commands: [{ id: 'restart', title: 'Restart Terminal', defaultBinding: 'Meta+Alt+R', global: true }],
     canvasWidgets: [
       {
         id: 'shell',

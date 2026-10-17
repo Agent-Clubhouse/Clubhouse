@@ -52,7 +52,7 @@ describe('GitCanvasWidget — statusInfo mapping', () => {
     expect(statusInfo('R100').color).toBe('text-ctp-mauve');
   });
 
-  it('maps C to Copied (teal, C)', () => {
+  it('maps C to Copied (info, C)', () => {
     expect(statusInfo('C050').short).toBe('C');
     expect(statusInfo('C050').color).toBe('text-ctp-info');
   });
