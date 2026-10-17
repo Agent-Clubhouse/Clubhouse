@@ -174,17 +174,14 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
   );
 }
 
-import { STATUS_RING_COLORS as STATUS_RING_COLOR } from './status-colors';
+import { statusRingColor } from './agent-status';
 export { STATUS_RING_COLORS as STATUS_RING_COLOR } from './status-colors';
 
 export function AgentAvatarWithRing({ agent }: { agent: Agent }) {
   const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
   const detailed = detailedStatus[agent.id];
   const isWorking = agent.status === 'running' && detailed?.state === 'working';
-  const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
-  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? STATUS_RING_COLOR.needs_permission
-    : agent.status === 'running' && detailed?.state === 'tool_error' ? STATUS_RING_COLOR.tool_error
-    : baseRingColor;
+  const ringColor = statusRingColor(agent, detailed);
 
   return (
     <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>

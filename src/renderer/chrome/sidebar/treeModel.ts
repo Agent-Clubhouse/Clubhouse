@@ -6,17 +6,9 @@ import type { Agent, AgentDetailedStatus } from '../../../shared/types';
  * on their own.
  */
 
-/** What the status dot on a row shows. */
-export type AgentDot = 'working' | 'idle' | 'needs' | 'error' | 'sleeping' | 'starting';
-
-export function agentDot(agent: Agent, detailed: AgentDetailedStatus | undefined): AgentDot {
-  if (agent.status === 'error' || detailed?.state === 'tool_error') return 'error';
-  if (detailed?.state === 'needs_permission') return 'needs';
-  if (agent.status === 'sleeping') return 'sleeping';
-  if (agent.status === 'creating' || agent.status === 'spawning' || agent.status === 'waking') return 'starting';
-  if (detailed?.state === 'working') return 'working';
-  return 'idle';
-}
+/** What the status dot on a row shows; shared with every status surface (#2018). */
+import { agentDot } from '../../features/agents/agent-status';
+export { agentDot, type AgentDot } from '../../features/agents/agent-status';
 
 export interface NeedsAttentionItem {
   agent: Agent;

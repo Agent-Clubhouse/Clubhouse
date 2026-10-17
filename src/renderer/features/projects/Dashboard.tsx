@@ -61,7 +61,7 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
-import { STATUS_RING_COLORS as STATUS_RING_COLOR } from '../agents/status-colors';
+import { DOT_LABEL, StatusDot, statusCounts, statusRingColor } from '../agents/agent-status';
 
 /* ─── Agent Avatar (compact) — delegates to shared component ─── */
 
@@ -71,10 +71,7 @@ function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' 
   const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
   const detailed = detailedStatus[agent.id];
   const isWorking = agent.status === 'running' && detailed?.state === 'working';
-  const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
-  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? STATUS_RING_COLOR.needs_permission
-    : agent.status === 'running' && detailed?.state === 'tool_error' ? STATUS_RING_COLOR.tool_error
-    : baseRingColor;
+  const ringColor = statusRingColor(agent, detailed);
 
   return (
     <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
@@ -291,27 +288,7 @@ function ProjectCard({ project }: { project: Project }) {
   const durableAgents = agents.filter((a) => a.kind === 'durable');
   const quickAgents = agents.filter((a) => a.kind === 'quick');
 
-  const agentSummary = useMemo(() => {
-    let working = 0, idle = 0, sleeping = 0, errored = 0;
-    for (const a of agents) {
-      if (a.status === 'running') {
-        const d = detailedStatus[a.id];
-        if (d?.state === 'working') working++;
-        else idle++;
-      } else if (a.status === 'sleeping') sleeping++;
-      else if (a.status === 'error') errored++;
-    }
-    return { working, idle, sleeping, errored, total: agents.length };
-  }, [agents, detailedStatus]);
-
-  const statusDots = useMemo(() => {
-    const dots: { color: string; pulse: boolean; label: string; count: number }[] = [];
-    if (agentSummary.working > 0) dots.push({ color: 'bg-ctp-success', pulse: true, label: 'working', count: agentSummary.working });
-    if (agentSummary.idle > 0) dots.push({ color: 'bg-blue-400', pulse: false, label: 'idle', count: agentSummary.idle });
-    if (agentSummary.errored > 0) dots.push({ color: 'bg-ctp-error', pulse: false, label: 'error', count: agentSummary.errored });
-    if (agentSummary.sleeping > 0) dots.push({ color: 'bg-ctp-subtext0/50', pulse: false, label: 'sleeping', count: agentSummary.sleeping });
-    return dots;
-  }, [agentSummary]);
+  const statusDots = useMemo(() => statusCounts(agents, detailedStatus), [agents, detailedStatus]);
 
   return (
     <div className="bg-ctp-mantle border border-surface-0 rounded-xl overflow-hidden hover:border-surface-2 transition-colors">
@@ -332,11 +309,11 @@ function ProjectCard({ project }: { project: Project }) {
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {statusDots.map((d) => (
             <span
-              key={d.label}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-0 text-xs text-ctp-subtext1"
-              title={`${d.count} ${d.label}`}
+              key={d.dot}
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-0 text-xs text-ctp-subtext1"
+              title={`${d.count} ${DOT_LABEL[d.dot]}`}
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${d.color} ${d.pulse ? 'animate-pulse' : ''}`} />
+              <StatusDot dot={d.dot} />
               {d.count}
             </span>
           ))}

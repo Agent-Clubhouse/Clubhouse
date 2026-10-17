@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEve
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
-import { CheckIcon, ChevronDown, FileIcon, PaperclipIcon, PlanIcon, ShieldIcon, StopIcon, UpIcon, XIcon } from './icons';
+import { CheckIcon, ChevronDown, FileIcon, PaperclipIcon, PlanIcon, PlusIcon, ShieldIcon, StopIcon, UpIcon, XIcon } from './icons';
 import { attachmentFromFile, attachmentName, type ComposerAttachment } from './attachments';
 import { composerModes, LEVEL_DESCRIPTIONS, LEVEL_LABELS, type SendAction } from './view-model';
 
@@ -80,7 +80,7 @@ export function QueueList({ queued }: { queued: QueuedMessage[] }) {
 
 // ── Level menu ──────────────────────────────────────────────────────────────
 
-function LevelPill({ level, capabilities, levelNames, onChange }: { level: PermissionLevel | null; capabilities: ChatCapabilities | null; levelNames?: Partial<Record<PermissionLevel, string>>; onChange: (l: PermissionLevel) => void }) {
+function LevelPill({ level, capabilities, levelNames, onChange, compact }: { level: PermissionLevel | null; capabilities: ChatCapabilities | null; levelNames?: Partial<Record<PermissionLevel, string>>; onChange: (l: PermissionLevel) => void; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const live = capabilities?.liveLevels ?? [];
   const current = level ?? 'ask';
@@ -102,12 +102,13 @@ function LevelPill({ level, capabilities, levelNames, onChange }: { level: Permi
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={canChange ? 'Permission level' : "This agent can't change permission level mid-session"}
-        className="h-[26px] flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] disabled:opacity-60"
+        title={compact ? `Permissions: ${LEVEL_LABELS[current]}` : canChange ? 'Permission level' : "This agent can't change permission level mid-session"}
+        aria-label={compact ? `Permissions: ${LEVEL_LABELS[current]}` : undefined}
+        className={`h-[26px] flex items-center gap-1.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] disabled:opacity-60 ${compact ? 'px-2' : 'px-2.5'}`}
         data-testid="chat-level-pill"
       >
         <ShieldIcon size={13} className="text-ctp-overlay1" />
-        {LEVEL_LABELS[current]}
+        {!compact && LEVEL_LABELS[current]}
         {canChange && <ChevronDown className="text-ctp-overlay1" />}
       </button>
       {open && (
@@ -290,7 +291,15 @@ export interface ComposerProps {
   onStop: () => void;
   onLevelChange: (level: PermissionLevel) => void;
   onModelChange?: (modelId: string, effort?: string) => void;
+  /**
+   * How much room there is (#2018): 'narrow' folds the permission pill to its
+   * shield, 'line' (a popout near its minimum height) is one row with attach,
+   * permissions and model under +.
+   */
+  layout?: ComposerLayout;
 }
+
+export type ComposerLayout = 'wide' | 'narrow' | 'line';
 
 const NO_ATTACHMENTS: ComposerAttachment[] = [];
 
@@ -335,13 +344,16 @@ export function Composer(props: ComposerProps) {
   latest.current = attachments;
   const adding = useRef(0);
   const modes = composerModes(capabilities, running);
+  const layout = props.layout ?? 'wide';
+  const line = layout === 'line';
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
     const el = area.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, [text]);
+    el.style.height = `${Math.min(el.scrollHeight, line ? 72 : 200)}px`;
+  }, [text, line]);
 
   const slashMatches = useMemo(() => {
     if (!capabilities?.slashCommands || !text.startsWith('/') || /\s/.test(text)) return [];
@@ -449,6 +461,113 @@ export function Composer(props: ComposerProps) {
     ? props.disabledReason ?? 'This session has ended'
     : `Message ${props.agentName}…${capabilities?.slashCommands ? ' / for commands' : ''}`;
 
+  const tools = (
+    <>
+      {canAttach && (
+        <>
+          <button
+            type="button"
+            disabled={disabled || attachments.length >= CHAT_ATTACHMENTS_MAX}
+            onClick={() => picker.current?.click()}
+            aria-label="Attach files"
+            title={capabilities?.images ? 'Attach images or files' : 'Attach files (this agent can\'t take images; they go as paths)'}
+            className="w-[26px] h-[26px] rounded-md grid place-items-center text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0 disabled:opacity-40"
+            data-testid="chat-attach"
+          >
+            <PaperclipIcon size={14} />
+          </button>
+          <input
+            ref={picker}
+            type="file"
+            multiple
+            hidden
+            data-testid="chat-attach-input"
+            onChange={(e) => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }}
+          />
+        </>
+      )}
+      <LevelPill level={props.level} capabilities={capabilities} levelNames={props.levelNames} onChange={props.onLevelChange} compact={layout === 'narrow'} />
+      <ModelPill
+        models={props.onModelChange ? props.models ?? [] : []}
+        efforts={props.efforts ?? []}
+        model={props.model}
+        effort={props.effort}
+        capabilities={capabilities}
+        onChange={(m, e) => props.onModelChange?.(m, e)}
+      />
+    </>
+  );
+
+  const sendButtons = (
+    <span className={`${line ? 'flex-shrink-0' : 'ml-auto'} flex items-center gap-1.5`}>
+      {running ? (
+        <>
+          <button
+            type="button"
+            disabled={empty || disabled}
+            onClick={() => submit(modes.primary)}
+            className="h-7 flex items-center gap-1.5 px-2.5 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium disabled:opacity-40 whitespace-nowrap"
+            data-testid="chat-send-primary"
+          >
+            {ACTION_LABELS[modes.primary]}{!line && <> <KeyHint>⏎</KeyHint></>}
+          </button>
+          {modes.secondary && (
+            <button
+              type="button"
+              disabled={empty || disabled}
+              onClick={() => submit(modes.secondary!)}
+              className="h-7 flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] font-medium disabled:opacity-40 whitespace-nowrap"
+              data-testid="chat-send-secondary"
+            >
+              {ACTION_LABELS[modes.secondary]}{!line && <> <KeyHint>⇧⏎</KeyHint></>}
+            </button>
+          )}
+          {modes.canStop && (
+            <button
+              type="button"
+              onClick={props.onStop}
+              title="Stop (Esc)"
+              aria-label="Stop"
+              className="w-[30px] h-[30px] rounded-lg bg-surface-1 text-ctp-text grid place-items-center"
+              data-testid="chat-stop"
+            >
+              <StopIcon />
+            </button>
+          )}
+        </>
+      ) : (
+        <button
+          type="button"
+          disabled={empty || disabled}
+          onClick={() => submit('send')}
+          aria-label="Send"
+          className="w-[30px] h-[30px] rounded-lg bg-ctp-accent text-ctp-crust grid place-items-center disabled:opacity-40"
+          data-testid="chat-send"
+        >
+          <UpIcon />
+        </button>
+      )}
+    </span>
+  );
+
+  const textarea = (
+    <textarea
+      ref={area}
+      rows={1}
+      value={text}
+      disabled={disabled}
+      onChange={(e) => setText(e.target.value)}
+      onKeyDown={onKeyDown}
+      onPaste={onPaste}
+      placeholder={placeholder}
+      aria-label="Message"
+      className={`resize-none bg-transparent text-[13px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none ${
+        line ? 'flex-1 min-w-0 px-1.5 py-1.5' : 'px-3.5 pt-3 pb-1.5 min-h-[44px]'
+      }`}
+    />
+  );
+  const attachErrorNote = attachError && <p className="px-3.5 pb-1 text-[11.5px] text-ctp-red" role="alert" data-testid="chat-attach-error">{attachError}</p>;
+
   return (
     <div className="relative">
       {slashMatches.length > 0 && (
@@ -481,102 +600,36 @@ export function Composer(props: ComposerProps) {
         <span className="sr-only" aria-live="polite">{dragging ? 'Drop files to attach them' : ''}</span>
         {dragging && <p className="px-3.5 pt-2.5 text-[12px] text-ctp-accent" data-testid="chat-drop-hint">Drop files to attach them</p>}
         {attachments.length > 0 && <AttachmentChips attachments={attachments} onRemove={removeAttachment} />}
-        <textarea
-          ref={area}
-          rows={1}
-          value={text}
-          disabled={disabled}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          placeholder={placeholder}
-          aria-label="Message"
-          className="resize-none bg-transparent px-3.5 pt-3 pb-1.5 min-h-[44px] text-[13px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none"
-        />
-        {attachError && <p className="px-3.5 pb-1 text-[11.5px] text-ctp-red" role="alert" data-testid="chat-attach-error">{attachError}</p>}
-        <div className="flex items-center gap-1.5 px-2 pb-2 pt-1.5">
-          {canAttach && (
-            <>
+        {line ? (
+          <>
+            {moreOpen && <div className="flex items-center gap-1.5 px-2 pt-2" data-testid="chat-composer-more">{tools}</div>}
+            <div className="flex items-center gap-1 pl-1 pr-1.5 py-1">
               <button
                 type="button"
-                disabled={disabled || attachments.length >= CHAT_ATTACHMENTS_MAX}
-                onClick={() => picker.current?.click()}
-                aria-label="Attach files"
-                title={capabilities?.images ? 'Attach images or files' : 'Attach files (this agent can\'t take images; they go as paths)'}
-                className="w-[26px] h-[26px] rounded-md grid place-items-center text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0 disabled:opacity-40"
-                data-testid="chat-attach"
+                onClick={() => setMoreOpen((o) => !o)}
+                aria-expanded={moreOpen}
+                aria-label="Attach, permissions and model"
+                title="Attach, permissions and model"
+                className="w-7 h-7 flex-shrink-0 rounded-md grid place-items-center text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0"
+                data-testid="chat-composer-plus"
               >
-                <PaperclipIcon size={14} />
+                <PlusIcon size={14} />
               </button>
-              <input
-                ref={picker}
-                type="file"
-                multiple
-                hidden
-                data-testid="chat-attach-input"
-                onChange={(e) => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }}
-              />
-            </>
-          )}
-          <LevelPill level={props.level} capabilities={capabilities} levelNames={props.levelNames} onChange={props.onLevelChange} />
-          <ModelPill
-            models={props.onModelChange ? props.models ?? [] : []}
-            efforts={props.efforts ?? []}
-            model={props.model}
-            effort={props.effort}
-            capabilities={capabilities}
-            onChange={(m, e) => props.onModelChange?.(m, e)}
-          />
-          <span className="ml-auto flex items-center gap-1.5">
-            {running ? (
-              <>
-                <button
-                  type="button"
-                  disabled={empty || disabled}
-                  onClick={() => submit(modes.primary)}
-                  className="h-7 flex items-center gap-1.5 px-2.5 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium disabled:opacity-40 whitespace-nowrap"
-                  data-testid="chat-send-primary"
-                >
-                  {ACTION_LABELS[modes.primary]} <KeyHint>⏎</KeyHint>
-                </button>
-                {modes.secondary && (
-                  <button
-                    type="button"
-                    disabled={empty || disabled}
-                    onClick={() => submit(modes.secondary!)}
-                    className="h-7 flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] font-medium disabled:opacity-40 whitespace-nowrap"
-                    data-testid="chat-send-secondary"
-                  >
-                    {ACTION_LABELS[modes.secondary]} <KeyHint>⇧⏎</KeyHint>
-                  </button>
-                )}
-                {modes.canStop && (
-                  <button
-                    type="button"
-                    onClick={props.onStop}
-                    title="Stop (Esc)"
-                    aria-label="Stop"
-                    className="w-[30px] h-[30px] rounded-lg bg-surface-1 text-ctp-text grid place-items-center"
-                    data-testid="chat-stop"
-                  >
-                    <StopIcon />
-                  </button>
-                )}
-              </>
-            ) : (
-              <button
-                type="button"
-                disabled={empty || disabled}
-                onClick={() => submit('send')}
-                aria-label="Send"
-                className="w-[30px] h-[30px] rounded-lg bg-ctp-accent text-ctp-crust grid place-items-center disabled:opacity-40"
-                data-testid="chat-send"
-              >
-                <UpIcon />
-              </button>
-            )}
-          </span>
-        </div>
+              {textarea}
+              {sendButtons}
+            </div>
+            {attachErrorNote}
+          </>
+        ) : (
+          <>
+            {textarea}
+            {attachErrorNote}
+            <div className="flex items-center gap-1.5 px-2 pb-2 pt-1.5">
+              {tools}
+              {sendButtons}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

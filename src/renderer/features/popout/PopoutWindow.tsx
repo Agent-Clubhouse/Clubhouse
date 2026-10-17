@@ -5,6 +5,7 @@ import { initChatEventListener } from '../../stores/chatStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { PopoutAgentView } from './PopoutAgentView';
 import { PopoutCanvasView } from './PopoutCanvasView';
+import { PopoutAgentActions } from './PopoutAgentActions';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { PopoutTitleBar } from '../../chrome/titlebar/PopoutTitleBar';
 import type { Agent, AgentHookEvent } from '../../../shared/types';
@@ -163,16 +164,26 @@ export function PopoutWindow() {
     );
   }
 
+  const isAgent = params.type === 'agent';
+  const title = isAgent
+    ? <span data-testid="popout-agent-name">{agentName || 'Agent'}</span>
+    : params.type === 'canvas' ? params.title || 'Canvas' : 'Pop-out';
+  const actions = isAgent && ready && params.agentId
+    ? <PopoutAgentActions agentId={params.agentId} projectId={params.projectId} />
+    : undefined;
+
   return (
     <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col" data-testid="popout-window">
-      {/* Title bar drag region */}
+      {/* Title bar: the agent's or canvas's name, and an agent's actions on the right */}
       {isNewChromeEnabled() ? (
-        <PopoutTitleBar title={params.type === 'agent' ? (agentName || 'Agent') : 'Canvas'} />
+        <PopoutTitleBar title={title} actions={actions} />
       ) : (
-        <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center" data-testid="popout-title-bar">
-          <span className="text-xs text-ctp-subtext0 select-none" data-testid="popout-title">
-            {params.type === 'agent' ? 'Agent' : 'Canvas'} — Pop-out
+        <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center relative" data-testid="popout-title-bar">
+          <span className="text-xs text-ctp-subtext0 select-none truncate max-w-[50%]" data-testid="popout-title">
+            {title}
           </span>
+          {/* Windows draws its controls over the right of the bar; the actions sit left of them. */}
+          {actions && <span className={`absolute top-1/2 -translate-y-1/2 flex ${window.clubhouse.platform === 'win32' ? 'right-[138px]' : 'right-1.5'}`}>{actions}</span>}
         </div>
       )}
       {/* Content */}

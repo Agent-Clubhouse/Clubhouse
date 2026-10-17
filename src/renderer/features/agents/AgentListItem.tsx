@@ -23,7 +23,7 @@ const STATUS_CONFIG: Record<string, { label: string }> = {
   error: { label: 'Error' },
 };
 
-import { STATUS_RING_COLORS as STATUS_RING_COLOR } from './status-colors';
+import { statusRingColor } from './agent-status';
 
 // Button width: 12px icon + 2*4px padding + gap ≈ 26px each
 const ACTION_BUTTON_WIDTH = 26;
@@ -43,10 +43,7 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
 
   const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
-  const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
-  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? STATUS_RING_COLOR.needs_permission
-    : agent.status === 'running' && detailed?.state === 'tool_error' ? STATUS_RING_COLOR.tool_error
-    : baseRingColor;
+  const ringColor = statusRingColor(agent, detailed);
 
   const isCreating = agent.status === 'creating';
   const hasDetailed = agent.status === 'running' && detailed;

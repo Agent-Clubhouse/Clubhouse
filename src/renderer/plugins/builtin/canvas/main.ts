@@ -381,7 +381,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       type: 'canvas',
       canvasId,
       projectId: isAppMode ? undefined : api.context.projectId,
-      title: `Canvas — ${canvasName}`,
+      title: canvasName,
     });
   }, [isAppMode, api]);
 

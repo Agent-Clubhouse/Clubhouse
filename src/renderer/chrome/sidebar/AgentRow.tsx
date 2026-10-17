@@ -5,6 +5,7 @@ import { AgentContextMenu, OverflowIcon, useAgentRowActions, type ActionDef } fr
 import { holdChromeSurface, reportChromeFeature, type ChromeSurface } from '../telemetry';
 import { AgentHoverCard } from './AgentHoverCard';
 import type { AgentDot } from './treeModel';
+import { StatusDot } from '../../features/agents/agent-status';
 
 /**
  * One 30px agent row (docs/chrome-redesign-spec.md §2): status dot, 18px
@@ -26,34 +27,7 @@ function useSurfaceWhile(open: boolean, surface: ChromeSurface) {
   useEffect(() => (open ? holdChromeSurface(surface) : undefined), [open, surface]);
 }
 
-const DOT_CLASS: Record<AgentDot, string> = {
-  working: 'bg-ctp-success',
-  idle: 'bg-ctp-info',
-  needs: 'bg-ctp-warning',
-  error: 'bg-ctp-error',
-  sleeping: 'border border-ctp-overlay0',
-  starting: 'border border-ctp-info',
-};
-
-const DOT_LABEL: Record<AgentDot, string> = {
-  working: 'Working',
-  idle: 'Idle',
-  needs: 'Needs you',
-  error: 'Error',
-  sleeping: 'Sleeping',
-  starting: 'Starting',
-};
-
-export function StatusDot({ dot }: { dot: AgentDot }) {
-  return (
-    <span
-      className={`w-2 h-2 rounded-full flex-shrink-0 ${DOT_CLASS[dot]}`}
-      role="img"
-      aria-label={DOT_LABEL[dot]}
-      title={DOT_LABEL[dot]}
-    />
-  );
-}
+export { StatusDot };
 
 interface AgentRowProps {
   agent: Agent;

@@ -743,7 +743,7 @@ export interface WidgetsAPI {
    * separate window (v0.9+). Pair with `window.usePopoutState()`.
    */
   PopoutPlaceholder: React.ComponentType<{
-    type: 'agent' | 'hub' | 'canvas';
+    type: 'agent' | 'canvas';
     name?: string;
     windowId: number;
   }>;

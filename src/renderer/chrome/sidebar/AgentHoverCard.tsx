@@ -6,7 +6,7 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { getOrchestratorLabel, formatModelLabel } from '../../features/agents/orchestrator-colors';
 import type { ActionDef } from '../../features/agents/useAgentRowActions';
 import { relativeTo } from '../scope';
-import { StatusDot } from './AgentRow';
+import { DOT_LABEL, StatusDot } from '../../features/agents/agent-status';
 import type { AgentDot } from './treeModel';
 
 /**
@@ -15,9 +15,6 @@ import type { AgentDot } from './treeModel';
  * short hover or keyboard focus on a row and closes on Esc or leaving.
  */
 
-const DOT_TEXT: Record<AgentDot, string> = {
-  working: 'Working', idle: 'Idle', needs: 'Needs you', error: 'Error', sleeping: 'Sleeping', starting: 'Starting',
-};
 
 export function formatDuration(ms: number): string {
   const min = Math.floor(ms / 60_000);
@@ -78,7 +75,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
         <StatusDot dot={dot} />
         <span className="text-[13px] font-medium text-ctp-text truncate">{agent.name}</span>
         <span className="ml-auto flex-shrink-0 text-ctp-overlay1">
-          {DOT_TEXT[dot]}{running ? ` for ${formatDuration(Date.now() - spawnedAt)}` : ''}
+          {DOT_LABEL[dot]}{running && dot !== 'idle' ? ` for ${formatDuration(Date.now() - spawnedAt)}` : ''}
         </span>
       </div>
       {(detailed?.message || agent.errorMessage) && (

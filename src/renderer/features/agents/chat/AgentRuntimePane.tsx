@@ -19,7 +19,8 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { useToastStore } from '../../../stores/toastStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
-import { RuntimeSwitch } from './ChatHeader';
+import { TerminalPaneToolbar } from '../pane/AgentPaneToolbar';
+import { useAgentRowActions } from '../useAgentRowActions';
 import type { ChatViewContext } from './ChatView';
 import { isRunningState } from './view-model';
 import { noteExplicitTerminalChoice } from './chat-default-tip';
@@ -149,6 +150,7 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
   const terminalBusy = hookState === 'working' || hookState === 'needs_permission';
   const [switching, setSwitching] = useState(false);
   const [confirm, setConfirm] = useState<AgentRuntimeMode | null>(null);
+  const rowActions = useAgentRowActions(agent);
 
   const doSwitch = useCallback(async (mode: AgentRuntimeMode) => {
     setConfirm(null);
@@ -199,8 +201,12 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
 
   return (
     <div className="flex flex-col h-full">
-      <div className="h-8 flex-shrink-0 flex items-center justify-end px-3 border-b border-surface-0 bg-ctp-base" data-testid="terminal-runtime-bar">
-        <RuntimeSwitch value="terminal" onChange={() => requestSwitch('chat')} disabled={switching} />
+      <div data-testid="terminal-runtime-bar">
+        <TerminalPaneToolbar
+          agent={agent}
+          runtime={{ value: 'terminal', onChange: () => requestSwitch('chat'), disabled: switching }}
+          actions={context === 'main' ? rowActions : undefined}
+        />
       </div>
       <div className="flex-1 min-h-0 relative">{terminal}</div>
       {confirmDialog}

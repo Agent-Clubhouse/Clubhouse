@@ -7,17 +7,18 @@
  * ChatCapabilities are hidden or disabled; nothing here checks provider ids.
  */
 
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { PermissionLevel } from '../../../../shared/chat';
 import { createChatViewState, useAnswering, type ChatViewState } from '../../../stores/chatStore';
-import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { ChatHeader } from './ChatHeader';
+import { useAgentRowActions } from '../useAgentRowActions';
 import { ChatStream, type StreamJump } from './ChatStream';
 import { ChangesPanel } from './ChangesPanel';
 import { AgentMapPanel } from './AgentMapPanel';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
-import { Composer, QueueList, TaskList } from './Composer';
+import { Composer, QueueList, TaskList, type ComposerLayout } from './Composer';
+import { useNarrow, useShortWindow } from '../pane/useNarrow';
 import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions } from './useChatSession';
 import { buildAgentMap, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
 
@@ -31,7 +32,8 @@ export interface ChatViewBodyProps {
   agent: Agent;
   state: ChatViewState;
   actions: ChatActions;
-  providerName: string;
+  /** @deprecated The toolbar names the provider from the session itself. */
+  providerName?: string;
   loading?: boolean;
   onSwitchToTerminal?: () => void;
   switching?: boolean;
@@ -99,7 +101,7 @@ function PlanHandoff({ state, onImplement }: { state: ChatViewState; onImplement
   );
 }
 
-export function ChatViewBody({ agent, state, actions, providerName, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier }: ChatViewBodyProps) {
+export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier }: ChatViewBodyProps) {
   const running = isRunningState(state.state);
   const permission = state.pendingPermissions[0];
   const question = state.pendingQuestions[0];
@@ -108,6 +110,12 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   const questionBusy = useAnswering(agent.id, question?.requestId ?? '');
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
+  const rowActions = useAgentRowActions(agent);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const narrow = useNarrow(rootRef);
+  // A popout near its 300px minimum height keeps the conversation, not the composer chrome.
+  const short = useShortWindow() && context === 'popout';
+  const composerLayout: ComposerLayout = short ? 'line' : narrow ? 'narrow' : 'wide';
   const [draft, setDraft] = useChatDraft(agent.id);
   const [changesOpen, setChangesOpen] = useState(false);
   const [attachments, setAttachments] = useChatAttachments(agent.id);
@@ -213,17 +221,18 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
           onStop={() => { void actions.interrupt(); }}
           onLevelChange={(l) => { void actions.setLevel(l); }}
           onModelChange={actions.setModel ? (m, e) => { void actions.setModel?.(m, e); } : undefined}
+          layout={composerLayout}
         />
       </>
     );
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-view-context={context} data-state={state.state ?? 'none'}>
+    <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-view-context={context} data-state={state.state ?? 'none'}>
       <ChatHeader
         agent={agent}
         state={state}
-        providerName={providerName}
+        actions={context === 'main' ? rowActions : undefined}
         onSwitchToTerminal={onSwitchToTerminal}
         switching={switching}
         onToggleChanges={() => { setAgentMapOpen(false); setChangesOpen((v) => !v); }}
@@ -248,7 +257,7 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
             announce={context !== 'canvas'}
             onShowEarlier={onShowEarlier}
           />
-          <div className="flex-shrink-0 px-7 pb-4 flex justify-center" data-testid="chat-dock">
+          <div className={`flex-shrink-0 flex justify-center ${narrow || short ? 'px-2 pb-2' : 'px-7 pb-4'}`} data-testid="chat-dock">
             <div className="w-full max-w-[740px] flex flex-col gap-2">
               <ProtocolDriftNote state={state} />
               <LoginBanner state={state} onSwitchToTerminal={onSwitchToTerminal} />
@@ -298,16 +307,12 @@ export function ChatView({ agent, onSwitchToTerminal, switching, context = 'main
   const stored = useChatState(agent.id);
   const loading = useChatLoading(agent.id);
   const actions = useChatActions(agent.id);
-  const orchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const empty = useMemo(() => createChatViewState(agent.id), [agent.id]);
-  const providerId = stored?.provider ?? agent.orchestrator ?? 'claude-code';
-  const providerName = orchestrators.find((o) => o.id === providerId)?.displayName ?? providerId;
   return (
     <ChatViewBody
       agent={agent}
       state={stored ?? empty}
       actions={actions}
-      providerName={providerName}
       loading={loading && !stored}
       onSwitchToTerminal={onSwitchToTerminal}
       switching={switching}
