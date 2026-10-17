@@ -51,7 +51,7 @@ const builtinHostImportAllowlist = new Set([
   'src/renderer/plugins/builtin/hub/CrossProjectAgentPicker.tsx',
   'src/renderer/plugins/builtin/hub/HubPane.tsx',
   'src/renderer/plugins/builtin/hub/main.ts',
-  'src/renderer/plugins/builtin/review/main.ts',
+  'src/renderer/plugins/builtin/review/host.ts',
   'src/renderer/plugins/builtin/sessions/main.ts',
   'src/renderer/plugins/builtin/terminal/TerminalCanvasWidget.tsx',
 ]);

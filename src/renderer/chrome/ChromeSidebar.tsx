@@ -24,7 +24,7 @@ import { selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention }
 import { HostSwitcher, LOCAL_HOST } from './sidebar/HostSwitcher';
 import { useClickOutside } from './sidebar/useClickOutside';
 import { hostOf, switchHost } from './hosts';
-import { useChromeStore } from './chromeStore';
+import { useChromeStore, type AppLaunchParams } from './chromeStore';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
 import { AppNotices } from '../features/app/AppNotices';
@@ -299,12 +299,25 @@ export function ChromeSidebar() {
   }, [projects, satelliteProjects]);
   const reviewEnabled = inlineItems.some((e) => e.manifest.id === 'review');
 
-  const openAppItem = useCallback((id: string) => {
+  // Every open goes through launchApp, so a plain open ends a visit that Needs you started.
+  const openAppItem = useCallback((id: string, params?: AppLaunchParams) => {
+    useChromeStore.getState().launchApp(id, params);
     setExplorerTab(`plugin:app:${id}`);
     reportChromeFeature('app_item_open');
   }, [setExplorerTab]);
+  // Needs you > Review shows only the agents waiting on you, for this visit (#2021).
+  const openNeedsYouReview = useCallback(() => {
+    openAppItem('review', { needsYouOnly: true });
+    reportChromeFeature('needs_you_review');
+  }, [openAppItem]);
 
   const isProjectTab = explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
+  // In an app view that shows one agent at a time (Review), the selection follows that agent.
+  const appViewAgentIdRaw = useChromeStore((s) => s.appViewAgentId);
+  const appViewAgentId = explorerTab.startsWith('plugin:app:') ? appViewAgentIdRaw : null;
+  const appViewProjectId = appViewAgentId ? treeAgents[appViewAgentId]?.projectId ?? null : null;
+  const treeActiveAgentId = isProjectTab ? activeAgentId : appViewAgentId;
+  const treeActiveProjectId = isProjectTab ? activeProjectId : appViewProjectId;
 
   // Selecting a project header makes the project root the scope (spec §4.5).
   // The project's remembered agent is cleared too, so the project-switch effect
@@ -480,7 +493,7 @@ export function ChromeSidebar() {
       {mode !== 'tree' && (
         <>
           <SidebarBreadcrumb current={mode === 'settings' ? 'Settings' : mode === 'help' ? 'Help' : listLabel ?? 'List'} onBack={backToAgents} />
-          <NeedsYouStrip items={needs} onSelect={selectNeedsYou} onReview={reviewEnabled ? () => openAppItem('review') : undefined} />
+          <NeedsYouStrip items={needs} onSelect={selectNeedsYou} onReview={reviewEnabled ? openNeedsYouReview : undefined} />
           {mode === 'settings' ? <SettingsNav /> : mode === 'help' ? <HelpNav /> : <ListBody explorerTab={explorerTab} projectId={activeProjectId} />}
         </>
       )}
@@ -491,7 +504,7 @@ export function ChromeSidebar() {
           projectNames={projectNames}
           activeAgentId={activeAgentId}
           onSelect={selectNeedsYou}
-          onReview={reviewEnabled ? () => openAppItem('review') : undefined}
+          onReview={reviewEnabled ? openNeedsYouReview : undefined}
         />
       )}
 
@@ -503,8 +516,8 @@ export function ChromeSidebar() {
           agentsByProject={agentsByProject}
           detailed={treeDetailed}
           completedByProject={isRemoteHost ? NO_COMPLETED : completedByProject}
-          activeProjectId={isProjectTab ? activeProjectId : null}
-          activeAgentId={isProjectTab ? activeAgentId : null}
+          activeProjectId={treeActiveProjectId}
+          activeAgentId={treeActiveAgentId}
           selectedCompletedId={selectedCompletedId}
           onReorder={isRemoteHost ? undefined : onReorder}
           onSelectProject={selectProject}

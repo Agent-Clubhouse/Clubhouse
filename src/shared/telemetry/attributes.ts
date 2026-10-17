@@ -321,7 +321,7 @@ export const ATTR = {
     'host_switch', 'host_retry', 'host_settings_open', 'needs_you_remote_select',
     'more_menu_open', 'more_menu_pick',
     'row_menu_open', 'hover_card_action',
-    'project_menu_open', 'agent_reorder', 'idle_toggle',
+    'project_menu_open', 'agent_reorder', 'idle_toggle', 'needs_you_review',
   ]),
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [
