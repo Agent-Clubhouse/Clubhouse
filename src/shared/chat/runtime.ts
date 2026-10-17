@@ -201,13 +201,26 @@ export interface ChatDriverProbe {
   handshakeOk: boolean;
   capabilities: ChatCapabilities;
   error?: string;
+  /**
+   * True when the CLI reports no usable login (Claude initialize account,
+   * Codex account/read, ACP auth methods). The handshake itself can still
+   * succeed. Clubhouse then opens the agent in the terminal so the user can
+   * log in with the CLI's own flow.
+   */
+  needsLogin?: boolean;
+  /** How to log in, in the CLI's words, e.g. "Run copilot login". */
+  loginHint?: string;
 }
 
 export interface ChatDriver {
   readonly id: ChatDriverId;
   readonly provider: string;
-  /** Zero-token handshake used for availability checks, fallback decisions and the nightly smoke test. */
-  probe(binaryPath: string, env?: Record<string, string>): Promise<ChatDriverProbe>;
+  /**
+   * Zero-token handshake used for availability checks, fallback decisions and
+   * the nightly smoke test. `commandPrefix` launches the CLI the same way
+   * start() will.
+   */
+  probe(binaryPath: string, env?: Record<string, string>, opts?: { commandPrefix?: string }): Promise<ChatDriverProbe>;
   start(opts: ChatDriverStartOptions): Promise<ChatDriverSession>;
 }
 

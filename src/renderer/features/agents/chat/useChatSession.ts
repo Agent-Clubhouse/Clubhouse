@@ -19,6 +19,7 @@ export interface ChatActions {
   respondPermission: (requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<boolean>;
   answerQuestion: (requestId: string, answers: ChatQuestionAnswers) => Promise<boolean>;
   setLevel: (level: PermissionLevel) => Promise<void>;
+  setModel?: (modelId: string, effort?: string) => Promise<void>;
 }
 
 /**
@@ -129,5 +130,6 @@ export function useChatActions(agentId: string): ChatActions {
     answerQuestion: async (requestId, answers) =>
       (await wrap("Couldn't send the answer", store.getState().answerQuestion)(agentId, requestId, answers)).ok,
     setLevel: async (level) => { await wrap("Couldn't change the permission level", store.getState().setLevel)(agentId, level); },
+    setModel: async (modelId, effort) => { await wrap("Couldn't change the model", store.getState().setModel)(agentId, modelId, effort); },
   }), [agentId, store, wrap]);
 }
