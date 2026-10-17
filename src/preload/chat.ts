@@ -15,11 +15,16 @@ export const chat = {
      * resolved here from the File itself, so page code can only stage files
      * the user actually gave it; a File with no path (pasted) goes as bytes.
      */
-    stageAttachment: async (agentId: string, file: File): Promise<StagedChatAttachment> => {
+    stageAttachment: async (agentId: string, file: File, opts?: { imagesAllowed?: boolean }): Promise<StagedChatAttachment> => {
       const filePath = webUtils.getPathForFile(file);
       if (filePath) return ipcRenderer.invoke(IPC.CHAT.STAGE_ATTACHMENT, agentId, { path: filePath, name: file.name });
+      if (opts?.imagesAllowed === false) throw new Error("This agent's chat can't take pasted images");
       if (file.size > CHAT_IMAGE_MAX_BYTES) throw new Error('Pasted images must be 3.75 MB or smaller');
-      return ipcRenderer.invoke(IPC.CHAT.STAGE_ATTACHMENT, agentId, { data: new Uint8Array(await file.arrayBuffer()), name: file.name });
+      return ipcRenderer.invoke(IPC.CHAT.STAGE_ATTACHMENT, agentId, {
+        data: new Uint8Array(await file.arrayBuffer()),
+        name: file.name,
+        ...(opts?.imagesAllowed !== undefined ? { imagesAllowed: opts.imagesAllowed } : {}),
+      });
     },
     interrupt: (agentId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.INTERRUPT, agentId),

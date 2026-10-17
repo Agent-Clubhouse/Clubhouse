@@ -359,7 +359,7 @@ describe('ChatView attachments', () => {
     const { actions } = renderFixture('claude', 'conversation');
     paste([png('image.png')]);
     const chip = await screen.findByTestId('chat-attachment');
-    expect(stage).toHaveBeenCalledWith(FIXTURE_AGENT_ID, expect.any(File));
+    expect(stage).toHaveBeenCalledWith(FIXTURE_AGENT_ID, expect.any(File), { imagesAllowed: true });
     expect(chip.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/png;base64,/);
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'What is wrong here?' } });
     fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
@@ -406,11 +406,13 @@ describe('ChatView attachments', () => {
   });
 
   it('explains why a pasted image cannot be attached when the agent cannot take images', async () => {
-    stageLike({ pasted: true });
+    const stage = stageLike({ pasted: true });
     const state = fold(chatFixture('claude', 'conversation'));
     renderState({ ...state, capabilities: { ...state.capabilities!, images: false } });
     paste([png('image.png')]);
     expect(await screen.findByTestId('chat-attach-error')).toHaveTextContent("can't take pasted images");
+    // Staging is told, so it refuses before saving anything.
+    expect(stage).toHaveBeenCalledWith(FIXTURE_AGENT_ID, expect.any(File), { imagesAllowed: false });
     expect(screen.queryByTestId('chat-attachment')).not.toBeInTheDocument();
   });
 

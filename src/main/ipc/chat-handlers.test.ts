@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
+import { CHAT_IMAGE_MAX_BYTES, MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
 
 const paths = vi.hoisted(() => ({ userData: '' }));
 const runtime = vi.hoisted(() => ({
@@ -12,7 +12,12 @@ const runtime = vi.hoisted(() => ({
   getCapabilities: () => runtime.caps,
 }));
 
-vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, app: { getPath: () => paths.userData } }));
+const windows = vi.hoisted(() => ({ known: new Set<unknown>() }));
+vi.mock('electron', () => ({
+  ipcMain: { handle: vi.fn() },
+  app: { getPath: () => paths.userData },
+  BrowserWindow: { fromWebContents: (wc: unknown) => (windows.known.has(wc) ? {} : null) },
+}));
 vi.mock('../services/agent-runtime', () => ({
   getAgentRuntime: () => runtime,
   isChatAgent: () => true,
@@ -34,8 +39,13 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9]);
 type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 let handlers: Map<string, Handler>;
 let dir: string;
+const mainFrame = { name: 'top' };
+const appWindow = { mainFrame };
+/** An invoke from the top frame of a Clubhouse window, unless overridden. */
+const fromWindow = { sender: appWindow, senderFrame: mainFrame };
 // Argument validation throws synchronously; async turns that into a rejection.
-const call = async (channel: string, ...args: unknown[]) => handlers.get(channel)!({}, ...args);
+const callFrom = async (event: unknown, channel: string, ...args: unknown[]) => handlers.get(channel)!(event, ...args);
+const call = (channel: string, ...args: unknown[]) => callFrom(fromWindow, channel, ...args);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -43,6 +53,7 @@ beforeEach(() => {
   paths.userData = path.join(dir, 'userData');
   runtime.caps = { ...MINIMAL_CHAT_CAPABILITIES, images: true };
   clearStagedAttachments();
+  windows.known = new Set([appWindow]);
   handlers = new Map();
   vi.mocked(ipcMain.handle).mockImplementation(((channel: string, handler: Handler) => { handlers.set(channel, handler); }) as never);
   registerChatHandlers();
@@ -86,6 +97,22 @@ describe('chat handlers: attachments', () => {
     runtime.caps = undefined;
     const pasted = await call(IPC.CHAT.STAGE_ATTACHMENT, 'agent-1', { data: new Uint8Array(PNG) }) as { id: string };
     await expect(call(IPC.CHAT.SEND_MESSAGE, 'agent-1', 'x', 'auto', [pasted.id])).rejects.toThrow(/can't take images/);
+  });
+
+  it('stages only from the top frame of a Clubhouse window', async () => {
+    const notes = path.join(dir, 'notes.md');
+    fs.writeFileSync(notes, 'x');
+    await expect(callFrom({ sender: appWindow, senderFrame: { name: 'iframe' } }, IPC.CHAT.STAGE_ATTACHMENT, 'agent-1', { path: notes }))
+      .rejects.toThrow(/Clubhouse window/);
+    const webview = { mainFrame: {} };
+    await expect(callFrom({ sender: webview, senderFrame: webview.mainFrame }, IPC.CHAT.STAGE_ATTACHMENT, 'agent-1', { path: notes }))
+      .rejects.toThrow(/Clubhouse window/);
+  });
+
+  it('caps pasted bytes before staging, and saves nothing for a paste the agent cannot take', async () => {
+    await expect(call(IPC.CHAT.STAGE_ATTACHMENT, 'agent-1', { data: new Uint8Array(CHAT_IMAGE_MAX_BYTES + 1) })).rejects.toThrow(/3.75 MB/);
+    await expect(call(IPC.CHAT.STAGE_ATTACHMENT, 'agent-1', { data: new Uint8Array(PNG), imagesAllowed: false })).rejects.toThrow(/can't take pasted images/);
+    expect(fs.existsSync(path.join(paths.userData, 'chat-attachments'))).toBe(false);
   });
 
   it('rejects staging without a path or image bytes, and pasted bytes that are not an image', async () => {

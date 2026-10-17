@@ -58,7 +58,8 @@ async function thumbnail(file: File): Promise<string | undefined> {
 export async function attachmentFromFile(agentId: string, file: File, imagesAllowed: boolean): Promise<ComposerAttachment | { error: string }> {
   let staged;
   try {
-    staged = await window.clubhouse.chat.stageAttachment(agentId, file);
+    // Pasted images the agent can't take are refused before anything is saved.
+    staged = await window.clubhouse.chat.stageAttachment(agentId, file, { imagesAllowed });
   } catch (err) {
     // telemetry-exempt: shown to the user next to the composer.
     const message = err instanceof Error ? err.message : String(err);
