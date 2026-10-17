@@ -7,17 +7,18 @@
  * ChatCapabilities are hidden or disabled; nothing here checks provider ids.
  */
 
-import { useMemo, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { PermissionLevel } from '../../../../shared/chat';
 import { createChatViewState, type ChatViewState } from '../../../stores/chatStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { ChatHeader } from './ChatHeader';
-import { ChatStream } from './ChatStream';
+import { ChatStream, type StreamJump } from './ChatStream';
+import { AgentMapPanel } from './AgentMapPanel';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { Composer, QueueList, TaskList } from './Composer';
 import { useChatActions, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, type ChatActions } from './useChatSession';
-import { implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
+import { buildAgentMap, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
 
 export interface ChatViewBodyProps {
   agent: Agent;
@@ -64,6 +65,20 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
   const [draft, setDraft] = useChatDraft(agent.id);
+  const [agentMapOpen, setAgentMapOpen] = useState(false);
+  const [selectedSubagent, setSelectedSubagent] = useState<string | null>(null);
+  const [jump, setJump] = useState<StreamJump | null>(null);
+  const { items, subagents, capabilities } = state;
+  const agentMap = useMemo(() => buildAgentMap({ items, subagents, capabilities }), [items, subagents, capabilities]);
+  // The map exists only when the driver reports subagents and there are some.
+  const hasAgentMap = agentMap.mode !== 'none' && agentMap.nodes.length > 0;
+  const openSubagent = useCallback((subagentId: string) => {
+    setAgentMapOpen(true);
+    setSelectedSubagent(subagentId);
+  }, []);
+  const showInStream = useCallback((subagentId: string) => {
+    setJump((j) => ({ subagentId, nonce: (j?.nonce ?? 0) + 1 }));
+  }, []);
 
   const onSend = (text: string, action: SendAction) => {
     void (async () => {
@@ -127,15 +142,41 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-state={state.state ?? 'none'}>
-      <ChatHeader agent={agent} state={state} providerName={providerName} onSwitchToTerminal={onSwitchToTerminal} switching={switching} />
-      <ChatStream state={state} />
-      <div className="flex-shrink-0 px-7 pb-4 flex justify-center" data-testid="chat-dock">
-        <div className="w-full max-w-[740px] flex flex-col gap-2">
-          <ProtocolDriftNote counts={state.protocolUnknown} />
-          {state.plan.length > 0 && <TaskList entries={state.plan} />}
-          {state.queued.length > 0 && <QueueList queued={state.queued} />}
-          {dock}
+      <ChatHeader
+        agent={agent}
+        state={state}
+        providerName={providerName}
+        onSwitchToTerminal={onSwitchToTerminal}
+        switching={switching}
+        {...(hasAgentMap && {
+          onToggleAgentMap: () => setAgentMapOpen((v) => !v),
+          agentMapOpen,
+          subagentCount: agentMap.nodes.length,
+        })}
+      />
+      <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-w-0 flex flex-col">
+          <ChatStream state={state} onOpenSubagent={hasAgentMap ? openSubagent : undefined} jump={jump} />
+          <div className="flex-shrink-0 px-7 pb-4 flex justify-center" data-testid="chat-dock">
+            <div className="w-full max-w-[740px] flex flex-col gap-2">
+              <ProtocolDriftNote counts={state.protocolUnknown} />
+              {state.plan.length > 0 && <TaskList entries={state.plan} />}
+              {state.queued.length > 0 && <QueueList queued={state.queued} />}
+              {dock}
+            </div>
+          </div>
         </div>
+        {hasAgentMap && agentMapOpen && (
+          <AgentMapPanel
+            agent={agent}
+            state={state}
+            map={agentMap}
+            selected={selectedSubagent}
+            onSelect={setSelectedSubagent}
+            onShowInStream={showInStream}
+            onClose={() => setAgentMapOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

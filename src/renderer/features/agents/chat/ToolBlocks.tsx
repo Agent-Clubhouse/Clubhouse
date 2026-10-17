@@ -210,7 +210,7 @@ const SUB_STATUS: Record<SubagentBlock['info']['status'], string> = {
   cancelled: 'cancelled',
 };
 
-export function SubagentCard({ block }: { block: SubagentBlock }) {
+export function SubagentCard({ block, onOpenInMap }: { block: SubagentBlock; onOpenInMap?: (subagentId: string) => void }) {
   const [open, setOpen] = useState(false);
   const { info, tool, children } = block;
   const toolCount = info.toolCount ?? children.filter((c) => c.kind === 'tool_call').length;
@@ -221,22 +221,35 @@ export function SubagentCard({ block }: { block: SubagentBlock }) {
   const tokens = info.usage?.total ?? ((info.usage?.input ?? 0) + (info.usage?.output ?? 0));
   if (tokens) meta.push(`${formatTokens(tokens)} tok`);
   return (
-    <div className="border border-ctp-mauve/30 rounded-lg flex flex-col" data-testid="chat-subagent" data-status={info.status}>
-      <button
-        type="button"
-        className="flex items-center gap-2 h-[34px] px-3 text-[12.5px] text-left min-w-0"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-      >
-        <AgentsIcon className="text-ctp-mauve" />
-        <span className="font-semibold text-ctp-text flex-shrink-0">{info.name}</span>
-        {(info.description || tool?.title) && <span className="text-ctp-subtext0 truncate min-w-0">{info.description ?? tool?.title}</span>}
-        <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap">
-          {info.status === 'running' && <Spin />}
-          <span className={info.status === 'failed' ? 'text-ctp-error' : ''}>{SUB_STATUS[info.status]}</span>
-          {meta.length > 0 && <span>· {meta.join(' · ')}</span>}
-        </span>
-      </button>
+    <div className="border border-ctp-mauve/30 rounded-lg flex flex-col" data-testid="chat-subagent" data-status={info.status} data-subagent-id={info.subagentId}>
+      <div className="flex items-center min-w-0">
+        <button
+          type="button"
+          className="flex-1 flex items-center gap-2 h-[34px] px-3 text-[12.5px] text-left min-w-0"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+        >
+          <AgentsIcon className="text-ctp-mauve" />
+          <span className="font-semibold text-ctp-text flex-shrink-0">{info.name}</span>
+          {(info.description || tool?.title) && <span className="text-ctp-subtext0 truncate min-w-0">{info.description ?? tool?.title}</span>}
+          <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap">
+            {info.status === 'running' && <Spin />}
+            <span className={info.status === 'failed' ? 'text-ctp-error' : ''}>{SUB_STATUS[info.status]}</span>
+            {meta.length > 0 && <span>· {meta.join(' · ')}</span>}
+          </span>
+        </button>
+        {onOpenInMap && (
+          <button
+            type="button"
+            onClick={() => onOpenInMap(info.subagentId)}
+            className="h-[34px] px-2.5 text-[11.5px] text-ctp-overlay1 hover:text-ctp-text flex-shrink-0"
+            aria-label={`Open ${info.name} in the agent map`}
+            data-testid="chat-subagent-open-map"
+          >
+            Agent map
+          </button>
+        )}
+      </div>
       {summary && summary.kind === 'agent_message' && !open && (
         <div className="px-3 pb-2.5 pl-9 text-[12.5px] text-ctp-subtext0 line-clamp-3">{summary.text}</div>
       )}
