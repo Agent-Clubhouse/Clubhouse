@@ -6,6 +6,7 @@ import type {
   ChatDriverSession,
   ChatDriverStartOptions,
 } from '../../../shared/chat/runtime';
+import { buildCliSpawnEnv } from '../../util/shell';
 import { AsyncQueue } from './async-queue';
 import { RpcError } from './acp-client';
 import { ACP_ERROR_CODES } from './acp-schema';
@@ -131,7 +132,7 @@ export class AcpChatDriver implements ChatDriver {
   /** `initialize` only: no session, no prompt, no tokens. */
   async probe(binaryPath: string, env?: Record<string, string>, opts?: { commandPrefix?: string }): Promise<ChatDriverProbe> {
     const cmd = this.spec.spawn({ binary: binaryPath, commandPrefix: opts?.commandPrefix });
-    const session = new AcpSession({ ...cmd, env, profile: this.spec.profile, onLog: this.log });
+    const session = new AcpSession({ ...cmd, env: buildCliSpawnEnv(env), profile: this.spec.profile, onLog: this.log });
     try {
       const caps = await session.start();
       return {
@@ -156,7 +157,7 @@ export class AcpChatDriver implements ChatDriver {
     const session = new AcpSession({
       ...cmd,
       cwd: opts.cwd,
-      env: opts.env,
+      env: buildCliSpawnEnv(opts.env),
       profile: this.spec.profile,
       onLog: this.log,
       onEvent: (event) => {

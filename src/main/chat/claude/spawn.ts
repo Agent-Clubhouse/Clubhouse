@@ -1,10 +1,10 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { resolveStructuredSpawn } from '../../orchestrators/adapters/structured-spawn';
-import { cleanSpawnEnv, getShellEnvironment } from '../../util/shell';
+import { buildCliSpawnEnv } from '../../util/shell';
 
 /** Env for a chat-driven `claude`: the login shell's env plus overrides, minus inherited Claude markers. */
 export function buildClaudeEnv(extra?: Record<string, string>): Record<string, string> {
-  return cleanSpawnEnv({ ...getShellEnvironment(), ...extra });
+  return buildCliSpawnEnv(extra);
 }
 
 /**

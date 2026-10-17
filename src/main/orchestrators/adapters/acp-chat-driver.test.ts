@@ -7,6 +7,12 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(),
 }));
 
+// Stand-in for the login shell env, so tests don't source a real shell.
+vi.mock('../../util/shell', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../util/shell')>()),
+  buildCliSpawnEnv: (extra?: Record<string, string>) => ({ HOME: '/home/test', PATH: '/usr/bin', ...extra }),
+}));
+
 import { spawn } from 'child_process';
 import { createCopilotAcpChatDriver, createGenericAcpChatDriver } from './acp-chat-driver';
 import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
@@ -194,6 +200,20 @@ describe('Copilot ACP chat driver', () => {
     const probe = await driver.probe('copilot');
     expect(probe).toMatchObject({ handshakeOk: true, cliVersion: '1.0.92', capabilities: { resume: 'replay', interrupt: true } });
     expect(replayer.written.map((m) => m.method)).toEqual(['initialize']);
+  });
+
+  it('spawns with the login shell env under the Clubhouse overrides, so the CLI finds its login', async () => {
+    const { driver } = setup(loadAcpFixture(COPILOT, 'one-prompt.jsonl'));
+    const session = await driver.start(startOpts({ env: { CLUBHOUSE_AGENT_ID: 'agent-1', PATH: '/override/bin' } }));
+    const env = (mockSpawn.mock.calls[0][2] as { env: Record<string, string> }).env;
+    expect(env).toMatchObject({ HOME: '/home/test', CLUBHOUSE_AGENT_ID: 'agent-1', PATH: '/override/bin' });
+    await session.close();
+  });
+
+  it('probes with the same login shell env as a real start', async () => {
+    const { driver } = setup(loadAcpFixture(COPILOT, 'handshake-list-close.jsonl').slice(0, 2));
+    await driver.probe('copilot');
+    expect((mockSpawn.mock.calls[0][2] as { env: Record<string, string> }).env).toMatchObject({ HOME: '/home/test', PATH: '/usr/bin' });
   });
 });
 

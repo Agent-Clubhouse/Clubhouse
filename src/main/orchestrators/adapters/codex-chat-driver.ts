@@ -12,6 +12,7 @@ import type {
   ChatDriverSession,
   ChatDriverStartOptions,
 } from '../../../shared/chat/runtime';
+import { buildCliSpawnEnv } from '../../util/shell';
 import { AsyncQueue } from './async-queue';
 import { CodexAppServerClient } from './codex-app-server-client';
 import { CodexChatEventMapper, toCodexInput, toCodexMcpServers } from './codex-chat-events';
@@ -187,7 +188,7 @@ export class CodexChatDriver implements ChatDriver {
     const spawnCmd = resolveStructuredSpawn(binaryPath, ['app-server'], opts?.commandPrefix);
     const client = new CodexAppServerClient({
       ...spawnCmd,
-      env,
+      env: buildCliSpawnEnv(env),
       rpcTimeoutMs: PROBE_TIMEOUT_MS,
       onLog: this.deps.onLog,
     });
@@ -260,7 +261,7 @@ class CodexChatSession implements ChatDriverSession {
     this.client = new CodexAppServerClient({
       ...spawnCmd,
       cwd: opts.cwd,
-      env: opts.env,
+      env: buildCliSpawnEnv(opts.env),
       onLog: log,
       onCodexNotification: (n) => this.onNotification(n),
       onCodexServerRequest: (request) => {

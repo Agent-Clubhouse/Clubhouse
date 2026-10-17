@@ -86,6 +86,16 @@ export function cleanSpawnEnv(env: Record<string, string>): Record<string, strin
 }
 
 /**
+ * Env for a piped CLI child (chat drivers): the login shell's env plus
+ * overrides, minus nested-agent markers. Overrides alone are not enough: a CLI
+ * spawned without HOME, PATH or USER can't find its own login (Copilot answers
+ * `session/new` with "Authentication required").
+ */
+export function buildCliSpawnEnv(extra?: Record<string, string>): Record<string, string> {
+  return cleanSpawnEnv({ ...getShellEnvironment(), ...extra });
+}
+
+/**
  * Quote a single argument for use in a Windows cmd.exe command line.
  * Always wraps in double quotes to safely handle spaces, special chars,
  * and long argument values (e.g. mission text, system prompts).
