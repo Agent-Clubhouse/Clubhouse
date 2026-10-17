@@ -5,14 +5,14 @@ import { InMemoryLogRecordExporter } from '@opentelemetry/sdk-logs';
 import { AggregationTemporality, InMemoryMetricExporter } from '@opentelemetry/sdk-metrics';
 import { ROOT_CONTEXT, SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import { ATTR, type TelemetryLevel } from '../../shared/telemetry/attributes';
-import { startSdk } from './sdk';
+import { parseTraceparent, startSdk } from './sdk';
 import { createScrubber } from './scrubber';
 import { FlowSampler } from './sampler';
 import { SessionCaps } from './caps';
 import { PreviewTee } from './preview-tee';
 import { hashId } from './ids';
 import type { TelemetryRuntime } from './types';
-import { ForwardedError } from './types';
+import { ForwardedError, tagError } from './types';
 
 const salt = Buffer.alloc(32, 7);
 
@@ -75,6 +75,102 @@ describe('startSdk', () => {
     const record = logs.getFinishedLogRecords().find((l) => l.eventName === 'clubhouse.exception');
     expect(record?.body).toBe('clubhouse.exception');
     expect(JSON.stringify(record?.attributes)).not.toContain('secret');
+  });
+
+  it('starts registered root spans in a new trace even inside an active flow', async () => {
+    const { rt, spans } = setup();
+    active = rt;
+    let leaked: (() => void) | undefined;
+    await rt.flow('clubhouse.agent.spawn', {}, async () => {
+      await rt.step('clubhouse.pty.spawn', async () => {
+        // A process callback registered here keeps this context after the flow ends.
+        leaked = () => {
+          rt.replaySpan({ name: 'clubhouse.agent.run', startMs: Date.now() - 10, endMs: Date.now(), attrs: [], outcome: 'ok' });
+          rt.flow('clubhouse.group.shoulder_tap', {}, () => undefined);
+        };
+      });
+    });
+    leaked!();
+    await rt.forceFlush(1000);
+    const byName = new Map(spans.getFinishedSpans().map((sp) => [sp.name, sp]));
+    expect(byName.get('clubhouse.pty.spawn')?.parentSpanContext?.spanId).toBe(byName.get('clubhouse.agent.spawn')?.spanContext().spanId);
+    expect(byName.get('clubhouse.agent.run')?.parentSpanContext).toBeUndefined();
+    expect(byName.get('clubhouse.group.shoulder_tap')?.parentSpanContext).toBeUndefined();
+    expect(byName.get('clubhouse.agent.run')?.spanContext().traceId).not.toBe(byName.get('clubhouse.agent.spawn')?.spanContext().traceId);
+  });
+
+  it('continues a remote traceparent in the next root flow only, once', async () => {
+    const { rt, spans } = setup();
+    active = rt;
+    const remote = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
+    let inner: string | undefined;
+    await rt.withRemoteParent(remote, async () => {
+      await rt.flow('clubhouse.agent.spawn', {}, async () => {
+        inner = rt.traceparent();
+      });
+      // A second root flow in the same (leaked) context starts its own trace.
+      rt.flow('clubhouse.group.shoulder_tap', {}, () => undefined);
+    });
+    await rt.forceFlush(1000);
+    const byName = new Map(spans.getFinishedSpans().map((sp) => [sp.name, sp]));
+    const spawn = byName.get('clubhouse.agent.spawn')!;
+    expect(spawn.spanContext().traceId).toBe('0123456789abcdef0123456789abcdef');
+    expect(spawn.parentSpanContext?.spanId).toBe('0123456789abcdef');
+    expect(inner).toBe(`00-${spawn.spanContext().traceId}-${spawn.spanContext().spanId}-01`);
+    expect(byName.get('clubhouse.group.shoulder_tap')?.spanContext().traceId).not.toBe('0123456789abcdef0123456789abcdef');
+    expect(rt.traceparent()).toBeUndefined();
+  });
+
+  it('applies its own sample rate to a sampled remote parent instead of always recording it', async () => {
+    const { rt, spans } = setup('standard', { sampleRate: 1e-9 });
+    active = rt;
+    const remote = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
+    await rt.withRemoteParent(remote, async () => {
+      await rt.flow('clubhouse.agent.spawn', {}, async () => undefined);
+    });
+    await rt.forceFlush(1000);
+    // Declined at this install's rate: continued unsampled, so nothing is recorded.
+    expect(spans.getFinishedSpans()).toHaveLength(0);
+  });
+
+  it('ignores unsampled, malformed or all-zero traceparents', () => {
+    expect(parseTraceparent('00-0123456789abcdef0123456789abcdef-0123456789abcdef-00')).toBeUndefined();
+    expect(parseTraceparent('01-0123456789abcdef0123456789abcdef-0123456789abcdef-01')).toBeUndefined();
+    expect(parseTraceparent('00-00000000000000000000000000000000-0123456789abcdef-01')).toBeUndefined();
+    expect(parseTraceparent('00-0123456789ABCDEF0123456789abcdef-0123456789abcdef-01')).toBeUndefined();
+    expect(parseTraceparent('garbage')).toBeUndefined();
+    expect(parseTraceparent('00-0123456789abcdef0123456789abcdef-0123456789abcdef-03')).toMatchObject({ isRemote: true });
+  });
+
+  it('does not attach an exception to an ended span left in context', async () => {
+    const { rt, spans, logs } = setup();
+    active = rt;
+    let leaked: (() => void) | undefined;
+    await rt.flow('clubhouse.agent.spawn', {}, async () => {
+      leaked = () => rt.exception(new Error('later'), { origin: 'main', handled: true });
+    });
+    leaked!();
+    await rt.forceFlush(1000);
+    const [spawn] = spans.getFinishedSpans();
+    expect(spawn.events.filter((e) => e.name === 'exception')).toEqual([]);
+    const record = logs.getFinishedLogRecords().find((l) => l.eventName === 'clubhouse.exception');
+    expect(record).toBeDefined();
+    expect(record?.spanContext?.traceId).not.toBe(spawn.spanContext().traceId);
+  });
+
+  it('records the error type a thrown error was tagged with, innermost tag first', async () => {
+    const { rt, spans } = setup();
+    active = rt;
+    const err = tagError(tagError(new Error('x'), 'preflight_failed'), 'unknown');
+    await expect(rt.flow('clubhouse.agent.spawn', {}, async () => {
+      await rt.step('clubhouse.provider.check_availability', async () => { throw err; });
+    })).rejects.toBe(err);
+    await rt.forceFlush(1000);
+    const types = spans.getFinishedSpans().map((s) => [s.name, s.attributes['error.type']]);
+    expect(types).toEqual([
+      ['clubhouse.provider.check_availability', 'preflight_failed'],
+      ['clubhouse.agent.spawn', 'preflight_failed'],
+    ]);
   });
 
   it('keeps forwarded renderer errors\' class name and extra attributes on the exception record', async () => {

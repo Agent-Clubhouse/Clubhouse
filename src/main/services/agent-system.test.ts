@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import type { OrchestratorConventions } from '../orchestrators';
+import { ATTR } from '../../shared/telemetry/attributes';
+import { setRuntime } from '../telemetry/facade';
+import type { TelemetryRuntime } from '../telemetry/types';
 
 // Mock config-pipeline
 const mockSnapshotFile = vi.fn();
@@ -31,6 +34,7 @@ vi.mock('./headless-manager', () => ({
   spawnHeadless: (...args: unknown[]) => mockHeadlessSpawn(...args),
   kill: (...args: unknown[]) => mockHeadlessKill(...args),
   isHeadless: (...args: unknown[]) => mockIsHeadless(...args),
+  hasPid: () => true,
 }));
 
 // Mock headless-settings
@@ -441,6 +445,27 @@ describe('agent-system', () => {
           kind: 'durable',
         })
       ).rejects.toThrowError('OPENAI_API_KEY is not set');
+    });
+
+    it('counts a failed pre-flight as a spawn with error.type preflight_failed', async () => {
+      const count = vi.fn();
+      setRuntime({
+        level: 'standard',
+        flow: (_n: string, _o: unknown, fn: (s: unknown) => unknown) => fn({ set: () => {} }),
+        step: (_n: string, fn: (s: unknown) => unknown) => fn({ set: () => {} }),
+        count,
+      } as unknown as TelemetryRuntime);
+      try {
+        mockProvider.checkAvailability.mockResolvedValueOnce({ available: false, error: 'not installed' });
+        await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'quick' })).rejects.toThrow();
+        expect(count).toHaveBeenCalledWith('clubhouse.agent.spawns', 1, [
+          // No runtime yet: the spawn failed before choosing one.
+          ATTR.agentKind('quick'), ATTR.orchestrator('claude-code'),
+          ATTR.outcome('error'), ATTR.errorType('preflight_failed'),
+        ]);
+      } finally {
+        setRuntime(null);
+      }
     });
 
     it('passes commandPrefix from project settings to ptyManager.spawn', async () => {

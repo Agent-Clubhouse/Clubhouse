@@ -537,7 +537,7 @@ See the artifact's mockups for the details.
 - A composer that steers or queues, with a visible queue.
 - One five-level permission ladder (Plan, Ask first, Auto-accept edits, Auto, Full access) with native names shown underneath.
 - Model and effort menus built from live lists.
-- A Changes panel with Clubhouse-owned git checkpoints, so Revert turn works the same for every provider.
+- A Changes panel with Clubhouse-owned git checkpoints, so Revert turn works the same for every provider. Checkpoints live under `refs/clubhouse/*`, which `git push --mirror` pushes (plain `git push` and `--all` don't). Untracked files over 10 MB are left out. Every revert backs up the current tree first and can be undone.
 - An agent map for subagents.
 - A Chat / Terminal switch.
 

@@ -120,6 +120,17 @@ export const ERROR_TYPES = [
   // Agents (§4.4, Phase 4)
   'mcp_tool_error',
   'mcp_tool_threw',
+  // Agents: create, spawn, delete, shoulder taps (§4.4, Phase 4b)
+  'orchestrator_unknown',
+  'preflight_failed',
+  'cwd_invalid',
+  'pty_spawn_failed',
+  'headless_no_pid',
+  'chat_start_failed',
+  'materialize_failed',
+  'worktree_failed',
+  'delete_failed',
+  'tap_undelivered',
   // Workspace (§4.7–4.10, Phase 5)
   'not_a_repo',
   'validation',
@@ -153,6 +164,18 @@ export const ERROR_TYPES = [
   'invalid_id',
   'install_failed',
   'no_update_available',
+  // Annex (§4.12, Phase 6)
+  'identity_unreachable',
+  'identity_invalid',
+  'pair_rejected',
+  'cert_missing',
+  'cert_mismatch',
+  'protocol_incompatible',
+  'auth_rejected',
+  'ws_error',
+  'handshake_timeout',
+  'not_connected',
+  'send_failed',
 ] as const;
 
 export const OUTCOMES = ['ok', 'error', 'cancelled', 'timeout', 'skipped'] as const;
@@ -220,7 +243,7 @@ export const ATTR = {
   // Agents (§5.1 examples; instrumented from Phase 3)
   agentKind: enumAttr('clubhouse.agent.kind', ['durable', 'quick', 'companion']),
   orchestrator: enumAttr('clubhouse.orchestrator', ['claude-code', 'codex-cli', 'copilot-cli', 'other']),
-  agentRuntime: enumAttr('clubhouse.agent.runtime', ['pty', 'headless']),
+  agentRuntime: enumAttr('clubhouse.agent.runtime', ['pty', 'headless', 'chat']),
   exitCode: intAttr('process.exit.code'),
   agentIdHash: hashAttr('clubhouse.agent.id_hash'),
   sizeBucket: enumAttr('clubhouse.size_bucket', ['0', '<1KB', '<100KB', '<1MB', '<10MB', '<100MB', '>=100MB']),
@@ -351,6 +374,27 @@ export const ATTR = {
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
   binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),
+  // Phase 4b: spawn, create, delete, kill, shoulder taps
+  agentResume: boolAttr('clubhouse.agent.resume'),
+  usesWorktree: boolAttr('clubhouse.agent.uses_worktree'),
+  mcpEnabled: boolAttr('clubhouse.mcp.enabled'),
+  hooksEnabled: boolAttr('clubhouse.hooks.enabled'),
+  profileActive: boolAttr('clubhouse.profile.active'),
+  wrapperApplied: boolAttr('clubhouse.wrapper.applied'),
+  /** Bucketed from the model string; never the raw model name. */
+  modelFamily: enumAttr('clubhouse.model.family', ['opus', 'sonnet', 'haiku', 'gpt-5', 'default', 'other']),
+  /**
+   * Who asked for a kill. Renderer kills over the agent IPC (including
+   * quick-agent auto-stop) are `user`; `other` is a kill that reached the
+   * runtime managers without a known caller (terminal IPC, force-kill).
+   */
+  killTrigger: enumAttr('clubhouse.kill.trigger', ['user', 'agent_tool', 'annex', 'shutdown', 'other']),
+  deleteMode: enumAttr('clubhouse.agent.delete.mode', [
+    'standard', 'commit_push', 'cleanup_branch', 'save_patch', 'force', 'unregister',
+  ]),
+  tapBroadcast: boolAttr('clubhouse.tap.broadcast'),
+  targetsCount: intAttr('clubhouse.targets.count'),
+  deliveryResult: enumAttr('clubhouse.delivery.result', ['delivered', 'not_running', 'unsupported_runtime']),
   // Workspace (§4.7–4.10, Phase 5). Counts are bucketed with countBucket().
   gitOp: enumAttr('clubhouse.git.op', GIT_OPS),
   gitTimedOut: boolAttr('clubhouse.git.timed_out'),
@@ -397,6 +441,80 @@ export const ATTR = {
   bulletinPostResult: enumAttr('clubhouse.bulletin.post.result', ['ok', 'evicted_message', 'evicted_topic', 'rejected']),
   mcpToolsCount: enumAttr('clubhouse.mcp.tools.count_bucket', COUNT_BUCKETS),
   mcpToolsEmpty: boolAttr('clubhouse.mcp.tools.empty'),
+
+  // Annex (§4.12, §7, Phase 6). Peer identity is never an attribute: no
+  // fingerprints, aliases, hosts, addresses or ports.
+  annexRole: enumAttr('clubhouse.annex.role', ['satellite', 'controller']),
+  annexTls: boolAttr('clubhouse.annex.tls'),
+  annexAuthMode: enumAttr('clubhouse.annex.auth_mode', ['mtls', 'bearer']),
+  /** mTLS clients are desktop controllers; bearer clients are the mobile app. */
+  annexClientKind: enumAttr('clubhouse.annex.client.kind', ['desktop', 'mobile']),
+  /** Address family of the peer address used, never the address (§12 H9). */
+  addrFamily: enumAttr('clubhouse.net.addr_family', ['ipv4', 'ipv6', 'hostname']),
+  annexPairResult: enumAttr('clubhouse.annex.pair.result', [
+    'ok', 'invalid_pin', 'rate_limited', 'locked', 'invalid_key', 'invalid_request', 'identity_not_ready', 'other',
+  ]),
+  annexDisconnectReason: enumAttr('clubhouse.annex.disconnect.reason', [
+    'heartbeat_timeout', 'heartbeat_failed', 'ws_error', 'connection_closed', 'user', 'other',
+  ]),
+  attemptBucket: enumAttr('clubhouse.attempt_bucket', ['1', '2', '3-5', '6-10', '>10']),
+  /** Event types the satellite streams; anything unlisted is `other`. */
+  annexEventType: enumAttr('clubhouse.annex.event.type', [
+    'pty:data', 'pty:exit', 'hook:event', 'chat:event', 'permission:request', 'permission:response',
+    'agent:spawned', 'agent:woken', 'agent:completed', 'snapshot', 'canvas:state', 'theme:changed',
+    'group-project:list', 'group-project:changed', 'bulletin:message', 'other',
+  ]),
+  annexRemoteAction: enumAttr('clubhouse.annex.remote.action', ['spawn', 'wake']),
+  annexControlChannel: enumAttr('clubhouse.annex.control.channel', ['ws', 'rest']),
+  annexReplayResult: enumAttr('clubhouse.annex.replay.result', ['ok', 'gap', 'send_failed']),
+  identityRegenReason: enumAttr('clubhouse.annex.identity.reason', ['corrupt', 'reset']),
+  /**
+   * Satellite REST route template, from ANNEX_HTTP_ROUTE_TABLE (a test keeps
+   * them in sync); never a concrete path or query.
+   */
+  annexRoute: enumAttr('clubhouse.annex.route', [
+    'GET /api/v1/identity',
+    'GET /api/v1/status',
+    'GET /api/v1/projects',
+    'GET /api/v1/projects/:id/agents',
+    'GET /api/v1/agents/:id/buffer',
+    'GET /api/v1/projects/:id/files/tree',
+    'GET /api/v1/projects/:id/files/read',
+    'GET /api/v1/projects/:id/git/info',
+    'GET /api/v1/projects/:id/git/log',
+    'GET /api/v1/projects/:id/git/diff',
+    'GET /api/v1/projects/:id/git/show-commit',
+    'GET /api/v1/projects/:id/git/commit-diff',
+    'POST /api/v1/projects/:id/git/:op',
+    'GET /api/v1/agents/:id/sessions',
+    'GET /api/v1/agents/:id/sessions/:id/transcript',
+    'GET /api/v1/agents/:id/sessions/:id/summary',
+    'POST /api/v1/projects/:id/agents/quick',
+    'POST /api/v1/agents/:id/agents/quick',
+    'POST /api/v1/agents/:id/wake',
+    'POST /api/v1/agents/:id/permission-response',
+    'POST /api/v1/agents/:id/message',
+    'POST /api/v1/projects/:id/agents/durable',
+    'POST /api/v1/projects/:id/agents/:id/delete',
+    'GET /api/v1/projects/:id/agents/:id/worktree-status',
+    'GET /api/v1/group-projects',
+    'GET /api/v1/group-projects/:id',
+    'GET /api/v1/group-projects/:id/bulletin/digest',
+    'GET /api/v1/group-projects/:id/bulletin/topics/:id',
+    'GET /api/v1/group-projects/:id/bulletin/messages',
+    'POST /api/v1/group-projects/:id/bulletin/messages',
+    'POST /api/v1/group-projects/:id/shoulder-tap',
+    'POST /api/v1/group-projects/:id/polling',
+    'DELETE /api/v1/group-projects/:id/bulletin/topics/:id/messages/:id',
+    'DELETE /api/v1/group-projects/:id/bulletin/topics/:id',
+    'PATCH /api/v1/group-projects/:id/bulletin/topics/:id/protection',
+    'POST /api/v1/inject-message',
+    'GET /api/v1/group-projects/:id/members',
+    'PATCH /api/v1/group-projects/:id',
+    'GET /api/v1/icons/agent/:id',
+    'GET /api/v1/icons/project/:id',
+    'other',
+  ]),
 } as const;
 
 /**
@@ -463,6 +581,41 @@ export const SPANS = {
   'clubhouse.agent.permission': { level: 'standard', root: true },
   /** One Clubhouse MCP tool call served to an agent. */
   'clubhouse.mcp.tool_call': { level: 'standard', root: true },
+  /** Durable agent creation (IPC entry → config written, persona applied). */
+  'clubhouse.agent.create': { level: 'standard', root: true },
+  'clubhouse.agent.persona_inject': { level: 'standard', root: false },
+  /** Durable agent deletion, any mode. */
+  'clubhouse.agent.delete': { level: 'standard', root: true },
+  /** spawnAgent entry → process launched (or the throw). */
+  'clubhouse.agent.spawn': { level: 'standard', root: true },
+  'clubhouse.provider.resolve': { level: 'standard', root: false },
+  'clubhouse.provider.check_availability': { level: 'standard', root: false },
+  'clubhouse.agent.materialize': { level: 'standard', root: false },
+  'clubhouse.agent.prepare_pty': { level: 'standard', root: false },
+  'clubhouse.hooks.configure': { level: 'standard', root: false },
+  'clubhouse.mcp.inject': { level: 'standard', root: false },
+  'clubhouse.provider.build_command': { level: 'standard', root: false },
+  'clubhouse.pty.spawn': { level: 'standard', root: false },
+  'clubhouse.headless.spawn': { level: 'standard', root: false },
+  /** Chat driver start inside a spawn; only when a chat start really began. */
+  'clubhouse.chat.start': { level: 'standard', root: false },
+  // Annex (§4.12, Phase 6)
+  /** Satellite start → both listeners up. */
+  'clubhouse.annex.server.start': { level: 'standard', root: true },
+  /** Pairing: client pairWithService, or the satellite's POST /pair. */
+  'clubhouse.annex.pair': { level: 'standard', root: true },
+  /** Controller: GET /identity for a discovered service. */
+  'clubhouse.annex.discover': { level: 'standard', root: true },
+  /** Controller: connectToSatellite → first snapshot (or failure). */
+  'clubhouse.annex.connect': { level: 'standard', root: true },
+  /** Controller: agent:spawn / agent:wake sent to a satellite; carries traceparent. */
+  'clubhouse.annex.remote_spawn': { level: 'standard', root: true },
+  /** Satellite REST request, per route template. Detailed only. */
+  'clubhouse.annex.rest': { level: 'detailed', root: true },
+  /** killAgent → exit. Replayed at exit; carries the trigger and the stage reached. */
+  'clubhouse.agent.kill': { level: 'standard', root: true },
+  /** One shoulder tap (direct or broadcast) to group-project members. */
+  'clubhouse.group.shoulder_tap': { level: 'standard', root: true },
   // Workspace (§4.7–4.10, Phase 5)
   'clubhouse.project.add': { level: 'standard', root: true },
   'clubhouse.project.add.ensure_gitignore': { level: 'standard', root: false },
@@ -631,13 +784,13 @@ export const METRICS = {
   },
   'clubhouse.agent.runs': {
     kind: 'counter', unit: '{run}', level: 'standard',
-    description: 'Agent runs that ended, by runtime, orchestrator and exit class',
-    attributes: ['clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
+    description: 'Agent runs that ended, by kind, runtime, orchestrator and exit class',
+    attributes: ['clubhouse.agent.kind', 'clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
   },
   'clubhouse.agent.run.duration': {
     kind: 'histogram', unit: 's', level: 'standard',
     description: 'Agent run length, spawn to exit',
-    attributes: ['clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
+    attributes: ['clubhouse.agent.kind', 'clubhouse.agent.runtime', 'clubhouse.orchestrator', 'clubhouse.agent.exit.class'],
   },
   'clubhouse.agent.time_to_shell_ready': {
     kind: 'histogram', unit: 's', level: 'standard',
@@ -688,6 +841,77 @@ export const METRICS = {
     kind: 'histogram', unit: 's', level: 'standard',
     description: 'Time to resolve an agent CLI binary, by lookup tier (login_shell blocks the main thread)',
     attributes: ['clubhouse.binary.lookup_tier'],
+  },
+  'clubhouse.agent.spawns': {
+    kind: 'counter', unit: '{spawn}', level: 'standard',
+    description: 'Agent spawn attempts by kind, orchestrator, runtime and outcome',
+    attributes: ['clubhouse.agent.kind', 'clubhouse.orchestrator', 'clubhouse.agent.runtime', 'clubhouse.outcome', 'error.type'],
+  },
+  'clubhouse.agent.spawn.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'spawnAgent entry to process launched',
+    attributes: ['clubhouse.agent.kind', 'clubhouse.orchestrator', 'clubhouse.agent.runtime'],
+  },
+  'clubhouse.group.shoulder_tap.deliveries': {
+    kind: 'counter', unit: '{delivery}', level: 'standard',
+    description: 'Shoulder tap deliveries by result and target runtime',
+    attributes: ['clubhouse.delivery.result', 'clubhouse.agent.runtime'],
+  },
+  // Annex (§4.12, Phase 6)
+  'clubhouse.annex.reconnects': {
+    kind: 'counter', unit: '{reconnect}', level: 'standard',
+    description: 'Controller reconnect attempts scheduled, by attempt',
+    attributes: ['clubhouse.attempt_bucket'],
+  },
+  'clubhouse.annex.reconnect.delay': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Backoff before a controller reconnect',
+    attributes: ['clubhouse.attempt_bucket'],
+  },
+  'clubhouse.annex.disconnects': {
+    kind: 'counter', unit: '{disconnect}', level: 'standard',
+    description: 'Controller disconnects from a satellite, by reason',
+    attributes: ['clubhouse.annex.disconnect.reason'],
+  },
+  'clubhouse.annex.heartbeat.rtt': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Controller ping → pong round trip',
+    attributes: [],
+  },
+  'clubhouse.annex.snapshot.build.duration': {
+    kind: 'histogram', unit: 's', level: 'standard',
+    description: 'Satellite buildSnapshot time',
+    attributes: [],
+  },
+  'clubhouse.annex.events': {
+    kind: 'counter', unit: '{event}', level: 'standard',
+    description: 'Events the satellite streamed, per event type (counted once per broadcast, not per client)',
+    attributes: ['clubhouse.annex.event.type'],
+  },
+  'clubhouse.annex.events.bytes': {
+    kind: 'counter', unit: 'By', level: 'standard',
+    description: 'Serialized bytes of streamed events, per event type and broadcast',
+    attributes: ['clubhouse.annex.event.type'],
+  },
+  'clubhouse.annex.send_failures': {
+    kind: 'counter', unit: '{send}', level: 'standard',
+    description: 'Per-client WS sends that threw during a broadcast',
+    attributes: ['clubhouse.annex.event.type'],
+  },
+  'clubhouse.annex.clients': {
+    kind: 'gauge', unit: '{client}', level: 'standard',
+    description: 'WS clients connected to this satellite, by client kind',
+    attributes: ['clubhouse.annex.client.kind'],
+  },
+  'clubhouse.annex.control.denied': {
+    kind: 'counter', unit: '{request}', level: 'standard',
+    description: 'Control requests refused for lacking mTLS (§12 H9)',
+    attributes: ['clubhouse.annex.control.channel'],
+  },
+  'clubhouse.annex.replays': {
+    kind: 'counter', unit: '{replay}', level: 'standard',
+    description: 'Event replays requested by reconnecting clients, by result',
+    attributes: ['clubhouse.annex.replay.result'],
   },
   'clubhouse.telemetry.export.failures': {
     kind: 'counter',
@@ -779,6 +1003,10 @@ export const EVENTS = {
   'clubhouse.process.eventloop_blocked': { level: 'errors' },
   /** At startup: whether the last applied update actually took (§12 H6). */
   'clubhouse.update.apply_verified': { level: 'errors' },
+  /** This install's Annex identity was regenerated: paired peers will no longer trust it (§12 H9). */
+  'clubhouse.annex.identity.regenerated': { level: 'errors' },
+  /** The satellite could not set up TLS and serves plain HTTP (security-relevant, §4.12). */
+  'clubhouse.annex.tls_fallback': { level: 'errors' },
   /** A store hit corruption or fell back to a backup (§12 H1). Silent today; always worth knowing. */
   'clubhouse.persist.recovery': { level: 'errors' },
   /** A data-loss guard blocked saves. Sent once per store and reason per session. */

@@ -77,6 +77,13 @@ export interface TelemetryRuntime {
   exception(error: unknown, opts: ExceptionOptions): void;
   replaySpan(span: ReplaySpan): void;
   replayTree(tree: ReplayTree): void;
+  /** W3C `traceparent` of the active recording span, for Annex propagation (spec §7). */
+  traceparent(): string | undefined;
+  /**
+   * Run `fn` so that the next root flow it starts continues the remote trace
+   * in `traceparent` (once; later root flows start their own traces).
+   */
+  withRemoteParent<T>(traceparent: string, fn: () => T): T;
   preview(): PreviewItem[];
   /** Export results that arrived at or after `sinceMs`, oldest first. */
   recentExports(sinceMs: number): ExportRecord[];
@@ -85,6 +92,33 @@ export interface TelemetryRuntime {
 }
 
 export const NOOP_SPAN: SpanHandle = { set: () => {} };
+
+const ERROR_TYPE_TAG = Symbol.for('clubhouse.telemetry.error_type');
+
+/**
+ * Attach a registry error type to an error before it is thrown, so a flow
+ * or step it escapes from records that type instead of `unknown`. The first
+ * tag wins: an inner, more specific tag is never overwritten. Returns the
+ * same error.
+ */
+export function tagError<E>(error: E, type: ErrorType): E {
+  if (typeof error === 'object' && error !== null && !(ERROR_TYPE_TAG in error)) {
+    try {
+      Object.defineProperty(error, ERROR_TYPE_TAG, { value: type, enumerable: false });
+    } catch {
+      // Frozen objects stay untagged.
+    }
+  }
+  return error;
+}
+
+/** The error type a thrown value was tagged with, or `unknown`. */
+export function errorTypeOf(error: unknown): ErrorType {
+  if (typeof error === 'object' && error !== null && ERROR_TYPE_TAG in error) {
+    return (error as Record<symbol, ErrorType>)[ERROR_TYPE_TAG];
+  }
+  return 'unknown';
+}
 
 /**
  * An error reported from another process (a renderer or plugin). It carries

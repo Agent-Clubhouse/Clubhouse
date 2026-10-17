@@ -33,6 +33,7 @@ import { cliLabel, evaluateCliVersion } from './chat-version-policy';
 import { ChatAgentRuntime } from './chat-runtime';
 import { registerChatRuntime, unregisterChatRuntime } from './index';
 import { readChatTranscript } from './chat-transcript';
+import { captureBeforePrompt } from './checkpoint-tracker';
 
 export interface ChatSpawnParams {
   agentId: string;
@@ -108,17 +109,22 @@ interface DriverCheck {
   ok: boolean;
   /** Why the driver was skipped. */
   reason?: string;
+  /** Set when the CLI works but the user isn't logged in; the CLI's own hint, if any. */
+  login?: { hint?: string };
   /** Notes for the transcript when it is used (e.g. an untested CLI version). */
   notices: ChatRuntimeNotice[];
 }
 
 /** Paused after repeated failures, handshake, then version policy. Never spends tokens. */
-async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, env?: Record<string, string>): Promise<DriverCheck> {
+async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, env?: Record<string, string>, commandPrefix?: string): Promise<DriverCheck> {
   const paused = driverPausedReason(key);
   if (paused) return { ok: false, reason: `${driverLabel(driver)} chat is paused after repeated failures (${paused})`, notices: [] };
-  const probe = await probeDriver(driver, binaryPath, env);
+  const probe = await probeDriver(driver, binaryPath, env, commandPrefix);
   if (!probe.handshakeOk) {
     return { ok: false, reason: `${driverLabel(driver)} handshake failed: ${probe.error ?? 'unknown error'}`, notices: [] };
+  }
+  if (probe.needsLogin) {
+    return { ok: false, reason: `${driverLabel(driver)} needs a login`, login: { hint: probe.loginHint }, notices: [] };
   }
   const verdict = evaluateCliVersion(driver.id, driver.provider, probe.cliVersion);
   if (verdict.status === 'known_bad' || verdict.status === 'below_min') {
@@ -132,7 +138,9 @@ async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, 
 
 /**
  * Try to start the agent in chat. Returns true when it did; false means the
- * caller should fall back to the terminal.
+ * caller should fall back to the terminal. `onStarting` is called once a
+ * driver and CLI are found and the chat start really begins, so a caller can
+ * tell a failed start (called, then false) from an agent that was never chat.
  *
  * Drivers are tried in fallback order. One is skipped when it is paused after
  * repeated failures, its handshake fails, or its CLI version is below the
@@ -146,6 +154,7 @@ export async function tryStartChatAgent(
   profileEnv: Record<string, string> | undefined,
   commandPrefix: string | undefined,
   durableConfig: DurableAgentConfig | null | undefined,
+  onStarting?: () => void,
 ): Promise<boolean> {
   // Only durable agents get chat for now; quick agents stay fire-and-forget.
   if (params.kind !== 'durable') return false;
@@ -168,6 +177,7 @@ export async function tryStartChatAgent(
     });
     return false;
   }
+  onStarting?.();
 
   const level = levelForFreeAgent(params.freeAgentMode, params.permissionMode);
   const resumeNativeSessionId = params.resume ? params.sessionId : undefined;
@@ -176,11 +186,14 @@ export async function tryStartChatAgent(
   // Probe lazily, in order, and stop at the first usable driver: the
   // preferred driver working means no other driver is probed or reported.
   const skipped: string[] = [];
+  let login: { hint?: string } | undefined;
   for (const [index, driver] of candidates.entries()) {
-    const key = driverHealthKey(driver, binaryPath, profileEnv);
-    const check = await checkDriver(driver, key, binaryPath, profileEnv);
+    const key = driverHealthKey(driver, binaryPath, profileEnv, commandPrefix);
+    const check = await checkDriver(driver, key, binaryPath, profileEnv, commandPrefix);
     if (!check.ok) {
       skipped.push(check.reason ?? `${driverLabel(driver)} is unavailable`);
+      // Every driver of a provider shares its login; don't try the next one.
+      if (check.login) { login = check.login; break; }
       continue;
     }
     prepared ??= await prepare();
@@ -207,7 +220,14 @@ export async function tryStartChatAgent(
     agentRegistry.setRuntime(params.agentId, 'pty');
     configPipeline.restoreForAgent(params.agentId);
   }
-  notifyFallback(params.agentId, { level: 'warn', code: 'fallback', message: `Opened in the terminal: ${skipped.join('; ')}` });
+  // The terminal is where the CLI's own login flow works.
+  notifyFallback(params.agentId, login
+    ? {
+        level: 'info',
+        code: 'login_required',
+        message: `${cliLabel(provider.id)} needs you to log in. Opening the terminal so you can log in${login.hint ? ` (${login.hint})` : ''}. Chat starts next time.`,
+      }
+    : { level: 'warn', code: 'fallback', message: `Opened in the terminal: ${skipped.join('; ')}` });
   return false;
 
   /** Nonce, Clubhouse MCP bridge + project servers and env: once, before the first start attempt. */
@@ -290,6 +310,7 @@ export async function tryStartChatAgent(
         sessionStarted = true;
         return session;
       },
+      beforePrompt: () => captureBeforePrompt(params.agentId),
       onNativeSessionId: (id) => {
         void updateSessionId(params.projectPath, params.agentId, id).catch((err) => {
           appLog('core:chat', 'warn', 'Failed to persist native session id', {

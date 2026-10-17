@@ -28,7 +28,9 @@ vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
-import { getOrCreateIdentity, getIdentity, getPublicIdentity, computeFingerprint, resetForTests } from './annex-identity';
+import { getOrCreateIdentity, getIdentity, getPublicIdentity, computeFingerprint, resetForTests, deleteIdentity } from './annex-identity';
+import { setRuntime } from '../telemetry/facade';
+import type { TelemetryRuntime } from '../telemetry/types';
 import { appLog } from './log-service';
 import { app } from 'electron';
 
@@ -111,6 +113,25 @@ describe('annex-identity', () => {
         'error',
         'Your device identity was reset - re-pair your devices',
       );
+    });
+
+    it('emits clubhouse.annex.identity.regenerated for a corrupt file and after a reset, not on first creation', () => {
+      const event = vi.fn();
+      setRuntime({ level: 'standard', event } as unknown as TelemetryRuntime);
+      try {
+        const filePath = path.join(tmpDir, 'annex-identity.json');
+        getOrCreateIdentity(); // first creation: no event
+        expect(event).not.toHaveBeenCalled();
+        deleteIdentity();
+        getOrCreateIdentity();
+        resetForTests();
+        fs.writeFileSync(filePath, '{not valid json', 'utf-8');
+        getOrCreateIdentity();
+        expect(event.mock.calls.map((c) => c[1][0].value)).toEqual(['reset', 'corrupt']);
+        expect(event.mock.calls.every((c) => c[0] === 'clubhouse.annex.identity.regenerated')).toBe(true);
+      } finally {
+        setRuntime(null);
+      }
     });
 
     it('should not signal a reset when the identity file is missing', () => {

@@ -651,7 +651,7 @@ export function registerGroupProjectTools(): void {
           };
         }
 
-        await agentSystem.killAgent(targetAgentId, projectPath, tracked?.orchestrator || durable?.agentConfig.orchestrator);
+        await agentSystem.killAgent(targetAgentId, projectPath, tracked?.orchestrator || durable?.agentConfig.orchestrator, 'agent_tool');
         broadcastToAllWindows(IPC.AGENT.AGENT_SLEEPING, targetAgentId);
 
         return {

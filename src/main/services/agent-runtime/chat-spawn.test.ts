@@ -86,13 +86,16 @@ describe('chat spawn', () => {
 
   it('falls back to the terminal when the mode is terminal, the agent is quick, or no driver exists', async () => {
     registerChatDriver(new FakeChatDriver());
+    const onStarting = vi.fn();
     mode.value = { mode: 'terminal' };
-    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe(false);
     mode.value = { mode: 'chat' };
-    expect(await tryStartChatAgent({ ...params, kind: 'quick' }, provider, undefined, undefined, null)).toBe(false);
+    expect(await tryStartChatAgent({ ...params, kind: 'quick' }, provider, undefined, undefined, null, onStarting)).toBe(false);
     clearChatDrivers();
-    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe(false);
     expect(registry.setRuntime).not.toHaveBeenCalled();
+    // Never chat: no start began.
+    expect(onStarting).not.toHaveBeenCalled();
   });
 
   it('falls back to the terminal when the CLI binary cannot be found', async () => {
@@ -111,7 +114,10 @@ describe('chat spawn', () => {
       return session;
     };
     registerChatDriver(driver);
-    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+    const onStarting = vi.fn();
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe(false);
+    // A start that began and fell back.
+    expect(onStarting).toHaveBeenCalledTimes(1);
     expect(driver.last.closed).toBe(true);
     expect(registry.setRuntime).toHaveBeenLastCalledWith('agent-1', 'pty');
     expect(getAgentRuntime('agent-1')).toBeUndefined();
@@ -187,6 +193,26 @@ describe('chat spawn', () => {
         level: 'warn', code: 'fallback',
         message: 'Opened in the terminal: Claude Code 2.1.250 is known to break chat: hangs; Claude Code 2.1.250 is known to break chat: hangs',
       }]);
+    });
+
+    it('opens the terminal for a CLI that needs a login, without trying the other drivers', async () => {
+      const { sdk, stream } = drivers();
+      sdk.probe = async () => ({ handshakeOk: true, needsLogin: true, loginHint: 'run claude, then /login', capabilities: sdk.capabilities });
+      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+      expect(sdk.sessions).toHaveLength(0);
+      expect(stream.sessions).toHaveLength(0);
+      expect(toasts()).toEqual([{
+        level: 'info', code: 'login_required',
+        message: 'Claude Code needs you to log in. Opening the terminal so you can log in (run claude, then /login). Chat starts next time.',
+      }]);
+    });
+
+    it('probes through the profile\'s command prefix', async () => {
+      const { sdk } = drivers();
+      const calls: unknown[][] = [];
+      sdk.probe = async (...args: unknown[]) => { calls.push(args); return { handshakeOk: true, capabilities: sdk.capabilities }; };
+      expect(await tryStartChatAgent(params, provider, { A: '1' }, 'wsl -e', null)).toBe(true);
+      expect(calls[0]).toEqual([expect.any(String), { A: '1' }, { commandPrefix: 'wsl -e' }]);
     });
 
     it('keeps chat on a newer-than-tested CLI and notes it in the transcript only', async () => {

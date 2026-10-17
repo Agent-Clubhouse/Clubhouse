@@ -320,6 +320,43 @@ describe('ChatAgentRuntime', () => {
     expect(resolved?.type === 'question_resolved' && resolved.data.answers).toEqual({ a: ['ui', 'api'] });
   });
 
+  it('ignores a second or late answer to the same request instead of failing', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'permission_request', data: { requestId: 'p1', title: 'Run tests', toolName: 'Bash', options: [{ optionId: 'ok', kind: 'allow_once', label: 'Allow' }] } });
+    driver.last.emit({ type: 'question', data: { requestId: 'q1', questions: [{ id: 'a', prompt: 'Which?', multiSelect: false, allowFreeText: true }] } });
+    await flush();
+
+    // Two views answer at once, then one answers again after it resolved.
+    await Promise.all([runtime.respondPermission('p1', 'ok'), runtime.respondPermission('p1', 'ok')]);
+    await runtime.respondPermission('p1', 'ok');
+    await Promise.all([runtime.answerQuestion('q1', { a: 'x' }), runtime.answerQuestion('q1', { a: 'y' })]);
+    await runtime.answerQuestion('q1', { a: 'z' });
+    // Never asked.
+    await runtime.respondPermission('nope', 'ok');
+    await runtime.answerQuestion('nope', { a: 'x' });
+    await flush();
+
+    expect(driver.last.responses).toEqual([{ requestId: 'p1', optionId: 'ok' }]);
+    expect(driver.last.answers).toEqual([{ requestId: 'q1', answers: { a: 'x' } }]);
+    expect(transcript.filter((e) => e.type === 'permission_resolved')).toHaveLength(1);
+    expect(transcript.filter((e) => e.type === 'question_resolved')).toHaveLength(1);
+  });
+
+  it('lets an answer be retried after the driver failed to send it', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'permission_request', data: { requestId: 'p2', title: 'Edit', toolName: 'Edit', options: [{ optionId: 'ok', kind: 'allow_once', label: 'Allow' }] } });
+    await flush();
+    const real = driver.last.respondPermission.bind(driver.last);
+    driver.last.respondPermission = vi.fn().mockRejectedValueOnce(new Error('stdin closed')).mockImplementation(real);
+    await expect(runtime.respondPermission('p2', 'ok')).rejects.toThrow('stdin closed');
+    await runtime.respondPermission('p2', 'ok');
+    expect(driver.last.responses).toEqual([{ requestId: 'p2', optionId: 'ok' }]);
+  });
+
   it('prepends the system prompt once when the driver cannot pass it', async () => {
     const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', { ...STEERLESS, systemPrompt: false });
     const { runtime } = makeRuntime(driver, { systemPrompt: 'You are the release agent.' });
@@ -379,6 +416,44 @@ describe('ChatAgentRuntime', () => {
     expect(driver.last.closed).toBe(true);
     expect(onEnded).not.toHaveBeenCalled();
     expect(types()).not.toContain('session_ended');
+  });
+
+  it('runs the pre-prompt hook before new prompts but not before steering', async () => {
+    const driver = new FakeChatDriver();
+    const order: string[] = [];
+    const beforePrompt = vi.fn(async () => { order.push('checkpoint'); });
+    const { runtime } = makeRuntime(driver, { beforePrompt });
+    await runtime.start();
+    const realSend = driver.last.send.bind(driver.last);
+    driver.last.send = async (content, delivery) => { order.push(`send:${delivery}`); return realSend(content, delivery); };
+
+    await runtime.sendMessage('first', { source: 'user' });
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    await flush();
+    await runtime.sendMessage('steer this', { source: 'user' });
+    expect(order).toEqual(['checkpoint', 'send:prompt', 'send:steer']);
+  });
+
+  it('sends the prompt anyway when the pre-prompt hook runs past its 5 s bound', async () => {
+    const driver = new FakeChatDriver();
+    const beforePrompt = vi.fn(() => new Promise<void>(() => {}));
+    const { runtime } = makeRuntime(driver, { beforePrompt });
+    await runtime.start();
+    const sent: string[] = [];
+    const realSend = driver.last.send.bind(driver.last);
+    driver.last.send = async (content, delivery) => { sent.push(delivery); return realSend(content, delivery); };
+
+    vi.useFakeTimers();
+    try {
+      const sending = runtime.sendMessage('first', { source: 'user' });
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(sent).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      await sending;
+      expect(sent).toEqual(['prompt']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects actions once ended', async () => {

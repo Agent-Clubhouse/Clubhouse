@@ -8,7 +8,11 @@
  */
 import {
   context,
+  createContextKey,
   diag,
+  ROOT_CONTEXT,
+  TraceFlags,
+  type SpanContext,
   DiagLogLevel,
   SpanKind,
   SpanStatusCode,
@@ -71,7 +75,7 @@ import type {
   SpanHandle,
   TelemetryRuntime,
 } from './types';
-import { ForwardedError } from './types';
+import { ForwardedError, errorTypeOf } from './types';
 
 export interface SdkOptions {
   level: TelemetryLevel;
@@ -106,6 +110,35 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof (value as { then?: unknown }).then === 'function';
 }
 
+const REMOTE_PARENT = createContextKey('clubhouse.telemetry.remote_parent');
+
+interface RemoteParent {
+  spanContext: SpanContext;
+  used: boolean;
+}
+
+const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
+
+/**
+ * Parse a W3C traceparent from an Annex peer. Only version 00, non-zero ids
+ * and a sampled flag are accepted: an unsampled remote parent would make
+ * ParentBased sampling drop this install's own spans, so this side starts its
+ * own trace instead (sampled at its own rate). For a sampled parent,
+ * withRemoteParent still applies this install's own rate.
+ */
+export function parseTraceparent(value: string): SpanContext | undefined {
+  const m = TRACEPARENT.exec(value);
+  if (!m) return undefined;
+  const [, traceId, spanId, flags] = m;
+  if (/^0+$/.test(traceId) || /^0+$/.test(spanId)) return undefined;
+  if ((parseInt(flags, 16) & TraceFlags.SAMPLED) === 0) return undefined;
+  return { traceId, spanId, traceFlags: TraceFlags.SAMPLED, isRemote: true };
+}
+
+export function formatTraceparent(sc: SpanContext): string {
+  return `00-${sc.traceId}-${sc.spanId}-${sc.traceFlags & TraceFlags.SAMPLED ? '01' : '00'}`;
+}
+
 function errorTypeName(error: unknown): string {
   if (error instanceof ForwardedError) {
     return /^[A-Za-z_$][\w$.]{0,63}$/.test(error.forwardedType) ? error.forwardedType : 'Error';
@@ -120,6 +153,8 @@ function errorTypeName(error: unknown): string {
 export function startSdk(opts: SdkOptions): TelemetryRuntime {
   const { scrub } = opts;
   const level = opts.level;
+  // Same clamp as FlowSampler: anything outside (0, 1] means record everything.
+  const remoteSampleRate = opts.sampleRate > 0 && opts.sampleRate <= 1 ? opts.sampleRate : 1;
   // At Errors level, flow spans are still recorded so the tail processor can
   // keep the ones that fail; Detailed-only spans are never recorded below Detailed.
   const spanLevel: TelemetryLevel = level === 'errors' ? 'standard' : level;
@@ -294,6 +329,31 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     span.end();
   }
 
+  /**
+   * The parent for a root flow: a remote parent set by withRemoteParent and
+   * not yet used, else ROOT_CONTEXT. Consumed once, so a callback that keeps
+   * this context (a PTY spawned for a remote agent:spawn) cannot hang later
+   * flows off the controller's trace.
+   */
+  function rootFlowParent() {
+    const holder = context.active().getValue(REMOTE_PARENT) as RemoteParent | undefined;
+    if (!holder || holder.used) return ROOT_CONTEXT;
+    holder.used = true;
+    return trace.setSpanContext(ROOT_CONTEXT, holder.spanContext);
+  }
+
+  /**
+   * Parent context for a replayed span, and (via SpanKind.SERVER) for a flow
+   * on a registered root span: those always start a new trace, while a
+   * tel.step stays under the active span whatever its name. Process and timer
+   * callbacks registered inside a flow (a PTY's onExit, for example) keep that
+   * flow's context for the life of the process, and a run or kill replayed
+   * from there must not hang off a spawn trace that ended hours ago.
+   */
+  function parentFor(name: SpanName) {
+    return SPANS[name].root ? ROOT_CONTEXT : context.active();
+  }
+
   function runSpan<T>(
     name: SpanName,
     kind: SpanKind,
@@ -302,7 +362,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     extras?: FlowExtras<T>,
   ): T {
     if (!levelAllows(spanLevel, SPANS[name].level)) return fn({ set: () => {} });
-    return tracer.startActiveSpan(name, { kind, attributes: { ...toAttributes(opts2.attrs), ...userAttrs } }, (span) => {
+    return tracer.startActiveSpan(name, { kind, attributes: { ...toAttributes(opts2.attrs), ...userAttrs } }, kind === SpanKind.SERVER ? rootFlowParent() : context.active(), (span) => {
       const classifyResult = (r: Awaited<T>): Classification => {
         if (opts2.signal?.aborted) return { outcome: 'cancelled' };
         try {
@@ -317,7 +377,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
           return;
         }
         recordException(span, err, { origin: 'main', handled: false });
-        finish(span, { error: 'unknown' });
+        finish(span, { error: errorTypeOf(err) });
       };
       let result: T;
       try {
@@ -371,7 +431,12 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     },
 
     exception(error, exOpts) {
-      recordException(trace.getActiveSpan(), error, exOpts);
+      // Only attach to a span that is still recording. An ended span left in
+      // a long-lived callback's context must not claim this exception or
+      // lend its trace id to the log record.
+      const active = trace.getActiveSpan();
+      if (active?.isRecording()) recordException(active, error, exOpts);
+      else context.with(ROOT_CONTEXT, () => recordException(undefined, error, exOpts));
     },
 
     replaySpan(s: ReplaySpan) {
@@ -380,7 +445,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
         kind: SPANS[s.name].root ? SpanKind.SERVER : SpanKind.INTERNAL,
         startTime: s.startMs,
         attributes: { ...toAttributes(s.attrs), ...userAttrs },
-      }, context.active());
+      }, parentFor(s.name));
       const attrs = [ATTR.outcome(s.outcome)];
       if (s.errorType) attrs.push(ATTR.errorType(s.errorType));
       span.setAttributes(toAttributes(attrs));
@@ -394,8 +459,8 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
         kind: SPANS[root.name].root ? SpanKind.SERVER : SpanKind.INTERNAL,
         startTime: root.startMs,
         attributes: { ...toAttributes(root.attrs), ...userAttrs },
-      }, context.active());
-      const parentCtx = trace.setSpan(context.active(), rootSpan);
+      }, parentFor(root.name));
+      const parentCtx = trace.setSpan(ROOT_CONTEXT, rootSpan);
       for (const c of children) {
         if (!levelAllows(spanLevel, SPANS[c.name].level)) continue;
         const child = tracer.startSpan(c.name, {
@@ -414,6 +479,26 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       rootSpan.setAttributes(toAttributes(rAttrs));
       if (root.outcome === 'error') rootSpan.setStatus({ code: SpanStatusCode.ERROR });
       rootSpan.end(root.endMs);
+    },
+
+    traceparent() {
+      const span = trace.getActiveSpan();
+      if (!span?.isRecording()) return undefined;
+      return formatTraceparent(span.spanContext());
+    },
+
+    withRemoteParent(traceparent, fn) {
+      const remote = parseTraceparent(traceparent);
+      if (!remote) return fn();
+      // ParentBased sampling would record every sampled remote trace, while
+      // the spans carry this install's own microsoft.sample_rate. Make this
+      // install's own decision at its own rate: kept traces continue the
+      // remote one, the rest continue it unsampled (and so are dropped). Either
+      // way this install records traces at exactly its configured rate.
+      const keep = remoteSampleRate >= 1 || Math.random() < remoteSampleRate;
+      const spanContext = keep ? remote : { ...remote, traceFlags: TraceFlags.NONE };
+      const holder: RemoteParent = { spanContext, used: false };
+      return context.with(context.active().setValue(REMOTE_PARENT, holder), fn);
     },
 
     preview: () => tee.snapshot(),

@@ -181,8 +181,8 @@ export class CodexChatDriver implements ChatDriver {
 
   constructor(private readonly deps: { onLog?: LogFn } = {}) {}
 
-  async probe(binaryPath: string, env?: Record<string, string>): Promise<ChatDriverProbe> {
-    const spawnCmd = resolveStructuredSpawn(binaryPath, ['app-server']);
+  async probe(binaryPath: string, env?: Record<string, string>, opts?: { commandPrefix?: string }): Promise<ChatDriverProbe> {
+    const spawnCmd = resolveStructuredSpawn(binaryPath, ['app-server'], opts?.commandPrefix);
     const client = new CodexAppServerClient({
       ...spawnCmd,
       env,

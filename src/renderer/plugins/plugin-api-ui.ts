@@ -160,6 +160,8 @@ export function createWidgetsAPI(): WidgetsAPI {
 
   let AgentTerminalComponent: React.ComponentType<any>;
 
+  let AgentViewComponent: React.ComponentType<any>;
+
   let SleepingAgentComponent: React.ComponentType<any>;
 
   let AgentAvatarComponent: React.ComponentType<any>;
@@ -173,6 +175,7 @@ export function createWidgetsAPI(): WidgetsAPI {
 
   try {
     AgentTerminalComponent = require('../features/agents/AgentTerminal').AgentTerminal;
+    AgentViewComponent = require('../features/agents/chat/AgentView').AgentView;
     SleepingAgentComponent = require('../features/agents/SleepingAgent').SleepingAgent;
     AgentAvatarComponent = require('../features/agents/AgentAvatar').AgentAvatar;
     AgentAvatarWithRingComponent = require('../features/agents/AgentAvatar').AgentAvatarWithRing;
@@ -183,6 +186,7 @@ export function createWidgetsAPI(): WidgetsAPI {
     const stub = ((): null => null) as unknown as React.ComponentType<any>;
     _widgetsCache = {
       AgentTerminal: stub,
+      AgentView: stub,
       SleepingAgent: stub,
       AgentAvatar: stub,
       QuickAgentGhost: stub,
@@ -216,6 +220,7 @@ export function createWidgetsAPI(): WidgetsAPI {
 
   _widgetsCache = {
     AgentTerminal: AgentTerminalComponent,
+    AgentView: AgentViewComponent,
     SleepingAgent: SleepingAgentAdapter,
     AgentAvatar: AgentAvatarAdapter,
     QuickAgentGhost: QuickAgentGhostComponent,

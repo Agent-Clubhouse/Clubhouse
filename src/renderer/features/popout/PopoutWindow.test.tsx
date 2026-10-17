@@ -86,6 +86,19 @@ describe('PopoutWindow', () => {
     expect(screen.getByTestId('popout-title').textContent).toBe('Agent — Pop-out');
   });
 
+  it('listens for chat events while open and stops on close, and loads provider names', async () => {
+    const unsubscribe = vi.fn();
+    window.clubhouse.chat.onEvent = vi.fn(() => unsubscribe);
+    const getOrchestrators = vi.fn(async () => []);
+    window.clubhouse.agent.getOrchestrators = getOrchestrators as typeof window.clubhouse.agent.getOrchestrators;
+    const view = render(<PopoutWindow />);
+    await screen.findByTestId('popout-agent-view');
+    expect(window.clubhouse.chat.onEvent).toHaveBeenCalledTimes(1);
+    expect(getOrchestrators).toHaveBeenCalled();
+    view.unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('shows syncing message while loading state', () => {
     // Delay resolution to keep loading state visible
     getAgentStateMock.mockReturnValue(new Promise(() => {}));

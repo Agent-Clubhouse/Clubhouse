@@ -32,6 +32,9 @@ import { parseSessionUpdate } from './acp-updates';
 import { deriveAcpCapabilities, type AcpDriverCapabilities } from './acp-capabilities';
 import type { PermissionLevel } from '../../../shared/chat/capabilities';
 
+/** How long close() waits for an agent to answer `session/close` before killing it. */
+export const SESSION_CLOSE_TIMEOUT_MS = 2_000;
+
 /** How an agent's native modes and options map onto Clubhouse's permission ladder. */
 export interface AcpPermissionLevels {
   /** Levels `apply` can switch to inside a live session. */
@@ -349,7 +352,9 @@ export class AcpSession {
     const sessionId = this.state.sessionId;
     if (sessionId && this.caps?.closeSession && this.client.alive) {
       try {
-        await this.client.request(ACP_AGENT_METHODS.sessionClose, { sessionId });
+        // Bounded: the process is killed right after either way, so an agent
+        // that never answers must not hold Stop for the full RPC timeout.
+        await this.client.request(ACP_AGENT_METHODS.sessionClose, { sessionId }, { timeoutMs: SESSION_CLOSE_TIMEOUT_MS });
       } catch (err) {
         this.log('warn', 'session/close failed', { error: (err as Error).message });
       }

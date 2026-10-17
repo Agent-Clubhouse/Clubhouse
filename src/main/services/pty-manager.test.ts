@@ -655,7 +655,8 @@ describe('pty-manager', () => {
 
     it('ends the telemetry run (no exit broadcast follows a hard kill)', async () => {
       const count = vi.fn();
-      setRuntime({ level: 'standard', count, replaySpan: vi.fn(), event: vi.fn(), exception: vi.fn() } as unknown as TelemetryRuntime);
+      const replaySpan = vi.fn();
+      setRuntime({ level: 'standard', count, replaySpan, event: vi.fn(), exception: vi.fn() } as unknown as TelemetryRuntime);
       installAgentTelemetry(() => 'claude-code');
       try {
         await spawnAndActivate('agent_kill_tel');
@@ -665,6 +666,9 @@ describe('pty-manager', () => {
         expect(count).toHaveBeenCalledWith('clubhouse.agent.runs', 1, [
           ATTR.agentRuntime('pty'), ATTR.orchestrator('claude-code'), ATTR.agentExitClass('killed_user'),
         ]);
+        // No caller named a trigger, so the kill span says `other`.
+        const killSpan = replaySpan.mock.calls.map((c) => c[0]).find((sp) => sp.name === 'clubhouse.agent.kill');
+        expect(killSpan.attrs).toContainEqual(ATTR.killTrigger('other'));
       } finally {
         setRuntime(null);
         _resetAgentTelemetryForTests();

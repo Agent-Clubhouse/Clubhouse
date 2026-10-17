@@ -21,8 +21,10 @@ A one-click **Deploy to Azure** button and optional alert rules come in Phase 7.
 | Data integrity | Write failures and write time by store, recoveries by store and action, saves blocked by data-loss guards, flush-barrier waits |
 | Workspace (Phase 5) | Git operations and failures by type and error, status-poll time by changed files, slow polls, worktree create/remove, project add/remove/git init, projects per install, file operations by result, sandbox denials, file tree reads, search by engine, file watches, Monaco load, external editor and save conflicts, settings changed by area, feature use (theme, popouts, blueprints), bulletin posts by result, MCP tool lists including empty ones |
 | Plugins and canvas (Phase 5) | Plugin activations and failures by plugin, origin and error, activation retries, plugin module requests, canvas loads by result, registry fetches, plugin installs/updates/uninstalls by failure stage, plugin update checks |
+| Agents | Spawns and spawn failures by orchestrator, runtime and error; spawn time and spawn steps; CLI binary lookup by tier; how runs end; readiness; kills by trigger and stage; kill escalations; tool calls by bucket; Clubhouse MCP tool calls; permission waits; shoulder tap deliveries; durable create and delete |
+| Annex | Pairing results; connects by address family; connect and discovery failures; identity regenerations and TLS fallbacks; reconnects by attempt; disconnects by reason; heartbeat RTT; control requests denied; remote spawns; the satellite event stream by type; connected clients; snapshot build and replays; REST routes (Detailed level) |
 
-Agents, Permissions and Annex tabs are added with telemetry Phases 4 and 6, in the same PRs as the instrumentation they chart.
+Permission panels live on the Agents tab. The Goobers tab is added with telemetry Phase 6b, in the same PR as the instrumentation it charts.
 
 ## Keeping it in sync
 
