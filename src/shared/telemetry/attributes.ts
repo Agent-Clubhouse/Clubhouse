@@ -148,6 +148,11 @@ export const ERROR_TYPES = [
   'create_failed',
   'canvas_unreadable',
   'canvas_load_failed',
+  // Workspace 5b (§4.11)
+  'invalid_json',
+  'invalid_id',
+  'install_failed',
+  'no_update_available',
 ] as const;
 
 export const OUTCOMES = ['ok', 'error', 'cancelled', 'timeout', 'skipped'] as const;
@@ -173,6 +178,20 @@ export const GIT_OPS = [
   'status', 'other',
 ] as const;
 export type GitOp = (typeof GIT_OPS)[number];
+
+/**
+ * Managed and legacy settings domains (§4.14). The key only, never values;
+ * chat runtime settings are left to the chat telemetry mapping (§9.1).
+ */
+export const SETTINGS_KEYS = [
+  'clipboard', 'editor', 'mcp', 'security', 'goobers', 'annex', 'notifications', 'orchestrators', 'headless',
+  'free_agent', 'badge', 'update', 'logging', 'sound', 'session', 'clubhouse_mode', 'experimental', 'marketplace', 'theme',
+] as const;
+
+/** Built-in theme ids (shared/types.ts BuiltinThemeId); plugin themes report `other`. */
+export const BUILTIN_THEME_IDS = [
+  'catppuccin-mocha', 'catppuccin-latte', 'solarized-dark', 'terminal', 'nord', 'dracula', 'tokyo-night', 'gruvbox-dark', 'cyberpunk',
+] as const;
 
 /** Supported plugin API versions, kept in sync with the manifest validator. */
 export const PLUGIN_API_VERSION_VALUES: readonly string[] = SUPPORTED_PLUGIN_API_VERSIONS.map(String);
@@ -358,6 +377,25 @@ export const ATTR = {
   canvasLoadResult: enumAttr('clubhouse.canvas.load.result', ['ok', 'new', 'recovered_from_backup', 'degraded', 'unreadable', 'failed']),
   canvasCount: intAttr('clubhouse.canvas.count'),
   canvasViewCount: enumAttr('clubhouse.canvas.view.count_bucket', COUNT_BUCKETS),
+
+  // Workspace 5b: marketplace, plugin updates, settings and feature events (§4.11, §4.14)
+  registryKind: enumAttr('clubhouse.registry.kind', ['official', 'custom']),
+  cacheHit: boolAttr('clubhouse.cache.hit'),
+  httpStatusCode: intAttr('http.response.status_code'),
+  installFailureStage: enumAttr('clubhouse.install.failure_stage', ['invalid_id', 'download_http', 'integrity', 'extract', 'no_manifest', 'swap', 'restore']),
+  updatesAvailable: intAttr('clubhouse.updates.available.count'),
+  updatesIncompatible: intAttr('clubhouse.updates.incompatible.count'),
+  settingsKey: enumAttr('clubhouse.settings.key', SETTINGS_KEYS),
+  themeBuiltinId: enumAttr('clubhouse.theme.builtin_id', [...BUILTIN_THEME_IDS, 'other']),
+  popoutType: enumAttr('clubhouse.popout.type', ['agent', 'canvas']),
+  /**
+   * A bulletin post (§12 H8): `evicted_message` when the topic's own cap
+   * dropped older messages, `evicted_topic` when the board-wide cap dropped
+   * messages from other topics, `rejected` for an oversized body.
+   */
+  bulletinPostResult: enumAttr('clubhouse.bulletin.post.result', ['ok', 'evicted_message', 'evicted_topic', 'rejected']),
+  mcpToolsCount: enumAttr('clubhouse.mcp.tools.count_bucket', COUNT_BUCKETS),
+  mcpToolsEmpty: boolAttr('clubhouse.mcp.tools.empty'),
 } as const;
 
 /**
@@ -455,6 +493,12 @@ export const SPANS = {
   'clubhouse.editor.monaco_load': { level: 'standard', root: true },
   'clubhouse.plugin.activate': { level: 'standard', root: true },
   'clubhouse.canvas.load': { level: 'standard', root: true },
+  // Workspace 5b (§4.11)
+  'clubhouse.marketplace.fetch_registry': { level: 'standard', root: true },
+  'clubhouse.plugin.install': { level: 'standard', root: true },
+  'clubhouse.plugin.update_check': { level: 'standard', root: true },
+  'clubhouse.plugin.update': { level: 'standard', root: true },
+  'clubhouse.plugin.uninstall': { level: 'standard', root: true },
 } as const satisfies Record<string, SpanDef>;
 export type SpanName = keyof typeof SPANS;
 
@@ -697,6 +741,12 @@ export const METRICS = {
     description: 'clubhouse-plugin: module requests by result',
     attributes: ['clubhouse.plugin.protocol.result'],
   },
+  // Workspace 5b
+  'clubhouse.group.bulletin.posts': {
+    kind: 'counter', unit: '{post}', level: 'standard',
+    description: 'Bulletin posts by result, from any source (MCP or UI)',
+    attributes: ['clubhouse.bulletin.post.result'],
+  },
 } as const satisfies Record<string, MetricDef>;
 export type MetricName = keyof typeof METRICS;
 
@@ -735,6 +785,18 @@ export const EVENTS = {
   // Workspace (§4.7–4.10, Phase 5)
   /** A file changed on disk while its editor tab had unsaved edits. */
   'clubhouse.editor.save_conflict': { level: 'errors' },
+  // Workspace 5b: settings and feature usage (§4.14), main-process call sites only.
+  /** Attributes: `clubhouse.settings.key`. Never values. */
+  'clubhouse.settings.changed': { level: 'standard' },
+  /** Attributes: `clubhouse.theme.kind`, `clubhouse.theme.builtin_id`. */
+  'clubhouse.theme.changed': { level: 'standard' },
+  /** Attributes: `clubhouse.popout.type`. */
+  'clubhouse.popout.opened': { level: 'standard' },
+  /** Attributes: `clubhouse.outcome`. */
+  'clubhouse.blueprint.exported': { level: 'standard' },
+  'clubhouse.blueprint.imported': { level: 'standard' },
+  /** An agent listed its MCP tools (§12 H8). Attributes: tool-count bucket, empty flag. */
+  'clubhouse.mcp.tools_list': { level: 'standard' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 
