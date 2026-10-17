@@ -33,6 +33,16 @@ export function buildProjectContext(view: CanvasView, projects: ProjectInfo[]): 
   return project.name;
 }
 
+/** The one word that goes with a status dot, as in the sidebar. */
+export const DOT_WORD: Record<AgentDot, string> = {
+  working: 'Working',
+  idle: 'Idle',
+  needs: 'Needs you',
+  error: 'Error',
+  sleeping: 'Sleeping',
+  starting: 'Starting',
+};
+
 /**
  * The status dot on an agent card: attention wins, then the agent's own state,
  * matching the sidebar's dot (chrome/sidebar/treeModel.ts agentDot).

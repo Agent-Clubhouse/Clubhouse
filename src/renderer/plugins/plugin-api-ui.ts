@@ -207,7 +207,7 @@ export function createWidgetsAPI(): WidgetsAPI {
 
   // AgentAvatar adapter: when showStatusRing is true, use the ring variant with status colors.
   // Checks both local and remote agent stores so remote canvas views work.
-  const AgentAvatarAdapter = ({ agentId, size, showStatusRing }: { agentId: string; size?: 'sm' | 'md'; showStatusRing?: boolean }) => {
+  const AgentAvatarAdapter = ({ agentId, size, showStatusRing }: { agentId: string; size?: '2xs' | 'sm' | 'md'; showStatusRing?: boolean }) => {
     const localAgent = useAgentStore((s) => s.agents[agentId]);
     const remoteAgent = useRemoteProjectStore((s) => s.remoteAgents[agentId]);
     const agent = localAgent || remoteAgent;

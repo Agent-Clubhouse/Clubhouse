@@ -730,7 +730,8 @@ export interface WidgetsAPI {
   SleepingAgent: React.ComponentType<{ agentId: string }>;
   AgentAvatar: React.ComponentType<{
     agentId: string;
-    size?: 'sm' | 'md';
+    /** `2xs` is the 18px chrome size (pair it with a status dot, not the ring). Added within API 0.9. */
+    size?: '2xs' | 'sm' | 'md';
     showStatusRing?: boolean;
   }>;
   QuickAgentGhost: React.ComponentType<{
