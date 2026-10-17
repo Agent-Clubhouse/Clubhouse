@@ -2,6 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { createMockAPI } from '../../testing';
+
+const openNewAgentOrDialog = vi.fn();
+vi.mock('../../../chrome/startPage', async (orig) => ({
+  ...(await orig<typeof import('../../../chrome/startPage')>()),
+  openNewAgentOrDialog: (...args: unknown[]) => openNewAgentOrDialog(...args),
+}));
 import type { AgentInfo, PluginAgentDetailedStatus, PluginAPI } from '../../../../shared/plugin-types';
 import { useChromeStore } from '../../../chrome/chromeStore';
 import { useChromeFlagStore } from '../../../chrome/chromeFlag';
@@ -298,6 +304,16 @@ describe('MainPanel', () => {
     render(<MainPanel api={api} />);
     fireEvent.keyDown(screen.getByTestId('review-wake-prompt'), { key: 'j' });
     expect(screen.getByTestId('review-sleeping-card')).toBeTruthy();
+  });
+
+  it("New agent opens the New agent page for the active project (#2031)", () => {
+    useChromeFlagStore.setState({ enabled: true });
+    useProjectStore.setState({ activeProjectId: 'proj-1' });
+    openNewAgentOrDialog.mockClear();
+    const { api } = makeApi([]);
+    render(<MainPanel api={api} />);
+    fireEvent.click(screen.getByRole('button', { name: 'New agent' }));
+    expect(openNewAgentOrDialog).toHaveBeenCalledExactlyOnceWith('durable', 'proj-1');
   });
 
   it('classic layout sets the window title', () => {

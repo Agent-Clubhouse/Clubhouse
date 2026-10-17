@@ -2,7 +2,7 @@ import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useAgentStore } from '../stores/agentStore';
-import { useChromeStore } from './chromeStore';
+import { useChromeStore, type NewAgentOptions } from './chromeStore';
 import { isNewChromeEnabled } from './chromeFlag';
 
 /**
@@ -19,26 +19,32 @@ export function openStartPage(projectId: string): void {
   useUIStore.getState().setExplorerTab('agents', projectId);
 }
 
-/**
- * ⌘⇧N. In the new shell it opens the start page composer for the selected
- * project (spec §4.3, §5.3). The legacy shell, a satellite host, or no local
- * project keeps the Quick Agent dialog.
- */
-export function openNewQuickAgent(): void {
-  const ui = useUIStore.getState();
-  if (!isNewChromeEnabled() || ui.activeHostId) {
-    ui.openQuickAgentDialog();
-    return;
-  }
-  const { projects, activeProjectId } = useProjectStore.getState();
-  const { lastProjectId } = useChromeStore.getState();
-  const has = (id: string | null | undefined): id is string => !!id && projects.some((p) => p.id === id);
-  const projectId = has(activeProjectId) ? activeProjectId : has(lastProjectId) ? lastProjectId : projects[0]?.id;
-  if (!projectId) {
-    ui.openQuickAgentDialog();
-    return;
-  }
-  openStartPage(projectId);
-  useChromeStore.getState().requestComposer();
+/** Whether the New agent page can open: the new shell, on the local host, with a project. */
+export function canOpenNewAgentPage(): boolean {
+  return isNewChromeEnabled() && !useUIStore.getState().activeHostId && useProjectStore.getState().projects.length > 0;
 }
 
+/**
+ * Open the New agent page (#2031) with `kind` chosen and, optionally, a
+ * project. Returns false, doing nothing, where it can't open (the legacy shell,
+ * a satellite host, no projects); the caller decides what to do instead.
+ *
+ * `onCreated` gets the new agent's id; `onClosed` fires once when the page goes
+ * away, with that id or null. With `stayInView` the view underneath stays put
+ * after creating, instead of opening the agent.
+ */
+export function openNewAgentPage(kind: 'durable' | 'quick', projectId?: string, options: NewAgentOptions = {}): boolean {
+  if (!canOpenNewAgentPage()) return false;
+  useChromeStore.getState().openNewAgent(kind, projectId, options);
+  return true;
+}
+
+/** The New agent page, or the Quick Agent dialog where the page can't open. For the app's own entry points. */
+export function openNewAgentOrDialog(kind: 'durable' | 'quick', projectId?: string): void {
+  if (!openNewAgentPage(kind, projectId)) useUIStore.getState().openQuickAgentDialog();
+}
+
+/** ⌘⇧N: the New agent page with Durable chosen, like the sidebar's New button (#2031). */
+export function openNewAgentFromShortcut(): void {
+  openNewAgentOrDialog('durable');
+}

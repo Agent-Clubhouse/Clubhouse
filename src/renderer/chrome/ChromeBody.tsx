@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
@@ -15,6 +15,8 @@ import { useChromeScope } from './scope';
 import { hostOf } from './hosts';
 import { ProjectStartPage } from './pages/ProjectStartPage';
 import { FirstRun } from './pages/FirstRun';
+import { NewAgentPage } from './pages/NewAgentPage';
+import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { reportChromePage, reportChromeSurface, reportChromeView, type ChromeSurface } from './telemetry';
 
@@ -61,6 +63,8 @@ export function ChromeBody() {
   const sidebarCollapsed = useChromeStore((s) => s.sidebarCollapsed);
   const resizeSidebar = useChromeStore((s) => s.resizeSidebar);
   const toggleSidebar = useChromeStore((s) => s.toggleSidebar);
+  const newAgent = useChromeStore((s) => s.newAgent);
+  const activeAgentId = useAgentStore((s) => s.activeAgentId);
 
   const isSettings = explorerTab === 'settings';
   const isHelp = explorerTab === 'help';
@@ -70,6 +74,27 @@ export function ChromeBody() {
   const setLastProjectId = useChromeStore((s) => s.setLastProjectId);
 
   useEffect(() => syncProjectScopeWithActiveAgent(), []);
+
+  // The New agent page covers the pane until the user opens something else:
+  // another tab, project, agent or host (#2031), from the sidebar, the palette
+  // or a shortcut. The one exception is a selection the page makes itself, the
+  // project it just added or the agent it is creating: one that didn't exist
+  // when it went busy. That becomes the new baseline.
+  const knownIds = useChromeStore((s) => s.newAgentKnownIds);
+  const opened = useRef<{ tab: string; project: string | null; agent: string | null; host: string | null } | null>(null);
+  useEffect(() => {
+    if (!newAgent) { opened.current = null; return; }
+    const now = { tab: explorerTab, project: activeProjectId, agent: activeAgentId, host: activeHostId };
+    const base = opened.current;
+    if (!base) { opened.current = now; return; }
+    if (base.tab === now.tab && base.project === now.project && base.agent === now.agent && base.host === now.host) return;
+    const own = !!knownIds && base.tab === now.tab && base.host === now.host
+      && (now.project === base.project || (!!now.project && !knownIds.projectIds.includes(now.project)))
+      && (now.agent === base.agent || now.agent === null || !knownIds.agentIds.includes(now.agent));
+    if (own) opened.current = now;
+    else useChromeStore.getState().closeNewAgent();
+  }, [newAgent, knownIds, explorerTab, activeProjectId, activeAgentId, activeHostId]);
+  const showNewAgent = !!newAgent && !activeHostId;
   useEffect(() => syncProjectActivityWithAgents(), []);
 
   // The active project decides the host: opening a local agent from the palette
@@ -103,7 +128,7 @@ export function ChromeBody() {
   // Not before the project list loads, or first run would flash on every launch.
   const firstRun = projectsLoaded && projects.length === 0 && !activeHostId;
   const inPane = !isSettings && !isHelp && !appPluginId;
-  const page = !inPane ? null : activeProjectId ? (startPage ? 'start_page' : null) : (firstRun ? 'first_run' : null);
+  const page = showNewAgent ? 'new_agent' : !inPane ? null : activeProjectId ? (startPage ? 'start_page' : null) : (firstRun ? 'first_run' : null);
 
   // clubhouse.view and clubhouse.ui.surface for slow-frame and render-error
   // signals (spec §8). The start page and first run are panes of their own.
@@ -117,6 +142,7 @@ export function ChromeBody() {
   }, [page, explorerTab, mode]);
 
   const content = useMemo(() => {
+    if (showNewAgent && newAgent) return <NewAgentPage key={newAgent.seq} request={newAgent} />;
     // The settings navigator is in the sidebar; the pane shows the selected page.
     if (isSettings) return <MainContentView />;
     if (isHelp) return <HelpView />;
@@ -129,7 +155,7 @@ export function ChromeBody() {
     if (startPage && activeProject) return <ProjectStartPage project={activeProject} />;
     // A tab's own list lives in the sidebar (spec §4.6), so the pane is just the tab's content.
     return <MainContentView />;
-  }, [isSettings, isHelp, appPluginId, activeProjectId, activeHostId, firstRun, startPage, activeProject]);
+  }, [showNewAgent, newAgent, isSettings, isHelp, appPluginId, activeProjectId, activeHostId, firstRun, startPage, activeProject]);
 
 
   return (

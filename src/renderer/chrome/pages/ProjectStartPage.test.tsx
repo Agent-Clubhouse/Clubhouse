@@ -40,7 +40,7 @@ beforeEach(() => {
     },
     selectedCompletedId: null,
   });
-  useChromeStore.setState({ projectScopeId: 'p1', composerFocusPending: false });
+  useChromeStore.setState({ projectScopeId: 'p1' });
   useUIStore.setState({ explorerTab: 'agents' });
 });
 
@@ -101,14 +101,9 @@ describe('ProjectStartPage', () => {
     expect(spawnDurableAgent).not.toHaveBeenCalled();
   });
 
-  it('takes focus only when ⌘⇧N asked for it', () => {
-    const { unmount } = render(<ProjectStartPage project={project} />);
-    expect(document.activeElement).not.toBe(screen.getByTestId('start-page-prompt'));
-    unmount();
-    useChromeStore.setState({ composerFocusPending: true });
+  it('leaves focus where it was when opened', () => {
     render(<ProjectStartPage project={project} />);
-    expect(document.activeElement).toBe(screen.getByTestId('start-page-prompt'));
-    expect(useChromeStore.getState().composerFocusPending).toBe(false);
+    expect(document.activeElement).not.toBe(screen.getByTestId('start-page-prompt'));
   });
 
   it('lists finished quick agents to open, dismiss or clear', () => {

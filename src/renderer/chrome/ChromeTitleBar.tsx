@@ -208,6 +208,7 @@ function useBreadcrumb(projectLabel: string | undefined, tabLabel: string | unde
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activeAgentName = useAgentStore((s) => (s.activeAgentId ? s.agents[s.activeAgentId]?.name : undefined));
   const agentSettings = useAgentSettingsTarget(explorerTab);
+  const newAgentOpen = useChromeStore((s) => s.newAgent !== null);
   const appPluginId = explorerTab.startsWith('plugin:app:') ? explorerTab.slice('plugin:app:'.length) : null;
   const projectPluginId = !appPluginId && explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
   const pluginId = appPluginId ?? projectPluginId;
@@ -223,6 +224,7 @@ function useBreadcrumb(projectLabel: string | undefined, tabLabel: string | unde
     return tab?.title || tab?.label;
   });
 
+  if (newAgentOpen) return { current: 'New agent' };
   if (explorerTab === 'settings') return { current: 'Settings' };
   if (explorerTab === 'help') return { current: 'Help' };
   if (appPluginId) return { current: dynamicTitle || appPluginLabel || appPluginId };
@@ -244,7 +246,9 @@ export function ChromeTitleBar() {
   const tabsById = useMemo(() => new Map(orderedTabs.map((t) => [t.id, t])), [orderedTabs]);
   const shortBreadcrumb = useWindowWidth() < BREADCRUMB_SHORT_BELOW;
 
-  const inProjectView = !!activeProjectId && explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
+  // The New agent page names its own project, so the title bar shows no tabs (#2031).
+  const newAgentOpen = useChromeStore((s) => s.newAgent !== null);
+  const inProjectView = !newAgentOpen && !!activeProjectId && explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
   const projectLabel = activeProject ? (activeProject.displayName || activeProject.name) : undefined;
   const activeTabLabel = orderedTabs.find((t) => t.id === explorerTab)?.label;
   const crumb = useBreadcrumb(projectLabel, activeTabLabel);

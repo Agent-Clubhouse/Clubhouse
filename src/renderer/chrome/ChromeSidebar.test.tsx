@@ -34,6 +34,7 @@ import type { PluginManifest, PluginSource } from '../../shared/plugin-types';
 import type { Agent } from '../../shared/types';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { useKeyboardShortcutsStore } from '../stores/keyboardShortcutsStore';
+import { useChromeFlagStore } from './chromeFlag';
 
 function registerAppPlugin(id: string, label: string, position: 'top' | 'bottom' = 'top') {
   usePluginStore.getState().registerPlugin(
@@ -169,12 +170,49 @@ describe('ChromeSidebar', () => {
     expect(useUIStore.getState().explorerTab).toBe('plugin:app:goobers');
   });
 
-  it('opens the new-agent dialog from a project header', () => {
-    render(<ChromeSidebar />);
-    const header = screen.getByTestId('project-p2').parentElement!;
-    fireEvent.mouseEnter(header);
-    fireEvent.click(screen.getByLabelText('New agent in Goobers'));
-    expect(useChromeDialogStore.getState().request).toEqual({ kind: 'durable', projectId: 'p2' });
+  describe('New agent page', () => {
+    beforeEach(() => { useChromeFlagStore.setState({ enabled: true }); useChromeStore.setState({ newAgent: null }); });
+    afterEach(() => useChromeFlagStore.setState({ enabled: false }));
+
+    it("opens from a project header's + with that project", () => {
+      render(<ChromeSidebar />);
+      const header = screen.getByTestId('project-p2').parentElement!;
+      fireEvent.mouseEnter(header);
+      fireEvent.click(screen.getByLabelText('New agent in Goobers'));
+      expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable', projectId: 'p2' });
+      expect(useChromeDialogStore.getState().request).toBeNull();
+    });
+
+    it('opens from each New menu item with that kind chosen', () => {
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('chrome-new'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /Quick agent/ }));
+      expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'quick' });
+      expect(useUIStore.getState().quickAgentDialogOpen).toBe(false);
+      fireEvent.click(screen.getByTestId('chrome-new'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /Durable agent/ }));
+      expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable' });
+    });
+
+    it("shows the New agent shortcut the platform's way", () => {
+      const platform = window.clubhouse.platform;
+      useKeyboardShortcutsStore.setState({ shortcuts: { 'new-quick-agent': { id: 'new-quick-agent', label: 'New Agent', category: 'Agents', defaultBinding: 'Meta+Shift+N', currentBinding: 'Meta+Shift+N' } } as never });
+      try {
+        (window.clubhouse as { platform: string }).platform = 'darwin';
+        render(<ChromeSidebar />);
+        fireEvent.click(screen.getByTestId('chrome-new'));
+        expect(screen.getByRole('menuitem', { name: /Durable agent/ }).textContent).toBe('Durable agent…⇧⌘N');
+      } finally {
+        (window.clubhouse as { platform: string }).platform = platform;
+      }
+    });
+
+    it('closes when an agent is opened from the tree', () => {
+      useChromeStore.getState().openNewAgent('durable');
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('agent-item-a1'));
+      expect(useChromeStore.getState().newAgent).toBeNull();
+    });
   });
 
   it('puts the app-wide notices slot above the footer', () => {

@@ -160,8 +160,10 @@ const SHARED_IDS = [
  * project-N shortcuts.
  */
 export const CHROME_SHORTCUTS: ShortcutSpec[] = [
+  // ⌘⇧N keeps its id (and any user binding) but opens the New agent page (#2031).
   ...LEGACY_SHORTCUTS.filter((s) => SHARED_IDS.includes(s.id)).map((s) =>
-    s.id === 'toggle-sidebar' ? { ...s, category: 'General' } : s),
+    s.id === 'toggle-sidebar' ? { ...s, category: 'General' }
+      : s.id === 'new-quick-agent' ? { ...s, label: 'New Agent' } : s),
   ...Array.from({ length: 9 }, (_, i) => ({
     id: `tab-${i + 1}`,
     label: i === 0 ? 'Agents Tab' : `Tab ${i + 1}`,

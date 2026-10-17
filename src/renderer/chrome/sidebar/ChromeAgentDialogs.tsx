@@ -2,33 +2,31 @@ import { useState } from 'react';
 import { create } from 'zustand';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
-import { AddAgentDialog } from '../../features/agents/AddAgentDialog';
 import { AgentGalleryDialog } from '../../features/agents/AgentGalleryDialog';
 import { TemplateConfigDialog } from '../../features/agents/TemplateConfigDialog';
 import { DeleteAgentDialog } from '../../features/agents/DeleteAgentDialog';
 import { ApplyPersonaDialog } from '../../features/agents/ApplyPersonaDialog';
 import { ExtractPersonaDialog } from '../../features/agents/ExtractPersonaDialog';
-import { createDurableAgent, createDurableAgentFromTemplate } from '../../features/agents/create-agent';
+import { createDurableAgentFromTemplate } from '../../features/agents/create-agent';
 import type { PersonaTemplate } from '../../features/personas';
 
 /**
  * Agent dialogs for the new chrome. The legacy shell renders these inside
  * AgentList; the new sidebar has no AgentList, so it hosts them here with the
- * same creation code (features/agents/create-agent.ts).
+ * same creation code (features/agents/create-agent.ts). New durable and quick
+ * agents are made on the New agent page instead (pages/NewAgentPage.tsx).
  */
 
-type Request = { kind: 'durable' | 'gallery'; projectId: string } | null;
+type Request = { kind: 'gallery'; projectId: string } | null;
 
 interface ChromeDialogState {
   request: Request;
-  openNewAgent: (projectId: string) => void;
   openGallery: (projectId: string) => void;
   close: () => void;
 }
 
 export const useChromeDialogStore = create<ChromeDialogState>((set) => ({
   request: null,
-  openNewAgent: (projectId) => set({ request: { kind: 'durable', projectId } }),
   openGallery: (projectId) => set({ request: { kind: 'gallery', projectId } }),
   close: () => set({ request: null }),
 }));
@@ -45,19 +43,6 @@ export function ChromeAgentDialogs() {
 
   return (
     <>
-      {request?.kind === 'durable' && project && (
-        <AddAgentDialog
-          onClose={close}
-          projectPath={project.path}
-          onCreate={(name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, persona) => {
-            close();
-            void createDurableAgent(
-              { id: project.id, path: project.path },
-              { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, persona },
-            );
-          }}
-        />
-      )}
       {request?.kind === 'gallery' && project && (
         <AgentGalleryDialog
           onClose={close}

@@ -13,7 +13,7 @@ import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import { CATEGORY, type CommandItem } from './command-registry';
 import { useSettingsCategories } from '../../panels/AccessoryPanel';
-import { openNewQuickAgent } from '../../chrome/startPage';
+import { openNewAgentOrDialog } from '../../chrome/startPage';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { agentDot, groupProjectAgents } from '../../chrome/sidebar/treeModel';
@@ -443,13 +443,24 @@ export function useCommandSource(): CommandItem[] {
         execute: () => toggleAccessoryCollapse(),
       });
     }
+    // The new shell: ⌘⇧N opens the New agent page with Durable chosen (#2031).
+    if (isNewChromeEnabled()) {
+      items.push({
+        id: 'action:new-agent',
+        label: 'New agent',
+        category: CATEGORY.commands,
+        shortcut: getShortcut(shortcuts, 'new-quick-agent'),
+        keywords: ['agent', 'durable', 'create'],
+        execute: () => openNewAgentOrDialog('durable'),
+      });
+    }
     items.push({
       id: 'action:new-quick-agent',
       label: 'New quick agent',
       category: CATEGORY.commands,
-      shortcut: getShortcut(shortcuts, 'new-quick-agent'),
+      shortcut: isNewChromeEnabled() ? undefined : getShortcut(shortcuts, 'new-quick-agent'),
       keywords: ['agent', 'mission', 'quick'],
-      execute: () => openNewQuickAgent(),
+      execute: () => openNewAgentOrDialog('quick'),
     });
     items.push({
       id: 'action:add-project',

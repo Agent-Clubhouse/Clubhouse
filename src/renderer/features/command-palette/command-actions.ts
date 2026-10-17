@@ -7,7 +7,7 @@ import { usePanelStore } from '../../stores/panelStore';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../agents/AgentTerminal';
-import { openNewQuickAgent } from '../../chrome/startPage';
+import { openNewAgentFromShortcut } from '../../chrome/startPage';
 import { groupProjectAgents } from '../../chrome/sidebar/treeModel';
 
 export interface CommandAction {
@@ -51,8 +51,8 @@ export function getCommandActions(): CommandAction[] {
     {
       id: 'new-quick-agent',
       global: true,
-      // The new shell opens the start page composer (spec §4.3).
-      execute: () => openNewQuickAgent(),
+      // The new shell opens the New agent page with Durable chosen (#2031).
+      execute: () => openNewAgentFromShortcut(),
     },
     {
       id: 'focus-active-terminal',
