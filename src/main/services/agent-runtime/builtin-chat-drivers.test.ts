@@ -16,6 +16,7 @@ describe('registerBuiltinChatDrivers', () => {
       'claude-code:claude_agent_sdk',
       'claude-code:claude_stream_json',
       'codex-cli:codex_app_server',
+      'copilot-cli:copilot_acp',
     ]);
     expect(resolveChatDriver('claude-code')?.id).toBe('claude_agent_sdk');
     expect(resolveChatDriver('claude-code', 'claude_stream_json')?.id).toBe('claude_stream_json');
@@ -34,6 +35,13 @@ describe('registerBuiltinChatDrivers', () => {
     onLog('warn', 'no meta');
     expect(appLog).toHaveBeenCalledWith('core:chat:codex', 'warn', 'Ignoring extraArgs', { meta: { dropped: ['--full-auto'] } });
     expect(appLog).toHaveBeenCalledWith('core:chat:codex', 'warn', 'no meta', undefined);
+  });
+
+  it('registers copilot_acp for the Copilot CLI', () => {
+    registerBuiltinChatDrivers();
+    expect(resolveChatDriver('copilot-cli')?.id).toBe('copilot_acp');
+    // No Copilot SDK driver registered yet, so asking for it falls back to ACP.
+    expect(resolveChatDriver('copilot-cli', 'copilot_sdk')?.id).toBe('copilot_acp');
   });
 
   it('unregisters what it registered', () => {

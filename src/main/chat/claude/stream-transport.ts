@@ -1,6 +1,7 @@
 import type { ChildProcess } from 'child_process';
 import type { ClaudePermissionMode } from './events';
 import { initializedFromWire, permissionRequestFromWire, type ClaudeWireMessage } from './normalizer';
+import { killStructuredChild } from '../../orchestrators/adapters/structured-spawn';
 import { buildClaudeEnv, spawnClaude } from './spawn';
 import {
   ClaudeTransportBase,
@@ -147,7 +148,7 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
     ]);
     if (!exited) {
       this.log('warn', 'claude did not exit after stdin closed; killing');
-      child.kill();
+      await killStructuredChild(child);
       await this.exited;
     }
   }

@@ -10,10 +10,12 @@ import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import type { ClaudePermissionMode } from './events';
 import { initializedFromWire, type ClaudeWireMessage } from './normalizer';
 import { loadClaudeAgentSdk } from './sdk-loader';
+import { killStructuredChild } from '../../orchestrators/adapters/structured-spawn';
 import { buildClaudeEnv, spawnClaude } from './spawn';
 import {
   ClaudeTransportBase,
   toWireUserMessage,
+  type ClaudeTransportLog,
   type ClaudeTransportOptions,
   type ClaudeUserInput,
 } from './transport';
@@ -89,16 +91,8 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
         return (result ?? { behavior: 'deny', message: 'Request cancelled', toolUseID: o.toolUseID }) as PermissionResult;
       },
       spawnClaudeCodeProcess: (so) => {
-        const child = spawnClaude({
-          binary: so.command,
-          args: so.args,
-          cwd: so.cwd,
-          env: so.env,
-          commandPrefix: opts.commandPrefix,
-        });
+        const child = sdkSpawnHook(so, opts.commandPrefix, (level, message, meta) => this.log(level, message, meta));
         this.child = child;
-        child.stderr?.on('data', (d: Buffer) => this.log('warn', 'claude stderr', { data: d.toString().slice(0, 2000) }));
-        so.signal.addEventListener('abort', () => { if (child.exitCode === null) child.kill(); }, { once: true });
         return child as unknown as SpawnedProcess;
       },
     };
@@ -194,4 +188,23 @@ export async function listClaudeSessions(cwd: string, opts?: { limit?: number; o
 export async function readClaudeSession(sessionId: string, cwd: string, opts?: { limit?: number; offset?: number }) {
   const sdk = await loadClaudeAgentSdk();
   return sdk.getSessionMessages(sessionId, { dir: cwd, limit: opts?.limit, offset: opts?.offset });
+}
+
+/**
+ * The Agent SDK's `spawnClaudeCodeProcess` hook: the user's `claude` under
+ * the structured spawn rules. The SDK owns the child's stdin, so:
+ * - an 'error' listener keeps a late SDK write (EPIPE, write-after-end once
+ *   the process is gone) from becoming an uncaught exception in main;
+ * - abort kills the process tree without ending stdin itself.
+ */
+export function sdkSpawnHook(
+  so: { command: string; args: string[]; cwd?: string; env: Record<string, string | undefined>; signal: AbortSignal },
+  commandPrefix: string | undefined,
+  log: ClaudeTransportLog,
+): ChildProcess {
+  const child = spawnClaude({ binary: so.command, args: so.args, cwd: so.cwd, env: so.env, commandPrefix });
+  child.stdin?.on('error', (err) => log('warn', 'claude stdin error', { error: err.message }));
+  child.stderr?.on('data', (d: Buffer) => log('warn', 'claude stderr', { data: d.toString().slice(0, 2000) }));
+  so.signal.addEventListener('abort', () => { void killStructuredChild(child, { endStdin: false }); }, { once: true });
+  return child;
 }

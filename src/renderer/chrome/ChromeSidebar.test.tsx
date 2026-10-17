@@ -24,6 +24,8 @@ import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
+import { useAnnexClientStore } from '../stores/annexClientStore';
+import { useRemoteProjectStore, namespacedAgentId, namespacedProjectId } from '../stores/remoteProjectStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useChromeStore, SIDEBAR_DEFAULT, syncProjectScopeWithActiveAgent } from './chromeStore';
 import type { PluginManifest, PluginSource } from '../../shared/plugin-types';
@@ -73,6 +75,9 @@ beforeEach(() => {
   usePluginStore.setState({ plugins: {}, appEnabled: [] });
   useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
   useChromeDialogStore.setState({ request: null });
+  useUIStore.setState({ activeHostId: null });
+  useAnnexClientStore.setState({ satellites: [] });
+  useRemoteProjectStore.setState({ satelliteProjects: {}, remoteAgents: {}, remoteAgentDetailedStatus: {}, remoteProjectIcons: {} });
 });
 
 describe('ChromeSidebar', () => {
@@ -330,6 +335,82 @@ describe('ChromeSidebar', () => {
       render(<ChromeSidebar />);
       expect(screen.getByTestId('settings-nav')).toBeTruthy();
       expect(screen.getByTestId('list-breadcrumb').textContent).toContain('Settings');
+    });
+  });
+
+  describe('hosts', () => {
+    const rp = namespacedProjectId('s1', 'site');
+    const ra = namespacedAgentId('s1', 'bold-owl');
+    beforeEach(() => {
+      useAnnexClientStore.setState({
+        satellites: [{ id: 's1', alias: 'Studio', state: 'connected', fingerprint: 'fp1', icon: '', color: 'blue', host: 'h', mainPort: 1, pairingPort: 2, snapshot: null, lastError: null }],
+      });
+      useRemoteProjectStore.setState({
+        satelliteProjects: { s1: [{ id: rp, name: 'Site', path: '/srv/site', remote: true, satelliteId: 's1', satelliteName: 'Studio' }] as never },
+        remoteAgents: { [ra]: agent(ra, rp) },
+        remoteAgentDetailedStatus: { [ra]: { state: 'needs_permission', message: 'Wants to deploy', timestamp: 2 } },
+      });
+    });
+
+    it('shows the host switcher once a satellite is paired', () => {
+      render(<ChromeSidebar />);
+      expect(screen.getByTestId('host-switcher').textContent).toContain('Local');
+    });
+
+    it('lists blocked agents from every host, tagged with the host', () => {
+      render(<ChromeSidebar />);
+      const section = screen.getByTestId('needs-you');
+      expect(within(section).getByTestId('needs-you-row-b1')).toBeTruthy();
+      expect(within(section).getByTestId(`needs-you-row-${ra}`).textContent).toContain('Site on Studio');
+    });
+
+    it('a remote Needs you row switches host and opens the agent', () => {
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId(`needs-you-row-${ra}`));
+      expect(useUIStore.getState().activeHostId).toBe('s1');
+      expect(useProjectStore.getState().activeProjectId).toBe(rp);
+      expect(useAgentStore.getState().activeAgentId).toBe(ra);
+      expect(useUIStore.getState().explorerTab).toBe('agents');
+    });
+
+    it('shows the satellite’s projects, read-only, while it is the host', () => {
+      useUIStore.setState({ activeHostId: 's1' });
+      useProjectStore.setState({ activeProjectId: null });
+      render(<ChromeSidebar />);
+      expect(screen.getByTestId(`project-${rp}`)).toBeTruthy();
+      expect(screen.queryByTestId('project-p1')).toBeNull();
+      expect(screen.getByTestId(`agent-item-${ra}`)).toBeTruthy();
+      expect(screen.queryByLabelText('New agent in Site')).toBeNull();
+      expect((screen.getByTestId('chrome-new') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('switches back to Local from the menu', () => {
+      useUIStore.setState({ activeHostId: 's1' });
+      useProjectStore.setState({ activeProjectId: rp });
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('host-switcher'));
+      fireEvent.click(screen.getByTestId('host-menu-local'));
+      expect(useUIStore.getState().activeHostId).toBeNull();
+      expect(useProjectStore.getState().activeProjectId).toBeNull();
+      expect(screen.getByTestId('project-p1')).toBeTruthy();
+    });
+
+    it('forgets an unpaired satellite’s pins, but keeps them while it is only offline', () => {
+      useChromeStore.setState({ pinnedProjectIds: ['p1', rp] });
+      const { rerender } = render(<ChromeSidebar />);
+      act(() => useAnnexClientStore.setState((st) => ({ satellites: st.satellites.map((x) => ({ ...x, state: 'disconnected' as const })) })));
+      rerender(<ChromeSidebar />);
+      expect(useChromeStore.getState().pinnedProjectIds).toEqual(['p1', rp]);
+      act(() => useAnnexClientStore.setState({ satellites: [] }));
+      rerender(<ChromeSidebar />);
+      expect(useChromeStore.getState().pinnedProjectIds).toEqual(['p1']);
+    });
+
+    it('opens Annex settings for pairing', () => {
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('host-switcher'));
+      fireEvent.click(screen.getByText('Pair a satellite…'));
+      expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'annex-control' });
     });
   });
 });

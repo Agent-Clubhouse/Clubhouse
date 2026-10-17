@@ -265,6 +265,7 @@ export const ATTR = {
     'needs_you_select', 'project_collapse', 'project_collapse_all', 'project_pin', 'project_reorder',
     'fold_toggle', 'completed_dismiss', 'completed_clear', 'new_agent_open', 'search_open',
     'start_page_start', 'completed_open', 'first_run_add', 'first_run_drop',
+    'host_switch', 'host_retry', 'host_settings_open', 'needs_you_remote_select',
   ]),
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [

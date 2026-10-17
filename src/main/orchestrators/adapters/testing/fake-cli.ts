@@ -26,6 +26,8 @@ export function chatFixturePath(cli: ChatFixtureCli, name: string): string {
 
 /** Progress report the fake CLI rewrites after every replayed line. */
 export interface FakeCliReport {
+  /** The fake's own process id (under a Windows .cmd shim, not the cmd.exe one). */
+  pid: number;
   fixture: string;
   protocol: 'claude-stream-json' | 'codex-app-server' | 'acp';
   /** Arguments the fake was launched with, minus its own `--fake-*` options. */
