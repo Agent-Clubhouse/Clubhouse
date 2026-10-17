@@ -87,6 +87,8 @@ export function claudeCapabilities(startLevel: PermissionLevel): ChatCapabilitie
       : ['plan', 'ask', 'auto_edit', 'auto'],
     login: 'terminal',
     systemPrompt: true,
+    // can_use_tool answers take a deny message and an updatedInput (respondPermission).
+    permissionExtras: { denyMessage: true, updatedInput: true },
   };
 }
 

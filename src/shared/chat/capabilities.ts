@@ -58,6 +58,14 @@ export interface ChatCapabilities {
    * When false, the runtime prepends it to the first user message instead.
    */
   systemPrompt: boolean;
+  /**
+   * Which `PermissionResponseExtras` the driver carries to the CLI with a
+   * permission answer: a message with a denial (what to do instead), and an
+   * edited tool input with an approval (e.g. a revised plan for Claude's
+   * ExitPlanMode). Absent means neither; a driver that doesn't carry an extra
+   * ignores it, so the UI only offers what's reported here.
+   */
+  permissionExtras?: { denyMessage: boolean; updatedInput: boolean };
 }
 
 /** Conservative baseline: a driver starts from this and turns on what it supports. */
