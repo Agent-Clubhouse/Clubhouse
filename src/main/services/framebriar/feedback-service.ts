@@ -27,6 +27,11 @@ export const FRAMEBRIAR_APP_ID = 'clubhouse';
 const DRAFT_TTL_MS = 30 * 60_000;
 /** Remembered "Received" acknowledgements, newest first. */
 const RECEIPT_MEMORY = 20;
+/** Open reviews kept at once (each holds a screenshot); the oldest is dropped beyond this. */
+const MAX_DRAFTS = 5;
+/** Framebriar's media limit (protocol LIMITS.media). */
+const MAX_PNG_BYTES = 8 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 /** Scene codes the renderer may report; anything else becomes 'app'. */
 const SCENE = /^[a-z][a-z0-9-]{0,39}$/;
 
@@ -46,6 +51,11 @@ const DISCONNECTED_ACCESS: FramebriarAccessView = Object.freeze({
 const EMPTY_OUTBOX: FramebriarOutboxView = Object.freeze({
   state: 'checking', items: 0, bytes: 0, maxItems: 10, maxBytes: 32 * 1024 * 1024, blocked: 0, retention: 'until-delivered-or-cleared',
 });
+
+/** What the renderer sees while Feedback isn't running (switch off, or before start). */
+export function stoppedFeedbackStatus(): FeedbackStatus {
+  return toFeedbackStatus(false, { available: true }, DISCONNECTED_ACCESS, EMPTY_OUTBOX, []);
+}
 
 /** Mapping from SDK views to the renderer's status. Pure, for tests. */
 export function toFeedbackStatus(
@@ -95,7 +105,6 @@ export class FeedbackService {
   private readonly drafts = new Map<string, Draft>();
   private readonly received: string[] = [];
   private readonly listeners = new Set<(status: FeedbackStatus) => void>();
-  private grab: (() => Promise<Buffer | null>) | null = null;
   private readonly now: () => number;
 
   constructor(private readonly deps: FeedbackServiceDeps) {
@@ -120,7 +129,9 @@ export class FeedbackService {
         appId: FRAMEBRIAR_APP_ID,
         appVersion: sdkVersion(this.deps.appVersion),
         telemetry: 'off',
-        capture: () => (this.grab ? this.grab() : Promise.resolve(null)),
+        // No SDK-side capture: captureDraft grabs the calling window itself, so two
+        // windows capturing at once can never get each other's screenshot.
+        capture: () => Promise.resolve(null),
         isOnline: this.deps.isOnline,
         onAccessChange: () => this.emit(),
         onOutboxChange: () => this.emit(),
@@ -170,15 +181,25 @@ export class FeedbackService {
   async captureDraft(grab: () => Promise<Buffer | null>): Promise<FeedbackCaptureResult> {
     await this.start();
     this.pruneDrafts();
-    this.grab = grab;
-    let snapshot: FramebriarSnapshot;
+    // open() checks eligibility and records the moment (and trace) feedback opened.
+    const opened = await this.sdk().feedback.open();
+    let png: Buffer | null;
     try {
-      snapshot = await this.sdk().feedback.open();
-    } finally {
-      this.grab = null;
+      png = await grab();
+    } catch {
+      // telemetry-exempt: surfaced to the user as a capture failure
+      throw Object.assign(new Error('Screenshot capture failed'), { code: 'capture-failed' });
     }
+    if (png && png.length > MAX_PNG_BYTES) {
+      throw Object.assign(new Error('The screenshot is too large to send (8 MiB at most)'), { code: 'invalid-media' });
+    }
+    if (png && (png.length <= PNG_SIGNATURE.length || !png.subarray(0, 8).equals(PNG_SIGNATURE))) {
+      throw Object.assign(new Error('The screenshot is not a PNG image'), { code: 'invalid-media' });
+    }
+    const snapshot: FramebriarSnapshot = { ...opened, png: png ?? null };
     const draftId = randomUUID();
     this.drafts.set(draftId, { snapshot, createdAt: this.now() });
+    while (this.drafts.size > MAX_DRAFTS) this.drafts.delete(this.drafts.keys().next().value as string);
     return {
       draftId,
       preview: snapshot.png ? `data:image/png;base64,${snapshot.png.toString('base64')}` : null,

@@ -18,8 +18,9 @@ export const feedback = {
       ipcRenderer.invoke(IPC.FEEDBACK.SEND, input),
     cancel: (draftId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.FEEDBACK.CANCEL, draftId),
-    onStatusChanged: (callback: (status: FeedbackStatus) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, status: FeedbackStatus) => callback(status);
+    /** null when Feedback stopped (its switch was turned off). */
+    onStatusChanged: (callback: (status: FeedbackStatus | null) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: FeedbackStatus | null) => callback(status);
       ipcRenderer.on(IPC.FEEDBACK.STATUS_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.FEEDBACK.STATUS_CHANGED, listener); };
     },

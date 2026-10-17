@@ -108,13 +108,45 @@ describe('FeedbackService (fake SDK)', () => {
   });
 
   it('captures through the given window grab and returns a data URL preview', async () => {
-    const { create } = fakeSdk();
+    const { create, fb, opts } = fakeSdk();
     const s = service(create);
     const grab = vi.fn(async () => PNG);
     const draft = await s.captureDraft(grab);
     expect(grab).toHaveBeenCalledTimes(1);
+    expect(fb.feedback.open).toHaveBeenCalledTimes(1);
     expect(draft.preview).toBe(`data:image/png;base64,${PNG.toString('base64')}`);
     expect(draft.draftId).toMatch(/^[0-9a-f-]{36}$/);
+    // The SDK never captures on its own: the caller's window is the only source.
+    expect(await opts().capture!()).toBeNull();
+  });
+
+  it('keeps concurrent captures from different windows apart', async () => {
+    const { create, fb } = fakeSdk();
+    const s = service(create);
+    const other = Buffer.concat([PNG, Buffer.from('other-window')]);
+    const [a, b] = await Promise.all([s.captureDraft(async () => PNG), s.captureDraft(async () => other)]);
+    await s.send({ draftId: b.draftId, notes: '', includeScreenshot: true });
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: other }));
+    await s.send({ draftId: a.draftId, notes: '', includeScreenshot: true });
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: PNG }));
+  });
+
+  it('rejects a failed, oversized or non-PNG capture', async () => {
+    const { create } = fakeSdk();
+    const s = service(create);
+    await expect(s.captureDraft(async () => { throw new Error('gpu'); })).rejects.toThrow('Screenshot capture failed');
+    await expect(s.captureDraft(async () => Buffer.concat([PNG, Buffer.alloc(8 * 1024 * 1024)]))).rejects.toThrow(/too large/);
+    await expect(s.captureDraft(async () => Buffer.from('not a png at all'))).rejects.toThrow(/not a PNG/);
+    expect((await s.captureDraft(async () => null)).preview).toBeNull();
+  });
+
+  it('keeps at most five open drafts, dropping the oldest', async () => {
+    const { create } = fakeSdk();
+    const s = service(create);
+    const drafts = [];
+    for (let i = 0; i < 6; i++) drafts.push(await s.captureDraft(async () => PNG));
+    await expect(s.send({ draftId: drafts[0].draftId, notes: 'n', includeScreenshot: true })).rejects.toThrow(/expired/);
+    await expect(s.send({ draftId: drafts[5].draftId, notes: 'n', includeScreenshot: true })).resolves.toMatchObject({ status: 'saved-local' });
   });
 
   it('sends with the captured screenshot, or text-only without it', async () => {
@@ -243,7 +275,8 @@ describe('FeedbackService with the vendored Framebriar SDK (mocked transport)', 
       expect(withShot.status).toBe('saved-local');
       const textOnly = await s.send({ notes: 'text only', includeScreenshot: false });
 
-      await until(() => s.status().received.includes(withShot.id) && s.status().received.includes(textOnly.id));
+      // A receipt can arrive just before the outbox removes the report: wait for both.
+      await until(() => s.status().received.includes(withShot.id) && s.status().received.includes(textOnly.id) && s.status().outbox.pending === 0);
       expect(srv.reports.get(withShot.id)).toMatchObject({ report: { gameId: 'clubhouse', scene: 'agents', notes: 'see screenshot', appVersion: '0.42.0-beta.1' } });
       expect(srv.reports.get(withShot.id)!.media!.equals(PNG)).toBe(true);
       expect(srv.reports.get(textOnly.id)).toMatchObject({ report: { media: null, notes: 'text only' } });

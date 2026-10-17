@@ -8,6 +8,8 @@ vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: vi.fn(() => win.current) },
 }));
 
+vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
+
 const svc = vi.hoisted(() => ({
   enabled: true,
   service: {
@@ -25,8 +27,6 @@ vi.mock('../services/framebriar', () => ({
   isFeedbackEnabled: () => svc.enabled,
   getFeedbackService: () => svc.service,
 }));
-const broadcast = vi.hoisted(() => vi.fn());
-vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: broadcast }));
 
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
@@ -55,7 +55,7 @@ describe('feedback IPC', () => {
 
   it('reports a stopped service and refuses actions with the switch off', async () => {
     svc.enabled = false;
-    expect(await call(IPC.FEEDBACK.GET_STATUS)).toMatchObject({ started: false, canCapture: false, state: 'disconnected', storage: { available: true } });
+    expect(await call(IPC.FEEDBACK.GET_STATUS)).toMatchObject({ started: false, canCapture: false, state: 'disconnected', storage: { available: true }, outbox: { pending: 0 } });
     expect(svc.service.start).not.toHaveBeenCalled();
     await expect(call(IPC.FEEDBACK.CONNECT, 'good')).rejects.toThrow(/turned off/);
     await expect(call(IPC.FEEDBACK.CAPTURE)).rejects.toThrow(/turned off/);
@@ -64,12 +64,19 @@ describe('feedback IPC', () => {
     expect(svc.service.cancel).not.toHaveBeenCalled();
   });
 
-  it('starts on status and broadcasts later changes', async () => {
+  it('starts on status', async () => {
     expect(await call(IPC.FEEDBACK.GET_STATUS)).toEqual({ started: true, canCapture: true });
     expect(svc.service.start).toHaveBeenCalled();
-    const listener = (svc.service.onChange.mock.calls[0] as unknown as [(s: unknown) => void])[0];
-    listener({ started: true, connected: true });
-    expect(broadcast).toHaveBeenCalledWith(IPC.FEEDBACK.STATUS_CHANGED, { started: true, connected: true });
+  });
+
+  it('refuses callers that are not application windows', async () => {
+    win.current = null;
+    await expect(call(IPC.FEEDBACK.GET_STATUS)).rejects.toThrow(/unauthorized caller/);
+    await expect(call(IPC.FEEDBACK.CONNECT, 'good')).rejects.toThrow(/unauthorized caller/);
+    await expect(call(IPC.FEEDBACK.DISCONNECT)).rejects.toThrow(/unauthorized caller/);
+    await expect(call(IPC.FEEDBACK.SEND, { notes: 'x', includeScreenshot: false })).rejects.toThrow(/unauthorized caller/);
+    expect(() => call(IPC.FEEDBACK.CANCEL, 'd1')).toThrow(/unauthorized caller/);
+    expect(svc.service.connect).not.toHaveBeenCalled();
   });
 
   it('connects and disconnects through the service', async () => {
@@ -83,7 +90,10 @@ describe('feedback IPC', () => {
   it("captures the calling window's own contents", async () => {
     expect(await call(IPC.FEEDBACK.CAPTURE)).toEqual({ draftId: 'd1', preview: 'png' });
     win.current = null;
-    await expect(call(IPC.FEEDBACK.CAPTURE)).rejects.toThrow(/No window/);
+    await expect(call(IPC.FEEDBACK.CAPTURE)).rejects.toThrow(/unauthorized caller/);
+    win.current = { isDestroyed: () => true, webContents: { capturePage: async () => ({ toPNG: () => Buffer.from('png') }) } };
+    await expect(call(IPC.FEEDBACK.CAPTURE)).rejects.toThrow(/unauthorized caller/);
+    expect(svc.service.captureDraft).toHaveBeenCalledTimes(1);
   });
 
   it('sends a validated review', async () => {

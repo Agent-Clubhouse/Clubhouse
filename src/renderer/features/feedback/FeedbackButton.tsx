@@ -36,7 +36,10 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
 
   useEffect(() => { void init(); }, [init]);
 
-  if (!enabled || !canCapture) return null;
+  // A review in progress stays open even if capture eligibility flips mid-Send
+  // (e.g. access expires), so the draft isn't orphaned.
+  const dialog = draft ? <FeedbackReviewDialog draft={draft} onClose={() => setDraft(null)} /> : null;
+  if (!enabled || !canCapture) return dialog;
 
   const open = async () => {
     if (capturing) return;
@@ -100,7 +103,7 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
   return (
     <>
       {button}
-      {draft && <FeedbackReviewDialog draft={draft} onClose={() => setDraft(null)} />}
+      {dialog}
     </>
   );
 }

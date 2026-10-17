@@ -1,34 +1,36 @@
 /**
  * IPC for Framebriar screenshot feedback (src/main/services/framebriar). Everything is
  * gated on the experimental Feedback switch; with it off, status reports a stopped service
- * and every action is refused. The renderer is not a trust boundary: notes and scene are
- * untrusted text (the SDK also redacts and bounds them), and capture is always the calling
- * window's own contents, never the desktop.
+ * and every action is refused. The renderer is not a trust boundary: only Clubhouse's own
+ * windows may call (not webview-hosted plugin pages), notes and scene are untrusted text
+ * (the SDK also redacts and bounds them), and capture is always the calling window's own
+ * contents, never the desktop.
  */
 import { BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import type { FeedbackSendInput, FeedbackStatus } from '../../shared/feedback-types';
-import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import type { FeedbackSendInput } from '../../shared/feedback-types';
 import { getFeedbackService, isFeedbackEnabled } from '../services/framebriar';
-import { toFeedbackStatus } from '../services/framebriar/feedback-service';
+import { stoppedFeedbackStatus } from '../services/framebriar/feedback-service';
+import { appLog } from '../services/log-service';
 import { objectArg, stringArg, withValidatedArgs } from './validation';
 
 const MAX_NOTES = 4000;
 const DRAFT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** What the renderer sees with the switch off. */
-export function disabledFeedbackStatus(): FeedbackStatus {
-  return toFeedbackStatus(
-    false,
-    { available: true },
-    { state: 'disconnected', connected: false, enrolled: false, canCapture: false, notice: null, expiresAt: null },
-    { state: 'checking', items: 0, bytes: 0, maxItems: 10, maxBytes: 32 * 1024 * 1024, blocked: 0, retention: 'until-delivered-or-cleared' },
-    [],
-  );
+/** The calling application window; webviews and other senders are refused. */
+function callerWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) {
+    appLog('core:feedback', 'warn', 'Rejected feedback request: caller is not an application window');
+    throw new Error('Feedback request rejected: unauthorized caller');
+  }
+  return win;
 }
 
-function requireEnabled(): void {
+function requireEnabled(event: Electron.IpcMainInvokeEvent): BrowserWindow {
+  const win = callerWindow(event);
   if (!isFeedbackEnabled()) throw new Error('Feedback is turned off (Settings › Experimental › Feedback)');
+  return win;
 }
 
 export function validateSendInput(value: FeedbackSendInput, argName: string): void {
@@ -42,51 +44,38 @@ export function validateSendInput(value: FeedbackSendInput, argName: string): vo
   if (value.scene !== undefined && (typeof value.scene !== 'string' || value.scene.length > 40)) throw new Error(`${argName}.scene is invalid`);
 }
 
-let broadcasting = false;
-/** Push status changes to every window (the button, notices and Settings follow them). */
-function ensureBroadcast(): void {
-  if (broadcasting) return;
-  broadcasting = true;
-  getFeedbackService().onChange((status) => broadcastToAllWindows(IPC.FEEDBACK.STATUS_CHANGED, status));
-}
-
 export function registerFeedbackHandlers(): void {
-  ipcMain.handle(IPC.FEEDBACK.GET_STATUS, async () => {
-    if (!isFeedbackEnabled()) return disabledFeedbackStatus();
-    ensureBroadcast();
+  ipcMain.handle(IPC.FEEDBACK.GET_STATUS, async (event) => {
+    callerWindow(event);
+    if (!isFeedbackEnabled()) return stoppedFeedbackStatus();
     const service = getFeedbackService();
     await service.start();
     return service.status();
   });
 
-  ipcMain.handle(IPC.FEEDBACK.CONNECT, withValidatedArgs([stringArg({ maxLength: 256 })], async (_event, invitation) => {
-    requireEnabled();
-    ensureBroadcast();
+  ipcMain.handle(IPC.FEEDBACK.CONNECT, withValidatedArgs([stringArg({ maxLength: 256 })], async (event, invitation) => {
+    requireEnabled(event);
     return getFeedbackService().connect(invitation);
   }));
 
-  ipcMain.handle(IPC.FEEDBACK.DISCONNECT, async () => {
-    requireEnabled();
-    ensureBroadcast();
+  ipcMain.handle(IPC.FEEDBACK.DISCONNECT, async (event) => {
+    requireEnabled(event);
     return getFeedbackService().disconnect();
   });
 
   // Captures the window that asked, at the moment it asks (before its review dialog draws).
   ipcMain.handle(IPC.FEEDBACK.CAPTURE, async (event) => {
-    requireEnabled();
-    ensureBroadcast();
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win || win.isDestroyed()) throw new Error('No window to capture');
+    const win = requireEnabled(event);
     return getFeedbackService().captureDraft(async () => (await win.webContents.capturePage()).toPNG());
   });
 
-  ipcMain.handle(IPC.FEEDBACK.SEND, withValidatedArgs([objectArg<FeedbackSendInput>({ validate: validateSendInput })], async (_event, input) => {
-    requireEnabled();
-    ensureBroadcast();
+  ipcMain.handle(IPC.FEEDBACK.SEND, withValidatedArgs([objectArg<FeedbackSendInput>({ validate: validateSendInput })], async (event, input) => {
+    requireEnabled(event);
     return getFeedbackService().send(input);
   }));
 
-  ipcMain.handle(IPC.FEEDBACK.CANCEL, withValidatedArgs([stringArg({ maxLength: 64 })], (_event, draftId) => {
+  ipcMain.handle(IPC.FEEDBACK.CANCEL, withValidatedArgs([stringArg({ maxLength: 64 })], (event, draftId) => {
+    callerWindow(event);
     if (isFeedbackEnabled()) getFeedbackService().cancel(draftId);
   }));
 }

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetFeedbackStore } from '../../stores/feedbackStore';
+import { resetFeedbackStore, useFeedbackStore } from '../../stores/feedbackStore';
 import { useToastStore } from '../../stores/toastStore';
 import { FeedbackButton } from './FeedbackButton';
 import { feedbackStatus, setFeedback } from './feedback-test-utils';
@@ -44,6 +44,19 @@ describe('FeedbackButton', () => {
     expect(await screen.findByTestId('feedback-review')).toBeTruthy();
     expect(window.clubhouse.feedback.capture).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('feedback-preview').getAttribute('src')).toBe(PREVIEW);
+  });
+
+  it('keeps an open review when capture eligibility flips mid-review', async () => {
+    setFeedback(true);
+    render(<FeedbackButton variant="sidebar" />);
+    fireEvent.click(screen.getByTestId('nav-feedback'));
+    await screen.findByTestId('feedback-review');
+    act(() => { useFeedbackStore.setState({ status: feedbackStatus({ canCapture: false, notice: 'expired' }) }); });
+    expect(screen.queryByTestId('nav-feedback')).toBeNull();
+    expect(screen.getByTestId('feedback-review')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'still here' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(window.clubhouse.feedback.send).toHaveBeenCalledWith(expect.objectContaining({ notes: 'still here', includeScreenshot: true }));
   });
 
   it('tells the user when capture fails', async () => {

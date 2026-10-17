@@ -74,9 +74,9 @@ export function FeedbackSettingsView() {
     try {
       const result = await window.clubhouse.feedback.disconnect();
       setStatus(result.status);
-      setMessage(result.revoked === false
-        ? 'Disconnected here. The server couldn\'t be told; the access will lapse on its own.'
-        : 'Disconnected.');
+      if (!result.forgotten) setMessage('Couldn\'t disconnect: the saved access couldn\'t be removed from secure storage.');
+      else if (result.revoked === false) setMessage('Disconnected here. The server couldn\'t be told; the access will lapse on its own.');
+      else setMessage('Disconnected.');
     } catch (err) {
       // telemetry-exempt: shown to the user
       setMessage(`Couldn't disconnect: ${err instanceof Error ? err.message : String(err)}`);
@@ -95,7 +95,7 @@ export function FeedbackSettingsView() {
         <div>
           <h2 className="text-lg font-semibold text-ctp-text mb-1">Feedback</h2>
           <p className="text-sm text-ctp-subtext0">
-            Send screenshots and notes about Clubhouse to its developer. Connecting lets you send feedback and screenshots to the developer.
+            Connecting lets you send feedback and screenshots to the developer.
           </p>
         </div>
 
@@ -149,6 +149,21 @@ export function FeedbackSettingsView() {
               <p className="text-xs text-ctp-subtext0">Previous access expires {expires}.</p>
             )}
           </form>
+        )}
+
+        {/* Offline, expired or revoked access is still an enrollment: Disconnect clears it and its notice. */}
+        {!status.connected && (status.enrolled || status.notice) && (
+          <div className="flex items-center justify-between gap-3" data-testid="feedback-enrolled">
+            <div className="text-sm text-ctp-subtext0">Feedback access is saved on this computer.</div>
+            <button
+              type="button"
+              onClick={() => void disconnect()}
+              disabled={busy}
+              className="px-3 py-1.5 text-sm rounded-md bg-surface-0 text-ctp-text hover:bg-surface-1 disabled:opacity-50"
+            >
+              Disconnect
+            </button>
+          </div>
         )}
 
         {stateText && <p className="text-sm text-ctp-subtext0" data-testid="feedback-state">{stateText}</p>}

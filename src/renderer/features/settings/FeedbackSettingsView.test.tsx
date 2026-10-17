@@ -47,6 +47,36 @@ describe('FeedbackSettingsView', () => {
     expect(screen.getByLabelText('Invitation')).toBeTruthy();
   });
 
+  it('lets an enrolled user who is offline or has a notice disconnect and clear it', async () => {
+    setFeedback(true, feedbackStatus({ ...disconnected, state: 'offline', enrolled: true, canCapture: true, notice: null }));
+    vi.mocked(window.clubhouse.feedback.disconnect).mockResolvedValue({ forgotten: true, revoked: true, status: disconnected });
+    const { unmount } = render(<FeedbackSettingsView />);
+    expect(screen.getByTestId('feedback-state').textContent).toMatch(/Offline/);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Disconnect' })); });
+    expect(window.clubhouse.feedback.disconnect).toHaveBeenCalled();
+    expect(screen.queryByTestId('feedback-enrolled')).toBeNull();
+    unmount();
+
+    setFeedback(true, feedbackStatus({ ...disconnected, enrolled: false, notice: 'access-required' }));
+    render(<FeedbackSettingsView />);
+    expect(screen.getByTestId('feedback-notice')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Disconnect' })).toBeTruthy();
+  });
+
+  it('says so when the saved access could not be removed', async () => {
+    setFeedback(true);
+    vi.mocked(window.clubhouse.feedback.disconnect).mockResolvedValue({ forgotten: false, revoked: false, status: feedbackStatus() });
+    render(<FeedbackSettingsView />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Disconnect' })); });
+    expect(screen.getByTestId('feedback-message').textContent).toMatch(/couldn't be removed from secure storage/);
+  });
+
+  it('hides Disconnect when never enrolled', () => {
+    setFeedback(true, disconnected);
+    render(<FeedbackSettingsView />);
+    expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull();
+  });
+
   it.each([
     ['expired', /access expired/],
     ['access-required', /revoked/],

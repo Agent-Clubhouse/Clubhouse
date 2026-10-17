@@ -35,6 +35,13 @@ describe('feedbackStore', () => {
     expect(useFeedbackStore.getState().status).toBeNull();
   });
 
+  it('re-reads the switch when main says Feedback stopped', async () => {
+    await useFeedbackStore.getState().init();
+    window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ feedback: false }));
+    push!(null as never);
+    await vi.waitFor(() => expect(useFeedbackStore.getState()).toMatchObject({ enabled: false, status: null }));
+  });
+
   it('toasts a persistent notice once per run, outside Settings', async () => {
     await useFeedbackStore.getState().init();
     push!(feedbackStatus({ notice: 'access-required' }));

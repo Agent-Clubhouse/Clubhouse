@@ -47,7 +47,11 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   init: () => {
     if (!initPromise) {
       initPromise = get().refresh();
-      unsubscribe ??= window.clubhouse.feedback.onStatusChanged((status) => get().setStatus(status));
+      unsubscribe ??= window.clubhouse.feedback.onStatusChanged((status) => {
+        // null: Feedback stopped in main (switch off); re-read the switch.
+        if (status === null) void get().refresh();
+        else get().setStatus(status);
+      });
     }
     return initPromise;
   },
