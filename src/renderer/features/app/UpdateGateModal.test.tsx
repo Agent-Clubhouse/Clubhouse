@@ -17,7 +17,7 @@ describe('UpdateGateModal', () => {
   it('renders working agents with action buttons', () => {
     render(<UpdateGateModal agents={baseAgents} onCancel={mockOnCancel} onConfirm={mockOnConfirm} onResolveAgent={mockOnResolveAgent} />);
     expect(screen.getByText('darling-gazelle')).toBeDefined();
-    expect(screen.getByText(/actively generating/i)).toBeDefined();
+    expect(screen.getByRole('img', { name: 'Working' })).toBeDefined();
     expect(screen.getByText('Interrupt & Resume')).toBeDefined();
   });
 

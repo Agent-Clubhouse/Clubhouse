@@ -21,7 +21,7 @@ Community plugins use `manifest.json`. Built-in plugins use TypeScript (`manifes
   "id": "my-plugin",
   "name": "My Plugin",
   "version": "1.0.0",
-  "engine": { "api": 0.5 },
+  "engine": { "api": 0.9 },
   "scope": "project"
 }
 ```
@@ -31,7 +31,7 @@ Community plugins use `manifest.json`. Built-in plugins use TypeScript (`manifes
 | `id` | Unique identifier |
 | `name` | Display name |
 | `version` | Semver string |
-| `engine.api` | Minimum Plugin API version (current: **0.5**) |
+| `engine.api` | Plugin API version (current: **0.9**; 0.5 and 0.6 are deprecated) |
 | `scope` | `"project"`, `"app"`, or `"dual"` |
 
 **Optional:** `description`, `author`, `main`, `permissions`, `settingsPanel`, `externalRoots`, `allowedCommands`, `contributes`

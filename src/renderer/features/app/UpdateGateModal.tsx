@@ -1,4 +1,5 @@
 import { Modal } from '../../components/Modal';
+import { StatusDot } from '../agents/agent-status';
 
 export interface UpdateGateAgent {
   agentId: string;
@@ -31,9 +32,9 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
             {workingAgents.map((agent) => (
               <div key={agent.agentId} className="flex items-center justify-between bg-surface-0 border border-surface-2 rounded-lg px-3 py-2.5 mb-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="inline-block w-2 h-2 rounded-full bg-ctp-red animate-pulse" />
+                  <StatusDot dot="working" />
                   <span className="text-sm text-ctp-text font-medium">{agent.agentName}</span>
-                  <span className="text-xs text-ctp-subtext0">actively generating</span>
+                  <span className="text-xs text-ctp-subtext0">Working</span>
                 </div>
                 <div className="flex gap-1.5">
                   <button
@@ -71,7 +72,7 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
             {idleAgents.map((agent) => (
               <div key={agent.agentId} className="flex items-center justify-between bg-surface-0 border border-surface-2 rounded-lg px-3 py-2.5 mb-1.5">
                 <div className="flex items-center gap-2">
-                  <span className={`inline-block w-2 h-2 rounded-full ${agent.resumeStrategy === 'auto' ? 'bg-ctp-green' : 'bg-ctp-yellow'}`} />
+                  <StatusDot dot="idle" />
                   <span className="text-sm text-ctp-text font-medium">{agent.agentName}</span>
                 </div>
                 <span className={`text-xs px-2 py-0.5 rounded-full ${

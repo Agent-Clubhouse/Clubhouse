@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { isListTab } from './listTabs';
+import { renderHook } from '@testing-library/react';
+import { isListTab, useSidebarMode } from './listTabs';
+import { useUIStore } from '../stores/uiStore';
 
 describe('isListTab', () => {
   it('is true for project tabs with the sidebar-content layout (the default)', () => {
@@ -13,5 +15,16 @@ describe('isListTab', () => {
     expect(isListTab('plugin:app:goobers', undefined)).toBe(false);
     expect(isListTab('agents', undefined)).toBe(false);
     expect(isListTab('settings', undefined)).toBe(false);
+  });
+});
+
+describe('useSidebarMode', () => {
+  it('swaps the sidebar for Settings and Help, and keeps the tree for Agents', () => {
+    useUIStore.setState({ explorerTab: 'settings' });
+    expect(renderHook(() => useSidebarMode()).result.current).toBe('settings');
+    useUIStore.setState({ explorerTab: 'help' });
+    expect(renderHook(() => useSidebarMode()).result.current).toBe('help');
+    useUIStore.setState({ explorerTab: 'agents' });
+    expect(renderHook(() => useSidebarMode()).result.current).toBe('tree');
   });
 });

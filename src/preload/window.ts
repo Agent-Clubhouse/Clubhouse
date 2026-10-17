@@ -10,18 +10,22 @@ export const window = {
   listPopouts: () =>
     ipcRenderer.invoke(IPC.WINDOW.LIST_POPOUTS),
   isPopout: () => process.argv.some((a: string) => a.startsWith('--popout-type=')),
-  getPopoutParams: (): { type: string; agentId?: string; canvasId?: string; projectId?: string } | null => {
+  getPopoutParams: (): { type: string; agentId?: string; canvasId?: string; projectId?: string; title?: string } | null => {
     const typeArg = process.argv.find((a: string) => a.startsWith('--popout-type='));
     if (!typeArg) return null;
     const type = typeArg.split('=')[1];
     const agentArg = process.argv.find((a: string) => a.startsWith('--popout-agent-id='));
     const canvasArg = process.argv.find((a: string) => a.startsWith('--popout-canvas-id='));
     const projectArg = process.argv.find((a: string) => a.startsWith('--popout-project-id='));
+    const titleArg = process.argv.find((a: string) => a.startsWith('--popout-title='));
+    let title: string | undefined;
+    try { title = titleArg ? decodeURIComponent(titleArg.slice('--popout-title='.length)) : undefined; } catch { title = undefined; }
     return {
       type,
       agentId: agentArg?.split('=')[1],
       canvasId: canvasArg?.split('=')[1],
       projectId: projectArg?.split('=')[1],
+      title,
     };
   },
   focusMain: (agentId?: string) =>

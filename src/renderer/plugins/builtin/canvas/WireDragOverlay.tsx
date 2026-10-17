@@ -8,6 +8,7 @@ import React from 'react';
 import type { WireDragState } from './useWiring';
 import type { CanvasView } from './canvas-types';
 import { closestEdgeMidpoint, viewRect, bezierPath } from './wire-utils';
+import { CANVAS_Z } from './canvas-chrome';
 
 interface WireDragOverlayProps {
   wireDrag: WireDragState;
@@ -46,7 +47,7 @@ export function WireDragOverlay({ wireDrag, views }: WireDragOverlayProps) {
   return (
     <svg
       className="absolute top-0 left-0 pointer-events-none overflow-visible"
-      style={{ width: 1, height: 1, zIndex: 99998 }}
+      style={{ width: 1, height: 1, zIndex: CANVAS_Z.worldTop }}
       data-testid="wire-drag-overlay"
     >
       {/* Drag line */}

@@ -4,14 +4,32 @@ import { renderMarkdownSafe } from '../../utils/safe-markdown';
 
 interface HelpContentPaneProps {
   markdown: string | null;
+  /** `chrome`: the new shell's article, alone in the pane at a readable width. */
+  variant?: 'classic' | 'chrome';
 }
 
-export function HelpContentPane({ markdown }: HelpContentPaneProps) {
+export function HelpContentPane({ markdown, variant = 'classic' }: HelpContentPaneProps) {
   const handleClick = useSafeMarkdownLinks();
   const html = useMemo(() => {
     if (!markdown) return null;
     return renderMarkdownSafe(markdown);
   }, [markdown]);
+
+  if (variant === 'chrome') {
+    return (
+      <div data-testid="help-article" className="h-full min-h-0 overflow-y-auto">
+        {html ? (
+          <article
+            className="help-content help-content-chrome max-w-[680px] px-12 pt-8 pb-16"
+            dangerouslySetInnerHTML={{ __html: html }}
+            onClick={handleClick}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center text-[13px] text-ctp-overlay1">Pick a topic in the sidebar.</div>
+        )}
+      </div>
+    );
+  }
 
   if (!html) {
     return (

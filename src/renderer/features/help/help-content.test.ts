@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { HELP_SECTIONS } from './help-content';
+import { describe, it, expect, afterEach } from 'vitest';
+import { HELP_SECTIONS, CHROME_HELP_SECTIONS, getHelpSections } from './help-content';
+import { useChromeFlagStore } from '../../chrome/chromeFlag';
 
 describe('help-content', () => {
   it('has 8 sections', () => {
@@ -79,5 +80,68 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('persona-doc-updater');
     expect(allTopicIds).toContain('persona-judge');
     expect(allTopicIds).toContain('persona-researcher');
+  });
+});
+
+describe('help-content in the new shell', () => {
+  afterEach(() => useChromeFlagStore.setState({ enabled: false }));
+
+  const topics = () => CHROME_HELP_SECTIONS.flatMap((s) => s.topics);
+  // Personas and cookbooks are prompts and patterns, not descriptions of the app.
+  const articles = () => CHROME_HELP_SECTIONS.filter((s) => !['personas', 'cookbooks'].includes(s.id)).flatMap((s) => s.topics);
+  // Articles written for the classic layout that the new shell replaces.
+  const RETIRED = /Project Rail|Explorer Rail|Accessory Panel|Dashboard|Home icon|Cmd\+Shift\+H|ghost card/i;
+
+  it('getHelpSections follows the shell flag', () => {
+    expect(getHelpSections()).toBe(HELP_SECTIONS);
+    useChromeFlagStore.setState({ enabled: true });
+    expect(getHelpSections()).toBe(CHROME_HELP_SECTIONS);
+  });
+
+  it('keeps the classic section ids and drops Dashboard', () => {
+    expect(CHROME_HELP_SECTIONS.map((s) => s.id)).toEqual(HELP_SECTIONS.map((s) => s.id));
+    const ids = topics().map((t) => t.id);
+    expect(ids).not.toContain('dashboard');
+    const classic = new Set(HELP_SECTIONS.flatMap((s) => s.topics.map((t) => t.id)));
+    for (const id of ids) expect(classic.has(id)).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('uses sentence-case titles', () => {
+    for (const s of CHROME_HELP_SECTIONS) {
+      expect(s.title).not.toMatch(/&/);
+      for (const t of s.topics) {
+        expect(t.title, t.title).not.toMatch(/ & |\s(?!Git\b|CLI\b|PR\b|UI\b|QA\b|A\/B\b)\(?[A-Z][a-z]/);
+      }
+    }
+  });
+
+  it('has no articles that describe the classic layout', () => {
+    for (const t of articles()) expect(t.content, t.id).not.toMatch(RETIRED);
+  });
+
+  it('documents the new shortcut set', () => {
+    const shortcuts = topics().find((t) => t.id === 'keyboard-shortcuts')!.content;
+    expect(shortcuts).toContain('`⌘2` to `⌘9`');
+    expect(shortcuts).toContain('`⌥⌘1` to `⌥⌘9`');
+    expect(shortcuts).not.toMatch(/Toggle Accessory|Switch to Project/);
+  });
+
+  it('points only at settings pages that exist', () => {
+    const pages = ['About', 'Orchestrators & agents', 'Profiles', 'Display & UI', 'External editor', 'Keyboard shortcuts',
+      'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Clubhouse MCP', 'Updates', 'Logging', 'Feedback', "What's new"];
+    for (const t of articles()) {
+      for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {
+        const page = m[1].split(' > ')[0];
+        expect(pages.map((p) => p.toLowerCase()), `${t.id}: ${m[1]}`).toContain(page.toLowerCase());
+      }
+    }
+  });
+
+  it('lists Annex under Settings only when asked', () => {
+    useChromeFlagStore.setState({ enabled: true });
+    const settingsIds = (sections: typeof HELP_SECTIONS) => sections.find((s) => s.id === 'settings')!.topics.map((t) => t.id);
+    expect(settingsIds(getHelpSections())).not.toContain('settings-annex');
+    expect(settingsIds(getHelpSections({ annex: true }))).toContain('settings-annex');
   });
 });

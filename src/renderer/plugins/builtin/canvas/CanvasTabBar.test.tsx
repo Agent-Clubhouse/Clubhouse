@@ -44,12 +44,12 @@ describe('CanvasTabBar', () => {
     const addBtn = screen.getByTestId('canvas-add-button');
     fireEvent.click(addBtn);
 
-    expect(screen.getByTestId('canvas-add-menu')).toBeDefined();
+    expect(screen.getByTestId('canvas-add')).toBeDefined();
     expect(screen.getByTestId('canvas-add-new')).toBeDefined();
     expect(screen.getByTestId('canvas-add-from-blueprint')).toBeDefined();
   });
 
-  it('"New Canvas" menu item calls onAddCanvas', () => {
+  it('"New canvas" menu item calls onAddCanvas', () => {
     const onAddFromBlueprint = vi.fn();
     render(<CanvasTabBar {...defaultProps} onAddFromBlueprint={onAddFromBlueprint} />);
 
@@ -59,7 +59,7 @@ describe('CanvasTabBar', () => {
     expect(defaultProps.onAddCanvas).toHaveBeenCalled();
   });
 
-  it('"From Blueprint" menu item calls onAddFromBlueprint', () => {
+  it('"From blueprint" menu item calls onAddFromBlueprint', () => {
     const onAddFromBlueprint = vi.fn();
     render(<CanvasTabBar {...defaultProps} onAddFromBlueprint={onAddFromBlueprint} />);
 
@@ -98,8 +98,8 @@ describe('CanvasTabBar', () => {
     const tab = screen.getByTestId('canvas-tab-c1');
     fireEvent.contextMenu(tab);
 
-    expect(screen.getByTestId('canvas-tab-context-menu')).toBeDefined();
-    expect(screen.getByTestId('canvas-tab-export-blueprint')).toBeDefined();
+    expect(screen.getByTestId('canvas-tab-menu')).toBeDefined();
+    expect(screen.getByTestId('canvas-tab-menu-export-blueprint')).toBeDefined();
   });
 
   it('Export as Blueprint context menu item calls onExportBlueprint', () => {
@@ -108,7 +108,7 @@ describe('CanvasTabBar', () => {
 
     const tab = screen.getByTestId('canvas-tab-c1');
     fireEvent.contextMenu(tab);
-    fireEvent.click(screen.getByTestId('canvas-tab-export-blueprint'));
+    fireEvent.click(screen.getByTestId('canvas-tab-menu-export-blueprint'));
 
     expect(onExportBlueprint).toHaveBeenCalledWith('c1');
   });
@@ -167,7 +167,7 @@ describe('CanvasTabBar — + button integration with real store', () => {
     // wires both onAddCanvas and onAddFromBlueprint, so users always see
     // the dropdown variant of the + button).
     fireEvent.click(screen.getByTestId('canvas-add-button'));
-    expect(screen.getByTestId('canvas-add-menu')).toBeDefined();
+    expect(screen.getByTestId('canvas-add')).toBeDefined();
 
     // Click "New Canvas" — this is what real users click
     fireEvent.click(screen.getByTestId('canvas-add-new'));

@@ -215,7 +215,7 @@ export function TelemetrySettingsSection() {
     <div data-testid="telemetry-settings">
       <SettingsSection title="Telemetry export" />
       <p className="text-xs text-ctp-overlay1 mb-1">
-        Send anonymized diagnostics to your own Azure Application Insights, an OpenTelemetry backend, or both, each with its own level. Nothing is sent to the Clubhouse maintainers. Off by default.
+        Send anonymized diagnostics to your own Azure Application Insights, an OpenTelemetry backend, or both, each with its own level. Nothing goes to the Clubhouse developer unless you turn that on below. Off by default.
       </p>
       <p className="text-xs text-ctp-overlay1">
         Telemetry is separate from local logging, and each has its own switch.{' '}
