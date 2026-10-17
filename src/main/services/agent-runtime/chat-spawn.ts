@@ -34,7 +34,7 @@ import { ChatAgentRuntime } from './chat-runtime';
 import { registerChatRuntime, unregisterChatRuntime } from './index';
 import { readChatTranscript } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
-import { buildCliSpawnEnv, summarizeSpawnEnv } from '../../util/shell';
+import { cleanSpawnEnv, getShellEnvironment, summarizeSpawnEnv } from '../../util/shell';
 
 export interface ChatSpawnParams {
   agentId: string;
@@ -192,7 +192,7 @@ export async function tryStartChatAgent(
   // Electron's inherited PATH may not contain Node for npm CLI shims. Match
   // the terminal launch and use the same effective env for probing, health
   // keys and the actual session; profile values remain overrides.
-  const launchEnv = buildCliSpawnEnv(profileEnv);
+  const launchEnv = cleanSpawnEnv({ ...getShellEnvironment(), ...profileEnv });
   const level = levelForFreeAgent(params.freeAgentMode, params.permissionMode);
   const resumeNativeSessionId = params.resume ? params.sessionId : undefined;
   appLog('core:chat', 'info', 'Chat start requested', {

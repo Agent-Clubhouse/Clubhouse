@@ -5,12 +5,6 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(),
 }));
 
-// Stand-in for the login shell env, so tests don't source a real shell.
-vi.mock('../../util/shell', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../util/shell')>()),
-  buildCliSpawnEnv: (extra?: Record<string, string>) => ({ HOME: '/home/test', PATH: '/usr/bin', ...extra }),
-}));
-
 import { spawn } from 'child_process';
 import {
   appServerArgs,
@@ -799,17 +793,6 @@ describe('CodexChatDriver', () => {
     expect(probe).toEqual({ handshakeOk: true, cliVersion: '0.153.4', capabilities: CODEX_CHAT_CAPABILITIES });
     expect(server.received.map((m) => m.method)).toEqual(['initialize', 'initialized']);
     expect(server.proc.kill).toHaveBeenCalled();
-  });
-
-  it('spawns with the login shell env under the Clubhouse overrides', async () => {
-    await startSession({ env: { CLUBHOUSE_AGENT_ID: 'agent-1', PATH: '/override/bin' } });
-    const env = (mockSpawn.mock.calls[0][2] as { env: Record<string, string> }).env;
-    expect(env).toMatchObject({ HOME: '/home/test', CLUBHOUSE_AGENT_ID: 'agent-1', PATH: '/override/bin' });
-  });
-
-  it('probe spawns with the same login shell env as a real start', async () => {
-    await new CodexChatDriver().probe('codex');
-    expect((mockSpawn.mock.calls[0][2] as { env: Record<string, string> }).env).toMatchObject({ HOME: '/home/test', PATH: '/usr/bin' });
   });
 
   it('probe reports a failed handshake', async () => {

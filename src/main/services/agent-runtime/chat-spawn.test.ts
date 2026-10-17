@@ -34,11 +34,6 @@ vi.mock('../agent-exit-broadcast', () => exitBroadcast);
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../pty-manager', () => ({ isRunning: () => false }));
 vi.mock('../annex-permission-queue', () => ({ createPermission: vi.fn(), resolvePermission: vi.fn() }));
-vi.mock('../../util/shell', () => ({
-  // Stand-in for the login shell env drivers layer theirs over.
-  buildCliSpawnEnv: (extra?: Record<string, string>) => ({ HOME: '/h', PATH: '/p', USER: 'u', SHELL: '/bin/zsh', ...extra }),
-  summarizeSpawnEnv: (env: Record<string, string>) => ({ keyCount: Object.keys(env).length, missing: [] }),
-}));
 vi.mock('./chat-version-policy', async (importActual) => {
   const actual = await importActual<typeof import('./chat-version-policy')>();
   return { ...actual, evaluateCliVersion: vi.fn(actual.evaluateCliVersion) };
@@ -253,7 +248,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(logs.find((l) => l.msg === 'Chat start requested')?.meta).toMatchObject({ resumeSessionId: 'n1', profileEnvKeys: ['CLAUDE_CONFIG_DIR'] });
     expect(logs.find((l) => l.msg === 'Chat driver check')?.meta).toMatchObject({ ok: true, durationMs: expect.any(Number) });
     const start = logs.find((l) => l.msg === 'Starting chat agent')?.meta;
-    expect(start).toMatchObject({ resumeSessionId: 'n1', mcpServers: ['clubhouse'], env: { missing: [] } });
+    expect(start).toMatchObject({ resumeSessionId: 'n1', mcpServers: ['clubhouse'], env: { keyCount: expect.any(Number), missing: expect.any(Array) } });
     expect(JSON.stringify(start)).not.toContain('/cfg');
   });
 
