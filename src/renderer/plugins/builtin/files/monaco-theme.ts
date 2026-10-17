@@ -1,5 +1,6 @@
 import type { ThemeDefinition } from '../../../../shared/types';
 import { getAllThemes, getTheme, onRegistryChange } from '../../../themes';
+import { tel } from '../../../telemetry';
 
 function stripHash(hex: string): string {
   return hex.replace(/^#/, '');
@@ -134,7 +135,8 @@ export function monacoThemeName(themeId: string): string {
 
 export async function loadMonaco(): Promise<any> {
   if (!monacoModule) {
-    monacoModule = await import('monaco-editor');
+    // The first load fetches the editor chunk; measured once per renderer (spec §4.9).
+    monacoModule = await tel.flow('clubhouse.editor.monaco_load', {}, () => import('monaco-editor'));
   }
   return monacoModule;
 }

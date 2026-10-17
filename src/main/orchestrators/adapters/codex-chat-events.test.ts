@@ -233,6 +233,16 @@ describe('CodexChatEventMapper', () => {
       expect(completed({ type: 'reasoning', id: 'r-3', summary: [], content: [] })).toEqual([]);
     });
 
+    it('maps review mode: entering is a notice, the exited item carries the review', () => {
+      expect(completed({ type: 'enteredReviewMode', id: 'rv-1', review: 'current changes' })).toEqual([
+        { type: 'notice', data: { level: 'info', code: 'review_started', message: 'Reviewing current changes' } },
+      ]);
+      expect(completed({ type: 'exitedReviewMode', id: 'rv-2', review: '- [P1] Null check missing in parse()' })).toEqual([
+        { type: 'agent_message', data: { messageId: 'rv-2', text: '- [P1] Null check missing in parse()' } },
+      ]);
+      expect(completed({ type: 'exitedReviewMode', id: 'rv-3', review: '' })).toEqual([]);
+    });
+
     it('maps a context compaction to a notice', () => {
       expect(completed({ type: 'contextCompaction', id: 'cc-1' })).toEqual([
         { type: 'notice', data: { level: 'info', code: 'context_compacted', message: 'Context compacted' } },

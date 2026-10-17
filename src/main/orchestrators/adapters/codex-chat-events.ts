@@ -505,6 +505,12 @@ export class CodexChatEventMapper {
       }
       case 'contextCompaction':
         return [{ type: 'notice', data: { level: 'info', code: 'context_compacted', message: 'Context compacted' } }];
+      // Review mode (/review → review/start): the entered item names what is
+      // being reviewed; the exited item carries the review itself.
+      case 'enteredReviewMode':
+        return [{ type: 'notice', data: { level: 'info', code: 'review_started', message: `Reviewing ${item.review}` } }];
+      case 'exitedReviewMode':
+        return item.review ? [{ type: 'agent_message', data: { messageId: item.id, text: item.review } }] : [];
       default:
         return [];
     }
