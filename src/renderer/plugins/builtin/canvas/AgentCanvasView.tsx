@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import type { AgentCanvasView as AgentCanvasViewType, CanvasView } from './canvas-types';
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import { AddAgentDialog } from '../../../features/agents/AddAgentDialog';
@@ -95,11 +95,28 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
     return projects.find((p) => p.id === pid) ?? null;
   }, [isAppMode, selectedProjectId, api.context.projectId, projects]);
 
-  // New agent: the durable-agent dialog, so the new agent lands in a sibling
-  // card (LB-M68). One place to point at the New agent page (#2031) once it
-  // can hand the created agent back to the canvas.
-  const openNewAgent = useCallback(() => {
+  // A newly created agent lands in a sibling card next to this one (LB-M68),
+  // and this card stays in picker mode for rapid spawning. Falls back to
+  // assigning the agent here when no callback is wired (e.g. unit tests,
+  // popout view).
+  const placeNewAgent = useCallback((agentId: string) => {
+    const newAgent = api.agents.list().find((a) => a.id === agentId);
+    if (!newAgent) return;
+    if (onCreateAgentCard) {
+      onCreateAgentCard(view, newAgent);
+    } else {
+      handlePickAgent(newAgent);
+    }
+  }, [api.agents, handlePickAgent, onCreateAgentCard, view]);
+
+  // New agent. Whatever creates the agent hands its id to `onCreated`, which
+  // places the card. Today that is AddAgentDialog. When the New agent page
+  // (#2031) replaces it, open the page here and have it call `onCreated` with
+  // the created durable agent's id.
+  const pendingCreatedRef = useRef<((agentId: string) => void) | null>(null);
+  const openNewAgent = useCallback((onCreated: (agentId: string) => void) => {
     setCreateError(null);
+    pendingCreatedRef.current = onCreated;
     setShowCreateDialog(true);
   }, []);
 
@@ -123,17 +140,9 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         persona,
       });
       setShowCreateDialog(false);
-      const newAgent = api.agents.list().find((a) => a.id === agentId);
-      if (!newAgent) return;
-      // LB-M68: prefer creating a sibling card adjacent to this card so the
-      // user can see the new agent next to its parent. This card stays in
-      // picker mode for rapid spawning. Fall back to assigning to the current
-      // card when no callback is wired (e.g. unit tests, popout view).
-      if (onCreateAgentCard) {
-        onCreateAgentCard(view, newAgent);
-      } else {
-        handlePickAgent(newAgent);
-      }
+      const onCreated = pendingCreatedRef.current ?? placeNewAgent;
+      pendingCreatedRef.current = null;
+      onCreated(agentId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('Failed to create durable agent:', err);
@@ -142,7 +151,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
       // signal at all (#1564). Keep the dialog open so they can retry.
       setCreateError(message);
     }
-  }, [activeProjectForCreate, api.agents, handlePickAgent, onCreateAgentCard, view]);
+  }, [activeProjectForCreate, api.agents, placeNewAgent]);
 
   // Agent assigned but not yet available in the store (e.g. sleeping durable
   // agent created by a blueprint import, or remote agent that hasn't synced yet).
@@ -240,11 +249,11 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
           backLabel="Projects"
           scrollTestId="canvas-agent-picker-scroll"
           sections={sections}
-          footer={{ label: 'New agent', testId: 'canvas-create-agent', onSelect: openNewAgent }}
+          footer={{ label: 'New agent', testId: 'canvas-create-agent', onSelect: () => openNewAgent(placeNewAgent) }}
         />
         {showCreateDialog && activeProjectForCreate && (
           <AddAgentDialog
-            onClose={() => { setShowCreateDialog(false); setCreateError(null); }}
+            onClose={() => { setShowCreateDialog(false); setCreateError(null); pendingCreatedRef.current = null; }}
             onCreate={handleCreateDurable}
             projectPath={activeProjectForCreate.path}
             error={createError}
