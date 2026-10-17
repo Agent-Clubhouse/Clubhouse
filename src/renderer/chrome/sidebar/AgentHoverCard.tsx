@@ -88,7 +88,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
           {getOrchestratorLabel(agent.orchestrator || 'claude-code', allOrchestrators)}, {formatModelLabel(agent.model)}
         </Row>
         {agent.branch && <Row label="Branch"><span className="font-mono">{agent.branch}</span></Row>}
-        {worktree && <Row label="Worktree"><span className="font-mono" title={agent.worktreePath}>{worktree}</span></Row>}
+        {worktree && <Row label="Worktree"><span className="font-mono">{worktree}</span></Row>}
         {agent.mcpIds && agent.mcpIds.length > 0 && <Row label="MCP">{agent.mcpIds.join(', ')}</Row>}
         {agent.freeAgentMode && <Row label="Permissions"><span className="text-ctp-error">Free Agent Mode, all bypassed</span></Row>}
       </dl>

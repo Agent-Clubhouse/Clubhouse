@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { Spinner } from '../../components/Spinner';
+import { NoticeCard, NOTICE_DOT, type NoticeTone } from '../../components/NoticeCard';
+import { Button } from '../../components/Button';
 
 export type ResumeStatus = 'pending' | 'resuming' | 'resumed' | 'failed' | 'manual' | 'timed_out';
 
@@ -14,6 +16,8 @@ interface ResumeBannerProps {
   sessions: ResumeBannerSession[];
   onManualResume: (agentId: string) => void;
   onDismiss: () => void;
+  /** `bar` is the classic strip; `card` is the new chrome's sidebar notice. */
+  variant?: 'bar' | 'card';
 }
 
 const STATUS_ICON: Record<ResumeStatus, string> = {
@@ -34,7 +38,16 @@ const STATUS_COLOR: Record<ResumeStatus, string> = {
   timed_out: 'text-ctp-peach',
 };
 
-export function ResumeBanner({ sessions, onManualResume, onDismiss }: ResumeBannerProps) {
+const CARD_STATUS: Record<ResumeStatus, [NoticeTone, string]> = {
+  resumed: ['success', 'Done'],
+  resuming: ['info', 'Working'],
+  pending: ['neutral', 'Waiting'],
+  manual: ['warning', 'Needs you'],
+  failed: ['error', 'Error'],
+  timed_out: ['warning', 'Needs you'],
+};
+
+export function ResumeBanner({ sessions, onManualResume, onDismiss, variant = 'bar' }: ResumeBannerProps) {
   if (sessions.length === 0) return null;
 
   const allSucceeded = sessions.every((s) => s.status === 'resumed');
@@ -46,6 +59,41 @@ export function ResumeBanner({ sessions, onManualResume, onDismiss }: ResumeBann
     const timer = setTimeout(onDismiss, 3000);
     return () => clearTimeout(timer);
   }, [allSucceeded, onDismiss]);
+
+  if (variant === 'card') {
+    const anyFailed = sessions.some((s) => s.status === 'failed');
+    const count = `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`;
+    return (
+      <NoticeCard
+        tone={anyFailed ? 'error' : allSucceeded ? 'success' : 'info'}
+        title={allSucceeded ? `Resumed ${count}` : `Resuming ${count}`}
+        meta="After update"
+        testId="resume-banner"
+        actions={<Button kind="quiet" onClick={onDismiss}>Dismiss</Button>}
+      >
+        <ul className="flex flex-col gap-1">
+          {sessions.map((s) => {
+            const [tone, word] = CARD_STATUS[s.status];
+            return (
+              <li key={s.agentId} className="flex flex-col">
+                <div className="flex items-center gap-2 min-h-6">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${NOTICE_DOT[tone]}`} aria-hidden="true" />
+                  <span className="min-w-0 truncate text-ctp-text">{s.agentName}</span>
+                  <span className="flex-shrink-0">{word}</span>
+                  {(s.status === 'manual' || s.status === 'timed_out') && (
+                    <Button kind="ghost" className="ml-auto !h-6" onClick={() => onManualResume(s.agentId)}>
+                      {s.status === 'manual' ? 'Resume' : 'Retry'}
+                    </Button>
+                  )}
+                </div>
+                {s.status === 'failed' && s.error && <span className="pl-4 text-ctp-error">{s.error}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      </NoticeCard>
+    );
+  }
 
   return (
     <div

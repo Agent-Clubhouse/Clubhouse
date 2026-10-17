@@ -3,6 +3,8 @@ import { useUpdateStore } from '../../stores/updateStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { UpdateGateModal, UpdateGateAgent } from './UpdateGateModal';
 import type { LiveAgentInfo } from '../../../shared/types';
+import { NoticeCard } from '../../components/NoticeCard';
+import { Button } from '../../components/Button';
 
 // Literal class strings so Tailwind can see every variant it needs to generate.
 const TONES = {
@@ -20,7 +22,11 @@ const TONES = {
   },
 } as const;
 
-export function UpdateBanner() {
+/**
+ * `bar` is the classic full-width strip; `card` is the new chrome's notice
+ * card above the sidebar footer (#2014).
+ */
+export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } = {}) {
   const status = useUpdateStore((s) => s.status);
   const dismissed = useUpdateStore((s) => s.dismissed);
   const dismiss = useUpdateStore((s) => s.dismiss);
@@ -132,6 +138,53 @@ export function UpdateBanner() {
     ) : null;
   }
 
+  const gate = showGate && (
+    <UpdateGateModal
+      agents={gateAgents}
+      onCancel={() => setShowGate(false)}
+      onConfirm={handleGateConfirm}
+      onResolveAgent={handleGateResolve}
+    />
+  );
+
+  if (variant === 'card') {
+    const version = status.availableVersion ? `v${status.availableVersion}` : undefined;
+    const later = <Button kind="quiet" onClick={dismiss} data-testid="update-dismiss-btn">Later</Button>;
+    const download = (kind: 'primary' | 'ghost') => (
+      <Button kind={kind} onClick={openUpdateDownload} data-testid="update-manual-download-btn">Download manually</Button>
+    );
+    return (
+      <>
+        {isApplyError ? (
+          <NoticeCard tone="error" title="Update failed" meta={version} testId="update-banner"
+            actions={<>{download('primary')}{later}</>}>
+            <span data-testid="update-error-message">{status.error || 'It could not be installed.'}</span>
+          </NoticeCard>
+        ) : hasFailedBefore ? (
+          <NoticeCard tone="warning" title="Update did not apply" meta={version} testId="update-banner"
+            actions={<>
+              <Button kind="primary" onClick={handleRestart} data-testid="update-restart-btn">Try again</Button>
+              {status.artifactUrl && download('ghost')}
+              {later}
+            </>}>
+            <span data-testid="update-retry-message">Restart to try installing it again.</span>
+          </NoticeCard>
+        ) : (
+          <NoticeCard tone="success" title="Update ready" meta={version} testId="update-banner"
+            actions={<>
+              <Button kind="primary" onClick={handleRestart} data-testid="update-restart-btn">Restart</Button>
+              {later}
+            </>}>
+            {status.releaseMessage
+              ? <span data-testid="update-release-message">{status.releaseMessage}</span>
+              : 'Restart to finish installing. Running agents resume.'}
+          </NoticeCard>
+        )}
+        {gate}
+      </>
+    );
+  }
+
   const tone = TONES[useWarningStyle ? 'warning' : 'info'];
 
   return (
@@ -188,14 +241,7 @@ export function UpdateBanner() {
         )}
       </div>
 
-      {showGate && (
-        <UpdateGateModal
-          agents={gateAgents}
-          onCancel={() => setShowGate(false)}
-          onConfirm={handleGateConfirm}
-          onResolveAgent={handleGateResolve}
-        />
-      )}
+      {gate}
     </>
   );
 }

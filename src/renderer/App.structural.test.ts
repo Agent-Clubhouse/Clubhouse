@@ -325,11 +325,17 @@ describe('App.tsx – global dialog presence in all return paths', () => {
     'PluginUpdateBanner',
   ];
 
+  // In the new chrome the app-wide notices render through CollapsedSidebarNotices
+  // (and the sidebar's AppNotices card) instead of directly in App.
+  const NOTICES = new Set(['PluginUpdateBanner', 'PermissionViolationBanner', 'UpdateBanner']);
+  const has = (tagNames: Set<string>, label: string, name: string) =>
+    tagNames.has(name) || (label === 'Chrome' && NOTICES.has(name) && tagNames.has('CollapsedSidebarNotices'));
+
   for (const dialog of requiredDialogs) {
     it(`should include <${dialog} /> in every JSX return block`, () => {
       for (const { tagNames, label } of returnPaths) {
         expect(
-          tagNames.has(dialog),
+          has(tagNames, label, dialog),
           `${label} return path is missing <${dialog} />`,
         ).toBe(true);
       }
@@ -348,7 +354,7 @@ describe('App.tsx – global dialog presence in all return paths', () => {
     it(`should include <${component} /> in every JSX return block`, () => {
       for (const { tagNames, label } of returnPaths) {
         expect(
-          tagNames.has(component),
+          has(tagNames, label, component),
           `${label} return path is missing <${component} />`,
         ).toBe(true);
       }

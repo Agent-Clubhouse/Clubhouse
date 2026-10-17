@@ -23,6 +23,7 @@ import { CommandPalette } from './features/command-palette/CommandPalette';
 import { QuickAgentDialog } from './features/agents/QuickAgentDialog';
 import { BlueprintGallery } from './features/blueprints/BlueprintGallery';
 import { PluginUpdateBanner } from './features/plugins/PluginUpdateBanner';
+import { CollapsedSidebarNotices } from './features/app/AppNotices';
 import { ConfigChangesDialog } from './features/agents/ConfigChangesDialog';
 import { initApp } from './app-initializer';
 import { initAppEventBridge } from './app-event-bridge';
@@ -282,16 +283,8 @@ export function App() {
         {lockOverlay}
         <ChromeTitleBar />
         <div ref={bannerRef}>
-          <PermissionViolationBanner />
-          <UpdateBanner />
-          <ResumeBanner
-            sessions={resumeSessions}
-            onManualResume={(agentId) => {
-              console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
-            }}
-            onDismiss={() => useAgentStore.getState().clearResumingAgents()}
-          />
-          <PluginUpdateBanner />
+          {/* The notices are a card above the sidebar footer; a strip only while the sidebar is collapsed. */}
+          <CollapsedSidebarNotices />
           <GitBanner />
         </div>
         <ChromeBody />

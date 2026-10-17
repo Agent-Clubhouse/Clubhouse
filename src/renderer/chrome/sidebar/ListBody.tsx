@@ -1,5 +1,6 @@
 import { AccessoryPanel } from '../../panels/AccessoryPanel';
 import { useChromeScope } from '../scope';
+import { Tooltip } from '../../components/Tooltip';
 
 /**
  * A project tab's own list in the sidebar (spec §4.6): Files' tree, Git's
@@ -15,14 +16,15 @@ export function ListBody({ explorerTab, projectId }: { explorerTab: string; proj
   return (
     <div className="flex-1 min-h-0 flex flex-col" data-testid="sidebar-list">
       {showScope && (
+        <Tooltip content={scope.cwd}>
         <div
           data-testid="scope-line"
           className="flex-shrink-0 mx-2 mb-1.5 h-7 flex items-center gap-1.5 px-2 rounded-md border border-surface-0 text-xs"
-          title={scope.cwd}
         >
           <span className="font-semibold text-ctp-text truncate">{scope.label}</span>
           <span className="text-ctp-overlay1 flex-shrink-0">{scope.kind === 'project' ? 'root' : scope.isWorktree ? 'worktree' : 'no worktree, using root'}</span>
         </div>
+        </Tooltip>
       )}
       <div className="flex-1 min-h-0 border-t border-surface-0">
         <AccessoryPanel />

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useToastStore, type Toast } from '../stores/toastStore';
+import { Button } from './Button';
 
 const AUTO_DISMISS_MS = 8000;
 
@@ -12,26 +13,27 @@ function ToastItem({ toast }: { toast: Toast }) {
     return () => clearTimeout(timerRef.current);
   }, [toast.id, removeToast]);
 
-  const borderClass = toast.type === 'error' ? 'border-ctp-error/30' : 'border-ctp-accent/30';
-  const textClass = toast.type === 'error' ? 'text-ctp-error' : 'text-ctp-accent';
-
   return (
     <div
       role="alert"
       aria-live="assertive"
       data-testid="toast-message"
-      className={`flex items-center gap-2 px-4 py-2 rounded shadow-lg bg-surface-0 border ${borderClass} text-ctp-text text-sm max-w-sm`}
+      data-type={toast.type}
+      className="flex items-center gap-2.5 min-h-10 w-80 max-w-[calc(100vw-32px)] py-1.5 pl-3 pr-1.5 rounded-lg border border-surface-1 bg-ctp-mantle shadow-xl text-[13px] text-ctp-text"
     >
-      <span className={`${textClass} flex-shrink-0`}>●</span>
-      <span className="flex-1 break-words">{toast.message}</span>
-      <button
+      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${toast.type === 'error' ? 'bg-ctp-error' : 'bg-ctp-info'}`} aria-hidden="true" />
+      <span className="flex-1 min-w-0 break-words">{toast.message}</span>
+      <Button
+        kind="quiet"
         aria-label="Dismiss notification"
         onClick={() => removeToast(toast.id)}
-        className="text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer px-1"
         data-testid="toast-dismiss"
-      >
-        ✕
-      </button>
+        icon={
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        }
+      />
     </div>
   );
 }
