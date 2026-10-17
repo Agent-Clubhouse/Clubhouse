@@ -65,8 +65,9 @@ export const agent = {
     permissionMode?: 'auto' | 'skip-all';
   }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
 
-  killAgent: (agentId: string, projectPath: string) =>
-    ipcRenderer.invoke(IPC.AGENT.KILL_AGENT, agentId, projectPath),
+  /** `waitForExit`: resolve once the PTY exited and its session id is saved (restart-with-resume). */
+  killAgent: (agentId: string, projectPath: string, waitForExit?: boolean) =>
+    ipcRenderer.invoke(IPC.AGENT.KILL_AGENT, agentId, projectPath, waitForExit),
 
   spawnCompanion: (pluginId: string, options?: { model?: string; systemPrompt?: string }) =>
     ipcRenderer.invoke(IPC.AGENT.SPAWN_COMPANION, pluginId, options),

@@ -63,7 +63,8 @@ describe('PopoutAgentView', () => {
       kind: 'durable', projectId: 'proj-1', color: 'red', orchestrator: 'codex-cli',
     };
     render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
-    expect(await screen.findByTestId('chat-view')).toHaveAttribute('data-view-context', 'popout');
+    // First test to render chat: it cold-loads the lazy ChatView chunk (~1s), right at findBy's default timeout.
+    expect(await screen.findByTestId('chat-view', undefined, { timeout: 5000 })).toHaveAttribute('data-view-context', 'popout');
     expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
     // Switching runtimes stays in the main window.
     expect(screen.queryByTestId('runtime-switch')).not.toBeInTheDocument();

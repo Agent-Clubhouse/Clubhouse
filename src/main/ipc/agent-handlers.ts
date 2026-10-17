@@ -315,9 +315,9 @@ export function registerAgentHandlers(): void {
   ));
 
   ipcMain.handle(IPC.AGENT.KILL_AGENT, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, agentId, projectPath) => {
-      await agentSystem.killAgent(agentId, projectPath);
+    [stringArg(), stringArg(), booleanArg({ optional: true })],
+    async (_event, agentId, projectPath, waitForExit) => {
+      await agentSystem.killAgent(agentId, projectPath, undefined, 'user', { waitForExit });
     },
   ));
 

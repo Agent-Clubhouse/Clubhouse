@@ -39,7 +39,8 @@ vi.mock('./chat-version-policy', async (importActual) => {
   return { ...actual, evaluateCliVersion: vi.fn(actual.evaluateCliVersion) };
 });
 
-import { levelForFreeAgent, findChatSessionFor, tryStartChatAgent } from './chat-spawn';
+import { levelForFreeAgent, findChatSessionFor, tryStartChatAgent, isLoginRequiredError } from './chat-spawn';
+import { appLog } from '../log-service';
 import { registerChatDriver, clearChatDrivers } from './chat-drivers';
 import { getAgentRuntime, clearChatRuntimes, isChatAgent } from './index';
 import { FakeChatDriver } from './fake-chat-driver';
@@ -231,6 +232,26 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(driver.last.startOptions?.resumeNativeSessionId).toBe('n9');
   });
 
+  it('recognizes login-required errors from each CLI', () => {
+    expect(isLoginRequiredError('RPC error -32000: Authentication required')).toBe(true);
+    expect(isLoginRequiredError('not logged in')).toBe(true);
+    expect(isLoginRequiredError('401 Unauthorized')).toBe(true);
+    expect(isLoginRequiredError('Please run /login')).toBe(true);
+    expect(isLoginRequiredError('No conversation found with session ID: stale')).toBe(false);
+    expect(isLoginRequiredError('SDK spawn failed')).toBe(false);
+  });
+
+  it('logs the request, each driver check and the start with a values-free env summary', async () => {
+    registerChatDriver(new FakeChatDriver());
+    await tryStartChatAgent({ ...params, resume: true, sessionId: 'n1' }, provider, { CLAUDE_CONFIG_DIR: '/cfg' }, undefined, null);
+    const logs = vi.mocked(appLog).mock.calls.map(([, , msg, opts]) => ({ msg, meta: opts?.meta as Record<string, unknown> }));
+    expect(logs.find((l) => l.msg === 'Chat start requested')?.meta).toMatchObject({ resumeSessionId: 'n1', profileEnvKeys: ['CLAUDE_CONFIG_DIR'] });
+    expect(logs.find((l) => l.msg === 'Chat driver check')?.meta).toMatchObject({ ok: true, durationMs: expect.any(Number) });
+    const start = logs.find((l) => l.msg === 'Starting chat agent')?.meta;
+    expect(start).toMatchObject({ resumeSessionId: 'n1', mcpServers: ['clubhouse'], env: { keyCount: expect.any(Number), missing: expect.any(Array) } });
+    expect(JSON.stringify(start)).not.toContain('/cfg');
+  });
+
   describe('fallback', () => {
     const notices = () => vi.mocked(appendChatEvent).mock.calls
       .map((c) => c.find((a): a is ChatEvent => typeof a === 'object' && a !== null && 'type' in a))
@@ -362,6 +383,20 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       }
       // Both drivers were tried on every attempt: none was paused.
       expect(sdkStarts).toBe(2 * (DRIVER_FAILURE_THRESHOLD + 1));
+    });
+
+    it('treats an auth error at session start as a login, not a broken driver', async () => {
+      const { sdk, stream } = drivers();
+      let sdkStarts = 0;
+      sdk.start = async () => { sdkStarts++; throw new Error('RPC error -32000: Authentication required'); };
+      for (let i = 0; i <= DRIVER_FAILURE_THRESHOLD; i++) {
+        expect(await tryStartChatAgent({ ...params, agentId: `l${i}` }, provider, undefined, undefined, null)).toBe(false);
+      }
+      // Every driver shares the login: the next one isn't tried, and the SDK is never paused.
+      expect(stream.sessions).toHaveLength(0);
+      expect(sdkStarts).toBe(DRIVER_FAILURE_THRESHOLD + 1);
+      expect(toasts().at(-1)).toMatchObject({ code: 'login_required' });
+      expect(registry.setRuntime).toHaveBeenLastCalledWith(`l${DRIVER_FAILURE_THRESHOLD}`, 'pty');
     });
 
     it('falls back to the terminal and restores config when every start fails', async () => {

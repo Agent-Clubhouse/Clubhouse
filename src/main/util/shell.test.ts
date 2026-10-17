@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(),
   execFile: vi.fn(),
 }));
 
-import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, winQuoteArg } from './shell';
+import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, buildCliSpawnEnv, summarizeSpawnEnv, winQuoteArg } from './shell';
 import { execSync, execFile } from 'child_process';
 
 // The module caches the shell env, so we need to reset between tests
@@ -128,6 +128,72 @@ describe('cleanSpawnEnv', () => {
     const result = cleanSpawnEnv(env);
     expect(result).toBe(env);
     expect(result.PATH).toBe('/usr/bin');
+  });
+});
+
+describe('buildCliSpawnEnv', () => {
+  const originalPlatform = process.platform;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Windows skips shell sourcing; pin a POSIX platform so execSync is used.
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    invalidateShellEnvironmentCache();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    invalidateShellEnvironmentCache();
+  });
+
+  it('starts from the login shell env so the CLI can find its own login', () => {
+    vi.mocked(execSync).mockImplementation(() => 'HOME=/home/user\nPATH=/opt/homebrew/bin:/usr/bin\nUSER=someone\n');
+    const env = buildCliSpawnEnv({ CLUBHOUSE_AGENT_ID: 'agent-1' });
+    expect(env.HOME).toBe('/home/user');
+    expect(env.PATH).toBe('/opt/homebrew/bin:/usr/bin');
+    expect(env.USER).toBe('someone');
+    expect(env.CLUBHOUSE_AGENT_ID).toBe('agent-1');
+  });
+
+  it('lets overrides win over the shell env', () => {
+    vi.mocked(execSync).mockImplementation(() => 'HOME=/home/user\nCOPILOT_HOME=/shell\n');
+    expect(buildCliSpawnEnv({ COPILOT_HOME: '/profile' }).COPILOT_HOME).toBe('/profile');
+  });
+
+  it('strips nested-agent markers and never mutates the cached shell env', () => {
+    vi.mocked(execSync).mockImplementation(() => 'HOME=/home/user\nCLAUDECODE=1\n');
+    const env = buildCliSpawnEnv({ CLAUDE_CODE_ENTRYPOINT: 'cli' });
+    expect(env.CLAUDECODE).toBeUndefined();
+    expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
+    expect(getShellEnvironment().CLAUDECODE).toBe('1');
+  });
+
+  it('works with no overrides', () => {
+    vi.mocked(execSync).mockImplementation(() => 'HOME=/home/user\n');
+    expect(buildCliSpawnEnv().HOME).toBe('/home/user');
+  });
+});
+
+describe('summarizeSpawnEnv', () => {
+  const originalPlatform = process.platform;
+  afterEach(() => { Object.defineProperty(process, 'platform', { value: originalPlatform }); });
+
+  it('names the login-critical vars a stripped env is missing, without values', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const summary = summarizeSpawnEnv({ CLUBHOUSE_AGENT_ID: 'a', CLUBHOUSE_HOOK_NONCE: 'secret-nonce' });
+    expect(summary).toEqual({ keyCount: 2, missing: ['HOME', 'PATH', 'USER', 'SHELL'] });
+    expect(JSON.stringify(summary)).not.toContain('secret-nonce');
+  });
+
+  it('reports nothing missing for a full env and skips undefined values', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    expect(summarizeSpawnEnv({ HOME: '/h', PATH: '/p', USER: 'u', SHELL: '/bin/zsh', GONE: undefined })).toEqual({ keyCount: 4, missing: [] });
+  });
+
+  it('checks the Windows login vars case-insensitively', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    expect(summarizeSpawnEnv({ Path: 'C:\\Windows', USERPROFILE: 'C:\\Users\\u' })).toEqual({ keyCount: 2, missing: [] });
+    expect(summarizeSpawnEnv({}).missing).toEqual(['PATH', 'USERPROFILE']);
   });
 });
 

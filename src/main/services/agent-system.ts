@@ -26,6 +26,7 @@ import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
 import { tryStartChatAgent } from './agent-runtime/chat-spawn';
+import { onAgentExit } from './agent-exit-broadcast';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { agentKillRequested, clearSpawnKind, noteSpawnKind } from '../telemetry/agent-telemetry';
@@ -509,7 +510,7 @@ async function spawnPtyAgent(
           sessionId = randomUUID();
         }
         const now = new Date().toISOString();
-        void addSessionEntry(params.projectPath, exitAgentId, {
+        pendingSessionCaptures.set(exitAgentId, addSessionEntry(params.projectPath, exitAgentId, {
           sessionId,
           startedAt: now,
           lastActiveAt: now,
@@ -521,7 +522,7 @@ async function spawnPtyAgent(
           appLog('core:agent', 'warn', 'Failed to persist session entry', {
             meta: { agentId: exitAgentId, sessionId, error: entryErr instanceof Error ? entryErr.message : String(entryErr) },
           });
-        });
+        }));
       } catch (err) {
         appLog('core:agent', 'warn', 'Failed to capture session ID', {
           meta: { agentId: exitAgentId, error: err instanceof Error ? err.message : String(err) },
@@ -531,13 +532,32 @@ async function spawnPtyAgent(
   }, commandPrefix)));
 }
 
+/**
+ * Session-entry writes started by a PTY exit, per agent. A restart that
+ * resumes must wait for this, or it reads the previous lastSessionId.
+ */
+const pendingSessionCaptures = new Map<string, Promise<void>>();
+
+/** Past gracefulKill's SIGKILL step (9s), so a timeout means the exit was lost. */
+const KILL_WAIT_TIMEOUT_MS = 12_000;
+
+export interface KillAgentOptions {
+  /**
+   * Resolve only once the PTY has exited and its session id is persisted.
+   * For restarts that resume (runtime switch): without it the respawn reads
+   * a stale lastSessionId, and replacing the live PTY drops its exit capture.
+   */
+  waitForExit?: boolean;
+}
+
 export async function killAgent(
   agentId: string,
   projectPath: string,
   orchestrator?: OrchestratorId,
   trigger: 'user' | 'agent_tool' = 'user',
+  opts: KillAgentOptions = {},
 ): Promise<void> {
-  appLog('core:agent', 'info', 'Killing agent', { meta: { agentId } });
+  appLog('core:agent', 'info', 'Killing agent', { meta: { agentId, trigger, waitForExit: opts.waitForExit === true } });
   agentKillRequested(agentId, trigger);
   try {
     const tracked = agentRegistry.get(agentId);
@@ -553,12 +573,42 @@ export async function killAgent(
     }
     const provider = await resolveOrchestrator(projectPath, tracked?.orchestrator || orchestrator);
     const exitCmd = provider.getExitCommand();
+    const exited = opts.waitForExit && ptyManager.isRunning(agentId) ? waitForAgentExit(agentId) : undefined;
     ptyManager.gracefulKill(agentId, exitCmd);
+    if (exited) await settleKill(agentId, exited);
   } catch (err) {
     appLog('core:agent', 'warn', 'killAgent failed (process may already be dead)', {
       meta: { agentId, error: err instanceof Error ? err.message : String(err) },
     });
   }
+}
+
+function waitForAgentExit(agentId: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { off(); resolve(false); }, KILL_WAIT_TIMEOUT_MS);
+    const off = onAgentExit((id) => {
+      if (id !== agentId) return;
+      clearTimeout(timer);
+      off();
+      resolve(true);
+    });
+  });
+}
+
+/** Await the PTY exit, then the session id it captured. */
+async function settleKill(agentId: string, exited: Promise<boolean>): Promise<void> {
+  const startedAt = Date.now();
+  const didExit = await exited;
+  // The exit callback runs in the same tick as the exit broadcast (before it
+  // on a normal exit, after it on SIGKILL), so the capture is registered by now.
+  const capture = pendingSessionCaptures.get(agentId);
+  if (capture) {
+    await capture;
+    pendingSessionCaptures.delete(agentId);
+  }
+  appLog('core:agent', didExit ? 'info' : 'warn', didExit ? 'Agent exited after kill' : 'Timed out waiting for agent exit after kill', {
+    meta: { agentId, waitedMs: Date.now() - startedAt, sessionCaptured: capture !== undefined },
+  });
 }
 
 export async function checkAvailability(

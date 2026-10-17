@@ -34,7 +34,7 @@ import { ChatAgentRuntime } from './chat-runtime';
 import { registerChatRuntime, unregisterChatRuntime } from './index';
 import { readChatTranscript } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
-import { cleanSpawnEnv, getShellEnvironment } from '../../util/shell';
+import { cleanSpawnEnv, getShellEnvironment, summarizeSpawnEnv } from '../../util/shell';
 
 export interface ChatSpawnParams {
   agentId: string;
@@ -98,6 +98,15 @@ export function chatDriverCandidates(provider: string, preferred?: ChatDriver['i
   const first = resolveChatDriver(provider, preferred);
   if (!first) return [];
   return [first, ...listChatDrivers().filter((d) => d.provider === provider && d !== first)];
+}
+
+/**
+ * A start failure that means "log in first": the probe can't see it (Copilot
+ * advertises its login method whether or not you're logged in), so it shows
+ * up as the session request failing.
+ */
+export function isLoginRequiredError(message: string): boolean {
+  return /authentication required|not logged in|not authenticated|unauthori[sz]ed|please (run )?\S*\s*login/i.test(message);
 }
 
 /** Tell the user (toast) and the log why an agent didn't get the chat it asked for. */
@@ -186,6 +195,16 @@ export async function tryStartChatAgent(
   const launchEnv = cleanSpawnEnv({ ...getShellEnvironment(), ...profileEnv });
   const level = levelForFreeAgent(params.freeAgentMode, params.permissionMode);
   const resumeNativeSessionId = params.resume ? params.sessionId : undefined;
+  appLog('core:chat', 'info', 'Chat start requested', {
+    meta: {
+      agentId: params.agentId,
+      provider: provider.id,
+      candidates: candidates.map((d) => d.id),
+      resumeSessionId: resumeNativeSessionId ?? null,
+      binaryPath,
+      profileEnvKeys: profileEnv ? Object.keys(profileEnv) : [],
+    },
+  });
   let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; continued?: { sessionId: string; lastSeq: number } } | undefined;
 
   // Probe lazily, in order, and stop at the first usable driver: the
@@ -194,7 +213,19 @@ export async function tryStartChatAgent(
   let login: { hint?: string } | undefined;
   for (const [index, driver] of candidates.entries()) {
     const key = driverHealthKey(driver, binaryPath, launchEnv, commandPrefix);
+    const checkStartedAt = Date.now();
     const check = await checkDriver(driver, key, binaryPath, launchEnv, commandPrefix);
+    appLog('core:chat', check.ok ? 'info' : 'warn', 'Chat driver check', {
+      meta: {
+        agentId: params.agentId,
+        driver: driver.id,
+        ok: check.ok,
+        durationMs: Date.now() - checkStartedAt,
+        ...(check.reason ? { reason: check.reason } : {}),
+        ...(check.login ? { loginRequired: true } : {}),
+        ...(check.notices.length ? { notices: check.notices.map((n) => n.code) } : {}),
+      },
+    });
     if (!check.ok) {
       skipped.push(check.reason ?? `${driverLabel(driver)} is unavailable`);
       // Every driver of a provider shares its login; don't try the next one.
@@ -214,6 +245,12 @@ export async function tryStartChatAgent(
     if (outcome.sessionStarted) {
       // The CLI may already have the mission: don't hand it to another driver.
       skipped.push(`${driverLabel(driver)} failed after its session started: ${outcome.error}`);
+      break;
+    }
+    if (isLoginRequiredError(outcome.error)) {
+      // Not the driver's fault, and every driver of a provider shares the login.
+      skipped.push(`${driverLabel(driver)} needs a login: ${outcome.error}`);
+      login = {};
       break;
     }
     // A stale resume id fails every driver alike; it says nothing about this one's health.
@@ -327,7 +364,18 @@ export async function tryStartChatAgent(
     });
 
     appLog('core:chat', 'info', 'Starting chat agent', {
-      meta: { agentId: params.agentId, provider: provider.id, driver: driver.id, level, resumed: !!resumeNativeSessionId },
+      meta: {
+        agentId: params.agentId,
+        provider: provider.id,
+        driver: driver.id,
+        level,
+        resumed: !!resumeNativeSessionId,
+        resumeSessionId: resumeNativeSessionId ?? null,
+        continuedChatSession: continued?.sessionId ?? null,
+        mcpServers: Object.keys(mcpServers),
+        // What the driver's child gets: the login shell env plus overrides.
+        env: summarizeSpawnEnv(env),
+      },
     });
 
     registerChatRuntime(runtime);
