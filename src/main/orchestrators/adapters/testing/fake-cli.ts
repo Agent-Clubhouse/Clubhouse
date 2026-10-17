@@ -161,6 +161,35 @@ export class EventLog<T> {
     for (const wake of this.waiters) wake();
   };
 
+  /** Set once a log filled by `fromAsyncIterable` has drained its source. */
+  ended = false;
+  /** Set if that source threw. */
+  error: unknown;
+
+  /**
+   * Collect an async stream (a ChatDriverSession's `events`, say) in the
+   * background, so a test can `waitFor` drafts while it drives the session.
+   */
+  static fromAsyncIterable<U>(source: AsyncIterable<U>): EventLog<U> {
+    const log = new EventLog<U>();
+    void (async () => {
+      try {
+        for await (const item of source) log.push(item);
+      } catch (err) {
+        log.error = err;
+      } finally {
+        log.ended = true;
+        for (const wake of log.waiters) wake();
+      }
+    })();
+    return log;
+  }
+
+  /** The `type` of every item so far, for asserting a stream's shape. */
+  types(this: EventLog<{ type: string }>): string[] {
+    return this.items.map((item) => item.type);
+  }
+
   async waitFor(match: ((item: T) => boolean) | Partial<T>, timeoutMs = 5000): Promise<T> {
     const predicate = typeof match === 'function'
       ? match as (item: T) => boolean
@@ -174,8 +203,12 @@ export class EventLog<T> {
         }
       }
       const remaining = deadline - Date.now();
+      const what = typeof match === 'function' ? 'predicate' : JSON.stringify(match);
+      if (this.ended) {
+        throw new Error(`stream ended without ${what}${this.error ? `: ${String(this.error)}` : ''}`);
+      }
       if (remaining <= 0) {
-        throw new Error(`timed out waiting for ${typeof match === 'function' ? 'predicate' : JSON.stringify(match)}`);
+        throw new Error(`timed out waiting for ${what}`);
       }
       await new Promise<void>((resolve) => {
         const timer = setTimeout(done, remaining);

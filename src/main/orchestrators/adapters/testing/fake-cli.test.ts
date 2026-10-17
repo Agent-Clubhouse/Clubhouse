@@ -43,4 +43,19 @@ describe('EventLog', () => {
     expect((await log.waitFor({ type: 'done' })).n).toBe(2);
     await expect(log.waitFor({ type: 'done' }, 20)).rejects.toThrow('timed out');
   });
+
+  it('collects an async event stream, the way a driver session emits drafts', async () => {
+    async function* drafts() {
+      yield { type: 'turn_started', data: {} };
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      yield { type: 'protocol_unknown', data: { name: 'item/hologram/delta' } };
+      yield { type: 'turn_ended', data: { reason: 'completed' } };
+    }
+    const log = EventLog.fromAsyncIterable(drafts());
+    expect(await log.waitFor({ type: 'protocol_unknown' })).toMatchObject({ data: { name: 'item/hologram/delta' } });
+    await log.waitFor({ type: 'turn_ended' });
+    expect(log.types()).toEqual(['turn_started', 'protocol_unknown', 'turn_ended']);
+    // Once the stream ends, a wait for something that never came fails fast.
+    await expect(log.waitFor({ type: 'error' }, 2000)).rejects.toThrow('stream ended without');
+  });
 });

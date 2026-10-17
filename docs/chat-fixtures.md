@@ -74,6 +74,17 @@ expect(report.complete).toBe(true);
 await fake.dispose();
 ```
 
+A chat driver test can assert on what the driver emits rather than on raw protocol traffic. `EventLog.fromAsyncIterable` collects a `ChatDriverSession`'s `events` in the background:
+
+```ts
+const drafts = EventLog.fromAsyncIterable(session.events);
+await session.send(/* … */);
+await drafts.waitFor({ type: 'turn_ended' });
+expect(drafts.types()).toContain('protocol_unknown'); // schema-drift fixtures
+```
+
+`waitFor` resumes after its previous match, and fails at once if the stream ends without a match.
+
 `writeFakeCliShims(dir, { codex: { fixture } })` writes an executable named `codex` (`codex.cmd` on Windows) for code that finds the CLI on PATH. On Windows that also exercises the cmd.exe route real npm installs take.
 
 ## Committed fixtures
