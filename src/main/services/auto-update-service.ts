@@ -984,11 +984,49 @@ export async function applyPlatformUpdate(
   return false;
 }
 
+export interface ApplyLifecycle {
+  /** Stop runtimes, drain persistence and restore config. Never rejects. */
+  beforeApply: () => Promise<void>;
+  /** The apply returned without exiting the app: reopen what beforeApply closed. */
+  onApplyAborted: () => void;
+}
+
+let applyLifecycle: ApplyLifecycle | undefined;
+
+/**
+ * Injected by the app (index.ts) so every relaunching apply, whichever IPC
+ * started it, awaits the lifecycle coordinator before the updater is spawned
+ * and the platform handler calls app.exit (which skips before-quit).
+ */
+export function setApplyLifecycle(lifecycle: ApplyLifecycle | undefined): void {
+  applyLifecycle = lifecycle;
+}
+
+let draining: Promise<void> | undefined;
+
 export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<void> {
+  // A second click while the first apply drains runtimes must not apply twice.
+  // Past the drain the state leaves 'ready', so the check below refuses it.
+  if (draining) return draining;
   if (updateStatus.state !== 'ready') {
     throw new Error('No update ready to apply');
   }
+  draining = applyLifecycle?.beforeApply() ?? Promise.resolve();
+  try {
+    await draining;
+  } finally {
+    draining = undefined;
+  }
+  let exiting = false;
+  try {
+    exiting = await applyUpdateNow(updateStatus);
+  } finally {
+    if (!exiting) applyLifecycle?.onApplyAborted();
+  }
+}
 
+/** Returns true once the process is exiting into the update or a relaunch. */
+async function applyUpdateNow(updateStatus: UpdateStatus): Promise<boolean> {
   const applyStartMs = Date.now();
   const context = await prepareApply(updateStatus, 'update:apply');
 
@@ -1026,7 +1064,7 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
     const applied = await applyPlatformUpdate(context, { relaunch: true, beforeExit: recordOnce, onCommit });
     if (applied) {
       await recordOnce();
-      return;
+      return true;
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1045,7 +1083,7 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
         availableVersion: context.version,
         artifactUrl: context.artifactUrl,
       });
-      return;
+      return false;
     }
     setState('error', { error: `Update failed: ${msg}`, availableVersion: context.version, artifactUrl: context.artifactUrl });
     throw err;
@@ -1055,7 +1093,7 @@ export async function applyUpdate(updateStatus: UpdateStatus = status): Promise<
   app.relaunch();
   await flushBeforeExit();
   app.exit(0);
-  return;
+  return true;
 }
 
 // ---------------------------------------------------------------------------

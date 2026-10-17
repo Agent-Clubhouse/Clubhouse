@@ -94,7 +94,22 @@ export function getRunningAgentIds(agentIds: string[]): string[] {
   return agentIds.filter(isAgentRunning);
 }
 
+/** Set by the app lifecycle while quitting or applying an update (#2053). */
+let launchesBlocked = false;
+
+export function setLaunchesBlocked(blocked: boolean): void {
+  launchesBlocked = blocked;
+}
+
+export class LaunchesBlockedError extends Error {
+  constructor() {
+    super('Clubhouse is shutting down; not starting new agents');
+    this.name = 'LaunchesBlockedError';
+  }
+}
+
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
+  if (launchesBlocked) throw new LaunchesBlockedError();
   const facts: SpawnFacts = { model: params.model };
   const startMs = Date.now();
   await tel.flow(
@@ -540,6 +555,19 @@ const pendingSessionCaptures = new Map<string, Promise<void>>();
 
 /** Past gracefulKill's SIGKILL step (9s), so a timeout means the exit was lost. */
 const KILL_WAIT_TIMEOUT_MS = 12_000;
+
+/**
+ * Await every session-id write started by a PTY exit. App shutdown calls this
+ * after stopping runtimes: the same barrier a resuming runtime switch uses
+ * (settleKill), applied to all agents at once.
+ */
+export async function awaitPendingSessionCaptures(): Promise<void> {
+  const captures = [...pendingSessionCaptures.entries()];
+  await Promise.all(captures.map(([, capture]) => capture));
+  for (const [agentId, capture] of captures) {
+    if (pendingSessionCaptures.get(agentId) === capture) pendingSessionCaptures.delete(agentId);
+  }
+}
 
 export interface KillAgentOptions {
   /**

@@ -187,6 +187,13 @@ function resumeStrategyFor(orchestrator: string): ResumeStrategy {
   return supportsAutoResumeAfterUpdate(provider) ? 'auto' : 'manual';
 }
 
+/** Chat states with a turn or a user answer outstanding. */
+const CHAT_WORKING_STATES = new Set(['starting', 'running', 'waiting_permission', 'waiting_input']);
+
+/**
+ * Every live agent an update restart will stop: terminal, chat and headless
+ * runs (#2053). The gate lists these and builds its capture metadata from them.
+ */
 export function getLiveAgentsForUpdate(): LiveAgentInfo[] {
   const all = agentRegistry.getAllRegistrations();
   const result: LiveAgentInfo[] = [];
@@ -194,10 +201,23 @@ export function getLiveAgentsForUpdate(): LiveAgentInfo[] {
   const WORKING_THRESHOLD_MS = 5000;
 
   for (const [agentId, reg] of all) {
-    if (reg.runtime !== 'pty') continue;
+    let isWorking: boolean;
+    let lastActivity: number | null = null;
+    let resumeStrategy = resumeStrategyFor(reg.orchestrator);
 
-    const lastActivity = ptyManager.getLastActivity(agentId);
-    const isWorking = lastActivity !== null && (now - lastActivity) < WORKING_THRESHOLD_MS;
+    if (reg.runtime === 'pty') {
+      lastActivity = ptyManager.getLastActivity(agentId);
+      isWorking = lastActivity !== null && (now - lastActivity) < WORKING_THRESHOLD_MS;
+    } else if (reg.runtime === 'chat') {
+      const runtime = getAgentRuntime(agentId);
+      if (!runtime?.isRunning()) continue;
+      isWorking = CHAT_WORKING_STATES.has(runtime.getState());
+    } else {
+      // A headless run is a task in flight. captureSessionState skips it, so
+      // it isn't resumed: the restart ends it.
+      isWorking = true;
+      resumeStrategy = 'manual';
+    }
 
     result.push({
       agentId,
@@ -206,7 +226,7 @@ export function getLiveAgentsForUpdate(): LiveAgentInfo[] {
       runtime: reg.runtime,
       isWorking,
       lastActivity,
-      resumeStrategy: resumeStrategyFor(reg.orchestrator),
+      resumeStrategy,
     });
   }
 

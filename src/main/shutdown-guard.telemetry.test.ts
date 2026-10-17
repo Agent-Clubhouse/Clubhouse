@@ -12,7 +12,7 @@ describe('before-quit telemetry hooks', () => {
     let quit!: () => void;
     const quitted = new Promise<void>((r) => (quit = r));
     const handler = createBeforeQuitHandler({
-      killAll: async () => {},
+      drainRuntimes: async () => {},
       flushAllAgentConfigs: async () => {
         throw new Error('disk full');
       },
@@ -30,7 +30,7 @@ describe('before-quit telemetry hooks', () => {
     handler({ preventDefault: () => {} });
     await quitted;
     expect(order[0]).toBe('started');
-    expect(order).toContain('step:pty_kill_all:true');
+    expect(order).toContain('step:runtime_drain:true');
     expect(order).toContain('step:agent_config_flush:false');
     expect(order).toContain('cleanup-error');
     expect(order.slice(-3)).toEqual(['completed', 'flush', 'quit']);
@@ -40,7 +40,7 @@ describe('before-quit telemetry hooks', () => {
     let quit!: () => void;
     const quitted = new Promise<void>((r) => (quit = r));
     const handler = createBeforeQuitHandler({
-      killAll: async () => {},
+      drainRuntimes: async () => {},
       flushAllAgentConfigs: async () => {},
       applyUpdateOnQuit: async () => {},
       appQuit: () => quit(),

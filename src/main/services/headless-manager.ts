@@ -633,6 +633,33 @@ export function kill(agentId: string): void {
   }, 5000);
 }
 
+/** Past kill()'s SIGKILL step (5s), so a timeout means the close event was lost. */
+const KILL_ALL_WAIT_MS = 6_000;
+
+/**
+ * Kill every headless run and resolve once each process has closed (its exit
+ * is broadcast by then) or the wait runs out. For app shutdown.
+ */
+export function killAll(): Promise<void> {
+  const waits = [...sessions.entries()].map(([agentId, session]) => {
+    const proc = session.process;
+    const closed = new Promise<void>((resolve) => {
+      if (proc.exitCode != null || proc.signalCode != null) {
+        resolve();
+        return;
+      }
+      const done = (): void => { clearTimeout(timer); resolve(); };
+      const timer: ReturnType<typeof setTimeout> = setTimeout(done, KILL_ALL_WAIT_MS);
+      proc.once('close', done);
+      proc.once('error', done);
+    });
+    agentKillRequested(agentId, 'shutdown');
+    kill(agentId);
+    return closed;
+  });
+  return Promise.all(waits).then((): void => undefined);
+}
+
 export async function readTranscript(agentId: string): Promise<string | null> {
   // First check in-memory session
   const session = sessions.get(agentId);

@@ -8,7 +8,7 @@ import { CHAT_CONTRACT_VERSION } from '../../../shared/chat';
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-transcript-'));
 vi.mock('electron', () => ({ app: { getPath: () => tmpRoot } }));
 
-import { appendChatEvent, readChatTranscript, lastSeqFor, transcriptPath } from './chat-transcript';
+import { appendChatEvent, readChatTranscript, lastSeqFor, transcriptPath, flushAllTranscripts } from './chat-transcript';
 
 function ev(seq: number, sessionId = 's1', agentId = 'agent-1'): ChatEvent {
   return { v: CHAT_CONTRACT_VERSION, agentId, sessionId, seq, ts: seq, type: 'session_state', data: { state: 'idle' } };
@@ -35,6 +35,18 @@ describe('chat transcript', () => {
     expect((await readChatTranscript('agent-1', { tail: 2 })).map((e) => `${e.sessionId}${e.seq}`)).toEqual(['a3', 'b2']);
     expect(await lastSeqFor('agent-1', 'a')).toBe(3);
     expect(await lastSeqFor('agent-1', 'missing')).toBe(0);
+  });
+
+  it('flushAllTranscripts waits for every agent\'s pending appends', async () => {
+    void appendChatEvent(ev(1, 's1', 'agent-a'));
+    void appendChatEvent(ev(2, 's1', 'agent-a'));
+    void appendChatEvent(ev(1, 's1', 'agent-b'));
+
+    await flushAllTranscripts();
+
+    const lines = (id: string) => fs.readFileSync(transcriptPath(id), 'utf-8').trim().split('\n').length;
+    expect(lines('agent-a')).toBe(2);
+    expect(lines('agent-b')).toBe(1);
   });
 
   it('returns nothing for an agent without a transcript', async () => {

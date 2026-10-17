@@ -26,6 +26,7 @@ import * as experimentalSettings from '../services/experimental-settings';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, arrayArg } from './validation';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
 import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState } from '../services/restart-session-service';
+import { appLifecycle } from '../services/app-lifecycle-service';
 import * as ptyManager from '../services/pty-manager';
 import { getAgentRuntime } from '../services/agent-runtime';
 import * as agentSystem from '../services/agent-system';
@@ -436,6 +437,8 @@ export function registerAppHandlers(): void {
 
   // --- App Restart ---
   ipcMain.handle(IPC.APP.RESTART, async () => {
+    // app.exit skips before-quit, so stop runtimes and restore config here.
+    await appLifecycle.shutdown({ reason: 'restart' });
     await flushAgentConfigsBeforeExit();
     await flushBeforeExit();
     app.relaunch();
@@ -515,14 +518,23 @@ export function registerAppHandlers(): void {
         agentMeta = new Map(Object.entries(data.agentMeta)) as typeof agentMeta;
       }
 
-      await captureSessionState(agentNames, agentMeta);
-
-      const { restoreAll } = await import('../services/config-pipeline');
+      // Capture resume state, stop every runtime, drain and restore config
+      // before the updater can exit the app (#2053).
+      await appLifecycle.shutdown({
+        reason: 'update',
+        captureResumeState: () => captureSessionState(agentNames, agentMeta),
+      });
       const { flushAllAgentConfigs } = await import('../services/agent-config');
       await flushAllAgentConfigs();
-      restoreAll();
 
-      await autoUpdateService.applyUpdate();
+      try {
+        await autoUpdateService.applyUpdate();
+      } catch (err) {
+        // applyUpdate reopens launches itself once it ran; this covers a
+        // rejection before that (no update ready).
+        appLifecycle.abort();
+        throw err;
+      }
     },
   ));
 
@@ -544,7 +556,7 @@ export function registerAppHandlers(): void {
         const { restoreAll } = await import('../services/config-pipeline');
         const { flushAllAgentConfigs } = await import('../services/agent-config');
         await flushAllAgentConfigs();
-        restoreAll();
+        await restoreAll();
 
         // In dev mode, app.relaunch() + app.exit() kills the Forge dev server.
         // Instead, kill all PTY sessions and reload the renderer window —

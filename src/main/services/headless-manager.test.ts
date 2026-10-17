@@ -104,6 +104,7 @@ import {
   spawnHeadless,
   isHeadless,
   kill,
+  killAll,
   readTranscript,
   getTranscriptInfo,
   readTranscriptPage,
@@ -576,6 +577,35 @@ describe('headless-manager', () => {
       await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'text');
       kill('test-agent');
       expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+
+    it('killAll() SIGTERMs every run and resolves once each has closed', async () => {
+      const onExit = vi.fn();
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+
+      let settled = false;
+      const all = killAll().then(() => { settled = true; });
+      expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+      await vi.advanceTimersByTimeAsync(100);
+      expect(settled).toBe(false);
+
+      mockProcess.emit('close', null, 'SIGTERM');
+      await all;
+      expect(onExit).toHaveBeenCalledWith('test-agent', 128 + os.constants.signals.SIGTERM);
+      expect(isHeadless('test-agent')).toBe(false);
+    });
+
+    it('killAll() stops waiting after SIGKILL when the close event never arrives', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'text');
+
+      const all = killAll();
+      await vi.advanceTimersByTimeAsync(6_000);
+      await all;
+      expect(mockProcess.kill).toHaveBeenCalledWith('SIGKILL');
+    });
+
+    it('killAll() resolves at once with no headless runs', async () => {
+      await expect(killAll()).resolves.toBeUndefined();
     });
 
     it('kill() is a no-op for unknown agentId', async () => {

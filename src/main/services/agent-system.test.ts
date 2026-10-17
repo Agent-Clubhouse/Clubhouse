@@ -248,6 +248,9 @@ import {
   isAgentRunning,
   getRunningAgentIds,
   expandHome,
+  setLaunchesBlocked,
+  LaunchesBlockedError,
+  awaitPendingSessionCaptures,
 } from './agent-system';
 import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
@@ -869,6 +872,39 @@ describe('agent-system', () => {
 
     it('does not reject for unknown orchestrator', async () => {
       await expect(killAgent('agent-1', '/project', 'nonexistent' as any)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('app lifecycle (#2053)', () => {
+    afterEach(() => setLaunchesBlocked(false));
+
+    it('refuses new launches while the app shuts down', async () => {
+      setLaunchesBlocked(true);
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' }))
+        .rejects.toBeInstanceOf(LaunchesBlockedError);
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+
+      setLaunchesBlocked(false);
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('awaitPendingSessionCaptures waits for session ids written by PTY exits', async () => {
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      const onExit = mockPtySpawn.mock.calls[0][5] as (id: string, code: number, buffer?: string) => void;
+      let persist!: () => void;
+      mockAddSessionEntry.mockReturnValueOnce(new Promise<void>((r) => { persist = r; }));
+
+      // pty-manager killAll: the CLI exits on its exit command, the callback captures.
+      onExit('agent-1', 0);
+      let settled = false;
+      const drained = awaitPendingSessionCaptures().then(() => { settled = true; });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      persist();
+      await drained;
+      expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: expect.any(String) }));
     });
   });
 

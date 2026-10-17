@@ -56,6 +56,8 @@ import * as ptyManager from './pty-manager';
 import { getProvider, isSessionCapable } from '../orchestrators';
 import { pathExists } from './fs-utils';
 import { getDurableConfig } from './agent-config';
+import { registerChatRuntime, clearChatRuntimes } from './agent-runtime';
+import type { AgentRuntime } from '../../shared/chat';
 
 describe('restart-session-service', () => {
   const statePath = '/tmp/test-userdata/restart-session-state.json';
@@ -291,25 +293,46 @@ describe('restart-session-service', () => {
       expect(result).toEqual([]);
     });
 
-    it('returns only PTY agents, filtering out headless runtimes', () => {
-      agentRegistry.register('pty-agent', {
-        projectPath: '/projects/club',
-        orchestrator: 'claude-code' as const,
-        runtime: 'pty',
-      });
-      agentRegistry.register('headless-agent', {
-        projectPath: '/projects/club',
-        orchestrator: 'claude-code' as const,
-        runtime: 'headless',
-      });
-
+    it('lists terminal, chat and headless agents (#2053)', () => {
+      agentRegistry.register('pty-agent', { projectPath: '/projects/club', orchestrator: 'claude-code' as const, runtime: 'pty' });
+      agentRegistry.register('chat-agent', { projectPath: '/projects/club', orchestrator: 'claude-code' as const, runtime: 'chat' });
+      agentRegistry.register('headless-agent', { projectPath: '/projects/club', orchestrator: 'claude-code' as const, runtime: 'headless' });
+      registerChatRuntime({
+        kind: 'chat',
+        agentId: 'chat-agent',
+        isRunning: () => true,
+        getState: () => 'waiting_permission',
+      } as unknown as AgentRuntime);
       vi.mocked(ptyManager.getLastActivity).mockReturnValue(null);
 
-      const result = getLiveAgentsForUpdate();
+      try {
+        const byId = Object.fromEntries(getLiveAgentsForUpdate().map((a) => [a.agentId, a]));
 
-      expect(result).toHaveLength(1);
-      expect(result[0].agentId).toBe('pty-agent');
-      expect(result[0].runtime).toBe('pty');
+        expect(Object.keys(byId).sort()).toEqual(['chat-agent', 'headless-agent', 'pty-agent']);
+        expect(byId['pty-agent']).toMatchObject({ runtime: 'pty', isWorking: false });
+        // A pending permission is outstanding work the restart would cut off.
+        expect(byId['chat-agent']).toMatchObject({ runtime: 'chat', isWorking: true, lastActivity: null });
+        // Capture skips headless runs, so they never resume automatically.
+        expect(byId['headless-agent']).toMatchObject({ runtime: 'headless', isWorking: true, resumeStrategy: 'manual' });
+      } finally {
+        clearChatRuntimes();
+      }
+    });
+
+    it('omits a chat registration whose runtime is no longer running', () => {
+      agentRegistry.register('chat-asleep', { projectPath: '/projects/club', orchestrator: 'claude-code' as const, runtime: 'chat' });
+      registerChatRuntime({
+        kind: 'chat',
+        agentId: 'chat-asleep',
+        isRunning: () => false,
+        getState: () => 'sleeping',
+      } as unknown as AgentRuntime);
+
+      try {
+        expect(getLiveAgentsForUpdate()).toEqual([]);
+      } finally {
+        clearChatRuntimes();
+      }
     });
 
     it('classifies agent as working when lastActivity is within 5 seconds', () => {
@@ -391,7 +414,7 @@ describe('restart-session-service', () => {
 
       const result = getLiveAgentsForUpdate();
 
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(3);
 
       const alpha = result.find((r) => r.agentId === 'agent-alpha');
       const beta = result.find((r) => r.agentId === 'agent-beta');
@@ -404,8 +427,8 @@ describe('restart-session-service', () => {
       expect(beta!.projectPath).toBe('/projects/beta');
       expect(beta!.isWorking).toBe(false);
 
-      // Headless agent must not appear
-      expect(result.find((r) => r.agentId === 'agent-gamma-headless')).toBeUndefined();
+      // The restart ends the headless run too, so the gate lists it.
+      expect(result.find((r) => r.agentId === 'agent-gamma-headless')).toMatchObject({ projectPath: '/projects/gamma', runtime: 'headless' });
     });
 
     it('reports auto-resume for any provider that can resume sessions', () => {

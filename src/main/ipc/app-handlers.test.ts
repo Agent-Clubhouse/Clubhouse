@@ -166,6 +166,12 @@ vi.mock('../services/agent-config', () => ({
   flushAllAgentConfigs: () => mockFlushAllAgentConfigs(),
 }));
 
+const mockLifecycle = vi.hoisted(() => ({
+  shutdown: vi.fn(async (opts: { captureResumeState?: () => Promise<void> }) => { await opts.captureResumeState?.(); }),
+  abort: vi.fn(),
+}));
+vi.mock('../services/app-lifecycle-service', () => ({ appLifecycle: mockLifecycle }));
+
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAppHandlers } from './app-handlers';
@@ -178,6 +184,7 @@ import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as badgeSettings from '../services/badge-settings';
 import { clipboardSettings } from './settings-handlers';
 import * as autoUpdateService from '../services/auto-update-service';
+import { captureSessionState } from '../services/restart-session-service';
 import * as soundService from '../services/sound-service';
 import * as logService from '../services/log-service';
 import * as logSettings from '../services/log-settings';
@@ -647,6 +654,38 @@ describe('app-handlers', () => {
     await handleHandlers.get(IPC.APP.RESTART)!({});
     expect(app.relaunch).toHaveBeenCalled();
     expect(order).toEqual(['flush', 'exit']);
+  });
+
+  it('RESTART stops every runtime through the lifecycle before exiting', async () => {
+    const order: string[] = [];
+    mockLifecycle.shutdown.mockImplementationOnce(async () => { order.push('shutdown'); });
+    vi.mocked(app.exit).mockImplementationOnce(() => { order.push('exit'); });
+    await handleHandlers.get(IPC.APP.RESTART)!({});
+    expect(mockLifecycle.shutdown).toHaveBeenCalledWith({ reason: 'restart' });
+    expect(order).toEqual(['shutdown', 'exit']);
+  });
+
+  it('CONFIRM_UPDATE_RESTART captures resume state inside the lifecycle shutdown, then applies', async () => {
+    const order: string[] = [];
+    vi.mocked(captureSessionState).mockImplementationOnce(async () => { order.push('capture'); });
+    mockLifecycle.shutdown.mockImplementationOnce(async (opts) => {
+      order.push('shutdown:start');
+      await opts.captureResumeState?.();
+      order.push('shutdown:done');
+    });
+    vi.mocked(autoUpdateService.applyUpdate).mockImplementationOnce(async () => { order.push('apply'); });
+
+    await handleHandlers.get(IPC.APP.CONFIRM_UPDATE_RESTART)!({}, { agentNames: { a1: 'Alpha' } });
+
+    expect(mockLifecycle.shutdown).toHaveBeenCalledWith(expect.objectContaining({ reason: 'update' }));
+    expect(captureSessionState).toHaveBeenCalledWith(new Map([['a1', 'Alpha']]), undefined);
+    expect(order).toEqual(['shutdown:start', 'capture', 'shutdown:done', 'apply']);
+  });
+
+  it('CONFIRM_UPDATE_RESTART reopens launches when the update cannot be applied', async () => {
+    vi.mocked(autoUpdateService.applyUpdate).mockRejectedValueOnce(new Error('No update ready to apply'));
+    await expect(handleHandlers.get(IPC.APP.CONFIRM_UPDATE_RESTART)!({}, { agentNames: {} })).rejects.toThrow('No update ready');
+    expect(mockLifecycle.abort).toHaveBeenCalled();
   });
 
   it('RESTART still exits when the agent config flush fails', async () => {

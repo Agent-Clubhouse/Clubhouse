@@ -2,16 +2,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { app, BrowserWindow, ipcMain, powerMonitor, session, net, protocol } from 'electron';
 import { registerAllHandlers } from './ipc';
-import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
+import { startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, getActiveWatchCount, stopAllWatches } from './services/file-watch-service';
 import { startStaleSweep as startHeadlessStaleSweep, stopStaleSweep as stopHeadlessStaleSweep } from './services/headless-manager';
-import { restoreAll } from './services/config-pipeline';
+import { appLifecycle } from './services/app-lifecycle-service';
 import { buildMenu } from './menu';
 import { getSettings as getThemeSettings } from './services/theme-service';
 import { getThemeColorsForTitleBar } from './title-bar-colors';
 import * as safeMode from './services/safe-mode';
 import { appLog } from './services/log-service';
-import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit, shouldAutoCheckOnStartup } from './services/auto-update-service';
+import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit, shouldAutoCheckOnStartup, setApplyLifecycle } from './services/auto-update-service';
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
 import { bridgeServer as mcpBridgeServer } from './services/clubhouse-mcp';
@@ -424,8 +424,15 @@ app.on('activate', () => {
   }
 });
 
+// Every relaunching update apply stops runtimes and restores config before the
+// updater's app.exit, which skips before-quit (#2053).
+setApplyLifecycle({
+  beforeApply: () => appLifecycle.shutdown({ reason: 'update' }),
+  onApplyAborted: () => appLifecycle.abort(),
+});
+
 app.on('before-quit', createBeforeQuitHandler({
-  killAll,
+  drainRuntimes: () => appLifecycle.shutdown({ reason: 'quit' }),
   flushAllAgentConfigs,
   flushAllGroupProjects: () => groupProjectRegistry.flush(),
   flushAllBulletinBoards,
@@ -437,7 +444,7 @@ app.on('before-quit', createBeforeQuitHandler({
     appLog('core:shutdown', 'error', `Failed to ${operation}: ${error instanceof Error ? error.message : String(error)}`);
   },
   beforeCleanup: () => {
-  appLog('core:shutdown', 'info', 'App shutting down, restoring configs and killing all PTY sessions');
+  appLog('core:shutdown', 'info', 'App shutting down, stopping all agent runtimes and restoring configs');
   stopUpdateChecks();
   stopPeriodicPluginUpdateChecks();
 
@@ -448,7 +455,6 @@ app.on('before-quit', createBeforeQuitHandler({
   stopHeadlessStaleSweep();
   annexServer.stop();
   mcpBridgeServer.stop();
-  restoreAll();
   stopAllWatches();
   // Bounded; queued feedback stays on disk for the next run.
   void shutdownFeedback();

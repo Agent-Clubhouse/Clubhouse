@@ -3,7 +3,12 @@ export interface BeforeQuitEvent {
 }
 
 interface BeforeQuitHandlerOptions {
-  killAll: () => Promise<void>;
+  /**
+   * The app lifecycle shutdown (app-lifecycle.ts): blocks launches, stops every
+   * runtime, drains transcripts/checkpoints/session ids and restores config.
+   * Applying an update on quit waits for it.
+   */
+  drainRuntimes: () => Promise<void>;
   flushAllAgentConfigs: () => Promise<void>;
   flushAllGroupProjects?: () => Promise<void>;
   flushAllBulletinBoards?: () => Promise<void>;
@@ -21,7 +26,7 @@ interface BeforeQuitHandlerOptions {
 }
 
 export type ShutdownStepName =
-  | 'pty_kill_all'
+  | 'runtime_drain'
   | 'agent_config_flush'
   | 'group_project_flush'
   | 'bulletin_flush'
@@ -49,7 +54,7 @@ export function awaitShutdownCleanup(
 }
 
 export function createBeforeQuitHandler({
-  killAll,
+  drainRuntimes,
   flushAllAgentConfigs,
   flushAllGroupProjects,
   flushAllBulletinBoards,
@@ -81,12 +86,15 @@ export function createBeforeQuitHandler({
     beforeCleanup?.();
     event.preventDefault();
 
+    const drained = timed('runtime_drain', 'drain runtimes', drainRuntimes);
     const cleanups: Array<Promise<void>> = [
-      timed('pty_kill_all', 'kill PTY sessions', killAll),
+      drained,
       timed('agent_config_flush', 'flush agent configs', flushAllAgentConfigs),
       timed('group_project_flush', 'flush group projects', flushAllGroupProjects),
       timed('bulletin_flush', 'flush bulletin boards', flushAllBulletinBoards),
-      timed('update_apply_on_quit', 'apply update on quit', applyUpdateOnQuit),
+      // The quit-time updater replaces the app once it exits, so it must not
+      // start before runtimes have stopped and config is restored.
+      drained.then(() => timed('update_apply_on_quit', 'apply update on quit', applyUpdateOnQuit)),
     ];
 
     awaitShutdownCleanup(cleanups, () => {

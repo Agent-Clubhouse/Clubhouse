@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import { execFileSync, spawn } from 'child_process';
 import { app } from 'electron';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyMacUpdate, applyPlatformUpdate, applyWindowsUpdate, platformUpdateHandlers, writePendingUpdateInfo, readPendingUpdateInfo, readApplyAttempt, platformKey } from './auto-update-service';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry, shellEscape, buildMacUpdateScript, buildMacQuitUpdateScript, getSquirrelReleasesUrl, getSquirrelUpdateExePath, applyUpdate, applyUpdateOnQuit, applyLinuxUpdate, applyMacUpdate, applyPlatformUpdate, applyWindowsUpdate, platformUpdateHandlers, setApplyLifecycle, writePendingUpdateInfo, readPendingUpdateInfo, readApplyAttempt, platformKey } from './auto-update-service';
 import * as fsUtils from './fs-utils';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -399,6 +399,85 @@ describe('auto-update-service', () => {
       } finally {
         handler.mockRestore();
       }
+    });
+
+    describe('app lifecycle hook (#2053)', () => {
+      const handlerName = process.platform === 'darwin'
+        ? 'applyMacUpdate'
+        : process.platform === 'win32' ? 'applyWindowsUpdate' : 'applyLinuxUpdate';
+
+      afterEach(() => setApplyLifecycle(undefined));
+
+      it('drains runtimes and restores config before the platform handler can exit', async () => {
+        const order: string[] = [];
+        let finishDrain!: () => void;
+        setApplyLifecycle({
+          beforeApply: () => new Promise<void>((r) => { order.push('drain:start'); finishDrain = () => { order.push('drain:done'); r(); }; }),
+          onApplyAborted: () => order.push('aborted'),
+        });
+        const handler = vi.spyOn(platformUpdateHandlers, handlerName).mockImplementation(async () => {
+          order.push('handler');
+          (app as unknown as { exit: (code: number) => void }).exit(0);
+          return new Promise<boolean>(() => {});
+        });
+        mockApp.exit = vi.fn(() => order.push('app.exit'));
+
+        try {
+          void applyUpdate(readyStatus);
+          await vi.waitFor(() => expect(order).toContain('drain:start'));
+          expect(handler).not.toHaveBeenCalled();
+
+          finishDrain();
+          await vi.waitFor(() => expect(order).toContain('app.exit'));
+          expect(order).toEqual(['drain:start', 'drain:done', 'handler', 'app.exit']);
+        } finally {
+          handler.mockRestore();
+        }
+      });
+
+      it('a second apply while the first drains joins it instead of applying twice', async () => {
+        let finishDrain!: () => void;
+        const beforeApply = vi.fn(() => new Promise<void>((r) => { finishDrain = r; }));
+        setApplyLifecycle({ beforeApply, onApplyAborted: vi.fn() });
+        const handler = vi.spyOn(platformUpdateHandlers, handlerName).mockResolvedValue(true);
+
+        try {
+          const first = applyUpdate(readyStatus);
+          const second = applyUpdate(readyStatus);
+          finishDrain();
+          await Promise.all([first, second]);
+          expect(beforeApply).toHaveBeenCalledOnce();
+          expect(handler).toHaveBeenCalledOnce();
+        } finally {
+          handler.mockRestore();
+        }
+      });
+
+      it('reopens launches when the handler fails and the app keeps running', async () => {
+        const onApplyAborted = vi.fn();
+        setApplyLifecycle({ beforeApply: async () => {}, onApplyAborted });
+        const handler = vi.spyOn(platformUpdateHandlers, handlerName).mockRejectedValue(new Error('installer missing'));
+
+        try {
+          await applyUpdate(readyStatus).catch(() => undefined);
+          expect(onApplyAborted).toHaveBeenCalledOnce();
+        } finally {
+          handler.mockRestore();
+        }
+      });
+
+      it('does not reopen launches once a handler reports the update applied', async () => {
+        const onApplyAborted = vi.fn();
+        setApplyLifecycle({ beforeApply: async () => {}, onApplyAborted });
+        const handler = vi.spyOn(platformUpdateHandlers, handlerName).mockResolvedValue(true);
+
+        try {
+          await applyUpdate(readyStatus);
+          expect(onApplyAborted).not.toHaveBeenCalled();
+        } finally {
+          handler.mockRestore();
+        }
+      });
     });
 
     it('applyMacUpdate runs beforeExit before flushing and exiting on relaunch', async () => {

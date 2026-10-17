@@ -62,7 +62,7 @@ describe('before-quit handler', () => {
     try {
       await new Promise<void>((resolve) => {
         const handleBeforeQuit = createBeforeQuitHandler({
-          killAll: async () => undefined,
+          drainRuntimes: async () => undefined,
           flushAllAgentConfigs: async () => undefined,
           applyUpdateOnQuit: () => applyUpdateOnQuit(update),
           appQuit: () => {
@@ -87,7 +87,7 @@ describe('before-quit handler', () => {
 
     await new Promise<void>((resolve) => {
       const handleBeforeQuit = createBeforeQuitHandler({
-        killAll: async () => undefined,
+        drainRuntimes: async () => undefined,
         flushAllAgentConfigs: async () => undefined,
         applyUpdateOnQuit: () => Promise.reject(new Error('spawn failed')),
         appQuit: () => {
@@ -110,8 +110,8 @@ describe('before-quit handler', () => {
 
     await new Promise<void>((resolve) => {
       const handleBeforeQuit = createBeforeQuitHandler({
-        killAll: async () => {
-          events.push('kill');
+        drainRuntimes: async () => {
+          events.push('drain');
         },
         flushAllAgentConfigs: async () => {
           events.push('configs');
@@ -135,8 +135,35 @@ describe('before-quit handler', () => {
       handleBeforeQuit({ preventDefault: vi.fn() });
     });
 
-    expect(events).toEqual(['kill', 'configs', 'group-projects', 'bulletins', 'apply-update', 'quit']);
+    expect(events).toEqual(['drain', 'configs', 'group-projects', 'bulletins', 'apply-update', 'quit']);
     expect(appQuit).toHaveBeenCalledOnce();
+  });
+
+  it('starts the quit-time update only after the runtime drain finishes', async () => {
+    const events: string[] = [];
+
+    await new Promise<void>((resolve) => {
+      const handleBeforeQuit = createBeforeQuitHandler({
+        drainRuntimes: async () => {
+          await new Promise((r) => setTimeout(r, 20));
+          events.push('drained');
+        },
+        flushAllAgentConfigs: async () => {
+          events.push('configs');
+        },
+        applyUpdateOnQuit: async () => {
+          events.push('apply-update');
+        },
+        appQuit: () => {
+          events.push('quit');
+          resolve();
+        },
+        onCleanupError: vi.fn(),
+      });
+      handleBeforeQuit({ preventDefault: vi.fn() });
+    });
+
+    expect(events).toEqual(['configs', 'drained', 'apply-update', 'quit']);
   });
 
   it('awaits the telemetry flush before quitting and reports its failure', async () => {
@@ -145,7 +172,7 @@ describe('before-quit handler', () => {
 
     await new Promise<void>((resolve) => {
       const handleBeforeQuit = createBeforeQuitHandler({
-        killAll: async () => {},
+        drainRuntimes: async () => {},
         flushAllAgentConfigs: async () => {},
         flushTelemetry: async () => {
           await new Promise((r) => setTimeout(r, 5));

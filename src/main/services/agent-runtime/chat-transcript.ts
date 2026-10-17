@@ -70,6 +70,11 @@ export async function flushTranscript(agentId: string): Promise<void> {
   await (writeChains.get(transcriptPath(agentId)) ?? Promise.resolve()).catch((): void => undefined);
 }
 
+/** Resolves when every agent's pending appends are on disk. For app shutdown. */
+export async function flushAllTranscripts(): Promise<void> {
+  await Promise.all([...writeChains.values()].map((chain) => chain.catch((): void => undefined)));
+}
+
 export interface ReadTranscriptOptions {
   /** Only events from this chat session. */
   sessionId?: string;

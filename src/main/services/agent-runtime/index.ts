@@ -39,6 +39,20 @@ export function isChatAgent(agentId: string): boolean {
   return !!runtime && runtime.isRunning();
 }
 
+/**
+ * Stop every chat runtime in parallel. Each stop closes its driver, settles
+ * pending permissions and writes the session's end, so it resolves once that
+ * end is in the transcript. A failed stop doesn't hold up the others.
+ */
+export async function stopAllChatRuntimes(): Promise<void> {
+  const results = await Promise.allSettled([...chatRuntimes.values()].map((runtime) => runtime.stop()));
+  const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+  if (failed.length) {
+    const reasons = failed.map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason)));
+    throw new Error(`${failed.length} chat runtime(s) failed to stop: ${reasons.join('; ')}`);
+  }
+}
+
 /** For tests. */
 export function clearChatRuntimes(): void {
   chatRuntimes.clear();

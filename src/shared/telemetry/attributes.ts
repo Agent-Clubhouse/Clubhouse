@@ -329,7 +329,8 @@ export const ATTR = {
   ]),
   // App lifecycle (§4.1, Phase 3b)
   shutdownStep: enumAttr('clubhouse.shutdown.step', [
-    'pty_kill_all', 'agent_config_flush', 'group_project_flush', 'bulletin_flush', 'update_apply_on_quit',
+    // pty_kill_all: emitted before #2053 widened the step to every runtime.
+    'runtime_drain', 'pty_kill_all', 'agent_config_flush', 'group_project_flush', 'bulletin_flush', 'update_apply_on_quit',
   ]),
   previousExit: enumAttr('clubhouse.shutdown.previous', ['unknown_exit', 'crash_loop']),
   safeModeTrigger: enumAttr('clubhouse.safe_mode.trigger', ['cli_flag', 'user_chosen', 'user_declined']),
