@@ -41,7 +41,8 @@ const STATUS_COLOR: Record<ResumeStatus, string> = {
 const CARD_STATUS: Record<ResumeStatus, [NoticeTone, string]> = {
   resumed: ['success', 'Done'],
   resuming: ['info', 'Working'],
-  pending: ['neutral', 'Waiting'],
+  // Queued behind the others, not running yet.
+  pending: ['neutral', 'Sleeping'],
   manual: ['warning', 'Needs you'],
   failed: ['error', 'Error'],
   timed_out: ['warning', 'Needs you'],

@@ -284,8 +284,8 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         </span>
         <span className="flex-shrink-0 flex group-hover:hidden group-focus-within:hidden items-center gap-1 pr-1.5 text-xs text-ctp-subtext0">
           {pinned && <span className="text-ctp-overlay0">pinned</span>}
-          {rollup.working > 0 && <Tooltip content={`${rollup.working} working`}><span className="flex items-center gap-1" aria-label={`${rollup.working} working`}><span className="w-1.5 h-1.5 rounded-full bg-ctp-success" />{rollup.working}</span></Tooltip>}
-          {rollup.waiting > 0 && <Tooltip content={`${rollup.waiting} waiting on you`}><span className="flex items-center gap-1 text-ctp-warning" aria-label={`${rollup.waiting} waiting on you`}><span className="w-1.5 h-1.5 rounded-full bg-ctp-warning" />{rollup.waiting}</span></Tooltip>}
+          {rollup.working > 0 && <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-ctp-success" aria-hidden="true" />{rollup.working}<span className="sr-only"> working</span></span>}
+          {rollup.waiting > 0 && <span className="flex items-center gap-1 text-ctp-warning"><span className="w-1.5 h-1.5 rounded-full bg-ctp-warning" aria-hidden="true" />{rollup.waiting}<span className="sr-only"> waiting on you</span></span>}
           {rollup.working === 0 && rollup.waiting === 0 && collapsed && agents.length > 0 && <span>{agents.length}</span>}
         </span>
       </div>

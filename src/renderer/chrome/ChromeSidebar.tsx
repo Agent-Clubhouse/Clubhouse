@@ -132,7 +132,8 @@ function AppRow({ inline, overflow, explorerTab, onOpen }: {
             }`}
           >
             {railIcon(entry)}
-            <TruncatedLabel text={rail.label} />
+            {/* With a distinct title the outer Tooltip already says it all; don't open a second. */}
+            {rail.title && rail.title !== rail.label ? <span className="truncate">{rail.label}</span> : <TruncatedLabel text={rail.label} />}
           </button>
           </Tooltip>
         );

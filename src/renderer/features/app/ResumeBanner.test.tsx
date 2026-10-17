@@ -63,13 +63,16 @@ describe('ResumeBanner card variant (new chrome)', () => {
           { agentId: 'a', agentName: 'darling-gazelle', status: 'resumed' },
           { agentId: 'b', agentName: 'mega-camel', status: 'failed', error: 'No session' },
           { agentId: 'c', agentName: 'zesty-lynx', status: 'manual' },
+          { agentId: 'd', agentName: 'calm-heron', status: 'pending' },
         ]}
         onManualResume={onManualResume}
         onDismiss={onDismiss}
       />,
     );
     const card = screen.getByTestId('resume-banner');
-    expect(card).toHaveTextContent('Resuming 3 sessions');
+    expect(card).toHaveTextContent('Resuming 4 sessions');
+    expect(card).toHaveTextContent('Sleeping');
+    expect(card).not.toHaveTextContent('Waiting');
     expect(card).toHaveTextContent('Done');
     expect(card).toHaveTextContent('Error');
     expect(card).toHaveTextContent('No session');

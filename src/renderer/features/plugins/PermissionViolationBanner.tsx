@@ -21,7 +21,7 @@ export function PermissionViolationBanner({ variant = 'bar' }: { variant?: 'bar'
     return (
       <>
         {visible.map((v) => (
-          <NoticeCard key={v.pluginId} tone="error" title="Plugin disabled" meta={v.pluginName} testId="permission-violation-banner"
+          <NoticeCard key={v.pluginId} urgent tone="error" title="Plugin disabled" meta={v.pluginName} testId="permission-violation-banner"
             actions={<Button kind="quiet" onClick={() => dismissOne(v.pluginId)}>Dismiss</Button>}>
             {v.pluginName} tried to use <code className="font-mono text-ctp-subtext1">api.{v.apiName}</code> without
             the <code className="font-mono text-ctp-subtext1">{v.permission}</code> permission.

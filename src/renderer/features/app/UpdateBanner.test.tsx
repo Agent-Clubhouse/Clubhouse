@@ -450,16 +450,26 @@ describe('UpdateBanner card variant (new chrome)', () => {
     },
   });
 
-  it('renders the update-ready card with Restart and Later', () => {
+  it('renders the update-ready card with Restart, Download manually and Later', () => {
     ready();
+    const openUpdateDownload = vi.fn();
+    useUpdateStore.setState({ openUpdateDownload });
     render(<UpdateBanner variant="card" />);
     const card = screen.getByTestId('update-banner');
     expect(card).toHaveTextContent('Update ready');
     expect(card).toHaveTextContent('v0.43.0');
     expect(card.className).toContain('rounded-lg');
     expect(screen.getByTestId('update-restart-btn')).toHaveTextContent('Restart');
+    fireEvent.click(screen.getByTestId('update-manual-download-btn'));
+    expect(openUpdateDownload).toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('update-dismiss-btn'));
     expect(useUpdateStore.getState().dismissed).toBe(true);
+  });
+
+  it('offers Download manually on the ready card only when there is an artifact', () => {
+    ready({ artifactUrl: null });
+    render(<UpdateBanner variant="card" />);
+    expect(screen.queryByTestId('update-manual-download-btn')).toBeNull();
   });
 
   it('restarts straight away when no agents are running', () => {

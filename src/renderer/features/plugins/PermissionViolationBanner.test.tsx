@@ -108,6 +108,7 @@ describe('PermissionViolationBanner card variant (new chrome)', () => {
     });
     render(<PermissionViolationBanner variant="card" />);
     const card = screen.getByTestId('permission-violation-banner');
+    expect(card).toHaveAttribute('role', 'alert');
     expect(card).toHaveTextContent('Plugin disabled');
     expect(card).toHaveTextContent('api.git');
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));

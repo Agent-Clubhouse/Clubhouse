@@ -173,6 +173,7 @@ export function UpdateBanner({ variant = 'bar' }: { variant?: 'bar' | 'card' } =
           <NoticeCard tone="success" title="Update ready" meta={version} testId="update-banner"
             actions={<>
               <Button kind="primary" onClick={handleRestart} data-testid="update-restart-btn">Restart</Button>
+              {status.artifactUrl && download('ghost')}
               {later}
             </>}>
             {status.releaseMessage

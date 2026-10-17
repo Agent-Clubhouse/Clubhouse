@@ -17,7 +17,7 @@ export const NOTICE_DOT: Record<NoticeTone, string> = {
   neutral: 'border border-ctp-overlay0',
 };
 
-export function NoticeCard({ tone, title, meta, children, actions, testId }: {
+export function NoticeCard({ tone, title, meta, children, actions, testId, urgent }: {
   tone: NoticeTone;
   title: ReactNode;
   meta?: ReactNode;
@@ -26,10 +26,12 @@ export function NoticeCard({ tone, title, meta, children, actions, testId }: {
   /** Usually `Button`s: one primary and a quiet "Later" or "Dismiss". */
   actions?: ReactNode;
   testId?: string;
+  /** Announce at once (`role="alert"`), for notices like a disabled plugin. */
+  urgent?: boolean;
 }) {
   return (
     <section
-      role="status"
+      role={urgent ? 'alert' : 'status'}
       data-testid={testId}
       className="flex flex-col gap-2 px-3 py-2.5 rounded-lg border border-surface-1 bg-ctp-base"
     >
