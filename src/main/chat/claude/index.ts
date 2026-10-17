@@ -24,3 +24,7 @@ export { ClaudeStreamTransport, buildStreamJsonArgs } from './stream-transport';
 export function createClaudeTransport(kind: ClaudeTransportKind, opts: ClaudeTransportOptions): ClaudeTransport {
   return kind === 'sdk' ? new ClaudeSdkTransport(opts) : new ClaudeStreamTransport(opts);
 }
+
+/** Contract-facing driver (src/shared/chat): what the chat runtime should use. */
+export { ClaudeChatDriver, ClaudeChatDriverSession } from './driver';
+export type { ClaudeChatDriverId } from './driver';

@@ -15,6 +15,9 @@
 //   crash  exit 3 mid-turn
 //   quit   a large final assistant message and result, then exit 0 at once
 //   other  result.result = "echo:<text>|priority:<p>|shouldQuery:<b>"
+//
+// A `priority: "later"` message sent while a turn runs waits for that turn to
+// end, as the CLI's queue does; other messages run at once.
 
 import { writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -38,6 +41,8 @@ let msgCounter = 0;
 let ctlCounter = 0;
 /** request_id → resolver for outstanding can_use_tool requests. */
 const pendingPermissions = new Map();
+/** The running turn, so `priority: "later"` messages can wait for it. */
+let turnInFlight = null;
 
 const out = (obj) => process.stdout.write(JSON.stringify(obj) + '\n');
 const base = () => ({ session_id: sessionId, uuid: `uuid-${++msgCounter}` });
@@ -214,6 +219,12 @@ rl.on('line', (line) => {
     }
     return;
   }
-  if (msg.type === 'user') void runTurn(msg);
+  if (msg.type !== 'user') return;
+  if (msg.priority === 'later' && turnInFlight) {
+    const prev = turnInFlight;
+    turnInFlight = prev.then(() => runTurn(msg));
+    return;
+  }
+  turnInFlight = runTurn(msg).finally(() => { turnInFlight = null; });
 });
 rl.on('close', () => process.exit(0));
