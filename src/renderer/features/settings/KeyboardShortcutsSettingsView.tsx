@@ -16,8 +16,11 @@ function ShortcutRow({ shortcut }: { shortcut: ShortcutDefinition }) {
   const setBinding = useKeyboardShortcutsStore((s) => s.setBinding);
   const resetBinding = useKeyboardShortcutsStore((s) => s.resetBinding);
 
+  const conflictLabel = useKeyboardShortcutsStore((s) => (shortcut.conflictWith ? s.shortcuts[shortcut.conflictWith]?.label : undefined));
+
   const isEditing = editingId === shortcut.id;
-  const isModified = shortcut.currentBinding !== shortcut.defaultBinding;
+  // An action left unbound by a conflict is not "modified"; there is nothing of its own to reset.
+  const isModified = !shortcut.conflictWith && shortcut.currentBinding !== shortcut.defaultBinding;
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -42,8 +45,15 @@ function ShortcutRow({ shortcut }: { shortcut: ShortcutDefinition }) {
   }, [isEditing, handleKeyDown]);
 
   return (
-    <div className="flex items-center justify-between py-2">
-      <span className="text-sm text-ctp-text">{shortcut.label}</span>
+    <div className="flex items-center justify-between py-2" data-testid={`shortcut-row-${shortcut.id}`}>
+      <span className="flex flex-col">
+        <span className="text-sm text-ctp-text">{shortcut.label}</span>
+        {shortcut.conflictWith && (
+          <span className="text-xs text-ctp-warning">
+            Unbound because {formatBinding(shortcut.defaultBinding)} is set for {conflictLabel ?? shortcut.conflictWith}
+          </span>
+        )}
+      </span>
       <div className="flex items-center gap-2">
         {isEditing ? (
           <span className="text-xs text-ctp-accent bg-surface-1 px-2 py-1 rounded border border-ctp-accent animate-pulse">
@@ -54,7 +64,7 @@ function ShortcutRow({ shortcut }: { shortcut: ShortcutDefinition }) {
             onClick={() => startEditing(shortcut.id)}
             className="text-xs text-ctp-subtext1 bg-surface-0 px-2 py-1 rounded hover:bg-surface-1 cursor-pointer transition-colors"
           >
-            {formatBinding(shortcut.currentBinding)}
+            {shortcut.currentBinding ? formatBinding(shortcut.currentBinding) : 'Unbound'}
           </button>
         )}
         {isModified && !isEditing && (

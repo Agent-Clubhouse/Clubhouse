@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { reportChromeActionFailed } from './telemetry';
 import { isNewChromeEnabled } from './chromeFlag';
+import { CHROME_STORAGE_KEY } from './storageKey';
 import { useAgentStore } from '../stores/agentStore';
 import { touchMru } from './titlebar/overflow';
 
@@ -8,7 +9,7 @@ import { touchMru } from './titlebar/overflow';
  * State for the new chrome shell. Persisted under its own key so the legacy
  * shell's `clubhouse_panel_sizes` is never touched (docs/chrome-redesign-spec.md §5).
  */
-export const CHROME_STORAGE_KEY = 'clubhouse_chrome_v2';
+export { CHROME_STORAGE_KEY };
 const STORAGE_VERSION = 2;
 
 export const SIDEBAR_MIN = 220;
@@ -41,6 +42,9 @@ export interface ChromeState {
    */
   projectScopeId: string | null;
   setProjectScope: (projectId: string | null) => void;
+  /** The title bar's tabs for the active project, in order, for ⌘1–9 (spec §5.3). Not persisted. */
+  titleTabs: Array<{ id: string; disabled?: boolean }>;
+  setTitleTabs: (tabs: Array<{ id: string; disabled?: boolean }>) => void;
   /** Set by ⌘⇧N for the start page to focus its composer, which clears it. Not persisted. */
   composerFocusPending: boolean;
   requestComposer: () => void;
@@ -119,6 +123,16 @@ export function loadChromeState(): PersistedFields {
   }
 }
 
+function readStoredShortcuts(): unknown {
+  try {
+    const raw = localStorage.getItem(CHROME_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as { shortcuts?: unknown } | null)?.shortcuts : undefined;
+  } catch {
+    // telemetry-exempt: corrupt stored state is rewritten by this save
+    return undefined;
+  }
+}
+
 function persistChromeState(state: PersistedFields): void {
   const payload: PersistedChromeState = {
     version: STORAGE_VERSION,
@@ -131,7 +145,9 @@ function persistChromeState(state: PersistedFields): void {
     tabMru: state.tabMru,
   };
   try {
-    localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify(payload));
+    // Keyboard shortcut overrides share the key but are written by their own store; keep them.
+    const shortcuts = readStoredShortcuts();
+    localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify(shortcuts === undefined ? payload : { ...payload, shortcuts }));
   } catch (err) {
     console.warn('[store:chrome] Failed to persist chrome state (quota?):', err instanceof Error ? err.message : err);
     reportChromeActionFailed('chrome_state_save', err);
@@ -157,6 +173,13 @@ export const useChromeStore = create<ChromeState>((set, get) => {
 
     setProjectScope: (projectId) => {
       if (get().projectScopeId !== projectId) set({ projectScopeId: projectId });
+    },
+
+    titleTabs: [],
+    setTitleTabs: (tabs) => {
+      const current = get().titleTabs;
+      const same = current.length === tabs.length && current.every((t, i) => t.id === tabs[i].id && !!t.disabled === !!tabs[i].disabled);
+      if (!same) set({ titleTabs: tabs });
     },
 
     composerFocusPending: false,

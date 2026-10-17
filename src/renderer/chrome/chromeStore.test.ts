@@ -198,4 +198,18 @@ describe('chromeStore', () => {
       expect(loadChromeState().tabMru).toEqual({});
     });
   });
+
+  it('keeps the keyboard shortcut overrides that share its key when it saves', () => {
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 2, shortcuts: { version: 1, overrides: { 'tab-2': 'Meta+Shift+2' } } }));
+      useChromeStore.getState().setSidebarWidth(300);
+      vi.advanceTimersByTime(400);
+      const saved = JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!);
+      expect(saved.sidebarWidth).toBe(300);
+      expect(saved.shortcuts).toEqual({ version: 1, overrides: { 'tab-2': 'Meta+Shift+2' } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

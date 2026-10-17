@@ -1,13 +1,20 @@
 import { create } from 'zustand';
+import { isNewChromeEnabled } from '../chrome/chromeFlag';
+import { CHROME_STORAGE_KEY } from '../chrome/storageKey';
 
+/** The legacy shell's overrides. The new shell never writes it (docs/chrome-redesign-spec.md §5.3). */
 const OVERRIDES_KEY = 'clubhouse_keyboard_shortcut_overrides';
+const CHROME_SHORTCUTS_VERSION = 1;
 
 export interface ShortcutDefinition {
   id: string;
   label: string;
   category: string;
   defaultBinding: string;
+  /** Empty when unbound: a user binding took this action's default. */
   currentBinding: string;
+  /** The action whose user binding took this one's default, if any. */
+  conflictWith?: string;
 }
 
 type ShortcutOverrides = Record<string, string>;
@@ -42,7 +49,8 @@ const ALT_DIGIT_MAP: Record<string, string> = {
   'ª': '9',
 };
 
-function loadOverrides(): ShortcutOverrides {
+/** Legacy overrides. `writeBack` saves the "Comma" → "," migration; the new shell reads without writing. */
+function loadOverrides(writeBack = true): ShortcutOverrides {
   try {
     const raw = localStorage.getItem(OVERRIDES_KEY);
     if (raw) {
@@ -55,7 +63,7 @@ function loadOverrides(): ShortcutOverrides {
           migrated = true;
         }
       }
-      if (migrated) {
+      if (migrated && writeBack) {
         try { localStorage.setItem(OVERRIDES_KEY, JSON.stringify(parsed)); } catch { /* ignore */ }
       }
       return parsed;
@@ -64,13 +72,46 @@ function loadOverrides(): ShortcutOverrides {
   return {};
 }
 
+/** The new shell's overrides, under `shortcuts` in clubhouse_chrome_v2. Null until first seeded. */
+function loadChromeOverrides(): ShortcutOverrides | null {
+  try {
+    const raw = localStorage.getItem(CHROME_STORAGE_KEY);
+    const stored = raw ? (JSON.parse(raw) as { shortcuts?: { overrides?: unknown } } | null)?.shortcuts : undefined;
+    if (!stored || typeof stored.overrides !== 'object' || stored.overrides === null) return null;
+    return Object.fromEntries(
+      Object.entries(stored.overrides as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'),
+    );
+  } catch { /* ignore */ }
+  return null;
+}
+
+function saveChromeOverrides(overrides: ShortcutOverrides): void {
+  try {
+    const raw = localStorage.getItem(CHROME_STORAGE_KEY);
+    let state: Record<string, unknown> = {};
+    try { state = raw ? JSON.parse(raw) ?? {} : {}; } catch { /* corrupt: chromeStore rewrites its own fields */ }
+    state.shortcuts = { version: CHROME_SHORTCUTS_VERSION, overrides };
+    localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify(state));
+  } catch { /* ignore */ }
+}
+
 function saveOverrides(overrides: ShortcutOverrides): void {
   try {
     localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
   } catch { /* ignore */ }
 }
 
-const DEFAULT_SHORTCUTS: Omit<ShortcutDefinition, 'currentBinding'>[] = [
+type ShortcutSpec = Omit<ShortcutDefinition, 'currentBinding' | 'conflictWith'>;
+
+const switchAgents = (binding: (n: number) => string): ShortcutSpec[] => Array.from({ length: 9 }, (_, i) => ({
+  id: `switch-agent-${i + 1}`,
+  label: `Switch to Agent ${i + 1}`,
+  category: 'Agents',
+  defaultBinding: binding(i + 1),
+}));
+
+/** The legacy shell's set, unchanged. */
+export const LEGACY_SHORTCUTS: ShortcutSpec[] = [
   // General
   { id: 'command-palette', label: 'Command Palette', category: 'General', defaultBinding: 'Meta+K' },
   { id: 'toggle-settings', label: 'Toggle Settings', category: 'General', defaultBinding: 'Meta+,' },
@@ -89,12 +130,7 @@ const DEFAULT_SHORTCUTS: Omit<ShortcutDefinition, 'currentBinding'>[] = [
   // focus back to the active agent terminal without needing a mouse click
   // (clicks don't reliably refocus under Copilot CLI's mouse tracking).
   { id: 'focus-active-terminal', label: 'Focus Active Terminal', category: 'Agents', defaultBinding: 'Meta+Shift+T' },
-  ...Array.from({ length: 9 }, (_, i) => ({
-    id: `switch-agent-${i + 1}`,
-    label: `Switch to Agent ${i + 1}`,
-    category: 'Agents',
-    defaultBinding: `Meta+${i + 1}`,
-  })),
+  ...switchAgents((n) => `Meta+${n}`),
 
   // Projects
   { id: 'add-project', label: 'Add Project', category: 'Projects', defaultBinding: 'Meta+Shift+O' },
@@ -107,15 +143,71 @@ const DEFAULT_SHORTCUTS: Omit<ShortcutDefinition, 'currentBinding'>[] = [
   })),
 ];
 
-function buildShortcuts(overrides: ShortcutOverrides): Record<string, ShortcutDefinition> {
+/** Actions with the same id and meaning in both shells. */
+const SHARED_IDS = [
+  'command-palette', 'toggle-settings', 'toggle-help', 'toggle-sidebar',
+  'new-quick-agent', 'focus-active-terminal', 'add-project', 'close-project',
+];
+
+/**
+ * The new shell's set (spec §5.3): ⌘1–9 select title-bar tabs (⌘1 is Agents)
+ * and ⌥⌘1–9 switch agents in sidebar order. No Home, accessory column or
+ * project-N shortcuts.
+ */
+export const CHROME_SHORTCUTS: ShortcutSpec[] = [
+  ...LEGACY_SHORTCUTS.filter((s) => SHARED_IDS.includes(s.id)).map((s) =>
+    s.id === 'toggle-sidebar' ? { ...s, category: 'General' } : s),
+  ...Array.from({ length: 9 }, (_, i) => ({
+    id: `tab-${i + 1}`,
+    label: i === 0 ? 'Agents Tab' : `Tab ${i + 1}`,
+    category: 'Tabs',
+    defaultBinding: `Meta+${i + 1}`,
+  })),
+  ...switchAgents((n) => `Meta+Alt+${n}`),
+];
+
+/** Ids whose legacy overrides carry into the new shell: the shared actions and switch-agent-N. */
+const SEEDABLE_IDS = new Set([...SHARED_IDS, ...Array.from({ length: 9 }, (_, i) => `switch-agent-${i + 1}`)]);
+
+/** The new shell's first overrides: the legacy ones that mean the same thing there. Retired ids are left out. */
+export function seedChromeOverrides(legacy: ShortcutOverrides): ShortcutOverrides {
+  return Object.fromEntries(Object.entries(legacy).filter(([id]) => SEEDABLE_IDS.has(id)));
+}
+
+/**
+ * Resolve each action's binding. With `resolveCollisions` (the new shell), a
+ * user binding that equals another action's default wins: that action is left
+ * unbound and records the conflict for Settings (spec §5.3).
+ */
+export function buildShortcuts(
+  definitions: ShortcutSpec[],
+  overrides: ShortcutOverrides,
+  { resolveCollisions = false }: { resolveCollisions?: boolean } = {},
+): Record<string, ShortcutDefinition> {
+  const takenBy = new Map<string, string>();
+  if (resolveCollisions) {
+    for (const def of definitions) if (overrides[def.id]) takenBy.set(overrides[def.id], def.id);
+  }
   const result: Record<string, ShortcutDefinition> = {};
-  for (const def of DEFAULT_SHORTCUTS) {
-    result[def.id] = {
-      ...def,
-      currentBinding: overrides[def.id] || def.defaultBinding,
-    };
+  for (const def of definitions) {
+    const override = overrides[def.id];
+    const owner = !override ? takenBy.get(def.defaultBinding) : undefined;
+    result[def.id] = owner && owner !== def.id
+      ? { ...def, currentBinding: '', conflictWith: owner }
+      : { ...def, currentBinding: override || def.defaultBinding };
   }
   return result;
+}
+
+/** The active shell's definitions and overrides; the new shell seeds its own on first run. */
+function loadForActiveShell(): { definitions: ShortcutSpec[]; overrides: ShortcutOverrides; chrome: boolean } {
+  if (!isNewChromeEnabled()) return { definitions: LEGACY_SHORTCUTS, overrides: loadOverrides(), chrome: false };
+  let overrides = loadChromeOverrides();
+  if (overrides === null) {
+    overrides = seedChromeOverrides(loadOverrides(false));
+    saveChromeOverrides(overrides);
+  }
+  return { definitions: CHROME_SHORTCUTS, overrides, chrome: true };
 }
 
 interface KeyboardShortcutsState {
@@ -128,30 +220,40 @@ interface KeyboardShortcutsState {
   startEditing: (id: string) => void;
   stopEditing: () => void;
   getBindingForAction: (actionId: string) => string;
+  /** Re-read the active shell's set and overrides (also seeds the new shell on its first run). */
+  reload: () => void;
 }
 
 export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, get) => {
-  const overrides = loadOverrides();
+  // Each shell edits its own set and storage (spec §5.3); the layout is fixed per session.
+  let shell = loadForActiveShell();
+  const build = (overrides: ShortcutOverrides) => buildShortcuts(shell.definitions, overrides, { resolveCollisions: shell.chrome });
+  const save = (overrides: ShortcutOverrides) => (shell.chrome ? saveChromeOverrides(overrides) : saveOverrides(overrides));
   return {
-    shortcuts: buildShortcuts(overrides),
+    shortcuts: build(shell.overrides),
     editingId: null,
-    overrides,
+    overrides: shell.overrides,
 
     setBinding: (id, binding) => {
       const newOverrides = { ...get().overrides, [id]: binding };
-      set({ overrides: newOverrides, shortcuts: buildShortcuts(newOverrides), editingId: null });
-      saveOverrides(newOverrides);
+      set({ overrides: newOverrides, shortcuts: build(newOverrides), editingId: null });
+      save(newOverrides);
     },
 
     resetBinding: (id) => {
       const { [id]: _, ...rest } = get().overrides;
-      set({ overrides: rest, shortcuts: buildShortcuts(rest), editingId: null });
-      saveOverrides(rest);
+      set({ overrides: rest, shortcuts: build(rest), editingId: null });
+      save(rest);
     },
 
     resetAll: () => {
-      set({ overrides: {}, shortcuts: buildShortcuts({}), editingId: null });
-      saveOverrides({});
+      set({ overrides: {}, shortcuts: build({}), editingId: null });
+      save({});
+    },
+
+    reload: () => {
+      shell = loadForActiveShell();
+      set({ overrides: shell.overrides, shortcuts: build(shell.overrides), editingId: null });
     },
 
     startEditing: (id) => set({ editingId: id }),
