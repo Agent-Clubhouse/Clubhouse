@@ -172,6 +172,25 @@ describe('telemetry settings control', () => {
     expect(await control.setAdvanced({ sampleRate: 2 })).toMatchObject({ ok: false, reason: 'invalid_sample_rate' });
   });
 
+  it('shows a Phase 1 file without recorded consent as off, and asks for consent to turn it on', async () => {
+    state.settings = { ...state.settings, enabled: true, destination: 'azure', consentVersion: 0 };
+    state.secrets.connectionString = CS;
+    expect((await control.getStatus()).enabled).toBe(false);
+    expect(await control.setEnabled('azure', true)).toMatchObject({ ok: false, needs: ['consent'] });
+    expect(await control.setEnabled('azure', true, { consent: true })).toMatchObject({ ok: true });
+    expect(state.calls).toEqual(['enable']);
+    expect((await control.getStatus()).enabled).toBe(true);
+  });
+
+  it('clearing a destination also removes an unmigrated Phase 1 plaintext secret', async () => {
+    state.settings = { ...state.settings, legacyDestination: { kind: 'azure', connectionString: CS } };
+    await control.clearOtlpConfig();
+    expect(state.settings.legacyDestination).toBeDefined();
+    await control.clearAzureConnectionString();
+    expect(state.settings.legacyDestination).toBeUndefined();
+    expect(JSON.stringify(state.settings)).not.toContain('InstrumentationKey');
+  });
+
   it('turns off and removes local data', async () => {
     state.settings = { ...state.settings, enabled: true, installId: 'x' };
     await control.deleteLocalData();

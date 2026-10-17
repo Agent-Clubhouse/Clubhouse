@@ -79,7 +79,9 @@ export async function getStatus(): Promise<TelemetryStatus> {
   const headerValues: Record<string, string> = { ...(legacySecrets(settings).otlpHeaders ?? {}), ...(secrets.otlpHeaders ?? {}) };
   return {
     available: isExperimentEnabled(),
-    enabled: settings.enabled,
+    // A Phase 1 file can be enabled without recorded consent; it isn't
+    // exporting, so show it as off until the user turns it on (and consents).
+    enabled: settings.enabled && settings.consentVersion >= TELEMETRY_CONSENT_VERSION,
     running: isRunning(),
     destination: settings.destination,
     level: settings.level,
@@ -102,7 +104,7 @@ export async function getStatus(): Promise<TelemetryStatus> {
     secureStorage: getSecureStorageState(),
     weakStorageAccepted: settings.weakStorageAccepted === true,
     offlineItems: await countOfflineItems(getOfflineDir()),
-    lastError: settings.enabled ? getLastStartError() : undefined,
+    lastError: settings.enabled && settings.consentVersion >= TELEMETRY_CONSENT_VERSION ? getLastStartError() : undefined,
   };
 }
 
@@ -153,6 +155,20 @@ export async function saveAzureConnectionString(
   return done();
 }
 
+/**
+ * Clearing must also remove a not-yet-migrated Phase 1 plaintext secret
+ * (it stays in the file when secure storage is unavailable).
+ */
+async function dropLegacyDestination(kind: TelemetryDestinationKind): Promise<void> {
+  const legacy = getTelemetrySettings().legacyDestination;
+  if (!legacy || (legacy.kind === 'otlp' ? 'otlp' : 'azure') !== kind) return;
+  await updateTelemetrySettings((s) => {
+    const next = { ...s };
+    delete next.legacyDestination;
+    return next;
+  });
+}
+
 export async function clearAzureConnectionString(): Promise<TelemetryActionResult> {
   const { settings } = await prepare();
   if (settings.enabled && settings.destination === 'azure') {
@@ -160,6 +176,7 @@ export async function clearAzureConnectionString(): Promise<TelemetryActionResul
     await disableTelemetry();
   }
   await updateSecrets((s) => ({ ...s, connectionString: undefined }));
+  await dropLegacyDestination('azure');
   return done();
 }
 
@@ -223,6 +240,7 @@ export async function clearOtlpConfig(): Promise<TelemetryActionResult> {
   }
   await updateSecrets((s) => ({ ...s, otlpHeaders: undefined }));
   await updateTelemetrySettings((s) => ({ ...s, otlpEndpoint: '', otlpHeaderNames: [], otlpConfirmedHost: undefined }));
+  await dropLegacyDestination('otlp');
   return done();
 }
 

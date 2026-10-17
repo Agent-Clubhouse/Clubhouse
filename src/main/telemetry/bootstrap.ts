@@ -13,6 +13,7 @@ import { randomUUID } from 'crypto';
 import { app } from 'electron';
 import { appLog } from '../services/log-service';
 import { ATTR } from '../../shared/telemetry/attributes';
+import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 import {
   abortPending,
   beginPending,
@@ -61,7 +62,14 @@ let lastStartError: string | undefined;
  * validated in start(), after `ready`.
  */
 export function isTelemetryConfigured(settings: TelemetrySettings = getTelemetrySettings()): boolean {
-  return isExperimentEnabled() && settings.enabled === true && hasDestinationConfigured(settings);
+  return (
+    isExperimentEnabled() &&
+    settings.enabled === true &&
+    // Consent is recorded before anything is exported. Phase 1 files predate
+    // it (consentVersion 0), so those users are asked once in Settings.
+    settings.consentVersion >= TELEMETRY_CONSENT_VERSION &&
+    hasDestinationConfigured(settings)
+  );
 }
 
 /** Why the last start failed, in plain words (shown in Settings). */
@@ -241,8 +249,28 @@ async function start(): Promise<boolean> {
  * Called once, synchronously, at the top of main/index.ts after the userData
  * override. Returns immediately; the SDK loads in the background.
  */
+/**
+ * Move a Phase 1 plaintext secret out of telemetry-settings.json once the app
+ * is ready, whatever the flags say: a user who turned telemetry or the
+ * experiment off must not keep the plaintext forever.
+ */
+export async function migrateLegacySecretsOnReady(): Promise<void> {
+  await app.whenReady();
+  try {
+    if (!getTelemetrySettings().legacyDestination) return;
+    if (!(await migrateLegacySecrets())) {
+      appLog(LOG_NS, 'warn', 'Secure storage is unavailable: the Phase 1 telemetry secret stays in plaintext in telemetry-settings.json until it is cleared in Settings or storage becomes available');
+    }
+  } catch (err) {
+    appLog(LOG_NS, 'warn', 'Could not move the Phase 1 telemetry secret to secure storage', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
 export function initTelemetry(): void {
   try {
+    if (getTelemetrySettings().legacyDestination) void migrateLegacySecretsOnReady();
     if (!isTelemetryConfigured()) return;
   } catch {
     return;

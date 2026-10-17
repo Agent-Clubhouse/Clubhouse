@@ -54,6 +54,7 @@ interface PendingConfirm {
   /** Destination the user is turning on or saving. */
   target: TelemetryDestinationKind;
   retry: (ack: TelemetryAcknowledgements) => Promise<TelemetryEnableResult>;
+  onSuccess?: (status: TelemetryStatus) => void;
 }
 
 const api = () => window.clubhouse.telemetrySettings;
@@ -71,6 +72,7 @@ export function TelemetrySettingsSection() {
   const [learnOpen, setLearnOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmClearQueue, setConfirmClearQueue] = useState(false);
 
   // App Insights form
   const [connectionString, setConnectionString] = useState('');
@@ -80,35 +82,42 @@ export function TelemetrySettingsSection() {
   const [headers, setHeaders] = useState<Array<OtlpHeaderInput & { stored?: string }>>([]);
   const [sampleRate, setSampleRate] = useState('1');
 
-  const applyStatus = useCallback((s: TelemetryStatus) => {
-    setStatus(s);
+  /** Status updates never overwrite fields the user is still editing. */
+  const applyStatus = useCallback((s: TelemetryStatus) => setStatus(s), []);
+  const syncOtlpForm = useCallback((s: TelemetryStatus) => {
     setEndpoint(s.otlp?.endpoint ?? '');
     setHeaders((s.otlp?.headers ?? []).map((h) => ({ name: h.name, stored: h.last4 })));
-    setSampleRate(String(s.sampleRate ?? 1));
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     api()?.getStatus?.().then((s) => {
-      if (!cancelled && s) applyStatus(s);
+      if (cancelled || !s) return;
+      setStatus(s);
+      syncOtlpForm(s);
+      setSampleRate(String(s.sampleRate ?? 1));
     }).catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [applyStatus]);
+  }, [syncOtlpForm]);
 
   const handleResult = useCallback(async (
     panel: TelemetryDestinationKind | 'general',
     target: TelemetryDestinationKind,
     run: (ack: TelemetryAcknowledgements) => Promise<TelemetryEnableResult>,
     ack: TelemetryAcknowledgements = {},
+    onSuccess?: (status: TelemetryStatus) => void,
   ): Promise<boolean> => {
     setError(null);
     const result = await run(ack);
     if (result.status) applyStatus(result.status);
-    if (result.ok) return true;
+    if (result.ok) {
+      onSuccess?.(result.status);
+      return true;
+    }
     if ('needs' in result) {
-      setConfirm({ needs: result.needs, host: result.host, target, retry: run });
+      setConfirm({ needs: result.needs, host: result.host, target, retry: run, onSuccess });
       return false;
     }
     setError({ panel, message: 'message' in result ? result.message : 'Something went wrong.' });
@@ -128,19 +137,18 @@ export function TelemetrySettingsSection() {
     if (confirm.needs.includes('destination') || confirm.needs.includes('switch_destination')) ack.host = confirm.host;
     const pending = confirm;
     setConfirm(null);
-    await handleResult(pending.target, pending.target, pending.retry, ack);
+    await handleResult(pending.target, pending.target, pending.retry, ack, pending.onSuccess);
   };
 
-  const saveCs = async () => {
-    const ok = await handleResult('azure', 'azure', (ack) => api().saveAzure(connectionString, ack));
-    if (ok) {
-      setConnectionString('');
-      setReplacingCs(false);
-    }
-  };
+  // onSuccess also runs after a confirmed retry (e.g. weak storage), so the
+  // typed secret never lingers in the input.
+  const saveCs = () => handleResult('azure', 'azure', (ack) => api().saveAzure(connectionString, ack), {}, () => {
+    setConnectionString('');
+    setReplacingCs(false);
+  });
 
   const saveOtlp = () => handleResult('otlp', 'otlp', (ack) =>
-    api().saveOtlp({ endpoint, headers: headers.map(({ name, value }) => ({ name, value: value || undefined })) }, ack));
+    api().saveOtlp({ endpoint, headers: headers.map(({ name, value }) => ({ name, value: value || undefined })) }, ack), {}, syncOtlpForm);
 
   const runTest = async (panel: TelemetryDestinationKind) => {
     setTest({ panel, report: 'sending' });
@@ -316,7 +324,7 @@ export function TelemetrySettingsSection() {
         <div className="flex items-center gap-3 flex-wrap">
           <button type="button" className={buttonClass} disabled={!endpoint.trim()} onClick={() => void saveOtlp()}>Save</button>
           {status.otlp.configured && (
-            <button type="button" className={buttonClass} onClick={() => void handleResult('otlp', 'otlp', () => api().clearOtlp())}>Clear</button>
+            <button type="button" className={buttonClass} onClick={() => void handleResult('otlp', 'otlp', () => api().clearOtlp(), {}, syncOtlpForm)}>Clear</button>
           )}
           <button type="button" className={buttonClass} disabled={!otlpOn || !status.running} onClick={() => void runTest('otlp')}>Send test event</button>
           {testLine('otlp')}
@@ -340,7 +348,13 @@ export function TelemetrySettingsSection() {
               value={sampleRate}
               onChange={(e) => setSampleRate(e.target.value)}
             />
-            <button type="button" className={buttonClass} onClick={() => void handleResult('general', status.destination, () => api().setAdvanced({ sampleRate: Number(sampleRate) }))}>Apply</button>
+            <button
+              type="button"
+              className={buttonClass}
+              onClick={() => void handleResult('general', status.destination, () => api().setAdvanced({ sampleRate: Number(sampleRate) }), {}, (s) => setSampleRate(String(s.sampleRate)))}
+            >
+              Apply
+            </button>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-ctp-text w-44">OTLP metric temporality</span>
@@ -365,7 +379,7 @@ export function TelemetrySettingsSection() {
           </div>
           <div className="text-sm text-ctp-text">
             Offline queue: {status.offlineItems} {status.offlineItems === 1 ? 'item' : 'items'}{' '}
-            <button type="button" className={linkClass} onClick={() => void handleResult('general', status.destination, () => api().clearOffline())}>Clear</button>
+            <button type="button" className={linkClass} onClick={() => setConfirmClearQueue(true)}>Clear</button>
           </div>
           <div>
             <button type="button" className={linkClass} onClick={() => setConfirmDelete(true)}>Delete local telemetry data</button>
@@ -400,6 +414,17 @@ export function TelemetrySettingsSection() {
         onConfirm={() => {
           setConfirmReset(false);
           void handleResult('general', status.destination, () => api().resetId());
+        }}
+      />
+      <ConfirmDestructiveAction
+        open={confirmClearQueue}
+        title="Clear the offline queue?"
+        description="Telemetry that couldn't be sent yet is deleted from this computer and won't reach your destination."
+        confirmLabel="Clear"
+        onCancel={() => setConfirmClearQueue(false)}
+        onConfirm={() => {
+          setConfirmClearQueue(false);
+          void handleResult('general', status.destination, () => api().clearOffline());
         }}
       />
       <ConfirmDestructiveAction
@@ -446,6 +471,7 @@ function ConfirmDialog({ confirm, onCancel, onConfirm }: { confirm: PendingConfi
           <p>
             Telemetry will go to {loopback ? `a collector on this computer (${host})` : host} instead of{' '}
             {confirm.target === 'otlp' ? 'Application Insights' : 'your OTLP backend'}. Anything queued for the old destination is deleted.
+            {confirm.target === 'otlp' && !loopback && " Clubhouse can't see or control what this service does with it."}
           </p>
         )}
         {confirm.needs.includes('destination') && (

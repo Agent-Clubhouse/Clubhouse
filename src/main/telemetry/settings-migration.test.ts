@@ -79,3 +79,20 @@ describe('migrateLegacySecrets', () => {
     expect(await migrateLegacySecrets()).toBe(true);
   });
 });
+
+describe('migrateLegacySecretsOnReady', () => {
+  it('migrates even when telemetry and the experiment are off, and startup stays gated on consent', async () => {
+    const { migrateLegacySecretsOnReady, isTelemetryConfigured } = await import('./bootstrap');
+    const file = path.join(userData.dir, 'telemetry-settings.json');
+    await fsp.rm(path.join(userData.dir, 'telemetry-secret.bin'), { force: true });
+    await fsp.writeFile(file, JSON.stringify({ enabled: false, destination: { kind: 'otlp', endpoint: 'https://o.example', headers: { 'x-k': 'v1' } } }));
+    resetAllSettingsStoresForTests();
+
+    await migrateLegacySecretsOnReady();
+    expect(await readSecrets()).toEqual({ otlpHeaders: { 'x-k': 'v1' } });
+    expect(await fsp.readFile(file, 'utf8')).not.toContain('v1');
+
+    // enabled with a destination but no recorded consent: never starts exporting.
+    expect(isTelemetryConfigured({ ...getTelemetrySettings(), enabled: true, consentVersion: 0 })).toBe(false);
+  });
+});

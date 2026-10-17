@@ -4,6 +4,8 @@ export function Toggle({ checked, onChange, disabled, ariaLabel }: { checked: bo
       type="button"
       aria-label={ariaLabel}
       aria-pressed={ariaLabel ? checked : undefined}
+      aria-disabled={disabled || undefined}
+      disabled={disabled}
       onClick={() => !disabled && onChange(!checked)}
       className={`
         relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer

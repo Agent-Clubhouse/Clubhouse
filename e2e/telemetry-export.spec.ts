@@ -81,6 +81,9 @@ test.describe('Telemetry export', () => {
           enabled: true,
           level: 'standard',
           sampleRate: 1,
+          // Phase 1 file shape (plaintext destination) with consent recorded:
+          // exercises the Phase 2 migration on startup.
+          consentVersion: 1,
           destination: { kind: 'otlp', endpoint: `http://127.0.0.1:${mock.port}` },
         },
       },
@@ -142,6 +145,7 @@ test.describe('Telemetry export', () => {
             enabled: true,
             level: 'standard',
             sampleRate: 1,
+            consentVersion: 1,
             destination: {
               kind: 'azure',
               connectionString: `InstrumentationKey=00000000-0000-4000-8000-0000000000e2;IngestionEndpoint=https://127.0.0.1:${mock.port}/`,
@@ -164,11 +168,10 @@ test.describe('Telemetry export', () => {
       // The seeded file is the Phase 1 shape with a plaintext secret. Once
       // secure storage takes it, the plaintext is wiped from the settings file.
       const dir = launched.userDataDir!;
+      expect(fs.existsSync(path.join(dir, 'telemetry-secret.bin'))).toBe(true);
       const settingsText = await fs.promises.readFile(path.join(dir, 'telemetry-settings.json'), 'utf-8');
-      if (fs.existsSync(path.join(dir, 'telemetry-secret.bin'))) {
-        expect(settingsText).not.toContain('InstrumentationKey');
-        expect(JSON.parse(settingsText).destination).toBe('azure');
-      }
+      expect(settingsText).not.toContain('InstrumentationKey');
+      expect(JSON.parse(settingsText).destination).toBe('azure');
     } finally {
       delete process.env.CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST;
       if (prevCa === undefined) delete process.env.NODE_EXTRA_CA_CERTS;
@@ -177,6 +180,40 @@ test.describe('Telemetry export', () => {
       mock.server.close();
       fs.rmSync(caDir, { recursive: true, force: true });
       if (launched?.userDataDir) fs.rmSync(launched.userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('Phase 1 file with the flag off: plaintext secret is still migrated, nothing exported', async () => {
+    const mock = await startMockIngestion();
+    const { electronApp, window, userDataDir } = await launchApp({
+      experimental: { telemetry: false },
+      userDataFiles: {
+        'telemetry-settings.json': {
+          enabled: true,
+          level: 'standard',
+          sampleRate: 1,
+          destination: {
+            kind: 'azure',
+            connectionString: `InstrumentationKey=00000000-0000-4000-8000-0000000000e3;IngestionEndpoint=https://127.0.0.1:${mock.port}/`,
+          },
+        },
+      },
+    });
+    try {
+      await expect(window.locator('body')).toBeVisible();
+      const dir = userDataDir!;
+      // Migration runs after ready regardless of flags; wait for it.
+      await expect.poll(() => fs.existsSync(path.join(dir, 'telemetry-secret.bin')), { timeout: 15_000 }).toBe(true);
+      await expect.poll(
+        async () => (await fs.promises.readFile(path.join(dir, 'telemetry-settings.json'), 'utf-8')).includes('InstrumentationKey'),
+        { timeout: 15_000 },
+      ).toBe(false);
+      await quitAndWait(electronApp);
+      expect(mock.received).toEqual([]);
+    } finally {
+      await electronApp.close().catch(() => {});
+      mock.server.close();
+      if (userDataDir) fs.rmSync(userDataDir, { recursive: true, force: true });
     }
   });
 

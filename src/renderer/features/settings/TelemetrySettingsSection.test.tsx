@@ -148,4 +148,60 @@ describe('TelemetrySettingsSection', () => {
     await waitFor(() => expect(resetId).toHaveBeenCalled());
     expect(await screen.findByText('22222222-2222-4222-8222-222222222222')).toBeInTheDocument();
   });
+
+  it('warns that Clubhouse cannot control a non-local OTLP host when switching from App Insights', async () => {
+    const status = makeStatus({ enabled: true, consentAccepted: true, otlp: { configured: true, endpoint: 'https://otlp.example.com', host: 'otlp.example.com', headers: [] } });
+    const api = mockApi(status);
+    vi.spyOn(api, 'setEnabled').mockResolvedValueOnce({ ok: false, reason: 'needs_confirmation', needs: ['switch_destination'], host: 'otlp.example.com', status });
+    render(<TelemetrySettingsSection />);
+    fireEvent.click(await screen.findByLabelText('Send telemetry to OTLP'));
+    const dialog = await screen.findByTestId('telemetry-confirm');
+    expect(dialog).toHaveTextContent('instead of Application Insights');
+    expect(dialog).toHaveTextContent("Clubhouse can't see or control what this service does with it.");
+  });
+
+  it('clears the typed connection string after a weak-storage confirmed save', async () => {
+    const api = mockApi(makeStatus({ secureStorage: 'weak' }));
+    const saved = makeStatus({ secureStorage: 'weak', weakStorageAccepted: true, azure: { configured: true, ikeyLast4: 'abcd', host: 'h' } });
+    const saveAzure = vi.spyOn(api, 'saveAzure')
+      .mockResolvedValueOnce({ ok: false, reason: 'needs_confirmation', needs: ['weak_storage'], status: makeStatus({ secureStorage: 'weak' }) })
+      .mockResolvedValueOnce({ ok: true, status: saved });
+    render(<TelemetrySettingsSection />);
+    fireEvent.change(await screen.findByLabelText('Connection string'), { target: { value: 'InstrumentationKey=x;IngestionEndpoint=https://y' } });
+    fireEvent.click(within(screen.getByRole('region', { name: 'Azure Application Insights' })).getByText('Save'));
+    const dialog = await screen.findByTestId('telemetry-confirm');
+    expect(dialog).toHaveTextContent('no keyring');
+    fireEvent.click(within(dialog).getByText('Continue'));
+    await waitFor(() => expect(saveAzure).toHaveBeenLastCalledWith('InstrumentationKey=x;IngestionEndpoint=https://y', { weakStorage: true }));
+    expect(await screen.findByTestId('telemetry-cs-masked')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Replace'));
+    expect(screen.getByLabelText('Connection string')).toHaveValue('');
+  });
+
+  it('keeps unsaved OTLP edits when another setting changes, and marks unusable toggles disabled', async () => {
+    const status = makeStatus();
+    const api = mockApi(status);
+    vi.spyOn(api, 'setLevel').mockResolvedValue({ ok: true, status: { ...status, level: 'detailed' } });
+    render(<TelemetrySettingsSection />);
+    expect(await screen.findByLabelText('Send telemetry to OTLP')).toBeDisabled();
+    expect(screen.getByLabelText('Send telemetry to OTLP')).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.change(screen.getByLabelText('Endpoint'), { target: { value: 'https://draft.example.com' } });
+    fireEvent.click(screen.getByRole('radio', { name: /Detailed/ }));
+    expect(await screen.findByRole('radio', { name: /Detailed/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByLabelText('Endpoint')).toHaveValue('https://draft.example.com');
+  });
+
+  it('confirms before clearing the offline queue', async () => {
+    const status = makeStatus({ offlineItems: 4 });
+    const api = mockApi(status);
+    const clearOffline = vi.spyOn(api, 'clearOffline').mockResolvedValue({ ok: true, status: { ...status, offlineItems: 0 } });
+    render(<TelemetrySettingsSection />);
+    expect(await screen.findByText(/Offline queue: 4 items/)).toBeInTheDocument();
+    fireEvent.click(within(screen.getByText(/Offline queue/)).getByText('Clear'));
+    expect(clearOffline).not.toHaveBeenCalled();
+    expect(screen.getByText('Clear the offline queue?')).toBeInTheDocument();
+    // The dialog renders in a portal after the page's own Clear link.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Clear' }).at(-1)!);
+    await waitFor(() => expect(clearOffline).toHaveBeenCalled());
+  });
 });
