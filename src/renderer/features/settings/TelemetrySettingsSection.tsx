@@ -59,6 +59,9 @@ interface PendingConfirm {
 
 const api = () => window.clubhouse.telemetrySettings;
 
+/** Opened in the browser by the user; Clubhouse makes no request itself (spec §6.10). */
+export const WORKBOOK_DOCS_URL = 'https://github.com/Agent-Clubhouse/Clubhouse/blob/main/docs/telemetry/workbook/README.md';
+
 const inputClass = 'w-full rounded-md border border-surface-1 bg-surface-0 px-2.5 py-1.5 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent';
 const buttonClass = 'rounded-md border border-surface-1 bg-surface-0 px-3 py-1.5 text-sm text-ctp-text hover:border-surface-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
 const linkClass = 'text-xs text-ctp-link hover:underline cursor-pointer';
@@ -261,6 +264,14 @@ export function TelemetrySettingsSection() {
         </div>
         <div className="mt-3">
           <button type="button" className={linkClass} onClick={() => void openPreview()}>Preview data</button>
+          {status.destination === 'azure' && (
+            <>
+              <span className="text-xs text-ctp-subtext0 mx-2">·</span>
+              <button type="button" className={linkClass} onClick={() => void window.clubhouse.app.openExternalUrl(WORKBOOK_DOCS_URL)}>
+                Get the Clubhouse Workbook
+              </button>
+            </>
+          )}
         </div>
         {errorLine('general')}
       </div>

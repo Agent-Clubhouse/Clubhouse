@@ -113,6 +113,7 @@ const SAMPLES: Record<keyof typeof ATTR, { good: TelAttr; key: string }> = {
   bulletinPostResult: { good: ATTR.bulletinPostResult('evicted_topic'), key: 'clubhouse.bulletin.post.result' },
   mcpToolsCount: { good: ATTR.mcpToolsCount('10-99'), key: 'clubhouse.mcp.tools.count_bucket' },
   mcpToolsEmpty: { good: ATTR.mcpToolsEmpty(true), key: 'clubhouse.mcp.tools.empty' },
+  configFormat: { good: ATTR.configFormat('toml'), key: 'clubhouse.config.format' },
 };
 
 describe('telemetry attribute registry', () => {
@@ -163,6 +164,7 @@ describe('telemetry attribute registry', () => {
         "clubhouse.child_process.gone_reason",
         "clubhouse.child_process.type",
         "clubhouse.clubhouse_mode",
+        "clubhouse.config.format",
         "clubhouse.editor.bucket",
         "clubhouse.error.boundary",
         "clubhouse.exception.handled",

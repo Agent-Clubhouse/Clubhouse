@@ -1,4 +1,5 @@
 import * as fsp from 'fs/promises';
+import { ATTR } from '../../shared/telemetry/attributes';
 import * as path from 'path';
 import { OrchestratorProvider } from '../orchestrators/types';
 import { appLog } from './log-service';
@@ -272,6 +273,7 @@ async function restoreSnapshot(absPath: string, snapshot: FileSnapshot): Promise
   } catch (err) {
     appLog('core:config-pipeline', 'error', `Failed to restore`, {
       meta: { filePath: absPath, error: err instanceof Error ? err.message : String(err) },
+      telemetry: { event: 'clubhouse.config.restore_failed', attrs: [ATTR.configFormat(isTomlFile(absPath) ? 'toml' : 'json')] },
     });
   }
 }

@@ -821,6 +821,8 @@ The user asked for no straight port, so the bridge is **opt-in per call site**:
 4. **Interaction with the logging settings.** The bridge sits **before** the logging `enabled`/namespace/min-level filters in `log()` (`log-service.ts:115`). Turning off local logging does not silently disable telemetry, and vice versa. Each has its own switch, and the UI says so.
 5. **Initial opt-in call sites** are the warn/error sites that map to §4 error classes without an existing span: Annex heartbeat timeout, permission stuck, project-store recovery, canvas unreadable, config-pipeline restore failure. Most other appLog errors are superseded by the flow spans' `error.type` and are not bridged.
 
+**As implemented (Phase 7).** `appLog(ns, level, msg, { meta, telemetry: { event, attrs } })`. `event` must be a registered event name and `attrs` registry attributes. The bridge runs in `log()` before the local filters, through `tel.event` with the mapped severity. `debug` is dropped. `meta` and `msg` are never read by the bridge. Local JSONL lines carry `traceId`/`spanId` while a span is active. The opt-in sites are Annex heartbeat timeout (`c.annex.heartbeat_timeout`), stuck permission (`c.agent.permission.stuck`, with `c.agent.id_hash`) and config restore failure (`c.config.restore_failed`, with `c.config.format`). Project-store recovery and canvas unreadable are already exported as `c.persist.recovery` (Phase 3c), so bridging them again would double-count.
+
 ### 6.7 Lifecycle: enable, disable, flush, offline
 
 - **Startup.** `bootstrap.ts` runs synchronously at the very top of `main/index.ts`, after the userData override (`:48-55`) and before handler registration:

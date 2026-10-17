@@ -17,6 +17,8 @@ import {
   type ReplayTree,
   type SpanHandle,
   type TelemetryRuntime,
+  type EventOptions,
+  type TraceIds,
 } from './types';
 
 export const PENDING_BUFFER_CAP = 500;
@@ -104,6 +106,11 @@ function trackFlow<T>(name: SpanName, fn: (span: SpanHandle) => T): (span: SpanH
   };
 }
 
+/** The active span's trace and span ids, when telemetry is running. */
+export function currentTraceIds(): TraceIds | undefined {
+  return runtime?.activeTraceIds();
+}
+
 /** The most recently started root flow still running, if any. */
 export function currentFlow(): SpanName | null {
   return activeFlows.length > 0 ? activeFlows[activeFlows.length - 1] : null;
@@ -129,9 +136,11 @@ export const tel = {
     else if (pending) buffer((rt) => rt.count(name, value, attrs));
   },
 
-  event(name: EventName, attrs?: TelAttr[]): void {
-    if (runtime) runtime.event(name, attrs);
-    else if (pending) buffer((rt) => rt.event(name, attrs));
+  event(name: EventName, attrs?: TelAttr[], opts?: EventOptions): void {
+    // Options only when given, so plain events keep their two-argument call shape.
+    const emit = (rt: TelemetryRuntime): void => (opts ? rt.event(name, attrs, opts) : rt.event(name, attrs));
+    if (runtime) emit(runtime);
+    else if (pending) buffer(emit);
   },
 
   exception(error: unknown, opts: ExceptionOptions): void {

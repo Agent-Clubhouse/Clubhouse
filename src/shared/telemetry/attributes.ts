@@ -394,6 +394,9 @@ export const ATTR = {
   bulletinPostResult: enumAttr('clubhouse.bulletin.post.result', ['ok', 'evicted_message', 'evicted_topic', 'rejected']),
   mcpToolsCount: enumAttr('clubhouse.mcp.tools.count_bucket', COUNT_BUCKETS),
   mcpToolsEmpty: boolAttr('clubhouse.mcp.tools.empty'),
+
+  // appLog bridge (§6.6, Phase 7)
+  configFormat: enumAttr('clubhouse.config.format', ['json', 'toml']),
 } as const;
 
 /**
@@ -795,6 +798,14 @@ export const EVENTS = {
   'clubhouse.blueprint.imported': { level: 'standard' },
   /** An agent listed its MCP tools (§12 H8). Attributes: tool-count bucket, empty flag. */
   'clubhouse.mcp.tools_list': { level: 'standard' },
+  // appLog bridge (§6.6, Phase 7): opt-in log sites, exported as these events
+  // with their declared attributes only, never the message or meta.
+  /** Annex controller: a satellite stopped answering heartbeats. */
+  'clubhouse.annex.heartbeat_timeout': { level: 'errors' },
+  /** A permission request still pending past the stuck threshold. Attributes: `clubhouse.agent.id_hash`. */
+  'clubhouse.agent.permission.stuck': { level: 'errors' },
+  /** Restoring an agent's config file from its snapshot failed. Attributes: `clubhouse.config.format`. */
+  'clubhouse.config.restore_failed': { level: 'errors' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

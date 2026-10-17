@@ -1,4 +1,5 @@
 import * as http from 'http';
+import { ATTR } from '../../shared/telemetry/attributes';
 import { IPC } from '../../shared/ipc-channels';
 import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrchestrator } from './agent-registry';
 import { isHookCapable } from '../orchestrators';
@@ -382,6 +383,7 @@ function scanForStuckPermissions(): void {
           timeoutMs: p.timeoutMs,
           remainingMs,
         },
+        telemetry: { event: 'clubhouse.agent.permission.stuck', attrs: [ATTR.agentIdHash(p.agentId)] },
       });
     }
   }
