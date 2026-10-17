@@ -19,6 +19,8 @@
     "check:test-coverage-ratchet": "node scripts/check-test-coverage-ratchet.mjs",
     "codex:generate-types": "node scripts/generate-codex-app-server-types.mjs",
     "codex:check-types": "node scripts/generate-codex-app-server-types.mjs --check",
+    "framebriar:vendor": "node scripts/vendor-framebriar.mjs --from",
+    "framebriar:check": "node scripts/vendor-framebriar.mjs --check",
     "typecheck": "tsc --noEmit",
     "validate": "npm run lint && npm run typecheck && npm test && npm run make && npm run test:e2e",
     "postinstall": "node scripts/fix-node-pty.js"

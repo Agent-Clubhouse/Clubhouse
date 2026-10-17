@@ -14,6 +14,7 @@ import { PluginRegistryEntry } from '../../shared/plugin-types';
 import { getAgentColorHex } from '../../shared/name-generator';
 import { sanitizeSvg } from '../utils/sanitize-svg';
 import { showConfirmDialog } from '../plugins/PluginDialog';
+import { FeedbackButton } from '../features/feedback/FeedbackButton';
 
 function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
   position: { x: number; y: number };
@@ -711,6 +712,7 @@ export function ProjectRail() {
             Common footer: Help & Settings
             ================================================================ */}
         <div className="border-t border-surface-2 my-1 flex-shrink-0" />
+        <FeedbackButton variant="rail" expanded={expanded} />
         <button
           onClick={toggleHelp}
           title="Help"

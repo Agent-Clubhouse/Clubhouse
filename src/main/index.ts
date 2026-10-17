@@ -54,6 +54,7 @@ import { installIpcTelemetry } from './telemetry/ipc-telemetry';
 import { getAgentOrchestrator } from './services/agent-registry';
 import { NEW_CHROME_ARG } from '../shared/chrome-flag';
 import { newChromeEnabled, titleBarOptions } from './window-chrome';
+import { shutdownFeedback, startFeedbackIfEnabled } from './services/framebriar';
 
 // On macOS, Electron's readable PTY handles can occupy the default four libuv
 // workers indefinitely, starving every fs.promises operation after an agent
@@ -360,6 +361,9 @@ app.on('ready', () => {
 
   createWindow();
 
+  // Framebriar screenshot feedback (experimental): restores enrollment and resumes queued reports.
+  startFeedbackIfEnabled();
+
   // Start periodic update checks (respects user's autoUpdate setting).
   // Skipped for unpackaged builds (dev / E2E) so a mid-run "update ready"
   // banner can't overlay the UI and flake unrelated tests. Manual checks
@@ -446,5 +450,7 @@ app.on('before-quit', createBeforeQuitHandler({
   mcpBridgeServer.stop();
   restoreAll();
   stopAllWatches();
+  // Bounded; queued feedback stays on disk for the next run.
+  void shutdownFeedback();
   },
 }));

@@ -34,6 +34,7 @@ import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../
 import { AnnexDisabledView } from './AnnexDisabledView';
 import { SatelliteDisconnectedOverlay } from './SatelliteDisconnectedOverlay';
 import { useAnnexClientStore } from '../stores/annexClientStore';
+import { FeedbackSettingsView } from '../features/settings/FeedbackSettingsView';
 
 export function MainContentView() {
   const explorerTab = useUIStore((s) => s.explorerTab);
@@ -240,6 +241,7 @@ export function MainContentView() {
     if (settingsSubPage === 'mcp') return <McpSettingsView />;
     if (settingsSubPage === 'experimental') return <ExperimentalSettingsView />;
     if (settingsSubPage === 'goobers') return <GoobersSettingsView />;
+    if (settingsSubPage === 'feedback') return <FeedbackSettingsView />;
     if (settingsSubPage === 'about') return <AboutSettingsView />;
     return <ProjectSettings projectId={projectId} />;
   }

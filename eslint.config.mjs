@@ -186,6 +186,8 @@ export default tseslint.config(
       '.clubhouse/agents/**/node_modules/**',
       // Vendored output of `codex app-server generate-ts`; see scripts/generate-codex-app-server-types.mjs.
       'src/main/orchestrators/adapters/codex-protocol/generated/**',
+      // Vendored Framebriar SDK, pinned in VENDORED.json; see scripts/vendor-framebriar.mjs.
+      'src/main/vendor/framebriar/**',
     ],
   },
   {

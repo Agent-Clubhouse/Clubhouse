@@ -19,6 +19,7 @@ vi.mock('./sidebar/ChromeAgentDialogs', async () => {
 });
 
 import { ChromeSidebar } from './ChromeSidebar';
+import { feedbackStatus, setFeedback } from '../features/feedback/feedback-test-utils';
 import { useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
@@ -414,3 +415,22 @@ describe('ChromeSidebar', () => {
     });
   });
 });
+
+describe('ChromeSidebar feedback button', () => {
+  it('shows Feedback in the footer before Help and Settings when it can capture', () => {
+    setFeedback(true);
+    render(<ChromeSidebar />);
+    expect(screen.getByTestId('nav-feedback').nextElementSibling).toBe(screen.getByTestId('nav-help'));
+  });
+
+  it('hides it with the switch off or without capture', () => {
+    setFeedback(false);
+    const { unmount } = render(<ChromeSidebar />);
+    expect(screen.queryByTestId('nav-feedback')).toBeNull();
+    unmount();
+    setFeedback(true, feedbackStatus({ canCapture: false }));
+    render(<ChromeSidebar />);
+    expect(screen.queryByTestId('nav-feedback')).toBeNull();
+  });
+});
+

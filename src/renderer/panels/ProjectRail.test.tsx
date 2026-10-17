@@ -10,6 +10,7 @@ import { usePluginStore } from '../plugins/plugin-store';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { ProjectRail } from './ProjectRail';
+import { feedbackStatus, setFeedback } from '../features/feedback/feedback-test-utils';
 import { showConfirmDialog } from '../plugins/PluginDialog';
 import * as nameGenerator from '../../shared/name-generator';
 import type { Project } from '../../shared/types';
@@ -951,3 +952,32 @@ describe('ProjectRail exitSettingsAndNavigate', () => {
     expect(useProjectStore.getState().activeProjectId).toBe('p1');
   });
 });
+
+describe('ProjectRail feedback button', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(_cb: () => void) {}
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+    resetStores();
+  });
+
+  it('shows Feedback in the footer next to Help and Settings when it can capture', () => {
+    setFeedback(true);
+    render(<ProjectRail />);
+    const feedback = screen.getByTestId('nav-feedback');
+    expect(feedback.nextElementSibling).toBe(screen.getByTestId('nav-help'));
+  });
+
+  it('hides it with the switch off or when feedback cannot be captured', () => {
+    setFeedback(false);
+    const { unmount } = render(<ProjectRail />);
+    expect(screen.queryByTestId('nav-feedback')).toBeNull();
+    unmount();
+    setFeedback(true, feedbackStatus({ canCapture: false, connected: false }));
+    render(<ProjectRail />);
+    expect(screen.queryByTestId('nav-feedback')).toBeNull();
+  });
+});
+

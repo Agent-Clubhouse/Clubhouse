@@ -143,6 +143,8 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   'IPC.GOOBERS.DATA_INVALIDATED',
   // Chat → Terminal / driver fallback notices are broadcast main→renderer from chat-spawn.ts.
   'IPC.CHAT.RUNTIME_NOTICE',
+  // Framebriar feedback status is broadcast main→renderer from feedback-handlers.ts.
+  'IPC.FEEDBACK.STATUS_CHANGED',
 ]);
 
 /**

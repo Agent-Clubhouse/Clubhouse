@@ -10,6 +10,7 @@ import { getActiveContext } from '../plugins/plugin-loader';
 import { PluginErrorBoundary } from './PluginContentView';
 import { AgentList } from '../features/agents/AgentList';
 import { SettingsSubPage } from '../../shared/types';
+import { useFeedbackStore } from '../stores/feedbackStore';
 
 
 export interface SettingsCategory { label: string; page: SettingsSubPage }
@@ -23,6 +24,9 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
   const [showExperimental, setShowExperimental] = useState(false);
   const [showAnnex, setShowAnnex] = useState(false);
   const [showGoobers, setShowGoobers] = useState(false);
+  const showFeedback = useFeedbackStore((s) => s.enabled);
+  const initFeedback = useFeedbackStore((s) => s.init);
+  useEffect(() => { void initFeedback(); }, [initFeedback]);
   useEffect(() => {
     window.clubhouse.app.isPreviewEligible().then((isPreview) => {
       setShowExperimental(isPreview);
@@ -48,6 +52,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     ...(showGoobers ? [{ label: 'Goobers', page: 'goobers' as SettingsSubPage }] : []),
     { label: 'Updates', page: 'updates' },
     { label: 'Logging', page: 'logging' },
+    ...(showFeedback ? [{ label: 'Feedback', page: 'feedback' as SettingsSubPage }] : []),
     ...(showExperimental ? [{ label: 'Experimental', page: 'experimental' as SettingsSubPage }] : []),
     { label: "What's New", page: 'whats-new' },
   ];
