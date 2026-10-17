@@ -97,3 +97,13 @@ export function timeAgo(iso: string | null | undefined, now = Date.now()): strin
 export function agentCount(n: number): string {
   return `${n} agent${n === 1 ? '' : 's'}`;
 }
+
+/** "3 agents are running", "2 agents are running and 1 is asleep", "1 agent is asleep". */
+export function describeAgents(agents: AgentInfo[]): string {
+  const asleep = agents.filter((a) => a.status === 'sleeping').length;
+  const running = agents.length - asleep;
+  const verb = (n: number) => (n === 1 ? 'is' : 'are');
+  if (running && asleep) return `${agentCount(running)} ${verb(running)} running and ${asleep} ${verb(asleep)} asleep`;
+  if (asleep) return `${agentCount(asleep)} ${verb(asleep)} asleep`;
+  return `${agentCount(running)} ${verb(running)} running`;
+}

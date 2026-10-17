@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AgentInfo, PluginAPI, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
 import { StatusDot } from '../../../chrome/sidebar/AgentRow';
-import { useChromeStore } from '../../../chrome/chromeStore';
-import { useChromeFlagStore } from '../../../chrome/chromeFlag';
-import { useChromeDialogStore } from '../../../chrome/sidebar/ChromeAgentDialogs';
-import { Button, PopupMenu, Toggle, useProjectStore, isRemoteAgentId, type MenuItem } from './host';
+import {
+  Button, PopupMenu, Toggle, useProjectStore, isRemoteAgentId, type MenuItem,
+  useChromeStore, useChromeFlagStore, useChromeDialogStore, FOCUS_ACTIVE_TERMINAL_EVENT,
+} from './host';
 import { reviewNav } from './commands';
 import { clampIndex, filterAgents, filterNeedsAttention, filterRemoteAgents, resolveIndex } from './filters';
 import { browseAction, emptyCause, reviewDot, statusWord } from './reviewModel';
@@ -12,6 +12,7 @@ import { ReviewEmptyState } from './ReviewEmptyState';
 import { SleepingCard, type SleepingCardHandle } from './SleepingCard';
 import { Icon, Kbd, ReviewAvatar, Svg, useProjectName } from './reviewUi';
 import { wakeAgent } from './wake';
+import { reportChromeActionFailed } from '../../../chrome/telemetry';
 
 /**
  * Review (#2021): one agent at a time behind a 32px toolbar, with a hint row
@@ -23,7 +24,8 @@ import { wakeAgent } from './wake';
 let appliedLaunchSeq = 0;
 
 /** Fields and the jump list keep their keys; everything else in the view is browsing. */
-const OWN_KEYS = 'input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"], .xterm';
+const OWN_KEYS = 'input, textarea, select, [role="menu"], [role="dialog"], .xterm';
+const ownsKeys = (el: HTMLElement) => el.isContentEditable || !!el.closest?.(OWN_KEYS);
 
 type SlideDirection = 'left' | 'right' | null;
 
@@ -146,15 +148,27 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const safeIndex = clampIndex(currentIndex, agents.length);
   const agent: AgentInfo | null = agents[safeIndex] ?? null;
 
-  // Browsing vs typing to the agent. The ref is read in focus handlers, which run before a re-render.
+  // Browsing vs typing to the agent. Typing belongs to one running agent: when the agent
+  // changes (navigation, or Needs you only dropping it) or stops running, the view is
+  // browsing again in the same render, so the next agent never mounts with the keyboard.
+  // The ref is read in key and focus handlers, which run before a re-render.
   const rootRef = useRef<HTMLDivElement>(null);
-  const [typing, setTypingState] = useState(false);
+  const [typingAgentId, setTypingAgentId] = useState<string | null>(null);
+  const typing = !!agent && agent.status === 'running' && typingAgentId === agent.id;
   const typingRef = useRef(false);
-  const setTyping = useCallback((on: boolean) => { typingRef.current = on; setTypingState(on); }, []);
+  useLayoutEffect(() => { typingRef.current = typing; });
+  const setTyping = useCallback((agentId: string | null) => { typingRef.current = agentId !== null; setTypingAgentId(agentId); }, []);
   const browse = useCallback(() => {
-    setTyping(false);
+    setTyping(null);
     rootRef.current?.focus({ preventScroll: true });
   }, [setTyping]);
+  // Typing ended because the agent changed or stopped: take the keys back, unless the user is elsewhere.
+  useEffect(() => {
+    if (typing || typingAgentId === null) return;
+    setTypingAgentId(null);
+    const active = document.activeElement;
+    if (!active || active === document.body || rootRef.current?.contains(active)) rootRef.current?.focus({ preventScroll: true });
+  }, [typing, typingAgentId]);
 
   useEffect(() => { rootRef.current?.focus({ preventScroll: true }); }, []);
 
@@ -222,14 +236,23 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // Actions
   const sleepingRef = useRef<SleepingCardHandle>(null);
   const isSleeping = agent?.status === 'sleeping';
-  const canSleep = agent?.status === 'running';
+  const isRunning = agent?.status === 'running';
+  // Only durable agents sleep and wake; a quick agent's kill ends it for good.
+  const isDurable = agent?.kind === 'durable';
+  const canSleep = isRunning && isDurable;
+  const canWake = isSleeping && isDurable;
   const sleep = useCallback(() => { if (agent && canSleep) void api.agents.kill(agent.id); }, [agent, canSleep, api]);
-  const wake = useCallback(() => { if (isSleeping) sleepingRef.current?.wake(); }, [isSleeping]);
+  const wake = useCallback(() => { if (canWake) sleepingRef.current?.wake(); }, [canWake]);
   const typeToAgent = useCallback(() => {
     if (!agent) return;
     if (isSleeping) { sleepingRef.current?.focusPrompt(); return; }
-    if (agent.status === 'running') setTyping(true);
-  }, [agent, isSleeping, setTyping]);
+    if (!isRunning) return;
+    setTyping(agent.id);
+    // Hand xterm the focus once the terminal has re-rendered with focused={true}.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (typingRef.current) window.dispatchEvent(new Event(FOCUS_ACTIVE_TERMINAL_EVENT));
+    }));
+  }, [agent, isSleeping, isRunning, setTyping]);
 
   // Jump list
   const jumpButtonRef = useRef<HTMLButtonElement>(null);
@@ -268,7 +291,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       return;
     }
     if (typingRef.current) return;
-    if ((e.target as HTMLElement).closest?.(OWN_KEYS)) return;
+    if (ownsKeys(e.target as HTMLElement)) return;
     const action = browseAction(e);
     if (!action) return;
     // Space and Return on a toolbar button press it.
@@ -286,12 +309,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // The terminal focuses itself when it mounts. Unless the user clicked into it or pressed Return, keep browsing.
   const contentRef = useRef<HTMLDivElement>(null);
   const onContentPointerDown = (e: React.PointerEvent) => {
-    if (agent?.status === 'running' && (e.target as HTMLElement).closest('.xterm')) setTyping(true);
+    if (agent && isRunning && (e.target as HTMLElement).closest('.xterm')) setTyping(agent.id);
   };
   // Moving focus out of the agent (a toolbar click, the sidebar) goes back to browsing.
   const onContentBlur = (e: React.FocusEvent) => {
     const to = e.relatedTarget as Node | null;
-    if (typingRef.current && to && !contentRef.current?.contains(to)) setTyping(false);
+    if (typingRef.current && to && !contentRef.current?.contains(to)) setTyping(null);
   };
   const onContentFocus = (e: React.FocusEvent) => {
     if (typingRef.current || !(e.target as HTMLElement).closest('.xterm')) return;
@@ -332,13 +355,13 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       </span>
       <span className="ml-auto pl-3 flex items-center gap-3.5 flex-shrink-0">
         {agent && (isSleeping ? (
-          agent.kind === 'durable' && (
+          canWake && (
             <Button kind="quiet" icon={<Svg>{Icon.bolt}</Svg>} onClick={wake} data-testid="review-wake-button">Wake</Button>
           )
         ) : canSleep && (
           <Button kind="quiet" icon={<Svg>{Icon.moon}</Svg>} onClick={sleep} data-testid="review-sleep-button">Sleep</Button>
         ))}
-        {agent && (isSleeping ? agent.kind === 'durable' : canSleep) && <Sep />}
+        {(canWake || canSleep) && <Sep />}
         <FilterSwitch
           label="Needs you only"
           checked={needsYouOnly}
@@ -373,10 +396,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   ) : (
     <>
       <span className="flex items-center gap-1.5"><Hint keys={['←', '→']} text="or" /><Hint keys={['J', 'K']} text="move" /></span>
-      {isSleeping ? <><Hint keys={['W']} text="wake" /><Hint keys={['→']} text="skip" /></> : canSleep && <Hint keys={['S']} text="sleep" />}
+      {isSleeping ? <>{canWake && <Hint keys={['W']} text="wake" />}<Hint keys={['→']} text="skip" /></> : canSleep && <Hint keys={['S']} text="sleep" />}
       <Hint keys={['1', '–', '9']} text="jump" />
       <Hint keys={['G']} text="jump list" />
-      {!isSleeping && canSleep && <Hint keys={['↵']} text="type to the agent" />}
+      {isRunning && <Hint keys={['↵']} text="type to the agent" />}
       <span className="ml-auto"><Hint keys={[`${cmd}←`, `${cmd}→`]} text="work from anywhere" /></span>
     </>
   );
@@ -404,7 +427,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         onToggleSleeping={toggleSleeping}
         onToggleRemote={toggleRemote}
         onClearFilters={clearFilters}
-        onWake={(id) => void wakeAgent(id, { resume: true })}
+        onWake={(id) => { wakeAgent(id, { resume: true }).catch((err: unknown) => reportChromeActionFailed('agent_start', err)); }}
         onNewAgent={onNewAgent}
       />
     );

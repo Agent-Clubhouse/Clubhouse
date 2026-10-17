@@ -6,7 +6,8 @@ import { StatusDot } from '../../../chrome/sidebar/AgentRow';
 import { formatDuration } from '../../../chrome/sidebar/AgentHoverCard';
 import { ReviewAvatar, Svg, Icon, useProjectName } from './reviewUi';
 import { timeAgo } from './reviewModel';
-import { wakeAgent } from './wake';
+import { resumeTarget, wakeAgent } from './wake';
+import { reportChromeActionFailed } from '../../../chrome/telemetry';
 
 /**
  * The card Review shows for a sleeping agent (#2021): what its last session
@@ -20,6 +21,8 @@ export interface SleepingCardHandle {
 }
 
 interface LastSession {
+  /** Whether Wake with Resume continues this session; false when a wake would start fresh. */
+  resumable: boolean;
   title: string | null;
   endedAt: string | null;
   summary: SessionSummary | null;
@@ -31,9 +34,15 @@ const TRANSCRIPT_HEAD = 20;
 const TRANSCRIPT_TAIL = 40;
 
 async function loadLastSession(api: PluginAPI, agentId: string): Promise<LastSession | null> {
-  const sessions = await api.agents.listSessions(agentId).catch((): Awaited<ReturnType<PluginAPI["agents"]["listSessions"]>> => []);
+  const [sessions, target] = await Promise.all([
+    api.agents.listSessions(agentId).catch((): Awaited<ReturnType<PluginAPI['agents']['listSessions']>> => []),
+    resumeTarget(agentId),
+  ]);
   if (!sessions.length) return null;
-  const last = [...sessions].sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt))[0];
+  // Show the session a resume would continue, so the card and Wake agree; else the most recent.
+  const latest = [...sessions].sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt))[0];
+  const last = (target.sessionId && sessions.find((x) => x.sessionId === target.sessionId)) || latest;
+  const resumable = target.resumable && (target.sessionId === null || last.sessionId === target.sessionId);
   const [summary, head] = await Promise.all([
     api.agents.getSessionSummary(agentId, last.sessionId).catch((): null => null),
     api.agents.readSessionTranscript(agentId, last.sessionId, 0, TRANSCRIPT_HEAD).catch((): null => null),
@@ -46,7 +55,7 @@ async function loadLastSession(api: PluginAPI, agentId: string): Promise<LastSes
   }
   const firstPrompt = events.find((e) => e.type === 'user_message' && e.text?.trim())?.text?.trim() ?? null;
   const replies = events.filter((e) => e.type === 'assistant_message' && e.text?.trim()).slice(-2).map((e) => e.text!.trim());
-  return { title: last.friendlyName ?? null, endedAt: summary?.lastActiveAt ?? last.lastActiveAt, summary, firstPrompt, replies };
+  return { resumable, title: last.friendlyName ?? null, endedAt: summary?.lastActiveAt ?? last.lastActiveAt, summary, firstPrompt, replies };
 }
 
 export const SleepingCard = React.forwardRef<SleepingCardHandle, {
@@ -60,6 +69,7 @@ export const SleepingCard = React.forwardRef<SleepingCardHandle, {
   const [prompt, setPrompt] = useState('');
   const [resume, setResume] = useState(true);
   const [waking, setWaking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const projectName = useProjectName(agent.projectId);
 
@@ -68,15 +78,22 @@ export const SleepingCard = React.forwardRef<SleepingCardHandle, {
     setLast(undefined);
     setPrompt('');
     setWaking(false);
+    setError(null);
     loadLastSession(api, agent.id).then((s) => { if (live) setLast(s); }).catch(() => { if (live) setLast(null); });
     return () => { live = false; };
   }, [api, agent.id]);
 
+  const canWake = agent.kind === 'durable';
   const wake = useCallback(() => {
-    if (waking) return;
+    if (waking || !canWake) return;
     setWaking(true);
-    wakeAgent(agent.id, { resume: resume && !!last, prompt }).catch(() => setWaking(false));
-  }, [agent.id, resume, last, prompt, waking]);
+    setError(null);
+    wakeAgent(agent.id, { resume: resume && !!last?.resumable, prompt }).catch((err: unknown) => {
+      reportChromeActionFailed('agent_start', err);
+      setWaking(false);
+      setError(err instanceof Error ? err.message : 'Couldn\'t wake this agent.');
+    });
+  }, [agent.id, canWake, resume, last, prompt, waking]);
 
   useImperativeHandle(ref, () => ({ wake, focusPrompt: () => promptRef.current?.focus() }), [wake]);
 
@@ -147,7 +164,7 @@ export const SleepingCard = React.forwardRef<SleepingCardHandle, {
             className="w-full resize-none bg-transparent px-3.5 py-3 text-[13px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none"
           />
           <div className="flex items-center gap-2 pl-3 pr-2 py-1.5 border-t border-surface-0 text-xs text-ctp-subtext1">
-            {last && (
+            {last?.resumable && (
               <label className="flex items-center gap-2 cursor-pointer">
                 <Toggle checked={resume} onChange={setResume} aria-label="Resume last session" />
                 Resume last session
@@ -155,10 +172,11 @@ export const SleepingCard = React.forwardRef<SleepingCardHandle, {
             )}
             <span className="ml-auto flex items-center gap-2">
               <Button kind="ghost" onClick={onSkip} data-testid="review-skip">Skip</Button>
-              <Button kind="primary" icon={<Svg>{Icon.bolt}</Svg>} onClick={wake} disabled={waking} data-testid="review-wake">{waking ? 'Waking' : 'Wake'}</Button>
+              <Button kind="primary" icon={<Svg>{Icon.bolt}</Svg>} onClick={wake} disabled={waking || !canWake} title={canWake ? undefined : 'Only durable agents can be woken'} data-testid="review-wake">{waking ? 'Waking' : 'Wake'}</Button>
             </span>
           </div>
         </div>
+        {error && <div role="alert" className="text-xs text-ctp-error" data-testid="review-wake-error">{error}</div>}
       </div>
     </div>
   );

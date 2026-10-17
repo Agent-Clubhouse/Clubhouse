@@ -6,7 +6,10 @@ import type { AgentInfo, PluginAgentDetailedStatus, PluginAPI } from '../../../.
 import { useChromeStore } from '../../../chrome/chromeStore';
 import { useChromeFlagStore } from '../../../chrome/chromeFlag';
 import { MainPanel } from './ReviewPanel';
-import { browseAction, emptyCause, timeAgo } from './reviewModel';
+import { browseAction, describeAgents, emptyCause, timeAgo } from './reviewModel';
+import { FOCUS_ACTIVE_TERMINAL_EVENT } from './host';
+import { useAgentStore } from '../../../stores/agentStore';
+import { useProjectStore } from '../../../stores/projectStore';
 
 function makeAgent(overrides: Partial<AgentInfo> = {}): AgentInfo {
   return { id: 'agent-1', name: 'alpha', kind: 'durable', status: 'running', color: '#ff0000', projectId: 'proj-1', ...overrides };
@@ -61,6 +64,14 @@ describe('browseAction', () => {
   });
 });
 
+describe('describeAgents', () => {
+  it('counts running and sleeping agents separately', () => {
+    expect(describeAgents([makeAgent({ id: 'a' }), makeAgent({ id: 'b' })])).toBe('2 agents are running');
+    expect(describeAgents([makeAgent({ id: 'a' }), makeAgent({ id: 'b', status: 'sleeping' })])).toBe('1 agent is running and 1 is asleep');
+    expect(describeAgents([makeAgent({ id: 'a', status: 'sleeping' })])).toBe('1 agent is asleep');
+  });
+});
+
 describe('timeAgo', () => {
   it('formats minutes, hours and days', () => {
     const now = Date.parse('2026-10-17T12:00:00Z');
@@ -80,6 +91,7 @@ describe('MainPanel', () => {
     settings?: Record<string, boolean>;
     detailed?: Record<string, PluginAgentDetailedStatus>;
     mode?: 'app' | 'project';
+    sessions?: Array<{ sessionId: string; startedAt: string; lastActiveAt: string; friendlyName?: string }>;
   } = {}) {
     let list = initial;
     const listeners = new Set<() => void>();
@@ -97,7 +109,7 @@ describe('MainPanel', () => {
         kill,
         getDetailedStatus: (id: string) => opts.detailed?.[id] ?? null,
         onAnyChange: (cb: () => void) => { listeners.add(cb); return { dispose: () => listeners.delete(cb) }; },
-        listSessions: async () => [],
+        listSessions: async () => opts.sessions ?? [],
         readSessionTranscript: async () => null,
         getSessionSummary: async () => null,
       },
@@ -163,6 +175,54 @@ describe('MainPanel', () => {
     act(() => reviewNav.next?.());
     expect(panel().getAttribute('data-mode')).toBe('browsing');
     expect(showing('a2')).toBe(true);
+  });
+
+  it('Return asks the terminal to take focus', async () => {
+    const { api } = makeApi(three());
+    const onFocus = vi.fn();
+    window.addEventListener(FOCUS_ACTIVE_TERMINAL_EVENT, onFocus);
+    render(<MainPanel api={api} />);
+    fireEvent.keyDown(panel(), { key: 'Enter' });
+    await waitFor(() => expect(onFocus).toHaveBeenCalled());
+    window.removeEventListener(FOCUS_ACTIVE_TERMINAL_EVENT, onFocus);
+  });
+
+  it('stops typing when the agent drops out of the list, so the next agent never gets the keys', () => {
+    const agents = [makeAgent({ id: 'a1', name: 'one' }), makeAgent({ id: 'a2', name: 'two' })];
+    const detailed: Record<string, PluginAgentDetailedStatus> = {
+      a1: { state: 'needs_permission', message: 'Bash' },
+      a2: { state: 'needs_permission', message: 'Bash' },
+    };
+    const { api, setList } = makeApi(agents, { settings: { 'needs-attention-only': true }, detailed });
+    render(<MainPanel api={api} />);
+    fireEvent.keyDown(panel(), { key: 'Enter' });
+    expect(panel().getAttribute('data-mode')).toBe('typing');
+    // Approving a1's prompt drops it from Needs you only.
+    delete detailed.a1;
+    act(() => setList([...agents]));
+    expect(showing('a2')).toBe(true);
+    expect(screen.getByTestId('terminal-a2').getAttribute('data-focused')).toBe('false');
+    expect(panel().getAttribute('data-mode')).toBe('browsing');
+    fireEvent.keyDown(panel(), { key: 'j' });
+    expect(panel().getAttribute('data-mode')).toBe('browsing');
+  });
+
+  it('stops typing when the agent goes to sleep', () => {
+    const agents = [makeAgent({ id: 'a1', name: 'one' }), makeAgent({ id: 'a2', name: 'two' })];
+    const { api, setList } = makeApi(agents);
+    render(<MainPanel api={api} />);
+    fireEvent.keyDown(panel(), { key: 'Enter' });
+    act(() => setList([{ ...agents[0], status: 'sleeping' }, agents[1]]));
+    expect(screen.getByTestId('review-sleeping-card')).toBeTruthy();
+    expect(panel().getAttribute('data-mode')).toBe('browsing');
+  });
+
+  it('S does nothing on a quick agent', () => {
+    const { api, kill } = makeApi([makeAgent({ id: 'q1', kind: 'quick' })]);
+    render(<MainPanel api={api} />);
+    expect(screen.queryByTestId('review-sleep-button')).toBeNull();
+    fireEvent.keyDown(panel(), { key: 's' });
+    expect(kill).not.toHaveBeenCalled();
   });
 
   it('G opens the jump list on the shared menu, and a number picks from it', () => {
@@ -256,5 +316,38 @@ describe('MainPanel', () => {
     expect(useChromeStore.getState().appViewAgentId).toBe('a2');
     unmount();
     expect(useChromeStore.getState().appViewAgentId).toBeNull();
+  });
+
+  describe('sleeping card wake', () => {
+    const spawnDurableAgent = vi.fn(async () => {});
+    beforeEach(() => {
+      spawnDurableAgent.mockClear();
+      useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'one', path: '/projects/one' }] as never });
+      useAgentStore.setState({ agents: { s1: { id: 's1', projectId: 'proj-1', name: 'dozy', kind: 'durable', status: 'sleeping' } } as never, spawnDurableAgent } as never);
+      Object.assign(window.clubhouse.agent, { listDurable: vi.fn(async () => [{ id: 's1', name: 'dozy', lastSessionId: 'older' }]) });
+    });
+
+    it('shows the session a resume continues, and Wake resumes it with the prompt', async () => {
+      const sessions = [
+        { sessionId: 'newer', startedAt: '', lastActiveAt: '2026-10-17T10:00:00Z', friendlyName: 'Unresumable scratch run' },
+        { sessionId: 'older', startedAt: '', lastActiveAt: '2026-10-16T10:00:00Z', friendlyName: 'Fix the flaky test' },
+      ];
+      const { api } = makeApi([makeAgent({ id: 's1', name: 'dozy', status: 'sleeping' })], { sessions });
+      render(<MainPanel api={api} />);
+      await waitFor(() => expect(screen.getByTestId('review-last-session').textContent).toContain('Fix the flaky test'));
+      expect(screen.getByRole('switch', { name: 'Resume last session' })).toBeTruthy();
+      fireEvent.change(screen.getByTestId('review-wake-prompt'), { target: { value: 'run the tests' } });
+      fireEvent.click(screen.getByTestId('review-wake'));
+      await waitFor(() => expect(spawnDurableAgent).toHaveBeenCalledWith('proj-1', '/projects/one', expect.objectContaining({ id: 's1' }), true, 'run the tests'));
+    });
+
+    it('shows why a wake failed and lets you try again', async () => {
+      useAgentStore.setState({ agents: {} } as never);
+      const { api } = makeApi([makeAgent({ id: 's1', name: 'dozy', status: 'sleeping' })]);
+      render(<MainPanel api={api} />);
+      fireEvent.click(screen.getByTestId('review-wake'));
+      await waitFor(() => expect(screen.getByTestId('review-wake-error').textContent).toBe('This agent no longer exists.'));
+      expect(screen.getByTestId('review-wake').textContent).toBe('Wake');
+    });
   });
 });

@@ -3,7 +3,7 @@ import type { AgentInfo, PluginAgentDetailedStatus } from '../../../../shared/pl
 import { StatusDot } from '../../../chrome/sidebar/AgentRow';
 import { Button, Toggle, useAnnexClientStore, parseNamespacedId, isRemoteAgentId } from './host';
 import { ReviewAvatar, Svg, Icon } from './reviewUi';
-import { agentCount, reviewDot, statusWord, type EmptyCause } from './reviewModel';
+import { agentCount, describeAgents, reviewDot, statusWord, type EmptyCause } from './reviewModel';
 
 /**
  * Review's empty states (#2021). Each names why nothing is shown and offers
@@ -91,7 +91,7 @@ export function ReviewEmptyState({ cause, all, detailed, onShowSleeping, onShowE
     const n = cause.others.length;
     body = (
       <>
-        <Head title="Nobody needs you" sub={`${n === 1 ? '1 agent is' : `${n} agents are`} running. One shows up here when it asks for permission or hits an error.`} />
+        <Head title="Nobody needs you" sub={`${describeAgents(cause.others)}. One shows up here when it asks for permission or hits an error.`} />
         <List>
           {cause.others.slice(0, LIST_LIMIT).map((a) => {
             const d = detailed.get(a.id);

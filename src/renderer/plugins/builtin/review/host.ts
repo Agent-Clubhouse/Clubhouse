@@ -1,9 +1,11 @@
 /**
- * The host internals Review uses, in one place so the builtin import boundary
- * (eslint.config.mjs) allowlists a single file. Review reaches past the plugin
- * API for the 18px chrome avatar, the shared Toggle, Button and PopupMenu, and
- * waking with a resumed session and a prompt, which `api.agents.resume`
- * doesn't offer.
+ * The host stores, components and events Review uses, in one place so the
+ * builtin import boundary (eslint.config.mjs) allowlists a single file. Review
+ * reaches past the plugin API for the 18px chrome avatar, the shared Toggle,
+ * Button and PopupMenu, the new chrome's selection and New agent dialog, focusing
+ * the terminal on Return, and waking with a resumed session and a prompt, which
+ * `api.agents.resume` doesn't offer. Pure chrome helpers (StatusDot, DOT_LABEL,
+ * agentDot, formatDuration) are imported directly where they're used.
  */
 export { Toggle } from '../../../components/Toggle';
 export { Button } from '../../../components/Button';
@@ -13,3 +15,7 @@ export { useAgentStore } from '../../../stores/agentStore';
 export { useProjectStore } from '../../../stores/projectStore';
 export { useAnnexClientStore } from '../../../stores/annexClientStore';
 export { useRemoteProjectStore, isRemoteAgentId, parseNamespacedId } from '../../../stores/remoteProjectStore';
+export { useChromeStore } from '../../../chrome/chromeStore';
+export { useChromeFlagStore } from '../../../chrome/chromeFlag';
+export { useChromeDialogStore } from '../../../chrome/sidebar/ChromeAgentDialogs';
+export { FOCUS_ACTIVE_TERMINAL_EVENT } from '../../../features/agents/AgentTerminal';
