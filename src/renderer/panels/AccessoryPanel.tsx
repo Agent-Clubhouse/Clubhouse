@@ -24,7 +24,6 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
   const [showExperimental, setShowExperimental] = useState(false);
   const [showAnnex, setShowAnnex] = useState(false);
   const [showGoobers, setShowGoobers] = useState(false);
-  const showFeedback = useFeedbackStore((s) => s.enabled);
   const initFeedback = useFeedbackStore((s) => s.init);
   useEffect(() => { void initFeedback(); }, [initFeedback]);
   useEffect(() => {
@@ -52,7 +51,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
     ...(showGoobers ? [{ label: 'Goobers', page: 'goobers' as SettingsSubPage }] : []),
     { label: 'Updates', page: 'updates' },
     { label: 'Logging', page: 'logging' },
-    ...(showFeedback ? [{ label: 'Feedback', page: 'feedback' as SettingsSubPage }] : []),
+    { label: 'Feedback', page: 'feedback' },
     ...(showExperimental ? [{ label: 'Experimental', page: 'experimental' as SettingsSubPage }] : []),
     { label: "What's New", page: 'whats-new' },
   ];

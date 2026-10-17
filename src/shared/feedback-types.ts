@@ -6,11 +6,9 @@ export type FeedbackAccessState =
 
 export type FeedbackNotice = 'expired' | 'access-required' | 'connection-uncertain' | 'migration-required';
 
-/** Experimental flag id (Settings › Experimental › Feedback). */
-export const FEEDBACK_EXPERIMENTAL_FLAG = 'feedback';
 
 export interface FeedbackStatus {
-  /** The SDK is running (the Feedback switch is on and it has started). */
+  /** The SDK is running (it starts with the app). */
   started: boolean;
   state: FeedbackAccessState;
   connected: boolean;

@@ -53,13 +53,13 @@ describe('feedback IPC', () => {
     ].sort());
   });
 
-  it('reports a stopped service and refuses actions with the switch off', async () => {
+  it('reports a stopped service and refuses actions once quit begins', async () => {
     svc.enabled = false;
     expect(await call(IPC.FEEDBACK.GET_STATUS)).toMatchObject({ started: false, canCapture: false, state: 'disconnected', storage: { available: true }, outbox: { pending: 0 } });
     expect(svc.service.start).not.toHaveBeenCalled();
-    await expect(call(IPC.FEEDBACK.CONNECT, 'good')).rejects.toThrow(/turned off/);
-    await expect(call(IPC.FEEDBACK.CAPTURE)).rejects.toThrow(/turned off/);
-    await expect(call(IPC.FEEDBACK.SEND, { notes: 'x', includeScreenshot: false })).rejects.toThrow(/turned off/);
+    await expect(call(IPC.FEEDBACK.CONNECT, 'good')).rejects.toThrow(/quitting/);
+    await expect(call(IPC.FEEDBACK.CAPTURE)).rejects.toThrow(/quitting/);
+    await expect(call(IPC.FEEDBACK.SEND, { notes: 'x', includeScreenshot: false })).rejects.toThrow(/quitting/);
     await call(IPC.FEEDBACK.CANCEL, 'd1');
     expect(svc.service.cancel).not.toHaveBeenCalled();
   });

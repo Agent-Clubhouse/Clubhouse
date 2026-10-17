@@ -1,10 +1,9 @@
 /**
- * Framebriar screenshot feedback, renderer side: the Feedback switch and the live status
- * main pushes (access, outbox, receipts). Holds no secrets: main never sends them.
+ * Framebriar screenshot feedback, renderer side: the live status main pushes (access,
+ * outbox, receipts). Holds no secrets: main never sends them.
  */
 import { create } from 'zustand';
 import type { FeedbackNotice, FeedbackStatus } from '../../shared/feedback-types';
-import { FEEDBACK_EXPERIMENTAL_FLAG } from '../../shared/feedback-types';
 import { useToastStore } from './toastStore';
 
 export const FEEDBACK_NOTICE_TEXT: Record<FeedbackNotice, string> = {
@@ -15,13 +14,11 @@ export const FEEDBACK_NOTICE_TEXT: Record<FeedbackNotice, string> = {
 };
 
 interface FeedbackState {
-  /** The Feedback switch is on (and the build is preview-eligible, like other experimental features). */
-  enabled: boolean;
   status: FeedbackStatus | null;
   loaded: boolean;
-  /** Load the switch and status once and follow main's changes. Safe to call repeatedly. */
+  /** Load the status once and follow main's changes. Safe to call repeatedly. */
   init: () => Promise<void>;
-  /** Re-read the switch and status (after the Experimental toggle). */
+  /** Re-read the status. */
   refresh: () => Promise<void>;
   setStatus: (status: FeedbackStatus) => void;
 }
@@ -31,16 +28,7 @@ let unsubscribe: (() => void) | null = null;
 /** Notices already toasted this run, so a persistent notice toasts once. */
 const toastedNotices = new Set<string>();
 
-async function loadEnabled(): Promise<boolean> {
-  const [settings, eligible] = await Promise.all([
-    window.clubhouse.app.getExperimentalSettings(),
-    window.clubhouse.app.isPreviewEligible(),
-  ]);
-  return eligible === true && settings?.[FEEDBACK_EXPERIMENTAL_FLAG] === true;
-}
-
 export const useFeedbackStore = create<FeedbackState>((set, get) => ({
-  enabled: false,
   status: null,
   loaded: false,
 
@@ -48,8 +36,8 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
     if (!initPromise) {
       initPromise = get().refresh();
       unsubscribe ??= window.clubhouse.feedback.onStatusChanged((status) => {
-        // null: Feedback stopped in main (switch off); re-read the switch.
-        if (status === null) void get().refresh();
+        // null: Feedback stopped in main (app quitting).
+        if (status === null) set({ status: null });
         else get().setStatus(status);
       });
     }
@@ -58,10 +46,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
 
   refresh: async () => {
     try {
-      const enabled = await loadEnabled();
-      set({ enabled });
-      if (enabled) get().setStatus(await window.clubhouse.feedback.getStatus());
-      else set({ status: null });
+      get().setStatus(await window.clubhouse.feedback.getStatus());
     } catch {
       // telemetry-exempt: feedback is optional; without status the button and page stay hidden.
       set({ status: null });
@@ -71,7 +56,6 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   },
 
   setStatus: (status) => {
-    if (!get().enabled) return;
     set({ status });
     // Persistent notices are shown outside Settings too: a toast once per run, and the
     // Feedback button keeps a marker until the notice clears.
@@ -89,5 +73,5 @@ export function resetFeedbackStore(): void {
   unsubscribe?.();
   unsubscribe = null;
   toastedNotices.clear();
-  useFeedbackStore.setState({ enabled: false, status: null, loaded: false });
+  useFeedbackStore.setState({ status: null, loaded: false });
 }

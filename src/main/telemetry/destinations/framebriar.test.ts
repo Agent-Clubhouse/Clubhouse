@@ -78,7 +78,7 @@ describe('Framebriar export gate', () => {
     const auth = framebriarAuthorizer(FB, () => now);
     expect(await auth.authorize('traces')).toBe(true);
     expect(auth.headers('traces')).toEqual({ authorization: 'Bearer tok' });
-    now = null; // Disconnected, or Feedback switched off.
+    now = null; // Disconnected, or Feedback stopped.
     expect(await auth.authorize('traces')).toBe(false);
     now = live({ sessionId: 's-other' }); // A new Feedback session: this exporter is stale.
     expect(await auth.authorize('logs')).toBe(false);

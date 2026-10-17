@@ -12,6 +12,6 @@ export function feedbackStatus(over: Partial<FeedbackStatus> = {}): FeedbackStat
 }
 
 /** Put the feedback store in a known state without it reloading from the (mocked) bridge. */
-export function setFeedback(enabled: boolean, status: FeedbackStatus | null = enabled ? feedbackStatus() : null): void {
-  useFeedbackStore.setState({ enabled, status, loaded: true, init: async () => {}, refresh: async () => {} });
+export function setFeedback(available: boolean, status: FeedbackStatus | null = available ? feedbackStatus() : null): void {
+  useFeedbackStore.setState({ status, loaded: true, init: async () => {}, refresh: async () => {} });
 }

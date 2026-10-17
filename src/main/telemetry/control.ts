@@ -506,7 +506,7 @@ let syncing: Promise<void> = Promise.resolve();
  * Re-check Framebriar when Feedback's connection changes: turn it on or off to
  * match framebriarWanted, and restart the exporter when it should run but isn't
  * (Feedback connected after telemetry started) or is bound to a Feedback session
- * that has ended (Feedback switched off and on). Whenever Feedback isn't
+ * that has ended (Feedback restarted). Whenever Feedback isn't
  * connected the destination leaves the runtime, whatever its flags say.
  */
 export function syncFramebriarDestination(): Promise<void> {
