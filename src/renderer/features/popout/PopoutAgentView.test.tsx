@@ -23,6 +23,12 @@ vi.mock('../agents/AgentAvatar', () => ({
   ),
 }));
 
+vi.mock('../agents/HeadlessAgentView', () => ({
+  HeadlessAgentView: ({ agent, stacked }: { agent: { id: string }; stacked?: boolean }) => (
+    <div data-testid="headless-agent-view" data-agent-id={agent.id} data-stacked={stacked} />
+  ),
+}));
+
 const mockAgents: Record<string, any> = {};
 
 vi.mock('../../stores/agentStore', () => ({
@@ -181,5 +187,13 @@ describe('PopoutAgentView', () => {
     // Verify no direct subscriptions to PTY/hook events
     expect(window.clubhouse.pty.onExit).not.toHaveBeenCalled();
     expect(window.clubhouse.agent.onHookEvent).not.toHaveBeenCalled();
+  });
+
+  it('shows the run monitor, stacked, for a headless quick agent instead of a terminal (#2019)', () => {
+    mockAgents['q-1'] = { id: 'q-1', name: 'quick-one', status: 'running', kind: 'quick', headless: true, projectId: 'proj-1', color: 'gray' };
+    render(<PopoutAgentView agentId="q-1" projectId="proj-1" />);
+    expect(screen.getByTestId('headless-agent-view')).toHaveAttribute('data-stacked', 'true');
+    expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('popout-action-bar')).not.toBeInTheDocument();
   });
 });

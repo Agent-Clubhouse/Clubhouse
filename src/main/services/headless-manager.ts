@@ -17,6 +17,7 @@ import { HeadlessOutputKind } from '../orchestrators/types';
 import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
 import { validateSpawnCwd } from './pty-manager';
+import { readTranscriptChunk, type TranscriptChunk } from './transcript-cursor';
 import { agentKillRequested, agentKillStage, agentOutput, agentRunStarted, agentSwept } from '../telemetry/agent-telemetry';
 
 /** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
@@ -730,6 +731,16 @@ export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo
   } catch {
     return null;
   }
+}
+
+/**
+ * Read transcript events from a byte cursor (see transcript-cursor.ts). The
+ * run monitor pages with this: it never re-reads the file, never consumes a
+ * line that's still being written, and steps over malformed lines.
+ */
+export async function readTranscriptFrom(agentId: string, cursor: number): Promise<TranscriptChunk | null> {
+  const transcriptPath = sessions.get(agentId)?.transcriptPath ?? path.join(getLogsDir(), `${agentId}.jsonl`);
+  return readTranscriptChunk(transcriptPath, cursor);
 }
 
 /**

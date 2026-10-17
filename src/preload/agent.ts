@@ -102,6 +102,10 @@ export const agent = {
   readTranscriptPage: (agentId: string, offset: number, limit: number): Promise<{ events: unknown[]; totalEvents: number } | null> =>
     ipcRenderer.invoke(IPC.AGENT.READ_TRANSCRIPT_PAGE, agentId, offset, limit),
 
+  /** Transcript events from a byte cursor: complete lines only, malformed lines skipped (run monitor). */
+  readTranscriptFrom: (agentId: string, cursor: number): Promise<{ events: unknown[]; cursor: number; skipped: number; more: boolean; reset: boolean } | null> =>
+    ipcRenderer.invoke(IPC.AGENT.READ_TRANSCRIPT_FROM, agentId, cursor),
+
   isHeadlessAgent: (agentId: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.AGENT.IS_HEADLESS_AGENT, agentId),
 

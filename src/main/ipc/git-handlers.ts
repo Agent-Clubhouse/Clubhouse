@@ -54,8 +54,8 @@ export function registerGitHandlers(): void {
     return gitService.pull(dirPath);
   }));
 
-  ipcMain.handle(IPC.GIT.DIFF, withValidatedArgs([stringArg(), stringArg(), booleanArg()], (_event, dirPath: string, filePath: string, staged: boolean) => {
-    return gitService.getFileDiff(dirPath, filePath, staged);
+  ipcMain.handle(IPC.GIT.DIFF, withValidatedArgs([stringArg(), stringArg(), booleanArg(), stringArg({ optional: true })], (_event, dirPath: string, filePath: string, staged: boolean, base?: string) => {
+    return gitService.getFileDiff(dirPath, filePath, staged, base);
   }));
 
   ipcMain.handle(IPC.GIT.CREATE_BRANCH, withValidatedArgs([stringArg(), stringArg()], (_event, dirPath: string, branchName: string) => {

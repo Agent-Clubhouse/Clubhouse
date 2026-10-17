@@ -9,6 +9,7 @@ import { SleepingAgent } from '../features/agents/SleepingAgent';
 import { HeadlessAgentView } from '../features/agents/HeadlessAgentView';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
 import { QuickAgentGhost } from '../features/agents/QuickAgentGhost';
+import { HeadlessRunFinished } from '../features/agents/states/HeadlessRunFinished';
 import { PoppedOutPlaceholder } from '../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../hooks/usePopouts';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
@@ -128,6 +129,24 @@ export function MainContentView() {
     }
 
     if (!activeAgent) {
+      if (selectedCompleted?.headless) {
+        // A headless run keeps its monitor layout after it ends (#2019)
+        return (
+          <HeadlessRunFinished
+            key={selectedCompleted.id}
+            completed={selectedCompleted}
+            onDismiss={() => selectCompleted(null)}
+            onDelete={() => {
+              if (activeProjectId) dismissCompleted(activeProjectId, selectedCompleted.id);
+              selectCompleted(null);
+            }}
+            onRetried={() => {
+              dismissCompleted(selectedCompleted.projectId, selectedCompleted.id);
+              selectCompleted(null);
+            }}
+          />
+        );
+      }
       if (selectedCompleted) {
         return (
           <QuickAgentGhost
@@ -157,6 +176,23 @@ export function MainContentView() {
       );
     }
 
+    // Headless quick runs get the run monitor from spawn to exit, including a
+    // failed launch and the moment between exit and the finished record (#2019).
+    if (activeAgent.headless && activeAgent.kind === 'quick') {
+      return (
+        <div className="relative h-full">
+          <HeadlessAgentView key={activeAgent.id} agent={activeAgent} />
+          {isSatelliteDisconnected && activeSatellite && (
+            <SatelliteDisconnectedOverlay
+              satelliteId={activeSatellite.fingerprint}
+              satelliteAlias={activeSatellite.alias}
+              satelliteState={activeSatellite.state}
+            />
+          )}
+        </div>
+      );
+    }
+
     if (activeAgent.status === 'sleeping' || activeAgent.status === 'error') {
       return (
         <div className="relative h-full">
@@ -172,7 +208,7 @@ export function MainContentView() {
       );
     }
 
-    // Headless running agents get the animated clubhouse view instead of a terminal
+    // Other headless agents (durable) get the run monitor instead of a terminal
     if (activeAgent.headless) {
       return (
         <div className="relative h-full">

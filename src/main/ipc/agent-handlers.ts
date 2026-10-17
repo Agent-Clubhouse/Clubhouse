@@ -383,6 +383,13 @@ export function registerAgentHandlers(): void {
     },
   ));
 
+  ipcMain.handle(IPC.AGENT.READ_TRANSCRIPT_FROM, withValidatedArgs(
+    [stringArg(), numberArg({ integer: true, min: 0 })],
+    async (_event, agentId, cursor) => {
+      return headlessManager.readTranscriptFrom(agentId, cursor);
+    },
+  ));
+
   ipcMain.handle(IPC.AGENT.IS_HEADLESS_AGENT, withValidatedArgs(
     [stringArg()],
     async (_event, agentId) => {

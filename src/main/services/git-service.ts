@@ -270,25 +270,34 @@ export async function push(dirPath: string): Promise<GitOpResult> {
   });
 }
 
+/**
+ * A file's `original` (at `base`, default HEAD) and `modified` (index when
+ * `staged`, else the working tree) contents. A run monitor passes the sha the
+ * run started from, so commits the run made show in the diff.
+ */
 export async function getFileDiff(
   dirPath: string,
   filePath: string,
-  staged: boolean
+  staged: boolean,
+  base?: string,
 ): Promise<{ original: string; modified: string }> {
-  return gitOp('diff', async () => ({ value: await readFileDiff(dirPath, filePath, staged) }));
+  return gitOp('diff', async () => ({ value: await readFileDiff(dirPath, filePath, staged, base) }));
 }
 
 async function readFileDiff(
   dirPath: string,
   filePath: string,
-  staged: boolean
+  staged: boolean,
+  base?: string,
 ): Promise<{ original: string; modified: string }> {
   validateFilePath(filePath);
+  const ref = base || 'HEAD';
+  if (ref.startsWith('-') || ref.includes(':') || ref.includes('\0')) throw new Error(`Invalid base: ${ref}`);
 
-  // Get the HEAD version (empty for new/untracked files)
+  // The version at the base (empty for files added since)
   let original = '';
   try {
-    original = await gitExec(['show', `HEAD:${filePath}`], dirPath, undefined, 'diff');
+    original = await gitExec(['show', `${ref}:${filePath}`], dirPath, undefined, 'diff');
   } catch {
     // File doesn't exist in HEAD (new/untracked) — leave empty
   }
@@ -576,10 +585,19 @@ export function countUntrackedLines(content: Uint8Array): { added: number; binar
   return { added: lines, binary: false };
 }
 
-async function untrackedEntry(root: string, relPath: string, budget: { reads: number }): Promise<GitNumstatEntry> {
+/**
+ * Line counts for one untracked file. Never follows a link out of the
+ * worktree: a symlink counts as 0 lines without being read, and a path whose
+ * real location is outside `rootReal` (through a linked directory) is skipped.
+ */
+async function untrackedEntry(root: string, rootReal: string, relPath: string, budget: { reads: number }): Promise<GitNumstatEntry> {
+  const none = { path: relPath, added: 0, removed: 0, binary: false };
   try {
     const full = path.join(root, relPath);
-    const stat = await fs.promises.stat(full);
+    const stat = await fs.promises.lstat(full);
+    if (stat.isSymbolicLink()) return none;
+    const real = await fs.promises.realpath(full);
+    if (real !== rootReal && !real.startsWith(rootReal + path.sep)) return none;
     if (!stat.isFile() || stat.size > UNTRACKED_MAX_BYTES) {
       return { path: relPath, added: 0, removed: 0, binary: stat.isFile() };
     }
@@ -622,8 +640,9 @@ export async function getDiffNumstat(dirPath: string, base?: string): Promise<Gi
     const seen = new Set(entries.map((e) => e.path));
     const untracked = untrackedRaw.split('\0').filter((p) => p && !seen.has(p)).slice(0, UNTRACKED_MAX_FILES);
     const budget = { reads: UNTRACKED_MAX_READS };
+    const rootReal = untracked.length ? await fs.promises.realpath(root) : root;
     // Sequential so the read budget is honoured; cached files cost one stat each.
-    for (const p of untracked) entries.push(await untrackedEntry(root, p, budget));
+    for (const p of untracked) entries.push(await untrackedEntry(root, rootReal, p, budget));
     return entries;
   } catch {
     // telemetry-exempt: polled diff stats; not a repo or a bad base means no stats.

@@ -3,6 +3,7 @@ import { AgentView } from '../agents/chat/AgentView';
 import { useAgentRuntimeInfo, useChatFlag } from '../agents/chat/AgentRuntimePane';
 import { TerminalPaneToolbar } from '../agents/pane/AgentPaneToolbar';
 import { SleepingAgent } from '../agents/SleepingAgent';
+import { HeadlessAgentView } from '../agents/HeadlessAgentView';
 import { useAgentStore } from '../../stores/agentStore';
 
 interface PopoutAgentViewProps {
@@ -25,6 +26,16 @@ export function PopoutAgentView({ agentId }: PopoutAgentViewProps) {
     return (
       <div className="flex items-center justify-center h-full text-ctp-subtext0 text-sm">
         Agent not found
+      </div>
+    );
+  }
+
+  // A headless run has no terminal: show its monitor, stacked (#2019). Stop and
+  // Show in main window are in the popout's title bar.
+  if (agent.kind === 'quick' && agent.headless) {
+    return (
+      <div className="w-full h-full" data-testid="popout-agent-view">
+        <HeadlessAgentView agent={agent} stacked />
       </div>
     );
   }

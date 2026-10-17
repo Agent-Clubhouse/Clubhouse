@@ -134,8 +134,14 @@ describe('git-handlers', () => {
   it('DIFF delegates to gitService.getFileDiff', async () => {
     const handler = handlers.get(IPC.GIT.DIFF)!;
     const result = await handler({}, '/project', 'file.ts', true);
-    expect(gitService.getFileDiff).toHaveBeenCalledWith('/project', 'file.ts', true);
+    expect(gitService.getFileDiff).toHaveBeenCalledWith('/project', 'file.ts', true, undefined);
     expect(result).toBe('diff --git a/file');
+  });
+
+  it('DIFF passes an optional base through', async () => {
+    const handler = handlers.get(IPC.GIT.DIFF)!;
+    await handler({}, '/project', 'file.ts', false, 'abc1234');
+    expect(gitService.getFileDiff).toHaveBeenCalledWith('/project', 'file.ts', false, 'abc1234');
   });
 
   it('CREATE_BRANCH delegates to gitService.createBranch', async () => {
