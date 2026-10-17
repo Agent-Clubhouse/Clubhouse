@@ -311,7 +311,7 @@ export const ATTR = {
   // lists report `sidebar_list`, plugin ids are never values.
   /** Where in the new chrome the user is, beside the coarse `clubhouse.view`. */
   uiSurface: enumAttr('clubhouse.ui.surface', [
-    'sidebar_agents', 'sidebar_list', 'sidebar_settings', 'sidebar_help', 'sidebar_agent_settings', 'start_page', 'first_run', 'host_menu', 'more_menu', 'hover_card', 'row_menu', 'new_agent',
+    'sidebar_agents', 'sidebar_list', 'sidebar_settings', 'sidebar_help', 'sidebar_agent_settings', 'start_page', 'first_run', 'host_menu', 'more_menu', 'hover_card', 'row_menu', 'new_agent', 'satellite_start',
   ]),
   /** Feature-usage events from the new chrome. */
   uiFeature: enumAttr('clubhouse.ui.feature', [
@@ -323,7 +323,7 @@ export const ATTR = {
     'more_menu_open', 'more_menu_pick',
     'row_menu_open', 'hover_card_action',
     'project_menu_open', 'agent_reorder', 'idle_toggle', 'needs_you_review',
-    'agent_settings_page', 'agent_shell_toggle', 'sidebar_filter', 'filter_search_everything', 'new_agent_create', 'new_agent_start',
+    'agent_settings_page', 'agent_shell_toggle', 'sidebar_filter', 'filter_search_everything', 'new_agent_create', 'new_agent_start', 'first_run_install',
   ]),
   /** The UI action whose failure was caught and reported (`clubhouse.ui.action_failed`). */
   uiAction: enumAttr('clubhouse.ui.action', [

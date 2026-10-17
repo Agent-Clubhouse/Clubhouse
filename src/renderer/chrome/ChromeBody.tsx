@@ -7,7 +7,6 @@ import { MainContentView } from '../panels/MainContentView';
 import { PluginContentView } from '../panels/PluginContentView';
 import { AnnexDisabledView } from '../panels/AnnexDisabledView';
 import { HelpView } from '../features/help/HelpView';
-import { SatelliteDashboard } from '../features/annex/SatelliteDashboard';
 import { ChromeSidebar } from './ChromeSidebar';
 import { useChromeStore, syncProjectScopeWithActiveAgent, syncProjectActivityWithAgents } from './chromeStore';
 import { useSidebarMode, type SidebarMode } from './listTabs';
@@ -15,6 +14,7 @@ import { useChromeScope } from './scope';
 import { hostOf } from './hosts';
 import { ProjectStartPage } from './pages/ProjectStartPage';
 import { FirstRun } from './pages/FirstRun';
+import { SatelliteStartPage } from './pages/SatelliteStartPage';
 import { NewAgentPage } from './pages/NewAgentPage';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
@@ -128,7 +128,8 @@ export function ChromeBody() {
   // Not before the project list loads, or first run would flash on every launch.
   const firstRun = projectsLoaded && projects.length === 0 && !activeHostId;
   const inPane = !isSettings && !isHelp && !appPluginId;
-  const page = showNewAgent ? 'new_agent' : !inPane ? null : activeProjectId ? (startPage ? 'start_page' : null) : (firstRun ? 'first_run' : null);
+  const page = showNewAgent ? 'new_agent' : !inPane ? null : activeProjectId ? (startPage ? 'start_page' : null)
+    : activeHostId ? 'satellite_start' : (firstRun ? 'first_run' : null);
 
   // clubhouse.view and clubhouse.ui.surface for slow-frame and render-error
   // signals (spec §8). The start page and first run are panes of their own.
@@ -148,7 +149,7 @@ export function ChromeBody() {
     if (isHelp) return <HelpView />;
     if (appPluginId) return <AppPluginContent pluginId={appPluginId} />;
     if (!activeProjectId) {
-      if (activeHostId) return <SatelliteDashboard activeHostId={activeHostId} />;
+      if (activeHostId) return <SatelliteStartPage activeHostId={activeHostId} />;
       // With projects, the fallback above selects one on the next render.
       return firstRun ? <FirstRun /> : null;
     }

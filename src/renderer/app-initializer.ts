@@ -25,6 +25,7 @@ import { initAnnexListener } from './stores/annexStore';
 import { initPluginUpdateListener } from './stores/pluginUpdateStore';
 import { useSessionSettingsStore } from './stores/sessionSettingsStore';
 import { useOnboardingStore } from './stores/onboardingStore';
+import { isNewChromeEnabled } from './chrome/chromeFlag';
 import { initializePluginSystem } from './plugins/plugin-loader';
 import { rendererLog } from './plugins/renderer-logger';
 import { useToastStore } from './stores/toastStore';
@@ -101,8 +102,9 @@ export async function initApp(): Promise<() => void> {
   }, 1000);
   cleanups.push(() => clearTimeout(whatsNewTimer));
 
-  // 6. Show onboarding on first launch (delayed)
-  if (!useOnboardingStore.getState().completed) {
+  // 6. Show onboarding on first launch (delayed). The new shell has no
+  // onboarding modal: its first-run page is the welcome (#2024).
+  if (!useOnboardingStore.getState().completed && !isNewChromeEnabled()) {
     const onboardingTimer = setTimeout(() => {
       useOnboardingStore.getState().startOnboarding();
     }, 500);
