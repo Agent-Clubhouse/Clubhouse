@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
+import { Button } from '../../components/Button';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useKeyboardShortcutsStore, formatBinding } from '../../stores/keyboardShortcutsStore';
@@ -150,14 +151,9 @@ export function FirstRun() {
               }`}
             >
               <span>Drop a folder here, or</span>
-              <button
-                type="button"
-                data-testid="first-run-choose"
-                onClick={choose}
-                className="h-7 px-3 rounded-md bg-ctp-accent text-white text-xs font-medium cursor-pointer hover:opacity-90 focus-ring"
-              >
+              <Button kind="primary" data-testid="first-run-choose" onClick={choose} className="focus-ring">
                 Choose a folder…
-              </button>
+              </Button>
             </div>
           </Step>
           <Step

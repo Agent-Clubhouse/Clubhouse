@@ -3,6 +3,7 @@ import type { Agent } from '../../../shared/types';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
 import { useUIStore } from '../../stores/uiStore';
+import { Button } from '../../components/Button';
 import { ProjectSquare } from '../sidebar/ProjectGroup';
 import { agentDot } from '../sidebar/treeModel';
 import { openStartPage } from '../startPage';
@@ -92,20 +93,10 @@ export function SatelliteStartPage({ activeHostId }: { activeHostId: string }) {
                 : `${name} isn't reachable right now. Its projects show up here when it reconnects.`}
             </p>
             <div className="mt-3 flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => { switchHost(null); reportChromeFeature('host_switch'); }}
-                className="h-7 px-3 rounded-md border border-surface-1 text-xs font-medium text-ctp-text hover:bg-surface-0 cursor-pointer focus-ring"
-              >
+              <Button kind="ghost" onClick={() => { switchHost(null); reportChromeFeature('host_switch'); }} className="focus-ring">
                 Switch to Local
-              </button>
-              <button
-                type="button"
-                onClick={openAnnexSettings}
-                className="h-7 px-3 rounded-md text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer focus-ring"
-              >
-                Annex settings
-              </button>
+              </Button>
+              <Button kind="quiet" onClick={openAnnexSettings} className="focus-ring">Annex settings</Button>
             </div>
           </>
         ) : (
