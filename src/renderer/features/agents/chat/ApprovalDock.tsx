@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import type { ChatQuestion, ChatQuestionAnswers, PermissionOption } from '../../../../shared/chat';
+import type { ChatCapabilities, ChatQuestion, ChatQuestionAnswers, PermissionOption, PermissionResponseExtras } from '../../../../shared/chat';
 import type { PendingPermission, PendingQuestion, PlanDocumentItem } from '../../../stores/chatStore';
 import { PlanIcon, QuestionIcon, ShieldIcon } from './icons';
 
@@ -33,6 +33,16 @@ function digitIndex(key: string, count: number): number {
   return Number.isInteger(n) && n >= 1 && n <= count ? n - 1 : -1;
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * The approval's edited tool input: the request's input with `plan` replaced,
+ * the shape plan-approval tools take (Claude's ExitPlanMode `{ plan }`).
+ */
+export function editedPlanInput(rawInput: unknown, plan: string): Record<string, unknown> {
+  return { ...(isRecord(rawInput) ? rawInput : {}), plan };
+}
+
 function Key({ children }: { children: string }) {
   return <span className="ml-auto text-[11px] leading-none opacity-70 border border-current rounded px-1 py-0.5">{children}</span>;
 }
@@ -42,24 +52,41 @@ interface PermissionCardProps {
   /** Set when the request approves a plan document. */
   plan?: PlanDocumentItem;
   queueSize: number;
+  agentName: string;
+  /** What the driver can carry with an answer; absent means option ids only. */
+  extras?: ChatCapabilities['permissionExtras'];
   /** Resolves false when the answer didn't go through; the card unlocks so the user can retry. */
-  onRespond: (requestId: string, optionId: string) => Promise<boolean>;
+  onRespond: (requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<boolean>;
 }
 
-export function PermissionCard({ request, plan, queueSize, onRespond }: PermissionCardProps) {
+export function PermissionCard({ request, plan, queueSize, agentName, extras, onRespond }: PermissionCardProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [answered, setAnswered] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [planText, setPlanText] = useState(plan?.markdown ?? '');
   const { primary, reject } = useMemo(() => defaultOptions(request.options), [request.options]);
+  const canFeedback = !!extras?.denyMessage && !!reject;
+  const canEditPlan = !!extras?.updatedInput && !!plan;
+  const planEdited = canEditPlan && planText.trim() !== '' && planText !== plan!.markdown;
 
   useEffect(() => {
     setAnswered(false);
     ref.current?.focus();
   }, [request.requestId]);
 
+  /** Extras for this option: the feedback with a rejection, the edited plan with an approval. */
+  const extrasFor = (opt: PermissionOption): PermissionResponseExtras | undefined => {
+    if (canFeedback && REJECT_KINDS.has(opt.kind) && feedback.trim()) return { message: feedback.trim() };
+    if (planEdited && ALLOW_KINDS.has(opt.kind)) return { updatedInput: editedPlanInput(request.rawInput, planText) };
+    return undefined;
+  };
+
   const choose = (opt: PermissionOption | undefined) => {
     if (!opt || answered) return;
     setAnswered(true);
-    void onRespond(request.requestId, opt.optionId).then((ok) => {
+    const sent = extrasFor(opt);
+    void (sent ? onRespond(request.requestId, opt.optionId, sent) : onRespond(request.requestId, opt.optionId)).then((ok) => {
       if (!ok) {
         setAnswered(false);
         ref.current?.focus();
@@ -117,6 +144,46 @@ export function PermissionCard({ request, plan, queueSize, onRespond }: Permissi
           );
         })}
       </div>
+      {canEditPlan && (
+        <div className="pl-5 flex flex-col gap-1.5">
+          {editing ? (
+            <textarea
+              value={planText}
+              disabled={answered}
+              onChange={(e) => setPlanText(e.target.value)}
+              rows={Math.min(14, Math.max(4, planText.split('\n').length + 1))}
+              aria-label="Edit the plan"
+              className="w-full resize-y rounded-md border border-surface-1 bg-ctp-crust px-2.5 py-2 font-mono text-[12px] text-ctp-text focus:outline-none focus:border-ctp-accent/60"
+            />
+          ) : null}
+          <div className="flex items-center gap-2 text-[12px] text-ctp-overlay1">
+            <button
+              type="button"
+              disabled={answered}
+              onClick={() => setEditing((v) => !v)}
+              className="h-6 px-2 rounded-md bg-surface-0 text-ctp-subtext1 disabled:opacity-50"
+            >
+              {editing ? 'Hide plan editor' : 'Edit plan'}
+            </button>
+            {planEdited && <span>Approving sends your edited plan.</span>}
+          </div>
+        </div>
+      )}
+      {canFeedback && (
+        <input
+          type="text"
+          value={feedback}
+          disabled={answered}
+          onChange={(e) => setFeedback(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && feedback.trim()) { e.preventDefault(); choose(reject); }
+          }}
+          placeholder={plan ? `${reject!.label}, and tell ${agentName} what to change…` : `${reject!.label}, and tell ${agentName} what to do instead…`}
+          aria-label={`${reject!.label} with a message`}
+          className="ml-5 h-[30px] rounded-md border border-dashed border-surface-1 bg-transparent px-2.5 text-[12.5px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-solid focus:border-ctp-accent/60 disabled:opacity-50"
+          data-testid="chat-permission-feedback"
+        />
+      )}
     </div>
   );
 }

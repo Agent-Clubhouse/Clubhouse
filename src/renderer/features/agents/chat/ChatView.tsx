@@ -93,6 +93,8 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
     dock = (
       <PermissionCard
         key={permission.requestId}
+        agentName={agent.name}
+        extras={state.capabilities?.permissionExtras}
         request={permission}
         plan={plan}
         queueSize={state.pendingPermissions.length}

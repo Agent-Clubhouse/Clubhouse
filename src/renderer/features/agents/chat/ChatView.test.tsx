@@ -485,3 +485,77 @@ describe('ChatView review fixes', () => {
     expect(screen.getByTestId('chat-live-region')).toBeEmptyDOMElement();
   });
 });
+
+describe('ChatView permission extras', () => {
+  it('sends a denial message when the driver carries one', () => {
+    const { actions } = renderFixture('claude', 'approval');
+    const input = screen.getByTestId('chat-permission-feedback');
+    expect(input).toHaveAttribute('placeholder', 'Deny, and tell gallant-swift what to do instead…');
+    fireEvent.change(input, { target: { value: 'Use the existing validator instead' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-1', 'deny', { message: 'Use the existing validator instead' });
+  });
+
+  it('attaches the message when the reject option is clicked, and not to an approval', () => {
+    const a1 = makeActions();
+    const r1 = renderFixture('claude', 'approval', a1);
+    fireEvent.change(screen.getByTestId('chat-permission-feedback'), { target: { value: 'No network' } });
+    fireEvent.click(screen.getByText('Deny'));
+    expect(a1.respondPermission).toHaveBeenCalledWith('perm-1', 'deny', { message: 'No network' });
+    r1.unmount();
+
+    const a2 = makeActions();
+    renderFixture('claude', 'approval', a2);
+    fireEvent.change(screen.getByTestId('chat-permission-feedback'), { target: { value: 'ignored' } });
+    fireEvent.click(screen.getByText('Allow once'));
+    expect(a2.respondPermission).toHaveBeenCalledWith('perm-1', 'allow');
+  });
+
+  it.each(['codex', 'copilot'] as const)('offers no message field when the driver does not report it (%s)', (p) => {
+    renderFixture(p, 'approval');
+    expect(screen.queryByTestId('chat-permission-feedback')).not.toBeInTheDocument();
+  });
+
+  it('approves an edited plan with updatedInput', () => {
+    const { actions } = renderFixture('claude', 'plan');
+    fireEvent.click(screen.getByText('Edit plan'));
+    const editor = screen.getByLabelText('Edit the plan');
+    fireEvent.change(editor, { target: { value: '1. Only the row layout.' } });
+    expect(screen.getByText('Approving sends your edited plan.')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Approve, auto-accept edits'));
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'acceptEdits', { updatedInput: { plan: '1. Only the row layout.' } });
+  });
+
+  it('approves an unedited plan without extras', () => {
+    const { actions } = renderFixture('claude', 'plan');
+    fireEvent.click(screen.getByText('Edit plan'));
+    fireEvent.click(screen.getByText('Approve, ask before each edit'));
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'default');
+  });
+
+  it('sends plan feedback with Keep planning', () => {
+    const { actions } = renderFixture('claude', 'plan');
+    const input = screen.getByTestId('chat-permission-feedback');
+    expect(input).toHaveAttribute('placeholder', 'Keep planning, and tell gallant-swift what to change…');
+    fireEvent.change(input, { target: { value: 'Also cover the canvas view' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'keep-planning', { message: 'Also cover the canvas view' });
+  });
+
+  it('hides plan editing when the driver carries no updatedInput', () => {
+    const state = fold(chatFixture('claude', 'plan'));
+    renderState({ ...state, capabilities: { ...state.capabilities!, permissionExtras: { denyMessage: true, updatedInput: false } } });
+    expect(screen.queryByText('Edit plan')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-permission-feedback')).toBeInTheDocument();
+  });
+
+  it('keeps number keys for options while the message field is not focused', () => {
+    const { actions } = renderFixture('claude', 'approval');
+    const input = screen.getByTestId('chat-permission-feedback');
+    fireEvent.change(input, { target: { value: '3 reasons' } });
+    fireEvent.keyDown(input, { key: '3' });
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: '1' });
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-1', 'allow');
+  });
+});

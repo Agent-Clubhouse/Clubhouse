@@ -81,6 +81,7 @@ export const PROFILES: Record<FixtureProvider, ProviderFixtureProfile> = {
       liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
       login: 'terminal',
       systemPrompt: true,
+      permissionExtras: { denyMessage: true, updatedInput: true },
     },
     installTitle: 'Run npm install zod@4 --save',
     installDescription: 'Adds zod to package.json and package-lock.json.',

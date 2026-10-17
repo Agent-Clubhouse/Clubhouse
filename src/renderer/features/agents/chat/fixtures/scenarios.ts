@@ -124,6 +124,7 @@ function plan(p: FixtureProvider, agentId?: string): ChatEvent[] {
       title: 'Claude finished planning. How should it continue?',
       toolCallId: 'exit-plan',
       toolName: 'ExitPlanMode',
+      rawInput: { plan: markdown },
       options: [
         { optionId: 'acceptEdits', kind: 'allow_once', label: 'Approve, auto-accept edits' },
         { optionId: 'default', kind: 'allow_once', label: 'Approve, ask before each edit' },
