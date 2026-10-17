@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
+import type { SettingsSubPage } from '../../../shared/types';
 import { useStore } from 'zustand';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -10,11 +11,13 @@ import { useAnnexStore } from '../../stores/annexStore';
 import { getProjectCanvasStore, getKnownProjectIds, useAppCanvasStore } from '../../plugins/builtin/canvas/main';
 import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
-import { CommandItem, SETTINGS_PAGES } from './command-registry';
+import { CATEGORY, type CommandItem } from './command-registry';
+import { useSettingsCategories } from '../../panels/AccessoryPanel';
 import { openNewQuickAgent } from '../../chrome/startPage';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { useChromeStore } from '../../chrome/chromeStore';
-import { groupProjectAgents } from '../../chrome/sidebar/treeModel';
+import { agentDot, groupProjectAgents } from '../../chrome/sidebar/treeModel';
+import { DOT_LABEL } from '../agents/agent-status';
 import { switchHost } from '../../chrome/hosts';
 import { reportChromeFeature } from '../../chrome/telemetry';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
@@ -43,6 +46,9 @@ export function useCommandSource(): CommandItem[] {
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const removeProject = useProjectStore((s) => s.removeProject);
   const agents = useAgentStore((s) => s.agents);
+  const detailed = useAgentStore((s) => s.agentDetailedStatus);
+  const projectIcons = useProjectStore((s) => s.projectIcons);
+  const openProjectSettings = useUIStore((s) => s.openProjectSettings);
   const setActiveAgent = useAgentStore((s) => s.setActiveAgent);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
@@ -60,6 +66,14 @@ export function useCommandSource(): CommandItem[] {
   const satellites = useAnnexClientStore((s) => s.satellites);
   const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
   const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
+  const remoteDetailed = useRemoteProjectStore((s) => s.remoteAgentDetailedStatus);
+  // useSettingsCategories builds new arrays on every render; key on the content
+  // so the settings rows rebuild only when the page list changes.
+  const settingsCategoriesKey = JSON.stringify(useSettingsCategories());
+  const settingsCategories = useMemo(
+    () => JSON.parse(settingsCategoriesKey) as ReturnType<typeof useSettingsCategories>,
+    [settingsCategoriesKey],
+  );
   const titleTabs = useChromeStore((s) => s.titleTabs);
   const annexStatus = useAnnexStore((s) => s.status);
   const currentCanvasStore = getProjectCanvasStore(activeProjectId);
@@ -181,14 +195,15 @@ export function useCommandSource(): CommandItem[] {
     return projects.map((p, i) => ({
       id: `project:${p.id}`,
       label: p.displayName || p.name,
-      category: 'Projects',
-      typeIndicator: '/',
+      category: CATEGORY.projects,
       keywords: [p.name, p.path],
-      detail: p.path,
+      detail: p.id === activeProjectId ? 'Active project' : p.path,
+      project: p,
+      projectIconUrl: projectIcons[p.id],
       shortcut: getShortcut(shortcuts, `switch-project-${i + 1}`),
       execute: () => setActiveProject(p.id),
     }));
-  }, [projects, shortcuts, setActiveProject]);
+  }, [projects, projectIcons, activeProjectId, shortcuts, setActiveProject]);
 
   const agentItems = useMemo((): CommandItem[] => {
     const items: CommandItem[] = [];
@@ -206,13 +221,16 @@ export function useCommandSource(): CommandItem[] {
       const project = projects.find((p) => p.id === agent.projectId);
       const index = numbered.indexOf(agentId);
       const agentShortcut = index >= 0 && index < 9 ? getShortcut(shortcuts, `switch-agent-${index + 1}`) : undefined;
+      const projectName = project?.displayName || project?.name;
+      const dot = agentDot(agent, detailed[agentId]);
       items.push({
         id: `agent:${agentId}`,
         label: agent.name,
-        category: 'Agents',
-        typeIndicator: '@',
-        keywords: [project?.displayName || project?.name || ''],
-        detail: project?.displayName || project?.name,
+        category: CATEGORY.agents,
+        keywords: [projectName || ''],
+        detail: projectName ? `${projectName} · ${DOT_LABEL[dot]}` : DOT_LABEL[dot],
+        agent,
+        dot,
         shortcut: agentShortcut,
         execute: () => {
           setActiveProject(agent.projectId);
@@ -222,7 +240,7 @@ export function useCommandSource(): CommandItem[] {
       });
     }
     return items;
-  }, [agents, projects, activeProjectId, shortcuts, setActiveProject, setExplorerTab, setActiveAgent]);
+  }, [agents, detailed, projects, activeProjectId, shortcuts, setActiveProject, setExplorerTab, setActiveAgent]);
 
   const spaceItems = useMemo((): CommandItem[] => {
     const items: CommandItem[] = [];
@@ -232,14 +250,13 @@ export function useCommandSource(): CommandItem[] {
     if (canvasPluginEnabled) {
       if (activeProjectId) {
         for (const canvas of projectCanvases) {
-          const context = canvas.id === projectActiveCanvasId ? 'Active' : activeProjectLabel;
           items.push({
             id: `canvas:project:${canvas.id}`,
             label: canvas.name,
-            category: 'Spaces',
-            typeIndicator: '#',
+            category: CATEGORY.canvases,
+            icon: 'canvas',
             keywords: ['canvas', 'workspace', 'space', activeProjectLabel || ''],
-            detail: context ? `Canvas · ${context}` : 'Canvas',
+            detail: canvas.id === projectActiveCanvasId ? `${activeProjectLabel ?? 'Project'}, open` : activeProjectLabel,
             execute: () => {
               setActiveProject(activeProjectId);
               setExplorerTab(CANVAS_TAB, activeProjectId);
@@ -252,10 +269,10 @@ export function useCommandSource(): CommandItem[] {
         items.push({
           id: `canvas:project:${entry.projectId}:${entry.canvasId}`,
           label: entry.canvasName,
-          category: 'Spaces',
-          typeIndicator: '#',
+          category: CATEGORY.canvases,
+          icon: 'canvas',
           keywords: ['canvas', 'workspace', 'space', entry.projectName],
-          detail: `Canvas · ${entry.projectName}`,
+          detail: entry.projectName,
           execute: async () => {
             await window.clubhouse.plugin.storageWrite({
               pluginId: 'canvas',
@@ -270,14 +287,13 @@ export function useCommandSource(): CommandItem[] {
         });
       }
       for (const canvas of appCanvases) {
-        const context = canvas.id === appActiveCanvasId && !activeProjectId ? 'Active' : 'Home';
         items.push({
           id: `canvas:app:${canvas.id}`,
           label: canvas.name,
-          category: 'Spaces',
-          typeIndicator: '#',
-          keywords: ['canvas', 'workspace', 'space', 'home', 'app'],
-          detail: `Canvas · ${context}`,
+          category: CATEGORY.canvases,
+          icon: 'canvas',
+          keywords: ['canvas', 'workspace', 'space', 'app'],
+          detail: canvas.id === appActiveCanvasId && !activeProjectId ? 'App canvas, open' : 'App canvas',
           execute: () => {
             setActiveProject(null);
             setExplorerTab(CANVAS_TAB);
@@ -314,7 +330,7 @@ export function useCommandSource(): CommandItem[] {
           items.push({
             id: `nav:plugin:${pluginId}`,
             label: `Go to ${tabLabel}`,
-            category: 'Navigation',
+            category: CATEGORY.commands,
             keywords: [pluginId],
             shortcut: tabShortcut(`plugin:${pluginId}`),
             execute: () => setExplorerTab(`plugin:${pluginId}`, activeProjectId),
@@ -326,7 +342,7 @@ export function useCommandSource(): CommandItem[] {
     items.push({
       id: 'nav:agents',
       label: 'Go to Agents',
-      category: 'Navigation',
+      category: CATEGORY.commands,
       shortcut: tabShortcut('agents'),
       execute: () => { if (activeProjectId) setExplorerTab('agents', activeProjectId); },
     });
@@ -335,62 +351,85 @@ export function useCommandSource(): CommandItem[] {
       items.push({
         id: 'nav:home',
         label: 'Go to Home',
-        category: 'Navigation',
+        category: CATEGORY.commands,
         shortcut: getShortcut(shortcuts, 'go-home'),
         execute: () => setActiveProject(null),
       });
     }
     items.push({
       id: 'nav:help',
-      label: 'Open Help',
-      category: 'Navigation',
+      label: 'Open help',
+      category: CATEGORY.commands,
       shortcut: getShortcut(shortcuts, 'toggle-help'),
+      icon: 'help',
       execute: () => toggleHelp(),
     });
     items.push({
       id: 'nav:about',
-      label: 'Open About',
-      category: 'Navigation',
+      label: 'About Clubhouse',
+      category: CATEGORY.commands,
       execute: () => openAbout(),
     });
 
     return items;
   }, [activeProjectId, pluginsMap, projectEnabled, shortcuts, titleTabs, setExplorerTab, setActiveProject, toggleHelp, openAbout]);
 
-  const settingsItems = useMemo((): CommandItem[] =>
-    SETTINGS_PAGES.map((sp) => {
-      const shortcutId = sp.page === 'display' ? 'toggle-settings' : undefined;
-      const shortcutDef = shortcutId ? shortcuts[shortcutId] : undefined;
-      return {
-        id: `settings:${sp.page}`,
-        label: sp.label,
-        category: 'Settings',
+  // Every page the sidebar's settings navigator lists, app and per project, so
+  // the two can't drift apart. ⌘, belongs to Open settings, not to one page.
+  const settingsItems = useMemo((): CommandItem[] => {
+    const openApp = (page: SettingsSubPage) => {
+      if (useUIStore.getState().explorerTab !== 'settings') toggleSettings();
+      setSettingsContext('app');
+      setSettingsSubPage(page);
+    };
+    const items: CommandItem[] = [{
+      id: 'settings:open',
+      label: 'Open settings',
+      category: CATEGORY.settings,
+      icon: 'settings',
+      keywords: ['settings', 'preferences', 'config'],
+      shortcut: getShortcut(shortcuts, 'toggle-settings'),
+      execute: () => { if (useUIStore.getState().explorerTab !== 'settings') toggleSettings(); },
+    }];
+    for (const c of settingsCategories.app) {
+      items.push({
+        id: `settings:${c.page}`,
+        label: c.label,
+        category: CATEGORY.settings,
+        icon: 'settings',
+        detail: 'App',
         keywords: ['settings', 'preferences', 'config'],
-        shortcut: shortcutDef ? formatBinding(shortcutDef.currentBinding) : undefined,
-        execute: () => {
-          const uiState = useUIStore.getState();
-          if (uiState.explorerTab !== 'settings') toggleSettings();
-          setSettingsContext('app');
-          setSettingsSubPage(sp.page);
-        },
-      };
-    }),
-  [shortcuts, toggleSettings, setSettingsContext, setSettingsSubPage]);
+        execute: () => openApp(c.page),
+      });
+    }
+    for (const p of projects) {
+      const name = p.displayName || p.name;
+      for (const c of settingsCategories.project) {
+        items.push({
+          id: `settings:${p.id}:${c.page}`,
+          label: c.label,
+          category: CATEGORY.settings,
+          icon: 'settings',
+          detail: name,
+          keywords: ['settings', 'project', name],
+          searchOnly: true,
+          execute: () => {
+            openProjectSettings(p.id);
+            setSettingsSubPage(c.page);
+          },
+        });
+      }
+    }
+    return items;
+  }, [settingsCategories, projects, shortcuts, toggleSettings, setSettingsContext, setSettingsSubPage, openProjectSettings]);
 
   const actionItems = useMemo((): CommandItem[] => {
     const items: CommandItem[] = [];
 
     items.push({
-      id: 'action:toggle-settings',
-      label: 'Toggle Settings',
-      category: 'Actions',
-      shortcut: getShortcut(shortcuts, 'toggle-settings'),
-      execute: () => toggleSettings(),
-    });
-    items.push({
       id: 'action:toggle-sidebar',
-      label: 'Toggle Sidebar',
-      category: 'Actions',
+      label: 'Toggle sidebar',
+      category: CATEGORY.commands,
       shortcut: getShortcut(shortcuts, 'toggle-sidebar'),
       execute: () => (isNewChromeEnabled() ? useChromeStore.getState().toggleSidebar() : toggleExplorerCollapse()),
     });
@@ -398,24 +437,24 @@ export function useCommandSource(): CommandItem[] {
     if (!isNewChromeEnabled()) {
       items.push({
         id: 'action:toggle-accessory',
-        label: 'Toggle Accessory Panel',
-        category: 'Actions',
+        label: 'Toggle accessory panel',
+        category: CATEGORY.commands,
         shortcut: getShortcut(shortcuts, 'toggle-accessory'),
         execute: () => toggleAccessoryCollapse(),
       });
     }
     items.push({
       id: 'action:new-quick-agent',
-      label: 'New Quick Agent',
-      category: 'Actions',
+      label: 'New quick agent',
+      category: CATEGORY.commands,
       shortcut: getShortcut(shortcuts, 'new-quick-agent'),
       keywords: ['agent', 'mission', 'quick'],
       execute: () => openNewQuickAgent(),
     });
     items.push({
       id: 'action:add-project',
-      label: 'Add Project',
-      category: 'Actions',
+      label: 'Add project',
+      category: CATEGORY.commands,
       shortcut: getShortcut(shortcuts, 'add-project'),
       keywords: ['new', 'open', 'folder'],
       execute: () => { useProjectStore.getState().pickAndAddProject(); },
@@ -424,8 +463,8 @@ export function useCommandSource(): CommandItem[] {
     if (activeProjectId) {
       items.push({
         id: 'action:close-project',
-        label: 'Close Project',
-        category: 'Actions',
+        label: 'Close project',
+        category: CATEGORY.commands,
         shortcut: getShortcut(shortcuts, 'close-project'),
         keywords: ['remove', 'delete', 'close', 'project'],
         execute: () => removeProject(activeProjectId),
@@ -435,8 +474,8 @@ export function useCommandSource(): CommandItem[] {
     if (annexEnabled) {
       items.push({
         id: 'action:toggle-annex-server',
-        label: annexSettings.enableServer ? 'Disable Annex Server' : 'Enable Annex Server',
-        category: 'Actions',
+        label: annexSettings.enableServer ? 'Disable Annex server' : 'Enable Annex server',
+        category: CATEGORY.commands,
         keywords: ['annex', 'server', 'companion', 'ios', 'network', 'remote', 'control'],
         execute: () => {
           useAnnexStore.getState().saveSettings({ ...annexSettings, enableServer: !annexSettings.enableServer });
@@ -444,8 +483,8 @@ export function useCommandSource(): CommandItem[] {
       });
       items.push({
         id: 'action:toggle-annex-client',
-        label: annexSettings.enableClient ? 'Disable Annex Client' : 'Enable Annex Client',
-        category: 'Actions',
+        label: annexSettings.enableClient ? 'Disable Annex client' : 'Enable Annex client',
+        category: CATEGORY.commands,
         keywords: ['annex', 'client', 'satellite', 'connect', 'network', 'discover'],
         execute: () => {
           useAnnexStore.getState().saveSettings({ ...annexSettings, enableClient: !annexSettings.enableClient });
@@ -454,7 +493,7 @@ export function useCommandSource(): CommandItem[] {
       items.push({
         id: 'action:annex-show-pin',
         label: 'Show Annex PIN',
-        category: 'Actions',
+        category: CATEGORY.commands,
         keywords: ['annex', 'pairing', 'pin', 'companion'],
         detail: annexSettings.enableServer && annexStatus.pin ? `PIN: ${annexStatus.pin}` : undefined,
         execute: () => {
@@ -468,8 +507,8 @@ export function useCommandSource(): CommandItem[] {
 
     items.push({
       id: 'action:agent-config',
-      label: 'Agent Config',
-      category: 'Actions',
+      label: 'Agent config',
+      category: CATEGORY.commands,
       keywords: ['clubhouse', 'mode', 'durable', 'agents', 'orchestrator', 'config'],
       execute: () => {
         const uiState = useUIStore.getState();
@@ -481,16 +520,16 @@ export function useCommandSource(): CommandItem[] {
 
     items.push({
       id: 'action:import-blueprint',
-      label: 'Import Blueprint',
-      category: 'Actions',
+      label: 'Import blueprint',
+      category: CATEGORY.commands,
       keywords: ['blueprint', 'canvas', 'template', 'import', 'board', 'layout'],
       execute: () => { useUIStore.getState().openBlueprintGallery(); },
     });
 
     items.push({
       id: 'action:export-blueprint',
-      label: 'Export Canvas as Blueprint',
-      category: 'Actions',
+      label: 'Export canvas as blueprint',
+      category: CATEGORY.commands,
       keywords: ['blueprint', 'canvas', 'export', 'save', 'share', 'board'],
       execute: () => {
         // Export the currently active canvas as a blueprint to clipboard
@@ -511,8 +550,8 @@ export function useCommandSource(): CommandItem[] {
     if (activeProjectId) {
       items.push({
         id: 'action:export-project-blueprints',
-        label: 'Export Project as Blueprint Bundle',
-        category: 'Actions',
+        label: 'Export project as blueprint bundle',
+        category: CATEGORY.commands,
         keywords: ['blueprint', 'bundle', 'project', 'export', 'all', 'canvases', 'backup'],
         execute: () => {
           // Open project settings which has the export bundle button
@@ -523,8 +562,8 @@ export function useCommandSource(): CommandItem[] {
 
     items.push({
       id: 'action:import-blueprint-bundle',
-      label: 'Import Blueprint Bundle',
-      category: 'Actions',
+      label: 'Import blueprint bundle',
+      category: CATEGORY.commands,
       keywords: ['blueprint', 'bundle', 'import', 'project', 'canvases', 'restore'],
       execute: () => {
         // Open the blueprint gallery which handles both single and bundle imports
@@ -561,14 +600,16 @@ export function useCommandSource(): CommandItem[] {
     const items: CommandItem[] = [{
       id: 'host:local',
       label: 'Switch to Local',
-      category: 'Hosts',
+      category: CATEGORY.hosts,
+      icon: 'host',
       execute: () => { switchHost(null); reportChromeFeature('host_switch'); },
     }];
     for (const sat of satellites) {
       items.push({
         id: `host:${sat.id}`,
         label: `Switch to ${sat.alias}`,
-        category: 'Hosts',
+        category: CATEGORY.hosts,
+        icon: 'host',
         detail: sat.state === 'connected' ? 'Connected' : 'Offline',
         execute: () => { switchHost(sat.id); reportChromeFeature('host_switch'); },
       });
@@ -578,9 +619,9 @@ export function useCommandSource(): CommandItem[] {
         items.push({
           id: `project:${p.id}`,
           label: p.displayName || p.name,
-          category: 'Projects',
-          typeIndicator: '/',
+          category: CATEGORY.projects,
           detail: `on ${sat.alias}`,
+          project: p,
           keywords: [sat.alias],
           execute: () => { switchHost(sat.id); setActiveProject(p.id); },
         });
@@ -588,12 +629,14 @@ export function useCommandSource(): CommandItem[] {
       for (const agent of Object.values(remoteAgents)) {
         const project = names.get(agent.projectId);
         if (!project) continue;
+        const dot = agentDot(agent, remoteDetailed[agent.id]);
         items.push({
           id: `agent:${agent.id}`,
           label: agent.name,
-          category: 'Agents',
-          typeIndicator: '@',
-          detail: `${project} on ${sat.alias}`,
+          category: CATEGORY.agents,
+          detail: `${project} on ${sat.alias} · ${DOT_LABEL[dot]}`,
+          agent,
+          dot,
           keywords: [project, sat.alias],
           execute: () => {
             switchHost(sat.id);
@@ -605,11 +648,11 @@ export function useCommandSource(): CommandItem[] {
       }
     }
     return items;
-  }, [satellites, satelliteProjects, remoteAgents, setActiveProject, setExplorerTab, setActiveAgent]);
+  }, [satellites, satelliteProjects, remoteAgents, remoteDetailed, setActiveProject, setExplorerTab, setActiveAgent]);
 
   // Combine all category memos — only rebuilds when a sub-memo changes
   return useMemo(
-    () => [...projectItems, ...agentItems, ...hostItems, ...spaceItems, ...navigationItems, ...settingsItems, ...actionItems, ...pluginCommandItems],
+    () => [...agentItems, ...projectItems, ...hostItems, ...spaceItems, ...settingsItems, ...navigationItems, ...actionItems, ...pluginCommandItems],
     [projectItems, agentItems, hostItems, spaceItems, navigationItems, settingsItems, actionItems, pluginCommandItems],
   );
 }
