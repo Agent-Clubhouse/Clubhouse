@@ -22,6 +22,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Goobers',
     description: 'Monitor and control a local Goobers instance from an app-level panel. Not available on Windows. Requires app restart.',
   },
+  {
+    id: 'chat',
+    label: 'Chat',
+    description: 'Talk to Claude Code, Codex and Copilot agents in a native chat view. The terminal stays available for every provider.',
+  },
 ];
 
 export function ExperimentalSettingsView() {

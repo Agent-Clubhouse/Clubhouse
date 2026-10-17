@@ -10,6 +10,7 @@ import * as ptyManager from './pty-manager';
 import { agentRegistry } from './agent-registry';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { appLog } from './log-service';
+import { getAgentRuntime } from './agent-runtime';
 import { getAgentOrchestrator } from './agent-registry';
 import { getProvider } from '../orchestrators/registry';
 import { pollingStartMsg } from '../../shared/polling-messages';
@@ -30,8 +31,21 @@ function getPasteDelayMs(agentId: string): number {
   return DEFAULT_PASTE_DELAY_MS;
 }
 
-/** Inject a message into an agent's PTY using bracketed paste + Enter. */
+/**
+ * Inject a group-project message (polling nudges, join notices). Chat agents
+ * get it through their runtime; terminal agents keep the bracketed paste +
+ * delayed Enter that polling has always used.
+ */
 export function injectPtyMessage(agentId: string, message: string): void {
+  const runtime = getAgentRuntime(agentId);
+  if (runtime?.kind === 'chat') {
+    runtime.sendMessage(message, { source: 'group_project' }).catch((err) => {
+      appLog('core:group-project', 'warn', 'Chat injection failed', {
+        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+    });
+    return;
+  }
   try {
     ptyManager.write(agentId, `\x1b[200~${message}\x1b[201~`);
     setTimeout(() => ptyManager.write(agentId, '\r'), getPasteDelayMs(agentId));

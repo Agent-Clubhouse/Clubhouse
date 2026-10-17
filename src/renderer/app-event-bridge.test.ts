@@ -32,6 +32,7 @@ const mockRemovers = {
   onProtocolAction: vi.fn(),
   onPermissionPending: vi.fn(),
   onPermissionSettled: vi.fn(),
+  onChatEvent: vi.fn(),
 };
 
 vi.stubGlobal('window', {
@@ -99,6 +100,9 @@ vi.stubGlobal('window', {
     settings: {
       get: vi.fn(async () => null),
       save: vi.fn(),
+    },
+    chat: {
+      onEvent: vi.fn(() => mockRemovers.onChatEvent),
     },
   },
   addEventListener: vi.fn(),
@@ -356,6 +360,13 @@ describe('initAppEventBridge', () => {
     mockShowStructuredModeRemovedNotice.mockRejectedValueOnce(new Error('IPC down'));
     expect(() => { cleanup = initAppEventBridge(); }).not.toThrow();
     expect(mockShowStructuredModeRemovedNotice).toHaveBeenCalledTimes(2);
+  });
+
+  it('subscribes to chat events and unsubscribes on cleanup', () => {
+    expect(window.clubhouse.chat.onEvent).toHaveBeenCalledTimes(1);
+    cleanup();
+    expect(mockRemovers.onChatEvent).toHaveBeenCalledTimes(1);
+    cleanup = initAppEventBridge();
   });
 
   it('should register agent lifecycle listeners', () => {

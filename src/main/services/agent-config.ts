@@ -974,6 +974,13 @@ export async function updateDurableConfig(
       delete agent.mcpConfigs;
     }
   }
+  if (updates.runtimeMode !== undefined) {
+    if (updates.runtimeMode === 'chat' || updates.runtimeMode === 'terminal') {
+      agent.runtimeMode = updates.runtimeMode;
+    } else {
+      delete agent.runtimeMode;
+    }
+  }
   if (updates.mission !== undefined) {
     if (updates.mission) {
       agent.mission = updates.mission;

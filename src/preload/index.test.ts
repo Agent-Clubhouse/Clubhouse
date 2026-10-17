@@ -34,6 +34,7 @@ import { hookServer } from './hookServer';
 import { goobers } from './goobers';
 import { telemetrySettings } from './telemetrySettings';
 import { telemetry } from './telemetry';
+import { chat } from './chat';
 import { plugin } from './plugin';
 import { profile } from './profile';
 import { marketplace } from './marketplace';
@@ -79,6 +80,7 @@ describe('preload IPC bridge', () => {
       goobers,
       telemetrySettings,
       telemetry,
+      chat,
     ];
     const expectedApi = {
       platform: api.platform,

@@ -721,7 +721,8 @@ describe('AgentTools', () => {
         content: 'multi\nline\ncontent',
         task_id: 'sf1',
       });
-      await vi.advanceTimersByTimeAsync(600);
+      // send_file now submits like send_message (Enter, then a retry Enter if nothing changed).
+      await vi.advanceTimersByTimeAsync(1200);
       const result = await promise;
 
       expect(result.isError).toBeFalsy();
@@ -773,7 +774,8 @@ describe('AgentTools', () => {
         task_id: 'sf_evil',
         filename: '../../etc/passwd',
       });
-      await vi.advanceTimersByTimeAsync(600);
+      // send_file now submits like send_message (Enter, then a retry Enter if nothing changed).
+      await vi.advanceTimersByTimeAsync(1200);
       await promise;
 
       // path.basename('../../etc/passwd') → 'passwd', so file stays in temp dir
@@ -794,7 +796,8 @@ describe('AgentTools', () => {
         task_id: 'sf3',
         filename: 'data.json',
       });
-      await vi.advanceTimersByTimeAsync(600);
+      // send_file now submits like send_message (Enter, then a retry Enter if nothing changed).
+      await vi.advanceTimersByTimeAsync(1200);
       await promise;
 
       expect(mockWriteFile).toHaveBeenCalledWith(

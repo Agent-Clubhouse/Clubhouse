@@ -99,6 +99,11 @@ export abstract class BaseProvider implements OrchestratorProvider {
     return findBinaryInPath(this.binaryNames, this.getExtraBinaryPaths());
   }
 
+  /** Absolute path of the user's installed CLI. Used by chat drivers, which never bundle a binary. */
+  getBinaryPath(): string {
+    return this.findBinary();
+  }
+
   /** Check if the CLI binary is available */
   async checkAvailability(_envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
     try {

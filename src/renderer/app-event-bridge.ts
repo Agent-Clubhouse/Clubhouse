@@ -32,6 +32,7 @@ import { initAnnexListener } from './stores/annexStore';
 import { initAnnexClientListener } from './stores/annexClientStore';
 import { useLockStore } from './stores/lockStore';
 import { initMcpBindingListener, useMcpBindingStore } from './stores/mcpBindingStore';
+import { initChatEventListener } from './stores/chatStore';
 import { initToolActivityListener } from './plugins/builtin/canvas/useWireActivity';
 import { usePendingPermissionStore } from './stores/pendingPermissionStore';
 import { showStructuredModeRemovedNotice } from './services/structured-mode-removal-notice';
@@ -762,6 +763,7 @@ export function initAppEventBridge(): () => void {
   }));
   cleanups.push(initToolActivityListener());
   cleanups.push(initProtocolActionListener());
+  cleanups.push(initChatEventListener());
 
   const teardown = () => {
     for (const cleanup of cleanups) {

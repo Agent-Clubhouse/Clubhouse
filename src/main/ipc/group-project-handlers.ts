@@ -15,10 +15,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, digestSinceArg } from './validation';
 import type { DigestSince } from '../../shared/group-project-types';
 import { agentRegistry } from '../services/agent-registry';
-import * as ptyManager from '../services/pty-manager';
-import { writeChunkedBracketedPaste, submitAfterPaste } from '../services/clubhouse-mcp/tools/agent-tools';
-import { getProvider } from '../orchestrators';
-import type { PasteSubmitTiming } from '../orchestrators';
+import { getAgentRuntime } from '../services/agent-runtime';
 
 function broadcastChanged(): void {
   groupProjectRegistry.list().then((projects) => {
@@ -245,22 +242,9 @@ export function registerGroupProjectHandlers(): void {
       const reg = agentRegistry.get(agentId as string);
       if (!reg) throw new Error(`Agent ${agentId} is not registered`);
 
-      if (reg.runtime === 'pty') {
-        const isMultiLine = (message as string).includes('\n');
-        if (isMultiLine) {
-          const provider = getProvider(reg.orchestrator);
-          const timing: PasteSubmitTiming = provider?.getPasteSubmitTiming()
-            ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
-
-          await writeChunkedBracketedPaste(agentId as string, message as string, timing.chunkSize, timing.chunkDelayMs);
-          await submitAfterPaste(agentId as string, timing);
-        } else {
-          ptyManager.write(agentId as string, message as string);
-          ptyManager.write(agentId as string, '\r');
-        }
-      } else {
-        throw new Error(`Agent runtime "${reg.runtime}" does not support input`);
-      }
+      const runtime = getAgentRuntime(agentId as string);
+      if (!runtime) throw new Error(`Agent runtime "${reg.runtime}" does not support input`);
+      await runtime.sendMessage(message as string, { source: 'group_project' });
 
       return true;
     },

@@ -9,9 +9,87 @@ import { useFreeAgentSettingsStore } from '../../stores/freeAgentSettingsStore';
 import { Toggle } from '../../components/Toggle';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
+import type { AgentRuntimeMode, ChatRuntimeSettings } from '../../../shared/chat';
 
 interface Props {
   projectId?: string;
+}
+
+// ── Per-provider Chat / Terminal runtime (experimental 'chat' flag) ──────
+
+const RUNTIME_MODE_OPTIONS: Array<{ value: AgentRuntimeMode; label: string }> = [
+  { value: 'chat', label: 'Chat' },
+  { value: 'terminal', label: 'Terminal' },
+];
+
+/** Provider default when no runtime setting is saved. */
+const DEFAULT_RUNTIME_MODE: AgentRuntimeMode = 'chat';
+
+/**
+ * Loads the experimental Chat flag and, when it's on, the per-provider
+ * runtime settings. Saves merge into the latest stored settings so other
+ * providers' entries are never clobbered.
+ */
+function useChatRuntimeSettings() {
+  const [chatEnabled, setChatEnabled] = useState(false);
+  const [runtimeSettings, setRuntimeSettings] = useState<ChatRuntimeSettings>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const experimental = await window.clubhouse.app.getExperimentalSettings();
+        if (cancelled || experimental?.chat !== true) return;
+        setChatEnabled(true);
+        const settings = await window.clubhouse.chat.getRuntimeSettings();
+        if (!cancelled) setRuntimeSettings(settings ?? {});
+      } catch {
+        // Leave the control hidden / at defaults.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const setRuntimeMode = async (orchestratorId: string, mode: AgentRuntimeMode) => {
+    setRuntimeSettings((prev) => ({ ...prev, [orchestratorId]: { ...prev[orchestratorId], mode } }));
+    try {
+      const current = (await window.clubhouse.chat.getRuntimeSettings()) ?? {};
+      await window.clubhouse.chat.saveRuntimeSettings({
+        ...current,
+        [orchestratorId]: { ...current[orchestratorId], mode },
+      });
+    } catch {
+      // Best-effort; the optimistic value stays until the next load.
+    }
+  };
+
+  return { chatEnabled, runtimeSettings, setRuntimeMode };
+}
+
+function RuntimeModeControl({ value, onChange }: { value: AgentRuntimeMode; onChange: (mode: AgentRuntimeMode) => void }) {
+  return (
+    <div role="radiogroup" aria-label="Runtime" className="inline-flex rounded-lg bg-surface-0 border border-surface-2 p-0.5">
+      {RUNTIME_MODE_OPTIONS.map((opt) => {
+        const selected = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => { if (!selected) onChange(opt.value); }}
+            className={`px-2.5 py-0.5 text-xs rounded-md transition-colors cursor-pointer ${
+              selected
+                ? 'bg-ctp-accent text-white'
+                : 'text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1'
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 // ── App-level: global headless toggle + orchestrator enable/disable ──────
@@ -40,6 +118,7 @@ function AppAgentSettings() {
   const setFreeAgentDefaultMode = useFreeAgentSettingsStore((s) => s.setDefaultMode);
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
+  const { chatEnabled, runtimeSettings, setRuntimeMode } = useChatRuntimeSettings();
 
   useEffect(() => {
     loadSettings().then(() => checkAllAvailability());
@@ -217,12 +296,14 @@ function AppAgentSettings() {
           // 1. turning ON something not installed
           // 2. turning OFF the last working (available) orchestrator
           const toggleDisabled = (isOnlyEnabled && !notInstalled) || (!!notInstalled && !isEnabled);
-          // The expansion only renders when the orchestrator is enabled, and the
-          // hook server option only for hook-capable orchestrators.  Resolve the
+          // The expansion only renders when the orchestrator is enabled. The
+          // hook server option shows only for hook-capable orchestrators, the
+          // runtime option only with the experimental Chat flag.  Resolve the
           // effective hook pref reactively from the subscribed prefs map.
           const hookCapable = !!o.capabilities?.hooks;
-          const showExpansion = isEnabled && hookCapable;
+          const showExpansion = isEnabled && (hookCapable || chatEnabled);
           const hookServerOn = hookServerPrefs[o.id] ?? (o.id === DEFAULT_HOOK_SERVER_ORCHESTRATOR);
+          const runtimeMode = runtimeSettings[o.id]?.mode ?? DEFAULT_RUNTIME_MODE;
 
           return (
             <div key={o.id} className="rounded-lg bg-ctp-mantle border border-surface-0">
@@ -261,23 +342,42 @@ function AppAgentSettings() {
 
               {showExpansion && (
                 <div className="border-t border-surface-0 px-3 py-2.5 pl-8 space-y-2.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs text-ctp-text font-medium">Hook server</div>
-                      <div className="text-[11px] text-ctp-subtext0 mt-0.5">
-                        Receives this orchestrator's hook callbacks (permission requests, tool
-                        events). When off, no hooks are injected into its agents and remote
-                        permissions/observability are unavailable. Toggling off strips hooks from
-                        running agents, which need a restart to take full effect.
+                  {chatEnabled && (
+                    <div className="flex items-center justify-between gap-3" data-testid={`runtime-mode-${o.id}`}>
+                      <div className="min-w-0">
+                        <div className="text-xs text-ctp-text font-medium">Runtime</div>
+                        <div className="text-[11px] text-ctp-subtext0 mt-0.5">
+                          Agents for this provider open in chat. Switch to Terminal to use the CLI's own
+                          interface. Chat needs a supported CLI; until then agents open in the terminal.
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        <RuntimeModeControl
+                          value={runtimeMode}
+                          onChange={(mode) => setRuntimeMode(o.id, mode)}
+                        />
                       </div>
                     </div>
-                    <div className="flex-shrink-0">
-                      <Toggle
-                        checked={hookServerOn}
-                        onChange={(v) => setHookServerEnabled(o.id, v)}
-                      />
+                  )}
+                  {hookCapable && (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs text-ctp-text font-medium">Hook server</div>
+                        <div className="text-[11px] text-ctp-subtext0 mt-0.5">
+                          Receives this orchestrator's hook callbacks (permission requests, tool
+                          events). When off, no hooks are injected into its agents and remote
+                          permissions/observability are unavailable. Toggling off strips hooks from
+                          running agents, which need a restart to take full effect.
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        <Toggle
+                          checked={hookServerOn}
+                          onChange={(v) => setHookServerEnabled(o.id, v)}
+                        />
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>

@@ -6,7 +6,7 @@ export interface ArchInfo {
 
 export type OrchestratorId = 'claude-code' | (string & {});
 
-export type AgentExecutionMode = 'pty' | 'headless';
+export type AgentExecutionMode = 'pty' | 'headless' | 'chat';
 
 export type SpawnMode = 'headless' | 'interactive';
 
@@ -203,6 +203,11 @@ export interface DurableAgentConfig {
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
   lastSessionId?: string;
+  /**
+   * Per-agent Chat / Terminal override. Only consulted when the experimental
+   * Chat flag is on; unset means the provider's runtime setting.
+   */
+  runtimeMode?: import('./chat').AgentRuntimeMode;
   /** History of CLI sessions for this agent */
   sessionHistory?: SessionInfo[];
   /** MCP IDs to inject via launch wrapper (when unset, falls back to project defaultMcps) */
@@ -297,6 +302,8 @@ export interface DurableConfigUpdates {
   lastSessionId?: string | null;
   mcpIds?: string[] | null;
   mcpConfigs?: Record<string, Record<string, string>> | null;
+  /** Per-agent Chat / Terminal override; null clears it (provider default). */
+  runtimeMode?: import('./chat').AgentRuntimeMode | null;
   persona?: string;
   mission?: string;
   buildCommand?: string;

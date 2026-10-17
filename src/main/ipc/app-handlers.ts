@@ -27,6 +27,7 @@ import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, arrayAr
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
 import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState } from '../services/restart-session-service';
 import * as ptyManager from '../services/pty-manager';
+import { getAgentRuntime } from '../services/agent-runtime';
 import * as agentSystem from '../services/agent-system';
 import { syncPluginThemes, PluginThemeSummary } from '../services/plugin-theme-store';
 import { consumePendingProtocolAction } from '../services/protocol-service';
@@ -477,10 +478,13 @@ export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.RESOLVE_WORKING_AGENT, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, agentId, action) => {
+      const runtime = getAgentRuntime(agentId);
       if (action === 'interrupt') {
-        ptyManager.write(agentId, '\x03');
+        if (runtime) await runtime.interrupt();
+        else ptyManager.write(agentId, '\x03');
       } else if (action === 'kill') {
-        ptyManager.kill(agentId);
+        if (runtime) await runtime.stop({ graceful: false });
+        else ptyManager.kill(agentId);
       }
     },
   ));

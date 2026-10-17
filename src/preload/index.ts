@@ -25,6 +25,7 @@ import { goobers } from './goobers';
 import { telemetrySettings } from './telemetrySettings';
 import { telemetry } from './telemetry';
 import { NEW_CHROME_ARG } from '../shared/chrome-flag';
+import { chat } from './chat';
 
 export const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
@@ -70,6 +71,7 @@ export const api = {
   ...goobers,
   ...telemetrySettings,
   ...telemetry,
+  ...chat,
 };
 
 export type ClubhouseAPI = typeof api;

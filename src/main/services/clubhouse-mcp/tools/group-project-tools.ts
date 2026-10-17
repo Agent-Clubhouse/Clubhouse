@@ -9,7 +9,7 @@ import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { isProjectAdmin } from '../../../../shared/group-project-admin';
 import { isAgentAlive, injectPtyMessage } from '../../group-project-lifecycle';
-import * as ptyManager from '../../pty-manager';
+import { getAgentRuntime } from '../../agent-runtime';
 import { executeShoulderTap } from '../../group-project-shoulder-tap';
 import * as agentSystem from '../../agent-system';
 import { listDurable } from '../../agent-config';
@@ -951,8 +951,11 @@ export function registerGroupProjectTools(): void {
         };
       }
 
-      ptyManager.write(targetAgentId, '/clear');
-      ptyManager.write(targetAgentId, '\r');
+      const clearRuntime = getAgentRuntime(targetAgentId);
+      if (!clearRuntime) {
+        return { content: [{ type: 'text', text: `Agent ${targetAgentId} does not accept input in its current runtime.` }], isError: true };
+      }
+      await clearRuntime.clearContext();
 
       return {
         content: [{
@@ -1014,8 +1017,11 @@ export function registerGroupProjectTools(): void {
         };
       }
 
-      ptyManager.write(targetAgentId, '/compact');
-      ptyManager.write(targetAgentId, '\r');
+      const compactRuntime = getAgentRuntime(targetAgentId);
+      if (!compactRuntime) {
+        return { content: [{ type: 'text', text: `Agent ${targetAgentId} does not accept input in its current runtime.` }], isError: true };
+      }
+      await compactRuntime.compact();
 
       return {
         content: [{
