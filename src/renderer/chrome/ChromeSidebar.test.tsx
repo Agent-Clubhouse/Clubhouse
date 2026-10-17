@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, within, act } from '@testing-library/react';
 
+vi.mock('../panels/AccessoryPanel', async (orig) => ({
+  ...(await orig<typeof import('../panels/AccessoryPanel')>()),
+  AccessoryPanel: () => <div data-testid="accessory-panel" />,
+}));
+
 vi.mock('./sidebar/ChromeAgentDialogs', async () => {
   const { create } = await import('zustand');
   const store = create<{ request: unknown; openNewAgent: (id: string) => void; openGallery: (id: string) => void; close: () => void }>((set) => ({
@@ -222,5 +227,62 @@ describe('ChromeSidebar', () => {
     render(<ChromeSidebar />);
     act(() => { useProjectStore.setState({ projects: projects.slice(0, 2) as never }); });
     expect(useChromeStore.getState()).toMatchObject({ pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
+  });
+
+  describe('scope and sidebar modes', () => {
+    function registerTab(id: string, label: string, layout?: 'full' | 'sidebar-content') {
+      usePluginStore.getState().registerPlugin(
+        { id, version: '0.1.0', apiVersion: 0.8, name: label, scope: 'project', contributes: { tab: { label, ...(layout ? { layout } : {}) } } } as unknown as PluginManifest,
+        'builtin' as PluginSource,
+        `/plugins/${id}`,
+      );
+    }
+
+    it('selecting a project header makes the project root the scope; selecting an agent clears it', () => {
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('project-p1'));
+      expect(useChromeStore.getState().projectScopeId).toBe('p1');
+      expect(screen.getByTestId('project-p1').getAttribute('aria-current')).toBe('true');
+      expect(screen.getByTestId('agent-item-a1').getAttribute('aria-current')).toBeNull();
+      fireEvent.click(screen.getByTestId('agent-item-a1'));
+      expect(useChromeStore.getState().projectScopeId).toBeNull();
+    });
+
+    it('keeps a scope-following tab (Terminal) when an agent is selected', () => {
+      useUIStore.setState({ explorerTab: 'plugin:terminal' });
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('sleeping-fold-p1'));
+      fireEvent.click(screen.getByTestId('agent-item-a2'));
+      expect(useUIStore.getState().explorerTab).toBe('plugin:terminal');
+      expect(useAgentStore.getState().activeAgentId).toBe('a2');
+    });
+
+    it('swaps the tree for a tab list, with the breadcrumb and the Needs you strip', () => {
+      registerTab('files', 'Files');
+      useUIStore.setState({ explorerTab: 'plugin:files' });
+      render(<ChromeSidebar />);
+      expect(screen.getByTestId('sidebar-list')).toBeTruthy();
+      expect(screen.getByTestId('accessory-panel')).toBeTruthy();
+      expect(screen.getByTestId('list-breadcrumb').textContent).toContain('Files');
+      expect(screen.getByTestId('needs-you-strip').textContent).toContain('1 needs you');
+      expect(screen.queryByTestId('needs-you')).toBeNull();
+      fireEvent.click(screen.getByText('Agents'));
+      expect(useUIStore.getState().explorerTab).toBe('agents');
+    });
+
+    it('keeps the tree for full-layout tabs', () => {
+      registerTab('canvas', 'Canvas', 'full');
+      useUIStore.setState({ explorerTab: 'plugin:canvas' });
+      render(<ChromeSidebar />);
+      expect(screen.queryByTestId('sidebar-list')).toBeNull();
+      expect(screen.getByTestId('needs-you')).toBeTruthy();
+    });
+
+    it('shows the settings navigator in Settings', () => {
+      useUIStore.setState({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'about' });
+      render(<ChromeSidebar />);
+      expect(screen.getByTestId('settings-nav')).toBeTruthy();
+      expect(screen.getByTestId('list-breadcrumb').textContent).toContain('Settings');
+    });
   });
 });

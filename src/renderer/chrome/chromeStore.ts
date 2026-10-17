@@ -31,6 +31,12 @@ interface PersistedChromeState {
 }
 
 export interface ChromeState {
+  /**
+   * The project whose header is selected, which makes the project root the
+   * scope (spec §4.5). Null when an agent row is the selection. Not persisted.
+   */
+  projectScopeId: string | null;
+  setProjectScope: (projectId: string | null) => void;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   lastProjectId: string | null;
@@ -126,6 +132,11 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     // With the flag off the legacy shell runs and this store is never used, so
     // don't touch localStorage at startup.
     ...(isNewChromeEnabled() ? loadChromeState() : DEFAULTS),
+    projectScopeId: null,
+
+    setProjectScope: (projectId) => {
+      if (get().projectScopeId !== projectId) set({ projectScopeId: projectId });
+    },
 
     resizeSidebar: (delta) => {
       const { sidebarWidth, sidebarCollapsed } = get();

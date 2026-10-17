@@ -3,6 +3,7 @@ import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/
 import type { GitInfo, GitLogEntry, GitStatusFile } from '../../../../shared/types';
 import { gitState } from './state';
 import { GitCanvasWidget } from './GitCanvasWidget';
+import { useChromeScope } from '../../../chrome/scope';
 import { createGitOps } from './remote-git';
 
 const GIT_POLL_INTERVAL_MS = 3000;
@@ -81,10 +82,22 @@ function useGitState() {
 
 export function SidebarPanel({ api }: { api: PluginAPI }) {
   const { gitInfo, commitLog, commitMessage, expandedSections } = useGitState();
-  const projectPath = api.context.projectPath || '';
   const projectId = api.context.projectId;
+  // New chrome: the repository follows the sidebar selection (agent worktree or project root).
+  const scope = useChromeScope(projectId);
+  const projectPath = scope?.cwd ?? (api.context.projectPath || '');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const git = useMemo(() => createGitOps(projectPath, projectId), [projectPath, projectId]);
+
+  // A different repository (scope change) invalidates the selected file and commit.
+  const lastRepoRef = useRef(projectPath);
+  useEffect(() => {
+    if (lastRepoRef.current === projectPath) return;
+    lastRepoRef.current = projectPath;
+    gitState.setSelectedFile(null);
+    gitState.setSelectedCommit(null);
+    gitState.setSelectedCommitFiles([]);
+  }, [projectPath]);
 
   const fetchGitInfo = useCallback(() => {
     if ((!projectPath && !projectId) || document.hidden) return;
@@ -299,8 +312,10 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
 
 export function MainPanel({ api }: { api: PluginAPI }) {
   const { gitInfo, selectedFile, selectedCommit, selectedCommitFiles } = useGitState();
-  const projectPath = api.context.projectPath || '';
   const projectId = api.context.projectId;
+  // New chrome: the repository follows the sidebar selection (agent worktree or project root).
+  const scope = useChromeScope(projectId);
+  const projectPath = scope?.cwd ?? (api.context.projectPath || '');
   const git = useMemo(() => createGitOps(projectPath, projectId), [projectPath, projectId]);
   const [diffData, setDiffData] = useState<{ original: string; modified: string } | null>(null);
   const [loading, setLoading] = useState(false);
