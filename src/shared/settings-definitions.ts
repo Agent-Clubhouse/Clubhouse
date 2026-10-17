@@ -39,6 +39,7 @@ export function settingsChannels(key: string) {
 // ---------------------------------------------------------------------------
 
 import type { ClipboardSettings, EditorSettings, GoobersSettings, McpSettings, SecuritySettings } from './types';
+import type { TelemetrySettingsFile } from './telemetry/settings-types';
 
 export const CLIPBOARD_COMPAT_DEFAULT = false;
 export const isClipboardCompatPlatform = (platform: string): boolean => platform === 'win32';
@@ -78,5 +79,25 @@ export const GOOBERS_SETTINGS: SettingsDefinition<GoobersSettings> = {
     binaryPath: 'goobers',
     autoConnect: true,
     manageDaemon: false,
+  },
+};
+
+// TELEMETRY_SETTINGS is main-process only: its generic get/save IPC is never
+// registered, because the file holds the install id's hash salt and saving
+// has side effects (start/stop exporters, consent, destination confirmation).
+// The renderer goes through window.clubhouse.telemetrySettings instead, which
+// returns a masked TelemetryStatus (spec §6.8).
+export const TELEMETRY_SETTINGS: SettingsDefinition<TelemetrySettingsFile> = {
+  key: 'telemetry',
+  filename: 'telemetry-settings.json',
+  defaults: {
+    enabled: false,
+    destination: 'azure',
+    level: 'standard',
+    sampleRate: 1,
+    otlpEndpoint: '',
+    otlpHeaderNames: [],
+    otlpTemporality: 'cumulative',
+    consentVersion: 0,
   },
 };

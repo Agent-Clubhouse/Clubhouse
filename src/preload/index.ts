@@ -22,6 +22,7 @@ import { mcpBinding } from './mcpBinding';
 import { canvas } from './canvas';
 import { hookServer } from './hookServer';
 import { goobers } from './goobers';
+import { telemetrySettings } from './telemetrySettings';
 
 export const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
@@ -63,6 +64,7 @@ export const api = {
   ...canvas,
   ...hookServer,
   ...goobers,
+  ...telemetrySettings,
 };
 
 export type ClubhouseAPI = typeof api;

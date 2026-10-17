@@ -59,8 +59,10 @@ import {
 import { classifyExportError, sanitizeAttribute } from './redaction';
 import { FlowSampler } from './sampler';
 import { sanitizeStack, type Scrubber } from './scrubber';
+import { ExportResultCode, type ExportResult } from '@opentelemetry/core';
 import type {
   Classification,
+  ExportRecord,
   ExceptionOptions,
   FlowExtras,
   FlowOptions,
@@ -137,6 +139,21 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
   const resource = resourceFromAttributes(opts.resourceAttributes);
   const tee = new PreviewTee();
 
+  const exportLog: ExportRecord[] = [];
+  const recordExport = (signal: ExportRecord['signal'], result: ExportResult): void => {
+    const err = result.error as { statusCode?: unknown; code?: unknown; name?: unknown; message?: unknown } | undefined;
+    const status = typeof err?.statusCode === 'number' ? err.statusCode : typeof err?.code === 'number' ? err.code : undefined;
+    exportLog.push({
+      signal,
+      ok: result.code === ExportResultCode.SUCCESS,
+      at: Date.now(),
+      httpStatus: status,
+      errorCode: typeof err?.code === 'string' ? err.code : typeof err?.name === 'string' ? err.name : undefined,
+      errorMessage: typeof err?.message === 'string' ? err.message.slice(0, 300) : undefined,
+    });
+    if (exportLog.length > 50) exportLog.shift();
+  };
+
   // --- Metrics ---
   // One allowlist View per registered metric. Instruments are only ever
   // created from the METRICS registry (see instrument() below), so there is
@@ -152,6 +169,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     exporter: new ObservedMetricExporter(opts.exporters.metricExporter, {
       tee,
       onFailure: (signal, httpClass) => observeHooks.onFailure(signal, httpClass),
+      onResult: (signal, result) => recordExport(signal, result),
     }),
     exportIntervalMillis: opts.metricExportIntervalMs ?? 60_000,
     exportTimeoutMillis: Math.min(30_000, opts.metricExportIntervalMs ?? 30_000),
@@ -179,6 +197,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
   const caps = new SessionCaps(opts.sessionCaps, (signal) => hooks.onDropped(signal, 1));
   const observeHooks = {
     tee,
+    onResult: recordExport,
     onFailure: (signal: 'traces' | 'metrics' | 'logs', httpClass: ReturnType<typeof classifyExportError>) =>
       failureCounter.add(1, toAttributes([ATTR.telemetrySignal(signal), ATTR.httpClass(httpClass)])),
   };
@@ -353,6 +372,8 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     },
 
     preview: () => tee.snapshot(),
+
+    recentExports: (sinceMs) => exportLog.filter((r) => r.at >= sinceMs),
 
     async forceFlush(timeoutMs) {
       if (shutDown) return;

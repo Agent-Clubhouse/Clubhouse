@@ -24,15 +24,31 @@ const originalLookup = dnsCjs.lookup;
 interface FakeSettings {
   enabled: boolean;
   level: 'errors' | 'standard' | 'detailed';
-  destination: unknown;
+  destination: 'azure' | 'otlp';
   sampleRate: number;
+  otlpEndpoint: string;
+  otlpHeaderNames: string[];
+  otlpTemporality: 'cumulative' | 'delta';
+  consentVersion: number;
   installId?: string;
   hashSalt?: string;
   lastVersion?: string;
 }
 
+const BASE: FakeSettings = {
+  enabled: false,
+  level: 'standard',
+  destination: 'azure',
+  sampleRate: 1,
+  otlpEndpoint: '',
+  otlpHeaderNames: [],
+  otlpTemporality: 'cumulative',
+  consentVersion: 1,
+};
+
 const state = vi.hoisted(() => ({
-  settings: { enabled: false, level: 'standard', destination: null, sampleRate: 1 } as FakeSettings,
+  settings: {} as Record<string, unknown>,
+  secrets: {} as { connectionString?: string; otlpHeaders?: Record<string, string> },
   logs: [] as string[],
 }));
 
@@ -41,13 +57,21 @@ vi.mock('./settings', async (importActual) => {
   return {
     ...actual,
     getTelemetrySettings: () => state.settings,
-    updateTelemetrySettings: async (fn: (s: FakeSettings) => FakeSettings) => {
+    updateTelemetrySettings: async (fn: (s: Record<string, unknown>) => Record<string, unknown>) => {
       state.settings = fn(state.settings);
       return state.settings;
     },
     isExperimentEnabled: () => true,
+    hasDestinationConfigured: () => true,
+    migrateLegacySecrets: async () => true,
   };
 });
+
+vi.mock('./secret-store', () => ({
+  readSecrets: async () => state.secrets,
+  getSecureStorageState: () => 'available',
+  getSecretPath: () => '/nonexistent/telemetry-secret.bin',
+}));
 
 vi.mock('../services/log-service', () => ({
   appLog: (_ns: string, level: string, msg: string, opts?: { meta?: unknown }) => {
@@ -214,14 +238,9 @@ describe('telemetry egress allowlist', () => {
         else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev;
       });
     }
-    state.settings = {
-      enabled: true,
-      level: 'standard',
-      sampleRate: 1,
-      destination: {
-        kind: 'azure',
-        connectionString: `InstrumentationKey=00000000-0000-4000-8000-000000000001;IngestionEndpoint=https://127.0.0.1:${port}/`,
-      },
+    state.settings = { ...BASE, enabled: true, destination: 'azure' };
+    state.secrets = {
+      connectionString: `InstrumentationKey=00000000-0000-4000-8000-000000000001;IngestionEndpoint=https://127.0.0.1:${port}/`,
     };
 
     await exerciseAllSignals();
@@ -232,7 +251,7 @@ describe('telemetry egress allowlist', () => {
     expect(bodies).toContain('clubhouse.telemetry.test');
     expect(bodies).toContain('clubhouse.app.sessions');
     expect(bodies).toContain('ExceptionData');
-    expect(bodies).toContain(state.settings.installId);
+    expect(bodies).toContain(state.settings.installId as string);
 
     expect(isOneSettingsNeutralized()).toBe(true);
     // A later initialize() (e.g. a second exporter) must stay inert.
@@ -245,12 +264,8 @@ describe('telemetry egress allowlist', () => {
 
   it('OTLP destination only contacts the configured endpoint, as HTTP/JSON', async () => {
     port = httpPort;
-    state.settings = {
-      enabled: true,
-      level: 'standard',
-      sampleRate: 1,
-      destination: { kind: 'otlp', endpoint: `http://127.0.0.1:${port}`, headers: { 'x-api-key': 'k' } },
-    };
+    state.settings = { ...BASE, enabled: true, destination: 'otlp', otlpEndpoint: `http://127.0.0.1:${port}`, otlpHeaderNames: ['x-api-key'] };
+    state.secrets = { otlpHeaders: { 'x-api-key': 'k' } };
 
     await exerciseAllSignals();
 
@@ -270,12 +285,8 @@ describe('telemetry egress allowlist', () => {
 describe('OTLP loopback hardening', () => {
   it('resolves localhost through the pinned lookup, never the system resolver', async () => {
     port = httpPort;
-    state.settings = {
-      enabled: true,
-      level: 'standard',
-      sampleRate: 1,
-      destination: { kind: 'otlp', endpoint: `http://localhost:${port}` },
-    };
+    state.settings = { ...BASE, enabled: true, destination: 'otlp', otlpEndpoint: `http://localhost:${port}` };
+    state.secrets = {};
     await exerciseAllSignals();
     expect(received.length).toBeGreaterThan(0);
     expect(lookups).toEqual([]);

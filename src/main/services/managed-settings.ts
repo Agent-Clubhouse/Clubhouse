@@ -48,6 +48,8 @@ export interface ManagedSettingsOptions<T> {
   migrate?: (raw: Record<string, unknown>) => T;
   /** Override defaults at registration time (e.g., platform-dependent values). */
   defaultsOverride?: Partial<T>;
+  /** File mode for the settings file (e.g. 0o600 for files holding salts). */
+  mode?: number;
 }
 
 /**
@@ -70,7 +72,7 @@ export function createManagedSettings<T>(
     ? { ...definition.defaults, ...options.defaultsOverride }
     : definition.defaults;
 
-  const store = createSettingsStore<T>(definition.filename, defaults, options?.migrate);
+  const store = createSettingsStore<T>(definition.filename, defaults, options?.migrate, options?.mode != null ? { mode: options.mode } : undefined);
 
   let registered = false;
 

@@ -7,11 +7,24 @@ export const app = {
   isPackaged: false,
   getName: () => 'clubhouse-test',
   getVersion: () => '0.0.0-test',
+  whenReady: () => Promise.resolve(),
   on: () => {},
   setBadgeCount: () => {},
   dock: {
     setBadge: () => {},
     bounce: () => -1,
+  },
+};
+
+/** Reversible stand-in for OS-backed encryption; never use in production code. */
+export const safeStorage = {
+  isEncryptionAvailable: () => true,
+  getSelectedStorageBackend: () => 'gnome_libsecret',
+  encryptString: (plain: string) => Buffer.from(`test-enc:${plain}`, 'utf8'),
+  decryptString: (buf: Buffer) => {
+    const text = buf.toString('utf8');
+    if (!text.startsWith('test-enc:')) throw new Error('Error while decrypting the ciphertext provided to safeStorage.decryptString.');
+    return text.slice('test-enc:'.length);
   },
 };
 

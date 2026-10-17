@@ -4,6 +4,7 @@ import type { LogLevel, LogRetention } from '../../../shared/types';
 import { LOG_LEVEL_PRIORITY } from '../../../shared/types';
 import { Toggle } from '../../components/Toggle';
 import { Spinner } from '../../components/Spinner';
+import { TelemetrySettingsSection } from './TelemetrySettingsSection';
 
 export function LoggingSettingsView() {
   const { settings, namespaces, logPath, loadSettings, saveSettings } = useLoggingStore();
@@ -146,6 +147,8 @@ export function LoggingSettingsView() {
             </>
           )}
         </div>
+
+        <TelemetrySettingsSection />
       </div>
     </div>
   );

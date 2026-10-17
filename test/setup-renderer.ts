@@ -475,6 +475,21 @@ vi.stubGlobal('clubhouse', {
   hookServer: {
     onAgentsNeedRestart: () => noop,
   },
+  telemetrySettings: {
+    getStatus: async () => ({ available: false }),
+    saveAzure: async () => ({ ok: false }),
+    clearAzure: async () => ({ ok: false }),
+    saveOtlp: async () => ({ ok: false }),
+    clearOtlp: async () => ({ ok: false }),
+    setEnabled: async () => ({ ok: false }),
+    setLevel: async () => ({ ok: false }),
+    setAdvanced: async () => ({ ok: false }),
+    sendTest: async () => ({ ok: false, message: '' }),
+    getPreview: async () => [],
+    resetId: async () => ({ ok: false }),
+    clearOffline: async () => ({ ok: false }),
+    deleteLocalData: async () => ({ ok: false }),
+  },
   window: {
     createPopout: asyncNoop,
     closePopout: asyncNoop,

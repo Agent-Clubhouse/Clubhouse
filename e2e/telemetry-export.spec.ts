@@ -160,6 +160,15 @@ test.describe('Telemetry export', () => {
       expectNoMachineIdentifiers(mock.received);
       // Only the configured endpoint's ingestion path was ever hit.
       for (const r of mock.received) expect(r.url.startsWith('/v2.1/track')).toBe(true);
+
+      // The seeded file is the Phase 1 shape with a plaintext secret. Once
+      // secure storage takes it, the plaintext is wiped from the settings file.
+      const dir = launched.userDataDir!;
+      const settingsText = await fs.promises.readFile(path.join(dir, 'telemetry-settings.json'), 'utf-8');
+      if (fs.existsSync(path.join(dir, 'telemetry-secret.bin'))) {
+        expect(settingsText).not.toContain('InstrumentationKey');
+        expect(JSON.parse(settingsText).destination).toBe('azure');
+      }
     } finally {
       delete process.env.CLUBHOUSE_TELEMETRY_TEST_AZURE_HOST;
       if (prevCa === undefined) delete process.env.NODE_EXTRA_CA_CERTS;

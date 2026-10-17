@@ -462,6 +462,22 @@ export const IPC = {
     /** Main → renderer: a list of agentIds whose hook config was changed and need restart for the change to take full effect. */
     AGENTS_NEED_RESTART: 'hook-server:agents-need-restart',
   },
+  /** Settings → Logging → Telemetry export (spec §6.8). Masked status only. */
+  TELEMETRY_SETTINGS: {
+    GET_STATUS: 'telemetry-settings:get-status',
+    SAVE_AZURE: 'telemetry-settings:save-azure',
+    CLEAR_AZURE: 'telemetry-settings:clear-azure',
+    SAVE_OTLP: 'telemetry-settings:save-otlp',
+    CLEAR_OTLP: 'telemetry-settings:clear-otlp',
+    SET_ENABLED: 'telemetry-settings:set-enabled',
+    SET_LEVEL: 'telemetry-settings:set-level',
+    SET_ADVANCED: 'telemetry-settings:set-advanced',
+    SEND_TEST: 'telemetry-settings:send-test',
+    GET_PREVIEW: 'telemetry-settings:get-preview',
+    RESET_ID: 'telemetry-settings:reset-id',
+    CLEAR_OFFLINE: 'telemetry-settings:clear-offline',
+    DELETE_LOCAL_DATA: 'telemetry-settings:delete-local-data',
+  },
   GOOBERS: {
     GET_STATE: 'goobers:get-state',
     VALIDATE_ROOT: 'goobers:validate-root',
