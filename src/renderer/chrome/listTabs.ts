@@ -1,5 +1,6 @@
 import { usePluginStore } from '../plugins/plugin-store';
 import { useUIStore } from '../stores/uiStore';
+import { useAgentSettingsTarget } from '../features/agents/agentSettingsPages';
 import { useProjectStore } from '../stores/projectStore';
 import { isRemoteProjectId } from '../stores/remoteProjectStore';
 
@@ -23,15 +24,21 @@ export function isListTab(
   return (layout ?? 'sidebar-content') === 'sidebar-content';
 }
 
-/** What the sidebar body shows: the agent tree, a project tab's list, the settings navigator, or Help topics. */
-export type SidebarMode = 'tree' | 'list' | 'settings' | 'help';
+/**
+ * What the sidebar body shows: the agent tree, a project tab's list, the
+ * settings navigator, Help topics, or the pages of the agent whose settings
+ * are open.
+ */
+export type SidebarMode = 'tree' | 'list' | 'settings' | 'help' | 'agent-settings';
 
 export function useSidebarMode(): SidebarMode {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const pluginId = explorerTab.startsWith('plugin:') && !explorerTab.startsWith('plugin:app:') ? explorerTab.slice('plugin:'.length) : null;
   const layout = usePluginStore((s) => (pluginId ? s.plugins[pluginId]?.manifest.contributes?.tab?.layout : undefined));
   const remote = useProjectStore((s) => (s.activeProjectId ? isRemoteProjectId(s.activeProjectId) : false));
+  const agentSettings = useAgentSettingsTarget(explorerTab);
   if (explorerTab === 'settings') return 'settings';
   if (explorerTab === 'help') return 'help';
+  if (agentSettings) return 'agent-settings';
   return isListTab(explorerTab, layout, { remote }) ? 'list' : 'tree';
 }

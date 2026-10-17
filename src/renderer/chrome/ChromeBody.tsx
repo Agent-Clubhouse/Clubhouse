@@ -23,6 +23,7 @@ const SURFACE_FOR_MODE: Record<SidebarMode, ChromeSurface> = {
   list: 'sidebar_list',
   settings: 'sidebar_settings',
   help: 'sidebar_help',
+  'agent-settings': 'sidebar_agent_settings',
 };
 
 function AppPluginContent({ pluginId }: { pluginId: string }) {

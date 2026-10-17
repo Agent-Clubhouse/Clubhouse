@@ -109,7 +109,7 @@ export function MainContentView() {
       activeAgent &&
       activeAgent.kind === 'durable'
     ) {
-      return <AgentSettingsView agent={activeAgent} />;
+      return <AgentSettingsView key={activeAgent.id} agent={activeAgent} />;
     }
 
     // Show placeholder when this agent is popped out

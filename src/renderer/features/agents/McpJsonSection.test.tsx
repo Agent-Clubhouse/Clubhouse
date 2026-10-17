@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { McpJsonSection } from './McpJsonSection';
 
@@ -34,7 +34,7 @@ describe('McpJsonSection', () => {
 
   it('renders the MCP Servers heading', async () => {
     renderSection();
-    expect(await screen.findByText('MCP Servers')).toBeInTheDocument();
+    expect(await screen.findByText('MCP servers')).toBeInTheDocument();
   });
 
   it('loads content from API', async () => {
@@ -59,13 +59,13 @@ describe('McpJsonSection', () => {
 
   it('Save button is disabled when content is not dirty', async () => {
     renderSection();
-    await screen.findByText('MCP Servers');
+    await screen.findByText('MCP servers');
     expect(screen.getByText('Save')).toBeDisabled();
   });
 
   it('Save button enables after content change with valid JSON', async () => {
     renderSection();
-    await screen.findByText('MCP Servers');
+    await screen.findByText('MCP servers');
 
     const editor = screen.getByTestId('monaco-editor');
     fireEvent.change(editor, { target: { value: '{"mcpServers": {"new": {}}}' } });
@@ -75,7 +75,7 @@ describe('McpJsonSection', () => {
 
   it('shows JSON validation error for invalid JSON', async () => {
     renderSection();
-    await screen.findByText('MCP Servers');
+    await screen.findByText('MCP servers');
 
     const editor = screen.getByTestId('monaco-editor');
     fireEvent.change(editor, { target: { value: '{invalid json' } });
@@ -88,7 +88,7 @@ describe('McpJsonSection', () => {
 
   it('disables Save when JSON is invalid even if dirty', async () => {
     renderSection();
-    await screen.findByText('MCP Servers');
+    await screen.findByText('MCP servers');
 
     const editor = screen.getByTestId('monaco-editor');
     fireEvent.change(editor, { target: { value: '{invalid' } });
@@ -98,7 +98,7 @@ describe('McpJsonSection', () => {
 
   it('saves content and clears dirty state', async () => {
     renderSection();
-    await screen.findByText('MCP Servers');
+    await screen.findByText('MCP servers');
 
     const editor = screen.getByTestId('monaco-editor');
     fireEvent.change(editor, { target: { value: '{"mcpServers": {"test": {}}}' } });
@@ -120,7 +120,7 @@ describe('McpJsonSection', () => {
     });
 
     renderSection();
-    await screen.findByText('MCP Servers');
+    await screen.findByText('MCP servers');
 
     const editor = screen.getByTestId('monaco-editor');
     fireEvent.change(editor, { target: { value: '{"mcpServers": {}}' } });
@@ -131,7 +131,7 @@ describe('McpJsonSection', () => {
 
   it('disables Save button when disabled prop is true', async () => {
     renderSection({ disabled: true });
-    await screen.findByText('MCP Servers');
+    await screen.findByText('MCP servers');
     expect(screen.getByText('Save')).toBeDisabled();
   });
 
@@ -146,7 +146,7 @@ describe('McpJsonSection', () => {
     window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockRejectedValue(new Error('fail'));
     renderSection();
     // Should still render after error
-    expect(await screen.findByText('MCP Servers')).toBeInTheDocument();
+    expect(await screen.findByText('MCP servers')).toBeInTheDocument();
   });
 
   it('shows the shadowing warning when a GHCP config is blocked by .mcp.json precedence', async () => {
@@ -157,5 +157,41 @@ describe('McpJsonSection', () => {
     renderSection();
 
     expect(await screen.findByText(warning)).toBeInTheDocument();
+  });
+
+  describe('in the agent settings save bar', () => {
+    it('drops its own Save, reports dirty and the server count, and saves through the handle', async () => {
+      window.clubhouse.agentSettings.readMcpRawJson = vi.fn().mockResolvedValue('{"mcpServers":{"a":{},"b":{}}}');
+      const onRegisterSave = vi.fn();
+      const onDirtyChange = vi.fn();
+      const onCountChange = vi.fn();
+      renderSection({ onRegisterSave, onDirtyChange, onCountChange });
+      await screen.findByText('MCP servers');
+      expect(screen.queryByText('Save')).not.toBeInTheDocument();
+      expect(onCountChange).toHaveBeenCalledWith(2);
+
+      fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{"mcpServers":{"a":{}}}' } });
+      expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+      const handle = onRegisterSave.mock.calls[0][0];
+      await act(() => handle.save());
+      expect(window.clubhouse.agentSettings.writeMcpRawJson).toHaveBeenCalledWith('/project', '{"mcpServers":{"a":{}}}', undefined);
+      expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+      expect(onCountChange).toHaveBeenLastCalledWith(1);
+    });
+
+    it('rejects when the write fails or the JSON is invalid, so the bar can say so', async () => {
+      window.clubhouse.agentSettings.writeMcpRawJson = vi.fn().mockResolvedValue({ ok: false, error: 'Permission denied' });
+      const onRegisterSave = vi.fn();
+      renderSection({ onRegisterSave });
+      await screen.findByText('MCP servers');
+      const handle = onRegisterSave.mock.calls[0][0];
+
+      fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{"mcpServers":{}} ' } });
+      await expect(act(() => handle.save())).rejects.toThrow('Permission denied');
+
+      fireEvent.change(screen.getByTestId('monaco-editor'), { target: { value: '{bad' } });
+      await expect(act(() => handle.save())).rejects.toThrow();
+    });
   });
 });

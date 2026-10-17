@@ -4,6 +4,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ChromeTitleBar } from './ChromeTitleBar';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
+import { useAgentStore } from '../stores/agentStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useChromeStore, SIDEBAR_DEFAULT } from './chromeStore';
 import type { PluginManifest, PluginSource } from '../../shared/plugin-types';
@@ -65,6 +66,19 @@ describe('ChromeTitleBar', () => {
     render(<ChromeTitleBar />);
     expect(screen.queryByTestId('explorer-tab-agents')).toBeNull();
     expect(screen.getByTestId('title-bar').textContent).toBe('Settings');
+  });
+
+  it('names the agent in the breadcrumb while its settings are open', () => {
+    useAgentStore.setState({
+      agents: { a1: { id: 'a1', projectId: 'p1', name: 'gallant-swift', kind: 'durable', status: 'sleeping', color: 'blue' } as never },
+      activeAgentId: 'a1',
+      agentSettingsOpenFor: 'a1',
+    });
+    render(<ChromeTitleBar />);
+    expect(screen.getByTestId('title-bar').textContent).toBe('Clubhouse/gallant-swift/Settings');
+    act(() => useAgentStore.setState({ agentSettingsOpenFor: null }));
+    expect(screen.getByTestId('title-bar').textContent).toBe('Clubhouse/gallant-swift');
+    useAgentStore.setState({ agents: {}, activeAgentId: null });
   });
 
   it('shows the project name in the breadcrumb', () => {

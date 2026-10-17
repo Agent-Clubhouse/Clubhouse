@@ -29,6 +29,7 @@ import { useAnnexClientStore } from '../stores/annexClientStore';
 import { useRemoteProjectStore, namespacedAgentId, namespacedProjectId } from '../stores/remoteProjectStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useChromeStore, SIDEBAR_DEFAULT, syncProjectScopeWithActiveAgent } from './chromeStore';
+import { useAgentSettingsPages } from '../features/agents/agentSettingsPages';
 import type { PluginManifest, PluginSource } from '../../shared/plugin-types';
 import type { Agent } from '../../shared/types';
 
@@ -365,6 +366,61 @@ describe('ChromeSidebar', () => {
       render(<ChromeSidebar />);
       expect(screen.queryByTestId('sidebar-list')).toBeNull();
       expect(screen.getByTestId('needs-you')).toBeTruthy();
+    });
+
+    it('swaps the tree for the agent settings pages, named in the breadcrumb', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'a1', activeAgentId: 'a1' });
+      render(<ChromeSidebar />);
+      expect(screen.getByTestId('agent-settings-nav')).toBeTruthy();
+      expect(screen.getByTestId('list-breadcrumb').textContent).toContain('a1');
+      expect(screen.queryByTestId('agent-item-a2')).toBeNull();
+      fireEvent.click(screen.getByText('Agents'));
+      expect(useAgentStore.getState().agentSettingsOpenFor).toBeNull();
+      expect(screen.queryByTestId('agent-settings-nav')).toBeNull();
+    });
+
+    it('closes agent settings on Esc', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'a1', activeAgentId: 'a1' });
+      render(<ChromeSidebar />);
+      fireEvent.keyDown(screen.getByTestId('agent-settings-nav-general'), { key: 'Escape' });
+      expect(useAgentStore.getState().agentSettingsOpenFor).toBeNull();
+    });
+
+    it('asks before opening another agent while settings edits are unsaved', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'a1', activeAgentId: 'a1' });
+      useAgentSettingsPages.getState().setDirtyPages(['instructions']);
+      render(<ChromeSidebar />);
+      // The tree is hidden in agent settings; the Needs you strip opens b1.
+      fireEvent.click(within(screen.getByTestId('needs-you-strip')).getAllByRole('button')[0]);
+      const pending = useAgentSettingsPages.getState().pendingLeave;
+      expect(pending).not.toBeNull();
+      expect(useAgentStore.getState().activeAgentId).toBe('a1');
+      expect(useAgentStore.getState().agentSettingsOpenFor).toBe('a1');
+
+      // What the view's confirm does.
+      act(() => {
+        useAgentSettingsPages.getState().setPendingLeave(null);
+        useAgentStore.getState().closeAgentSettings();
+        pending!();
+      });
+      expect(useAgentStore.getState().activeAgentId).toBe('b1');
+      useAgentSettingsPages.getState().reset();
+    });
+
+    it('opens another agent at once when nothing is unsaved', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'a1', activeAgentId: 'a1' });
+      useAgentSettingsPages.getState().reset();
+      render(<ChromeSidebar />);
+      fireEvent.click(within(screen.getByTestId('needs-you-strip')).getAllByRole('button')[0]);
+      expect(useAgentSettingsPages.getState().pendingLeave).toBeNull();
+      expect(useAgentStore.getState().activeAgentId).toBe('b1');
+      expect(useAgentStore.getState().agentSettingsOpenFor).toBeNull();
+    });
+
+    it('keeps the tree when settings are open for an agent outside the active project', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'b1', activeAgentId: 'b1' });
+      render(<ChromeSidebar />);
+      expect(screen.queryByTestId('agent-settings-nav')).toBeNull();
     });
 
     it('shows the settings navigator in Settings', () => {

@@ -15,6 +15,8 @@ import { ProjectTree } from './sidebar/ProjectTree';
 import { NeedsYou, NeedsYouStrip } from './sidebar/NeedsYou';
 import { ListBody } from './sidebar/ListBody';
 import { SettingsNav } from './sidebar/SettingsNav';
+import { AgentSettingsNav } from './sidebar/AgentSettingsNav';
+import { requestCloseAgentSettings, requestLeaveAgentSettings } from '../features/agents/agentSettingsPages';
 import { HelpNav } from './sidebar/HelpNav';
 import { SidebarBreadcrumb } from './sidebar/SidebarBreadcrumb';
 import { useSidebarMode } from './listTabs';
@@ -334,7 +336,7 @@ export function ChromeSidebar() {
   // Selecting an agent makes its worktree the scope. On a tab that follows the
   // scope (Terminal, Files, Git) the tab stays; otherwise the agent opens.
   // An agent on another host switches the host first (a remote Needs you row).
-  const openAgent = useCallback((agent: Agent, keepTab: boolean) => {
+  const openAgent = useCallback((agent: Agent, keepTab: boolean) => requestLeaveAgentSettings(() => {
     useQuickAgentStore.getState().selectCompleted(null);
     switchHost(hostOf(agent.projectId));
     setProjectScope(null);
@@ -344,7 +346,7 @@ export function ChromeSidebar() {
     const tab = keepTab && sameProject && SCOPE_FOLLOWING_TABS.has(explorerTab) ? explorerTab : 'agents';
     setExplorerTab(tab, agent.projectId);
     setActiveAgent(agent.id, agent.projectId);
-  }, [setActiveProject, setProjectScope, setExplorerTab, setActiveAgent, explorerTab]);
+  }), [setActiveProject, setProjectScope, setExplorerTab, setActiveAgent, explorerTab]);
 
   const selectAgent = useCallback((agent: Agent) => {
     openAgent(agent, true);
@@ -443,8 +445,14 @@ export function ChromeSidebar() {
   const backToAgents = () => {
     if (mode === 'settings') useUIStore.getState().toggleSettings();
     else if (mode === 'help') useUIStore.getState().toggleHelp();
+    else if (mode === 'agent-settings') requestCloseAgentSettings();
     else setExplorerTab('agents', activeProjectId ?? undefined);
   };
+  const agentSettingsName = useAgentStore((s) => (mode === 'agent-settings' && s.activeAgentId ? s.agents[s.activeAgentId]?.name : undefined));
+  const breadcrumbLabel = mode === 'settings' ? 'Settings'
+    : mode === 'help' ? 'Help'
+      : mode === 'agent-settings' ? agentSettingsName ?? 'Agent'
+        : listLabel ?? 'List';
   const onSidebarKeyDown = (e: React.KeyboardEvent) => {
     if (mode === 'tree' || e.key !== 'Escape' || e.defaultPrevented) return;
     const target = e.target as HTMLElement;
@@ -492,9 +500,12 @@ export function ChromeSidebar() {
 
       {mode !== 'tree' && (
         <>
-          <SidebarBreadcrumb current={mode === 'settings' ? 'Settings' : mode === 'help' ? 'Help' : listLabel ?? 'List'} onBack={backToAgents} />
+          <SidebarBreadcrumb current={breadcrumbLabel} onBack={backToAgents} />
           <NeedsYouStrip items={needs} onSelect={selectNeedsYou} onReview={reviewEnabled ? openNeedsYouReview : undefined} />
-          {mode === 'settings' ? <SettingsNav /> : mode === 'help' ? <HelpNav /> : <ListBody explorerTab={explorerTab} projectId={activeProjectId} />}
+          {mode === 'settings' ? <SettingsNav />
+            : mode === 'help' ? <HelpNav />
+              : mode === 'agent-settings' ? <AgentSettingsNav />
+                : <ListBody explorerTab={explorerTab} projectId={activeProjectId} />}
         </>
       )}
 

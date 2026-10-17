@@ -1,10 +1,13 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { AgentSettingsView } from './AgentSettingsView';
+import { useAgentSettingsPages, requestCloseAgentSettings, requestLeaveAgentSettings } from './agentSettingsPages';
+import { useToastStore } from '../../stores/toastStore';
+import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import type { Agent, MaterializationPreview } from '../../../shared/types';
 
 // Mock heavy child components
@@ -27,8 +30,12 @@ vi.mock('../../components/ImageCropDialog', () => ({
   ImageCropDialog: () => <div data-testid="image-crop-dialog" />,
 }));
 
+let skillsProps: any;
 vi.mock('./SkillsSection', () => ({
-  SkillsSection: (props: any) => <div data-testid="skills-section" data-disabled={String(props.disabled)} />,
+  SkillsSection: (props: any) => {
+    skillsProps = props;
+    return <div data-testid="skills-section" data-disabled={String(props.disabled)} />;
+  },
 }));
 
 let capturedOnCreateFromPluginTemplate: ((entry: any) => void) | undefined;
@@ -39,8 +46,12 @@ vi.mock('./AgentTemplatesSection', () => ({
   },
 }));
 
+let mcpProps: any;
 vi.mock('./McpJsonSection', () => ({
-  McpJsonSection: (props: any) => <div data-testid="mcp-json-section" data-disabled={String(props.disabled)} />,
+  McpJsonSection: (props: any) => {
+    mcpProps = props;
+    return <div data-testid="mcp-json-section" data-disabled={String(props.disabled)} />;
+  },
 }));
 
 let _capturedTemplateOnCreate: ((config: any) => void) | undefined;
@@ -101,6 +112,7 @@ function resetStores() {
   useAgentStore.setState({
     agents: { 'agent-1': defaultAgent },
     activeAgentId: 'agent-1',
+    agentSettingsOpenFor: 'agent-1',
     agentIcons: {},
     closeAgentSettings: vi.fn(),
     updateAgent: vi.fn(),
@@ -182,75 +194,94 @@ describe('AgentSettingsView', () => {
       expect(closeAgentSettings).toHaveBeenCalled();
     });
 
-    it('renders refresh button', () => {
+    it('renders reload button', () => {
       renderSettings();
-      expect(screen.getByTitle('Refresh from disk')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Reload from disk' })).toBeInTheDocument();
     });
   });
 
   describe('running state', () => {
-    it('shows read-only banner when running', () => {
+    it('shows one line with the Working state and Stop when running', () => {
       renderSettings({ status: 'running' });
-      expect(screen.getByText(/read-only while this agent is running/)).toBeInTheDocument();
+      const line = screen.getByTestId('agent-settings-running');
+      expect(line).toHaveTextContent('Working');
+      expect(line).toHaveTextContent('Stop the agent to change these settings.');
     });
 
-    it('does not show read-only banner when sleeping', () => {
+    it('stops the agent from the running line', () => {
+      const killAgent = vi.fn().mockResolvedValue(undefined);
+      useAgentStore.setState({ killAgent });
+      renderSettings({ status: 'running' });
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+      expect(killAgent).toHaveBeenCalledWith('agent-1');
+    });
+
+    it('does not show the running line when sleeping', () => {
       renderSettings({ status: 'sleeping' });
-      expect(screen.queryByText(/read-only while this agent is running/)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('agent-settings-running')).not.toBeInTheDocument();
     });
   });
 
-  describe('appearance section', () => {
-    it('renders appearance heading', () => {
+  describe('identity section', () => {
+    it('renders the sentence-case Identity heading', () => {
       renderSettings();
-      expect(screen.getByText('Appearance')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Identity' })).toBeInTheDocument();
     });
 
-    it('renders agent name with rename button', () => {
+    it('edits the name in place', () => {
       renderSettings();
-      expect(screen.getByText('Rename')).toBeInTheDocument();
+      expect(screen.getByLabelText('Name')).toHaveValue('bold-falcon');
     });
 
-    it('shows rename input on Rename click', () => {
+    it('saves a new name on blur', async () => {
+      const updateAgent = vi.fn().mockResolvedValue(undefined);
+      useAgentStore.setState({ updateAgent });
       renderSettings();
-      fireEvent.click(screen.getByText('Rename'));
-      expect(screen.getByDisplayValue('bold-falcon')).toBeInTheDocument();
+      const input = screen.getByLabelText('Name');
+      fireEvent.change(input, { target: { value: 'calm-heron' } });
+      fireEvent.blur(input);
+      await waitFor(() => expect(updateAgent).toHaveBeenCalledWith('agent-1', { name: 'calm-heron' }, '/project'));
+    });
+
+    it('restores the name on Escape without saving', () => {
+      const updateAgent = vi.fn();
+      useAgentStore.setState({ updateAgent });
+      renderSettings();
+      const input = screen.getByLabelText('Name');
+      fireEvent.change(input, { target: { value: 'calm-heron' } });
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(input).toHaveValue('bold-falcon');
+      expect(updateAgent).not.toHaveBeenCalled();
     });
 
     it('renders color picker', () => {
       renderSettings();
-      expect(screen.getByText('Color')).toBeInTheDocument();
+      expect(screen.getByRole('radiogroup', { name: 'Color' })).toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'Indigo' })).toHaveAttribute('aria-checked', 'true');
     });
 
     it('renders model selector', () => {
       renderSettings();
-      expect(screen.getByText('Model')).toBeInTheDocument();
+      expect(screen.getByLabelText('Model', { selector: '#agent-settings-model' })).toBeInTheDocument();
     });
 
-    it('disables rename when running', () => {
+    it('disables the name when running', () => {
       renderSettings({ status: 'running' });
-      expect(screen.getByText('Rename')).toBeDisabled();
+      expect(screen.getByLabelText('Name')).toBeDisabled();
     });
   });
 
-  describe('tab switching', () => {
-    it('renders Main Agent and Quick Agent tabs', () => {
-      renderSettings();
-      expect(screen.getByText('Main Agent')).toBeInTheDocument();
-      expect(screen.getByText('Quick Agent')).toBeInTheDocument();
+  describe('classic single page', () => {
+    it('has no uppercase labels', () => {
+      const { container } = renderSettings();
+      expect(container.querySelector('.uppercase')).toBeNull();
     });
 
-    it('shows main tab content by default', async () => {
+    it('stacks every section on one page', async () => {
       renderSettings();
-      await waitFor(() => {
-        expect(screen.getByTestId('skills-section')).toBeInTheDocument();
-      });
-    });
-
-    it('switches to quick agent tab', async () => {
-      renderSettings();
-      fireEvent.click(screen.getByText('Quick Agent'));
-      expect(await screen.findByText('Quick Agent Defaults')).toBeInTheDocument();
+      expect(await screen.findByTestId('skills-section')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Quick agents' })).toBeInTheDocument();
+      expect(screen.queryByTestId('agent-settings-nav')).not.toBeInTheDocument();
     });
   });
 
@@ -280,22 +311,22 @@ describe('AgentSettingsView', () => {
       expect(await screen.findByText('Permissions')).toBeInTheDocument();
     });
 
-    it('renders free agent mode', () => {
+    it('renders free agent mode as a switch', () => {
       renderSettings();
-      expect(screen.getByText('Free Agent Mode')).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'Free Agent Mode' })).toBeInTheDocument();
     });
 
     it('does not render a Structured Mode toggle, even with the legacy experimental flag set', async () => {
       window.clubhouse.app.getExperimentalSettings = vi.fn().mockResolvedValue({ structuredMode: true });
       renderSettings();
-      expect(await screen.findByText('Free Agent Mode')).toBeInTheDocument();
+      expect(await screen.findByTestId('agent-settings-free-agent-mode')).toBeInTheDocument();
       expect(screen.queryByTestId('structured-mode-field')).not.toBeInTheDocument();
       expect(screen.queryByText('Structured Mode')).not.toBeInTheDocument();
     });
 
     it('shows shared settings info note', () => {
       renderSettings();
-      expect(screen.getByText(/Skills, agent definitions, and MCP settings/)).toBeInTheDocument();
+      expect(screen.getByText(/Skills, agent definitions and MCP settings live in the agent worktree/)).toBeInTheDocument();
     });
   });
 
@@ -371,7 +402,7 @@ describe('AgentSettingsView', () => {
   describe('runtime override', () => {
     it('is hidden when the experimental Chat flag is off', async () => {
       renderSettings();
-      expect(await screen.findByText('Free Agent Mode')).toBeInTheDocument();
+      expect(await screen.findByTestId('agent-settings-free-agent-mode')).toBeInTheDocument();
       await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
       expect(screen.queryByLabelText('Runtime')).not.toBeInTheDocument();
     });
@@ -470,19 +501,19 @@ describe('AgentSettingsView', () => {
       });
     });
 
-    it('shows clubhouse mode banner when active', () => {
+    it('shows a Clubhouse Mode section when active', () => {
       renderSettings();
-      expect(screen.getByText(/Clubhouse Mode is active/)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Clubhouse Mode' })).toBeInTheDocument();
     });
 
     it('shows managed mode message when no override', () => {
       renderSettings();
-      expect(screen.getByText(/managed from project defaults/)).toBeInTheDocument();
+      expect(screen.getByText(/settings come from project defaults/)).toBeInTheDocument();
     });
 
-    it('shows local override checkbox', () => {
+    it('shows local override switch', () => {
       renderSettings();
-      expect(screen.getByText('Enable local overrides')).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'Local overrides' })).toBeInTheDocument();
     });
 
     it('hides editable sections when managed by clubhouse', async () => {
@@ -518,28 +549,27 @@ describe('AgentSettingsView', () => {
     it('shows materialization preview behind the collapsible toggle when managed', async () => {
       renderSettings();
       fireEvent.click(await screen.findByText('Show resolved preview'));
-      expect(await screen.findByText('Resolved Instructions')).toBeInTheDocument();
+      expect(await screen.findByText('Resolved instructions')).toBeInTheDocument();
       expect(screen.getByText('You are bold-falcon.')).toBeInTheDocument();
     });
 
     it('shows resolved permissions in preview', async () => {
       renderSettings();
       fireEvent.click(await screen.findByText('Show resolved preview'));
-      expect(await screen.findByText('Resolved Permissions')).toBeInTheDocument();
+      expect(await screen.findByText('Resolved permissions')).toBeInTheDocument();
     });
 
     it('shows managed skills in preview', async () => {
       renderSettings();
       fireEvent.click(await screen.findByText('Show resolved preview'));
-      expect(await screen.findByText('Managed Skills')).toBeInTheDocument();
-      expect(screen.getByText('mission')).toBeInTheDocument();
-      expect(screen.getByText('review')).toBeInTheDocument();
+      expect(await screen.findByText('Managed skills')).toBeInTheDocument();
+      expect(screen.getByText('mission, review')).toBeInTheDocument();
     });
 
     it('shows managed agent templates in preview', async () => {
       renderSettings();
       fireEvent.click(await screen.findByText('Show resolved preview'));
-      expect(await screen.findByText('Managed Agent Templates')).toBeInTheDocument();
+      expect(await screen.findByText('Managed agent definitions')).toBeInTheDocument();
       expect(screen.getByText('researcher')).toBeInTheDocument();
     });
 
@@ -550,7 +580,7 @@ describe('AgentSettingsView', () => {
 
       renderSettings();
       await waitFor(() => {
-        expect(screen.getByText(/local overrides are enabled/)).toBeInTheDocument();
+        expect(screen.getByText(/this agent keeps its own instructions/)).toBeInTheDocument();
       });
     });
 
@@ -567,10 +597,9 @@ describe('AgentSettingsView', () => {
       });
     });
 
-    it('toggles override on checkbox click', async () => {
+    it('toggles override on switch click', async () => {
       renderSettings();
-      const checkbox = await screen.findByRole('checkbox', { name: /local overrides/i });
-      fireEvent.click(checkbox);
+      fireEvent.click(await screen.findByRole('switch', { name: 'Local overrides' }));
 
       await waitFor(() => {
         expect((window.clubhouse.agent as any).updateDurableConfig).toHaveBeenCalledWith(
@@ -581,7 +610,7 @@ describe('AgentSettingsView', () => {
 
     it('shows the personalize info note when managed', () => {
       renderSettings();
-      expect(screen.getByText(/Personalize it by editing the wildcard values/)).toBeInTheDocument();
+      expect(screen.getByText(/Personalize this agent with the wildcard values/)).toBeInTheDocument();
     });
   });
 
@@ -592,19 +621,20 @@ describe('AgentSettingsView', () => {
         isEnabledForProject: () => false,
       });
       renderSettings();
-      expect(screen.queryByText(/Clubhouse Mode is active/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Clubhouse Mode' })).not.toBeInTheDocument();
     });
   });
 
-  describe('utility terminal', () => {
-    it('renders utility shell toggle', () => {
+  describe('shell in worktree', () => {
+    it('renders the Shell in worktree row', () => {
       renderSettings();
-      expect(screen.getByText('Utility shell')).toBeInTheDocument();
+      expect(screen.getByText('Shell in worktree')).toBeInTheDocument();
+      expect(screen.queryByTestId('utility-terminal')).not.toBeInTheDocument();
     });
 
     it('expands terminal on click', () => {
       renderSettings();
-      fireEvent.click(screen.getByText('Utility shell'));
+      fireEvent.click(screen.getByText('Shell in worktree'));
       expect(screen.getByTestId('utility-terminal')).toBeInTheDocument();
     });
   });
@@ -612,14 +642,14 @@ describe('AgentSettingsView', () => {
   describe('custom model', () => {
     it('shows Custom option in model selector', () => {
       renderSettings();
-      const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
+      const modelSelect = screen.getByLabelText('Model', { selector: '#agent-settings-model' }) as HTMLSelectElement;
       const options = Array.from(modelSelect.querySelectorAll('option'));
       expect(options.find((o) => o.value === 'custom')).toBeDefined();
     });
 
     it('reveals text input when Custom is selected', () => {
       renderSettings();
-      const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
+      const modelSelect = screen.getByLabelText('Model', { selector: '#agent-settings-model' }) as HTMLSelectElement;
       fireEvent.change(modelSelect, { target: { value: 'custom' } });
       expect(screen.getByPlaceholderText('e.g. claude-opus-4-6')).toBeInTheDocument();
     });
@@ -699,7 +729,7 @@ describe('AgentSettingsView', () => {
       const mockUpdate = vi.fn().mockResolvedValue(undefined);
       (window.clubhouse.agent as any).updateDurableConfig = mockUpdate;
       renderSettings();
-      const modelSelect = screen.getByDisplayValue('Default') as HTMLSelectElement;
+      const modelSelect = screen.getByLabelText('Model', { selector: '#agent-settings-model' }) as HTMLSelectElement;
       fireEvent.change(modelSelect, { target: { value: 'custom' } });
       const customInput = screen.getByPlaceholderText('e.g. claude-opus-4-6');
       fireEvent.change(customInput, { target: { value: 'claude-opus-4-6' } });
@@ -711,15 +741,7 @@ describe('AgentSettingsView', () => {
 
     it('shows Custom option in QAD model selector', async () => {
       renderSettings();
-      // Navigate to Quick Agent tab
-      const qadTab = screen.getByRole('button', { name: /Quick Agent/i });
-      fireEvent.click(qadTab);
-      await waitFor(() => {
-        expect(screen.getByText('Default model')).toBeInTheDocument();
-      });
-      // The QAD model selector is the select element after the "Default model" label
-      const label = screen.getByText('Default model');
-      const qadModelSelect = label.parentElement!.querySelector('select') as HTMLSelectElement;
+      const qadModelSelect = await screen.findByLabelText('Model', { selector: '#agent-settings-qad-model' }) as HTMLSelectElement;
       const options = Array.from(qadModelSelect.querySelectorAll('option'));
       expect(options.find((o) => o.value === 'custom')).toBeDefined();
     });
@@ -729,11 +751,239 @@ describe('AgentSettingsView', () => {
         quickAgentDefaults: { defaultModel: 'exotic-model-7b' },
       });
       renderSettings();
-      const qadTab = screen.getByRole('button', { name: /Quick Agent/i });
-      fireEvent.click(qadTab);
       await waitFor(() => {
         expect(screen.getByDisplayValue('exotic-model-7b')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('new chrome pages', () => {
+    beforeEach(() => {
+      useChromeFlagStore.setState({ enabled: true });
+      useToastStore.setState({ toasts: [] });
+    });
+    afterEach(() => {
+      useChromeFlagStore.setState({ enabled: false });
+    });
+
+    const visiblePage = () => screen.getAllByTestId(/^agent-settings-page-/).filter((el) => !el.hidden);
+
+    it('has no header and opens on General', () => {
+      renderSettings();
+      expect(screen.queryByTitle('Back')).not.toBeInTheDocument();
+      expect(visiblePage().map((el) => el.dataset.testid)).toEqual(['agent-settings-page-general']);
+      expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument();
+    });
+
+    it('shows the page the sidebar selects and keeps the others mounted but hidden', async () => {
+      renderSettings();
+      act(() => useAgentSettingsPages.getState().setPage('skills'));
+      expect(visiblePage().map((el) => el.dataset.testid)).toEqual(['agent-settings-page-skills']);
+      expect(screen.getByTestId('skills-section')).toBeVisible();
+      expect(screen.getByLabelText('Name')).not.toBeVisible();
+    });
+
+    it('keeps edits when switching pages', async () => {
+      renderSettings();
+      act(() => useAgentSettingsPages.getState().setPage('instructions'));
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Kept' } });
+      act(() => useAgentSettingsPages.getState().setPage('general'));
+      act(() => useAgentSettingsPages.getState().setPage('instructions'));
+      expect(screen.getByLabelText('Instructions')).toHaveValue('Kept');
+    });
+
+    it('resets to General when another agent opens', () => {
+      useAgentSettingsPages.getState().setPage('permissions');
+      renderSettings();
+      expect(useAgentSettingsPages.getState().page).toBe('general');
+    });
+
+    it('collects text edits in one save bar and marks the dirty pages', async () => {
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'New instructions' } });
+      fireEvent.change(await screen.findByLabelText('Allowed tools, one per line', { selector: '#agent-settings-perm-allow' }), { target: { value: 'Read(**)\nEdit(**)' } });
+
+      const bar = screen.getByTestId('agent-settings-save-bar');
+      expect(bar).toHaveTextContent('Unsaved changes to instructions and permissions');
+      expect(useAgentSettingsPages.getState().dirtyPages).toEqual(['instructions', 'permissions']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.saveInstructions).toHaveBeenCalledWith(
+          '/project/.clubhouse/agents/bold-falcon', 'New instructions', '/project',
+        );
+        expect(window.clubhouse.agentSettings.savePermissions).toHaveBeenCalledWith(
+          '/project/.clubhouse/agents/bold-falcon', { allow: ['Read(**)', 'Edit(**)'], deny: undefined }, '/project',
+        );
+      });
+      await waitFor(() => expect(screen.queryByTestId('agent-settings-save-bar')).not.toBeInTheDocument());
+      expect(useAgentSettingsPages.getState().dirtyPages).toEqual([]);
+    });
+
+    it('keeps going after a failed save, says which saved, and leaves the bar usable', async () => {
+      window.clubhouse.agentSettings.saveInstructions = vi.fn().mockRejectedValue(new Error('EACCES'));
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Nope' } });
+      fireEvent.change(await screen.findByLabelText('Allowed tools, one per line', { selector: '#agent-settings-perm-allow' }), { target: { value: 'Edit(**)' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(window.clubhouse.agentSettings.savePermissions).toHaveBeenCalled());
+      await waitFor(() => {
+        expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual(["Saved permissions. Couldn't save instructions."]);
+      });
+      expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('Unsaved changes to instructions');
+      expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Discard' })).not.toBeDisabled();
+    });
+
+    it('discards text edits back to what was loaded', async () => {
+      renderSettings();
+      const editor = await screen.findByLabelText('Instructions');
+      fireEvent.change(editor, { target: { value: 'Scratch' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+      expect(editor).toHaveValue('Agent instructions');
+      expect(screen.queryByTestId('agent-settings-save-bar')).not.toBeInTheDocument();
+      expect(window.clubhouse.agentSettings.saveInstructions).not.toHaveBeenCalled();
+    });
+
+    it('saves and discards .mcp.json edits through the bar', async () => {
+      renderSettings();
+      await screen.findByTestId('mcp-json-section');
+      const handle = { save: vi.fn().mockResolvedValue(undefined), discard: vi.fn() };
+      act(() => {
+        mcpProps.onRegisterSave(handle);
+        mcpProps.onDirtyChange(true);
+      });
+      expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('Unsaved changes to MCP servers');
+      expect(useAgentSettingsPages.getState().dirtyPages).toEqual(['mcp']);
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(handle.save).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+      expect(handle.discard).toHaveBeenCalled();
+    });
+
+    it('marks a page with an open skill editor without adding it to the bar', async () => {
+      renderSettings();
+      await screen.findByTestId('skills-section');
+      act(() => skillsProps.onDirtyChange(true));
+      expect(useAgentSettingsPages.getState().dirtyPages).toEqual(['skills']);
+      expect(screen.queryByTestId('agent-settings-save-bar')).not.toBeInTheDocument();
+    });
+
+    it('saves quick agent defaults from the save bar', async () => {
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Extra instructions'), { target: { value: 'Be brief.' } });
+      expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('quick agent defaults');
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => {
+        expect((window.clubhouse.agent as any).updateDurableConfig).toHaveBeenCalledWith(
+          '/project', 'agent-1', { quickAgentDefaults: { systemPrompt: 'Be brief.' } },
+        );
+      });
+    });
+
+    it('asks before leaving with unsaved edits', async () => {
+      const closeAgentSettings = vi.fn();
+      useAgentStore.setState({ closeAgentSettings });
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Unsaved' } });
+
+      act(() => requestCloseAgentSettings());
+      expect(closeAgentSettings).not.toHaveBeenCalled();
+      expect(await screen.findByText('Leave with unsaved changes?')).toBeInTheDocument();
+      expect(screen.getByText('Your changes to instructions will be lost.')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('confirm-destructive-cancel'));
+      expect(closeAgentSettings).not.toHaveBeenCalled();
+
+      act(() => requestCloseAgentSettings());
+      fireEvent.click(await screen.findByTestId('confirm-destructive-confirm'));
+      expect(closeAgentSettings).toHaveBeenCalled();
+    });
+
+    it('runs the pending action after confirming, so the other agent opens', async () => {
+      const closeAgentSettings = vi.fn();
+      const next = vi.fn();
+      useAgentStore.setState({ closeAgentSettings, agentSettingsOpenFor: 'agent-1' });
+      renderSettings();
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Unsaved' } });
+      act(() => requestLeaveAgentSettings(next));
+      expect(next).not.toHaveBeenCalled();
+      fireEvent.click(await screen.findByTestId('confirm-destructive-confirm'));
+      expect(closeAgentSettings).toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('closes at once when nothing is unsaved', () => {
+      const closeAgentSettings = vi.fn();
+      useAgentStore.setState({ closeAgentSettings });
+      renderSettings();
+      act(() => requestCloseAgentSettings());
+      expect(closeAgentSettings).toHaveBeenCalled();
+    });
+
+    it('discards edits to managed files when local overrides are turned off', async () => {
+      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ clubhouseModeOverride: true });
+      renderSettings();
+      const toggle = await screen.findByRole('switch', { name: 'Local overrides' });
+      await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+      fireEvent.change(await screen.findByLabelText('Instructions'), { target: { value: 'Unsaved' } });
+      fireEvent.change(screen.getByLabelText('Extra instructions'), { target: { value: 'Kept' } });
+
+      fireEvent.click(toggle);
+      await waitFor(() => expect(screen.getByTestId('agent-settings-save-bar')).toHaveTextContent('Unsaved changes to quick agent defaults'));
+      expect(screen.getByTestId('agent-settings-save-bar')).not.toHaveTextContent('instructions and');
+      expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual([
+        'Discarded unsaved changes to instructions. Clubhouse Mode manages them now.',
+      ]);
+    });
+
+    it('shows the launch wrapper states as plain words', async () => {
+      (window.clubhouse.project as any).readMcpCatalog = vi.fn().mockResolvedValue([
+        { id: 'fs', name: 'Filesystem', command: 'fs' },
+      ]);
+      renderSettings();
+      act(() => useAgentSettingsPages.getState().setPage('mcp'));
+      const wrapper = await screen.findByTestId('agent-settings-launch-wrapper');
+      expect(wrapper).toHaveTextContent('Launch wrapper');
+      expect(wrapper).toHaveTextContent('Filesystem');
+      expect(wrapper.querySelector('.uppercase')).toBeNull();
+    });
+
+    it('points managed pages back to General', async () => {
+      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
+      renderSettings();
+      act(() => useAgentSettingsPages.getState().setPage('skills'));
+      const page = screen.getByTestId('agent-settings-page-skills');
+      expect(within(page).getByTestId('agent-settings-managed')).toBeInTheDocument();
+      fireEvent.click(within(page).getByRole('button', { name: /Turn on local overrides in General/ }));
+      expect(useAgentSettingsPages.getState().page).toBe('general');
+    });
+
+    it('opens the shell from the store and hides its row while closed', () => {
+      renderSettings();
+      expect(screen.getByTestId('agent-settings-shell')).toHaveClass('hidden');
+      act(() => useAgentSettingsPages.getState().setShellOpen(true));
+      expect(screen.getByTestId('agent-settings-shell')).not.toHaveClass('hidden');
+      expect(screen.getByTestId('utility-terminal')).toBeInTheDocument();
+    });
+
+    it('takes sidebar counts from the sections and clears them under Clubhouse Mode', async () => {
+      renderSettings();
+      await screen.findByTestId('skills-section');
+      act(() => {
+        skillsProps.onCountChange(2);
+        mcpProps.onCountChange(3);
+      });
+      expect(useAgentSettingsPages.getState().counts).toEqual({ skills: 2, mcp: 3 });
+    });
+
+    it('clears counts when Clubhouse Mode manages the agent', () => {
+      useAgentSettingsPages.getState().setCount('skills', 4);
+      useClubhouseModeStore.setState({ enabled: true, isEnabledForProject: () => true });
+      renderSettings();
+      expect(useAgentSettingsPages.getState().counts).toEqual({});
     });
   });
 

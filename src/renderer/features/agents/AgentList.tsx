@@ -21,6 +21,7 @@ import { useAnnexClientStore } from '../../stores/annexClientStore';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 import type { PersonaTemplate } from '../personas';
 import { EmptyState } from '../../components/EmptyState';
+import { requestLeaveAgentSettings } from './agentSettingsPages';
 import { createDurableAgent, createDurableAgentFromTemplate } from './create-agent';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
@@ -260,10 +261,10 @@ function AgentListInner() {
     setShowMissionInput(true);
   }, []);
 
-  const handleSelectAgent = useCallback((agentId: string) => {
+  const handleSelectAgent = useCallback((agentId: string) => requestLeaveAgentSettings(() => {
     selectCompleted(null);
     setActiveAgent(agentId, activeProjectId ?? undefined);
-  }, [selectCompleted, setActiveAgent, activeProjectId]);
+  }), [selectCompleted, setActiveAgent, activeProjectId]);
 
   const handleMissionSubmit = async () => {
     if (!activeProject || !mission.trim()) return;

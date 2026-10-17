@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
+import { useAgentSettingsTarget } from '../features/agents/agentSettingsPages';
 import { usePluginStore } from '../plugins/plugin-store';
 import { Badge } from '../components/Badge';
 import { useChromeStore } from './chromeStore';
@@ -203,9 +204,10 @@ const NO_MRU: string[] = [];
  * tab/rail title, overridden by a plugin's window.setTitle()), shown as
  * "Project / Tab" in a project view (spec §6).
  */
-function useBreadcrumb(projectLabel: string | undefined, tabLabel: string | undefined): { parent?: string; current: string } {
+function useBreadcrumb(projectLabel: string | undefined, tabLabel: string | undefined): { parent?: string; middle?: string; current: string } {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activeAgentName = useAgentStore((s) => (s.activeAgentId ? s.agents[s.activeAgentId]?.name : undefined));
+  const agentSettings = useAgentSettingsTarget(explorerTab);
   const appPluginId = explorerTab.startsWith('plugin:app:') ? explorerTab.slice('plugin:app:'.length) : null;
   const projectPluginId = !appPluginId && explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
   const pluginId = appPluginId ?? projectPluginId;
@@ -225,6 +227,7 @@ function useBreadcrumb(projectLabel: string | undefined, tabLabel: string | unde
   if (explorerTab === 'help') return { current: 'Help' };
   if (appPluginId) return { current: dynamicTitle || appPluginLabel || appPluginId };
   if (!projectLabel) return { current: 'Clubhouse' };
+  if (agentSettings) return { parent: projectLabel, middle: agentSettings.name, current: 'Settings' };
   if (explorerTab === 'agents') return { parent: projectLabel, current: activeAgentName || 'Agents' };
   return { parent: projectLabel, current: dynamicTitle || projectPluginTitle || tabLabel || projectLabel };
 }
@@ -320,6 +323,12 @@ export function ChromeTitleBar() {
         {crumb.parent && !shortBreadcrumb && (
           <>
             <span className="text-ctp-subtext0 truncate">{crumb.parent}</span>
+            <span className="text-ctp-overlay0" aria-hidden="true">/</span>
+          </>
+        )}
+        {crumb.middle && (
+          <>
+            <span className="text-ctp-subtext0 truncate">{crumb.middle}</span>
             <span className="text-ctp-overlay0" aria-hidden="true">/</span>
           </>
         )}
