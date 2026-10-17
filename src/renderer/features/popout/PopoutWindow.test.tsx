@@ -68,6 +68,24 @@ describe('PopoutWindow', () => {
     });
   });
 
+  it('has a bare title bar with the agent name in the new layout', async () => {
+    const { useChromeFlagStore } = await import('../../chrome/chromeFlag');
+    useChromeFlagStore.setState({ enabled: true });
+    try {
+      mockAgentState.agents = { a1: { id: 'a1', name: 'snazzy-fox' } } as never;
+      render(<PopoutWindow />);
+      expect(screen.getByTestId('popout-title').textContent).toBe('snazzy-fox');
+      expect(screen.getByTestId('popout-title-bar').className).not.toContain('justify-center');
+    } finally {
+      useChromeFlagStore.setState({ enabled: false });
+    }
+  });
+
+  it('keeps the legacy title bar with the flag off', () => {
+    render(<PopoutWindow />);
+    expect(screen.getByTestId('popout-title').textContent).toBe('Agent — Pop-out');
+  });
+
   it('shows syncing message while loading state', () => {
     // Delay resolution to keep loading state visible
     getAgentStateMock.mockReturnValue(new Promise(() => {}));

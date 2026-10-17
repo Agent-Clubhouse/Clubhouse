@@ -12,7 +12,7 @@ import {
 describe('chromeStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
+    useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {} });
   });
 
   afterEach(() => {
@@ -21,7 +21,7 @@ describe('chromeStore', () => {
 
   describe('loadChromeState', () => {
     it('defaults to a 264px expanded sidebar when nothing is stored', () => {
-      expect(loadChromeState()).toEqual({ sidebarWidth: 264, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
+      expect(loadChromeState()).toEqual({ sidebarWidth: 264, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {} });
     });
 
     it('reads persisted width and collapsed state', () => {
@@ -36,7 +36,7 @@ describe('chromeStore', () => {
 
     it('falls back to defaults on corrupt JSON', () => {
       localStorage.setItem(CHROME_STORAGE_KEY, '{not json');
-      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
+      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {} });
     });
 
     it('reads the last selected project', () => {
@@ -46,7 +46,7 @@ describe('chromeStore', () => {
 
     it('never reads the legacy panel sizes key', () => {
       localStorage.setItem('clubhouse_panel_sizes', JSON.stringify({ explorerWidth: 390, explorerCollapsed: true }));
-      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
+      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {} });
     });
   });
 
@@ -58,7 +58,7 @@ describe('chromeStore', () => {
 
     it('reads a version 1 payload without tree state', () => {
       localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 1, sidebarWidth: 280, sidebarCollapsed: false }));
-      expect(loadChromeState()).toEqual({ sidebarWidth: 280, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
+      expect(loadChromeState()).toEqual({ sidebarWidth: 280, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {} });
     });
 
     it('togglePinned adds and removes a project', () => {
@@ -130,7 +130,7 @@ describe('chromeStore', () => {
       useChromeStore.getState().toggleSidebar();
       expect(localStorage.getItem(CHROME_STORAGE_KEY)).toBeNull();
       vi.advanceTimersByTime(400);
-      expect(JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!)).toEqual({ version: 2, sidebarWidth: 310, sidebarCollapsed: true, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [] });
+      expect(JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!)).toEqual({ version: 2, sidebarWidth: 310, sidebarCollapsed: true, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {} });
       expect(localStorage.getItem('clubhouse_panel_sizes')).toBe('{"explorerWidth":200}');
     });
   });
@@ -163,6 +163,7 @@ describe('chromeStore', () => {
       collapsedProjectIds: ['remote||s1||b', 'remote||s2||c'],
       expandedFolds: ['remote||s1||a:sleeping', 'p1:finished'],
       lastProjectId: 'p1',
+      tabMru: { p1: ['agents'], 'remote||s1||a': ['plugin:files'] },
     });
     useChromeStore.getState().forgetProjectsWithPrefix('remote||s1||');
     expect(useChromeStore.getState()).toMatchObject({
@@ -170,6 +171,31 @@ describe('chromeStore', () => {
       collapsedProjectIds: ['remote||s2||c'],
       expandedFolds: ['p1:finished'],
       lastProjectId: 'p1',
+      tabMru: { p1: ['agents'] },
+    });
+  });
+
+  describe('tab MRU', () => {
+    it('records tab opens per project, persists them, and forgets removed projects', () => {
+      vi.useFakeTimers();
+      try {
+        useChromeStore.setState({ tabMru: {} });
+        useChromeStore.getState().touchTab('p1', 'plugin:git');
+        useChromeStore.getState().touchTab('p1', 'agents');
+        useChromeStore.getState().touchTab('p2', 'plugin:files');
+        expect(useChromeStore.getState().tabMru).toEqual({ p1: ['agents', 'plugin:git'], p2: ['plugin:files'] });
+        vi.advanceTimersByTime(400);
+        expect(loadChromeState().tabMru).toEqual({ p1: ['agents', 'plugin:git'], p2: ['plugin:files'] });
+        useChromeStore.getState().forgetProjects(['p2']);
+        expect(useChromeStore.getState().tabMru).toEqual({ p1: ['agents', 'plugin:git'] });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('ignores a malformed stored MRU', () => {
+      localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 2, sidebarWidth: 300, tabMru: ['x'] }));
+      expect(loadChromeState().tabMru).toEqual({});
     });
   });
 });
