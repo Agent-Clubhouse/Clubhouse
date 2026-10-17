@@ -3,7 +3,7 @@ import type { PluginAPI } from '../../../../shared/plugin-types';
 import { fileState } from './state';
 import type { Tab } from './state';
 import { getFileIconColor } from './file-icons';
-import { PopupMenu, type MenuItem } from '../../../chrome/sidebar/ProjectMenu';
+import { PopupMenu, type MenuEntry } from '../../../components/PopupMenu';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -247,16 +247,18 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree, trailing }: TabB
     setContextMenu({ x: e.clientX, y: e.clientY, tab });
   }, []);
 
-  const contextItems = useCallback((tab: Tab): MenuItem[] => [
-    { id: 'close', label: 'Close', onSelect: () => onCloseTab(tab.id) },
+  const contextItems = useCallback((tab: Tab): MenuEntry[] => [
+    { id: 'close', label: 'Close', shortcut: 'Meta+Shift+W', onSelect: () => onCloseTab(tab.id) },
     { id: 'close-others', label: 'Close others', onSelect: () => fileState.closeOtherTabs(tab.id) },
     { id: 'close-right', label: 'Close to the right', onSelect: () => fileState.closeTabsToRight(tab.id) },
     { id: 'close-all', label: 'Close all', onSelect: () => fileState.closeAllTabs() },
+    { id: 'sep-pin', separator: true },
     {
       id: 'pin',
       label: tab.isPinned ? 'Unpin' : 'Pin',
       onSelect: () => (tab.isPinned ? fileState.unpinTab(tab.id) : fileState.pinTab(tab.id)),
     },
+    { id: 'sep-path', separator: true },
     { id: 'copy-path', label: 'Copy path', onSelect: () => { navigator.clipboard.writeText(tab.filePath).catch(() => {}); } },
     { id: 'reveal', label: 'Reveal in file tree', onSelect: () => onRevealInTree(tab.filePath) },
   ], [onCloseTab, onRevealInTree]);

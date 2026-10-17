@@ -5,7 +5,7 @@ import type { Tab, ScrollState } from './state';
 import { TabBar } from './TabBar';
 import { MonacoEditor, disposeModel, disposeCleanModels, updateSavedContent, getModelContent } from './MonacoEditor';
 import { useFilesScope } from './filesScope';
-import { PopupMenu, type MenuItem } from '../../../chrome/sidebar/ProjectMenu';
+import { PopupMenu, type MenuEntry } from '../../../components/PopupMenu';
 import { MarkdownPreview } from './MarkdownPreview';
 import { BINARY_EXTENSIONS, IMAGE_EXTENSIONS, EXT_TO_LANG } from './file-icons';
 import { tel } from '../../../telemetry';
@@ -130,7 +130,7 @@ const MoreIcon = React.createElement('svg', {
   React.createElement('circle', { cx: 19, cy: 12, r: 1.6 }),
 );
 
-function FileMenuButton({ items }: { items: MenuItem[] }) {
+function FileMenuButton({ items }: { items: MenuEntry[] }) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const ref = useRef<HTMLButtonElement>(null);
   return React.createElement(React.Fragment, null,

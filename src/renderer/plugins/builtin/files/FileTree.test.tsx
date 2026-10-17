@@ -20,7 +20,8 @@ function getByTitleOrMenu(label: string): HTMLElement {
   if (!screen.queryByRole('menu', { name: 'More file actions' })) {
     fireEvent.click(screen.getByTestId('files-more-btn'));
   }
-  return screen.getByRole('menuitem', { name: label });
+  // Items with a shortcut include it in their accessible name.
+  return screen.getByRole('menuitem', { name: new RegExp(`^${label}`) });
 }
 
 const MOCK_TREE: FileNode[] = [
@@ -1341,7 +1342,7 @@ describe('FileTree — accessibility', () => {
     const menu = await screen.findByRole('menu', { name: 'File actions' });
     expect(menu).toHaveAttribute('data-testid', 'files-tree-menu');
     expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toHaveClass('text-ctp-red');
   });
 });
 

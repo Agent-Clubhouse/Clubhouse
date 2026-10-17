@@ -4,8 +4,7 @@ import type { FileNode } from '../../../../shared/types';
 import { fileState } from './state';
 import { getFileIconColor } from './file-icons';
 import { fuzzyMatch } from '../../../features/command-palette/fuzzy-match';
-import { PopupMenu, type MenuItem } from '../../../chrome/sidebar/ProjectMenu';
-import { formatBinding } from '../../../stores/keyboardShortcutsStore';
+import { PopupMenu, type MenuEntry, type MenuItem } from '../../../components/PopupMenu';
 import { useFilesScope } from './filesScope';
 
 // ── Icons ──────────────────────────────────────────────────────────────
@@ -418,15 +417,17 @@ const TreeNode = React.memo(function TreeNodeInner({
 // ── Context menu ──────────────────────────────────────────────────────
 
 /** The tree's right-click actions, for the shared PopupMenu. */
-function contextMenuItems(multiSelectCount: number, onAction: (action: string) => void): MenuItem[] {
-  const item = (id: string, label: string): MenuItem => ({ id, label, onSelect: () => onAction(id) });
-  if (multiSelectCount > 1) return [item('deleteSelected', `Delete ${multiSelectCount} items`)];
+function contextMenuItems(multiSelectCount: number, onAction: (action: string) => void): MenuEntry[] {
+  const item = (id: string, label: string, danger = false): MenuItem => ({ id, label, danger, onSelect: () => onAction(id) });
+  if (multiSelectCount > 1) return [item('deleteSelected', `Delete ${multiSelectCount} items`, true)];
   return [
     item('newFile', 'New file'),
     item('newFolder', 'New folder'),
+    { id: 'sep-edit', separator: true },
     item('rename', 'Rename'),
     item('copy', 'Copy'),
-    item('delete', 'Delete'),
+    { id: 'sep-delete', separator: true },
+    item('delete', 'Delete', true),
   ];
 }
 
@@ -1216,14 +1217,16 @@ export function FileTree({ api: rawApi }: { api: PluginAPI }) {
 
   const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
-  const searchShortcut = formatBinding('Meta+Shift+F');
   const refreshAll = () => { loadTree(); loadGitStatus(); loadBranch(); loadWorktrees(); };
-  const moreItems: MenuItem[] = [
+  const moreItems: MenuEntry[] = [
     { id: 'new-folder', label: 'New folder', onSelect: handleNewFolder },
+    { id: 'sep-tree', separator: true },
     { id: 'expand-all', label: 'Expand all', onSelect: expandAll },
     { id: 'collapse-all', label: 'Collapse all', onSelect: collapseAll },
-    { id: 'search', label: `Search across files (${searchShortcut})`, onSelect: () => fileState.setSearchMode(true) },
-    { id: 'refresh', label: 'Refresh', onSelect: refreshAll },
+    { id: 'sep-search', separator: true },
+    // The platform's binding (⌘⇧F or Ctrl+Shift+F), not a hardcoded "Cmd+Shift+F"
+    { id: 'search', label: 'Search across files', shortcut: 'Meta+Shift+F', onSelect: () => fileState.setSearchMode(true) },
+    { id: 'refresh', label: 'Refresh', shortcut: 'Meta+Shift+R', onSelect: refreshAll },
   ];
 
   const iconButton = (props: Record<string, unknown>, icon: React.ReactElement) =>
