@@ -27,4 +27,6 @@ export interface BranchFilePatch {
   binary?: boolean;
   /** Over 1 MB: not read or diffed. */
   tooLarge?: boolean;
+  /** An untracked symbolic link: its target, never followed or read. */
+  link?: string;
 }

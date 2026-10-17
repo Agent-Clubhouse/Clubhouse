@@ -709,6 +709,36 @@ describe('ChatView review fixes', () => {
 describe('ChatView agent details', () => {
   beforeEach(() => { useAgentDetailsStore.setState({ open: false, focus: null }); });
 
+  it('hides the details column below 640px of pane, and brings it back when there is room', () => {
+    const observers: Array<{ cb: ResizeObserverCallback; el?: Element }> = [];
+    const Orig = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      private o: { cb: ResizeObserverCallback; el?: Element };
+      constructor(cb: ResizeObserverCallback) { this.o = { cb }; observers.push(this.o); }
+      observe(el: Element) { this.o.el = el; }
+      disconnect() {}
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+    const resizePane = (width: number) => act(() => {
+      for (const o of observers) {
+        if (o.el?.getAttribute('data-testid') === 'chat-view') o.cb([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver);
+      }
+    });
+    try {
+      useAgentDetailsStore.setState({ open: true });
+      renderFixture('claude', 'conversation');
+      expect(screen.getByTestId('agent-details')).toBeInTheDocument();
+      resizePane(560);
+      expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
+      // Still "open": it comes back when the pane is wide again.
+      expect(useAgentDetailsStore.getState().open).toBe(true);
+      resizePane(1100);
+      expect(screen.getByTestId('agent-details')).toBeInTheDocument();
+    } finally {
+      globalThis.ResizeObserver = Orig;
+    }
+  });
+
   it('shows and hides the details column from the toolbar, with every card collapsed', () => {
     renderFixture('claude', 'conversation');
     expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();

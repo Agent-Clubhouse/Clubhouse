@@ -134,6 +134,16 @@ describe('git branch against main', { timeout: 30_000 }, () => {
     expect(await getBranchFilePatch(repo, 'img.bin')).toEqual({ binary: true });
   });
 
+  // Windows runners can't make symlinks without developer mode.
+  (process.platform === 'win32' ? it.skip : it)('shows an untracked symlink as a link and never reads what it points at', async () => {
+    const outside = tmp('git-outside-');
+    write('secret.txt', 'do not read\n', outside);
+    fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(repo, 'leak.txt'));
+    const patch = await getBranchFilePatch(repo, 'leak.txt');
+    expect(patch).toEqual({ link: path.join(outside, 'secret.txt') });
+    expect(JSON.stringify(patch)).not.toContain('do not read');
+  });
+
   it('rejects a base that looks like an option', async () => {
     await expect(resolveMergeBase(repo, '--output=/tmp/x')).rejects.toThrow('Invalid base');
     await expect(resolveMergeBase(repo, 'main:secret')).rejects.toThrow('Invalid base');

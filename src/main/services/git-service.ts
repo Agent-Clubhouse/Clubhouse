@@ -767,8 +767,16 @@ export async function getBranchFilePatch(dirPath: string, filePath: string, base
   const untracked = (await gitExec(['ls-files', '--others', '--exclude-standard', '-z', '--', filePath], root, undefined, op)).split('\0');
   if (untracked.includes(filePath)) {
     const full = path.join(root, filePath);
-    const stat = await fs.promises.stat(full).catch((): null => null);
+    // lstat: a symlink shows as a link and is never followed, so nothing outside the repo is read.
+    const stat = await fs.promises.lstat(full).catch((): null => null);
+    if (stat?.isSymbolicLink()) {
+      const target = await fs.promises.readlink(full).catch((): string => '');
+      return { link: target };
+    }
     if (!stat?.isFile()) return {};
+    // A folder on the way could itself be a link; refuse anything that resolves outside the repo.
+    const [realFile, realRoot] = await Promise.all([fs.promises.realpath(full), fs.promises.realpath(root)]);
+    if (realFile !== realRoot && !realFile.startsWith(realRoot + path.sep)) return {};
     if (stat.size > BRANCH_PATCH_MAX_BYTES) return { tooLarge: true };
     const buf = await fs.promises.readFile(full);
     if (buf.includes(0)) return { binary: true };

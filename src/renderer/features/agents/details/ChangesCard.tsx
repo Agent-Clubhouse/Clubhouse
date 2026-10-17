@@ -48,7 +48,7 @@ type Diff = Parameters<typeof DiffCard>[0]['diff'];
 
 /** Files as rows; clicking one opens its diff under it. */
 /** A diff, or why there's none: too large to read, or nothing to show. */
-type DiffResult = Diff | 'tooLarge' | null;
+type DiffResult = Diff | 'tooLarge' | { link: string } | null;
 
 function FileList({ files, loadDiff, max }: { files: ChangedFile[]; loadDiff: (path: string) => Promise<DiffResult>; max?: number }) {
   const [open, setOpen] = useState<string | null>(null);
@@ -97,7 +97,10 @@ function FileList({ files, loadDiff, max }: { files: ChangedFile[]; loadDiff: (p
                 {diff === 'loading' && <p className="text-xs text-ctp-overlay1 py-1">Loading…</p>}
                 {diff === 'failed' && <p className="text-xs text-ctp-overlay1 py-1">No diff to show for this file.</p>}
                 {diff === 'tooLarge' && <p className="text-xs text-ctp-overlay1 py-1">Too large to show here (over 1 MB).</p>}
-                {diff && typeof diff === 'object' && <DiffCard diff={diff} />}
+                {diff && typeof diff === 'object' && 'link' in diff && (
+                  <p className="text-xs text-ctp-overlay1 py-1">Symbolic link to <span className="font-mono text-[11.5px] text-ctp-text break-all">{diff.link || 'an unreadable target'}</span></p>
+                )}
+                {diff && typeof diff === 'object' && 'type' in diff && <DiffCard diff={diff} />}
               </div>
             )}
           </li>
@@ -119,6 +122,7 @@ function BranchBody({ cwd, changes }: { cwd: string; changes: BranchChanges | nu
   const loadDiff = useCallback(async (p: string): Promise<DiffResult> => {
     const r = await window.clubhouse.git.branchFilePatch(cwd, p, undefined);
     if (r.tooLarge) return 'tooLarge';
+    if (r.link !== undefined) return { link: r.link };
     if (r.binary) return null;
     if (r.patch) return { type: 'diff', path: p, unifiedDiff: r.patch };
     if (r.newText !== undefined) return { type: 'diff', path: p, newText: r.newText };
