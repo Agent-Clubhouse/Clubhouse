@@ -46,7 +46,7 @@ async function stubDialogForPath(dirPath: string) {
 }
 
 test.beforeAll(async () => {
-  ({ electronApp, window } = await launchApp());
+  ({ electronApp, window } = await launchApp({ experimental: {} }));
 });
 
 test.afterAll(async () => {
@@ -63,36 +63,11 @@ test('clicking the canvas + button → New Canvas creates a new canvas tab', asy
     timeout: 10_000,
   });
 
-  // 2. Navigate to the project's canvas explorer tab. The canvas tab is
-  //    keyed as "plugin:canvas" in the UI store (see canvas-command-handler.ts).
-  await window.evaluate(() => {
-    // Reach into the renderer's UI store via the global window.clubhouse
-    // bridge — fall back to dispatching a click on the canvas nav button
-    // if the store handle isn't directly available.
-    const w = window as unknown as {
-      __zustand_uiStore?: { getState: () => { setExplorerTab: (tab: string, projectId?: string) => void } };
-    };
-    if (w.__zustand_uiStore) {
-      w.__zustand_uiStore.getState().setExplorerTab('plugin:canvas');
-    }
-  });
-
-  // If the programmatic store call didn't work, fall back to clicking the
-  // canvas tab in the explorer (the explorer renders one tab per builtin).
-  // The canvas tab title is "Canvas" or shows the canvas icon.
+  // 2. Select the project's Canvas tab, distinct from the app-wide Canvas button.
+  const canvasNavBtn = window.locator('[data-testid="explorer-tab-plugin:canvas"]');
+  await expect(canvasNavBtn).toBeVisible({ timeout: 10_000 });
+  await canvasNavBtn.click();
   const canvasPanel = window.locator('[data-testid="canvas-panel"]');
-  const panelVisible = await canvasPanel.isVisible({ timeout: 3_000 }).catch(() => false);
-  if (!panelVisible) {
-    // Try clicking a canvas tab/button in the explorer
-    const canvasNavBtn = window
-      .locator('button, [role="tab"]')
-      .filter({ hasText: /canvas/i })
-      .first();
-    if (await canvasNavBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await canvasNavBtn.click();
-    }
-  }
-
   await expect(canvasPanel).toBeVisible({ timeout: 10_000 });
 
   // 3. Capture the initial canvas tab count (real canvas IDs are
