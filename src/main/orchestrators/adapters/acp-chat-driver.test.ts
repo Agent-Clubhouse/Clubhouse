@@ -132,7 +132,8 @@ describe('Copilot ACP chat driver', () => {
         ],
       },
     });
-    expect(drafts.find((d) => d.type === 'permission_resolved')).toMatchObject({ data: { optionId: 'allow_once', decision: 'allow', by: 'user' } });
+    // The chat runtime reports answers it gives; the driver doesn't echo them.
+    expect(drafts.some((d) => d.type === 'permission_resolved')).toBe(false);
     expect(drafts.find((d) => d.type === 'usage' && d.data.scope === 'session')).toMatchObject({ data: { context: { used: 14047, size: 128000 } } });
     expect(drafts[drafts.length - 1]).toMatchObject({
       type: 'turn_ended',
@@ -217,12 +218,13 @@ describe('ACP → chat contract mapping', () => {
     expect(ended[1]).toMatchObject({ type: 'turn_ended', turnId: expect.stringMatching(/^turn-[0-9a-f]{8}-1$/), data: { stopReason: 'end_turn' } });
   });
 
-  it('maps a rejection and a cancellation', () => {
+  it('reports only cancellations it caused, not answers the runtime gave', () => {
     const mapper = new AcpChatEventMapper('copilot_acp');
     const options = [{ optionId: 'no', name: 'Never', kind: 'reject_always' as const }];
-    mapper.map({ type: 'permission_request', sessionId: 's1', requestId: '1', toolCall: { toolCallId: 't' }, options }, state());
+    expect(mapper.map({ type: 'permission_request', sessionId: 's1', requestId: '1', toolCall: { toolCallId: 't' }, options }, state())[0])
+      .toMatchObject({ type: 'permission_request', data: { options: [{ optionId: 'no', kind: 'reject_always', label: 'Never' }] } });
     expect(mapper.map({ type: 'permission_resolved', sessionId: 's1', requestId: '1', outcome: { outcome: 'selected', optionId: 'no' } }, state()))
-      .toEqual([{ type: 'permission_resolved', data: { requestId: '1', optionId: 'no', decision: 'deny', by: 'user' } }]);
+      .toEqual([]);
     expect(mapper.map({ type: 'permission_resolved', sessionId: 's1', requestId: '2', outcome: { outcome: 'cancelled' } }, state()))
       .toEqual([{ type: 'permission_resolved', data: { requestId: '2', decision: 'cancelled', by: 'user' } }]);
   });
@@ -261,8 +263,26 @@ describe('ACP → chat contract mapping', () => {
     const update = { type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'config_option_update' as const, configOptions: after.configOptions } };
     expect(mapper.map(update, after)).toEqual([{
       type: 'session_info',
-      data: { models: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }], efforts: ['low', 'high'] },
+      data: { models: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }] },
     }]);
+    expect(mapper.map(update, after)).toEqual([]);
+  });
+
+  it('clears a list that went away with an explicit empty array', () => {
+    const select = (id: string, category: string, values: string[]) =>
+      ({ type: 'select' as const, id, name: id, category, currentValue: values[0] ?? '', options: values.map((v) => ({ value: v, name: v })) });
+    const before = state({ configOptions: [select('model', 'model', ['a']), select('effort', 'thought_level', ['low', 'high'])] });
+    // The new model has no effort setting, so the agent drops the option.
+    const after = state({ configOptions: [select('model', 'model', ['a'])] });
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    mapper.prime(before);
+    const update = { type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'config_option_update' as const, configOptions: after.configOptions } };
+    expect(mapper.map(update, after)).toEqual([
+      // The effort itself is gone too.
+      { type: 'model_changed', data: { modelId: 'a' } },
+      // Only the list that changed is sent.
+      { type: 'session_info', data: { efforts: [] } },
+    ]);
     expect(mapper.map(update, after)).toEqual([]);
   });
 
@@ -361,6 +381,29 @@ describe('ACP chat driver failure paths', () => {
     }
     expect(first[0]).toMatchObject({ type: 'notice', data: { code: 'resume_unavailable' } });
     expect(first[1]).toMatchObject({ type: 'session_info', data: { nativeSessionId: 's-new' } });
+    expect(replayer.errors).toEqual([]);
+  });
+
+  it('discards a partial replay when the load then fails, and starts clean', async () => {
+    const replay = (update: Record<string, unknown>) => rec('in', { method: 'session/update', params: { sessionId: 'gone', update } });
+    const { driver, replayer } = setup([
+      genericStart[0], genericStart[1],
+      rec('out', { id: 2, method: 'session/load' }),
+      replay({ sessionUpdate: 'session_info_update', title: 'Old conversation' }),
+      replay({ sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'old-command', description: 'From the old session' }] }),
+      replay({ sessionUpdate: 'usage_update', used: 900, size: 1000 }),
+      replay({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'old reply' } }),
+      rec('in', { id: 2, error: { code: -32002, message: 'Resource not found' } }),
+      rec('out', { id: 3, method: 'session/new' }),
+      rec('in', { id: 3, result: { sessionId: 's-new' } }),
+    ]);
+    const session = await driver.start(startOpts({ resumeNativeSessionId: 'gone' }));
+    await session.close();
+    const drafts: ChatEventDraft[] = [];
+    for await (const d of session.events) drafts.push(d);
+
+    expect(drafts.map((d) => d.type)).toEqual(['notice', 'session_info']);
+    expect(drafts[1]).toEqual({ type: 'session_info', data: { nativeSessionId: 's-new', cliVersion: '0.4.0' } });
     expect(replayer.errors).toEqual([]);
   });
 

@@ -286,11 +286,16 @@ export class AcpSession {
     const caps = this.requireStarted();
     if (caps.resume === 'resume') {
       this.state.sessionId = sessionId;
-      const res = (await this.client.request(ACP_AGENT_METHODS.sessionResume, {
-        sessionId,
-        ...this.sessionParams(setup),
-      })) as LoadSessionResponse;
-      this.applySessionSetup(res ?? {});
+      try {
+        const res = (await this.client.request(ACP_AGENT_METHODS.sessionResume, {
+          sessionId,
+          ...this.sessionParams(setup),
+        })) as LoadSessionResponse;
+        this.applySessionSetup(res ?? {});
+      } catch (err) {
+        this.resetSessionState();
+        throw err;
+      }
       return { method: 'resume' };
     }
     if (caps.resume === 'load') {
@@ -312,6 +317,11 @@ export class AcpSession {
       this.loadRequestId = this.client.lastRequestId;
       const res = (await pending) as LoadSessionResponse;
       this.applySessionSetup(res ?? {});
+    } catch (err) {
+      // A load can replay part of the history and still fail. Leave nothing of
+      // that session behind, so a fallback session/new starts clean.
+      this.resetSessionState();
+      throw err;
     } finally {
       this.replaying = false;
       this.loadRequestId = null;
@@ -586,6 +596,19 @@ export class AcpSession {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
+
+  private resetSessionState(): void {
+    Object.assign(this.state, {
+      sessionId: null,
+      modes: null,
+      configOptions: [],
+      legacyModels: null,
+      availableCommands: [],
+      title: null,
+      context: null,
+    });
+    this.openToolCalls.clear();
+  }
 
   private applySessionSetup(res: LoadSessionResponse): void {
     if (res.modes && Array.isArray(res.modes.availableModes)) this.state.modes = res.modes;

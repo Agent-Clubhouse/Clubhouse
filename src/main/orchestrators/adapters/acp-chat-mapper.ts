@@ -95,7 +95,7 @@ function fileLink(target: string, mimeType?: string): ContentBlock {
 
 /**
  * MCP servers keyed by name → ACP's list. Accepts `{ command, args, env }`
- * (stdio) and `{ type: 'http' | 'sse', url, headers }`. Anything else is
+ * (stdio) and `{ type?, url, headers }` (SSE when type is 'sse', else HTTP). Anything else is
  * returned in `skipped` so the caller can log it.
  */
 export function toAcpMcpServers(servers: Record<string, unknown> | undefined): { servers: McpServer[]; skipped: string[] } {
@@ -110,7 +110,8 @@ export function toAcpMcpServers(servers: Record<string, unknown> | undefined): {
         args: Array.isArray(s.args) ? s.args.map(String) : [],
         env: pairs(s.env),
       });
-    } else if (s && typeof s.url === 'string' && (s.type === 'http' || s.type === 'sse' || s.type === undefined)) {
+    } else if (s && typeof s.url === 'string') {
+      // 'sse' is SSE; anything else with a URL ('http', 'streamable-http', unset) is HTTP.
       out.push({ type: s.type === 'sse' ? 'sse' : 'http', name, url: s.url, headers: pairs(s.headers) });
     } else {
       skipped.push(name);
@@ -257,7 +258,6 @@ export class AcpChatEventMapper {
   private model: string | undefined;
   private effort: string | undefined;
   private level: PermissionLevel | undefined;
-  private readonly permissionKinds = new Map<string, Map<string, PermissionOption['kind']>>();
 
   private choicesKey = '';
   private commandsKey = '';
@@ -332,7 +332,6 @@ export class AcpChatEventMapper {
         return out;
       }
       case 'permission_request': {
-        this.permissionKinds.set(event.requestId, new Map(event.options.map((o) => [o.optionId, o.kind])));
         this.lastKind = 'other';
         const tc = event.toolCall;
         return [this.scoped({
@@ -348,22 +347,11 @@ export class AcpChatEventMapper {
         })];
       }
       case 'permission_resolved': {
-        const kinds = this.permissionKinds.get(event.requestId);
-        this.permissionKinds.delete(event.requestId);
-        const outcome = event.outcome;
-        if (outcome.outcome === 'cancelled') {
-          return [this.scoped({ type: 'permission_resolved', data: { requestId: event.requestId, decision: 'cancelled', by: 'user' } })];
-        }
-        const kind = kinds?.get(outcome.optionId);
-        return [this.scoped({
-          type: 'permission_resolved',
-          data: {
-            requestId: event.requestId,
-            optionId: outcome.optionId,
-            decision: kind?.startsWith('reject') ? 'deny' : 'allow',
-            by: 'user',
-          },
-        })];
+        // The chat runtime emits permission_resolved for every answer it gives (user or
+        // Annex). Only a cancellation the driver caused (interrupt answers pending
+        // requests 'cancelled') is news to it.
+        if (event.outcome.outcome !== 'cancelled') return [];
+        return [this.scoped({ type: 'permission_resolved', data: { requestId: event.requestId, decision: 'cancelled', by: 'user' } })];
       }
       case 'unknown_update':
         return [{ type: 'protocol_unknown', data: { driver: this.driver, kind: 'field', name: `session/update:${event.kind}` } }];
@@ -496,7 +484,18 @@ export class AcpChatEventMapper {
 
     const choices = sessionChoices(state, this.modelCostHint);
     const choicesKey = JSON.stringify(choices);
-    if (choicesKey !== this.choicesKey) out.push({ type: 'session_info', data: choices });
+    if (choicesKey !== this.choicesKey) {
+      // Absent means unchanged, so a list that went away is sent as [] to clear it.
+      const previous = JSON.parse(this.choicesKey || '{}') as ReturnType<typeof sessionChoices>;
+      const changed = (key: 'models' | 'efforts') => JSON.stringify(choices[key]) !== JSON.stringify(previous[key]);
+      out.push({
+        type: 'session_info',
+        data: {
+          ...(changed('models') && { models: choices.models ?? [] }),
+          ...(changed('efforts') && { efforts: choices.efforts ?? [] }),
+        },
+      });
+    }
     this.choicesKey = choicesKey;
 
     const level = this.levels?.current(state);

@@ -250,6 +250,24 @@ describe('AcpSession as a generic ACP driver', () => {
     expect(replayer.errors).toEqual([]);
   });
 
+  it('leaves no state behind when a load replays history and then fails', async () => {
+    const { session, events } = setup([
+      ...genericStart({ loadSession: true }),
+      out(2, 'session/load'),
+      update({ sessionUpdate: 'session_info_update', title: 'Old' }, 'gone'),
+      update({ sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'x', description: 'x' }] }, 'gone'),
+      update({ sessionUpdate: 'usage_update', used: 5, size: 10 }, 'gone'),
+      update({ sessionUpdate: 'tool_call', toolCallId: 't', title: 'old', status: 'pending' }, 'gone'),
+      inMsg({ id: 2, error: { code: -32002, message: 'Resource not found' } }),
+      ...genericNew(),
+    ]);
+    await session.start();
+    await expect(session.resumeSession('gone', { cwd: CWD })).rejects.toThrow(/Resource not found/);
+    expect(events.filter((e) => e.type === 'update').every((e) => e.type === 'update' && e.replay)).toBe(true);
+    const state = await session.newSession({ cwd: CWD });
+    expect(state).toMatchObject({ sessionId: 's1', title: null, availableCommands: [], context: null, modes: null, configOptions: [] });
+  });
+
   it('rejects an agent that negotiates another protocol version', async () => {
     const { session, proc } = setup(genericStart({}, 2));
     await expect(session.start()).rejects.toThrow(/protocol version 2/);

@@ -265,9 +265,16 @@ export interface ChatEventDataMap {
     capabilities?: Partial<ChatCapabilities>;
     cliVersion?: string;
     model?: string;
-    /** Models the session can switch to (deduped). Replaces any earlier list. */
+    /**
+     * Models the session can switch to (deduped). Replaces any earlier list;
+     * an empty array clears it (no model choice), absent leaves it unchanged.
+     */
     models?: ChatModelOption[];
-    /** Reasoning-effort values the session accepts, in the provider's order. Replaces any earlier list. */
+    /**
+     * Reasoning-effort values the session accepts, in the provider's order
+     * (they can change with the model). Replaces any earlier list; an empty
+     * array clears it, absent leaves it unchanged.
+     */
     efforts?: string[];
     /** The provider's own name for each live level, shown under Clubhouse's level name. */
     levelNames?: Partial<Record<PermissionLevel, string>>;

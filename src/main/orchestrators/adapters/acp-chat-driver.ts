@@ -183,11 +183,14 @@ export class AcpChatDriver implements ChatDriver {
         try {
           await session.resumeSession(opts.resumeNativeSessionId, setup);
         } catch (err) {
-          // Copilot doesn't persist a session that never got a prompt, so loading it
-          // answers "resource not found". Clubhouse's transcript still has the history;
-          // start a fresh native session and say so.
+          // The agent no longer has the session and answers "resource not found"
+          // (Copilot, for one, doesn't persist a session that never got a prompt).
+          // Clubhouse's transcript still has the history; start a fresh native
+          // session and say so. Applies to every ACP agent, not just Copilot.
           if (!(err instanceof RpcError) || err.code !== ACP_ERROR_CODES.resourceNotFound) throw err;
           this.log('warn', 'Native session not found; starting a new one', { sessionId: opts.resumeNativeSessionId });
+          // Drop anything the failed load replayed before it gave up.
+          buffered.length = 0;
           queue.push({
             type: 'notice',
             data: {
@@ -292,6 +295,19 @@ export const COPILOT_ACP_LAUNCH: AcpLaunchSpec = {
 
 export function createCopilotAcpChatDriver(log?: Log): AcpChatDriver {
   return new AcpChatDriver(COPILOT_ACP_LAUNCH, log);
+}
+
+/**
+ * Register Copilot's chat driver with the chat runtime's registry
+ * (`registerChatDriver` in services/agent-runtime/chat-drivers.ts). Copilot
+ * has one chat mode today; the Copilot SDK driver will register ahead of it
+ * (docs/copilot-sdk-driver.md). Returns the unregister function.
+ */
+export function registerCopilotChatDrivers(
+  register: (driver: ChatDriver) => () => void,
+  log?: Log,
+): () => void {
+  return register(createCopilotAcpChatDriver(log));
 }
 
 /**
