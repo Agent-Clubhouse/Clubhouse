@@ -13,7 +13,7 @@ import type { Agent } from '../../shared/types';
 import { sanitizeSvg } from '../utils/sanitize-svg';
 import { ProjectTree } from './sidebar/ProjectTree';
 import { FilterResults } from './sidebar/FilterResults';
-import { useKeyboardShortcutsStore, formatBinding } from '../stores/keyboardShortcutsStore';
+import { useKeyboardShortcutsStore } from '../stores/keyboardShortcutsStore';
 import { Tooltip, formatShortcut } from '../components/Tooltip';
 import { NeedsYou, NeedsYouStrip } from './sidebar/NeedsYou';
 import { ListBody } from './sidebar/ListBody';
@@ -209,8 +209,8 @@ function SidebarFilter({ value, onChange }: { value: string; onChange: (value: s
     }
   };
   return (
-    <div className="flex-1 min-w-0 h-7 pl-2 pr-1.5 rounded-md border border-surface-1 bg-ctp-crust flex items-center gap-1.5 focus-within:border-ctp-accent">
-      <span className="flex text-ctp-overlay1">{FunnelIcon}</span>
+    <div className="relative flex-1 min-w-0">
+      <span className="absolute left-2 top-1/2 -translate-y-1/2 flex text-ctp-overlay1 pointer-events-none">{FunnelIcon}</span>
       <input
         ref={inputRef}
         type="text"
@@ -222,7 +222,7 @@ function SidebarFilter({ value, onChange }: { value: string; onChange: (value: s
         onKeyDown={onKeyDown}
         spellCheck={false}
         autoComplete="off"
-        className="flex-1 min-w-0 bg-transparent text-[12.5px] text-ctp-text placeholder:text-ctp-overlay0 outline-none"
+        className={`w-full h-7 pl-[26px] ${value ? 'pr-7' : 'pr-2'} rounded-md border border-surface-1 bg-ctp-crust text-[12.5px] text-ctp-text placeholder:text-ctp-overlay0 focus-ring`}
       />
       {value && (
         <button
@@ -230,7 +230,7 @@ function SidebarFilter({ value, onChange }: { value: string; onChange: (value: s
           aria-label="Clear filter"
           title="Clear filter"
           onClick={() => { onChange(''); inputRef.current?.focus(); }}
-          className="w-5 h-5 rounded flex items-center justify-center text-ctp-overlay1 hover:text-ctp-text cursor-pointer"
+          className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded flex items-center justify-center text-ctp-overlay1 hover:text-ctp-text cursor-pointer focus-ring"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" /></svg>
         </button>
