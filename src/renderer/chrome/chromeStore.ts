@@ -59,6 +59,8 @@ export interface NewAgentRequest {
   projectId?: string;
   /** Bumped on every open so the form starts fresh even when it was already showing. */
   seq: number;
+  /** Called with the new agent's id once it exists (canvas places a card for it). */
+  onCreated?: (agentId: string) => void;
 }
 
 export interface ChromeState {
@@ -74,7 +76,7 @@ export interface ChromeState {
   /** Set by ⌘⇧N for the start page to focus its composer, which clears it. Not persisted. */
   /** The New agent page in the pane, while it is open. Not persisted. */
   newAgent: NewAgentRequest | null;
-  openNewAgent: (kind: NewAgentRequest['kind'], projectId?: string) => void;
+  openNewAgent: (kind: NewAgentRequest['kind'], projectId?: string, onCreated?: (agentId: string) => void) => void;
   closeNewAgent: () => void;
   composerFocusPending: boolean;
   requestComposer: () => void;
@@ -252,7 +254,7 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     },
 
     newAgent: null,
-    openNewAgent: (kind, projectId) => set({ newAgent: { kind, projectId, seq: (get().newAgent?.seq ?? 0) + 1 } }),
+    openNewAgent: (kind, projectId, onCreated) => set({ newAgent: { kind, projectId, onCreated, seq: (get().newAgent?.seq ?? 0) + 1 } }),
     closeNewAgent: () => { if (get().newAgent) set({ newAgent: null }); },
 
     composerFocusPending: false,

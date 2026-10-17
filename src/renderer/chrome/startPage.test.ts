@@ -52,4 +52,11 @@ describe('openNewAgentPage', () => {
     openNewAgentPage('durable');
     expect(useChromeStore.getState().newAgent!.seq).toBeGreaterThan(first!.seq);
   });
+
+  it('keeps the completion callback for the opener', () => {
+    useChromeFlagStore.setState({ enabled: true });
+    const onCreated = () => {};
+    openNewAgentPage('durable', 'p1', { onCreated });
+    expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable', projectId: 'p1', onCreated });
+  });
 });

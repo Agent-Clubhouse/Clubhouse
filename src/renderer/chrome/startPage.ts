@@ -22,15 +22,20 @@ export function openStartPage(projectId: string): void {
 /**
  * The New agent page (#2031) with `kind` chosen, in the new shell on the local
  * host. Elsewhere (the legacy shell, a satellite, no projects yet) the Quick
- * Agent dialog stays the way in.
+ * Agent dialog stays the way in. `onCreated` gets the new agent's id once it
+ * exists; it is not called if the page is cancelled or creation fails.
  */
-export function openNewAgentPage(kind: 'durable' | 'quick', projectId?: string): void {
+export function openNewAgentPage(
+  kind: 'durable' | 'quick',
+  projectId?: string,
+  { onCreated }: { onCreated?: (agentId: string) => void } = {},
+): void {
   const ui = useUIStore.getState();
   if (!isNewChromeEnabled() || ui.activeHostId || useProjectStore.getState().projects.length === 0) {
     ui.openQuickAgentDialog();
     return;
   }
-  useChromeStore.getState().openNewAgent(kind, projectId);
+  useChromeStore.getState().openNewAgent(kind, projectId, onCreated);
 }
 
 /** ⌘⇧N: the New agent page with Durable chosen, like the sidebar's New button (#2031). */

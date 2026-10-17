@@ -122,6 +122,23 @@ describe('NewAgentPage', () => {
     expect(within(list).getAllByRole('option').map((o) => o.textContent)).toEqual([expect.stringContaining('Goobers')]);
   });
 
+  it('hands the new agent id to the opener (canvas places a card for it)', async () => {
+    const onCreated = vi.fn();
+    render(<NewAgentPage request={req({ projectId: 'p2', onCreated })} />);
+    expect(screen.getByTestId('new-agent-project').textContent).toContain('Goobers');
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('a-new'));
+  });
+
+  it('does not call back when creation fails', async () => {
+    createDurableAgent.mockResolvedValue(null);
+    const onCreated = vi.fn();
+    render(<NewAgentPage request={req({ onCreated })} />);
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    await waitFor(() => expect(createDurableAgent).toHaveBeenCalled());
+    expect(onCreated).not.toHaveBeenCalled();
+  });
+
   it('Cancel closes the page', () => {
     render(<NewAgentPage request={req()} />);
     fireEvent.click(screen.getByText('Cancel'));

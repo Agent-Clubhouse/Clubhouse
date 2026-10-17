@@ -170,7 +170,9 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           persona: persona || undefined,
         },
       ).then((id) => {
-        if (id) selectAgent(project.id, id);
+        if (!id) return;
+        selectAgent(project.id, id);
+        request.onCreated?.(id);
       });
     } else {
       reportChromeFeature('new_agent_start');
@@ -182,7 +184,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
         parentAgentId || undefined,
         parentAgentId ? undefined : resolvedOrchestrator,
         (supportsPermissions && freeAgentMode) || undefined,
-      ).then((id) => selectAgent(project.id, id))
+      ).then((id) => { selectAgent(project.id, id); request.onCreated?.(id); })
         .catch((err) => reportChromeActionFailed('agent_start', err));
     }
   };
