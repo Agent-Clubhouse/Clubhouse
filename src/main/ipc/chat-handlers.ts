@@ -9,10 +9,11 @@ import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRunti
 import { PERMISSION_LEVELS } from '../../shared/chat';
 import { getAgentRuntime, isChatAgent, readChatTranscript, onChatEvent, resolveChatDriver } from '../services/agent-runtime';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
+import { handleChatEventForCheckpoints, listTurns, getChanges, revertTurn, type ChangesScope } from '../services/agent-runtime/checkpoint-tracker';
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, stringArg, numberArg, objectArg } from './validation';
+import { withValidatedArgs, stringArg, numberArg, objectArg, booleanArg } from './validation';
 
 function requireChatRuntime(agentId: string) {
   const runtime = getAgentRuntime(agentId);
@@ -38,6 +39,7 @@ export function registerChatHandlers(): void {
   unsubscribe = onChatEvent((event) => {
     broadcastToAllWindows(IPC.CHAT.EVENT, event);
     statusBridge(event);
+    handleChatEventForCheckpoints(event);
   });
 
   ipcMain.handle(IPC.CHAT.READ_TRANSCRIPT, withValidatedArgs(
@@ -112,4 +114,26 @@ export function registerChatHandlers(): void {
       await chatRuntimeSettings.saveSettings(clean);
     },
   ));
+
+  // ── Checkpoints / Changes panel ──
+  ipcMain.handle(IPC.CHAT.LIST_CHECKPOINTS, withValidatedArgs(
+    [stringArg()],
+    async (_event, agentId) => listTurns(agentId),
+  ));
+
+  ipcMain.handle(IPC.CHAT.GET_CHANGES, withValidatedArgs(
+    [stringArg(), objectArg<ChangesScope>(), stringArg({ optional: true })],
+    async (_event, agentId, scope, filePath) => {
+      if (!scope || (typeof (scope as { turnId?: unknown }).turnId !== 'string' && typeof (scope as { sessionId?: unknown }).sessionId !== 'string')) {
+        throw new Error('scope needs a turnId or a sessionId');
+      }
+      return getChanges(agentId, scope, filePath);
+    },
+  ));
+
+  ipcMain.handle(IPC.CHAT.REVERT_TURN, withValidatedArgs(
+    [stringArg(), stringArg(), booleanArg({ optional: true })],
+    async (_event, agentId, turnId, force) => revertTurn(agentId, turnId, force === true),
+  ));
+
 }

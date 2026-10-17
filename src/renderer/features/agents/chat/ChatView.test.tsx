@@ -485,3 +485,14 @@ describe('ChatView review fixes', () => {
     expect(screen.getByTestId('chat-live-region')).toBeEmptyDOMElement();
   });
 });
+
+describe('ChatView changes panel', () => {
+  it('opens and closes the Changes panel from the header', async () => {
+    renderFixture('claude', 'conversation');
+    expect(screen.queryByTestId('chat-changes-panel')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('chat-changes-toggle'));
+    expect(await screen.findByTestId('chat-changes-panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close changes' }));
+    expect(screen.queryByTestId('chat-changes-panel')).not.toBeInTheDocument();
+  });
+});

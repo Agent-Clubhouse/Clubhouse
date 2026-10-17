@@ -7,13 +7,14 @@
  * ChatCapabilities are hidden or disabled; nothing here checks provider ids.
  */
 
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { PermissionLevel } from '../../../../shared/chat';
 import { createChatViewState, type ChatViewState } from '../../../stores/chatStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { ChatHeader } from './ChatHeader';
 import { ChatStream } from './ChatStream';
+import { ChangesPanel } from './ChangesPanel';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { Composer, QueueList, TaskList } from './Composer';
 import { useChatActions, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, type ChatActions } from './useChatSession';
@@ -64,6 +65,7 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
   const [draft, setDraft] = useChatDraft(agent.id);
+  const [changesOpen, setChangesOpen] = useState(false);
 
   const onSend = (text: string, action: SendAction) => {
     void (async () => {
@@ -127,15 +129,35 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-ctp-base" data-testid="chat-view" data-state={state.state ?? 'none'}>
-      <ChatHeader agent={agent} state={state} providerName={providerName} onSwitchToTerminal={onSwitchToTerminal} switching={switching} />
-      <ChatStream state={state} />
-      <div className="flex-shrink-0 px-7 pb-4 flex justify-center" data-testid="chat-dock">
-        <div className="w-full max-w-[740px] flex flex-col gap-2">
-          <ProtocolDriftNote counts={state.protocolUnknown} />
-          {state.plan.length > 0 && <TaskList entries={state.plan} />}
-          {state.queued.length > 0 && <QueueList queued={state.queued} />}
-          {dock}
+      <ChatHeader
+        agent={agent}
+        state={state}
+        providerName={providerName}
+        onSwitchToTerminal={onSwitchToTerminal}
+        switching={switching}
+        onToggleChanges={() => setChangesOpen((v) => !v)}
+        changesOpen={changesOpen}
+      />
+      <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-w-0 flex flex-col">
+          <ChatStream state={state} />
+          <div className="flex-shrink-0 px-7 pb-4 flex justify-center" data-testid="chat-dock">
+            <div className="w-full max-w-[740px] flex flex-col gap-2">
+              <ProtocolDriftNote counts={state.protocolUnknown} />
+              {state.plan.length > 0 && <TaskList entries={state.plan} />}
+              {state.queued.length > 0 && <QueueList queued={state.queued} />}
+              {dock}
+            </div>
+          </div>
         </div>
+        {changesOpen && (
+          <ChangesPanel
+            agentId={agent.id}
+            sessionId={state.sessionId}
+            refreshKey={`${state.turnId ?? 'idle'}:${state.state ?? ''}`}
+            onClose={() => setChangesOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

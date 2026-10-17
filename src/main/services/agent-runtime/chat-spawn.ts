@@ -28,6 +28,7 @@ import { resolveChatDriver } from './chat-drivers';
 import { ChatAgentRuntime } from './chat-runtime';
 import { registerChatRuntime, unregisterChatRuntime } from './index';
 import { readChatTranscript } from './chat-transcript';
+import { captureBeforePrompt } from './checkpoint-tracker';
 
 export interface ChatSpawnParams {
   agentId: string;
@@ -161,6 +162,7 @@ export async function tryStartChatAgent(
       mcpServers,
       ...(params.extraArgs?.length ? { extraArgs: params.extraArgs } : {}),
     }),
+    beforePrompt: () => captureBeforePrompt(params.agentId),
     onNativeSessionId: (id) => {
       void updateSessionId(params.projectPath, params.agentId, id).catch((err) => {
         appLog('core:chat', 'warn', 'Failed to persist native session id', {

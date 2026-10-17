@@ -47,6 +47,8 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 
 export const DEFAULT_CHAT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+/** Longest a pre-prompt hook (checkpoint) may delay a prompt. */
+const BEFORE_PROMPT_TIMEOUT_MS = 5000;
 /** Chat permission requests wait for the user; the queue entry only needs to outlive them. */
 const CHAT_PERMISSION_QUEUE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
@@ -76,6 +78,11 @@ export interface ChatAgentRuntimeOptions {
    * the runtime prepends it to the first message sent.
    */
   systemPrompt?: string;
+  /**
+   * Awaited (up to a few seconds) before each new prompt is sent, e.g. to
+   * checkpoint the working tree. Never blocks steering into a running turn.
+   */
+  beforePrompt?: () => Promise<void>;
   idleTimeoutMs?: number;
   /** Called once when the runtime ends for good (stop, idle timeout or process exit). */
   onEnded?: (reason: SessionEndReason, exitCode: number) => void;
@@ -300,9 +307,21 @@ export class ChatAgentRuntime implements AgentRuntime {
     }
 
     this.clearIdleTimer();
+    if (wanted === 'prompt') await this.runBeforePrompt();
     const delivered = await session.send(outgoing, wanted);
     await this.emit({ type: 'user_message', data: { messageId, content: blocks, source: opts.source, delivery: delivered } });
     return { delivery: delivered, messageId };
+  }
+
+  private async runBeforePrompt(): Promise<void> {
+    if (!this.opts.beforePrompt) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, BEFORE_PROMPT_TIMEOUT_MS); });
+    try {
+      await Promise.race([this.opts.beforePrompt().catch((): void => undefined), timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /** Prepend the system prompt once, for drivers that can't pass it natively. The transcript keeps the user's own text. */
@@ -317,6 +336,8 @@ export class ChatAgentRuntime implements AgentRuntime {
     const next = this.queued.shift();
     if (!next || !this.session) return;
     this.clearIdleTimer();
+    await this.runBeforePrompt();
+    if (!this.session) return;
     await this.session.send(next.content, 'prompt');
   }
 

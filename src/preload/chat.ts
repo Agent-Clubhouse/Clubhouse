@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { CheckpointTurn, ChangesResult, RevertResult } from '../shared/chat-checkpoints';
 import type { ChatAgentRuntimeInfo, ChatEvent, ChatQuestionAnswers, ChatRuntimeSettings, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult } from '../shared/chat';
 
 export const chat = {
@@ -24,6 +25,12 @@ export const chat = {
       ipcRenderer.invoke(IPC.CHAT.SAVE_RUNTIME_SETTINGS, settings),
     getAgentRuntime: (agentId: string, provider?: string): Promise<ChatAgentRuntimeInfo> =>
       ipcRenderer.invoke(IPC.CHAT.GET_AGENT_RUNTIME, agentId, provider),
+    listCheckpoints: (agentId: string): Promise<CheckpointTurn[]> =>
+      ipcRenderer.invoke(IPC.CHAT.LIST_CHECKPOINTS, agentId),
+    getChanges: (agentId: string, scope: { turnId: string } | { sessionId: string }, filePath?: string): Promise<ChangesResult> =>
+      ipcRenderer.invoke(IPC.CHAT.GET_CHANGES, agentId, scope, filePath),
+    revertTurn: (agentId: string, turnId: string, force?: boolean): Promise<RevertResult> =>
+      ipcRenderer.invoke(IPC.CHAT.REVERT_TURN, agentId, turnId, force),
     onEvent: (callback: (event: ChatEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, chatEvent: ChatEvent) => callback(chatEvent);
       ipcRenderer.on(IPC.CHAT.EVENT, listener);
