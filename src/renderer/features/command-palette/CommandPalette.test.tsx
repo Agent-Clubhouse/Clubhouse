@@ -68,7 +68,7 @@ describe('CommandPalette', () => {
   it('shows no results message for unmatched query', () => {
     useCommandPaletteStore.setState({ isOpen: true, query: 'xyznonexistent' });
     render(<CommandPalette />);
-    expect(screen.getByText(/No results found/)).toBeInTheDocument();
+    expect(screen.getByText(/No results for/)).toBeInTheDocument();
   });
 
   it('closes on backdrop click', () => {
@@ -90,7 +90,7 @@ describe('CommandPalette', () => {
   it('closes on Escape when fired from input (bubbles to overlay)', () => {
     useCommandPaletteStore.setState({ isOpen: true });
     render(<CommandPalette />);
-    const input = screen.getByPlaceholderText('Type to search...');
+    const input = screen.getByRole('combobox');
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(useCommandPaletteStore.getState().isOpen).toBe(false);
   });
@@ -106,16 +106,59 @@ describe('CommandPalette', () => {
     expect(useCommandPaletteStore.getState().selectedIndex).toBe(0);
   });
 
+  it('is a modal dialog with the search field as a combobox over the results', () => {
+    useCommandPaletteStore.setState({ isOpen: true });
+    render(<CommandPalette />);
+    const dialog = screen.getByRole('dialog', { name: 'Command palette' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const input = screen.getByRole('combobox');
+    expect(input).toHaveFocus();
+    const active = input.getAttribute('aria-activedescendant');
+    expect(active && document.getElementById(active)).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps Tab inside the dialog', () => {
+    useCommandPaletteStore.setState({ isOpen: true });
+    render(<CommandPalette />);
+    const input = screen.getByRole('combobox');
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(input).toHaveFocus();
+  });
+
+  it('groups in sentence case, with prefix hints in the footer', () => {
+    useCommandPaletteStore.setState({ isOpen: true });
+    render(<CommandPalette />);
+    const groups = screen.getAllByTestId('command-palette-group').map((g) => g.textContent);
+    expect(groups).toContain('Agents');
+    expect(groups).not.toContain('Spaces');
+    for (const g of screen.getAllByTestId('command-palette-group')) expect(g.className).not.toMatch(/uppercase/);
+    expect(screen.getByTestId('command-palette-hints').textContent).toContain('#canvases');
+  });
+
+  it('adds matching help topics as a small group', () => {
+    useCommandPaletteStore.setState({ isOpen: true, query: 'keyboard', mode: 'all' });
+    render(<CommandPalette />);
+    const groups = screen.getAllByTestId('command-palette-group').map((g) => g.textContent);
+    expect(groups).toContain('Help');
+  });
+
+  it('shows the mode as a label when a prefix is typed', () => {
+    useCommandPaletteStore.setState({ isOpen: true });
+    useCommandPaletteStore.getState().setQuery('#');
+    render(<CommandPalette />);
+    expect(screen.getByTestId('command-palette-mode').textContent).toBe('Canvases');
+  });
+
   it('sets mode to agents with @ prefix', () => {
     useCommandPaletteStore.setState({ isOpen: true });
     useCommandPaletteStore.getState().setQuery('@tap');
     expect(useCommandPaletteStore.getState().mode).toBe('agents');
   });
 
-  it('sets mode to spaces with # prefix', () => {
+  it('sets mode to canvases with # prefix', () => {
     useCommandPaletteStore.setState({ isOpen: true });
     useCommandPaletteStore.getState().setQuery('#hub');
-    expect(useCommandPaletteStore.getState().mode).toBe('spaces');
+    expect(useCommandPaletteStore.getState().mode).toBe('canvases');
   });
 
   it('sets mode to projects with / prefix', () => {

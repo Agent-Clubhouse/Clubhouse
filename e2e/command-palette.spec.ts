@@ -187,12 +187,12 @@ test.describe('Command Palette – Filtering', () => {
     await window.keyboard.press('Escape');
   });
 
-  test('shows "No results found" for impossible query', async () => {
+  test('shows "No results" for impossible query', async () => {
     await openPalette();
     await window.keyboard.type('xyznonexistent999');
     await window.waitForTimeout(200);
 
-    const noResults = window.locator('text=No results found');
+    const noResults = window.locator('text=No results for');
     await expect(noResults).toBeVisible({ timeout: 3_000 });
 
     await window.keyboard.press('Escape');
@@ -210,9 +210,9 @@ test.describe('Command Palette – Mode Prefixes', () => {
     await input.fill('>');
     await window.waitForTimeout(300);
 
-    // Target the badge in the input row (border-b) to avoid matching category headers
-    const inputRow = window.locator('[data-testid="command-palette-overlay"]').locator('.border-b');
-    const badge = inputRow.locator('text=Commands');
+    // The mode label in the input row, not a group header.
+    const badge = window.locator('[data-testid="command-palette-mode"]');
+    await expect(badge).toHaveText('Commands');
     await expect(badge).toBeVisible({ timeout: 3_000 });
 
     await window.keyboard.press('Escape');
@@ -224,14 +224,14 @@ test.describe('Command Palette – Mode Prefixes', () => {
     await input.fill('@');
     await window.waitForTimeout(300);
 
-    const inputRow = window.locator('[data-testid="command-palette-overlay"]').locator('.border-b');
-    const badge = inputRow.locator('text=Agents');
+    const badge = window.locator('[data-testid="command-palette-mode"]');
+    await expect(badge).toHaveText('Agents');
     await expect(badge).toBeVisible({ timeout: 3_000 });
 
     await window.keyboard.press('Escape');
   });
 
-  test('# prefix shows spaces mode badge', async () => {
+  test('# prefix shows canvases mode label', async () => {
     await openPalette();
 
     // Type '#' via fill to avoid keyboard interpretation issues
@@ -239,10 +239,9 @@ test.describe('Command Palette – Mode Prefixes', () => {
     await input.fill('#');
     await window.waitForTimeout(300);
 
-    // The mode badge is a <span> with specific styling classes, distinct from
-    // the category header. Use the badge's parent (the input row with border-b).
-    const inputRow = window.locator('[data-testid="command-palette-overlay"]').locator('.border-b');
-    const badge = inputRow.locator('text=Spaces');
+    // The mode label sits in the input row, distinct from the group headers.
+    const badge = window.locator('[data-testid="command-palette-mode"]');
+    await expect(badge).toHaveText('Canvases');
     await expect(badge).toBeVisible({ timeout: 3_000 });
 
     await window.keyboard.press('Escape');
@@ -401,9 +400,8 @@ test.describe('Command Palette – Categories', () => {
   test('results are grouped by category headers', async () => {
     await openPalette();
 
-    // Category headers are uppercase text elements in the palette
-    const overlay = window.locator('[data-testid="command-palette-overlay"]');
-    const categoryHeaders = overlay.locator('.uppercase');
+    // Group headers, in sentence case
+    const categoryHeaders = window.locator('[data-testid="command-palette-group"]');
     const headerCount = await categoryHeaders.count();
 
     // Should have at least one category group
@@ -436,12 +434,11 @@ test.describe('Command Palette – Recent Commands', () => {
     await openPalette();
     await window.waitForTimeout(200);
 
-    // Look for a "Recently Used" category header
-    const overlay = window.locator('[data-testid="command-palette-overlay"]');
-    const recentHeader = overlay.locator('text=Recently Used');
+    // Look for a "Recent" group header
+    const recentHeader = window.locator('[data-testid="command-palette-group"]', { hasText: /^Recent$/ });
     const hasRecent = await recentHeader.isVisible({ timeout: 3_000 }).catch(() => false);
 
-    // The executed command should appear (either in "Recently Used" group
+    // The executed command should appear (either in the "Recent" group
     // or boosted in the list)
     if (hasRecent) {
       expect(hasRecent).toBe(true);
