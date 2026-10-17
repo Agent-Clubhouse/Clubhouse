@@ -184,6 +184,7 @@ const COPILOT_MODE_BASE = 'https://agentclientprotocol.com/protocol/session-mode
  */
 export const COPILOT_PERMISSION_LEVELS: AcpPermissionLevels = {
   live: ['plan', 'ask', 'full_access'],
+  names: { plan: 'Plan', ask: 'Agent', full_access: 'Agent, allow all' },
   current(state) {
     const mode = state.modes?.currentModeId ?? stringOption(state.configOptions, 'mode');
     const kind = mode ? copilotModeKind(mode) : undefined;
@@ -214,8 +215,15 @@ function stringOption(options: SessionConfigOption[], id: string): string | unde
   return option?.type === 'select' ? option.currentValue : undefined;
 }
 
+/** Copilot's model options carry the legacy premium-request multiplier ("0.33x", "1x", …). */
+export function copilotModelCostHint(meta: Meta | undefined): string | undefined {
+  const usage = meta?.copilotUsage;
+  return typeof usage === 'string' && usage ? usage : undefined;
+}
+
 export const COPILOT_ACP_PROFILE: AcpAgentProfile = {
   id: 'copilot',
+  modelCostHint: copilotModelCostHint,
   capabilities: copilotAcpCapabilities,
   normalizeConfigOptions: dedupeCopilotConfigOptions,
   normalizeLegacyModels: dedupeCopilotLegacyModels,

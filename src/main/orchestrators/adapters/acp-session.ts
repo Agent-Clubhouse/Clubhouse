@@ -15,6 +15,7 @@ import {
   type ListSessionsResponse,
   type LoadSessionResponse,
   type McpServer,
+  type Meta,
   type NewSessionResponse,
   type PermissionOption,
   type PromptResponse,
@@ -35,6 +36,8 @@ import type { PermissionLevel } from '../../../shared/chat/capabilities';
 export interface AcpPermissionLevels {
   /** Levels `apply` can switch to inside a live session. */
   live: readonly PermissionLevel[];
+  /** The agent's own name for each live level, for the UI. */
+  names?: Partial<Record<PermissionLevel, string>>;
   /** The level the session's current mode and options amount to, if any. */
   current(state: Readonly<AcpSessionState>): PermissionLevel | undefined;
   apply(session: AcpSession, level: PermissionLevel): Promise<void>;
@@ -55,6 +58,8 @@ export interface AcpAgentProfile {
   filterUpdate?(update: SessionUpdate, ctx: { openToolCallIds: ReadonlySet<string> }): SessionUpdate | null;
   /** Permission-ladder mapping. Without one, the session reports no levels. */
   permissionLevels?: AcpPermissionLevels;
+  /** A cost hint for a model option, from the agent's private `_meta`. */
+  modelCostHint?(meta: Meta | undefined): string | undefined;
 }
 
 const KNOWN_CLIENT_METHODS: ReadonlySet<string> = new Set(Object.values(ACP_CLIENT_METHODS));
@@ -154,6 +159,7 @@ export class AcpSession {
   private init: InitializeResponse | null = null;
   private caps: AcpDriverCapabilities | null = null;
   private replaying = false;
+  private loadRequestId: number | null = null;
   /** Pending while a prompt turn runs; `exit` waits for it so `turn_ended` comes first. */
   private turnSettled: Promise<void> | null = null;
   /** Agents may announce a new session's updates before answering session/new. */
@@ -191,6 +197,10 @@ export class AcpSession {
       onNotification: (method, params) => this.handleNotification(method, params),
       onServerRequest: (id, method, params) => this.handleServerRequest(id, method, params),
       onExit: (code, signal) => this.handleExit(code, signal),
+      onResponse: (id) => {
+        // Replay is over the moment session/load answers, even if later updates share its chunk.
+        if (id === this.loadRequestId) this.replaying = false;
+      },
     });
   }
 
@@ -295,13 +305,16 @@ export class AcpSession {
     this.state.sessionId = sessionId;
     this.replaying = true;
     try {
-      const res = (await this.client.request(ACP_AGENT_METHODS.sessionLoad, {
+      const pending = this.client.request(ACP_AGENT_METHODS.sessionLoad, {
         sessionId,
         ...this.sessionParams(setup),
-      })) as LoadSessionResponse;
+      });
+      this.loadRequestId = this.client.lastRequestId;
+      const res = (await pending) as LoadSessionResponse;
       this.applySessionSetup(res ?? {});
     } finally {
       this.replaying = false;
+      this.loadRequestId = null;
       // Replayed tool calls are history, not work in progress.
       this.openToolCalls.clear();
     }

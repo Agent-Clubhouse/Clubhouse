@@ -7,6 +7,8 @@ import type {
   ChatDriverStartOptions,
 } from '../../../shared/chat/runtime';
 import { AsyncQueue } from './async-queue';
+import { RpcError } from './acp-client';
+import { ACP_ERROR_CODES } from './acp-schema';
 import { AcpSession, GENERIC_ACP_PROFILE, type AcpAgentProfile, type AcpSessionEvent } from './acp-session';
 import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
 import type { InitializeResponse } from './acp-schema';
@@ -178,7 +180,24 @@ export class AcpChatDriver implements ChatDriver {
       if (skipped.length) this.log('warn', 'MCP servers not expressible over ACP', { skipped });
       const setup = { cwd: opts.cwd, mcpServers: servers };
       if (opts.resumeNativeSessionId) {
-        await session.resumeSession(opts.resumeNativeSessionId, setup);
+        try {
+          await session.resumeSession(opts.resumeNativeSessionId, setup);
+        } catch (err) {
+          // Copilot doesn't persist a session that never got a prompt, so loading it
+          // answers "resource not found". Clubhouse's transcript still has the history;
+          // start a fresh native session and say so.
+          if (!(err instanceof RpcError) || err.code !== ACP_ERROR_CODES.resourceNotFound) throw err;
+          this.log('warn', 'Native session not found; starting a new one', { sessionId: opts.resumeNativeSessionId });
+          queue.push({
+            type: 'notice',
+            data: {
+              level: 'info',
+              code: 'resume_unavailable',
+              message: 'The agent no longer has this conversation, so it continues in a new session without the earlier context.',
+            },
+          });
+          await session.newSession(setup);
+        }
       } else {
         await session.newSession(setup);
       }
@@ -196,17 +215,9 @@ export class AcpChatDriver implements ChatDriver {
         this.log('warn', 'Permission level not available over ACP; keeping the agent default', { level: opts.level });
       }
 
-      mapper = new AcpChatEventMapper(this.id, levels);
+      mapper = new AcpChatEventMapper(this.id, { profile: session.agentProfile });
       const state = session.getState();
-      const cliVersion = session.initializeResponse?.agentInfo?.version;
-      queue.push({
-        type: 'session_info',
-        data: {
-          ...(state.sessionId && { nativeSessionId: state.sessionId }),
-          ...(cliVersion && { cliVersion }),
-          ...(state.title && { title: state.title }),
-        },
-      });
+      queue.push(mapper.initialInfo(state, session.initializeResponse?.agentInfo?.version));
       // Session-scoped state that arrived during setup. Replayed copies count:
       // Copilot's trailing command list can land while session/load still reads as replay.
       for (const event of buffered.splice(0)) {

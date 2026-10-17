@@ -6,6 +6,7 @@ import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat/capabilities';
 import type {
   ChatErrorCode,
   ChatEventDraft,
+  ChatModelOption,
   ContentBlock as ChatContentBlock,
   PermissionOption as ChatPermissionOption,
   ToolCallContent as ChatToolCallContent,
@@ -13,10 +14,11 @@ import type {
   TurnStopReason as ChatStopReason,
 } from '../../../shared/chat/events';
 import type { AcpDriverCapabilities } from './acp-capabilities';
-import type { AcpPermissionLevels, AcpSessionEvent, AcpSessionState } from './acp-session';
+import type { AcpAgentProfile, AcpPermissionLevels, AcpSessionEvent, AcpSessionState } from './acp-session';
 import type {
   ContentBlock,
   McpServer,
+  Meta,
   PermissionOption,
   SessionConfigOption,
   SessionUpdate,
@@ -54,6 +56,7 @@ export function toChatCapabilities(
     images: caps.prompt.image,
     slashCommands: caps.slashCommands,
     modelSwitch: hasModelSwitch ? 'live' : 'none',
+    effortSwitch: (state ? state.configOptions.some((o) => o.category === 'thought_level') : caps.configOptions) ? 'live' : 'none',
     liveLevels: levels?.live ?? [],
     login: caps.login === 'terminal' ? 'terminal' : caps.login === 'agent' ? 'api' : 'none',
     // Stable ACP v1 has no system prompt field (the client system prompt is still unstable).
@@ -196,6 +199,37 @@ function permissionOption(o: PermissionOption): ChatPermissionOption {
   return { optionId: o.optionId, kind, label: o.name };
 }
 
+function flatOptions(option: SessionConfigOption | undefined): Array<{ value: string; name: string; description?: string | null; _meta?: Meta }> {
+  if (option?.type !== 'select' || !Array.isArray(option.options)) return [];
+  type Flat = { value: string; name: string; description?: string | null; _meta?: Meta };
+  return (option.options as unknown as Array<Flat & { options?: Flat[] }>).flatMap((o) => (Array.isArray(o.options) ? o.options : [o]));
+}
+
+/**
+ * The model and effort choices a session offers, for the UI's pickers. Models
+ * come from the `model` config option (deduped by the profile already) or
+ * the legacy model list.
+ */
+export function sessionChoices(
+  state: Readonly<AcpSessionState>,
+  modelCostHint?: AcpAgentProfile['modelCostHint'],
+): { models?: ChatModelOption[]; efforts?: string[] } {
+  const modelOption = state.configOptions.find((o) => o.category === 'model') ?? state.configOptions.find((o) => o.id === 'model');
+  const fromOption = flatOptions(modelOption).map((o) => ({ id: o.value, name: o.name, description: o.description, meta: o._meta }));
+  const fromLegacy = (state.legacyModels?.availableModels ?? []).map((m) => ({ id: m.modelId, name: m.name, description: m.description, meta: m._meta }));
+  const models = (fromOption.length ? fromOption : fromLegacy).map((m): ChatModelOption => {
+    const costHint = modelCostHint?.(m.meta ?? undefined);
+    return {
+      id: m.id,
+      label: m.name,
+      ...(m.description && m.description !== m.name && { description: m.description }),
+      ...(costHint && { costHint }),
+    };
+  });
+  const efforts = flatOptions(state.configOptions.find((o) => o.category === 'thought_level')).map((o) => o.value);
+  return { ...(models.length && { models }), ...(efforts.length && { efforts }) };
+}
+
 function selectValue(options: SessionConfigOption[], match: (o: SessionConfigOption) => boolean): string | undefined {
   const o = options.find(match);
   return o?.type === 'select' ? o.currentValue : undefined;
@@ -225,17 +259,43 @@ export class AcpChatEventMapper {
   private level: PermissionLevel | undefined;
   private readonly permissionKinds = new Map<string, Map<string, PermissionOption['kind']>>();
 
+  private choicesKey = '';
+  private commandsKey = '';
+  private readonly levels?: AcpPermissionLevels;
+  private readonly modelCostHint?: AcpAgentProfile['modelCostHint'];
+  private readonly now: () => number;
+
   constructor(
     private readonly driver: ChatDriverId,
-    private readonly levels?: AcpPermissionLevels,
-    private readonly now: () => number = Date.now,
-  ) {}
+    opts: { profile?: Pick<AcpAgentProfile, 'permissionLevels' | 'modelCostHint'>; now?: () => number } = {},
+  ) {
+    this.levels = opts.profile?.permissionLevels;
+    this.modelCostHint = opts.profile?.modelCostHint;
+    this.now = opts.now ?? Date.now;
+  }
 
-  /** Seed model/effort/level from the session state so only changes are reported. */
+  /** Seed model/effort/level/choices from the session state so only changes are reported. */
   prime(state: Readonly<AcpSessionState>): void {
     this.model = this.currentModel(state);
     this.effort = selectValue(state.configOptions, (o) => o.category === 'thought_level');
     this.level = this.levels?.current(state);
+    this.choicesKey = JSON.stringify(sessionChoices(state, this.modelCostHint));
+  }
+
+  /** The session facts the driver reports once setup is done. */
+  initialInfo(state: Readonly<AcpSessionState>, cliVersion?: string): ChatEventDraft {
+    const model = this.currentModel(state);
+    return {
+      type: 'session_info',
+      data: {
+        ...(state.sessionId && { nativeSessionId: state.sessionId }),
+        ...(cliVersion && { cliVersion }),
+        ...(state.title && { title: state.title }),
+        ...(model && { model }),
+        ...sessionChoices(state, this.modelCostHint),
+        ...(this.levels?.names && { levelNames: this.levels.names }),
+      },
+    };
   }
 
   map(event: AcpSessionEvent, state: Readonly<AcpSessionState>): ChatEventDraft[] {
@@ -374,17 +434,18 @@ export class AcpChatEventMapper {
           type: 'plan',
           data: { entries: u.entries.map((e) => ({ content: e.content, status: e.status, priority: e.priority })) },
         })];
-      case 'available_commands_update':
-        return [{
-          type: 'commands_available',
-          data: {
-            commands: u.availableCommands.map((c) => ({
-              name: c.name,
-              ...(c.description && { description: c.description }),
-              ...(c.input?.hint && { inputHint: c.input.hint }),
-            })),
-          },
-        }];
+      case 'available_commands_update': {
+        const commands = u.availableCommands.map((c) => ({
+          name: c.name,
+          ...(c.description && { description: c.description }),
+          ...(c.input?.hint && { inputHint: c.input.hint }),
+        }));
+        // Agents resend the same list (Copilot does on every session/load); report changes only.
+        const key = JSON.stringify(commands);
+        if (key === this.commandsKey) return [];
+        this.commandsKey = key;
+        return [{ type: 'commands_available', data: { commands } }];
+      }
       case 'current_mode_update':
       case 'config_option_update':
         return this.configChanges(state, u.sessionUpdate === 'current_mode_update' ? u.currentModeId : undefined);
@@ -432,6 +493,11 @@ export class AcpChatEventMapper {
     }
     this.model = model;
     this.effort = effort;
+
+    const choices = sessionChoices(state, this.modelCostHint);
+    const choicesKey = JSON.stringify(choices);
+    if (choicesKey !== this.choicesKey) out.push({ type: 'session_info', data: choices });
+    this.choicesKey = choicesKey;
 
     const level = this.levels?.current(state);
     if (level && level !== this.level) {
