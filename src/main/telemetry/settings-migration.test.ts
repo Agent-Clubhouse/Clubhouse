@@ -48,7 +48,7 @@ describe('migrateTelemetrySettings', () => {
         otlp: { endpoint: 'https://otlp.example.com:4318', headerNames: ['x-api-key'], temporality: 'cumulative' },
       },
       // Framebriar follows Feedback; off until Feedback connects, user activity and errors only.
-      { id: 'framebriar', kind: 'framebriar', enabled: false, level: 'detailed', preset: 'user_activity', framebriar: { autoEnabled: false, userOff: false } },
+      { id: 'framebriar', kind: 'framebriar', enabled: false, level: 'detailed', preset: 'user_activity', framebriar: { userOff: false } },
     ]);
     expect(out.legacyDestination).toBeDefined();
     expect(resolveDestination(findDestination(out, 'otlp'), out, {})).toEqual({
@@ -98,7 +98,7 @@ describe('migrateTelemetrySettings', () => {
       destinations: [{ kind: 'otlp', enabled: true, level: 'loud', preset: 'nope' }, { kind: 'carrier-pigeon', enabled: true }],
     });
     expect(repaired.destinations.map((d) => d.id)).toEqual(['azure', 'otlp', 'framebriar']);
-    expect(findDestination(repaired, 'framebriar')).toMatchObject({ enabled: false, preset: 'user_activity', framebriar: { autoEnabled: false, userOff: false } });
+    expect(findDestination(repaired, 'framebriar')).toMatchObject({ enabled: false, preset: 'user_activity', framebriar: { userOff: false } });
     expect(findDestination(repaired, 'otlp')).toMatchObject({ enabled: true, level: 'standard', preset: 'all', otlp: { endpoint: '', headerNames: [], temporality: 'cumulative' } });
     expect(migrateTelemetrySettings({}).destinations.every((d) => !d.enabled)).toBe(true);
   });

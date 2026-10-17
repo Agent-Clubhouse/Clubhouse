@@ -86,7 +86,7 @@ function defaultEntry(kind: TelemetryDestinationKind): TelemetryDestinationEntry
   // The developer's feedback service gets "User activity and errors" only.
   if (kind === 'framebriar') {
     entry.preset = 'user_activity';
-    entry.framebriar = { autoEnabled: false, userOff: false };
+    entry.framebriar = { userOff: false };
   }
   return entry;
 }
@@ -111,7 +111,7 @@ function normalizeEntry(raw: unknown): TelemetryDestinationEntry | null {
   if (typeof r.confirmedHost === 'string') entry.confirmedHost = r.confirmedHost;
   if (kind === 'framebriar') {
     const f = (r.framebriar && typeof r.framebriar === 'object' ? r.framebriar : {}) as Record<string, unknown>;
-    entry.framebriar = { autoEnabled: f.autoEnabled === true, userOff: f.userOff === true };
+    entry.framebriar = { userOff: f.userOff === true };
   }
   if (kind === 'otlp') {
     const o = (r.otlp && typeof r.otlp === 'object' ? r.otlp : {}) as Record<string, unknown>;

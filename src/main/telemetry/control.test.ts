@@ -21,7 +21,12 @@ function setEntry(id: string, patch: Partial<Entry>): void {
   state.settings = { ...state.settings, destinations: entries().map((d) => (d.id === id ? { ...d, ...patch } : d)) };
 }
 const syncActive = () => {
-  state.active = (state.settings.destinations as Entry[]).filter((d) => d.enabled && !state.startErrors[d.id]).map((d) => d.id);
+  // Like the runtime: Framebriar starts only when Feedback's source resolves, and binds to its session.
+  const fb = currentFramebriarExport();
+  state.active = (state.settings.destinations as Entry[])
+    .filter((d) => d.enabled && !state.startErrors[d.id] && (d.kind !== 'framebriar' || fb))
+    .map((d) => d.id);
+  setBoundFramebriarSession(state.active.includes('framebriar') ? fb!.sessionId : null);
 };
 
 vi.mock('./settings', async (importActual) => {
@@ -79,7 +84,9 @@ vi.mock('./offline', () => ({
 }));
 
 import * as control from './control';
-import { notifyFramebriarConnectionChanged, setFramebriarTelemetrySource } from './destinations/framebriar-source';
+import {
+  currentFramebriarExport, notifyFramebriarConnectionChanged, setBoundFramebriarSession, setFramebriarTelemetrySource,
+} from './destinations/framebriar-source';
 
 const HOST = 'westus2-1.in.applicationinsights.azure.com';
 const CS = 'InstrumentationKey=00000000-0000-4000-8000-00000000abcd;IngestionEndpoint=https://westus2-1.in.applicationinsights.azure.com/';
@@ -333,132 +340,217 @@ describe('telemetry settings control', () => {
 });
 
 describe('Framebriar destination follows Feedback', () => {
-  const HOST = 'framebriar.example.net';
-  const FB = {
-    host: HOST,
-    options: (signal: string) => ({ url: `https://${HOST}/api/v1/otlp/v1/${signal}`, headers: async () => ({ authorization: 'Bearer t' }) }),
-    sessionId: 's-abc',
-  };
-  let connected = false;
-  type FbEntry = Entry & { framebriar?: { autoEnabled: boolean; userOff: boolean } };
+  const FB_HOST = 'framebriar.example.net';
+  const fbExport = (sessionId: string) => ({
+    host: FB_HOST,
+    options: (signal: string) => ({ url: `https://${FB_HOST}/api/v1/otlp/v1/${signal}`, headers: async () => ({ authorization: 'Bearer t' }) }),
+    sessionId,
+  });
+  let current: ReturnType<typeof fbExport> | null = null;
+  const connect = (sessionId = 's-abc') => { current = fbExport(sessionId); };
+  const disconnect = () => { current = null; };
+  type FbEntry = Entry & { framebriar?: { userOff: boolean } };
   const fbEntry = () => entry('framebriar') as FbEntry;
+  const fbStatus = async () => (await control.getStatus()).destinations.find((d) => d.id === 'framebriar')!;
 
   beforeEach(() => {
-    connected = false;
-    setFramebriarTelemetrySource(() => (connected ? FB : null));
+    current = null;
+    setFramebriarTelemetrySource(() => current);
   });
 
   async function exportOnWithAzure() {
     await control.saveAzureConnectionString(CS);
-    await control.setEnabled('azure', true, { consent: true, host: 'westus2-1.in.applicationinsights.azure.com' });
+    await control.setEnabled('azure', true, { consent: true, host: HOST });
+  }
+  /** Feedback connected and Framebriar confirmed through the Share prompt. */
+  async function shared() {
+    await exportOnWithAzure();
+    connect();
+    await control.syncFramebriarDestination();
+    expect(await control.setEnabled('framebriar', true, { host: FB_HOST })).toMatchObject({ ok: true });
+    expect(state.active).toEqual(['azure', 'framebriar']);
+    state.calls = [];
   }
 
   it('defaults to off with the "User activity and errors" filter', () => {
-    expect(fbEntry()).toMatchObject({ enabled: false, preset: 'user_activity', framebriar: { autoEnabled: false, userOff: false } });
+    expect(fbEntry()).toMatchObject({ enabled: false, preset: 'user_activity', framebriar: { userOff: false } });
   });
 
-  it('stays off when Feedback connects with an unconfirmed host, and asks to confirm it', async () => {
+  it('stays off when Feedback connects with an unconfirmed host; Share confirms it with one restart', async () => {
     await exportOnWithAzure();
-    connected = true;
+    connect();
+    state.calls = [];
     notifyFramebriarConnectionChanged();
     await control.syncFramebriarDestination();
     expect(fbEntry().enabled).toBe(false);
-    expect(state.active).toEqual(['azure']);
-    // Turning it on (the Feedback page's prompt, or its panel) needs the host confirmed.
+    expect(state.calls).toEqual([]);
     expect(await control.setEnabled('framebriar', true)).toMatchObject({
-      ok: false, needs: ['destination'], host: HOST, hosts: ['westus2-1.in.applicationinsights.azure.com', HOST],
+      ok: false, needs: ['destination'], host: FB_HOST, hosts: [HOST, FB_HOST],
     });
     expect(fbEntry().enabled).toBe(false);
-    expect(await control.setEnabled('framebriar', true, { host: HOST })).toMatchObject({ ok: true });
-    expect(fbEntry()).toMatchObject({ enabled: true, confirmedHost: HOST });
+    expect(await control.setEnabled('framebriar', true, { host: FB_HOST })).toMatchObject({ ok: true });
+    expect(fbEntry()).toMatchObject({ enabled: true, confirmedHost: FB_HOST });
+    expect(state.calls).toEqual(['restart:keep']);
   });
 
-  it('declining keeps it off for good, and Feedback is unaffected', async () => {
+  it('a confirmed host is not asked about again', async () => {
     await exportOnWithAzure();
-    connected = true;
+    setEntry('framebriar', { confirmedHost: FB_HOST });
+    connect();
+    expect(await control.setEnabled('framebriar', true)).toMatchObject({ ok: true });
+  });
+
+  it('"Not now" records Off without restarting, sticks, and shows in status', async () => {
+    await exportOnWithAzure();
+    connect();
+    state.calls = [];
     await control.setEnabled('framebriar', false);
+    expect(state.calls).toEqual([]);
     expect(fbEntry()).toMatchObject({ enabled: false, framebriar: { userOff: true } });
+    expect(await fbStatus()).toMatchObject({ userOff: true });
+    setEntry('framebriar', { confirmedHost: FB_HOST });
     await control.syncFramebriarDestination();
     expect(fbEntry().enabled).toBe(false);
     expect(state.active).toEqual(['azure']);
+  });
+
+  it('after Share, Disconnect takes it out of the runtime at once, and reconnecting brings it back', async () => {
+    await shared();
+    disconnect();
+    await control.syncFramebriarDestination();
+    expect(fbEntry()).toMatchObject({ enabled: false, framebriar: { userOff: false } });
+    expect(state.active).toEqual(['azure']);
+    expect(state.calls).toEqual(['restart:keep']);
+    connect();
+    await control.syncFramebriarDestination();
+    expect(state.active).toEqual(['azure', 'framebriar']);
+    expect(state.calls).toEqual(['restart:keep', 'restart:keep']);
+  });
+
+  it('after Share, Feedback off and on rebinds the exporter to the new session', async () => {
+    await shared();
+    connect('s-new');
+    await control.syncFramebriarDestination();
+    expect(state.calls).toEqual(['restart:keep']);
+    expect(state.active).toContain('framebriar');
+    // Already bound: another notification doesn't restart again.
+    await control.syncFramebriarDestination();
+    expect(state.calls).toEqual(['restart:keep']);
+  });
+
+  it('after Share, turning export off turns it off too: it never exports alone', async () => {
+    await shared();
+    await control.setEnabled('azure', false);
+    expect(fbEntry()).toMatchObject({ enabled: false, framebriar: { userOff: false } });
+    expect(state.active).toEqual([]);
+    expect(state.calls).toEqual(['disable']);
+    // And back on with export, without asking (its host is confirmed).
+    await control.setEnabled('azure', true, { host: HOST });
+    expect(state.active).toEqual(['azure', 'framebriar']);
+  });
+
+  it('clearing the Azure connection string stops it too', async () => {
+    await shared();
+    await control.clearAzureConnectionString();
+    expect(fbEntry().enabled).toBe(false);
+    expect(state.calls).toEqual(['disable']);
+    expect(state.running).toBe(false);
+  });
+
+  it('clearing the OTLP config stops it too', async () => {
+    await control.saveOtlpConfig({ endpoint: 'https://otel.example.com', headers: [] });
+    await control.setEnabled('otlp', true, { consent: true, host: 'otel.example.com' });
+    connect();
+    await control.setEnabled('framebriar', true, { host: FB_HOST });
+    expect(state.active).toEqual(['otlp', 'framebriar']);
+    state.calls = [];
+    await control.clearOtlpConfig();
+    expect(fbEntry().enabled).toBe(false);
+    expect(state.calls).toEqual(['disable']);
   });
 
   it('follows Feedback automatically once its host is confirmed', async () => {
     await exportOnWithAzure();
-    setEntry('framebriar', { confirmedHost: HOST });
-    connected = true;
-    await control.syncFramebriarDestination();
-    expect(fbEntry()).toMatchObject({ enabled: true, framebriar: { autoEnabled: true } });
-    expect(state.active).toContain('framebriar');
-    connected = false;
-    await control.syncFramebriarDestination();
-    expect(fbEntry()).toMatchObject({ enabled: false, framebriar: { autoEnabled: false } });
-    // Reconnecting turns it back on without asking: the host was confirmed.
-    connected = true;
+    setEntry('framebriar', { confirmedHost: FB_HOST });
+    connect();
     await control.syncFramebriarDestination();
     expect(fbEntry().enabled).toBe(true);
+    expect(state.active).toContain('framebriar');
+    disconnect();
+    await control.syncFramebriarDestination();
+    expect(fbEntry().enabled).toBe(false);
+    expect(state.active).toEqual(['azure']);
   });
 
   it('never follows a host that changed since it was confirmed', async () => {
     await exportOnWithAzure();
     setEntry('framebriar', { confirmedHost: 'old.example.net' });
-    connected = true;
+    connect();
     await control.syncFramebriarDestination();
     expect(fbEntry().enabled).toBe(false);
+    expect(state.active).toEqual(['azure']);
   });
 
-  it('names Framebriar in the consent for export, and confirming there confirms it too', async () => {
-    connected = true;
+  it('names Framebriar in the consent for export, and confirms it only when the dialog named it', async () => {
+    connect();
     await control.saveAzureConnectionString(CS);
     const ask = await control.setEnabled('azure', true);
-    expect(ask).toMatchObject({ ok: false, needs: ['consent', 'destination'], hosts: ['westus2-1.in.applicationinsights.azure.com', HOST] });
-    await control.setEnabled('azure', true, { consent: true, host: 'westus2-1.in.applicationinsights.azure.com' });
-    expect(fbEntry()).toMatchObject({ enabled: true, confirmedHost: HOST, framebriar: { autoEnabled: true } });
-    // Export off: it follows.
-    await control.setEnabled('azure', false);
-    expect(fbEntry().enabled).toBe(false);
+    expect(ask).toMatchObject({ ok: false, needs: ['consent', 'destination'], hosts: [HOST, FB_HOST], followHost: FB_HOST });
+    state.calls = [];
+    await control.setEnabled('azure', true, { consent: true, host: HOST, followHost: FB_HOST });
+    expect(fbEntry()).toMatchObject({ enabled: true, confirmedHost: FB_HOST });
+    expect(state.active).toEqual(['azure', 'framebriar']);
+    // One start, not a start and a restart.
+    expect(state.calls).toEqual(['enable']);
+  });
+
+  it('does not confirm a Framebriar host the dialog never showed (it connected while the dialog was open)', async () => {
+    await control.saveAzureConnectionString(CS);
+    const ask = await control.setEnabled('azure', true);
+    expect(ask).toMatchObject({ needs: ['consent', 'destination'], hosts: [HOST] });
+    expect('followHost' in ask && ask.followHost).toBeFalsy();
+    connect();
+    // The dialog's ack names only Azure: ask again, now listing Framebriar.
+    expect(await control.setEnabled('azure', true, { consent: true, host: HOST })).toMatchObject({
+      ok: false, needs: ['destination'], hosts: [HOST, FB_HOST], followHost: FB_HOST,
+    });
+    expect(entry('azure').enabled).toBe(false);
+    expect(fbEntry().confirmedHost).toBeUndefined();
   });
 
   it('asks again when turning another destination on would bring an unconfirmed Framebriar along', async () => {
-    await control.saveAzureConnectionString(CS);
-    await control.setEnabled('azure', true, { consent: true, host: 'westus2-1.in.applicationinsights.azure.com' });
+    await exportOnWithAzure();
     await control.setEnabled('azure', false);
-    connected = true;
-    // Consent is on record and Azure's host is confirmed, but Framebriar's isn't: the dialog shows.
-    expect(await control.setEnabled('azure', true)).toMatchObject({ ok: false, needs: ['destination'], hosts: ['westus2-1.in.applicationinsights.azure.com', HOST] });
+    connect();
+    expect(await control.setEnabled('azure', true)).toMatchObject({ ok: false, needs: ['destination'], hosts: [HOST, FB_HOST], followHost: FB_HOST });
   });
 
-  it('stays off without consent or another enabled destination', async () => {
-    connected = true;
-    setEntry('framebriar', { confirmedHost: HOST });
+  it('cannot be turned on without another destination exporting', async () => {
+    connect();
+    setEntry('framebriar', { confirmedHost: FB_HOST });
     await control.syncFramebriarDestination();
     expect(fbEntry().enabled).toBe(false);
+    expect(await control.setEnabled('framebriar', true, { host: FB_HOST })).toMatchObject({ ok: false, reason: 'needs_other_destination' });
     state.settings.consentVersion = 1;
     await control.syncFramebriarDestination();
     expect(fbEntry().enabled).toBe(false);
-  });
-
-  it('an explicit On survives export going off', async () => {
-    await exportOnWithAzure();
-    connected = true;
-    expect(await control.setEnabled('framebriar', true, { host: HOST })).toMatchObject({ ok: true });
-    expect(fbEntry()).toMatchObject({ enabled: true, framebriar: { autoEnabled: false, userOff: false } });
-    await control.setEnabled('azure', false);
-    expect(fbEntry().enabled).toBe(true);
+    expect(state.calls).toEqual([]);
   });
 
   it('explains what to do when Feedback is not connected', async () => {
     await exportOnWithAzure();
     expect(await control.setEnabled('framebriar', true)).toMatchObject({ ok: false, reason: 'not_configured', message: 'Connect Feedback in Settings, Feedback first.' });
-    const status = await control.getStatus();
-    expect(status.destinations.find((d) => d.id === 'framebriar')).toMatchObject({ label: 'Clubhouse developer (Framebriar)', configured: false, enabled: false });
+    expect(await fbStatus()).toMatchObject({ label: 'Clubhouse developer (Framebriar)', configured: false, enabled: false, userOff: false });
   });
 
-  it('restarts export when Feedback connects after telemetry started without it', async () => {
+  it('joins a running export when Feedback connects late, only for the confirmed host', async () => {
     await exportOnWithAzure();
-    setEntry('framebriar', { enabled: true, confirmedHost: HOST });
+    setEntry('framebriar', { enabled: true, confirmedHost: FB_HOST });
     state.calls = [];
-    connected = true;
+    connect();
+    await control.syncFramebriarDestination();
+    expect(state.calls).toEqual(['restart:keep']);
+    expect(state.active).toEqual(['azure', 'framebriar']);
     await control.syncFramebriarDestination();
     expect(state.calls).toEqual(['restart:keep']);
   });

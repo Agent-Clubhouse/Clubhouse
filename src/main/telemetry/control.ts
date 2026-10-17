@@ -57,7 +57,7 @@ import {
   type TelemetrySettings,
 } from './settings';
 import type { ExportRecord } from './types';
-import { getFramebriarTelemetrySource, onFramebriarConnectionChanged } from './destinations/framebriar-source';
+import { getBoundFramebriarSession, getFramebriarTelemetrySource, onFramebriarConnectionChanged } from './destinations/framebriar-source';
 import { appLog } from '../services/log-service';
 
 const last4 = (value: string): string => value.slice(-4);
@@ -147,6 +147,7 @@ export async function getStatus(): Promise<TelemetryStatus> {
       active: active.has(entry.id),
       health: healthOf(entry, consented),
       offlineQueue: getAdapter(entry.kind).usesOfflineQueue === true,
+      ...(entry.kind === 'framebriar' ? { userOff: entry.framebriar?.userOff === true } : {}),
     };
   });
   const anyEnabled = destinations.some((d) => d.enabled);
@@ -271,7 +272,7 @@ async function dropLegacyDestination(kind: TelemetryDestinationEntry['kind']): P
 
 export async function clearAzureConnectionString(): Promise<TelemetryActionResult> {
   await prepare();
-  await updateTelemetrySettings((s) => withDestination(s, 'azure', (d) => ({ ...d, enabled: false, confirmedHost: undefined })));
+  await updateTelemetrySettings((s) => withFramebriarFollowing(withDestination(s, 'azure', (d) => ({ ...d, enabled: false, confirmedHost: undefined }))));
   await updateSecrets((s) => ({ ...s, connectionString: undefined }));
   await dropLegacyDestination('azure');
   await applyRuntime({ clearOffline: true });
@@ -333,12 +334,12 @@ export async function saveOtlpConfig(input: OtlpConfigInput, ack?: TelemetryAckn
 export async function clearOtlpConfig(): Promise<TelemetryActionResult> {
   await prepare();
   await updateSecrets((s) => ({ ...s, otlpHeaders: undefined }));
-  await updateTelemetrySettings((s) => withDestination(s, 'otlp', (d) => ({
+  await updateTelemetrySettings((s) => withFramebriarFollowing(withDestination(s, 'otlp', (d) => ({
     ...d,
     enabled: false,
     otlp: { endpoint: '', headerNames: [], temporality: d.otlp?.temporality ?? 'cumulative' },
     confirmedHost: undefined,
-  })));
+  }))));
   await dropLegacyDestination('otlp');
   await applyRuntime();
   return done();
@@ -360,14 +361,16 @@ export async function setEnabled(
   const entry = findDestination(settings, destinationId);
   if (!entry) return fail('unknown_destination', 'Unknown destination.');
   if (!enabled) {
-    await updateTelemetrySettings((s) => withDestination(s, destinationId, (d) => ({
+    const clearOffline = getAdapter(entry.kind).usesOfflineQueue === true;
+    const before = enabledIds(settings);
+    const next = await updateTelemetrySettings((s) => withFramebriarFollowing(withDestination(s, destinationId, (d) => ({
       ...d,
       enabled: false,
       // An explicit Off sticks: the Feedback link never turns it back on.
-      ...(d.kind === 'framebriar' ? { framebriar: { autoEnabled: false, userOff: true } } : {}),
-    })));
-    await applyRuntime({ clearOffline: getAdapter(entry.kind).usesOfflineQueue === true });
-    await syncFramebriarDestination();
+      ...(d.kind === 'framebriar' ? { framebriar: { userOff: true } } : {}),
+    }))));
+    // Nothing changed (e.g. "Not now" while it was already off): no restart.
+    if (clearOffline || enabledIds(next) !== before) await applyRuntime({ clearOffline });
     return done();
   }
   if (!isExperimentEnabled()) return fail('not_available', 'Telemetry export is an experimental feature. Turn it on in Experimental settings first.');
@@ -377,11 +380,17 @@ export async function setEnabled(
     return fail('not_configured', NOT_CONFIGURED[entry.kind]);
   }
 
+  // Framebriar never exports on its own: it follows another destination.
+  if (entry.kind === 'framebriar' && !exportIsOn(settings)) {
+    return fail('needs_other_destination', 'Turn on another telemetry destination first: the developer gets telemetry only while your own export is on.');
+  }
+
   const consented = settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
   // Framebriar will follow this destination on while Feedback is connected; if its
-  // host isn't confirmed yet, this dialog confirms it too.
+  // host isn't confirmed yet, this dialog names it and confirms it too.
   const followHost = entry.kind !== 'framebriar' ? framebriarFollowHost(settings) : undefined;
   const followNeedsConfirm = !!followHost && findDestination(settings, 'framebriar')?.confirmedHost !== followHost;
+  const followConfirmed = followNeedsConfirm && ack.followHost === followHost;
   // Everything that will be sending once this is confirmed: other enabled
   // destinations start too if consent is only being given now.
   const hosts = [
@@ -398,25 +407,36 @@ export async function setEnabled(
   // after it changed, and always when another destination is already on, so
   // adding a second destination never starts sending without a dialog.
   const othersEnabled = enabledDestinations(settings).some((d) => d.id !== destinationId);
-  if (!hostConfirmed && (entry.confirmedHost !== validation.host || othersEnabled || followNeedsConfirm)) needs.push('destination');
+  // Framebriar always has another destination on; only its own host needs confirming.
+  const confirmEvenIfKnown = othersEnabled && entry.kind !== 'framebriar';
+  if (!hostConfirmed && (entry.confirmedHost !== validation.host || confirmEvenIfKnown)) needs.push('destination');
+  // The dialog must have named Framebriar's host too, or it isn't confirmed (it may
+  // have connected while the dialog was open).
+  else if (followNeedsConfirm && !followConfirmed) needs.push('destination');
   const usesSecrets = entry.kind === 'azure' || Object.keys((config as { headers?: Record<string, string> }).headers ?? {}).length > 0;
   if (usesSecrets && getSecureStorageState() === 'weak' && !settings.weakStorageAccepted && !ack.weakStorage) {
     needs.push('weak_storage');
   }
   if (needs.length) {
-    return { ok: false, reason: 'needs_confirmation', needs, host: validation.host, hosts: [...new Set(hosts)], status: await getStatus() };
+    return {
+      ok: false, reason: 'needs_confirmation', needs, host: validation.host, hosts: [...new Set(hosts)],
+      ...(followNeedsConfirm ? { followHost } : {}),
+      status: await getStatus(),
+    };
   }
 
-  await updateTelemetrySettings((s) => ({
+  await updateTelemetrySettings((s) => withFramebriarFollowing({
     ...withDestination(
       // The dialog named Framebriar's host as well: that confirms it.
-      followHost ? withDestination(s, 'framebriar', (d) => ({ ...d, confirmedHost: followHost })) : s,
+      followConfirmed ? withDestination(s, 'framebriar', (d) => ({ ...d, confirmedHost: followHost })) : s,
       destinationId,
       (d) => ({
         ...d,
-        enabled: true,
+        // Framebriar's switch is derived (withFramebriarFollowing): On confirms
+        // its host and lets it follow Feedback; it is never a sticky On.
+        enabled: d.kind !== 'framebriar',
         confirmedHost: validation.host,
-        ...(d.kind === 'framebriar' ? { framebriar: { autoEnabled: false, userOff: false } } : {}),
+        ...(d.kind === 'framebriar' ? { framebriar: { userOff: false } } : {}),
       }),
     ),
     // Phase 1 files can hold an enabled entry from before consent was asked;
@@ -425,7 +445,6 @@ export async function setEnabled(
     weakStorageAccepted: s.weakStorageAccepted || ack.weakStorage === true,
   }));
   const ok = await applyRuntime();
-  if (entry.kind !== 'framebriar') await syncFramebriarDestination();
   if (!ok || !getActiveDestinations().some((d) => d.id === destinationId)) {
     return fail('start_failed', getDestinationStartError(destinationId) ?? getLastStartError() ?? 'Telemetry failed to start.');
   }
@@ -447,51 +466,63 @@ function exportIsOn(settings: TelemetrySettings): boolean {
     && enabledDestinations(settings).some((d) => d.kind !== 'framebriar');
 }
 
+function currentFramebriarHost(): string | undefined {
+  return getFramebriarTelemetrySource()?.()?.host;
+}
+
 /** Framebriar's host when it would follow export on (Feedback connected, not switched off by the user). */
 function framebriarFollowHost(settings: TelemetrySettings): string | undefined {
   const entry = findDestination(settings, 'framebriar');
   if (!entry || entry.enabled || entry.framebriar?.userOff) return undefined;
-  return getFramebriarTelemetrySource()?.()?.host;
+  return currentFramebriarHost();
+}
+
+/**
+ * Whether Framebriar should be exporting (spec §6.11): only while Feedback is
+ * connected, another destination is exporting, its current host is the one the
+ * user confirmed, and the user hasn't switched it off.
+ */
+function framebriarWanted(settings: TelemetrySettings): boolean {
+  const entry = findDestination(settings, 'framebriar');
+  const host = currentFramebriarHost();
+  return !!entry && host !== undefined && exportIsOn(settings) && !entry.framebriar?.userOff && entry.confirmedHost === host;
+}
+
+/** The settings with Framebriar's switch matching framebriarWanted. Every path that changes another destination goes through this. */
+function withFramebriarFollowing(settings: TelemetrySettings): TelemetrySettings {
+  const entry = findDestination(settings, 'framebriar');
+  if (!entry) return settings;
+  const want = framebriarWanted(settings);
+  return entry.enabled === want ? settings : withDestination(settings, 'framebriar', (d) => ({ ...d, enabled: want }));
+}
+
+function enabledIds(settings: TelemetrySettings): string {
+  return enabledDestinations(settings).map((d) => d.id).join(',');
 }
 
 let syncing: Promise<void> = Promise.resolve();
 
 /**
- * Turn the Framebriar destination on while Feedback is connected and export is
- * on, and off again when either stops. A switch the user set themselves wins:
- * an explicit Off is never undone, and an explicit On is never turned off here.
- *
- * It only ever turns on to a host the user confirmed (consent per host, spec
- * §6.11): through the consent dialog of another destination that named it, its
- * own panel switch, or the prompt Settings › Feedback shows after connecting.
- * An unconfirmed host stays off; Feedback itself keeps working.
- *
- * Restarts the exporter when Feedback connects after telemetry started, since
- * an unconnected destination couldn't start then.
+ * Re-check Framebriar when Feedback's connection changes: turn it on or off to
+ * match framebriarWanted, and restart the exporter when it should run but isn't
+ * (Feedback connected after telemetry started) or is bound to a Feedback session
+ * that has ended (Feedback switched off and on). Whenever Feedback isn't
+ * connected the destination leaves the runtime, whatever its flags say.
  */
 export function syncFramebriarDestination(): Promise<void> {
   syncing = syncing.then(async () => {
     const settings = getTelemetrySettings();
     const entry = findDestination(settings, 'framebriar');
     if (!entry) return;
-    const host = getFramebriarTelemetrySource()?.()?.host;
-    const connected = host !== undefined;
-    const auto = entry.framebriar?.autoEnabled === true;
-    const want = connected && exportIsOn(settings) && !entry.framebriar?.userOff && entry.confirmedHost === host;
-    if (want && !entry.enabled) {
-      await updateTelemetrySettings((s) => withDestination(s, 'framebriar', (d) => ({ ...d, enabled: true, framebriar: { autoEnabled: true, userOff: false } })));
+    if (withFramebriarFollowing(settings) !== settings) {
+      await updateTelemetrySettings(withFramebriarFollowing);
       await applyRuntime();
       return;
     }
-    if (!want && entry.enabled && auto) {
-      await updateTelemetrySettings((s) => withDestination(s, 'framebriar', (d) => ({ ...d, enabled: false, framebriar: { autoEnabled: false, userOff: false } })));
-      await applyRuntime();
-      return;
-    }
-    // Enabled but not exporting because Feedback wasn't connected at start.
-    if (entry.enabled && connected && settings.consentVersion >= TELEMETRY_CONSENT_VERSION && !getActiveDestinations().some((d) => d.id === 'framebriar')) {
-      await applyRuntime();
-    }
+    const active = getActiveDestinations().some((d) => d.id === 'framebriar');
+    const current = getFramebriarTelemetrySource()?.();
+    if (entry.enabled && current && (!active || getBoundFramebriarSession() !== current.sessionId)) await applyRuntime();
+    else if (!entry.enabled && active) await applyRuntime();
   }).catch((err) => {
     // telemetry-exempt: logged; the next Feedback change retries.
     appLog('telemetry:control', 'warn', 'Could not update the Framebriar destination', {

@@ -198,6 +198,24 @@ describe('TelemetrySettingsSection', () => {
     expect(screen.getByTestId('telemetry-confirm')).toHaveTextContent("Clubhouse can't see or control what these services do with it.");
   });
 
+  it('confirms the Framebriar host the dialog listed, and only that one', async () => {
+    const status = makeStatus({ azure: { configured: true, ikeyLast4: 'abcd', host: 'h.applicationinsights.azure.com' } });
+    const api = mockApi(status);
+    const setEnabled = vi.spyOn(api, 'setEnabled')
+      .mockResolvedValueOnce({
+        ok: false, reason: 'needs_confirmation', needs: ['consent', 'destination'], host: 'h.applicationinsights.azure.com',
+        hosts: ['h.applicationinsights.azure.com', 'framebriar.example.net'], followHost: 'framebriar.example.net', status,
+      })
+      .mockResolvedValueOnce({ ok: true, status });
+    render(<TelemetrySettingsSection />);
+    fireEvent.click(await screen.findByLabelText('Send telemetry to Application Insights'));
+    const dialog = await screen.findByTestId('telemetry-confirm');
+    fireEvent.click(within(dialog).getByText('Continue'));
+    await waitFor(() => expect(setEnabled).toHaveBeenLastCalledWith('azure', true, {
+      consent: true, host: 'h.applicationinsights.azure.com', followHost: 'framebriar.example.net',
+    }));
+  });
+
   it('shows each destination its own health, and both can be on at once', async () => {
     mockApi(makeStatus({ enabled: true, running: true, consentAccepted: true }, {
       azure: { enabled: true, active: true, configured: true, health: { state: 'ok', lastSuccessAt: Date.now() } },

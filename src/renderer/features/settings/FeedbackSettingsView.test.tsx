@@ -26,7 +26,7 @@ describe('FeedbackSettingsView', () => {
     vi.mocked(window.clubhouse.feedback.connect).mockReturnValue(new Promise((r) => { resolve = r; }) as never);
     render(<FeedbackSettingsView />);
     expect(screen.getByTestId('feedback-settings').textContent).toContain('Connecting lets you send feedback and screenshots to the developer.');
-    expect(screen.getByTestId('feedback-settings').textContent).toContain('If telemetry export is on (Settings, Logging), connecting also shares user activity and errors with the developer');
+    expect(screen.getByTestId('feedback-settings').textContent).toContain('If telemetry export is on (Settings, Logging), Clubhouse then asks whether to share user activity and errors with the developer too');
     const input = screen.getByLabelText('Invitation') as HTMLInputElement;
     expect(input.type).toBe('password');
     fireEvent.change(input, { target: { value: '  the-invitation  ' } });
@@ -147,6 +147,15 @@ describe('FeedbackSettingsView telemetry prompt', () => {
     expect(setEnabled).toHaveBeenLastCalledWith('framebriar', false);
     expect(screen.queryByTestId('feedback-telemetry-prompt')).toBeNull();
     expect(screen.getByTestId('feedback-connected')).toBeTruthy();
+  });
+
+  it('does not ask again after "Not now"', async () => {
+    vi.mocked(window.clubhouse.telemetrySettings.getStatus).mockResolvedValue({
+      available: true, consentAccepted: true, destinations: [{ id: 'azure', enabled: true }, { id: 'framebriar', enabled: false, userOff: true }],
+    } as never);
+    await connect();
+    expect(screen.queryByTestId('feedback-telemetry-prompt')).toBeNull();
+    expect(setEnabled).not.toHaveBeenCalled();
   });
 
   it('does not ask when no other destination exports', async () => {

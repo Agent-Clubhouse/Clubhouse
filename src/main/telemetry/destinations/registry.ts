@@ -16,7 +16,7 @@
  */
 import type { TelemetryDestinationEntry, TelemetryDestinationKind } from '../../../shared/telemetry/settings-types';
 import { loadAzureDestination, loadFramebriarDestination, loadOtlpDestination } from '../lazy-chunks';
-import { getFramebriarTelemetrySource, type FramebriarTelemetryExport } from './framebriar-source';
+import { currentFramebriarExport, FRAMEBRIAR_NOT_CONNECTED, setBoundFramebriarSession, type FramebriarTelemetryExport } from './framebriar-source';
 import type { TelemetrySecrets } from '../secret-store';
 import {
   resolveDestination,
@@ -34,6 +34,14 @@ function azureFailure(record: ExportRecord): string | undefined {
   if (s === 401 || s === 403) {
     return `Rejected (HTTP ${s}). Local authentication is probably disabled on this resource; Entra ID sign-in is not supported yet.`;
   }
+  return undefined;
+}
+
+function framebriarFailure(record: ExportRecord): string | undefined {
+  const s = record.httpStatus;
+  if (s === 401) return 'Rejected (HTTP 401). Reconnect Feedback in Settings, Feedback.';
+  if (s === 403) return 'Rejected (HTTP 403). The developer hasn\'t enabled telemetry for Clubhouse yet.';
+  if (s === undefined && record.errorMessage === FRAMEBRIAR_NOT_CONNECTED) return 'Not sent: Feedback isn\'t connected right now. It resumes when Feedback reconnects.';
   return undefined;
 }
 
@@ -74,7 +82,7 @@ const otlp: DestinationAdapter<OtlpDestinationConfig> = {
 const framebriar: DestinationAdapter<FramebriarTelemetryExport> = {
   kind: 'framebriar',
   label: 'Clubhouse developer (Framebriar)',
-  resolve: () => getFramebriarTelemetrySource()?.() ?? null,
+  resolve: () => currentFramebriarExport(),
   validate(config) {
     let url: URL;
     try {
@@ -87,8 +95,11 @@ const framebriar: DestinationAdapter<FramebriarTelemetryExport> = {
   },
   async createExporters(config, _entry, ctx) {
     const { createFramebriarExporters } = await loadFramebriarDestination();
-    return createFramebriarExporters(config, ctx.reservedPorts);
+    setBoundFramebriarSession(config.sessionId);
+    // Each export re-reads the live source: nothing is sent once Feedback disconnects.
+    return createFramebriarExporters(config, ctx.reservedPorts, currentFramebriarExport);
   },
+  describeFailure: framebriarFailure,
   // Framebriar keeps service.* and session.id from the resource and drops the rest.
   copyResourceAttributes: ['clubhouse.install.id', 'clubhouse.ui.chrome', 'clubhouse.channel'],
 };

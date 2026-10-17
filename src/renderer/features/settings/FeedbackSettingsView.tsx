@@ -12,7 +12,8 @@ async function framebriarTelemetryAsk(): Promise<TelemetryShareAsk | null> {
   const status = await api.getStatus();
   if (!status?.available || !status.consentAccepted) return null;
   const fb = status.destinations.find((d) => d.id === 'framebriar');
-  if (!fb || fb.enabled) return null;
+  // Already on, or the user said "Not now" before: don't ask again.
+  if (!fb || fb.enabled || fb.userOff) return null;
   if (!status.destinations.some((d) => d.id !== 'framebriar' && d.enabled)) return null;
   const result = await api.setEnabled('framebriar', true, {});
   if ('needs' in result && result.host) return { host: result.host, hosts: result.hosts ?? [result.host] };
@@ -134,7 +135,7 @@ export function FeedbackSettingsView() {
             Connecting lets you send feedback and screenshots to the developer.
           </p>
           <p className="text-sm text-ctp-subtext0 mt-1">
-            If telemetry export is on (Settings, Logging), connecting also shares user activity and errors with the developer, with the same redaction as your own export. You can turn that off in Telemetry export.
+            If telemetry export is on (Settings, Logging), Clubhouse then asks whether to share user activity and errors with the developer too, with the same redaction as your own export. Nothing is shared unless you agree.
           </p>
         </div>
 

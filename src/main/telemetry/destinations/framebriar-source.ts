@@ -19,8 +19,26 @@ export interface FramebriarTelemetryExport {
 /** Returns the export config while Feedback is connected, else null. */
 export type FramebriarTelemetrySource = () => FramebriarTelemetryExport | null;
 
+/** The export error when there's no live connection or token: nothing is sent. */
+export const FRAMEBRIAR_NOT_CONNECTED = 'Feedback is not connected';
+
 let source: FramebriarTelemetrySource | null = null;
+let boundSession: string | null = null;
 const listeners = new Set<() => void>();
+
+/** The current export config, read at export time so a Disconnect or a new Feedback session applies at once. */
+export function currentFramebriarExport(): FramebriarTelemetryExport | null {
+  return source?.() ?? null;
+}
+
+/** The Feedback session the running exporters were created for (control restarts them when it changes). */
+export function setBoundFramebriarSession(sessionId: string | null): void {
+  boundSession = sessionId;
+}
+
+export function getBoundFramebriarSession(): string | null {
+  return boundSession;
+}
 
 export function setFramebriarTelemetrySource(next: FramebriarTelemetrySource | null): void {
   source = next;
