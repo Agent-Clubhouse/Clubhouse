@@ -272,7 +272,6 @@ export function TelemetrySettingsSection() {
         </div>
       </section>
 
-      {status.enabled && status.lastError && <p className="text-xs text-ctp-red mt-2" role="alert">{status.lastError}</p>}
 
       {/* Preview, Workbook */}
       <div className="mt-3">
@@ -349,8 +348,21 @@ export function TelemetrySettingsSection() {
           {status.otlp.configured && (
             <button type="button" className={buttonClass} onClick={() => void handleResult('otlp', 'otlp', () => api().clearOtlp(), {}, syncOtlpForm)}>Clear</button>
           )}
-          <button type="button" className={buttonClass} disabled={!otlp?.active} onClick={() => void runTest('otlp')}>Send test event</button>
-          {testLine('otlp')}
+        </div>
+        {errorLine('otlp')}
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-ctp-text">Metric temporality</span>
+          {(['cumulative', 'delta'] as const).map((t) => (
+            <label key={t} className="text-sm text-ctp-subtext1 flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="telemetry-temporality"
+                checked={status.otlp.temporality === t}
+                onChange={() => void handleResult('otlp', 'otlp', () => api().setAdvanced({ otlpTemporality: t }))}
+              />
+              {t === 'cumulative' ? 'Cumulative' : 'Delta'}
+            </label>
+          ))}
         </div>
         {otlp && (
           <DestinationControls
@@ -358,7 +370,10 @@ export function TelemetrySettingsSection() {
             onFilter={(level, preset) => void handleResult('otlp', 'otlp', () => api().setFilter('otlp', level, preset))}
           />
         )}
-        {errorLine('otlp')}
+        <div className="flex items-center gap-3">
+          <button type="button" className={buttonClass} disabled={!otlp?.active} onClick={() => void runTest('otlp')}>Send test event</button>
+          {testLine('otlp')}
+        </div>
       </section>
 
       {/* Advanced */}
@@ -384,20 +399,6 @@ export function TelemetrySettingsSection() {
             >
               Apply
             </button>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-ctp-text w-44">OTLP metric temporality</span>
-            {(['cumulative', 'delta'] as const).map((t) => (
-              <label key={t} className="text-sm text-ctp-subtext1 flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="radio"
-                  name="telemetry-temporality"
-                  checked={status.otlp.temporality === t}
-                  onChange={() => void handleResult('general', 'general', () => api().setAdvanced({ otlpTemporality: t }))}
-                />
-                {t === 'cumulative' ? 'Cumulative' : 'Delta'}
-              </label>
-            ))}
           </div>
           <div className="text-sm text-ctp-text">
             Install ID <span className="font-mono text-ctp-subtext1">{status.installId ?? 'created when telemetry is first turned on'}</span>

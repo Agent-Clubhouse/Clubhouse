@@ -65,8 +65,9 @@ import {
   ObservedSpanExporter,
   RedactionLogProcessor,
   RedactionSpanProcessor,
-  ResourceCopyLogExporter,
-  ResourceCopySpanExporter,
+  SessionCapLogProcessor,
+  StampLogExporter,
+  StampSpanExporter,
   SessionCapSpanProcessor,
   type PipelineHooks,
 } from './processors';
@@ -106,6 +107,8 @@ export interface SdkOptions {
   diagLog?: (level: 'warn' | 'error', message: string) => void;
   /** Overrides for tests. */
   metricExportIntervalMs?: number;
+  /** An export with no result after this long counts as failed for health (default 30 s). */
+  exportTimeoutMs?: number;
   batchDelayMs?: number;
   sessionCaps?: { traces: number; logs: number };
 }
@@ -203,7 +206,6 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
   context.setGlobalContextManager(contextManager);
 
   const resource = resourceFromAttributes(opts.resourceAttributes);
-  const tee = new PreviewTee();
 
   const destinations: SdkDestination[] = opts.destinations ?? (opts.exporters
     ? [{ id: 'default', kind: 'default', exporters: opts.exporters, filter: { level, preset: 'all' } }]
@@ -255,14 +257,17 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     aggregationCardinalityLimit: METRIC_CARDINALITY_LIMIT,
   }));
   // observeHooks is defined below; the readers only call it after the first export.
+  // One preview buffer per destination, so a busy one never pushes another's items out.
+  const tees = new Map(destinations.map((d) => [d.id, new PreviewTee()]));
   const hooksFor = (dest: SdkDestination) => ({
-    tee,
+    tee: tees.get(dest.id),
     destination: dest.id,
+    exportTimeoutMs: opts.exportTimeoutMs,
     onFailure: (signal: 'traces' | 'metrics' | 'logs', httpClass: ReturnType<typeof classifyExportError>) =>
       observeHooks.onFailure(dest, signal, httpClass),
     onResult: (signal: 'traces' | 'metrics' | 'logs', result: ExportResult) => recordExport(dest.id, signal, result),
   });
-  const filters = new Map(destinations.map((d) => [d.id, compileFilter(d.filter, d.kind)]));
+  const filters = new Map(destinations.map((d) => [d.id, compileFilter(d.filter, d.id)]));
   // One reader per destination: each keeps its own temporality (from its
   // exporter) and its own filter.
   const metricReaders = destinations.map((dest) => new PeriodicExportingMetricReader({
@@ -295,7 +300,8 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
     scrub,
     onDropped: (signal, n) => droppedCounter.add(n, toAttributes([ATTR.telemetrySignal(signal)])),
   };
-  const caps = new SessionCaps(opts.sessionCaps, (signal) => hooks.onDropped(signal, 1));
+  // One budget per destination, spent after its filter (spec §6.4, §6.11).
+  const capsFor = new Map(destinations.map((d) => [d.id, new SessionCaps(opts.sessionCaps, (signal) => hooks.onDropped(signal, 1))]));
   const observeHooks = {
     onFailure: (dest: SdkDestination, signal: 'traces' | 'metrics' | 'logs', httpClass: ReturnType<typeof classifyExportError>) =>
       failureCounter.add(1, toAttributes([
@@ -305,19 +311,26 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       ])),
   };
 
+  const stampFor = (dest: SdkDestination) => ({
+    attributes: { 'clubhouse.telemetry.level': dest.filter.level },
+    copyResourceAttributes: dest.copyResourceAttributes ?? [],
+  });
+
   // --- Traces ---
   const spanChains = destinations.map((dest) => {
     const filter = filters.get(dest.id)!;
-    let exporter = new ObservedSpanExporter(dest.exporters.spanExporter, hooksFor(dest)) as import('@opentelemetry/sdk-trace-base').SpanExporter;
-    if (dest.copyResourceAttributes?.length) exporter = new ResourceCopySpanExporter(exporter, dest.copyResourceAttributes);
+    const exporter = new StampSpanExporter(new ObservedSpanExporter(dest.exporters.spanExporter, hooksFor(dest)), stampFor(dest));
     let chain: SpanProcessor = new BatchSpanProcessor(exporter, {
       maxExportBatchSize: 256,
       scheduledDelayMillis: opts.batchDelayMs ?? 5000,
     });
+    chain = new FilterSpanProcessor(new SessionCapSpanProcessor(chain, capsFor.get(dest.id)!), filter);
+    // Before the filter, so a failing trace whose root the filter drops still
+    // forwards its failing children.
     if (filter.errorTail) chain = new ErrorTailSpanProcessor(chain);
-    return new FilterSpanProcessor(chain, filter);
+    return chain;
   });
-  const spanPipeline = new RedactionSpanProcessor(new SessionCapSpanProcessor(new FanOutSpanProcessor(spanChains), caps), hooks);
+  const spanPipeline = new RedactionSpanProcessor(new FanOutSpanProcessor(spanChains), hooks);
   const tracerProvider = new BasicTracerProvider({
     resource,
     sampler: new FlowSampler(opts.sampleRate),
@@ -327,17 +340,16 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
 
   // --- Logs ---
   const logChains = destinations.map((dest) => {
-    let exporter = new ObservedLogExporter(dest.exporters.logExporter, hooksFor(dest)) as import('@opentelemetry/sdk-logs').LogRecordExporter;
-    if (dest.copyResourceAttributes?.length) exporter = new ResourceCopyLogExporter(exporter, dest.copyResourceAttributes);
-    return new FilterLogProcessor(new BatchLogRecordProcessor({
+    const exporter = new StampLogExporter(new ObservedLogExporter(dest.exporters.logExporter, hooksFor(dest)), stampFor(dest));
+    return new FilterLogProcessor(new SessionCapLogProcessor(new BatchLogRecordProcessor({
       exporter,
       maxExportBatchSize: 256,
       scheduledDelayMillis: opts.batchDelayMs ?? 5000,
-    }), filters.get(dest.id)!);
+    }), capsFor.get(dest.id)!), filters.get(dest.id)!);
   });
   const loggerProvider = new LoggerProvider({
     resource,
-    processors: [new RedactionLogProcessor(new FanOutLogProcessor(logChains), hooks, caps)],
+    processors: [new RedactionLogProcessor(new FanOutLogProcessor(logChains), hooks)],
   });
   const logger = loggerProvider.getLogger(SCOPE);
 
@@ -574,7 +586,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       return context.with(context.active().setValue(REMOTE_PARENT, holder), fn);
     },
 
-    preview: () => tee.snapshot(),
+    preview: () => [...tees.values()].flatMap((t) => t.snapshot()).sort((a, b) => a.time - b.time),
 
     recentExports: (sinceMs) => exportLog.filter((r) => r.at >= sinceMs),
 
@@ -598,7 +610,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       );
       context.disable();
       diag.disable();
-      tee.clear();
+      for (const t of tees.values()) t.clear();
     },
   };
 }

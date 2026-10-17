@@ -43,8 +43,6 @@ export interface TelemetryDestinationEntry {
   enabled: boolean;
   level: TelemetryLevel;
   preset: TelemetryFilterPreset;
-  /** Key of this destination's secrets in telemetry-secret.bin (defaults to the id). */
-  secretRef?: string;
   /** The host the user last confirmed sending to (kinds with user-entered endpoints). */
   confirmedHost?: string;
   otlp?: OtlpDestinationSettings;

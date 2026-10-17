@@ -5,10 +5,15 @@
  * Sampling, redaction and the session caps are global; after them the
  * pipeline fans out to every enabled destination (spec §6.11):
  *
- * Span pipeline:  Redaction → SessionCap → FanOut → per destination:
- *                 Filter → [ErrorTail at Errors level] → Batch → [ResourceCopy] → ObservedSpanExporter
- * Log pipeline:   Redaction (in place) → SessionCap → FanOut → per destination:
- *                 Filter → Batch → [ResourceCopy] → ObservedLogExporter
+ * Span pipeline:  Redaction → FanOut → per destination:
+ *                 [ErrorTail at Errors level] → Filter → SessionCap → Batch → Stamp → ObservedSpanExporter
+ * Log pipeline:   Redaction (in place) → FanOut → per destination:
+ *                 Filter → SessionCap → Batch → Stamp → ObservedLogExporter
+ *
+ * The error tail runs before the filter so a failing trace is kept even when
+ * the filter drops its root. Session caps are per destination and counted
+ * after its filter, so high-volume export to one destination never uses up
+ * another's budget.
  * Metric pipeline: Views (allowlist, cardinality) → one PeriodicReader per destination →
  *                 FilteredMetricExporter → ObservedMetricExporter
  */
@@ -181,7 +186,8 @@ export class RedactionLogProcessor implements LogRecordProcessor {
   constructor(
     private readonly next: LogRecordProcessor,
     private readonly hooks: PipelineHooks,
-    private readonly caps: SessionCaps,
+    /** Optional: the multi-destination pipeline caps per destination instead (SessionCapLogProcessor). */
+    private readonly caps?: SessionCaps,
   ) {}
 
   onEmit(record: SdkLogRecord, ctx?: Context): void {
@@ -198,7 +204,7 @@ export class RedactionLogProcessor implements LogRecordProcessor {
     Object.assign(bag, attributes);
     // Body is always the event name, never a message.
     record.setBody(eventName);
-    if (!this.caps.tryAcquire('logs')) return;
+    if (this.caps && !this.caps.tryAcquire('logs')) return;
     this.next.onEmit(record, ctx);
   }
 
@@ -239,10 +245,30 @@ export class FilterLogProcessor implements LogRecordProcessor {
   }
 }
 
+/** One destination's log budget for the session. */
+export class SessionCapLogProcessor implements LogRecordProcessor {
+  constructor(private readonly next: LogRecordProcessor, private readonly caps: SessionCaps) {}
+  onEmit(record: SdkLogRecord, ctx?: Context): void {
+    if (this.caps.tryAcquire('logs')) this.next.onEmit(record, ctx);
+  }
+  forceFlush(): Promise<void> {
+    return this.next.forceFlush();
+  }
+  shutdown(): Promise<void> {
+    return this.next.shutdown();
+  }
+}
+
 // --- Exporter decorators ----------------------------------------------------
 
 export interface ObserveHooks {
   tee?: PreviewTee;
+  /**
+   * An export with no result after this long is recorded as a failure (so a
+   * hanging destination shows as failing). The real result, if it ever
+   * arrives, is still recorded. Default 30 s.
+   */
+  exportTimeoutMs?: number;
   /** The destination these exports go to; tags preview items. */
   destination?: string;
   onFailure(signal: Signal, httpClass: ReturnType<typeof classifyExportError>): void;
@@ -254,8 +280,17 @@ function hrToMs(t: [number, number]): number {
   return t[0] * 1000 + t[1] / 1e6;
 }
 
+export const DEFAULT_EXPORT_TIMEOUT_MS = 30_000;
+
 function observe(signal: Signal, hooks: ObserveHooks, cb: (r: ExportResult) => void): (r: ExportResult) => void {
+  const timer = setTimeout(() => {
+    const error = Object.assign(new Error('Export timed out'), { code: 'ETIMEDOUT' });
+    hooks.onFailure(signal, classifyExportError(error));
+    hooks.onResult?.(signal, { code: ExportResultCode.FAILED, error });
+  }, hooks.exportTimeoutMs ?? DEFAULT_EXPORT_TIMEOUT_MS);
+  timer.unref?.();
   return (result) => {
+    clearTimeout(timer);
     if (result.code !== ExportResultCode.SUCCESS) hooks.onFailure(signal, classifyExportError(result.error));
     hooks.onResult?.(signal, result);
     cb(result);
@@ -349,30 +384,80 @@ export class ObservedMetricExporter implements PushMetricExporter {
 
 // --- Per-destination exporter decorators --------------------------------------
 
-/** Copy chosen resource attributes onto each item's own attributes. */
-function withResourceAttrs<T extends { attributes: Record<string, unknown>; resource: { attributes: Record<string, unknown> } }>(
-  item: T,
-  keys: readonly string[],
-): T {
-  const extra: Record<string, unknown> = {};
-  for (const k of keys) {
-    const v = item.resource.attributes[k];
-    if (v !== undefined && !(k in item.attributes)) extra[k] = v;
+/**
+ * What a destination adds to every span and log record it receives: its own
+ * `clubhouse.telemetry.level` (the resource can only carry one value), and
+ * any resource attributes it copies onto items for backends that keep few
+ * resource attributes.
+ */
+export interface DestinationStamp {
+  attributes: Record<string, string>;
+  copyResourceAttributes: readonly string[];
+}
+
+function stampAttributes(
+  attrs: Record<string, unknown>,
+  resource: { attributes: Record<string, unknown> },
+  stamp: DestinationStamp,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...attrs };
+  for (const k of stamp.copyResourceAttributes) {
+    const v = resource.attributes[k];
+    if (v !== undefined && !(k in out)) out[k] = v;
   }
-  if (Object.keys(extra).length === 0) return item;
-  // A view over the shared item: other destinations keep seeing the original.
-  return Object.create(item, { attributes: { value: { ...item.attributes, ...extra }, enumerable: true } }) as T;
+  for (const [k, v] of Object.entries(stamp.attributes)) if (!(k in out)) out[k] = v;
+  return out;
 }
 
 /**
- * For backends that keep only a few resource attributes: copies the chosen
- * ones onto every span. The span is shared with other destinations, so this
- * works on a per-destination view, never in place.
+ * Per-destination copy of a shared span. A plain object with every
+ * ReadableSpan field, so exporters that spread, clone or serialize it keep
+ * the stamped attributes, and other destinations keep seeing the original.
  */
-export class ResourceCopySpanExporter implements SpanExporter {
-  constructor(private readonly inner: SpanExporter, private readonly keys: readonly string[]) {}
+function stampSpan(span: ReadableSpan, stamp: DestinationStamp): ReadableSpan {
+  const spanContext = span.spanContext();
+  return {
+    name: span.name,
+    kind: span.kind,
+    spanContext: () => spanContext,
+    parentSpanContext: span.parentSpanContext,
+    startTime: span.startTime,
+    endTime: span.endTime,
+    status: span.status,
+    attributes: stampAttributes(span.attributes, span.resource, stamp) as ReadableSpan['attributes'],
+    links: span.links,
+    events: span.events,
+    duration: span.duration,
+    ended: span.ended,
+    resource: span.resource,
+    instrumentationScope: span.instrumentationScope,
+    droppedAttributesCount: span.droppedAttributesCount,
+    droppedEventsCount: span.droppedEventsCount,
+    droppedLinksCount: span.droppedLinksCount,
+  };
+}
+
+/** Per-destination copy of a shared log record (see stampSpan). */
+function stampLog(log: ReadableLogRecord, stamp: DestinationStamp): ReadableLogRecord {
+  return {
+    hrTime: log.hrTime,
+    hrTimeObserved: log.hrTimeObserved,
+    spanContext: log.spanContext,
+    severityText: log.severityText,
+    severityNumber: log.severityNumber,
+    body: log.body,
+    eventName: log.eventName,
+    resource: log.resource,
+    instrumentationScope: log.instrumentationScope,
+    attributes: stampAttributes(log.attributes, log.resource, stamp) as ReadableLogRecord['attributes'],
+    droppedAttributesCount: log.droppedAttributesCount,
+  };
+}
+
+export class StampSpanExporter implements SpanExporter {
+  constructor(private readonly inner: SpanExporter, private readonly stamp: DestinationStamp) {}
   export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
-    this.inner.export(spans.map((s) => withResourceAttrs(s as ReadableSpan & { attributes: Record<string, unknown> }, this.keys)), resultCallback);
+    this.inner.export(spans.map((s) => stampSpan(s, this.stamp)), resultCallback);
   }
   shutdown(): Promise<void> {
     return this.inner.shutdown();
@@ -382,11 +467,10 @@ export class ResourceCopySpanExporter implements SpanExporter {
   }
 }
 
-/** Log-record counterpart of ResourceCopySpanExporter. */
-export class ResourceCopyLogExporter implements LogRecordExporter {
-  constructor(private readonly inner: LogRecordExporter, private readonly keys: readonly string[]) {}
+export class StampLogExporter implements LogRecordExporter {
+  constructor(private readonly inner: LogRecordExporter, private readonly stamp: DestinationStamp) {}
   export(logs: ReadableLogRecord[], resultCallback: (result: ExportResult) => void): void {
-    this.inner.export(logs.map((l) => withResourceAttrs(l as ReadableLogRecord & { attributes: Record<string, unknown> }, this.keys)), resultCallback);
+    this.inner.export(logs.map((l) => stampLog(l, this.stamp)), resultCallback);
   }
   shutdown(): Promise<void> {
     return this.inner.shutdown();

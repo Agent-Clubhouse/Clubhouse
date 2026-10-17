@@ -117,13 +117,14 @@ describe('resource attributes', () => {
     electronVersion: '43.0.0',
     installId: IKEY,
     instanceId: 'run-1',
-    level: 'standard',
     annexRole: 'none',
     uiChrome: 'legacy',
   });
 
   it('sets exactly the documented keys, with service.instance.id explicit', () => {
     expect(Object.keys(attrs).sort()).toEqual([...RESOURCE_KEYS].sort());
+    // Each destination stamps its own level on its items; the shared resource carries none.
+    expect(attrs).not.toHaveProperty('clubhouse.telemetry.level');
     expect(attrs['service.instance.id']).toBe('run-1');
     expect(attrs['enduser.pseudo.id']).toBe(IKEY);
   });

@@ -236,10 +236,20 @@ export async function saveAzureConnectionString(
   }
   const storage = await checkStorage(ack, settings);
   if (typeof storage === 'object') return storage;
+  // A different ingestion host on an enabled destination is a new recipient:
+  // confirm it before anything is sent there.
+  const validation = validateDestination({ kind: 'azure', connectionString: connectionString.trim() });
+  const host = 'host' in validation ? validation.host : undefined;
+  const azure = findDestination(settings, 'azure');
+  const azureActive = azure?.enabled === true && settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
+  if (azureActive && host && host !== azure?.confirmedHost && ack?.host !== host) {
+    return { ok: false, reason: 'needs_confirmation', needs: ['destination'], host, hosts: [host], status: await getStatus() };
+  }
   await updateSecrets((s) => ({ ...s, connectionString: connectionString.trim() }));
   if (storage === 'weak_ok') await updateTelemetrySettings((s) => ({ ...s, weakStorageAccepted: true }));
+  if (azureActive && host) await updateTelemetrySettings((s) => withDestination(s, 'azure', (d) => ({ ...d, confirmedHost: host })));
   // A new resource: nothing queued for the old one may be sent to it.
-  if (isRunning() && findDestination(settings, 'azure')?.enabled) await restartTelemetry({ clearOffline: true });
+  if (isRunning() && azure?.enabled) await restartTelemetry({ clearOffline: true });
   return done();
 }
 
@@ -259,7 +269,7 @@ async function dropLegacyDestination(kind: TelemetryDestinationEntry['kind']): P
 
 export async function clearAzureConnectionString(): Promise<TelemetryActionResult> {
   await prepare();
-  await updateTelemetrySettings((s) => withDestination(s, 'azure', (d) => ({ ...d, enabled: false })));
+  await updateTelemetrySettings((s) => withDestination(s, 'azure', (d) => ({ ...d, enabled: false, confirmedHost: undefined })));
   await updateSecrets((s) => ({ ...s, connectionString: undefined }));
   await dropLegacyDestination('azure');
   await applyRuntime({ clearOffline: true });
@@ -370,7 +380,11 @@ export async function setEnabled(
   const needs: TelemetryConfirmation[] = [];
   if (!consented && !ack.consent) needs.push('consent');
   const hostConfirmed = ack.host === validation.host;
-  if (entry.kind === 'otlp' && entry.confirmedHost !== validation.host && !hostConfirmed) needs.push('destination');
+  // Every kind's host is confirmed before it receives anything: on first use,
+  // after it changed, and always when another destination is already on, so
+  // adding a second destination never starts sending without a dialog.
+  const othersEnabled = enabledDestinations(settings).some((d) => d.id !== destinationId);
+  if (!hostConfirmed && (entry.confirmedHost !== validation.host || othersEnabled)) needs.push('destination');
   const usesSecrets = entry.kind === 'azure' || Object.keys((config as { headers?: Record<string, string> }).headers ?? {}).length > 0;
   if (usesSecrets && getSecureStorageState() === 'weak' && !settings.weakStorageAccepted && !ack.weakStorage) {
     needs.push('weak_storage');
@@ -380,11 +394,7 @@ export async function setEnabled(
   }
 
   await updateTelemetrySettings((s) => ({
-    ...withDestination(s, destinationId, (d) => ({
-      ...d,
-      enabled: true,
-      confirmedHost: d.kind === 'otlp' ? validation.host : d.confirmedHost,
-    })),
+    ...withDestination(s, destinationId, (d) => ({ ...d, enabled: true, confirmedHost: validation.host })),
     // Phase 1 files can hold an enabled entry from before consent was asked;
     // consenting now covers every host listed, so keep those as they are.
     consentVersion: Math.max(s.consentVersion, TELEMETRY_CONSENT_VERSION),

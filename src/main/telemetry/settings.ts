@@ -102,7 +102,6 @@ function normalizeEntry(raw: unknown): TelemetryDestinationEntry | null {
     level: normalizeLevel(r.level),
     preset: TELEMETRY_FILTER_PRESETS.includes(r.preset as never) ? (r.preset as TelemetryDestinationEntry['preset']) : 'all',
   };
-  if (typeof r.secretRef === 'string') entry.secretRef = r.secretRef;
   if (typeof r.confirmedHost === 'string') entry.confirmedHost = r.confirmedHost;
   if (kind === 'otlp') {
     const o = (r.otlp && typeof r.otlp === 'object' ? r.otlp : {}) as Record<string, unknown>;

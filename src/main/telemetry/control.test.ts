@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   calls: [] as string[],
   /** Destination ids the fake runtime is exporting to. */
   active: [] as string[],
+  /** Destination ids that fail to start, with their reason. */
+  startErrors: {} as Record<string, string>,
 }));
 
 type Entry = { id: string; kind: string; enabled: boolean; level: string; preset: string; confirmedHost?: string; otlp?: { endpoint: string; headerNames: string[]; temporality: string } };
@@ -19,7 +21,7 @@ function setEntry(id: string, patch: Partial<Entry>): void {
   state.settings = { ...state.settings, destinations: entries().map((d) => (d.id === id ? { ...d, ...patch } : d)) };
 }
 const syncActive = () => {
-  state.active = (state.settings.destinations as Entry[]).filter((d) => d.enabled).map((d) => d.id);
+  state.active = (state.settings.destinations as Entry[]).filter((d) => d.enabled && !state.startErrors[d.id]).map((d) => d.id);
 };
 
 vi.mock('./settings', async (importActual) => {
@@ -48,7 +50,7 @@ vi.mock('./secret-store', () => ({
 vi.mock('./bootstrap', () => ({
   isRunning: () => state.running,
   getLastStartError: () => undefined,
-  getDestinationStartError: () => undefined,
+  getDestinationStartError: (id: string) => state.startErrors[id],
   getActiveDestinations: () => state.active.map((id) => ({ id, kind: id })),
   describeDestinationError: (r: string) => `error:${r}`,
   enableTelemetry: async () => {
@@ -78,6 +80,7 @@ vi.mock('./offline', () => ({
 
 import * as control from './control';
 
+const HOST = 'westus2-1.in.applicationinsights.azure.com';
 const CS = 'InstrumentationKey=00000000-0000-4000-8000-00000000abcd;IngestionEndpoint=https://westus2-1.in.applicationinsights.azure.com/';
 
 beforeEach(() => {
@@ -88,6 +91,7 @@ beforeEach(() => {
   state.experiment = true;
   state.calls = [];
   state.active = [];
+  state.startErrors = {};
 });
 
 describe('telemetry settings control', () => {
@@ -124,9 +128,11 @@ describe('telemetry settings control', () => {
 
   it('asks for consent the first time, then starts at the configured level', async () => {
     await control.saveAzureConnectionString(CS);
-    expect(await control.setEnabled('azure', true)).toMatchObject({ ok: false, needs: ['consent'] });
+    // One dialog: consent, naming the host (which also confirms it).
+    expect(await control.setEnabled('azure', true)).toMatchObject({ ok: false, needs: ['consent', 'destination'], hosts: [HOST] });
     expect(state.calls).toEqual([]);
-    expect(await control.setEnabled('azure', true, { consent: true })).toMatchObject({ ok: true });
+    expect(await control.setEnabled('azure', true, { consent: true })).toMatchObject({ ok: false, needs: ['destination'] });
+    expect(await control.setEnabled('azure', true, { consent: true, host: HOST })).toMatchObject({ ok: true });
     expect(state.settings).toMatchObject({ consentVersion: 1 });
     expect(entry('azure')).toMatchObject({ enabled: true, level: 'standard', preset: 'all' });
     expect(entry('otlp').enabled).toBe(false);
@@ -149,10 +155,8 @@ describe('telemetry settings control', () => {
     setEntry('azure', { enabled: false });
     state.settings.consentVersion = 0;
     const both = await control.setEnabled('azure', true);
-    expect(both).toMatchObject({ needs: ['consent'], hosts: ['otlp.example.com', 'westus2-1.in.applicationinsights.azure.com'] });
-    state.settings.consentVersion = 1;
-    state.settings = { ...state.settings };
-    expect(await control.setEnabled('azure', true)).toMatchObject({ ok: true });
+    expect(both).toMatchObject({ needs: ['consent', 'destination'], hosts: ['otlp.example.com', HOST] });
+    expect(await control.setEnabled('azure', true, { consent: true, host: HOST })).toMatchObject({ ok: true });
     expect(entries().filter((d) => d.enabled).map((d) => d.id)).toEqual(['azure', 'otlp']);
   });
 
@@ -201,6 +205,49 @@ describe('telemetry settings control', () => {
     expect(state.calls.at(-1)).toBe('disable');
   });
 
+  it('confirms Azure (a non-OTLP kind) when it is added second, so nothing new sends without a dialog', async () => {
+    state.settings = { ...state.settings, consentVersion: 1 };
+    await control.saveOtlpConfig({ endpoint: 'http://localhost:4318', headers: [] });
+    expect(await control.setEnabled('otlp', true, { host: 'localhost:4318' })).toMatchObject({ ok: true });
+    await control.saveAzureConnectionString(CS);
+    const second = await control.setEnabled('azure', true);
+    expect(second).toMatchObject({
+      ok: false, needs: ['destination'], host: 'westus2-1.in.applicationinsights.azure.com',
+      hosts: ['localhost:4318', 'westus2-1.in.applicationinsights.azure.com'],
+    });
+    expect(entry('azure').enabled).toBe(false);
+    expect(await control.setEnabled('azure', true, { host: 'westus2-1.in.applicationinsights.azure.com' })).toMatchObject({ ok: true });
+    expect(entry('azure').confirmedHost).toBe('westus2-1.in.applicationinsights.azure.com');
+  });
+
+  it('asks again before a running Azure destination sends to a different resource host', async () => {
+    state.settings = { ...state.settings, consentVersion: 1 };
+    await control.saveAzureConnectionString(CS);
+    expect(await control.setEnabled('azure', true, { host: 'westus2-1.in.applicationinsights.azure.com' })).toMatchObject({ ok: true });
+    const other = 'InstrumentationKey=00000000-0000-4000-8000-00000000ffff;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/';
+    expect(await control.saveAzureConnectionString(other)).toMatchObject({ ok: false, needs: ['destination'], host: 'eastus-8.in.applicationinsights.azure.com' });
+    expect(state.secrets.connectionString).toBe(CS);
+    expect(await control.saveAzureConnectionString(other, { host: 'eastus-8.in.applicationinsights.azure.com' })).toMatchObject({ ok: true });
+    expect(entry('azure').confirmedHost).toBe('eastus-8.in.applicationinsights.azure.com');
+    expect(state.calls.at(-1)).toBe('restart:clear');
+  });
+
+  it('changes one destination\'s filter while another fails to start, and shows that failure under it', async () => {
+    state.settings = { ...state.settings, consentVersion: 1 };
+    setEntry('azure', { enabled: true, confirmedHost: 'westus2-1.in.applicationinsights.azure.com' });
+    setEntry('otlp', { enabled: true, confirmedHost: 'o.example', otlp: { endpoint: 'https://o.example', headerNames: [], temporality: 'cumulative' } });
+    state.secrets.connectionString = CS;
+    state.startErrors = { otlp: 'The endpoint is not a valid URL.' };
+    state.running = true;
+    syncActive();
+    expect(await control.setFilter('azure', 'detailed', 'all')).toMatchObject({ ok: true });
+    expect(state.calls).toEqual(['restart:keep']);
+    const status = await control.getStatus();
+    const byId = Object.fromEntries(status.destinations.map((d) => [d.id, d]));
+    expect(byId.azure).toMatchObject({ active: true, level: 'detailed' });
+    expect(byId.otlp).toMatchObject({ enabled: true, active: false, health: { state: 'error', message: 'The endpoint is not a valid URL.' } });
+  });
+
   it('sets each destination its own level and preset', async () => {
     state.running = true;
     expect(await control.setFilter('otlp', 'errors', 'user_activity')).toMatchObject({ ok: true });
@@ -246,8 +293,8 @@ describe('telemetry settings control', () => {
     setEntry('azure', { enabled: true });
     state.secrets.connectionString = CS;
     expect((await control.getStatus()).enabled).toBe(false);
-    expect(await control.setEnabled('azure', true)).toMatchObject({ ok: false, needs: ['consent'] });
-    expect(await control.setEnabled('azure', true, { consent: true })).toMatchObject({ ok: true });
+    expect(await control.setEnabled('azure', true)).toMatchObject({ ok: false, needs: ['consent', 'destination'] });
+    expect(await control.setEnabled('azure', true, { consent: true, host: HOST })).toMatchObject({ ok: true });
     expect(state.calls).toEqual(['enable']);
     expect((await control.getStatus()).enabled).toBe(true);
   });
@@ -281,5 +328,15 @@ describe('telemetry settings control', () => {
     expect(control.describeTestFailure({ signal: 'logs', ok: false, at: 0, errorCode: 'ENOTFOUND' }, 'otlp')).toMatch(/resolve/);
     state.running = false;
     expect(await control.sendTest('otlp')).toMatchObject({ ok: false, message: expect.stringMatching(/Turn this destination on/) });
+  });
+});
+
+describe('start() host guard', () => {
+  it('refuses an unconfirmed or changed host, but adopts a lone destination from before hosts were recorded', async () => {
+    const { checkConfirmedHost } = await vi.importActual<typeof import('./bootstrap')>('./bootstrap');
+    expect(checkConfirmedHost('a.example', 'a.example', 2)).toBe('ok');
+    expect(checkConfirmedHost(undefined, 'a.example', 1)).toBe('adopt');
+    expect(checkConfirmedHost(undefined, 'a.example', 2)).toBe('refuse');
+    expect(checkConfirmedHost('old.example', 'a.example', 1)).toBe('refuse');
   });
 });

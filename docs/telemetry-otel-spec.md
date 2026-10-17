@@ -694,8 +694,9 @@ The Windows path patterns are tested on the Windows CI runner with real `C:\User
 | `process.runtime.version` | Node version |
 | `clubhouse.electron.version` | Electron version |
 | `clubhouse.telemetry.schema` | integer, starts at `1`; bump on breaking attribute changes |
-| `clubhouse.telemetry.level` | `errors` / `standard` / `detailed` |
 | `clubhouse.annex.role` | `none` / `satellite` / `controller` / `both` |
+
+`clubhouse.telemetry.level` (`errors` / `standard` / `detailed`) is not on the shared resource: with several destinations it differs per destination, so each destination stamps its own level onto every span and log record it receives (§6.11).
 
 Explicitly **not set**: `host.name`, `os.description`, `process.command_args`, `process.executable.path`, `process.owner`, `service.namespace` (all would leak). Resource detectors are **not** used. `@opentelemetry/resources` default detectors include `host.name` and process args.
 
@@ -809,7 +810,7 @@ Bundling notes (`webpack.main.config.ts`):
   - Detailed: also 100%, with tool-call, IPC and Annex REST spans enabled.
   - An **advanced "trace sample rate"** (1.0 by default) applies a `ParentBased(TraceIdRatioBased)` on top, for heavy users who want to cut cost. The sample rate is stamped on spans as `microsoft.sample_rate` so App Insights `itemCount` stays correct.
 - **Metrics** are exported every 60 s with delta temporality, which the Azure exporter expects. A metric `View` caps cardinality at 200 attribute sets per instrument.
-- **A per-session hard cap** of 50,000 spans and 10,000 log records, after which items are dropped and counted in `c.telemetry.dropped`. This protects against a runaway loop billing the user's Azure subscription.
+- **A per-session hard cap** of 50,000 spans and 10,000 log records **per destination**, counted after that destination's filter, after which its items are dropped and counted in `c.telemetry.dropped`. This protects against a runaway loop billing the user's Azure subscription, and high-volume export to one destination never uses up another's budget (§6.11).
 - **Settings shows a cost hint:** "Typical Standard usage: <10 MB/day. Set a daily cap on your App Insights resource." It links to the Azure doc.
 
 ### 6.5 Instrumentation API (what feature code writes)
@@ -1090,7 +1091,7 @@ requests
 
 ### 6.11 Multiple destinations and per-destination filters
 
-Telemetry can go to several destinations at once, for example everything to the user's own App Insights and only user activity and errors to a feedback service. Sampling, redaction and the session caps stay global: an item is sampled, scrubbed and counted once, then fans out.
+Telemetry can go to several destinations at once, for example everything to the user's own App Insights and only user activity and errors to a feedback service. Sampling and redaction stay global: an item is sampled and scrubbed once, then fans out. Session caps are per destination.
 
 **Settings.** `telemetry-settings.json` holds a `destinations` list with one entry per kind, in display order. Each entry has:
 
@@ -1099,28 +1100,29 @@ Telemetry can go to several destinations at once, for example everything to the 
 - `enabled`;
 - `level` (Errors / Standard / Detailed);
 - `preset` (below);
-- an optional `secretRef` into `telemetry-secret.bin`;
-- `confirmedHost`, for kinds with a user-entered endpoint;
+- `confirmedHost`: the host the user last confirmed for this destination (every kind; from the adapter's `validate().host`);
 - the kind's own non-secret settings (`otlp: { endpoint, headerNames, temporality }`).
 
 `sampleRate`, consent, the install id and the salt stay global. A Phase 2 file, with its single `enabled` + `destination` + `level` and flat `otlp*` fields, migrates on load to the same destination enabled at the same level, and every other entry off, so what is sent does not change. The settings store merges the defaults over the file before migrating, so the Phase 2 keys, not the absence of `destinations`, mark an older file. Phase 1 files migrate through the Phase 2 step.
 
-**Pipeline** (`sdk.ts`, `processors.ts`). The SDK records at the most verbose enabled level. After the global Redaction → SessionCap, each destination has:
+**Pipeline** (`sdk.ts`, `processors.ts`). The SDK records at the most verbose enabled level. After the global Redaction, each destination has:
 
-- **Spans:** Filter → ErrorTail (only if that destination is at Errors) → Batch → [ResourceCopy] → Observed exporter.
-- **Logs:** Filter → Batch → [ResourceCopy] → Observed exporter.
+- **Spans:** ErrorTail (only if that destination is at Errors) → Filter → SessionCap → Batch → Stamp → Observed exporter. The tail runs before the filter, so a failing trace is kept even when the filter drops its root (a Detailed root, or one the preset doesn't take); the filter then keeps the failing children.
+- **Logs:** Filter → SessionCap → Batch → Stamp → Observed exporter.
+- **Stamp** adds the destination's own `clubhouse.telemetry.level` and any `copyResourceAttributes` to a plain per-destination copy of each span and log record, so exporters that spread, clone or serialize items keep them, and other destinations see the originals.
+- **Preview** keeps one buffer per destination; items carry the destination they went to.
 - **Metrics:** its own `PeriodicExportingMetricReader` with a metric-stream filter. Each reader takes its temporality from its own exporter, so Azure stays delta, OTLP follows its setting, and a delta-only backend gets delta.
 
-One destination failing never shortens another's flush or shutdown. Export results are tagged with the destination id, which drives per-destination health and the test event.
+One destination failing never shortens another's flush or shutdown. Export results are tagged with the destination id, which drives per-destination health and the test event. An export with no result after 30 s is recorded as a failure (`ETIMEDOUT`), so a hanging destination shows as failing rather than staying ok.
 
 **Filters** (`filters.ts`). A destination's level is applied to every item first, as for a single destination; Detailed spans need Detailed. The `preset` then narrows it:
 
 | Preset | Spans | Events | Metrics |
 |---|---|---|---|
 | `all` | everything the level allows | everything the level allows | everything the level allows |
-| `user_activity` ("User activity and errors") | `c.agent.spawn`, `.kill`, `.create`, `.delete`, `c.agent.turn` (chat turn start to end), `c.agent.permission` (permission decisions), plus any span that ended in error. Never a Detailed span (`c.agent.tool_call`, `c.ipc.invoke`, `c.annex.rest`), whatever the level. | every Errors-level event (exceptions, `c.app.unclean_exit`, `c.renderer.gone`, `c.child_process.gone`, `c.ui.action_failed`, …), plus feature and navigation events: `c.ui.feature_used` (also carries view and surface changes; there is no separate navigation event), `c.popout.opened`, `c.settings.changed`, `c.theme.changed`, `c.blueprint.exported` / `.imported` | `c.app.sessions` only |
+| `user_activity` ("User activity and errors") | `c.agent.spawn`, `.kill`, `.create`, `.delete`, `c.agent.turn` (chat turn start to end), `c.agent.permission` (permission decisions), plus any span that ended in error. Never a Detailed span (`c.agent.tool_call`, `c.ipc.invoke`, `c.annex.rest`), whatever the level. | every Errors-level event (exceptions, `c.app.unclean_exit`, `c.renderer.gone`, `c.child_process.gone`, `c.ui.action_failed`, …), `c.telemetry.enabled` / `.disabled`, plus feature and navigation events: `c.ui.feature_used` (also carries view and surface changes; there is no separate navigation event), `c.popout.opened`, `c.settings.changed`, `c.theme.changed`, `c.blueprint.exported` / `.imported` | `c.app.sessions` and `c.telemetry.dropped` (so a gap can be told from silence) |
 
-The Goobers poll counters are Detailed metrics, so the preset never sends them. The test event (`c.telemetry.test`) passes every preset, but carries its target's kind in `c.telemetry.destination` and reaches only that destination.
+The Goobers poll counters are Detailed metrics, so the preset never sends them. The test event (`c.telemetry.test`) passes every preset, but carries its target's id in `c.telemetry.destination` and reaches only that destination.
 
 **Destination interface** (`destinations/types.ts`, `destinations/registry.ts`). An adapter per kind supplies:
 
@@ -1145,8 +1147,8 @@ Fan-out, filters, consent, health and the test event are shared.
 
 **Consent, UI and health.**
 
-- **Panels:** each destination's panel has its own switch, level, "What to send" preset, health line and Send test event.
-- **Consent:** the dialog lists every host that will receive data once confirmed: the destination being turned on plus every other enabled one.
+- **Panels:** each destination's panel has the same order: switch, its own settings (OTLP's include metric temporality), level and "What to send" preset, health line (start errors appear here, under the destination that failed), then Send test event.
+- **Consent and host confirmation:** every kind's host is confirmed before it receives anything. Turning a destination on asks again when its host was never confirmed, when it changed, and always when another destination is already on, so adding a second destination never starts sending without a dialog. A running Azure destination asks again before a new connection string sends to a different ingestion host. The consent dialog lists every host that will receive data once confirmed: the destination being turned on plus every other enabled one. As a second line of defence, `start()` refuses an enabled destination whose host isn't the confirmed one; a lone destination from a file that predates per-kind confirmation (and has consent on record) is adopted as confirmed.
 - **Turning destinations on and off:** turning one on or off restarts the exporter with the others still running. Turning Azure off, or changing its resource, clears its offline queue. The offline queue is Azure's alone.
 - **Health:** `ok`, `pending`, `failing` (with the plain-words reason) or `error` (could not start). It comes from each destination's own export results. A destination counts as failing while any signal's latest export failed.
 - **Signals:** `c.telemetry.enabled` is emitted once per active destination kind, with `c.telemetry.destination`. `c.telemetry.export.failures` carries the destination kind.

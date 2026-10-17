@@ -241,6 +241,20 @@ describe('TelemetrySettingsSection', () => {
     expect(screen.getByLabelText('Endpoint')).toHaveValue('https://draft.example.com');
   });
 
+  it('shows a start error under the destination that failed, and keeps OTLP temporality in its panel', async () => {
+    const api = mockApi(makeStatus({ enabled: true, running: true, consentAccepted: true }, {
+      azure: { enabled: true, active: true, configured: true, health: { state: 'ok', lastSuccessAt: Date.now() } },
+      otlp: { enabled: true, active: false, configured: true, health: { state: 'error', message: 'The endpoint is not a valid URL.' } },
+    }));
+    const setAdvanced = vi.spyOn(api, 'setAdvanced').mockResolvedValue({ ok: true, status: makeStatus() });
+    render(<TelemetrySettingsSection />);
+    const otlp = await screen.findByRole('region', { name: 'Other destinations' });
+    expect(within(otlp).getByTestId('telemetry-health-otlp')).toHaveTextContent('Not sending: The endpoint is not a valid URL.');
+    expect(within(screen.getByRole('region', { name: 'Azure Application Insights' })).queryByText(/not a valid URL/)).toBeNull();
+    fireEvent.click(within(otlp).getByLabelText('Delta'));
+    await waitFor(() => expect(setAdvanced).toHaveBeenCalledWith({ otlpTemporality: 'delta' }));
+  });
+
   it('confirms before clearing the offline queue', async () => {
     const status = makeStatus({ offlineItems: 4 });
     const api = mockApi(status);

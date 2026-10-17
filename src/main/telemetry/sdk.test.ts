@@ -243,6 +243,8 @@ describe('startSdk', () => {
     expect(record.attributes).toEqual({
       'clubhouse.telemetry.destination': 'azure',
       'microsoft.custom_event.name': 'clubhouse.telemetry.test',
+      // Stamped per destination (the shared resource carries no level).
+      'clubhouse.telemetry.level': 'standard',
     });
   });
 

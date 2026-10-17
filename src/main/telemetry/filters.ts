@@ -20,7 +20,7 @@ import {
 import type { TelemetryFilterPreset } from '../../shared/telemetry/settings-types';
 import type { DestinationFilter } from './destinations/types';
 
-/** The test event's target destination kind (set by sendTestEvent). */
+/** The test event's target destination id (set by sendTestEvent). */
 export const TEST_TARGET_KEY = 'clubhouse.telemetry.destination';
 const TEST_NAME = 'clubhouse.telemetry.test';
 
@@ -46,6 +46,8 @@ export const USER_ACTIVITY = {
    * surface changes are recorded as `clubhouse.ui.feature_used`.
    */
   events: new Set<EventName>([
+    'clubhouse.telemetry.enabled',
+    'clubhouse.telemetry.disabled',
     'clubhouse.ui.feature_used',
     'clubhouse.popout.opened',
     'clubhouse.settings.changed',
@@ -53,8 +55,11 @@ export const USER_ACTIVITY = {
     'clubhouse.blueprint.exported',
     'clubhouse.blueprint.imported',
   ]),
-  /** Almost no metrics: one session count, so activity can be put per session. */
-  metrics: new Set<string>(['clubhouse.app.sessions']),
+  /**
+   * Almost no metrics: the session count, so activity can be put per
+   * session, and the dropped-items count, so a gap can be told from silence.
+   */
+  metrics: new Set<string>(['clubhouse.app.sessions', 'clubhouse.telemetry.dropped']),
 } as const;
 
 export interface FilterItem {
@@ -79,14 +84,14 @@ export function recordingLevel(levels: readonly TelemetryLevel[]): TelemetryLeve
   return 'errors';
 }
 
-/** The test event goes only to the destination it names. */
-function isOtherTarget(item: FilterItem, kind: string): boolean {
+/** The test event goes only to the destination it names (by id). */
+function isOtherTarget(item: FilterItem, destinationId: string): boolean {
   if (item.name !== TEST_NAME) return false;
   const target = item.attributes[TEST_TARGET_KEY];
-  return typeof target === 'string' && target !== kind;
+  return typeof target === 'string' && target !== destinationId;
 }
 
-export function compileFilter(filter: DestinationFilter, kind: string): CompiledFilter {
+export function compileFilter(filter: DestinationFilter, destinationId: string): CompiledFilter {
   const level = filter.level;
   // At Errors level, flow spans still reach the error tail, which keeps only
   // traces that fail; Detailed spans need Detailed.
@@ -97,7 +102,7 @@ export function compileFilter(filter: DestinationFilter, kind: string): Compiled
     errorTail: level === 'errors',
 
     span(item) {
-      if (!isKnownSpan(item.name) || isOtherTarget(item, kind)) return false;
+      if (!isKnownSpan(item.name) || isOtherTarget(item, destinationId)) return false;
       const def = SPANS[item.name];
       if (!levelAllows(spanLevel, def.level)) return false;
       if (preset === 'user_activity') {
@@ -108,7 +113,7 @@ export function compileFilter(filter: DestinationFilter, kind: string): Compiled
     },
 
     log(item) {
-      if (!isKnownEvent(item.name) || isOtherTarget(item, kind)) return false;
+      if (!isKnownEvent(item.name) || isOtherTarget(item, destinationId)) return false;
       const eventLevel = EVENTS[item.name].level;
       if (!levelAllows(level, eventLevel)) return false;
       if (preset === 'user_activity') return eventLevel === 'errors' || USER_ACTIVITY.events.has(item.name);

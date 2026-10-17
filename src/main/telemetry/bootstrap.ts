@@ -36,6 +36,7 @@ import {
   migrateLegacySecrets,
   normalizeSampleRate,
   updateTelemetrySettings,
+  withDestination,
   type TelemetrySettings,
 } from './settings';
 import { readSecrets } from './secret-store';
@@ -167,6 +168,18 @@ function clubhousePorts(): number[] {
   return ports;
 }
 
+/**
+ * Second line of defence behind the consent dialog: never send to a host the
+ * user hasn't confirmed. A lone destination with consent on record and no
+ * confirmed host yet (a file from before every kind recorded one) is exactly
+ * what the user consented to, so it is adopted as confirmed.
+ */
+export function checkConfirmedHost(confirmedHost: string | undefined, host: string, enabledCount: number): 'ok' | 'adopt' | 'refuse' {
+  if (confirmedHost === host) return 'ok';
+  if (confirmedHost === undefined && enabledCount === 1) return 'adopt';
+  return 'refuse';
+}
+
 async function ensureIdentity(settings: TelemetrySettings): Promise<TelemetryIdentity> {
   if (isValidIdentity(settings)) return { installId: settings.installId, hashSalt: settings.hashSalt };
   const identity = createIdentity();
@@ -209,10 +222,18 @@ async function start(): Promise<boolean> {
     const ctx = { offlineDir: getOfflineDir(), reservedPorts: clubhousePorts };
     // Each enabled destination starts on its own: one that is misconfigured
     // or fails to load never stops the others.
-    const built = await Promise.all(enabledDestinations(settings).map(async (entry): Promise<SdkDestination | null> => {
+    const enabled = enabledDestinations(settings);
+    const adopt: Array<{ id: string; host: string }> = [];
+    const built = await Promise.all(enabled.map(async (entry): Promise<SdkDestination | null> => {
       const { adapter, config, validation } = resolveEntry(entry, settings, secrets);
       if (!config || !validation.ok) {
         errors.set(entry.id, describeDestinationError('reason' in validation ? validation.reason : 'missing_destination'));
+        return null;
+      }
+      const hostCheck = checkConfirmedHost(entry.confirmedHost, validation.host, enabled.length);
+      if (hostCheck === 'adopt') adopt.push({ id: entry.id, host: validation.host });
+      if (hostCheck === 'refuse') {
+        errors.set(entry.id, 'The destination host changed or was never confirmed. Turn it off and on again to confirm it.');
         return null;
       }
       try {
@@ -234,6 +255,9 @@ async function start(): Promise<boolean> {
     }));
     const destinations = built.filter((d): d is SdkDestination => d !== null);
     destinationStartErrors = errors;
+    for (const { id, host } of adopt) {
+      await updateTelemetrySettings((s) => withDestination(s, id, (d) => ({ ...d, confirmedHost: host })));
+    }
     if (destinations.length === 0) {
       lastStartError = errors.values().next().value ?? describeDestinationError('missing_destination');
       abortPending();
@@ -267,7 +291,6 @@ async function start(): Promise<boolean> {
         electronVersion: process.versions.electron ?? 'unknown',
         installId: identity.installId,
         instanceId,
-        level,
         annexRole: annexRole(),
         uiChrome: uiChrome(),
       }),
@@ -428,7 +451,7 @@ export interface TestEventResult {
 
 /**
  * `clubhouse.telemetry.test` (spec §6.8): a span and an event, then a flush.
- * Both carry the target's kind in `clubhouse.telemetry.destination`, and the
+ * Both carry the target's id in `clubhouse.telemetry.destination`, and the
  * destination filters let them through only to that destination, so each
  * destination's "Send test event" tests just that destination.
  */
@@ -437,7 +460,8 @@ export async function sendTestEvent(destinationId: string, timeoutMs = 10_000): 
   const rt = getRuntime();
   const target = activeDestinations.find((d) => d.id === destinationId);
   if (!rt || !target) return { ok: false, reason: 'not_enabled' };
-  const attrs = [ATTR.telemetryDestination(target.kind)];
+  // Ids are the kinds today, so the registry's destination enum carries the id.
+  const attrs = [ATTR.telemetryDestination(target.id as TelemetryDestinationKind)];
   const t0 = Date.now();
   tel.flow('clubhouse.telemetry.test', { attrs }, (): void => undefined);
   tel.event('clubhouse.telemetry.test', attrs);
