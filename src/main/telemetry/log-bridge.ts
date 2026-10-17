@@ -27,7 +27,12 @@ export const LOG_LEVEL_SEVERITY: Record<LogLevel, EventSeverity | null> = {
 export function bridgeLog(level: LogLevel, telemetry: LogTelemetry): void {
   const severity = LOG_LEVEL_SEVERITY[level];
   if (!severity) return;
-  tel.event(telemetry.event, telemetry.attrs, { severity });
+  // Both helpers run inside appLog, and a logger must never throw.
+  try {
+    tel.event(telemetry.event, telemetry.attrs, { severity });
+  } catch {
+    // dropped
+  }
 }
 
 /**
@@ -35,6 +40,10 @@ export function bridgeLog(level: LogLevel, telemetry: LogTelemetry): void {
  * local log line can be matched to a remote trace. Nothing extra is sent.
  */
 export function traceFieldsForLog(): { traceId?: string; spanId?: string } {
-  const ids = currentTraceIds();
-  return ids ? { traceId: ids.traceId, spanId: ids.spanId } : {};
+  try {
+    const ids = currentTraceIds();
+    return ids ? { traceId: ids.traceId, spanId: ids.spanId } : {};
+  } catch {
+    return {};
+  }
 }
