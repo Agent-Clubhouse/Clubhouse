@@ -22,10 +22,12 @@ import type { ChatCapabilities, ChatDriverId, PermissionLevel } from './capabili
 import type {
   ChatEvent,
   ChatEventDraft,
+  ChatQuestionAnswers,
   ChatSessionState,
   ContentBlock,
   MessageDelivery,
   MessageSource,
+  SessionEndReason,
 } from './events';
 
 // ── AgentRuntime ────────────────────────────────────────────────────────────
@@ -41,6 +43,11 @@ export interface RuntimeSendOptions {
   delivery?: 'auto' | MessageDelivery;
   /** For agent-to-agent messages; PTY runtimes ignore it. */
   taskId?: string;
+  /**
+   * PTY only: false types the text without pressing Enter (MCP send_message
+   * force_submit=false). Chat runtimes always send.
+   */
+  submit?: boolean;
 }
 
 export interface RuntimeSendResult {
@@ -49,10 +56,25 @@ export interface RuntimeSendResult {
   messageId?: string;
 }
 
+/**
+ * Extra data for a permission answer. Claude can attach a message to a denial
+ * (what to do instead) and an edited input to an approval (e.g. a revised plan
+ * for ExitPlanMode). Drivers that can't carry them ignore them.
+ */
+export interface PermissionResponseExtras {
+  message?: string;
+  updatedInput?: unknown;
+}
+
+export interface RuntimeExitInfo {
+  reason: SessionEndReason;
+  exitCode: number;
+}
+
 /** Transcript slice for MCP read_output, Annex replay and the renderer's initial load. */
 export interface RuntimeTranscriptSlice {
   kind: AgentRuntimeKind;
-  /** Chat runtimes return events; PTY runtimes return the terminal buffer tail. */
+  /** Chat runtimes return events (`tail` counts events); PTY runtimes return the terminal buffer tail (`tail` counts lines). */
   events?: ChatEvent[];
   text?: string;
   /** Sequence number of the last event returned (chat only), for incremental reads. */
@@ -79,13 +101,30 @@ export interface AgentRuntime {
   /** Compact the context (Claude /compact, Codex thread/compact/start, ACP /compact). */
   compact(): Promise<void>;
 
-  /** Answer a pending permission request with one of its option ids. */
-  respondPermission(requestId: string, optionId: string): Promise<void>;
-  /** Answer a pending question. */
-  answerQuestion(requestId: string, answer: string): Promise<void>;
+  /**
+   * Answer a pending permission request with one of its option ids. PTY
+   * runtimes resolve the hook-driven permission queue, whose only options are
+   * 'allow' and 'deny'; any other id is treated as 'deny'.
+   */
+  respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void>;
+  /** Answer a pending question, keyed by question id. */
+  answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void>;
 
-  /** Read the transcript; `afterSeq` returns only newer chat events. */
+  /** Read the transcript; `afterSeq` returns only newer chat events of the current session. */
   readTranscript(opts?: { tail?: number; afterSeq?: number }): Promise<RuntimeTranscriptSlice>;
+
+  /** The CLI's own session id, for resume (PTY runtimes read it from the terminal when the provider prints one). */
+  getNativeSessionId(): string | undefined;
+
+  /**
+   * Push notifications, each returning an unsubscribe function. PTY runtimes
+   * report only liveness changes ('sleeping' on exit); terminal status detail
+   * still arrives through hooks.
+   */
+  onStateChange(listener: (state: ChatSessionState) => void): () => void;
+  onExit(listener: (info: RuntimeExitInfo) => void): () => void;
+  /** Every stamped event for this agent (chat runtimes only; the global bus carries all agents). */
+  onEvent?(listener: (event: ChatEvent) => void): () => void;
 
   /** Chat-only controls; undefined on PTY runtimes. */
   setLevel?(level: PermissionLevel): Promise<void>;
@@ -110,7 +149,12 @@ export interface ChatDriverStartOptions {
   effort?: string;
   level: PermissionLevel;
   systemPrompt?: string;
-  /** Continue this native session instead of starting a new one. */
+  /**
+   * Continue this native session instead of starting a new one. Clubhouse's
+   * transcript already holds the history, so a driver whose resume replays it
+   * (ACP session/load) must swallow the replayed updates rather than re-emit
+   * them as new events.
+   */
   resumeNativeSessionId?: string;
   /** MCP servers to attach, keyed by name (the Clubhouse bridge plus project servers). */
   mcpServers?: Record<string, unknown>;
@@ -119,7 +163,11 @@ export interface ChatDriverStartOptions {
 }
 
 export interface ChatDriverSession {
-  /** Known once the CLI reports it; may arrive after start. */
+  /**
+   * Values known at start. Either may change later: the driver then emits a
+   * `session_info` event (e.g. Claude stream-json sends system/init only after
+   * the first prompt), and the runtime treats that event as authoritative.
+   */
   readonly nativeSessionId: string | undefined;
   readonly capabilities: ChatCapabilities;
   /**
@@ -133,8 +181,8 @@ export interface ChatDriverSession {
   /** Send content. Returns how it was delivered (a driver without steer reports 'queued' or 'prompt'). */
   send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery>;
   interrupt(): Promise<void>;
-  respondPermission(requestId: string, optionId: string): Promise<void>;
-  answerQuestion(requestId: string, answer: string): Promise<void>;
+  respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void>;
+  answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void>;
   setLevel(level: PermissionLevel): Promise<void>;
   setModel(modelId: string, effort?: string): Promise<void>;
   compact(): Promise<void>;

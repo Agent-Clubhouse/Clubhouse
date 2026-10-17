@@ -13,7 +13,10 @@
  *   event types and unknown fields.
  * - `seq` is strictly increasing per chat session, starting at 1, and is the
  *   only ordering consumers should rely on.
- * - Turn-scoped events carry `turnId`; session-scoped events don't.
+ * - Turn-scoped events carry `turnId`; session-scoped events don't. `turnId`
+ *   and `sessionId` are Clubhouse's ids. A driver that needs the provider's own
+ *   turn id (e.g. Codex `turn/steer` takes `expectedTurnId`) keeps it itself and
+ *   may report it as `turn_started.data.nativeTurnId`.
  *
  * See docs/structured-chat-research.md §7 for the design.
  */
@@ -27,6 +30,7 @@ export const CHAT_CONTRACT_VERSION = 2 as const;
 export const CHAT_EVENT_TYPES = [
   // Session lifecycle
   'session_started',
+  'session_info',
   'session_state',
   'session_ended',
   // Turn lifecycle
@@ -150,8 +154,11 @@ export interface TokenUsage {
 export interface UsageLimit {
   /** e.g. '5h', 'week', or a provider-specific window name. */
   window: string;
-  /** 0..1 */
-  utilization: number;
+  /** 0..1, when the provider reports a fraction. */
+  utilization?: number;
+  /** When the provider reports a status instead of (or as well as) a fraction (Claude rate_limit_event). */
+  status?: 'ok' | 'warning' | 'exceeded';
+  /** Epoch milliseconds. Drivers convert from the provider's unit (Codex sends seconds). */
   resetsAt?: number;
 }
 
@@ -161,6 +168,39 @@ export interface PlanEntry {
   status: 'pending' | 'in_progress' | 'completed';
   priority?: 'low' | 'medium' | 'high';
 }
+
+/** One question in a `question` event. Claude AskUserQuestion sends 1–4; Codex requestUserInput sends an array. */
+export interface ChatQuestion {
+  id: string;
+  prompt: string;
+  /** Short label for the question, when the provider sends one. */
+  header?: string;
+  options?: Array<{ id: string; label: string; description?: string }>;
+  multiSelect?: boolean;
+  allowFreeText: boolean;
+}
+
+/** Answers keyed by question id: a single choice or text, or several choices for multiSelect. */
+export type ChatQuestionAnswers = Record<string, string | string[]>;
+
+/**
+ * Closed set of error codes (also the telemetry `error.type` values for chat).
+ * Add a code here rather than inventing free-form strings in drivers.
+ */
+export type ChatErrorCode =
+  | 'max_tokens'
+  | 'refusal'
+  | 'rpc_timeout'
+  | 'process_exited'
+  | 'spawn_failed'
+  | 'unhandled_server_request'
+  | 'protocol_error'
+  | 'driver_stream_failed'
+  | 'auth_required'
+  | 'rate_limited'
+  | 'context_overflow'
+  | 'tool_failed'
+  | 'unknown';
 
 export interface AvailableCommand {
   name: string;
@@ -180,7 +220,7 @@ export type ChatSessionState =
   | 'error';
 
 export type TurnStopReason =
-  | 'end_turn' | 'cancelled' | 'max_tokens' | 'max_turns' | 'refusal' | 'error';
+  | 'end_turn' | 'cancelled' | 'max_tokens' | 'max_turns' | 'refusal' | 'timeout' | 'error';
 
 export type SessionEndReason =
   | 'stopped'        // user or app stopped the agent
@@ -203,10 +243,26 @@ export interface ChatEventDataMap {
     level?: PermissionLevel;
     capabilities: ChatCapabilities;
   };
+  /**
+   * Facts learned after start: e.g. Claude stream-json reports its session id
+   * and capabilities in system/init only after the first prompt. Fields present
+   * replace the earlier values; `capabilities` is merged into the record from
+   * `session_started`.
+   */
+  session_info: {
+    nativeSessionId?: string;
+    capabilities?: Partial<ChatCapabilities>;
+    cliVersion?: string;
+    model?: string;
+  };
   session_state: { state: ChatSessionState };
   session_ended: { reason: SessionEndReason; exitCode?: number; message?: string };
 
-  turn_started: { trigger: MessageDelivery | 'system' };
+  turn_started: {
+    trigger: MessageDelivery | 'system';
+    /** The provider's own turn id, when it has one. */
+    nativeTurnId?: string;
+  };
   turn_ended: { stopReason: TurnStopReason; durationMs?: number; usage?: TokenUsage; costUsd?: number };
 
   user_message: {
@@ -215,11 +271,12 @@ export interface ChatEventDataMap {
     source: MessageSource;
     delivery: MessageDelivery;
   };
-  agent_message_chunk: { messageId: string; text: string };
+  /** `subagentId` is set when the text comes from a subagent (Claude parent_tool_use_id, Codex child thread). */
+  agent_message_chunk: { messageId: string; text: string; subagentId?: string };
   /** Final text of a message; replaces the accumulated chunks. */
-  agent_message: { messageId: string; text: string };
-  agent_thought_chunk: { messageId: string; text: string };
-  agent_thought: { messageId: string; text: string; durationMs?: number };
+  agent_message: { messageId: string; text: string; subagentId?: string };
+  agent_thought_chunk: { messageId: string; text: string; subagentId?: string };
+  agent_thought: { messageId: string; text: string; durationMs?: number; subagentId?: string };
 
   tool_call: {
     toolCallId: string;
@@ -254,6 +311,7 @@ export interface ChatEventDataMap {
     toolName?: string;
     rawInput?: unknown;
     options: PermissionOption[];
+    subagentId?: string;
   };
   permission_resolved: {
     requestId: string;
@@ -263,11 +321,11 @@ export interface ChatEventDataMap {
   };
   question: {
     requestId: string;
-    prompt: string;
-    options?: Array<{ id: string; label: string }>;
-    allowFreeText: boolean;
+    questions: ChatQuestion[];
+    toolCallId?: string;
+    subagentId?: string;
   };
-  question_resolved: { requestId: string; answer: string; cancelled?: boolean };
+  question_resolved: { requestId: string; answers: ChatQuestionAnswers; cancelled?: boolean };
 
   /** The current task list; each event replaces the previous one. */
   plan: { entries: PlanEntry[] };
@@ -303,9 +361,13 @@ export interface ChatEventDataMap {
     code: string;
     message: string;
   };
-  error: { code: string; message: string; fatal: boolean; willRetry?: boolean; toolCallId?: string };
-  /** A native message the driver didn't recognize. Feeds the protocol-drift signal. */
-  protocol_unknown: { driver: ChatDriverId; kind: 'notification' | 'request' | 'item' | 'event'; name: string };
+  error: { code: ChatErrorCode; message: string; fatal: boolean; willRetry?: boolean; toolCallId?: string };
+  /**
+   * Something native the driver didn't recognize: an unknown request or
+   * notification method, or an unknown field / item / event type (`field`).
+   * Feeds the c.chat.protocol.unknown signal; `name` is the method or type.
+   */
+  protocol_unknown: { driver: ChatDriverId; kind: 'request' | 'notification' | 'field'; name: string };
 }
 
 type AssertTrue<T extends true> = T;

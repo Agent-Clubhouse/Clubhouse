@@ -52,6 +52,23 @@ describe('chat event contract', () => {
     }
   });
 
+  it('carries several questions with multi-select answers', () => {
+    const value: unknown = envelope({
+      type: 'question',
+      data: {
+        requestId: 'q1',
+        questions: [
+          { id: 'scope', prompt: 'Which areas?', options: [{ id: 'ui', label: 'UI' }, { id: 'api', label: 'API' }], multiSelect: true, allowFreeText: false },
+          { id: 'why', prompt: 'Anything else?', allowFreeText: true },
+        ],
+      },
+    });
+    expect(isChatEvent(value)).toBe(true);
+    if (isChatEvent(value) && value.type === 'question') {
+      expect(value.data.questions.map((q) => q.id)).toEqual(['scope', 'why']);
+    }
+  });
+
   it.each([
     ['another contract version', { v: 1 }],
     ['an unknown event type', { type: 'not_a_real_event' }],

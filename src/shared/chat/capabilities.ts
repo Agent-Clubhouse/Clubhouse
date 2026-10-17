@@ -3,7 +3,9 @@
  * `session_started` event; the UI reads it to downgrade gracefully instead of
  * checking provider ids (e.g. Copilot over ACP v1 can't steer, so the composer
  * offers "Stop and send"). Values describe what the driver can do live, in an
- * active session, on the installed CLI version.
+ * active session, on the installed CLI version. A flag is only added together
+ * with the runtime method that uses it (fork and rewind come later; Clubhouse
+ * checkpoints cover revert meanwhile).
  */
 
 /** Concrete chat transports. Also the `c.chat.driver` telemetry values. */
@@ -31,9 +33,6 @@ export interface ChatCapabilities {
   interrupt: boolean;
   /** Continue a native session after the process restarts. 'replay' means history is re-streamed on load. */
   resume: 'native' | 'replay' | 'none';
-  fork: boolean;
-  /** Provider-side file rewind (Clubhouse checkpoints work regardless). */
-  rewind: boolean;
   /** Structured approval of a proposed plan. */
   planApproval: boolean;
   /** The agent can ask the user a structured question mid-turn. */
@@ -58,8 +57,6 @@ export const MINIMAL_CHAT_CAPABILITIES: ChatCapabilities = Object.freeze({
   queue: 'client',
   interrupt: false,
   resume: 'none',
-  fork: false,
-  rewind: false,
   planApproval: false,
   questions: false,
   subagents: 'none',
