@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import type { Agent } from '../../../shared/types';
 import {
   detectBlueprintFormat,
   parseAnyBlueprint,
   parseAnyBlueprintText,
-  buildWireDefinitionsFromResult,
+  applyParsedBlueprint,
 } from './parse-blueprint';
 
 // ── Fixtures ─────────────────────────────────────────────────────────
@@ -139,33 +140,28 @@ describe('parseAnyBlueprintText', () => {
 
 // ── buildWireDefinitionsFromResult ───────────────────────────────────
 
-describe('buildWireDefinitionsFromResult', () => {
-  it('returns no wires when there are no pending wires', () => {
+describe('wire plan in the parse result', () => {
+  it('has no wires for a legacy blueprint', () => {
     const result = parseAnyBlueprint(LEGACY_BLUEPRINT);
-    expect(buildWireDefinitionsFromResult(result)).toEqual([]);
+    expect(result.wires).toEqual({ create: [], deferred: [], skipped: [] });
   });
 
-  it('skips wires whose source agent view has no bound agent', () => {
-    // Manifest with no matching agent on this machine — source view has no agentId
-    const result = parseAnyBlueprint(MANIFEST_BLUEPRINT, { agents: [], projects: [] });
-    expect(buildWireDefinitionsFromResult(result)).toEqual([]);
-  });
-
-  it('emits a wire entry when the source agent view is bound', () => {
-    // Provide an agent that matches the manifest's "Alpha" agent
-    const matchedAgent: any = {
-      id: 'agent-real-id',
-      name: 'Alpha',
-      orchestrator: null,
-      model: null,
-      status: 'sleeping',
-    };
+  it('skips a wire to an anchor: it is not a wire target (it used to become a browser wire)', () => {
+    const matchedAgent = { id: 'agent-real-id', name: 'Alpha', orchestrator: null, model: null, status: 'sleeping' } as unknown as Agent;
     const result = parseAnyBlueprint(MANIFEST_BLUEPRINT, { agents: [matchedAgent], projects: [] });
-    const wires = buildWireDefinitionsFromResult(result);
-    expect(wires).toHaveLength(1);
-    expect(wires[0].agentId).toBe('agent-real-id');
-    expect(wires[0].targetKind).toBe('browser'); // anchor target → falls back to browser
-    expect(wires[0].label).toContain('v1');
-    expect(wires[0].label).toContain('v2');
+    expect(result.wires.create).toEqual([]);
+    expect(result.wires.skipped).toEqual([expect.objectContaining({ reason: 'unsupported_target' })]);
+  });
+
+  it('applyParsedBlueprint inserts the canvas, then adds the planned wires', async () => {
+    const matchedAgent = { id: 'agent-real-id', name: 'Alpha', orchestrator: null, model: null, status: 'sleeping' } as unknown as Agent;
+    const result = parseAnyBlueprint(MANIFEST_BLUEPRINT, { agents: [matchedAgent], projects: [] });
+    result.wires.create.push({ agentId: 'agent-real-id', targetId: 'x', targetKind: 'browser', label: 'x' });
+    const calls: string[] = [];
+    await applyParsedBlueprint(result, {
+      insertCanvas: async (canvas) => { calls.push(`canvas:${canvas.id === result.canvas.id}`); },
+      addWireDefinition: (wire) => { calls.push(`wire:${wire.targetId}`); },
+    });
+    expect(calls).toEqual(['canvas:true', 'wire:x']);
   });
 });

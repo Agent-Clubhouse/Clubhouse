@@ -17,6 +17,7 @@ import { DEFAULT_VIEW_WIDTH, DEFAULT_VIEW_HEIGHT } from '../../plugins/builtin/c
 import { deduplicateDisplayName } from '../../plugins/builtin/canvas/canvas-types';
 import { generateViewId, generateCanvasId, snapPosition } from '../../plugins/builtin/canvas/canvas-operations';
 import type { McpBindingEntry } from '../../stores/mcpBindingStore';
+import { planBlueprintWires } from './blueprint-wire-plan';
 import type {
   BlueprintManifest,
   BlueprintAgentDef,
@@ -476,10 +477,13 @@ export function importBlueprint(
 // ── Wire creation (deferred) ────────────────────────────────────────
 
 /**
- * Resolve and create wires for bound agents. Only creates wires where
- * both source and target views have bound agents.
+ * Resolve wires that were deferred at import time, once stubs are bound.
+ * Applies the stub bindings to the agent views and runs the same wire plan
+ * as every import path (blueprint-wire-plan.ts), so target identity,
+ * metadata and bidirectional handling are identical.
  *
- * Returns the wires that were successfully created and those still pending.
+ * `remaining` holds the wires still waiting for a binding; wires the canvas
+ * can never represent are dropped.
  */
 export function resolveAndCreateWires(
   pendingWires: BlueprintWire[],
@@ -487,98 +491,16 @@ export function resolveAndCreateWires(
   stubs: AgentStubInfo[],
   canvasViews: CanvasView[],
 ): { created: McpBindingEntry[]; remaining: BlueprintWire[] } {
-  const created: McpBindingEntry[] = [];
-  const remaining: BlueprintWire[] = [];
-
-  // Build lookup: viewId → agentId for bound agent views
-  const viewIdToAgentId = new Map<string, string>();
+  const boundAgent = new Map<string, string>();
   for (const stub of stubs) {
-    if (stub.bound && stub.boundAgentId) {
-      viewIdToAgentId.set(stub.viewId, stub.boundAgentId);
-    }
+    if (stub.bound && stub.boundAgentId) boundAgent.set(stub.viewId, stub.boundAgentId);
   }
-  // Also check non-stub agent views that already have agentIds
-  for (const view of canvasViews) {
-    if (view.type === 'agent' && (view as AgentCanvasView).agentId) {
-      viewIdToAgentId.set(view.id, (view as AgentCanvasView).agentId!);
-    }
-  }
-
-  // Build lookup: viewId → target info for non-agent views (GP widgets, browsers, etc.)
-  const viewIdToTarget = new Map<string, { id: string; kind: McpBindingEntry['targetKind']; name: string }>();
-  for (const view of canvasViews) {
-    if (view.type === 'plugin') {
-      const pv = view as PluginCanvasView;
-      if (pv.pluginWidgetType.includes('group-project')) {
-        const gpId = view.metadata?.groupProjectId as string;
-        if (gpId) {
-          viewIdToTarget.set(view.id, { id: gpId, kind: 'group-project', name: view.displayName });
-        }
-      } else if (pv.pluginWidgetType.includes('browser')) {
-        viewIdToTarget.set(view.id, { id: view.id, kind: 'browser', name: view.displayName });
-      }
-    }
-  }
-
-  for (const wire of pendingWires) {
-    const sourceViewId = refIdToViewId.get(wire.sourceRef);
-    const targetViewId = refIdToViewId.get(wire.targetRef);
-
-    if (!sourceViewId || !targetViewId) {
-      remaining.push(wire);
-      continue;
-    }
-
-    const sourceAgentId = viewIdToAgentId.get(sourceViewId);
-    if (!sourceAgentId) {
-      remaining.push(wire);
-      continue;
-    }
-
-    // Target can be an agent or a non-agent widget
-    const targetAgentId = viewIdToAgentId.get(targetViewId);
-    const targetInfo = viewIdToTarget.get(targetViewId);
-
-    if (targetAgentId) {
-      // Agent-to-agent wire
-      const entry: McpBindingEntry = {
-        agentId: sourceAgentId,
-        targetId: targetAgentId,
-        targetKind: 'agent',
-        label: `Wire to agent`,
-        instructions: wire.instructions,
-        disabledTools: wire.disabledTools,
-      };
-      created.push(entry);
-
-      // If bidirectional, create reverse wire too
-      if (wire.bidirectional) {
-        created.push({
-          agentId: targetAgentId,
-          targetId: sourceAgentId,
-          targetKind: 'agent',
-          label: `Wire to agent`,
-          instructions: wire.instructions,
-          disabledTools: wire.disabledTools,
-        });
-      }
-    } else if (targetInfo) {
-      // Agent-to-widget wire
-      const entry: McpBindingEntry = {
-        agentId: sourceAgentId,
-        targetId: targetInfo.id,
-        targetKind: targetInfo.kind,
-        label: `Wire to ${targetInfo.name}`,
-        instructions: wire.instructions,
-        disabledTools: wire.disabledTools,
-      };
-      created.push(entry);
-    } else {
-      remaining.push(wire);
-    }
-  }
-
-  return { created, remaining };
+  const views = canvasViews.map((view): CanvasView => {
+    const agentId = boundAgent.get(view.id);
+    return agentId && view.type === 'agent' && !(view as AgentCanvasView).agentId ? { ...view, agentId } as AgentCanvasView : view;
+  });
+  const plan = planBlueprintWires(pendingWires, refIdToViewId, views);
+  return { created: plan.create, remaining: plan.deferred.map((d) => d.wire) };
 }
 
 // ── Bind agent to stub ──────────────────────────────────────────────
