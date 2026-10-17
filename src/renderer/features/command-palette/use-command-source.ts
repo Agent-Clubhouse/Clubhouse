@@ -15,6 +15,10 @@ import { openNewQuickAgent } from '../../chrome/startPage';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { groupProjectAgents } from '../../chrome/sidebar/treeModel';
+import { switchHost } from '../../chrome/hosts';
+import { reportChromeFeature } from '../../chrome/telemetry';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
+import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
 
 /** Canvas metadata loaded from storage for non-active projects */
 interface CrossProjectCanvas {
@@ -53,6 +57,10 @@ export function useCommandSource(): CommandItem[] {
   const toggleExplorerCollapse = usePanelStore((s) => s.toggleExplorerCollapse);
   const toggleAccessoryCollapse = usePanelStore((s) => s.toggleAccessoryCollapse);
   const annexSettings = useAnnexStore((s) => s.settings);
+  const satellites = useAnnexClientStore((s) => s.satellites);
+  const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
+  const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
+  const titleTabs = useChromeStore((s) => s.titleTabs);
   const annexStatus = useAnnexStore((s) => s.status);
   const currentCanvasStore = getProjectCanvasStore(activeProjectId);
   const projectCanvases = useStore(currentCanvasStore, (s) => s.canvases);
@@ -286,6 +294,13 @@ export function useCommandSource(): CommandItem[] {
     setActiveProject, setExplorerTab,
   ]);
 
+  // The new shell's ⌘1–9 select title-bar tabs in order (spec §5.3).
+  const tabShortcut = (tabId: string) => {
+    if (!isNewChromeEnabled()) return undefined;
+    const i = titleTabs.findIndex((t) => t.id === tabId);
+    return i >= 0 && i < 9 ? getShortcut(shortcuts, `tab-${i + 1}`) : undefined;
+  };
+
   const navigationItems = useMemo((): CommandItem[] => {
     const items: CommandItem[] = [];
 
@@ -300,6 +315,7 @@ export function useCommandSource(): CommandItem[] {
             label: `Go to ${tabLabel}`,
             category: 'Navigation',
             keywords: [pluginId],
+            shortcut: tabShortcut(`plugin:${pluginId}`),
             execute: () => setExplorerTab(`plugin:${pluginId}`, activeProjectId),
           });
         }
@@ -310,6 +326,7 @@ export function useCommandSource(): CommandItem[] {
       id: 'nav:agents',
       label: 'Go to Agents',
       category: 'Navigation',
+      shortcut: tabShortcut('agents'),
       execute: () => { if (activeProjectId) setExplorerTab('agents', activeProjectId); },
     });
     // The new shell has no Home (spec §5.2).
@@ -337,7 +354,7 @@ export function useCommandSource(): CommandItem[] {
     });
 
     return items;
-  }, [activeProjectId, pluginsMap, projectEnabled, shortcuts, setExplorerTab, setActiveProject, toggleHelp, openAbout]);
+  }, [activeProjectId, pluginsMap, projectEnabled, shortcuts, titleTabs, setExplorerTab, setActiveProject, toggleHelp, openAbout]);
 
   const settingsItems = useMemo((): CommandItem[] =>
     SETTINGS_PAGES.map((sp) => {
@@ -536,9 +553,62 @@ export function useCommandSource(): CommandItem[] {
     }),
   [pluginsMap]);
 
+  // The new shell (spec §4.3): hosts, and every satellite's projects and agents.
+  // Opening one on another host switches host first.
+  const hostItems = useMemo((): CommandItem[] => {
+    if (!isNewChromeEnabled() || satellites.length === 0) return [];
+    const items: CommandItem[] = [{
+      id: 'host:local',
+      label: 'Switch to Local',
+      category: 'Hosts',
+      execute: () => { switchHost(null); reportChromeFeature('host_switch'); },
+    }];
+    for (const sat of satellites) {
+      items.push({
+        id: `host:${sat.id}`,
+        label: `Switch to ${sat.alias}`,
+        category: 'Hosts',
+        detail: sat.state === 'connected' ? 'Connected' : 'Offline',
+        execute: () => { switchHost(sat.id); reportChromeFeature('host_switch'); },
+      });
+      const projectsOnHost = satelliteProjects[sat.id] ?? [];
+      const names = new Map(projectsOnHost.map((p) => [p.id, p.displayName || p.name]));
+      for (const p of projectsOnHost) {
+        items.push({
+          id: `project:${p.id}`,
+          label: p.displayName || p.name,
+          category: 'Projects',
+          typeIndicator: '/',
+          detail: `on ${sat.alias}`,
+          keywords: [sat.alias],
+          execute: () => { switchHost(sat.id); setActiveProject(p.id); },
+        });
+      }
+      for (const agent of Object.values(remoteAgents)) {
+        const project = names.get(agent.projectId);
+        if (!project) continue;
+        items.push({
+          id: `agent:${agent.id}`,
+          label: agent.name,
+          category: 'Agents',
+          typeIndicator: '@',
+          detail: `${project} on ${sat.alias}`,
+          keywords: [project, sat.alias],
+          execute: () => {
+            switchHost(sat.id);
+            setActiveProject(agent.projectId);
+            setExplorerTab('agents', agent.projectId);
+            setActiveAgent(agent.id, agent.projectId);
+          },
+        });
+      }
+    }
+    return items;
+  }, [satellites, satelliteProjects, remoteAgents, setActiveProject, setExplorerTab, setActiveAgent]);
+
   // Combine all category memos — only rebuilds when a sub-memo changes
   return useMemo(
-    () => [...projectItems, ...agentItems, ...spaceItems, ...navigationItems, ...settingsItems, ...actionItems, ...pluginCommandItems],
-    [projectItems, agentItems, spaceItems, navigationItems, settingsItems, actionItems, pluginCommandItems],
+    () => [...projectItems, ...agentItems, ...hostItems, ...spaceItems, ...navigationItems, ...settingsItems, ...actionItems, ...pluginCommandItems],
+    [projectItems, agentItems, hostItems, spaceItems, navigationItems, settingsItems, actionItems, pluginCommandItems],
   );
 }
