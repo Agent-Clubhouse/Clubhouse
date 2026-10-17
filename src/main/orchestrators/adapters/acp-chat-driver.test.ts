@@ -8,7 +8,7 @@ vi.mock('child_process', () => ({
 }));
 
 import { spawn } from 'child_process';
-import { createCopilotAcpChatDriver } from './acp-chat-driver';
+import { createCopilotAcpChatDriver, createGenericAcpChatDriver } from './acp-chat-driver';
 import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
 import { copilotAcpCapabilities, COPILOT_PERMISSION_LEVELS } from './copilot-acp';
 import { AcpFixtureReplayer, loadAcpFixture, withoutRequest, type AcpFixtureRecord } from './__fixtures__/acp/acp-replay';
@@ -19,7 +19,7 @@ import type { AcpSessionState } from './acp-session';
 
 const mockSpawn = vi.mocked(spawn);
 const CWD = '/workspace/project';
-const COPILOT = 'copilot-1.0.92';
+const COPILOT = 'copilot-cli';
 const PROMPT = 'Create a file named hello.txt in the current directory containing exactly the word hi. Do nothing else and reply with one word.';
 
 function createMockProcess() {
@@ -85,7 +85,11 @@ describe('Copilot ACP chat driver', () => {
     const types = drafts.map((d) => d.type);
     // Setup changes (the model switch) are not reported as live changes.
     expect(types).not.toContain('model_changed');
-    expect(types[0]).toBe('commands_available');
+    expect(drafts[0]).toEqual({
+      type: 'session_info',
+      data: { nativeSessionId: '5af70548-c3ac-4e25-b105-bec13faa1f20', cliVersion: '1.0.98' },
+    });
+    expect(types[1]).toBe('commands_available');
     expect(types).toContain('turn_started');
     expect(types[types.length - 1]).toBe('turn_ended');
 
@@ -94,7 +98,10 @@ describe('Copilot ACP chat driver', () => {
     expect(thoughtIds.size).toBe(1);
     const text = turnScoped.flatMap((d) => (d.type === 'agent_message_chunk' ? [d.data.text] : [])).join('');
     expect(text).toBe("Creating hello.txt containing 'hi' to satisfy the request.Done");
-    expect(turnScoped.filter((d) => d.type !== 'usage' || d.data.scope === 'turn').every((d) => d.turnId === 'turn-1')).toBe(true);
+    const turnId = turnScoped[0].turnId;
+    expect(turnId).toMatch(/^turn-[0-9a-f]{8}-1$/);
+    expect(turnScoped.filter((d) => d.type !== 'usage' && d.type !== 'session_info').every((d) => d.turnId === turnId)).toBe(true);
+    expect(drafts.find((d) => d.type === 'session_info' && d.data.title)).toMatchObject({ data: { title: PROMPT } });
 
     expect(drafts.find((d) => d.type === 'tool_call')).toMatchObject({
       data: { kind: 'edit', status: 'pending', content: [{ type: 'diff', path: '/workspace/project/hello.txt', newText: 'hi' }] },
@@ -130,7 +137,13 @@ describe('Copilot ACP chat driver', () => {
     const drafts: ChatEventDraft[] = [];
     for await (const d of session.events) drafts.push(d);
 
-    expect(drafts.map((d) => d.type).filter((t) => t !== 'commands_available')).toEqual([]);
+    // History is swallowed; the session facts and the command list (which can arrive while
+    // session/load still reads as replay) come through.
+    // Copilot sends the list during the replay and again right after it; both are full replacements.
+    expect(drafts.map((d) => d.type)).toEqual(['session_info', 'commands_available', 'commands_available']);
+    expect(drafts[0]).toEqual({ type: 'session_info', data: { nativeSessionId: '5af70548-c3ac-4e25-b105-bec13faa1f20', cliVersion: '1.0.98' } });
+    const commands = drafts[1].type === 'commands_available' ? drafts[1].data.commands : [];
+    expect(commands.length).toBeGreaterThan(20);
     expect(replayer.written[1]).toMatchObject({ method: 'session/load' });
     expect(replayer.errors).toEqual([]);
   });
@@ -158,7 +171,7 @@ describe('Copilot ACP chat driver', () => {
       { type: 'model_changed', data: { modelId: 'gpt-5-mini', effort: 'low' } },
     ]);
     await expect(session.setLevel('auto_edit')).rejects.toThrow(/no auto_edit level/);
-    await expect(session.answerQuestion('q', 'a')).rejects.toThrow();
+    await expect(session.answerQuestion('q', { q1: 'a' })).rejects.toThrow();
     expect(replayer.errors).toEqual([]);
     expect(replayer.done).toBe(true);
   });
@@ -185,11 +198,11 @@ describe('ACP → chat contract mapping', () => {
   it('turns unknown updates and stop reasons into protocol_unknown', () => {
     const mapper = new AcpChatEventMapper('copilot_acp', undefined, () => 0);
     expect(mapper.map({ type: 'unknown_update', sessionId: 's1', replay: false, kind: 'subagent_started', reason: 'x', raw: {} }, state()))
-      .toEqual([{ type: 'protocol_unknown', data: { driver: 'copilot_acp', kind: 'notification', name: 'session/update:subagent_started' } }]);
+      .toEqual([{ type: 'protocol_unknown', data: { driver: 'copilot_acp', kind: 'field', name: 'session/update:subagent_started' } }]);
     mapper.map({ type: 'turn_started', sessionId: 's1' }, state());
     const ended = mapper.map({ type: 'turn_ended', sessionId: 's1', stopReason: 'unknown', rawStopReason: 'paused' }, state());
-    expect(ended[0]).toEqual({ type: 'protocol_unknown', data: { driver: 'copilot_acp', kind: 'event', name: 'stopReason:paused' } });
-    expect(ended[1]).toMatchObject({ type: 'turn_ended', turnId: 'turn-1', data: { stopReason: 'end_turn' } });
+    expect(ended[0]).toEqual({ type: 'protocol_unknown', data: { driver: 'copilot_acp', kind: 'field', name: 'stopReason:paused' } });
+    expect(ended[1]).toMatchObject({ type: 'turn_ended', turnId: expect.stringMatching(/^turn-[0-9a-f]{8}-1$/), data: { stopReason: 'end_turn' } });
   });
 
   it('maps a rejection and a cancellation', () => {
@@ -226,6 +239,24 @@ describe('ACP → chat contract mapping', () => {
       .toEqual([{ type: 'usage', data: { scope: 'session', context: { used: 5, size: 10 }, costUsd: 0.25 } }]);
   });
 
+  it('gives each driver session its own turn and message ids', () => {
+    const turnOf = (m: AcpChatEventMapper) => m.map({ type: 'turn_started', sessionId: 's1' }, state())[0].turnId;
+    expect(turnOf(new AcpChatEventMapper('copilot_acp'))).not.toBe(turnOf(new AcpChatEventMapper('copilot_acp')));
+  });
+
+  it('classifies failed turns with contract error codes', () => {
+    const failed = (errorKind: 'process_exited' | 'rpc' | 'other', rpcCode?: number) => {
+      const m = new AcpChatEventMapper('copilot_acp');
+      m.map({ type: 'turn_started', sessionId: 's1' }, state());
+      const drafts = m.map({ type: 'turn_ended', sessionId: 's1', stopReason: 'error', error: 'x', errorKind, rpcCode }, state());
+      return drafts.find((d) => d.type === 'error');
+    };
+    expect(failed('process_exited')).toMatchObject({ data: { code: 'process_exited', fatal: true } });
+    expect(failed('rpc', -32000)).toMatchObject({ data: { code: 'auth_required', fatal: false } });
+    expect(failed('rpc', -32603)).toMatchObject({ data: { code: 'protocol_error' } });
+    expect(failed('other')).toMatchObject({ data: { code: 'unknown' } });
+  });
+
   it('converts prompt content, sending local files as file URLs', () => {
     const file = path.join(path.parse(process.cwd()).root, 'tmp', 'notes.md');
     expect(toAcpPrompt([
@@ -251,5 +282,58 @@ describe('ACP → chat contract mapping', () => {
       ],
       skipped: ['odd'],
     });
+  });
+});
+
+// ── Inline scripts ───────────────────────────────────────────────────────────
+
+const rec = (dir: 'in' | 'out', msg: Record<string, unknown>): AcpFixtureRecord => ({ dir, msg: { jsonrpc: '2.0', ...msg } });
+const genericStart: AcpFixtureRecord[] = [
+  rec('out', { id: 1, method: 'initialize' }),
+  rec('in', { id: 1, result: { protocolVersion: 1, agentCapabilities: { loadSession: true }, agentInfo: { name: 'example-agent', version: '0.4.0' } } }),
+  rec('out', { id: 2, method: 'session/new' }),
+  rec('in', { id: 2, result: { sessionId: 's1' } }),
+];
+
+describe('ACP chat driver failure paths', () => {
+  it('reports the turn as failed before the stream ends when the agent dies mid-turn', async () => {
+    const { driver, proc } = setup([...genericStart, rec('out', { id: 3, method: 'session/prompt' })]);
+    const session = await driver.start(startOpts());
+    await session.send([{ type: 'text', text: 'go' }], 'prompt');
+    await new Promise((r) => setTimeout(r, 0));
+    proc.emit('exit', 1, null);
+
+    const drafts: ChatEventDraft[] = [];
+    for await (const d of session.events) drafts.push(d);
+    const tail = drafts.slice(-2);
+    expect(tail[0]).toMatchObject({ type: 'error', data: { code: 'process_exited', fatal: true } });
+    expect(tail[1]).toMatchObject({ type: 'turn_ended', data: { stopReason: 'error' } });
+  });
+
+  it('runs other ACP agents as driver "acp" and flags methods outside the schema', async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+    const replayer = new AcpFixtureReplayer(proc, [
+      ...genericStart,
+      rec('out', { id: 3, method: 'session/prompt' }),
+      rec('in', { method: 'x/progress', params: {} }),
+      rec('in', { id: 50, method: 'x/ask', params: {} }),
+      rec('out', { id: 50 }),
+      rec('in', { id: 3, result: { stopReason: 'end_turn' } }),
+    ]);
+    const driver = createGenericAcpChatDriver('example', ['--acp']);
+    expect(driver.id).toBe('acp');
+    const session = await driver.start(startOpts({ provider: 'example', binaryPath: 'example-agent' }));
+    expect(mockSpawn.mock.calls[0].slice(0, 2)).toEqual(['example-agent', ['--acp']]);
+    expect(session.capabilities).toMatchObject({ systemPrompt: false, liveLevels: [], resume: 'replay' });
+
+    await session.send([{ type: 'text', text: 'go' }], 'prompt');
+    const drafts = await collect(session, (d) => d.type === 'turn_ended');
+    expect(drafts.filter((d) => d.type === 'protocol_unknown').map((d) => d.data)).toEqual([
+      { driver: 'acp', kind: 'notification', name: 'x/progress' },
+      { driver: 'acp', kind: 'request', name: 'x/ask' },
+    ]);
+    expect(replayer.written.find((m) => m.id === 50)).toMatchObject({ error: { code: -32601 } });
+    expect(replayer.errors).toEqual([]);
   });
 });

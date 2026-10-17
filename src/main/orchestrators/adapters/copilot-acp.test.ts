@@ -16,7 +16,7 @@ import { terminalLoginCommand } from './acp-capabilities';
 import { loadAcpFixture } from './__fixtures__/acp/acp-replay';
 import type { InitializeResponse, NewSessionResponse, SessionConfigSelect, SessionUpdate } from './acp-schema';
 
-const recording = loadAcpFixture('copilot-1.0.92', 'handshake-list-close.jsonl');
+const recording = loadAcpFixture('copilot-cli', 'handshake-list-close.jsonl');
 const init = recording.find((r) => r.dir === 'in' && r.msg.id === 1)!.msg.result as InitializeResponse;
 const newSession = recording.find((r) => r.dir === 'in' && r.msg.id === 2)!.msg.result as NewSessionResponse;
 

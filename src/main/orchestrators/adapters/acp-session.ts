@@ -1,4 +1,5 @@
 import { AcpClient, RpcError, type AcpClientOpts } from './acp-client';
+import { ProcessExitedError } from './ndjson-rpc-base';
 import {
   ACP_AGENT_METHODS,
   ACP_CLIENT_METHODS,
@@ -56,6 +57,8 @@ export interface AcpAgentProfile {
   permissionLevels?: AcpPermissionLevels;
 }
 
+const KNOWN_CLIENT_METHODS: ReadonlySet<string> = new Set(Object.values(ACP_CLIENT_METHODS));
+
 export const GENERIC_ACP_PROFILE: AcpAgentProfile = {
   id: 'generic',
   capabilities: (init) => deriveAcpCapabilities(init, 'generic'),
@@ -79,7 +82,14 @@ export type AcpSessionEvent =
       rawStopReason?: string;
       usage?: TurnUsage;
       error?: string;
+      /** Why an `error` turn failed: the process died, the agent returned a JSON-RPC error, or something else. */
+      errorKind?: 'process_exited' | 'rpc' | 'other';
+      /** JSON-RPC error code, for `errorKind: 'rpc'`. */
+      rpcCode?: number;
     }
+  /** An agent request or notification method outside the ACP schema. Requests are answered -32601. */
+  | { type: 'unknown_method'; kind: 'request' | 'notification'; method: string }
+  /** Always the last event. Emitted after a running turn's `turn_ended`, even when the process died mid-turn. */
   | { type: 'exit'; code: number | null; signal: string | null };
 
 export interface AcpSessionState {
@@ -144,6 +154,8 @@ export class AcpSession {
   private init: InitializeResponse | null = null;
   private caps: AcpDriverCapabilities | null = null;
   private replaying = false;
+  /** Pending while a prompt turn runs; `exit` waits for it so `turn_ended` comes first. */
+  private turnSettled: Promise<void> | null = null;
   /** Agents may announce a new session's updates before answering session/new. */
   private creatingSession = false;
   private earlyUpdates: unknown[] = [];
@@ -340,6 +352,8 @@ export class AcpSession {
     const blocks: ContentBlock[] = typeof prompt === 'string' ? [{ type: 'text', text: prompt }] : prompt;
 
     this.state.turnInFlight = true;
+    let settle: () => void = () => undefined;
+    this.turnSettled = new Promise<void>((resolve) => { settle = resolve; });
     this.emit({ type: 'turn_started', sessionId });
     try {
       const res = (await this.client.request(
@@ -362,11 +376,21 @@ export class AcpSession {
       return { stopReason, ...(!known && { rawStopReason: raw }), ...(usage && { usage }) };
     } catch (err) {
       const message = (err as Error).message;
-      this.emit({ type: 'turn_ended', sessionId, stopReason: 'error', error: message });
+      const errorKind = err instanceof ProcessExitedError ? 'process_exited' : err instanceof RpcError ? 'rpc' : 'other';
+      this.emit({
+        type: 'turn_ended',
+        sessionId,
+        stopReason: 'error',
+        error: message,
+        errorKind,
+        ...(err instanceof RpcError && { rpcCode: err.code }),
+      });
       throw err;
     } finally {
       this.state.turnInFlight = false;
       this.openToolCalls.clear();
+      this.turnSettled = null;
+      settle();
     }
   }
 
@@ -454,6 +478,7 @@ export class AcpSession {
   private handleNotification(method: string, params: unknown): void {
     if (method !== ACP_CLIENT_METHODS.sessionUpdate) {
       this.log('info', 'Ignoring ACP notification', { method });
+      if (!KNOWN_CLIENT_METHODS.has(method)) this.emit({ type: 'unknown_method', kind: 'notification', method });
       return;
     }
     const p = params as { sessionId?: unknown; update?: unknown } | undefined;
@@ -535,11 +560,16 @@ export class AcpSession {
     // fs/*, terminal/* and elicitation/* are not advertised, so a conforming
     // agent never sends them. Answer anyway: an unanswered request blocks the turn.
     this.client.respondWithError(id, ACP_ERROR_CODES.methodNotFound, `Method not found: ${method}`, { method });
+    if (!KNOWN_CLIENT_METHODS.has(method)) this.emit({ type: 'unknown_method', kind: 'request', method });
   }
 
   private handleExit(code: number | null, signal: string | null): void {
     this.pendingPermissions.clear();
-    this.emit({ type: 'exit', code, signal });
+    // Pending requests were rejected just before this, but prompt()'s catch runs
+    // on a later microtask. Let its turn_ended go out before exit.
+    const emitExit = () => this.emit({ type: 'exit', code, signal });
+    if (this.turnSettled) void this.turnSettled.then(emitExit);
+    else emitExit();
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────

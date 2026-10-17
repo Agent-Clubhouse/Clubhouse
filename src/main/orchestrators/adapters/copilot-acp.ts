@@ -15,8 +15,8 @@ import { resolveStructuredSpawn, type StructuredSpawnCommand } from './structure
 /**
  * Copilot CLI over ACP (`copilot --acp`), public preview.
  *
- * Facts below were probed against Copilot CLI 1.0.92 (live ACP transcripts,
- * committed as fixtures) and re-checked against 1.0.98's `--help`. See
+ * Facts below come from live ACP transcripts of Copilot CLI 1.0.92 and 1.0.98
+ * (committed as fixtures) and 1.0.98's `--help`. See
  * docs/structured-chat-research.md §3.
  */
 

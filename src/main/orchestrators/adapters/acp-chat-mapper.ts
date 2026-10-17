@@ -1,8 +1,10 @@
+import { randomUUID } from 'crypto';
 import { pathToFileURL } from 'url';
 import * as path from 'path';
 import type { ChatCapabilities, ChatDriverId, PermissionLevel } from '../../../shared/chat/capabilities';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat/capabilities';
 import type {
+  ChatErrorCode,
   ChatEventDraft,
   ContentBlock as ChatContentBlock,
   PermissionOption as ChatPermissionOption,
@@ -43,8 +45,6 @@ export function toChatCapabilities(
     queue: 'client',
     interrupt: true,
     resume: caps.resume === 'resume' ? 'native' : caps.resume === 'load' ? 'replay' : 'none',
-    fork: false,
-    rewind: false,
     planApproval: false,
     questions: false,
     // Copilot exposes subagent ids in an unverified format; claim nothing until it's checked.
@@ -56,6 +56,8 @@ export function toChatCapabilities(
     modelSwitch: hasModelSwitch ? 'live' : 'none',
     liveLevels: levels?.live ?? [],
     login: caps.login === 'terminal' ? 'terminal' : caps.login === 'agent' ? 'api' : 'none',
+    // Stable ACP v1 has no system prompt field (the client system prompt is still unstable).
+    systemPrompt: false,
   };
 }
 
@@ -118,6 +120,15 @@ function pairs(v: unknown): Array<{ name: string; value: string }> {
   if (!v || typeof v !== 'object') return [];
   if (Array.isArray(v)) return v.filter((p) => p && typeof p.name === 'string').map((p) => ({ name: p.name, value: String(p.value ?? '') }));
   return Object.entries(v as Record<string, unknown>).map(([name, value]) => ({ name, value: String(value) }));
+}
+
+/** ACP's "authentication required" JSON-RPC error. */
+const ACP_AUTH_REQUIRED = -32000;
+
+function turnErrorCode(errorKind: string | undefined, rpcCode: number | undefined): ChatErrorCode {
+  if (errorKind === 'process_exited') return 'process_exited';
+  if (errorKind === 'rpc') return rpcCode === ACP_AUTH_REQUIRED ? 'auth_required' : 'protocol_error';
+  return 'unknown';
 }
 
 const STOP_REASONS: Record<string, ChatStopReason> = {
@@ -200,6 +211,8 @@ function selectValue(options: SessionConfigOption[], match: (o: SessionConfigOpt
  * - Unknown updates become `protocol_unknown`.
  */
 export class AcpChatEventMapper {
+  /** Distinguishes this driver session's ids from earlier ones in the same (resumed) chat session. */
+  private readonly idPrefix = randomUUID().slice(0, 8);
   private turn = 0;
   private turnId: string | undefined;
   private turnStartedAt = 0;
@@ -229,7 +242,7 @@ export class AcpChatEventMapper {
     switch (event.type) {
       case 'turn_started': {
         this.turn++;
-        this.turnId = `turn-${this.turn}`;
+        this.turnId = `turn-${this.idPrefix}-${this.turn}`;
         this.turnStartedAt = this.now();
         this.seqInTurn = 0;
         this.lastKind = 'other';
@@ -241,10 +254,14 @@ export class AcpChatEventMapper {
         let stopReason = STOP_REASONS[event.stopReason];
         if (!stopReason) {
           stopReason = 'end_turn';
-          out.push({ type: 'protocol_unknown', data: { driver: this.driver, kind: 'event', name: `stopReason:${event.rawStopReason ?? event.stopReason}` } });
+          out.push({ type: 'protocol_unknown', data: { driver: this.driver, kind: 'field', name: `stopReason:${event.rawStopReason ?? event.stopReason}` } });
         }
         if (event.stopReason === 'error') {
-          out.push(this.scoped({ type: 'error', data: { code: 'turn_failed', message: event.error ?? 'turn failed', fatal: false } }));
+          const code = turnErrorCode(event.errorKind, event.rpcCode);
+          out.push(this.scoped({
+            type: 'error',
+            data: { code, message: event.error ?? 'turn failed', fatal: code === 'process_exited' },
+          }));
         }
         if (tokens) out.push(this.scoped({ type: 'usage', data: { scope: 'turn', tokens } }));
         out.push(this.scoped({
@@ -289,7 +306,9 @@ export class AcpChatEventMapper {
         })];
       }
       case 'unknown_update':
-        return [{ type: 'protocol_unknown', data: { driver: this.driver, kind: 'notification', name: `session/update:${event.kind}` } }];
+        return [{ type: 'protocol_unknown', data: { driver: this.driver, kind: 'field', name: `session/update:${event.kind}` } }];
+      case 'unknown_method':
+        return [{ type: 'protocol_unknown', data: { driver: this.driver, kind: event.kind, name: event.method } }];
       case 'update':
         return this.mapUpdate(event.update, event.replay, state);
       case 'exit':
@@ -305,7 +324,7 @@ export class AcpChatEventMapper {
         const thought = u.sessionUpdate === 'agent_thought_chunk';
         const kind = thought ? 'thought' : 'message';
         if (this.lastKind !== kind) {
-          const id = u.messageId ?? `${this.turnId ?? 'session'}-${thought ? 'thought' : 'msg'}-${++this.seqInTurn}`;
+          const id = u.messageId ?? `${this.turnId ?? `session-${this.idPrefix}`}-${thought ? 'thought' : 'msg'}-${++this.seqInTurn}`;
           if (thought) this.thoughtId = id; else this.messageId = id;
         }
         this.lastKind = kind;
@@ -396,9 +415,10 @@ export class AcpChatEventMapper {
             message: u.error ?? `Context compaction ${String(u.status).replace('_', ' ')}`,
           },
         }];
-      case 'compaction_summary_chunk':
       case 'session_info_update':
-        // Known and harmless; the contract has no slot for them yet.
+        return u.title ? [{ type: 'session_info', data: { title: u.title } }] : [];
+      case 'compaction_summary_chunk':
+        // Known and harmless; the contract has no slot for the summary text.
         return [];
     }
   }

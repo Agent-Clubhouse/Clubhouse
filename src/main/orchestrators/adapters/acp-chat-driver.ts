@@ -7,10 +7,10 @@ import type {
   ChatDriverStartOptions,
 } from '../../../shared/chat/runtime';
 import { AsyncQueue } from './async-queue';
-import { AcpSession, type AcpAgentProfile, type AcpSessionEvent } from './acp-session';
+import { AcpSession, GENERIC_ACP_PROFILE, type AcpAgentProfile, type AcpSessionEvent } from './acp-session';
 import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
 import type { InitializeResponse } from './acp-schema';
-import type { StructuredSpawnCommand } from './structured-spawn';
+import { resolveStructuredSpawn, type StructuredSpawnCommand } from './structured-spawn';
 import { COPILOT_ACP_TESTED_RANGE, copilotVersionStatus, resolveCopilotAcpSpawn, selectAcpProfile } from './copilot-acp';
 
 type Log = (level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
@@ -159,6 +159,7 @@ export class AcpChatDriver implements ChatDriver {
       onLog: this.log,
       onEvent: (event) => {
         if (event.type === 'exit') {
+          // AcpSession emits exit only after a running turn's turn_ended, so nothing is cut off.
           driverSession?.markExited();
           queue.finish();
           return;
@@ -196,11 +197,24 @@ export class AcpChatDriver implements ChatDriver {
       }
 
       mapper = new AcpChatEventMapper(this.id, levels);
-      // Session-scoped state that arrived during setup (commands list, context fill).
+      const state = session.getState();
+      const cliVersion = session.initializeResponse?.agentInfo?.version;
+      queue.push({
+        type: 'session_info',
+        data: {
+          ...(state.sessionId && { nativeSessionId: state.sessionId }),
+          ...(cliVersion && { cliVersion }),
+          ...(state.title && { title: state.title }),
+        },
+      });
+      // Session-scoped state that arrived during setup. Replayed copies count:
+      // Copilot's trailing command list can land while session/load still reads as replay.
       for (const event of buffered.splice(0)) {
-        if (event.type === 'update' && !event.replay
+        if (event.type === 'update'
           && (event.update.sessionUpdate === 'available_commands_update' || event.update.sessionUpdate === 'usage_update')) {
-          for (const draft of mapper.map(event, session.getState())) queue.push(draft);
+          for (const draft of mapper.map(event, state)) queue.push(draft);
+        } else if (event.type === 'unknown_update' || event.type === 'unknown_method') {
+          for (const draft of mapper.map(event, state)) queue.push(draft);
         }
       }
       mapper.prime(session.getState());
@@ -267,4 +281,17 @@ export const COPILOT_ACP_LAUNCH: AcpLaunchSpec = {
 
 export function createCopilotAcpChatDriver(log?: Log): AcpChatDriver {
   return new AcpChatDriver(COPILOT_ACP_LAUNCH, log);
+}
+
+/**
+ * Any other ACP agent (Gemini CLI, adapters for other CLIs): driver id `acp`.
+ * The agent's own ACP flags go in `agentArgs`; no agent-specific quirks apply.
+ */
+export function createGenericAcpChatDriver(provider: string, agentArgs: string[] = [], log?: Log): AcpChatDriver {
+  return new AcpChatDriver({
+    id: 'acp',
+    provider,
+    spawn: ({ binary, extraArgs, commandPrefix }) => resolveStructuredSpawn(binary, [...agentArgs, ...(extraArgs ?? [])], commandPrefix),
+    profile: GENERIC_ACP_PROFILE,
+  }, log);
 }

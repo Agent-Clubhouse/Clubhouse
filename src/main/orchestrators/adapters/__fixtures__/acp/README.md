@@ -12,18 +12,20 @@
 `acp-schema.test.ts` checks the constants in `acp-schema.ts` against these files. To move to a new
 schema version, replace both files, update `ACP_SCHEMA_VERSION`, and fix whatever the test reports.
 
-## `copilot-1.0.92/`
+## `copilot-cli/`
 
 Real `copilot --acp` transcripts recorded on 2026-10-16 for docs/structured-chat-research.md, one
-JSON-RPC message per line: `{"dir":"out"|"in","msg":{...}}`. `out` is client → agent.
+JSON-RPC message per line: `{"dir":"out"|"in","msg":{...}}`. `out` is client → agent. The probes
+ran without `--no-auto-update`, so the brew shim moved from 1.0.92 to 1.0.98 between recordings.
+The version column is what each handshake reports.
 
-| File | What it covers |
-|---|---|
-| `handshake-list-close.jsonl` | `initialize`, `session/new`, `session/list`, an invalid `set_mode`, an unknown method, `session/close` |
-| `method-coverage.jsonl` | `set_config_option`, legacy `set_model`, `set_mode`, the unsupported `resume` / `fork` / `$/cancel_request`, `list` with `cwd`, `authenticate`, `close`, `load` of an unpersisted session |
-| `one-prompt.jsonl` | One paid prompt on `gpt-5-mini`: thought and message chunks, an edit `tool_call` with a diff, `session/request_permission`, `tool_call_update`, `usage_update`, and the prompt result with token usage |
-| `load-replay.jsonl` | A fresh process running `session/load` on the session above, which replays its history |
-| `delete-unsupported.jsonl` | `session/delete` answering -32601 |
+| File | Copilot | What it covers |
+|---|---|---|
+| `handshake-list-close.jsonl` | 1.0.92 | `initialize`, `session/new`, `session/list`, an invalid `set_mode`, an unknown method, `session/close` |
+| `method-coverage.jsonl` | 1.0.98 | `set_config_option`, legacy `set_model`, `set_mode`, the unsupported `resume` / `fork` / `$/cancel_request`, `list` with `cwd`, `authenticate`, `close`, `load` of an unpersisted session |
+| `one-prompt.jsonl` | 1.0.98 | One paid prompt on `gpt-5-mini`: thought and message chunks, an edit `tool_call` with a diff, `session/request_permission`, `tool_call_update`, `usage_update`, and the prompt result with token usage |
+| `load-replay.jsonl` | 1.0.98 | A fresh process running `session/load` on the session above, which replays its history |
+| `delete-unsupported.jsonl` | 1.0.98 | `session/delete` answering -32601 |
 
 Edits made when committing:
 

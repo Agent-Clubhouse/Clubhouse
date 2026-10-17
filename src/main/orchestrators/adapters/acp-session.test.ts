@@ -36,7 +36,7 @@ function createMockProcess() {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const CWD = '/workspace/project';
-const COPILOT = 'copilot-1.0.92';
+const COPILOT = 'copilot-cli';
 
 function setup(records: AcpFixtureRecord[], opts: Partial<AcpSessionOpts> = {}, matcher?: OutMatcher) {
   const proc = createMockProcess();
@@ -408,7 +408,11 @@ describe('AcpSession as a generic ACP driver', () => {
     proc.emit('exit', 1, null);
 
     await expect(turn).rejects.toThrow(/exited with code 1/);
-    expect(events.find((e) => e.type === 'turn_ended')).toMatchObject({ stopReason: 'error' });
+    await tick();
+    const types = events.map((e) => e.type);
+    // turn_ended must precede exit so consumers that stop at exit still see it.
+    expect(types.slice(-2)).toEqual(['turn_ended', 'exit']);
+    expect(events.find((e) => e.type === 'turn_ended')).toMatchObject({ stopReason: 'error', errorKind: 'process_exited' });
     expect(events.find((e) => e.type === 'exit')).toEqual({ type: 'exit', code: 1, signal: null });
     expect(session.getState().turnInFlight).toBe(false);
   });
