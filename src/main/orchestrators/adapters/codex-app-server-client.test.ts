@@ -9,6 +9,7 @@ vi.mock('child_process', () => ({
 import { spawn } from 'child_process';
 import {
   CodexAppServerClient,
+  redactForLog,
   CODEX_RPC_INTERNAL_ERROR,
   CODEX_RPC_METHOD_NOT_FOUND,
   textInput,
@@ -356,6 +357,37 @@ describe('CodexAppServerClient', () => {
 
       emitMessage(mockProc, { id: 2, result });
       expect(await promise).toEqual(result);
+    });
+
+    it('never logs the MCP config (headers, env, token variables)', async () => {
+      const onLog = vi.fn();
+      const client = await startClient({ onLog });
+
+      void client.threadStart({
+        cwd: 'workspace',
+        config: {
+          mcp_servers: {
+            remote: { url: 'https://mcp.example.test/mcp', http_headers: { Authorization: 'Bearer s3cr3t-token' }, bearer_token_env_var: 'MY_TOKEN_VAR' },
+            local: { command: 'node', env: { API_KEY: 'k3y-value' } },
+          },
+        },
+      });
+
+      const logged = JSON.stringify(onLog.mock.calls);
+      expect(logged).not.toContain('s3cr3t-token');
+      expect(logged).not.toContain('MY_TOKEN_VAR');
+      expect(logged).not.toContain('k3y-value');
+      expect(onLog).toHaveBeenCalledWith('info', 'RPC request → thread/start', expect.objectContaining({
+        params: { cwd: 'workspace', config: { redacted: ['mcp_servers'] } },
+      }));
+      // The request itself still carries the config.
+      expect(lastSent(mockProc)).toMatchObject({ params: { config: { mcp_servers: { remote: { http_headers: { Authorization: 'Bearer s3cr3t-token' } } } } } });
+    });
+
+    it('redactForLog leaves params without config untouched', () => {
+      const params = { threadId: 't', input: [] };
+      expect(redactForLog(params)).toBe(params);
+      expect(redactForLog(undefined)).toBeUndefined();
     });
 
     it('threadList defaults to empty params', async () => {

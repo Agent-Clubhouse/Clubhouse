@@ -17,7 +17,13 @@ vi.mock('fs', () => ({
   },
 }));
 
+vi.mock('../telemetry/feature-events', async (importActual) => ({
+  ...(await importActual<typeof import('../telemetry/feature-events')>()),
+  settingsChanged: vi.fn(),
+}));
+
 import { ipcMain } from 'electron';
+import { settingsChanged } from '../telemetry/feature-events';
 import * as fs from 'fs';
 import { resetAllSettingsStoresForTests } from './settings-store';
 import { createManagedSettings } from './managed-settings';
@@ -234,5 +240,16 @@ describe('managed-settings', () => {
       expect(result.enabled).toBe(true);
       expect(result.name).toBe('original');
     });
+  });
+
+  it('reports clubhouse.settings.changed for listed keys only, never coercing others', async () => {
+    const handlers = new Map<string, (...a: unknown[]) => Promise<unknown>>();
+    vi.mocked(ipcMain.handle).mockImplementation(((ch: string, fn: (...a: unknown[]) => Promise<unknown>) => { handlers.set(ch, fn); }) as never);
+    createManagedSettings({ key: 'editor', filename: 'editor-tel.json', defaults: { editorCommand: 'code' } }).register();
+    createManagedSettings({ key: 'telemetry', filename: 'telemetry-tel.json', defaults: { enabled: false } }).register();
+    await handlers.get('settings:editor:save')!({}, { editorCommand: 'zed' });
+    await handlers.get('settings:telemetry:save')!({}, { enabled: true });
+    expect(settingsChanged).toHaveBeenCalledTimes(1);
+    expect(settingsChanged).toHaveBeenCalledWith('editor');
   });
 });

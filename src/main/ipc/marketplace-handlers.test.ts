@@ -7,7 +7,10 @@ vi.mock('electron', () => ({
 vi.mock('../services/marketplace-service', () => ({
   fetchRegistry: vi.fn(async () => ({ version: 1, plugins: [] })),
   installPlugin: vi.fn(async () => ({ success: true })),
+  saveMarketplaceSettings: vi.fn(async () => {}),
 }));
+
+vi.mock('../telemetry/feature-events', () => ({ settingsChanged: vi.fn() }));
 
 vi.mock('../services/plugin-update-service', () => ({
   checkForPluginUpdates: vi.fn(async () => []),
@@ -24,6 +27,7 @@ vi.mock('../services/custom-marketplace-service', () => ({
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
+import { settingsChanged } from '../telemetry/feature-events';
 import * as marketplaceService from '../services/marketplace-service';
 import * as pluginUpdateService from '../services/plugin-update-service';
 import * as customMarketplaceService from '../services/custom-marketplace-service';
@@ -159,5 +163,10 @@ describe('marketplace-handlers', () => {
   it('rejects TOGGLE_CUSTOM with non-boolean enabled', () => {
     const handler = handlers.get(IPC.MARKETPLACE.TOGGLE_CUSTOM)!;
     expect(() => handler({}, { id: 'cm-1', enabled: 'yes' })).toThrow('enabled must be a boolean');
+  });
+
+  it('SAVE_SETTINGS reports clubhouse.settings.changed with key marketplace', async () => {
+    await handlers.get(IPC.MARKETPLACE.SAVE_SETTINGS)!({}, { showBetaPlugins: true });
+    expect(settingsChanged).toHaveBeenCalledWith('marketplace');
   });
 });

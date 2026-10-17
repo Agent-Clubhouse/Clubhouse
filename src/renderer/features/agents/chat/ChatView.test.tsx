@@ -40,7 +40,7 @@ function renderFixture(p: FixtureProvider, scenario: Parameters<typeof chatFixtu
 }
 
 beforeEach(() => {
-  useChatDraftStore.setState({ drafts: {} });
+  useChatDraftStore.setState({ drafts: {}, attachments: {} });
 });
 
 /** Append events after a fixture, continuing its seq. */
@@ -154,7 +154,7 @@ describe('ChatView approvals', () => {
 
   it('shows what an always-allow option covers', () => {
     renderFixture('claude', 'approval');
-    expect(screen.getByTestId('chat-permission')).toHaveTextContent('npm install:*');
+    expect(screen.getByTestId('chat-permission')).toHaveTextContent('Bash(npm install:*)');
   });
 
   it('answers with Enter, Esc and number keys', () => {
@@ -199,9 +199,10 @@ describe('ChatView plans and questions', () => {
     expect(screen.getByTestId('chat-plan-document')).toHaveTextContent('Ready for review');
     expect(screen.getByTestId('chat-plan-document')).toHaveTextContent('Row layout.');
     const card = screen.getByTestId('chat-permission');
-    expect(card).toHaveTextContent('Claude finished planning');
-    fireEvent.click(within(card).getByText('Approve, auto-accept edits'));
-    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'acceptEdits');
+    expect(card).toHaveTextContent('Plan ready for review');
+    expect(card).toHaveTextContent('acceptEdits mode');
+    fireEvent.click(within(card).getByText("Allow and don't ask again"));
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow_always');
   });
 
   it('asks a question with options and free text', () => {
@@ -339,6 +340,139 @@ describe('ChatView composer', () => {
   });
 });
 
+describe('ChatView attachments', () => {
+  const png = (name = 'shot.png') => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type: 'image/png' });
+  const paste = (files: File[]) => fireEvent.paste(screen.getByLabelText('Message'), { clipboardData: { files } });
+  /** Main's staging, faked: images are images, pasted when named like a paste, everything else a file. */
+  function stageLike(overrides: Partial<{ pasted: boolean; kind: 'image' | 'file' }> = {}) {
+    const stage = vi.fn(async (_agentId: string, f: File) => ({
+      id: `staged-${f.name}`, name: f.name, size: f.size,
+      kind: overrides.kind ?? (f.type.startsWith('image/') ? 'image' as const : 'file' as const),
+      pasted: overrides.pasted ?? f.name.startsWith('image'),
+      ...(f.type.startsWith('image/') ? { mimeType: f.type } : {}),
+    }));
+    window.clubhouse.chat.stageAttachment = stage as typeof window.clubhouse.chat.stageAttachment;
+    return stage;
+  }
+
+  it('stages a pasted image, shows a thumbnail and sends only its staged id', async () => {
+    const stage = stageLike();
+    const { actions } = renderFixture('claude', 'conversation');
+    paste([png('image.png')]);
+    const chip = await screen.findByTestId('chat-attachment');
+    expect(stage).toHaveBeenCalledWith(FIXTURE_AGENT_ID, expect.any(File), { imagesAllowed: true });
+    expect(chip.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/png;base64,/);
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'What is wrong here?' } });
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+    expect(actions.send).toHaveBeenCalledWith('What is wrong here?', 'auto', ['staged-image.png']);
+    expect(screen.queryByTestId('chat-attachment')).not.toBeInTheDocument();
+  });
+
+  it('sends dropped files without text, with a drop hint while dragging', async () => {
+    stageLike();
+    const { actions } = renderFixture('claude', 'conversation');
+    const composer = screen.getByTestId('chat-composer');
+    fireEvent.dragOver(composer, { dataTransfer: { types: ['Files'] } });
+    expect(screen.getByTestId('chat-drop-hint')).toHaveTextContent('Drop files to attach them');
+    const notes = new File(['# notes'], 'notes.md', { type: 'text/markdown' });
+    fireEvent.drop(composer, { dataTransfer: { files: [notes, png()], types: ['Files'] } });
+    expect(screen.queryByTestId('chat-drop-hint')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByTestId('chat-attachment')).toHaveLength(2));
+    fireEvent.click(screen.getByTestId('chat-send'));
+    expect(actions.send).toHaveBeenCalledWith('', 'auto', ['staged-notes.md', 'staged-shot.png']);
+  });
+
+  it('keeps the drop hint while dragging over the composer\'s own children', () => {
+    stageLike();
+    renderFixture('claude', 'conversation');
+    const composer = screen.getByTestId('chat-composer');
+    fireEvent.dragOver(composer, { dataTransfer: { types: ['Files'] } });
+    // jsdom's DragEvent drops relatedTarget; a MouseEvent of the same type carries it.
+    const leave = (relatedTarget: Element) => fireEvent(composer, new MouseEvent('dragleave', { bubbles: true, relatedTarget }));
+    leave(screen.getByLabelText('Message'));
+    expect(screen.getByTestId('chat-drop-hint')).toBeInTheDocument();
+    leave(document.body);
+    expect(screen.queryByTestId('chat-drop-hint')).not.toBeInTheDocument();
+  });
+
+  it('shows an image on disk as a file when the agent cannot take images', async () => {
+    stageLike({ pasted: false });
+    const state = fold(chatFixture('claude', 'conversation'));
+    const { actions } = renderState({ ...state, capabilities: { ...state.capabilities!, images: false } });
+    fireEvent.change(screen.getByTestId('chat-attach-input'), { target: { files: [png()] } });
+    const chip = await screen.findByTestId('chat-attachment');
+    expect(chip.querySelector('img')).toBeNull();
+    fireEvent.click(screen.getByTestId('chat-send'));
+    expect(actions.send).toHaveBeenCalledWith('', 'auto', ['staged-shot.png']);
+  });
+
+  it('explains why a pasted image cannot be attached when the agent cannot take images', async () => {
+    const stage = stageLike({ pasted: true });
+    const state = fold(chatFixture('claude', 'conversation'));
+    renderState({ ...state, capabilities: { ...state.capabilities!, images: false } });
+    paste([png('image.png')]);
+    expect(await screen.findByTestId('chat-attach-error')).toHaveTextContent("can't take pasted images");
+    // Staging is told, so it refuses before saving anything.
+    expect(stage).toHaveBeenCalledWith(FIXTURE_AGENT_ID, expect.any(File), { imagesAllowed: false });
+    expect(screen.queryByTestId('chat-attachment')).not.toBeInTheDocument();
+  });
+
+  it('shows main\'s reason when a file is refused', async () => {
+    window.clubhouse.chat.stageAttachment = vi.fn(async () => {
+      throw new Error("Error invoking remote method 'chat:stage-attachment': Error: Can't attach huge.bin: files must be 20 MB or smaller");
+    });
+    renderFixture('claude', 'conversation');
+    fireEvent.change(screen.getByTestId('chat-attach-input'), { target: { files: [new File(['x'], 'huge.bin')] } });
+    expect(await screen.findByTestId('chat-attach-error')).toHaveTextContent(/^Can't attach huge.bin: files must be 20 MB or smaller$/);
+  });
+
+  it('holds the 10-attachment cap across adds that are still staging', async () => {
+    stageLike();
+    renderFixture('claude', 'conversation');
+    const input = screen.getByTestId('chat-attach-input');
+    fireEvent.change(input, { target: { files: Array.from({ length: 6 }, (_, i) => new File(['x'], `a${i}.txt`)) } });
+    fireEvent.change(input, { target: { files: Array.from({ length: 6 }, (_, i) => new File(['x'], `b${i}.txt`)) } });
+    await waitFor(() => expect(screen.getAllByTestId('chat-attachment')).toHaveLength(10));
+    expect(screen.getByTestId('chat-attach-error')).toHaveTextContent('Attach at most 10 files at a time');
+  });
+
+  it('removes an attachment', async () => {
+    stageLike();
+    renderFixture('claude', 'conversation');
+    paste([png()]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove shot.png' }));
+    expect(screen.queryByTestId('chat-attachment')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-send')).toBeDisabled();
+  });
+
+  it('puts the text and attachments back when the message is not sent', async () => {
+    stageLike();
+    const actions = makeActions();
+    actions.send.mockResolvedValueOnce(null as never);
+    renderFixture('claude', 'conversation', actions);
+    paste([png()]);
+    await screen.findByTestId('chat-attachment');
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'look' } });
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+    expect(await screen.findByTestId('chat-attachment')).toHaveTextContent('shot.png');
+    expect(screen.getByLabelText('Message')).toHaveValue('look');
+  });
+
+  it('shows attachments on sent messages', () => {
+    const events = extend(chatFixture('claude', 'conversation'), {
+      type: 'user_message',
+      data: {
+        messageId: 'm-att', source: 'user', delivery: 'prompt',
+        content: [{ type: 'image', mimeType: 'image/png', path: '/tmp/x/shot.png' }, { type: 'file', path: '/work/repo/notes.md' }],
+      },
+    });
+    renderState(fold(events));
+    const chips = screen.getAllByTestId('chat-user-attachments').at(-1)!;
+    expect(chips).toHaveTextContent('shot.png');
+    expect(chips).toHaveTextContent('notes.md');
+  });
+});
+
 describe('ChatView subagents', () => {
   it.each(['claude', 'codex'] as const)('renders a subagent card with its work folded in (%s)', (p) => {
     renderFixture(p, 'subagents');
@@ -346,7 +480,7 @@ describe('ChatView subagents', () => {
     expect(card).toHaveTextContent(p === 'claude' ? 'Explore' : 'worker-1');
     expect(card).toHaveTextContent('12 tools');
     expect(card).toHaveTextContent('Found 3 consumers');
-    fireEvent.click(within(card).getByRole('button'));
+    fireEvent.click(within(card).getAllByRole('button', { expanded: false })[0]);
     expect(within(card).getAllByTestId('chat-tool-row')).toHaveLength(2);
   });
 
@@ -483,5 +617,125 @@ describe('ChatView review fixes', () => {
     const firstChunk = events.findIndex((e) => e.type === 'agent_message_chunk');
     renderState(fold(events.slice(0, firstChunk + 1)));
     expect(screen.getByTestId('chat-live-region')).toBeEmptyDOMElement();
+  });
+});
+
+describe('ChatView permission extras', () => {
+  it('sends a denial message when the driver carries one', () => {
+    const { actions } = renderFixture('claude', 'approval');
+    const input = screen.getByTestId('chat-permission-feedback');
+    expect(input).toHaveAttribute('placeholder', 'Deny, and tell gallant-swift what to do instead…');
+    fireEvent.change(input, { target: { value: 'Use the existing validator instead' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-1', 'deny', { message: 'Use the existing validator instead' });
+  });
+
+  it('attaches the message when the reject option is clicked, and not to an approval', () => {
+    const a1 = makeActions();
+    const r1 = renderFixture('claude', 'approval', a1);
+    fireEvent.change(screen.getByTestId('chat-permission-feedback'), { target: { value: 'No network' } });
+    fireEvent.click(screen.getByText('Deny'));
+    expect(a1.respondPermission).toHaveBeenCalledWith('perm-1', 'deny', { message: 'No network' });
+    r1.unmount();
+
+    const a2 = makeActions();
+    renderFixture('claude', 'approval', a2);
+    fireEvent.change(screen.getByTestId('chat-permission-feedback'), { target: { value: 'ignored' } });
+    fireEvent.click(screen.getByText('Allow'));
+    expect(a2.respondPermission).toHaveBeenCalledWith('perm-1', 'allow');
+  });
+
+  it.each(['codex', 'copilot'] as const)('offers no message field when the driver does not report it (%s)', (p) => {
+    renderFixture(p, 'approval');
+    expect(screen.queryByTestId('chat-permission-feedback')).not.toBeInTheDocument();
+  });
+
+  it('approves an edited plan with updatedInput', () => {
+    const { actions } = renderFixture('claude', 'plan');
+    fireEvent.click(screen.getByText('Edit plan'));
+    const editor = screen.getByLabelText('Edit the plan');
+    fireEvent.change(editor, { target: { value: '1. Only the row layout.' } });
+    expect(screen.getByText('Approving sends your edited plan.')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Allow'));
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow', { updatedInput: { plan: '1. Only the row layout.' } });
+  });
+
+  it('approves an unedited plan without extras', () => {
+    const { actions } = renderFixture('claude', 'plan');
+    fireEvent.click(screen.getByText('Edit plan'));
+    fireEvent.click(screen.getByText('Allow'));
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow');
+  });
+
+  it('sends plan feedback with the reject option', () => {
+    const { actions } = renderFixture('claude', 'plan');
+    const input = screen.getByTestId('chat-permission-feedback');
+    expect(input).toHaveAttribute('placeholder', 'Deny, and tell gallant-swift what to change…');
+    fireEvent.change(input, { target: { value: 'Also cover the canvas view' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'deny', { message: 'Also cover the canvas view' });
+  });
+
+  it('hides plan editing when the driver carries no updatedInput', () => {
+    const state = fold(chatFixture('claude', 'plan'));
+    renderState({ ...state, capabilities: { ...state.capabilities!, permissionExtras: { denyMessage: true, updatedInput: false } } });
+    expect(screen.queryByText('Edit plan')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-permission-feedback')).toBeInTheDocument();
+  });
+
+  it('leaves typed digits in the message field', () => {
+    const { actions } = renderFixture('claude', 'approval');
+    const input = screen.getByTestId('chat-permission-feedback');
+    fireEvent.change(input, { target: { value: '3 reasons' } });
+    fireEvent.keyDown(input, { key: '3' });
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+  });
+
+  it.each(['1', 'Enter', 'Escape'])('pauses the %s shortcut while a message is typed, so it is not thrown away', (key) => {
+    const { actions } = renderFixture('claude', 'approval');
+    const card = screen.getByTestId('chat-permission');
+    fireEvent.change(screen.getByTestId('chat-permission-feedback'), { target: { value: 'Use pnpm' } });
+    expect(screen.getByTestId('chat-permission-shortcuts-paused')).toBeInTheDocument();
+    fireEvent.keyDown(card, { key });
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByTestId('chat-permission-feedback'), { target: { value: '' } });
+    fireEvent.keyDown(card, { key: '1' });
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-1', 'allow');
+  });
+
+  it('pauses shortcuts while the plan has unsent edits', () => {
+    const { actions } = renderFixture('claude', 'plan');
+    fireEvent.click(screen.getByText('Edit plan'));
+    fireEvent.change(screen.getByLabelText('Edit the plan'), { target: { value: '1. Smaller plan.' } });
+    fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: 'Escape' });
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+  });
+
+  it('focuses the editor and reports it expanded when Edit plan opens it', () => {
+    renderFixture('claude', 'plan');
+    const toggle = screen.getByText('Edit plan');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(screen.getByText('Hide plan editor')).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText('Edit the plan')).toHaveFocus();
+  });
+
+  it('will not approve a cleared plan, and can restore it', () => {
+    const { actions } = renderFixture('claude', 'plan');
+    fireEvent.click(screen.getByText('Edit plan'));
+    fireEvent.change(screen.getByLabelText('Edit the plan'), { target: { value: '   ' } });
+    expect(screen.getByText("The plan is empty, so it can't be approved.")).toBeInTheDocument();
+    const allow = screen.getByText('Allow').closest('button')!;
+    expect(allow).toBeDisabled();
+    fireEvent.keyDown(screen.getByTestId('chat-permission'), { key: 'Enter' });
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+    // Rejecting still works with an empty editor.
+    expect(screen.getByText('Deny').closest('button')).not.toBeDisabled();
+
+    fireEvent.click(screen.getByText('Restore original'));
+    expect(allow).not.toBeDisabled();
+    fireEvent.click(allow);
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow');
   });
 });
