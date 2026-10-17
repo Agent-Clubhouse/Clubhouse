@@ -373,6 +373,22 @@ export class CodexChatEventMapper {
     };
   }
 
+  /**
+   * Resolve every open permission and question as cancelled by the agent, for
+   * when the process is gone and nothing can answer them any more.
+   */
+  cancelOpenRequests(): ChatEventDraft[] {
+    const events: ChatEventDraft[] = [
+      ...[...this.openPermissions.keys()].map((requestId): ChatEventDraft =>
+        ({ type: 'permission_resolved', data: { requestId, decision: 'cancelled', by: 'agent' } })),
+      ...[...this.openQuestions.keys()].map((requestId): ChatEventDraft =>
+        ({ type: 'question_resolved', data: { requestId, answers: {}, cancelled: true } })),
+    ];
+    this.openPermissions.clear();
+    this.openQuestions.clear();
+    return events;
+  }
+
   /** A message the vendored schema doesn't know, as the protocol-drift event. */
   mapUnrecognized(message: CodexUnrecognizedMessage): ChatEventDraft[] {
     if (message.kind === 'other') {

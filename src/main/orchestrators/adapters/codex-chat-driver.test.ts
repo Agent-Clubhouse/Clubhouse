@@ -481,6 +481,71 @@ describe('CodexChatDriver', () => {
     expect(await rest()).toEqual([{ type: 'session_ended', data: { reason: 'error', exitCode: 1 } }]);
   });
 
+  it('a crash mid-turn reports process_exited and ends the turn before the session', async () => {
+    const { take, rest } = await startSession();
+    await take(1);
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+    expect(await take(1)).toMatchObject([{ type: 'turn_started' }]);
+
+    server.exit(1);
+
+    expect(await rest()).toEqual([
+      { type: 'error', data: { code: 'process_exited', message: 'Codex app-server exited with code 1 during a turn', fatal: true } },
+      { type: 'turn_ended', data: { stopReason: 'error' } },
+      { type: 'session_ended', data: { reason: 'error', exitCode: 1 } },
+    ]);
+  });
+
+  it('close mid-turn ends the turn as cancelled, with no error', async () => {
+    const { session, take, rest } = await startSession();
+    await take(1);
+    server.send(fx.completedTurnNotifications[1]);
+    await take(1);
+
+    await session.close();
+
+    expect(await rest()).toEqual([
+      { type: 'turn_ended', data: { stopReason: 'cancelled' } },
+      { type: 'session_ended', data: { reason: 'stopped' } },
+    ]);
+  });
+
+  it('a crash cancels open approvals so no card outlives the process', async () => {
+    const { take, rest } = await startSession();
+    await take(1);
+    server.send(fx.completedTurnNotifications[1]);
+    server.send(fx.commandApprovalRequest);
+    await take(2);
+
+    server.exit(1);
+
+    const events = await rest();
+    expect(events.map((e) => e.type)).toEqual(['error', 'turn_ended', 'permission_resolved', 'session_ended']);
+    expect(events[2]).toEqual({ type: 'permission_resolved', data: { requestId: '0', decision: 'cancelled', by: 'agent' } });
+  });
+
+  it('a crash after the turn finished adds no turn_ended', async () => {
+    const { take, rest } = await startSession();
+    await take(1);
+    server.send(fx.completedTurnNotifications[1]); // turn/started
+    server.send(fx.interruptedTurnCompleted); // turn/completed for the same turn
+    await take(2);
+
+    server.exit(1);
+
+    expect(await rest()).toEqual([{ type: 'session_ended', data: { reason: 'error', exitCode: 1 } }]);
+  });
+
+  it('subagent turns do not count as the chat turn running', async () => {
+    const { take, rest } = await startSession();
+    await take(1);
+    server.send({ method: 'turn/started', params: { threadId: 'subagent-thread', turn: { ...fx.turnStartResult.turn, id: 'sub-turn' } } });
+
+    server.exit(1);
+
+    expect(await rest()).toEqual([{ type: 'session_ended', data: { reason: 'error', exitCode: 1 } }]);
+  });
+
   // ── Probe ────────────────────────────────────────────────────────────────
 
   it('probe completes the handshake only and reports the CLI version', async () => {

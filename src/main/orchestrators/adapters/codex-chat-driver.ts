@@ -169,6 +169,8 @@ class CodexChatSession implements ChatDriverSession {
   /** Events that arrive before session_started is emitted. */
   private early: ChatEventDraft[] | null = [];
   private closing = false;
+  /** Between a turn_started and its turn_ended on this chat's thread. */
+  private turnRunning = false;
   private exited: Promise<void>;
   /** Overrides applied on the next turn/start (Codex keeps them for later turns too). */
   private nextTurn: Partial<TurnStartParams> = {};
@@ -206,6 +208,19 @@ class CodexChatSession implements ChatDriverSession {
       },
       onUnrecognizedMessage: (message) => this.mapper.mapUnrecognized(message).forEach((e) => this.emit(e)),
       onExit: (code, signal) => {
+        // Close out what the dead process can no longer finish, as the Claude
+        // and ACP drivers do: the running turn, then any open approvals.
+        if (this.turnRunning) {
+          if (!this.closing) {
+            const how = code !== null ? ` with code ${code}` : signal ? ` on ${signal}` : '';
+            this.emit({
+              type: 'error',
+              data: { code: 'process_exited', message: `Codex app-server exited${how} during a turn`, fatal: true },
+            });
+          }
+          this.emit({ type: 'turn_ended', data: { stopReason: this.closing ? 'cancelled' : 'error' } });
+        }
+        this.mapper.cancelOpenRequests().forEach((e) => this.emit(e));
         this.emit({
           type: 'session_ended',
           data: {
@@ -380,6 +395,8 @@ class CodexChatSession implements ChatDriverSession {
   }
 
   private emit(event: ChatEventDraft): void {
+    if (event.type === 'turn_started') this.turnRunning = true;
+    else if (event.type === 'turn_ended') this.turnRunning = false;
     if (this.early) this.early.push(event);
     else this.queue.push(event);
   }
