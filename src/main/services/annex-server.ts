@@ -51,6 +51,19 @@ import { generateQuickName } from '../../shared/name-generator';
 import { generateQuickAgentId } from '../../shared/agent-id';
 import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
 import { agentKillRequested } from '../telemetry/agent-telemetry';
+import { withRemoteParent } from '../telemetry/facade';
+import {
+  annexRestFlow,
+  pairResultFor,
+  recordBroadcast,
+  recordClients,
+  recordControlDenied,
+  recordPairServed,
+  recordReplay,
+  recordServerStarted,
+  recordSnapshotBuild,
+  recordTlsFallback,
+} from '../telemetry/annex-telemetry';
 import type {
   AnnexStatus,
   AgentHookEvent,
@@ -446,6 +459,15 @@ function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[
 // ---------------------------------------------------------------------------
 
 async function buildSnapshot(): Promise<object> {
+  const startMs = Date.now();
+  try {
+    return await buildSnapshotData();
+  } finally {
+    recordSnapshotBuild(startMs);
+  }
+}
+
+async function buildSnapshotData(): Promise<object> {
   const projects = await projectStore.list();
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
@@ -635,20 +657,35 @@ async function buildSnapshot(): Promise<object> {
 // WebSocket broadcast with replay buffer (Issue 8)
 // ---------------------------------------------------------------------------
 
+/** Telemetry: open clients by kind (mTLS controllers are desktop, bearer clients mobile). */
+function reportClientCounts(): void {
+  let desktop = 0;
+  let mobile = 0;
+  for (const client of wss?.clients ?? []) {
+    if (client.readyState !== WebSocket.OPEN) continue;
+    if (wsAuthTypes.get(client) === 'mtls') desktop++;
+    else mobile++;
+  }
+  recordClients(desktop, mobile);
+}
+
 function broadcastWs(message: object): void {
   if (!wss) return;
   const data = JSON.stringify(message);
+  let sendFailures = 0;
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) {
       try {
         client.send(data);
       } catch (err) {
+        sendFailures++;
         appLog('core:annex', 'warn', 'broadcastWs: failed to send to client', {
           meta: { error: err instanceof Error ? err.message : String(err) },
         });
       }
     }
   }
+  recordBroadcast((message as { type?: string }).type ?? 'other', data.length, sendFailures);
 }
 
 /** Broadcast a message and push it to the replay buffer. */
@@ -1113,27 +1150,32 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
 
   // POST /pair — with brute-force protection
   if (method === 'POST' && url === '/pair') {
+    const pairStartMs = Date.now();
+    const pairReply = (status: number, body: Record<string, unknown>): void => {
+      recordPairServed(pairStartMs, status === 200 ? 'ok' : pairResultFor(body.error as string | undefined));
+      sendJson(res, status, body);
+    };
     const source = req.socket.remoteAddress || 'unknown';
     const bruteCheck = annexPeers.checkBruteForce(source);
 
     if (!bruteCheck.allowed) {
       if (bruteCheck.locked) {
-        sendJson(res, 429, { error: 'pairing_locked', message: 'Too many failed attempts. Pairing is locked.' });
+        pairReply(429, { error: 'pairing_locked', message: 'Too many failed attempts. Pairing is locked.' });
       } else {
-        sendJson(res, 429, { error: 'rate_limited', retryAfterMs: bruteCheck.delayMs });
+        pairReply(429, { error: 'rate_limited', retryAfterMs: bruteCheck.delayMs });
       }
       return;
     }
 
     readBody(req).then((raw) => {
       const body = parseJsonBody(raw);
-      if (!body) { sendJson(res, 400, { error: 'invalid_json' }); return; }
+      if (!body) { pairReply(400, { error: 'invalid_json' }); return; }
       const pin = body.pin;
-      if (typeof pin !== 'string') { sendJson(res, 400, { error: 'invalid_json' }); return; }
+      if (typeof pin !== 'string') { pairReply(400, { error: 'invalid_json' }); return; }
 
       if (!comparePins(pin, currentPin)) {
         annexPeers.recordFailedAttempt(source);
-        sendJson(res, 401, { error: 'invalid_pin' });
+        pairReply(401, { error: 'invalid_pin' });
         return;
       }
 
@@ -1151,11 +1193,11 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
           const keyBuf = Buffer.from(clientPublicKey, 'base64');
           const keyObj = require('crypto').createPublicKey({ key: keyBuf, format: 'der', type: 'spki' });
           if (keyObj.asymmetricKeyType !== 'ed25519') {
-            sendJson(res, 400, { error: 'invalid_public_key' });
+            pairReply(400, { error: 'invalid_public_key' });
             return;
           }
         } catch {
-          sendJson(res, 400, { error: 'invalid_public_key' });
+          pairReply(400, { error: 'invalid_public_key' });
           return;
         }
         annexPeers.addPeer({
@@ -1170,7 +1212,7 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
         });
       }
 
-      sendJson(res, 200, {
+      pairReply(200, {
         token,
         publicKey: identity.publicKey,
         alias: settings.alias,
@@ -1180,6 +1222,7 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
       });
     }).catch((err) => {
       appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      recordPairServed(pairStartMs, 'invalid_request');
       res.writeHead(400);
       res.end();
     });
@@ -1971,6 +2014,11 @@ const ANNEX_HTTP_ROUTE_TABLE: AnnexHttpRoute[] = [
   { method: 'GET', pattern: /^\/api\/v1\/icons\/project\/([^/]+)$/, handler: handleProjectIconRoute },
 ];
 
+/** The REST route table's methods and patterns (telemetry route templates are checked against it). */
+export function annexHttpRoutes(): ReadonlyArray<{ method: string; pattern: RegExp }> {
+  return ANNEX_HTTP_ROUTE_TABLE.map(({ method, pattern }) => ({ method, pattern }));
+}
+
 export function resolveAnnexHttpRoute(method: string, url: string): AnnexHttpRoute | undefined {
   return ANNEX_HTTP_ROUTE_TABLE.find((route) => route.method === method && route.pattern.test(url));
 }
@@ -2031,6 +2079,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       appLog('core:annex', 'warn', 'Rejected destructive REST request — mTLS required', {
         meta: { method, url },
       });
+      recordControlDenied('rest');
       sendJson(res, 403, { error: 'mtls_required', message: 'Destructive operations require mTLS authentication' });
       return true;
     }
@@ -2041,7 +2090,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (route) {
     const match = url.match(route.pattern);
     if (match) {
-      await route.handler({ req, res, url, method, requireMtls }, match);
+      const header = req.headers.traceparent;
+      await withRemoteParent(typeof header === 'string' ? header : undefined, () =>
+        annexRestFlow(method, route.pattern, () => res.statusCode, () => route.handler({ req, res, url, method, requireMtls }, match)),
+      );
       return;
     }
   }
@@ -2065,7 +2117,8 @@ function safeSend(ws: WebSocket, data: string): boolean {
 }
 
 function handleWsMessage(ws: WebSocket, data: string): void {
-  let msg: { type?: string; payload?: Record<string, unknown>; since?: number };
+  // `tc`: optional W3C traceparent from a controller with telemetry on (spec §7).
+  let msg: { type?: string; payload?: Record<string, unknown>; since?: number; tc?: unknown };
   try {
     msg = JSON.parse(data);
   } catch {
@@ -2082,6 +2135,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     const events = eventReplay.getEventsSince(msg.since);
 
     if (events === null) {
+      recordReplay('gap');
       safeSend(ws, JSON.stringify({
         type: 'replay:gap',
         oldestAvailable: eventReplay.getOldestSeq(),
@@ -2097,14 +2151,19 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       count: events.length,
     }));
 
+    let replayed = true;
     for (const event of events) {
       if (!safeSend(ws, JSON.stringify({
         type: event.type,
         payload: event.payload,
         seq: event.seq,
         replayed: true,
-      }))) break;
+      }))) {
+        replayed = false;
+        break;
+      }
     }
+    recordReplay(replayed ? 'ok' : 'send_failed');
 
     safeSend(ws, JSON.stringify({ type: 'replay:end' }));
     return;
@@ -2115,11 +2174,13 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   const isMtls = authType === 'mtls';
 
   if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'agent:reorder' || type === 'clipboard:image')) {
+    recordControlDenied('ws');
     safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
     return;
   }
 
   const payload = msg.payload || {};
+  const traceparent = typeof msg.tc === 'string' ? msg.tc : undefined;
 
   switch (type) {
     case 'pty:input': {
@@ -2191,7 +2252,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
           safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
           return;
         }
-        handleSpawnQuickAgentWs(ws, project, payload);
+        withRemoteParent(traceparent, () => handleSpawnQuickAgentWs(ws, project, payload));
       }).catch((err) => {
         appLog('core:annex', 'error', 'agent:spawn lookup failed', {
           meta: { projectId, error: err instanceof Error ? err.message : String(err) },
@@ -2204,11 +2265,11 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     case 'agent:wake': {
       const agentId = payload.agentId as string;
       if (!agentId) break;
-      handleWakeAgentWs(ws, agentId, {
+      withRemoteParent(traceparent, () => handleWakeAgentWs(ws, agentId, {
         resume: !!payload.resume,
         mission: payload.mission as string | undefined,
         model: payload.model as string | undefined,
-      });
+      }));
       break;
     }
 
@@ -2405,6 +2466,7 @@ export function start(): void {
   }
 
   appLog('core:annex', 'info', 'Annex server starting...');
+  const serverStartMs = Date.now();
 
   // Generate identity on first enable (lazy creation)
   const identity = annexIdentity.getOrCreateIdentity();
@@ -2428,6 +2490,7 @@ export function start(): void {
     });
     // Fallback: use plain HTTP for the main server (legacy/iOS compat)
     tlsServer = null;
+    recordTlsFallback();
   }
 
   // If TLS failed, fall back to HTTP for the main server
@@ -2514,6 +2577,7 @@ export function start(): void {
 
     // wsAuthTypes is set synchronously in handleUpgrade before 'connection' fires — safe to read here.
     const authType = wsAuthTypes.get(ws);
+    reportClientCounts();
 
     // Broadcast lock state immediately when mTLS controller connects — before the async
     // buildSnapshot() so the satellite UI locks without waiting for snapshot I/O to complete.
@@ -2538,6 +2602,7 @@ export function start(): void {
       appLog('core:annex', 'info', 'WebSocket client disconnected', {
         meta: { authType, code, reason: reason?.toString() || '' },
       });
+      reportClientCounts();
       if (authType === 'mtls') {
         // Check if any other mTLS connections are still open
         const hasMtlsClient = Array.from(wss?.clients || []).some(
@@ -2732,6 +2797,7 @@ export function start(): void {
       serverPort = addr.port;
       appLog('core:annex', 'info', `Annex main server listening on 0.0.0.0:${serverPort} (${tlsServer ? 'TLS' : 'HTTP'})`);
       mainReady = true;
+      if (pairingReady) recordServerStarted(serverStartMs, !!tlsServer);
       publishBonjour();
     }
   });
@@ -2742,6 +2808,7 @@ export function start(): void {
       pairingPort = addr.port;
       appLog('core:annex', 'info', `Annex pairing server listening on 0.0.0.0:${pairingPort} (HTTP)`);
       pairingReady = true;
+      if (mainReady) recordServerStarted(serverStartMs, !!tlsServer);
       publishBonjour();
     }
   });

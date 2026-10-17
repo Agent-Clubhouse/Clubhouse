@@ -22,6 +22,25 @@ import { IPC } from '../../shared/ipc-channels';
 import type { DigestSince } from '../../shared/group-project-types';
 import { encodeDigestSince } from '../../shared/digest-since';
 import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
+import { ATTR } from '../../shared/telemetry/attributes';
+import { currentTraceparent, tel } from '../telemetry/facade';
+import {
+  connectAuthMode,
+  connectFailed,
+  connectStarted,
+  connectSucceeded,
+  disconnectReasonFor,
+  connectErrorFor,
+  pairFlow,
+  pairResultFor,
+  recordDisconnect,
+  recordDiscover,
+  recordHeartbeatRtt,
+  recordReconnectScheduled,
+} from '../telemetry/annex-telemetry';
+
+/** Telemetry: when the last heartbeat ping was sent, per satellite connection. */
+const pingSentAt = new WeakMap<object, number>();
 
 // ---------------------------------------------------------------------------
 // Types
@@ -260,6 +279,11 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
 function setState(sat: SatelliteConnectionInternal, state: SatelliteState, error?: string): void {
   const prev = sat.state;
   sat.state = state;
+  if (state === 'disconnected') {
+    // The reason text stays local; it only picks the registry enum.
+    if (prev === 'connected') recordDisconnect(disconnectReasonFor(error));
+    connectFailed(sat.fingerprint, connectErrorFor(error));
+  }
   if (error !== undefined) sat.lastError = error;
   appLog('core:annex-client', error ? 'warn' : 'info', `Satellite state: ${prev} → ${state}`, {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias, ...(error ? { error } : {}) },
@@ -332,6 +356,7 @@ interface RemoteIdentity {
 }
 
 async function identifyService(service: RemoteService): Promise<RemoteIdentity | null> {
+  const discoverStartMs = Date.now();
   const txt = service.txt || {};
   // Prefer resolved IP addresses over hostname — on Linux os.hostname() returns a
   // bare name (e.g. "desk") that macOS cannot resolve, while .local hostnames from
@@ -347,13 +372,16 @@ async function identifyService(service: RemoteService): Promise<RemoteIdentity |
     const res = await httpGet(host, pPort, '/api/v1/identity');
     if (res.status !== 200) {
       appLog('core:annex-client', 'warn', 'Identity request failed', { meta: { host, port: pPort, status: res.status } });
+      recordDiscover(discoverStartMs, host, 'identity_unreachable');
       return null;
     }
     const identity = JSON.parse(res.body);
     if (!identity.fingerprint) {
       appLog('core:annex-client', 'warn', 'Identity response missing fingerprint', { meta: { host, port: pPort } });
+      recordDiscover(discoverStartMs, host, 'identity_invalid');
       return null;
     }
+    recordDiscover(discoverStartMs, host);
     return {
       fingerprint: identity.fingerprint,
       alias: identity.alias || 'Unknown',
@@ -365,6 +393,7 @@ async function identifyService(service: RemoteService): Promise<RemoteIdentity |
     appLog('core:annex-client', 'warn', 'Identity request error', {
       meta: { host, port: pPort, error: err instanceof Error ? err.message : String(err) },
     });
+    recordDiscover(discoverStartMs, host, err instanceof SyntaxError ? 'identity_invalid' : 'identity_unreachable');
     return null;
   }
 }
@@ -383,6 +412,7 @@ function getPeerCertificateFingerprint(ws: WebSocket): string | null {
 
 async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<void> {
   setState(sat, 'connecting');
+  connectStarted(sat.fingerprint, sat.host);
 
   const identity = annexIdentity.getOrCreateIdentity();
 
@@ -486,6 +516,7 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       appLog('core:annex-client', 'info', 'Connected to satellite', {
         meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort },
       });
+      connectAuthMode(sat.fingerprint, withBearerToken ? 'bearer' : 'mtls');
       setState(sat, 'connected');
       sat.reconnectAttempt = 0;
       annexPeers.updateLastSeen(sat.fingerprint);
@@ -493,6 +524,11 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
     });
 
     ws.on('pong', () => {
+      const sentAt = pingSentAt.get(sat);
+      if (sentAt !== undefined) {
+        pingSentAt.delete(sat);
+        recordHeartbeatRtt(Date.now() - sentAt);
+      }
       // Clear the pong timeout — connection is alive
       if (sat.pongTimeout) {
         clearTimeout(sat.pongTimeout);
@@ -560,6 +596,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
         setState(sat, 'disconnected', 'Incompatible Annex version');
         return;
       }
+      connectSucceeded(sat.fingerprint);
       if (!sat.snapshot || incoming.lastSeq >= sat.snapshot.lastSeq) {
         sat.lastError = null;
         sat.snapshot = incoming;
@@ -608,6 +645,7 @@ function startHeartbeat(sat: SatelliteConnectionInternal): void {
     }
     // Send ping
     try {
+      pingSentAt.set(sat, Date.now());
       sat.ws.ping();
     } catch {
       stopHeartbeat(sat);
@@ -664,6 +702,7 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
   const baseDelay = Math.min(1000 * Math.pow(2, sat.reconnectAttempt), 30_000);
   const delay = Math.round(baseDelay * (0.5 + Math.random()));
   sat.reconnectAttempt++;
+  recordReconnectScheduled(sat.reconnectAttempt, delay);
   appLog('core:annex-client', 'info', `Scheduling reconnect in ${delay}ms (attempt ${sat.reconnectAttempt})`, {
     meta: { fingerprint: sat.fingerprint, alias: sat.alias },
   });
@@ -937,6 +976,17 @@ export function retry(fingerprint: string): void {
  * Returns an object with `sent` status and optional error context.
  */
 export function sendToSatellite(fingerprint: string, message: Record<string, unknown>): { sent: boolean; error?: string } {
+  const action = message.type === 'agent:spawn' ? 'spawn' : message.type === 'agent:wake' ? 'wake' : undefined;
+  if (!action) return sendToSatelliteNow(fingerprint, message);
+  // Remote spawn/wake: a root flow whose traceparent rides in the envelope as
+  // `tc` (spec §7). The satellite continues it only if its own telemetry is on.
+  return tel.flow('clubhouse.annex.remote_spawn', { attrs: [ATTR.annexRemoteAction(action)] }, () => {
+    const tc = currentTraceparent();
+    return sendToSatelliteNow(fingerprint, tc ? { ...message, tc } : message);
+  }, { classify: (r) => (r.sent ? 'ok' : { error: r.error === 'not_connected' ? 'not_connected' : 'send_failed' }) });
+}
+
+function sendToSatelliteNow(fingerprint: string, message: Record<string, unknown>): { sent: boolean; error?: string } {
   const sat = satellites.get(fingerprint);
   if (!sat || !sat.ws || sat.ws.readyState !== WebSocket.OPEN) {
     return { sent: false, error: 'not_connected' };
@@ -1308,11 +1358,16 @@ function satelliteHttpsRequest(
 
   return new Promise<unknown>((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : undefined;
+    const traceparent = currentTraceparent();
+    const headers: Record<string, string | number> = {
+      ...(bodyStr ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
+      ...(traceparent ? { traceparent } : {}),
+    };
     const options: https.RequestOptions = {
       ...tlsOptions,
       method,
       timeout: 30000,
-      headers: bodyStr ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } : undefined,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
     };
 
     const req = https.request(url, options, (res) => {
@@ -1491,7 +1546,11 @@ export async function requestWorktreeStatus(
  * On success, adds the peer, removes it from discovered, creates a satellite,
  * and initiates connection.
  */
-export async function pairWithService(fingerprint: string, pin: string): Promise<{ success: boolean; error?: string }> {
+export function pairWithService(fingerprint: string, pin: string): Promise<{ success: boolean; error?: string }> {
+  return pairFlow(() => pairWithServiceImpl(fingerprint, pin), (r) => (r.success ? 'ok' : pairResultFor(r.error)));
+}
+
+async function pairWithServiceImpl(fingerprint: string, pin: string): Promise<{ success: boolean; error?: string }> {
   const discovered = discoveredServices.get(fingerprint);
   if (!discovered) {
     return { success: false, error: 'Service not found — it may have gone offline' };
