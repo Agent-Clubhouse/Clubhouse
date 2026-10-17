@@ -1,0 +1,94 @@
+/**
+ * The one seam between ChatView and the chat store. Components read state and
+ * call actions through these hooks only, so the store (or a fixture replayer)
+ * can be swapped without touching them.
+ */
+
+import { useCallback, useEffect, useMemo } from 'react';
+import { create } from 'zustand';
+import type { ChatQuestionAnswers, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult } from '../../../../shared/chat';
+import { useChatStore, type ChatViewState } from '../../../stores/chatStore';
+import { useToastStore } from '../../../stores/toastStore';
+
+export interface ChatActions {
+  send: (text: string, delivery?: 'auto' | MessageDelivery) => Promise<RuntimeSendResult | null>;
+  interrupt: () => Promise<void>;
+  /** Resolves false when the answer didn't reach the agent (a toast says why). */
+  respondPermission: (requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<boolean>;
+  answerQuestion: (requestId: string, answers: ChatQuestionAnswers) => Promise<boolean>;
+  setLevel: (level: PermissionLevel) => Promise<void>;
+}
+
+/**
+ * Unsent composer text per agent. It lives outside the composer so a draft
+ * survives the composer being swapped for an approval card, or switching agents.
+ */
+interface DraftState {
+  drafts: Record<string, string>;
+  setDraft: (agentId: string, text: string) => void;
+}
+
+export const useChatDraftStore = create<DraftState>((set) => ({
+  drafts: {},
+  setDraft: (agentId, text) => set((s) => {
+    const drafts = { ...s.drafts };
+    if (text) drafts[agentId] = text;
+    else delete drafts[agentId];
+    return { drafts };
+  }),
+}));
+
+export function useChatDraft(agentId: string): [string, (text: string) => void] {
+  const text = useChatDraftStore((s) => s.drafts[agentId] ?? '');
+  const setDraft = useChatDraftStore((s) => s.setDraft);
+  const set = useCallback((t: string) => setDraft(agentId, t), [agentId, setDraft]);
+  return [text, set];
+}
+
+export function useChatState(agentId: string): ChatViewState | undefined {
+  return useChatStore((s) => s.agents[agentId]);
+}
+
+export function useChatLoading(agentId: string): boolean {
+  return useChatStore((s) => !!s.loading[agentId]);
+}
+
+/** Load the agent's transcript once per mount; live events merge on top. */
+export function useChatTranscript(agentId: string): void {
+  const loadTranscript = useChatStore((s) => s.loadTranscript);
+  useEffect(() => {
+    void loadTranscript(agentId);
+  }, [agentId, loadTranscript]);
+}
+
+function reportFailure(what: string, err: unknown): void {
+  const detail = err instanceof Error ? err.message : String(err);
+  useToastStore.getState().addToast(`${what}: ${detail}`, 'error');
+}
+
+export function useChatActions(agentId: string): ChatActions {
+  const store = useChatStore;
+  const wrap = useCallback(<A extends unknown[], R>(what: string, fn: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<{ ok: true; value: R } | { ok: false }> => {
+      try {
+        return { ok: true, value: await fn(...args) };
+      } catch (err) {
+        // telemetry-exempt: shown to the user; chat stays independent of telemetry (research §7.3), which maps chat events itself.
+        reportFailure(what, err);
+        return { ok: false };
+      }
+    }, []);
+
+  return useMemo<ChatActions>(() => ({
+    send: async (text, delivery) => {
+      const r = await wrap('Message not sent', store.getState().send)(agentId, text, delivery);
+      return r.ok ? r.value : null;
+    },
+    interrupt: async () => { await wrap("Couldn't stop the turn", store.getState().interrupt)(agentId); },
+    respondPermission: async (requestId, optionId, extras) =>
+      (await wrap("Couldn't answer the request", store.getState().respondPermission)(agentId, requestId, optionId, extras)).ok,
+    answerQuestion: async (requestId, answers) =>
+      (await wrap("Couldn't send the answer", store.getState().answerQuestion)(agentId, requestId, answers)).ok,
+    setLevel: async (level) => { await wrap("Couldn't change the permission level", store.getState().setLevel)(agentId, level); },
+  }), [agentId, store, wrap]);
+}

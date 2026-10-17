@@ -281,11 +281,10 @@ c.agent.spawn             (root; ends when process launched)
   │    ├─ c.mcp.inject
   │    └─ c.provider.build_command
   └─ c.pty.spawn | c.headless.spawn | c.chat.start
-c.agent.first_output      (event on run; carries latency)
+c.agent.run               (root; spawn → exit, replayed at exit; carries the exit class)
 c.agent.turn              (chat runtime; one per turn; mapped from the chat event bus, §9.1)
 c.agent.permission        (root per permission request)
-c.agent.exit              (root; short; classifies the exit)
-c.agent.kill              (root; user/system kill with escalation)
+c.agent.kill              (root; user/system kill trigger; Phase 4b)
 ```
 
 #### Create (`ipc/agent-handlers.ts:56` → `agent-config.ts:1069`)
@@ -314,11 +313,15 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
 
 #### Run, first output and readiness
 
-There is no CLI "ready" signal. The proxies below are recorded as **events** on a minimal `c.agent.run` span. That span is started at spawn and **ended at exit**, but because it can be long-lived it is exported only when it ends, as normal OTel behavior. A run lasting days is acceptable: an unfinished span is simply never exported, and the metrics below still capture the data.
+`c.agent.run` (S, root) covers one PTY or headless process from spawn to exit. Nothing holds it open: `agent-telemetry.ts` keeps a small per-run record and **replays the span with explicit times when the run ends** (§6.5), so a run that never ends (app crash) is simply never exported, and a run lasting days costs nothing. The exit is folded into this span rather than a separate `c.agent.exit` span: it carries `c.agent.exit.class`, `process.exit.code` and, for killed runs, `c.kill.stage_reached`. Outcome is `error` for `failed`/`early_failure`, `ok` for `completed`, `cancelled` otherwise.
 
-- `c.agent.shell_ready`: the first PTY `onData`, where the pending command flushes (`pty-manager.ts:125-137`). PTY only.
-- `c.agent.first_output`: the first data after the flush (PTY), the first stdout JSONL event (headless, `headless-manager.ts:328`), or the first assistant-text event on the chat bus (chat).
-- `c.agent.first_hook`: the first hook event for this agent ID (`hook-server.ts`). This is the best "the CLI is alive and working" proxy for hook-capable providers.
+A run ends on `broadcastAgentExit` (`onAgentExit`), or directly where a session is removed without one: a hard kill (`pty-manager.ts` `kill()`) and the post-grace sweep in `killAll()` both end it as `killed_user` at `sigkill`. A respawn under the same agent ID ends the previous run as `replaced`.
+
+There is no CLI "ready" signal. The proxies below are recorded as **histograms**, not span events, so they aggregate without span queries:
+
+- `c.agent.time_to_shell_ready`: spawn → the PTY shell accepting the pending command (`flushPendingCommand`). PTY only.
+- `c.agent.time_to_first_output`: spawn → the first data after the flush (PTY) or the first stdout chunk (headless). Chat maps its first assistant-text event later (§9.1).
+- `c.agent.first_hook` is not recorded; `c.agent.hook_events` covers liveness for hook-capable providers.
 
 **Metrics (level S)**
 
@@ -326,10 +329,14 @@ There is no CLI "ready" signal. The proxies below are recorded as **events** on 
 |---|---|---|
 | `c.agent.spawns` | counter | kind, orchestrator, runtime, `clubhouse.outcome` |
 | `c.agent.spawn.duration` | histogram, s | kind, orchestrator, runtime |
+| `c.agent.runs` | counter; one per ended run | orchestrator, runtime, `c.agent.exit.class` (kind joins in Phase 4b) |
+| `c.agent.time_to_shell_ready` | histogram, s | orchestrator |
 | `c.agent.time_to_first_output` | histogram, s | orchestrator, runtime |
-| `c.agent.run.duration` | histogram, s | kind, orchestrator, runtime, `c.agent.exit.class` |
+| `c.agent.run.duration` | histogram, s | orchestrator, runtime, `c.agent.exit.class` (kind joins in Phase 4b) |
+| `c.agent.kill.escalations` | counter; one per stage a kill escalates to. The stage a kill starts at (exit command for PTY, SIGTERM for headless, SIGKILL for a hard kill) is not counted | `c.kill.stage_reached` |
+| `c.provider.binary_lookup.duration` | histogram, s; every `findBinaryInPath` call | `c.binary.lookup_tier` (`cache`/`well_known`/`path_scan`/`login_shell`/`not_found`) |
 | `c.agent.active` | UpDownCounter (or observable gauge from `agentRegistry`) | kind, runtime |
-| `c.pty.output.bytes` | counter, By; **incremented at exit from a per-session byte total, never per chunk** | orchestrator |
+| `c.pty.output.bytes` | counter, By; **incremented at exit from a per-session byte total, never per chunk** | orchestrator, runtime |
 | `c.agent.tool_calls` | counter, fed from hook-server `pre_tool`/`post_tool`/`tool_error` and from chat/headless tool start and end events | orchestrator, `c.tool.bucket`, `c.tool.result` (`ok`/`error`) |
 | `c.agent.hook_events` | counter | orchestrator, `c.hook.kind` (`pre_tool`/`post_tool`/`stop`/`notification`/`tool_error`/`permission_request`) |
 
@@ -360,8 +367,11 @@ Metrics: `c.agent.permission.wait` histogram (s; already computed as `elapsedMs`
 
 | Span | Boundaries | Attributes | Level |
 |---|---|---|---|
-| `c.agent.exit` (root, short) | `broadcastAgentExit` (`agent-exit-broadcast.ts:26`) (the structured-mode bypass, F1, was fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928) and the code is removed by [#1937](https://github.com/Agent-Clubhouse/Clubhouse/pull/1937); chat exits must also go through it) | `c.agent.exit.class` (see below), `process.exit.code` (int), `c.agent.exit.signal` (`SIGTERM`/`SIGKILL`/none), `c.agent.run.duration_s`, `c.pty.output.bytes` | S |
-| `c.agent.kill` | `killAgent` (`agent-system.ts:526`) → exit | `c.kill.trigger` (`user`/`quick_auto_stop`/`shutdown`/`replace`/`sweeper`), `c.kill.stage_reached` (`exit_command`/`eof`/`sigterm`/`sigkill`, from `gracefulKill` `:498-548`) | S |
+Exits are classified on the `c.agent.run` span (above), not a separate span. Chat exits must also go through `broadcastAgentExit` (the structured-mode bypass, F1, was fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928)).
+
+| Span | Boundaries | Attributes | Level |
+|---|---|---|---|
+| `c.agent.kill` (Phase 4b) | `killAgent` on the agent-runtime seam → exit | `c.kill.trigger` (`user`/`quick_auto_stop`/`shutdown`/`replace`/`sweeper`), `c.kill.stage_reached` (`exit_command`/`eof`/`sigterm`/`sigkill`, from `gracefulKill`) | S |
 
 `c.agent.exit.class` takes one of:
 
@@ -374,21 +384,22 @@ Metrics: `c.agent.permission.wait` histogram (s; already computed as `elapsedMs`
 | `killed_escalated` | SIGKILL reached |
 | `stale_swept` | removed by the stale sweeper |
 | `chat_error` | chat turn ended with `end_reason=error` and the session closed |
-| `replaced` | session replaced. This currently emits no exit event; instrument it at `pty-manager.ts:290`. |
+| `replaced` | a new run started under the same agent ID before the old one reported an exit |
 
 #### Group projects and shoulder taps
 
 - `c.group.shoulder_tap` (S): `executeShoulderTap` (`group-project-shoulder-tap.ts:63`), with a child per target. Attributes: `c.delivery.result` (`delivered`/`not_running`/`unsupported_runtime`/`failed`), `c.agent.runtime`, `c.targets.count`.
 - `c.group.membership_sync` (S): `syncMemberships`. Attributes: join/leave counts.
-- Counter `c.group.bulletin.posts`, which comes from the MCP tool calls.
+- `c.group.bulletin.posts` is not a separate counter: it is `c.mcp.tool_calls` filtered to `c.mcp.tool = post_bulletin`.
 
 ### 4.5 Clubhouse MCP bridge (`clubhouse-mcp/`)
 
 | Instrument | Boundaries / attributes | Level |
 |---|---|---|
 | `c.mcp.bridge.start` span | `bridge-server.ts:302` | S |
-| `c.mcp.tool_call` span | `handleToolsCall` `:126` → JSON-RPC return. Attributes: `c.mcp.tool` (the **built-in Clubhouse tool name only**, from `tool-registry.ts`; plugin-contributed tools are bucketed as `plugin`), `c.mcp.result` (`ok`/`tool_error`/`threw`), `error.type ∈ {unknown_tool, no_binding, invalid_args, admin_denied, internal}` | S |
-| `c.mcp.tool_calls` counter, `c.mcp.tool_call.duration` histogram | tool, result | S |
+| `c.mcp.tool_call` span | `handleToolsCall` → JSON-RPC return. Attributes: `c.mcp.tool_kind` (`clubhouse`/`browser`/`terminal`/`group`/`plugin`/`global`/`other`, from the tool-name prefix or global-tool membership), `c.mcp.tool` (the **built-in Clubhouse tool suffix or global tool name only**, from a fixed list kept in sync with `clubhouse-mcp/tools` by a test; plugin tools are always `other`; the binding segment of the name is never sent), `c.mcp.result` (`ok`/`tool_error`/`threw`), `error.type ∈ {mcp_tool_error, mcp_tool_threw}` | S |
+| `c.mcp.tool_calls` counter | tool kind, tool, result | S |
+| `c.mcp.tool_call.duration` histogram | tool kind | S |
 | `c.mcp.auth_rejected` counter | nonce 403s (`:71-82`) | E |
 | `c.mcp.sessions` gauge | SSE connections | D |
 

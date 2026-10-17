@@ -152,6 +152,7 @@ export const IPC = {
     SET_MODEL: 'chat:set-model',
     GET_RUNTIME_SETTINGS: 'chat:get-runtime-settings',
     SAVE_RUNTIME_SETTINGS: 'chat:save-runtime-settings',
+    GET_AGENT_RUNTIME: 'chat:get-agent-runtime',
   },
   FILE: {
     READ_TREE: 'file:read-tree',

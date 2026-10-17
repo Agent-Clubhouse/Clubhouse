@@ -5,9 +5,9 @@
  */
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import type { ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
+import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
 import { PERMISSION_LEVELS } from '../../shared/chat';
-import { getAgentRuntime, readChatTranscript, onChatEvent } from '../services/agent-runtime';
+import { getAgentRuntime, isChatAgent, readChatTranscript, onChatEvent, resolveChatDriver } from '../services/agent-runtime';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as annexEventBus from '../services/annex-event-bus';
@@ -86,6 +86,16 @@ export function registerChatHandlers(): void {
       if (!runtime.setModel) throw new Error('This agent cannot change model');
       await runtime.setModel(modelId, effort);
     },
+  ));
+
+  // Lets the agent pane pick ChatView or the terminal, and offer the
+  // Chat / Terminal switch only when the provider has a chat driver.
+  ipcMain.handle(IPC.CHAT.GET_AGENT_RUNTIME, withValidatedArgs(
+    [stringArg(), stringArg({ optional: true })],
+    async (_event, agentId, provider): Promise<ChatAgentRuntimeInfo> => ({
+      chat: isChatAgent(agentId),
+      chatAvailable: !!resolveChatDriver(provider || 'claude-code'),
+    }),
   ));
 
   ipcMain.handle(IPC.CHAT.GET_RUNTIME_SETTINGS, () => chatRuntimeSettings.getSettings());

@@ -1,0 +1,321 @@
+/**
+ * The composer stays live while a turn runs. Enter steers when the driver can
+ * steer, otherwise "Stop and send" (interrupt, then prompt); Shift+Enter
+ * queues. Stop (Esc) interrupts the turn and keeps the session.
+ */
+
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { PERMISSION_LEVELS, type AvailableCommand, type ChatCapabilities, type PermissionLevel } from '../../../../shared/chat';
+import type { PlanEntry } from '../../../../shared/chat';
+import type { QueuedMessage } from '../../../stores/chatStore';
+import { CheckIcon, ChevronDown, PlanIcon, ShieldIcon, StopIcon, UpIcon } from './icons';
+import { composerModes, LEVEL_DESCRIPTIONS, LEVEL_LABELS, type SendAction } from './view-model';
+
+const ACTION_LABELS: Record<SendAction, string> = {
+  send: 'Send',
+  steer: 'Steer',
+  stop_and_send: 'Stop & send',
+  queue: 'Queue',
+};
+
+function KeyHint({ children }: { children: string }) {
+  return <span className="text-[11px] leading-none opacity-70 border border-current rounded px-1 py-0.5">{children}</span>;
+}
+
+// ── Tasks ───────────────────────────────────────────────────────────────────
+
+export function TaskList({ entries }: { entries: PlanEntry[] }) {
+  const [open, setOpen] = useState(true);
+  const done = entries.filter((e) => e.status === 'completed').length;
+  const allDone = done === entries.length;
+  return (
+    <div className={`border border-surface-0 rounded-lg bg-ctp-mantle px-3 py-2 flex flex-col gap-1.5 ${allDone ? 'opacity-70' : ''}`} data-testid="chat-tasks">
+      <button type="button" className="flex items-center gap-2 text-[12.5px] text-left" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <PlanIcon className="text-ctp-overlay1" />
+        <span className="font-semibold text-ctp-text">Tasks</span>
+        <span className="text-ctp-overlay1 tabular-nums">{done}/{entries.length}</span>
+        <ChevronDown className={`ml-auto text-ctp-overlay0 transition-transform ${open ? '' : '-rotate-90'}`} />
+      </button>
+      {open && (
+        <ul className="flex flex-wrap gap-x-3.5 gap-y-1 m-0 p-0 list-none">
+          {entries.map((e, i) => (
+            <li
+              key={e.id ?? i}
+              className={`flex items-center gap-1.5 text-[12px] ${e.status === 'completed' ? 'text-ctp-overlay0 line-through' : e.status === 'in_progress' ? 'text-ctp-text' : 'text-ctp-subtext0'}`}
+              data-status={e.status}
+            >
+              {e.status === 'completed'
+                ? <CheckIcon size={13} className="text-ctp-success" />
+                : e.status === 'in_progress'
+                  ? <span className="inline-block w-2.5 h-2.5 rounded-full border-[1.5px] border-surface-1 border-t-ctp-success animate-spin" />
+                  : <span className="inline-block w-[11px] h-[11px] rounded-full border-[1.5px] border-surface-2" />}
+              {e.content}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── Queue ───────────────────────────────────────────────────────────────────
+
+export function QueueList({ queued }: { queued: QueuedMessage[] }) {
+  return (
+    <div className="border border-surface-0 rounded-lg bg-ctp-mantle flex flex-col overflow-hidden" data-testid="chat-queue">
+      <div className="flex items-center gap-2 px-3 py-1.5 text-[12px] border-b border-surface-0">
+        <span className="font-semibold text-ctp-text">Queued</span>
+        <span className="text-ctp-overlay1">{queued.length} · sent when this turn ends</span>
+      </div>
+      {queued.map((q, i) => (
+        <div key={q.messageId} className={`flex items-center gap-2.5 px-3 py-1.5 text-[12.5px] text-ctp-subtext1 ${i > 0 ? 'border-t border-surface-0' : ''}`}>
+          <span className="w-[18px] h-[18px] rounded bg-surface-0 grid place-items-center text-[11px] text-ctp-overlay1 flex-shrink-0">{i + 1}</span>
+          <span className="truncate min-w-0">{q.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Level menu ──────────────────────────────────────────────────────────────
+
+function LevelPill({ level, capabilities, onChange }: { level: PermissionLevel | null; capabilities: ChatCapabilities | null; onChange: (l: PermissionLevel) => void }) {
+  const [open, setOpen] = useState(false);
+  const live = capabilities?.liveLevels ?? [];
+  const current = level ?? 'ask';
+  // The driver's own levels, in ladder order; the current level stays listed even if it can't be re-entered live.
+  const levels = PERMISSION_LEVELS.filter((l) => l === current || live.includes(l));
+  const canChange = levels.some((l) => l !== current);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [open]);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        disabled={!canChange}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={canChange ? 'Permission level' : "This agent can't change permission level mid-session"}
+        className="h-[26px] flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] disabled:opacity-60"
+        data-testid="chat-level-pill"
+      >
+        <ShieldIcon size={13} className="text-ctp-overlay1" />
+        {LEVEL_LABELS[current]}
+        {canChange && <ChevronDown className="text-ctp-overlay1" />}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-0 bottom-9 w-[300px] bg-ctp-crust border border-surface-1 rounded-lg shadow-xl p-1.5 z-dropdown flex flex-col gap-px"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Permissions</div>
+          {levels.map((l) => {
+            return (
+              <button
+                key={l}
+                type="button"
+                role="menuitemradio"
+                aria-checked={l === current}
+                onClick={() => { setOpen(false); if (l !== current) onChange(l); }}
+                className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text disabled:opacity-45 ${l === current ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
+              >
+                <span className={`w-3 h-3 rounded-full flex-shrink-0 ${l === current ? 'border-[3.5px] border-ctp-accent' : 'border-[1.5px] border-surface-2'}`} />
+                <span className="flex flex-col">
+                  <span>{LEVEL_LABELS[l]}</span>
+                  <span className="text-[11px] text-ctp-overlay1">{LEVEL_DESCRIPTIONS[l]}</span>
+                </span>
+                {l === 'full_access' && <span className="ml-auto text-[11px] text-ctp-error">no prompts</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Composer ────────────────────────────────────────────────────────────────
+
+export interface ComposerProps {
+  agentName: string;
+  capabilities: ChatCapabilities | null;
+  running: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+  level: PermissionLevel | null;
+  model: string | null;
+  effort: string | null;
+  commands: AvailableCommand[];
+  /** The draft is owned by the caller so it outlives this component. */
+  text: string;
+  onTextChange: (text: string) => void;
+  onSend: (text: string, action: SendAction) => void;
+  onStop: () => void;
+  onLevelChange: (level: PermissionLevel) => void;
+}
+
+export function Composer(props: ComposerProps) {
+  const { capabilities, running, disabled, text, onTextChange: setText } = props;
+  const [cmdIndex, setCmdIndex] = useState(0);
+  const area = useRef<HTMLTextAreaElement>(null);
+  const modes = composerModes(capabilities, running);
+
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [text]);
+
+  const slashMatches = useMemo(() => {
+    if (!capabilities?.slashCommands || !text.startsWith('/') || /\s/.test(text)) return [];
+    const q = text.slice(1).toLowerCase();
+    return props.commands.filter((c) => c.name.toLowerCase().startsWith(q)).slice(0, 8);
+  }, [capabilities?.slashCommands, text, props.commands]);
+
+  useEffect(() => { setCmdIndex(0); }, [slashMatches.length]);
+
+  const submit = (action: SendAction) => {
+    const trimmed = text.trim();
+    if (!trimmed || disabled) return;
+    props.onSend(trimmed, action);
+    setText('');
+  };
+
+  const pickCommand = (c: AvailableCommand) => {
+    setText(`/${c.name} `);
+    area.current?.focus();
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashMatches.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex((i) => (i + 1) % slashMatches.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length); return; }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && text.slice(1) !== slashMatches[cmdIndex].name)) {
+        e.preventDefault();
+        pickCommand(slashMatches[cmdIndex]);
+        return;
+      }
+    }
+    if (e.key === 'Escape' && modes.canStop) {
+      e.preventDefault();
+      props.onStop();
+      return;
+    }
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+    if (e.shiftKey) {
+      // Shift+Enter queues during a turn; otherwise it's a newline.
+      if (!modes.secondary) return;
+      e.preventDefault();
+      submit(modes.secondary);
+      return;
+    }
+    e.preventDefault();
+    submit(modes.primary);
+  };
+
+  const empty = !text.trim();
+  const placeholder = disabled
+    ? props.disabledReason ?? 'This session has ended'
+    : `Message ${props.agentName}…${capabilities?.slashCommands ? ' / for commands' : ''}`;
+
+  return (
+    <div className="relative">
+      {slashMatches.length > 0 && (
+        <div role="listbox" className="absolute left-0 bottom-full mb-1.5 w-[320px] bg-ctp-crust border border-surface-1 rounded-lg shadow-xl p-1 z-dropdown" data-testid="chat-slash-menu">
+          {slashMatches.map((c, i) => (
+            <button
+              key={c.name}
+              type="button"
+              role="option"
+              aria-selected={i === cmdIndex}
+              onMouseDown={(e) => { e.preventDefault(); pickCommand(c); }}
+              className={`w-full flex items-baseline gap-2 px-2 py-1 rounded text-left text-[12.5px] ${i === cmdIndex ? 'bg-surface-0' : ''}`}
+            >
+              <span className="font-mono text-ctp-text">/{c.name}</span>
+              {c.description && <span className="text-[11.5px] text-ctp-overlay1 truncate">{c.description}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className={`border rounded-xl bg-ctp-mantle flex flex-col ${disabled ? 'border-surface-0 opacity-70' : 'border-surface-1 focus-within:border-ctp-accent/60'}`} data-testid="chat-composer">
+        <textarea
+          ref={area}
+          rows={1}
+          value={text}
+          disabled={disabled}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          aria-label="Message"
+          className="resize-none bg-transparent px-3.5 pt-3 pb-1.5 min-h-[44px] text-[13px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none"
+        />
+        <div className="flex items-center gap-1.5 px-2 pb-2 pt-1.5">
+          <LevelPill level={props.level} capabilities={capabilities} onChange={props.onLevelChange} />
+          {props.model && (
+            <span className="h-[26px] flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px]" data-testid="chat-model-pill">
+              {props.model}
+              {props.effort && <span className="text-ctp-overlay0">· {props.effort}</span>}
+            </span>
+          )}
+          <span className="ml-auto flex items-center gap-1.5">
+            {running ? (
+              <>
+                <button
+                  type="button"
+                  disabled={empty || disabled}
+                  onClick={() => submit(modes.primary)}
+                  className="h-7 flex items-center gap-1.5 px-2.5 rounded-md bg-ctp-accent text-ctp-crust text-[12px] font-medium disabled:opacity-40 whitespace-nowrap"
+                  data-testid="chat-send-primary"
+                >
+                  {ACTION_LABELS[modes.primary]} <KeyHint>⏎</KeyHint>
+                </button>
+                {modes.secondary && (
+                  <button
+                    type="button"
+                    disabled={empty || disabled}
+                    onClick={() => submit(modes.secondary!)}
+                    className="h-7 flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] font-medium disabled:opacity-40 whitespace-nowrap"
+                    data-testid="chat-send-secondary"
+                  >
+                    {ACTION_LABELS[modes.secondary]} <KeyHint>⇧⏎</KeyHint>
+                  </button>
+                )}
+                {modes.canStop && (
+                  <button
+                    type="button"
+                    onClick={props.onStop}
+                    title="Stop (Esc)"
+                    aria-label="Stop"
+                    className="w-[30px] h-[30px] rounded-lg bg-surface-1 text-ctp-text grid place-items-center"
+                    data-testid="chat-stop"
+                  >
+                    <StopIcon />
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={empty || disabled}
+                onClick={() => submit('send')}
+                aria-label="Send"
+                className="w-[30px] h-[30px] rounded-lg bg-ctp-accent text-ctp-crust grid place-items-center disabled:opacity-40"
+                data-testid="chat-send"
+              >
+                <UpIcon />
+              </button>
+            )}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
