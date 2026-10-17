@@ -238,7 +238,7 @@ class CodexChatSession implements ChatDriverSession {
     try {
       const info = await this.client.start();
       cliVersion = parseCodexVersion(info?.userAgent);
-      mcp = toCodexMcpServers(opts.mcpServers);
+      mcp = toCodexMcpServers(opts.mcpServers, opts.cwd);
       const shared = {
         cwd: opts.cwd,
         ...(opts.model && { model: opts.model }),

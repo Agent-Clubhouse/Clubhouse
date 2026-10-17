@@ -178,8 +178,13 @@ describe('CodexChatDriver', () => {
     });
     expect(Object.keys((server.requests('thread/start')[0].params as { config: { mcp_servers: object } }).config.mcp_servers))
       .toEqual(['clubhouse', 'remote']);
-    expect((await iterator.next()).value).toMatchObject({ type: 'session_started' });
-    expect((await iterator.next()).value).toEqual({
+    // Find the notice among the opening events rather than at a fixed index,
+    // so other start-up events (commands_available) don't break this.
+    server.send({ method: 'thread/status/changed', params: { threadId: fx.THREAD_ID, status: { type: 'idle' } } });
+    const opening: ChatEventDraft[] = [];
+    for (let i = 0; i < 3; i++) opening.push((await iterator.next()).value as ChatEventDraft);
+    expect(opening[0]).toMatchObject({ type: 'session_started' });
+    expect(opening).toContainEqual({
       type: 'notice',
       data: { level: 'warn', code: 'mcp_servers_skipped', message: "Left out MCP servers Codex can't run: events (Codex has no SSE transport)" },
     });
