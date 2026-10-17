@@ -144,7 +144,7 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Wildcards</h3>
+        <h3 className="text-[13px] font-semibold text-ctp-text">Wildcards</h3>
         <button
           onClick={handleSave}
           disabled={disabled || !dirty || saving}
@@ -167,7 +167,7 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
 
       {/* Identity — read-only computed actuals */}
       <section className="space-y-2">
-        <h4 className="text-xs text-ctp-subtext0/60 uppercase tracking-wider">Identity (read-only)</h4>
+        <h4 className="text-xs font-semibold text-ctp-subtext0">Identity (read-only)</h4>
         <ReadOnlyField token="@@AgentName" value={data.agentName} />
         <ReadOnlyField token="@@StandbyBranch" value={data.standbyBranch} />
         <ReadOnlyField token="@@Path" value={data.agentPath} />
@@ -175,7 +175,7 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
 
       {/* Commands + provider — editable per-agent overrides */}
       <section className="space-y-2">
-        <h4 className="text-xs text-ctp-subtext0/60 uppercase tracking-wider">Commands &amp; provider</h4>
+        <h4 className="text-xs font-semibold text-ctp-subtext0">Commands &amp; provider</h4>
         <CommandField
           token="@@BuildCommand"
           value={form.buildCommand}
@@ -214,7 +214,7 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
 
       {/* Mission + persona — authorable library fields */}
       <section className="space-y-3">
-        <h4 className="text-xs text-ctp-subtext0/60 uppercase tracking-wider">Mission &amp; persona</h4>
+        <h4 className="text-xs font-semibold text-ctp-subtext0">Mission &amp; persona</h4>
         <WildcardLibraryField
           token="@@Mission"
           help="The mission body substituted for @@Mission. Authored under .clubhouse/missions/."

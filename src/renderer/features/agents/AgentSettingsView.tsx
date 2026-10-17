@@ -22,81 +22,88 @@ import { exportAgentAsTemplate } from '../blueprints/agent-template-export';
 import { serializeManifest } from '../blueprints/blueprint-export';
 import { PERSONA_TEMPLATES } from '../personas';
 import type { AgentRuntimeMode } from '../../../shared/chat';
-
-type SettingsTab = 'main' | 'quick';
+import { Toggle } from '../../components/Toggle';
+import { useChromeFlagStore } from '../../chrome/chromeFlag';
+import {
+  AGENT_SETTINGS_PAGES,
+  useAgentSettingsPages,
+  type AgentSettingsPage,
+  type AgentSettingsTextPage,
+} from './agentSettingsPages';
+import { buttonClass, Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
 
 interface Props {
   agent: Agent;
 }
 
+/** Catalog diff states as plain colored words (#2015). */
+const MCP_STATE_WORD: Partial<Record<McpCatalogEntryWithState['state'], { word: string; className: string }>> = {
+  new: { word: 'new', className: 'text-ctp-success' },
+  changed: { word: 'changed', className: 'text-ctp-warning' },
+  removed: { word: 'removed', className: 'text-ctp-error' },
+};
+
 function McpConfigRow({
   entry,
   checked,
   configs,
+  disabled,
   onToggle,
   onConfigChange,
 }: {
   entry: McpCatalogEntryWithState;
   checked: boolean;
   configs: Record<string, string>;
+  disabled?: boolean;
   onToggle: () => void;
   onConfigChange: (flag: string, value: string) => void;
 }) {
   const hasArgs = entry.args && entry.args.length > 0;
   const [expanded, setExpanded] = useState(false);
   const isRemoved = entry.state === 'removed';
+  const stateWord = MCP_STATE_WORD[entry.state];
 
-  // Detect boolean flags by description heuristic — render as toggle chips, not text inputs.
+  // Detect boolean flags by description heuristic: render them as toggles, not text inputs.
   const isBooleanFlag = (a: McpCatalogArg) =>
     !a.description || /^(enable|disable|force|use)\b/i.test(a.description);
   const booleanArgs = (entry.args || []).filter(isBooleanFlag);
   const textArgs = (entry.args || []).filter((a) => !isBooleanFlag(a));
 
   return (
-    <div className={expanded ? 'col-span-2' : ''}>
-      <div
-        className={`flex items-center gap-2 py-1 px-2 rounded hover:bg-surface-0 ${
-          isRemoved ? 'opacity-70' : ''
-        }`}
-        title={entry.description}
-      >
-        <label className="flex items-center gap-2 flex-1 cursor-pointer min-w-0">
+    <div className="border-t border-surface-0">
+      <div className={`h-[30px] flex items-center gap-2 ${isRemoved ? 'opacity-70' : ''}`}>
+        <label className="flex items-center gap-2 flex-1 cursor-pointer min-w-0" title={entry.description}>
           <input
             type="checkbox"
             checked={checked}
             onChange={onToggle}
-            className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-ctp-blue focus:ring-ctp-blue shrink-0"
+            disabled={disabled}
+            className="w-3.5 h-3.5 rounded accent-ctp-accent shrink-0"
           />
-          <span className="text-xs text-ctp-text truncate flex items-center gap-1.5">
-            {entry.name}
-            {entry.state === 'new' && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-green/15 text-ctp-green uppercase tracking-wider">new</span>
-            )}
-            {entry.state === 'changed' && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-yellow/15 text-ctp-yellow uppercase tracking-wider">changed</span>
-            )}
-            {entry.state === 'removed' && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ctp-red/15 text-ctp-red uppercase tracking-wider">removed</span>
-            )}
-          </span>
+          <span className="text-[13px] text-ctp-text truncate">{entry.name}</span>
+          {stateWord && <span className={`text-xs ${stateWord.className}`}>{stateWord.word}</span>}
         </label>
         {hasArgs && (
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}
-            className="text-xs text-ctp-subtext0 hover:text-ctp-text transition-colors shrink-0 px-1"
-            title="Configure parameters"
+            aria-expanded={expanded}
+            aria-label={`Parameters for ${entry.name}`}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
           >
-            {expanded ? '▴' : '▾'}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+              className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
           </button>
         )}
       </div>
       {expanded && hasArgs && (
-        <div className="mt-1.5 ml-7 mb-2 space-y-1.5">
+        <div className="ml-6 mb-2 space-y-1.5">
           {textArgs.map((arg) => (
             <div key={arg.name} className="flex items-center gap-2">
-              <span className="text-xs text-ctp-subtext0 font-mono w-28 text-right shrink-0 flex items-center justify-end gap-1">
-                {arg.required && <span className="w-1 h-1 rounded-full bg-ctp-yellow inline-block" title="Required" />}
+              <span className="text-xs text-ctp-overlay1 font-mono w-28 text-right shrink-0 flex items-center justify-end gap-1">
+                {arg.required && <span className="w-1 h-1 rounded-full bg-ctp-warning inline-block" role="img" aria-label="Required" />}
                 {arg.name.replace(/^--/, '')}
               </span>
               <input
@@ -104,30 +111,25 @@ function McpConfigRow({
                 value={configs[arg.name] || ''}
                 onChange={(e) => onConfigChange(arg.name, e.target.value)}
                 placeholder={arg.description || ''}
-                className="flex-1 text-xs bg-surface-0 border border-surface-2 rounded px-2 py-1 text-ctp-text placeholder:text-ctp-subtext0/40 placeholder:italic focus-ring-dim transition-colors"
+                disabled={disabled}
+                className={`flex-1 ${inputClass}`}
               />
             </div>
           ))}
           {booleanArgs.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-1">
-              {booleanArgs.map((arg) => {
-                const active = configs[arg.name] === 'true';
-                return (
-                  <button
-                    key={arg.name}
-                    type="button"
-                    onClick={() => onConfigChange(arg.name, active ? '' : 'true')}
-                    title={arg.description || ''}
-                    className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
-                      active
-                        ? 'border-ctp-blue/50 bg-ctp-blue/15 text-ctp-blue'
-                        : 'border-surface-2 text-ctp-subtext0 hover:border-ctp-subtext0'
-                    }`}
-                  >
-                    {arg.name.replace(/^--/, '')}
-                  </button>
-                );
-              })}
+            <div className="flex flex-col">
+              {booleanArgs.map((arg) => (
+                <label key={arg.name} className="h-7 flex items-center gap-2 text-xs text-ctp-subtext1 cursor-pointer" title={arg.description || undefined}>
+                  <input
+                    type="checkbox"
+                    checked={configs[arg.name] === 'true'}
+                    onChange={(e) => onConfigChange(arg.name, e.target.checked ? 'true' : '')}
+                    disabled={disabled}
+                    className="w-3.5 h-3.5 rounded accent-ctp-accent shrink-0"
+                  />
+                  <span className="font-mono">{arg.name.replace(/^--/, '')}</span>
+                </label>
+              ))}
             </div>
           )}
         </div>
@@ -159,52 +161,65 @@ export function AgentSettingsView({ agent }: Props) {
     [effectiveOrchestrators, allOrchestrators, agentOrchestrator],
   );
 
-  // Tab state
-  const [activeTab, setActiveTab] = useState<SettingsTab>('main');
+  // The new chrome lists the pages in the sidebar and shows one at a time;
+  // the classic shell stacks them on one page.
+  const pageMode = useChromeFlagStore((s) => s.enabled);
+  const page = useAgentSettingsPages((s) => s.page);
+  const setPage = useAgentSettingsPages((s) => s.setPage);
+  const setDirtyPages = useAgentSettingsPages((s) => s.setDirtyPages);
+  const setCount = useAgentSettingsPages((s) => s.setCount);
+  const resetPages = useAgentSettingsPages((s) => s.reset);
+  const killAgent = useAgentStore((s) => s.killAgent);
 
-  // Utility terminal collapse state
-  const [terminalExpanded, setTerminalExpanded] = useState(false);
-  const [terminalHasOpened, setTerminalHasOpened] = useState(false);
+  // Every agent opens on General with its shell closed.
+  useEffect(() => {
+    resetPages();
+  }, [agent.id, resetPages]);
 
-  const handleTerminalToggle = () => {
-    if (!terminalExpanded) setTerminalHasOpened(true);
-    setTerminalExpanded((prev) => !prev);
-  };
+  // Shell in worktree: the sidebar row (new chrome) or the row under the page
+  // (classic) opens it. It stays mounted once opened.
+  const shellOpen = useAgentSettingsPages((s) => s.shellOpen);
+  const setShellOpen = useAgentSettingsPages((s) => s.setShellOpen);
+  const [shellHasOpened, setShellHasOpened] = useState(false);
+  useEffect(() => {
+    if (shellOpen) setShellHasOpened(true);
+  }, [shellOpen]);
 
-  // Appearance editing state
-  const [isRenaming, setIsRenaming] = useState(false);
+  // Appearance editing state. The name saves on blur or Enter, like the other General settings.
   const [renameValue, setRenameValue] = useState(agent.name);
   const [cropImageDataUrl, setCropImageDataUrl] = useState<string | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
-  const renameInputRef = useRef<HTMLInputElement>(null);
   const { pickAgentIcon, saveAgentIcon, removeAgentIcon, agentIcons } = useAgentStore();
   const iconDataUrl = agentIcons[agent.id];
 
   useEffect(() => {
-    if (isRenaming && renameInputRef.current) {
-      renameInputRef.current.focus();
-      renameInputRef.current.select();
-    }
-  }, [isRenaming]);
+    setRenameValue(agent.name);
+  }, [agent.name]);
 
   const handleRenameConfirm = async () => {
     const trimmed = renameValue.trim();
-    if (trimmed && trimmed !== agent.name && activeProject) {
+    if (!trimmed) {
+      setRenameValue(agent.name);
+      return;
+    }
+    if (trimmed !== agent.name && activeProject) {
       await updateAgent(agent.id, { name: trimmed }, activeProject.path);
     }
-    setIsRenaming(false);
   };
 
-  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+  const handleRenameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      handleRenameConfirm();
+      e.currentTarget.blur();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       setRenameValue(agent.name);
-      setIsRenaming(false);
     }
+  };
+
+  const handleStop = async () => {
+    await killAgent(agent.id);
   };
 
   const handleColorChange = async (colorId: string) => {
@@ -332,8 +347,11 @@ export function AgentSettingsView({ agent }: Props) {
   // Resolve capabilities for the agent's orchestrator
   const capabilities = allOrchestrators.find((o) => o.id === agentOrchestrator)?.capabilities;
 
+  // Text edits wait for the save bar. Each keeps what was last loaded or saved,
+  // so Discard can put it back.
   // Instructions state
   const [instructions, setInstructions] = useState('');
+  const [instructionsBase, setInstructionsBase] = useState('');
   const [instructionsDirty, setInstructionsDirty] = useState(false);
   const [instructionsSaving, setInstructionsSaving] = useState(false);
   const [instructionsLoaded, setInstructionsLoaded] = useState(false);
@@ -341,6 +359,7 @@ export function AgentSettingsView({ agent }: Props) {
   // Permissions state (main agent — stored in .claude/settings.local.json)
   const [permAllow, setPermAllow] = useState('');
   const [permDeny, setPermDeny] = useState('');
+  const [permBase, setPermBase] = useState({ allow: '', deny: '' });
   const [permDirty, setPermDirty] = useState(false);
   const [permSaving, setPermSaving] = useState(false);
   const [permLoaded, setPermLoaded] = useState(false);
@@ -354,6 +373,7 @@ export function AgentSettingsView({ agent }: Props) {
   const [qadDefaultModel, setQadDefaultModel] = useState('');
   const [qadCustomModel, setQadCustomModel] = useState('');
   const [qadSavedModel, setQadSavedModel] = useState('');
+  const [qadBase, setQadBase] = useState({ systemPrompt: '', allowedTools: '', savedModel: '', freeAgentMode: false });
 
   // Split the raw persisted model ids into dropdown selection + custom text box.
   // Deliberately gated on `modelOptionsLoading` and re-run when MODEL_OPTIONS
@@ -580,11 +600,19 @@ export function AgentSettingsView({ agent }: Props) {
         const config = await window.clubhouse.agent.getDurableConfig(projectPath, agent.id);
         const defaults = config?.quickAgentDefaults;
         if (defaults) {
-          setQadSystemPrompt(defaults.systemPrompt || '');
-          setQadAllowedTools((defaults.allowedTools || []).join('\n'));
-          setQadSavedModel(defaults.defaultModel || '');
-          setQadFreeAgentMode(defaults.freeAgentMode ?? false);
+          const base = {
+            systemPrompt: defaults.systemPrompt || '',
+            allowedTools: (defaults.allowedTools || []).join('\n'),
+            savedModel: defaults.defaultModel || '',
+            freeAgentMode: defaults.freeAgentMode ?? false,
+          };
+          setQadSystemPrompt(base.systemPrompt);
+          setQadAllowedTools(base.allowedTools);
+          setQadSavedModel(base.savedModel);
+          setQadFreeAgentMode(base.freeAgentMode);
+          setQadBase(base);
         }
+        setQadDirty(false);
         // Sync agent model from disk — disk is the source of truth. Classification
         // into known-vs-custom is left to the effect that waits on MODEL_OPTIONS.
         setSavedModel(config?.model || 'default');
@@ -658,6 +686,7 @@ export function AgentSettingsView({ agent }: Props) {
       try {
         const content = await window.clubhouse.agentSettings.readInstructions(readPath, projectPath);
         setInstructions(content || '');
+        setInstructionsBase(content || '');
         setInstructionsLoaded(true);
         setInstructionsDirty(false);
       } catch {
@@ -673,8 +702,10 @@ export function AgentSettingsView({ agent }: Props) {
     (async () => {
       try {
         const perms = await window.clubhouse.agentSettings.readPermissions(readPath, projectPath);
-        setPermAllow((perms.allow || []).join('\n'));
-        setPermDeny((perms.deny || []).join('\n'));
+        const base = { allow: (perms.allow || []).join('\n'), deny: (perms.deny || []).join('\n') };
+        setPermAllow(base.allow);
+        setPermDeny(base.deny);
+        setPermBase(base);
         setPermLoaded(true);
         setPermDirty(false);
       } catch {
@@ -688,6 +719,7 @@ export function AgentSettingsView({ agent }: Props) {
     if (!writePath || !projectPath) return;
     setInstructionsSaving(true);
     await window.clubhouse.agentSettings.saveInstructions(writePath, instructions, projectPath);
+    setInstructionsBase(instructions);
     setInstructionsDirty(false);
     setInstructionsSaving(false);
   };
@@ -702,6 +734,7 @@ export function AgentSettingsView({ agent }: Props) {
       allow: allow.length > 0 ? allow : undefined,
       deny: deny.length > 0 ? deny : undefined,
     }, projectPath);
+    setPermBase({ allow: permAllow, deny: permDeny });
     setPermDirty(false);
     setPermSaving(false);
   };
@@ -738,742 +771,709 @@ export function AgentSettingsView({ agent }: Props) {
     if (resolvedQadModel && resolvedQadModel !== 'default') defaults.defaultModel = resolvedQadModel;
     if (qadFreeAgentMode) defaults.freeAgentMode = true;
     await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { quickAgentDefaults: defaults });
+    setQadBase({
+      systemPrompt: qadSystemPrompt,
+      allowedTools: qadAllowedTools,
+      savedModel: resolvedQadModel && resolvedQadModel !== 'default' ? resolvedQadModel : '',
+      freeAgentMode: qadFreeAgentMode,
+    });
     setQadDirty(false);
     setQadSaving(false);
   };
 
-  // Check if the main tab has unsaved changes
-  const mainDirty = instructionsDirty || permDirty;
+  // ── One save bar for text edits ────────────────────────────────
 
-  return (
-    <div className="h-full flex flex-col bg-ctp-base overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-surface-0 flex-shrink-0">
-        <button
-          onClick={closeAgentSettings}
-          className="text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer"
-          title="Back"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 12H5" />
-            <path d="M12 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <AgentAvatar agent={agent} size="xs" iconUrl={iconDataUrl} />
-        <span className="text-sm font-medium text-ctp-text">{agent.name}</span>
-        <span className="text-xs text-ctp-subtext0">Settings</span>
-        <div className="ml-auto flex items-center gap-1">
-          <button
-            onClick={handleExportAsTemplate}
-            disabled={exportingTemplate}
-            className="text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer p-1 disabled:opacity-50"
-            title="Export as Template (copy to clipboard)"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-          </button>
-          <button
-            onClick={handleRefreshAll}
-            className="text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer p-1"
-            title="Refresh from disk"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 2v6h-6" />
-              <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-              <path d="M3 22v-6h6" />
-              <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-            </svg>
-          </button>
-        </div>
-      </div>
+  const dirtyPages = useMemo(() => {
+    const pages: AgentSettingsTextPage[] = [];
+    if (instructionsDirty) pages.push('instructions');
+    if (permDirty) pages.push('permissions');
+    if (qadDirty) pages.push('quick');
+    return pages;
+  }, [instructionsDirty, permDirty, qadDirty]);
 
-      {/* Running banner */}
-      {isRunning && (
-        <div className="px-4 py-2 bg-ctp-warning/10 border-b border-ctp-warning/20 text-xs text-ctp-warning flex-shrink-0">
-          Settings are read-only while this agent is running.
-        </div>
-      )}
+  useEffect(() => {
+    setDirtyPages(dirtyPages);
+  }, [dirtyPages, setDirtyPages]);
 
-      {/* Clubhouse Mode banner */}
-      {clubhouseActive && (
-        <div className={`px-4 py-2 border-b flex-shrink-0 ${
-          isManagedByClubhouse
-            ? 'bg-ctp-success/10 border-ctp-success/20'
-            : 'bg-ctp-warning/10 border-ctp-warning/20'
-        }`}>
-          <div className="flex items-center justify-between">
-            <span className={`text-xs ${isManagedByClubhouse ? 'text-ctp-success' : 'text-ctp-warning'}`}>
-              {isManagedByClubhouse
-                ? 'Clubhouse Mode is active. Settings are managed from project defaults and refreshed on agent wake.'
-                : 'Clubhouse Mode is active but local overrides are enabled for this agent.'}
-            </span>
-          </div>
-          <label className="flex items-center gap-2 mt-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={clubhouseModeOverride}
-              onChange={(e) => handleClubhouseOverrideChange(e.target.checked)}
+  const saving = instructionsSaving || permSaving || qadSaving;
+
+  const handleSaveAll = async () => {
+    if (instructionsDirty) await handleSaveInstructions();
+    if (permDirty) await handleSavePermissions();
+    if (qadDirty) await handleSaveQad();
+  };
+
+  const handleDiscard = () => {
+    setInstructions(instructionsBase);
+    setInstructionsDirty(false);
+    setPermAllow(permBase.allow);
+    setPermDeny(permBase.deny);
+    setPermDirty(false);
+    setQadSystemPrompt(qadBase.systemPrompt);
+    setQadAllowedTools(qadBase.allowedTools);
+    setQadFreeAgentMode(qadBase.freeAgentMode);
+    setQadSavedModel(qadBase.savedModel);
+    if (qadBase.savedModel && !isKnownModel(qadBase.savedModel)) {
+      setQadDefaultModel('custom');
+      setQadCustomModel(qadBase.savedModel);
+    } else {
+      setQadDefaultModel(qadBase.savedModel);
+      setQadCustomModel('');
+    }
+    setQadDirty(false);
+  };
+
+  // ── Sidebar counts (new chrome) ────────────────────────────────
+
+  useEffect(() => {
+    if (!pageMode || !worktreePath || isManagedByClubhouse) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [skills, definitions, mcpRaw] = await Promise.all([
+          window.clubhouse.agentSettings.listSkills(worktreePath, projectPath),
+          window.clubhouse.agentSettings.listAgentTemplateFiles(worktreePath, projectPath),
+          window.clubhouse.agentSettings.readMcpRawJson(worktreePath, projectPath),
+        ]);
+        if (cancelled) return;
+        setCount('skills', skills.length);
+        setCount('definitions', definitions.length);
+        const servers = (JSON.parse(mcpRaw) as { mcpServers?: Record<string, unknown> }).mcpServers;
+        setCount('mcp', servers && typeof servers === 'object' ? Object.keys(servers).length : 0);
+      } catch {
+        // telemetry-exempt: the sidebar counts are optional; the pages report their own load failures
+      }
+    })();
+    return () => { cancelled = true; };
+    // Re-count when a page changes, so edits on the Skills page show on return.
+  }, [pageMode, worktreePath, projectPath, isManagedByClubhouse, refreshKey, page, setCount]);
+
+  // ── Pieces ─────────────────────────────────────────────────────
+
+  const relativeWorktree = projectPath && worktreePath.startsWith(`${projectPath}/`)
+    ? worktreePath.slice(projectPath.length + 1)
+    : worktreePath;
+  const permissionsSupported = capabilities?.permissions ?? false;
+  const orchestratorName = orchestratorInfo?.displayName || 'this orchestrator';
+  const stopFirst = isRunning ? 'Stop the agent to change this' : undefined;
+
+  const reloadButton = (
+    <button
+      type="button"
+      onClick={handleRefreshAll}
+      className={buttonClass('quiet')}
+      title="Reload from disk"
+      aria-label="Reload from disk"
+      data-testid="agent-settings-reload"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M21 2v6h-6" />
+        <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+        <path d="M3 22v-6h6" />
+        <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+      </svg>
+    </button>
+  );
+
+  const runningLine = isRunning && (
+    <div data-testid="agent-settings-running" className="h-10 mb-2 flex items-center gap-2 border-b border-surface-0 text-[13px]">
+      <span className="w-2 h-2 rounded-full flex-shrink-0 bg-ctp-success" aria-hidden="true" />
+      <span className="text-ctp-text">Working</span>
+      <span className="text-xs text-ctp-overlay1 truncate">Stop the agent to change these settings.</span>
+      <button type="button" onClick={handleStop} className={`${buttonClass('ghost')} ml-auto`}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" /></svg>
+        Stop
+      </button>
+    </div>
+  );
+
+  const freeAgentModeHelp = !permissionsSupported
+    ? `Not supported by ${orchestratorName}.`
+    : 'Skip every permission prompt while this agent runs.';
+
+  const general = (
+    <>
+      <SectionHeading title="Identity" />
+      <Field label="Name" htmlFor="agent-settings-name">
+        <input
+          id="agent-settings-name"
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onBlur={handleRenameConfirm}
+          onKeyDown={handleRenameKeyDown}
+          disabled={isRunning}
+          title={isRunning ? 'Stop the agent to rename it' : undefined}
+          spellCheck={false}
+          className={`${inputClass} w-60`}
+        />
+      </Field>
+      <Field label="Color">
+        <div role="radiogroup" aria-label="Color" className="flex gap-2">
+          {AGENT_COLORS.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              role="radio"
+              aria-checked={agent.color === c.id}
+              aria-label={c.label}
+              onClick={() => handleColorChange(c.id)}
               disabled={isRunning}
-              className="w-3 h-3 rounded border-surface-2 bg-surface-0 accent-ctp-accent"
+              className={`w-[18px] h-[18px] rounded-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
+                agent.color === c.id ? 'outline outline-2 outline-offset-2 outline-ctp-text' : ''
+              }`}
+              style={{ backgroundColor: c.hex }}
             />
-            <span className="text-xs text-ctp-subtext0">Enable local overrides</span>
-          </label>
+          ))}
         </div>
+      </Field>
+      <Field label="Icon" help="An image or emoji in place of the initials.">
+        <div className="relative flex items-center gap-2">
+          <AgentAvatar agent={agent} size="xs" iconUrl={iconDataUrl} />
+          <button type="button" onClick={handlePickIcon} disabled={isRunning} className={buttonClass('ghost')}>
+            Choose image…
+          </button>
+          <button
+            type="button"
+            ref={emojiButtonRef}
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            disabled={isRunning}
+            className={buttonClass('quiet')}
+          >
+            Emoji…
+          </button>
+          {((agent.icon && iconDataUrl) || agent.emoji) && !isRunning && (
+            <button type="button" onClick={agent.emoji ? handleRemoveEmoji : handleRemoveIcon} className={buttonClass('quiet')}>
+              Remove
+            </button>
+          )}
+          {showEmojiPicker && (
+            <div className="absolute top-8 right-0 z-dropdown">
+              <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmojiPicker(false)} />
+            </div>
+          )}
+        </div>
+      </Field>
+
+      <SectionHeading title="Runtime" sub="Applied on the next wake" />
+      {orchestratorOptions.length > 1 ? (
+        <Field label="Orchestrator" htmlFor="agent-settings-orchestrator">
+          <select
+            id="agent-settings-orchestrator"
+            value={agentOrchestrator}
+            onChange={(e) => handleOrchestratorChange(e.target.value)}
+            disabled={isRunning}
+            title={stopFirst}
+            className={selectClass}
+          >
+            {orchestratorOptions.map((o) => (
+              <option key={o.id} value={o.id}>{o.displayName}</option>
+            ))}
+          </select>
+        </Field>
+      ) : (orchestratorInfo || orchestratorOptions[0]) ? (
+        <Field label="Orchestrator">
+          <span className="text-xs text-ctp-subtext1">{(orchestratorInfo || orchestratorOptions[0]).displayName}</span>
+        </Field>
+      ) : null}
+      <Field label="Model" htmlFor="agent-settings-model">
+        {agentModel === 'custom' && (
+          <input
+            type="text"
+            aria-label="Custom model"
+            value={agentCustomModel}
+            onChange={(e) => setAgentCustomModel(e.target.value)}
+            onBlur={handleCustomModelBlur}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCustomModelBlur(); }}
+            placeholder="e.g. claude-opus-4-6"
+            disabled={isRunning}
+            spellCheck={false}
+            className={`${inputClass} w-44`}
+          />
+        )}
+        <select
+          id="agent-settings-model"
+          value={agentModel}
+          onChange={(e) => handleModelChange(e.target.value)}
+          disabled={isRunning}
+          title={stopFirst}
+          className={selectClass}
+        >
+          {MODEL_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>{opt.label}</option>
+          ))}
+          <option value="custom">Custom...</option>
+        </select>
+      </Field>
+      {chatFlagEnabled && (
+        <Field label="Runtime" help="Chat or terminal for this agent. Overrides the provider setting." htmlFor="agent-settings-runtime">
+          <select
+            id="agent-settings-runtime"
+            aria-label="Runtime"
+            value={runtimeMode}
+            onChange={(e) => handleRuntimeModeChange(e.target.value as AgentRuntimeMode | '')}
+            disabled={isRunning}
+            title={stopFirst}
+            className={selectClass}
+          >
+            <option value="">Provider default</option>
+            <option value="chat">Chat</option>
+            <option value="terminal">Terminal</option>
+          </select>
+        </Field>
       )}
+      <Field
+        label="Persona"
+        help={<>Overrides the project persona when Clubhouse Mode is on. See <code className="font-mono">.clubhouse/clubhouse-mode.md</code>.</>}
+        htmlFor="agent-settings-persona"
+      >
+        <select
+          id="agent-settings-persona"
+          value={agentPersona}
+          onChange={(e) => handlePersonaChange(e.target.value)}
+          disabled={isRunning}
+          title={stopFirst}
+          className={selectClass}
+        >
+          <option value="">Project default</option>
+          {PERSONA_TEMPLATES.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      </Field>
+      <Field
+        label="Free agent mode"
+        help={freeAgentMode && permissionsSupported
+          ? <span className="text-ctp-error">This agent runs with full access and no tool approvals.</span>
+          : freeAgentModeHelp}
+        testId="agent-settings-free-agent-mode"
+      >
+        <Toggle
+          checked={freeAgentMode}
+          onChange={handleFreeAgentModeChange}
+          disabled={isRunning || !permissionsSupported}
+          ariaLabel="Free agent mode"
+        />
+      </Field>
 
-      {/* Top 2/3: scrollable settings */}
-      <div className="flex-[2] overflow-y-auto min-h-0 px-4 py-4 space-y-6">
-        {/* Appearance Section (shared, above tabs) */}
-        <section>
-          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-3">Appearance</h3>
-          <div className="flex items-start gap-4">
-            {/* Large avatar preview */}
-            <AgentAvatar agent={agent} size="lg" iconUrl={iconDataUrl} />
-
-            <div className="flex-1 space-y-3">
-              {/* Rename */}
-              <div>
-                <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Name</span>
-                <div className="flex gap-2 mt-1">
-                  {isRenaming ? (
-                    <input
-                      ref={renameInputRef}
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onBlur={handleRenameConfirm}
-                      onKeyDown={handleRenameKeyDown}
-                      className="flex-1 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring"
-                    />
-                  ) : (
-                    <>
-                      <span className="flex-1 text-sm text-ctp-text truncate py-1">{agent.name}</span>
-                      <button
-                        onClick={() => { setRenameValue(agent.name); setIsRenaming(true); }}
-                        disabled={agent.status === 'running'}
-                        className={`text-xs px-2 py-1 rounded transition-colors ${
-                          agent.status === 'running'
-                            ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed'
-                            : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer'
-                        }`}
-                        title={agent.status === 'running' ? 'Stop agent to rename' : 'Rename'}
-                      >
-                        Rename
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Color picker */}
-              <div>
-                <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Color</span>
-                <div className="flex gap-2 mt-1.5">
-                  {AGENT_COLORS.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => handleColorChange(c.id)}
-                      disabled={isRunning}
-                      className={`w-6 h-6 rounded-full transition-all ${
-                        isRunning ? 'cursor-not-allowed opacity-40' :
-                        agent.color === c.id ? 'ring-2 ring-offset-2 ring-offset-ctp-base scale-110 cursor-pointer' : 'opacity-60 hover:opacity-100 cursor-pointer'
-                      }`}
-                      style={{ backgroundColor: c.hex, ...(agent.color === c.id ? { boxShadow: `0 0 0 2px ${c.hex}40` } : {}) }}
-                      title={c.label}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Icon upload / emoji */}
-              <div>
-                <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Icon</span>
-                <div className="flex gap-2 mt-1 relative">
-                  <button
-                    onClick={handlePickIcon}
-                    disabled={isRunning}
-                    className={`px-3 py-1 text-xs rounded-lg bg-surface-0 border border-surface-2
-                      text-ctp-text hover:bg-surface-1 cursor-pointer transition-colors
-                      ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    Choose Image
-                  </button>
-                  <button
-                    ref={emojiButtonRef}
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    disabled={isRunning}
-                    className={`px-3 py-1 text-xs rounded-lg bg-surface-0 border border-surface-2
-                      text-ctp-text hover:bg-surface-1 cursor-pointer transition-colors
-                      ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    Choose Emoji
-                  </button>
-                  {((agent.icon && iconDataUrl) || agent.emoji) && !isRunning && (
-                    <button
-                      onClick={agent.emoji ? handleRemoveEmoji : handleRemoveIcon}
-                      className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:text-ctp-error hover:border-ctp-error/50 cursor-pointer transition-colors"
-                    >
-                      Remove
-                    </button>
-                  )}
-                  {showEmojiPicker && (
-                    <div className="absolute top-8 left-0 z-dropdown">
-                      <EmojiPicker
-                        onSelect={handleEmojiSelect}
-                        onClose={() => setShowEmojiPicker(false)}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Orchestrator */}
-              {orchestratorOptions.length > 1 ? (
-                <div>
-                  <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
-                  <select
-                    value={agentOrchestrator}
-                    onChange={(e) => handleOrchestratorChange(e.target.value)}
-                    disabled={agent.status === 'running'}
-                    className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {orchestratorOptions.map((o) => (
-                      <option key={o.id} value={o.id}>{o.displayName}</option>
-                    ))}
-                  </select>
-                </div>
-              ) : (orchestratorInfo || orchestratorOptions[0]) ? (
-                <div>
-                  <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
-                  <p className="mt-1 text-sm text-ctp-text">{(orchestratorInfo || orchestratorOptions[0]).displayName}</p>
-                </div>
-              ) : null}
-
-              {/* Model */}
-              <div>
-                <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Model</span>
-                <select
-                  value={agentModel}
-                  onChange={(e) => handleModelChange(e.target.value)}
-                  disabled={agent.status === 'running'}
-                  className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {MODEL_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>{opt.label}</option>
-                  ))}
-                  <option value="custom">Custom...</option>
-                </select>
-                {agentModel === 'custom' && (
-                  <input
-                    type="text"
-                    value={agentCustomModel}
-                    onChange={(e) => setAgentCustomModel(e.target.value)}
-                    onBlur={handleCustomModelBlur}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleCustomModelBlur(); }}
-                    placeholder="e.g. claude-opus-4-6"
-                    disabled={agent.status === 'running'}
-                    className="mt-1.5 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
-                  />
-                )}
-              </div>
-
-              {/* Runtime (Chat / Terminal) override — experimental Chat flag only */}
-              {chatFlagEnabled && (
-                <div title={isRunning ? 'Stop the agent to change this' : undefined}>
-                  <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Runtime</span>
-                  <select
-                    aria-label="Runtime"
-                    value={runtimeMode}
-                    onChange={(e) => handleRuntimeModeChange(e.target.value as AgentRuntimeMode | '')}
-                    disabled={isRunning}
-                    title={isRunning ? 'Stop the agent to change this' : undefined}
-                    className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <option value="">Provider default</option>
-                    <option value="chat">Chat</option>
-                    <option value="terminal">Terminal</option>
-                  </select>
-                  <p className="mt-1 text-xs text-ctp-subtext0/60">
-                    Overrides this provider's Chat / Terminal setting for this agent. Applied the next time the agent starts.
-                  </p>
-                </div>
-              )}
-
-              {/* Persona */}
-              <div>
-                <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Persona</span>
-                <select
-                  value={agentPersona}
-                  onChange={(e) => handlePersonaChange(e.target.value)}
-                  className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring"
-                >
-                  <option value="">Project default</option>
-                  {PERSONA_TEMPLATES.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-ctp-subtext0/60">
-                  Overrides the project default persona. Applied on the next agent wake. Effective only when Clubhouse Mode is on for this project — see <code className="bg-surface-0 px-0.5 rounded">.clubhouse/clubhouse-mode.md</code>.
-                </p>
-              </div>
-
-              {/* Free Agent Mode */}
-              <div>
-                <label
-                  className={`flex items-center gap-2 ${
-                    !isRunning && (capabilities?.permissions ?? false)
-                      ? 'cursor-pointer'
-                      : 'cursor-not-allowed opacity-50'
-                  }`}
-                  title={
-                    !(capabilities?.permissions ?? false)
-                      ? 'Not supported by this orchestrator'
-                      : isRunning
-                      ? 'Stop agent to change this setting'
-                      : 'Skip all permission prompts when running'
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={freeAgentMode}
-                    onChange={(e) => handleFreeAgentModeChange(e.target.checked)}
-                    disabled={isRunning || !(capabilities?.permissions ?? false)}
-                    className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-ctp-error"
-                  />
-                  <span className="text-sm text-ctp-text">Free Agent Mode</span>
-                </label>
-                {freeAgentMode && (capabilities?.permissions ?? false) && (
-                  <p className="mt-1 text-xs text-ctp-error pl-6">
-                    This agent will run with full access — no tool approvals required.
-                  </p>
-                )}
-                {!(capabilities?.permissions ?? false) && (
-                  <p className="mt-1 text-xs text-ctp-subtext0/60 pl-6">
-                    Not supported by {orchestratorInfo?.displayName || 'this orchestrator'}.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Tab Bar */}
-        <div className="flex border-b border-surface-1">
-          <button
-            onClick={() => setActiveTab('main')}
-            className={`px-4 py-2 text-xs font-medium transition-colors relative cursor-pointer ${
-              activeTab === 'main'
-                ? 'text-ctp-text'
-                : 'text-ctp-subtext0 hover:text-ctp-text'
-            }`}
+      {clubhouseActive && (
+        <>
+          <SectionHeading title="Clubhouse Mode" />
+          <Field
+            label="Local overrides"
+            help={isManagedByClubhouse
+              ? 'Off: settings come from project defaults and refresh when the agent wakes.'
+              : 'On: this agent keeps its own instructions, skills, MCP servers and permissions.'}
+            testId="agent-settings-clubhouse-mode"
           >
-            Main Agent
-            {mainDirty && (
-              <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-ctp-accent inline-block" />
-            )}
-            {activeTab === 'main' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-ctp-accent" />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('quick')}
-            className={`px-4 py-2 text-xs font-medium transition-colors relative cursor-pointer ${
-              activeTab === 'quick'
-                ? 'text-ctp-text'
-                : 'text-ctp-subtext0 hover:text-ctp-text'
-            }`}
-          >
-            Quick Agent
-            {qadDirty && (
-              <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-ctp-accent inline-block" />
-            )}
-            {activeTab === 'quick' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-ctp-accent" />
-            )}
-          </button>
-        </div>
-
-        {/* Main Agent Tab */}
-        {activeTab === 'main' && (
-          <div className="space-y-6">
-            {/* Shared settings note */}
-            <div className="text-xs text-ctp-subtext0/60 flex items-start gap-1.5 bg-ctp-mantle border border-surface-0 rounded-lg px-3 py-2">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="16" x2="12" y2="12" />
-                <line x1="12" y1="8" x2="12.01" y2="8" />
-              </svg>
-              <span>
-                {isManagedByClubhouse
-                  ? 'Clubhouse Mode manages this agent. Personalize it by editing the wildcard values below — saved as per-agent overrides. Enable local overrides above for the full settings editor.'
-                  : 'Skills, agent definitions, and MCP settings are stored in the agent worktree. Agents sharing the same root directory will pick up and share these settings.'}
-              </span>
-            </div>
-
-            {/* Per-agent wildcard settings form (editable when managed) */}
-            {isManagedByClubhouse && projectPath && (
+            <Toggle
+              checked={clubhouseModeOverride}
+              onChange={handleClubhouseOverrideChange}
+              disabled={isRunning}
+              ariaLabel="Local overrides"
+            />
+          </Field>
+          {isManagedByClubhouse && projectPath && (
+            <div className="pt-2">
+              <p className="text-xs text-ctp-overlay1 mb-2">
+                Personalize this agent with the wildcard values below. They save as overrides for this agent.
+              </p>
               <WildcardSettingsForm
                 projectPath={projectPath}
                 agentId={agent.id}
                 disabled={isRunning}
                 refreshKey={refreshKey}
               />
-            )}
-
-            {/* Resolved materialization preview (read-only, collapsible) */}
-            {isManagedByClubhouse && preview && (
-              <button
-                type="button"
-                onClick={() => setShowResolvedPreview((v) => !v)}
-                className="text-xs text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer flex items-center gap-1"
-              >
-                <svg
-                  width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  className={`transition-transform ${showResolvedPreview ? 'rotate-90' : ''}`}
-                >
-                  <path d="M9 18l6-6-6-6" />
-                </svg>
-                {showResolvedPreview ? 'Hide resolved preview' : 'Show resolved preview'}
-              </button>
-            )}
-            {isManagedByClubhouse && preview && showResolvedPreview && (
-              <div className="space-y-4">
-                {preview.instructions && (
-                  <section>
-                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Resolved Instructions</h3>
-                    <pre className="w-full bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 border border-surface-1 overflow-x-auto whitespace-pre-wrap opacity-70 max-h-40 overflow-y-auto">
-                      {preview.instructions}
-                    </pre>
-                  </section>
-                )}
-                {(preview.permissions.allow?.length || preview.permissions.deny?.length) ? (
-                  <section>
-                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Resolved Permissions</h3>
-                    {preview.permissions.allow && preview.permissions.allow.length > 0 && (
-                      <div className="mb-2">
-                        <span className="text-xs text-ctp-subtext0/60">Allow</span>
-                        <pre className="bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-2 border border-surface-1 opacity-70">
-                          {preview.permissions.allow.join('\n')}
-                        </pre>
-                      </div>
-                    )}
-                    {preview.permissions.deny && preview.permissions.deny.length > 0 && (
-                      <div>
-                        <span className="text-xs text-ctp-subtext0/60">Deny</span>
-                        <pre className="bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-2 border border-surface-1 opacity-70">
-                          {preview.permissions.deny.join('\n')}
-                        </pre>
-                      </div>
-                    )}
-                  </section>
-                ) : null}
-                {preview.mcpJson && (
-                  <section>
-                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Resolved MCP Config</h3>
-                    <pre className="w-full bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 border border-surface-1 overflow-x-auto whitespace-pre-wrap opacity-70 max-h-32 overflow-y-auto">
-                      {preview.mcpJson}
-                    </pre>
-                  </section>
-                )}
-                {preview.skills.length > 0 && (
-                  <section>
-                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Managed Skills</h3>
-                    <div className="flex flex-wrap gap-1.5">
-                      {preview.skills.map((s) => (
-                        <span key={s} className="px-2 py-0.5 text-xs bg-surface-0 border border-surface-1 rounded text-ctp-subtext0">{s}</span>
-                      ))}
-                    </div>
-                  </section>
-                )}
-                {preview.agentTemplates.length > 0 && (
-                  <section>
-                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Managed Agent Templates</h3>
-                    <div className="flex flex-wrap gap-1.5">
-                      {preview.agentTemplates.map((t) => (
-                        <span key={t} className="px-2 py-0.5 text-xs bg-surface-0 border border-surface-1 rounded text-ctp-subtext0">{t}</span>
-                      ))}
-                    </div>
-                  </section>
-                )}
-              </div>
-            )}
-
-            {/* Instructions Section (hidden when managed by clubhouse mode) */}
-            {!isManagedByClubhouse && instructionsLoaded && (
-              <section>
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Instructions</h3>
-                    <span className="text-xs text-ctp-subtext0/60 font-mono">{instructionsFileLabel}</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleOpenAgentRoot}
-                      className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
-                      title="Open agent root in Finder"
-                    >
-                      Open in Finder
-                    </button>
-                    <button
-                      onClick={handleSaveInstructions}
-                      disabled={isRunning || !instructionsDirty || instructionsSaving}
-                      className={`text-xs px-3 py-1 rounded transition-colors ${
-                        isRunning ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed' :
-                        instructionsDirty
-                          ? 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
-                          : 'bg-surface-1 text-ctp-subtext0 cursor-default'
-                      }`}
-                    >
-                      {instructionsSaving ? 'Saving...' : 'Save'}
-                    </button>
-                  </div>
-                </div>
-                <textarea
-                  value={instructions}
-                  onChange={(e) => { setInstructions(e.target.value); setInstructionsDirty(true); }}
-                  disabled={isRunning}
-                  placeholder={`Agent instructions written to ${instructionsFileLabel}...`}
-                  className={`w-full h-40 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  spellCheck={false}
-                />
-              </section>
-            )}
-
-            {/* Skills Section (hidden when managed) */}
-            {!isManagedByClubhouse && (
-              <SkillsSection
-                worktreePath={worktreePath}
-                projectPath={projectPath}
-                disabled={isRunning}
-                refreshKey={refreshKey}
-                pathLabel={skillsPathLabel}
-              />
-            )}
-
-            {/* Agent Definitions Section (hidden when managed) */}
-            {!isManagedByClubhouse && (
-              <AgentTemplatesSection
-                worktreePath={worktreePath}
-                projectPath={projectPath}
-                disabled={isRunning}
-                refreshKey={refreshKey}
-                pathLabel={agentTemplatesPathLabel}
-                onCreateFromPluginTemplate={handleCreateFromPluginTemplate}
-              />
-            )}
-
-            {/* MCP JSON Section (hidden when managed) */}
-            {!isManagedByClubhouse && (
-              <McpJsonSection
-                worktreePath={worktreePath}
-                projectPath={projectPath}
-                disabled={isRunning}
-                refreshKey={refreshKey}
-                pathLabel={mcpPathLabel}
-              />
-            )}
-
-            {/* Launch Wrapper MCPs */}
-            {!isManagedByClubhouse && mcpLoaded && mcpCatalog.length > 0 && (
-              <section>
-                <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Launch Wrapper MCPs</h3>
-                <p className="text-xs text-ctp-subtext0/60 mb-2">
-                  MCPs injected via the launch wrapper when this agent starts. Expand entries to configure parameters.
-                </p>
-                <div className="grid grid-cols-2 gap-1">
-                  {mcpCatalog.map((entry) => (
-                    <McpConfigRow
-                      key={entry.id}
-                      entry={{ ...entry, state: 'stable' as const }}
-                      checked={agentMcpIds.includes(entry.id)}
-                      configs={agentMcpConfigs[entry.id] || {}}
-                      onToggle={() => handleToggleMcp(entry.id)}
-                      onConfigChange={(flag, value) => handleMcpConfigChange(entry.id, flag, value)}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Permissions Section (hidden when managed) */}
-            {!isManagedByClubhouse && permLoaded && (
-              <section>
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Permissions</h3>
-                    <span className="text-xs text-ctp-subtext0/60 font-mono">{permissionsPathLabel}</span>
-                  </div>
-                  <button
-                    onClick={handleSavePermissions}
-                    disabled={isRunning || !permDirty || permSaving}
-                    className={`text-xs px-3 py-1 rounded transition-colors ${
-                      isRunning ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed' :
-                      permDirty
-                        ? 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
-                        : 'bg-surface-1 text-ctp-subtext0 cursor-default'
-                    }`}
-                  >
-                    {permSaving ? 'Saving...' : 'Save'}
-                  </button>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-ctp-subtext0 mb-1">Allowed tools (one per line)</label>
-                    <textarea
-                      value={permAllow}
-                      onChange={(e) => { setPermAllow(e.target.value); setPermDirty(true); }}
-                      disabled={isRunning}
-                      placeholder={"Bash(git checkout:*)\nBash(git pull:*)\nBash(npm run:*)"}
-                      className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      spellCheck={false}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-ctp-subtext0 mb-1">Auto-deny tools (one per line)</label>
-                    <textarea
-                      value={permDeny}
-                      onChange={(e) => { setPermDeny(e.target.value); setPermDirty(true); }}
-                      disabled={isRunning}
-                      placeholder={"WebFetch\nBash(curl *)\nRead(./.env)"}
-                      className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      spellCheck={false}
-                    />
-                  </div>
-                </div>
-              </section>
-            )}
-          </div>
-        )}
-
-        {/* Quick Agent Tab */}
-        {activeTab === 'quick' && qadLoaded && (
-          <div className="space-y-6">
-            <section>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Quick Agent Defaults</h3>
-                <button
-                  onClick={handleSaveQad}
-                  disabled={isRunning || !qadDirty || qadSaving}
-                  className={`text-xs px-3 py-1 rounded transition-colors ${
-                    isRunning ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed' :
-                    qadDirty
-                      ? 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
-                      : 'bg-surface-1 text-ctp-subtext0 cursor-default'
-                  }`}
-                >
-                  {qadSaving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-ctp-subtext0 mb-1">Custom instructions</label>
-                  <textarea
-                    value={qadSystemPrompt}
-                    onChange={(e) => { setQadSystemPrompt(e.target.value); setQadDirty(true); }}
-                    disabled={isRunning}
-                    placeholder="System prompt appended to quick agents spawned by this agent..."
-                    className={`w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    spellCheck={false}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-ctp-subtext0 mb-1">Allowed tools (one per line)</label>
-                  <textarea
-                    value={qadAllowedTools}
-                    onChange={(e) => { setQadAllowedTools(e.target.value); setQadDirty(true); }}
-                    disabled={isRunning}
-                    placeholder={"Bash(npm test:*)\nEdit\nWrite"}
-                    className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    spellCheck={false}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-ctp-subtext0 mb-1">Default model</label>
-                  <select
-                    value={qadDefaultModel}
-                    onChange={(e) => { setQadDefaultModel(e.target.value); setQadDirty(true); }}
-                    disabled={isRunning}
-                    className={`w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus-ring ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    {MODEL_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>{opt.label}</option>
-                    ))}
-                    <option value="custom">Custom...</option>
-                  </select>
-                  {qadDefaultModel === 'custom' && (
-                    <input
-                      type="text"
-                      value={qadCustomModel}
-                      onChange={(e) => { setQadCustomModel(e.target.value); setQadDirty(true); }}
-                      placeholder="e.g. claude-opus-4-6"
-                      disabled={isRunning}
-                      className={`mt-1.5 w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus-ring placeholder:text-ctp-overlay0 ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    />
-                  )}
-                </div>
-                <div>
-                  <label
-                    className={`flex items-center gap-2 ${
-                      !isRunning && (capabilities?.permissions ?? false)
-                        ? 'cursor-pointer'
-                        : 'cursor-not-allowed opacity-50'
-                    }`}
-                    title={
-                      !(capabilities?.permissions ?? false)
-                        ? 'Not supported by this orchestrator'
-                        : isRunning
-                        ? 'Stop agent to change this setting'
-                        : 'Default free agent mode for quick agents spawned by this agent'
-                    }
-                  >
-                    <input
-                      type="checkbox"
-                      checked={qadFreeAgentMode}
-                      onChange={(e) => { setQadFreeAgentMode(e.target.checked); setQadDirty(true); }}
-                      disabled={isRunning || !(capabilities?.permissions ?? false)}
-                      className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-ctp-error focus:ring-ctp-error accent-ctp-error"
-                    />
-                    <span className="text-xs text-ctp-subtext0">Free Agent Mode by default</span>
-                  </label>
-                  {!(capabilities?.permissions ?? false) && (
-                    <p className="mt-1 text-xs text-ctp-subtext0/60">
-                      Not supported by {orchestratorInfo?.displayName || 'this orchestrator'}.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom: collapsible utility terminal */}
-      <div className={`flex flex-col border-t border-surface-0 ${terminalExpanded ? 'flex-[1] min-h-0' : ''}`}>
-        <button
-          onClick={handleTerminalToggle}
-          className="w-full px-4 py-1.5 text-[11px] text-ctp-subtext0 bg-surface-0 border-b border-surface-1 flex items-center justify-between hover:bg-surface-1 transition-colors cursor-pointer"
-        >
-          <span>Utility shell</span>
-          <svg
-            width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            className={`transition-transform ${terminalExpanded ? 'rotate-180' : ''}`}
-          >
-            <path d="M18 15l-6-6-6 6" />
-          </svg>
-        </button>
-        <div className={terminalExpanded ? 'flex-1 min-h-0' : 'h-0 overflow-hidden'}>
-          {terminalHasOpened && (
-            <UtilityTerminal agentId={agent.id} worktreePath={worktreePath} />
+            </div>
           )}
+          {isManagedByClubhouse && preview && (
+            <button
+              type="button"
+              onClick={() => setShowResolvedPreview((v) => !v)}
+              aria-expanded={showResolvedPreview}
+              className="mt-3 h-7 text-xs text-ctp-subtext1 hover:text-ctp-text cursor-pointer flex items-center gap-1"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                className={`transition-transform ${showResolvedPreview ? 'rotate-90' : ''}`}>
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+              {showResolvedPreview ? 'Hide resolved preview' : 'Show resolved preview'}
+            </button>
+          )}
+          {isManagedByClubhouse && preview && showResolvedPreview && (
+            <div>
+              {preview.instructions && (
+                <>
+                  <SectionHeading title="Resolved instructions" />
+                  <pre className="bg-ctp-crust text-ctp-subtext1 text-xs font-mono rounded-md px-2.5 py-2 border border-surface-1 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                    {preview.instructions}
+                  </pre>
+                </>
+              )}
+              {(preview.permissions.allow?.length || preview.permissions.deny?.length) ? (
+                <>
+                  <SectionHeading title="Resolved permissions" />
+                  {preview.permissions.allow && preview.permissions.allow.length > 0 && (
+                    <div className="mb-2">
+                      <div className="text-xs text-ctp-overlay1 mb-1">Allow</div>
+                      <pre className="bg-ctp-crust text-ctp-subtext1 text-xs font-mono rounded-md px-2.5 py-2 border border-surface-1">
+                        {preview.permissions.allow.join('\n')}
+                      </pre>
+                    </div>
+                  )}
+                  {preview.permissions.deny && preview.permissions.deny.length > 0 && (
+                    <div>
+                      <div className="text-xs text-ctp-overlay1 mb-1">Deny</div>
+                      <pre className="bg-ctp-crust text-ctp-subtext1 text-xs font-mono rounded-md px-2.5 py-2 border border-surface-1">
+                        {preview.permissions.deny.join('\n')}
+                      </pre>
+                    </div>
+                  )}
+                </>
+              ) : null}
+              {preview.mcpJson && (
+                <>
+                  <SectionHeading title="Resolved MCP config" />
+                  <pre className="bg-ctp-crust text-ctp-subtext1 text-xs font-mono rounded-md px-2.5 py-2 border border-surface-1 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                    {preview.mcpJson}
+                  </pre>
+                </>
+              )}
+              {preview.skills.length > 0 && (
+                <>
+                  <SectionHeading title="Managed skills" />
+                  <p className="text-xs text-ctp-subtext1 font-mono">{preview.skills.join(', ')}</p>
+                </>
+              )}
+              {preview.agentTemplates.length > 0 && (
+                <>
+                  <SectionHeading title="Managed agent definitions" />
+                  <p className="text-xs text-ctp-subtext1 font-mono">{preview.agentTemplates.join(', ')}</p>
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      <SectionHeading title="Template" />
+      <Field label="Copy as template" help="Copies this agent's definition to the clipboard to share or reuse.">
+        <button type="button" onClick={handleExportAsTemplate} disabled={exportingTemplate} className={buttonClass('ghost')}>
+          Copy
+        </button>
+      </Field>
+      {!isManagedByClubhouse && !pageMode && (
+        <p className="mt-3 text-xs text-ctp-overlay1">
+          Skills, agent definitions and MCP settings live in the agent worktree. Agents that share a root directory share them.
+        </p>
+      )}
+    </>
+  );
+
+  const instructionsEditor = instructionsLoaded && (
+    <>
+      <textarea
+        id="agent-settings-instructions"
+        aria-label="Instructions"
+        value={instructions}
+        onChange={(e) => { setInstructions(e.target.value); setInstructionsDirty(true); }}
+        disabled={isRunning}
+        placeholder={`Agent instructions written to ${instructionsFileLabel}`}
+        className={`${textareaClass} h-[226px] mt-1.5`}
+        spellCheck={false}
+      />
+      <div className="flex items-center gap-2 mt-2 text-xs text-ctp-overlay1 min-w-0">
+        <span className="flex-shrink-0">Written to the agent worktree at</span>
+        <span className="font-mono text-ctp-subtext1 truncate">{relativeWorktree}</span>
+        <button type="button" onClick={handleOpenAgentRoot} className={`${buttonClass('quiet')} ml-auto`}>
+          Open in Finder
+        </button>
+      </div>
+    </>
+  );
+
+  const skillsSection = (
+    <SkillsSection
+      worktreePath={worktreePath}
+      projectPath={projectPath}
+      disabled={isRunning}
+      refreshKey={refreshKey}
+      pathLabel={skillsPathLabel}
+      hideTitle={pageMode}
+    />
+  );
+
+  const definitionsSection = (
+    <AgentTemplatesSection
+      worktreePath={worktreePath}
+      projectPath={projectPath}
+      disabled={isRunning}
+      refreshKey={refreshKey}
+      pathLabel={agentTemplatesPathLabel}
+      onCreateFromPluginTemplate={handleCreateFromPluginTemplate}
+      hideTitle={pageMode}
+    />
+  );
+
+  const mcpSections = (
+    <>
+      <McpJsonSection
+        worktreePath={worktreePath}
+        projectPath={projectPath}
+        disabled={isRunning}
+        refreshKey={refreshKey}
+        pathLabel={mcpPathLabel}
+        hideTitle={pageMode}
+      />
+      {mcpLoaded && mcpCatalog.length > 0 && (
+        <div data-testid="agent-settings-launch-wrapper">
+          <SectionHeading title="Launch wrapper" />
+          <p className="text-xs text-ctp-overlay1 mb-2">
+            Servers the launch wrapper adds when this agent starts. Expand one to set its parameters.
+          </p>
+          {mcpCatalog.map((entry) => (
+            <McpConfigRow
+              key={entry.id}
+              entry={{ ...entry, state: 'stable' as const }}
+              checked={agentMcpIds.includes(entry.id)}
+              configs={agentMcpConfigs[entry.id] || {}}
+              disabled={isRunning}
+              onToggle={() => handleToggleMcp(entry.id)}
+              onConfigChange={(flag, value) => handleMcpConfigChange(entry.id, flag, value)}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  const permissionsEditor = permLoaded && (
+    <div className="mt-1.5">
+      <FieldLabel htmlFor="agent-settings-perm-allow">Allowed tools, one per line</FieldLabel>
+      <textarea
+        id="agent-settings-perm-allow"
+        value={permAllow}
+        onChange={(e) => { setPermAllow(e.target.value); setPermDirty(true); }}
+        disabled={isRunning}
+        placeholder={'Bash(git checkout:*)\nBash(git pull:*)\nBash(npm run:*)'}
+        className={`${textareaClass} h-[104px]`}
+        spellCheck={false}
+      />
+      <div className="h-3.5" />
+      <FieldLabel htmlFor="agent-settings-perm-deny">Denied tools, one per line</FieldLabel>
+      <textarea
+        id="agent-settings-perm-deny"
+        value={permDeny}
+        onChange={(e) => { setPermDeny(e.target.value); setPermDirty(true); }}
+        disabled={isRunning}
+        placeholder={'WebFetch\nBash(curl *)\nRead(./.env)'}
+        className={`${textareaClass} h-[82px]`}
+        spellCheck={false}
+      />
+    </div>
+  );
+
+  const quickDefaults = qadLoaded && (
+    <>
+      <Field label="Model" htmlFor="agent-settings-qad-model">
+        {qadDefaultModel === 'custom' && (
+          <input
+            type="text"
+            aria-label="Custom quick agent model"
+            value={qadCustomModel}
+            onChange={(e) => { setQadCustomModel(e.target.value); setQadDirty(true); }}
+            placeholder="e.g. claude-opus-4-6"
+            disabled={isRunning}
+            spellCheck={false}
+            className={`${inputClass} w-44`}
+          />
+        )}
+        <select
+          id="agent-settings-qad-model"
+          value={qadDefaultModel}
+          onChange={(e) => { setQadDefaultModel(e.target.value); setQadDirty(true); }}
+          disabled={isRunning}
+          className={selectClass}
+        >
+          {MODEL_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>{opt.label}</option>
+          ))}
+          <option value="custom">Custom...</option>
+        </select>
+      </Field>
+      <Field
+        label="Free agent mode"
+        help={permissionsSupported ? 'Quick agents skip permission prompts.' : `Not supported by ${orchestratorName}.`}
+      >
+        <Toggle
+          checked={qadFreeAgentMode}
+          onChange={(v) => { setQadFreeAgentMode(v); setQadDirty(true); }}
+          disabled={isRunning || !permissionsSupported}
+          ariaLabel="Quick agent free agent mode"
+        />
+      </Field>
+      <div className="h-2.5" />
+      <FieldLabel htmlFor="agent-settings-qad-prompt">Extra instructions</FieldLabel>
+      <textarea
+        id="agent-settings-qad-prompt"
+        value={qadSystemPrompt}
+        onChange={(e) => { setQadSystemPrompt(e.target.value); setQadDirty(true); }}
+        disabled={isRunning}
+        placeholder="Appended to the system prompt of quick agents this agent starts"
+        className={`${textareaClass} h-[88px]`}
+        spellCheck={false}
+      />
+      <div className="h-3.5" />
+      <FieldLabel htmlFor="agent-settings-qad-tools">Allowed tools, one per line</FieldLabel>
+      <textarea
+        id="agent-settings-qad-tools"
+        value={qadAllowedTools}
+        onChange={(e) => { setQadAllowedTools(e.target.value); setQadDirty(true); }}
+        disabled={isRunning}
+        placeholder={'Bash(npm test:*)\nEdit\nWrite'}
+        className={`${textareaClass} h-[82px]`}
+        spellCheck={false}
+      />
+    </>
+  );
+
+  const managedNote = (
+    <p data-testid="agent-settings-managed" className="mt-3 text-[13px] text-ctp-subtext1">
+      Clubhouse Mode manages this from project defaults.{' '}
+      <button type="button" onClick={() => setPage('general')} className="text-ctp-accent hover:underline cursor-pointer">
+        Turn on local overrides in General
+      </button>{' '}
+      to edit it here.
+    </p>
+  );
+
+  // ── Page content ───────────────────────────────────────────────
+
+  let body: React.ReactNode;
+  if (pageMode) {
+    const title = AGENT_SETTINGS_PAGES.find((p) => p.page === page)?.label ?? 'General';
+    const sub: Record<AgentSettingsPage, React.ReactNode> = {
+      general: `How ${agent.name} looks and what it runs on`,
+      instructions: <><span className="font-mono">{instructionsFileLabel}</span> in the agent worktree</>,
+      skills: undefined,
+      definitions: undefined,
+      mcp: undefined,
+      permissions: <span className="font-mono">{permissionsPathLabel}</span>,
+      quick: `Defaults for quick agents ${agent.name} starts`,
+    };
+    const managedPage = isManagedByClubhouse && page !== 'general' && page !== 'quick';
+    const content: Record<AgentSettingsPage, React.ReactNode> = {
+      general,
+      instructions: instructionsEditor,
+      skills: skillsSection,
+      definitions: definitionsSection,
+      mcp: mcpSections,
+      permissions: permissionsEditor,
+      quick: quickDefaults,
+    };
+    body = (
+      <div data-testid={`agent-settings-page-${page}`}>
+        <PageTitle title={title} sub={sub[page]} right={reloadButton} />
+        {managedPage ? managedNote : content[page]}
+      </div>
+    );
+  } else {
+    body = (
+      <>
+        {general}
+        {!isManagedByClubhouse && (
+          <>
+            <SectionHeading title="Instructions" sub={<span className="font-mono">{instructionsFileLabel}</span>} />
+            {instructionsEditor}
+            {skillsSection}
+            {definitionsSection}
+            {mcpSections}
+            <SectionHeading title="Permissions" sub={<span className="font-mono">{permissionsPathLabel}</span>} />
+            {permissionsEditor}
+          </>
+        )}
+        <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
+        {quickDefaults}
+      </>
+    );
+  }
+
+  const dirtyNames = dirtyPages.map((p) => DIRTY_PAGE_NAME[p]);
+
+  return (
+    <div data-testid="agent-settings" className="h-full flex flex-col bg-ctp-base overflow-hidden">
+      {/* The classic shell has no breadcrumb, so it keeps a slim header to name the agent and go back. */}
+      {!pageMode && (
+        <div className="h-10 flex items-center gap-2.5 px-4 border-b border-surface-0 flex-shrink-0">
+          <button
+            type="button"
+            onClick={closeAgentSettings}
+            className="w-7 h-7 -ml-1.5 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
+            title="Back"
+            aria-label="Back"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 12H5" />
+              <path d="M12 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <AgentAvatar agent={agent} size="2xs" iconUrl={iconDataUrl} />
+          <span className="text-[13px] font-medium text-ctp-text truncate">{agent.name}</span>
+          <span className="text-xs text-ctp-overlay1">Settings</span>
+          <div className="ml-auto">{reloadButton}</div>
+        </div>
+      )}
+
+      <div className="flex-[2] min-h-0 overflow-y-auto">
+        <div className={`max-w-[720px] ${pageMode ? 'px-10 pt-7 pb-10' : 'px-6 pt-4 pb-10'}`}>
+          {runningLine}
+          {body}
         </div>
       </div>
 
-      {/* Image crop dialog */}
+      {dirtyPages.length > 0 && (
+        <div
+          data-testid="agent-settings-save-bar"
+          className={`h-12 flex-shrink-0 flex items-center gap-2 pr-6 border-t border-surface-0 bg-ctp-mantle text-[13px] ${pageMode ? 'pl-10' : 'pl-6'}`}
+        >
+          <span className="w-2 h-2 rounded-full flex-shrink-0 bg-ctp-warning" aria-hidden="true" />
+          <span className="text-ctp-text truncate">Unsaved changes to {joinNames(dirtyNames)}</span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <button type="button" onClick={handleDiscard} disabled={saving} className={buttonClass('quiet')}>
+              Discard
+            </button>
+            <button type="button" onClick={handleSaveAll} disabled={saving || isRunning} title={stopFirst} className={buttonClass('primary')}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Shell in worktree. In the new chrome the sidebar row opens it, so its row only shows while open. */}
+      <div
+        data-testid="agent-settings-shell"
+        className={`flex flex-col border-t border-surface-0 ${shellOpen ? 'flex-[1] min-h-0' : ''} ${pageMode && !shellOpen ? 'hidden' : ''}`}
+      >
+        <button
+          type="button"
+          onClick={() => setShellOpen(!shellOpen)}
+          aria-expanded={shellOpen}
+          className="h-[30px] flex-shrink-0 w-full px-4 flex items-center gap-2 text-xs text-ctp-subtext1 hover:bg-surface-0 cursor-pointer"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-ctp-overlay1 flex-shrink-0">
+            <path d="M4 17l6-6-6-6" /><path d="M12 19h8" />
+          </svg>
+          <span className="flex-shrink-0">Shell in worktree</span>
+          <span className="font-mono text-ctp-overlay1 truncate">{relativeWorktree}</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+            className={`ml-auto flex-shrink-0 transition-transform ${shellOpen ? '' : 'rotate-180'}`}>
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+        <div className={shellOpen ? 'flex-1 min-h-0' : 'h-0 overflow-hidden'}>
+          {shellHasOpened && <UtilityTerminal agentId={agent.id} worktreePath={worktreePath} />}
+        </div>
+      </div>
+
       {cropImageDataUrl && (
         <ImageCropDialog
           imageDataUrl={cropImageDataUrl}
@@ -1483,7 +1483,6 @@ export function AgentSettingsView({ agent }: Props) {
         />
       )}
 
-      {/* Plugin template config dialog */}
       {pendingPluginTemplate && (
         <TemplateConfigDialog
           persona={{
@@ -1500,4 +1499,16 @@ export function AgentSettingsView({ agent }: Props) {
       )}
     </div>
   );
+}
+
+const DIRTY_PAGE_NAME: Record<AgentSettingsTextPage, string> = {
+  instructions: 'instructions',
+  permissions: 'permissions',
+  quick: 'quick agent defaults',
+};
+
+/** "a", "a and b", "a, b and c". */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }

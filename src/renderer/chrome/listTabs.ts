@@ -1,5 +1,6 @@
 import { usePluginStore } from '../plugins/plugin-store';
 import { useUIStore } from '../stores/uiStore';
+import { useAgentSettingsTarget } from '../features/agents/agentSettingsPages';
 
 /**
  * Plugin tabs whose list the new chrome does not show, because the sidebar
@@ -16,13 +17,18 @@ export function isListTab(explorerTab: string, layout: 'sidebar-content' | 'full
   return (layout ?? 'sidebar-content') === 'sidebar-content';
 }
 
-/** What the sidebar body shows: the agent tree, a project tab's list, or the settings navigator. */
-export type SidebarMode = 'tree' | 'list' | 'settings';
+/**
+ * What the sidebar body shows: the agent tree, a project tab's list, the
+ * settings navigator, or the pages of the agent whose settings are open.
+ */
+export type SidebarMode = 'tree' | 'list' | 'settings' | 'agent-settings';
 
 export function useSidebarMode(): SidebarMode {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const pluginId = explorerTab.startsWith('plugin:') && !explorerTab.startsWith('plugin:app:') ? explorerTab.slice('plugin:'.length) : null;
   const layout = usePluginStore((s) => (pluginId ? s.plugins[pluginId]?.manifest.contributes?.tab?.layout : undefined));
+  const agentSettings = useAgentSettingsTarget(explorerTab);
   if (explorerTab === 'settings') return 'settings';
+  if (agentSettings) return 'agent-settings';
   return isListTab(explorerTab, layout) ? 'list' : 'tree';
 }

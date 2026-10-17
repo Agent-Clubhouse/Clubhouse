@@ -59,9 +59,9 @@ describe('SkillsSection', () => {
       expect(await screen.findByText('No skills defined.')).toBeInTheDocument();
     });
 
-    it('renders the + Skill button', async () => {
+    it('renders the New skill button', async () => {
       renderSkills();
-      expect(await screen.findByText('+ Skill')).toBeInTheDocument();
+      expect(await screen.findByText('New skill')).toBeInTheDocument();
     });
 
     it('shows custom path label when provided', () => {
@@ -74,33 +74,33 @@ describe('SkillsSection', () => {
       expect(screen.getByText('.claude/skills/')).toBeInTheDocument();
     });
 
-    it('disables + Skill button when disabled', async () => {
+    it('disables New skill button when disabled', async () => {
       renderSkills({ disabled: true });
-      const btn = await screen.findByText('+ Skill');
+      const btn = await screen.findByText('New skill');
       expect(btn).toBeDisabled();
     });
   });
 
   describe('create flow', () => {
-    it('switches to create view on + Skill click', async () => {
+    it('switches to create view on New skill click', async () => {
       renderSkills();
       await screen.findByText('mission');
-      fireEvent.click(screen.getByText('+ Skill'));
-      expect(screen.getByText('New Skill')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('New skill'));
+      expect(screen.getByText('New skill')).toBeInTheDocument();
       expect(screen.getByPlaceholderText('skill-name (lowercase, hyphens)')).toBeInTheDocument();
     });
 
     it('Save button is disabled when skill name is empty', async () => {
       renderSkills();
       await screen.findByText('mission');
-      fireEvent.click(screen.getByText('+ Skill'));
+      fireEvent.click(screen.getByText('New skill'));
       expect(screen.getByText('Save')).toBeDisabled();
     });
 
     it('Save button enables when skill name is provided', async () => {
       renderSkills();
       await screen.findByText('mission');
-      fireEvent.click(screen.getByText('+ Skill'));
+      fireEvent.click(screen.getByText('New skill'));
       fireEvent.change(screen.getByPlaceholderText('skill-name (lowercase, hyphens)'), {
         target: { value: 'deploy' },
       });
@@ -110,7 +110,7 @@ describe('SkillsSection', () => {
     it('saves new skill and returns to list', async () => {
       renderSkills();
       await screen.findByText('mission');
-      fireEvent.click(screen.getByText('+ Skill'));
+      fireEvent.click(screen.getByText('New skill'));
       fireEvent.change(screen.getByPlaceholderText('skill-name (lowercase, hyphens)'), {
         target: { value: 'deploy' },
       });
@@ -129,8 +129,8 @@ describe('SkillsSection', () => {
     it('Cancel returns to list view', async () => {
       renderSkills();
       await screen.findByText('mission');
-      fireEvent.click(screen.getByText('+ Skill'));
-      expect(screen.getByText('New Skill')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('New skill'));
+      expect(screen.getByText('New skill')).toBeInTheDocument();
       fireEvent.click(screen.getByText('Cancel'));
       expect(await screen.findByText('Skills')).toBeInTheDocument();
     });
@@ -171,7 +171,7 @@ describe('SkillsSection', () => {
       // Find delete buttons by title
       const deleteButtons = screen.getAllByTitle('Delete skill');
       fireEvent.click(deleteButtons[0]);
-      expect(screen.getByText('Delete Skill')).toBeInTheDocument();
+      expect(screen.getByText('Delete skill')).toBeInTheDocument();
       expect(screen.getByText(/cannot be undone/)).toBeInTheDocument();
     });
 
@@ -192,9 +192,9 @@ describe('SkillsSection', () => {
       renderSkills();
       await screen.findByText('mission');
       fireEvent.click(screen.getAllByTitle('Delete skill')[0]);
-      expect(screen.getByText('Delete Skill')).toBeInTheDocument();
+      expect(screen.getByText('Delete skill')).toBeInTheDocument();
       fireEvent.click(screen.getAllByText('Cancel')[0]);
-      expect(screen.queryByText('Delete Skill')).not.toBeInTheDocument();
+      expect(screen.queryByText('Delete skill')).not.toBeInTheDocument();
     });
 
     it('disables delete button when disabled prop is true', async () => {

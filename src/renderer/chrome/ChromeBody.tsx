@@ -105,7 +105,11 @@ export function ChromeBody() {
       return;
     }
     reportChromeView(explorerTab);
-    reportChromeSurface(mode === 'settings' ? 'sidebar_settings' : mode === 'list' ? 'sidebar_list' : 'sidebar_agents');
+    reportChromeSurface(
+      mode === 'settings' ? 'sidebar_settings'
+        : mode === 'agent-settings' ? 'sidebar_agent_settings'
+          : mode === 'list' ? 'sidebar_list' : 'sidebar_agents',
+    );
   }, [page, explorerTab, mode]);
 
   const content = useMemo(() => {

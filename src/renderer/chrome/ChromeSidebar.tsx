@@ -15,6 +15,7 @@ import { ProjectTree } from './sidebar/ProjectTree';
 import { NeedsYou, NeedsYouStrip } from './sidebar/NeedsYou';
 import { ListBody } from './sidebar/ListBody';
 import { SettingsNav } from './sidebar/SettingsNav';
+import { AgentSettingsNav } from './sidebar/AgentSettingsNav';
 import { SidebarBreadcrumb } from './sidebar/SidebarBreadcrumb';
 import { useSidebarMode } from './listTabs';
 import { SCOPE_FOLLOWING_TABS } from './scope';
@@ -419,7 +420,13 @@ export function ChromeSidebar() {
   ] : [];
 
   // The breadcrumb, or Esc inside the sidebar, returns from a list or Settings to Agents (spec §4.6).
-  const backToAgents = () => (mode === 'settings' ? useUIStore.getState().toggleSettings() : setExplorerTab('agents', activeProjectId ?? undefined));
+  const backToAgents = () => {
+    if (mode === 'settings') useUIStore.getState().toggleSettings();
+    else if (mode === 'agent-settings') useAgentStore.getState().closeAgentSettings();
+    else setExplorerTab('agents', activeProjectId ?? undefined);
+  };
+  const agentSettingsName = useAgentStore((s) => (mode === 'agent-settings' && s.activeAgentId ? s.agents[s.activeAgentId]?.name : undefined));
+  const breadcrumbLabel = mode === 'settings' ? 'Settings' : mode === 'agent-settings' ? agentSettingsName ?? 'Agent' : listLabel ?? 'List';
   const onSidebarKeyDown = (e: React.KeyboardEvent) => {
     if (mode === 'tree' || e.key !== 'Escape' || e.defaultPrevented) return;
     const target = e.target as HTMLElement;
@@ -467,9 +474,11 @@ export function ChromeSidebar() {
 
       {mode !== 'tree' && (
         <>
-          <SidebarBreadcrumb current={mode === 'settings' ? 'Settings' : listLabel ?? 'List'} onBack={backToAgents} />
+          <SidebarBreadcrumb current={breadcrumbLabel} onBack={backToAgents} />
           <NeedsYouStrip items={needs} onSelect={selectNeedsYou} onReview={reviewEnabled ? () => openAppItem('review') : undefined} />
-          {mode === 'settings' ? <SettingsNav /> : <ListBody explorerTab={explorerTab} projectId={activeProjectId} />}
+          {mode === 'settings' ? <SettingsNav />
+            : mode === 'agent-settings' ? <AgentSettingsNav />
+              : <ListBody explorerTab={explorerTab} projectId={activeProjectId} />}
         </>
       )}
 

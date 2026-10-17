@@ -331,6 +331,30 @@ describe('ChromeSidebar', () => {
       expect(screen.getByTestId('needs-you')).toBeTruthy();
     });
 
+    it('swaps the tree for the agent settings pages, named in the breadcrumb', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'a1', activeAgentId: 'a1' });
+      render(<ChromeSidebar />);
+      expect(screen.getByTestId('agent-settings-nav')).toBeTruthy();
+      expect(screen.getByTestId('list-breadcrumb').textContent).toContain('a1');
+      expect(screen.queryByTestId('agent-item-a2')).toBeNull();
+      fireEvent.click(screen.getByText('Agents'));
+      expect(useAgentStore.getState().agentSettingsOpenFor).toBeNull();
+      expect(screen.queryByTestId('agent-settings-nav')).toBeNull();
+    });
+
+    it('closes agent settings on Esc', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'a1', activeAgentId: 'a1' });
+      render(<ChromeSidebar />);
+      fireEvent.keyDown(screen.getByTestId('agent-settings-nav-general'), { key: 'Escape' });
+      expect(useAgentStore.getState().agentSettingsOpenFor).toBeNull();
+    });
+
+    it('keeps the tree when settings are open for an agent outside the active project', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'b1', activeAgentId: 'b1' });
+      render(<ChromeSidebar />);
+      expect(screen.queryByTestId('agent-settings-nav')).toBeNull();
+    });
+
     it('shows the settings navigator in Settings', () => {
       useUIStore.setState({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'about' });
       render(<ChromeSidebar />);

@@ -14,12 +14,14 @@ interface Props {
   disabled: boolean;
   refreshKey: number;
   pathLabel?: string;
+  /** The page title already names the section (agent settings pages in the new chrome). */
+  hideTitle?: boolean;
   onCreateFromPluginTemplate?: (template: RegisteredPluginAgentTemplate) => void;
 }
 
 type View = 'list' | 'create' | 'edit';
 
-export function AgentTemplatesSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, onCreateFromPluginTemplate }: Props) {
+export function AgentTemplatesSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, hideTitle, onCreateFromPluginTemplate }: Props) {
   const [templates, setTemplates] = useState<AgentTemplateEntry[]>([]);
   const [view, setView] = useState<View>('list');
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
@@ -102,28 +104,28 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
   if (view === 'create' || view === 'edit') {
     const isCreate = view === 'create';
     return (
-      <section>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">
-            {isCreate ? 'New Agent Definition' : `Edit: ${editingTemplate}`}
+      <section className={hideTitle ? 'mt-3' : 'mt-[22px]'}>
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <h3 className="text-[13px] font-semibold text-ctp-text">
+            {isCreate ? 'New agent definition' : `Edit: ${editingTemplate}`}
           </h3>
           <div className="flex gap-2">
             <button
               onClick={() => { setView('list'); setEditingTemplate(null); }}
-              className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
+              className="h-7 px-2.5 rounded-md text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
             >
               Cancel
             </button>
             <button
               onClick={isCreate ? handleSaveNew : handleSaveEdit}
               disabled={saving || (isCreate && !templateName.trim())}
-              className={`text-xs px-3 py-1 rounded transition-colors ${
+              className={`h-7 px-2.5 rounded-md text-xs font-medium transition-colors ${
                 saving || (isCreate && !templateName.trim())
-                  ? 'bg-surface-1 text-ctp-subtext0 cursor-default'
-                  : 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
+                  ? 'bg-surface-0 text-ctp-overlay0 cursor-default'
+                  : 'bg-ctp-accent text-ctp-crust hover:bg-ctp-accent/85 cursor-pointer'
               }`}
             >
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>
@@ -132,7 +134,7 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
             value={templateName}
             onChange={(e) => setTemplateName(e.target.value)}
             placeholder="agent-name (lowercase, hyphens)"
-            className="w-full mb-2 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring"
+            className="w-full h-7 mb-2 rounded-md border border-surface-1 bg-ctp-crust px-2.5 text-xs text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
             spellCheck={false}
           />
         )}
@@ -151,41 +153,37 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
 
   // List view
   return (
-    <section>
-      <div className="flex items-center justify-between mb-2">
+    <section className={hideTitle ? 'mt-3' : 'mt-[22px]'}>
+      <div className="flex items-center justify-between gap-3 mb-2">
         <div>
-          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Agent Definitions</h3>
-          <span className="text-xs text-ctp-subtext0/60 font-mono">{pathLabel || '.claude/agents/'}</span>
+          {!hideTitle && <h3 className="text-[13px] font-semibold text-ctp-text">Agent definitions</h3>}
+          <span className="text-xs text-ctp-overlay1 font-mono">{pathLabel || '.claude/agents/'}</span>
         </div>
         <button
           onClick={handleCreate}
           disabled={disabled}
-          className={`text-xs px-2 py-1 rounded transition-colors ${
-            disabled
-              ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed'
-              : 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
-          }`}
+          className="h-7 px-2.5 rounded-md border border-surface-1 text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          + Agent
+          New definition
         </button>
       </div>
 
       {/* Built-in (filesystem) templates */}
       {hasPluginTemplates && templates.length > 0 && (
-        <p className="text-xs text-ctp-subtext0/50 uppercase tracking-wider mb-1 mt-2">Built-in</p>
+        <p className="text-xs font-semibold text-ctp-subtext0 mb-1 mt-2">Built-in</p>
       )}
       {templates.length === 0 && !hasPluginTemplates ? (
-        <p className="text-xs text-ctp-subtext0/60 py-2">No agent definitions found.</p>
+        <p className="text-xs text-ctp-overlay1 py-2">No agent definitions found.</p>
       ) : (
-        <div className="space-y-1">
+        <div>
           {templates.map((tpl) => (
             <div
               key={tpl.name}
-              className="flex items-center justify-between py-1.5 px-2 rounded bg-surface-0 border border-surface-1"
+              className="min-h-[30px] py-1 flex items-center justify-between border-t border-surface-0"
             >
               <button
                 onClick={() => handleEdit(tpl.name)}
-                className="text-sm text-ctp-text font-mono truncate hover:text-ctp-accent cursor-pointer transition-colors text-left"
+                className="text-[13px] text-ctp-text font-mono truncate hover:text-ctp-accent cursor-pointer transition-colors text-left"
                 title="Click to edit"
               >
                 {tpl.name}
@@ -227,14 +225,14 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
         const groupName = pluginTemplates[0]?.pluginName || pluginId;
         return (
           <div key={pluginId} className="mt-3" data-testid={`plugin-template-group-${pluginId}`}>
-            <p className="text-xs text-ctp-subtext0/50 uppercase tracking-wider mb-1">
+            <p className="text-xs font-semibold text-ctp-subtext0 mb-1">
               {groupName}
             </p>
-            <div className="space-y-1">
+            <div>
               {pluginTemplates.map((entry) => (
                 <div
                   key={`${pluginId}:${entry.template.name}`}
-                  className="flex items-center justify-between py-1.5 px-2 rounded bg-surface-0 border border-surface-1"
+                  className="min-h-[30px] py-1 flex items-center justify-between border-t border-surface-0"
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     {entry.template.icon && (
@@ -244,7 +242,7 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
                       />
                     )}
                     <div className="min-w-0">
-                      <span className="text-sm text-ctp-text font-mono truncate block">
+                      <span className="text-[13px] text-ctp-text font-mono truncate block">
                         {entry.template.name}
                       </span>
                       {entry.template.description && (
@@ -259,8 +257,8 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
                     disabled={disabled}
                     className={`text-xs px-2 py-1 rounded transition-colors flex-shrink-0 ml-2 ${
                       disabled
-                        ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed'
-                        : 'bg-ctp-accent/20 text-ctp-accent hover:bg-ctp-accent/30 cursor-pointer'
+                        ? 'bg-surface-0 text-ctp-overlay0 cursor-not-allowed'
+                        : 'border border-surface-1 text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer'
                     }`}
                     title="Create agent from this template"
                   >
@@ -278,7 +276,7 @@ export function AgentTemplatesSection({ worktreePath, projectPath, disabled, ref
         // eslint-disable-next-line no-restricted-syntax
         <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50">
           <div className="bg-ctp-base border border-surface-1 rounded-lg p-4 max-w-sm mx-4 shadow-xl">
-            <h4 className="text-sm font-semibold text-ctp-text mb-2">Delete Agent Definition</h4>
+            <h4 className="text-sm font-semibold text-ctp-text mb-2">Delete agent definition</h4>
             <p className="text-xs text-ctp-subtext0 mb-1">
               Are you sure you want to delete <span className="font-mono text-ctp-text">{deleteTarget}</span>?
             </p>

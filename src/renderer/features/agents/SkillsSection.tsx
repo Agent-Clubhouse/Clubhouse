@@ -8,11 +8,13 @@ interface Props {
   disabled: boolean;
   refreshKey: number;
   pathLabel?: string;
+  /** The page title already names the section (agent settings pages in the new chrome). */
+  hideTitle?: boolean;
 }
 
 type View = 'list' | 'create' | 'edit';
 
-export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel }: Props) {
+export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, hideTitle }: Props) {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [view, setView] = useState<View>('list');
   const [editingSkill, setEditingSkill] = useState<string | null>(null);
@@ -82,28 +84,28 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
   if (view === 'create' || view === 'edit') {
     const isCreate = view === 'create';
     return (
-      <section>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">
-            {isCreate ? 'New Skill' : `Edit: ${editingSkill}`}
+      <section className={hideTitle ? 'mt-3' : 'mt-[22px]'}>
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <h3 className="text-[13px] font-semibold text-ctp-text">
+            {isCreate ? 'New skill' : `Edit: ${editingSkill}`}
           </h3>
           <div className="flex gap-2">
             <button
               onClick={() => { setView('list'); setEditingSkill(null); }}
-              className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
+              className="h-7 px-2.5 rounded-md text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
             >
               Cancel
             </button>
             <button
               onClick={isCreate ? handleSaveNew : handleSaveEdit}
               disabled={saving || (isCreate && !skillName.trim())}
-              className={`text-xs px-3 py-1 rounded transition-colors ${
+              className={`h-7 px-2.5 rounded-md text-xs font-medium transition-colors ${
                 saving || (isCreate && !skillName.trim())
-                  ? 'bg-surface-1 text-ctp-subtext0 cursor-default'
-                  : 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
+                  ? 'bg-surface-0 text-ctp-overlay0 cursor-default'
+                  : 'bg-ctp-accent text-ctp-crust hover:bg-ctp-accent/85 cursor-pointer'
               }`}
             >
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>
@@ -112,7 +114,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
             value={skillName}
             onChange={(e) => setSkillName(e.target.value)}
             placeholder="skill-name (lowercase, hyphens)"
-            className="w-full mb-2 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring"
+            className="w-full h-7 mb-2 rounded-md border border-surface-1 bg-ctp-crust px-2.5 text-xs text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent"
             spellCheck={false}
           />
         )}
@@ -129,37 +131,33 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
 
   // List view
   return (
-    <section>
-      <div className="flex items-center justify-between mb-2">
+    <section className={hideTitle ? 'mt-3' : 'mt-[22px]'}>
+      <div className="flex items-center justify-between gap-3 mb-2">
         <div>
-          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Skills</h3>
-          <span className="text-xs text-ctp-subtext0/60 font-mono">{pathLabel || '.claude/skills/'}</span>
+          {!hideTitle && <h3 className="text-[13px] font-semibold text-ctp-text">Skills</h3>}
+          <span className="text-xs text-ctp-overlay1 font-mono">{pathLabel || '.claude/skills/'}</span>
         </div>
         <button
           onClick={handleCreate}
           disabled={disabled}
-          className={`text-xs px-2 py-1 rounded transition-colors ${
-            disabled
-              ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed'
-              : 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
-          }`}
+          className="h-7 px-2.5 rounded-md border border-surface-1 text-xs font-medium text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          + Skill
+          New skill
         </button>
       </div>
 
       {skills.length === 0 ? (
-        <p className="text-xs text-ctp-subtext0/60 py-2">No skills defined.</p>
+        <p className="text-xs text-ctp-overlay1 py-2">No skills defined.</p>
       ) : (
-        <div className="space-y-1">
+        <div>
           {skills.map((skill) => (
             <div
               key={skill.name}
-              className="flex items-center justify-between py-1.5 px-2 rounded bg-surface-0 border border-surface-1"
+              className="min-h-[30px] py-1 flex items-center justify-between border-t border-surface-0"
             >
               <button
                 onClick={() => handleEdit(skill.name)}
-                className="text-sm text-ctp-text font-mono truncate hover:text-ctp-accent cursor-pointer transition-colors text-left"
+                className="text-[13px] text-ctp-text font-mono truncate hover:text-ctp-accent cursor-pointer transition-colors text-left"
                 title="Click to edit"
               >
                 {skill.name}
@@ -216,7 +214,7 @@ export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey,
         // eslint-disable-next-line no-restricted-syntax
         <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50">
           <div className="bg-ctp-base border border-surface-1 rounded-lg p-4 max-w-sm mx-4 shadow-xl">
-            <h4 className="text-sm font-semibold text-ctp-text mb-2">Delete Skill</h4>
+            <h4 className="text-sm font-semibold text-ctp-text mb-2">Delete skill</h4>
             <p className="text-xs text-ctp-subtext0 mb-1">
               Are you sure you want to delete <span className="font-mono text-ctp-text">{deleteTarget}</span>?
             </p>

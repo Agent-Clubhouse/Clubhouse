@@ -7,9 +7,11 @@ interface Props {
   disabled: boolean;
   refreshKey: number;
   pathLabel?: string;
+  /** The page title already names the section (agent settings pages in the new chrome). */
+  hideTitle?: boolean;
 }
 
-export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel }: Props) {
+export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel, hideTitle }: Props) {
   const [content, setContent] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -70,24 +72,24 @@ export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey
   if (!loaded) return null;
 
   return (
-    <section>
-      <div className="flex items-center justify-between mb-2">
+    <section className={hideTitle ? 'mt-3' : 'mt-[22px]'}>
+      <div className="flex items-center justify-between gap-3 mb-2">
         <div>
-          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">MCP Servers</h3>
-          <span className="text-xs text-ctp-subtext0/60 font-mono">{pathLabel || '.mcp.json'}</span>
+          {!hideTitle && <h3 className="text-[13px] font-semibold text-ctp-text">MCP servers</h3>}
+          <span className="text-xs text-ctp-overlay1 font-mono">{pathLabel || '.mcp.json'}</span>
         </div>
         <button
           onClick={handleSave}
           disabled={disabled || !dirty || saving || !!error}
-          className={`text-xs px-3 py-1 rounded transition-colors ${
+          className={`h-7 px-2.5 rounded-md text-xs font-medium transition-colors ${
             disabled
-              ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed'
+              ? 'bg-surface-0 text-ctp-overlay0 cursor-not-allowed'
               : dirty && !error
-                ? 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
-                : 'bg-surface-1 text-ctp-subtext0 cursor-default'
+                ? 'bg-ctp-accent text-ctp-crust hover:bg-ctp-accent/85 cursor-pointer'
+                : 'bg-surface-0 text-ctp-overlay0 cursor-default'
           }`}
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
 
