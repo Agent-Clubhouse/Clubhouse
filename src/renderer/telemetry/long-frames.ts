@@ -8,7 +8,7 @@
  * view values (spec §9.1); until it calls this, everything counts as `other`.
  */
 import { ATTR } from '../../shared/telemetry/attributes';
-import { isTelemetryEnabled, tel } from './facade';
+import { isTelemetryEnabled, onTelemetryEnabledChange, tel } from './facade';
 
 export type TelemetryView = Parameters<typeof ATTR.view>[0];
 
@@ -56,7 +56,7 @@ export function flushLongFrames(): void {
   buckets.clear();
 }
 
-export function startLongFrameCollection(): void {
+function startObserver(): void {
   if (observer || typeof PerformanceObserver === 'undefined') return;
   const supported = PerformanceObserver.supportedEntryTypes ?? [];
   const type = supported.includes('long-animation-frame') ? 'long-animation-frame' : supported.includes('longtask') ? 'longtask' : null;
@@ -72,12 +72,36 @@ export function startLongFrameCollection(): void {
   }
 }
 
-/** Test-only reset. */
-export function _resetLongFramesForTests(): void {
+function stopObserver(): void {
   observer?.disconnect();
   observer = null;
   if (interval) clearInterval(interval);
   interval = null;
   buckets.clear();
+}
+
+let subscribed: (() => void) | null = null;
+
+/**
+ * Collect long frames only while telemetry is on: the observer and the
+ * aggregation timer start on the enabled transition and stop on disable, so
+ * a disabled install pays nothing.
+ */
+export function startLongFrameCollection(): void {
+  if (subscribed) return;
+  subscribed = onTelemetryEnabledChange((enabled) => (enabled ? startObserver() : stopObserver()));
+  if (isTelemetryEnabled()) startObserver();
+}
+
+/** True while the PerformanceObserver is installed. Exported for tests. */
+export function isCollectingLongFrames(): boolean {
+  return observer !== null;
+}
+
+/** Test-only reset. */
+export function _resetLongFramesForTests(): void {
+  stopObserver();
+  subscribed?.();
+  subscribed = null;
   currentView = 'other';
 }

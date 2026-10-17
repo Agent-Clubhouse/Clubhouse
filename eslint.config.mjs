@@ -188,17 +188,16 @@ export default tseslint.config(
   },
   {
     // Swallowed errors must reach telemetry (telemetry spec §12.4). Warn on the
-    // existing code (about 530 catches in these trees); strict in new code.
-    // New UI trees (the chrome refresh lives in src/renderer/chrome) belong in
-    // the strict list below from their first commit.
+    // existing code (474 flagged catches in these trees today); strict in new
+    // UI trees, starting with the chrome refresh in src/renderer/chrome (below).
+    // src/main/telemetry and src/renderer/telemetry are outside both lists on
+    // purpose: the pipeline can't report its own failures into itself.
     files: ['src/renderer/features/**/*.{ts,tsx}', 'src/main/services/**/*.ts'],
     ignores: ['**/*.test.ts', '**/*.test.tsx'],
     plugins: { 'clubhouse-telemetry': { rules: { 'catch-must-report': catchMustReport } } },
     rules: { 'clubhouse-telemetry/catch-must-report': 'warn' },
   },
   {
-    // The telemetry pipeline itself is exempt: it can't report its own
-    // failures into itself without looping, so it logs locally instead.
     files: ['src/renderer/chrome/**/*.{ts,tsx}'],
     ignores: ['**/*.test.ts', '**/*.test.tsx'],
     plugins: { 'clubhouse-telemetry': { rules: { 'catch-must-report': catchMustReport } } },

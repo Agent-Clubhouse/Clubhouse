@@ -187,16 +187,19 @@ test.describe('Telemetry export', () => {
     });
     try {
       await expect(window.locator('body')).toBeVisible();
-      // Give the renderer time to receive the enabled state from main.
-      await window.waitForTimeout(1000);
+      // Wait until main has told this renderer that telemetry is on.
+      await expect
+        .poll(() => window.evaluate(() => window.clubhouse.telemetry.getState().then((s) => s.enabled)), { timeout: 15_000 })
+        .toBe(true);
       await window.evaluate(() => {
         void Promise.reject(new TypeError('e2e-secret-renderer-message'));
       });
-      // The renderer flushes its batch every 2 s.
-      await window.waitForTimeout(2500);
+      // Renderer batch (2 s) → main → exporter batch (5 s). Poll instead of sleeping.
+      const logsBody = () => mock.received.filter((r) => r.url === '/v1/logs').map((r) => r.body).join('\n');
+      await expect.poll(() => logsBody(), { timeout: 20_000 }).toContain('clubhouse.exception');
       await quitAndWait(electronApp);
 
-      const logs = mock.received.filter((r) => r.url === '/v1/logs').map((r) => r.body).join('\n');
+      const logs = logsBody();
       expect(logs).toContain('clubhouse.exception');
       expect(logs).toContain('TypeError');
       expect(logs).toContain('clubhouse.window.kind');

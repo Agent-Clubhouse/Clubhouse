@@ -99,8 +99,27 @@ export function flushTelemetry(): void {
   }
 }
 
+type StateListener = (enabled: boolean) => void;
+const stateListeners = new Set<StateListener>();
+
+/** Called on every enabled ↔ disabled transition. Returns an unsubscribe. */
+export function onTelemetryEnabledChange(listener: StateListener): () => void {
+  stateListeners.add(listener);
+  return () => stateListeners.delete(listener);
+}
+
 function setState(next: TelemetryState): void {
+  const was = state.enabled;
   state = next;
+  if (was !== state.enabled) {
+    for (const l of stateListeners) {
+      try {
+        l(state.enabled);
+      } catch {
+        // A listener must never break the state update.
+      }
+    }
+  }
   if (!state.enabled) {
     queue = [];
     if (timer) {
@@ -271,6 +290,7 @@ export function _resetRendererTelemetryForTests(): void {
   timer = null;
   unsubscribe = null;
   readySent = false;
+  stateListeners.clear();
 }
 
 /** Test-only: force a state without a bridge round trip. */

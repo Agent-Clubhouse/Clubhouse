@@ -103,12 +103,17 @@ describe('renderer bridge', () => {
   it('turns renderer exceptions into ForwardedErrors with no message', () => {
     const rt = fakeRuntime();
     setRuntime(rt);
-    dispatchRendererItems([{ t: 'exception', errorType: 'TypeError', stack: 'TypeError\n at x', origin: 'plugin', handled: true, attrs: [] }], 'main');
+    dispatchRendererItems([{ t: 'exception', errorType: 'TypeError', stack: 'TypeError\n at x', origin: 'plugin', handled: true, attrs: [ATTR.errorBoundary('plugin')] }], 'main');
     const [err, opts] = (rt.exception as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(err).toBeInstanceOf(ForwardedError);
     expect((err as ForwardedError).forwardedType).toBe('TypeError');
     expect((err as Error).message).toBe('');
-    expect(opts).toEqual({ origin: 'plugin', handled: true, attrs: [ATTR.process('renderer'), ATTR.windowKind('main')] });
+    // The boundary from the renderer and the window kind main decides both reach the record.
+    expect(opts).toEqual({
+      origin: 'plugin',
+      handled: true,
+      attrs: [ATTR.errorBoundary('plugin'), ATTR.process('renderer'), ATTR.windowKind('main')],
+    });
   });
 
   it('accepts renderer-ready once, and only from the main window', () => {
