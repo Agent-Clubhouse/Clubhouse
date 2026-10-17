@@ -12,10 +12,14 @@ export type { AcpSessionOpts, AcpSessionEvent, AcpSessionState, AcpAgentProfile,
 export { deriveAcpCapabilities, terminalLoginCommand } from './acp-capabilities';
 export type { AcpDriverCapabilities } from './acp-capabilities';
 export { parseSessionUpdate } from './acp-updates';
+export { AcpChatDriver, COPILOT_ACP_LAUNCH, createCopilotAcpChatDriver } from './acp-chat-driver';
+export type { AcpLaunchSpec } from './acp-chat-driver';
+export { AcpChatEventMapper, toChatCapabilities } from './acp-chat-mapper';
 export { ACP_SCHEMA_VERSION, ACP_PROTOCOL_VERSION } from './acp-schema';
 export {
   COPILOT_ACP_ARGS,
   COPILOT_ACP_PROFILE,
+  COPILOT_PERMISSION_LEVELS,
   COPILOT_ACP_TESTED_RANGE,
   resolveCopilotAcpSpawn,
   selectAcpProfile,

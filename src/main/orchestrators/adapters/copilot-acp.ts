@@ -1,5 +1,6 @@
 import { deriveAcpCapabilities, type AcpDriverCapabilities } from './acp-capabilities';
-import { GENERIC_ACP_PROFILE, type AcpAgentProfile } from './acp-session';
+import { GENERIC_ACP_PROFILE, type AcpAgentProfile, type AcpPermissionLevels } from './acp-session';
+import type { PermissionLevel } from '../../../shared/chat/capabilities';
 import type {
   InitializeResponse,
   LegacySessionModelState,
@@ -170,12 +171,56 @@ export function copilotAcpCapabilities(init: InitializeResponse): AcpDriverCapab
   };
 }
 
+// ── Permission ladder ────────────────────────────────────────────────────────
+
+const COPILOT_MODE_BASE = 'https://agentclientprotocol.com/protocol/session-modes#';
+
+/**
+ * Copilot over ACP has two knobs: the mode (agent / plan / autopilot) and the
+ * `allow_all` config option. That covers Plan, Ask first and Full access.
+ * There is no "accept edits only" or classifier mode, so Auto-accept edits
+ * and Auto aren't offered. Autopilot (experimental, runs until done without
+ * user input) reads as Full access but is never chosen by Clubhouse.
+ */
+export const COPILOT_PERMISSION_LEVELS: AcpPermissionLevels = {
+  live: ['plan', 'ask', 'full_access'],
+  current(state) {
+    const mode = state.modes?.currentModeId ?? stringOption(state.configOptions, 'mode');
+    const kind = mode ? copilotModeKind(mode) : undefined;
+    if (kind === 'plan') return 'plan';
+    if (kind === 'autopilot') return 'full_access';
+    if (kind === 'agent') return stringOption(state.configOptions, 'allow_all') === 'on' ? 'full_access' : 'ask';
+    return undefined;
+  },
+  async apply(session, level: PermissionLevel) {
+    if (!COPILOT_PERMISSION_LEVELS.live.includes(level)) {
+      throw new Error(`Copilot over ACP has no ${level} level`);
+    }
+    const state = session.getState();
+    const targetMode = COPILOT_MODE_BASE + (level === 'plan' ? 'plan' : 'agent');
+    const modeId = state.modes?.availableModes.find((m) => copilotModeKind(m.id) === copilotModeKind(targetMode))?.id ?? targetMode;
+    const allowAll = level === 'full_access' ? 'on' : 'off';
+    if (stringOption(state.configOptions, 'allow_all') !== allowAll && state.configOptions.some((o) => o.id === 'allow_all')) {
+      await session.setConfigOption('allow_all', allowAll);
+    }
+    if ((state.modes?.currentModeId ?? stringOption(state.configOptions, 'mode')) !== modeId) {
+      await session.setMode(modeId);
+    }
+  },
+};
+
+function stringOption(options: SessionConfigOption[], id: string): string | undefined {
+  const option = options.find((o) => o.id === id);
+  return option?.type === 'select' ? option.currentValue : undefined;
+}
+
 export const COPILOT_ACP_PROFILE: AcpAgentProfile = {
   id: 'copilot',
   capabilities: copilotAcpCapabilities,
   normalizeConfigOptions: dedupeCopilotConfigOptions,
   normalizeLegacyModels: dedupeCopilotLegacyModels,
   filterUpdate: filterCopilotUpdate,
+  permissionLevels: COPILOT_PERMISSION_LEVELS,
 };
 
 /** Pick the profile from the handshake: Copilot's when it is Copilot, else generic. */

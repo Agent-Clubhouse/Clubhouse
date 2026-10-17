@@ -28,6 +28,16 @@ import {
 } from './acp-schema';
 import { parseSessionUpdate } from './acp-updates';
 import { deriveAcpCapabilities, type AcpDriverCapabilities } from './acp-capabilities';
+import type { PermissionLevel } from '../../../shared/chat/capabilities';
+
+/** How an agent's native modes and options map onto Clubhouse's permission ladder. */
+export interface AcpPermissionLevels {
+  /** Levels `apply` can switch to inside a live session. */
+  live: readonly PermissionLevel[];
+  /** The level the session's current mode and options amount to, if any. */
+  current(state: Readonly<AcpSessionState>): PermissionLevel | undefined;
+  apply(session: AcpSession, level: PermissionLevel): Promise<void>;
+}
 
 /**
  * Agent-specific adjustments layered on the generic ACP driver. The generic
@@ -42,6 +52,8 @@ export interface AcpAgentProfile {
   normalizeLegacyModels?(models: LegacySessionModelState): LegacySessionModelState;
   /** Inspect each update before it is applied and emitted; return null to drop it. */
   filterUpdate?(update: SessionUpdate, ctx: { openToolCallIds: ReadonlySet<string> }): SessionUpdate | null;
+  /** Permission-ladder mapping. Without one, the session reports no levels. */
+  permissionLevels?: AcpPermissionLevels;
 }
 
 export const GENERIC_ACP_PROFILE: AcpAgentProfile = {
@@ -202,6 +214,10 @@ export class AcpSession {
 
   get profileId(): string {
     return this.profile.id;
+  }
+
+  get agentProfile(): AcpAgentProfile {
+    return this.profile;
   }
 
   getState(): Readonly<AcpSessionState> {
