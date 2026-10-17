@@ -1,4 +1,4 @@
-import type { PluginContext, PluginModule, PluginManifest, PluginThemeDeclaration } from '../../shared/plugin-types';
+import type { PluginContext, PluginModule, PluginManifest, PluginRegistryEntry, PluginThemeDeclaration } from '../../shared/plugin-types';
 import { PERMISSION_RISK_LEVELS } from '../../shared/plugin-types';
 import type { ThemeDefinition, ThemeColors, HljsColors, TerminalColors, ThemeFonts, ThemeGradients } from '../../shared/types';
 import { usePluginStore } from './plugin-store';
@@ -479,7 +479,7 @@ export async function activatePlugin(
 ): Promise<void> {
   const entry = usePluginStore.getState().plugins[pluginId];
   const contextKey = projectId ? `${pluginId}:${projectId}` : pluginId;
-  if (!entry || activeContexts.has(contextKey) || !isTelemetryEnabled()) {
+  if (!entry || !isTelemetryEnabled() || !willAttemptActivation(entry, contextKey, projectId)) {
     return activatePluginNow(pluginId, projectId, projectPath);
   }
   const builtin = entry.source === 'builtin';
@@ -490,12 +490,30 @@ export async function activatePlugin(
       ...(builtin ? [] : [ATTR.pluginIdHash(pluginId)]),
       ATTR.pluginOrigin(builtin ? 'builtin' : entry.source === 'marketplace' ? 'marketplace' : 'sideloaded'),
       ATTR.pluginScope(entry.manifest.scope),
-      ATTR.pluginApiVersion(entry.manifest.engine?.api ?? 0),
+      ATTR.pluginApiVersion(String(entry.manifest.engine?.api ?? 'none')),
       ATTR.attempt(attempt),
     ],
   }, () => activatePluginNow(pluginId, projectId, projectPath), {
     classify: () => classifyActivation(pluginId, contextKey),
   });
+}
+
+/**
+ * Mirrors activatePluginNow's early returns, so the span covers real
+ * attempts only: not already-active contexts, blocked statuses, a project
+ * plugin without a project, or an errored plugin whose retry is still
+ * backing off or out of attempts (those would re-report the old error).
+ */
+function willAttemptActivation(entry: PluginRegistryEntry, contextKey: string, projectId?: string): boolean {
+  if (activeContexts.has(contextKey)) return false;
+  if (entry.status === 'incompatible' || entry.status === 'disabled' || entry.status === 'pending-approval') return false;
+  if (entry.manifest.scope === 'project' && !projectId) return false;
+  if (entry.status === 'errored') {
+    const failure = activationFailures.get(activationContextKey(entry.manifest.id, projectId));
+    if ((failure?.attempts ?? 0) >= MAX_ACTIVATION_ATTEMPTS) return false;
+    if (failure && Date.now() < failure.nextEligibleAt) return false;
+  }
+  return true;
 }
 
 /** The activation outcome, from the plugin's state once activatePluginNow settled. */

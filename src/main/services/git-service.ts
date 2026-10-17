@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult, GitWorktreeEntry, GitCommitDetail, GitCommitFileEntry } from '../../shared/types';
 import { appLog } from './log-service';
-import { replaySpan, tel } from '../telemetry/facade';
+import { isTelemetryActive, replaySpan, tel } from '../telemetry/facade';
 import { classifyGitFailure, type GitFailure } from '../telemetry/workspace';
 import { ATTR, countBucket, type GitOp, type SpanName } from '../../shared/telemetry/attributes';
 
@@ -38,7 +38,7 @@ function gitExec(args: string[], cwd: string, timeout = 10000, op: GitOp = 'othe
   const startMs = Date.now();
   return new Promise((resolve, reject) => {
     nodeExecFile('git', args, { cwd, encoding: 'utf-8', timeout }, (error, stdout, stderr) => {
-      tel.count('clubhouse.git.subprocess.duration', (Date.now() - startMs) / 1000, [ATTR.gitOp(op)]);
+      if (isTelemetryActive()) tel.count('clubhouse.git.subprocess.duration', (Date.now() - startMs) / 1000, [ATTR.gitOp(op)]);
       if (error) {
         (error as any).stderr = stderr;
         reject(error);
@@ -146,6 +146,7 @@ export async function isInsideGitRepo(dirPath: string): Promise<boolean> {
  * Detailed-level exemplar span only when one poll takes over 2 s.
  */
 export async function getGitInfo(dirPath: string): Promise<GitInfo> {
+  if (!isTelemetryActive()) return readGitInfo(dirPath);
   const startMs = Date.now();
   const info = await readGitInfo(dirPath);
   const endMs = Date.now();

@@ -16,6 +16,14 @@ import { ATTR, countBucket } from '../../shared/telemetry/attributes';
 type FileOp = Parameters<typeof ATTR.fileOp>[0];
 
 /**
+ * The handlers rethrow a friendlier Error; keep the errno code on it so
+ * fileOp can count by code. The message (what the renderer sees) is unchanged.
+ */
+function withErrno(err: Error, code: string): Error {
+  return Object.assign(err, { code });
+}
+
+/**
  * Count a file-service operation by result (spec §4.9). Errors are counted by
  * errno code (or `path_denied`) and rethrown unchanged.
  */
@@ -68,7 +76,7 @@ export function registerFileHandlers(): void {
       appLog('core:file', 'error', 'Failed to read file', {
         meta: { filePath, code, error: message },
       });
-      throw new Error(`Failed to read file "${filePath}": ${code} - ${message}`);
+      throw withErrno(new Error(`Failed to read file "${filePath}": ${code} - ${message}`), code);
     }
   })));
 
@@ -82,7 +90,7 @@ export function registerFileHandlers(): void {
       appLog('core:file', 'error', 'Failed to write file', {
         meta: { filePath, code, error: message },
       });
-      throw new Error(`Failed to write file "${filePath}": ${code} - ${message}`);
+      throw withErrno(new Error(`Failed to write file "${filePath}": ${code} - ${message}`), code);
     }
   })));
 
@@ -96,7 +104,7 @@ export function registerFileHandlers(): void {
       appLog('core:file', 'error', 'Failed to read binary file', {
         meta: { filePath, code, error: message },
       });
-      throw new Error(`Failed to read binary file "${filePath}": ${code} - ${message}`);
+      throw withErrno(new Error(`Failed to read binary file "${filePath}": ${code} - ${message}`), code);
     }
   })));
 
@@ -115,7 +123,7 @@ export function registerFileHandlers(): void {
       appLog('core:file', 'error', 'Failed to create directory', {
         meta: { dirPath, code, error: message },
       });
-      throw new Error(`Failed to create directory "${dirPath}": ${code} - ${message}`);
+      throw withErrno(new Error(`Failed to create directory "${dirPath}": ${code} - ${message}`), code);
     }
   })));
 
@@ -129,7 +137,7 @@ export function registerFileHandlers(): void {
       appLog('core:file', 'error', 'Failed to delete file', {
         meta: { filePath, code, error: message },
       });
-      throw new Error(`Failed to delete file "${filePath}": ${code} - ${message}`);
+      throw withErrno(new Error(`Failed to delete file "${filePath}": ${code} - ${message}`), code);
     }
   })));
 
@@ -144,7 +152,7 @@ export function registerFileHandlers(): void {
       appLog('core:file', 'error', 'Failed to rename file', {
         meta: { oldPath, newPath, code, error: message },
       });
-      throw new Error(`Failed to rename "${oldPath}" to "${newPath}": ${code} - ${message}`);
+      throw withErrno(new Error(`Failed to rename "${oldPath}" to "${newPath}": ${code} - ${message}`), code);
     }
   })));
 
@@ -159,7 +167,7 @@ export function registerFileHandlers(): void {
       appLog('core:file', 'error', 'Failed to copy file', {
         meta: { src, dest, code, error: message },
       });
-      throw new Error(`Failed to copy "${src}" to "${dest}": ${code} - ${message}`);
+      throw withErrno(new Error(`Failed to copy "${src}" to "${dest}": ${code} - ${message}`), code);
     }
   })));
 
@@ -173,7 +181,7 @@ export function registerFileHandlers(): void {
       appLog('core:file', 'error', 'Failed to stat file', {
         meta: { filePath, code, error: message },
       });
-      throw new Error(`Failed to stat "${filePath}": ${code} - ${message}`);
+      throw withErrno(new Error(`Failed to stat "${filePath}": ${code} - ${message}`), code);
     }
   })));
 

@@ -13,6 +13,7 @@ const rec = vi.hoisted(() => ({
   flows: [] as FlowRecord[],
   counts: [] as Array<{ name: string; value: number; attrs?: Array<{ key: string; value: unknown }> }>,
   replays: [] as Array<{ name: string }>,
+  active: true,
 }));
 
 vi.mock('../telemetry/facade', () => ({
@@ -27,6 +28,7 @@ vi.mock('../telemetry/facade', () => ({
     count: (name: string, value: number, attrs?: Array<{ key: string; value: unknown }>) => rec.counts.push({ name, value, attrs }),
   },
   replaySpan: (s: { name: string }) => rec.replays.push(s),
+  isTelemetryActive: () => rec.active,
 }));
 
 import { execFile } from 'child_process';
@@ -52,6 +54,7 @@ function mockGit(handler: (args: string[]) => { stdout?: string; error?: Partial
 const attr = (f: FlowRecord, key: string) => f.attrs.find((a) => a.key === key)?.value;
 
 beforeEach(() => {
+  rec.active = true;
   rec.flows = [];
   rec.counts = [];
   rec.replays = [];
@@ -115,5 +118,12 @@ describe('git-service telemetry', () => {
     mockGit(() => ({ error: { code: 128, stderr: 'fatal: not a git repository (or any of the parent directories): .git' } }));
     await expect(listWorktrees(DIR)).rejects.toThrow();
     expect(rec.flows[0]).toMatchObject({ name: 'clubhouse.git.worktree_list', classification: { error: 'not_a_repo' } });
+  });
+
+  it('does no metric work for polls while telemetry is off', async () => {
+    rec.active = false;
+    mockGit((args) => ({ stdout: args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree' ? 'true' : '' }));
+    await getGitInfo(DIR);
+    expect(rec.counts).toEqual([]);
   });
 });

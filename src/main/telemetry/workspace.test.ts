@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { classifyFsError, classifyGitFailure, classifySearchError, editorBucket, flowClassifyingThrows } from './workspace';
-import { abortPending, setRuntime } from './facade';
+import { classifyFsError, classifyGitFailure, classifySearchError, editorBucket, flowClassifyingThrows, stepUnderFlow } from './workspace';
+import { abortPending, setRuntime, tel } from './facade';
 import { sampleWorkspace } from './workspace-gauges';
 import type { TelemetryRuntime } from './types';
 
@@ -114,5 +114,23 @@ describe('sampleWorkspace', () => {
     expect(rt.counts).toEqual([['clubhouse.file_watch.active', 3], ['clubhouse.projects.count', 7]]);
     await sampleWorkspace({ projectCount: async () => { throw new Error('unreadable'); }, activeWatchCount: () => 1 });
     expect(rt.counts.at(-1)).toEqual(['clubhouse.file_watch.active', 1]);
+  });
+});
+
+describe('stepUnderFlow', () => {
+  it('only opens a step while a root flow is running', async () => {
+    const rt = fakeRuntime();
+    const steps: string[] = [];
+    rt.step = ((name: string, fn: (s: { set: () => void }) => unknown) => {
+      steps.push(name);
+      return fn({ set: () => {} });
+    }) as never;
+    setRuntime(rt);
+    expect(stepUnderFlow('clubhouse.git.worktree_add', () => 1)).toBe(1);
+    expect(steps).toEqual([]);
+    await tel.flow('clubhouse.project.add', {}, async () => {
+      stepUnderFlow('clubhouse.git.worktree_add', () => 2);
+    });
+    expect(steps).toEqual(['clubhouse.git.worktree_add']);
   });
 });

@@ -83,7 +83,7 @@ const SAMPLES: Record<keyof typeof ATTR, { good: TelAttr; key: string }> = {
   pluginIdHash: { good: ATTR.pluginIdHash('my-community-plugin'), key: 'clubhouse.plugin.id_hash' },
   pluginOrigin: { good: ATTR.pluginOrigin('marketplace'), key: 'clubhouse.plugin.origin' },
   pluginScope: { good: ATTR.pluginScope('dual'), key: 'clubhouse.plugin.scope' },
-  pluginApiVersion: { good: ATTR.pluginApiVersion(9), key: 'clubhouse.plugin.api_version' },
+  pluginApiVersion: { good: ATTR.pluginApiVersion('0.9'), key: 'clubhouse.plugin.api_version' },
   attempt: { good: ATTR.attempt(2), key: 'clubhouse.attempt' },
   pluginProtocolResult: { good: ATTR.pluginProtocolResult('denied'), key: 'clubhouse.plugin.protocol.result' },
   canvasLoadResult: { good: ATTR.canvasLoadResult('recovered_from_backup'), key: 'clubhouse.canvas.load.result' },
@@ -238,5 +238,11 @@ describe('telemetry attribute registry', () => {
       'create_branch', 'stash', 'stash_pop', 'diff', 'show_commit', 'worktree_list']) {
       expect(isKnownSpan(`clubhouse.git.${op}`), op).toBe(true);
     }
+  });
+
+  it('sends plugin API versions as strings, never truncated', () => {
+    expect(ATTR.pluginApiVersion('0.8').value).toBe('0.8');
+    expect(ATTR.pluginApiVersion('0.9').value).toBe('0.9');
+    expect(ATTR.pluginApiVersion('7.5').value).toBe('other');
   });
 });

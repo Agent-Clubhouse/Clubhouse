@@ -6,10 +6,18 @@
  * No OpenTelemetry imports: this file is part of the main bundle.
  */
 import type { ERROR_TYPES, SpanName } from '../../shared/telemetry/attributes';
-import { tel } from './facade';
+import { currentFlow, tel } from './facade';
 import type { FlowOptions, SpanHandle } from './types';
 
 type ErrorType = (typeof ERROR_TYPES)[number];
+
+/**
+ * A child step only when a root flow is active (e.g. the Phase 4 agent
+ * create/delete flows); otherwise just runs `fn`, so no orphan spans appear.
+ */
+export function stepUnderFlow<T>(name: SpanName, fn: () => T): T {
+  return currentFlow() ? tel.step(name, fn) : fn();
+}
 
 /**
  * A flow whose thrown errors get a specific `error.type` instead of the

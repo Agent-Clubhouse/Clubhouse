@@ -601,7 +601,7 @@
             "type": 3,
             "content": {
               "version": "KqlItem/1.0",
-              "query": "dependencies\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.git.worktree_create\", \"clubhouse.git.worktree_remove\")\n| summarize count = sum(itemCount), failed = sumif(itemCount, success == false), p95_ms = round(percentile(duration, 95)) by name",
+              "query": "dependencies\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name in (\"clubhouse.git.worktree_add\", \"clubhouse.git.worktree_remove\")\n| summarize count = sum(itemCount), failed = sumif(itemCount, success == false), p95_ms = round(percentile(duration, 95)) by name",
               "size": 0,
               "title": "Worktree create and remove",
               "queryType": 0,

@@ -10,7 +10,7 @@ import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-s
 import { resolveOrchestrator } from './agent-system';
 import { pathExists } from './fs-utils';
 import { isInsideGitRepo } from './git-service';
-import { tel } from '../telemetry/facade';
+import { stepUnderFlow } from '../telemetry/workspace';
 import { persist } from '../telemetry/persist';
 
 /** Non-blocking git command execution. Prevents UI freezes in large repos. */
@@ -1175,8 +1175,8 @@ export async function createDurable(
 
       try {
         await ensureDir(path.dirname(worktreePath));
-        // A child of the agent create flow when one is active (spec §4.8).
-        await tel.step('clubhouse.git.worktree_create', () => execGitAsync(`git worktree add "${worktreePath}" "${branch}"`, projectPath));
+        // Only spanned under an active agent create flow (Phase 4), never orphaned.
+        await stepUnderFlow('clubhouse.git.worktree_add', () => execGitAsync(`git worktree add "${worktreePath}" "${branch}"`, projectPath));
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         appLog('core:agent-config', 'error', 'Git worktree creation failed', {
@@ -1314,7 +1314,7 @@ export async function deleteDurable(projectPath: string, agentId: string): Promi
   const hasGit = await isInsideGitRepo(projectPath);
   if (hasGit) {
     try {
-      await tel.step('clubhouse.git.worktree_remove', () => execGitFileAsync(['worktree', 'remove', agent.worktreePath, '--force'], projectPath));
+      await stepUnderFlow('clubhouse.git.worktree_remove', () => execGitFileAsync(['worktree', 'remove', agent.worktreePath, '--force'], projectPath));
     } catch (err) {
       appLog('core:agent-config', 'warn', 'Git worktree removal failed, will clean up manually', {
         meta: {

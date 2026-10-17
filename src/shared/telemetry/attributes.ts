@@ -11,6 +11,8 @@
  */
 
 /** Bump on breaking attribute changes; exported as `clubhouse.telemetry.schema`. */
+import { SUPPORTED_PLUGIN_API_VERSIONS } from '../marketplace-types';
+
 export const TELEMETRY_SCHEMA_VERSION = 1;
 
 /** Maximum length of any exported string attribute (spec §5.1). */
@@ -161,13 +163,16 @@ export function countBucket(n: number): CountBucket {
   return '>=10000';
 }
 
-/** User-initiated git operations (§4.8), plus the polled status and worktree steps. */
+/** User-initiated git operations (§4.8), plus the polled status. */
 export const GIT_OPS = [
   'checkout', 'stage', 'unstage', 'stage_all', 'unstage_all', 'discard', 'commit', 'push', 'pull',
   'create_branch', 'stash', 'stash_pop', 'diff', 'show_commit', 'worktree_list',
-  'status', 'worktree_create', 'worktree_remove', 'other',
+  'status', 'other',
 ] as const;
 export type GitOp = (typeof GIT_OPS)[number];
+
+/** Supported plugin API versions, kept in sync with the manifest validator. */
+export const PLUGIN_API_VERSION_VALUES: readonly string[] = SUPPORTED_PLUGIN_API_VERSIONS.map(String);
 
 /** Built-in plugins (§4.10): the only plugin ids ever sent raw. */
 export const BUILTIN_PLUGIN_IDS = [
@@ -304,7 +309,8 @@ export const ATTR = {
   pluginIdHash: hashAttr('clubhouse.plugin.id_hash'),
   pluginOrigin: enumAttr('clubhouse.plugin.origin', ['builtin', 'marketplace', 'sideloaded']),
   pluginScope: enumAttr('clubhouse.plugin.scope', ['project', 'app', 'dual']),
-  pluginApiVersion: intAttr('clubhouse.plugin.api_version'),
+  /** The manifest's `engine.api` (0.5, 0.9, ...) as a string; unsupported versions become `other`. */
+  pluginApiVersion: enumAttr('clubhouse.plugin.api_version', PLUGIN_API_VERSION_VALUES),
   attempt: intAttr('clubhouse.attempt'),
   pluginProtocolResult: enumAttr('clubhouse.plugin.protocol.result', ['ok', 'denied', 'not_found']),
   canvasLoadResult: enumAttr('clubhouse.canvas.load.result', ['ok', 'new', 'recovered_from_backup', 'degraded', 'unreadable', 'failed']),
@@ -390,7 +396,7 @@ export const SPANS = {
   'clubhouse.git.show_commit': { level: 'standard', root: true },
   'clubhouse.git.worktree_list': { level: 'standard', root: true },
   /** Children of the agent create/delete flows (Phase 4). */
-  'clubhouse.git.worktree_create': { level: 'standard', root: false },
+  'clubhouse.git.worktree_add': { level: 'standard', root: false },
   'clubhouse.git.worktree_remove': { level: 'standard', root: false },
   /** Exemplar for a status poll slower than 2 s; polls themselves never get spans. */
   'clubhouse.git.status.slow': { level: 'detailed', root: true },
