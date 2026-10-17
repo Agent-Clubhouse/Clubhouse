@@ -77,4 +77,40 @@ describe('Clubhouse Workbook', () => {
     expect(all).not.toMatch(/id_hash/);
     expect(all).not.toMatch(/\bmessage\b/);
   });
+
+  it('ships an ARM wrapper and alert rules that match the generator (run scripts/build-workbook-arm.mjs)', async () => {
+    const { buildAll } = await import('../scripts/build-workbook-arm.mjs');
+    for (const [file, content] of Object.entries(buildAll() as Record<string, string>)) {
+      // Windows checkouts may convert to CRLF; the generator writes LF.
+      const onDisk = (await fs.promises.readFile(path.join(path.dirname(WORKBOOK), file), 'utf-8')).replace(/\r\n/g, '\n');
+      expect(onDisk, file).toBe(content);
+    }
+    const deploy = JSON.parse(await fs.promises.readFile(path.join(path.dirname(WORKBOOK), 'azuredeploy.json'), 'utf-8'));
+    expect(JSON.parse(deploy.resources[0].properties.serializedData)).toEqual(await loadWorkbook());
+  });
+
+  it('has an alert rule for every P0 hot spot with signals, and names the rest as pending', async () => {
+    const { ALERTS, PENDING_P0 } = await import('../scripts/build-workbook-arm.mjs');
+    const covered = new Set((ALERTS as Array<{ hotspot: string }>).map((a) => a.hotspot));
+    const pending = Object.keys(PENDING_P0 as Record<string, string>);
+    // spec §12.4: P0 flows are H1, H2, H3, H5, H6, H7, H9, the H11 save path and H8's bulletin post.
+    expect([...covered, ...pending].sort()).toEqual(['H1', 'H11', 'H2', 'H3', 'H5', 'H6', 'H7', 'H8', 'H9']);
+    expect(pending.filter((h) => covered.has(h))).toEqual([]);
+  });
+
+  it('alert queries only use registered names and never hashed ids or messages', async () => {
+    const { ALERTS } = await import('../scripts/build-workbook-arm.mjs');
+    const unknown: string[] = [];
+    for (const a of ALERTS as Array<{ id: string; query: string[] }>) {
+      const q = a.query.join('\n');
+      for (const m of q.matchAll(/"(clubhouse\.[a-z0-9_.]+)"/g)) {
+        if (!names.has(m[1]) && !attributes.has(m[1])) unknown.push(`${a.id}: ${m[1]}`);
+      }
+      for (const m of q.matchAll(/customDimensions\["([^"]+)"\]/g)) {
+        if (!attributes.has(m[1])) unknown.push(`${a.id}: ${m[1]}`);
+      }
+      expect(q).not.toMatch(/id_hash|\bmessage\b/);
+    }
+    expect(unknown).toEqual([]);
+  });
 });

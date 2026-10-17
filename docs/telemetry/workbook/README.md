@@ -2,16 +2,48 @@
 
 A ready-made Azure Monitor Workbook for Clubhouse's opt-in telemetry export ([spec §6.10](../../telemetry-otel-spec.md)). It only applies to the Azure Application Insights destination. If you export over OTLP, build dashboards in your own backend.
 
-## Import it
+## Deploy it
+
+**One click:** [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAgent-Clubhouse%2FClubhouse%2Fmain%2Fdocs%2Ftelemetry%2Fworkbook%2Fazuredeploy.json)
+
+The portal asks for the resource group and the **Application Insights resource ID** Clubhouse sends to. Find it on the resource's **Properties** page; it looks like `/subscriptions/…/resourceGroups/…/providers/microsoft.insights/components/…`. The workbook is created in that resource group and reads from that resource. Deploying again with the same workbook ID updates it in place.
+
+**By hand:**
 
 1. In the Azure portal, open your Application Insights resource and go to **Workbooks**.
 2. Choose **New**, then open the **Advanced Editor** (the `</>` button).
 3. Select **Gallery Template**, paste the contents of [`clubhouse.workbook.json`](clubhouse.workbook.json), and choose **Apply**.
 4. **Save** the workbook into the same resource.
 
-A one-click **Deploy to Azure** button and optional alert rules come in Phase 7.
+## Alerts (optional)
 
-## What's in v1
+[![Deploy alerts to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAgent-Clubhouse%2FClubhouse%2Fmain%2Fdocs%2Ftelemetry%2Fworkbook%2Falerts.json)
+
+[`alerts.json`](alerts.json) creates one scheduled-query alert rule for each P0 signal in the spec (§12.4). Each rule checks the last hour, once an hour, and fires when its query returns any row. Nothing is created until you deploy it. Give it an **action group** to be emailed or paged; leave it empty to see alerts only in the portal.
+
+| Rule | Hot spot | Fires when |
+|---|---|---|
+| Data recovered or saves blocked | H1 | a store was restored from backup, found unreadable, or a data-loss guard blocked saves |
+| Permission requests timed out or stuck | H3 | a permission request timed out, or stayed pending past the stuck threshold |
+| Plugin activations failing | H5 | three or more activations failed with the same error in an hour |
+| An applied update did not take | H6 | the next start after an update still ran the old version |
+| Agents failing right after spawn | H7 | over 20% of at least 10 runs ended as early failures, per orchestrator |
+| Bulletin messages evicted or rejected | H8 | a post pushed out older messages or was rejected |
+| File saves failing | H11 | a write from the file service failed |
+
+H2 (CLI drift by `c.provider.cli_version`) and H9 (Annex) get their rules when their instrumentation lands. Thresholds are deliberately low for a single user's resource; edit the rules in the portal to tune them.
+
+## Release checklist
+
+Once per release that changes the workbook, the alert rules or the attribute registry:
+
+1. Run `node scripts/build-workbook-arm.mjs` and commit `azuredeploy.json` and `alerts.json`. `test/telemetry-workbook.test.ts` fails if they are out of date or reference an unregistered name.
+2. Deploy `azuredeploy.json` into a scratch resource group against a scratch Application Insights resource that has received data from a dev build.
+3. Open every tab with **Time range** set to the last 24 hours. Each panel renders without a query error; panels for features you didn't use may be empty.
+4. Deploy `alerts.json` with `alertsEnabled` set to `false`, check that every rule appears under **Alerts → Alert rules**, then delete the scratch resource group.
+5. Note any panel or rule change in the release notes.
+
+## Tabs
 
 | Tab | Panels |
 |---|---|

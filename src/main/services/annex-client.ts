@@ -657,6 +657,7 @@ function startHeartbeat(sat: SatelliteConnectionInternal): void {
     sat.pongTimeout = setTimeout(() => {
       appLog('core:annex-client', 'warn', 'Heartbeat pong timeout — closing connection', {
         meta: { fingerprint: sat.fingerprint },
+        telemetry: { event: 'clubhouse.annex.heartbeat_timeout' },
       });
       if (sat.ws) {
         try { sat.ws.terminate(); } catch (err) {

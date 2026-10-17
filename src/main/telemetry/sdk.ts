@@ -16,6 +16,7 @@ import {
   DiagLogLevel,
   SpanKind,
   SpanStatusCode,
+  isSpanContextValid,
   trace,
   type Attributes,
   type Counter,
@@ -68,6 +69,7 @@ import { ExportResultCode, type ExportResult } from '@opentelemetry/core';
 import type {
   Classification,
   ExportRecord,
+  EventSeverity,
   ExceptionOptions,
   FlowExtras,
   FlowOptions,
@@ -93,6 +95,14 @@ export interface SdkOptions {
 }
 
 const SCOPE = 'clubhouse';
+
+/** spec §6.6: appLog levels to OTel severity (App Insights severityLevel 1–4). */
+const EVENT_SEVERITY: Record<EventSeverity, { number: SeverityNumber; text: string }> = {
+  info: { number: SeverityNumber.INFO, text: 'INFO' },
+  warn: { number: SeverityNumber.WARN, text: 'WARN' },
+  error: { number: SeverityNumber.ERROR, text: 'ERROR' },
+  fatal: { number: SeverityNumber.FATAL, text: 'FATAL' },
+};
 const METRIC_CARDINALITY_LIMIT = 200;
 
 function withTimeout(promise: Promise<unknown>, timeoutMs: number): Promise<void> {
@@ -420,12 +430,13 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       else inst.record(value, a);
     },
 
-    event(name: EventName, attrs) {
+    event(name: EventName, attrs, opts) {
       if (!levelAllows(level, EVENTS[name].level)) return;
+      const severity = EVENT_SEVERITY[opts?.severity ?? 'info'];
       logger.emit({
         eventName: name,
-        severityNumber: SeverityNumber.INFO,
-        severityText: 'INFO',
+        severityNumber: severity.number,
+        severityText: severity.text,
         attributes: { ...toAttributes(attrs), ...userAttrs, [SDK_ATTRIBUTE_KEYS.customEventName]: name },
       });
     },
@@ -437,6 +448,11 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       const active = trace.getActiveSpan();
       if (active?.isRecording()) recordException(active, error, exOpts);
       else context.with(ROOT_CONTEXT, () => recordException(undefined, error, exOpts));
+    },
+
+    activeTraceIds() {
+      const ctx = trace.getActiveSpan()?.spanContext();
+      return ctx && isSpanContextValid(ctx) ? { traceId: ctx.traceId, spanId: ctx.spanId } : undefined;
     },
 
     replaySpan(s: ReplaySpan) {

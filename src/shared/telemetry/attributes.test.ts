@@ -151,6 +151,7 @@ const SAMPLES: Record<keyof typeof ATTR, { good: TelAttr; key: string }> = {
   annexReplayResult: { good: ATTR.annexReplayResult('gap'), key: 'clubhouse.annex.replay.result' },
   identityRegenReason: { good: ATTR.identityRegenReason('corrupt'), key: 'clubhouse.annex.identity.reason' },
   annexRoute: { good: ATTR.annexRoute('GET /api/v1/agents/:id/buffer'), key: 'clubhouse.annex.route' },
+  configFormat: { good: ATTR.configFormat('toml'), key: 'clubhouse.config.format' },
 };
 
 describe('telemetry attribute registry', () => {
@@ -219,6 +220,7 @@ describe('telemetry attribute registry', () => {
         "clubhouse.child_process.gone_reason",
         "clubhouse.child_process.type",
         "clubhouse.clubhouse_mode",
+        "clubhouse.config.format",
         "clubhouse.cost.estimate",
         "clubhouse.delivery.result",
         "clubhouse.editor.bucket",

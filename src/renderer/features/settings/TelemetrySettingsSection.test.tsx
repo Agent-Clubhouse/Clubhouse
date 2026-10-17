@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { TelemetrySettingsSection } from './TelemetrySettingsSection';
+import { TelemetrySettingsSection, WORKBOOK_DOCS_URL } from './TelemetrySettingsSection';
 import type { TelemetryStatus } from '../../../shared/telemetry/settings-types';
 
 function makeStatus(overrides: Partial<TelemetryStatus> = {}): TelemetryStatus {
@@ -203,5 +203,20 @@ describe('TelemetrySettingsSection', () => {
     // The dialog renders in a portal after the page's own Clear link.
     fireEvent.click(screen.getAllByRole('button', { name: 'Clear' }).at(-1)!);
     await waitFor(() => expect(clearOffline).toHaveBeenCalled());
+  });
+
+  it('links App Insights users to the Workbook docs page in the browser', async () => {
+    mockApi(makeStatus({ destination: 'azure' }));
+    const open = vi.spyOn(window.clubhouse.app, 'openExternalUrl').mockResolvedValue(undefined as never);
+    render(<TelemetrySettingsSection />);
+    fireEvent.click(await screen.findByText('Get the Clubhouse Workbook'));
+    expect(open).toHaveBeenCalledWith(WORKBOOK_DOCS_URL);
+  });
+
+  it('hides the Workbook link for OTLP', async () => {
+    mockApi(makeStatus({ destination: 'otlp' }));
+    render(<TelemetrySettingsSection />);
+    await screen.findByText('Preview data');
+    expect(screen.queryByText('Get the Clubhouse Workbook')).toBeNull();
   });
 });

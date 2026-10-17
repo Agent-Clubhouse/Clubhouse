@@ -3,6 +3,7 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import {
   abortPending,
   beginPending,
+  currentTraceIds,
   flushBeforeExit,
   isPending,
   PENDING_BUFFER_CAP,
@@ -128,6 +129,18 @@ describe('telemetry facade', () => {
     const rt = fakeRuntime();
     setRuntime(rt);
     expect(vi.mocked(rt.replaySpan).mock.calls[0][0]).toMatchObject({ outcome: 'error', errorType: 'cwd_invalid' });
+  });
+});
+
+describe('currentTraceIds', () => {
+  it('never throws, since appLog calls it on every line', () => {
+    expect(currentTraceIds()).toBeUndefined();
+    setRuntime(fakeRuntime());
+    expect(currentTraceIds()).toBeUndefined();
+    setRuntime(fakeRuntime({ activeTraceIds: () => { throw new Error('broken context'); } }));
+    expect(currentTraceIds()).toBeUndefined();
+    setRuntime(fakeRuntime({ activeTraceIds: () => ({ traceId: 't', spanId: 's' }) }));
+    expect(currentTraceIds()).toEqual({ traceId: 't', spanId: 's' });
   });
 });
 

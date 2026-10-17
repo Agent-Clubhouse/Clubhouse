@@ -311,6 +311,25 @@ describe('startSdk', () => {
   });
 });
 
+describe('appLog bridge support', () => {
+  it('keeps a bridged record\'s severity and exposes the active trace ids', async () => {
+    const { rt, logs } = setup();
+    active = rt;
+    expect(rt.activeTraceIds()).toBeUndefined();
+    let ids: ReturnType<typeof rt.activeTraceIds>;
+    rt.flow('clubhouse.telemetry.test', {}, () => {
+      ids = rt.activeTraceIds();
+      rt.event('clubhouse.annex.heartbeat_timeout', [], { severity: 'warn' });
+    });
+    await rt.forceFlush(1000);
+    expect(ids!.traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(ids!.spanId).toMatch(/^[0-9a-f]{16}$/);
+    const record = logs.getFinishedLogRecords().find((l) => l.eventName === 'clubhouse.annex.heartbeat_timeout')!;
+    expect(record.severityText).toBe('WARN');
+    expect(record.spanContext?.traceId).toBe(ids!.traceId);
+  });
+});
+
 describe('FlowSampler', () => {
   it('stamps the sample rate as a percentage on sampled spans', () => {
     const sampler = new FlowSampler(0.25);
