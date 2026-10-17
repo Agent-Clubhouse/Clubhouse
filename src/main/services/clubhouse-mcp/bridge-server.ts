@@ -11,6 +11,7 @@ import { bindingManager } from './binding-manager';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import type { JsonRpcRequest, JsonRpcResponse } from './types';
+import { recordMcpToolCall } from '../../telemetry/agent-signals';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 const MCP_PROTOCOL_VERSION = '2024-11-05';
@@ -139,8 +140,11 @@ async function handleToolsCall(
     meta: { agentId, toolName, args: Object.keys(args) },
   });
 
+  const callStartMs = Date.now();
+  const isGlobal = parseToolName(toolName) === null;
   try {
     const result = await callTool(agentId, toolName, args);
+    recordMcpToolCall(toolName, callStartMs, result.isError ? 'tool_error' : 'ok', isGlobal);
     const errorText = result.isError
       ? result.content?.find(c => c.type === 'text')?.text
       : undefined;
@@ -177,6 +181,7 @@ async function handleToolsCall(
 
     return jsonRpcSuccess(id, result);
   } catch (err) {
+    recordMcpToolCall(toolName, callStartMs, 'threw', isGlobal);
     appLog('core:mcp', 'error', 'Tool call threw exception', {
       meta: { agentId, toolName, error: err instanceof Error ? err.message : String(err) },
     });
