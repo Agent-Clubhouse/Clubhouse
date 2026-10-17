@@ -1544,8 +1544,10 @@ describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => 
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
     service.subscribe();
-    await flush();
-    expect(service.getState().lastError?.code).toBe('auth-required');
+    // subscribe() validates real files asynchronously; wait for its result.
+    await vi.waitFor(() => {
+      expect(service.getState().lastError?.code).toBe('auth-required');
+    }, { timeout: 2_000 });
 
     vi.mocked(startDaemon).mockResolvedValueOnce({ ok: false, error: 'lock-contention', holderKind: 'daemon' });
     vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
@@ -1574,8 +1576,10 @@ describe('GoobersService — 401 / auth-required (§8.4, §9.2, §10.1)', () => 
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(authRequiredSnapshot());
     service.subscribe();
-    await flush();
-    expect(service.getState().lastError?.code).toBe('auth-required');
+    // subscribe() validates real files asynchronously; wait for its result.
+    await vi.waitFor(() => {
+      expect(service.getState().lastError?.code).toBe('auth-required');
+    }, { timeout: 2_000 });
     expect(service.isPollingForTests).toBe(false);
 
     vi.mocked(probeLiveness).mockResolvedValueOnce(runningSnapshot());
