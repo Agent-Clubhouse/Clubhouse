@@ -455,10 +455,15 @@ describe('copilot_acp ChatDriver against Copilot 1.0.82 (Homebrew shim runtime)'
     expect(info.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
     expect(session.capabilities).toMatchObject({ resume: 'replay', modelSwitch: 'live', effortSwitch: 'live', liveLevels: ['plan', 'ask', 'full_access'] });
 
+    // Check the replay before closing. The recording ends with the CLI's exit
+    // after stdin closed, which a SIGTERM'd fake never reaches, so the report
+    // can't say `complete`. The 6 entries before session/close have matched by now.
+    type Report = { consumed: number; total: number; mismatch: unknown; argv: string[] };
+    const before = await waitForJson(report, (r: Report) => r.consumed >= 6 || r.mismatch !== null) as unknown as Report;
+    expect(before.mismatch).toBeNull();
+    expect(before.argv).toEqual(['--acp', '--stdio', '--no-auto-update']);
+    // The fake answers session/close only when the request matches its recording.
     await session.close();
-    const done = await waitForJson(report, (r: { complete: boolean; mismatch: unknown }) => r.complete || r.mismatch !== null);
-    expect(done).toMatchObject({ complete: true, mismatch: null });
-    expect((done as unknown as { argv: string[] }).argv).toEqual(['--acp', '--stdio', '--no-auto-update']);
   }, 15_000);
 
   it('probes the version the session will run', async () => {
