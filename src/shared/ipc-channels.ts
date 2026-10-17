@@ -7,6 +7,7 @@ export const IPC = {
     KILL: 'pty:kill',
     GET_BUFFER: 'pty:get-buffer',
     GET_BUFFER_SNAPSHOT: 'pty:get-buffer-snapshot',
+    IS_SHELL_BUSY: 'pty:is-shell-busy',
     DATA: 'pty:data',
     EXIT: 'pty:exit',
   },

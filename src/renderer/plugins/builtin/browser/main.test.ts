@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { activate, deactivate, MainPanel, SidebarPanel } from './main';
+import { activate, deactivate, MainPanel, SidebarPanel, protocolSummary, emptyHint } from './main';
 import { browserState } from './state';
 import { manifest } from './manifest';
 import * as browserModule from './main';
@@ -337,5 +337,24 @@ describe('browser plugin lifecycle', () => {
     expect(ctx.subscriptions).toHaveLength(3);
     ctx.subscriptions[0].dispose();
     expect(disposeSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('protocolSummary', () => {
+  it('lists the address kinds the browser opens', () => {
+    expect(protocolSummary({ allowLocalhost: false, allowFileProtocol: false })).toBe('Opens https addresses.');
+    expect(protocolSummary({ allowLocalhost: true, allowFileProtocol: false })).toBe('Opens https and localhost addresses.');
+    expect(protocolSummary({ allowLocalhost: true, allowFileProtocol: true })).toBe('Opens https, localhost and file addresses.');
+  });
+});
+
+describe('emptyHint', () => {
+  it('says which addresses work and which are off in Settings', () => {
+    expect(emptyHint({ allowLocalhost: true, allowFileProtocol: false }))
+      .toBe('Type an address above. localhost:3000 and https:// addresses work. File addresses are off in Settings.');
+    expect(emptyHint({ allowLocalhost: false, allowFileProtocol: false }))
+      .toBe('Type an address above. https:// addresses work. Localhost and file addresses are off in Settings.');
+    expect(emptyHint({ allowLocalhost: true, allowFileProtocol: true }))
+      .toBe('Type an address above. localhost:3000 and https:// addresses work.');
   });
 });

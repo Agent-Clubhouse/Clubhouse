@@ -25,7 +25,7 @@ export function ListBody({ explorerTab, projectId }: { explorerTab: string; proj
         </div>
       )}
       <div className="flex-1 min-h-0 border-t border-surface-0">
-        <AccessoryPanel />
+        <AccessoryPanel bare />
       </div>
     </div>
   );

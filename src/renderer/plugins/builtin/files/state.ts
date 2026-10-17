@@ -43,6 +43,14 @@ export interface PersistedTabState {
   activeTabId: string | null;
 }
 
+/** The open tabs of a scope that is not current (see setScope). */
+interface ScopeTabs {
+  openTabs: Tab[];
+  tabOrder: string[];
+  activeTabId: string | null;
+  recentlyClosed: string[];
+}
+
 // ── File State (singleton) ───────────────────────────────────────────
 
 export const fileState = {
@@ -51,6 +59,13 @@ export const fileState = {
   activeTabId: null as string | null,
   recentlyClosed: [] as string[],     // Stack of file paths for reopen
   tabOrder: [] as string[],           // Tab IDs in display order (for drag-reorder)
+
+  /**
+   * Which scope the tabs above belong to: an agent worktree's key, or null for
+   * the project root. Other scopes' tabs wait in `scopeTabs` (spec §4.5).
+   */
+  scopeKey: null as string | null,
+  scopeTabs: new Map<string | null, ScopeTabs>(),
 
   // Legacy compat — still used for FileTree highlighting
   selectedPath: null as string | null,
@@ -296,6 +311,33 @@ export const fileState = {
     return path;
   },
 
+  // ── Scope ────────────────────────────────────────────────────────
+
+  /**
+   * Make `key`'s tabs current, setting the current ones aside. Returns true
+   * when `key` had no tabs in memory, so the caller can restore saved ones.
+   */
+  setScope(key: string | null): boolean {
+    if (key === this.scopeKey) return false;
+    this.scopeTabs.set(this.scopeKey, {
+      openTabs: this.openTabs,
+      tabOrder: this.tabOrder,
+      activeTabId: this.activeTabId,
+      recentlyClosed: this.recentlyClosed,
+    });
+    const next = this.scopeTabs.get(key);
+    this.scopeTabs.delete(key);
+    this.scopeKey = key;
+    this.openTabs = next?.openTabs ?? [];
+    this.tabOrder = next?.tabOrder ?? [];
+    this.activeTabId = next?.activeTabId ?? null;
+    this.recentlyClosed = next?.recentlyClosed ?? [];
+    this.selectedPath = this.getActiveTab()?.filePath ?? null;
+    this.isDirty = this.hasDirtyTabs() || [...this.scopeTabs.values()].some((s) => s.openTabs.some((t: Tab) => t.isDirty));
+    this.notify();
+    return !next;
+  },
+
   // ── Tab property updates ─────────────────────────────────────────
 
   setTabDirty(tabId: string, dirty: boolean): void {
@@ -482,6 +524,8 @@ export const fileState = {
     this.tabOrder = [];
     this.activeTabId = null;
     this.recentlyClosed = [];
+    this.scopeKey = null;
+    this.scopeTabs = new Map();
     this.selectedPath = null;
     this.isDirty = false;
     this.refreshCount = 0;
