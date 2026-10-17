@@ -20,6 +20,19 @@ export function defaultOptions(options: PermissionOption[]): { primary?: Permiss
   return { primary, reject };
 }
 
+/** Keys typed into a text field or a focused control's own Enter/Space stay with that element. */
+function ownsKey(e: KeyboardEvent<HTMLElement>): boolean {
+  const t = e.target as HTMLElement;
+  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return true;
+  return t !== e.currentTarget && t.tagName === 'BUTTON' && (e.key === 'Enter' || e.key === ' ');
+}
+
+/** 1-9 as an option index, or -1. */
+function digitIndex(key: string, count: number): number {
+  const n = Number(key);
+  return Number.isInteger(n) && n >= 1 && n <= count ? n - 1 : -1;
+}
+
 function Key({ children }: { children: string }) {
   return <span className="ml-auto text-[11px] leading-none opacity-70 border border-current rounded px-1 py-0.5">{children}</span>;
 }
@@ -29,7 +42,8 @@ interface PermissionCardProps {
   /** Set when the request approves a plan document. */
   plan?: PlanDocumentItem;
   queueSize: number;
-  onRespond: (requestId: string, optionId: string) => void;
+  /** Resolves false when the answer didn't go through; the card unlocks so the user can retry. */
+  onRespond: (requestId: string, optionId: string) => Promise<boolean>;
 }
 
 export function PermissionCard({ request, plan, queueSize, onRespond }: PermissionCardProps) {
@@ -45,17 +59,22 @@ export function PermissionCard({ request, plan, queueSize, onRespond }: Permissi
   const choose = (opt: PermissionOption | undefined) => {
     if (!opt || answered) return;
     setAnswered(true);
-    onRespond(request.requestId, opt.optionId);
+    void onRespond(request.requestId, opt.optionId).then((ok) => {
+      if (!ok) {
+        setAnswered(false);
+        ref.current?.focus();
+      }
+    });
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget) return;
+    if (ownsKey(e)) return;
     if (e.key === 'Enter') { e.preventDefault(); choose(primary); return; }
     if (e.key === 'Escape') { e.preventDefault(); choose(reject); return; }
-    const n = Number(e.key);
-    if (Number.isInteger(n) && n >= 1 && n <= request.options.length) {
+    const i = digitIndex(e.key, request.options.length);
+    if (i >= 0) {
       e.preventDefault();
-      choose(request.options[n - 1]);
+      choose(request.options[i]);
     }
   };
 
@@ -104,7 +123,8 @@ export function PermissionCard({ request, plan, queueSize, onRespond }: Permissi
 
 interface QuestionCardProps {
   request: PendingQuestion;
-  onAnswer: (requestId: string, answers: ChatQuestionAnswers) => void;
+  /** Resolves false when the answer didn't go through; the card unlocks so the user can retry. */
+  onAnswer: (requestId: string, answers: ChatQuestionAnswers) => Promise<boolean>;
 }
 
 function isSimpleChoice(q: ChatQuestion): boolean {
@@ -115,7 +135,14 @@ export function QuestionCard({ request, onAnswer }: QuestionCardProps) {
   const [answers, setAnswers] = useState<ChatQuestionAnswers>({});
   const [free, setFree] = useState<Record<string, string>>({});
   const [sent, setSent] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   const single = request.questions.length === 1 && isSimpleChoice(request.questions[0]);
+  const first = request.questions[0];
+
+  useEffect(() => {
+    // Focus the card so number keys work at once; free text is a Tab away.
+    ref.current?.focus();
+  }, [request.requestId]);
 
   const submit = (override?: ChatQuestionAnswers) => {
     if (sent) return;
@@ -125,7 +152,7 @@ export function QuestionCard({ request, onAnswer }: QuestionCardProps) {
       if (text && merged[q.id] === undefined) merged[q.id] = text;
     }
     setSent(true);
-    onAnswer(request.requestId, merged);
+    void onAnswer(request.requestId, merged).then((ok) => { if (!ok) setSent(false); });
   };
 
   const complete = request.questions.every((q) => answers[q.id] !== undefined || !!free[q.id]?.trim());
@@ -140,8 +167,30 @@ export function QuestionCard({ request, onAnswer }: QuestionCardProps) {
     });
   };
 
+  // 1-9 pick an option of the first question; Enter sends once every question is answered.
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (sent || ownsKey(e)) return;
+    if (e.key === 'Enter' && !single) {
+      if (complete) { e.preventDefault(); submit(); }
+      return;
+    }
+    const i = first?.options ? digitIndex(e.key, first.options.length) : -1;
+    if (i >= 0) {
+      e.preventDefault();
+      toggle(first, first.options![i].id);
+    }
+  };
+
   return (
-    <div className="rounded-xl border border-ctp-accent/50 bg-ctp-mantle px-3.5 py-3 flex flex-col gap-3" data-testid="chat-question" role="group" aria-label="Question">
+    <div
+      ref={ref}
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+      className="rounded-xl border border-ctp-accent/50 bg-ctp-mantle px-3.5 py-3 flex flex-col gap-3 focus:outline-none"
+      data-testid="chat-question"
+      role="group"
+      aria-label="Question"
+    >
       {request.questions.map((q) => {
         const picked = answers[q.id];
         return (

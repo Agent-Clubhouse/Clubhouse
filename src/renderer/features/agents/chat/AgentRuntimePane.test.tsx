@@ -126,4 +126,45 @@ describe('AgentRuntimePane', () => {
     fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
     await waitFor(() => expect(killAgent).toHaveBeenCalled());
   });
+
+  it('asks before switching a busy terminal agent to chat', async () => {
+    setFlag(true);
+    setRuntime(false, true);
+    const killAgent = vi.fn(async () => {});
+    useAgentStore.setState({ killAgent, agentDetailedStatus: { [FIXTURE_AGENT_ID]: { state: 'working', message: '', timestamp: 1 } } } as never);
+    render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    await screen.findByTestId('terminal-runtime-bar');
+    fireEvent.click(screen.getByRole('radio', { name: 'Chat' }));
+    expect(await screen.findByText('Interrupt and switch?')).toBeInTheDocument();
+    expect(killAgent).not.toHaveBeenCalled();
+  });
+
+  it('remounts straight into the last known runtime instead of flashing the terminal', async () => {
+    setFlag(true);
+    setRuntime(true, true);
+    api.chat.readTranscript = vi.fn(async () => chatFixture('codex', 'conversation'));
+    const first = render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    await screen.findByTestId('chat-view');
+    first.unmount();
+
+    api.chat.getAgentRuntime = vi.fn(() => new Promise(() => {}));
+    render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
+    await screen.findByTestId('chat-view');
+  });
+
+  it('does not show one agent\'s runtime for another', async () => {
+    setFlag(true);
+    setRuntime(true, true);
+    api.chat.readTranscript = vi.fn(async () => []);
+    const first = render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    await screen.findByTestId('chat-view');
+    first.unmount();
+
+    api.chat.getAgentRuntime = vi.fn(() => new Promise(() => {}));
+    render(<AgentRuntimePane agent={{ ...agent, id: 'other-agent' }} terminal={terminal} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-view')).not.toBeInTheDocument();
+  });
 });

@@ -25,13 +25,16 @@ import { isRunningState } from './view-model';
 const ChatView = lazy(() => import('./ChatView'));
 
 let flagPromise: Promise<boolean> | null = null;
+/** The resolved flag, so panes mounted after the first load render the right view at once. */
+let flagValue: boolean | null = null;
 
 /** Same gate as main: the Chat flag only counts in preview-eligible builds. */
 export function loadChatFlag(): Promise<boolean> {
   if (!flagPromise) {
     flagPromise = Promise.all([window.clubhouse.app.getExperimentalSettings(), window.clubhouse.app.isPreviewEligible()])
       .then(([s, eligible]) => s?.chat === true && eligible === true)
-      .catch(() => false);
+      .catch(() => false)
+      .then((v) => { flagValue = v; return v; });
   }
   return flagPromise;
 }
@@ -39,10 +42,12 @@ export function loadChatFlag(): Promise<boolean> {
 /** For tests and for the Experimental settings toggle. */
 export function resetChatFlagCache(): void {
   flagPromise = null;
+  flagValue = null;
+  runtimeCache.clear();
 }
 
 export function useChatFlag(): boolean {
-  const [on, setOn] = useState(false);
+  const [on, setOn] = useState(() => flagValue ?? false);
   useEffect(() => {
     let cancelled = false;
     void loadChatFlag().then((v) => { if (!cancelled) setOn(v); });
@@ -53,20 +58,31 @@ export function useChatFlag(): boolean {
 
 const NO_CHAT: ChatAgentRuntimeInfo = { chat: false, chatAvailable: false };
 
+/** Last known runtime per agent: a pane remounting for an agent starts from it instead of NO_CHAT. */
+const runtimeCache = new Map<string, ChatAgentRuntimeInfo>();
+
 /** Which runtime the agent is in, re-checked when it starts, stops or opens a chat session. */
 export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRuntimeInfo {
-  const [info, setInfo] = useState<ChatAgentRuntimeInfo>(NO_CHAT);
+  // Tagged with the agent id, so a result for a different agent is never shown.
+  const [entry, setEntry] = useState(() => ({ agentId: agent.id, info: runtimeCache.get(agent.id) ?? NO_CHAT }));
   const chatSession = useChatStore((s) => s.agents[agent.id]?.sessionId ?? null);
   const remote = isRemoteProjectId(agent.projectId);
+  const eligible = enabled && !remote && agent.kind === 'durable';
   useEffect(() => {
-    if (!enabled || remote || agent.kind !== 'durable') { setInfo(NO_CHAT); return; }
+    if (!eligible) { setEntry({ agentId: agent.id, info: NO_CHAT }); return; }
     let cancelled = false;
+    const apply = (info: ChatAgentRuntimeInfo) => {
+      if (cancelled) return;
+      runtimeCache.set(agent.id, info);
+      setEntry({ agentId: agent.id, info });
+    };
     window.clubhouse.chat.getAgentRuntime(agent.id, agent.orchestrator)
-      .then((r) => { if (!cancelled) setInfo(r ?? NO_CHAT); })
-      .catch(() => { if (!cancelled) setInfo(NO_CHAT); });
+      .then((r) => apply(r ?? NO_CHAT))
+      .catch(() => apply(NO_CHAT));
     return () => { cancelled = true; };
-  }, [enabled, remote, agent.id, agent.kind, agent.orchestrator, agent.status, chatSession]);
-  return info;
+  }, [eligible, agent.id, agent.orchestrator, agent.status, chatSession]);
+  if (!eligible || entry.agentId !== agent.id) return eligible ? runtimeCache.get(agent.id) ?? NO_CHAT : NO_CHAT;
+  return entry.info;
 }
 
 /** Restart a durable agent in the other runtime, resuming its CLI session. */
@@ -91,12 +107,15 @@ interface Props {
 export function AgentRuntimePane({ agent, terminal }: Props) {
   const flag = useChatFlag();
   const info = useAgentRuntimeInfo(agent, flag);
-  const running = useChatStore((s) => isRunningState(s.agents[agent.id]?.state ?? null));
+  // Busy in either runtime: chat from its events, the terminal from hook status.
+  const chatBusy = useChatStore((s) => isRunningState(s.agents[agent.id]?.state ?? null));
+  const hookState = useAgentStore((s) => s.agentDetailedStatus[agent.id]?.state);
+  const terminalBusy = hookState === 'working' || hookState === 'needs_permission';
   const [switching, setSwitching] = useState(false);
-  const [confirm, setConfirm] = useState(false);
+  const [confirm, setConfirm] = useState<AgentRuntimeMode | null>(null);
 
   const doSwitch = useCallback(async (mode: AgentRuntimeMode) => {
-    setConfirm(false);
+    setConfirm(null);
     setSwitching(true);
     try {
       await switchAgentRuntime(agent, mode);
@@ -109,24 +128,30 @@ export function AgentRuntimePane({ agent, terminal }: Props) {
 
   if (!flag) return <>{terminal}</>;
 
+  const requestSwitch = (mode: AgentRuntimeMode) => {
+    const busy = mode === 'terminal' ? chatBusy : terminalBusy;
+    if (busy) setConfirm(mode);
+    else void doSwitch(mode);
+  };
+
+  const confirmDialog = (
+    <ConfirmDestructiveAction
+      open={confirm !== null}
+      title="Interrupt and switch?"
+      description={`${agent.name} is working. Switching to ${confirm === 'chat' ? 'Chat' : 'the terminal'} stops the current turn, then resumes the same session there.`}
+      confirmLabel="Interrupt and switch"
+      onConfirm={() => { if (confirm) void doSwitch(confirm); }}
+      onCancel={() => setConfirm(null)}
+    />
+  );
+
   if (info.chat) {
     return (
       <>
         <Suspense fallback={<div className="h-full bg-ctp-base" />}>
-          <ChatView
-            agent={agent}
-            switching={switching}
-            onSwitchToTerminal={() => { if (running) setConfirm(true); else void doSwitch('terminal'); }}
-          />
+          <ChatView agent={agent} switching={switching} onSwitchToTerminal={() => requestSwitch('terminal')} />
         </Suspense>
-        <ConfirmDestructiveAction
-          open={confirm}
-          title="Interrupt and switch?"
-          description={`${agent.name} is working. Switching to the terminal stops the current turn, then resumes the same session there.`}
-          confirmLabel="Interrupt and switch"
-          onConfirm={() => { void doSwitch('terminal'); }}
-          onCancel={() => setConfirm(false)}
-        />
+        {confirmDialog}
       </>
     );
   }
@@ -136,9 +161,10 @@ export function AgentRuntimePane({ agent, terminal }: Props) {
   return (
     <div className="flex flex-col h-full">
       <div className="h-8 flex-shrink-0 flex items-center justify-end px-3 border-b border-surface-0 bg-ctp-base" data-testid="terminal-runtime-bar">
-        <RuntimeSwitch value="terminal" onChange={() => { void doSwitch('chat'); }} disabled={switching} />
+        <RuntimeSwitch value="terminal" onChange={() => requestSwitch('chat')} disabled={switching} />
       </div>
       <div className="flex-1 min-h-0 relative">{terminal}</div>
+      {confirmDialog}
     </div>
   );
 }

@@ -154,14 +154,16 @@ export interface ComposerProps {
   model: string | null;
   effort: string | null;
   commands: AvailableCommand[];
+  /** The draft is owned by the caller so it outlives this component. */
+  text: string;
+  onTextChange: (text: string) => void;
   onSend: (text: string, action: SendAction) => void;
   onStop: () => void;
   onLevelChange: (level: PermissionLevel) => void;
 }
 
 export function Composer(props: ComposerProps) {
-  const { capabilities, running, disabled } = props;
-  const [text, setText] = useState('');
+  const { capabilities, running, disabled, text, onTextChange: setText } = props;
   const [cmdIndex, setCmdIndex] = useState(0);
   const area = useRef<HTMLTextAreaElement>(null);
   const modes = composerModes(capabilities, running);

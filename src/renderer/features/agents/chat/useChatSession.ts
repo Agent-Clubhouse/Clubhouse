@@ -5,6 +5,7 @@
  */
 
 import { useCallback, useEffect, useMemo } from 'react';
+import { create } from 'zustand';
 import type { ChatQuestionAnswers, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult } from '../../../../shared/chat';
 import { useChatStore, type ChatViewState } from '../../../stores/chatStore';
 import { useToastStore } from '../../../stores/toastStore';
@@ -12,9 +13,36 @@ import { useToastStore } from '../../../stores/toastStore';
 export interface ChatActions {
   send: (text: string, delivery?: 'auto' | MessageDelivery) => Promise<RuntimeSendResult | null>;
   interrupt: () => Promise<void>;
-  respondPermission: (requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<void>;
-  answerQuestion: (requestId: string, answers: ChatQuestionAnswers) => Promise<void>;
+  /** Resolves false when the answer didn't reach the agent (a toast says why). */
+  respondPermission: (requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<boolean>;
+  answerQuestion: (requestId: string, answers: ChatQuestionAnswers) => Promise<boolean>;
   setLevel: (level: PermissionLevel) => Promise<void>;
+}
+
+/**
+ * Unsent composer text per agent. It lives outside the composer so a draft
+ * survives the composer being swapped for an approval card, or switching agents.
+ */
+interface DraftState {
+  drafts: Record<string, string>;
+  setDraft: (agentId: string, text: string) => void;
+}
+
+export const useChatDraftStore = create<DraftState>((set) => ({
+  drafts: {},
+  setDraft: (agentId, text) => set((s) => {
+    const drafts = { ...s.drafts };
+    if (text) drafts[agentId] = text;
+    else delete drafts[agentId];
+    return { drafts };
+  }),
+}));
+
+export function useChatDraft(agentId: string): [string, (text: string) => void] {
+  const text = useChatDraftStore((s) => s.drafts[agentId] ?? '');
+  const setDraft = useChatDraftStore((s) => s.setDraft);
+  const set = useCallback((t: string) => setDraft(agentId, t), [agentId, setDraft]);
+  return [text, set];
 }
 
 export function useChatState(agentId: string): ChatViewState | undefined {
@@ -41,24 +69,25 @@ function reportFailure(what: string, err: unknown): void {
 export function useChatActions(agentId: string): ChatActions {
   const store = useChatStore;
   const wrap = useCallback(<A extends unknown[], R>(what: string, fn: (...args: A) => Promise<R>) =>
-    async (...args: A): Promise<R | undefined> => {
+    async (...args: A): Promise<{ ok: true; value: R } | { ok: false }> => {
       try {
-        return await fn(...args);
+        return { ok: true, value: await fn(...args) };
       } catch (err) {
         reportFailure(what, err);
-        return undefined;
+        return { ok: false };
       }
     }, []);
 
   return useMemo<ChatActions>(() => ({
-    send: async (text, delivery) => (await wrap('Message not sent', store.getState().send)(agentId, text, delivery)) ?? null,
+    send: async (text, delivery) => {
+      const r = await wrap('Message not sent', store.getState().send)(agentId, text, delivery);
+      return r.ok ? r.value : null;
+    },
     interrupt: async () => { await wrap("Couldn't stop the turn", store.getState().interrupt)(agentId); },
-    respondPermission: async (requestId, optionId, extras) => {
-      await wrap("Couldn't answer the request", store.getState().respondPermission)(agentId, requestId, optionId, extras);
-    },
-    answerQuestion: async (requestId, answers) => {
-      await wrap("Couldn't send the answer", store.getState().answerQuestion)(agentId, requestId, answers);
-    },
+    respondPermission: async (requestId, optionId, extras) =>
+      (await wrap("Couldn't answer the request", store.getState().respondPermission)(agentId, requestId, optionId, extras)).ok,
+    answerQuestion: async (requestId, answers) =>
+      (await wrap("Couldn't send the answer", store.getState().answerQuestion)(agentId, requestId, answers)).ok,
     setLevel: async (level) => { await wrap("Couldn't change the permission level", store.getState().setLevel)(agentId, level); },
   }), [agentId, store, wrap]);
 }

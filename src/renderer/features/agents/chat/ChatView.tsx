@@ -16,7 +16,7 @@ import { ChatHeader } from './ChatHeader';
 import { ChatStream } from './ChatStream';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { Composer, QueueList, TaskList } from './Composer';
-import { useChatActions, useChatLoading, useChatState, useChatTranscript, type ChatActions } from './useChatSession';
+import { useChatActions, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, type ChatActions } from './useChatSession';
 import { implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
 
 export interface ChatViewBodyProps {
@@ -63,17 +63,21 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   const question = state.pendingQuestions[0];
   const plan = permission ? planForRequest(state.items, permission) : undefined;
   const ended = isSessionEnded(state);
+  const [draft, setDraft] = useChatDraft(agent.id);
 
   const onSend = (text: string, action: SendAction) => {
     void (async () => {
-      if (action === 'steer') await actions.send(text, 'steer');
-      else if (action === 'queue') await actions.send(text, 'queued');
+      let result;
+      if (action === 'steer') result = await actions.send(text, 'steer');
+      else if (action === 'queue') result = await actions.send(text, 'queued');
       else if (action === 'stop_and_send') {
         // No steering: cancel the turn, then send. 'auto' queues it until the
         // cancelled turn has ended, so it becomes the next prompt.
         await actions.interrupt();
-        await actions.send(text, 'auto');
-      } else await actions.send(text, 'auto');
+        result = await actions.send(text, 'auto');
+      } else result = await actions.send(text, 'auto');
+      // Not sent: put the text back unless the user has started a new draft.
+      if (result === null && !useChatDraftStore.getState().drafts[agent.id]) setDraft(text);
     })();
   };
 
@@ -88,14 +92,15 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
   if (permission) {
     dock = (
       <PermissionCard
+        key={permission.requestId}
         request={permission}
         plan={plan}
         queueSize={state.pendingPermissions.length}
-        onRespond={(requestId, optionId) => { void actions.respondPermission(requestId, optionId); }}
+        onRespond={actions.respondPermission}
       />
     );
   } else if (question) {
-    dock = <QuestionCard request={question} onAnswer={(requestId, answers) => { void actions.answerQuestion(requestId, answers); }} />;
+    dock = <QuestionCard key={question.requestId} request={question} onAnswer={actions.answerQuestion} />;
   } else {
     dock = (
       <>
@@ -110,6 +115,8 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
           model={state.model}
           effort={state.effort}
           commands={state.commands}
+          text={draft}
+          onTextChange={setDraft}
           onSend={onSend}
           onStop={() => { void actions.interrupt(); }}
           onLevelChange={(l) => { void actions.setLevel(l); }}

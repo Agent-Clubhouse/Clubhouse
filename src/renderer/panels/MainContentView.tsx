@@ -193,6 +193,7 @@ export function MainContentView() {
     return (
       <div className="relative h-full bg-ctp-base" data-testid="agent-terminal-view">
         <AgentRuntimePane
+          key={activeAgent.id}
           agent={activeAgent}
           terminal={<AgentTerminal agentId={activeAgentId!} focused={terminalFocused} />}
         />

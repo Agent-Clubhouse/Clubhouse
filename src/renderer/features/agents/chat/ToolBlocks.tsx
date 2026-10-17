@@ -153,8 +153,9 @@ export function DiffCard({ diff, line, status }: { diff: Extract<ToolCallContent
 const OUTPUT_MAX_HEIGHT = 'max-h-56';
 
 export function CommandCard({ tool }: { tool: ToolCallItem }) {
-  const term = terminalContent(tool);
-  const command = commandOf(tool);
+  // Output arrives in many appended chunks; join them only when they change.
+  const term = useMemo(() => terminalContent(tool), [tool]);
+  const command = useMemo(() => commandOf(tool), [tool]);
   const running = tool.status === 'in_progress';
   const exit = term?.exitCode;
   return (

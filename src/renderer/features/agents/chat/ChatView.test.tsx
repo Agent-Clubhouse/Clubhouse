@@ -4,7 +4,7 @@ import type { Agent } from '../../../../shared/types';
 import type { ChatEvent } from '../../../../shared/chat';
 import { foldChatEvents, useChatStore, type ChatViewState } from '../../../stores/chatStore';
 import { ChatView, ChatViewBody } from './ChatView';
-import type { ChatActions } from './useChatSession';
+import { useChatDraftStore, type ChatActions } from './useChatSession';
 import { chatFixture, FIXTURE_AGENT_ID, PROFILES, type FixtureProvider } from './fixtures';
 
 const agent: Agent = {
@@ -20,8 +20,8 @@ function makeActions(): ChatActions & { [K in keyof ChatActions]: ReturnType<typ
   return {
     send: vi.fn(async () => ({ delivery: 'prompt' as const })),
     interrupt: vi.fn(async () => {}),
-    respondPermission: vi.fn(async () => {}),
-    answerQuestion: vi.fn(async () => {}),
+    respondPermission: vi.fn(async () => true),
+    answerQuestion: vi.fn(async () => true),
     setLevel: vi.fn(async () => {}),
   };
 }
@@ -37,6 +37,16 @@ function renderState(state: ChatViewState, actions = makeActions()) {
 
 function renderFixture(p: FixtureProvider, scenario: Parameters<typeof chatFixture>[1], actions = makeActions()) {
   return renderState(fold(chatFixture(p, scenario)), actions);
+}
+
+beforeEach(() => {
+  useChatDraftStore.setState({ drafts: {} });
+});
+
+/** Append events after a fixture, continuing its seq. */
+function extend(events: ChatEvent[], ...more: Array<Pick<ChatEvent, 'type' | 'data'>>): ChatEvent[] {
+  const last = events[events.length - 1];
+  return [...events, ...more.map((m, i) => ({ ...last, seq: last.seq + 1 + i, type: m.type, data: m.data }) as ChatEvent)];
 }
 
 describe('ChatView conversation', () => {
@@ -383,5 +393,85 @@ describe('ChatView (store-bound)', () => {
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'hi' } });
     fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
     await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(FIXTURE_AGENT_ID, 'hi', 'auto'));
+  });
+});
+
+describe('ChatView review fixes', () => {
+  it('keeps the draft while an approval replaces the composer', () => {
+    const actions = makeActions();
+    const before = chatFixture('claude', 'approval').filter((e) => e.type !== 'permission_request' && !(e.type === 'session_state' && e.data.state === 'waiting_permission'));
+    const { rerender } = render(<ChatViewBody agent={agent} state={fold(before)} actions={actions} providerName="P" />);
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'half-written thought' } });
+    const pending = chatFixture('claude', 'approval');
+    rerender(<ChatViewBody agent={agent} state={fold(pending)} actions={actions} providerName="P" />);
+    expect(screen.queryByLabelText('Message')).not.toBeInTheDocument();
+    rerender(<ChatViewBody agent={agent} state={fold(extend(pending, { type: 'permission_resolved', data: { requestId: 'perm-1', decision: 'allow', by: 'user' } }))} actions={actions} providerName="P" />);
+    expect(screen.getByLabelText('Message')).toHaveValue('half-written thought');
+  });
+
+  it('puts the text back when a message fails to send', async () => {
+    const actions = makeActions();
+    actions.send.mockResolvedValueOnce(null);
+    renderState(fold(chatFixture('claude', 'conversation')), actions);
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'try this' } });
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+    await waitFor(() => expect(screen.getByLabelText('Message')).toHaveValue('try this'));
+  });
+
+  it('opens a second pending question unlocked', () => {
+    const actions = makeActions();
+    const q = (id: string) => ({ type: 'question' as const, data: { requestId: id, questions: [{ id: 'x', prompt: `Question ${id}`, options: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], allowFreeText: false }] } });
+    const base = chatFixture('codex', 'conversation');
+    const two = extend(base, q('q-a'), q('q-b'));
+    const { rerender } = render(<ChatViewBody agent={agent} state={fold(two)} actions={actions} providerName="P" />);
+    fireEvent.click(screen.getByText('A'));
+    expect(actions.answerQuestion).toHaveBeenCalledWith('q-a', { x: 'a' });
+    rerender(<ChatViewBody agent={agent} state={fold(extend(two, { type: 'question_resolved', data: { requestId: 'q-a', answers: { x: 'a' } } }))} actions={actions} providerName="P" />);
+    expect(screen.getByTestId('chat-question')).toHaveTextContent('Question q-b');
+    expect(screen.getByText('B').closest('button')).not.toBeDisabled();
+    fireEvent.click(screen.getByText('B'));
+    expect(actions.answerQuestion).toHaveBeenLastCalledWith('q-b', { x: 'b' });
+  });
+
+  it('unlocks the approval card when the answer fails', async () => {
+    const actions = makeActions();
+    actions.respondPermission.mockResolvedValueOnce(false);
+    renderState(fold(chatFixture('codex', 'approval')), actions);
+    const card = screen.getByTestId('chat-permission');
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(within(card).getAllByRole('button')[0]).toBeDisabled();
+    await waitFor(() => expect(within(card).getAllByRole('button')[0]).not.toBeDisabled());
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(actions.respondPermission).toHaveBeenCalledTimes(2);
+  });
+
+  it('takes number keys and Esc while an option button has focus', () => {
+    const { actions } = renderFixture('codex', 'approval');
+    const button = within(screen.getByTestId('chat-permission')).getAllByRole('button')[0];
+    button.focus();
+    fireEvent.keyDown(button, { key: '2' });
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-1', 'acceptForSession');
+  });
+
+  it('answers questions from the keyboard', () => {
+    const { actions } = renderFixture('codex', 'plan');
+    const card = screen.getByTestId('chat-question');
+    fireEvent.keyDown(card, { key: '2' });
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(actions.answerQuestion).toHaveBeenCalledWith('q-1', { tooltips: 'both' });
+  });
+
+  it('announces a finished reply in a polite live region', () => {
+    renderFixture('claude', 'conversation');
+    const region = screen.getByTestId('chat-live-region');
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region).toHaveTextContent('Want me to move the orchestrator chip');
+  });
+
+  it('keeps the live region quiet while a reply streams', () => {
+    const events = chatFixture('claude', 'conversation');
+    const firstChunk = events.findIndex((e) => e.type === 'agent_message_chunk');
+    renderState(fold(events.slice(0, firstChunk + 1)));
+    expect(screen.getByTestId('chat-live-region')).toBeEmptyDOMElement();
   });
 });
