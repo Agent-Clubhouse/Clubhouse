@@ -28,8 +28,13 @@ import { resolveStructuredSpawn, type StructuredSpawnCommand } from './structure
  */
 export const COPILOT_ACP_ARGS: readonly string[] = ['--acp', '--stdio', '--no-auto-update'];
 
-/** Versions whose ACP behaviour the fixtures and probes cover. Newer is "untested", not broken. */
-export const COPILOT_ACP_TESTED_RANGE = { min: '1.0.92', max: '1.0.98' } as const;
+/**
+ * Versions whose ACP behaviour the fixtures and probes cover. Newer is
+ * "untested", not broken. 1.0.82 is what the Homebrew/WinGet shim runs under
+ * `--no-auto-update` (its bundled runtime); its handshake is recorded in
+ * test/chat-fixtures/copilot/handshake-1.0.82.jsonl.
+ */
+export const COPILOT_ACP_TESTED_RANGE = { min: '1.0.82', max: '1.0.98' } as const;
 
 /** Copilot's ACP mode ids are URIs ending in one of these fragments. */
 export type CopilotModeKind = 'agent' | 'plan' | 'autopilot';

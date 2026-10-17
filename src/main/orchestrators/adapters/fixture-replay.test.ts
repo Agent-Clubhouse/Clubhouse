@@ -429,6 +429,45 @@ describe('copilot_acp ChatDriver against fake Copilot ACP', () => {
   }, 15_000);
 });
 
+describe('copilot_acp ChatDriver against Copilot 1.0.82 (Homebrew shim runtime)', () => {
+  // `--no-auto-update` makes the Homebrew/WinGet shim run its own bundled
+  // runtime (1.0.82 here) instead of the newer downloaded package, so this is
+  // the version Homebrew users get. The fixture is a real handshake recording.
+  async function shim() {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'acp-1082-'));
+    cleanups.push(() => fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+    const report = path.join(dir, 'report.json');
+    const shims = await writeFakeCliShims(path.join(dir, 'bin'), {
+      copilot: { fixture: chatFixturePath('copilot', 'handshake-1.0.82'), report },
+    });
+    return { dir, report, binary: shims.copilot };
+  }
+
+  it('starts a session, reports 1.0.82 with its pickers, and closes', async () => {
+    const { dir, report, binary } = await shim();
+    const session = await createCopilotAcpChatDriver().start({
+      agentId: 'agent-1', provider: 'copilot-cli', cwd: dir, binaryPath: binary, level: 'ask',
+    });
+    const drafts = EventLog.fromAsyncIterable(session.events);
+    const info = (await drafts.waitFor({ type: 'session_info' })).data;
+    expect(info).toMatchObject({ cliVersion: '1.0.82', levelNames: { plan: 'Plan', ask: 'Agent', full_access: 'Agent, allow all' } });
+    expect(info.models).toHaveLength(23);
+    expect(info.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect(session.capabilities).toMatchObject({ resume: 'replay', modelSwitch: 'live', effortSwitch: 'live', liveLevels: ['plan', 'ask', 'full_access'] });
+
+    await session.close();
+    const done = await waitForJson(report, (r: { complete: boolean; mismatch: unknown }) => r.complete || r.mismatch !== null);
+    expect(done).toMatchObject({ complete: true, mismatch: null });
+    expect((done as unknown as { argv: string[] }).argv).toEqual(['--acp', '--stdio', '--no-auto-update']);
+  }, 15_000);
+
+  it('probes the version the session will run', async () => {
+    const { binary } = await shim();
+    const probe = await createCopilotAcpChatDriver().probe(binary);
+    expect(probe).toMatchObject({ handshakeOk: true, cliVersion: '1.0.82' });
+  }, 15_000);
+});
+
 // ───────────────────────────── Codex ChatDriver ─────────────────────────────
 
 describe('CodexChatDriver against fake codex app-server', () => {
