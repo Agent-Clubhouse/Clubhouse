@@ -1055,7 +1055,7 @@ export function AgentSettingsView({ agent }: Props) {
           checked={freeAgentMode}
           onChange={handleFreeAgentModeChange}
           disabled={isRunning || !permissionsSupported}
-          ariaLabel="Free agent mode"
+          aria-label="Free agent mode"
         />
       </Field>
 
@@ -1073,7 +1073,7 @@ export function AgentSettingsView({ agent }: Props) {
               checked={clubhouseModeOverride}
               onChange={handleClubhouseOverrideChange}
               disabled={isRunning}
-              ariaLabel="Local overrides"
+              aria-label="Local overrides"
             />
           </Field>
           {isManagedByClubhouse && projectPath && (
@@ -1312,7 +1312,7 @@ export function AgentSettingsView({ agent }: Props) {
           checked={qadFreeAgentMode}
           onChange={(v) => { setQadFreeAgentMode(v); setQadDirty(true); }}
           disabled={isRunning || !permissionsSupported}
-          ariaLabel="Quick agent free agent mode"
+          aria-label="Quick agent free agent mode"
         />
       </Field>
       <div className="h-2.5" />
