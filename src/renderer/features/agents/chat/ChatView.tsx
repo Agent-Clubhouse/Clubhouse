@@ -157,9 +157,9 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
       else if (action === 'queue') result = await send('queued');
       else if (action === 'stop_and_send') {
         // No steering: cancel the turn, then send. 'auto' queues it until the
-        // cancelled turn has ended, so it becomes the next prompt.
-        await actions.interrupt();
-        result = await send('auto');
+        // cancelled turn has ended, so it becomes the next prompt. If the turn
+        // couldn't be stopped, don't send: the draft goes back to the composer.
+        result = (await actions.interrupt()) ? await send('auto') : null;
       } else result = await send('auto');
       // Not sent: put the draft back unless the user has started a new one.
       if (result !== null) return;
@@ -173,7 +173,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
 
   const onImplement = (level: PermissionLevel) => {
     void (async () => {
-      await actions.setLevel(level);
+      // Implementing in the old level would run the plan unapproved (or not at all).
+      if (!(await actions.setLevel(level))) return;
       await actions.send('Implement the plan.', 'auto');
     })();
   };

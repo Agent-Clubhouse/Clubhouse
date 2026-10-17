@@ -14,11 +14,13 @@ import type { ComposerAttachment } from './attachments';
 export interface ChatActions {
   /** `attachmentIds` are staged attachment ids. */
   send: (text: string, delivery?: 'auto' | MessageDelivery, attachmentIds?: string[]) => Promise<RuntimeSendResult | null>;
-  interrupt: () => Promise<void>;
+  /** Resolves false when the turn couldn't be stopped (a toast says why). */
+  interrupt: () => Promise<boolean>;
   /** Resolves false when the answer didn't reach the agent (a toast says why). */
   respondPermission: (requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<boolean>;
   answerQuestion: (requestId: string, answers: ChatQuestionAnswers) => Promise<boolean>;
-  setLevel: (level: PermissionLevel) => Promise<void>;
+  /** Resolves false when the level didn't change (a toast says why). */
+  setLevel: (level: PermissionLevel) => Promise<boolean>;
   setModel?: (modelId: string, effort?: string) => Promise<void>;
 }
 
@@ -124,12 +126,12 @@ export function useChatActions(agentId: string): ChatActions {
         : await wrap('Message not sent', store.getState().send)(agentId, text, delivery);
       return r.ok ? r.value : null;
     },
-    interrupt: async () => { await wrap("Couldn't stop the turn", store.getState().interrupt)(agentId); },
+    interrupt: async () => (await wrap("Couldn't stop the turn", store.getState().interrupt)(agentId)).ok,
     respondPermission: async (requestId, optionId, extras) =>
       (await wrap("Couldn't answer the request", store.getState().respondPermission)(agentId, requestId, optionId, extras)).ok,
     answerQuestion: async (requestId, answers) =>
       (await wrap("Couldn't send the answer", store.getState().answerQuestion)(agentId, requestId, answers)).ok,
-    setLevel: async (level) => { await wrap("Couldn't change the permission level", store.getState().setLevel)(agentId, level); },
+    setLevel: async (level) => (await wrap("Couldn't change the permission level", store.getState().setLevel)(agentId, level)).ok,
     setModel: async (modelId, effort) => { await wrap("Couldn't change the model", store.getState().setModel)(agentId, modelId, effort); },
   }), [agentId, store, wrap]);
 }
