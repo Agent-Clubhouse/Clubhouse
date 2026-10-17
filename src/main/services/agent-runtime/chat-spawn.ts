@@ -34,6 +34,7 @@ import { ChatAgentRuntime } from './chat-runtime';
 import { registerChatRuntime, unregisterChatRuntime } from './index';
 import { readChatTranscript } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
+import { cleanSpawnEnv, getShellEnvironment } from '../../util/shell';
 
 export interface ChatSpawnParams {
   agentId: string;
@@ -179,6 +180,10 @@ export async function tryStartChatAgent(
   }
   onStarting?.();
 
+  // Electron's inherited PATH may not contain Node for npm CLI shims. Match
+  // the terminal launch and use the same effective env for probing, health
+  // keys and the actual session; profile values remain overrides.
+  const launchEnv = cleanSpawnEnv({ ...getShellEnvironment(), ...profileEnv });
   const level = levelForFreeAgent(params.freeAgentMode, params.permissionMode);
   const resumeNativeSessionId = params.resume ? params.sessionId : undefined;
   let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; continued?: { sessionId: string; lastSeq: number } } | undefined;
@@ -188,8 +193,8 @@ export async function tryStartChatAgent(
   const skipped: string[] = [];
   let login: { hint?: string } | undefined;
   for (const [index, driver] of candidates.entries()) {
-    const key = driverHealthKey(driver, binaryPath, profileEnv, commandPrefix);
-    const check = await checkDriver(driver, key, binaryPath, profileEnv, commandPrefix);
+    const key = driverHealthKey(driver, binaryPath, launchEnv, commandPrefix);
+    const check = await checkDriver(driver, key, binaryPath, launchEnv, commandPrefix);
     if (!check.ok) {
       skipped.push(check.reason ?? `${driverLabel(driver)} is unavailable`);
       // Every driver of a provider shares its login; don't try the next one.
@@ -253,7 +258,7 @@ export async function tryStartChatAgent(
       ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId, nonce) } : {}),
     };
     const env: Record<string, string> = {
-      ...profileEnv,
+      ...launchEnv,
       CLUBHOUSE_AGENT_ID: params.agentId,
       CLUBHOUSE_HOOK_NONCE: nonce,
       ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),

@@ -1128,6 +1128,8 @@ export interface EventDef {
 }
 
 export const EVENTS = {
+  /** Failed chat handshake; only driver and bounded error.type, never stderr or env. */
+  'clubhouse.chat.probe_failed': { level: 'errors' },
   'clubhouse.telemetry.test': { level: 'errors' },
   'clubhouse.telemetry.enabled': { level: 'errors' },
   'clubhouse.telemetry.disabled': { level: 'errors' },

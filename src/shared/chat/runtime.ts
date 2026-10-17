@@ -201,6 +201,8 @@ export interface ChatDriverProbe {
   handshakeOk: boolean;
   capabilities: ChatCapabilities;
   error?: string;
+  /** Bounded probe failure category; safe to export without the error text. */
+  errorCode?: 'spawn_failed' | 'process_exited' | 'rpc_timeout' | 'protocol_error' | 'unknown';
   /**
    * True when the CLI reports no usable login (Claude initialize account,
    * Codex account/read, ACP auth methods). The handshake itself can still

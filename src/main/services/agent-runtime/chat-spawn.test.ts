@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ChatEvent } from '../../../shared/chat';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import type { ChatDriver, ChatEvent } from '../../../shared/chat';
 import { CHAT_CONTRACT_VERSION } from '../../../shared/chat';
 
 const mode = vi.hoisted(() => ({ value: { mode: 'chat' } as { mode: 'chat' | 'terminal'; driver?: string } }));
+vi.mock('../../util/shell', async (importActual) => ({
+  ...await importActual<typeof import('../../util/shell')>(),
+  getShellEnvironment: vi.fn(),
+}));
 vi.mock('../chat-runtime-settings', () => ({ resolveRuntimeMode: vi.fn(() => mode.value) }));
 const transcript = vi.hoisted(() => ({ events: [] as ChatEvent[] }));
 vi.mock('./chat-transcript', () => ({
@@ -42,6 +49,9 @@ import { appendChatEvent } from './chat-transcript';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import type { OrchestratorProvider } from '../../orchestrators';
+import { getShellEnvironment } from '../../util/shell';
+import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
+import * as codexFixture from '../../orchestrators/adapters/codex-protocol/__fixtures__/app-server-session';
 
 const provider = {
   id: 'claude-code',
@@ -65,9 +75,76 @@ beforeEach(() => {
   clearDriverHealth();
   mode.value = { mode: 'chat' };
   transcript.events = [];
+  vi.mocked(getShellEnvironment).mockReturnValue({
+    PATH: '/shell/bin', HOME: '/shell/home', SHELL_ONLY: 'preserved',
+    CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli',
+  });
 });
 
 describe('chat spawn', () => {
+  it.each([undefined, { PATH: '/profile/bin', CODEX_HOME: '/profile/codex' }])(
+    'uses the shell environment plus profile overrides for both probe and start (%j)', async (profile) => {
+      const driver = new FakeChatDriver();
+      const probe = vi.spyOn(driver as ChatDriver, 'probe');
+      registerChatDriver(driver);
+      expect(await tryStartChatAgent(params, provider, profile, undefined, null)).toBe(true);
+      const expected = { PATH: '/shell/bin', HOME: '/shell/home', SHELL_ONLY: 'preserved', ...profile };
+      expect(probe.mock.calls[0][1]).toEqual(expected);
+      expect(driver.last.startOptions?.env).toMatchObject({ ...expected, CLUBHOUSE_AGENT_ID: params.agentId });
+      expect(driver.last.startOptions?.env).not.toHaveProperty('CLAUDECODE');
+      expect(driver.last.startOptions?.env).not.toHaveProperty('CLAUDE_CODE_ENTRYPOINT');
+      expect(getShellEnvironment()).toHaveProperty('CLAUDECODE', '1');
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')('launches an env-node Codex shim for probe and session with a minimal app PATH', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-launch-env-'));
+    const bin = path.join(dir, 'bin');
+    const report = path.join(dir, 'launches.jsonl');
+    fs.mkdirSync(bin);
+    fs.symlinkSync(process.execPath, path.join(bin, 'node'));
+    const shim = path.join(bin, 'codex');
+    fs.writeFileSync(shim, `#!/usr/bin/env node
+const fs = require('fs');
+fs.appendFileSync(${JSON.stringify(report)}, JSON.stringify({ path: process.env.PATH, home: process.env.HOME, agent: process.env.CLUBHOUSE_AGENT_ID }) + '\\n');
+const replies = ${JSON.stringify({ initialize: codexFixture.initializeResult, 'thread/start': codexFixture.threadStartResult })};
+require('readline').createInterface({ input: process.stdin }).on('line', line => {
+  const msg = JSON.parse(line);
+  if (msg.id !== undefined) process.stdout.write(JSON.stringify({ id: msg.id, result: replies[msg.method] || {} }) + '\\n');
+});
+`, { mode: 0o755 });
+    vi.stubEnv('PATH', dir); // No node here: only the login shell PATH can launch the shim.
+    vi.mocked(getShellEnvironment).mockReturnValue({ PATH: bin, HOME: dir });
+    const codex = { ...provider, id: 'codex-cli', getBinaryPath: () => shim } as unknown as OrchestratorProvider;
+    registerChatDriver(new CodexChatDriver());
+    try {
+      expect(await tryStartChatAgent({ ...params, cwd: dir, mission: undefined }, codex, undefined, undefined, null)).toBe(true);
+      const launches = fs.readFileSync(report, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+      expect(launches).toEqual([
+        { path: bin, home: dir },
+        { path: bin, home: dir, agent: params.agentId },
+      ]);
+    } finally {
+      await getAgentRuntime(params.agentId)?.stop();
+      vi.unstubAllEnvs();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('retries a paused driver when its effective shell PATH changes', async () => {
+    const driver = new FakeChatDriver();
+    const probe = vi.spyOn(driver, 'probe').mockResolvedValue({ handshakeOk: false, capabilities: driver.capabilities, error: 'missing node' });
+    registerChatDriver(driver);
+    for (let i = 0; i <= DRIVER_FAILURE_THRESHOLD; i++) {
+      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+    }
+    expect(probe).toHaveBeenCalledTimes(DRIVER_FAILURE_THRESHOLD);
+    vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/fixed/bin' });
+    probe.mockResolvedValue({ handshakeOk: true, capabilities: driver.capabilities });
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(true);
+    expect(probe).toHaveBeenCalledTimes(DRIVER_FAILURE_THRESHOLD + 1);
+  });
+
   it('maps Free Agent Mode onto the permission ladder', () => {
     expect(levelForFreeAgent(false, 'auto')).toBe('ask');
     expect(levelForFreeAgent(true, 'auto')).toBe('auto');
@@ -212,7 +289,8 @@ describe('chat spawn', () => {
       const calls: unknown[][] = [];
       sdk.probe = async (...args: unknown[]) => { calls.push(args); return { handshakeOk: true, capabilities: sdk.capabilities }; };
       expect(await tryStartChatAgent(params, provider, { A: '1' }, 'wsl -e', null)).toBe(true);
-      expect(calls[0]).toEqual([expect.any(String), { A: '1' }, { commandPrefix: 'wsl -e' }]);
+      expect(calls[0]).toEqual([expect.any(String), expect.objectContaining({ A: '1', PATH: '/shell/bin' }), { commandPrefix: 'wsl -e' }]);
+      expect(sdk.last.startOptions?.commandPrefix).toBe('wsl -e');
     });
 
     it('keeps chat on a newer-than-tested CLI and notes it in the transcript only', async () => {

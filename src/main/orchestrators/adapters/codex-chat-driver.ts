@@ -28,6 +28,8 @@ import {
   type TurnStartParams,
 } from './codex-protocol';
 import { resolveStructuredSpawn } from './structured-spawn';
+import { ProcessExitedError } from './ndjson-rpc-base';
+import { RpcError } from './acp-client';
 
 type LogFn = (level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 
@@ -193,10 +195,22 @@ export class CodexChatDriver implements ChatDriver {
       const info = await client.start();
       return { handshakeOk: true, cliVersion: parseCodexVersion(info?.userAgent), capabilities: CODEX_CHAT_CAPABILITIES };
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const missingNode = err instanceof ProcessExitedError && err.code === 127
+        && /env:.*\bnode\b.*(?:No such file|not found)/i.test(client.getStderr());
+      const spawnError = err instanceof Error && 'code' in err
+        && (err.code === 'ENOENT' || err.code === 'EACCES');
       return {
         handshakeOk: false,
         capabilities: MINIMAL_CHAT_CAPABILITIES,
-        error: err instanceof Error ? err.message : String(err),
+        error: missingNode
+          ? 'Node.js was not found on the Codex launch PATH. Check your shell or profile PATH and restart the agent.'
+          : message,
+        errorCode: missingNode || spawnError ? 'spawn_failed'
+          : err instanceof ProcessExitedError ? 'process_exited'
+          : err instanceof RpcError ? 'protocol_error'
+          : /^RPC request '.+' timed out after \d+ms$/.test(message) ? 'rpc_timeout'
+          : 'unknown',
       };
     } finally {
       client.kill();
