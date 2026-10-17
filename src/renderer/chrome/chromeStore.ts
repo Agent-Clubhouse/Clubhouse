@@ -124,6 +124,11 @@ export interface ChromeState {
   closeNewAgent: (createdAgentId?: string | null) => void;
   setNewAgentBusy: (busy: boolean, known?: { projectIds: string[]; agentIds: string[] }) => void;
   /**
+   * Close the page without ending it: the opener's callbacks move on with the
+   * returned request (From a template… hands them to the template dialogs).
+   */
+  handOffNewAgent: () => NewAgentRequest | null;
+  /**
    * The latest request to open an app view (Canvas, Review) with options for
    * that visit, such as Review's "Needs you only" from Needs you. The view reads
    * it when it mounts or when `seq` changes. Not persisted.
@@ -311,6 +316,11 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       const busy = get().newAgentBusy;
       set({ newAgent: null, newAgentBusy: false, newAgentKnownIds: null });
       endNewAgent(request, busy && createdAgentId === null, createdAgentId);
+    },
+    handOffNewAgent: () => {
+      const request = get().newAgent;
+      if (request) set({ newAgent: null, newAgentBusy: false, newAgentKnownIds: null });
+      return request;
     },
     setNewAgentBusy: (busy, known) => {
       if (busy && known) set({ newAgentBusy: true, newAgentKnownIds: known });

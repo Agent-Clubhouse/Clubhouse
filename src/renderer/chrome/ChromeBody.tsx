@@ -19,6 +19,7 @@ import { SatelliteStartPage } from './pages/SatelliteStartPage';
 import { NewAgentPage } from './pages/NewAgentPage';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
+import { ChromeAgentDialogs } from './sidebar/ChromeAgentDialogs';
 import { reportChromePage, reportChromeSurface, reportChromeView, type ChromeSurface } from './telemetry';
 
 const SURFACE_FOR_MODE: Record<SidebarMode, ChromeSurface> = {
@@ -162,6 +163,8 @@ export function ChromeBody() {
 
   return (
     <div className="flex-1 min-h-0 flex flex-row" data-testid="chrome-body">
+      {/* Here, not in the sidebar, so they open with the sidebar hidden (From a template… on the New agent page). */}
+      <ChromeAgentDialogs />
       {!sidebarCollapsed && (
         <div style={{ width: sidebarWidth }} className="flex-shrink-0 min-h-0">
           <ChromeSidebar />

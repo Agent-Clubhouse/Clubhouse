@@ -17,17 +17,23 @@ import type { PersonaTemplate } from '../../features/personas';
  * agents are made on the New agent page instead (pages/NewAgentPage.tsx).
  */
 
-type Request = { kind: 'gallery'; projectId: string } | null;
+/** Callbacks of a New agent page that handed off to the template dialogs (NewAgentOptions' contract). */
+export interface TemplateOpener {
+  onCreated?: (agentId: string) => void;
+  onClosed?: (createdAgentId: string | null) => void;
+}
+
+type Request = { kind: 'gallery'; projectId: string; opener?: TemplateOpener } | null;
 
 interface ChromeDialogState {
   request: Request;
-  openGallery: (projectId: string) => void;
+  openGallery: (projectId: string, opener?: TemplateOpener) => void;
   close: () => void;
 }
 
 export const useChromeDialogStore = create<ChromeDialogState>((set) => ({
   request: null,
-  openGallery: (projectId) => set({ request: { kind: 'gallery', projectId } }),
+  openGallery: (projectId, opener) => set({ request: { kind: 'gallery', projectId, opener } }),
   close: () => set({ request: null }),
 }));
 
@@ -38,17 +44,17 @@ export function ChromeAgentDialogs() {
   const deleteDialogAgent = useAgentStore((s) => s.deleteDialogAgent);
   const applyPersonaDialogAgent = useAgentStore((s) => s.applyPersonaDialogAgent);
   const extractPersonaDialogAgent = useAgentStore((s) => s.extractPersonaDialogAgent);
-  const [pendingTemplate, setPendingTemplate] = useState<{ persona: PersonaTemplate; color: string; projectId: string } | null>(null);
+  const [pendingTemplate, setPendingTemplate] = useState<{ persona: PersonaTemplate; color: string; projectId: string; opener?: TemplateOpener } | null>(null);
   const templateProject = useProjectStore((s) => (pendingTemplate ? s.projects.find((p) => p.id === pendingTemplate.projectId) : undefined));
 
   return (
     <>
       {request?.kind === 'gallery' && project && (
         <AgentGalleryDialog
-          onClose={close}
+          onClose={() => { close(); request.opener?.onClosed?.(null); }}
           onCreate={(persona, color) => {
             close();
-            setPendingTemplate({ persona, color, projectId: project.id });
+            setPendingTemplate({ persona, color, projectId: project.id, opener: request.opener });
           }}
         />
       )}
@@ -57,10 +63,14 @@ export function ChromeAgentDialogs() {
           persona={pendingTemplate.persona}
           personaColor={pendingTemplate.color}
           projectPath={templateProject.path}
-          onClose={() => setPendingTemplate(null)}
+          onClose={() => { setPendingTemplate(null); pendingTemplate.opener?.onClosed?.(null); }}
           onCreate={(templateConfig) => {
+            const opener = pendingTemplate.opener;
             setPendingTemplate(null);
-            void createDurableAgentFromTemplate({ id: templateProject.id, path: templateProject.path }, templateConfig);
+            void createDurableAgentFromTemplate({ id: templateProject.id, path: templateProject.path }, templateConfig).then((id) => {
+              if (id) opener?.onCreated?.(id);
+              opener?.onClosed?.(id);
+            });
           }}
         />
       )}

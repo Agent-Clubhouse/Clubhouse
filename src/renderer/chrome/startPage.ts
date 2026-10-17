@@ -27,7 +27,8 @@ export function canOpenNewAgentPage(): boolean {
 /**
  * Open the New agent page (#2031) with `kind` chosen and, optionally, a
  * project. Returns false, doing nothing, where it can't open (the legacy shell,
- * a satellite host, no projects); the caller decides what to do instead.
+ * a satellite host, no projects, or a `projectId` that isn't a local project);
+ * the caller decides what to do instead.
  *
  * `onCreated` gets the new agent's id; `onClosed` fires once when the page goes
  * away, with that id or null. With `stayInView` the view underneath stays put
@@ -35,6 +36,9 @@ export function canOpenNewAgentPage(): boolean {
  */
 export function openNewAgentPage(kind: 'durable' | 'quick', projectId?: string, options: NewAgentOptions = {}): boolean {
   if (!canOpenNewAgentPage()) return false;
+  // A project the page can't offer (a satellite's, or one since removed) would
+  // otherwise quietly start on another project; let the caller fall back.
+  if (projectId !== undefined && !useProjectStore.getState().projects.some((p) => p.id === projectId)) return false;
   useChromeStore.getState().openNewAgent(kind, projectId, options);
   return true;
 }

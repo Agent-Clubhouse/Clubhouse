@@ -240,10 +240,12 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
       .finally(() => { if (stillOpen()) setBusy(false); else settleNewAgent(request, null); });
   };
 
+  // The template dialogs take over the opener's callbacks: an agent made from
+  // a template is reported like one made here.
   const openTemplates = () => {
     if (!project) return;
-    close();
-    useChromeDialogStore.getState().openGallery(project.id);
+    const handed = useChromeStore.getState().handOffNewAgent();
+    useChromeDialogStore.getState().openGallery(project.id, { onCreated: handed?.onCreated, onClosed: handed?.onClosed });
     reportChromeFeature('new_agent_open');
   };
 
