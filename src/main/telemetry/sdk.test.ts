@@ -12,7 +12,7 @@ import { SessionCaps } from './caps';
 import { PreviewTee } from './preview-tee';
 import { hashId } from './ids';
 import type { TelemetryRuntime } from './types';
-import { ForwardedError } from './types';
+import { ForwardedError, tagError } from './types';
 
 const salt = Buffer.alloc(32, 7);
 
@@ -75,6 +75,21 @@ describe('startSdk', () => {
     const record = logs.getFinishedLogRecords().find((l) => l.eventName === 'clubhouse.exception');
     expect(record?.body).toBe('clubhouse.exception');
     expect(JSON.stringify(record?.attributes)).not.toContain('secret');
+  });
+
+  it('records the error type a thrown error was tagged with, innermost tag first', async () => {
+    const { rt, spans } = setup();
+    active = rt;
+    const err = tagError(tagError(new Error('x'), 'preflight_failed'), 'unknown');
+    await expect(rt.flow('clubhouse.agent.spawn', {}, async () => {
+      await rt.step('clubhouse.provider.check_availability', async () => { throw err; });
+    })).rejects.toBe(err);
+    await rt.forceFlush(1000);
+    const types = spans.getFinishedSpans().map((s) => [s.name, s.attributes['error.type']]);
+    expect(types).toEqual([
+      ['clubhouse.provider.check_availability', 'preflight_failed'],
+      ['clubhouse.agent.spawn', 'preflight_failed'],
+    ]);
   });
 
   it('keeps forwarded renderer errors\' class name and extra attributes on the exception record', async () => {

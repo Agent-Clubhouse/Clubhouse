@@ -12,6 +12,7 @@ import { broadcastAgentExit } from './agent-exit-broadcast';
 import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
 import { agentKillStage, agentOutput, agentRunKilled, agentRunStarted, agentShellReady, agentSwept } from '../telemetry/agent-telemetry';
+import { tagError } from '../telemetry/types';
 
 /** Pattern matching common API key environment variable names. */
 const API_KEY_ENV_PATTERN = /^(ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AZURE_OPENAI_API_KEY|MISTRAL_API_KEY|COHERE_API_KEY|HUGGING_FACE_TOKEN|HF_TOKEN)$/;
@@ -84,25 +85,25 @@ const SENSITIVE_PREFIXES_WIN = [
  */
 export async function validateSpawnCwd(cwd: string): Promise<string> {
   if (!path.isAbsolute(cwd)) {
-    throw new Error(`PTY cwd must be an absolute path, received: ${cwd}`);
+    throw tagError(new Error(`PTY cwd must be an absolute path, received: ${cwd}`), 'cwd_invalid');
   }
 
   let realCwd: string;
   try {
     realCwd = await fsp.realpath(cwd);
   } catch {
-    throw new Error(`PTY cwd does not exist or is not accessible: ${cwd}`);
+    throw tagError(new Error(`PTY cwd does not exist or is not accessible: ${cwd}`), 'cwd_invalid');
   }
 
   let stat: fs.Stats;
   try {
     stat = await fsp.stat(realCwd);
   } catch {
-    throw new Error(`PTY cwd does not exist or is not accessible: ${cwd}`);
+    throw tagError(new Error(`PTY cwd does not exist or is not accessible: ${cwd}`), 'cwd_invalid');
   }
 
   if (!stat.isDirectory()) {
-    throw new Error(`PTY cwd is not a directory: ${cwd}`);
+    throw tagError(new Error(`PTY cwd is not a directory: ${cwd}`), 'cwd_invalid');
   }
 
   const prefixes = process.platform === 'win32' ? SENSITIVE_PREFIXES_WIN : SENSITIVE_PREFIXES_UNIX;
@@ -110,7 +111,7 @@ export async function validateSpawnCwd(cwd: string): Promise<string> {
   for (const prefix of prefixes) {
     const normalizedPrefix = prefix.toLowerCase();
     if (normalizedCwd === normalizedPrefix || normalizedCwd.startsWith(normalizedPrefix + path.sep)) {
-      throw new Error(`PTY cwd points to a restricted system directory: ${cwd}`);
+      throw tagError(new Error(`PTY cwd points to a restricted system directory: ${cwd}`), 'cwd_invalid');
     }
   }
 

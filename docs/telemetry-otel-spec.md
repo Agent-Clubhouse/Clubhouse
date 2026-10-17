@@ -287,29 +287,32 @@ c.agent.permission        (root per permission request)
 c.agent.kill              (root; user/system kill trigger; Phase 4b)
 ```
 
-#### Create (`ipc/agent-handlers.ts:56` → `agent-config.ts:1069`)
+#### Create and delete (`ipc/agent-handlers.ts`)
 
-| Span | Children | Result enum | Level |
+Both flows start in the IPC handlers, so the git and config work below them (`agent-config.ts`) nests through the active context without that file knowing about the parent.
+
+| Span | Children | Attributes / result | Level |
 |---|---|---|---|
-| `c.agent.create` | `c.git.rev_parse`, `c.git.bootstrap_commit` (empty repo), `c.git.branch`, `c.git.worktree_add` (`:1131`), `c.agent_config.write`, `c.agent.apply_defaults`, `c.agent.persona_inject` | `error.type ∈ {worktree_failed, write_failed}`; non-fatal `c.warnings` list: `defaults_failed`, `persona_failed` | S |
+| `c.agent.create` | `c.git.worktree_create` (Phase 5, in `agent-config.ts`), `c.agent.persona_inject` | `c.agent.uses_worktree`, orchestrator; `error.type ∈ {worktree_failed, write_failed}`. A persona failure is non-fatal: the child span records it, the create stays `ok` | S |
+| `c.agent.delete` | `c.git.worktree_remove` (Phase 5) | `c.agent.delete.mode` (`standard`/`commit_push`/`cleanup_branch`/`save_patch`/`force`/`unregister`); a result with `ok: false` is `cancelled` when the user backed out, else `error.type = delete_failed` | S |
 
 Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`agentLifecycleSlice.ts:25`) starts a renderer span `c.agent.quick_launch` that is propagated into `SPAWN_AGENT` (§6.2). That is how the renderer-side work (summary instruction fetch, template expansion) gets measured.
 
 #### Spawn (`agent-system.ts:98`)
 
-- **Boundaries:** `spawnAgent` entry to the `return` after `AGENT_AWOKE` (`:269`, `:321` or `:328`), or the throw (`:115-121`, `:329-332`).
-- **Children:** listed in the tree above, with source lines in the agent survey. `provider.check_availability` matters most: it can run a **synchronous `execFileSync(shell -ilc which)` for up to 5 s on the main thread** (`orchestrators/shared.ts:100`). Codex also runs `codex --version` on every spawn. The span carries `c.binary.lookup_tier ∈ {cache, well_known, path_scan, login_shell}`.
+- **Boundaries:** `spawnAgent` entry to the process launched (after `AGENT_AWOKE`), or the throw. Recorded with `tel.flow` around the whole function; the children are `tel.step`s.
+- **Children:** `c.provider.resolve`, `c.provider.check_availability`, `c.agent.materialize` (Clubhouse Mode, non-fatal), then for PTY `c.agent.prepare_pty` with its three parallel children (`c.hooks.configure`, `c.mcp.inject`, `c.provider.build_command`) and `c.pty.spawn`, or `c.headless.spawn` for headless. Chat starts are not split into steps here; chat maps its own spans from the chat event bus (§9.1). `provider.check_availability` matters most: it can run a **synchronous `execFileSync(shell -ilc which)` for up to 5 s on the main thread** (`orchestrators/shared.ts:100`), and Codex also runs `codex --version` on every spawn. The lookup tier is recorded on every lookup as `c.provider.binary_lookup.duration` (§4.4 metrics), not on the span.
 - **Attributes:**
   - `c.agent.kind` (`durable`/`quick`/`companion`)
   - `c.orchestrator` (`claude-code`/`codex-cli`/`copilot-cli`/`other`)
   - `c.agent.runtime` (`pty`/`headless`/`chat`)
-  - `c.agent.runtime.reason` (`requested`/`fallback_no_mission`/`fallback_not_capable`/`default`)
-  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`/`acp` for other ACP agents, later `copilot_sdk`), from chat's capability record. Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
+  - `c.chat.driver` (`claude_agent_sdk`/`claude_stream_json`/`codex_app_server`/`copilot_acp`/`acp` for other ACP agents, later `copilot_sdk`), from chat's capability record, added by the chat telemetry work (§9.1). Claude chat is designed to default to the Agent SDK, with raw `-p` stream-json as a second mode.
   - `c.agent.resume` (bool)
-  - `c.model.family` (bucketed against `MODEL_OPTIONS`: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`)
-  - `c.agent.uses_worktree`, `c.clubhouse_mode`, `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool)
-  - `c.agent.id_hash`, `c.agent.run.id_hash`
-- **`error.type`:** `orchestrator_unknown`, `binary_not_found`, `binary_check_failed`, `preflight_failed`, `cwd_invalid`, `pty_spawn_failed`, `headless_no_pid`, `chat_start_failed`, `materialize_failed` (non-fatal warning).
+  - `c.model.family` (bucketed from the model string: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`; the raw model is never sent)
+  - `c.clubhouse_mode`, `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
+  - Not recorded: `c.agent.runtime.reason` (the fallback decision is implicit in the runtime) and per-agent hashed IDs on spawn spans.
+- **`error.type`:** `orchestrator_unknown`, `preflight_failed` (CLI missing or unauthenticated), `cwd_invalid`, `pty_spawn_failed`, `headless_no_pid` (the span ends `error` though the call returns), `chat_start_failed`; `materialize_failed` on the non-fatal child only. Errors are typed with `tagError` / `withErrorType` at the throw site (§6.5); anything untagged is `unknown`.
+- **Metrics:** `c.agent.spawns` (counter: kind, orchestrator, runtime, outcome, `error.type`) and `c.agent.spawn.duration` (histogram, s, successful spawns only).
 
 #### Run, first output and readiness
 
@@ -365,13 +368,13 @@ Metrics: `c.agent.permission.wait` histogram (s; already computed as `elapsedMs`
 
 #### Exit and kill
 
-| Span | Boundaries | Attributes | Level |
-|---|---|---|---|
 Exits are classified on the `c.agent.run` span (above), not a separate span. Chat exits must also go through `broadcastAgentExit` (the structured-mode bypass, F1, was fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928)).
 
 | Span | Boundaries | Attributes | Level |
 |---|---|---|---|
-| `c.agent.kill` (Phase 4b) | `killAgent` on the agent-runtime seam → exit | `c.kill.trigger` (`user`/`quick_auto_stop`/`shutdown`/`replace`/`sweeper`), `c.kill.stage_reached` (`exit_command`/`eof`/`sigterm`/`sigkill`, from `gracefulKill`) | S |
+| `c.agent.kill` | `killAgent` (`agent-system.ts`) → the run's exit; replayed when the run ends, like `c.agent.run`. PTY and headless only | `c.kill.trigger` (`user` for IPC, which includes the renderer's quick-agent auto-stop; `agent_tool` for the `sleep_agent` MCP tool), `c.kill.stage_reached` (`exit_command`/`eof`/`sigterm`/`sigkill`), `c.agent.exit.class` | S |
+
+Shutdown, replacement and the stale sweeper don't go through `killAgent`; they show up as the run's exit class (`killed_user` from `killAll`, `replaced`, `stale_swept`) rather than a kill span.
 
 `c.agent.exit.class` takes one of:
 
@@ -388,8 +391,8 @@ Exits are classified on the `c.agent.run` span (above), not a separate span. Cha
 
 #### Group projects and shoulder taps
 
-- `c.group.shoulder_tap` (S): `executeShoulderTap` (`group-project-shoulder-tap.ts:63`), with a child per target. Attributes: `c.delivery.result` (`delivered`/`not_running`/`unsupported_runtime`/`failed`), `c.agent.runtime`, `c.targets.count`.
-- `c.group.membership_sync` (S): `syncMemberships`. Attributes: join/leave counts.
+- `c.group.shoulder_tap` (S): `executeShoulderTap`. Attributes: `c.tap.broadcast`, `c.targets.count`. No targets is `skipped`; every target failing is `error.type = tap_undelivered`. Per-target results are a counter, not child spans: `c.group.shoulder_tap.deliveries` by `c.delivery.result` (`delivered`/`not_running`/`unsupported_runtime`) and target `c.agent.runtime`.
+- `c.group.membership_sync`: not instrumented yet.
 - `c.group.bulletin.posts` is not a separate counter: it is `c.mcp.tool_calls` filtered to `c.mcp.tool = post_bulletin`.
 
 ### 4.5 Clubhouse MCP bridge (`clubhouse-mcp/`)
@@ -775,6 +778,7 @@ tel.exception(err, { origin: 'main', handled: false });
 - When telemetry is disabled, `tel.*` are no-op functions that run `fn` directly. That is one property read and a branch, so hot-adjacent code (hook server) pays nothing measurable.
 - `tel.flow` also accepts an existing `AbortSignal` and marks `cancelled` on abort.
 - Thrown errors are recorded via `tel.exception` (sanitized) and rethrown unchanged. Instrumentation never changes control flow.
+- A thrown error's `error.type` is `unknown` unless the error was typed at the throw site: `throw tagError(err, 'preflight_failed')`, or `withErrorType('pty_spawn_failed', () => spawn(...))` around a call. The tag is a non-enumerable symbol property, so the error the caller sees is otherwise unchanged. The first tag wins, so an inner, more specific type (`cwd_invalid`) survives an outer wrapper (`pty_spawn_failed`), and every span the error passes through records the same type.
 
 ### 6.6 Bridging `appLog` into OTel logs
 

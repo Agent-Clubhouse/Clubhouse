@@ -185,6 +185,11 @@ export function isHeadless(agentId: string): boolean {
   return sessions.has(agentId);
 }
 
+/** True when the headless session for `agentId` got a PID (the binary started). */
+export function hasPid(agentId: string): boolean {
+  return sessions.get(agentId)?.process.pid !== undefined;
+}
+
 // ── Spawn Helpers ───────────────────────────────────────────────────────────
 
 /** Mutable I/O state shared between stdout, stderr, and exit handlers. */

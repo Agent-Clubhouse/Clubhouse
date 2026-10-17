@@ -19,8 +19,9 @@ A one-click **Deploy to Azure** button and optional alert rules come in Phase 7.
 | Reliability | Exceptions by type and origin, renderer and child-process exits, window hangs, main-thread stalls by running flow, event-loop delay, memory by process type, long frames by view |
 | Startup and updates | Startup p50/p95 by kind and version, startup phases, failed startups, the update funnel, applies that didn't take by install kind, update failures, safe-mode decisions |
 | Data integrity | Write failures and write time by store, recoveries by store and action, saves blocked by data-loss guards, flush-barrier waits |
+| Agents | Spawns and spawn failures by orchestrator, runtime and error; spawn time and spawn steps; CLI binary lookup by tier; how runs end; readiness; kills by trigger and stage; kill escalations; tool calls by bucket; Clubhouse MCP tool calls; permission waits; shoulder tap deliveries; durable create and delete |
 
-Agents, Permissions, Plugins, Workspace and Annex tabs are added with telemetry Phases 4–6, in the same PRs as the instrumentation they chart.
+Permission panels live on the Agents tab. Plugins, Workspace and Annex tabs are added with telemetry Phases 5–6, in the same PRs as the instrumentation they chart.
 
 ## Keeping it in sync
 

@@ -9,6 +9,7 @@
 import type { EventName, MetricName, SpanName, TelAttr } from '../../shared/telemetry/attributes';
 import {
   NOOP_SPAN,
+  errorTypeOf,
   type Classification,
   type ExceptionOptions,
   type FlowExtras,
@@ -61,7 +62,7 @@ function bufferedSpan<T>(name: SpanName, opts: FlowOptions, fn: (s: SpanHandle) 
   try {
     result = fn(handle);
   } catch (err) {
-    record({ error: 'unknown' });
+    record({ error: errorTypeOf(err) });
     buffer((rt) => rt.exception(err, { origin: 'main', handled: false }));
     throw err;
   }
@@ -69,7 +70,7 @@ function bufferedSpan<T>(name: SpanName, opts: FlowOptions, fn: (s: SpanHandle) 
     Promise.resolve(result).then(
       (r) => record(classify(r)),
       (err) => {
-        record({ error: 'unknown' });
+        record({ error: errorTypeOf(err) });
         buffer((rt) => rt.exception(err, { origin: 'main', handled: false }));
       },
     );
@@ -108,6 +109,8 @@ function trackFlow<T>(name: SpanName, fn: (span: SpanHandle) => T): (span: SpanH
 export function currentFlow(): SpanName | null {
   return activeFlows.length > 0 ? activeFlows[activeFlows.length - 1] : null;
 }
+
+export { tagError, withErrorType } from './types';
 
 export const tel = {
   /** A root user-flow span. Thrown errors are recorded and rethrown unchanged. */

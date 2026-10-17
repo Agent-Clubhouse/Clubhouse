@@ -8,6 +8,7 @@ import {
   PENDING_BUFFER_CAP,
   setRuntime,
   tel,
+  withErrorType,
 } from './facade';
 import type { TelemetryRuntime } from './types';
 
@@ -103,6 +104,17 @@ describe('telemetry facade', () => {
     setRuntime(rt);
     expect(rt.exception).toHaveBeenCalledWith(err, { origin: 'main', handled: false });
     expect(vi.mocked(rt.replaySpan).mock.calls[0][0]).toMatchObject({ outcome: 'error', errorType: 'unknown' });
+  });
+
+  it('keeps the tagged error type on buffered startup flows', async () => {
+    beginPending();
+    const err = new Error('nope');
+    await expect(tel.flow('clubhouse.telemetry.test', {}, () => withErrorType('cwd_invalid', async () => {
+      throw err;
+    }))).rejects.toBe(err);
+    const rt = fakeRuntime();
+    setRuntime(rt);
+    expect(vi.mocked(rt.replaySpan).mock.calls[0][0]).toMatchObject({ outcome: 'error', errorType: 'cwd_invalid' });
   });
 });
 

@@ -14,6 +14,8 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { buildToolName } from './clubhouse-mcp/tool-registry';
 import { getAgentRuntime } from './agent-runtime';
 import { appLog } from './log-service';
+import { ATTR } from '../../shared/telemetry/attributes';
+import { tel } from '../telemetry/facade';
 
 export interface ShoulderTapParams {
   projectId: string;
@@ -47,7 +49,37 @@ function senderReplyChannel(senderLabel: string): string | null {
   return inboxChannelName(senderAgentName);
 }
 
-export async function executeShoulderTap(params: ShoulderTapParams): Promise<ShoulderTapResult> {
+const DELIVERY_RESULT = {
+  'delivered': 'delivered',
+  'not-running': 'not_running',
+  'unsupported-runtime': 'unsupported_runtime',
+} as const;
+
+/**
+ * Deliver a shoulder tap, recorded as `clubhouse.group.shoulder_tap`: no
+ * targets is `skipped`, every target failing is `tap_undelivered`.
+ */
+export function executeShoulderTap(params: ShoulderTapParams): Promise<ShoulderTapResult> {
+  const broadcast = !params.targetAgentId || params.targetAgentId === 'all';
+  return tel.flow('clubhouse.group.shoulder_tap', { attrs: [ATTR.tapBroadcast(broadcast)] }, async (span) => {
+    const result = await deliverShoulderTap(params);
+    span.set(ATTR.targetsCount(result.delivered.length + result.failed.length));
+    return result;
+  }, {
+    classify: (r) => {
+      if (r.delivered.length + r.failed.length === 0) return { outcome: 'skipped' };
+      return r.delivered.length === 0 ? { error: 'tap_undelivered' } : 'ok';
+    },
+  });
+}
+
+function recordDelivery(status: ShoulderTapDelivery['status'], runtime: 'pty' | 'chat' | undefined): void {
+  const attrs = [ATTR.deliveryResult(DELIVERY_RESULT[status])];
+  if (runtime) attrs.push(ATTR.agentRuntime(runtime));
+  tel.count('clubhouse.group.shoulder_tap.deliveries', 1, attrs);
+}
+
+async function deliverShoulderTap(params: ShoulderTapParams): Promise<ShoulderTapResult> {
   const { projectId, senderLabel, targetAgentId, message } = params;
   const taskId = params.taskId || `tap_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
@@ -85,6 +117,7 @@ export async function executeShoulderTap(params: ShoulderTapParams): Promise<Sho
 
     if (!reg) {
       failed.push({ agentId: binding.agentId, agentName, status: 'not-running' });
+      recordDelivery('not-running', undefined);
       continue;
     }
 
@@ -116,19 +149,22 @@ export async function executeShoulderTap(params: ShoulderTapParams): Promise<Sho
       `This tap is ephemeral — no bulletin record was created.\n\n` +
       replyLines.join('\n');
 
+    const runtime = getAgentRuntime(binding.agentId);
     try {
-      const runtime = getAgentRuntime(binding.agentId);
       if (runtime) {
         await runtime.sendMessage(taggedMessage, { source: 'shoulder_tap', taskId });
         delivered.push({ agentId: binding.agentId, agentName, status: 'delivered' });
+        recordDelivery('delivered', runtime.kind);
       } else {
         failed.push({ agentId: binding.agentId, agentName, status: 'unsupported-runtime' });
+        recordDelivery('unsupported-runtime', undefined);
       }
     } catch (err) {
       appLog('core:group-project', 'error', 'Shoulder tap delivery failed', {
         meta: { agentId: binding.agentId, taskId, error: err instanceof Error ? err.message : String(err) },
       });
       failed.push({ agentId: binding.agentId, agentName, status: 'not-running' });
+      recordDelivery('not-running', runtime?.kind);
     }
   }
 

@@ -71,7 +71,7 @@ import type {
   SpanHandle,
   TelemetryRuntime,
 } from './types';
-import { ForwardedError } from './types';
+import { ForwardedError, errorTypeOf } from './types';
 
 export interface SdkOptions {
   level: TelemetryLevel;
@@ -317,7 +317,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
           return;
         }
         recordException(span, err, { origin: 'main', handled: false });
-        finish(span, { error: 'unknown' });
+        finish(span, { error: errorTypeOf(err) });
       };
       let result: T;
       try {
