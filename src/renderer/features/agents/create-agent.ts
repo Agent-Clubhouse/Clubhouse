@@ -3,6 +3,7 @@ import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { useToastStore } from '../../stores/toastStore';
 import { isRemoteProjectId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import type { TemplateConfig } from './TemplateConfigDialog';
+import { ATTR, tel } from '../../telemetry';
 
 /**
  * Durable-agent creation shared by the legacy agent list and the new chrome's
@@ -50,6 +51,7 @@ export async function createDurableAgent(project: AgentProjectRef, input: Durabl
       // Snapshot refresh is broadcast by the satellite — controller will update automatically
     } catch (err) {
       console.error('Failed to create remote durable agent:', err);
+      tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
       toastFailure(err);
     }
     return;
@@ -70,6 +72,7 @@ export async function createDurableAgent(project: AgentProjectRef, input: Durabl
   } catch (err) {
     if (tempId) removeAgent(tempId);
     console.error('Failed to create durable agent:', err);
+    tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
     toastFailure(err);
   }
 }
@@ -89,6 +92,7 @@ export async function createDurableAgentFromTemplate(project: AgentProjectRef, t
   } catch (err) {
     if (tempId) removeAgent(tempId);
     console.error('Failed to create agent from template:', err);
+    tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
     toastFailure(err);
   }
 }

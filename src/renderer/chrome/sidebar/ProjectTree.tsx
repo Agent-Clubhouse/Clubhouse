@@ -3,6 +3,7 @@ import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '.
 import { useChromeStore, foldKey, type ProjectFold } from '../chromeStore';
 import { ProjectGroup } from './ProjectGroup';
 import { moveProject, orderProjects } from './treeModel';
+import { reportChromeFeature } from '../telemetry';
 
 /**
  * The project tree (docs/chrome-redesign-spec.md §4.2): pinned projects first,
@@ -77,7 +78,18 @@ export function ProjectTree(props: ProjectTreeProps) {
     onDragEnd: () => { setDragId(null); setOverId(null); },
   }), [dragId, projectIds, onReorder]);
 
-  const onToggleFold = useCallback((projectId: string, fold: ProjectFold) => toggleFold(projectId, fold), [toggleFold]);
+  const onToggleFold = useCallback((projectId: string, fold: ProjectFold) => {
+    toggleFold(projectId, fold);
+    reportChromeFeature('fold_toggle');
+  }, [toggleFold]);
+  const onToggleCollapsed = useCallback((projectId: string) => {
+    toggleProjectCollapsed(projectId);
+    reportChromeFeature('project_collapse');
+  }, [toggleProjectCollapsed]);
+  const onTogglePinned = useCallback((projectId: string) => {
+    togglePinned(projectId);
+    reportChromeFeature('project_pin');
+  }, [togglePinned]);
 
   const renderGroup = (project: Project) => (
     <ProjectGroup
@@ -95,8 +107,8 @@ export function ProjectTree(props: ProjectTreeProps) {
       activeAgentId={activeAgentId}
       selectedCompletedId={selectedCompletedId}
       onSelectProject={props.onSelectProject}
-      onToggleCollapsed={toggleProjectCollapsed}
-      onTogglePinned={togglePinned}
+      onToggleCollapsed={onToggleCollapsed}
+      onTogglePinned={onTogglePinned}
       onToggleFold={onToggleFold}
       onNewAgent={props.onNewAgent}
       onSelectAgent={props.onSelectAgent}
@@ -118,7 +130,7 @@ export function ProjectTree(props: ProjectTreeProps) {
           data-testid="project-collapse-all"
           title={allCollapsed ? 'Expand all projects' : 'Collapse all projects'}
           aria-label={allCollapsed ? 'Expand all projects' : 'Collapse all projects'}
-          onClick={() => toggleCollapseAll(projectIds)}
+          onClick={() => { toggleCollapseAll(projectIds); reportChromeFeature('project_collapse_all'); }}
           className="ml-1.5 w-6 h-6 rounded flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
           style={allCollapsed ? { transform: 'rotate(180deg)' } : undefined}
         >

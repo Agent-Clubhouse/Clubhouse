@@ -235,7 +235,13 @@ export function ChromeSidebar() {
     // Recording 'agents' for the project keeps the project-switch effect from restoring another tab.
     setExplorerTab('agents', agent.projectId);
     setActiveAgent(agent.id, agent.projectId);
+    reportChromeFeature('agent_select');
   }, [setActiveProject, setExplorerTab, setActiveAgent]);
+
+  const selectNeedsYou = useCallback((agent: Agent) => {
+    selectAgent(agent);
+    reportChromeFeature('needs_you_select');
+  }, [selectAgent]);
 
   const selectCompleted = useCallback((projectId: string, completedId: string) => {
     if (useProjectStore.getState().activeProjectId !== projectId) setActiveProject(projectId);
@@ -246,17 +252,21 @@ export function ChromeSidebar() {
 
   const dismissCompleted = useCallback((projectId: string, completedId: string) => {
     useQuickAgentStore.getState().dismissCompleted(projectId, completedId);
+    reportChromeFeature('completed_dismiss');
   }, []);
   const clearCompleted = useCallback((projectId: string) => {
     useQuickAgentStore.getState().clearCompleted(projectId);
+    reportChromeFeature('completed_clear');
   }, []);
 
   const onReorder = useCallback((ids: string[]) => {
     reorderProjects(ids).catch((err) => reportChromeActionFailed('reorder_projects', err));
+    reportChromeFeature('project_reorder');
   }, [reorderProjects]);
 
   const onNewAgent = useCallback((projectId: string) => {
     useChromeDialogStore.getState().openNewAgent(projectId);
+    reportChromeFeature('new_agent_open');
   }, []);
 
   const addProject = () => {
@@ -278,7 +288,7 @@ export function ChromeSidebar() {
       <div className="flex-shrink-0 px-2 pt-2 pb-2 flex items-center gap-1.5">
         <button
           type="button"
-          onClick={() => useCommandPaletteStore.getState().open()}
+          onClick={() => { useCommandPaletteStore.getState().open(); reportChromeFeature('search_open'); }}
           data-testid="chrome-search"
           className="flex-1 min-w-0 h-7 px-2 rounded-md bg-surface-0 flex items-center gap-2 text-xs text-ctp-overlay1 hover:text-ctp-subtext1 cursor-pointer"
         >
@@ -298,7 +308,7 @@ export function ChromeSidebar() {
         items={needs}
         projectNames={projectNames}
         activeAgentId={activeAgentId}
-        onSelect={selectAgent}
+        onSelect={selectNeedsYou}
         onReview={reviewEnabled ? () => openAppItem('review') : undefined}
       />
 
