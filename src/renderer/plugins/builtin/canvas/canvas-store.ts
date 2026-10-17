@@ -7,6 +7,18 @@ import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } fro
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { generateZoneWireId, type ZoneWireDefinition } from './zone-wire-store';
 import { persist } from '../../../telemetry/persist';
+import { ATTR, tel } from '../../../telemetry';
+import { countBucket } from '../../../../shared/telemetry/attributes';
+import type { Classification } from '../../../telemetry/facade';
+
+type CanvasLoadResult = Parameters<typeof ATTR.canvasLoadResult>[0];
+
+/** Unreadable and failed loads leave the canvas unloaded with saves blocked: errors. */
+export function canvasLoadOutcome(result: CanvasLoadResult): Classification {
+  if (result === 'unreadable') return { error: 'canvas_unreadable' };
+  if (result === 'failed') return { error: 'canvas_load_failed' };
+  return 'ok';
+}
 import {
   createView as createViewOp,
   createPluginView as createPluginViewOp,
@@ -358,7 +370,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
     // ── Lifecycle ──────────────────────────────────────────────────
 
-    loadCanvas: async (storage) => {
+    // Measured as `clubhouse.canvas.load` (spec §4.10); `loadResult` records
+    // which branch hydration took. Recovery details are persist telemetry.
+    loadCanvas: (storage) => tel.flow<Promise<CanvasLoadResult>>('clubhouse.canvas.load', {}, async (span) => {
+      let loadResult: CanvasLoadResult = 'failed';
       _canvasPersist = 'blocked';
       _recoverySnapshot = undefined;
       try {
@@ -390,6 +405,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         if (primary.status !== 'ok') {
           const backup = await readInstancesCopy(storage, STORAGE_KEY_INSTANCES_BACKUP);
           if (backup.status === 'ok') {
+            loadResult = 'recovered_from_backup';
             persist.recovery('canvas', 'restored_from_backup');
             rendererLog('canvas', 'warn', 'Primary canvas data missing/corrupt — recovered from backup', {
               meta: { primary: primary.status, backupCanvases: backup.canvases.length },
@@ -406,7 +422,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
               meta: { primary: primary.status, backup: backup.status, error: errorMessage(error) },
             });
             set({ loaded: false, loadError: `Canvas data could not be read: ${errorMessage(error)}` });
-            return;
+            loadResult = 'unreadable';
+            span.set(ATTR.canvasLoadResult(loadResult));
+            return loadResult;
           } else if (primary.status !== 'degraded' && (backup.status === 'degraded' || primary.status === 'missing')) {
             // Salvage whichever copy still has valid records.
             chosen = backup;
@@ -417,9 +435,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         if (chosen.status === 'ok') {
           canvases = chosen.canvases;
           _canvasPersist = 'ok';
+          if (loadResult !== 'recovered_from_backup') loadResult = 'ok';
         } else if (chosen.status === 'missing') {
           canvases = [createCanvasInstance()];
           _canvasPersist = 'verify-empty';
+          loadResult = 'new';
         } else if (chosen.status === 'unreadable') {
           throw chosen.error; // unreachable — handled above
         } else {
@@ -428,6 +448,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           canvases = chosen.status === 'degraded' ? chosen.canvases : [createCanvasInstance()];
           _recoverySnapshot = chosen.raw;
           _canvasPersist = 'snapshot-first';
+          loadResult = 'degraded';
           persist.recovery('canvas', 'records_dropped');
           rendererLog('canvas', 'warn', 'Canvas data had malformed records — loaded what was valid', {
             meta: { issues: chosen.status === 'degraded' ? chosen.issues : ['instances is not a non-empty array'] },
@@ -449,16 +470,23 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           : canvases[0].id;
 
         set({ canvases, activeCanvasId, zoneWireDefinitions: loadedZoneWires, loaded: true, loadError: null, ...syncDerivedState(canvases, activeCanvasId) });
+        span.set(
+          ATTR.canvasCount(canvases.length),
+          ATTR.canvasViewCount(countBucket(canvases.reduce((n, c) => n + c.views.length, 0))),
+        );
       } catch (err) {
         // Unexpected failure — never substitute an empty canvas, which the
         // next autosave would persist over the user's data.
         _canvasPersist = 'blocked';
+        loadResult = 'failed';
         rendererLog('canvas', 'error', 'loadCanvas failed — not loading, saves blocked', {
           meta: { error: errorMessage(err) },
         });
         set({ loaded: false, loadError: `Canvas failed to load: ${errorMessage(err)}` });
       }
-    },
+      span.set(ATTR.canvasLoadResult(loadResult));
+      return loadResult;
+    }, { classify: canvasLoadOutcome }).then((): void => undefined),
 
     saveCanvas: async (storage) => {
       if (_canvasPersist === 'blocked') {
