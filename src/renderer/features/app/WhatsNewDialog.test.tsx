@@ -76,7 +76,7 @@ describe('WhatsNewDialog', () => {
     render(<WhatsNewDialog />);
 
     expect(screen.getByTestId('whats-new-dialog')).toBeInTheDocument();
-    expect(screen.getByText(/What's New in v0\.27\.0/)).toBeInTheDocument();
+    expect(screen.getByText(/What's new in v0\.27\.0/)).toBeInTheDocument();
     expect(screen.getByText('Bug Fixes')).toBeInTheDocument();
     expect(screen.getByText(/Fixed crash on startup/)).toBeInTheDocument();
   });

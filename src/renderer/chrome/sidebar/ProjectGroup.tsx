@@ -4,7 +4,7 @@ import { getAgentColorHex } from '../../../shared/name-generator';
 import { AgentRow } from './AgentRow';
 import { agentDot, groupProjectAgents, projectRollup } from './treeModel';
 import type { ProjectFold } from '../chromeStore';
-import { PopupMenu, type MenuItem } from './ProjectMenu';
+import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
 import { reportChromeFeature } from '../telemetry';
 import type { ActionDef } from '../../features/agents/useAgentRowActions';
 

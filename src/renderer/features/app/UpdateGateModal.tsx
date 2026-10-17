@@ -22,7 +22,7 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
   const hasWorking = workingAgents.length > 0;
 
   return (
-    <Modal open={true} onClose={onCancel} width="w-full max-w-lg mx-4">
+    <Modal open={true} onClose={onCancel} aria-label="Update ready" width="w-full max-w-lg mx-4">
         <h2 className="text-base font-semibold text-ctp-text mb-4">Update Ready — Active Agents</h2>
 
         {workingAgents.length > 0 && (

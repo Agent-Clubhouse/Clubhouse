@@ -492,6 +492,30 @@ describe('ChatView subagents', () => {
   });
 });
 
+describe('ChatView untested CLI version', () => {
+  const versionNotice = { type: 'notice' as const, data: { level: 'info' as const, code: 'untested_cli_version', message: 'Claude Code 2.1.302 is newer than the version chat was tested with (2.1.301).' } };
+
+  it('stays quiet when nothing went wrong', () => {
+    renderState(fold(extend(chatFixture('claude', 'conversation'), versionNotice)));
+    expect(screen.queryByTestId('chat-protocol-unknown')).not.toBeInTheDocument();
+    expect(screen.queryByText(/newer than the version chat was tested with/)).not.toBeInTheDocument();
+  });
+
+  it('shows the version next to unrecognized messages', () => {
+    renderState(fold(extend(chatFixture('claude', 'protocol_drift'), versionNotice)));
+    const note = screen.getByTestId('chat-protocol-unknown');
+    expect(note).toHaveTextContent('sent 2 messages Clubhouse doesn\'t recognize');
+    expect(note).toHaveTextContent('Claude Code 2.1.302 is newer than the version chat was tested with (2.1.301).');
+  });
+
+  it('shows the version after a fatal error', () => {
+    renderState(fold(extend(chatFixture('claude', 'conversation'), versionNotice, { type: 'error', data: { code: 'process_exited', message: 'The CLI exited unexpectedly', fatal: true } })));
+    const note = screen.getByTestId('chat-protocol-unknown');
+    expect(note).toHaveTextContent('Claude Code 2.1.302 is newer');
+    expect(note).not.toHaveTextContent('recognize');
+  });
+});
+
 describe('ChatView failures', () => {
   it.each(['claude', 'codex', 'copilot'] as const)('shows a failed turn and keeps the composer (%s)', (p) => {
     renderFixture(p, 'turn_error');

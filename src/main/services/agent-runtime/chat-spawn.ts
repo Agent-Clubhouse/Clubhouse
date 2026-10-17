@@ -140,10 +140,11 @@ async function checkDriver(driver: ChatDriver, key: string, binaryPath: string, 
   if (verdict.status === 'known_bad' || verdict.status === 'below_min') {
     return { ok: false, reason: verdict.message, notices: [] };
   }
-  const notices: ChatRuntimeNotice[] = verdict.status === 'untested' && verdict.message
-    ? [{ level: 'info', code: 'untested_cli_version', message: verdict.message }]
-    : [];
-  return { ok: true, notices };
+  if (verdict.status !== 'untested' || !verdict.message) return { ok: true, notices: [] };
+  // Expected whenever the CLI ships before chat is retested: log it; the view
+  // shows it only alongside a real problem.
+  appLog('core:chat', 'info', verdict.message, { meta: { driver: driver.id, cliVersion: verdict.version } });
+  return { ok: true, notices: [{ level: 'info', code: 'untested_cli_version', message: verdict.message }] };
 }
 
 /**

@@ -83,4 +83,132 @@ describe('Modal', () => {
     // z-index: auto and settings content renders above it.
     expect(backdrop.classList.contains('z-modal')).toBe(true);
   });
+
+  it('is a labelled dialog with aria-modal', () => {
+    render(
+      <Modal open onClose={vi.fn()} title="Delete agent?">
+        <span>content</span>
+      </Modal>
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Delete agent?' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+  });
+
+  it('uses aria-label when there is no title row', () => {
+    render(<Modal open onClose={vi.fn()} aria-label="Picker"><span>content</span></Modal>);
+    expect(screen.getByRole('dialog', { name: 'Picker' })).toBeInTheDocument();
+  });
+
+  it('draws a 44px title row whose close button calls onClose', () => {
+    const onClose = vi.fn();
+    render(<Modal open onClose={onClose} title="Title"><span>content</span></Modal>);
+    const close = screen.getByRole('button', { name: 'Close' });
+    expect(close.parentElement!.className).toContain('h-11');
+    fireEvent.click(close);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders footer actions right-aligned', () => {
+    render(<Modal open onClose={vi.fn()} footer={<button>OK</button>}><span>content</span></Modal>);
+    const footer = screen.getByRole('button', { name: 'OK' }).parentElement!;
+    expect(footer.className).toContain('justify-end');
+  });
+
+  it('pads the body by default and not with padding="none"', () => {
+    const { rerender } = render(<Modal open onClose={vi.fn()}><span data-testid="c">c</span></Modal>);
+    expect(screen.getByTestId('c').parentElement!.className).toContain('p-4');
+    rerender(<Modal open onClose={vi.fn()} padding="none"><span data-testid="c">c</span></Modal>);
+    expect(screen.getByTestId('c').parentElement!.className).not.toContain('p-4');
+  });
+
+  it('focuses the first control in the body, not the close button', () => {
+    render(<Modal open onClose={vi.fn()} title="T"><input data-testid="field" /></Modal>);
+    expect(document.activeElement).toBe(screen.getByTestId('field'));
+  });
+
+  it('focuses initialFocusRef when given', () => {
+    function Harness() {
+      const ref = { current: null as HTMLButtonElement | null };
+      return (
+        <Modal open onClose={vi.fn()} initialFocusRef={ref}>
+          <input />
+          <button ref={(el) => { ref.current = el; }}>Confirm</button>
+        </Modal>
+      );
+    }
+    render(<Harness />);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Confirm' }));
+  });
+
+  it('keeps an autofocused field focused', () => {
+    render(<Modal open onClose={vi.fn()}><button>first</button><input autoFocus data-testid="auto" /></Modal>);
+    expect(document.activeElement).toBe(screen.getByTestId('auto'));
+  });
+
+  it('traps Tab inside the dialog', () => {
+    render(
+      <Modal open onClose={vi.fn()}>
+        <button>one</button>
+        <button>two</button>
+      </Modal>
+    );
+    const one = screen.getByRole('button', { name: 'one' });
+    const two = screen.getByRole('button', { name: 'two' });
+    expect(document.activeElement).toBe(one);
+    two.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(one);
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(two);
+  });
+
+  it('returns focus to the opener on close', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    const { rerender } = render(<Modal open onClose={vi.fn()}><button>inside</button></Modal>);
+    expect(document.activeElement).not.toBe(opener);
+    rerender(<Modal open={false} onClose={vi.fn()}><button>inside</button></Modal>);
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+
+  it('closes only the topmost modal on Esc', () => {
+    const outer = vi.fn();
+    const inner = vi.fn();
+    render(
+      <>
+        <Modal open onClose={outer}><span>outer</span></Modal>
+        <Modal open onClose={inner}><span>inner</span></Modal>
+      </>
+    );
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(inner).toHaveBeenCalledTimes(1);
+    expect(outer).not.toHaveBeenCalled();
+  });
+
+  it('leaves Tab alone while focus is in a portaled menu or tooltip', () => {
+    const popup = document.createElement('div');
+    popup.setAttribute('data-layer-portal', '');
+    const item = document.createElement('button');
+    popup.appendChild(item);
+    document.body.appendChild(popup);
+    render(<Modal open onClose={vi.fn()}><button>one</button></Modal>);
+    item.focus();
+    const e = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    document.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(item);
+    popup.remove();
+  });
+
+  it('ignores an Esc that a popup already handled', () => {
+    const onClose = vi.fn();
+    render(<Modal open onClose={onClose}><button>one</button></Modal>);
+    const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    e.preventDefault();
+    document.dispatchEvent(e);
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });
+

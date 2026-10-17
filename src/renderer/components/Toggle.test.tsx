@@ -1,58 +1,59 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { Toggle } from './Toggle';
 
 describe('Toggle', () => {
-  it('renders unchecked state with bg-surface-2', () => {
-    const { container } = render(<Toggle checked={false} onChange={() => {}} />);
-    const button = container.querySelector('button')!;
-    expect(button.className).toContain('bg-surface-2');
-    expect(button.className).not.toContain('bg-ctp-accent');
+  it('is a switch whose aria-checked follows checked', () => {
+    const { rerender } = render(<Toggle checked={false} onChange={() => {}} aria-label="Sounds" />);
+    const sw = screen.getByRole('switch', { name: 'Sounds' });
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+    expect(sw).toHaveAttribute('data-on', 'false');
+    rerender(<Toggle checked onChange={() => {}} aria-label="Sounds" />);
+    expect(sw).toHaveAttribute('aria-checked', 'true');
+    expect(sw).toHaveAttribute('data-on', 'true');
   });
 
-  it('renders checked state with bg-ctp-accent', () => {
-    const { container } = render(<Toggle checked={true} onChange={() => {}} />);
-    const button = container.querySelector('button')!;
-    expect(button.className).toContain('bg-ctp-accent');
+  it('uses the accent track when on and surface-1 when off', () => {
+    const { rerender } = render(<Toggle checked={false} onChange={() => {}} />);
+    expect(screen.getByRole('switch').className).toContain('bg-surface-1');
+    rerender(<Toggle checked onChange={() => {}} />);
+    expect(screen.getByRole('switch').className).toContain('bg-ctp-accent');
   });
 
-  it('calls onChange with toggled value on click', () => {
+  it('is 28x16 with a 12px knob that slides when on', () => {
+    const { rerender } = render(<Toggle checked={false} onChange={() => {}} />);
+    const sw = screen.getByRole('switch');
+    expect(sw.className).toContain('w-7');
+    expect(sw.className).toContain('h-4');
+    const knob = sw.querySelector('span')!;
+    expect(knob.className).toContain('w-3');
+    expect(knob.className).toContain('translate-x-0');
+    rerender(<Toggle checked onChange={() => {}} />);
+    expect(sw.querySelector('span')!.className).toContain('translate-x-3');
+  });
+
+  it('calls onChange with the toggled value', () => {
     const onChange = vi.fn();
-    const { container } = render(<Toggle checked={false} onChange={onChange} />);
-    fireEvent.click(container.querySelector('button')!);
-    expect(onChange).toHaveBeenCalledWith(true);
-  });
-
-  it('calls onChange with false when checked is true', () => {
-    const onChange = vi.fn();
-    const { container } = render(<Toggle checked={true} onChange={onChange} />);
-    fireEvent.click(container.querySelector('button')!);
-    expect(onChange).toHaveBeenCalledWith(false);
+    const { rerender } = render(<Toggle checked={false} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('switch'));
+    expect(onChange).toHaveBeenLastCalledWith(true);
+    rerender(<Toggle checked onChange={onChange} />);
+    fireEvent.click(screen.getByRole('switch'));
+    expect(onChange).toHaveBeenLastCalledWith(false);
   });
 
   it('does not call onChange when disabled', () => {
     const onChange = vi.fn();
-    const { container } = render(<Toggle checked={false} onChange={onChange} disabled />);
-    fireEvent.click(container.querySelector('button')!);
+    render(<Toggle checked={false} onChange={onChange} disabled />);
+    const sw = screen.getByRole('switch');
+    expect(sw).toBeDisabled();
+    expect(sw.className).toContain('opacity-50');
+    fireEvent.click(sw);
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('applies disabled styling', () => {
-    const { container } = render(<Toggle checked={false} onChange={() => {}} disabled />);
-    const button = container.querySelector('button')!;
-    expect(button.className).toContain('opacity-40');
-    expect(button.className).toContain('cursor-not-allowed');
-  });
-
-  it('translates knob when checked', () => {
-    const { container } = render(<Toggle checked={true} onChange={() => {}} />);
-    const knob = container.querySelector('span')!;
-    expect(knob.className).toContain('translate-x-4');
-  });
-
-  it('does not translate knob when unchecked', () => {
-    const { container } = render(<Toggle checked={false} onChange={() => {}} />);
-    const knob = container.querySelector('span')!;
-    expect(knob.className).toContain('translate-x-0');
+  it('passes through extra button props', () => {
+    render(<Toggle checked={false} onChange={() => {}} data-testid="t" aria-labelledby="lbl" />);
+    expect(screen.getByTestId('t')).toHaveAttribute('aria-labelledby', 'lbl');
   });
 });

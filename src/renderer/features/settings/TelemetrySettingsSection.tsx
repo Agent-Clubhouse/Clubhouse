@@ -233,7 +233,7 @@ export function TelemetrySettingsSection() {
         <div className={panelTitleClass}>Azure Application Insights</div>
         <SettingsField label="Send telemetry">
           <Toggle
-            ariaLabel="Send telemetry to Application Insights"
+            aria-label="Send telemetry to Application Insights"
             checked={azureOn}
             disabled={!status.azure.configured && !azureOn}
             onChange={(v) => void handleResult('azure', 'azure', (ack) => api().setEnabled('azure', v, ack))}
@@ -302,7 +302,7 @@ export function TelemetrySettingsSection() {
         </div>
         <SettingsField label="Send to OTLP">
           <Toggle
-            ariaLabel="Send telemetry to OTLP"
+            aria-label="Send telemetry to OTLP"
             checked={otlpOn}
             disabled={!status.otlp.configured && !otlpOn}
             onChange={(v) => void handleResult('otlp', 'otlp', (ack) => api().setEnabled('otlp', v, ack))}
@@ -391,7 +391,7 @@ export function TelemetrySettingsSection() {
           </p>
           <SettingsField label="Send telemetry">
             <Toggle
-              ariaLabel="Send telemetry to the Clubhouse developer"
+              aria-label="Send telemetry to the Clubhouse developer"
               checked={framebriar.enabled}
               disabled={!framebriar.configured && !framebriar.enabled}
               onChange={(v) => void handleResult('framebriar', 'framebriar', (ack) => api().setEnabled('framebriar', v, ack))}

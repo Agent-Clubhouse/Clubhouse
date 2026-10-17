@@ -1,6 +1,6 @@
 /**
  * Regression: the named z-index utilities (z-modal, z-toast, z-dropdown,
- * z-canvas-overlay, z-canvas-dialog, z-top, z-raised, z-dropdown-backdrop)
+ * z-canvas-overlay, z-canvas-dialog, z-top, z-tooltip, z-raised, z-dropdown-backdrop)
  * must compile to real CSS rules with the expected z-index values.
  *
  * Tailwind v4 generates `z-*` utilities only from the `--z-index-*`
@@ -64,6 +64,7 @@ describe('Tailwind named z-index utilities', () => {
     'z-canvas-overlay': '9999',
     'z-canvas-dialog': '10000',
     'z-top': '100000',
+    'z-tooltip': '100001',
   };
 
   it('compiles every named z-index utility to its declared value', async () => {

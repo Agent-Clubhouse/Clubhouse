@@ -73,7 +73,7 @@ export function TemplateConfigDialog({ persona, personaColor, projectPath, onClo
   };
 
   return (
-    <Modal open={true} onClose={onClose}>
+    <Modal open={true} onClose={onClose} aria-label={`Configure ${persona.name}`}>
         {/* Template badge */}
         <div className="flex items-center gap-2 mb-4">
           <div
