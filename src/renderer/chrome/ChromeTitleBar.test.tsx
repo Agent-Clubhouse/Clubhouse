@@ -147,6 +147,7 @@ describe('ChromeTitleBar', () => {
       expect(screen.getByTestId('explorer-tab-plugin:terminal').getAttribute('data-active')).toBe('true');
       expect(screen.queryByTestId('explorer-tab-plugin:files')).toBeNull();
 
+      expect(screen.getByTestId('title-more').getAttribute('data-overflow-ids')).toBe('plugin:git plugin:files');
       fireEvent.click(screen.getByTestId('title-more'));
       const items = screen.getAllByRole('menuitem').map((el) => el.getAttribute('data-testid'));
       // terminal became the most recent on render, then git, then files.

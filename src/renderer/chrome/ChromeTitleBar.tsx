@@ -123,6 +123,9 @@ function MoreMenu({ tabs, projectId, onSelect, buttonRef }: {
         ref={buttonRef}
         type="button"
         data-testid="title-more"
+        // Overflowed tabs only have explorer-tab-<id> while the menu is open; this
+        // lists them so E2E helpers know to open More first (spec §9).
+        data-overflow-ids={tabs.map((t) => t.id).join(' ')}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`${tabs.length} more tab${tabs.length === 1 ? '' : 's'}`}
