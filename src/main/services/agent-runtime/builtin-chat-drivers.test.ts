@@ -1,5 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+
 import { registerBuiltinChatDrivers } from './builtin-chat-drivers';
+import { appLog } from '../log-service';
+import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
 import { clearChatDrivers, listChatDrivers, resolveChatDriver } from './chat-drivers';
 
 describe('registerBuiltinChatDrivers', () => {
@@ -10,10 +15,25 @@ describe('registerBuiltinChatDrivers', () => {
     expect(listChatDrivers().map((d) => `${d.provider}:${d.id}`)).toEqual([
       'claude-code:claude_agent_sdk',
       'claude-code:claude_stream_json',
+      'codex-cli:codex_app_server',
     ]);
     expect(resolveChatDriver('claude-code')?.id).toBe('claude_agent_sdk');
     expect(resolveChatDriver('claude-code', 'claude_stream_json')?.id).toBe('claude_stream_json');
-    expect(resolveChatDriver('codex-cli')).toBeUndefined();
+  });
+
+  it('registers the Codex app-server driver for codex-cli, logging under core:chat:codex', () => {
+    registerBuiltinChatDrivers();
+    const codex = resolveChatDriver('codex-cli');
+    expect(codex).toBeInstanceOf(CodexChatDriver);
+    expect(codex?.id).toBe('codex_app_server');
+    expect(resolveChatDriver('codex-cli', 'codex_app_server')).toBe(codex);
+
+    // The driver's logger is wired to appLog under its own namespace.
+    const onLog = (codex as unknown as { deps: { onLog: (l: 'warn', m: string, meta?: Record<string, unknown>) => void } }).deps.onLog;
+    onLog('warn', 'Ignoring extraArgs', { dropped: ['--full-auto'] });
+    onLog('warn', 'no meta');
+    expect(appLog).toHaveBeenCalledWith('core:chat:codex', 'warn', 'Ignoring extraArgs', { meta: { dropped: ['--full-auto'] } });
+    expect(appLog).toHaveBeenCalledWith('core:chat:codex', 'warn', 'no meta', undefined);
   });
 
   it('unregisters what it registered', () => {
