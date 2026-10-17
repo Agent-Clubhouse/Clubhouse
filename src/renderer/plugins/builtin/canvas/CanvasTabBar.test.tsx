@@ -91,6 +91,16 @@ describe('CanvasTabBar', () => {
     expect(tab.parentElement?.contains(addButton)).toBe(false);
   });
 
+  it('the close button on an inactive tab takes no clicks or Tab stop until hovered', () => {
+    render(<CanvasTabBar {...defaultProps} />);
+    const [activeClose, inactiveClose] = screen.getAllByTestId('canvas-tab-close');
+    expect(activeClose.getAttribute('tabindex')).toBeNull();
+    expect(activeClose.className).not.toContain('pointer-events-none');
+    expect(inactiveClose.getAttribute('tabindex')).toBe('-1');
+    expect(inactiveClose.className).toContain('pointer-events-none');
+    expect(inactiveClose.className).toContain('group-hover:pointer-events-auto');
+  });
+
   it('right-click on tab shows context menu with Export as Blueprint', () => {
     const onExportBlueprint = vi.fn();
     render(<CanvasTabBar {...defaultProps} onExportBlueprint={onExportBlueprint} />);

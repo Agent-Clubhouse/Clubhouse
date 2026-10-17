@@ -87,6 +87,9 @@ export function useViewportControls({
     selectedViewIds: string[],
     onClearSelection: () => void,
   ) => {
+    // A menu or picker that handled the key (the shared PopupMenu moving its
+    // highlight) already called preventDefault; don't pan under it.
+    if (e.defaultPrevented) return;
     // Typing in a card (a chat composer, a search box) isn't a canvas gesture.
     if (isEditableTarget(e.target)) return;
     if (e.key === 'Escape') {
