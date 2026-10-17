@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { SleepingAgent } from './SleepingAgent';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -10,6 +11,11 @@ vi.mock('./SleepingMascots', () => ({
     <div data-testid="sleeping-mascot" data-orchestrator={orchestrator || ''} data-size={size} />
   ),
 }));
+
+vi.mock('../../stores/remoteProjectStore', async (orig) => {
+  const actual = await orig<typeof import('../../stores/remoteProjectStore')>();
+  return { ...actual, isRemoteAgentId: vi.fn(() => false), parseNamespacedId: vi.fn(actual.parseNamespacedId) };
+});
 
 vi.mock('./SessionPickerDialog', () => ({
   SessionPickerDialog: ({ onResume, onClose }: { onResume: (id: string) => void; onClose: () => void }) => (
@@ -49,6 +55,11 @@ function resetStores(agentOverrides: Partial<Agent> = {}) {
     projects: [{ id: 'proj-1', name: 'test-project', path: '/projects/test' }],
     activeProjectId: 'proj-1',
   });
+}
+
+/** Wake waits until the last session is known (so it never skips resume by mistake). */
+async function waitForReady() {
+  await waitFor(() => expect(screen.getByTestId('wake-button')).not.toBeDisabled());
 }
 
 function renderComponent(agentOverrides: Partial<Agent> = {}) {
@@ -183,6 +194,7 @@ describe('SleepingAgent', () => {
       const durableConfig = { id: 'agent-1', name: 'bold-falcon' };
       window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
       renderComponent();
+      await waitForReady();
       fireEvent.click(screen.getByTestId('wake-button'));
       await waitFor(() => {
         expect(mockSpawnDurableAgent).toHaveBeenCalledWith('proj-1', '/projects/test', durableConfig, false, undefined);
@@ -204,6 +216,7 @@ describe('SleepingAgent', () => {
       const durableConfig = { id: 'agent-1', name: 'bold-falcon' };
       window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
       renderComponent();
+      await waitForReady();
       const input = screen.getByTestId('wake-task-input');
       fireEvent.change(input, { target: { value: '  Fix the flaky test  ' } });
       fireEvent.keyDown(input, { key: 'Enter', metaKey: true });
@@ -222,9 +235,92 @@ describe('SleepingAgent', () => {
     it('does not spawn if config not found', async () => {
       window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'other-agent', name: 'other' }]);
       renderComponent();
+      await waitForReady();
       fireEvent.click(screen.getByTestId('wake-button'));
       await waitFor(() => expect(window.clubhouse.agent.listDurable).toHaveBeenCalledTimes(2));
       expect(mockSpawnDurableAgent).not.toHaveBeenCalled();
+    });
+
+    it('waits for the last session before Wake or Cmd+Enter can run', async () => {
+      let resolve: (v: unknown) => void = () => {};
+      window.clubhouse.agent.listDurable = vi.fn().mockReturnValueOnce(new Promise((r) => { resolve = r; })).mockResolvedValue([{ id: 'agent-1', lastSessionId: 's1' }]);
+      renderComponent();
+      expect(screen.getByTestId('wake-button')).toBeDisabled();
+      fireEvent.keyDown(screen.getByTestId('wake-task-input'), { key: 'Enter', metaKey: true });
+      expect(mockSpawnDurableAgent).not.toHaveBeenCalled();
+      resolve([{ id: 'agent-1', lastSessionId: 's1' }]);
+      await waitForReady();
+    });
+
+    it('shows an error when the agent config is missing', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([]);
+      renderComponent();
+      await waitForReady();
+      fireEvent.click(screen.getByTestId('wake-button'));
+      expect(await screen.findByTestId('wake-error')).toHaveTextContent("Couldn't find bold-falcon's settings");
+    });
+
+    it('shows an error when listDurable throws, and keeps the typed task', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValueOnce([]).mockRejectedValue(new Error('disk on fire'));
+      renderComponent();
+      await waitForReady();
+      fireEvent.change(screen.getByTestId('wake-task-input'), { target: { value: 'Ship it' } });
+      fireEvent.click(screen.getByTestId('wake-button'));
+      expect(await screen.findByTestId('wake-error')).toHaveTextContent("Couldn't wake bold-falcon: disk on fire");
+      expect(screen.getByTestId('wake-task-input')).toHaveValue('Ship it');
+    });
+
+    it('keeps the typed task when the spawn fails', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'agent-1', name: 'bold-falcon' }]);
+      mockSpawnDurableAgent.mockRejectedValue(new Error('not logged in'));
+      renderComponent();
+      await waitForReady();
+      fireEvent.change(screen.getByTestId('wake-task-input'), { target: { value: 'Ship it' } });
+      fireEvent.click(screen.getByTestId('wake-button'));
+      expect(await screen.findByTestId('wake-error')).toBeInTheDocument();
+      expect(screen.getByTestId('wake-task-input')).toHaveValue('Ship it');
+    });
+
+    it('clears the typed task after a successful wake', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'agent-1', name: 'bold-falcon' }]);
+      renderComponent();
+      await waitForReady();
+      fireEvent.change(screen.getByTestId('wake-task-input'), { target: { value: 'Ship it' } });
+      fireEvent.click(screen.getByTestId('wake-button'));
+      await waitFor(() => expect(screen.getByTestId('wake-task-input')).toHaveValue(''));
+    });
+
+    describe('remote agents', () => {
+      const remoteId = 'remote||sat-1||agent-9';
+      beforeEach(() => {
+        vi.mocked(isRemoteAgentId).mockImplementation((id: string) => id === remoteId);
+        vi.mocked(parseNamespacedId).mockImplementation(() => ({ satelliteId: 'sat-1', agentId: 'agent-9' }) as never);
+      });
+      afterEach(() => {
+        vi.mocked(isRemoteAgentId).mockImplementation(() => false);
+      });
+
+      it('wakes once on a double click, with the task', async () => {
+        let resolve: () => void = () => {};
+        window.clubhouse.annexClient.agentWake = vi.fn(() => new Promise<void>((r) => { resolve = r; }));
+        renderComponent({ id: remoteId });
+        fireEvent.change(screen.getByTestId('wake-task-input'), { target: { value: 'Go' } });
+        fireEvent.click(screen.getByTestId('wake-button'));
+        fireEvent.click(screen.getByTestId('wake-button'));
+        resolve();
+        await waitFor(() => expect(screen.getByTestId('wake-task-input')).toHaveValue(''));
+        expect(window.clubhouse.annexClient.agentWake).toHaveBeenCalledTimes(1);
+        expect(window.clubhouse.annexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-9', { resume: true, mission: 'Go' });
+      });
+
+      it('keeps the task and shows an error when the remote wake fails', async () => {
+        window.clubhouse.annexClient.agentWake = vi.fn().mockRejectedValue(new Error('satellite offline'));
+        renderComponent({ id: remoteId });
+        fireEvent.change(screen.getByTestId('wake-task-input'), { target: { value: 'Go' } });
+        fireEvent.click(screen.getByTestId('wake-button'));
+        expect(await screen.findByTestId('wake-error')).toHaveTextContent('satellite offline');
+        expect(screen.getByTestId('wake-task-input')).toHaveValue('Go');
+      });
     });
 
     it('does not spawn if project not found', async () => {
@@ -257,6 +353,7 @@ describe('SleepingAgent', () => {
       const durableConfig = { id: 'agent-1', name: 'bold-falcon', lastSessionId: 'sess-1' };
       window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
       renderComponent();
+      await waitForReady();
       fireEvent.click(screen.getByTestId('wake-dropdown-toggle'));
       fireEvent.click(screen.getByTestId('wake-dropdown-menu-fresh'));
       await waitFor(() => {

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ATTR, tel } from '../../telemetry';
 import { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
-import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { PopupMenu, type MenuEntry } from '../../components/PopupMenu';
 import { Button } from '../../components/Button';
@@ -61,7 +61,6 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const storeIconUrl = useAgentStore((s) => s.agentIcons[agent.id]);
   const projects = useProjectStore((s) => s.projects);
-  const sendAgentWake = useAnnexClientStore((s) => s.sendAgentWake);
   const isRemote = isRemoteAgentId(agent.id);
   const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agent.id) : null, [agent.id, isRemote]);
   // Use the agent's own project, not the globally-active project
@@ -73,6 +72,9 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   const compact = useCompact(rootRef);
   const [task, setTask] = useState('');
   const [waking, setWaking] = useState(false);
+  const [wakeError, setWakeError] = useState<string | null>(null);
+  // Synchronous guard: state updates land too late to stop a double click
+  const wakingRef = useRef(false);
   const [wakeMenu, setWakeMenu] = useState<{ x: number; y: number } | null>(null);
   const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false);
@@ -81,34 +83,47 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   const last = useLastSession(agent, agentProject?.path, isDurable && !isRemote);
   const hasLastSession = !!last?.sessionId;
 
-  // One greeting per visit to this agent
-  const greeting = useMemo(() => pickGreeting(agent.name, new Date().getHours()), [agent.id, agent.name]);
+  // One greeting per visit to this agent, picked once when the visit starts
+  const [greeting, setGreeting] = useState('');
+  useEffect(() => { setGreeting(pickGreeting(agent.name, new Date().getHours())); }, [agent.id, agent.name]);
+
+  // Wake resumes the last session when there is one (#2019), so it waits until
+  // that's known rather than starting a fresh session by mistake.
+  const ready = isRemote || !agentProject || last !== null;
 
   const wake = useCallback(async (mode: WakeMode, sessionId?: string) => {
-    if (waking) return;
+    if (wakingRef.current) return;
     const mission = task.trim() || undefined;
     setWakeMenu(null);
-    if (isRemote && remoteParts) {
-      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, { resume: mode === 'resume', mission });
-      setTask('');
-      return;
-    }
-    if (!agentProject) return;
+    setWakeError(null);
+    if (!isRemote && !agentProject) return;
+    wakingRef.current = true;
     setWaking(true);
     try {
-      const configs = await window.clubhouse.agent.listDurable(agentProject.path);
-      const config = configs.find((c: { id: string }) => c.id === agent.id);
-      if (!config) return;
-      const effective = sessionId ? { ...config, lastSessionId: sessionId } : config;
-      const resume = mode === 'resume' && !!effective.lastSessionId;
+      if (isRemote && remoteParts) {
+        await window.clubhouse.annexClient.agentWake(remoteParts.satelliteId, remoteParts.agentId, { resume: mode === 'resume', mission });
+      } else if (agentProject) {
+        const configs = await window.clubhouse.agent.listDurable(agentProject.path);
+        const config = Array.isArray(configs) ? configs.find((c: { id: string }) => c.id === agent.id) : undefined;
+        if (!config) {
+          setWakeError(`Couldn't find ${agent.name}'s settings in this project. Reopen the project and try again.`);
+          return;
+        }
+        const effective = sessionId ? { ...config, lastSessionId: sessionId } : config;
+        const resume = mode === 'resume' && !!effective.lastSessionId;
+        await spawnDurableAgent(agentProject.id, agentProject.path, effective, resume, mission);
+      }
+      // Only clear the task once the wake went through
       setTask('');
-      await spawnDurableAgent(agentProject.id, agentProject.path, effective, resume, mission);
-    } catch {
-      // telemetry-exempt: spawnDurableAgent marks the agent failed and this view shows the error
+    } catch (err) {
+      tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_wake'), ATTR.errorType('unknown')]);
+      tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_wake')] });
+      setWakeError(`Couldn't wake ${agent.name}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
+      wakingRef.current = false;
       setWaking(false);
     }
-  }, [waking, task, isRemote, remoteParts, sendAgentWake, agentProject, agent.id, spawnDurableAgent]);
+  }, [task, isRemote, remoteParts, agentProject, agent.id, agent.name, spawnDurableAgent]);
 
   // Wake picks up the last session when there is one (#2019).
   const defaultMode: WakeMode = hasLastSession || isRemote ? 'resume' : 'fresh';
@@ -130,7 +145,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   const onComposerKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      void wake(defaultMode);
+      if (ready) void wake(defaultMode);
     }
   };
 
@@ -243,7 +258,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
                   <Button
                     kind="primary"
                     onClick={() => { void wake(defaultMode); }}
-                    disabled={waking}
+                    disabled={waking || !ready}
                     data-testid="wake-button"
                     className="rounded-r-none"
                   >
@@ -270,6 +285,10 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
                 </span>
               </div>
             </div>
+          )}
+
+          {wakeError && (
+            <p role="alert" className="w-full mt-2 text-left text-xs text-ctp-error" data-testid="wake-error">{wakeError}</p>
           )}
 
           {!compact && last && (last.summary || last.filesModified.length > 0 || agent.branch) && (

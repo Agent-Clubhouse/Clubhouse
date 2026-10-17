@@ -150,10 +150,12 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     const binary = this.findBinary();
     const args: string[] = [];
 
+    const hasPrompt = !!(opts.mission || opts.systemPrompt);
     // Session resume: --resume <id> for specific session, --continue for most recent.
-    // Note: Copilot CLI does not support resume in prompt mode (-p), so resume
-    // flags are only appended for interactive (non-prompt) sessions.
-    if (opts.resume && !(opts.mission || opts.systemPrompt)) {
+    // Copilot CLI cannot resume in prompt mode (-p, one-shot), so resume flags go
+    // only on interactive sessions: no prompt, or a durable agent woken with a
+    // first message, which uses -i (run the prompt, then stay interactive).
+    if (opts.resume && (!hasPrompt || opts.interactive)) {
       if (opts.sessionId) {
         args.push('--resume', opts.sessionId);
       } else {
@@ -178,11 +180,11 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       }
     }
 
-    if (opts.mission || opts.systemPrompt) {
+    if (hasPrompt) {
       const parts: string[] = [];
       if (opts.systemPrompt) parts.push(opts.systemPrompt);
       if (opts.mission) parts.push(opts.mission);
-      args.push('-p', parts.join('\n\n'));
+      args.push(opts.interactive ? '-i' : '-p', parts.join('\n\n'));
     }
 
     args.push(...this.buildAgentFileArgs({ agentFile: opts.agentFile, agentSource: opts.agentSource }));

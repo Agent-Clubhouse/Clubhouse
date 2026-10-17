@@ -22,6 +22,12 @@ export interface SpawnOpts {
   agentFile?: string;
   /** Source directory for agent file (passed as --source to Copilot CLI) */
   agentSource?: string;
+  /**
+   * Keep the session open after the mission (durable agents). Providers whose
+   * prompt flag is one-shot (Copilot's -p) use their interactive form instead,
+   * so a wake with a first message can still resume.
+   */
+  interactive?: boolean;
 }
 
 export interface HeadlessOpts extends SpawnOpts {
