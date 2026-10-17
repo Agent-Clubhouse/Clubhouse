@@ -41,6 +41,22 @@ jobs:
       # enforced on protected branches instead of remaining advisory.
       - run: npm run lint
 
+  codex-schema-drift:
+    needs: dependency-preflight
+    if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
+    name: Codex app-server schema drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # Regenerates the vendored bindings from the codex-cli pin in
+      # scheduled-real-cli-e2e.yml (`codex app-server generate-ts`: no login,
+      # no model request) and fails if they differ from what is committed.
+      - run: npm run codex:check-types
+
   typecheck:
     needs: dependency-preflight
     if: ${{ always() && (needs.dependency-preflight.result == 'success' || needs.dependency-preflight.result == 'skipped') }}
