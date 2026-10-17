@@ -68,6 +68,7 @@ import type {
   SpanHandle,
   TelemetryRuntime,
 } from './types';
+import { ForwardedError } from './types';
 
 export interface SdkOptions {
   level: TelemetryLevel;
@@ -103,6 +104,9 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
 }
 
 function errorTypeName(error: unknown): string {
+  if (error instanceof ForwardedError) {
+    return /^[A-Za-z_$][\w$.]{0,63}$/.test(error.forwardedType) ? error.forwardedType : 'Error';
+  }
   if (error instanceof Error) {
     const name = error.constructor?.name || error.name;
     return /^[A-Za-z_$][\w$.]{0,63}$/.test(name) ? name : 'Error';
@@ -233,7 +237,7 @@ export function startSdk(opts: SdkOptions): TelemetryRuntime {
       [SDK_ATTRIBUTE_KEYS.exceptionType]: type,
       [SDK_ATTRIBUTE_KEYS.exceptionMessage]: type,
       [SDK_ATTRIBUTE_KEYS.exceptionStacktrace]: stack,
-      ...toAttributes([ATTR.exceptionOrigin(origin.origin), ATTR.exceptionHandled(origin.handled)]),
+      ...toAttributes([ATTR.exceptionOrigin(origin.origin), ATTR.exceptionHandled(origin.handled), ...(origin.attrs ?? [])]),
     };
     span?.addEvent('exception', attributes);
     if (levelAllows(level, EVENTS['clubhouse.exception'].level)) {

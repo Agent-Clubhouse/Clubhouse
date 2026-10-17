@@ -1,0 +1,639 @@
+import { AcpClient, RpcError, type AcpClientOpts } from './acp-client';
+import { ProcessExitedError } from './ndjson-rpc-base';
+import {
+  ACP_AGENT_METHODS,
+  ACP_CLIENT_METHODS,
+  ACP_ERROR_CODES,
+  ACP_PROTOCOL_VERSION,
+  ACP_STOP_REASONS,
+  type AvailableCommand,
+  type ClientCapabilities,
+  type ContentBlock,
+  type Implementation,
+  type InitializeResponse,
+  type LegacySessionModelState,
+  type ListSessionsResponse,
+  type LoadSessionResponse,
+  type McpServer,
+  type NewSessionResponse,
+  type PermissionOption,
+  type PromptResponse,
+  type RequestPermissionOutcome,
+  type RequestPermissionRequest,
+  type SessionConfigOption,
+  type SessionModeState,
+  type SessionUpdate,
+  type StopReason,
+  type ToolCallUpdate,
+  type TurnUsage,
+} from './acp-schema';
+import { parseSessionUpdate } from './acp-updates';
+import { deriveAcpCapabilities, type AcpDriverCapabilities } from './acp-capabilities';
+import type { PermissionLevel } from '../../../shared/chat/capabilities';
+
+/** How an agent's native modes and options map onto Clubhouse's permission ladder. */
+export interface AcpPermissionLevels {
+  /** Levels `apply` can switch to inside a live session. */
+  live: readonly PermissionLevel[];
+  /** The level the session's current mode and options amount to, if any. */
+  current(state: Readonly<AcpSessionState>): PermissionLevel | undefined;
+  apply(session: AcpSession, level: PermissionLevel): Promise<void>;
+}
+
+/**
+ * Agent-specific adjustments layered on the generic ACP driver. The generic
+ * profile changes nothing; copilot-acp.ts supplies Copilot's.
+ */
+export interface AcpAgentProfile {
+  id: string;
+  /** Build the capability record from the handshake plus known agent facts. */
+  capabilities(init: InitializeResponse): AcpDriverCapabilities;
+  /** Rewrite config options wherever they arrive (session/new, updates, set results). */
+  normalizeConfigOptions?(options: SessionConfigOption[]): SessionConfigOption[];
+  normalizeLegacyModels?(models: LegacySessionModelState): LegacySessionModelState;
+  /** Inspect each update before it is applied and emitted; return null to drop it. */
+  filterUpdate?(update: SessionUpdate, ctx: { openToolCallIds: ReadonlySet<string> }): SessionUpdate | null;
+  /** Permission-ladder mapping. Without one, the session reports no levels. */
+  permissionLevels?: AcpPermissionLevels;
+}
+
+const KNOWN_CLIENT_METHODS: ReadonlySet<string> = new Set(Object.values(ACP_CLIENT_METHODS));
+
+export const GENERIC_ACP_PROFILE: AcpAgentProfile = {
+  id: 'generic',
+  capabilities: (init) => deriveAcpCapabilities(init, 'generic'),
+};
+
+export type TurnStopReason = StopReason | 'unknown' | 'error';
+
+export type AcpSessionEvent =
+  /** A schema-valid update. `replay` is true while `session/load` replays history. */
+  | { type: 'update'; sessionId: string; replay: boolean; update: SessionUpdate }
+  /** An update this schema version doesn't know, or a malformed one. Skipped, not applied. */
+  | { type: 'unknown_update'; sessionId: string; replay: boolean; kind: string; reason: string; raw: unknown }
+  | { type: 'permission_request'; sessionId: string; requestId: string; toolCall: ToolCallUpdate; options: PermissionOption[] }
+  | { type: 'permission_resolved'; sessionId: string; requestId: string; outcome: RequestPermissionOutcome }
+  | { type: 'turn_started'; sessionId: string }
+  | {
+      type: 'turn_ended';
+      sessionId: string;
+      stopReason: TurnStopReason;
+      /** The agent's literal stop reason when it isn't one v1 defines. */
+      rawStopReason?: string;
+      usage?: TurnUsage;
+      error?: string;
+      /** Why an `error` turn failed: the process died, the agent returned a JSON-RPC error, or something else. */
+      errorKind?: 'process_exited' | 'rpc' | 'other';
+      /** JSON-RPC error code, for `errorKind: 'rpc'`. */
+      rpcCode?: number;
+    }
+  /** An agent request or notification method outside the ACP schema. Requests are answered -32601. */
+  | { type: 'unknown_method'; kind: 'request' | 'notification'; method: string }
+  /** Always the last event. Emitted after a running turn's `turn_ended`, even when the process died mid-turn. */
+  | { type: 'exit'; code: number | null; signal: string | null };
+
+export interface AcpSessionState {
+  sessionId: string | null;
+  modes: SessionModeState | null;
+  configOptions: SessionConfigOption[];
+  /** Copilot's pre-config-options model list, deduped. Prefer the `model` config option. */
+  legacyModels: LegacySessionModelState | null;
+  availableCommands: AvailableCommand[];
+  title: string | null;
+  context: { used: number; size: number; cost?: { amount: number; currency: string } | null } | null;
+  turnInFlight: boolean;
+}
+
+export interface AcpSessionOpts extends Pick<AcpClientOpts, 'binary' | 'args' | 'cwd' | 'env' | 'windowsVerbatimArguments' | 'rpcTimeoutMs' | 'onLog'> {
+  clientInfo?: Implementation;
+  /**
+   * Profile to apply. Pass a fixed one, or a function that picks it from the
+   * handshake (copilot-acp.ts exports `selectAcpProfile`). Defaults to generic.
+   */
+  profile?: AcpAgentProfile | ((init: InitializeResponse) => AcpAgentProfile);
+  onEvent?: (event: AcpSessionEvent) => void;
+}
+
+export interface SessionSetup {
+  cwd: string;
+  mcpServers?: McpServer[];
+  additionalDirectories?: string[];
+}
+
+export interface PermissionDecision {
+  optionId: string;
+}
+
+/**
+ * Client capabilities Clubhouse advertises. It serves none of the client-side
+ * methods (fs/*, terminal/*, elicitation), and presents notices, compaction
+ * progress and boolean config options, all of which are just updates it renders.
+ */
+export const CLUBHOUSE_ACP_CLIENT_CAPABILITIES: ClientCapabilities = {
+  fs: { readTextFile: false, writeTextFile: false },
+  terminal: false,
+  session: {
+    notices: {},
+    compaction: {},
+    configOptions: { boolean: {} },
+  },
+};
+
+/**
+ * One ACP agent process driving one chat session, over the current stable
+ * ACP v1 schema (see acp-schema.ts for the pinned version).
+ *
+ * Works with any ACP agent; agent quirks live in an `AcpAgentProfile`.
+ * Request/response plumbing is `AcpClient`; this class owns the session
+ * lifecycle, state, permission round-trips and update validation.
+ */
+export class AcpSession {
+  private readonly client: AcpClient;
+  private readonly opts: AcpSessionOpts;
+  private profile: AcpAgentProfile = GENERIC_ACP_PROFILE;
+  private init: InitializeResponse | null = null;
+  private caps: AcpDriverCapabilities | null = null;
+  private replaying = false;
+  /** Pending while a prompt turn runs; `exit` waits for it so `turn_ended` comes first. */
+  private turnSettled: Promise<void> | null = null;
+  /** Agents may announce a new session's updates before answering session/new. */
+  private creatingSession = false;
+  private earlyUpdates: unknown[] = [];
+  private readonly openToolCalls = new Set<string>();
+  private readonly pendingPermissions = new Map<string, { rpcId: number | string; options: PermissionOption[] }>();
+  private readonly loggedUnknownKinds = new Set<string>();
+  private readonly state: AcpSessionState = {
+    sessionId: null,
+    modes: null,
+    configOptions: [],
+    legacyModels: null,
+    availableCommands: [],
+    title: null,
+    context: null,
+    turnInFlight: false,
+  };
+
+  constructor(opts: AcpSessionOpts) {
+    this.opts = opts;
+    this.client = new AcpClient({
+      binary: opts.binary,
+      args: opts.args,
+      cwd: opts.cwd,
+      env: opts.env,
+      windowsVerbatimArguments: opts.windowsVerbatimArguments,
+      rpcTimeoutMs: opts.rpcTimeoutMs,
+      onLog: opts.onLog,
+      initialize: {
+        protocolVersion: ACP_PROTOCOL_VERSION,
+        clientCapabilities: CLUBHOUSE_ACP_CLIENT_CAPABILITIES,
+        clientInfo: opts.clientInfo ?? { name: 'clubhouse', version: '1.0.0' },
+      },
+      onNotification: (method, params) => this.handleNotification(method, params),
+      onServerRequest: (id, method, params) => this.handleServerRequest(id, method, params),
+      onExit: (code, signal) => this.handleExit(code, signal),
+    });
+  }
+
+  // ── Lifecycle ────────────────────────────────────────────────────────────
+
+  /** Spawn the agent and complete `initialize`. Rejects if it speaks another protocol version. */
+  async start(): Promise<AcpDriverCapabilities> {
+    const init = await this.client.start();
+    if (init.protocolVersion !== ACP_PROTOCOL_VERSION) {
+      this.client.kill();
+      throw new Error(`ACP agent negotiated protocol version ${init.protocolVersion}; Clubhouse supports ${ACP_PROTOCOL_VERSION}`);
+    }
+    this.init = init;
+    const p = this.opts.profile;
+    this.profile = typeof p === 'function' ? p(init) : p ?? GENERIC_ACP_PROFILE;
+    this.caps = this.profile.capabilities(init);
+    this.log('info', 'ACP session driver ready', {
+      profile: this.profile.id,
+      agent: init.agentInfo?.name,
+      version: init.agentInfo?.version,
+    });
+    return this.caps;
+  }
+
+  get capabilities(): AcpDriverCapabilities {
+    if (!this.caps) throw new Error('AcpSession not started');
+    return this.caps;
+  }
+
+  get initializeResponse(): InitializeResponse | null {
+    return this.init;
+  }
+
+  get profileId(): string {
+    return this.profile.id;
+  }
+
+  get agentProfile(): AcpAgentProfile {
+    return this.profile;
+  }
+
+  getState(): Readonly<AcpSessionState> {
+    return this.state;
+  }
+
+  get alive(): boolean {
+    return this.client.alive;
+  }
+
+  getStderr(): string {
+    return this.client.getStderr();
+  }
+
+  async authenticate(methodId: string): Promise<void> {
+    await this.client.request(ACP_AGENT_METHODS.authenticate, { methodId });
+  }
+
+  async newSession(setup: SessionSetup): Promise<AcpSessionState> {
+    this.requireStarted();
+    this.creatingSession = true;
+    let res: NewSessionResponse;
+    try {
+      res = (await this.client.request(ACP_AGENT_METHODS.sessionNew, this.sessionParams(setup))) as NewSessionResponse;
+    } finally {
+      this.creatingSession = false;
+    }
+    const early = this.earlyUpdates;
+    this.earlyUpdates = [];
+    if (!res || typeof res.sessionId !== 'string') throw new Error('session/new returned no sessionId');
+    this.state.sessionId = res.sessionId;
+    this.applySessionSetup(res);
+    for (const params of early) this.handleNotification(ACP_CLIENT_METHODS.sessionUpdate, params);
+    return this.state;
+  }
+
+  /**
+   * Reopen an earlier session. Uses `session/resume` (no replay) when the
+   * agent supports it, else `session/load`, whose history replay is emitted
+   * with `replay: true`. Clubhouse's own transcript owns history, so callers
+   * normally ignore replayed updates.
+   */
+  async resumeSession(sessionId: string, setup: SessionSetup): Promise<{ method: 'resume' | 'load' }> {
+    const caps = this.requireStarted();
+    if (caps.resume === 'resume') {
+      this.state.sessionId = sessionId;
+      const res = (await this.client.request(ACP_AGENT_METHODS.sessionResume, {
+        sessionId,
+        ...this.sessionParams(setup),
+      })) as LoadSessionResponse;
+      this.applySessionSetup(res ?? {});
+      return { method: 'resume' };
+    }
+    if (caps.resume === 'load') {
+      await this.loadSession(sessionId, setup);
+      return { method: 'load' };
+    }
+    throw new Error('ACP agent supports neither session/resume nor session/load');
+  }
+
+  async loadSession(sessionId: string, setup: SessionSetup): Promise<AcpSessionState> {
+    this.requireStarted();
+    this.state.sessionId = sessionId;
+    this.replaying = true;
+    try {
+      const res = (await this.client.request(ACP_AGENT_METHODS.sessionLoad, {
+        sessionId,
+        ...this.sessionParams(setup),
+      })) as LoadSessionResponse;
+      this.applySessionSetup(res ?? {});
+    } finally {
+      this.replaying = false;
+      // Replayed tool calls are history, not work in progress.
+      this.openToolCalls.clear();
+    }
+    return this.state;
+  }
+
+  async listSessions(opts: { cwd?: string; cursor?: string } = {}): Promise<ListSessionsResponse> {
+    const caps = this.requireStarted();
+    if (!caps.listSessions) throw new Error('ACP agent does not support session/list');
+    const res = (await this.client.request(ACP_AGENT_METHODS.sessionList, {
+      ...(opts.cwd && { cwd: opts.cwd }),
+      ...(opts.cursor && { cursor: opts.cursor }),
+    })) as ListSessionsResponse;
+    const sessions = Array.isArray(res?.sessions) ? res.sessions : [];
+    // Some agents (Copilot) list every session on the machine; keep the filter honest.
+    const filtered = opts.cwd ? sessions.filter((s) => s.cwd === opts.cwd) : sessions;
+    return { sessions: filtered, nextCursor: res?.nextCursor ?? null };
+  }
+
+  /** Close the session if the agent supports it, then stop the process. */
+  async close(): Promise<void> {
+    const sessionId = this.state.sessionId;
+    if (sessionId && this.caps?.closeSession && this.client.alive) {
+      try {
+        await this.client.request(ACP_AGENT_METHODS.sessionClose, { sessionId });
+      } catch (err) {
+        this.log('warn', 'session/close failed', { error: (err as Error).message });
+      }
+    }
+    this.kill();
+  }
+
+  kill(): void {
+    this.answerPendingPermissionsCancelled();
+    this.client.kill();
+  }
+
+  // ── Turns ────────────────────────────────────────────────────────────────
+
+  /**
+   * Send one user turn. Resolves when the agent ends the turn, however long
+   * that takes (no RPC timeout). One turn at a time: v1 has no queueing or
+   * steering, so callers queue client-side.
+   */
+  async prompt(prompt: string | ContentBlock[]): Promise<{ stopReason: TurnStopReason; rawStopReason?: string; usage?: TurnUsage }> {
+    const sessionId = this.requireSession();
+    if (this.state.turnInFlight) throw new Error('A prompt turn is already in flight; cancel it or wait');
+    const blocks: ContentBlock[] = typeof prompt === 'string' ? [{ type: 'text', text: prompt }] : prompt;
+
+    this.state.turnInFlight = true;
+    let settle: () => void = () => undefined;
+    this.turnSettled = new Promise<void>((resolve) => { settle = resolve; });
+    this.emit({ type: 'turn_started', sessionId });
+    try {
+      const res = (await this.client.request(
+        ACP_AGENT_METHODS.sessionPrompt,
+        { sessionId, prompt: blocks },
+        { timeoutMs: null },
+      )) as PromptResponse;
+      const raw = typeof res?.stopReason === 'string' ? res.stopReason : '';
+      const known = (ACP_STOP_REASONS as readonly string[]).includes(raw);
+      const stopReason: TurnStopReason = known ? (raw as StopReason) : 'unknown';
+      const usage = readTurnUsage(res);
+      if (!known) this.log('warn', 'Unknown ACP stopReason', { stopReason: raw });
+      this.emit({
+        type: 'turn_ended',
+        sessionId,
+        stopReason,
+        ...(!known && { rawStopReason: raw }),
+        ...(usage && { usage }),
+      });
+      return { stopReason, ...(!known && { rawStopReason: raw }), ...(usage && { usage }) };
+    } catch (err) {
+      const message = (err as Error).message;
+      const errorKind = err instanceof ProcessExitedError ? 'process_exited' : err instanceof RpcError ? 'rpc' : 'other';
+      this.emit({
+        type: 'turn_ended',
+        sessionId,
+        stopReason: 'error',
+        error: message,
+        errorKind,
+        ...(err instanceof RpcError && { rpcCode: err.code }),
+      });
+      throw err;
+    } finally {
+      this.state.turnInFlight = false;
+      this.openToolCalls.clear();
+      this.turnSettled = null;
+      settle();
+    }
+  }
+
+  /**
+   * Cancel the running turn. The agent answers the pending `session/prompt`
+   * with `stopReason: "cancelled"`. Per spec, every pending permission request
+   * is answered `cancelled` first.
+   */
+  cancel(): void {
+    const sessionId = this.state.sessionId;
+    if (!sessionId) return;
+    this.answerPendingPermissionsCancelled();
+    this.client.notify(ACP_AGENT_METHODS.sessionCancel, { sessionId });
+  }
+
+  // ── Modes and config options ─────────────────────────────────────────────
+
+  async setMode(modeId: string): Promise<void> {
+    const sessionId = this.requireSession();
+    const modeOption = this.state.configOptions.find((o) => o.category === 'mode' && o.type === 'select');
+    if (this.state.modes) {
+      await this.client.request(ACP_AGENT_METHODS.sessionSetMode, { sessionId, modeId });
+      this.state.modes = { ...this.state.modes, currentModeId: modeId };
+    } else if (modeOption) {
+      await this.setConfigOption(modeOption.id, modeId);
+    } else {
+      throw new Error('ACP agent exposes no session modes');
+    }
+  }
+
+  async setConfigOption(configId: string, value: string | boolean): Promise<SessionConfigOption[]> {
+    const sessionId = this.requireSession();
+    const params = typeof value === 'boolean'
+      ? { sessionId, configId, type: 'boolean', value }
+      : { sessionId, configId, value };
+    const res = (await this.client.request(ACP_AGENT_METHODS.sessionSetConfigOption, params)) as { configOptions?: SessionConfigOption[] };
+    if (Array.isArray(res?.configOptions)) this.setConfigOptions(res.configOptions);
+    return this.state.configOptions;
+  }
+
+  /** Switch model through the `model` config option, or Copilot's legacy `session/set_model`. */
+  async setModel(modelId: string): Promise<void> {
+    const sessionId = this.requireSession();
+    const option = this.state.configOptions.find((o) => o.category === 'model' && o.type === 'select')
+      ?? this.state.configOptions.find((o) => o.id === 'model' && o.type === 'select');
+    if (option) {
+      await this.setConfigOption(option.id, modelId);
+      return;
+    }
+    if (this.state.legacyModels) {
+      // Unstable in the schema; only reached for agents that never sent config options.
+      await this.client.request('session/set_model', { sessionId, modelId });
+      this.state.legacyModels = { ...this.state.legacyModels, currentModelId: modelId };
+      return;
+    }
+    throw new Error('ACP agent exposes no model selection');
+  }
+
+  // ── Permissions ──────────────────────────────────────────────────────────
+
+  /** Answer a `permission_request` event with one of its options, or `'cancelled'`. */
+  respondToPermission(requestId: string, decision: PermissionDecision | 'cancelled'): void {
+    const pending = this.pendingPermissions.get(requestId);
+    if (!pending) throw new Error(`No pending permission request ${requestId}`);
+    let outcome: RequestPermissionOutcome;
+    if (decision === 'cancelled') {
+      outcome = { outcome: 'cancelled' };
+    } else {
+      if (!pending.options.some((o) => o.optionId === decision.optionId)) {
+        throw new Error(`Option ${decision.optionId} was not offered for permission request ${requestId}`);
+      }
+      outcome = { outcome: 'selected', optionId: decision.optionId };
+    }
+    this.pendingPermissions.delete(requestId);
+    this.client.respond(pending.rpcId, { outcome });
+    this.emit({ type: 'permission_resolved', sessionId: this.state.sessionId ?? '', requestId, outcome });
+  }
+
+  get pendingPermissionIds(): string[] {
+    return [...this.pendingPermissions.keys()];
+  }
+
+  // ── Inbound ──────────────────────────────────────────────────────────────
+
+  private handleNotification(method: string, params: unknown): void {
+    if (method !== ACP_CLIENT_METHODS.sessionUpdate) {
+      this.log('info', 'Ignoring ACP notification', { method });
+      if (!KNOWN_CLIENT_METHODS.has(method)) this.emit({ type: 'unknown_method', kind: 'notification', method });
+      return;
+    }
+    const p = params as { sessionId?: unknown; update?: unknown } | undefined;
+    const sessionId = typeof p?.sessionId === 'string' ? p.sessionId : '';
+    if (!this.state.sessionId && this.creatingSession) {
+      this.earlyUpdates.push(params);
+      return;
+    }
+    if (!this.state.sessionId || sessionId !== this.state.sessionId) {
+      this.log('warn', 'session/update for another session', { sessionId, current: this.state.sessionId });
+      return;
+    }
+
+    const parsed = parseSessionUpdate(p?.update);
+    if (parsed.result === 'skipped') {
+      if (!this.loggedUnknownKinds.has(parsed.kind)) {
+        this.loggedUnknownKinds.add(parsed.kind);
+        this.log('warn', 'Skipping unsupported ACP session/update', { kind: parsed.kind, reason: parsed.reason });
+      }
+      this.emit({ type: 'unknown_update', sessionId, replay: this.replaying, kind: parsed.kind, reason: parsed.reason, raw: parsed.raw });
+      return;
+    }
+
+    const update = this.profile.filterUpdate
+      ? this.profile.filterUpdate(parsed.update, { openToolCallIds: this.openToolCalls })
+      : parsed.update;
+    if (!update) return;
+
+    this.applyUpdate(update);
+    this.emit({ type: 'update', sessionId, replay: this.replaying, update });
+  }
+
+  private applyUpdate(update: SessionUpdate): void {
+    switch (update.sessionUpdate) {
+      case 'tool_call':
+      case 'tool_call_update':
+        if (update.status === 'completed' || update.status === 'failed') this.openToolCalls.delete(update.toolCallId);
+        else if (update.sessionUpdate === 'tool_call' || update.status) this.openToolCalls.add(update.toolCallId);
+        break;
+      case 'available_commands_update':
+        this.state.availableCommands = update.availableCommands;
+        break;
+      case 'current_mode_update':
+        if (this.state.modes) this.state.modes = { ...this.state.modes, currentModeId: update.currentModeId };
+        break;
+      case 'config_option_update':
+        this.setConfigOptions(update.configOptions);
+        // The emitted update should carry the normalized list too.
+        update.configOptions = this.state.configOptions;
+        break;
+      case 'session_info_update':
+        if (update.title !== undefined) this.state.title = update.title ?? null;
+        break;
+      case 'usage_update':
+        this.state.context = { used: update.used, size: update.size, ...(update.cost !== undefined && { cost: update.cost }) };
+        break;
+      default:
+        break;
+    }
+  }
+
+  private handleServerRequest(id: number | string, method: string, params: unknown): void {
+    if (method === ACP_CLIENT_METHODS.sessionRequestPermission) {
+      const req = params as RequestPermissionRequest | undefined;
+      const sessionId = typeof req?.sessionId === 'string' ? req.sessionId : '';
+      if (!req || !Array.isArray(req.options) || !req.toolCall || sessionId !== this.state.sessionId) {
+        this.client.respondWithError(id, ACP_ERROR_CODES.invalidParams, 'Malformed or foreign session/request_permission');
+        return;
+      }
+      if (this.state.turnInFlight === false && !this.replaying) {
+        this.log('warn', 'Permission request outside a prompt turn', { id });
+      }
+      const requestId = String(id);
+      this.pendingPermissions.set(requestId, { rpcId: id, options: req.options });
+      this.emit({ type: 'permission_request', sessionId, requestId, toolCall: req.toolCall, options: req.options });
+      return;
+    }
+
+    // fs/*, terminal/* and elicitation/* are not advertised, so a conforming
+    // agent never sends them. Answer anyway: an unanswered request blocks the turn.
+    this.client.respondWithError(id, ACP_ERROR_CODES.methodNotFound, `Method not found: ${method}`, { method });
+    if (!KNOWN_CLIENT_METHODS.has(method)) this.emit({ type: 'unknown_method', kind: 'request', method });
+  }
+
+  private handleExit(code: number | null, signal: string | null): void {
+    this.pendingPermissions.clear();
+    // Pending requests were rejected just before this, but prompt()'s catch runs
+    // on a later microtask. Let its turn_ended go out before exit.
+    const emitExit = () => this.emit({ type: 'exit', code, signal });
+    if (this.turnSettled) void this.turnSettled.then(emitExit);
+    else emitExit();
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  private applySessionSetup(res: LoadSessionResponse): void {
+    if (res.modes && Array.isArray(res.modes.availableModes)) this.state.modes = res.modes;
+    if (Array.isArray(res.configOptions)) this.setConfigOptions(res.configOptions);
+    if (res.models && Array.isArray(res.models.availableModels)) {
+      this.state.legacyModels = this.profile.normalizeLegacyModels
+        ? this.profile.normalizeLegacyModels(res.models)
+        : res.models;
+    }
+  }
+
+  private setConfigOptions(options: SessionConfigOption[]): void {
+    this.state.configOptions = this.profile.normalizeConfigOptions
+      ? this.profile.normalizeConfigOptions(options)
+      : options;
+  }
+
+  private sessionParams(setup: SessionSetup): Record<string, unknown> {
+    return {
+      cwd: setup.cwd,
+      mcpServers: setup.mcpServers ?? [],
+      ...(setup.additionalDirectories?.length && { additionalDirectories: setup.additionalDirectories }),
+    };
+  }
+
+  private answerPendingPermissionsCancelled(): void {
+    for (const requestId of [...this.pendingPermissions.keys()]) {
+      this.respondToPermission(requestId, 'cancelled');
+    }
+  }
+
+  private requireStarted(): AcpDriverCapabilities {
+    if (!this.caps) throw new Error('AcpSession not started');
+    return this.caps;
+  }
+
+  private requireSession(): string {
+    this.requireStarted();
+    if (!this.state.sessionId) throw new Error('No ACP session; call newSession or resumeSession first');
+    return this.state.sessionId;
+  }
+
+  private emit(event: AcpSessionEvent): void {
+    this.opts.onEvent?.(event);
+  }
+
+  private log(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
+    this.opts.onLog?.(level, message, meta);
+  }
+}
+
+/** Per-turn usage: Copilot puts it on the result; the draft RFD puts it under `_meta`. */
+function readTurnUsage(res: PromptResponse | undefined): TurnUsage | undefined {
+  const candidate = res?.usage ?? (res?._meta as { usage?: unknown } | null | undefined)?.usage;
+  if (!candidate || typeof candidate !== 'object') return undefined;
+  const out: TurnUsage = {};
+  for (const key of ['inputTokens', 'outputTokens', 'totalTokens', 'thoughtTokens', 'cachedReadTokens', 'cachedWriteTokens'] as const) {
+    const v = (candidate as Record<string, unknown>)[key];
+    if (typeof v === 'number') out[key] = v;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+export { RpcError };

@@ -1,5 +1,13 @@
 import { spawn, type ChildProcess } from 'child_process';
 
+/** Rejection for requests still pending when the agent process exits. */
+export class ProcessExitedError extends Error {
+  constructor(readonly code: number | null, readonly signal: string | null) {
+    super(`Process exited with code ${code}, signal ${signal}`);
+    this.name = 'ProcessExitedError';
+  }
+}
+
 /** Default RPC request timeout (ms). Prevents indefinite hangs on init failures. */
 export const DEFAULT_RPC_TIMEOUT_MS = 30_000;
 
@@ -201,7 +209,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
       ...(stderr ? { stderr: stderr.length > 2000 ? stderr.substring(0, 2000) + '…' : stderr } : {}),
     });
     this.flush();
-    this.rejectAllPending(new Error(`Process exited with code ${code}, signal ${signal}`));
+    this.rejectAllPending(new ProcessExitedError(code, signal));
     this.opts.onExit?.(code, signal);
   }
 

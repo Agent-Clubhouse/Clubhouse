@@ -109,6 +109,39 @@ export const tel = {
   },
 };
 
+/**
+ * Record a span measured elsewhere (a renderer) with explicit start and end
+ * times. Buffered like any other call while the SDK chunk loads.
+ */
+export function replaySpan(span: ReplaySpan): void {
+  if (runtime) runtime.replaySpan(span);
+  else if (pending) buffer((rt) => rt.replaySpan(span));
+}
+
+// --- Runtime change notifications ------------------------------------------
+
+type RuntimeListener = () => void;
+const runtimeListeners = new Set<RuntimeListener>();
+
+/**
+ * Called whenever telemetry starts, stops or its startup is abandoned, so
+ * renderers can be told to start or stop recording. Returns an unsubscribe.
+ */
+export function onRuntimeChange(listener: RuntimeListener): () => void {
+  runtimeListeners.add(listener);
+  return () => runtimeListeners.delete(listener);
+}
+
+function notifyRuntimeChange(): void {
+  for (const l of runtimeListeners) {
+    try {
+      l();
+    } catch {
+      // A listener must never break telemetry start/stop.
+    }
+  }
+}
+
 // --- Lifecycle (used by bootstrap.ts and tests) ----------------------------
 
 /** Start buffering calls while the SDK chunk loads. */
@@ -119,6 +152,7 @@ export function beginPending(): void {
 /** Drop the startup buffer (telemetry failed to start or was disabled). */
 export function abortPending(): void {
   pending = null;
+  notifyRuntimeChange();
 }
 
 /** Install the runtime and replay anything buffered during startup. */
@@ -126,6 +160,7 @@ export function setRuntime(rt: TelemetryRuntime | null): void {
   runtime = rt;
   if (!rt) {
     pending = null;
+    notifyRuntimeChange();
     return;
   }
   const queued = pending ?? [];
@@ -137,6 +172,7 @@ export function setRuntime(rt: TelemetryRuntime | null): void {
       // Replay must never throw into startup code.
     }
   }
+  notifyRuntimeChange();
 }
 
 export function getRuntime(): TelemetryRuntime | null {

@@ -8,6 +8,7 @@ import { usePluginUpdateStore } from '../stores/pluginUpdateStore';
 import { rendererLog } from '../plugins/renderer-logger';
 import type { PluginRenderMode } from '../../shared/plugin-types';
 import { Spinner } from '../components/Spinner';
+import { ATTR, tel } from '../telemetry';
 
 export class PluginErrorBoundary extends React.Component<
   { pluginId: string; children: React.ReactNode },
@@ -31,6 +32,9 @@ export class PluginErrorBoundary extends React.Component<
     // Store the render error in the plugin store so it's visible in Settings
     usePluginStore.getState().setPluginStatus(pluginId, 'errored',
       `Render error: ${error.message}`);
+    // Plugin identity (c.plugin.ref, hashed for community plugins) arrives with
+    // the Phase 5 plugin instrumentation; for now only the class and stack.
+    tel.exception(error, { origin: 'plugin', handled: true, attrs: [ATTR.errorBoundary('plugin')] });
   }
 
   render() {

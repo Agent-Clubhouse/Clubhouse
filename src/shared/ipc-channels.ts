@@ -485,4 +485,14 @@ export const IPC = {
     /** Main → renderer broadcast: targeted cache invalidation. */
     DATA_INVALIDATED: 'goobers:data-invalidated',
   },
+  TELEMETRY: {
+    /** Renderer → main, fire-and-forget: a batch of renderer telemetry items. */
+    EMIT: 'telemetry:emit',
+    /** Renderer → main, once: initApp() finished (spec §6.2). */
+    RENDERER_READY: 'telemetry:renderer-ready',
+    /** Renderer → main invoke: current { enabled, level }. */
+    GET_STATE: 'telemetry:get-state',
+    /** Main → renderer broadcast: { enabled, level } changed. */
+    STATE_CHANGED: 'telemetry:state-changed',
+  },
 } as const;

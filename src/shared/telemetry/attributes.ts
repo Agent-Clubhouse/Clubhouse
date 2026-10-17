@@ -100,6 +100,8 @@ export const ERROR_TYPES = [
   'ipc_register_failed',
   // Agents (§4.4)
   'binary_not_found',
+  // Renderer and crash handling (§4.2, Phase 3)
+  'render_error',
 ] as const;
 
 export const OUTCOMES = ['ok', 'error', 'cancelled', 'timeout', 'skipped'] as const;
@@ -135,6 +137,27 @@ export const ATTR = {
 
   // Versions (§4.3)
   updateFromVersion: versionAttr('clubhouse.update.from_version'),
+
+  // Renderer foundation and crash handling (§4.2, §4.15; Phase 3)
+  windowKind: enumAttr('clubhouse.window.kind', ['main', 'popout']),
+  /**
+   * The active main view (spec §4.15), a coarse bounded enum. The chrome
+   * refresh sets it from the active tab and pane (spec §9.1; chrome spec §8);
+   * finer placement goes in a separate attribute, not here.
+   */
+  view: enumAttr('clubhouse.view', ['agent', 'terminal', 'canvas', 'files', 'git', 'settings', 'plugin', 'other']),
+  errorBoundary: enumAttr('clubhouse.error.boundary', ['app', 'plugin']),
+  /** Electron `RenderProcessGoneDetails.reason`. */
+  rendererGoneReason: enumAttr('clubhouse.renderer.gone_reason', [
+    'clean-exit', 'abnormal-exit', 'killed', 'crashed', 'oom', 'launch-failed', 'integrity-failure', 'memory-eviction',
+  ]),
+  /** Electron `Details.type` for `child-process-gone`. */
+  childProcessType: enumAttr('clubhouse.child_process.type', [
+    'Utility', 'Zygote', 'Sandbox helper', 'GPU', 'Pepper Plugin', 'Pepper Plugin Broker', 'Unknown',
+  ]),
+  childProcessGoneReason: enumAttr('clubhouse.child_process.gone_reason', [
+    'clean-exit', 'abnormal-exit', 'killed', 'crashed', 'oom', 'launch-failed', 'integrity-failure', 'memory-eviction',
+  ]),
 } as const;
 
 /**
@@ -172,6 +195,8 @@ export interface SpanDef {
 
 export const SPANS = {
   'clubhouse.telemetry.test': { level: 'errors', root: true },
+  /** A window that stopped responding, from `unresponsive` to `responsive` (§4.2). */
+  'clubhouse.renderer.unresponsive': { level: 'errors', root: true },
 } as const satisfies Record<string, SpanDef>;
 export type SpanName = keyof typeof SPANS;
 
@@ -199,6 +224,27 @@ export const METRICS = {
     description: 'Telemetry items dropped by the per-session cap or the redaction pipeline',
     attributes: ['clubhouse.telemetry.signal'],
   },
+  'clubhouse.renderer.long_frames': {
+    kind: 'counter',
+    unit: '{frame}',
+    level: 'standard',
+    description: 'Long animation frames (>= 50 ms) in a renderer, aggregated per minute',
+    attributes: ['clubhouse.view', 'clubhouse.window.kind'],
+  },
+  'clubhouse.renderer.long_frame.duration': {
+    kind: 'histogram',
+    unit: 's',
+    level: 'standard',
+    description: 'Duration of sampled long animation frames',
+    attributes: ['clubhouse.view', 'clubhouse.window.kind'],
+  },
+  'clubhouse.renderer.unresponsive_count': {
+    kind: 'counter',
+    unit: '{event}',
+    level: 'errors',
+    description: 'Windows that stopped responding',
+    attributes: ['clubhouse.window.kind'],
+  },
   'clubhouse.telemetry.export.failures': {
     kind: 'counter',
     unit: '{export}',
@@ -219,6 +265,10 @@ export const EVENTS = {
   'clubhouse.telemetry.disabled': { level: 'errors' },
   /** Exception records (§4.2). Body is always this name; never the message. */
   'clubhouse.exception': { level: 'errors' },
+  /** A renderer process exited (`render-process-gone`). */
+  'clubhouse.renderer.gone': { level: 'errors' },
+  /** A GPU or utility process exited (`child-process-gone`). */
+  'clubhouse.child_process.gone': { level: 'errors' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

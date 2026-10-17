@@ -171,6 +171,48 @@ test.describe('Telemetry export', () => {
     }
   });
 
+  test('renderer errors reach the exporter through main, without their message', async () => {
+    // Phase 3a: renderer facade → telemetry:emit → main re-validation → SDK.
+    const mock = await startMockIngestion();
+    const { electronApp, window, userDataDir } = await launchApp({
+      experimental: { telemetry: true },
+      userDataFiles: {
+        'telemetry-settings.json': {
+          enabled: true,
+          level: 'errors',
+          sampleRate: 1,
+          destination: { kind: 'otlp', endpoint: `http://127.0.0.1:${mock.port}` },
+        },
+      },
+    });
+    try {
+      await expect(window.locator('body')).toBeVisible();
+      // Wait until main has told this renderer that telemetry is on.
+      await expect
+        .poll(() => window.evaluate(() => window.clubhouse.telemetry.getState().then((s) => s.enabled)), { timeout: 15_000 })
+        .toBe(true);
+      await window.evaluate(() => {
+        void Promise.reject(new TypeError('e2e-secret-renderer-message'));
+      });
+      // Renderer batch (2 s) → main → exporter batch (5 s). Poll instead of sleeping.
+      const logsBody = () => mock.received.filter((r) => r.url === '/v1/logs').map((r) => r.body).join('\n');
+      await expect.poll(() => logsBody(), { timeout: 20_000 }).toContain('clubhouse.exception');
+      await quitAndWait(electronApp);
+
+      const logs = logsBody();
+      expect(logs).toContain('clubhouse.exception');
+      expect(logs).toContain('TypeError');
+      expect(logs).toContain('clubhouse.window.kind');
+      const all = mock.received.map((r) => r.body).join('\n');
+      expect(all).not.toContain('e2e-secret-renderer-message');
+      expectNoMachineIdentifiers(mock.received);
+    } finally {
+      await electronApp.close().catch(() => {});
+      mock.server.close();
+      if (userDataDir) fs.rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
   test('flag on but not enabled: nothing exported and no install id created', async () => {
     const { electronApp, window, userDataDir } = await launchApp({ experimental: { telemetry: true } });
     try {

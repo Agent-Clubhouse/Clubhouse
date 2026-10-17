@@ -138,6 +138,8 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   // Goobers connection/daemon/health transitions and targeted cache
   // invalidation are pushed main→renderer via broadcastToAllWindows (§6.2).
   'IPC.GOOBERS.STATE_CHANGED',
+  // Telemetry enabled/level changes are broadcast main→renderer (telemetry spec §6.2).
+  'IPC.TELEMETRY.STATE_CHANGED',
   'IPC.GOOBERS.DATA_INVALIDATED',
 ]);
 
