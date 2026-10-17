@@ -31,8 +31,17 @@ function toastFailure(err: unknown): void {
   useToastStore.getState().addToast(`Failed to create agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
 }
 
-/** Resolves to the new agent's id once it exists locally, or null (remote, or it failed and was reported). */
-export async function createDurableAgent(project: AgentProjectRef, input: DurableAgentInput): Promise<string | null> {
+/**
+ * Resolves to the new agent's id once it exists locally, or null (remote, or it
+ * failed and was reported). A failure toasts, unless `onError` takes the message
+ * to show it in place (the New agent page keeps its form open).
+ */
+export async function createDurableAgent(
+  project: AgentProjectRef,
+  input: DurableAgentInput,
+  { onError }: { onError?: (message: string) => void } = {},
+): Promise<string | null> {
+  const fail = (err: unknown) => (onError ? onError(err instanceof Error ? err.message : String(err)) : toastFailure(err));
   const { name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, persona } = input;
 
   if (isRemoteProjectId(project.id)) {
@@ -54,7 +63,7 @@ export async function createDurableAgent(project: AgentProjectRef, input: Durabl
       console.error('Failed to create remote durable agent:', err);
       tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
       tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
-      toastFailure(err);
+      fail(err);
     }
     return null;
   }
@@ -77,7 +86,7 @@ export async function createDurableAgent(project: AgentProjectRef, input: Durabl
     console.error('Failed to create durable agent:', err);
     tel.event('clubhouse.ui.action_failed', [ATTR.uiAction('agent_create'), ATTR.errorType('unknown')]);
     tel.exception(err, { handled: true, attrs: [ATTR.uiAction('agent_create')] });
-    toastFailure(err);
+    fail(err);
     return null;
   }
 }

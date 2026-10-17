@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { openNewAgentFromShortcut, openNewAgentPage } from './startPage';
 import { useChromeFlagStore } from './chromeFlag';
 import { useChromeStore } from './chromeStore';
@@ -9,7 +9,7 @@ import { useQuickAgentStore } from '../stores/quickAgentStore';
 beforeEach(() => {
   useUIStore.setState({ explorerTab: 'plugin:files', activeHostId: null, quickAgentDialogOpen: false, projectExplorerTab: {} });
   useProjectStore.setState({ projects: [{ id: 'p1', name: 'a', path: '/a' }, { id: 'p2', name: 'b', path: '/b' }] as never, activeProjectId: 'p2' });
-  useChromeStore.setState({ projectScopeId: null, composerFocusPending: false, lastProjectId: null, newAgent: null });
+  useChromeStore.setState({ projectScopeId: null, lastProjectId: null, newAgent: null });
   useQuickAgentStore.setState({ selectedCompletedId: 'q1' });
 });
 
@@ -53,10 +53,31 @@ describe('openNewAgentPage', () => {
     expect(useChromeStore.getState().newAgent!.seq).toBeGreaterThan(first!.seq);
   });
 
-  it('keeps the completion callback for the opener', () => {
+  it("keeps the opener's options and says it opened", () => {
     useChromeFlagStore.setState({ enabled: true });
     const onCreated = () => {};
-    openNewAgentPage('durable', 'p1', { onCreated });
-    expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable', projectId: 'p1', onCreated });
+    expect(openNewAgentPage('durable', 'p1', { onCreated, stayInView: true })).toBe(true);
+    expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable', projectId: 'p1', onCreated, stayInView: true });
+  });
+
+  it('returns false and does nothing where the page cannot open', () => {
+    // Legacy shell.
+    expect(openNewAgentPage('quick', 'p1', { onCreated: () => {} })).toBe(false);
+    expect(useChromeStore.getState().newAgent).toBeNull();
+    expect(useUIStore.getState().quickAgentDialogOpen).toBe(false);
+    useChromeFlagStore.setState({ enabled: true });
+    useUIStore.setState({ activeHostId: 'sat-1' });
+    expect(openNewAgentPage('durable')).toBe(false);
+    expect(useUIStore.getState().quickAgentDialogOpen).toBe(false);
+  });
+
+  it('tells the previous opener nothing was made when a new open replaces it', () => {
+    useChromeFlagStore.setState({ enabled: true });
+    const onClosed = vi.fn();
+    openNewAgentPage('durable', 'p1', { onClosed });
+    openNewAgentPage('quick');
+    expect(onClosed).toHaveBeenCalledWith(null);
+    useChromeStore.getState().closeNewAgent();
+    expect(onClosed).toHaveBeenCalledTimes(1);
   });
 });

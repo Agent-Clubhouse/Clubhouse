@@ -13,7 +13,7 @@ import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import { CATEGORY, type CommandItem } from './command-registry';
 import { useSettingsCategories } from '../../panels/AccessoryPanel';
-import { openNewAgentPage } from '../../chrome/startPage';
+import { openNewAgentOrDialog } from '../../chrome/startPage';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { agentDot, groupProjectAgents } from '../../chrome/sidebar/treeModel';
@@ -451,7 +451,7 @@ export function useCommandSource(): CommandItem[] {
         category: CATEGORY.commands,
         shortcut: getShortcut(shortcuts, 'new-quick-agent'),
         keywords: ['agent', 'durable', 'create'],
-        execute: () => openNewAgentPage('durable'),
+        execute: () => openNewAgentOrDialog('durable'),
       });
     }
     items.push({
@@ -460,7 +460,7 @@ export function useCommandSource(): CommandItem[] {
       category: CATEGORY.commands,
       shortcut: isNewChromeEnabled() ? undefined : getShortcut(shortcuts, 'new-quick-agent'),
       keywords: ['agent', 'mission', 'quick'],
-      execute: () => openNewAgentPage('quick'),
+      execute: () => openNewAgentOrDialog('quick'),
     });
     items.push({
       id: 'action:add-project',

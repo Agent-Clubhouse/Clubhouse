@@ -37,7 +37,7 @@ beforeEach(() => {
     availability: {},
   });
   useUIStore.setState({ explorerTab: 'agents', activeHostId: null });
-  useChromeStore.setState({ newAgent: req(), lastProjectId: 'p2', projectActivity: {}, projectScopeId: null });
+  useChromeStore.setState({ newAgent: req(), newAgentBusy: false, lastProjectId: 'p2', projectActivity: {}, projectScopeId: null });
 });
 
 describe('NewAgentPage', () => {
@@ -83,9 +83,10 @@ describe('NewAgentPage', () => {
     expect(createDurableAgent).toHaveBeenCalledWith(
       { id: 'p1', path: '/tmp/ch' },
       expect.objectContaining({ name: 'keen-heron', color: 'emerald', useWorktree: true, orchestrator: 'claude-code', model: 'default' }),
+      expect.objectContaining({ onError: expect.any(Function) }),
     );
-    expect(useChromeStore.getState().newAgent).toBeNull();
     await waitFor(() => expect(useAgentStore.getState().activeAgentId).toBe('a-new'));
+    expect(useChromeStore.getState().newAgent).toBeNull();
   });
 
   it('Quick swaps the durable rows for a required Mission and Runs in', async () => {
@@ -110,7 +111,7 @@ describe('NewAgentPage', () => {
     expect(screen.getByTestId('new-agent-project').textContent).toContain('Goobers');
     fireEvent.change(screen.getByLabelText('Runs in'), { target: { value: 'a1' } });
     fireEvent.change(screen.getByTestId('new-agent-mission'), { target: { value: 'Run tests' } });
-    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    await submitWhenReady();
     await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p2', '/tmp/gb', 'Run tests', 'default', 'a1', undefined, undefined));
   });
 
@@ -122,26 +123,91 @@ describe('NewAgentPage', () => {
     expect(within(list).getAllByRole('option').map((o) => o.textContent)).toEqual([expect.stringContaining('Goobers')]);
   });
 
-  it('hands the new agent id to the opener (canvas places a card for it)', async () => {
-    const onCreated = vi.fn();
-    render(<NewAgentPage request={req({ projectId: 'p2', onCreated })} />);
-    expect(screen.getByTestId('new-agent-project').textContent).toContain('Goobers');
-    fireEvent.click(screen.getByTestId('new-agent-submit'));
-    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('a-new'));
+  const submitWhenReady = async () => {
+    const submit = screen.getByTestId('new-agent-submit') as HTMLButtonElement;
+    await waitFor(() => expect(submit.disabled).toBe(false));
+    fireEvent.click(submit);
+  };
+  const openWith = (over: Partial<NewAgentRequest>) => {
+    const request = req(over);
+    useChromeStore.setState({ newAgent: request, newAgentBusy: false });
+    return render(<NewAgentPage request={request} />);
+  };
+
+  it('waits for the git check before Create is enabled', async () => {
+    let resolveGit: (v: boolean) => void = () => {};
+    window.clubhouse.project.checkGit = vi.fn(() => new Promise<boolean>((r) => { resolveGit = r; }));
+    render(<NewAgentPage request={req()} />);
+    expect((screen.getByTestId('new-agent-submit') as HTMLButtonElement).disabled).toBe(true);
+    resolveGit(true);
+    await waitFor(() => expect((screen.getByTestId('new-agent-submit') as HTMLButtonElement).disabled).toBe(false));
   });
 
-  it('does not call back when creation fails', async () => {
-    createDurableAgent.mockResolvedValue(null);
+  it('hands the new agent id to the opener and, with stayInView, stays put', async () => {
+    useUIStore.setState({ explorerTab: 'plugin:app:canvas' });
     const onCreated = vi.fn();
-    render(<NewAgentPage request={req({ onCreated })} />);
-    fireEvent.click(screen.getByTestId('new-agent-submit'));
-    await waitFor(() => expect(createDurableAgent).toHaveBeenCalled());
+    const onClosed = vi.fn();
+    openWith({ projectId: 'p2', onCreated, onClosed, stayInView: true });
+    expect(screen.getByTestId('new-agent-project').textContent).toContain('Goobers');
+    await submitWhenReady();
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith('a-new'));
+    expect(onClosed).toHaveBeenCalledWith('a-new');
+    expect(useUIStore.getState().explorerTab).toBe('plugin:app:canvas');
+    expect(useChromeStore.getState().newAgent).toBeNull();
+  });
+
+  it('keeps the form open, with the error inline, when creation fails', async () => {
+    createDurableAgent.mockImplementation(async (_p: unknown, _i: unknown, opts: { onError: (m: string) => void }) => { opts.onError('branch exists'); return null; });
+    const onCreated = vi.fn();
+    openWith({ onCreated });
+    fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'keen-heron' } });
+    await submitWhenReady();
+    expect((await screen.findByTestId('new-agent-error')).textContent).toBe("Couldn't create the agent: branch exists");
+    expect(useChromeStore.getState().newAgent).not.toBeNull();
+    expect(useChromeStore.getState().newAgentBusy).toBe(false);
+    expect((screen.getByTestId('new-agent-name') as HTMLInputElement).value).toBe('keen-heron');
     expect(onCreated).not.toHaveBeenCalled();
   });
 
-  it('Cancel closes the page', () => {
-    render(<NewAgentPage request={req()} />);
+  it('shows a quick agent that fails to start inline, keeping the mission', async () => {
+    spawnQuickAgent.mockRejectedValue(new Error('CLI not found'));
+    openWith({ kind: 'quick' });
+    fireEvent.change(screen.getByTestId('new-agent-mission'), { target: { value: 'Fix it' } });
+    await submitWhenReady();
+    expect((await screen.findByTestId('new-agent-error')).textContent).toBe("Couldn't start the agent: CLI not found");
+    expect((screen.getByTestId('new-agent-mission') as HTMLTextAreaElement).value).toBe('Fix it');
+    expect(useChromeStore.getState().newAgent).not.toBeNull();
+  });
+
+  it('is busy while creating: Cancel is disabled and the button says so', async () => {
+    createDurableAgent.mockReturnValue(new Promise(() => {}));
+    openWith({});
+    await submitWhenReady();
+    expect(screen.getByTestId('new-agent-submit').textContent).toBe('Creating…');
+    expect((screen.getByText('Cancel') as HTMLButtonElement).disabled).toBe(true);
+    expect(useChromeStore.getState().newAgentBusy).toBe(true);
+  });
+
+  it('adding a project from the picker selects it and keeps the page', async () => {
+    const added = { id: 'p3', name: 'Site', path: '/tmp/site' };
+    useProjectStore.setState({
+      pickAndAddProject: vi.fn(async () => {
+        useProjectStore.setState((st) => ({ projects: [...st.projects, added] as never, activeProjectId: 'p3' }));
+        return added;
+      }),
+    } as never);
+    openWith({});
+    fireEvent.click(screen.getByTestId('new-agent-project'));
+    fireEvent.click(screen.getByText('Add project…'));
+    await waitFor(() => expect(screen.getByTestId('new-agent-project').textContent).toContain('Site'));
+    expect(useChromeStore.getState().newAgent).not.toBeNull();
+  });
+
+  it('Cancel closes the page and tells the opener nothing was made', () => {
+    const onClosed = vi.fn();
+    openWith({ onClosed });
     fireEvent.click(screen.getByText('Cancel'));
     expect(useChromeStore.getState().newAgent).toBeNull();
+    expect(onClosed).toHaveBeenCalledWith(null);
   });
 });

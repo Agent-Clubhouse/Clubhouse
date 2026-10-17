@@ -101,9 +101,7 @@ export function ProjectPicker({ projects, projectIcons, activity, value, onChang
       </button>
       {open && (
         <div
-          role="listbox"
-          aria-label="Project"
-          aria-activedescendant={flat[hi] ? `project-option-${flat[hi].id}` : undefined}
+          data-testid="project-picker"
           onKeyDown={onKeyDown}
           className="absolute left-0 top-8 z-dropdown w-[340px] p-1 rounded-lg border border-surface-1 bg-ctp-mantle shadow-xl"
         >
@@ -111,6 +109,10 @@ export function ProjectPicker({ projects, projectIcons, activity, value, onChang
             <input
               autoFocus
               type="text"
+              role="combobox"
+              aria-expanded="true"
+              aria-controls="project-picker-list"
+              aria-activedescendant={flat[hi] ? `project-option-${flat[hi].id}` : undefined}
               aria-label="Find a project"
               placeholder="Find a project"
               value={query}
@@ -118,6 +120,7 @@ export function ProjectPicker({ projects, projectIcons, activity, value, onChang
               className="w-full h-7 px-2 rounded-md border border-ctp-accent bg-ctp-crust text-[13px] text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
             />
           </div>
+          <div id="project-picker-list" role="listbox" aria-label="Project">
           {rows.groups.map((g) => (
             <div key={g.title} role="group" aria-label={g.title}>
               <div className="h-[26px] px-2.5 flex items-center text-xs font-semibold text-ctp-overlay1">{g.title}</div>
@@ -143,6 +146,7 @@ export function ProjectPicker({ projects, projectIcons, activity, value, onChang
               })}
             </div>
           ))}
+          </div>
           {rows.more > 0 && <div className="h-[26px] px-2.5 flex items-center text-xs text-ctp-overlay1">{rows.more} more, type to find them</div>}
           <div className="h-px bg-surface-0 mx-1.5 my-1" />
           <button

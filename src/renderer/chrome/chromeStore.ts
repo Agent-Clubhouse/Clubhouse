@@ -53,14 +53,22 @@ export interface AppLaunch {
 }
 
 /** What the New agent page opens with (#2031). */
-export interface NewAgentRequest {
+export interface NewAgentRequest extends NewAgentOptions {
   kind: 'durable' | 'quick';
   /** Preselected project; otherwise the page picks the selected or last-used one. */
   projectId?: string;
   /** Bumped on every open so the form starts fresh even when it was already showing. */
   seq: number;
-  /** Called with the new agent's id once it exists (canvas places a card for it). */
+}
+
+/** What an opener of the New agent page can ask for (#2031; canvas uses all three). */
+export interface NewAgentOptions {
+  /** Called with the new agent's id once it exists. Not called on cancel or failure. */
   onCreated?: (agentId: string) => void;
+  /** Called once when the page goes away: with the new agent's id, or null if nothing was made. */
+  onClosed?: (createdAgentId: string | null) => void;
+  /** After creating, stay on the view underneath instead of opening the agent. */
+  stayInView?: boolean;
 }
 
 export interface ChromeState {
@@ -73,14 +81,14 @@ export interface ChromeState {
   /** The title bar's tabs for the active project, in order, for ⌘1–9 (spec §5.3). Not persisted. */
   titleTabs: Array<{ id: string; disabled?: boolean }>;
   setTitleTabs: (tabs: Array<{ id: string; disabled?: boolean }>) => void;
-  /** Set by ⌘⇧N for the start page to focus its composer, which clears it. Not persisted. */
   /** The New agent page in the pane, while it is open. Not persisted. */
   newAgent: NewAgentRequest | null;
-  openNewAgent: (kind: NewAgentRequest['kind'], projectId?: string, onCreated?: (agentId: string) => void) => void;
-  closeNewAgent: () => void;
-  composerFocusPending: boolean;
-  requestComposer: () => void;
-  consumeComposerFocus: () => void;
+  /** The page is creating an agent: selection changes it causes (adding a project, the creating placeholder) don't close it. */
+  newAgentBusy: boolean;
+  openNewAgent: (kind: NewAgentRequest['kind'], projectId?: string, options?: NewAgentOptions) => void;
+  /** Close the page; `createdAgentId` is passed to the opener's onClosed. */
+  closeNewAgent: (createdAgentId?: string | null) => void;
+  setNewAgentBusy: (busy: boolean) => void;
   /**
    * The latest request to open an app view (Canvas, Review) with options for
    * that visit, such as Review's "Needs you only" from Needs you. The view reads
@@ -254,12 +262,20 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     },
 
     newAgent: null,
-    openNewAgent: (kind, projectId, onCreated) => set({ newAgent: { kind, projectId, onCreated, seq: (get().newAgent?.seq ?? 0) + 1 } }),
-    closeNewAgent: () => { if (get().newAgent) set({ newAgent: null }); },
-
-    composerFocusPending: false,
-    requestComposer: () => set({ composerFocusPending: true }),
-    consumeComposerFocus: () => { if (get().composerFocusPending) set({ composerFocusPending: false }); },
+    newAgentBusy: false,
+    openNewAgent: (kind, projectId, options = {}) => {
+      const previous = get().newAgent;
+      set({ newAgent: { ...options, kind, projectId, seq: (previous?.seq ?? 0) + 1 }, newAgentBusy: false });
+      // A new open replaces the one showing, which ends with nothing made.
+      previous?.onClosed?.(null);
+    },
+    closeNewAgent: (createdAgentId = null) => {
+      const request = get().newAgent;
+      if (!request) return;
+      set({ newAgent: null, newAgentBusy: false });
+      request.onClosed?.(createdAgentId);
+    },
+    setNewAgentBusy: (busy) => { if (get().newAgentBusy !== busy) set({ newAgentBusy: busy }); },
     appLaunch: null,
     launchApp: (id, params = {}) => set({ appLaunch: { id, params, seq: (get().appLaunch?.seq ?? 0) + 1 } }),
     appViewAgentId: null,

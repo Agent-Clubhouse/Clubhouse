@@ -25,7 +25,7 @@ beforeEach(() => {
     activeAgentId: 'a1',
   });
   useQuickAgentStore.setState({ selectedCompletedId: null });
-  useChromeStore.setState({ projectScopeId: null, newAgent: null });
+  useChromeStore.setState({ projectScopeId: null, newAgent: null, newAgentBusy: false });
 });
 
 afterEach(() => useChromeFlagStore.setState({ enabled: false }));
@@ -39,6 +39,18 @@ describe('ChromeBody', () => {
     act(() => useUIStore.setState({ explorerTab: 'help' }));
     expect(useChromeStore.getState().newAgent).toBeNull();
     expect(screen.queryByTestId('new-agent-page')).toBeNull();
+  });
+
+  it('keeps the New agent page through selection changes it makes while busy', () => {
+    render(<ChromeBody />);
+    act(() => { useChromeStore.getState().openNewAgent('durable'); useChromeStore.getState().setNewAgentBusy(true); });
+    // Adding a project activates it; the creating placeholder becomes the active agent.
+    act(() => useProjectStore.setState({ activeProjectId: 'p1' }));
+    act(() => useAgentStore.setState({ activeAgentId: 'tmp' }));
+    act(() => useChromeStore.getState().setNewAgentBusy(false));
+    expect(useChromeStore.getState().newAgent).not.toBeNull();
+    act(() => useUIStore.setState({ explorerTab: 'help' }));
+    expect(useChromeStore.getState().newAgent).toBeNull();
   });
 
   it('shows the selected agent on the Agents tab', () => {

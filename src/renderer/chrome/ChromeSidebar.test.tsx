@@ -194,6 +194,19 @@ describe('ChromeSidebar', () => {
       expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable' });
     });
 
+    it("shows the New agent shortcut the platform's way", () => {
+      const platform = window.clubhouse.platform;
+      useKeyboardShortcutsStore.setState({ shortcuts: { 'new-quick-agent': { id: 'new-quick-agent', label: 'New Agent', category: 'Agents', defaultBinding: 'Meta+Shift+N', currentBinding: 'Meta+Shift+N' } } as never });
+      try {
+        (window.clubhouse as { platform: string }).platform = 'darwin';
+        render(<ChromeSidebar />);
+        fireEvent.click(screen.getByTestId('chrome-new'));
+        expect(screen.getByRole('menuitem', { name: /Durable agent/ }).textContent).toBe('Durable agent…⇧⌘N');
+      } finally {
+        (window.clubhouse as { platform: string }).platform = platform;
+      }
+    });
+
     it('closes when an agent is opened from the tree', () => {
       useChromeStore.getState().openNewAgent('durable');
       render(<ChromeSidebar />);

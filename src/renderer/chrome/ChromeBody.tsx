@@ -76,14 +76,16 @@ export function ChromeBody() {
   useEffect(() => syncProjectScopeWithActiveAgent(), []);
 
   // The New agent page covers the pane until something else is opened: another
-  // tab, project, agent or host (#2031).
+  // tab, project, agent or host (#2031). Changes the page makes itself while
+  // busy (adding a project, the creating placeholder) become the new baseline.
+  const newAgentBusy = useChromeStore((s) => s.newAgentBusy);
   const navKey = `${explorerTab}|${activeProjectId}|${activeAgentId}|${activeHostId}`;
   const openedAt = useRef<string | null>(null);
   useEffect(() => {
     if (!newAgent) { openedAt.current = null; return; }
-    if (openedAt.current === null) openedAt.current = navKey;
+    if (openedAt.current === null || newAgentBusy) openedAt.current = navKey;
     else if (openedAt.current !== navKey) useChromeStore.getState().closeNewAgent();
-  }, [newAgent, navKey]);
+  }, [newAgent, newAgentBusy, navKey]);
   const showNewAgent = !!newAgent && !activeHostId;
   useEffect(() => syncProjectActivityWithAgents(), []);
 

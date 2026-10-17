@@ -26,7 +26,7 @@ import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
  * Quick swaps the durable-only rows for a required Mission and Runs in.
  */
 
-const IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
+const IS_MAC = typeof window !== 'undefined' && window.clubhouse?.platform === 'darwin';
 
 const inputClass = 'h-7 px-2 rounded-md border border-surface-1 bg-ctp-crust text-[13px] text-ctp-text placeholder:text-ctp-overlay0 focus-ring';
 const selectClass = `${inputClass} pr-6 cursor-pointer`;
@@ -150,17 +150,37 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   }, [projectPath]);
 
   const resolvedModel = model === 'custom' ? customModel.trim() : model;
-  const canSubmit = !!project && (durable ? !!name.trim() : !!mission.trim() && (model !== 'custom' || !!customModel.trim()));
+  const busy = useChromeStore((s) => s.newAgentBusy);
+  const setBusy = useChromeStore((s) => s.setNewAgentBusy);
+  const [error, setError] = useState<string | null>(null);
+  // Durable waits for the git check, which decides the worktree row.
+  const canSubmit = !!project && !busy && (durable
+    ? !!name.trim() && isGit !== null
+    : !!mission.trim() && (model !== 'custom' || !!customModel.trim()));
+
+  // The page stays up, busy, until the agent exists; a failure is shown here with the form intact.
+  const finish = (projectIdDone: string, agentId: string) => {
+    close(agentId);
+    request.onCreated?.(agentId);
+    if (!request.stayInView) {
+      openStartPage(projectIdDone);
+      selectAgent(projectIdDone, agentId);
+    }
+  };
+  const failed = (message: string) => {
+    setBusy(false);
+    setError(message);
+  };
 
   const submit = () => {
     if (!project || !canSubmit) return;
-    close();
-    // The project's start page shows while the agent is set up; then it opens.
-    openStartPage(project.id);
+    setError(null);
+    setBusy(true);
+    const target = project;
     if (durable) {
       reportChromeFeature('new_agent_create');
       void createDurableAgent(
-        { id: project.id, path: project.path },
+        { id: target.id, path: target.path },
         {
           name: name.trim(),
           color,
@@ -171,23 +191,23 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           mcpIds: selectedMcps.length > 0 ? selectedMcps : undefined,
           persona: persona || undefined,
         },
-      ).then((id) => {
-        if (!id) return;
-        selectAgent(project.id, id);
-        request.onCreated?.(id);
-      });
+        { onError: (message) => failed(`Couldn't create the agent: ${message}`) },
+      ).then((id) => { if (id) finish(target.id, id); });
     } else {
       reportChromeFeature('new_agent_start');
       useAgentStore.getState().spawnQuickAgent(
-        project.id,
-        project.path,
+        target.id,
+        target.path,
         mission.trim(),
         resolvedModel,
         parentAgentId || undefined,
         parentAgentId ? undefined : resolvedOrchestrator,
         (supportsPermissions && freeAgentMode) || undefined,
-      ).then((id) => { selectAgent(project.id, id); request.onCreated?.(id); })
-        .catch((err) => reportChromeActionFailed('agent_start', err));
+      ).then((id) => finish(target.id, id))
+        .catch((err) => {
+          reportChromeActionFailed('agent_start', err);
+          failed(`Couldn't start the agent: ${err instanceof Error ? err.message : String(err)}`);
+        });
     }
   };
 
@@ -195,16 +215,19 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       submit();
-    } else if (e.key === 'Escape' && !e.defaultPrevented && !(e.target as HTMLElement).closest('[role="listbox"]')) {
+    } else if (e.key === 'Escape' && !busy && !e.defaultPrevented && !(e.target as HTMLElement).closest('[data-testid="project-picker"]')) {
       e.preventDefault();
       close();
     }
   };
 
+  // Adding a project makes it active; busy keeps that from closing the page.
   const addProject = () => {
+    setBusy(true);
     pickAndAddProject()
       .then((added) => { if (added) setProjectId(added.id); })
-      .catch((err) => reportChromeActionFailed('add_project', err));
+      .catch((err) => reportChromeActionFailed('add_project', err))
+      .finally(() => setBusy(false));
   };
 
   const openTemplates = () => {
@@ -406,6 +429,9 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           </Row>
         )}
 
+        {error && (
+          <p role="alert" data-testid="new-agent-error" className="mt-3 pl-32 text-xs leading-normal text-ctp-error">{error}</p>
+        )}
         <div className="mt-[18px] pl-32 flex items-center gap-2">
           {durable && (
             <button type="button" onClick={openTemplates} className="text-xs text-ctp-subtext0 hover:text-ctp-text cursor-pointer focus-ring rounded">
@@ -413,9 +439,9 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
             </button>
           )}
           <span className="ml-auto text-xs text-ctp-overlay1">{IS_MAC ? '⌘↵' : 'Ctrl+Enter'}</span>
-          <Button kind="ghost" onClick={close} className="focus-ring">Cancel</Button>
-          <Button kind="primary" type="submit" data-testid="new-agent-submit" disabled={!canSubmit} className="focus-ring">
-            {durable ? 'Create' : 'Start'}
+          <Button kind="ghost" onClick={() => close()} disabled={busy} className="focus-ring">Cancel</Button>
+          <Button kind="primary" type="submit" data-testid="new-agent-submit" disabled={!canSubmit} aria-busy={busy || undefined} className="focus-ring">
+            {busy ? (durable ? 'Creating…' : 'Starting…') : durable ? 'Create' : 'Start'}
           </Button>
         </div>
       </form>

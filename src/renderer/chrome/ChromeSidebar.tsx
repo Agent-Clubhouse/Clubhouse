@@ -29,7 +29,7 @@ import { selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention }
 import { HostSwitcher, LOCAL_HOST } from './sidebar/HostSwitcher';
 import { useClickOutside } from './sidebar/useClickOutside';
 import { hostOf, switchHost } from './hosts';
-import { openNewAgentPage } from './startPage';
+import { openNewAgentOrDialog } from './startPage';
 import { useChromeStore, type AppLaunchParams } from './chromeStore';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
@@ -539,7 +539,7 @@ export function ChromeSidebar() {
 
   // A project's +, and each New menu item, open the New agent page with that kind chosen (#2031).
   const onNewAgent = useCallback((projectId: string) => {
-    openNewAgentPage('durable', projectId);
+    openNewAgentOrDialog('durable', projectId);
     reportChromeFeature('new_agent_open');
   }, []);
   const newAgentBinding = useKeyboardShortcutsStore((s) => s.shortcuts['new-quick-agent']?.currentBinding);
@@ -558,10 +558,10 @@ export function ChromeSidebar() {
   const newItems = [
     {
       label: 'Durable agent…',
-      shortcut: newAgentBinding ? formatBinding(newAgentBinding) : undefined,
-      onSelect: () => { openNewAgentPage('durable'); reportChromeFeature('new_agent_open'); },
+      shortcut: newAgentBinding ? formatShortcut(newAgentBinding) : undefined,
+      onSelect: () => { openNewAgentOrDialog('durable'); reportChromeFeature('new_agent_open'); },
     },
-    { label: 'Quick agent…', onSelect: () => { openNewAgentPage('quick'); reportChromeFeature('new_agent_open'); } },
+    { label: 'Quick agent…', onSelect: () => { openNewAgentOrDialog('quick'); reportChromeFeature('new_agent_open'); } },
     ...(templateProjectId ? [{ label: 'Agent from a template…', onSelect: () => useChromeDialogStore.getState().openGallery(templateProjectId) }] : []),
   ];
 
