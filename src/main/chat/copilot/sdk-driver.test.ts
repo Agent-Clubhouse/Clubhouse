@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import {
   CopilotSdkChatDriver,
   createCopilotSdkChatDriver,
+  toSdkMcpServers,
   sdkUnsupportedReason,
   type SdkClientLike,
   type SdkModuleLike,
@@ -25,6 +26,10 @@ function fakeSdk(opts: { startError?: Error; pingError?: () => Error | undefined
     abort: async () => { calls.push({ method: 'abort', args: [] }); },
     setModel: async (...args) => { calls.push({ method: 'setModel', args }); },
     disconnect: async () => { calls.push({ method: 'disconnect', args: [] }); },
+    rpc: {
+      mode: { set: async (p) => { calls.push({ method: 'mode.set', args: [p] }); } },
+      permissions: { setMode: async (p) => { calls.push({ method: 'permissions.setMode', args: [p] }); } },
+    },
   };
   const client: SdkClientLike = {
     start: async () => { if (opts.startError) throw opts.startError; },
@@ -67,13 +72,37 @@ describe('copilot_sdk driver', () => {
   it("runs the user's copilot through forStdio and reports the session", async () => {
     const fake = fakeSdk();
     const driver = new CopilotSdkChatDriver({ loadSdk: async () => fake.sdk, heartbeatMs: 0 });
-    const session = await driver.start(startOpts({ model: 'gpt-5-mini', effort: 'low', extraArgs: ['--agent', 'x'] }));
+    const session = await driver.start(startOpts({
+      model: 'gpt-5-mini',
+      effort: 'low',
+      extraArgs: ['--agent', 'x'],
+      systemPrompt: 'You are a Clubhouse agent.',
+      mcpServers: { clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_MCP_PORT: '1' } } },
+    }));
 
     expect(fake.connections).toEqual([{ path: '/usr/local/bin/copilot', args: ['--agent', 'x'], env: undefined }]);
-    expect(fake.config()).toMatchObject({ workingDirectory: '/work', streaming: true, model: 'gpt-5-mini', reasoningEffort: 'low' });
+    expect(fake.config()).toMatchObject({
+      workingDirectory: '/work',
+      streaming: true,
+      model: 'gpt-5-mini',
+      reasoningEffort: 'low',
+      systemMessage: { mode: 'append', content: 'You are a Clubhouse agent.' },
+      mcpServers: { clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_MCP_PORT: '1' } } },
+    });
+    // The start level (ask) is applied: manual approvals, interactive mode.
+    expect(fake.calls.filter((c) => c.method.includes('.')).map((c) => [c.method, c.args[0]])).toEqual([
+      ['permissions.setMode', { mode: 'manual' }],
+      ['mode.set', { mode: 'interactive' }],
+    ]);
     expect(session.nativeSessionId).toBe('native-1');
-    expect(session.capabilities).toMatchObject({ steer: true, queue: 'native', resume: 'native', permissionExtras: { denyMessage: true, updatedInput: false } });
-    expect(await next(session, 1)).toEqual([{ type: 'session_info', data: { nativeSessionId: 'native-1', cliVersion: '1.0.98' } }]);
+    expect(session.capabilities).toMatchObject({
+      steer: true, queue: 'native', resume: 'native', systemPrompt: true, liveLevels: ['plan', 'ask', 'full_access'],
+      permissionExtras: { denyMessage: true, updatedInput: false },
+    });
+    expect(await next(session, 1)).toEqual([{
+      type: 'session_info',
+      data: { nativeSessionId: 'native-1', cliVersion: '1.0.98', levelNames: { plan: 'Plan', ask: 'Interactive', full_access: 'Interactive, allow all' } },
+    }]);
   });
 
   it('runs a turn from send to session.idle, steering and queueing in between', async () => {
@@ -145,6 +174,33 @@ describe('copilot_sdk driver', () => {
       { type: 'error', data: { code: 'process_exited', message: 'Copilot stopped responding: connection closed', fatal: true } },
       expect.objectContaining({ type: 'turn_ended', data: expect.objectContaining({ stopReason: 'error' }) }),
     ]);
+  });
+
+  it('switches levels through the session and permission modes', async () => {
+    const fake = fakeSdk();
+    const session = await new CopilotSdkChatDriver({ loadSdk: async () => fake.sdk, heartbeatMs: 0 }).start(startOpts({ level: 'auto' }));
+    // auto isn't offered, so start keeps Copilot's default instead of guessing.
+    expect(fake.calls.some((c) => c.method.includes('.'))).toBe(false);
+    await session.setLevel('full_access');
+    await session.setLevel('plan');
+    expect(fake.calls.filter((c) => c.method.includes('.')).map((c) => [c.method, c.args[0]])).toEqual([
+      ['permissions.setMode', { mode: 'allow-all' }], ['mode.set', { mode: 'interactive' }],
+      ['permissions.setMode', { mode: 'manual' }], ['mode.set', { mode: 'plan' }],
+    ]);
+    await expect(session.setLevel('auto_edit')).rejects.toThrow(/no auto_edit level/);
+  });
+
+  it('maps Clubhouse MCP definitions to the SDK config', () => {
+    expect(toSdkMcpServers({
+      local: { command: 'node', args: ['x.js'] },
+      remote: { type: 'streamable-http', url: 'https://example.test/mcp', headers: { A: 'b' } },
+      events: { type: 'sse', url: 'https://example.test/sse' },
+      broken: { transport: 'ws' },
+    })).toEqual({
+      local: { type: 'stdio', command: 'node', args: ['x.js'] },
+      remote: { type: 'http', url: 'https://example.test/mcp', headers: { A: 'b' } },
+      events: { type: 'sse', url: 'https://example.test/sse' },
+    });
   });
 
   it('resumes natively', async () => {

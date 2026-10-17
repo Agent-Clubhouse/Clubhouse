@@ -2,10 +2,11 @@
  * copilot_sdk chat driver: the GA Copilot SDK (`@github/copilot-sdk`) driving
  * the user's own `copilot` (docs/copilot-sdk-driver.md).
  *
- * Minimal on purpose. It covers a chat turn (send, steer, queue, interrupt),
- * message/reasoning/tool/usage events, approve-once/reject permissions, model
- * and effort switching and native resume. Plan approval, questions, subagent
- * trees, permission levels and images come later.
+ * It covers a chat turn (send, steer, queue, interrupt), message/reasoning/
+ * tool/usage events, approve-once/reject permissions, the Plan / Ask first /
+ * Full access levels, MCP servers, the system prompt, model and effort
+ * switching and native resume. Plan approval, questions, subagent trees and
+ * images come later.
  *
  * Fallback: when the SDK can't drive this install (a Windows .cmd shim or a
  * command prefix, which the SDK's shell-less spawn can't run; a failed load;
@@ -14,7 +15,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import type { ChatCapabilities } from '../../../shared/chat/capabilities';
+import type { ChatCapabilities, PermissionLevel } from '../../../shared/chat/capabilities';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat/capabilities';
 import type { ChatEventDraft, ContentBlock, MessageDelivery } from '../../../shared/chat/events';
 import type {
@@ -40,6 +41,10 @@ export interface SdkSessionLike {
   abort(): Promise<void>;
   setModel(model: string, options?: { reasoningEffort?: string }): Promise<unknown>;
   disconnect(): Promise<void>;
+  readonly rpc: {
+    mode: { set(params: { mode: 'interactive' | 'plan' | 'autopilot' }): Promise<unknown> };
+    permissions: { setMode(params: { mode: 'manual' | 'assisted' | 'allow-all' }): Promise<unknown> };
+  };
 }
 
 type SdkPermissionResult = { kind: 'approve-once' } | { kind: 'reject'; feedback?: string } | { kind: 'user-not-available' };
@@ -49,8 +54,14 @@ export interface SdkSessionConfig {
   streaming: boolean;
   model?: string;
   reasoningEffort?: string;
+  systemMessage?: { mode: 'append'; content: string };
+  mcpServers?: Record<string, SdkMcpServer>;
   onPermissionRequest: (request: Record<string, unknown>) => Promise<SdkPermissionResult>;
 }
+
+export type SdkMcpServer =
+  | { type?: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
+  | { type: 'http' | 'sse'; url: string; headers?: Record<string, string> };
 
 export interface SdkClientLike {
   start(): Promise<void>;
@@ -87,9 +98,45 @@ export const COPILOT_SDK_CAPABILITIES: ChatCapabilities = {
   usage: 'tokens',
   modelSwitch: 'live',
   effortSwitch: 'live',
+  liveLevels: ['plan', 'ask', 'full_access'],
   login: 'terminal',
+  systemPrompt: true,
   permissionExtras: { denyMessage: true, updatedInput: false },
 };
+
+/**
+ * Clubhouse levels → Copilot's session mode and permission mode. Copilot has
+ * no "accept edits only" mode, and its `assisted` mode (an LLM safety judge)
+ * is experimental, so Auto-accept edits and Auto aren't offered. Autopilot
+ * runs without user input and is never chosen by Clubhouse.
+ */
+const LEVELS: Partial<Record<PermissionLevel, { mode: 'interactive' | 'plan'; permissions: 'manual' | 'allow-all' }>> = {
+  plan: { mode: 'plan', permissions: 'manual' },
+  ask: { mode: 'interactive', permissions: 'manual' },
+  full_access: { mode: 'interactive', permissions: 'allow-all' },
+};
+
+export const COPILOT_SDK_LEVEL_NAMES: Partial<Record<PermissionLevel, string>> = {
+  plan: 'Plan',
+  ask: 'Interactive',
+  full_access: 'Interactive, allow all',
+};
+
+/** Clubhouse MCP server definitions (McpServerDef) → the SDK's config. Unusable entries are skipped. */
+export function toSdkMcpServers(servers: Record<string, unknown> | undefined): Record<string, SdkMcpServer> {
+  const out: Record<string, SdkMcpServer> = {};
+  for (const [name, raw] of Object.entries(servers ?? {})) {
+    const s = raw as Record<string, unknown> | null;
+    const env = s?.env && typeof s.env === 'object' ? (s.env as Record<string, string>) : undefined;
+    if (s && typeof s.command === 'string') {
+      out[name] = { type: 'stdio', command: s.command, ...(Array.isArray(s.args) && { args: s.args.map(String) }), ...(env && { env }) };
+    } else if (s && typeof s.url === 'string') {
+      const headers = s.headers && typeof s.headers === 'object' ? (s.headers as Record<string, string>) : undefined;
+      out[name] = { type: s.type === 'sse' ? 'sse' : 'http', url: s.url, ...(headers && { headers }) };
+    }
+  }
+  return out;
+}
 
 /** Why the SDK can't run this launch, or null when it can. */
 export function sdkUnsupportedReason(opts: Pick<ChatDriverStartOptions, 'binaryPath' | 'commandPrefix'>): string | null {
@@ -202,8 +249,12 @@ class CopilotSdkChatSession implements ChatDriverSession {
     throw new Error('The copilot_sdk driver does not handle questions yet');
   }
 
-  async setLevel(): Promise<void> {
-    throw new Error('The copilot_sdk driver has no permission levels yet');
+  async setLevel(level: PermissionLevel): Promise<void> {
+    const target = LEVELS[level];
+    if (!target) throw new Error(`Copilot has no ${level} level`);
+    const session = this.requireSession();
+    await session.rpc.permissions.setMode({ mode: target.permissions });
+    await session.rpc.mode.set({ mode: target.mode });
   }
 
   async setModel(modelId: string, effort?: string): Promise<void> {
@@ -343,6 +394,8 @@ export class CopilotSdkChatDriver implements ChatDriver {
       streaming: true,
       ...(opts.model && { model: opts.model }),
       ...(opts.effort && { reasoningEffort: opts.effort }),
+      ...(opts.systemPrompt && { systemMessage: { mode: 'append' as const, content: opts.systemPrompt } }),
+      ...(opts.mcpServers && { mcpServers: toSdkMcpServers(opts.mcpServers) }),
       onPermissionRequest: chat.onPermissionRequest,
     };
     try {
@@ -350,10 +403,16 @@ export class CopilotSdkChatDriver implements ChatDriver {
         ? await client.resumeSession(opts.resumeNativeSessionId, config)
         : await client.createSession(config);
       chat.attach(session, this.deps.heartbeatMs ?? HEARTBEAT_MS);
+      if (LEVELS[opts.level]) await chat.setLevel(opts.level);
+      else this.log('warn', 'Permission level not available on Copilot; keeping its default', { level: opts.level });
       const status = await client.getStatus().catch((): { version?: string } => ({})); // telemetry-exempt: version is optional
       chat.push({
         type: 'session_info',
-        data: { nativeSessionId: session.sessionId, ...(status.version && { cliVersion: status.version }) },
+        data: {
+          nativeSessionId: session.sessionId,
+          ...(status.version && { cliVersion: status.version }),
+          levelNames: COPILOT_SDK_LEVEL_NAMES,
+        },
       });
       return chat;
     } catch (err) {
@@ -374,10 +433,9 @@ export class CopilotSdkChatDriver implements ChatDriver {
 }
 
 /**
- * The production driver: the real SDK, with copilot_acp as the fallback. To be
- * registered after copilot_acp in registerBuiltinChatDrivers(), so ACP stays
- * Copilot's default until the SDK driver is complete; a provider setting of
- * `driver: 'copilot_sdk'` selects it.
+ * The production driver: the real SDK, with copilot_acp as the fallback.
+ * Registered after copilot_acp in registerBuiltinChatDrivers(), so ACP stays
+ * Copilot's default; a provider setting of `driver: 'copilot_sdk'` selects it.
  */
 export function createCopilotSdkChatDriver(log?: Log): CopilotSdkChatDriver {
   return new CopilotSdkChatDriver({ fallback: createCopilotAcpChatDriver(log), log });
