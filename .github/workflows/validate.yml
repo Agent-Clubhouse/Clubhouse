@@ -157,9 +157,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      # Regenerates the vendored bindings from the codex-cli pin in
-      # scheduled-real-cli-e2e.yml (`codex app-server generate-ts`: no login,
-      # no model request) and fails if they differ from what is committed.
+      # Regenerates the vendored bindings from the version recorded in
+      # codex-protocol/generated-meta.ts (`codex app-server generate-ts`: no
+      # login, no model request) and fails if they differ from what is committed.
       - run: npm run codex:check-types
 
   # tsc is platform-independent, so it runs once, on Linux (case-sensitive
