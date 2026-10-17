@@ -7,6 +7,7 @@ import {
   goobersErrorCode,
   markFresh,
   recordLivenessChange,
+  resetFreshness,
   recordPollDone,
 } from './goobers-telemetry';
 import type { Classification, TelemetryRuntime } from './types';
@@ -60,6 +61,13 @@ describe('goobers telemetry', () => {
       ['clubhouse.goobers.data.age', 9, [ATTR.goobersModel('instance')]],
       ['clubhouse.goobers.data.age', 6, [ATTR.goobersModel('run')]],
     ]);
+  });
+
+  it('stops sampling data age once the instance root changes', () => {
+    markFresh(['instance'], 1000);
+    resetFreshness();
+    recordPollDone(1500, 2000);
+    expect((rt.count as ReturnType<typeof vi.fn>).mock.calls.some((c) => c[0] === 'clubhouse.goobers.data.age')).toBe(false);
   });
 
   it('classifies daemon start: free-text errors get the service code, a ready timeout is timeout', async () => {

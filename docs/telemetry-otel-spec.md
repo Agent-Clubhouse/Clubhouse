@@ -542,7 +542,7 @@ The 7 errors and 31 warnings in §2.1 (identity request errors, WS errors, heart
   - `c.goobers.stream.mode` event on every stream-status change (`live`/`reconnecting`/`polling`/`unavailable`)
   - `c.goobers.sse.reconnects` counter
   - `c.goobers.sse.terminals` counter by `c.sse.terminal_reason` (`auth-required`/`no-read-model`/`schema-changed`)
-- **`c.goobers.data.age`** (gauge, s) is sampled per model (`instance`/`run`/`workflow`) at each poll tick, so only while the panel is watched. A model counts as fresh on a successful running probe (instance), a 200 from `listRuns` (run), or a stream invalidation naming it.
+- **`c.goobers.data.age`** (gauge, s) is sampled per model (`instance`/`run`/`workflow`) at each poll tick, so only while the panel is watched. Freshness resets when the instance root changes. A model counts as fresh on a successful running probe (instance), a 200 from `listRuns` (run), or a stream invalidation naming it.
 - **The poll loop** (Detailed only) is `c.goobers.polls`, `c.goobers.poll.skipped` (the previous tick was still running) and `c.goobers.poll.duration`.
 
 ### 4.14 Settings and feature usage
@@ -803,7 +803,7 @@ tel.exception(err, { origin: 'main', handled: false });
 
 - **Detailed level (Phase 6b).** Three span types exist only at Detailed:
   - `c.agent.tool_call`: hook-server `pre_tool` paired with the next `post_tool`/`tool_error` for the same agent and tool name, since hook payloads carry no tool-use id; at most 32 pending per agent, cleared at exit.
-  - `c.ipc.invoke`: every `ipcMain.handle` invoke, wrapped once at startup, with `c.ipc.channel` from the fixed IPC constants. Below Detailed the wrapper is a level check and a direct call.
+  - `c.ipc.invoke`: every app `ipcMain.handle` invoke, wrapped once at startup (telemetry's own handlers stay untimed), with `c.ipc.channel` from the fixed IPC constants; channels built at runtime are `other`. The span is replayed, not run as a flow: a rejected invoke gets an error outcome but no `c.exception` record (it is the handler's answer, not a crash), and a long async invoke is never blamed by the event-loop watchdog. Below Detailed the wrapper is a level check and a direct call.
   - `c.annex.rest` (§4.12).
   Arguments, results and paths are never recorded.
 - When telemetry is disabled, `tel.*` are no-op functions that run `fn` directly. That is one property read and a branch, so hot-adjacent code (hook server) pays nothing measurable.

@@ -130,6 +130,11 @@ export function recordPollDone(startMs: number, atMs = Date.now()): void {
   }
 }
 
+/** The instance root changed: the old root's freshness no longer applies. */
+export function resetFreshness(): void {
+  lastFresh.clear();
+}
+
 /** Test-only reset. */
 export function _resetGoobersTelemetryForTests(): void {
   lastFresh.clear();

@@ -35,6 +35,7 @@ import type { GoobersConnectionState, GoobersDaemonStatus, RunListQuery } from '
 import {
   daemonFlow,
   markFresh,
+  resetFreshness,
   recordActivated,
   recordLivenessChange,
   recordPollDone,
@@ -980,6 +981,7 @@ export class GoobersService {
       this.draining = false;
       this.state = { ...makeIdleState(), configured: !!next.instanceRoot };
       this.resolvedBinaryPath = null;
+      resetFreshness(); // data age restarts with the new root's first payloads
       void this.reconcile(next);
       return;
     }

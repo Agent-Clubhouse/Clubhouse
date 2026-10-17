@@ -88,7 +88,8 @@ registerTelemetryRendererHandlers({
 installCrashTelemetry();
 installLifecycleTelemetry();
 installAgentTelemetry(getAgentOrchestrator);
-// Before any ipcMain.handle registration, so every invoke handler is wrapped.
+// Before registerAllHandlers, so every app invoke handler is timed at the
+// Detailed level. Telemetry's own handlers (registered above) stay untimed.
 installIpcTelemetry(ipcMain);
 // The startup span (§4.1) ends when the main window's initApp() resolves.
 onRendererReady((atMs, marks) => completeStartup(marks, undefined, atMs));

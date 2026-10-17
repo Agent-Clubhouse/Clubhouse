@@ -375,7 +375,10 @@ export const ATTR = {
   goobersStreamMode: enumAttr('clubhouse.goobers.stream.mode', ['live', 'reconnecting', 'polling', 'unavailable']),
   goobersModel: enumAttr('clubhouse.goobers.model', ['instance', 'run', 'workflow']),
   sseTerminalReason: enumAttr('clubhouse.sse.terminal_reason', ['auth-required', 'no-read-model', 'schema-changed']),
-  /** IPC channel, from the fixed IPC constants; never a dynamic name. */
+  /**
+   * IPC channel, from the fixed IPC constants; never a dynamic name. Channels
+   * built at runtime (e.g. per-key managed-settings channels) are `other`.
+   */
   ipcChannel: enumAttr('clubhouse.ipc.channel', [...ipcChannelNames(), 'other']),
   annexRoute: enumAttr('clubhouse.annex.route', [
     'GET /api/v1/identity',
