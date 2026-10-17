@@ -3,7 +3,13 @@
  * fixtures: real child processes and real stdio, zero tokens. One describe
  * block per protocol, one test per fixture scenario.
  */
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { ChatEventDraft } from '../../../shared/chat';
+import { createCopilotAcpChatDriver } from './acp-chat-driver';
+import { CodexChatDriver } from './codex-chat-driver';
 import { AcpClient, RpcError } from './acp-client';
 import { CodexAppServerClient, textInput } from './codex-app-server-client';
 import type { CodexUnrecognizedMessage } from './codex-protocol';
@@ -12,6 +18,7 @@ import {
   NdjsonPeer,
   chatFixturePath,
   createFakeCli,
+  writeFakeCliShims,
   type ChatFixtureCli,
   type FakeCli,
 } from './testing/fake-cli';
@@ -156,7 +163,7 @@ describe('AcpClient against fake Copilot ACP', () => {
 // ───────────────────────────── Codex (app-server v2) ─────────────────────────────
 
 describe('CodexAppServerClient against fake codex app-server', () => {
-  async function startCodex(name: string, startThread = true) {
+  async function startCodex(name: string, startThread = true, threadParams?: Parameters<CodexAppServerClient['threadStart']>[0]) {
     const handle = await fake('codex', name, ['app-server']);
     const notes = new EventLog<Notification>();
     const requests = new EventLog<ServerRequest>();
@@ -179,7 +186,7 @@ describe('CodexAppServerClient against fake codex app-server', () => {
     expect(init.userAgent).toContain('0.159.3');
     let threadId = '';
     if (startThread) {
-      const started = await client.threadStart({ cwd: '/workspace/project', approvalPolicy: 'on-request', sandbox: 'workspace-write' });
+      const started = await client.threadStart(threadParams ?? { cwd: '/workspace/project', approvalPolicy: 'on-request', sandbox: 'workspace-write' });
       threadId = started.thread.id;
     }
     const startTurn = async (text: string, thread = threadId) =>
@@ -280,6 +287,16 @@ describe('CodexAppServerClient against fake codex app-server', () => {
     expect(logs.some((l) => l.message.startsWith('Malformed JSON line'))).toBe(true);
     await expectFixtureComplete(handle);
   });
+  it('session info: thread/name/updated names the thread, then renames it on the next turn', async () => {
+    const { handle, notes, startTurn, turnCompleted, threadId } = await startCodex('session-info', true, { cwd: '/workspace/project' });
+    await startTurn('Rename greet to welcome.');
+    expect((await notes.waitFor({ method: 'thread/name/updated' })).params).toEqual({ threadId, threadName: 'Rename greet to welcome' });
+    await turnCompleted();
+    await startTurn('Also update the README.');
+    expect((await notes.waitFor({ method: 'thread/name/updated' })).params.threadName).toBe('Rename greet and update the README');
+    await turnCompleted();
+    await expectFixtureComplete(handle);
+  });
 });
 
 // ───────────────────────────── Claude (stream-json + control protocol) ─────────────────────────────
@@ -371,3 +388,90 @@ describe('stream-json peer against fake Claude Code', () => {
     await expectFixtureComplete(handle);
   });
 });
+
+// ───────────────────────────── Copilot ChatDriver (ACP) ─────────────────────────────
+
+describe('copilot_acp ChatDriver against fake Copilot ACP', () => {
+  it('session info: drafts carry the native session, then each title the agent sets', async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'acp-driver-'));
+    cleanups.push(() => fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+    const report = path.join(dir, 'report.json');
+    const shims = await writeFakeCliShims(path.join(dir, 'bin'), {
+      copilot: { fixture: chatFixturePath('copilot', 'session-info'), report },
+    });
+
+    const session = await createCopilotAcpChatDriver().start({
+      agentId: 'agent-1', provider: 'copilot-cli', cwd: dir, binaryPath: shims.copilot, level: 'ask',
+    });
+    let closed = false;
+    cleanups.push(() => (closed ? undefined : session.close()));
+    const drafts = EventLog.fromAsyncIterable(session.events);
+    const titles = () => drafts.items
+      .filter((d): d is Extract<ChatEventDraft, { type: 'session_info' }> => d.type === 'session_info')
+      .map((d) => d.data.title)
+      .filter(Boolean);
+
+    expect((await drafts.waitFor({ type: 'session_info' })).data).toMatchObject({
+      nativeSessionId: 'b6f0c1de-0000-4000-8000-00000000a002', cliVersion: '1.0.92',
+    });
+    await session.send([{ type: 'text', text: 'Rename greet to welcome.' }], 'prompt');
+    await drafts.waitFor({ type: 'turn_ended' });
+    await session.send([{ type: 'text', text: 'Also update the README.' }], 'prompt');
+    await drafts.waitFor({ type: 'turn_ended' });
+    expect(titles()).toEqual(['Rename greet to welcome', 'Rename greet and update the README']);
+
+    // Copilot advertises session/close, so the driver ends with it.
+    await session.close();
+    closed = true;
+    const done = await waitForJson(report, (r: { complete: boolean; mismatch: unknown }) => r.complete || r.mismatch !== null);
+    expect(done).toMatchObject({ complete: true, mismatch: null });
+    expect((done as unknown as { argv: string[] }).argv).toEqual(expect.arrayContaining(['--acp']));
+  }, 15_000);
+});
+
+// ───────────────────────────── Codex ChatDriver ─────────────────────────────
+
+describe('CodexChatDriver against fake codex app-server', () => {
+  it('session info: thread names become session_info title drafts', async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'codex-driver-'));
+    cleanups.push(() => fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+    const report = path.join(dir, 'report.json');
+    const shims = await writeFakeCliShims(path.join(dir, 'bin'), {
+      codex: { fixture: chatFixturePath('codex', 'session-info'), report },
+    });
+
+    const session = await new CodexChatDriver().start({
+      agentId: 'agent-1', provider: 'codex-cli', cwd: dir, binaryPath: shims.codex, level: 'ask',
+    });
+    cleanups.push(() => session.close());
+    const drafts = EventLog.fromAsyncIterable(session.events);
+
+    expect((await drafts.waitFor({ type: 'session_started' })).data).toMatchObject({
+      driver: 'codex_app_server', nativeSessionId: '019a0000-0000-7000-8000-00000000c001',
+    });
+    await session.send([{ type: 'text', text: 'Rename greet to welcome.' }], 'prompt');
+    await drafts.waitFor({ type: 'turn_ended' });
+    await session.send([{ type: 'text', text: 'Also update the README.' }], 'prompt');
+    await drafts.waitFor({ type: 'turn_ended' });
+
+    const titles = drafts.items
+      .filter((d): d is Extract<ChatEventDraft, { type: 'session_info' }> => d.type === 'session_info')
+      .map((d) => d.data.title);
+    expect(titles).toEqual(['Rename greet to welcome', 'Rename greet and update the README']);
+    const done = await waitForJson(report, (r: { complete: boolean; mismatch: unknown }) => r.complete || r.mismatch !== null);
+    expect(done).toMatchObject({ complete: true, mismatch: null, argv: ['app-server'] });
+  }, 15_000);
+});
+
+/** Poll a fake CLI report written by a PATH shim (no createFakeCli handle). */
+async function waitForJson<T>(file: string, predicate: (value: T) => boolean, timeoutMs = 15_000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const value = JSON.parse(await fs.promises.readFile(file, 'utf8')) as T;
+      if (predicate(value)) return value;
+    } catch {}
+    if (Date.now() > deadline) throw new Error(`timed out waiting on ${file}`);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+  }
+}
