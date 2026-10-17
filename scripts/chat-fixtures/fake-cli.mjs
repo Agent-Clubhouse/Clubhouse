@@ -166,20 +166,22 @@ async function replay() {
     }
 
     if (entry.from === 'cli') {
+      // Count the line before writing it: a driver may kill the CLI the
+      // moment it reads the last line, before this process gets another turn.
+      report.consumed++;
+      report.complete = report.consumed === report.total;
+      if ('exit' in entry) {
+        finish(entry.exit.code ?? 0);
+        return;
+      }
+      writeReport();
       if ('msg' in entry) {
         process.stdout.write(JSON.stringify(remapCliMessage(protocol, entry.msg, idMap)) + '\n');
       } else if ('raw' in entry) {
         process.stdout.write(entry.raw + '\n');
       } else if ('stderr' in entry) {
         process.stderr.write(entry.stderr.endsWith('\n') ? entry.stderr : entry.stderr + '\n');
-      } else if ('exit' in entry) {
-        report.consumed++;
-        report.complete = report.consumed === report.total;
-        finish(entry.exit.code ?? 0);
-        return;
       }
-      report.consumed++;
-      writeReport();
       continue;
     }
 
@@ -211,6 +213,7 @@ async function replay() {
       return;
     }
     report.consumed++;
+    report.complete = report.consumed === report.total;
     writeReport();
   }
 

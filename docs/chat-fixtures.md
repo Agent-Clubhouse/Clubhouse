@@ -16,7 +16,7 @@ CI never sends a real prompt (docs/structured-chat-research.md §8, decision 4).
 - `scripts/chat-fixtures/record.mjs` captures a session with a real CLI into a fixture.
 - `scripts/chat-fixtures/fixture-format.mjs` holds the format, matching and redaction code both share.
 - `src/main/orchestrators/adapters/testing/fake-cli.ts` is the vitest helper: `createFakeCli`, `writeFakeCliShims`, `EventLog` and `NdjsonPeer`.
-- `src/main/orchestrators/adapters/fixture-replay.test.ts` drives `AcpClient`, `CodexAppServerClient` and a stream-json peer through every committed fixture. Start there for examples.
+- `src/main/orchestrators/adapters/fixture-replay.test.ts` drives `AcpClient`, `CodexAppServerClient`, a stream-json peer and the `copilot_acp` `ChatDriver` through the committed fixtures. `src/main/chat/claude/fixture-replay.test.ts` does the same for `ClaudeStreamTransport` and its normalizer. Start there for examples.
 - `e2e/chat-fake-cli.ts` installs fake `claude`/`codex`/`copilot` executables on the app's PATH for Playwright.
 
 ## Format
@@ -89,7 +89,7 @@ expect(drafts.types()).toContain('protocol_unknown'); // schema-drift fixtures
 
 ## Committed fixtures
 
-Each CLI has six hand-made fixtures, shaped on the probe captures and generated schemas from the research (Claude Code 2.1.300, Codex 0.159.3, Copilot 1.0.92):
+Each CLI has seven hand-made fixtures, plus two Claude-only ones, shaped on the probe captures and generated schemas from the research (Claude Code 2.1.300, Codex 0.159.3, Copilot 1.0.92):
 
 | Name | Covers |
 |---|---|
@@ -99,6 +99,9 @@ Each CLI has six hand-made fixtures, shaped on the probe captures and generated 
 | `permission-deny` | A shell command approval that the client denies |
 | `turn-error` | A failed request or turn, then recovery |
 | `schema-drift` | Unknown event types and fields, an unknown CLI→client request the driver must refuse, and a stray non-JSON stdout line |
+| `session-info` | Session metadata: Claude's `system/init` (after the first prompt, then again with a new model), Codex `thread/name/updated` and `thread/name/set`, ACP `session_info_update` titles and `session/close` |
+| `ask-user-question` (Claude) | `AskUserQuestion` with two questions, the second `multiSelect`, answered through `can_use_tool` with `answers` in `updatedInput` |
+| `subagent-task` (Claude) | A `Task` subagent: `task_started`/`task_progress`/`task_notification`, and its messages, partials and tool calls tagged with `parent_tool_use_id` |
 
 Hand-made fixtures are approximations: field sets were taken from real captures, but they weren't recorded end to end. Replace them with recordings as each driver lands, and keep the hand-made `schema-drift` ones, since no real session produces those on purpose.
 

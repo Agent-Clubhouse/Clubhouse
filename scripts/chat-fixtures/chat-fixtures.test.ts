@@ -103,11 +103,12 @@ describe('fixture format', () => {
       .toEqual({ id: 5, text: 'session s-1' });
   });
 
-  it('every committed fixture parses and covers the six scenarios per CLI', async () => {
-    const scenarios = ['interrupt', 'multi-turn', 'permission-approve-edit', 'permission-deny', 'schema-drift', 'turn-error'];
+  it('every committed fixture parses, and each CLI covers the shared scenarios', async () => {
+    const shared = ['interrupt', 'multi-turn', 'permission-approve-edit', 'permission-deny', 'schema-drift', 'session-info', 'turn-error'];
+    const extra: Record<string, string[]> = { claude: ['ask-user-question', 'subagent-task'], codex: [], copilot: [] };
     for (const [cli, protocol] of [['claude', 'claude-stream-json'], ['codex', 'codex-app-server'], ['copilot', 'acp']]) {
       const names = (await fs.promises.readdir(path.join(FIXTURES, cli))).map((f) => f.replace(/\.jsonl$/, '')).sort();
-      expect(names).toEqual(scenarios);
+      expect(names).toEqual([...shared, ...extra[cli]].sort());
       for (const name of names) {
         const { header: h } = await loadFixture(path.join(FIXTURES, cli, `${name}.jsonl`));
         expect(h.protocol).toBe(protocol);
