@@ -4,10 +4,22 @@
  * Renderer-side events (settings pages, command palette, onboarding, help)
  * belong to the chrome refresh (§9.1).
  */
-import { ATTR, BUILTIN_THEME_IDS, type SETTINGS_KEYS } from '../../shared/telemetry/attributes';
+import { ATTR, BUILTIN_THEME_IDS, SETTINGS_KEYS, countBucket } from '../../shared/telemetry/attributes';
 import { tel } from './facade';
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number];
+
+const settingsKeys = new Set<string>(SETTINGS_KEYS);
+
+/**
+ * Managed-settings keys never reported: TELEMETRY_SETTINGS has no generic
+ * save IPC, and its own actions are measured as clubhouse.telemetry.*.
+ */
+export const SETTINGS_KEYS_EXCLUDED = ['telemetry'] as const;
+
+export function isSettingsKey(key: string): key is SettingsKey {
+  return settingsKeys.has(key);
+}
 
 export function settingsChanged(key: SettingsKey): void {
   tel.event('clubhouse.settings.changed', [ATTR.settingsKey(key)]);
@@ -31,4 +43,9 @@ export function popoutOpened(type: 'agent' | 'canvas'): void {
 
 export function blueprintTransfer(direction: 'exported' | 'imported', ok: boolean): void {
   tel.event(direction === 'exported' ? 'clubhouse.blueprint.exported' : 'clubhouse.blueprint.imported', [ATTR.outcome(ok ? 'ok' : 'error')]);
+}
+
+/** An agent's MCP tools/list (spec §12 H8): the count bucket and whether it was empty, never tool names. */
+export function recordToolsList(toolCount: number): void {
+  tel.event('clubhouse.mcp.tools_list', [ATTR.mcpToolsCount(countBucket(toolCount)), ATTR.mcpToolsEmpty(toolCount === 0)]);
 }

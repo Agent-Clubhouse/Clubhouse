@@ -110,6 +110,9 @@ const SAMPLES: Record<keyof typeof ATTR, { good: TelAttr; key: string }> = {
   settingsKey: { good: ATTR.settingsKey('editor'), key: 'clubhouse.settings.key' },
   themeBuiltinId: { good: ATTR.themeBuiltinId('nord'), key: 'clubhouse.theme.builtin_id' },
   popoutType: { good: ATTR.popoutType('agent'), key: 'clubhouse.popout.type' },
+  bulletinPostResult: { good: ATTR.bulletinPostResult('evicted_topic'), key: 'clubhouse.bulletin.post.result' },
+  mcpToolsCount: { good: ATTR.mcpToolsCount('10-99'), key: 'clubhouse.mcp.tools.count_bucket' },
+  mcpToolsEmpty: { good: ATTR.mcpToolsEmpty(true), key: 'clubhouse.mcp.tools.empty' },
 };
 
 describe('telemetry attribute registry', () => {
@@ -152,6 +155,7 @@ describe('telemetry attribute registry', () => {
         "clubhouse.attempt",
         "clubhouse.binary.lookup_tier",
         "clubhouse.blocked.flow",
+        "clubhouse.bulletin.post.result",
         "clubhouse.cache.hit",
         "clubhouse.canvas.count",
         "clubhouse.canvas.load.result",
@@ -177,6 +181,8 @@ describe('telemetry attribute registry', () => {
         "clubhouse.mcp.result",
         "clubhouse.mcp.tool",
         "clubhouse.mcp.tool_kind",
+        "clubhouse.mcp.tools.count_bucket",
+        "clubhouse.mcp.tools.empty",
         "clubhouse.orchestrator",
         "clubhouse.outcome",
         "clubhouse.permission.decision",

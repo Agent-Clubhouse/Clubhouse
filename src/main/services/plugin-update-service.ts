@@ -95,9 +95,6 @@ function broadcastStatus(): void {
 
 type UpdateTrigger = Parameters<typeof ATTR.updateTrigger>[0];
 
-/** The last failed check's error, for telemetry classification only. */
-let lastCheckError: unknown;
-
 /**
  * Check for plugin updates, measured as `clubhouse.plugin.update_check`
  * (spec §4.11) with the trigger and the available/incompatible counts.
@@ -107,15 +104,31 @@ export async function checkForPluginUpdates(trigger: UpdateTrigger = 'manual'): 
   if (status.checking) {
     return { updates: status.updates, incompatibleUpdates: status.incompatibleUpdates, checkedAt: status.lastCheck || new Date().toISOString() };
   }
-  lastCheckError = undefined;
-  return tel.flow('clubhouse.plugin.update_check', { attrs: [ATTR.updateTrigger(trigger)] }, async (span) => {
-    const result = await checkForPluginUpdatesNow();
-    span.set(ATTR.updatesAvailable(result.updates.length), ATTR.updatesIncompatible(result.incompatibleUpdates.length));
-    return result;
-  }, { classify: () => (lastCheckError !== undefined ? { error: classifyFetchError(lastCheckError) } : 'ok') });
+  const outcome = await tel.flow('clubhouse.plugin.update_check', { attrs: [ATTR.updateTrigger(trigger)] }, async (span) => {
+    const attempt = await checkForPluginUpdatesNow();
+    span.set(ATTR.updatesAvailable(attempt.result.updates.length), ATTR.updatesIncompatible(attempt.result.incompatibleUpdates.length));
+    return attempt;
+  }, { classify: (attempt) => (attempt.failed ? { error: classifyUpdateCheckError(attempt.error) } : 'ok') });
+  return outcome.result;
 }
 
-async function checkForPluginUpdatesNow(): Promise<PluginUpdateCheckResult> {
+/**
+ * Fetch failures keep their fetch classification; anything else that broke
+ * the check (custom marketplace list, version parsing) is `unknown`, not
+ * `network`. fetch() reports network failures as a TypeError.
+ */
+export function classifyUpdateCheckError(err: unknown): ReturnType<typeof classifyFetchError> | 'unknown' {
+  const type = classifyFetchError(err);
+  return type === 'network' && !(err instanceof TypeError) ? 'unknown' : type;
+}
+
+interface CheckAttempt {
+  result: PluginUpdateCheckResult;
+  failed: boolean;
+  error?: unknown;
+}
+
+async function checkForPluginUpdatesNow(): Promise<CheckAttempt> {
 
   status = { ...status, checking: true, error: null };
   broadcastStatus();
@@ -179,14 +192,17 @@ async function checkForPluginUpdatesNow(): Promise<PluginUpdateCheckResult> {
       meta: { pluginIds: updates.map((u) => u.pluginId), incompatibleIds: incompatibleUpdates.map((u) => u.pluginId), checkedAt },
     });
 
-    return { updates, incompatibleUpdates, checkedAt };
+    return { result: { updates, incompatibleUpdates, checkedAt }, failed: false };
   } catch (err) {
-    lastCheckError = err;
     const msg = err instanceof Error ? err.message : String(err);
     appLog('marketplace:updates', 'error', `Plugin update check failed: ${msg}`);
     status = { ...status, checking: false, error: msg };
     broadcastStatus();
-    return { updates: status.updates, incompatibleUpdates: status.incompatibleUpdates, checkedAt: status.lastCheck || new Date().toISOString() };
+    return {
+      result: { updates: status.updates, incompatibleUpdates: status.incompatibleUpdates, checkedAt: status.lastCheck || new Date().toISOString() },
+      failed: true,
+      error: err,
+    };
   }
 }
 

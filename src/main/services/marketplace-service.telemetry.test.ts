@@ -21,7 +21,7 @@ vi.mock('../telemetry/facade', () => ({
   },
 }));
 
-import { _resetCache, fetchRegistry, installPlugin } from './marketplace-service';
+import { _resetCache, fetchCustomRegistry, fetchRegistry, installPlugin } from './marketplace-service';
 
 const fetchMock = vi.fn();
 
@@ -75,5 +75,15 @@ describe('marketplace telemetry', () => {
     expect(rec.flows[0].attrs['clubhouse.plugin.ref']).toBe('other');
     expect(rec.flows[0].attrs['clubhouse.plugin.id_hash']).toBe('acme-secret-plugin');
     expect(JSON.stringify(rec.flows)).not.toContain('acme.example');
+  });
+
+  it('records a custom registry fetch as kind custom, without its name or URL', async () => {
+    fetchMock.mockResolvedValue(response(200, { version: 1, updated: '', plugins: [] }));
+    await fetchCustomRegistry({ id: 'cm1', name: 'Acme Internal', url: 'https://plugins.acme.example/registry.json', enabled: true } as never);
+    expect(rec.flows[0]).toMatchObject({
+      name: 'clubhouse.marketplace.fetch_registry',
+      attrs: { 'clubhouse.registry.kind': 'custom', 'clubhouse.cache.hit': false, 'http.response.status_code': 200 },
+    });
+    expect(JSON.stringify(rec.flows)).not.toMatch(/acme/i);
   });
 });

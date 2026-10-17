@@ -386,6 +386,14 @@ export const ATTR = {
   settingsKey: enumAttr('clubhouse.settings.key', SETTINGS_KEYS),
   themeBuiltinId: enumAttr('clubhouse.theme.builtin_id', [...BUILTIN_THEME_IDS, 'other']),
   popoutType: enumAttr('clubhouse.popout.type', ['agent', 'canvas']),
+  /**
+   * A bulletin post (§12 H8): `evicted_message` when the topic's own cap
+   * dropped older messages, `evicted_topic` when the board-wide cap dropped
+   * messages from other topics, `rejected` for an oversized body.
+   */
+  bulletinPostResult: enumAttr('clubhouse.bulletin.post.result', ['ok', 'evicted_message', 'evicted_topic', 'rejected']),
+  mcpToolsCount: enumAttr('clubhouse.mcp.tools.count_bucket', COUNT_BUCKETS),
+  mcpToolsEmpty: boolAttr('clubhouse.mcp.tools.empty'),
 } as const;
 
 /**
@@ -731,6 +739,12 @@ export const METRICS = {
     description: 'clubhouse-plugin: module requests by result',
     attributes: ['clubhouse.plugin.protocol.result'],
   },
+  // Workspace 5b
+  'clubhouse.group.bulletin.posts': {
+    kind: 'counter', unit: '{post}', level: 'standard',
+    description: 'Bulletin posts by result, from any source (MCP or UI)',
+    attributes: ['clubhouse.bulletin.post.result'],
+  },
 } as const satisfies Record<string, MetricDef>;
 export type MetricName = keyof typeof METRICS;
 
@@ -779,6 +793,8 @@ export const EVENTS = {
   /** Attributes: `clubhouse.outcome`. */
   'clubhouse.blueprint.exported': { level: 'standard' },
   'clubhouse.blueprint.imported': { level: 'standard' },
+  /** An agent listed its MCP tools (§12 H8). Attributes: tool-count bucket, empty flag. */
+  'clubhouse.mcp.tools_list': { level: 'standard' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

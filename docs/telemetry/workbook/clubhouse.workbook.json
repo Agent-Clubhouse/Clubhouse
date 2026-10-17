@@ -739,6 +739,32 @@
               "visualization": "table"
             },
             "name": "Feature use"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customMetrics\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.group.bulletin.posts\"\n| extend result = tostring(customDimensions[\"clubhouse.bulletin.post.result\"])\n| summarize posts = sum(value) by result\n| order by posts desc",
+              "size": 0,
+              "title": "Bulletin posts by result",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "Bulletin posts by result"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "customEvents\n| where timestamp {TimeRange} | where \"{Version:label}\" == \"All\" or application_Version in ({Version})\n| where name == \"clubhouse.mcp.tools_list\"\n| extend tools = tostring(customDimensions[\"clubhouse.mcp.tools.count_bucket\"]), empty = tostring(customDimensions[\"clubhouse.mcp.tools.empty\"])\n| summarize lists = sum(itemCount), installs = dcount(user_Id) by tools, empty",
+              "size": 0,
+              "title": "MCP tool lists, including empty ones",
+              "queryType": 0,
+              "resourceType": "microsoft.insights/components",
+              "visualization": "table"
+            },
+            "name": "MCP tool lists, including empty ones"
           }
         ]
       },

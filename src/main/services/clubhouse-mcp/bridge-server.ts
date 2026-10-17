@@ -12,6 +12,7 @@ import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import type { JsonRpcRequest, JsonRpcResponse } from './types';
 import { recordMcpToolCall } from '../../telemetry/agent-signals';
+import { recordToolsList } from '../../telemetry/feature-events';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 const MCP_PROTOCOL_VERSION = '2024-11-05';
@@ -117,6 +118,8 @@ function handleInitialize(id: number | string | null): JsonRpcResponse {
 /** Handle tools/list request. */
 function handleToolsList(agentId: string, id: number | string | null): JsonRpcResponse {
   const tools = getScopedToolList(agentId);
+  // §12 H8: an empty list here is the "tools missing until canvas renders" bug (#1544).
+  recordToolsList(tools.length);
   appLog('core:mcp', 'info', 'Tools list requested', {
     meta: { agentId, toolCount: tools.length, toolNames: tools.map(t => t.name) },
   });

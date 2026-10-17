@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { abortPending, setRuntime } from './facade';
-import { blueprintTransfer, popoutOpened, settingsChanged, themeChanged } from './feature-events';
+import { blueprintTransfer, isSettingsKey, popoutOpened, recordToolsList, settingsChanged, SETTINGS_KEYS_EXCLUDED, themeChanged } from './feature-events';
+import * as definitions from '../../shared/settings-definitions';
 import { byteSizeBucket, classifyFetchError } from './workspace';
 import type { TelemetryRuntime } from './types';
 
@@ -55,6 +56,30 @@ describe('feature events', () => {
   it('is silent while telemetry is off', () => {
     settingsChanged('mcp');
     expect(events).toEqual([]);
+  });
+});
+
+describe('settings key coverage', () => {
+  it('lists every managed-settings definition key, or excludes it on purpose', () => {
+    const keys = Object.values(definitions)
+      .filter((v): v is { key: string; filename: string; defaults: unknown } =>
+        !!v && typeof v === 'object' && 'key' in v && 'filename' in v && 'defaults' in v)
+      .map((d) => d.key);
+    expect(keys.length).toBeGreaterThan(4);
+    const excluded = new Set<string>(SETTINGS_KEYS_EXCLUDED);
+    expect(keys.filter((k) => !isSettingsKey(k) && !excluded.has(k))).toEqual([]);
+  });
+});
+
+describe('MCP tools list', () => {
+  it('sends a count bucket and an empty flag, never tool names', () => {
+    setRuntime(runtime());
+    recordToolsList(0);
+    recordToolsList(23);
+    expect(events).toEqual([
+      { name: 'clubhouse.mcp.tools_list', attrs: { 'clubhouse.mcp.tools.count_bucket': '0', 'clubhouse.mcp.tools.empty': true } },
+      { name: 'clubhouse.mcp.tools_list', attrs: { 'clubhouse.mcp.tools.count_bucket': '10-99', 'clubhouse.mcp.tools.empty': false } },
+    ]);
   });
 });
 
