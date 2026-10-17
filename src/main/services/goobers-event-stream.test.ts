@@ -441,13 +441,6 @@ describe('startEventStream — close()', () => {
   });
 
   it('cancels a pending reconnect timer when closed before it fires', async () => {
-    // Deliberately asymmetric timing: detection (onDisconnected) is fast,
-    // the reconnect backoff is slow, so close() always lands well inside the
-    // window before the scheduled reconnect could fire — no race. This
-    // directly targets the reconnectTimer-clear path in close(): under the
-    // mutation chirpy-mole applied (timer left armed, connect()'s closed
-    // guard removed), the still-armed timer would fire during the wait below
-    // and produce a second, unambiguous request.
     const timing = { livenessDeadlineMs: 60, initialBackoffMs: 500, maxBackoffMs: 500 };
     let requestCount = 0;
     const { port, server } = await listen((req, res) => {
@@ -458,19 +451,28 @@ describe('startEventStream — close()', () => {
     activeServer = server;
 
     const cb = collectCallbacks();
-    const handle = startEventStream('127.0.0.1', port, cb, timing);
+    let closed = false;
+    const handle: EventStreamHandle = startEventStream('127.0.0.1', port, {
+      ...cb,
+      onDisconnected() {
+        cb.onDisconnected();
+        // scheduleReconnect runs immediately after this callback. A microtask
+        // closes the handle after that timer is armed but before it can fire,
+        // even when full jitter chooses a delay near zero.
+        queueMicrotask(() => {
+          handle.close();
+          closed = true;
+        });
+      },
+    }, timing);
+    activeHandle = handle;
 
-    // onDisconnected fires once the 503 response is fully processed client
-    // side — by then, a correct implementation has already armed
-    // reconnectTimer for a 0-500ms-out reconnect. Closing immediately after
-    // this, well under the 500ms floor, leaves no room for a legitimate
-    // reconnect to have fired first.
-    await waitUntil(() => cb.disconnected >= 1);
+    await waitUntil(() => closed);
     expect(requestCount).toBe(1);
-    handle.close();
 
     // Past the full backoff window several times over, the cancelled timer
-    // must never fire.
+    // must never fire. Leaving the timer armed and removing connect's closed
+    // guard still produces a second request and fails this assertion.
     await new Promise((resolve) => setTimeout(resolve, timing.maxBackoffMs * 3));
     expect(requestCount).toBe(1);
   });
