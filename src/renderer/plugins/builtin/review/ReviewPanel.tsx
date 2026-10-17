@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import type { AgentInfo, PluginAPI, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
 import {
   Button, PopupMenu, Toggle, useProjectStore, isRemoteAgentId, type MenuItem,
-  useChromeStore, useChromeFlagStore, useChromeDialogStore, FOCUS_ACTIVE_TERMINAL_EVENT, StatusDot,
+  useChromeStore, useChromeFlagStore, openNewAgentOrDialog, FOCUS_ACTIVE_TERMINAL_EVENT, StatusDot,
 } from './host';
 import { reviewNav } from './commands';
 import { clampIndex, filterAgents, filterNeedsAttention, filterRemoteAgents, resolveIndex } from './filters';
@@ -323,7 +323,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const projectName = useProjectName(isAppMode ? agent?.projectId : undefined);
   const newAgentProjectId = (isAppMode ? useProjectStore.getState().activeProjectId : api.context.projectId) ?? null;
   const onNewAgent = newChrome && newAgentProjectId && !isRemoteAgentId(newAgentProjectId)
-    ? () => useChromeDialogStore.getState().openNewAgent(newAgentProjectId)
+    ? () => openNewAgentOrDialog('durable', newAgentProjectId)
     : undefined;
 
   const empty = !agent;

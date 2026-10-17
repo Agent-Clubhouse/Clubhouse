@@ -17,6 +17,6 @@ export { useAnnexClientStore } from '../../../stores/annexClientStore';
 export { useRemoteProjectStore, isRemoteAgentId, parseNamespacedId } from '../../../stores/remoteProjectStore';
 export { useChromeStore } from '../../../chrome/chromeStore';
 export { useChromeFlagStore } from '../../../chrome/chromeFlag';
-export { useChromeDialogStore } from '../../../chrome/sidebar/ChromeAgentDialogs';
+export { openNewAgentOrDialog } from '../../../chrome/startPage';
 export { FOCUS_ACTIVE_TERMINAL_EVENT } from '../../../features/agents/AgentTerminal';
 export { StatusDot, DOT_LABEL, agentDot, type AgentDot } from '../../../features/agents/agent-status';
