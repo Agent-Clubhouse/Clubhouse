@@ -89,8 +89,7 @@ test.describe('Settings Persistence — Theme', () => {
 
   test('selected theme button has visual indicator after returning', async () => {
     const draculaBtn = window.locator('button:has-text("Dracula")').first();
-    const classes = await draculaBtn.getAttribute('class');
-    expect(classes).toContain('ring-ctp-accent');
+    await expect(draculaBtn).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('theme persists after switching projects (project-b roundtrip)', async () => {
