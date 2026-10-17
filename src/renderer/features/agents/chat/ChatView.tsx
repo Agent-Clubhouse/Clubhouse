@@ -40,13 +40,24 @@ export interface ChatViewBodyProps {
   onShowEarlier?: () => void;
 }
 
-function ProtocolDriftNote({ counts }: { counts: Record<string, number> }) {
+/**
+ * Unrecognized CLI messages, plus the "newer than tested" CLI note. That note
+ * is only shown here, next to a real problem (drift or a fatal error), since
+ * a CLI newer than the tested one is the normal case.
+ */
+function ProtocolDriftNote({ state }: { state: ChatViewState }) {
+  const counts = state.protocolUnknown;
   const names = Object.keys(counts);
-  if (names.length === 0) return null;
+  const fatal = state.items.some((i) => i.kind === 'error' && i.fatal);
+  const versionNote = state.untestedCliNote && (names.length > 0 || fatal) ? state.untestedCliNote : null;
+  if (names.length === 0 && !versionNote) return null;
   const total = names.reduce((n, k) => n + counts[k], 0);
   return (
-    <div className="text-[12px] text-ctp-overlay1 px-1" title={names.join('\n')} data-testid="chat-protocol-unknown">
-      This CLI sent {total} {total === 1 ? 'message' : 'messages'} Clubhouse doesn't recognize yet, so some activity may be missing here. The terminal view shows everything.
+    <div className="text-[12px] text-ctp-overlay1 px-1" title={names.join('\n') || undefined} data-testid="chat-protocol-unknown">
+      {names.length > 0 && (
+        <>This CLI sent {total} {total === 1 ? 'message' : 'messages'} Clubhouse doesn't recognize yet, so some activity may be missing here. The terminal view shows everything. </>
+      )}
+      {versionNote}
     </div>
   );
 }
@@ -239,7 +250,7 @@ export function ChatViewBody({ agent, state, actions, providerName, loading, onS
           />
           <div className="flex-shrink-0 px-7 pb-4 flex justify-center" data-testid="chat-dock">
             <div className="w-full max-w-[740px] flex flex-col gap-2">
-              <ProtocolDriftNote counts={state.protocolUnknown} />
+              <ProtocolDriftNote state={state} />
               <LoginBanner state={state} onSwitchToTerminal={onSwitchToTerminal} />
               {state.plan.length > 0 && <TaskList entries={state.plan} />}
               {state.queued.length > 0 && <QueueList queued={state.queued} />}

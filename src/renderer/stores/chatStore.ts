@@ -213,6 +213,12 @@ export interface ChatViewState {
   queued: QueuedMessage[];
   /** Native messages the driver didn't recognize (protocol drift), by name. */
   protocolUnknown: Record<string, number>;
+  /**
+   * "Newer than tested" CLI note. CLIs release faster than chat is retested,
+   * so this isn't a transcript item; the view shows it only next to a real
+   * problem (unrecognized messages or a fatal error).
+   */
+  untestedCliNote: string | null;
 }
 
 export function createChatViewState(agentId: string): ChatViewState {
@@ -243,6 +249,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     levelNames: {},
     queued: [],
     protocolUnknown: {},
+    untestedCliNote: null,
   };
 }
 
@@ -640,6 +647,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
 
     case 'notice': {
       const d = event.data;
+      if (d.code === 'untested_cli_version') return { ...state, untestedCliNote: d.message };
       const item: NoticeItem = { ...itemBase(event, `notice:${sid}:${event.seq}`), kind: 'notice', level: d.level, code: d.code, message: d.message };
       return { ...state, items: [...state.items, item] };
     }

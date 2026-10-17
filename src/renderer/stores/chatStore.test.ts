@@ -406,13 +406,22 @@ describe('reduceChatEvent', () => {
     const s = fold([
       sessionStarted(ev),
       ev('session_state', { state: 'waiting_permission' }),
-      ev('notice', { level: 'warn', code: 'untested_cli_version', message: 'Untested CLI' }),
+      ev('notice', { level: 'warn', code: 'mcp_servers_skipped', message: 'Left out MCP servers' }),
       ev('error', { code: 'rate_limited', message: 'slow down', fatal: false, willRetry: true }),
     ]);
     expect(s.state).toBe('waiting_permission');
     expect(s.items.map((i) => i.kind)).toEqual(['notice', 'error']);
     const err = s.items[1];
     expect(err.kind === 'error' && err.willRetry).toBe(true);
+  });
+
+  it('keeps the untested CLI version note out of the transcript', () => {
+    const s = fold([
+      sessionStarted(ev),
+      ev('notice', { level: 'info', code: 'untested_cli_version', message: 'Claude Code 2.1.302 is newer than the version chat was tested with (2.1.301).' }),
+    ]);
+    expect(s.items).toEqual([]);
+    expect(s.untestedCliNote).toBe('Claude Code 2.1.302 is newer than the version chat was tested with (2.1.301).');
   });
 
   it('ignores unknown event types but advances seq', () => {

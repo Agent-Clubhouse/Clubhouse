@@ -5,8 +5,8 @@
  * - Below a driver's minimum version, or on the known-bad list: the agent
  *   opens in the next mode down.
  * - Newer than the newest version a driver was tested with: chat stays on and
- *   the transcript gets a quiet "untested version" note, because these CLIs
- *   release daily.
+ *   the app log records it. These CLIs release daily, so the chat view shows
+ *   the note only next to a real problem (unrecognized messages, a fatal error).
  * - Unknown version (the CLI didn't report one): no verdict, chat stays on.
  *
  * The known-bad list is the remote kill switch: entries can arrive with the
