@@ -1,5 +1,7 @@
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type ChatDriverId, type PermissionLevel } from '../../../shared/chat/capabilities';
 import type {
   ChatErrorCode,
@@ -219,12 +221,57 @@ export function claudeQuestionInput(input: Obj, answers: ChatQuestionAnswers): O
   return { ...input, answers: flat };
 }
 
-/** Map Claude's assistant `error` values onto the contract's closed error codes. */
-function claudeErrorCode(message: string): ChatErrorCode {
-  if (message.includes('rate_limit')) return 'rate_limited';
-  if (message.includes('authentication') || message.includes('billing')) return 'auth_required';
-  if (message.includes('max_output_tokens')) return 'max_tokens';
+// ── Errors ──────────────────────────────────────────────────────────────────
+
+/** Claude's assistant `error` kinds (SDKAssistantMessageError) → contract codes. */
+const API_ERROR_CODES: Record<string, ChatErrorCode> = {
+  authentication_failed: 'auth_required',
+  oauth_org_not_allowed: 'auth_required',
+  account_on_hold: 'auth_required',
+  verification_required: 'auth_required',
+  billing_error: 'auth_required',
+  cloud_credential_error: 'auth_required',
+  rate_limit: 'rate_limited',
+  max_output_tokens: 'max_tokens',
+};
+
+/** The result's terminal_reason → contract codes, for failures without an assistant error. */
+const TERMINAL_REASON_CODES: Record<string, ChatErrorCode> = {
+  prompt_too_long: 'context_overflow',
+  blocking_limit: 'rate_limited',
+  rapid_refill_breaker: 'rate_limited',
+  malformed_tool_use_exhausted: 'protocol_error',
+};
+
+/**
+ * The single error code for a failed turn: the assistant's API error kind if
+ * one arrived, else the terminal reason, else the model's stop reason.
+ */
+export function claudeTurnErrorCode(apiError: string | undefined, terminalReason?: string, stopReason?: string): ChatErrorCode {
+  if (apiError) return API_ERROR_CODES[apiError] ?? 'unknown';
+  if (terminalReason && TERMINAL_REASON_CODES[terminalReason]) return TERMINAL_REASON_CODES[terminalReason];
+  if (stopReason === 'max_tokens') return 'max_tokens';
+  if (stopReason === 'refusal') return 'refusal';
   return 'unknown';
+}
+
+/** Kinds that only occur inside a turn; one arriving while idle means a queued message started a turn. */
+const TURN_OPENING_KINDS: ReadonlySet<ClaudeChatEvent['kind']> = new Set([
+  'message_chunk', 'thought_chunk', 'message', 'thought', 'tool_call', 'tool_call_update', 'permission_request', 'turn_ended',
+]);
+
+// ── Images ──────────────────────────────────────────────────────────────────
+
+const IMAGE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+/** An image block as Claude input: inline data, or a local file read from `path` or a file: `uri`. */
+export async function claudeImageInput(block: Extract<ContentBlock, { type: 'image' }>): Promise<ClaudeImageInput> {
+  if (!IMAGE_TYPES.has(block.mimeType)) throw new Error(`Claude doesn't accept ${block.mimeType} images`);
+  const mediaType = block.mimeType as ClaudeImageInput['mediaType'];
+  if (block.data) return { mediaType, data: block.data };
+  const file = block.path ?? (block.uri?.startsWith('file:') ? fileURLToPath(block.uri) : undefined);
+  if (!file) throw new Error(`Claude chat can't attach an image from ${block.uri ?? 'nowhere'}: only inline data or local files`);
+  return { mediaType, data: (await fsp.readFile(file)).toString('base64') };
 }
 
 const LIMIT_STATUS: Record<string, 'ok' | 'warning' | 'exceeded'> = {
@@ -244,6 +291,20 @@ function tokens(u: ClaudeUsage | undefined) {
     output: u.outputTokens,
     total: u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens + u.outputTokens,
   };
+}
+
+/** Sum the CLI's cumulative per-model usage (main loop, subagents, compaction) into session tokens. */
+function sessionTokens(modelUsage: Record<string, unknown> | undefined) {
+  if (!modelUsage) return undefined;
+  let input = 0, output = 0, cachedInput = 0, cacheWrite = 0;
+  for (const m of Object.values(modelUsage)) {
+    if (!isObj(m)) continue;
+    input += typeof m.inputTokens === 'number' ? m.inputTokens : 0;
+    output += typeof m.outputTokens === 'number' ? m.outputTokens : 0;
+    cachedInput += typeof m.cacheReadInputTokens === 'number' ? m.cacheReadInputTokens : 0;
+    cacheWrite += typeof m.cacheCreationInputTokens === 'number' ? m.cacheCreationInputTokens : 0;
+  }
+  return { input, output, cachedInput, cacheWrite, total: input + output + cachedInput + cacheWrite };
 }
 
 const LIMIT_WINDOWS: Record<string, string> = {
@@ -284,6 +345,14 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private model: string | undefined;
   /** apiKeySource 'none' means a claude.ai login: dollars are API-price estimates. */
   private costIsEstimate = true;
+  /**
+   * total_cost_usd from the previous result. The CLI reports a running total
+   * for the session, so a turn's cost is the difference. Unknown on the first
+   * result of a resumed session, whose total includes the earlier turns.
+   */
+  private lastTotalCostUsd: number | undefined;
+  /** An assistant API error seen in this turn, reported once when the turn ends. */
+  private turnApiError: string | undefined;
   private pump: Promise<void> | null = null;
 
   constructor(
@@ -315,16 +384,18 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       .map((b) => (b.type === 'text' ? b.text : b.type === 'file' ? b.path : b.type === 'resource' ? b.text ?? b.uri : ''))
       .filter(Boolean)
       .join('\n');
-    const images: ClaudeImageInput[] = content
-      .filter((b): b is Extract<ContentBlock, { type: 'image' }> => b.type === 'image' && !!b.data)
-      .map((b) => ({ mediaType: b.mimeType as ClaudeImageInput['mediaType'], data: b.data as string }));
+    const images = await Promise.all(
+      content.filter((b): b is Extract<ContentBlock, { type: 'image' }> => b.type === 'image').map(claudeImageInput),
+    );
     // Idle: whatever was asked, the message starts a turn.
     const actual: MessageDelivery = this.turnRunning ? delivery : 'prompt';
     if (!this.turnRunning) this.beginTurn('prompt');
     this.transport.send({
       text,
       images: images.length ? images : undefined,
-      priority: actual === 'steer' ? 'now' : actual === 'queued' ? 'later' : undefined,
+      // 'next' folds the message into the running turn at the next tool boundary.
+      // 'now' would make the CLI cut (interrupt) the turn and run the message alone.
+      priority: actual === 'steer' ? 'next' : actual === 'queued' ? 'later' : undefined,
     });
     return actual;
   }
@@ -398,14 +469,16 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     return this.turn > 0 ? `turn-${this.turn}` : undefined;
   }
 
+  /** Turn-scoped drafts get the running turn's id; outside a turn they go out session-scoped. */
   private push(draft: ChatEventDraft, turnScoped = false): void {
-    this.queue.push(turnScoped && this.turnId ? { ...draft, turnId: this.turnId } as ChatEventDraft : draft);
+    this.queue.push(turnScoped && this.turnRunning && this.turnId ? { ...draft, turnId: this.turnId } as ChatEventDraft : draft);
   }
 
   private beginTurn(trigger: MessageDelivery | 'system'): void {
     this.turn += 1;
     this.turnRunning = true;
     this.interrupting = false;
+    this.turnApiError = undefined;
     this.push({ type: 'turn_started', data: { trigger } }, true);
   }
 
@@ -425,9 +498,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
 
   private map(ev: ClaudeChatEvent): void {
     // A queued message can start a turn on its own once the previous one ends.
-    const turnScoped = ev.kind !== 'initialized' && ev.kind !== 'session_ended' && ev.kind !== 'rate_limit'
-      && ev.kind !== 'mode_changed' && ev.kind !== 'unmapped' && ev.kind !== 'session_started';
-    if (turnScoped && !this.turnRunning && ev.kind !== 'permission_cancelled') this.beginTurn('queued');
+    if (TURN_OPENING_KINDS.has(ev.kind) && !this.turnRunning) this.beginTurn('queued');
 
     switch (ev.kind) {
       case 'initialized': {
@@ -502,7 +573,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         if (ev.name === 'ExitPlanMode' && typeof ev.input.plan === 'string') {
           this.push({ type: 'plan_document', data: { planId: ev.toolCallId, markdown: ev.input.plan, status: 'ready', toolCallId: ev.toolCallId } }, true);
         }
-        const entries = ev.name === 'TodoWrite' ? todoEntries(ev.input) : undefined;
+        // A subagent's own todo list isn't the session's plan.
+        const entries = ev.name === 'TodoWrite' && !ev.parentToolCallId ? todoEntries(ev.input) : undefined;
         if (entries) this.push({ type: 'plan', data: { entries } }, true);
         return;
       }
@@ -557,15 +629,24 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.push({ type: 'notice', data: { level: 'info', code: 'permission_denied', message: `${ev.toolName ?? 'A tool'} was denied by the permission mode` } }, true);
         return;
       case 'turn_ended': {
-        const stopReason = this.stopReason(ev.subtype, ev.isError);
+        const stopReason = this.stopReason(ev);
         if (stopReason === 'error') {
-          this.push({ type: 'error', data: { code: 'unknown', message: ev.errors?.join('; ') || ev.result || `Turn failed (${ev.subtype})`, fatal: false } }, true);
+          const code = claudeTurnErrorCode(this.turnApiError, ev.terminalReason, ev.stopReason);
+          const message = ev.errors?.join('; ') || ev.result || this.turnApiError || `Turn failed (${ev.subtype})`;
+          this.push({ type: 'error', data: { code, message, fatal: false } }, true);
         }
+        // `usage` is this turn's main loop; total_cost_usd and modelUsage are session running totals.
         const t = tokens(ev.usage);
-        this.push({ type: 'usage', data: { scope: 'turn', tokens: t, costUsd: ev.totalCostUsd, costIsEstimate: ev.totalCostUsd !== undefined ? this.costIsEstimate : undefined } }, true);
-        this.push({ type: 'turn_ended', data: { stopReason, durationMs: ev.durationMs, usage: t, costUsd: ev.totalCostUsd } }, true);
+        const turnCost = this.turnCost(ev.totalCostUsd);
+        const costIsEstimate = ev.totalCostUsd !== undefined ? this.costIsEstimate : undefined;
+        this.push({ type: 'usage', data: { scope: 'turn', tokens: t, costUsd: turnCost, costIsEstimate: turnCost !== undefined ? costIsEstimate : undefined } }, true);
+        if (ev.totalCostUsd !== undefined || ev.modelUsage) {
+          this.push({ type: 'usage', data: { scope: 'session', tokens: sessionTokens(ev.modelUsage), costUsd: ev.totalCostUsd, costIsEstimate } }, true);
+        }
+        this.push({ type: 'turn_ended', data: { stopReason, durationMs: ev.durationMs, usage: t, costUsd: turnCost } }, true);
         this.turnRunning = false;
         this.interrupting = false;
+        this.turnApiError = undefined;
         return;
       }
       case 'rate_limit': {
@@ -591,12 +672,24 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.changeLevel(levelFromClaudeMode(ev.permissionMode), ev.permissionMode);
         return;
       case 'error':
-        this.push({ type: 'error', data: { code: ev.fatal ? 'driver_stream_failed' : claudeErrorCode(ev.message), message: ev.message, fatal: ev.fatal } }, !ev.fatal);
+        if (!ev.fatal && this.turnRunning) {
+          // Reported once, with the turn's result, so a failed turn yields exactly one error.
+          this.turnApiError = ev.apiError ?? ev.message;
+          return;
+        }
+        this.push({
+          type: 'error',
+          data: { code: ev.fatal ? 'driver_stream_failed' : claudeTurnErrorCode(ev.apiError), message: ev.message, fatal: ev.fatal },
+        });
         return;
       case 'unmapped':
         this.push({ type: 'protocol_unknown', data: { driver: this.driverId, kind: 'field', name: ev.subtype ? `${ev.type}/${ev.subtype}` : ev.type } });
         return;
       case 'session_ended':
+        if (this.turnRunning) {
+          this.push({ type: 'turn_ended', data: { stopReason: this.closing || this.interrupting ? 'cancelled' : 'error' } }, true);
+          this.turnRunning = false;
+        }
         for (const requestId of this.pendingPermissions.keys()) {
           this.push({ type: 'permission_resolved', data: { requestId, decision: 'cancelled', by: 'agent' } }, true);
         }
@@ -622,11 +715,27 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     return toolCallId ? this.tools.get(toolCallId)?.parentToolCallId : undefined;
   }
 
-  private stopReason(subtype: string, isError: boolean): TurnStopReason {
-    if (subtype === 'error_max_turns') return 'max_turns';
-    if (this.interrupting && (subtype === 'error_during_execution' || isError)) return 'cancelled';
-    if (subtype === 'success' && !isError) return 'end_turn';
+  private stopReason(ev: Extract<ClaudeChatEvent, { kind: 'turn_ended' }>): TurnStopReason {
+    if (ev.subtype === 'error_max_turns') return 'max_turns';
+    if (this.interrupting && (ev.subtype === 'error_during_execution' || ev.isError)) return 'cancelled';
+    if (ev.subtype === 'success' && !ev.isError) {
+      if (ev.stopReason === 'max_tokens') return 'max_tokens';
+      if (ev.stopReason === 'refusal') return 'refusal';
+      return 'end_turn';
+    }
     return 'error';
+  }
+
+  private turnCost(total: number | undefined): number | undefined {
+    if (total === undefined) return undefined;
+    const previous = this.lastTotalCostUsd;
+    this.lastTotalCostUsd = total;
+    if (previous === undefined) {
+      // The first result of a resumed session already carries the earlier turns.
+      return this.opts.resumeNativeSessionId ? undefined : total;
+    }
+    // A mid-session /clear resets the running total.
+    return total >= previous ? total - previous : total;
   }
 
   private mapSubagent(ev: Extract<ClaudeChatEvent, { kind: 'subagent' }>): void {

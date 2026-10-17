@@ -7,6 +7,9 @@ import type { ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import {
   ClaudeChatDriver,
   claudeCapabilities,
+  claudeImageInput,
+  claudeQuestionInput,
+  claudeTurnErrorCode,
   claudeModeFromLevel,
   claudePermissionOptions,
   claudeToolContent,
@@ -18,9 +21,12 @@ import {
   type ClaudeChatDriverSession,
   type ClaudeTransportFactory,
 } from './driver';
+import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
+import type { ClaudeChatEvent, ClaudeChatEventBody } from './events';
 import { ClaudeSdkTransport } from './sdk-transport';
 import { spawnClaude } from './spawn';
 import { ClaudeStreamTransport } from './stream-transport';
+import type { ClaudePermissionDecision, ClaudeTransport, ClaudeUserInput } from './transport';
 
 vi.mock('../../util/shell', async (importActual) => {
   const actual = await importActual<typeof import('../../util/shell')>();
@@ -120,7 +126,8 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     const ended = await drafts.waitFor('turn_ended');
     expect(ended).toMatchObject({ turnId: 'turn-1', data: { stopReason: 'end_turn', costUsd: 0.0012, usage: { input: 10, cachedInput: 100, output: 5, total: 115 } } });
     const turnTypes = drafts.all.filter((d) => d.turnId === 'turn-1').map((d) => d.type);
-    expect(turnTypes).toEqual(['turn_started', 'agent_message_chunk', 'agent_message_chunk', 'agent_message', 'usage', 'turn_ended']);
+    expect(turnTypes).toEqual(['turn_started', 'agent_message_chunk', 'agent_message_chunk', 'agent_message', 'usage', 'usage', 'turn_ended']);
+    expect(drafts.of('usage').map((d) => [d.data.scope, d.data.costUsd])).toEqual([['turn', 0.0012], ['session', 0.0012]]);
     expect(drafts.of('agent_message')[0].data).toEqual({ messageId: 'msg_hello', text: 'Hello' });
     expect(drafts.of('usage')[0].data).toMatchObject({ scope: 'turn', costIsEstimate: true });
     expect(s.nativeSessionId).toBe('fake-session-1');
@@ -215,6 +222,19 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     await expect(s.setLevel('full_access')).rejects.toThrow(/restarting/);
   });
 
+  it('steers into the running turn instead of cutting it', async () => {
+    const s = await start();
+    await s.send([{ type: 'text', text: 'tool' }], 'prompt');
+    const req = await drafts.waitFor('permission_request');
+    expect(await s.send([{ type: 'text', text: 'also check git' }], 'steer')).toBe('steer');
+    await s.respondPermission(req.data.requestId, 'allow');
+    await drafts.waitFor('agent_message', (d) => d.data.text === 'allowed:{"command":"ls"}:null|steered:also check git');
+    const ended = await drafts.waitFor('turn_ended');
+    expect(ended.data.stopReason).toBe('end_turn');
+    expect(drafts.of('turn_started')).toHaveLength(1);
+    expect(drafts.of('error')).toHaveLength(0);
+  });
+
   it('maps steer and queue to Claude priorities while a turn runs', async () => {
     const s = await start();
     await s.send([{ type: 'text', text: 'tool' }], 'prompt');
@@ -300,5 +320,176 @@ describe('Claude contract mapping helpers', () => {
     expect(claudePermissionOptions([{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }])[1]).toMatchObject({
       kind: 'allow_always', scope: 'acceptEdits mode',
     });
+  });
+});
+
+// ── Mapping against a scripted transport ────────────────────────────────────
+
+
+/** An in-memory transport: the test emits normalized events, the driver's calls are recorded. */
+class ScriptedTransport implements ClaudeTransport {
+  readonly kind = 'sdk' as const;
+  readonly sent: ClaudeUserInput[] = [];
+  readonly answers: Array<[string, ClaudePermissionDecision]> = [];
+  sessionId = '';
+  private readonly queue = new AsyncQueue<ClaudeChatEvent>();
+  private seq = 0;
+  get events(): AsyncIterable<ClaudeChatEvent> { return this.queue; }
+  emit(body: ClaudeChatEventBody): void {
+    this.queue.push({ ...body, sessionId: this.sessionId, turnId: 0, seq: ++this.seq } as ClaudeChatEvent);
+  }
+  async start(): Promise<void> { this.emit({ kind: 'initialized', commands: [], models: [], raw: { claude_code_version: '2.1.300' } }); }
+  send(input: ClaudeUserInput): void { this.sent.push(input); }
+  respondToPermission(requestId: string, decision: ClaudePermissionDecision): void { this.answers.push([requestId, decision]); }
+  async interrupt(): Promise<void> {}
+  async setPermissionMode(): Promise<void> {}
+  async setModel(): Promise<void> {}
+  async close(): Promise<void> { this.emit({ kind: 'session_ended', exitCode: 0, signal: null }); this.queue.finish(); }
+  end(exitCode: number | null): void { this.emit({ kind: 'session_ended', exitCode, signal: null }); this.queue.finish(); }
+}
+
+describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
+  async function scripted(extra: Partial<ChatDriverStartOptions> = {}) {
+    const transport = new ScriptedTransport();
+    const driver = new ClaudeChatDriver('claude_agent_sdk', { createTransport: () => transport });
+    const session = await driver.start({ agentId: 'a', provider: 'claude-code', cwd: os.tmpdir(), binaryPath: 'claude', level: 'ask', ...extra });
+    const drafts = new Drafts(session.events);
+    await drafts.waitFor('session_started');
+    return { transport, session, drafts };
+  }
+  const result = (over: Partial<Extract<ClaudeChatEventBody, { kind: 'turn_ended' }>> = {}): ClaudeChatEventBody =>
+    ({ kind: 'turn_ended', subtype: 'success', isError: false, ...over });
+  const settle = () => new Promise((r) => setImmediate(r));
+
+  it('reports per-turn cost from the CLI running total, and the total as session usage', async () => {
+    const { session, transport, drafts } = await scripted();
+    for (const total of [0.01, 0.03, 0.005]) {
+      await session.send([{ type: 'text', text: 'go' }], 'prompt');
+      transport.emit(result({ totalCostUsd: total, usage: { inputTokens: 1, outputTokens: 1, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 } }));
+    }
+    await settle();
+    const turnCosts = drafts.of('turn_ended').map((d) => d.data.costUsd);
+    expect(turnCosts[0]).toBeCloseTo(0.01);
+    expect(turnCosts[1]).toBeCloseTo(0.02);
+    // A /clear reset the running total: the new total is this turn's cost.
+    expect(turnCosts[2]).toBeCloseTo(0.005);
+    expect(drafts.of('usage').filter((d) => d.data.scope === 'session').map((d) => d.data.costUsd)).toEqual([0.01, 0.03, 0.005]);
+  });
+
+  it('leaves the first turn cost of a resumed session unknown', async () => {
+    const { session, transport, drafts } = await scripted({ resumeNativeSessionId: 'old' });
+    await session.send([{ type: 'text', text: 'go' }], 'prompt');
+    transport.emit(result({ totalCostUsd: 1.5 }));
+    await session.send([{ type: 'text', text: 'again' }], 'prompt');
+    transport.emit(result({ totalCostUsd: 1.75 }));
+    await settle();
+    expect(drafts.of('turn_ended').map((d) => d.data.costUsd)).toEqual([undefined, 0.25]);
+  });
+
+  it('reports exactly one error per failed turn, with a contract code', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'go' }], 'prompt');
+    transport.emit({ kind: 'error', message: 'authentication_failed', fatal: false, apiError: 'authentication_failed' });
+    transport.emit(result({ subtype: 'error_during_execution', isError: true, errors: ['Invalid API key'] }));
+    await session.send([{ type: 'text', text: 'big' }], 'prompt');
+    transport.emit(result({ subtype: 'error_during_execution', isError: true, terminalReason: 'prompt_too_long' }));
+    await settle();
+    expect(drafts.of('error').map((d) => [d.turnId, d.data.code, d.data.message])).toEqual([
+      ['turn-1', 'auth_required', 'Invalid API key'],
+      ['turn-2', 'context_overflow', 'Turn failed (error_during_execution)'],
+    ]);
+  });
+
+  it('maps max_tokens and refusal stop reasons without an error', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'a' }], 'prompt');
+    transport.emit(result({ stopReason: 'max_tokens' }));
+    await session.send([{ type: 'text', text: 'b' }], 'prompt');
+    transport.emit(result({ stopReason: 'refusal' }));
+    await settle();
+    expect(drafts.of('turn_ended').map((d) => d.data.stopReason)).toEqual(['max_tokens', 'refusal']);
+    expect(drafts.of('error')).toHaveLength(0);
+  });
+
+  it('maps TodoWrite to plan (main thread only) and ExitPlanMode to plan_document', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'plan' }], 'prompt');
+    const todos = { todos: [{ content: 'Read', status: 'completed' }, { content: 'Fix', status: 'in_progress' }, { content: 'Test', status: 'pending' }] };
+    transport.emit({ kind: 'tool_call', toolCallId: 't1', name: 'TodoWrite', input: todos });
+    transport.emit({ kind: 'tool_call', toolCallId: 't2', name: 'TodoWrite', input: { todos: [{ content: 'sub step', status: 'pending' }] }, parentToolCallId: 'task' });
+    transport.emit({ kind: 'tool_call', toolCallId: 't3', name: 'ExitPlanMode', input: { plan: '# Plan\n1. Fix' } });
+    await settle();
+    expect(drafts.of('plan').map((d) => d.data.entries)).toEqual([[
+      { content: 'Read', status: 'completed' }, { content: 'Fix', status: 'in_progress' }, { content: 'Test', status: 'pending' },
+    ]]);
+    expect(drafts.of('plan_document').map((d) => d.data)).toEqual([{ planId: 't3', markdown: '# Plan\n1. Fix', status: 'ready', toolCallId: 't3' }]);
+  });
+
+  it('maps system/status permission mode changes', async () => {
+    const { transport, drafts } = await scripted();
+    transport.emit({ kind: 'mode_changed', permissionMode: 'acceptEdits' });
+    transport.emit({ kind: 'mode_changed', permissionMode: 'acceptEdits' });
+    await settle();
+    expect(drafts.of('mode_changed').map((d) => d.data)).toEqual([{ level: 'auto_edit', nativeMode: 'acceptEdits' }]);
+    expect(drafts.of('mode_changed')[0].turnId).toBeUndefined();
+  });
+
+  it('does not open a turn for an idle crash or session-level events', async () => {
+    const { transport, drafts } = await scripted();
+    transport.emit({ kind: 'rate_limit', status: 'allowed' });
+    transport.emit({ kind: 'subagent', phase: 'notification', taskId: 'x', raw: { status: 'completed' } });
+    transport.emit({ kind: 'compacted', trigger: 'auto' });
+    transport.emit({ kind: 'error', message: 'stream broke', fatal: true });
+    transport.end(1);
+    await drafts.done;
+    expect(drafts.of('turn_started')).toHaveLength(0);
+    expect(drafts.of('turn_ended')).toHaveLength(0);
+    expect(drafts.of('error')[0].data).toMatchObject({ code: 'driver_stream_failed', fatal: true });
+    expect(drafts.all.every((d) => d.turnId === undefined)).toBe(true);
+    expect(drafts.of('session_ended')[0].data.reason).toBe('error');
+  });
+
+  it('ends a running turn when the CLI dies mid-turn', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'go' }], 'prompt');
+    transport.end(3);
+    await drafts.done;
+    expect(drafts.types().slice(-2)).toEqual(['turn_ended', 'session_ended']);
+    expect(drafts.of('turn_ended')[0]).toMatchObject({ turnId: 'turn-1', data: { stopReason: 'error' } });
+  });
+
+  it('joins multiSelect answers for AskUserQuestion', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'ask' }], 'prompt');
+    const input = { questions: [{ question: 'Which?', options: [{ label: 'A' }, { label: 'B' }], multiSelect: true }] };
+    transport.emit({ kind: 'permission_request', requestId: 'q1', toolName: 'AskUserQuestion', input, suggestions: [] });
+    const q = await drafts.waitFor('question');
+    expect(q.data.questions[0].multiSelect).toBe(true);
+    await session.answerQuestion('q1', { 'Which?': ['A', 'B'] });
+    expect(transport.answers).toEqual([['q1', { behavior: 'allow', updatedInput: { ...input, answers: { 'Which?': 'A, B' } } }]]);
+    expect(claudeQuestionInput({}, { x: 'one' })).toEqual({ answers: { x: 'one' } });
+  });
+
+  it('attaches images from local files and rejects remote ones', async () => {
+    const { session, transport } = await scripted();
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-img-')), 'shot.png');
+    fs.writeFileSync(file, Buffer.from([1, 2, 3]));
+    await session.send([{ type: 'text', text: 'see' }, { type: 'image', mimeType: 'image/png', path: file }], 'prompt');
+    expect(transport.sent[0].images).toEqual([{ mediaType: 'image/png', data: Buffer.from([1, 2, 3]).toString('base64') }]);
+    await expect(claudeImageInput({ type: 'image', mimeType: 'image/png', uri: 'https://example.com/a.png' })).rejects.toThrow(/only inline data or local files/);
+    await expect(claudeImageInput({ type: 'image', mimeType: 'image/tiff', data: 'AA' })).rejects.toThrow(/image\/tiff/);
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+  });
+});
+
+describe('claudeTurnErrorCode', () => {
+  it('prefers the API error, then terminal reason, then stop reason', () => {
+    expect(claudeTurnErrorCode('rate_limit', 'prompt_too_long')).toBe('rate_limited');
+    expect(claudeTurnErrorCode('billing_error')).toBe('auth_required');
+    expect(claudeTurnErrorCode('overloaded')).toBe('unknown');
+    expect(claudeTurnErrorCode(undefined, 'blocking_limit')).toBe('rate_limited');
+    expect(claudeTurnErrorCode(undefined, 'api_error', 'refusal')).toBe('refusal');
+    expect(claudeTurnErrorCode(undefined, undefined, 'max_tokens')).toBe('max_tokens');
+    expect(claudeTurnErrorCode(undefined)).toBe('unknown');
   });
 });

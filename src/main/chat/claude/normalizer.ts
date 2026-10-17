@@ -192,7 +192,8 @@ export class ClaudeNormalizer {
       }
     }
     if (isObj(msg.error) || typeof msg.error === 'string') {
-      out.push({ kind: 'error', message: typeof msg.error === 'string' ? msg.error : JSON.stringify(msg.error), fatal: false });
+      const apiError = typeof msg.error === 'string' ? msg.error : undefined;
+      out.push({ kind: 'error', message: apiError ?? JSON.stringify(msg.error), fatal: false, apiError });
     }
     return out;
   }
@@ -234,6 +235,8 @@ export class ClaudeNormalizer {
       usage: toUsage(msg.usage),
       modelUsage: isObj(msg.modelUsage) ? msg.modelUsage : undefined,
       queuedTurnCount: num(msg.queued_turn_count),
+      stopReason: str(msg.stop_reason),
+      terminalReason: str(msg.terminal_reason),
     };
   }
 }

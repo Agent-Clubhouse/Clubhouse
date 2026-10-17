@@ -83,13 +83,13 @@ describe('ClaudeNormalizer', () => {
   it('reports an assistant API error without dropping its content', () => {
     const n = new ClaudeNormalizer();
     const evs = n.normalize({ type: 'assistant', message: { id: 'm', content: [{ type: 'text', text: 'partial' }] }, error: 'rate_limit' });
-    expect(evs).toMatchObject([{ kind: 'message', text: 'partial' }, { kind: 'error', message: 'rate_limit', fatal: false }]);
+    expect(evs).toMatchObject([{ kind: 'message', text: 'partial' }, { kind: 'error', message: 'rate_limit', fatal: false, apiError: 'rate_limit' }]);
   });
 
   it('maps an error result', () => {
     const n = new ClaudeNormalizer();
-    const [r] = n.normalize({ type: 'result', subtype: 'error_max_turns', is_error: true, errors: ['too many', 3], num_turns: 9 });
-    expect(r).toMatchObject({ kind: 'turn_ended', subtype: 'error_max_turns', isError: true, errors: ['too many'], numTurns: 9 });
+    const [r] = n.normalize({ type: 'result', subtype: 'error_max_turns', is_error: true, errors: ['too many', 3], num_turns: 9, stop_reason: 'tool_use', terminal_reason: 'max_turns' });
+    expect(r).toMatchObject({ kind: 'turn_ended', subtype: 'error_max_turns', isError: true, errors: ['too many'], numTurns: 9, stopReason: 'tool_use', terminalReason: 'max_turns' });
   });
 });
 

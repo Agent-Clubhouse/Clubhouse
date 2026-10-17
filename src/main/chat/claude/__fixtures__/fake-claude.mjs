@@ -19,7 +19,9 @@
 //   other  result.result = "echo:<text>|priority:<p>|shouldQuery:<b>"
 //
 // A `priority: "later"` message sent while a turn runs waits for that turn to
-// end, as the CLI's queue does; other messages run at once.
+// end, as the CLI's queue does. Any other message sent mid-turn is a steer: it
+// folds into the running turn, whose final text then ends with
+// "|steered:<texts>".
 
 import { writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -45,6 +47,8 @@ let ctlCounter = 0;
 const pendingPermissions = new Map();
 /** The running turn, so `priority: "later"` messages can wait for it. */
 let turnInFlight = null;
+/** Steer texts folded into the running turn. */
+let steered = [];
 
 const out = (obj) => process.stdout.write(JSON.stringify(obj) + '\n');
 const base = () => ({ session_id: sessionId, uuid: `uuid-${++msgCounter}` });
@@ -69,6 +73,10 @@ function result(text, extra = {}) {
 
 /** Report a decision as assistant text and as the result, so both raw and contract-level tests can see it. */
 function say(text) {
+  if (steered.length) {
+    text += `|steered:${steered.join(',')}`;
+    steered = [];
+  }
   out({ type: 'assistant', message: { id: `msg_say_${msgCounter}`, role: 'assistant', content: [{ type: 'text', text }] }, parent_tool_use_id: null, ...base() });
   result(text);
 }
@@ -247,6 +255,11 @@ rl.on('line', (line) => {
     return;
   }
   if (msg.type !== 'user') return;
+  if (turnInFlight && msg.priority !== 'later') {
+    const content = msg.message?.content;
+    steered.push(typeof content === 'string' ? content : (content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join(''));
+    return;
+  }
   if (msg.priority === 'later' && turnInFlight) {
     const prev = turnInFlight;
     turnInFlight = prev.then(() => runTurn(msg));

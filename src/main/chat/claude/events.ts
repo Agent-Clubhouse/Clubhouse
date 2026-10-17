@@ -102,6 +102,10 @@ export type ClaudeChatEventBody =
       usage?: ClaudeUsage;
       modelUsage?: Record<string, unknown>;
       queuedTurnCount?: number;
+      /** The model's stop_reason for the turn (`end_turn`, `max_tokens`, `refusal`, …). */
+      stopReason?: string;
+      /** Why the CLI's loop ended (`completed`, `prompt_too_long`, `blocking_limit`, `api_error`, …). */
+      terminalReason?: string;
     }
   | {
       kind: 'rate_limit';
@@ -115,7 +119,13 @@ export type ClaudeChatEventBody =
   | { kind: 'subagent'; phase: 'started' | 'progress' | 'notification' | 'updated'; taskId: string; raw: Record<string, unknown> }
   | { kind: 'mode_changed'; permissionMode: string }
   | { kind: 'permission_denied'; toolName?: string; raw: Record<string, unknown> }
-  | { kind: 'error'; message: string; fatal: boolean }
+  | {
+      kind: 'error';
+      message: string;
+      fatal: boolean;
+      /** Claude's assistant `error` kind (`authentication_failed`, `rate_limit`, `max_output_tokens`, …). */
+      apiError?: string;
+    }
   /** A wire message the normalizer doesn't map yet. Logged as a drift signal, never dropped silently. */
   | { kind: 'unmapped'; type: string; subtype?: string; raw: Record<string, unknown> }
   | { kind: 'session_ended'; exitCode: number | null; signal: string | null; reason?: string };
