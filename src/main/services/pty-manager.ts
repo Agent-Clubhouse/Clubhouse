@@ -450,6 +450,27 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
   });
 }
 
+/**
+ * Whether a shell session is running something other than the shell itself
+ * (a dev server, an editor, a build), so closing it would interrupt work.
+ * Unknown answers are true: Windows does not report the foreground process,
+ * and a caller deciding whether to close a shell should keep it then.
+ */
+export function isShellBusy(id: string): boolean {
+  const session = sessions.get(id);
+  if (!session) return false;
+  if (process.platform === 'win32') return true;
+  let foreground: string | undefined;
+  try {
+    foreground = session.process.process;
+  } catch {
+    return true;
+  }
+  if (!foreground) return true;
+  const name = (p: string) => p.replace(/^-/, '').split(/[\\/]/).pop() ?? p;
+  return name(foreground) !== name(getDefaultShell());
+}
+
 /** Defense-in-depth ceiling for a single write() call (64 KB). */
 const MAX_WRITE_LENGTH = 64 * 1024;
 

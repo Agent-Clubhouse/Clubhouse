@@ -5,7 +5,6 @@ import { fileState } from './state';
 import { getFileIconColor } from './file-icons';
 import { fuzzyMatch } from '../../../features/command-palette/fuzzy-match';
 import { PopupMenu, type MenuEntry, type MenuItem } from '../../../components/PopupMenu';
-import { useFilesScope } from './filesScope';
 
 // ── Icons ──────────────────────────────────────────────────────────────
 
@@ -433,10 +432,17 @@ function contextMenuItems(multiSelectCount: number, onAction: (action: string) =
 
 // ── FileTree (SidebarPanel) ───────────────────────────────────────────
 
-export function FileTree({ api: rawApi }: { api: PluginAPI }) {
-  // New chrome: the root, search and git badges follow the sidebar selection
-  // (agent worktree or project root) and the worktree picker is hidden (spec §4.5).
-  const { api, root: scopeRoot } = useFilesScope(rawApi);
+/**
+ * `api` is already pointed at the scope (SidebarWrapper builds it once with
+ * useFilesScope and shares it with SearchPanel). In the new chrome the root
+ * follows the sidebar selection and the worktree picker is hidden (spec §4.5);
+ * `scopeRoot` and `scopeKey` are null without a scope (classic layout, remote).
+ */
+export function FileTree({ api, scopeRoot = null, scopeKey = null }: {
+  api: PluginAPI;
+  scopeRoot?: string | null;
+  scopeKey?: string | null;
+}) {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
@@ -472,6 +478,8 @@ export function FileTree({ api: rawApi }: { api: PluginAPI }) {
   const expandedSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const projectPath = api.context.projectPath || '';
+  // Expanded folders are saved per scope; the project root keeps the original key.
+  const expandedKey = scopeKey ? `files:expandedPaths:${scopeKey}` : 'files:expandedPaths';
   const [showHidden, setShowHidden] = useState(() => api.settings.get<boolean>('showHiddenFiles') ?? true);
   const loadVersionRef = useRef(0);
 
@@ -645,7 +653,7 @@ export function FileTree({ api: rawApi }: { api: PluginAPI }) {
         }
 
         // Restore expanded paths
-        const savedExpanded = await api.storage.project.read('files:expandedPaths');
+        const savedExpanded = await api.storage.project.read(expandedKey);
         if (!cancelled && Array.isArray(savedExpanded) && savedExpanded.length > 0) {
           const validPaths = savedExpanded.filter((p: unknown) => typeof p === 'string') as string[];
           const absExpanded = new Set(validPaths.map(p => `${projectPath}/${p}`));
@@ -665,19 +673,19 @@ export function FileTree({ api: rawApi }: { api: PluginAPI }) {
     }
     restore();
     return () => { cancelled = true; };
-  }, [api, projectPath]);
+  }, [api, projectPath, expandedKey]);
 
   // Persist expanded state (debounced) — saves relative paths
   useEffect(() => {
     if (expandedSaveTimerRef.current) clearTimeout(expandedSaveTimerRef.current);
     expandedSaveTimerRef.current = setTimeout(() => {
       const relPaths = Array.from(expanded).map(p => getRelativePath(p, projectPath));
-      api.storage.project.write('files:expandedPaths', relPaths).catch(() => {});
+      api.storage.project.write(expandedKey, relPaths).catch(() => {});
     }, 500);
     return () => {
       if (expandedSaveTimerRef.current) clearTimeout(expandedSaveTimerRef.current);
     };
-  }, [expanded, api, projectPath]);
+  }, [expanded, api, projectPath, expandedKey]);
 
   // Load when meaningful dependencies change (rootPath, showHidden, api)
   useEffect(() => {
@@ -842,9 +850,16 @@ export function FileTree({ api: rawApi }: { api: PluginAPI }) {
   }, [api, resetForRoot]);
 
   // Follow scope changes without touching the legacy picker's saved root.
+  // Two worktrees outside the project both have the root '.', so the scope's
+  // directory, not just the root, decides when selection and expansion reset.
+  const scopeIdentity = scopeRoot === null ? null : `${projectPath}::${scopeRoot}`;
+  const lastScopeIdentityRef = useRef(scopeIdentity);
   useEffect(() => {
-    if (scopeRoot !== null && scopeRoot !== rootPath) resetForRoot(scopeRoot);
-  }, [scopeRoot, rootPath, resetForRoot]);
+    if (scopeRoot === null) return;
+    const moved = lastScopeIdentityRef.current !== scopeIdentity;
+    lastScopeIdentityRef.current = scopeIdentity;
+    if (moved || scopeRoot !== rootPath) resetForRoot(scopeRoot);
+  }, [scopeRoot, scopeIdentity, rootPath, resetForRoot]);
 
   // Expand all directories
   const expandAll = useCallback(async () => {
@@ -1224,9 +1239,9 @@ export function FileTree({ api: rawApi }: { api: PluginAPI }) {
     { id: 'expand-all', label: 'Expand all', onSelect: expandAll },
     { id: 'collapse-all', label: 'Collapse all', onSelect: collapseAll },
     { id: 'sep-search', separator: true },
-    // The platform's binding (⌘⇧F or Ctrl+Shift+F), not a hardcoded "Cmd+Shift+F"
-    { id: 'search', label: 'Search across files', shortcut: 'Meta+Shift+F', onSelect: () => fileState.setSearchMode(true) },
-    { id: 'refresh', label: 'Refresh', shortcut: 'Meta+Shift+R', onSelect: refreshAll },
+    // The user's current bindings, shown for the platform (⌘⇧F or Ctrl+Shift+F)
+    { id: 'search', label: 'Search across files', shortcut: api.commands.getBinding('search') ?? undefined, onSelect: () => fileState.setSearchMode(true) },
+    { id: 'refresh', label: 'Refresh', shortcut: api.commands.getBinding('refresh') ?? undefined, onSelect: refreshAll },
   ];
 
   const iconButton = (props: Record<string, unknown>, icon: React.ReactElement) =>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef, useSyncExternalStore } from 'react';
 import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/plugin-types';
-import { terminalState, makeSessionId } from './state';
+import { terminalState, makeSessionId, MAX_TERMINAL_SESSIONS } from './state';
 import type { TerminalTarget } from './state';
 import { TerminalCanvasWidget } from './TerminalCanvasWidget';
 import { useChromeScope } from '../../../chrome/scope';
@@ -33,6 +33,7 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
 export function deactivate(): void {
   restartAction = null;
   terminalState.reset();
+  overCapNoticeShown.clear();
 }
 
 // ── Sidebar Panel ───────────────────────────────────────────────────────
@@ -142,6 +143,9 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
 
 // ── Main Panel ──────────────────────────────────────────────────────────
 
+/** Projects already told that every open shell is busy, so the notice shows once. */
+const overCapNoticeShown = new Set<string>();
+
 /** `path` with the home directory shortened to `~`, for display. */
 export function displayPath(path: string): string {
   const home = typeof process !== 'undefined' ? (process.env?.HOME || process.env?.USERPROFILE) : undefined;
@@ -201,14 +205,49 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     }
   }, [api]);
 
+  // Keep at most MAX_TERMINAL_SESSIONS shells per project: close the least
+  // recently shown idle ones. A shell running a command is never closed for
+  // the cap; if only busy ones are left, the project goes over and says so.
+  useEffect(() => {
+    const candidates = terminalState.touchSession(projectId, sessionId);
+    if (candidates.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const candidate of candidates) {
+        if (cancelled || terminalState.sessionCount(projectId) <= MAX_TERMINAL_SESSIONS) return;
+        if (await api.terminal.isBusy(candidate).catch(() => true)) continue;
+        terminalState.forgetSession(projectId, candidate);
+        spawnedSessionsRef.current.delete(candidate);
+        api.terminal.kill(candidate).catch(() => {});
+      }
+      if (!cancelled && terminalState.sessionCount(projectId) > MAX_TERMINAL_SESSIONS && !overCapNoticeShown.has(projectId)) {
+        overCapNoticeShown.add(projectId);
+        api.ui.showNotice(`${terminalState.sessionCount(projectId)} terminals are open in this project and all are running commands, so none were closed.`);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [api, projectId, sessionId]);
+
+  // Close the shells of agents that were deleted (their worktree is gone),
+  // unless a command is still running in one.
+  useEffect(() => {
+    let known = new Set(api.agents.list().map((a) => a.id));
+    const sub = api.agents.onAnyChange(() => {
+      const now = new Set(api.agents.list().map((a) => a.id));
+      for (const id of known) {
+        if (now.has(id)) continue;
+        const sid = makeSessionId(projectId, 'agent', id);
+        terminalState.forgetSession(projectId, sid);
+        spawnedSessionsRef.current.delete(sid);
+        api.terminal.isBusy(sid).then((busy) => { if (!busy) api.terminal.kill(sid).catch(() => {}); }, () => {});
+      }
+      known = now;
+    });
+    return () => sub.dispose();
+  }, [api, projectId]);
+
   // Spawn or reconnect when target changes
   useEffect(() => {
-    // Keep at most MAX_TERMINAL_SESSIONS shells alive; close the least recently shown.
-    for (const evicted of terminalState.touchSession(sessionId)) {
-      spawnedSessionsRef.current.delete(evicted);
-      api.terminal.kill(evicted).catch(() => {});
-    }
-
     if (spawnedSessionsRef.current.has(sessionId)) {
       // Already spawned in this lifecycle — just reconnect
       setStatus('running');

@@ -33,7 +33,9 @@ export function getOrCreateModel(
     return existing;
   }
 
-  const uri = monaco.Uri.parse(`file:///${filePath}`);
+  // Files passes a checkout-qualified key (`<checkout>/<path>`), so models of
+  // the same relative path in two checkouts get different URIs.
+  const uri = monaco.Uri.parse(`file:///${filePath.replace(/^\/+/, '')}`);
   // Check if a model already exists at this URI (e.g., from a previous session)
   let model = monaco.editor.getModel(uri);
   if (!model) {

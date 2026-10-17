@@ -38,6 +38,17 @@ interface LoadedFile {
   fileType: FileType;
 }
 
+/**
+ * The key for a file in the caches below and in Monaco's model cache: the
+ * checkout's directory plus the path. Paths are relative to the Files API's
+ * root, and a worktree outside the project reuses the root's relative paths,
+ * so the path alone would let one checkout's content or unsaved edits show
+ * (and be saved) in another.
+ */
+export function fileKey(root: string, relativePath: string): string {
+  return `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/${relativePath}`;
+}
+
 // Module-level cache shared across component mounts; cleared on plugin deactivation.
 const _fileCache = new Map<string, LoadedFile>();
 
@@ -165,6 +176,8 @@ function FileMenuButton({ items }: { items: MenuEntry[] }) {
 export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
   // New chrome: files and saved tabs follow the sidebar selection (spec §4.5).
   const { api, key: scopeKey, root: scopeRoot } = useFilesScope(rawApi);
+  const checkoutRoot = api.context.projectPath || '';
+  const keyOf = useCallback((relativePath: string) => fileKey(checkoutRoot, relativePath), [checkoutRoot]);
   const [activeTab, setActiveTab] = useState<Tab | undefined>(fileState.getActiveTab());
   const [loadedFile, setLoadedFile] = useState<LoadedFile | null>(null);
   const [previewMode, setPreviewMode] = useState<'preview' | 'source'>('preview');
@@ -194,7 +207,7 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
 
   const loadFile = useCallback(async (relativePath: string): Promise<LoadedFile> => {
     // Check cache first
-    const cached = _fileCache.get(relativePath);
+    const cached = _fileCache.get(keyOf(relativePath));
     if (cached) return cached;
 
     const ext = getExtension(relativePath);
@@ -238,9 +251,9 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
       result.fileType = 'none';
     }
 
-    _fileCache.set(relativePath, result);
+    _fileCache.set(keyOf(relativePath), result);
     return result;
-  }, [api]);
+  }, [api, keyOf]);
 
   // Load file when active tab changes
   useEffect(() => {
@@ -272,9 +285,10 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
   // Saving waits until the read is done so an empty set never overwrites them.
   useEffect(() => {
     if (fileState.scopeKey !== scopeKey) {
-      // A worktree outside the project reuses the root's relative paths: drop
-      // cached content so nothing from the other checkout is shown.
+      // Caches are keyed by checkout, so this only frees memory; the save
+      // times are dropped so a stale one never hides an external change.
       _fileCache.clear();
+      _savedMtimes.clear();
       disposeCleanModels();
     }
     fileState.setScope(scopeKey);
@@ -329,18 +343,18 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
         tabId,
         pendingAction: () => {
           // Dispose the Monaco model for this file
-          disposeModel(tab.filePath);
-          _fileCache.delete(tab.filePath);
+          disposeModel(keyOf(tab.filePath));
+          _fileCache.delete(keyOf(tab.filePath));
           fileState.closeTab(tabId);
         },
       });
       return;
     }
 
-    disposeModel(tab.filePath);
-    _fileCache.delete(tab.filePath);
+    disposeModel(keyOf(tab.filePath));
+    _fileCache.delete(keyOf(tab.filePath));
     fileState.closeTab(tabId);
-  }, []);
+  }, [keyOf]);
 
   // ── Save file ─────────────────────────────────────────────────────
 
@@ -349,15 +363,15 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
   const recordSavedMtime = useCallback(async (filePath: string) => {
     try {
       const stat = await api.files.stat(filePath);
-      _savedMtimes.set(filePath, stat.modifiedAt);
+      _savedMtimes.set(keyOf(filePath), stat.modifiedAt);
     } catch {
-      _savedMtimes.delete(filePath);
+      _savedMtimes.delete(keyOf(filePath));
     }
-  }, [api]);
+  }, [api, keyOf]);
 
   /** Write the editor content to disk. Returns false (and surfaces the error) on failure. */
   const saveFile = useCallback(async (filePath: string): Promise<boolean> => {
-    const content = getModelContent(filePath);
+    const content = getModelContent(keyOf(filePath));
     if (content === null) {
       api.ui.showError('Failed to save: editor content is unavailable');
       return false;
@@ -369,14 +383,14 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
       return false;
     }
     await recordSavedMtime(filePath);
-    updateSavedContent(filePath, content);
+    updateSavedContent(keyOf(filePath), content);
     const tab = fileState.getTabByPath(filePath);
     if (tab) {
       fileState.setTabDirty(tab.id, false);
     }
     fileState.triggerRefresh();
     return true;
-  }, [api, recordSavedMtime]);
+  }, [api, recordSavedMtime, keyOf]);
 
   // ── Dirty change handler ──────────────────────────────────────────
 
@@ -397,16 +411,16 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
       return false;
     }
     await recordSavedMtime(activeTab.filePath);
-    updateSavedContent(activeTab.filePath, newContent);
+    updateSavedContent(keyOf(activeTab.filePath), newContent);
     fileState.setTabDirty(activeTab.id, false);
     fileState.triggerRefresh();
     // Update cache
-    const cached = _fileCache.get(activeTab.filePath);
+    const cached = _fileCache.get(keyOf(activeTab.filePath));
     if (cached) {
       cached.content = newContent;
     }
     return true;
-  }, [api, recordSavedMtime, activeTab?.id, activeTab?.filePath]);
+  }, [api, recordSavedMtime, keyOf, activeTab?.id, activeTab?.filePath]);
 
   // ── Scroll state handler ──────────────────────────────────────────
 
@@ -436,12 +450,12 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
 
         try {
           const stat = await api.files.stat(evt.path);
-          const knownMtime = _savedMtimes.get(evt.path);
+          const knownMtime = _savedMtimes.get(keyOf(evt.path));
           // If mtime matches our last save, this is our own write — skip
           if (knownMtime !== undefined && stat.modifiedAt === knownMtime) continue;
 
           // External change: reload content and update Monaco's saved baseline
-          const cached = _fileCache.get(evt.path);
+          const cached = _fileCache.get(keyOf(evt.path));
           if (!cached || (cached.fileType !== 'text' && cached.fileType !== 'markdown')) continue;
 
           // Unsaved edits now sit on top of a file that changed on disk.
@@ -449,8 +463,8 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
 
           const newContent = await api.files.readFile(evt.path);
           cached.content = newContent;
-          _savedMtimes.set(evt.path, stat.modifiedAt);
-          updateSavedContent(evt.path, newContent);
+          _savedMtimes.set(keyOf(evt.path), stat.modifiedAt);
+          updateSavedContent(keyOf(evt.path), newContent);
           // Monaco now shows dirty only when editor content differs from newContent
         } catch {
           // File may have been deleted or be temporarily unreadable
@@ -458,7 +472,7 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
       }
     });
     return () => disposable.dispose();
-  }, [api]);
+  }, [api, keyOf]);
 
   // ── Reveal in tree ────────────────────────────────────────────────
 
@@ -629,12 +643,12 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
       } else {
         body = React.createElement('div', { className: 'flex-1 min-h-0' },
           React.createElement(MonacoEditor, {
-            key: activeTab.filePath,
+            key: keyOf(activeTab.filePath),
             value: loadedFile.content,
             language: 'xml',
             onSave: handleSave,
             onDirtyChange: handleDirtyChange,
-            filePath: activeTab.filePath,
+            filePath: keyOf(activeTab.filePath),
             initialScrollState: activeTab.scrollState,
             onScrollStateChange: handleScrollStateChange,
             scrollToLine,
@@ -652,12 +666,12 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
       } else {
         body = React.createElement('div', { className: 'flex-1 min-h-0' },
           React.createElement(MonacoEditor, {
-            key: activeTab.filePath,
+            key: keyOf(activeTab.filePath),
             value: loadedFile.content,
             language: 'markdown',
             onSave: handleSave,
             onDirtyChange: handleDirtyChange,
-            filePath: activeTab.filePath,
+            filePath: keyOf(activeTab.filePath),
             initialScrollState: activeTab.scrollState,
             onScrollStateChange: handleScrollStateChange,
             scrollToLine,
@@ -670,12 +684,12 @@ export function FileViewer({ api: rawApi }: { api: PluginAPI }) {
     default: // text
       body = React.createElement('div', { className: 'flex-1 min-h-0' },
         React.createElement(MonacoEditor, {
-          key: activeTab.filePath,
+          key: keyOf(activeTab.filePath),
           value: loadedFile.content,
           language: lang,
           onSave: handleSave,
           onDirtyChange: handleDirtyChange,
-          filePath: activeTab.filePath,
+          filePath: keyOf(activeTab.filePath),
           initialScrollState: activeTab.scrollState,
           onScrollStateChange: handleScrollStateChange,
           scrollToLine,

@@ -92,7 +92,7 @@ const WIDGETS_API_COMPONENTS: (keyof WidgetsAPI)[] = [
 ];
 
 const TERMINAL_API_METHODS: (keyof TerminalAPI)[] = [
-  'spawn', 'write', 'resize', 'kill', 'getBuffer', 'onData', 'onExit', 'ShellTerminal',
+  'spawn', 'write', 'resize', 'kill', 'getBuffer', 'isBusy', 'onData', 'onExit', 'ShellTerminal',
 ];
 
 const LOGGING_API_METHODS: (keyof LoggingAPI)[] = ['debug', 'info', 'warn', 'error', 'fatal'];

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { FileViewer, clearFileCache, revealLabel } from './FileViewer';
 import { fileState } from './state';
 import { createMockAPI } from '../../testing';
+import { formatShortcut } from '../../../components/Tooltip';
 
 // Track the last onSave callback passed to MonacoEditor so tests can trigger saves
 let lastOnSave: ((content: string) => unknown) | null = null;
@@ -278,5 +279,24 @@ describe('FileViewer', () => {
       await waitFor(() => expect(api2.files.readFile).toHaveBeenCalledTimes(1));
       // api2 must have been called — proves the cache was cleared and re-fetched
     });
+  });
+});
+
+describe('FileViewer tab menu shortcuts', () => {
+  beforeEach(() => {
+    fileState.reset();
+    clearFileCache();
+  });
+
+  it('shows the Close binding the user has now, not a hard-coded one', async () => {
+    const api = createViewerAPI();
+    api.commands.getBinding = vi.fn((id: string) => (id === 'close-tab' ? 'Meta+Alt+W' : null));
+    render(<FileViewer api={api} />);
+    selectFile('hello.ts');
+
+    fireEvent.contextMenu(await screen.findByTitle('hello.ts'));
+    const close = await screen.findByTestId('files-tab-menu-close');
+    expect(close).toHaveTextContent(formatShortcut('Meta+Alt+W'));
+    expect(api.commands.getBinding).toHaveBeenCalledWith('close-tab');
   });
 });

@@ -16,6 +16,9 @@ export const pty = {
     ipcRenderer.invoke(IPC.PTY.KILL, agentId),
   getBuffer: (agentId: string): Promise<string> =>
     ipcRenderer.invoke(IPC.PTY.GET_BUFFER, agentId),
+  /** True when a shell session is running a command, or when that can't be told (Windows). */
+  isShellBusy: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.PTY.IS_SHELL_BUSY, id),
   /** Buffer plus the output seq it includes; pair with the `seq` passed to `onData`. */
   getBufferSnapshot: (agentId: string): Promise<{ data: string; seq: number }> =>
     ipcRenderer.invoke(IPC.PTY.GET_BUFFER_SNAPSHOT, agentId),

@@ -174,7 +174,7 @@ interface TabBarProps {
  * file's path, cursor position and menu on the right. It replaces the tab
  * bar, the file header and the status bar.
  */
-export function TabBar({ api: _api, onCloseTab, onRevealInTree, trailing }: TabBarProps) {
+export function TabBar({ api, onCloseTab, onRevealInTree, trailing }: TabBarProps) {
   const [tabs, setTabs] = useState<Tab[]>(fileState.getOrderedTabs());
   const [activeTabId, setActiveTabId] = useState<string | null>(fileState.activeTabId);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tab: Tab } | null>(null);
@@ -248,7 +248,8 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree, trailing }: TabB
   }, []);
 
   const contextItems = useCallback((tab: Tab): MenuEntry[] => [
-    { id: 'close', label: 'Close', shortcut: 'Meta+Shift+W', onSelect: () => onCloseTab(tab.id) },
+    // The binding the user has now (manifest default or their override), if any
+    { id: 'close', label: 'Close', shortcut: api.commands.getBinding('close-tab') ?? undefined, onSelect: () => onCloseTab(tab.id) },
     { id: 'close-others', label: 'Close others', onSelect: () => fileState.closeOtherTabs(tab.id) },
     { id: 'close-right', label: 'Close to the right', onSelect: () => fileState.closeTabsToRight(tab.id) },
     { id: 'close-all', label: 'Close all', onSelect: () => fileState.closeAllTabs() },
@@ -261,7 +262,7 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree, trailing }: TabB
     { id: 'sep-path', separator: true },
     { id: 'copy-path', label: 'Copy path', onSelect: () => { navigator.clipboard.writeText(tab.filePath).catch(() => {}); } },
     { id: 'reveal', label: 'Reveal in file tree', onSelect: () => onRevealInTree(tab.filePath) },
-  ], [onCloseTab, onRevealInTree]);
+  ], [api, onCloseTab, onRevealInTree]);
 
   // Drag handlers
   const handleDragStart = useCallback((tabId: string) => {

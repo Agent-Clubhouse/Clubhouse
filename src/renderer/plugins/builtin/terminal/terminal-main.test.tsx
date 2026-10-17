@@ -7,7 +7,7 @@ import type { AgentInfo } from '../../../../shared/plugin-types';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-function createTerminalAPI(bufferContent = '') {
+function createTerminalAPI(bufferContent = '', busy: (sessionId: string) => boolean = () => false) {
   const onExitHandlers: ((code: number) => void)[] = [];
 
   return createMockAPI({
@@ -17,6 +17,7 @@ function createTerminalAPI(bufferContent = '') {
       resize: vi.fn(),
       kill: vi.fn(async () => {}),
       getBuffer: vi.fn(async () => bufferContent),
+      isBusy: vi.fn(async (sessionId: string) => busy(sessionId)),
       onData: () => ({ dispose: () => {} }),
       onExit: vi.fn((_sessionId: string, cb: (code: number) => void) => {
         onExitHandlers.push(cb);
@@ -81,6 +82,7 @@ function createSidebarAPI(agents: AgentInfo[] = []) {
       resize: vi.fn(),
       kill: vi.fn(async () => {}),
       getBuffer: vi.fn(async () => ''),
+      isBusy: vi.fn(async () => false),
       onData: () => ({ dispose: () => {} }),
       onExit: vi.fn(() => ({ dispose: () => {} })),
       ShellTerminal: ({ sessionId }: { sessionId: string }) =>
@@ -212,21 +214,62 @@ describe('Terminal MainPanel', () => {
     expect(screen.queryByTestId('terminal-root-note')).not.toBeInTheDocument();
   });
 
-  it('closes the least recently shown shell past MAX_TERMINAL_SESSIONS', async () => {
-    const api = createTerminalAPI();
-    render(<MainPanel api={api} />);
-    await waitFor(() => expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:project', '/project'));
-
-    for (let i = 0; i < MAX_TERMINAL_SESSIONS; i++) {
+  async function showTargets(count: number) {
+    for (let i = 0; i < count; i++) {
       act(() => {
         terminalState.setActiveTarget({ sessionId: `terminal:proj-1:agent:a${i}`, label: `a${i}`, cwd: `/wt/a${i}`, kind: 'agent' });
       });
       await waitFor(() => expect(screen.getByText(`Shell: terminal:proj-1:agent:a${i}`)).toBeInTheDocument());
     }
+  }
+
+  it('closes the least recently shown idle shell past MAX_TERMINAL_SESSIONS', async () => {
+    const api = createTerminalAPI();
+    render(<MainPanel api={api} />);
+    await waitFor(() => expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:project', '/project'));
+
+    await showTargets(MAX_TERMINAL_SESSIONS);
 
     // The project shell was shown first and is now one past the cap.
+    await waitFor(() => expect(api.terminal.kill).toHaveBeenCalledWith('terminal:proj-1:project'));
     expect(api.terminal.kill).toHaveBeenCalledTimes(1);
-    expect(api.terminal.kill).toHaveBeenCalledWith('terminal:proj-1:project');
+    expect(terminalState.sessionCount('proj-1')).toBe(MAX_TERMINAL_SESSIONS);
+  });
+
+  it('never closes a shell that is running a command, and says when every one is busy', async () => {
+    const api = createTerminalAPI('', () => true);
+    const notice = vi.spyOn(api.ui, 'showNotice');
+    render(<MainPanel api={api} />);
+    await waitFor(() => expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:project', '/project'));
+
+    await showTargets(MAX_TERMINAL_SESSIONS);
+
+    await waitFor(() => expect(notice).toHaveBeenCalledTimes(1));
+    expect(api.terminal.kill).not.toHaveBeenCalled();
+    expect(terminalState.sessionCount('proj-1')).toBe(MAX_TERMINAL_SESSIONS + 1);
+  });
+
+  it('skips a busy shell and closes the next idle one', async () => {
+    const api = createTerminalAPI('', (sid) => sid === 'terminal:proj-1:project');
+    render(<MainPanel api={api} />);
+    await waitFor(() => expect(api.terminal.spawn).toHaveBeenCalledWith('terminal:proj-1:project', '/project'));
+
+    await showTargets(MAX_TERMINAL_SESSIONS);
+
+    await waitFor(() => expect(api.terminal.kill).toHaveBeenCalledWith('terminal:proj-1:agent:a0'));
+    expect(api.terminal.kill).not.toHaveBeenCalledWith('terminal:proj-1:project');
+  });
+
+  it('closes the shell of an agent that was deleted', async () => {
+    const { api, triggerAgentChange } = createSidebarAPI([DURABLE_AGENT, SECOND_DURABLE]);
+    render(<MainPanel api={api} />);
+    await waitFor(() => expect(api.terminal.spawn).toHaveBeenCalled());
+
+    (api.agents.list as ReturnType<typeof vi.fn>).mockReturnValue([SECOND_DURABLE]);
+    act(() => { triggerAgentChange(); });
+
+    await waitFor(() => expect(api.terminal.kill).toHaveBeenCalledWith('terminal:proj-1:agent:agent-1'));
+    expect(api.terminal.kill).not.toHaveBeenCalledWith('terminal:proj-1:agent:agent-2');
   });
 
   describe('new chrome scope', () => {

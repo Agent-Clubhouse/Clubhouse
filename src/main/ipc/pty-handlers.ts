@@ -31,6 +31,10 @@ export function registerPtyHandlers(): void {
     return ptyManager.getBuffer(agentId);
   }));
 
+  ipcMain.handle(IPC.PTY.IS_SHELL_BUSY, withValidatedArgs([stringArg()], (_event, id: string) => {
+    return ptyManager.isShellBusy(id);
+  }));
+
   ipcMain.handle(IPC.PTY.GET_BUFFER_SNAPSHOT, withValidatedArgs([stringArg()], (_event, agentId: string) => {
     return ptyManager.getBufferSnapshot(agentId);
   }));

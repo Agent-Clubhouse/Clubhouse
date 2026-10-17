@@ -28,27 +28,39 @@ export function makeSessionId(projectId: string, kind: 'project' | 'agent', agen
   return `terminal:${projectId}:project`;
 }
 
-/** Most shells kept alive at once; the least recently shown one is closed past this. */
+/**
+ * Most idle shells kept alive per project. Past this the least recently shown
+ * idle one is closed; a shell running a command is never closed for the cap.
+ */
 export const MAX_TERMINAL_SESSIONS = 8;
 
 export const terminalState = {
   activeTarget: null as TerminalTarget | null,
   targets: [] as TerminalTarget[],
-  /** Session ids in the order they were last shown, oldest first. */
-  recentSessions: [] as string[],
+  /** Per project, session ids in the order they were last shown, oldest first. */
+  recentSessions: new Map<string, string[]>(),
   listeners: new Set<() => void>(),
 
   /**
-   * Mark `sessionId` as just shown. Returns the sessions that now exceed
-   * MAX_TERMINAL_SESSIONS, oldest first, for the caller to close.
+   * Mark `sessionId` as just shown in `projectId`. Returns the project's other
+   * sessions, oldest first, when it has more than MAX_TERMINAL_SESSIONS: the
+   * candidates for the caller to close (it skips busy ones and calls forgetSession).
    */
-  touchSession(sessionId: string): string[] {
-    this.recentSessions = [...this.recentSessions.filter((id: string) => id !== sessionId), sessionId];
-    const excess = this.recentSessions.length - MAX_TERMINAL_SESSIONS;
-    if (excess <= 0) return [];
-    const evicted = this.recentSessions.slice(0, excess);
-    this.recentSessions = this.recentSessions.slice(excess);
-    return evicted;
+  touchSession(projectId: string, sessionId: string): string[] {
+    const list = [...(this.recentSessions.get(projectId) ?? []).filter((id: string) => id !== sessionId), sessionId];
+    this.recentSessions.set(projectId, list);
+    return list.length > MAX_TERMINAL_SESSIONS ? list.slice(0, -1) : [];
+  },
+
+  /** How many sessions `projectId` has open. */
+  sessionCount(projectId: string): number {
+    return this.recentSessions.get(projectId)?.length ?? 0;
+  },
+
+  /** Stop tracking a session that was closed. */
+  forgetSession(projectId: string, sessionId: string): void {
+    const list = this.recentSessions.get(projectId);
+    if (list) this.recentSessions.set(projectId, list.filter((id: string) => id !== sessionId));
   },
 
   setActiveTarget(target: TerminalTarget | null): void {
@@ -77,7 +89,7 @@ export const terminalState = {
   reset(): void {
     this.activeTarget = null;
     this.targets = [];
-    this.recentSessions = [];
+    this.recentSessions = new Map();
     this.listeners.clear();
   },
 };
