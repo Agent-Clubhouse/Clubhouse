@@ -24,7 +24,8 @@ concurrency:
 # and Windows) and the Linux package smoke test only run on pushes to main,
 # the nightly schedule, manual dispatch, Dependabot PRs, and PRs labelled
 # `full-ci`. Every PR still gets lint, the API surface check, and typecheck
-# plus unit/component tests on all three OSes.
+# plus unit/component tests on Linux and Windows; macOS typecheck/unit runs in
+# those same full runs (macOS runners are capped at 5 concurrent jobs).
 
 jobs:
   dependency-preflight:
@@ -67,7 +68,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS has a 5-concurrent-job cap on this plan, so PRs run on Linux and
+        # Windows only; main, nightly, Dependabot and `full-ci` PRs add macOS.
+        os: ${{ fromJSON((github.event_name != 'pull_request' || github.actor == 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && '["ubuntu-latest","windows-latest","macos-latest"]' || '["ubuntu-latest","windows-latest"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -87,7 +90,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS has a 5-concurrent-job cap on this plan, so PRs run on Linux and
+        # Windows only; main, nightly, Dependabot and `full-ci` PRs add macOS.
+        os: ${{ fromJSON((github.event_name != 'pull_request' || github.actor == 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && '["ubuntu-latest","windows-latest","macos-latest"]' || '["ubuntu-latest","windows-latest"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
