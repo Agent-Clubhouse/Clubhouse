@@ -3,6 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult, GitWorktreeEntry, GitCommitDetail, GitCommitFileEntry } from '../../shared/types';
 import { appLog } from './log-service';
+import { isTelemetryActive, replaySpan, tel } from '../telemetry/facade';
+import { classifyGitFailure, type GitFailure } from '../telemetry/workspace';
+import { ATTR, countBucket, type GitOp, type SpanName } from '../../shared/telemetry/attributes';
 
 // Conflict status codes from git porcelain format
 const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
@@ -31,9 +34,11 @@ function validateFilePath(filePath: string): void {
   }
 }
 
-function gitExec(args: string[], cwd: string, timeout = 10000): Promise<string> {
+function gitExec(args: string[], cwd: string, timeout = 10000, op: GitOp = 'other'): Promise<string> {
+  const startMs = Date.now();
   return new Promise((resolve, reject) => {
     nodeExecFile('git', args, { cwd, encoding: 'utf-8', timeout }, (error, stdout, stderr) => {
+      if (isTelemetryActive()) tel.count('clubhouse.git.subprocess.duration', (Date.now() - startMs) / 1000, [ATTR.gitOp(op)]);
       if (error) {
         (error as any).stderr = stderr;
         reject(error);
@@ -55,23 +60,71 @@ function formatCmd(args: string[]): string {
   return `git ${args.slice(0, 2).join(' ')}`;
 }
 
-async function runResult(args: string[], cwd: string, timeout = 30000): Promise<GitOpResult> {
+/** A git result plus, on failure, its local classification for telemetry. */
+interface Attempt<T> {
+  value: T;
+  failure?: GitFailure;
+}
+
+async function runResultDetailed(args: string[], cwd: string, timeout = 30000, op: GitOp = 'other'): Promise<Attempt<GitOpResult>> {
   try {
-    const output = await gitExec(args, cwd, timeout);
-    return { ok: true, message: output.trim() };
+    const output = await gitExec(args, cwd, timeout, op);
+    return { value: { ok: true, message: output.trim() } };
   } catch (err: unknown) {
     const msg = extractGitError(err);
     appLog('core:git', 'warn', 'Git operation failed', {
       meta: { cmd: formatCmd(args), cwd, error: msg },
     });
-    return { ok: false, message: msg };
+    return { value: { ok: false, message: msg }, failure: classifyGitFailure(err) };
   }
 }
 
-async function run(args: string[], cwd: string): Promise<string> {
-  const result = await runResult(args, cwd);
-  return result.ok ? result.message : '';
+async function run(args: string[], cwd: string, op: GitOp = 'other'): Promise<string> {
+  const { value } = await runResultDetailed(args, cwd, undefined, op);
+  return value.ok ? value.message : '';
 }
+
+/**
+ * A user-initiated git operation as a `clubhouse.git.<op>` span (spec §4.8).
+ * Failures returned as values are classified from the attempt; thrown errors
+ * (validation, spawn failures) are classified, recorded and rethrown
+ * unchanged, so callers see exactly what they saw before.
+ */
+async function gitOp<T>(op: GitOp, fn: () => Promise<Attempt<T>>): Promise<T> {
+  let failure: GitFailure | undefined;
+  let threw = false;
+  let thrown: unknown;
+  const value = await tel.flow(`clubhouse.git.${op}` as SpanName, { attrs: [ATTR.gitOp(op)] }, async (span) => {
+    try {
+      const attempt = await fn();
+      failure = attempt.failure;
+      return attempt.value;
+    } catch (err) {
+      threw = true;
+      thrown = err;
+      failure = err instanceof Error && /^Invalid (branch name|file path|commit hash)/.test(err.message)
+        ? { errorType: 'validation', timedOut: false }
+        : classifyGitFailure(err);
+      return undefined as T;
+    } finally {
+      if (failure) {
+        span.set(ATTR.gitTimedOut(failure.timedOut));
+        if (failure.exitCode !== undefined) span.set(ATTR.exitCode(failure.exitCode));
+      }
+    }
+  }, { classify: () => (failure ? { error: failure.errorType } : 'ok') });
+  if (threw) throw thrown;
+  return value;
+}
+
+function opRun(op: GitOp, args: string[], cwd: string): Promise<GitOpResult> {
+  return gitOp(op, () => runResultDetailed(args, cwd, undefined, op));
+}
+
+const noRemote = (): Attempt<GitOpResult> => ({
+  value: { ok: false, message: 'No remote configured' },
+  failure: { errorType: 'no_remote', timedOut: false },
+});
 
 /**
  * Check whether a directory is inside a git work tree.
@@ -87,7 +140,28 @@ export async function isInsideGitRepo(dirPath: string): Promise<boolean> {
   }
 }
 
+/**
+ * Polled every few seconds per git widget. Never a span (spec §4.8): a
+ * duration histogram bucketed by changed-file count, a poll counter, and a
+ * Detailed-level exemplar span only when one poll takes over 2 s.
+ */
 export async function getGitInfo(dirPath: string): Promise<GitInfo> {
+  if (!isTelemetryActive()) return readGitInfo(dirPath);
+  const startMs = Date.now();
+  const info = await readGitInfo(dirPath);
+  const endMs = Date.now();
+  const files = [ATTR.gitStatusFileCount(countBucket(info.status.length))];
+  tel.count('clubhouse.git.status.polls');
+  tel.count('clubhouse.git.status.duration', (endMs - startMs) / 1000, files);
+  if (endMs - startMs > SLOW_STATUS_MS) {
+    replaySpan({ name: 'clubhouse.git.status.slow', startMs, endMs, attrs: files, outcome: 'ok' });
+  }
+  return info;
+}
+
+const SLOW_STATUS_MS = 2000;
+
+async function readGitInfo(dirPath: string): Promise<GitInfo> {
   const hasGit = await isInsideGitRepo(dirPath);
   if (!hasGit) {
     return { branch: '', branches: [], status: [], log: [], hasGit: false, ahead: 0, behind: 0, remote: '', stashCount: 0, hasConflicts: false };
@@ -95,12 +169,12 @@ export async function getGitInfo(dirPath: string): Promise<GitInfo> {
 
   // Run independent git commands in parallel
   const [branchRaw, branchesRaw, statusRaw, logRaw, remoteRaw, stashRaw] = await Promise.all([
-    run(['rev-parse', '--abbrev-ref', 'HEAD'], dirPath),
-    run(['branch', '--no-color'], dirPath),
-    run(['status', '--porcelain', '-uall'], dirPath),
-    run(['log', '--oneline', '--format=%H|||%h|||%s|||%an|||%ar', '-20'], dirPath),
-    run(['remote'], dirPath),
-    run(['stash', 'list'], dirPath),
+    run(['rev-parse', '--abbrev-ref', 'HEAD'], dirPath, 'status'),
+    run(['branch', '--no-color'], dirPath, 'status'),
+    run(['status', '--porcelain', '-uall'], dirPath, 'status'),
+    run(['log', '--oneline', '--format=%H|||%h|||%s|||%an|||%ar', '-20'], dirPath, 'status'),
+    run(['remote'], dirPath, 'status'),
+    run(['stash', 'list'], dirPath, 'status'),
   ]);
 
   const branch = branchRaw || 'HEAD';
@@ -149,7 +223,7 @@ export async function getGitInfo(dirPath: string): Promise<GitInfo> {
   let ahead = 0;
   let behind = 0;
   if (remote) {
-    const abRaw = await run(['rev-list', '--left-right', '--count', `${remote}/${branch}...HEAD`], dirPath);
+    const abRaw = await run(['rev-list', '--left-right', '--count', `${remote}/${branch}...HEAD`], dirPath, 'status');
     if (abRaw) {
       const parts = abRaw.split(/\s+/);
       behind = parseInt(parts[0], 10) || 0;
@@ -164,33 +238,47 @@ export async function getGitInfo(dirPath: string): Promise<GitInfo> {
 }
 
 export async function checkout(dirPath: string, branchName: string): Promise<GitOpResult> {
-  validateBranchName(branchName);
-  return runResult(['checkout', branchName], dirPath);
+  return gitOp('checkout', () => {
+    validateBranchName(branchName);
+    return runResultDetailed(['checkout', branchName], dirPath, undefined, 'checkout');
+  });
 }
 
 export async function stage(dirPath: string, filePath: string): Promise<GitOpResult> {
-  validateFilePath(filePath);
-  return runResult(['add', '--', filePath], dirPath);
+  return gitOp('stage', () => {
+    validateFilePath(filePath);
+    return runResultDetailed(['add', '--', filePath], dirPath, undefined, 'stage');
+  });
 }
 
 export async function unstage(dirPath: string, filePath: string): Promise<GitOpResult> {
-  validateFilePath(filePath);
-  return runResult(['reset', 'HEAD', '--', filePath], dirPath);
+  return gitOp('unstage', () => {
+    validateFilePath(filePath);
+    return runResultDetailed(['reset', 'HEAD', '--', filePath], dirPath, undefined, 'unstage');
+  });
 }
 
 export async function commit(dirPath: string, message: string): Promise<GitOpResult> {
-  return runResult(['commit', '-m', message], dirPath);
+  return opRun('commit', ['commit', '-m', message], dirPath);
 }
 
 export async function push(dirPath: string): Promise<GitOpResult> {
-  const info = await getGitInfo(dirPath);
-  if (!info.remote) {
-    return { ok: false, message: 'No remote configured' };
-  }
-  return runResult(['push', info.remote, info.branch], dirPath);
+  return gitOp('push', async () => {
+    const info = await readGitInfo(dirPath);
+    if (!info.remote) return noRemote();
+    return runResultDetailed(['push', info.remote, info.branch], dirPath, undefined, 'push');
+  });
 }
 
 export async function getFileDiff(
+  dirPath: string,
+  filePath: string,
+  staged: boolean
+): Promise<{ original: string; modified: string }> {
+  return gitOp('diff', async () => ({ value: await readFileDiff(dirPath, filePath, staged) }));
+}
+
+async function readFileDiff(
   dirPath: string,
   filePath: string,
   staged: boolean
@@ -200,7 +288,7 @@ export async function getFileDiff(
   // Get the HEAD version (empty for new/untracked files)
   let original = '';
   try {
-    original = await gitExec(['show', `HEAD:${filePath}`], dirPath);
+    original = await gitExec(['show', `HEAD:${filePath}`], dirPath, undefined, 'diff');
   } catch {
     // File doesn't exist in HEAD (new/untracked) — leave empty
   }
@@ -209,7 +297,7 @@ export async function getFileDiff(
   if (staged) {
     // Staged version from the index
     try {
-      modified = await gitExec(['show', `:${filePath}`], dirPath);
+      modified = await gitExec(['show', `:${filePath}`], dirPath, undefined, 'diff');
     } catch {
       modified = '';
     }
@@ -226,46 +314,51 @@ export async function getFileDiff(
 }
 
 export async function pull(dirPath: string): Promise<GitOpResult> {
-  const info = await getGitInfo(dirPath);
-  if (!info.remote) {
-    return { ok: false, message: 'No remote configured' };
-  }
-  return runResult(['pull', info.remote, info.branch], dirPath);
+  return gitOp('pull', async () => {
+    const info = await readGitInfo(dirPath);
+    if (!info.remote) return noRemote();
+    return runResultDetailed(['pull', info.remote, info.branch], dirPath, undefined, 'pull');
+  });
 }
 
 export async function stageAll(dirPath: string): Promise<GitOpResult> {
-  return runResult(['add', '-A'], dirPath);
+  return opRun('stage_all', ['add', '-A'], dirPath);
 }
 
 export async function unstageAll(dirPath: string): Promise<GitOpResult> {
-  return runResult(['reset', 'HEAD'], dirPath);
+  return opRun('unstage_all', ['reset', 'HEAD'], dirPath);
 }
 
 export async function discardFile(dirPath: string, filePath: string, isUntracked: boolean): Promise<GitOpResult> {
-  validateFilePath(filePath);
-  if (isUntracked) {
-    // Remove untracked file from disk
-    try {
-      await fs.promises.unlink(path.join(dirPath, filePath));
-      return { ok: true, message: 'Deleted untracked file' };
-    } catch (err: any) {
-      return { ok: false, message: err?.message || 'Failed to delete file' };
+  return gitOp('discard', async () => {
+    validateFilePath(filePath);
+    if (isUntracked) {
+      // Remove untracked file from disk
+      try {
+        await fs.promises.unlink(path.join(dirPath, filePath));
+        return { value: { ok: true, message: 'Deleted untracked file' } };
+      } catch (err: any) {
+        // A filesystem error, not a git exit; the span still records the failure.
+        return { value: { ok: false, message: err?.message || 'Failed to delete file' }, failure: { errorType: 'nonzero_exit', timedOut: false } };
+      }
     }
-  }
-  return runResult(['restore', '--', filePath], dirPath);
+    return runResultDetailed(['restore', '--', filePath], dirPath, undefined, 'discard');
+  });
 }
 
 export async function createBranch(dirPath: string, branchName: string): Promise<GitOpResult> {
-  validateBranchName(branchName);
-  return runResult(['checkout', '-b', branchName], dirPath);
+  return gitOp('create_branch', () => {
+    validateBranchName(branchName);
+    return runResultDetailed(['checkout', '-b', branchName], dirPath, undefined, 'create_branch');
+  });
 }
 
 export async function stash(dirPath: string): Promise<GitOpResult> {
-  return runResult(['stash'], dirPath);
+  return opRun('stash', ['stash'], dirPath);
 }
 
 export async function stashPop(dirPath: string): Promise<GitOpResult> {
-  return runResult(['stash', 'pop'], dirPath);
+  return opRun('stash_pop', ['stash', 'pop'], dirPath);
 }
 
 /** Validate that a string looks like a hex commit hash (short or full). */
@@ -305,10 +398,15 @@ export async function getLog(
  * Returns a GitCommitDetail with the list of affected files.
  */
 export async function showCommit(dirPath: string, hash: string): Promise<GitCommitDetail> {
+  return gitOp('show_commit', async () => ({ value: await readCommit(dirPath, hash) }));
+}
+
+async function readCommit(dirPath: string, hash: string): Promise<GitCommitDetail> {
   validateCommitHash(hash);
   const raw = await run(
     ['diff-tree', '--no-commit-id', '--name-status', '-r', '-M', hash],
     dirPath,
+    'show_commit',
   );
   const files: GitCommitFileEntry[] = raw
     .split('\n')
@@ -333,19 +431,27 @@ export async function getCommitFileDiff(
   hash: string,
   filePath: string,
 ): Promise<{ original: string; modified: string }> {
+  return gitOp('diff', async () => ({ value: await readCommitFileDiff(dirPath, hash, filePath) }));
+}
+
+async function readCommitFileDiff(
+  dirPath: string,
+  hash: string,
+  filePath: string,
+): Promise<{ original: string; modified: string }> {
   validateCommitHash(hash);
   validateFilePath(filePath);
 
   let original = '';
   try {
-    original = await gitExec(['show', `${hash}^:${filePath}`], dirPath);
+    original = await gitExec(['show', `${hash}^:${filePath}`], dirPath, undefined, 'diff');
   } catch {
     // File didn't exist before this commit
   }
 
   let modified = '';
   try {
-    modified = await gitExec(['show', `${hash}:${filePath}`], dirPath);
+    modified = await gitExec(['show', `${hash}:${filePath}`], dirPath, undefined, 'diff');
   } catch {
     // File was deleted in this commit
   }
@@ -358,7 +464,11 @@ export async function getCommitFileDiff(
  * Returns the main worktree plus any linked worktrees.
  */
 export async function listWorktrees(dirPath: string): Promise<GitWorktreeEntry[]> {
-  const output = await gitExec(['worktree', 'list', '--porcelain'], dirPath);
+  return gitOp('worktree_list', async () => ({ value: await readWorktrees(dirPath) }));
+}
+
+async function readWorktrees(dirPath: string): Promise<GitWorktreeEntry[]> {
+  const output = await gitExec(['worktree', 'list', '--porcelain'], dirPath, undefined, 'worktree_list');
   const entries: GitWorktreeEntry[] = [];
   let current: Partial<GitWorktreeEntry> = {};
 

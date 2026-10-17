@@ -19,8 +19,10 @@ A one-click **Deploy to Azure** button and optional alert rules come in Phase 7.
 | Reliability | Exceptions by type and origin, renderer and child-process exits, window hangs, main-thread stalls by running flow, event-loop delay, memory by process type, long frames by view |
 | Startup and updates | Startup p50/p95 by kind and version, startup phases, failed startups, the update funnel, applies that didn't take by install kind, update failures, safe-mode decisions |
 | Data integrity | Write failures and write time by store, recoveries by store and action, saves blocked by data-loss guards, flush-barrier waits |
+| Workspace (Phase 5) | Git operations and failures by type and error, status-poll time by changed files, slow polls, worktree create/remove, project add/remove/git init, projects per install, file operations by result, sandbox denials, file tree reads, search by engine, file watches, Monaco load, external editor and save conflicts |
+| Plugins and canvas (Phase 5) | Plugin activations and failures by plugin, origin and error, activation retries, plugin module requests, canvas loads by result |
 
-Agents, Permissions, Plugins, Workspace and Annex tabs are added with telemetry Phases 4–6, in the same PRs as the instrumentation they chart.
+Agents, Permissions and Annex tabs are added with telemetry Phases 4 and 6, in the same PRs as the instrumentation they chart.
 
 ## Keeping it in sync
 

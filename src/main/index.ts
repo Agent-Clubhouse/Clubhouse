@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { app, BrowserWindow, powerMonitor, session, net, protocol } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
-import { cleanupWatchesForWindow, stopAllWatches } from './services/file-watch-service';
+import { cleanupWatchesForWindow, getActiveWatchCount, stopAllWatches } from './services/file-watch-service';
 import { startStaleSweep as startHeadlessStaleSweep, stopStaleSweep as stopHeadlessStaleSweep } from './services/headless-manager';
 import { restoreAll } from './services/config-pipeline';
 import { buildMenu } from './menu';
@@ -32,9 +32,10 @@ import { getCommunityPluginsDir } from './services/plugin-discovery';
 import { getGlobalPluginDataDir } from './services/plugin-storage';
 import { cleanupRetiredPluginData } from './services/retired-plugin-cleanup';
 import * as projectStore from './services/project-store';
-import { initTelemetry, recordAppSession, flushBeforeExit } from './telemetry';
+import { initTelemetry, recordAppSession, flushBeforeExit, tel, ATTR } from './telemetry';
 import { installCrashTelemetry, reportMainProcessError } from './telemetry/crash-handlers';
 import { installHealthTelemetry } from './telemetry/health';
+import { installWorkspaceTelemetry } from './telemetry/workspace-gauges';
 import {
   checkPreviousSession,
   completeStartup,
@@ -261,6 +262,10 @@ app.on('ready', () => {
   recordAppSession();
   checkPreviousSession(crashLoop);
   installHealthTelemetry();
+  installWorkspaceTelemetry({
+    projectCount: async () => (await projectStore.list()).length,
+    activeWatchCount: getActiveWatchCount,
+  });
 
   markStartup('register_ipc_start');
   registerAllHandlers();
@@ -336,10 +341,13 @@ app.on('ready', () => {
         (p) => fs.promises.realpath(p),
       );
       const source = await fs.promises.readFile(realPath, 'utf-8');
+      tel.count('clubhouse.plugin.protocol.requests', 1, [ATTR.pluginProtocolResult('ok')]);
       // CORS header is required: importing this scheme is always cross-origin
       // from the file://-or-http:// renderer. See pluginModuleResponseHeaders.
       return new Response(source, { headers: pluginModuleResponseHeaders() });
     } catch (err) {
+      const denied = err instanceof Error && /^(Invalid plugin module URL|Access denied)/.test(err.message);
+      tel.count('clubhouse.plugin.protocol.requests', 1, [ATTR.pluginProtocolResult(denied ? 'denied' : 'not_found')]);
       appLog('core:plugins', 'warn', 'clubhouse-plugin: request denied', {
         meta: { url: request.url, error: err instanceof Error ? err.message : String(err) },
       });
