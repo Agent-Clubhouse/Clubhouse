@@ -1,3 +1,5 @@
+import * as childProcess from 'child_process';
+import type { ChildProcess } from 'child_process';
 import { winQuoteArg } from '../../util/shell';
 import { validateCommandPrefix } from '../../services/command-prefix-validation';
 
@@ -54,4 +56,57 @@ export function resolveStructuredSpawn(
   }
 
   return { binary, args };
+}
+
+function hasExited(child: ChildProcess): boolean {
+  return child.exitCode != null || child.signalCode != null;
+}
+
+/** How long killStructuredChild waits for `taskkill` before falling back. */
+export const TASKKILL_TIMEOUT_MS = 5_000;
+
+/**
+ * Stop a structured-spawn child and everything it started.
+ *
+ * - Ends stdin first: these CLIs exit on EOF, and it reaches a grandchild
+ *   reading the same pipe.
+ * - On Windows, kills the whole tree with `taskkill /PID <pid> /T /F`. A
+ *   `.cmd` shim runs through cmd.exe, so `child.kill()` alone stops only
+ *   cmd.exe and leaves the real CLI (node, or a native binary under it)
+ *   running. Falls back to `child.kill()` if taskkill fails or can't run.
+ * - Elsewhere sends SIGTERM, as before. The POSIX spawn path execs the CLI,
+ *   so there is no wrapper between us and it.
+ *
+ * Resolves once the kill has been delivered; callers may ignore the promise.
+ */
+export function killStructuredChild(child: ChildProcess): Promise<void> {
+  try {
+    child.stdin?.end();
+  } catch {
+    // Already closed; nothing to flush.
+  }
+  if (hasExited(child)) return Promise.resolve();
+
+  if (process.platform !== 'win32' || child.pid === undefined) {
+    child.kill('SIGTERM');
+    return Promise.resolve();
+  }
+
+  const pid = child.pid;
+  return new Promise((resolve) => {
+    const fallback = (): void => {
+      if (!hasExited(child)) child.kill('SIGTERM');
+      resolve();
+    };
+    try {
+      childProcess.execFile(
+        'taskkill',
+        ['/PID', String(pid), '/T', '/F'],
+        { windowsHide: true, timeout: TASKKILL_TIMEOUT_MS },
+        (err) => (err ? fallback() : resolve()),
+      );
+    } catch {
+      fallback();
+    }
+  });
 }

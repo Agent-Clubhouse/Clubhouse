@@ -10,6 +10,7 @@ import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import type { ClaudePermissionMode } from './events';
 import { initializedFromWire, type ClaudeWireMessage } from './normalizer';
 import { loadClaudeAgentSdk } from './sdk-loader';
+import { killStructuredChild } from '../../orchestrators/adapters/structured-spawn';
 import { buildClaudeEnv, spawnClaude } from './spawn';
 import {
   ClaudeTransportBase,
@@ -98,7 +99,7 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
         });
         this.child = child;
         child.stderr?.on('data', (d: Buffer) => this.log('warn', 'claude stderr', { data: d.toString().slice(0, 2000) }));
-        so.signal.addEventListener('abort', () => { if (child.exitCode === null) child.kill(); }, { once: true });
+        so.signal.addEventListener('abort', () => { void killStructuredChild(child); }, { once: true });
         return child as unknown as SpawnedProcess;
       },
     };

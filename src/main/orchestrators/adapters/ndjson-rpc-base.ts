@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process';
+import { killStructuredChild } from './structured-spawn';
 
 /** Rejection for requests still pending when the agent process exits. */
 export class ProcessExitedError extends Error {
@@ -95,7 +96,9 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
     if (this.killed) return;
     this.killed = true;
     this.flush();
-    this.proc?.kill('SIGTERM');
+    // Ends stdin, then kills the whole process tree (a Windows .cmd shim's
+    // cmd.exe and the CLI under it), not just the direct child.
+    if (this.proc) void killStructuredChild(this.proc);
   }
 
   get alive(): boolean {
