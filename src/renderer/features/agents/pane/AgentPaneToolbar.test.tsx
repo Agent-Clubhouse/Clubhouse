@@ -112,16 +112,25 @@ describe('AgentPaneToolbar', () => {
     expect(screen.getByTestId('pane-agent-name')).toHaveTextContent('gallant-swift');
   });
 
-  it('shows a focusable context meter that turns red when context or a limit runs out', () => {
-    const { rerender } = render(<AgentPaneToolbar agent={agent} dot="working" usage={{ contextPct: 34, hot: false, lines: ['Context 34%: 68k of 200k tokens', '5h limit: 40%, resets Fri 3:00 PM'] }} />);
+  it('shows a focusable meter: blue context, amber limit, red when one runs out', () => {
+    const lines = ['Context 34%: 68k of 200k tokens', 'Session (5-hour) limit: 40%, resets Fri 3:00 PM'];
+    const { rerender } = render(<AgentPaneToolbar agent={agent} dot="working" usage={{ fillPct: 34, text: '34%', label: 'Context 34%', tone: 'normal', lines }} />);
     const meter = screen.getByTestId('pane-usage');
     expect(meter).toHaveTextContent('34%');
     expect(meter).toHaveAttribute('tabindex', '0');
-    expect(meter.getAttribute('aria-label')).toContain('resets Fri 3:00 PM');
+    // The label isn't repeated: the context line is dropped from the list.
+    expect(meter.getAttribute('aria-label')).toBe(`Context 34%, ${lines[1]}`);
     expect(meter).not.toHaveAttribute('data-hot');
-    rerender(<AgentPaneToolbar agent={agent} dot="working" usage={{ contextPct: 92, hot: true, lines: [] }} />);
+    expect(screen.getByTestId('pane-usage-fill').getAttribute('class')).toContain('stroke-ctp-info');
+    rerender(<AgentPaneToolbar agent={agent} dot="working" usage={{ fillPct: 71, text: '71% wk', label: 'Weekly limit 71%', tone: 'warn', lines }} />);
+    expect(screen.getByTestId('pane-usage')).toHaveTextContent('71% wk');
+    expect(screen.getByTestId('pane-usage').className).toContain('text-ctp-warning');
+    expect(screen.getByTestId('pane-usage-fill').getAttribute('class')).toContain('stroke-ctp-warning');
+    rerender(<AgentPaneToolbar agent={agent} dot="working" usage={{ fillPct: 92, text: '92%', label: 'Context 92%', tone: 'hot', lines: [] }} />);
     expect(screen.getByTestId('pane-usage')).toHaveAttribute('data-hot', 'true');
     expect(screen.getByTestId('pane-usage').className).toContain('text-ctp-error');
+    rerender(<AgentPaneToolbar agent={agent} dot="working" usage={{ fillPct: null, text: null, label: 'Usage limits', tone: 'normal', lines: [] }} />);
+    expect(screen.queryByTestId('pane-usage-fill')).toBeNull();
   });
 });
 
@@ -134,14 +143,46 @@ describe('chatActivity', () => {
     };
     expect(chatActivity(state, 192_000)).toBe('3:12 · Edit AgentRow.tsx');
   });
-  it('marks the meter hot at 90% context or a reached limit, with reset times', () => {
+  it('says when the context is compacting, in a turn or idle', () => {
+    const row = { id: 'n', sessionId: 's', seq: 1, ts: 0, kind: 'notice' as const, level: 'info' as const, code: 'compaction_in_progress', message: 'Compacting context…', running: true };
+    expect(chatActivity({ ...base, state: 'running', turnStartedAt: 0, items: [row], compactionItemId: 'n' }, 85_000)).toBe('1:25 · Compacting context');
+    expect(chatActivity({ ...base, state: 'idle', items: [row], compactionItemId: 'n' }, 0)).toBe('Compacting context');
+  });
+  describe('chatUsage', () => {
     const caps = { usage: 'tokens', limits: true } as never;
-    const u = chatUsage({ ...base, capabilities: caps, usage: { ...base.usage, context: { used: 95, size: 100 }, limits: [] } });
-    expect(u).toMatchObject({ contextPct: 95, hot: true });
-    const l = chatUsage({ ...base, capabilities: caps, usage: { ...base.usage, context: { used: 10, size: 100 }, limits: [{ window: '5h', status: 'exceeded', resetsAt: '2026-10-17T15:00:00Z' }] } as never });
-    expect(l?.hot).toBe(true);
-    expect(l?.lines[1]).toMatch(/^5h limit: limit reached, resets /);
-    expect(chatUsage({ ...base, capabilities: { usage: 'none' } as never })).toBeNull();
+    const at = (context: { used: number; size: number } | null, limits: unknown[]) =>
+      chatUsage({ ...base, capabilities: caps, usage: { ...base.usage, context, limits } as never });
+
+    it('shows context, red at 90%', () => {
+      expect(at({ used: 42, size: 100 }, [{ window: 'week', utilization: 0.5 }])).toMatchObject({ fillPct: 42, text: '42%', tone: 'normal' });
+      expect(at({ used: 95, size: 100 }, [])).toMatchObject({ fillPct: 95, tone: 'hot' });
+    });
+
+    it('fills from the most-used limit when there is no context', () => {
+      const u = at(null, [{ window: '5h', utilization: 0.2 }, { window: 'week', utilization: 0.55 }]);
+      expect(u).toMatchObject({ fillPct: 55, text: '55% wk', label: 'Weekly limit 55%', tone: 'normal' });
+    });
+
+    it('keeps showing context when a limit is at warning, tinted amber, with the limit in the tooltip', () => {
+      const u = at({ used: 10, size: 100 }, [{ window: '5h', utilization: 0.3 }, { window: 'week', utilization: 0.71, status: 'warning', resetsAt: Date.parse('2026-10-21T09:00:00Z') }]);
+      expect(u).toMatchObject({ fillPct: 10, text: '10%', tone: 'warn' });
+      expect(u?.lines[0]).toBe('Context 10%: 10 of 100 tokens');
+      expect(u?.lines[1]).toBe('Session (5-hour) limit: 30%');
+      expect(u?.lines[2]).toMatch(/^Weekly limit: 71%, resets /);
+      // 80% used counts as a warning when the provider reports only a fraction (Codex).
+      expect(at({ used: 10, size: 100 }, [{ window: '5h', utilization: 0.85 }])).toMatchObject({ text: '10%', tone: 'warn' });
+      // With no context to show, the warning limit takes the ring.
+      expect(at(null, [{ window: 'week', utilization: 0.71, status: 'warning' }])).toMatchObject({ fillPct: 71, text: '71% wk', tone: 'warn' });
+    });
+
+    it('turns red when a limit is reached, and names a status-only limit', () => {
+      const u = at({ used: 10, size: 100 }, [{ window: '5h', status: 'exceeded', resetsAt: Date.parse('2026-10-17T15:00:00Z') }]);
+      expect(u).toMatchObject({ fillPct: 10, text: 'limit reached 5h', tone: 'hot' });
+      expect(u?.lines[1]).toMatch(/^Session \(5-hour\) limit: limit reached, resets /);
+      expect(at(null, [{ window: 'week_opus', status: 'ok' }])).toMatchObject({ fillPct: null, text: null, tone: 'normal' });
+      expect(at(null, [{ window: 'week:Fable', utilization: 0.4 }])).toMatchObject({ text: '40% wk Fable', label: 'Weekly Fable limit 40%' });
+      expect(chatUsage({ ...base, capabilities: { usage: 'none' } as never })).toBeNull();
+    });
   });
 
   it('says what a waiting agent needs', () => {

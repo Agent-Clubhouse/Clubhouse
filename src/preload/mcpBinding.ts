@@ -20,6 +20,11 @@ export const mcpBinding = {
     ipcRenderer.invoke(IPC.MCP_BINDING.SET_DISABLED_TOOLS, agentId, targetId, disabledTools),
   getAgentConnection: (agentId: string): Promise<AgentMcpConnection | null> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_AGENT_CONNECTION, agentId),
+  onAgentConnectionChanged: (callback: (agentId: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, agentId: string) => callback(agentId);
+    ipcRenderer.on(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, listener); };
+  },
   onBindingsChanged: (callback: (bindings: Array<{
     agentId: string;
     targetId: string;

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef, useId } from 'react';
 import { GroupProjectPanelSidebar, useGroupProjectPanelLayout } from './GroupProjectPanelSidebar';
 import { useWheelContainment } from '../../../hooks/useWheelContainment';
 import type { CanvasWidgetComponentProps, AnnexAPI } from '../../../../shared/plugin-types';
@@ -17,6 +17,11 @@ import { useUIStore } from '../../../stores/uiStore';
 import { showApprovalDialog, showConfirmDialog } from '../../PluginDialog';
 import { WireToolPermissionsDialog } from '../canvas/WireToolPermissionsDialog';
 import { Button } from '../../../components/Button';
+import { Modal } from '../../../components/Modal';
+import { Toggle } from '../../../components/Toggle';
+import { Tooltip } from '../../../components/Tooltip';
+import { AgentAvatar } from '../../../features/agents/AgentAvatar';
+import { DOT_LABEL, StatusDot, agentDot } from '../../../features/agents/agent-status';
 import {
   GROUP_PROJECT_DEFAULT_DISABLED_TOOLS_VERSION,
   GROUP_PROJECT_CORE_TOOL_SUFFIXES,
@@ -77,7 +82,7 @@ export function GroupProjectCanvasWidget({
   }
 
   if (!groupProjectId) {
-    return <div className="flex items-center justify-center h-full text-xs text-ctp-overlay0 italic p-4">No group project selected</div>;
+    return <div className="flex items-center justify-center h-full text-xs text-ctp-overlay1 p-4">No group project selected</div>;
   }
 
   return (
@@ -261,7 +266,6 @@ function ProjectCard({
     return () => { cancelled = true; clearInterval(interval); };
   }, [groupProjectId, fetchDigest, getLastRead]);
 
-  const hasActivity = members.length > 0;
   const description = project?.description || '';
   const pollingEnabled = !!(project?.metadata?.pollingEnabled);
 
@@ -295,100 +299,140 @@ function ProjectCard({
     }
   }, [members, project, groupProjectId, injectMessage]);
 
+  const activity = [
+    `${topics.length} ${topics.length === 1 ? 'topic' : 'topics'}`,
+    `${totalMessages} ${totalMessages === 1 ? 'message' : 'messages'}`,
+    ...(totalNew > 0 ? [`${totalNew} new`] : []),
+  ].join(' · ');
+
   return (
-    <div className="flex flex-col h-full p-4 gap-3">
-      {/* Status + actions row */}
-      <div className="flex items-center gap-2">
-        <div
-          className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-            hasActivity ? 'bg-ctp-green' : 'bg-ctp-overlay0'
-          }`}
-        />
-        <RobotIcon size={14} />
-        <span className="text-xs text-ctp-subtext0 flex-1 truncate">
-          {members.length} agent{members.length !== 1 ? 's' : ''}
+    <div className="flex flex-col h-full min-h-0 py-1.5">
+      {/* Status and actions */}
+      <div className="h-[30px] flex items-center gap-1 pl-3 pr-1.5 flex-shrink-0">
+        <span className="text-[13px] text-ctp-text truncate" data-testid="group-project-member-count">
+          {members.length} {members.length === 1 ? 'agent' : 'agents'}
         </span>
-        {/* Megaphone button */}
-        <button
-          onClick={() => setShowTapModal(true)}
-          className="p-1 text-ctp-overlay1 hover:text-ctp-accent transition-colors flex-shrink-0"
-          title="Broadcast message"
-        >
-          <MegaphoneIcon size={14} />
-        </button>
-        {/* Polling nudge */}
-        <button
-          onClick={handleNudgePolling}
-          className="p-1 text-ctp-overlay1 hover:text-ctp-yellow transition-colors flex-shrink-0"
-          title="Nudge all agents to start polling if not already"
-        >
-          <NudgeIcon size={14} />
-        </button>
-        {/* Polling toggle */}
-        <button
-          onClick={handleTogglePolling}
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
-            pollingEnabled
-              ? 'text-ctp-green bg-ctp-green/10'
-              : 'text-ctp-overlay0 bg-surface-0'
-          }`}
-          title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
-        >
-          <PollingIcon size={12} active={pollingEnabled} />
-          <span className="text-xs font-medium">{pollingEnabled ? 'Poll: On' : 'Poll: Off'}</span>
-        </button>
+        <span className="flex-1" />
+        <IconButton label="Broadcast message" onClick={() => setShowTapModal(true)}><MegaphoneIcon /></IconButton>
+        <IconButton label="Ask agents to start polling" onClick={handleNudgePolling}><NudgeIcon /></IconButton>
+        <PollingSwitch on={pollingEnabled} onToggle={handleTogglePolling} />
       </div>
 
-      {/* Activity summary */}
-      <div className="flex items-center gap-3 text-xs text-ctp-subtext0">
-        <span>{topics.length} topic{topics.length !== 1 ? 's' : ''}</span>
-        <span>{totalMessages} msg{totalMessages !== 1 ? 's' : ''}{totalNew > 0 && <span className="text-ctp-green ml-0.5">+{totalNew} new</span>}</span>
-      </div>
+      <div className="px-3 text-xs text-ctp-overlay1 flex-shrink-0" data-testid="group-project-activity">{activity}</div>
 
-      {/* Description snippet */}
       {description && (
-        <div className="text-xs text-ctp-subtext0 truncate" title={description}>
-          {description}
-        </div>
+        <Tooltip content={description} onlyWhenTruncated>
+          <div className="px-3 pt-1 text-xs text-ctp-subtext0 truncate flex-shrink-0">{description}</div>
+        </Tooltip>
       )}
 
-      {/* Agent list — click a member to toggle their project-lead (admin) role.
-          Admins show a star and get the privileged group-project tools. */}
+      {/* Members: the star makes an agent a project lead (admin), which gets the privileged tools. */}
       {members.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-1">
-          {members.map((m) => {
-            const admin = admins.includes(m.agentId);
-            return (
-              <button
-                key={m.agentId}
-                onClick={(e) => { e.stopPropagation(); void handleToggleAdmin(m.agentId); }}
-                title={admin ? 'Project lead — click to remove admin' : 'Click to make project lead (admin)'}
-                className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded-full transition-colors ${
-                  admin
-                    ? 'bg-ctp-accent/20 text-ctp-accent'
-                    : 'bg-surface-0 text-ctp-subtext1 hover:bg-surface-1'
-                }`}
-              >
-                {admin && <StarIcon size={9} filled />}
-                {m.agentName || m.agentId}
-              </button>
-            );
-          })}
-        </div>
+        <ul className="mt-1.5 px-1.5 flex-1 min-h-0 overflow-y-auto" aria-label="Members">
+          {members.map((m) => (
+            <MemberRow
+              key={m.agentId}
+              member={m}
+              lead={admins.includes(m.agentId)}
+              onToggleLead={() => void handleToggleAdmin(m.agentId)}
+            />
+          ))}
+        </ul>
       )}
 
-      {/* Shoulder Tap Modal */}
-      {showTapModal && (
-        <ShoulderTapModal
-          members={members}
-          projectInstructions={project?.instructions || ''}
-          onClose={() => setShowTapModal(false)}
-          injectMessage={injectMessage}
-        />
-      )}
+      <BroadcastModal
+        open={showTapModal}
+        members={members}
+        projectInstructions={project?.instructions || ''}
+        onClose={() => setShowTapModal(false)}
+        injectMessage={injectMessage}
+      />
     </div>
   );
 }
+
+/* ---------- Shared pieces ---------- */
+
+/**
+ * A 28px icon button with a tooltip and an accessible name. A toggle passes
+ * `pressed` and keeps one fixed `label`; the pressed state says whether it's on.
+ */
+function IconButton({ label, tooltip, onClick, pressed, testId, children }: {
+  label: string;
+  /** Tooltip text when it should say more than the label. */
+  tooltip?: string;
+  onClick: (e: React.MouseEvent) => void;
+  pressed?: boolean;
+  testId?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip content={tooltip ?? label}>
+      <Button
+        kind="quiet"
+        icon={children}
+        aria-label={label}
+        aria-pressed={pressed}
+        onClick={onClick}
+        data-testid={testId}
+        className={pressed ? 'bg-surface-0 text-ctp-text' : ''}
+      />
+    </Tooltip>
+  );
+}
+
+export const POLLING_HINT = 'When on, member agents check the board for new messages on their own. When off, they only act when someone messages them.';
+
+/** Polling on or off. The word is the switch's label, so clicking it toggles too. */
+function PollingSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  const switchId = useId();
+  return (
+    <span className="flex items-center gap-2 pl-1.5 pr-1.5 h-7 flex-shrink-0" data-testid="group-project-polling">
+      <Tooltip content={POLLING_HINT}>
+        <label htmlFor={switchId} className="text-xs text-ctp-subtext1 cursor-pointer">Polling</label>
+      </Tooltip>
+      <Toggle id={switchId} checked={on} onChange={onToggle} />
+    </span>
+  );
+}
+
+/** One member: 18px avatar, name, "Lead" for a project lead, and the agent's status as a dot and a word. */
+function MemberRow({ member, lead, onToggleLead }: { member: GroupProjectMember; lead: boolean; onToggleLead: () => void }) {
+  const agent = useAgentStore((s) => s.agents[member.agentId]);
+  const detailed = useAgentStore((s) => s.agentDetailedStatus[member.agentId]);
+  const dot = agent ? agentDot(agent, detailed) : null;
+  const name = member.agentName || member.agentId;
+  return (
+    <li className="group/member h-[30px] flex items-center gap-2 pl-1.5 rounded-md hover:bg-surface-0" data-testid="group-project-member">
+      {agent ? <AgentAvatar agent={agent} size="2xs" /> : <span className="w-[18px] flex-shrink-0" aria-hidden="true" />}
+      <span className="text-[13px] text-ctp-text truncate min-w-0">{name}</span>
+      {lead && <span className="text-xs text-ctp-overlay1 flex-shrink-0">Lead</span>}
+      <span className="flex-1" />
+      {dot && (
+        <span className="flex items-center gap-1.5 text-xs text-ctp-overlay1 flex-shrink-0">
+          {/* The word says the status; the dot is decoration, so it isn't read out twice. */}
+          <span aria-hidden="true" className="flex"><StatusDot dot={dot} /></span>
+          {DOT_LABEL[dot]}
+        </span>
+      )}
+      <IconButton
+        label="Project lead"
+        tooltip="Project lead: gets the privileged group project tools"
+        pressed={lead}
+        onClick={(e) => { e.stopPropagation(); onToggleLead(); }}
+      >
+        <StarIcon filled={lead} />
+      </IconButton>
+    </li>
+  );
+}
+
+/** A label above a field, in sentence case. */
+function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: React.ReactNode }) {
+  return <label htmlFor={htmlFor} className="block text-xs text-ctp-overlay1 mb-1">{children}</label>;
+}
+
+const FIELD = 'w-full px-2 text-xs bg-ctp-base border border-surface-1 rounded-md text-ctp-text placeholder:text-ctp-overlay1 focus-ring';
 
 /* ---------- Expanded 3-Pane View ---------- */
 
@@ -420,8 +464,6 @@ function ExpandedProjectView({
   const [messages, setMessages] = useState<BulletinMessage[]>([]);
   const [showTapModal, setShowTapModal] = useState(false);
   const [showRetentionSettings, setShowRetentionSettings] = useState(false);
-  const [confirmDeleteTopic, setConfirmDeleteTopic] = useState<string | null>(null);
-  const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [bulletinTopic, setBulletinTopic] = useState('');
   const [bulletinBody, setBulletinBody] = useState('');
   const [postingBulletin, setPostingBulletin] = useState(false);
@@ -611,6 +653,8 @@ function ExpandedProjectView({
   }, [groupProjectId, deleteMessage, selectedMessageId]);
 
   const handleDeleteTopic = useCallback(async (topic: string) => {
+    const { promise } = showConfirmDialog(`Delete the "${topic}" topic and its messages?`);
+    if (!(await promise)) return;
     await deleteTopic(groupProjectId, topic);
     setTopics((prev) => prev.filter((t) => t.topic !== topic));
     if (selectedTopic === topic) {
@@ -618,7 +662,6 @@ function ExpandedProjectView({
       setSelectedMessageId(null);
       setMessages([]);
     }
-    setConfirmDeleteTopic(null);
   }, [groupProjectId, deleteTopic, selectedTopic]);
 
   const handleToggleProtection = useCallback(async (topic: string, currentlyProtected: boolean) => {
@@ -627,12 +670,13 @@ function ExpandedProjectView({
   }, [groupProjectId, setTopicProtection]);
 
   const handleClearAll = useCallback(async () => {
+    const { promise } = showConfirmDialog('Clear every message? The description, instructions and wires stay.');
+    if (!(await promise)) return;
     await clearAllMessages(groupProjectId);
     setTopics([]);
     setMessages([]);
     setSelectedTopic(ALL_TOPICS_KEY);
     setSelectedMessageId(null);
-    setConfirmClearAll(false);
   }, [groupProjectId, clearAllMessages]);
 
   const handlePostBulletin = useCallback(async () => {
@@ -649,9 +693,10 @@ function ExpandedProjectView({
     }
   }, [bulletinTopic, bulletinBody, postingBulletin, postBulletinMessage, groupProjectId]);
 
+  const totalMessages = topics.reduce((sum, t) => sum + t.messageCount, 0);
+
   return (
     <div className="flex flex-col h-full text-ctp-text">
-      {/* Header */}
       <ExpandedHeader
         displayName={displayName}
         groupProjectId={groupProjectId}
@@ -679,203 +724,130 @@ function ExpandedProjectView({
         />
       )}
 
-      {/* Retention Settings (collapsible) */}
-      {showRetentionSettings && (
-        <RetentionSettings groupProjectId={groupProjectId} />
-      )}
+      {showRetentionSettings && <RetentionSettings groupProjectId={groupProjectId} />}
 
-      <div className="flex items-end gap-2 px-3 py-2 border-t border-surface-1 bg-ctp-mantle/50">
+      {/* Post to the board */}
+      <div className="flex items-start gap-2 px-3 py-2 border-b border-surface-0">
         <input
           value={bulletinTopic}
           onChange={(e) => setBulletinTopic(e.target.value)}
           placeholder="Topic"
           aria-label="Bulletin topic"
-          className="w-28 px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
+          className={`${FIELD} h-7 w-28 flex-shrink-0`}
         />
         <textarea
           value={bulletinBody}
           onChange={(e) => setBulletinBody(e.target.value)}
-          placeholder="Post a bulletin message..."
+          placeholder="Post a message to the board"
           aria-label="Bulletin message"
           rows={2}
-          className="flex-1 px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring resize-none"
+          className={`${FIELD} py-1.5 flex-1 resize-none`}
         />
-        <button
+        <Button
+          kind="primary"
           onClick={() => void handlePostBulletin()}
           disabled={!bulletinTopic.trim() || !bulletinBody.trim() || postingBulletin}
-          className="px-2 py-1.5 text-xs font-medium bg-ctp-accent text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
         >
-          {postingBulletin ? 'Posting...' : 'Post'}
-        </button>
+          {postingBulletin ? 'Posting…' : 'Post'}
+        </Button>
       </div>
 
-      {/* Inline Description & Instructions Editor */}
-      <div className="flex gap-3 px-3 py-2 border-t border-surface-1 bg-ctp-mantle/50">
+      {/* Description, instructions and connection defaults */}
+      <div className="flex gap-3 px-3 py-2 border-b border-surface-0">
         <div className="flex-1 min-w-0">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-ctp-subtext0 mb-1">Description</label>
+          <FieldLabel htmlFor={`${groupProjectId}-description`}>Description</FieldLabel>
           <textarea
+            id={`${groupProjectId}-description`}
             value={editDesc}
             onChange={(e) => setEditDesc(e.target.value)}
-            placeholder="Purpose of this group project..."
+            placeholder="What this group project is for"
             rows={5}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring resize-none"
+            className={`${FIELD} py-1.5 resize-none`}
           />
         </div>
         <div className="flex-1 min-w-0">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-ctp-subtext0 mb-1">Instructions</label>
+          <FieldLabel htmlFor={`${groupProjectId}-instructions`}>Instructions</FieldLabel>
           <textarea
+            id={`${groupProjectId}-instructions`}
             value={editInstr}
             onChange={(e) => setEditInstr(e.target.value)}
-            placeholder="Rules agents must follow..."
+            placeholder="Rules every agent here follows"
             rows={5}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring resize-none"
+            className={`${FIELD} py-1.5 resize-none`}
           />
         </div>
-        <div className="flex flex-col justify-between flex-shrink-0 gap-1.5 w-44">
+        <div className="flex flex-col justify-between flex-shrink-0 gap-2 w-44">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wider text-ctp-subtext0 mb-0.5">Default permissions</div>
+            <div className="text-xs text-ctp-overlay1 mb-1">Default permissions</div>
             <div className="text-xs text-ctp-subtext0 leading-snug">
               {GROUP_PROJECT_CORE_TOOL_SUFFIXES.length} message tools on.
               {' '}
               {enabledPrivilegedDefaults === 0
                 ? 'Privileged actions off.'
                 : `${enabledPrivilegedDefaults} privileged action${enabledPrivilegedDefaults === 1 ? '' : 's'} on.`}
+              {' '}
+              {disabledDefaultCount} {disabledDefaultCount === 1 ? 'tool' : 'tools'} off.
             </div>
-            <button
+            <Button
+              kind="ghost"
+              className="mt-1.5"
               onClick={() => setShowDefaultPermissionsDialog(true)}
-              className="mt-1 px-2 py-1 text-xs font-medium rounded bg-surface-0 text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
               data-testid="group-project-default-permissions-button"
             >
               Set defaults
-            </button>
+            </Button>
           </div>
-          {/* Wave 10 #7+#8: single Save (scope chosen inside the confirm
-              dialog) + Clear All on its own row so neither gets clipped at
-              the column's fixed width. */}
+          {/* One Save (the scope is chosen in its confirm dialog), and Clear all on its own row. */}
           <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <button
-                onClick={() => handleSaveDescInstr()}
-                disabled={!hasUnsavedChanges || saving}
-                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-all ${
-                  hasUnsavedChanges
-                    ? 'bg-ctp-accent text-white shadow-md hover:opacity-90'
-                    : 'bg-surface-0 text-ctp-overlay0 cursor-default'
-                }`}
-                data-testid="group-project-save-defaults-button"
-              >
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-              <span className="text-xs text-ctp-overlay0 whitespace-nowrap" title={`${disabledDefaultCount} tools disabled by default`}>
-                {disabledDefaultCount} off
-              </span>
-            </div>
-            {confirmClearAll ? (
-              <button
-                onClick={handleClearAll}
-                className="w-full px-2 py-1.5 text-xs font-medium bg-ctp-red text-white rounded hover:opacity-90 transition-opacity"
-                data-testid="group-project-confirm-clear-all"
-              >
-                Confirm Clear
-              </button>
-            ) : (
-              <button
-                onClick={() => setConfirmClearAll(true)}
-                className="w-full px-2 py-1.5 text-xs font-medium text-ctp-red bg-ctp-red/10 rounded hover:bg-ctp-red/20 transition-colors"
-                title="Clear all messages (keeps description, instructions, and wires)"
-                data-testid="group-project-clear-all"
-              >
-                Clear All
-              </button>
-            )}
+            <Button
+              kind={hasUnsavedChanges ? 'primary' : 'ghost'}
+              onClick={() => handleSaveDescInstr()}
+              disabled={!hasUnsavedChanges || saving}
+              data-testid="group-project-save-defaults-button"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+            <Button kind="danger" onClick={() => void handleClearAll()} data-testid="group-project-clear-all">
+              Clear all messages
+            </Button>
           </div>
         </div>
       </div>
 
-      {/* 3-Pane Content */}
-      <div className="flex flex-1 min-h-0 border-t border-surface-1">
-        {/* Topic Sidebar */}
+      {/* Topics, messages and the open message */}
+      <div className="flex flex-1 min-h-0">
         <GroupProjectPanelSidebar
           width={topicsWidth}
           collapsed={topicsCollapsed}
           onResize={resizeTopics}
           onToggleCollapse={toggleTopicsCollapse}
         >
-          <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider bg-ctp-accent/10 text-ctp-accent sticky top-0 z-10">
-            Topics
-          </div>
-          {/* All virtual topic */}
-          <button
-            onClick={() => handleTopicClick(ALL_TOPICS_KEY)}
-            className={`w-full text-left px-3 py-2 text-xs border-b border-surface-0 hover:bg-surface-0 transition-colors ${
-              selectedTopic === ALL_TOPICS_KEY
-                ? 'bg-surface-0 text-ctp-accent border-l-2 border-l-ctp-accent'
-                : 'text-ctp-subtext1'
-            }`}
-          >
-            <div className="font-medium">All</div>
-            <div className="text-xs text-ctp-overlay0 mt-0.5">
-              {topics.reduce((sum, t) => sum + t.messageCount, 0)} msgs
-            </div>
-          </button>
-          {topics.map((t) => (
-            <div
-              key={t.topic}
-              className={`group relative text-xs border-b border-surface-0 hover:bg-surface-0 transition-colors ${
-                selectedTopic === t.topic
-                  ? 'bg-surface-0 text-ctp-accent border-l-2 border-l-ctp-accent'
-                  : 'text-ctp-subtext1'
-              }`}
-            >
+          <div className="h-[30px] flex items-center px-3 text-xs text-ctp-overlay1 sticky top-0 z-10 bg-ctp-mantle">Topics</div>
+          <ul className="px-1.5 pb-1.5">
+            <li>
               <button
-                onClick={() => handleTopicClick(t.topic)}
-                className="w-full text-left px-3 py-2"
+                onClick={() => handleTopicClick(ALL_TOPICS_KEY)}
+                aria-current={selectedTopic === ALL_TOPICS_KEY || undefined}
+                className={`w-full h-[30px] flex items-center gap-2 px-1.5 rounded-md text-left hover:bg-surface-0 ${selectedTopic === ALL_TOPICS_KEY ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1'}`}
               >
-                <div className="font-medium truncate flex items-center gap-1">
-                  {t.isProtected && <ShieldIcon size={10} />}
-                  {t.topic}
-                </div>
-                <div className="text-xs text-ctp-overlay0 mt-0.5">
-                  {t.messageCount} msg{t.messageCount !== 1 ? 's' : ''}
-                  {t.newMessageCount > 0 && (
-                    <span className="ml-1 text-ctp-green">+{t.newMessageCount}</span>
-                  )}
-                </div>
+                <span className="text-[13px] flex-1 truncate">All</span>
+                <span className="text-xs text-ctp-overlay1">{totalMessages}</span>
               </button>
-              {/* Topic actions (show on hover) */}
-              <div className="absolute top-1 right-1 hidden group-hover:flex items-center gap-0.5">
-                <button
-                  onClick={(e) => { e.stopPropagation(); void handleToggleProtection(t.topic, !!t.isProtected); }}
-                  className={`p-0.5 rounded transition-colors ${t.isProtected ? 'text-ctp-yellow' : 'text-ctp-overlay0 hover:text-ctp-yellow'}`}
-                  title={t.isProtected ? 'Remove protection' : 'Protect topic (never prune)'}
-                >
-                  <ShieldIcon size={10} />
-                </button>
-                {confirmDeleteTopic === t.topic ? (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); void handleDeleteTopic(t.topic); }}
-                    className="px-1 py-0.5 text-[9px] bg-ctp-red text-white rounded"
-                  >
-                    Confirm
-                  </button>
-                ) : (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteTopic(t.topic); }}
-                    className="p-0.5 text-ctp-overlay0 hover:text-ctp-red rounded transition-colors"
-                    title="Delete topic"
-                  >
-                    <TrashIcon size={10} />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-          {topics.length === 0 && (
-            <div className="p-3 text-xs text-ctp-overlay0 italic">No topics yet</div>
-          )}
+            </li>
+            {topics.map((t) => (
+              <TopicRow
+                key={t.topic}
+                topic={t}
+                selected={selectedTopic === t.topic}
+                onSelect={() => handleTopicClick(t.topic)}
+                onToggleProtection={() => void handleToggleProtection(t.topic, !!t.isProtected)}
+                onDelete={() => void handleDeleteTopic(t.topic)}
+              />
+            ))}
+          </ul>
+          {topics.length === 0 && <div className="px-3 py-1.5 text-xs text-ctp-overlay1">No topics yet</div>}
         </GroupProjectPanelSidebar>
 
-        {/* Message List (compact preview pane) */}
         <GroupProjectPanelSidebar
           width={messagesWidth}
           collapsed={messagesCollapsed}
@@ -883,103 +855,125 @@ function ExpandedProjectView({
           onToggleCollapse={toggleMessagesCollapse}
         >
           {sortedMessages.length === 0 ? (
-            <div className="p-3 text-xs text-ctp-overlay0 italic">
-              {selectedTopic === ALL_TOPICS_KEY ? 'No messages yet' : `No messages in "${selectedTopic}"`}
+            <div className="px-3 py-2 text-xs text-ctp-overlay1">
+              {selectedTopic === ALL_TOPICS_KEY ? 'No messages yet' : `No messages in ${selectedTopic}`}
             </div>
           ) : (
-            sortedMessages.map((m) => (
-              <div
-                key={m.id}
-                className={`group relative border-b border-surface-0 hover:bg-surface-0 transition-colors ${
-                  selectedMessageId === m.id ? 'bg-surface-0' : ''
-                }`}
-              >
-                <button
-                  onClick={() => setSelectedMessageId(m.id)}
-                  className="w-full text-left px-3 py-2"
+            <ul className="p-1.5">
+              {sortedMessages.map((m) => (
+                <li
+                  key={m.id}
+                  className={`group/msg relative rounded-md hover:bg-surface-0 ${selectedMessageId === m.id ? 'bg-surface-0' : ''}`}
                 >
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <span className="bg-ctp-accent/15 text-ctp-accent rounded px-1 py-0.5 text-xs font-medium truncate max-w-[80px]">
-                      {senderShort(m.sender)}
-                    </span>
-                    <span className="ml-auto text-xs text-ctp-overlay0 flex-shrink-0">
-                      {formatTime(m.timestamp)}
-                    </span>
-                  </div>
-                  <div
-                    className="text-xs text-ctp-subtext0 truncate mt-0.5 prose prose-xs prose-invert max-w-none [&>*]:inline [&>*]:m-0"
-                    dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(m.body.slice(0, 80)) }}
-                  />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); void handleDeleteMessage(m.topic, m.id); }}
-                  className="absolute top-1 right-1 hidden group-hover:block p-0.5 text-ctp-overlay0 hover:text-ctp-red rounded transition-colors"
-                  title="Delete message"
-                >
-                  <TrashIcon size={10} />
-                </button>
-              </div>
-            ))
+                  <button
+                    onClick={() => setSelectedMessageId(m.id)}
+                    aria-current={selectedMessageId === m.id || undefined}
+                    className="w-full text-left px-1.5 py-1.5"
+                  >
+                    <div className="flex items-center gap-2 pr-7">
+                      <span className="text-xs font-medium text-ctp-text truncate">{senderShort(m.sender)}</span>
+                      <span className="ml-auto text-xs text-ctp-overlay1 flex-shrink-0">{formatTime(m.timestamp)}</span>
+                    </div>
+                    <div
+                      className="text-xs text-ctp-overlay1 truncate mt-0.5 prose prose-xs prose-invert max-w-none [&>*]:inline [&>*]:m-0"
+                      dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(m.body.slice(0, 80)) }}
+                    />
+                  </button>
+                  <span className="absolute top-0.5 right-0.5 hidden group-hover/msg:block group-focus-within/msg:block">
+                    <IconButton label="Delete message" onClick={(e) => { e.stopPropagation(); void handleDeleteMessage(m.topic, m.id); }}>
+                      <TrashIcon />
+                    </IconButton>
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </GroupProjectPanelSidebar>
 
-        {/* Message Detail (main content area) */}
         <div
-          className="flex-1 min-w-0 overflow-y-auto p-3"
+          className="flex-1 min-w-0 overflow-y-auto px-3 py-2"
           onWheel={handleWheelContainment}
           data-testid="group-project-message-detail-scroll"
         >
           {selectedMessage ? (
-            <div className="text-xs space-y-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="bg-ctp-accent/15 text-ctp-accent rounded px-1.5 py-0.5 text-xs font-medium">
-                  {selectedMessage.sender}
-                </span>
-                <span className="text-ctp-overlay0">
-                  {formatTime(selectedMessage.timestamp)}
-                </span>
+            <div>
+              <div className="h-[30px] flex items-center gap-2 min-w-0">
+                <span className="text-[13px] font-medium text-ctp-text truncate">{selectedMessage.sender}</span>
+                <span className="text-xs text-ctp-overlay1 flex-shrink-0">{formatTime(selectedMessage.timestamp)}</span>
                 {selectedTopic === ALL_TOPICS_KEY && (
-                  <span className="text-ctp-overlay0">
-                    in <span className="text-ctp-subtext1">{selectedMessage.topic}</span>
-                  </span>
+                  <span className="text-xs text-ctp-overlay1 truncate">in {selectedMessage.topic}</span>
                 )}
-                <button
-                  onClick={() => void handleDeleteMessage(selectedMessage.topic, selectedMessage.id)}
-                  className="ml-auto p-1 text-ctp-overlay0 hover:text-ctp-red rounded transition-colors"
-                  title="Delete message"
-                >
-                  <TrashIcon size={12} />
-                </button>
+                <span className="ml-auto">
+                  <IconButton label="Delete message" onClick={() => void handleDeleteMessage(selectedMessage.topic, selectedMessage.id)}>
+                    <TrashIcon />
+                  </IconButton>
+                </span>
               </div>
               <div
-                className="border-t border-surface-1 pt-2 mt-2 prose prose-xs prose-invert max-w-none break-words"
+                className="border-t border-surface-0 pt-2 mt-1 text-[13px] prose prose-sm prose-invert max-w-none break-words"
                 dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(selectedMessage.body) }}
               />
             </div>
           ) : (
-            <div className="text-xs text-ctp-overlay0 italic">Select a message</div>
+            <div className="text-xs text-ctp-overlay1">Select a message</div>
           )}
         </div>
       </div>
 
-      {/* Action Bar (agent count only) */}
-      <div className="flex items-center gap-2 px-3 py-1.5 border-t border-surface-1 bg-ctp-mantle">
-        <RobotIcon size={12} />
-        <span className="text-xs text-ctp-subtext0">
-          {members.length} agent{members.length !== 1 ? 's' : ''} connected
-        </span>
+      <div className="h-[30px] flex items-center px-3 border-t border-surface-0 text-xs text-ctp-overlay1 flex-shrink-0">
+        {members.length} {members.length === 1 ? 'agent' : 'agents'} connected
       </div>
 
-      {/* Shoulder Tap Modal */}
-      {showTapModal && (
-        <ShoulderTapModal
-          members={members}
-          projectInstructions={project?.instructions || ''}
-          onClose={() => setShowTapModal(false)}
-          injectMessage={injectMessage}
-        />
-      )}
+      <BroadcastModal
+        open={showTapModal}
+        members={members}
+        projectInstructions={project?.instructions || ''}
+        onClose={() => setShowTapModal(false)}
+        injectMessage={injectMessage}
+      />
     </div>
+  );
+}
+
+/** One topic: name (with a shield when protected) and its count, or how many are new. */
+function TopicRow({ topic: t, selected, onSelect, onToggleProtection, onDelete }: {
+  topic: TopicDigest;
+  selected: boolean;
+  onSelect: () => void;
+  onToggleProtection: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <li className={`group/topic relative rounded-md hover:bg-surface-0 ${selected ? 'bg-surface-0' : ''}`}>
+      <button
+        onClick={onSelect}
+        aria-current={selected || undefined}
+        className={`w-full h-[30px] flex items-center gap-1.5 px-1.5 text-left ${selected ? 'text-ctp-text' : 'text-ctp-subtext1'}`}
+      >
+        {t.isProtected && <span className="text-ctp-overlay1 flex-shrink-0" aria-label="Protected"><ShieldIcon size={12} /></span>}
+        <span className="text-[13px] flex-1 truncate">{t.topic}</span>
+        {t.newMessageCount > 0 ? (
+          <span className="text-xs font-medium text-ctp-text flex-shrink-0 group-hover/topic:hidden group-focus-within/topic:hidden" data-testid="group-project-topic-unread">
+            {t.newMessageCount} new
+          </span>
+        ) : (
+          <span className="text-xs text-ctp-overlay1 flex-shrink-0 group-hover/topic:hidden group-focus-within/topic:hidden">{t.messageCount}</span>
+        )}
+      </button>
+      <span className="absolute inset-y-0 right-0.5 hidden group-hover/topic:flex group-focus-within/topic:flex items-center">
+        <IconButton
+          label="Protect topic"
+          tooltip="Protect topic: retention never removes its messages"
+          pressed={!!t.isProtected}
+          onClick={(e) => { e.stopPropagation(); onToggleProtection(); }}
+        >
+          <ShieldIcon />
+        </IconButton>
+        <IconButton label="Delete topic" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+          <TrashIcon />
+        </IconButton>
+      </span>
+    </li>
   );
 }
 
@@ -1034,7 +1028,7 @@ function ExpandedHeader({
   );
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-ctp-mantle border-b-2 border-ctp-accent/30">
+    <div className="h-[30px] flex items-center gap-1 pl-3 pr-1.5 border-b border-surface-0 flex-shrink-0">
       {editing ? (
         <input
           type="text"
@@ -1042,68 +1036,39 @@ function ExpandedHeader({
           onChange={(e) => setEditName(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleSaveEdit}
-          className="px-2 py-0.5 text-sm font-semibold bg-surface-0 border border-surface-2 rounded text-ctp-text focus-ring"
+          aria-label="Group project name"
+          className={`${FIELD} h-6 text-[13px] max-w-[240px]`}
           autoFocus
         />
       ) : (
-        <button
-          onClick={handleStartEdit}
-          className="text-sm font-semibold text-ctp-text hover:text-ctp-accent transition-colors truncate"
-          title="Click to rename"
-        >
-          {displayName}
-        </button>
+        <Tooltip content="Rename">
+          <button
+            onClick={handleStartEdit}
+            className="h-6 px-1.5 -ml-1.5 rounded-md text-[13px] font-medium text-ctp-text hover:bg-surface-0 truncate min-w-0"
+          >
+            {displayName}
+          </button>
+        </Tooltip>
       )}
-      <div className="flex-1" />
-      {/* Retention settings */}
-      <button
-        onClick={onToggleRetention}
-        className={`p-1 transition-colors flex-shrink-0 ${showRetentionSettings ? 'text-ctp-accent' : 'text-ctp-overlay1 hover:text-ctp-accent'}`}
-        title="Retention settings"
-      >
-        <GearIcon size={14} />
-      </button>
-      {/* Megaphone broadcast */}
-      <button
-        onClick={onShowTapModal}
-        className="p-1 text-ctp-overlay1 hover:text-ctp-accent transition-colors flex-shrink-0"
-        title="Broadcast message"
-      >
-        <MegaphoneIcon size={14} />
-      </button>
-      {/* Polling nudge */}
-      <button
-        onClick={onNudgePolling}
-        className="p-1 text-ctp-overlay1 hover:text-ctp-yellow transition-colors flex-shrink-0"
-        title="Nudge all agents to start polling if not already"
-      >
-        <NudgeIcon size={14} />
-      </button>
-      {/* Polling toggle */}
-      <button
-        onClick={onTogglePolling}
-        className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
-          pollingEnabled
-            ? 'text-ctp-green bg-ctp-green/10'
-            : 'text-ctp-overlay0 bg-surface-0'
-        }`}
-        title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
-      >
-        <PollingIcon size={12} active={pollingEnabled} />
-        <span className="text-xs font-medium">{pollingEnabled ? 'Poll: On' : 'Poll: Off'}</span>
-      </button>
+      <span className="flex-1" />
+      <IconButton label="Retention settings" pressed={showRetentionSettings} onClick={onToggleRetention}><GearIcon /></IconButton>
+      <IconButton label="Broadcast message" onClick={onShowTapModal}><MegaphoneIcon /></IconButton>
+      <IconButton label="Ask agents to start polling" onClick={onNudgePolling}><NudgeIcon /></IconButton>
+      <PollingSwitch on={pollingEnabled} onToggle={onTogglePolling} />
     </div>
   );
 }
 
-/* ---------- Shoulder Tap Modal ---------- */
+/* ---------- Broadcast dialog ---------- */
 
-function ShoulderTapModal({
+function BroadcastModal({
+  open,
   members,
   projectInstructions,
   onClose,
   injectMessage,
 }: {
+  open: boolean;
   members: GroupProjectMember[];
   projectInstructions: string;
   onClose: () => void;
@@ -1113,6 +1078,18 @@ function ShoulderTapModal({
   const [message, setMessage] = useState('');
   const [includeInstructions, setIncludeInstructions] = useState(false);
   const [sending, setSending] = useState(false);
+  const targetId = useId();
+  const messageId = useId();
+  const instructionsLabelId = useId();
+  const hasInstructions = !!projectInstructions.trim();
+
+  // Start fresh each time it opens.
+  useEffect(() => {
+    if (!open) return;
+    setTarget('all');
+    setMessage('');
+    setIncludeInstructions(false);
+  }, [open]);
 
   const handleSend = useCallback(async () => {
     const msg = message.trim();
@@ -1122,7 +1099,7 @@ function ShoulderTapModal({
 
     try {
       const parts: string[] = [];
-      if (includeInstructions && projectInstructions.trim()) {
+      if (includeInstructions && hasInstructions) {
         parts.push(`Project Instructions:\n${projectInstructions.trim()}`);
       }
       if (msg) parts.push(msg);
@@ -1140,84 +1117,58 @@ function ShoulderTapModal({
     } finally {
       setSending(false);
     }
-  }, [message, includeInstructions, projectInstructions, sending, target, members, onClose, injectMessage]);
+  }, [message, includeInstructions, hasInstructions, projectInstructions, sending, target, members, onClose, injectMessage]);
 
   return (
-    <div
-      // eslint-disable-next-line no-restricted-syntax
-      className="absolute inset-0 bg-ctp-crust/80 flex items-center justify-center z-modal"
-      onClick={onClose}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Broadcast message"
+      testId="group-project-broadcast"
+      footer={(
+        <>
+          <Button kind="ghost" onClick={onClose}>Cancel</Button>
+          <Button kind="primary" onClick={() => void handleSend()} disabled={(!message.trim() && !includeInstructions) || sending}>
+            {sending ? 'Sending…' : 'Send'}
+          </Button>
+        </>
+      )}
     >
-      <div
-        className="bg-ctp-base border border-surface-1 rounded-lg shadow-xl w-[90%] max-w-sm p-4 space-y-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-ctp-text flex items-center gap-2">
-            <MegaphoneIcon size={16} />
-            Broadcast Message
-          </h3>
-          <button onClick={onClose} className="text-ctp-overlay1 hover:text-ctp-text text-lg leading-none">&times;</button>
-        </div>
-
+      <div className="flex flex-col gap-3">
         <div>
-          <label className="block text-xs text-ctp-subtext0 mb-1">Target</label>
-          <select
-            value={target}
-            onChange={(e) => setTarget(e.target.value)}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus-ring"
-          >
-            <option value="all">Broadcast to all</option>
+          <FieldLabel htmlFor={targetId}>Send to</FieldLabel>
+          <select id={targetId} value={target} onChange={(e) => setTarget(e.target.value)} className={`${FIELD} h-7`}>
+            <option value="all">Every agent</option>
             {members.map((m) => (
-              <option key={m.agentId} value={m.agentId}>
-                {m.agentName || m.agentId}
-              </option>
+              <option key={m.agentId} value={m.agentId}>{m.agentName || m.agentId}</option>
             ))}
           </select>
         </div>
-
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={includeInstructions}
-            onChange={(e) => setIncludeInstructions(e.target.checked)}
-            className="accent-ctp-accent"
-            disabled={!projectInstructions.trim()}
-          />
-          <span className={`text-xs ${projectInstructions.trim() ? 'text-ctp-subtext1' : 'text-ctp-overlay0'}`}>
+        <div className="h-7 flex items-center justify-between gap-2">
+          <span id={instructionsLabelId} className={`text-xs ${hasInstructions ? 'text-ctp-subtext1' : 'text-ctp-overlay1'}`}>
             Include project instructions
           </span>
-        </label>
-
+          <Toggle
+            checked={includeInstructions}
+            onChange={() => setIncludeInstructions((v) => !v)}
+            disabled={!hasInstructions}
+            aria-labelledby={instructionsLabelId}
+          />
+        </div>
         <div>
-          <label className="block text-xs text-ctp-subtext0 mb-1">Message</label>
+          <FieldLabel htmlFor={messageId}>Message</FieldLabel>
           <textarea
+            id={messageId}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Type your message..."
+            placeholder="What should they do?"
             rows={4}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus-ring resize-none"
+            className={`${FIELD} py-1.5 resize-none`}
             autoFocus
           />
         </div>
-
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs text-ctp-subtext0 hover:text-ctp-text transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSend}
-            disabled={(!message.trim() && !includeInstructions) || sending}
-            className="px-3 py-1.5 text-xs font-medium bg-ctp-accent text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
-          >
-            {sending ? 'Sending...' : 'Send'}
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1265,90 +1216,48 @@ function RetentionSettings({ groupProjectId }: { groupProjectId: string }) {
   if (!loaded) return null;
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 border-t border-surface-1 bg-ctp-mantle/30">
-      <span className="text-xs font-semibold uppercase tracking-wider text-ctp-subtext0">Retention</span>
+    <div className="flex items-center gap-3 px-3 py-1.5 border-b border-surface-0 flex-wrap" data-testid="group-project-retention">
+      <span className="text-xs text-ctp-overlay1">Keep</span>
       <label className="flex items-center gap-1.5 text-xs text-ctp-subtext1">
-        Per topic:
         <input
           type="number"
           min={1}
           value={maxPerTopic}
           onChange={(e) => { setMaxPerTopic(Math.max(1, parseInt(e.target.value) || 1)); setConfirmTrim(false); }}
-          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus-ring"
+          className={`${FIELD} h-7 w-20`}
         />
+        per topic
       </label>
       <label className="flex items-center gap-1.5 text-xs text-ctp-subtext1">
-        Total:
         <input
           type="number"
           min={1}
           value={maxTotal}
           onChange={(e) => { setMaxTotal(Math.max(1, parseInt(e.target.value) || 1)); setConfirmTrim(false); }}
-          className="w-20 px-1.5 py-0.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus-ring"
+          className={`${FIELD} h-7 w-20`}
         />
+        in total
       </label>
       {trimEstimate != null && trimEstimate > 0 && (
-        <span className="text-xs text-ctp-red font-medium">
-          {trimEstimate} msg{trimEstimate !== 1 ? 's' : ''} will be removed
+        <span className="text-xs text-ctp-error">
+          {trimEstimate} {trimEstimate === 1 ? 'message' : 'messages'} will be removed
         </span>
       )}
-      {confirmTrim ? (
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-2 py-0.5 text-xs font-medium bg-ctp-red text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
-        >
-          {saving ? 'Trimming...' : 'Confirm Trim'}
-        </button>
-      ) : (
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-2 py-0.5 text-xs font-medium bg-ctp-accent text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </button>
-      )}
+      <span className="flex-1" />
+      <Button kind={confirmTrim ? 'danger-solid' : 'primary'} onClick={() => void handleSave()} disabled={saving}>
+        {saving ? (confirmTrim ? 'Trimming…' : 'Saving…') : confirmTrim ? 'Remove and save' : 'Save'}
+      </Button>
     </div>
   );
 }
 
 /* ---------- Icons ---------- */
 
-function RobotIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="11" width="7" height="8" rx="1" />
-      <rect x="14" y="11" width="7" height="8" rx="1" />
-      <circle cx="5" cy="14" r="1" fill="currentColor" />
-      <circle cx="8" cy="14" r="1" fill="currentColor" />
-      <circle cx="16" cy="14" r="1" fill="currentColor" />
-      <circle cx="19" cy="14" r="1" fill="currentColor" />
-      <line x1="6.5" y1="11" x2="6.5" y2="8" />
-      <line x1="17.5" y1="11" x2="17.5" y2="8" />
-      <rect x="4" y="3" width="16" height="5" rx="1" />
-      <line x1="8" y1="5.5" x2="16" y2="5.5" />
-    </svg>
-  );
-}
-
 function MegaphoneIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 11l18-5v12L3 13v-2z" />
       <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
-    </svg>
-  );
-}
-
-function PollingIcon({ size = 14, active = false }: { size?: number; active?: boolean }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {active ? (
-        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-      ) : (
-        <line x1="2" y1="12" x2="22" y2="12" />
-      )}
     </svg>
   );
 }

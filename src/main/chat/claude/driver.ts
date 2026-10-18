@@ -2,7 +2,7 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type ChatDriverId, type PermissionLevel } from '../../../shared/chat/capabilities';
+import { MINIMAL_CHAT_CAPABILITIES, PERMISSION_LEVEL_LABELS, type ChatCapabilities, type ChatDriverId, type PermissionLevel } from '../../../shared/chat/capabilities';
 import type {
   ChatErrorCode,
   ChatEventDraft,
@@ -17,7 +17,9 @@ import type {
   ToolCallLocation,
   ToolKind,
   TurnStopReason,
+  UsageLimit,
 } from '../../../shared/chat/events';
+import { COMPACTION_STARTED } from '../../../shared/chat/events';
 import type {
   ChatDriver,
   ChatDriverProbe,
@@ -125,6 +127,7 @@ export function claudeToolKind(name: string): ToolKind {
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
+const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
 function inputPath(input: Obj): string | undefined {
@@ -152,6 +155,32 @@ export function claudeToolTitle(name: string, input: Obj, cwd: string): string {
 function toolLocations(input: Obj): ToolCallLocation[] | undefined {
   const p = inputPath(input);
   return p ? [{ path: p }] : undefined;
+}
+
+/**
+ * The change an Edit, MultiEdit or Write call proposes, from its input, so a
+ * pending call (and its approval card) shows a diff before it runs. The
+ * CLI's result replaces it once the call finishes (claudeToolContent).
+ */
+export function claudeInputDiff(name: string, input: Obj): ToolCallContent[] | undefined {
+  const filePath = str(input.file_path);
+  if (!filePath) return undefined;
+  if (name === 'Edit' && typeof input.new_string === 'string') {
+    return [{ type: 'diff', path: filePath, oldText: str(input.old_string) ?? '', newText: input.new_string }];
+  }
+  if (name === 'MultiEdit' && Array.isArray(input.edits)) {
+    const diffs = input.edits.filter(isObj).filter((e) => typeof e.new_string === 'string')
+      .map((e): ToolCallContent => ({ type: 'diff', path: filePath, oldText: str(e.old_string) ?? '', newText: e.new_string as string }));
+    return diffs.length > 0 ? diffs : undefined;
+  }
+  if (name === 'Write' && typeof input.content === 'string') {
+    // Write may create or overwrite; the old content isn't in the input. A
+    // unified diff of additions avoids labelling an overwrite "Created".
+    const lines = input.content.replace(/\n$/, '').split('\n');
+    const unifiedDiff = [`@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`)].join('\n');
+    return [{ type: 'diff', path: filePath, newText: input.content, unifiedDiff }];
+  }
+  return undefined;
 }
 
 /** Diff or terminal content from the CLI's typed tool_use_result, falling back to the result text. */
@@ -190,7 +219,8 @@ function describeSuggestion(s: ClaudePermissionUpdate): string | undefined {
   if (Array.isArray(s.rules)) {
     return s.rules.filter(isObj).map((r) => (r.ruleContent ? `${String(r.toolName)}(${String(r.ruleContent)})` : String(r.toolName))).join(', ');
   }
-  if (s.type === 'setMode' && typeof s.mode === 'string') return `${s.mode} mode`;
+  // A mode switch is named by its Clubhouse level ("Auto-accept edits"), not the CLI's mode id.
+  if (s.type === 'setMode' && typeof s.mode === 'string') return PERMISSION_LEVEL_LABELS[levelFromClaudeMode(s.mode)];
   if (Array.isArray(s.directories)) return s.directories.join(', ');
   return undefined;
 }
@@ -301,12 +331,15 @@ const LIMIT_STATUS: Record<string, 'ok' | 'warning' | 'exceeded'> = {
 
 function tokens(u: ClaudeUsage | undefined) {
   if (!u) return undefined;
+  // Anthropic's input_tokens excludes cache reads and writes; the contract's
+  // `input` is the total input (TokenUsage), so add them in.
+  const input = u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens;
   return {
-    input: u.inputTokens,
+    input,
     cachedInput: u.cacheReadInputTokens,
     cacheWrite: u.cacheCreationInputTokens,
     output: u.outputTokens,
-    total: u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens + u.outputTokens,
+    total: input + u.outputTokens,
   };
 }
 
@@ -321,15 +354,95 @@ function sessionTokens(modelUsage: Record<string, unknown> | undefined) {
     cachedInput += typeof m.cacheReadInputTokens === 'number' ? m.cacheReadInputTokens : 0;
     cacheWrite += typeof m.cacheCreationInputTokens === 'number' ? m.cacheCreationInputTokens : 0;
   }
-  return { input, output, cachedInput, cacheWrite, total: input + output + cachedInput + cacheWrite };
+  // Total input, as in tokens(): uncached input plus cache reads and writes.
+  const totalInput = input + cachedInput + cacheWrite;
+  return { input: totalInput, output, cachedInput, cacheWrite, total: totalInput + output };
 }
 
-const LIMIT_WINDOWS: Record<string, string> = {
+/** Every plan window the CLI reports (rate_limit_event's rateLimitType, get_usage's rate_limits keys). */
+export const LIMIT_WINDOWS: Record<string, string> = {
   five_hour: '5h',
   seven_day: 'week',
   seven_day_opus: 'week_opus',
   seven_day_sonnet: 'week_sonnet',
+  seven_day_oauth_apps: 'week_oauth_apps',
+  seven_day_overage_included: 'week_overage_included',
+  overage: 'overage',
 };
+
+/** A fraction 0..1 from a fraction (rate_limit_event's utilization). */
+function fraction(v: number | undefined | null): number | undefined {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+  return Math.min(1, Math.max(0, v));
+}
+
+/** A fraction 0..1 from a 0-100 percentage (get_usage always reports percent, so 1 means 1%). */
+function fromPercent(v: number | undefined | null): number | undefined {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+  return Math.min(1, Math.max(0, v / 100));
+}
+
+/** Epoch ms from epoch seconds, epoch ms or an ISO string. */
+function epochMs(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v)) return v < 1e12 ? v * 1000 : v;
+  if (typeof v === 'string') {
+    const t = Date.parse(v);
+    return Number.isFinite(t) ? t : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * The plan windows in a `get_usage` reply (the data behind /usage): 5-hour,
+ * weekly, per-model weekly and extra usage. Null when plan limits don't apply
+ * (API key, Bedrock, Vertex) or the reply has none.
+ */
+export function planLimitsFromWire(response: unknown): UsageLimit[] | null {
+  if (!isObj(response) || response.rate_limits_available === false || !isObj(response.rate_limits)) return null;
+  const rl = response.rate_limits;
+  const out: UsageLimit[] = [];
+  for (const [key, window] of Object.entries(LIMIT_WINDOWS)) {
+    const w = rl[key];
+    if (!isObj(w)) continue;
+    const utilization = fromPercent(w.utilization as number | null);
+    if (utilization === undefined && w.resets_at == null) continue;
+    out.push({ window, ...(utilization !== undefined && { utilization }), ...(epochMs(w.resets_at) !== undefined && { resetsAt: epochMs(w.resets_at) }) });
+  }
+  for (const m of arr(rl.model_scoped)) {
+    if (!isObj(m) || typeof m.display_name !== 'string') continue;
+    const utilization = fromPercent(m.utilization as number | null);
+    if (utilization === undefined) continue;
+    out.push({ window: `week:${m.display_name}`, utilization, ...(epochMs(m.resets_at) !== undefined && { resetsAt: epochMs(m.resets_at) }) });
+  }
+  const extra = rl.extra_usage;
+  if (isObj(extra) && extra.is_enabled === true) {
+    const utilization = fromPercent(extra.utilization as number | null);
+    if (utilization !== undefined) out.push({ window: 'overage', utilization });
+  }
+  return out.length ? out : null;
+}
+
+/**
+ * The context window of the model that served the last call. The result's
+ * modelUsage reports it (keyed by the selected id, e.g. `claude-opus-5-5[1m]`);
+ * otherwise a `[1m]` id means 1M tokens and anything else the standard 200K.
+ */
+export function claudeContextWindow(model: string | undefined, modelUsage: Record<string, unknown> | undefined, selected?: string): number | undefined {
+  const windows = Object.entries(modelUsage ?? {}).flatMap(([id, u]) =>
+    (isObj(u) && typeof u.contextWindow === 'number' && u.contextWindow > 0 ? [[id, u.contextWindow] as const] : []));
+  const byId = (id: string | undefined) => (id ? windows.find(([k]) => k === id)?.[1] : undefined);
+  // The model that served the call wins; its id may lack the selected id's suffix (`[1m]`).
+  const known = byId(model) ?? (model ? windows.find(([k]) => k.startsWith(model))?.[1] : undefined) ?? byId(selected);
+  if (known) return known;
+  if (/\[1m\]/i.test(selected ?? '') || /\[1m\]/i.test(model ?? '')) return 1_000_000;
+  if (windows.length === 1) return windows[0][1];
+  return model || selected ? 200_000 : undefined;
+}
+
+/** How long a get_usage read may take; it's best-effort and never holds a turn up. */
+const PLAN_USAGE_TIMEOUT_MS = 5_000;
+/** At most one get_usage read per this long (it calls the claude.ai usage endpoint). */
+const PLAN_USAGE_MIN_INTERVAL_MS = 30_000;
 
 // ── Models ──────────────────────────────────────────────────────────────────
 
@@ -375,6 +488,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private readonly queue = new AsyncQueue<ChatEventDraft>();
   private readonly tools = new Map<string, ToolInfo>();
   private readonly pendingPermissions = new Map<string, ClaudePermissionUpdate[]>();
+  /** The tool call each pending permission is for: requestId → toolCallId. */
+  private readonly permissionTools = new Map<string, string>();
   /** AskUserQuestion requests, surfaced as `question`: requestId → tool input. */
   private readonly pendingQuestions = new Map<string, Obj>();
   /** Subagent names from task_started; later task_* messages don't repeat them. */
@@ -423,6 +538,17 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   /** An assistant API error seen in this turn, reported once when the turn ends. */
   private turnApiError: string | undefined;
   private pump: Promise<void> | null = null;
+  /** The last main-loop call's context fill this turn: input + cache read + cache write. */
+  private lastContext: { used: number; model?: string } | undefined;
+  /** A compaction-started notice went out and nothing has settled it yet. */
+  private compacting = false;
+  /** Status per window from rate_limit_event, kept on get_usage's windows (which have none). */
+  private limitStatus = new Map<string, UsageLimit['status']>();
+  private planUsageAt = 0;
+  private planUsageInFlight = false;
+  /** False once get_usage said plan limits don't apply, or the CLI doesn't answer it. */
+  private planUsageAvailable = true;
+  private planUsageFailures = 0;
 
   constructor(
     readonly driverId: ClaudeChatDriverId,
@@ -450,6 +576,42 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     await this.transport.start();
     // Before the first prompt, so the request order on the wire is fixed.
     await this.refreshApplied();
+    void this.refreshPlanUsage();
+  }
+
+  /** Read every plan window (5-hour, weekly, per-model) from get_usage; best-effort. */
+  private async refreshPlanUsage(): Promise<void> {
+    if (!this.planUsageAvailable || this.planUsageInFlight || !this.transport.planUsage || this.closing) return;
+    if (Date.now() - this.planUsageAt < PLAN_USAGE_MIN_INTERVAL_MS) return;
+    this.planUsageInFlight = true;
+    this.planUsageAt = Date.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const response = await Promise.race([
+        this.transport.planUsage(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`get_usage timed out after ${PLAN_USAGE_TIMEOUT_MS}ms`)), PLAN_USAGE_TIMEOUT_MS);
+        }),
+      ]);
+      this.planUsageFailures = 0;
+      const limits = planLimitsFromWire(response);
+      if (!limits) {
+        if (isObj(response) && response.rate_limits_available === false) this.planUsageAvailable = false;
+        return;
+      }
+      this.push({
+        type: 'usage',
+        data: { scope: 'session', limits: limits.map((l) => (this.limitStatus.has(l.window) ? { ...l, status: this.limitStatus.get(l.window) } : l)) },
+      });
+    } catch (err) {
+      // telemetry-exempt: optional data; the rate_limit_event windows still arrive.
+      // A CLI that doesn't answer get_usage isn't asked again after a few tries.
+      if (++this.planUsageFailures >= 3) this.planUsageAvailable = false;
+      this.log?.('warn', '[claude-chat] Could not read plan usage', { error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      clearTimeout(timer);
+      this.planUsageInFlight = false;
+    }
   }
 
   async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
@@ -487,6 +649,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     const suggestions = this.pendingPermissions.get(requestId);
     if (!suggestions) throw new Error(`No pending Claude permission request ${requestId}`);
     this.pendingPermissions.delete(requestId);
+    const toolCallId = this.permissionTools.get(requestId);
+    this.permissionTools.delete(requestId);
     // e.g. a revised plan for ExitPlanMode
     const updatedInput = isObj(extras?.updatedInput) ? extras.updatedInput : undefined;
     if (optionId === CLAUDE_OPTION_ALLOW) {
@@ -498,12 +662,21 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       this.transport.respondToPermission(requestId, { behavior: 'deny', message: extras?.message || 'The user denied this request.' });
     } else {
       this.pendingPermissions.set(requestId, suggestions);
+      if (toolCallId) this.permissionTools.set(requestId, toolCallId);
       throw new Error(`Unknown Claude permission option ${optionId}`);
+    }
+    // An approved, edited plan replaces the one shown for review, so the
+    // transcript matches what Claude was told to implement.
+    const tool = toolCallId ? this.tools.get(toolCallId) : undefined;
+    if (optionId !== CLAUDE_OPTION_DENY && toolCallId && tool?.name === 'ExitPlanMode' && typeof updatedInput?.plan === 'string') {
+      this.push({ type: 'plan_document', data: { planId: toolCallId, markdown: updatedInput.plan, status: 'ready', toolCallId } }, true);
     }
     this.push({
       type: 'permission_resolved',
       data: { requestId, optionId, decision: optionId === CLAUDE_OPTION_DENY ? 'deny' : 'allow', by: 'user' },
     }, true);
+    // An approved call runs now; Claude reports nothing more until its result.
+    if (optionId !== CLAUDE_OPTION_DENY && toolCallId) this.markRunning(toolCallId);
   }
 
   async answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void> {
@@ -760,6 +933,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
             toolName: ev.name,
             rawInput: ev.input,
             locations: toolLocations(ev.input),
+            content: claudeInputDiff(ev.name, ev.input),
             subagentId: ev.parentToolCallId,
           },
         }, true);
@@ -794,6 +968,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
           return;
         }
         this.pendingPermissions.set(ev.requestId, ev.suggestions);
+        if (ev.toolCallId) this.permissionTools.set(ev.requestId, ev.toolCallId);
         this.push({
           type: 'permission_request',
           data: {
@@ -817,6 +992,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
           return;
         }
         if (!this.pendingPermissions.delete(ev.requestId)) return;
+        this.permissionTools.delete(ev.requestId);
         this.push({ type: 'permission_resolved', data: { requestId: ev.requestId, decision: 'cancelled', by: 'agent' } }, true);
         return;
       case 'permission_denied':
@@ -833,14 +1009,23 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         const t = tokens(ev.usage);
         const turnCost = this.turnCost(ev.totalCostUsd);
         const costIsEstimate = ev.totalCostUsd !== undefined ? this.costIsEstimate : undefined;
-        this.push({ type: 'usage', data: { scope: 'turn', tokens: t, costUsd: turnCost, costIsEstimate: turnCost !== undefined ? costIsEstimate : undefined } }, true);
+        // Context fill is the last main-loop call's prompt, against that model's window.
+        const size = this.lastContext ? claudeContextWindow(this.lastContext.model, ev.modelUsage, this.applied?.model ?? this.model) : undefined;
+        const context = this.lastContext && size ? { used: this.lastContext.used, size } : undefined;
+        this.push({
+          type: 'usage',
+          data: { scope: 'turn', tokens: t, costUsd: turnCost, costIsEstimate: turnCost !== undefined ? costIsEstimate : undefined, ...(context && { context }) },
+        }, true);
         if (ev.totalCostUsd !== undefined || ev.modelUsage) {
           this.push({ type: 'usage', data: { scope: 'session', tokens: sessionTokens(ev.modelUsage), costUsd: ev.totalCostUsd, costIsEstimate } }, true);
         }
         this.push({ type: 'turn_ended', data: { stopReason, durationMs: ev.durationMs, usage: t, costUsd: turnCost } }, true);
         this.turnRunning = false;
+        // turn_ended settles a compaction row; a later status frame starts a new one.
+        this.compacting = false;
         this.interrupting = false;
         this.turnApiError = undefined;
+        void this.refreshPlanUsage();
         if (this.effortCommandThisTurn) {
           this.effortPinned = this.effortCommandThisTurn === 'pin';
           this.effortCommandThisTurn = undefined;
@@ -851,21 +1036,56 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         }
         return;
       }
+      case 'assistant_usage': {
+        const u = ev.usage;
+        this.lastContext = { used: u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens, model: ev.model };
+        return;
+      }
       case 'rate_limit': {
         const window = (ev.rateLimitType && LIMIT_WINDOWS[ev.rateLimitType]) ?? ev.rateLimitType ?? 'limit';
-        // The CLI reports resetsAt in epoch seconds; the contract uses epoch ms like ts.
-        const resetsAt = ev.resetsAt !== undefined && ev.resetsAt < 1e12 ? ev.resetsAt * 1000 : ev.resetsAt;
-        this.push({
-          type: 'usage',
-          data: { scope: 'session', limits: [{ window, utilization: ev.utilization, status: LIMIT_STATUS[ev.status], resetsAt }] },
-        });
+        const status = LIMIT_STATUS[ev.status];
+        const limits: UsageLimit[] = [{
+          window,
+          ...(fraction(ev.utilization) !== undefined && { utilization: fraction(ev.utilization) }),
+          ...(status && { status }),
+          // The CLI reports resetsAt in epoch seconds; the contract uses epoch ms like ts.
+          ...(epochMs(ev.resetsAt) !== undefined && { resetsAt: epochMs(ev.resetsAt) }),
+        }];
+        // Extra usage rides on the same event as its own window, but only when the
+        // account has it: with extra usage off, overageStatus is "rejected" and a
+        // disabled reason is given, which isn't a reached limit.
+        const overage = ev.overageStatus && !ev.overageDisabledReason ? LIMIT_STATUS[ev.overageStatus] : undefined;
+        if (overage && window !== 'overage') {
+          limits.push({ window: 'overage', status: overage, ...(epochMs(ev.overageResetsAt) !== undefined && { resetsAt: epochMs(ev.overageResetsAt) }) });
+        }
+        for (const l of limits) if (l.status) this.limitStatus.set(l.window, l.status);
+        this.push({ type: 'usage', data: { scope: 'session', limits } });
         if (ev.status === 'rejected') {
           this.push({ type: 'notice', data: { level: 'warn', code: 'rate_limited', message: 'Plan usage limit reached' } });
         }
         return;
       }
+      case 'compaction':
+        // Auto compaction or /compact can take a minute or more: say so when it starts.
+        if (ev.phase === 'started' && !this.compacting) {
+          this.compacting = true;
+          this.push({ type: 'notice', data: { level: 'info', code: COMPACTION_STARTED, message: 'Compacting context…' } }, true);
+        } else if (ev.phase === 'failed' && this.compacting) {
+          this.compacting = false;
+          this.push({ type: 'notice', data: { level: 'warn', code: 'compaction_failed', message: ev.error ? `Context compaction failed: ${ev.error}` : 'Context compaction failed' } }, true);
+        }
+        return;
       case 'compacted':
+        // The context the meter showed is gone; the next call reports the new fill.
+        this.lastContext = undefined;
+        this.compacting = false;
         this.push({ type: 'notice', data: { level: 'info', code: 'compacted', message: 'Context compacted' } }, true);
+        return;
+      case 'conversation_reset':
+        // /clear typed in chat (or a plan-mode exit that clears): the CLI starts over.
+        this.lastContext = undefined;
+        this.compacting = false;
+        this.push({ type: 'notice', data: { level: 'info', code: 'conversation_reset', message: 'Context cleared' } }, true);
         return;
       case 'subagent':
         this.mapSubagent(ev);
@@ -900,6 +1120,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.push({ type: 'protocol_unknown', data: { driver: this.driverId, kind: 'field', name: ev.subtype ? `${ev.type}/${ev.subtype}` : ev.type } });
         return;
       case 'session_ended':
+        this.compacting = false;
         if (this.turnRunning) {
           this.push({ type: 'turn_ended', data: { stopReason: this.closing || this.interrupting ? 'cancelled' : 'error' } }, true);
           this.turnRunning = false;
@@ -967,8 +1188,12 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       }, true);
       return;
     }
-    const id = ev.toolCallId;
-    if (!id || !this.tools.has(id) || this.runningTools.has(id) || this.finishedTools.has(id)) return;
+    if (ev.toolCallId) this.markRunning(ev.toolCallId);
+  }
+
+  /** Mark a known tool call in progress, once, unless it already finished. */
+  private markRunning(id: string): void {
+    if (!this.tools.has(id) || this.runningTools.has(id) || this.finishedTools.has(id)) return;
     this.runningTools.add(id);
     this.push({ type: 'tool_call_update', data: { toolCallId: id, status: 'in_progress' } }, true);
   }

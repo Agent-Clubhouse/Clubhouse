@@ -412,6 +412,20 @@ describe('CodexChatDriver', () => {
     expect(server.requests('turn/start')).toHaveLength(0);
   });
 
+  it('blocks a new turn while /compact is in flight and accepts it after compaction', async () => {
+    const { session } = await startSession();
+    let finish!: () => void;
+    vi.spyOn(session, 'compact').mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const compacting = session.send([{ type: 'text', text: '/compact' }], 'prompt');
+    await expect(session.send([{ type: 'text', text: 'Next task' }], 'prompt')).rejects.toThrow('current command');
+    await expect(session.send([{ type: 'text', text: '/compact' }], 'prompt')).rejects.toThrow('before running /compact');
+    expect(server.requests('turn/start')).toHaveLength(0);
+    finish();
+    await compacting;
+    await session.send([{ type: 'text', text: 'Next task' }], 'prompt');
+    expect(server.requests('turn/start')).toHaveLength(1);
+  });
+
   it('refuses a slash command while a turn is running', async () => {
     const { session } = await startSession();
     server.send(fx.completedTurnNotifications[1]); // turn/started

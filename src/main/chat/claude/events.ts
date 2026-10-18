@@ -118,8 +118,28 @@ export type ClaudeChatEventBody =
       resetsAt?: number;
       utilization?: number;
       isUsingOverage?: boolean;
+      /** Extra usage (overage) beside the plan window, when the account has it. */
+      overageStatus?: string;
+      overageResetsAt?: number;
+      /** Why extra usage is off (e.g. "org_level_disabled"); overageStatus is then "rejected" and means nothing. */
+      overageDisabledReason?: string;
+    }
+  | {
+      /** A main-loop assistant message's API usage: what the context held for that call. */
+      kind: 'assistant_usage';
+      messageId: string;
+      model?: string;
+      usage: ClaudeUsage;
     }
   | { kind: 'compacted'; trigger?: string; preTokens?: number }
+  /**
+   * `system/status` around a compaction: `started` when the status turns
+   * `compacting`; `failed` when it leaves with `compact_result: 'failed'`.
+   * Success is the `compact_boundary` (`compacted`).
+   */
+  | { kind: 'compaction'; phase: 'started' | 'failed'; error?: string }
+  /** `conversation_reset`: /clear (or a plan-mode exit with clear) discarded the CLI's conversation. */
+  | { kind: 'conversation_reset'; trigger?: string }
   | { kind: 'subagent'; phase: 'started' | 'progress' | 'notification' | 'updated'; taskId: string; raw: Record<string, unknown> }
   | { kind: 'mode_changed'; permissionMode: string }
   | { kind: 'permission_denied'; toolName?: string; raw: Record<string, unknown> }

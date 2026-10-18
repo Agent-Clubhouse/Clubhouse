@@ -12,11 +12,12 @@
 // and recorded in the report, so a test can assert how the CLI was launched.
 //
 // Standing queries: read-only requests a driver may send at any point (the
-// applied model and effort, the model list) are answered with an empty result
+// applied model and effort, plan usage, the model list) are answered with an empty result
 // whenever they arrive, unless the fixture records that request itself. So a
 // fixture recorded before a driver started asking still replays. A fixture that
 // records one must record every one the driver sends: the Claude driver reads
-// get_settings at start, after model changes and after /model or /effort turns.
+// get_settings at start, after model changes and after /model or /effort turns,
+// and get_usage at start and after turns (at most every 30s).
 //
 // Options (flag or environment variable):
 //   --fake-fixture <path>      CLUBHOUSE_FAKE_CLI_FIXTURE   fixture to replay (required)
@@ -72,6 +73,8 @@ const protocol = header.protocol;
 const STANDING_QUERIES = {
   'claude-stream-json': {
     'control_request:get_settings': (msg) => ({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: {} } }),
+    // No rate_limits: the driver shows no plan windows from it.
+    'control_request:get_usage': (msg) => ({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: {} } }),
   },
   'codex-app-server': {
     'request:model/list': (msg) => ({ id: msg.id, result: { data: [], nextCursor: null } }),

@@ -296,11 +296,24 @@ describe('BridgeServer', () => {
     const conn = bridgeServer.getAgentConnection('agent-1');
     expect(conn?.connectedAt).toBeGreaterThanOrEqual(before);
     expect(conn?.toolCount).toBeNull();
+    expect(mockBroadcast).toHaveBeenLastCalledWith(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, 'agent-1');
+    mockBroadcast.mockClear();
     await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', id: 2, method: 'tools/list' }, 'test-nonce');
     expect(bridgeServer.getAgentConnection('agent-1')).toEqual({ connectedAt: conn?.connectedAt, toolCount: 0 });
+    expect(mockBroadcast).toHaveBeenCalledWith(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, 'agent-1');
+    mockBroadcast.mockClear();
+    await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', id: 3, method: 'tools/list' }, 'test-nonce');
+    expect(mockBroadcast).not.toHaveBeenCalled();
     expect(bridgeServer.getAgentConnection('agent-2')).toBeNull();
     bridgeServer.stop();
     expect(bridgeServer.getAgentConnection('agent-1')).toBeNull();
+    expect(mockBroadcast).toHaveBeenCalledWith(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, 'agent-1');
+  });
+
+  it('announces a tools/list connection even without an initialized notification', async () => {
+    await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', id: 1, method: 'tools/list' }, 'test-nonce');
+    expect(bridgeServer.getAgentConnection('agent-1')).toEqual({ connectedAt: expect.any(Number), toolCount: 0 });
+    expect(mockBroadcast).toHaveBeenCalledWith(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, 'agent-1');
   });
 
   it('returns missing tool name error for tools/call without name', async () => {

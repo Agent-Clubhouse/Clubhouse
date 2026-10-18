@@ -10,6 +10,8 @@ const runtime = vi.hoisted(() => ({
   caps: undefined as unknown,
   sendMessage: vi.fn(async () => ({ delivery: 'prompt', messageId: 'm1' })),
   setModel: vi.fn(async () => {}),
+  clearContext: vi.fn(async () => {}),
+  compact: vi.fn(async () => {}),
   getCapabilities: () => runtime.caps,
 }));
 
@@ -23,6 +25,7 @@ vi.mock('../services/agent-runtime', () => ({
   getAgentRuntime: () => runtime,
   isChatAgent: () => true,
   readChatTranscript: vi.fn(),
+  listChatSessions: vi.fn(),
   onChatEvent: () => () => {},
   resolveChatDriver: vi.fn(),
 }));
@@ -34,6 +37,7 @@ vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerChatHandlers } from './chat-handlers';
+import { listChatSessions, readChatTranscript } from '../services/agent-runtime';
 import { clearStagedAttachments } from '../services/agent-runtime/chat-attachments';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9]);
@@ -135,5 +139,48 @@ describe('chat handlers: set model (#2136)', () => {
     await expect(call(IPC.CHAT.SET_MODEL, 'agent-1', 'opus', 3)).rejects.toThrow();
     await expect(call(IPC.CHAT.SET_MODEL, 'agent-1', 'opus', '')).rejects.toThrow();
     expect(runtime.setModel).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('chat session commands', () => {
+  it('preserves the driver compact busy guard through sendMessage', async () => {
+    runtime.sendMessage.mockRejectedValueOnce(new Error('Finish or stop the current turn before running /compact'));
+    await expect(call(IPC.CHAT.SEND_MESSAGE, 'agent-1', '/compact', 'auto')).rejects.toThrow('before running /compact');
+    expect(runtime.sendMessage).toHaveBeenCalledWith([{ type: 'text', text: '/compact' }], { source: 'user', delivery: 'auto' });
+    expect(runtime.compact).not.toHaveBeenCalled();
+  });
+  it.each(['/clear', ' /clear \n'])('routes bare %s to the runtime', async (command) => {
+    await expect(call(IPC.CHAT.SEND_MESSAGE, 'agent-1', command, 'auto')).resolves.toEqual({ delivery: 'prompt' });
+    expect(runtime.clearContext).toHaveBeenCalledOnce();
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+  });
+  it.each(['/compact', ' /compact \n', '/clear please', 'explain /clear', '/compact focus on tests'])('keeps %s as a message', async (text) => {
+    await call(IPC.CHAT.SEND_MESSAGE, 'agent-1', text, 'auto');
+    expect(runtime.sendMessage).toHaveBeenCalled();
+    expect(runtime.clearContext).not.toHaveBeenCalled();
+    expect(runtime.compact).not.toHaveBeenCalled();
+  });
+  it('does not drop attachments on a command-shaped message', async () => {
+    const staged = await call(IPC.CHAT.STAGE_ATTACHMENT, 'agent-1', { data: new Uint8Array(PNG), name: 'image.png' }) as { id: string };
+    await call(IPC.CHAT.SEND_MESSAGE, 'agent-1', '/clear', 'auto', [staged.id]);
+    expect(runtime.sendMessage).toHaveBeenCalled();
+    expect(runtime.clearContext).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('chat session history IPC', () => {
+  it('passes an explicit session and tail through for saved history', async () => {
+    await call(IPC.CHAT.READ_TRANSCRIPT, 'agent-1', 500, 'earlier-session');
+    expect(readChatTranscript).toHaveBeenCalledWith('agent-1', { tail: 500, sessionId: 'earlier-session' });
+  });
+  it('leaves the session unspecified for the current conversation', async () => {
+    await call(IPC.CHAT.READ_TRANSCRIPT, 'agent-1');
+    expect(readChatTranscript).toHaveBeenCalledWith('agent-1', { tail: undefined, sessionId: undefined });
+  });
+  it('lists saved Clubhouse sessions', async () => {
+    await call(IPC.CHAT.LIST_SESSIONS, 'agent-1');
+    expect(listChatSessions).toHaveBeenCalledWith('agent-1');
   });
 });

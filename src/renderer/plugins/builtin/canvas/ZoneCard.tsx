@@ -10,6 +10,7 @@ import { ZONE_CARD_HEIGHT, ZONE_CARD_WIDTH } from './canvas-types';
 import { InlineRename } from './InlineRename';
 import { getAllThemeIds, getTheme } from '../../../themes';
 import { CANVAS_Z } from './canvas-chrome';
+import { Tooltip } from '../../../components/Tooltip';
 
 interface ZoneCardProps {
   zone: ZoneCanvasView;
@@ -85,14 +86,22 @@ export const ZoneCard = React.memo(function ZoneCard({ zone, mcpEnabled, dragOff
       </div>
 
       {/* Theme color dot */}
-      <button
-        ref={buttonRef}
-        className="w-5 h-5 rounded-full border border-surface-2 flex-shrink-0 mx-1 transition-transform hover:scale-110"
-        style={{ backgroundColor: currentTheme?.colors.accent ?? 'rgb(var(--ctp-accent))' }}
-        onClick={(e) => { e.stopPropagation(); setThemePickerOpen(!themePickerOpen); }}
-        onMouseDown={(e) => e.stopPropagation()}
-        title="Zone theme"
-      />
+      <Tooltip content="Zone theme">
+        <button
+          ref={buttonRef}
+          className="w-7 h-7 flex items-center justify-center rounded-md flex-shrink-0 hover:bg-surface-0"
+          onClick={(e) => { e.stopPropagation(); setThemePickerOpen(!themePickerOpen); }}
+          onMouseDown={(e) => e.stopPropagation()}
+          aria-label="Zone theme"
+          aria-expanded={themePickerOpen}
+        >
+          <span
+            className="w-4 h-4 rounded-full border border-surface-2"
+            style={{ backgroundColor: currentTheme?.colors.accent ?? 'rgb(var(--ctp-accent))' }}
+            aria-hidden="true"
+          />
+        </button>
+      </Tooltip>
       {themePickerOpen && createPortal(
         <ZoneThemePicker
           ref={pickerRef}
@@ -105,32 +114,36 @@ export const ZoneCard = React.memo(function ZoneCard({ zone, mcpEnabled, dragOff
 
       {/* Wire handle — only when MCP enabled */}
       {mcpEnabled && (
+        <Tooltip content="Connect zone">
         <button
-          className="w-6 h-6 flex items-center justify-center rounded text-ctp-accent hover:bg-ctp-accent/20 transition-colors flex-shrink-0"
+          className="w-7 h-7 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text flex-shrink-0"
           onClick={(e) => { e.stopPropagation(); onStartWireDrag(); }}
           onMouseDown={(e) => e.stopPropagation()}
-          title="Connect zone"
+          aria-label="Connect zone"
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <circle cx="5" cy="12" r="3" />
             <circle cx="19" cy="12" r="3" />
             <line x1="8" y1="12" x2="16" y2="12" />
           </svg>
         </button>
+        </Tooltip>
       )}
 
       {/* Delete button */}
+      <Tooltip content="Delete zone">
       <button
-        className="w-6 h-6 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-ctp-error/20 hover:text-ctp-error transition-colors mr-1.5 flex-shrink-0"
+        className="w-7 h-7 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-error mr-1 flex-shrink-0"
         onClick={handleDeleteClick}
         onMouseDown={(e) => e.stopPropagation()}
-        title="Delete zone"
+        aria-label="Delete zone"
       >
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
           <line x1="18" y1="6" x2="6" y2="18" />
           <line x1="6" y1="6" x2="18" y2="18" />
         </svg>
       </button>
+      </Tooltip>
     </div>
   );
 });

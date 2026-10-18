@@ -16,6 +16,7 @@ const broadcasts = vi.hoisted(() => ({ calls: [] as unknown[][] }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...args: unknown[]) => { broadcasts.calls.push(args); } }));
 
 import { ChatAgentRuntime, ChatStartCancelledError } from './chat-runtime';
+import { appendChatEvent } from './chat-transcript';
 import { FakeChatDriver } from './fake-chat-driver';
 import { onChatEvent, removeAllChatEventListeners } from './chat-event-bus';
 import * as permissionQueue from '../annex-permission-queue';
@@ -128,6 +129,26 @@ describe('ChatAgentRuntime', () => {
     driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
     await flush();
     expect(driver.last.sent).toEqual([{ content: [{ type: 'text', text: 'next: open a PR' }], delivery: 'prompt' }]);
+  });
+
+  it.each([true, false])('sends /compact through mid-turn delivery and records it (steer=%s)', async (steer) => {
+    const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', { ...STEERLESS, steer });
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    await flush();
+    const result = await runtime.sendMessage('/compact', { source: 'user' });
+    expect(result.delivery).toBe(steer ? 'steer' : 'queued');
+    expect(driver.last.compactions).toBe(0);
+    expect(transcript).toContainEqual(expect.objectContaining({ type: 'user_message', data: expect.objectContaining({
+      content: [{ type: 'text', text: '/compact' }], delivery: steer ? 'steer' : 'queued',
+    }) }));
+    if (!steer) {
+      expect(driver.last.sent).toHaveLength(0);
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+    }
+    expect(driver.last.sent.at(-1)).toEqual({ content: [{ type: 'text', text: '/compact' }], delivery: steer ? 'steer' : 'prompt' });
   });
 
   it('mirrors permission requests into the shared queue and applies a queue decision', async () => {
@@ -316,7 +337,34 @@ describe('ChatAgentRuntime', () => {
     expect(runtime.getSessionId()).not.toBe(firstSession);
     const newSessionEvents = transcript.filter((e) => e.sessionId === runtime.getSessionId());
     expect(newSessionEvents[0].seq).toBe(1);
+    expect((await runtime.readTranscript()).events).toEqual(newSessionEvents);
+    expect((await runtime.readTranscript({ tail: 1 })).events).toEqual(newSessionEvents.slice(-1));
     expect(runtime.isRunning()).toBe(true);
+  });
+
+  it('finishes pending old-session writes before clearing context', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    const oldId = runtime.getSessionId();
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    vi.mocked(appendChatEvent).mockImplementationOnce(async (event) => {
+      await pending;
+      transcript.push(event);
+    });
+    driver.last.emit({ type: 'agent_message', data: { messageId: 'late', text: 'Old reply' } });
+    await flush(1);
+    const clearing = runtime.clearContext();
+    await flush(1);
+    expect(runtime.getSessionId()).toBe(oldId);
+    release();
+    await clearing;
+    await flush();
+    const oldReply = transcript.find((e) => e.type === 'agent_message');
+    expect(oldReply?.sessionId).toBe(oldId);
+    expect((await runtime.readTranscript()).events?.every((e) => e.sessionId === runtime.getSessionId())).toBe(true);
+    expect((await runtime.readTranscript()).events?.[0].seq).toBe(1);
   });
 
   it('continues an earlier session sequence on resume and reports the native id', async () => {

@@ -36,6 +36,14 @@ export function getAgentConnection(agentId: string): AgentMcpConnection | null {
   return agentConnections.get(agentId) ?? null;
 }
 
+function setAgentConnection(agentId: string, connection: AgentMcpConnection): void {
+  const previous = agentConnections.get(agentId);
+  agentConnections.set(agentId, connection);
+  if (previous?.connectedAt !== connection.connectedAt || previous?.toolCount !== connection.toolCount) {
+    broadcastToAllWindows(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, agentId);
+  }
+}
+
 export function getPort(): number {
   return serverPort;
 }
@@ -133,7 +141,7 @@ function handleToolsList(agentId: string, id: number | string | null): JsonRpcRe
   // §12 H8: an empty list here is the "tools missing until canvas renders" bug (#1544).
   recordToolsList(tools.length);
   const conn = agentConnections.get(agentId);
-  agentConnections.set(agentId, { connectedAt: conn?.connectedAt ?? Date.now(), toolCount: tools.length });
+  setAgentConnection(agentId, { connectedAt: conn?.connectedAt ?? Date.now(), toolCount: tools.length });
   appLog('core:mcp', 'info', 'Tools list requested', {
     meta: { agentId, toolCount: tools.length, toolNames: tools.map(t => t.name) },
   });
@@ -302,7 +310,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     case 'notifications/initialized':
       // Client ack — no response needed
       appLog('core:mcp', 'info', 'Agent MCP connection initialized', { meta: { agentId } });
-      agentConnections.set(agentId, { connectedAt: Date.now(), toolCount: null });
+      setAgentConnection(agentId, { connectedAt: Date.now(), toolCount: null });
       res.writeHead(200);
       res.end();
       return;
@@ -369,7 +377,11 @@ export function stop(): void {
     }
   }
   sseConnections.clear();
+  const connectedAgents = [...agentConnections.keys()];
   agentConnections.clear();
+  for (const agentId of connectedAgents) {
+    broadcastToAllWindows(IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED, agentId);
+  }
 
   if (server) {
     server.close();

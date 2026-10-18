@@ -144,6 +144,12 @@ export interface PermissionOption {
   scope?: string;
 }
 
+/**
+ * Token counts with one convention for every driver: `input` is the total
+ * input, cache reads and cache writes included; `cachedInput` is the part of
+ * it served from cache and `cacheWrite` the part written to it. (Anthropic
+ * reports input excluding both, so the Claude driver adds them in.)
+ */
 export interface TokenUsage {
   input?: number;
   cachedInput?: number;
@@ -154,7 +160,7 @@ export interface TokenUsage {
 }
 
 export interface UsageLimit {
-  /** e.g. '5h', 'week', or a provider-specific window name. */
+  /** e.g. '5h', 'week', 'week_opus', 'week:<model>' (Claude's per-model weekly), 'overage', or a provider-specific name. */
   window: string;
   /** 0..1, when the provider reports a fraction. */
   utilization?: number;
@@ -355,7 +361,10 @@ export interface ChatEventDataMap {
   permission_request: {
     requestId: string;
     title: string;
+    /** What the request is about when the title is generic, e.g. the file path. */
     description?: string;
+    /** A preview of the change being asked for (a diff or text), when the provider sends one. */
+    content?: ToolCallContent[];
     toolCallId?: string;
     toolName?: string;
     rawInput?: unknown;
@@ -397,7 +406,12 @@ export interface ChatEventDataMap {
     costUsd?: number;
     /** True when the cost is an API-price estimate (e.g. Claude on a subscription). */
     costIsEstimate?: boolean;
-    context?: { used: number; size: number };
+    /**
+     * Context fill. `window` says what `size` measures: the whole context
+     * window ('total', the default) or only the part left for input after
+     * the output reserve ('input'; Copilot reports this, e.g. 272k of 400k).
+     */
+    context?: { used: number; size: number; window?: 'input' | 'total' };
     limits?: UsageLimit[];
   };
   mode_changed: { level: PermissionLevel; nativeMode?: string };
@@ -433,6 +447,23 @@ export interface ChatEventDataMap {
    */
   protocol_unknown: { driver: ChatDriverId; kind: 'request' | 'notification' | 'field'; name: string };
 }
+
+/**
+ * Context compaction rides on `notice` events. A driver that learns that
+ * compaction has started sends a notice with {@link COMPACTION_STARTED}; a
+ * later notice with one of {@link COMPACTION_SETTLED} (or the turn or session
+ * ending) settles it. Consumers show one in-progress row between the two. The
+ * codes follow ACP's `compaction_update` statuses; `context_compacted` (Codex)
+ * and `compacted` (Claude) are kept because transcripts already hold them.
+ */
+export const COMPACTION_STARTED = 'compaction_in_progress';
+export const COMPACTION_SETTLED: readonly string[] = [
+  'context_compacted',
+  'compacted',
+  'compaction_completed',
+  'compaction_failed',
+  'compaction_cancelled',
+];
 
 type AssertTrue<T extends true> = T;
 /** Compile-time check that CHAT_EVENT_TYPES and ChatEventDataMap list the same event types. */

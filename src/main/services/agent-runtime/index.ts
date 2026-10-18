@@ -61,5 +61,5 @@ export function clearChatRuntimes(): void {
 export { PtyAgentRuntime } from './pty-runtime';
 export { ChatAgentRuntime } from './chat-runtime';
 export { onChatEvent, publishChatEvent } from './chat-event-bus';
-export { readChatTranscript } from './chat-transcript';
+export { readChatTranscript, listChatSessions } from './chat-transcript';
 export { registerChatDriver, resolveChatDriver } from './chat-drivers';

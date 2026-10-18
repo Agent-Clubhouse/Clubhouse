@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { ChatMcpServer, ToolCallContent, ToolKind } from '../../../../shared/chat';
 import type { ToolCallItem } from '../../../stores/chatStore';
 import type { SubagentBlock } from './view-model';
@@ -14,6 +14,7 @@ import {
   mcpTool,
   terminalContent,
   toolArgs,
+  toolErrorText,
   toolOpenByDefault,
   toolResultText,
   toolTarget,
@@ -52,9 +53,94 @@ function Spin() {
   return <span className="inline-block w-2.5 h-2.5 rounded-full border-[1.5px] border-surface-1 border-t-ctp-success animate-spin" aria-label="Running" />;
 }
 
+interface TranscriptExpansionStore {
+  get: (key: string) => boolean | undefined;
+  set: (key: string, open: boolean) => void;
+  subscribe: (key: string, listener: () => void) => () => void;
+}
+
+export function createTranscriptExpansionStore(): TranscriptExpansionStore {
+  const values = new Map<string, boolean>();
+  const listeners = new Map<string, Set<() => void>>();
+  return {
+    get: (key) => values.get(key),
+    set: (key, open) => {
+      if (values.get(key) === open) return;
+      values.set(key, open);
+      listeners.get(key)?.forEach((listener) => listener());
+    },
+    subscribe: (key, listener) => {
+      const keyListeners = listeners.get(key) ?? new Set();
+      keyListeners.add(listener);
+      listeners.set(key, keyListeners);
+      return () => {
+        keyListeners.delete(listener);
+        if (keyListeners.size === 0) listeners.delete(key);
+      };
+    },
+  };
+}
+
+const TranscriptExpansionContext = createContext<TranscriptExpansionStore | null>(null);
+
+export function TranscriptExpansionProvider({ store, children }: { store: TranscriptExpansionStore; children: ReactNode }) {
+  return <TranscriptExpansionContext.Provider value={store}>{children}</TranscriptExpansionContext.Provider>;
+}
+
+function useOpenState(defaultOpen: boolean, expansionKey?: string): [boolean, () => void] {
+  const store = useContext(TranscriptExpansionContext);
+  const subscribe = useCallback((listener: () => void) => (
+    store && expansionKey ? store.subscribe(expansionKey, listener) : () => undefined
+  ), [store, expansionKey]);
+  const getSnapshot = useCallback(() => (
+    store && expansionKey ? store.get(expansionKey) : undefined
+  ), [store, expansionKey]);
+  const storedOpen = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const [localOpen, setLocalOpen] = useState<boolean | undefined>(undefined);
+  const open = storedOpen ?? localOpen ?? defaultOpen;
+  const toggle = useCallback(() => {
+    if (store && expansionKey) store.set(expansionKey, !open);
+    else setLocalOpen(!open);
+  }, [store, expansionKey, open]);
+  return [open, toggle];
+}
+
+/**
+ * Tool calls with a permission request still waiting for an answer. A call
+ * can be `pending` without one (e.g. auto-approved under Full access, not
+ * started yet); only these get "waiting for approval". ChatStream provides it.
+ */
+export const AwaitingApprovalContext = createContext<ReadonlySet<string>>(new Set());
+
+function useAwaitingApproval(tool: ToolCallItem): boolean {
+  const awaiting = useContext(AwaitingApprovalContext);
+  return tool.status === 'pending' && awaiting.has(tool.toolCallId);
+}
+
+/**
+ * The running turn's id (null when idle). ChatStream provides it; elsewhere
+ * (agent map, tests) it's unknown, and unfinished calls count as running.
+ */
+export const LiveTurnContext = createContext<string | null | undefined>(undefined);
+
+/**
+ * A call that hasn't finished and isn't waiting for approval is running:
+ * Claude reports nothing between the call and its result, so `pending` alone
+ * means it's under way. Once its turn is over it isn't, and says so.
+ */
+function useUnfinished(tool: ToolCallItem): 'running' | 'stopped' | null {
+  const liveTurn = useContext(LiveTurnContext);
+  if (tool.status !== 'pending' && tool.status !== 'in_progress') return null;
+  if (liveTurn === undefined) return 'running';
+  return liveTurn !== null && (tool.turnId === undefined || tool.turnId === liveTurn) ? 'running' : 'stopped';
+}
+
 function StatusMeta({ tool }: { tool: ToolCallItem }) {
-  if (tool.status === 'pending') return <span className="text-ctp-warning">waiting for approval</span>;
-  if (tool.status === 'in_progress') return <><Spin /> running</>;
+  const awaiting = useAwaitingApproval(tool);
+  const unfinished = useUnfinished(tool);
+  if (awaiting) return <span className="text-ctp-warning">waiting for approval</span>;
+  if (unfinished === 'running') return <><Spin /> running</>;
+  if (unfinished === 'stopped') return <span>stopped</span>;
   if (tool.status === 'failed') return <span className="text-ctp-error">failed</span>;
   if (tool.status === 'cancelled') return <span>cancelled</span>;
   return tool.durationMs !== undefined ? <span>{formatDuration(tool.durationMs)}</span> : null;
@@ -63,7 +149,8 @@ function StatusMeta({ tool }: { tool: ToolCallItem }) {
 export function ToolRow({ tool }: { tool: ToolCallItem }) {
   const Ico = KIND_ICONS[tool.toolKind] ?? ToolIcon;
   const target = toolTarget(tool);
-  const pending = tool.status === 'pending';
+  const pending = useAwaitingApproval(tool);
+  const error = toolErrorText(tool);
   return (
     <div className="flex flex-col" data-testid="chat-tool-row" data-status={tool.status}>
       <div className={`flex items-center gap-2 min-w-0 text-[12.5px] text-ctp-overlay1 ${pending ? 'h-[30px] px-2 rounded-md bg-surface-0/60' : 'h-6'}`}>
@@ -72,20 +159,20 @@ export function ToolRow({ tool }: { tool: ToolCallItem }) {
         <span className="font-mono text-[11.5px] text-ctp-subtext0 truncate min-w-0" title={target}>{target}</span>
         <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap"><StatusMeta tool={tool} /></span>
       </div>
-      {tool.error && <div className="ml-6 text-[12px] text-ctp-error break-words">{tool.error}</div>}
+      {error && <div className="ml-6 text-[12px] text-ctp-error break-words">{error}</div>}
     </div>
   );
 }
 
-export function ExploreGroup({ tools }: { tools: ToolCallItem[] }) {
-  const [open, setOpen] = useState(false);
+export function ExploreGroup({ tools, expansionKey }: { tools: ToolCallItem[]; expansionKey?: string }) {
+  const [open, toggle] = useOpenState(false, expansionKey);
   const running = tools.some((t) => t.status === 'in_progress');
   return (
     <div className="flex flex-col" data-testid="chat-explore-group">
       <button
         type="button"
         className="flex items-center gap-2 h-6 text-[12.5px] text-left text-ctp-overlay1 hover:text-ctp-subtext0"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         aria-expanded={open}
       >
         {open ? <ChevronDown className="text-ctp-overlay0" /> : <ChevronRight className="text-ctp-overlay0" />}
@@ -102,10 +189,8 @@ export function ExploreGroup({ tools }: { tools: ToolCallItem[] }) {
 }
 
 /** Open state for a tool card: follows the status until the user toggles it (see toolOpenByDefault). */
-function useToolOpen(status: ToolCallItem['status'] | undefined): [boolean, () => void] {
-  const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const open = userOpen ?? (status !== undefined && toolOpenByDefault(status));
-  return [open, () => setUserOpen(!open)];
+function useToolOpen(status: ToolCallItem['status'] | undefined, expansionKey?: string): [boolean, () => void] {
+  return useOpenState(status !== undefined && toolOpenByDefault(status), expansionKey);
 }
 
 const CARD_HEADER = 'flex items-center gap-2 h-[34px] px-3 text-[12.5px] text-ctp-overlay1 min-w-0';
@@ -154,19 +239,23 @@ const DIFF_PREVIEW_LINES = 40;
  * A file edit. In the transcript it collapses to its header (pass `open` and
  * `onToggle`); elsewhere (Changes, review, run insets) it is always open.
  */
-export function DiffCard({ diff, line, status, open = true, onToggle }: {
+export function DiffCard({ diff, line, status, awaitingApproval = false, open = true, onToggle, previewLines = DIFF_PREVIEW_LINES }: {
   diff: Extract<ToolCallContent, { type: 'diff' }>;
   line?: number;
   status?: ToolCallItem['status'];
+  /** Its tool call has a permission request waiting for an answer. */
+  awaitingApproval?: boolean;
   open?: boolean;
   onToggle?: () => void;
+  /** Lines shown before "Show all". */
+  previewLines?: number;
 }) {
   const lines = useMemo(() => diffLines(diff, line), [diff, line]);
   const { added, removed } = useMemo(() => diffStats(lines), [lines]);
   const [expanded, setExpanded] = useState(false);
   const created = diff.oldText === undefined && !diff.unifiedDiff;
   const deleted = diff.newText === undefined && !diff.unifiedDiff && diff.oldText !== undefined;
-  const shown = expanded ? lines : lines.slice(0, DIFF_PREVIEW_LINES);
+  const shown = expanded ? lines : lines.slice(0, previewLines);
   return (
     <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-diff-card" data-open={open}>
       <CardHeader open={open} onToggle={onToggle} label={`${open ? 'Collapse' : 'Expand'} edit of ${diff.path}`}>
@@ -175,11 +264,11 @@ export function DiffCard({ diff, line, status, open = true, onToggle }: {
         <span className="font-mono text-[11.5px] text-ctp-text truncate min-w-0" title={diff.path}>{diff.path}</span>
         <span className="font-mono text-[11.5px] text-ctp-success">+{added}</span>
         <span className="font-mono text-[11.5px] text-ctp-error">−{removed}</span>
-        {status === 'pending' && <span className="ml-auto text-[11.5px] text-ctp-warning">waiting for approval</span>}
+        {awaitingApproval && <span className="ml-auto text-[11.5px] text-ctp-warning">waiting for approval</span>}
         {status === 'failed' && <span className="ml-auto text-[11.5px] text-ctp-error">failed</span>}
       </CardHeader>
       {open && <DiffBody lines={shown} />}
-      {open && lines.length > DIFF_PREVIEW_LINES && (
+      {open && lines.length > previewLines && (
         <button type="button" className="w-full text-[11.5px] text-ctp-overlay1 hover:text-ctp-text py-1 border-t border-surface-0" onClick={() => setExpanded((e) => !e)}>
           {expanded ? 'Show less' : `Show all ${lines.length} lines`}
         </button>
@@ -188,22 +277,42 @@ export function DiffCard({ diff, line, status, open = true, onToggle }: {
   );
 }
 
+/** Diff lines an approval card shows per file before "Show all". */
+const APPROVAL_PREVIEW_LINES = 12;
+
+/**
+ * What a permission request would change, for the approval card: one compact
+ * diff per file from generic diff content, so any driver's edit requests
+ * (Claude Edit/MultiEdit/Write, ACP diffs) preview the same way.
+ */
+export function ApprovalDiffPreview({ diffs }: { diffs: Array<Extract<ToolCallContent, { type: 'diff' }>> }) {
+  if (diffs.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto" data-testid="chat-permission-diff">
+      {diffs.map((d, i) => <DiffCard key={`${d.path}:${i}`} diff={d} previewLines={APPROVAL_PREVIEW_LINES} />)}
+    </div>
+  );
+}
+
 /** A diff card in the transcript: collapsed to its header until opened. */
-function TranscriptDiffCard({ diff, line, status }: { diff: Extract<ToolCallContent, { type: 'diff' }>; line?: number; status: ToolCallItem['status'] }) {
-  const [open, toggle] = useToolOpen(status);
-  return <DiffCard diff={diff} line={line} status={status} open={open} onToggle={toggle} />;
+function TranscriptDiffCard({ diff, line, tool, expansionKey }: { diff: Extract<ToolCallContent, { type: 'diff' }>; line?: number; tool: ToolCallItem; expansionKey?: string }) {
+  const [open, toggle] = useToolOpen(tool.status, expansionKey);
+  const awaiting = useAwaitingApproval(tool);
+  return <DiffCard diff={diff} line={line} status={tool.status} awaitingApproval={awaiting} open={open} onToggle={toggle} />;
 }
 
 /** Output lines kept visible; older lines scroll inside the card. */
 const OUTPUT_MAX_HEIGHT = 'max-h-56';
 
-export function CommandCard({ tool }: { tool: ToolCallItem }) {
+export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expansionKey?: string }) {
   // Output arrives in many appended chunks; join them only when they change.
   const term = useMemo(() => terminalContent(tool), [tool]);
   const command = useMemo(() => commandOf(tool), [tool]);
-  const [open, toggle] = useToolOpen(tool.status);
-  const running = tool.status === 'in_progress';
+  const [open, toggle] = useToolOpen(tool.status, expansionKey);
+  const awaiting = useAwaitingApproval(tool);
+  const running = useUnfinished(tool) === 'running' && !awaiting;
   const exit = term?.exitCode;
+  const error = toolErrorText(tool, term?.output);
   return (
     <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-command-card" data-status={tool.status} data-open={open}>
       <CardHeader open={open} onToggle={toggle} label={`${open ? 'Collapse' : 'Expand'} command ${command}`}>
@@ -211,7 +320,7 @@ export function CommandCard({ tool }: { tool: ToolCallItem }) {
         <span className="font-mono text-[11.5px] text-ctp-text truncate min-w-0" title={command}>$ {command}</span>
         <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap">
           {running ? <><Spin /> running</>
-            : tool.status === 'pending' ? <span className="text-ctp-warning">waiting for approval</span>
+            : awaiting ? <span className="text-ctp-warning">waiting for approval</span>
               : exit !== undefined ? <><span className={exit === 0 ? 'text-ctp-success font-mono' : 'text-ctp-error font-mono'}>exit {exit}</span>{tool.durationMs !== undefined && <span>· {formatDuration(tool.durationMs)}</span>}</>
                 : <StatusMeta tool={tool} />}
         </span>
@@ -221,7 +330,8 @@ export function CommandCard({ tool }: { tool: ToolCallItem }) {
           {term.output.replace(/\n$/, '')}
         </pre>
       )}
-      {open && tool.error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0">{tool.error}</div>}
+      {/* The error stays visible on a collapsed card: it's the outcome, not detail. */}
+      {error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0 break-words" data-testid="chat-tool-error">{error}</div>}
     </div>
   );
 }
@@ -230,17 +340,18 @@ export function CommandCard({ tool }: { tool: ToolCallItem }) {
  * Any other tool call, MCP included: one row with the tool and a short summary;
  * open it for the arguments and what came back.
  */
-export function ToolCard({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?: ChatMcpServer[] | null }) {
+export function ToolCard({ tool, mcpServers, expansionKey }: { tool: ToolCallItem; mcpServers?: ChatMcpServer[] | null; expansionKey?: string }) {
   const mcp = useMemo(() => mcpTool(tool, mcpServers), [tool, mcpServers]);
   const args = useMemo(() => toolArgs(tool), [tool]);
   const result = useMemo(() => toolResultText(tool), [tool]);
-  const [open, toggle] = useToolOpen(tool.status);
+  const error = toolErrorText(tool, result);
+  const [open, toggle] = useToolOpen(tool.status, expansionKey);
   const Ico = KIND_ICONS[tool.toolKind] ?? ToolIcon;
   const label = mcp ? `${mcp.server} · ${mcp.tool}` : KIND_VERBS[tool.toolKind];
   const summary = mcp ? argSummary(tool) : toolTarget(tool);
   // Built-in tools show their input only when it isn't already the summary (e.g. a path).
   const showArgs = args !== null && (mcp !== null || tool.toolKind === 'other');
-  const expandable = showArgs || result !== '' || !!tool.error;
+  const expandable = showArgs || result !== '';
   return (
     <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-tool-card" data-status={tool.status} data-open={expandable && open} data-mcp={mcp ? 'true' : undefined}>
       <CardHeader open={expandable && open} onToggle={expandable ? toggle : undefined} indent label={`${open ? 'Collapse' : 'Expand'} ${label}`}>
@@ -261,9 +372,10 @@ export function ToolCard({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?
               {result.replace(/\n$/, '')}
             </pre>
           )}
-          {tool.error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0">{tool.error}</div>}
         </div>
       )}
+      {/* The error stays visible on a collapsed card: it's the outcome, not detail. */}
+      {error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0 break-words" data-testid="chat-tool-error">{error}</div>}
     </div>
   );
 }
@@ -272,18 +384,19 @@ export function ToolCard({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?
  * One tool call in the transcript: a diff card per file edit, a command card for
  * commands, a tool card otherwise. All start collapsed to one row (toolOpenByDefault).
  */
-export function ToolCallView({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?: ChatMcpServer[] | null }) {
+export function ToolCallView({ tool, mcpServers, expansionKey }: { tool: ToolCallItem; mcpServers?: ChatMcpServer[] | null; expansionKey?: string }) {
   const diffs = diffContent(tool);
   if (diffs.length > 0) {
+    const error = toolErrorText(tool);
     return (
       <>
-        {diffs.map((d, i) => <TranscriptDiffCard key={`${d.path}:${i}`} diff={d} line={tool.locations?.[0]?.line} status={tool.status} />)}
-        {tool.error && <div className="text-[12px] text-ctp-error">{tool.error}</div>}
+        {diffs.map((d, i) => <TranscriptDiffCard key={`${d.path}:${i}`} diff={d} line={tool.locations?.[0]?.line} tool={tool} expansionKey={expansionKey && `${expansionKey}:diff:${i}`} />)}
+        {error && <div className="text-[12px] text-ctp-error break-words" data-testid="chat-tool-error">{error}</div>}
       </>
     );
   }
-  if (tool.toolKind === 'execute' || tool.content.some((c) => c.type === 'terminal')) return <CommandCard tool={tool} />;
-  return <ToolCard tool={tool} mcpServers={mcpServers} />;
+  if (tool.toolKind === 'execute' || tool.content.some((c) => c.type === 'terminal')) return <CommandCard tool={tool} expansionKey={expansionKey} />;
+  return <ToolCard tool={tool} mcpServers={mcpServers} expansionKey={expansionKey} />;
 }
 
 const SUB_STATUS: Record<SubagentBlock['info']['status'], string> = {
@@ -293,8 +406,8 @@ const SUB_STATUS: Record<SubagentBlock['info']['status'], string> = {
   cancelled: 'cancelled',
 };
 
-export function SubagentCard({ block, onOpenInMap }: { block: SubagentBlock; onOpenInMap?: (subagentId: string) => void }) {
-  const [open, setOpen] = useState(false);
+export function SubagentCard({ block, onOpenInMap, expansionKey }: { block: SubagentBlock; onOpenInMap?: (subagentId: string) => void; expansionKey?: string }) {
+  const [open, toggle] = useOpenState(false, expansionKey);
   const { info, tool, children } = block;
   const toolCount = info.toolCount ?? children.filter((c) => c.kind === 'tool_call').length;
   const summary = [...children].reverse().find((c) => c.kind === 'agent_message');
@@ -309,7 +422,7 @@ export function SubagentCard({ block, onOpenInMap }: { block: SubagentBlock; onO
         <button
           type="button"
           className="flex-1 flex items-center gap-2 h-[34px] px-3 text-[12.5px] text-left min-w-0"
-          onClick={() => setOpen((o) => !o)}
+          onClick={toggle}
           aria-expanded={open}
         >
           <AgentsIcon className="text-ctp-mauve" />

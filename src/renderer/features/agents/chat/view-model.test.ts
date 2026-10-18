@@ -6,6 +6,8 @@ import type { ToolCallItem } from '../../../stores/chatStore';
 import {
   argSummary,
   buildStreamBlocks,
+  commandForRequest,
+  commandOutputIds,
   composerModes,
   diffStats,
   diffTexts,
@@ -14,10 +16,13 @@ import {
   formatDuration,
   formatTokens,
   implementLevel,
+  looksPreformatted,
   mcpTool,
   needsManualPlanHandoff,
   parseUnifiedDiff,
+  slashCommandOf,
   toolArgs,
+  toolErrorText,
   toolOpenByDefault,
   toolResultText,
 } from './view-model';
@@ -207,5 +212,95 @@ describe('tool card helpers (#2110)', () => {
     expect(toolResultText(tool({ rawOutput: 'plain' }))).toBe('plain');
     expect(toolResultText(tool({ rawOutput: { ok: true } }))).toBe('{\n  "ok": true\n}');
     expect(toolResultText(tool({}))).toBe('');
+  });
+});
+
+describe('slash command output (#2179)', () => {
+  // Copilot's /context reply, verbatim from a live session.
+  const CONTEXT = [
+    'Context Usage',
+    '',
+    '○ ○ ◌ ● ◉ · · · · ·   gpt-5.6-sol · 17k/400k tokens (4%)',
+    '· · · · · · · · · ·   ○ System Prompt           8.9k   (2%)',
+    '· · · · · · · · · ·   ◌ System Tools            6.0k   (2%)',
+    '◎ ◎ ◎ ◎ ◎ ◎ ◎ ◎ ◎ ◎   ◎ Buffer                141.6k  (35%)',
+  ].join('\n');
+  const COMMANDS = [{ name: 'context' }, { name: 'mission' }];
+  const base = { sessionId: 's', seq: 0, ts: 0 };
+  const user = (id: string, text: string) => ({ ...base, id, kind: 'user_message' as const, messageId: id, content: [], text, source: 'user' as const, delivery: 'prompt' as const });
+  const reply = (id: string, text: string) => ({ ...base, id, kind: 'agent_message' as const, messageId: id, text, streaming: false });
+
+  it('recognises only commands the session offers, at the start of the message', () => {
+    expect(slashCommandOf('/context', COMMANDS)).toBe('context');
+    expect(slashCommandOf('  /mission fix it', COMMANDS)).toBe('mission');
+    expect(slashCommandOf('/contexts', COMMANDS)).toBeNull();
+    expect(slashCommandOf('/usr/bin is missing', COMMANDS)).toBeNull();
+    expect(slashCommandOf('run /context', COMMANDS)).toBeNull();
+  });
+
+  it('treats column-aligned lines as preformatted, and prose or markdown as not', () => {
+    expect(looksPreformatted(CONTEXT)).toBe(true);
+    expect(looksPreformatted('One line  with  gaps')).toBe(false);
+    expect(looksPreformatted('First paragraph.\n\nSecond paragraph.')).toBe(false);
+    expect(looksPreformatted('| a  | b |\n|----|---|\n| 1  | 2 |')).toBe(false);
+    expect(looksPreformatted('## Heading\nsome    text\nmore    text')).toBe(false);
+    expect(looksPreformatted('```\na    b\nc    d\n```')).toBe(false);
+  });
+
+  it('marks a command\'s laid-out reply, not ordinary replies or skill output in markdown', () => {
+    const items = [
+      user('u1', '/context'), reply('a1', CONTEXT),
+      user('u2', 'Same grid again please'), reply('a2', CONTEXT),
+      user('u3', '/mission tidy up'), reply('a3', 'Plan:\n\n- one\n- two'),
+    ];
+    expect([...commandOutputIds(items, COMMANDS)]).toEqual(['a1']);
+  });
+
+  it('marks only the first reply after a command: not one after a tool call or a later reply (#2188 review)', () => {
+    const toolCall = { ...base, id: 't1', kind: 'tool_call' as const, toolCallId: 't1', toolKind: 'read' as const, title: 'Read', status: 'completed' as const, content: [] };
+    const turnEnd = { ...base, id: 'e1', kind: 'turn_end' as const, stopReason: 'end_turn' as const };
+    expect([...commandOutputIds([user('u1', '/context'), reply('a1', CONTEXT), reply('a2', CONTEXT)], COMMANDS)]).toEqual(['a1']);
+    expect([...commandOutputIds([user('u1', '/mission go'), toolCall, reply('a1', CONTEXT)], COMMANDS)]).toEqual([]);
+    expect([...commandOutputIds([user('u1', '/context'), turnEnd, reply('a1', CONTEXT)], COMMANDS)]).toEqual([]);
+  });
+});
+
+describe('toolErrorText (#2188 review)', () => {
+  const failed = (error: string) => ({ sessionId: 's', seq: 0, ts: 0, id: 't', kind: 'tool_call' as const, toolCallId: 't', toolKind: 'other' as const, title: 'T', status: 'failed' as const, content: [], error });
+
+  it('hides an error only when what is shown is the same message', () => {
+    expect(toolErrorText(failed('<tool_use_error>Timed out</tool_use_error>'), 'Timed  out\n')).toBeUndefined();
+    expect(toolErrorText(failed('Timed out'), '<tool_use_error>Timed out</tool_use_error>')).toBeUndefined();
+  });
+
+  it('keeps an error the shown text merely contains', () => {
+    expect(toolErrorText(failed('failed'), 'Step 3 failed, retrying\nok')).toBe('failed');
+    expect(toolErrorText(failed('Exit code 1'), 'Exit code 1\nnpm ERR! missing script')).toBe('Exit code 1');
+  });
+
+  it('ignores an empty error', () => {
+    expect(toolErrorText(failed('<tool_use_error> </tool_use_error>'))).toBeUndefined();
+  });
+});
+
+describe('commandForRequest (#2183 review)', () => {
+  const base = { sessionId: 's', seq: 0, ts: 0 };
+  const req = (over: Record<string, unknown> = {}) => ({ requestId: 'r', title: 'Run', options: [], ts: 0, ...over });
+  const execTool = (over: Record<string, unknown> = {}) => ({ ...base, id: 'tc', kind: 'tool_call' as const, toolCallId: 'tc', toolKind: 'execute' as const, title: 'Run', status: 'pending' as const, content: [], ...over });
+
+  it("reads Claude's Bash input, and an argv array", () => {
+    expect(commandForRequest([], req({ toolName: 'Bash', rawInput: { command: 'git status --short' } }))).toBe('git status --short');
+    expect(commandForRequest([], req({ rawInput: { command: ['npm', 'test'] } }))).toBe('npm test');
+  });
+
+  it('falls back to the execute tool call the request is for', () => {
+    expect(commandForRequest([execTool({ content: [{ type: 'terminal', terminalId: 't', command: 'make build', output: '' }] })], req({ toolCallId: 'tc' }))).toBe('make build');
+    expect(commandForRequest([execTool({ rawInput: { command: ['ls', '-la'] } })], req({ toolCallId: 'tc' }))).toBe('ls -la');
+    expect(commandForRequest([execTool({ toolKind: 'edit', rawInput: { command: 'x' } })], req({ toolCallId: 'tc' }))).toBeUndefined();
+  });
+
+  it("leaves it to the request's own content when that already shows it", () => {
+    expect(commandForRequest([], req({ rawInput: { command: 'rm -rf build' }, content: [{ type: 'text', text: 'rm -rf build' }] }))).toBeUndefined();
+    expect(commandForRequest([], req({ rawInput: { path: '/a' } }))).toBeUndefined();
   });
 });

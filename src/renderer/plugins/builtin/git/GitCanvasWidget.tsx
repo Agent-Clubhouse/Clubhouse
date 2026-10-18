@@ -21,12 +21,12 @@ interface StatusInfo {
   short: string;
 }
 
-function statusInfo(code: string): StatusInfo {
+export function statusInfo(code: string): StatusInfo {
   const c = code.trim();
   if (c === '??' || c === '?') return { label: 'Untracked', color: 'text-ctp-accent', short: 'U' };
-  if (c.startsWith('A') || c === 'A') return { label: 'Added', color: 'text-ctp-green', short: 'A' };
-  if (c.startsWith('D') || c === 'D') return { label: 'Deleted', color: 'text-ctp-red', short: 'D' };
-  if (c.startsWith('M') || c === 'M') return { label: 'Modified', color: 'text-ctp-yellow', short: 'M' };
+  if (c.startsWith('A') || c === 'A') return { label: 'Added', color: 'text-ctp-success', short: 'A' };
+  if (c.startsWith('D') || c === 'D') return { label: 'Deleted', color: 'text-ctp-error', short: 'D' };
+  if (c.startsWith('M') || c === 'M') return { label: 'Modified', color: 'text-ctp-warning', short: 'M' };
   if (c.startsWith('R')) return { label: 'Renamed', color: 'text-ctp-mauve', short: 'R' };
   if (c.startsWith('C')) return { label: 'Copied', color: 'text-ctp-info', short: 'C' };
   return { label: 'Changed', color: 'text-ctp-overlay0', short: '~' };
@@ -165,7 +165,7 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
 
   if (!gitInfo.hasGit) {
     return (
-      <div className="flex items-center justify-center h-full text-ctp-overlay0 text-xs p-4 text-center">
+      <div className="flex items-center justify-center h-full text-ctp-overlay1 text-xs p-4 text-center">
         Not a git repository
       </div>
     );
@@ -182,18 +182,27 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
   return (
     <div className="flex flex-col h-full" data-testid="git-diff-widget">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-surface-0 bg-ctp-mantle/50 flex-shrink-0">
-        <span className="text-xs font-medium text-ctp-text truncate">{gitInfo.branch}</span>
-        {gitInfo.ahead > 0 && <span className="text-[9px] text-ctp-green">↑{gitInfo.ahead}</span>}
-        {gitInfo.behind > 0 && <span className="text-[9px] text-ctp-red">↓{gitInfo.behind}</span>}
+      <div className="h-[30px] flex items-center gap-2 px-3 border-b border-surface-0 flex-shrink-0">
+        <span className="text-[13px] font-medium text-ctp-text truncate">{gitInfo.branch}</span>
+        {(gitInfo.ahead > 0 || gitInfo.behind > 0) && (
+          <span className="text-xs text-ctp-overlay1 flex-shrink-0" data-testid="git-ahead-behind">
+            {[gitInfo.ahead > 0 && `${gitInfo.ahead} ahead`, gitInfo.behind > 0 && `${gitInfo.behind} behind`].filter(Boolean).join(', ')}
+          </span>
+        )}
         <span className="flex-1" />
-        {staged.length > 0 && <span className="text-[9px] text-ctp-green">{staged.length} staged</span>}
-        {unstaged.length > 0 && <span className="text-[9px] text-ctp-yellow">{unstaged.length} changed</span>}
-        {untracked.length > 0 && <span className="text-[9px] text-ctp-accent">{untracked.length} untracked</span>}
+        {totalChanges > 0 && (
+          <span className="text-xs text-ctp-overlay1 truncate" data-testid="git-change-summary">
+            {[
+              staged.length > 0 && `${staged.length} staged`,
+              unstaged.length > 0 && `${unstaged.length} changed`,
+              untracked.length > 0 && `${untracked.length} untracked`,
+            ].filter(Boolean).join(' · ')}
+          </span>
+        )}
       </div>
 
       {totalChanges === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-ctp-overlay0 text-xs">
+        <div className="flex-1 flex items-center justify-center text-ctp-overlay1 text-xs">
           Working tree clean
         </div>
       ) : isCompact ? (
@@ -207,7 +216,7 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
         /* Full: file list + diff pane */
         <div className="flex flex-1 min-h-0">
           {/* File list */}
-          <div className="w-52 flex-shrink-0 overflow-y-auto border-r border-surface-0 bg-ctp-mantle/30" data-testid="file-list">
+          <div className="w-52 flex-shrink-0 overflow-y-auto border-r border-surface-0" data-testid="file-list">
             <FileSection title="Staged" sectionKey="staged" files={staged} collapsed={collapsedSections} selectedFile={selectedFile} onSelect={setSelectedFile} onToggle={toggleSection} />
             <FileSection title="Changes" sectionKey="changes" files={unstaged} collapsed={collapsedSections} selectedFile={selectedFile} onSelect={setSelectedFile} onToggle={toggleSection} />
             <FileSection title="Untracked" sectionKey="untracked" files={untracked} collapsed={collapsedSections} selectedFile={selectedFile} onSelect={setSelectedFile} onToggle={toggleSection} />
@@ -227,8 +236,8 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
                 <MonacoDiffEditorLazy original={diffData.original} modified={diffData.modified} filePath={selectedFile || ''} />
               </React.Suspense>
             ) : (
-              <div className="flex items-center justify-center h-full text-ctp-overlay0 text-xs">
-                {selectedFile ? 'Loading…' : 'Select a file to view diff'}
+              <div className="flex items-center justify-center h-full text-ctp-overlay1 text-xs">
+                {selectedFile ? 'Loading…' : 'Select a file to see its diff'}
               </div>
             )}
           </div>
@@ -255,40 +264,45 @@ function FileSection({ title, sectionKey, files, collapsed, selectedFile, onSele
   const isCollapsed = collapsed[sectionKey] === true;
 
   return (
-    <>
+    <div className="px-1.5 py-1">
       <button
-        className="w-full flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0 hover:bg-surface-0"
+        className="w-full h-[30px] flex items-center gap-1.5 px-1.5 rounded-md text-xs text-ctp-overlay1 hover:bg-surface-0"
         onClick={() => onToggle(sectionKey)}
+        aria-expanded={!isCollapsed}
         data-testid={`section-${sectionKey}`}
       >
-        <span className={`transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>▸</span>
-        {title} ({files.length})
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`flex-shrink-0 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+        <span>{title}</span>
+        <span className="ml-auto">{files.length}</span>
       </button>
       {!isCollapsed && (
-        <div className="border-b border-surface-0">
+        <ul>
           {files.map((file) => {
             const info = statusInfo(file.status);
             const name = file.path.split('/').pop() || file.path;
             const dir = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : '';
             return (
-              <div
-                key={file.path}
-                className={`flex items-center gap-1 px-3 py-1 cursor-pointer transition-colors ${
-                  selectedFile === file.path ? 'bg-surface-1' : 'hover:bg-surface-0'
-                }`}
-                onClick={() => onSelect(file.path)}
-                data-testid={`file-${file.path}`}
-              >
-                <span className={`w-3 text-center text-[9px] font-bold flex-shrink-0 ${info.color}`}>{info.short}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[11px] text-ctp-text truncate">{name}</div>
-                  {dir && <div className="text-[8px] text-ctp-overlay0 truncate">{dir}</div>}
-                </div>
-              </div>
+              <li key={file.path}>
+                <button
+                  className={`w-full h-[30px] flex items-center gap-2 px-1.5 rounded-md text-left ${
+                    selectedFile === file.path ? 'bg-surface-0' : 'hover:bg-surface-0'
+                  }`}
+                  onClick={() => onSelect(file.path)}
+                  aria-current={selectedFile === file.path || undefined}
+                  data-testid={`file-${file.path}`}
+                >
+                  <span className={`w-3 text-center text-xs font-mono flex-shrink-0 ${info.color}`} aria-hidden="true">{info.short}</span>
+                  <span className="sr-only">{info.label}</span>
+                  <span className="text-[13px] text-ctp-text truncate min-w-0">{name}</span>
+                  {dir && <span className="text-xs text-ctp-overlay1 truncate min-w-0">{dir}</span>}
+                </button>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
-    </>
+    </div>
   );
 }

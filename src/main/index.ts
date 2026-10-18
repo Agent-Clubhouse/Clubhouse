@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { app, BrowserWindow, ipcMain, powerMonitor, session, net, protocol } from 'electron';
+import { cleanupTranscriptStaging } from './services/agent-runtime/chat-transcript';
 import { registerAllHandlers } from './ipc';
 import { configurePluginMcpHost } from './ipc/plugin-mcp-handlers';
 import { startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
@@ -233,6 +234,7 @@ const createWindow = (): void => {
 };
 
 app.on('ready', () => {
+  void cleanupTranscriptStaging();
   // Pre-warm the shell environment cache in background so the first agent
   // wake doesn't pay the 500ms–2s login shell penalty.
   preWarmShellEnvironment();

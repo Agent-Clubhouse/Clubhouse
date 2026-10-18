@@ -63,8 +63,8 @@ describe('ZoneCard', () => {
 
   describe('theme picker z-index', () => {
     it('renders theme picker into document.body via portal', () => {
-      const { getByTitle } = renderZoneCard();
-      fireEvent.click(getByTitle('Zone theme'));
+      const { getByRole } = renderZoneCard();
+      fireEvent.click(getByRole('button', { name: 'Zone theme' }));
 
       // Picker should be in document.body, not inside the zone card
       const picker = document.querySelector('[data-testid="zone-theme-picker"]');
@@ -73,16 +73,16 @@ describe('ZoneCard', () => {
     });
 
     it('theme picker has z-index above canvas cards', () => {
-      const { getByTitle } = renderZoneCard();
-      fireEvent.click(getByTitle('Zone theme'));
+      const { getByRole } = renderZoneCard();
+      fireEvent.click(getByRole('button', { name: 'Zone theme' }));
 
       const picker = document.querySelector('[data-testid="zone-theme-picker"]') as HTMLElement;
       expect(picker.style.zIndex).toBe('10000');
     });
 
     it('theme picker uses fixed positioning', () => {
-      const { getByTitle } = renderZoneCard();
-      fireEvent.click(getByTitle('Zone theme'));
+      const { getByRole } = renderZoneCard();
+      fireEvent.click(getByRole('button', { name: 'Zone theme' }));
 
       const picker = document.querySelector('[data-testid="zone-theme-picker"]') as HTMLElement;
       expect(picker.classList.contains('fixed')).toBe(true);
@@ -91,8 +91,8 @@ describe('ZoneCard', () => {
 
   describe('theme picker scroll isolation', () => {
     it('stops wheel events from propagating to canvas', () => {
-      const { getByTitle } = renderZoneCard();
-      fireEvent.click(getByTitle('Zone theme'));
+      const { getByRole } = renderZoneCard();
+      fireEvent.click(getByRole('button', { name: 'Zone theme' }));
 
       const picker = document.querySelector('[data-testid="zone-theme-picker"]') as HTMLElement;
       expect(picker).toBeTruthy();
@@ -103,8 +103,8 @@ describe('ZoneCard', () => {
     });
 
     it('stops mousedown from propagating through the portal', () => {
-      const { getByTitle } = renderZoneCard();
-      fireEvent.click(getByTitle('Zone theme'));
+      const { getByRole } = renderZoneCard();
+      fireEvent.click(getByRole('button', { name: 'Zone theme' }));
 
       const picker = document.querySelector('[data-testid="zone-theme-picker"]') as HTMLElement;
       expect(picker).toBeTruthy();
@@ -117,8 +117,8 @@ describe('ZoneCard', () => {
 
   describe('theme picker outside-click dismissal', () => {
     it('closes picker on mousedown outside both button and picker', () => {
-      const { getByTitle } = renderZoneCard();
-      fireEvent.click(getByTitle('Zone theme'));
+      const { getByRole } = renderZoneCard();
+      fireEvent.click(getByRole('button', { name: 'Zone theme' }));
       expect(document.querySelector('[data-testid="zone-theme-picker"]')).toBeTruthy();
 
       // Click outside — dispatched on window
@@ -127,8 +127,8 @@ describe('ZoneCard', () => {
     });
 
     it('keeps picker open when clicking inside it', () => {
-      const { getByTitle } = renderZoneCard();
-      fireEvent.click(getByTitle('Zone theme'));
+      const { getByRole } = renderZoneCard();
+      fireEvent.click(getByRole('button', { name: 'Zone theme' }));
 
       const picker = document.querySelector('[data-testid="zone-theme-picker"]') as HTMLElement;
       fireEvent.mouseDown(picker);
@@ -138,8 +138,8 @@ describe('ZoneCard', () => {
 
   describe('theme selection', () => {
     it('calls onThemeChange when a theme is selected', () => {
-      const { getByTitle, onThemeChange } = renderZoneCard();
-      fireEvent.click(getByTitle('Zone theme'));
+      const { getByRole, onThemeChange } = renderZoneCard();
+      fireEvent.click(getByRole('button', { name: 'Zone theme' }));
 
       const picker = document.querySelector('[data-testid="zone-theme-picker"]') as HTMLElement;
       const buttons = picker.querySelectorAll('button');
@@ -150,8 +150,8 @@ describe('ZoneCard', () => {
     });
 
     it('closes picker after selection', () => {
-      const { getByTitle } = renderZoneCard();
-      fireEvent.click(getByTitle('Zone theme'));
+      const { getByRole } = renderZoneCard();
+      fireEvent.click(getByRole('button', { name: 'Zone theme' }));
       expect(document.querySelector('[data-testid="zone-theme-picker"]')).toBeTruthy();
 
       const picker = document.querySelector('[data-testid="zone-theme-picker"]') as HTMLElement;

@@ -86,6 +86,7 @@ function buildChannelMap(): Map<string, string> {
  * subscribes via ipcRenderer.on(). No ipcMain handler is needed.
  */
 const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
+  'IPC.MCP_BINDING.AGENT_CONNECTION_CHANGED',
   'IPC.PTY.DATA',
   'IPC.PTY.EXIT',
   'IPC.AGENT.HOOK_EVENT',

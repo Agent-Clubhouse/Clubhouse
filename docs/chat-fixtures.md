@@ -166,12 +166,12 @@ For an approval, add `{"await":{"method":"item/commandExecution/requestApproval"
 
 ### Copilot
 
-Pin the version with `--no-auto-update`. Pick the cheapest model in the `session/new` result (each entry's `_meta.copilotUsage` is its premium-request multiplier) and set it with `session/set_config_option` (`configId: "model"`) before the prompt. Approvals arrive as `session/request_permission`; answer with `{"outcome":{"outcome":"selected","optionId":"allow_once"}}` or `reject_once`.
+Launch it the way the driver does, `copilot --acp --stdio` without `--no-auto-update`: that flag makes the Homebrew/WinGet shim run its bundled runtime instead of the installed Copilot (#2154), so `--cli-version` would be wrong. Pick the cheapest model in the `session/new` result (each entry's `_meta.copilotUsage` is its premium-request multiplier) and set it with `session/set_config_option` (`configId: "model"`) before the prompt. Approvals arrive as `session/request_permission`; answer with `{"outcome":{"outcome":"selected","optionId":"allow_once"}}` or `reject_once`.
 
 ```sh
 node scripts/chat-fixtures/record.mjs --protocol acp --cli-name copilot \
   --cli-version "$(copilot --version)" --out test/chat-fixtures/copilot/one-turn.jsonl \
-  --script steps.jsonl -- copilot --acp --no-auto-update
+  --script steps.jsonl -- copilot --acp --stdio
 ```
 
 ### Claude Code

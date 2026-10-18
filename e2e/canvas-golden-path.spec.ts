@@ -174,7 +174,7 @@ test.describe('Canvas golden path', () => {
     // force:true skips actionability checks but the browser still rejects synthetic
     // mouse clicks at coordinates outside window bounds. dispatchEvent fires directly
     // on the DOM element and works regardless of CSS-transform positioning on Windows CI.
-    const deleteBtn = zoneCard.locator('button[title="Delete zone"]');
+    const deleteBtn = zoneCard.locator('button[aria-label="Delete zone"]');
     await expect(deleteBtn).toBeVisible({ timeout: 3_000 });
     await deleteBtn.dispatchEvent('click');
     await expect(zoneCard).not.toBeVisible({ timeout: 5_000 });
@@ -265,7 +265,7 @@ test.describe('Canvas golden path', () => {
 
     if (!hadDialog) {
       // Zone has no contained views → direct delete (no dialog)
-      const deleteBtn = zoneCard.locator('button[title="Delete zone"]');
+      const deleteBtn = zoneCard.locator('button[aria-label="Delete zone"]');
       await expect(deleteBtn).toBeVisible({ timeout: 5_000 });
       // dispatchEvent bypasses Playwright's viewport coordinate check — the zone card
       // may be CSS-transform-positioned outside viewport bounds on Windows CI.

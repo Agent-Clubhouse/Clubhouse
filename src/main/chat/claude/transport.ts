@@ -91,6 +91,8 @@ export interface ClaudeTransport {
   setEffort(effort: ClaudeEffort | null): Promise<void>;
   /** The model and effort in effect (`get_settings` → `applied`). */
   appliedSettings(): Promise<ClaudeAppliedSettings>;
+  /** The raw `get_usage` reply (session totals and plan windows), skipping the transcript scan. */
+  planUsage?(): Promise<unknown>;
   /** End the session: closes stdin and lets the CLI exit, killing it if it doesn't. */
   close(): Promise<void>;
 }

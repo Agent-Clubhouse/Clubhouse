@@ -477,6 +477,7 @@ class CodexChatSession implements ChatDriverSession {
         if (this.client.getActiveTurnId(threadId)) throw err;
       }
     }
+    if (this.commandRunning) throw new Error('Wait for the current command to finish before starting a new turn');
     // Queueing is the runtime's job (capabilities.queue === 'client'), so
     // anything that isn't a live steer starts a turn.
     const overrides = this.nextTurn;

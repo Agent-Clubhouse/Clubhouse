@@ -6,6 +6,7 @@ import type {
   ErrorItem,
   NoticeItem,
   PlanDocumentItem,
+  QuestionItem,
   SessionDividerItem,
   ThoughtItem,
   TurnEndItem,
@@ -13,7 +14,7 @@ import type {
 } from '../../../stores/chatStore';
 import type { ChatCapabilities, ContentBlock } from '../../../../shared/chat';
 import { attachmentName } from './attachments';
-import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, FileIcon, ImageIcon, PlanIcon } from './icons';
+import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, FileIcon, ImageIcon, PlanIcon, QuestionIcon } from './icons';
 import { formatCost, formatDuration, formatTokens } from './view-model';
 
 /** Markdown re-renders at most this often while a message streams. */
@@ -89,11 +90,14 @@ export function UserMessage({ item }: { item: UserMessageItem }) {
   );
 }
 
-export function AgentMessage({ item }: { item: AgentMessageItem }) {
+/** `preformatted`: a slash command's own laid-out output, shown as is (#2179). */
+export function AgentMessage({ item, preformatted = false }: { item: AgentMessageItem; preformatted?: boolean }) {
   if (!item.text && !item.streaming) return null;
   return (
     <div className="text-[13.5px] leading-relaxed text-ctp-text" data-testid="chat-agent-message">
-      <Markdown text={item.text} streaming={item.streaming} />
+      {preformatted
+        ? <pre className="font-mono text-[12px] leading-[1.6] text-ctp-text whitespace-pre overflow-x-auto m-0" data-testid="chat-command-output">{item.text}</pre>
+        : <Markdown text={item.text} streaming={item.streaming} />}
       {item.streaming && <span className="inline-block w-1.5 h-3.5 bg-ctp-accent/70 animate-pulse align-text-bottom" aria-label="Streaming" />}
     </div>
   );
@@ -125,22 +129,40 @@ export function ThoughtRow({ item }: { item: ThoughtItem }) {
   );
 }
 
-export function PlanDocumentCard({ item }: { item: PlanDocumentItem }) {
+function planState(item: PlanDocumentItem): { label: string; tone: string } {
+  if (item.decision === 'approved') return { label: 'Approved', tone: 'text-ctp-success' };
+  if (item.decision === 'rejected') return { label: 'Not approved', tone: 'text-ctp-subtext0' };
+  return { label: item.status === 'ready' ? 'Ready for review' : 'Writing…', tone: 'text-ctp-subtext0' };
+}
+
+export function PlanDocumentCard({ item, error }: { item: PlanDocumentItem; error?: string }) {
+  const state = planState(item);
   return (
-    <div className="border border-surface-1 rounded-lg bg-ctp-mantle" data-testid="chat-plan-document">
+    <div className="border border-surface-1 rounded-lg bg-ctp-mantle" data-testid="chat-plan-document" data-decision={item.decision ?? 'pending'}>
       <div className="flex items-center gap-2 h-9 px-3 border-b border-surface-0 text-[12.5px]">
         <PlanIcon className="text-ctp-overlay1" />
         <span className="font-semibold text-ctp-text">Plan</span>
-        <span className="text-ctp-subtext0">{item.status === 'ready' ? 'Ready for review' : 'Writing…'}</span>
+        <span className={state.tone}>{state.label}</span>
       </div>
       <div className="px-4 py-3 text-[13px]">
         <Markdown text={item.markdown} streaming={item.status === 'streaming'} />
       </div>
+      {/* e.g. the feedback sent with "Not approved": the ExitPlanMode call it rode on is hidden. */}
+      {error && <div className="px-4 py-2 border-t border-surface-0 text-[12px] text-ctp-error break-words" data-testid="chat-tool-error">{error}</div>}
     </div>
   );
 }
 
 export function NoticeRow({ item }: { item: NoticeItem }) {
+  if (item.running) {
+    // In progress (a context compaction): the tool rows' spinner, then the notice it settles into.
+    return (
+      <div className="flex items-center gap-2 text-[12px] text-ctp-overlay1" role="status" data-testid="chat-notice" data-code={item.code} data-running="true">
+        <span className="inline-block w-2.5 h-2.5 mx-px rounded-full border-[1.5px] border-surface-1 border-t-ctp-success animate-spin" aria-hidden="true" />
+        <span>{item.message}</span>
+      </div>
+    );
+  }
   return (
     <div
       className={`flex items-center gap-2 text-[12px] ${item.level === 'warn' ? 'text-ctp-warning' : 'text-ctp-overlay1'}`}
@@ -217,6 +239,51 @@ export function SessionDivider({ item }: { item: SessionDividerItem }) {
       <span className="flex-1 border-t border-surface-0" />
       <span>{item.resumed ? 'Session resumed' : 'New session'}</span>
       <span className="flex-1 border-t border-surface-0" />
+    </div>
+  );
+}
+
+/** The answer text for one question: option labels for choices, the text itself otherwise. */
+function answerText(item: QuestionItem, questionId: string): string | null {
+  const answer = item.answers?.[questionId];
+  if (answer === undefined) return null;
+  const q = item.questions.find((x) => x.id === questionId);
+  const label = (id: string) => q?.options?.find((o) => o.id === id)?.label ?? id;
+  return Array.isArray(answer) ? answer.map(label).join(', ') : label(answer);
+}
+
+/**
+ * A question the agent asked, as one line per question: "Asked" while it
+ * waits (the card in the composer dock takes the answer), then "Answered".
+ */
+export function QuestionRow({ item, error }: { item: QuestionItem; error?: string }) {
+  // Cancelled, or expired with its turn: either way nobody answered it.
+  const unanswered = !!item.cancelled || (!item.answers && !!item.expired);
+  const state = item.cancelled ? 'cancelled' : item.answers ? 'answered' : item.expired ? 'expired' : 'asked';
+  return (
+    <div className="flex flex-col gap-0.5" data-testid="chat-question-row" data-state={state}>
+      {item.questions.map((q) => {
+        const answer = answerText(item, q.id);
+        return (
+          <div key={q.id} className="flex flex-col text-[12.5px] min-w-0">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <QuestionIcon size={13} className="text-ctp-overlay1 self-center" />
+              <span className="font-medium text-ctp-subtext1 flex-shrink-0">Asked</span>
+              <span className="text-ctp-subtext0 min-w-0 break-words">{q.prompt}</span>
+              {state === 'asked' && <span className="ml-auto text-[11.5px] text-ctp-warning whitespace-nowrap">waiting for your answer</span>}
+            </div>
+            {unanswered ? (
+              <div className="pl-[21px] text-[12px] text-ctp-overlay0">Not answered</div>
+            ) : answer !== null && (
+              <div className="pl-[21px] flex items-baseline gap-2 min-w-0">
+                <span className="font-medium text-ctp-subtext1 flex-shrink-0">Answered</span>
+                <span className="text-ctp-text min-w-0 break-words">{answer}</span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {error && <div className="pl-[21px] text-[12px] text-ctp-error break-words" data-testid="chat-tool-error">{error}</div>}
     </div>
   );
 }

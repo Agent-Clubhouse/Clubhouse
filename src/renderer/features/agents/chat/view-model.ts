@@ -6,12 +6,19 @@
  * id (docs/structured-chat-research.md §7, "Capabilities, not provider checks").
  */
 
+import { PERMISSION_LEVEL_LABELS } from '../../../../shared/chat';
 import type { ChatCapabilities, PermissionLevel, ToolCallContent } from '../../../../shared/chat';
 import type { ChatItem, ChatViewState, PendingPermission, PlanDocumentItem, SubagentInfo, ToolCallItem, TurnEndItem } from '../../../stores/chatStore';
 
 // ── Stream blocks ───────────────────────────────────────────────────────────
 
-export interface ItemBlock { type: 'item'; key: string; item: ChatItem }
+export interface ItemBlock {
+  type: 'item';
+  key: string;
+  item: ChatItem;
+  /** The hidden tool call a question row or plan card stands for, so its error still shows. */
+  tool?: ToolCallItem;
+}
 /** A run of consecutive read-only tool calls, shown as one "Explored" row. */
 export interface ExploreBlock { type: 'explore'; key: string; tools: ToolCallItem[] }
 /** A subagent with its own work folded underneath. */
@@ -56,7 +63,20 @@ export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagent
     top.push({ type: 'subagent', key: `sub:${info.subagentId}`, info, ...(tool && { tool }), children: childrenOf.get(info.subagentId) ?? [] });
   };
 
+  // A question row or plan card already stands for its tool call (Claude's
+  // AskUserQuestion, ExitPlanMode); don't show the call's raw input as well.
+  const shownElsewhere = new Set<string>();
   for (const item of items) {
+    if ((item.kind === 'question' || item.kind === 'plan_document') && item.toolCallId) shownElsewhere.add(item.toolCallId);
+  }
+  // ...but its outcome (a denial message, an error) shows on the row that stands for it.
+  const standIns = new Map<string, ToolCallItem>();
+
+  for (const item of items) {
+    if (item.kind === 'tool_call' && shownElsewhere.has(item.toolCallId)) {
+      standIns.set(item.toolCallId, item);
+      continue;
+    }
     const subId = 'subagentId' in item ? item.subagentId : undefined;
     if (nestSubagents && subId && childrenOf.has(subId)) {
       childrenOf.get(subId)!.push(item);
@@ -91,7 +111,8 @@ export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagent
       continue;
     }
     flush();
-    blocks.push({ type: 'item', key: item.id, item });
+    const tool = (item.kind === 'question' || item.kind === 'plan_document') && item.toolCallId ? standIns.get(item.toolCallId) : undefined;
+    blocks.push(tool ? { type: 'item', key: item.id, item, tool } : { type: 'item', key: item.id, item });
   }
   flush();
   return blocks;
@@ -163,15 +184,35 @@ export function argSummary(tool: ToolCallItem): string {
   return first ? first.replace(/\s+/g, ' ').trim() : '';
 }
 
+/** Claude wraps tool-level failures in `<tool_use_error>` tags (#2184); show the message alone. */
+export function stripToolUseError(text: string): string {
+  return text.replace(/<\/?tool_use_error>/g, '');
+}
+
 /** What a finished tool returned: its text content, else its raw output. */
 export function toolResultText(tool: ToolCallItem): string {
   const text = tool.content
     .filter((c): c is Extract<ToolCallContent, { type: 'text' }> => c.type === 'text')
-    .map((c) => c.text)
+    .map((c) => stripToolUseError(c.text))
     .join('\n');
   if (text) return text;
   if (tool.rawOutput === undefined || tool.rawOutput === null) return '';
   return typeof tool.rawOutput === 'string' ? tool.rawOutput : JSON.stringify(tool.rawOutput, null, 2);
+}
+
+/**
+ * The tool's error for display, unless `shown` (what the card already shows)
+ * is that same message: drivers often send a failure's message as both the
+ * result and the error (#2182). Only the same text, whitespace aside, counts:
+ * a result that merely mentions the error's words doesn't hide it.
+ */
+export function toolErrorText(tool: ToolCallItem, shown = ''): string | undefined {
+  if (!tool.error) return undefined;
+  const error = stripToolUseError(tool.error);
+  const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
+  const message = squash(error);
+  if (!message) return undefined;
+  return squash(stripToolUseError(shown)) === message ? undefined : error;
 }
 
 export function diffContent(tool: ToolCallItem): Array<Extract<ToolCallContent, { type: 'diff' }>> {
@@ -313,13 +354,7 @@ export function composerModes(caps: ChatCapabilities | null, running: boolean): 
   return { primary: 'queue', secondary: null, canStop };
 }
 
-export const LEVEL_LABELS: Record<PermissionLevel, string> = {
-  plan: 'Plan',
-  ask: 'Ask first',
-  auto_edit: 'Auto-accept edits',
-  auto: 'Auto',
-  full_access: 'Full access',
-};
+export const LEVEL_LABELS: Readonly<Record<PermissionLevel, string>> = PERMISSION_LEVEL_LABELS;
 
 export const LEVEL_DESCRIPTIONS: Record<PermissionLevel, string> = {
   plan: 'Reads and plans, changes nothing',
@@ -346,6 +381,49 @@ export function isSessionEnded(state: ChatViewState): boolean {
     if (it.kind === 'turn_end' || it.kind === 'user_message') return false;
   }
   return false;
+}
+
+/**
+ * The file changes a permission request would allow: the diff content of its
+ * tool call, whichever driver supplied it (Claude from the tool input, ACP
+ * from the tool_call content). Empty when there's nothing to preview.
+ */
+export function diffsForRequest(items: ChatItem[], req: PendingPermission): Array<Extract<ToolCallContent, { type: 'diff' }>> {
+  if (!req.toolCallId) return [];
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === 'tool_call' && it.toolCallId === req.toolCallId) return diffContent(it);
+  }
+  return [];
+}
+
+/** A command from a tool input: a string, or an argv array (Codex). */
+function inputCommand(input: unknown): string | undefined {
+  if (typeof input !== 'object' || input === null) return undefined;
+  const cmd = (input as { command?: unknown }).command;
+  if (typeof cmd === 'string' && cmd.trim()) return cmd;
+  if (Array.isArray(cmd) && cmd.length > 0 && cmd.every((c) => typeof c === 'string')) return cmd.join(' ');
+  return undefined;
+}
+
+/**
+ * The command a permission request would run, so the card never asks to
+ * approve one blind: from the request's input (Claude's Bash), else from its
+ * execute tool call (Codex, ACP). Undefined when the request's own content
+ * already shows it, or when it isn't a command.
+ */
+export function commandForRequest(items: ChatItem[], req: PendingPermission): string | undefined {
+  if (req.content?.some((c) => c.type === 'text' || c.type === 'terminal')) return undefined;
+  const fromInput = inputCommand(req.rawInput);
+  if (fromInput) return fromInput;
+  if (!req.toolCallId) return undefined;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind !== 'tool_call' || it.toolCallId !== req.toolCallId) continue;
+    if (it.toolKind !== 'execute' && !it.content.some((c) => c.type === 'terminal')) return undefined;
+    return terminalContent(it)?.command || inputCommand(it.rawInput);
+  }
+  return undefined;
 }
 
 /** The plan document a permission request approves, if it's a plan approval. */
@@ -376,6 +454,50 @@ export function implementLevel(caps: ChatCapabilities | null): PermissionLevel |
     if (live.includes(level)) return level;
   }
   return null;
+}
+
+// ── Command output ──────────────────────────────────────────────────────────
+
+/** The command a message starts with, when it's one the session offers. */
+export function slashCommandOf(text: string, commands: ReadonlyArray<{ name: string }>): string | null {
+  const m = /^\/([\w:.-]+)(?:\s|$)/.exec(text.trimStart());
+  return m && commands.some((c) => c.name === m[1]) ? m[1] : null;
+}
+
+/**
+ * Text laid out in lines and space-aligned columns, like a CLI's own command
+ * output, which markdown would join into one paragraph (#2179).
+ */
+export function looksPreformatted(text: string): boolean {
+  if (text.includes('```')) return false;
+  const lines = text.split('\n').filter((l) => l.trim() !== '');
+  if (lines.length < 2 || lines.some((l) => /^\s*(\||#{1,6} )/.test(l))) return false;
+  return lines.some((l) => /\S {2,}\S/.test(l));
+}
+
+/**
+ * Ids of agent messages that are a slash command's own laid-out output: only
+ * the first reply after the command, in the same turn and with no tool call
+ * in between. Anything later is the agent talking, which stays markdown.
+ */
+export function commandOutputIds(items: ChatItem[], commands: ReadonlyArray<{ name: string }>): Set<string> {
+  const ids = new Set<string>();
+  let afterCommand = false;
+  for (const item of items) {
+    if (item.kind === 'user_message') {
+      afterCommand = slashCommandOf(item.text, commands) !== null;
+      continue;
+    }
+    if (!afterCommand || ('subagentId' in item && item.subagentId)) continue;
+    if (item.kind === 'agent_message') {
+      if (looksPreformatted(item.text)) ids.add(item.id);
+      afterCommand = false;
+    } else if (item.kind !== 'thought') {
+      // A tool call, turn end, divider, notice...: the command's reply is over.
+      afterCommand = false;
+    }
+  }
+  return ids;
 }
 
 // ── Formatting ──────────────────────────────────────────────────────────────

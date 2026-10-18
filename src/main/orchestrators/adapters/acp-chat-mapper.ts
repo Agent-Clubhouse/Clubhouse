@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
 import { pathToFileURL } from 'url';
 import * as path from 'path';
 import type { ChatCapabilities, ChatDriverId, PermissionLevel } from '../../../shared/chat/capabilities';
@@ -14,7 +15,7 @@ import type {
   TurnStopReason as ChatStopReason,
 } from '../../../shared/chat/events';
 import type { AcpDriverCapabilities } from './acp-capabilities';
-import type { AcpAgentProfile, AcpPermissionLevels, AcpSessionEvent, AcpSessionState } from './acp-session';
+import type { AcpAgentProfile, AcpPermissionLevels, AcpSessionEvent, AcpSessionState, AcpTask } from './acp-session';
 import type {
   ContentBlock,
   McpServer,
@@ -129,6 +130,12 @@ function pairs(v: unknown): Array<{ name: string; value: string }> {
 /** ACP's "authentication required" JSON-RPC error. */
 const ACP_AUTH_REQUIRED = -32000;
 
+/** Chat's wording for the compaction states every provider shares. */
+const COMPACTION_MESSAGES: Partial<Record<string, string>> = {
+  in_progress: 'Compacting context…',
+  completed: 'Context compacted',
+};
+
 function turnErrorCode(errorKind: string | undefined, rpcCode: number | undefined): ChatErrorCode {
   if (errorKind === 'process_exited') return 'process_exited';
   if (errorKind === 'rpc') return rpcCode === ACP_AUTH_REQUIRED ? 'auth_required' : 'protocol_error';
@@ -191,6 +198,89 @@ function blockText(block: ContentBlock): string | undefined {
   }
 }
 
+/** Paths a tool call touches: its locations and its diffs. */
+function toolPaths(locs: ToolCall['locations'] | null | undefined, content: ToolCallContent[] | null | undefined): string[] {
+  return [
+    ...(Array.isArray(locs) ? locs.map((l) => l.path) : []),
+    ...(Array.isArray(content) ? content.flatMap((c) => (c.type === 'diff' ? [c.path] : [])) : []),
+  ];
+}
+
+/**
+ * Files an apply_patch-style raw input touches. Copilot's apply_patch sends
+ * only a string, `*** Begin Patch\n*** Add File: /abs/path\n+line…`; the diff
+ * comes later on the tool_call_update. For an added file, `added` is its text.
+ */
+export function patchFiles(rawInput: unknown): Array<{ path: string; added?: string }> {
+  if (typeof rawInput !== 'string' || !rawInput.includes('*** ')) return [];
+  const files: Array<{ path: string; added?: string }> = [];
+  let adding: { path: string; lines: string[] } | undefined;
+  const flush = () => {
+    if (adding) files.push({ path: adding.path, added: adding.lines.join('\n') + (adding.lines.length ? '\n' : '') });
+    adding = undefined;
+  };
+  for (const line of rawInput.split(/\r?\n/)) {
+    const header = /^\*\*\* (Add|Update|Delete) File: (.+?)\s*$/.exec(line);
+    if (header) {
+      flush();
+      if (header[1] === 'Add') adding = { path: header[2], lines: [] };
+      else if (header[1] === 'Update') files.push({ path: header[2] });
+    } else if (line.startsWith('*** ')) {
+      flush();
+    } else if (adding) {
+      adding.lines.push(line.startsWith('+') ? line.slice(1) : line);
+    }
+  }
+  flush();
+  return files;
+}
+
+/** The new text of the diff for `path`, when the tool call has one. */
+function diffNewText(content: ToolCallContent[] | null | undefined, path: string): string | undefined {
+  const diff = Array.isArray(content) ? content.find((c) => c.type === 'diff' && c.path === path) : undefined;
+  return diff && diff.type === 'diff' ? diff.newText : undefined;
+}
+
+/** A plan file's text, if it can be read and is a sensible size. */
+function readSmallFile(file: string): string | undefined {
+  try {
+    if (fs.statSync(file).size > 512 * 1024) return undefined;
+    return fs.readFileSync(file, 'utf8');
+  } catch { // telemetry-exempt: a plan file that can't be read falls back to the diff
+    return undefined;
+  }
+}
+
+/** Whether a title has any letter or digit (Copilot sometimes sends "."). */
+function readable(title: string | null | undefined): title is string {
+  return !!title && /[\p{L}\p{N}]/u.test(title);
+}
+
+/** A readable tool card title: Copilot sometimes sends "." (#2177). */
+function toolTitle(title: string | null | undefined, name: string | null | undefined, kind: ToolCall['kind']): string {
+  if (readable(title)) return title;
+  if (name && /[\p{L}\p{N}]/u.test(name)) return name;
+  const kindTitles: Partial<Record<NonNullable<ToolCall['kind']>, string>> = {
+    read: 'Read', edit: 'Edit', delete: 'Delete', move: 'Move', search: 'Search', execute: 'Run command', think: 'Think', fetch: 'Fetch', switch_mode: 'Switch mode',
+  };
+  return (kind && kindTitles[kind]) ?? 'Tool';
+}
+
+/** A file path in a permission request's raw input (Copilot: `fileName`; others: `path`). */
+function rawInputPath(rawInput: unknown): string | undefined {
+  if (!rawInput || typeof rawInput !== 'object') return undefined;
+  const r = rawInput as Record<string, unknown>;
+  return [r.fileName, r.path, r.file_path].find((v): v is string => typeof v === 'string' && v.length > 0);
+}
+
+/** A unified diff in a permission request's raw input (Copilot sends `diff`), as diff content. */
+function rawInputPreview(rawInput: unknown): ChatToolCallContent[] | undefined {
+  const path = rawInputPath(rawInput);
+  const diff = rawInput && typeof rawInput === 'object' ? (rawInput as Record<string, unknown>).diff : undefined;
+  if (!path || typeof diff !== 'string' || !diff.includes('@@')) return undefined;
+  return [{ type: 'diff', path, unifiedDiff: diff }];
+}
+
 function locations(locs: ToolCall['locations'] | null | undefined) {
   return Array.isArray(locs) ? locs.map((l) => ({ path: l.path, ...(typeof l.line === 'number' && { line: l.line }) })) : undefined;
 }
@@ -231,6 +321,10 @@ export function sessionChoices(
   return { ...(models.length && { models }), ...(efforts.length && { efforts }) };
 }
 
+function modelChanged(modelId: string, effort: string | undefined, isDefault: boolean): ChatEventDraft {
+  return { type: 'model_changed', data: { modelId, ...(effort && { effort }), ...(isDefault && { effortIsDefault: true }) } };
+}
+
 function selectValue(options: SessionConfigOption[], match: (o: SessionConfigOption) => boolean): string | undefined {
   const o = options.find(match);
   return o?.type === 'select' ? o.currentValue : undefined;
@@ -247,6 +341,15 @@ function selectValue(options: SessionConfigOption[], match: (o: SessionConfigOpt
  */
 export class AcpChatEventMapper {
   /** Distinguishes this driver session's ids from earlier ones in the same (resumed) chat session. */
+  /** Path and content of each tool call seen, for the permission request that follows it. */
+  private readonly toolCalls = new Map<string, {
+    locations?: ReturnType<typeof locations>;
+    content?: ChatToolCallContent[];
+    /** The card title shown, when the call got a tool card (not a plan write). */
+    title?: string;
+    name?: string | null;
+    kind?: ToolCall['kind'];
+  }>();
   private readonly idPrefix = randomUUID().slice(0, 8);
   private turn = 0;
   private turnId: string | undefined;
@@ -257,27 +360,60 @@ export class AcpChatEventMapper {
   private thoughtId = '';
   private model: string | undefined;
   private effort: string | undefined;
+  /** ACP has no "default" effort: the session's starting level counts as it until one is chosen. */
+  private effortPinned: boolean;
+  private reportedDefault: boolean | undefined;
+  /** The last turn's reported usage, to spot a repeat (see turn_ended). */
+  private lastUsageKey: string | undefined;
   private level: PermissionLevel | undefined;
 
   private choicesKey = '';
   private commandsKey = '';
   private readonly levels?: AcpPermissionLevels;
   private readonly modelCostHint?: AcpAgentProfile['modelCostHint'];
+  private readonly profile?: Pick<AcpAgentProfile, 'planFilePath' | 'tasksAfterToolCall' | 'contextWindow'>;
+  private readonly env: Record<string, string | undefined>;
   private readonly now: () => number;
+  /** Tool calls that write the agent's plan file, by id → the file. */
+  private readonly planWrites = new Map<string, string>();
+  /** Raw input of each tool call, for tasksAfterToolCall when it completes. */
+  private readonly toolInputs = new Map<string, unknown>();
+  private tasks: AcpTask[] = [];
+  private planMarkdown = '';
 
   constructor(
     private readonly driver: ChatDriverId,
-    opts: { profile?: Pick<AcpAgentProfile, 'permissionLevels' | 'modelCostHint'>; now?: () => number } = {},
+    opts: {
+      profile?: Pick<AcpAgentProfile, 'permissionLevels' | 'modelCostHint' | 'planFilePath' | 'tasksAfterToolCall' | 'contextWindow'>;
+      /** The agent's environment, for locating its plan file. */
+      env?: Record<string, string | undefined>;
+      now?: () => number;
+      /** The session was started with a chosen effort, so it isn't the agent's default. */
+      effortPinned?: boolean;
+    } = {},
   ) {
+    this.effortPinned = opts.effortPinned ?? false;
     this.levels = opts.profile?.permissionLevels;
     this.modelCostHint = opts.profile?.modelCostHint;
+    this.profile = opts.profile;
+    this.env = opts.env ?? process.env;
     this.now = opts.now ?? Date.now;
+  }
+
+  /**
+   * An effort was chosen in the session, so it's no longer the agent's default.
+   * Reports the change when the agent's own update didn't already.
+   */
+  pinEffort(state: Readonly<AcpSessionState>): ChatEventDraft[] {
+    this.effortPinned = true;
+    return this.configChanges(state);
   }
 
   /** Seed model/effort/level/choices from the session state so only changes are reported. */
   prime(state: Readonly<AcpSessionState>): void {
     this.model = this.currentModel(state);
     this.effort = selectValue(state.configOptions, (o) => o.category === 'thought_level');
+    this.reportedDefault = !!this.effort && !this.effortPinned;
     this.level = this.levels?.current(state);
     this.choicesKey = JSON.stringify(sessionChoices(state, this.modelCostHint));
   }
@@ -298,6 +434,12 @@ export class AcpChatEventMapper {
     };
   }
 
+  /** The agent's plan file for this session among `paths`, if any. */
+  private planFileAmong(paths: string[], state: Readonly<AcpSessionState>): string | undefined {
+    if (!paths.length || !this.profile?.planFilePath) return undefined;
+    return this.profile.planFilePath(paths, { sessionId: state.sessionId, env: this.env });
+  }
+
   map(event: AcpSessionEvent, state: Readonly<AcpSessionState>): ChatEventDraft[] {
     switch (event.type) {
       case 'turn_started': {
@@ -306,11 +448,17 @@ export class AcpChatEventMapper {
         this.turnStartedAt = this.now();
         this.seqInTurn = 0;
         this.lastKind = 'other';
-        return [this.scoped({ type: 'turn_started', data: { trigger: 'prompt' } })];
+        // An agent-initiated turn (#2191) has no user message behind it.
+        return [this.scoped({ type: 'turn_started', data: { trigger: event.trigger === 'agent' ? 'system' : 'prompt' } })];
       }
       case 'turn_ended': {
         const out: ChatEventDraft[] = [];
-        const tokens = toTokenUsage(event.usage);
+        // Copilot answers a local command such as /context with the previous
+        // prompt's usage unchanged (#2180); an exact repeat is no usage.
+        const usageKey = event.usage ? JSON.stringify(event.usage) : undefined;
+        const repeated = usageKey !== undefined && usageKey === this.lastUsageKey;
+        if (usageKey !== undefined) this.lastUsageKey = usageKey;
+        const tokens = repeated ? undefined : toTokenUsage(event.usage);
         let stopReason = STOP_REASONS[event.stopReason];
         if (!stopReason) {
           stopReason = 'end_turn';
@@ -334,11 +482,21 @@ export class AcpChatEventMapper {
       case 'permission_request': {
         this.lastKind = 'other';
         const tc = event.toolCall;
+        // Copilot's request carries a generic title ("Create file") and no
+        // content; the tool_call it belongs to has the path and diff (#2159).
+        const known = this.toolCalls.get(tc.toolCallId);
+        const locs = locations(tc.locations) ?? known?.locations;
+        const content = toolContent(tc.content) ?? known?.content ?? rawInputPreview(tc.rawInput);
+        const description = locs?.length
+          ? locs.map((l) => (l.line !== undefined ? `${l.path}:${l.line}` : l.path)).join(', ')
+          : rawInputPath(tc.rawInput);
         return [this.scoped({
           type: 'permission_request',
           data: {
             requestId: event.requestId,
             title: tc.title ?? 'Permission requested',
+            ...(description && { description }),
+            ...(content?.length && { content }),
             toolCallId: tc.toolCallId,
             ...(tc.name && { toolName: tc.name }),
             ...(tc.rawInput !== undefined && { rawInput: tc.rawInput }),
@@ -386,12 +544,26 @@ export class AcpChatEventMapper {
       case 'tool_call': {
         if (replay) return [];
         this.lastKind = 'other';
+        const content = u.content ? toolContent(u.content, u.rawOutput) : undefined;
+        if (u.rawInput !== undefined) this.toolInputs.set(u.toolCallId, u.rawInput);
+        const patched = patchFiles(u.rawInput);
+        const planFile = this.planFileAmong([...toolPaths(u.locations, u.content), ...patched.map((f) => f.path)], state);
+        if (planFile) {
+          // A write to the agent's plan file is the plan, not a workspace edit (#2176).
+          this.toolCalls.set(u.toolCallId, { locations: locations(u.locations), content });
+          this.planWrites.set(u.toolCallId, planFile);
+          const markdown = diffNewText(u.content, planFile) ?? patched.find((f) => f.path === planFile)?.added ?? this.planMarkdown;
+          this.planMarkdown = markdown;
+          return [this.scoped({ type: 'plan_document', data: { planId: planFile, markdown, status: 'streaming', toolCallId: u.toolCallId } })];
+        }
+        const title = toolTitle(u.title, u.name, u.kind);
+        this.toolCalls.set(u.toolCallId, { locations: locations(u.locations), content, title, name: u.name, kind: u.kind });
         return [this.scoped({
           type: 'tool_call',
           data: {
             toolCallId: u.toolCallId,
             kind: u.kind ?? 'other',
-            title: u.title,
+            title,
             status: u.status ?? 'pending',
             ...(u.name && { toolName: u.name }),
             ...(u.rawInput !== undefined && { rawInput: u.rawInput }),
@@ -404,13 +576,54 @@ export class AcpChatEventMapper {
         if (replay) return [];
         this.lastKind = 'other';
         const tu = u as ToolCallUpdate;
+        const known = this.toolCalls.get(tu.toolCallId);
+        let planFile = this.planWrites.get(tu.toolCallId);
+        // The tool_call may not have named the plan file; its update's diff can (#2176).
+        const lateCard = !planFile && known?.title !== undefined;
+        if (!planFile) {
+          planFile = this.planFileAmong([...toolPaths(tu.locations, tu.content), ...patchFiles(tu.rawInput).map((f) => f.path)], state);
+          if (planFile) this.planWrites.set(tu.toolCallId, planFile);
+        }
+        if (planFile) {
+          const out: ChatEventDraft[] = [];
+          const diffText = diffNewText(tu.content ?? undefined, planFile);
+          if (tu.status === 'completed' || tu.status === 'failed') {
+            this.planWrites.delete(tu.toolCallId);
+            this.toolInputs.delete(tu.toolCallId);
+          }
+          if (tu.status === 'completed') {
+            // The file on disk is the whole plan, edits included; the diff is a fallback.
+            const markdown = readSmallFile(planFile) ?? diffText ?? this.planMarkdown;
+            this.planMarkdown = markdown;
+            out.push(this.scoped({ type: 'plan_document', data: { planId: planFile, markdown, status: 'ready', toolCallId: tu.toolCallId } }));
+          } else if (diffText !== undefined) {
+            this.planMarkdown = diffText;
+            out.push(this.scoped({ type: 'plan_document', data: { planId: planFile, markdown: diffText, status: 'streaming', toolCallId: tu.toolCallId } }));
+          }
+          // A card already shown for the call still needs to settle.
+          if (lateCard && tu.status) out.push(this.scoped({ type: 'tool_call_update', data: { toolCallId: tu.toolCallId, status: tu.status } }));
+          return out;
+        }
+        // A punctuation-only title never replaces a readable one (#2177).
+        const title = !tu.title ? undefined
+          : readable(tu.title) ? tu.title
+          : known?.title ?? toolTitle(tu.title, tu.name ?? known?.name, tu.kind ?? known?.kind);
         const content = toolContent(tu.content, tu.rawOutput);
-        return [this.scoped({
+        const out: ChatEventDraft[] = [];
+        if (tu.status === 'completed' && this.profile?.tasksAfterToolCall) {
+          const tasks = this.profile.tasksAfterToolCall(this.toolInputs.get(tu.toolCallId) ?? tu.rawInput, this.tasks);
+          if (tasks) {
+            this.tasks = tasks;
+            out.push(this.scoped({ type: 'plan', data: { entries: tasks.map((t) => ({ id: t.id, content: t.content, status: t.status })) } }));
+          }
+        }
+        if (tu.status === 'completed' || tu.status === 'failed') this.toolInputs.delete(tu.toolCallId);
+        return [...out, this.scoped({
           type: 'tool_call_update',
           data: {
             toolCallId: tu.toolCallId,
             ...(tu.status && { status: tu.status }),
-            ...(tu.title && { title: tu.title }),
+            ...(title && { title }),
             ...(content && { content, contentMode: 'replace' as const }),
             ...(tu.rawOutput !== undefined && { rawOutput: tu.rawOutput }),
           },
@@ -418,6 +631,7 @@ export class AcpChatEventMapper {
       }
       case 'plan':
         if (replay) return [];
+        this.tasks = u.entries.map((e, i) => ({ id: String(i), content: e.content, status: e.status }));
         return [this.scoped({
           type: 'plan',
           data: { entries: u.entries.map((e) => ({ content: e.content, status: e.status, priority: e.priority })) },
@@ -442,7 +656,7 @@ export class AcpChatEventMapper {
           type: 'usage',
           data: {
             scope: 'session',
-            context: { used: u.used, size: u.size },
+            context: { used: u.used, size: u.size, ...(this.profile?.contextWindow === 'input' && { window: 'input' as const }) },
             ...(u.cost && u.cost.currency.toUpperCase() === 'USD' && { costUsd: u.cost.amount }),
           },
         }];
@@ -460,8 +674,10 @@ export class AcpChatEventMapper {
           type: 'notice',
           data: {
             level: u.status === 'failed' ? 'warn' : 'info',
+            // compaction_in_progress opens the chat's running row; completed,
+            // failed or cancelled settles it (see COMPACTION_SETTLED).
             code: `compaction_${u.status}`,
-            message: u.error ?? `Context compaction ${String(u.status).replace('_', ' ')}`,
+            message: u.error ?? COMPACTION_MESSAGES[u.status] ?? `Context compaction ${String(u.status).replace('_', ' ')}`,
           },
         }];
       case 'session_info_update':
@@ -476,8 +692,10 @@ export class AcpChatEventMapper {
     const out: ChatEventDraft[] = [];
     const model = this.currentModel(state);
     const effort = selectValue(state.configOptions, (o) => o.category === 'thought_level');
-    if (model && (model !== this.model || effort !== this.effort)) {
-      out.push({ type: 'model_changed', data: { modelId: model, ...(effort && { effort }) } });
+    const isDefault = !!effort && !this.effortPinned;
+    if (model && (model !== this.model || effort !== this.effort || isDefault !== this.reportedDefault)) {
+      out.push(modelChanged(model, effort, isDefault));
+      this.reportedDefault = isDefault;
     }
     this.model = model;
     this.effort = effort;

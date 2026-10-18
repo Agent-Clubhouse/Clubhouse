@@ -13,7 +13,7 @@
  */
 
 import { create } from 'zustand';
-import { MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
+import { COMPACTION_SETTLED, COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
 import type {
   AvailableCommand,
   ChatCapabilities,
@@ -22,6 +22,7 @@ import type {
   ChatDriverId,
   ChatEvent,
   ChatEventDataMap,
+  ChatQuestion,
   ChatQuestionAnswers,
   ChatSessionState,
   ContentBlock,
@@ -102,6 +103,8 @@ export interface NoticeItem extends ChatItemBase {
   level: 'info' | 'warn';
   code: string;
   message: string;
+  /** Still in progress (a context compaction that hasn't finished). */
+  running?: boolean;
 }
 
 export interface ErrorItem extends ChatItemBase {
@@ -119,6 +122,21 @@ export interface PlanDocumentItem extends ChatItemBase {
   markdown: string;
   status: 'streaming' | 'ready';
   toolCallId?: string;
+  /** Set when the permission request for this plan's tool call was answered. */
+  decision?: 'approved' | 'rejected';
+}
+
+/** A question the agent asked, kept in the transcript with its answer once given. */
+export interface QuestionItem extends ChatItemBase {
+  kind: 'question';
+  requestId: string;
+  questions: ChatQuestion[];
+  /** The tool call the question rides on (e.g. Claude's AskUserQuestion), shown as this row instead. */
+  toolCallId?: string;
+  answers?: ChatQuestionAnswers;
+  cancelled?: boolean;
+  /** Never answered: its turn or session ended first (e.g. the app quit while it waited). */
+  expired?: boolean;
 }
 
 /** Closes a turn: drives the turn footer (duration, usage) and turn-failure states. */
@@ -146,6 +164,7 @@ export type ChatItem =
   | NoticeItem
   | ErrorItem
   | PlanDocumentItem
+  | QuestionItem
   | TurnEndItem
   | SessionDividerItem;
 
@@ -176,13 +195,16 @@ export interface ChatUsage {
   session: UsageSnapshot | null;
   /** Plan / rate-limit windows; account-wide, so kept across sessions. */
   limits: UsageLimit[];
-  context: { used: number; size: number } | null;
+  context: { used: number; size: number; window?: 'input' | 'total' } | null;
+  /** Every completed turn's tokens summed, for drivers that send no session total (ACP). */
+  turnTotal: TokenUsage | null;
 }
 
 export interface ChatViewState {
   agentId: string;
   /** Current Clubhouse chat session id (null before any event). */
   sessionId: string | null;
+  sessionStartedAt: number | null;
   state: ChatSessionState | null;
   capabilities: ChatCapabilities | null;
   driver: ChatDriverId | null;
@@ -193,6 +215,11 @@ export interface ChatViewState {
   effort: string | null;
   /** The effort is the provider's default rather than one chosen in the session (model_changed). */
   effortIsDefault: boolean;
+  /**
+   * The session has reported its model and effort (model_changed). Until then
+   * `effort` is unknown, not the default, so the effort chip waits.
+   */
+  effortReported: boolean;
   nativeSessionId: string | null;
   /** Last applied seq, per session id. Used to drop duplicates. */
   lastSeq: Record<string, number>;
@@ -220,6 +247,8 @@ export interface ChatViewState {
   protocolUnknown: Record<string, number>;
   /** Bumped when the agent changes the workspace's git state (commit, push, …): views of its changes re-read. */
   workspaceRevision: number;
+  /** Item id of the running "Compacting context…" notice, while a compaction runs. */
+  compactionItemId: string | null;
   /**
    * "Newer than tested" CLI note. CLIs release faster than chat is retested,
    * so this isn't a transcript item; the view shows it only next to a real
@@ -232,6 +261,7 @@ export function createChatViewState(agentId: string): ChatViewState {
   return {
     agentId,
     sessionId: null,
+    sessionStartedAt: null,
     state: null,
     capabilities: null,
     driver: null,
@@ -241,6 +271,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     model: null,
     effort: null,
     effortIsDefault: false,
+    effortReported: false,
     nativeSessionId: null,
     lastSeq: {},
     turnId: null,
@@ -250,7 +281,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     pendingQuestions: [],
     plan: [],
     subagents: {},
-    usage: { turn: null, session: null, limits: [], context: null },
+    usage: { turn: null, session: null, limits: [], context: null, turnTotal: null },
     commands: [],
     models: [],
     efforts: [],
@@ -259,6 +290,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     queued: [],
     protocolUnknown: {},
     workspaceRevision: 0,
+    compactionItemId: null,
     untestedCliNote: null,
   };
 }
@@ -300,33 +332,53 @@ function upsertItem<T extends ChatItem>(
   return next;
 }
 
-/** Fields reset when a new chat session begins. History (`items`) is kept. */
-function startSession(state: ChatViewState, event: ChatEvent): ChatViewState {
-  const previous = state.sessionId;
-  const next: ChatViewState = {
-    ...state,
-    sessionId: event.sessionId,
-    turnId: null,
-    turnStartedAt: null,
-    pendingPermissions: [],
-    pendingQuestions: [],
-    plan: [],
-    subagents: {},
-    queued: [],
-    nativeSessionId: null,
-    usage: { ...state.usage, turn: null, session: null, context: null },
-  };
-  if (previous !== null) {
-    const divider: SessionDividerItem = {
-      ...itemBase(event, `session:${event.sessionId}`),
-      kind: 'session_divider',
-      previousSessionId: previous,
-      resumed: event.type === 'session_started' ? event.data.resumed : false,
-    };
-    delete divider.turnId;
-    next.items = [...state.items, divider];
+/**
+ * Settle a running compaction: swap its row for the notice that finished it,
+ * or drop the row when the turn or session ended without one.
+ */
+function settleCompaction(state: ChatViewState, replacement?: NoticeItem): ChatViewState {
+  if (state.compactionItemId === null) return state;
+  const idx = findItemIndex(state.items, state.compactionItemId);
+  const items = state.items.slice();
+  if (idx !== -1) {
+    // In place, so the result reads where compaction began.
+    if (replacement) items[idx] = { ...replacement, id: state.items[idx].id };
+    else items.splice(idx, 1);
+  } else if (replacement) {
+    items.push(replacement);
   }
-  return next;
+  return { ...state, items, compactionItemId: null };
+}
+
+/** A different session is a different conversation, never an extension of its predecessor. */
+function startSession(state: ChatViewState, event: ChatEvent): ChatViewState {
+  return {
+    ...createChatViewState(event.agentId),
+    sessionId: event.sessionId,
+    sessionStartedAt: event.ts,
+    lastSeq: state.lastSeq,
+    usage: { ...createChatViewState(event.agentId).usage, limits: state.usage.limits },
+  };
+}
+
+/** A usage's total: `input` already includes cache reads and writes (TokenUsage), so they aren't added again. */
+export const totalOf = (t: TokenUsage): number => t.total ?? (t.input ?? 0) + (t.output ?? 0);
+
+function addTokens(a: TokenUsage | null, b: TokenUsage): TokenUsage {
+  const out: TokenUsage = { ...(a ?? {}) };
+  for (const key of ['input', 'cachedInput', 'cacheWrite', 'output', 'reasoning'] as const) {
+    if (b[key] !== undefined) out[key] = (out[key] ?? 0) + b[key];
+  }
+  // A turn without a total still counts toward it.
+  out.total = (a ? totalOf(a) : 0) + totalOf(b);
+  return out;
+}
+
+function mergeLimits(current: UsageLimit[], next: UsageLimit[]): UsageLimit[] {
+  const byWindow = new Map(current.map((l) => [l.window, l]));
+  // Field by field: a status-only event keeps the utilization get_usage supplied.
+  for (const l of next) byWindow.set(l.window, { ...byWindow.get(l.window), ...l });
+  return [...byWindow.values()];
 }
 
 function usageSnapshot(data: { tokens?: TokenUsage; usage?: TokenUsage; costUsd?: number; costIsEstimate?: boolean }): UsageSnapshot {
@@ -336,6 +388,37 @@ function usageSnapshot(data: { tokens?: TokenUsage; usage?: TokenUsage; costUsd?
   if (data.costUsd !== undefined) snap.costUsd = data.costUsd;
   if (data.costIsEstimate !== undefined) snap.costIsEstimate = data.costIsEstimate;
   return snap;
+}
+
+/** An item of turn `itemTurn` ends with turn `ended` (either unknown counts as the same turn). */
+function endsWithTurn(itemTurn: string | undefined, ended: string | undefined): boolean {
+  return itemTurn === undefined || ended === undefined || itemTurn === ended;
+}
+
+/**
+ * Mark unanswered questions matching `which` expired: their turn or session
+ * is over, so nobody is waiting for the answer any more.
+ */
+function expireQuestions(items: ChatItem[], which: (q: QuestionItem) => boolean): ChatItem[] {
+  let changed = false;
+  const next = items.map((item) => {
+    if (item.kind !== 'question' || item.answers || item.cancelled || item.expired || !which(item)) return item;
+    changed = true;
+    return { ...item, expired: true };
+  });
+  return changed ? next : items;
+}
+
+/**
+ * Settle a restored transcript whose session no longer runs (the app quit or
+ * crashed mid-turn): open questions expire and nothing is left awaiting an answer.
+ */
+export function settleDeadSession(state: ChatViewState): ChatViewState {
+  if (state.pendingQuestions.length === 0 && state.pendingPermissions.length === 0
+    && !state.items.some((i) => i.kind === 'question' && !i.answers && !i.cancelled && !i.expired)) {
+    return state;
+  }
+  return { ...state, items: expireQuestions(state.items, () => true), pendingQuestions: [], pendingPermissions: [] };
 }
 
 function stopStreaming(items: ChatItem[], turnId: string | undefined): ChatItem[] {
@@ -379,10 +462,17 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
   const last = base.lastSeq[event.sessionId];
   if (last !== undefined && event.seq <= last) return base;
 
+  if (base.sessionId !== null && base.sessionId !== event.sessionId) {
+    // A late end/message from a retired session must not replace the live view.
+    // A fresh start can reactivate a previously seen session when resuming it.
+    const startsSession = event.type === 'session_started' || (last === undefined && event.seq === 1 && event.type !== 'session_ended');
+    if (!startsSession || event.ts < (base.sessionStartedAt ?? 0)) return base;
+  }
+
   let state: ChatViewState = { ...base, lastSeq: { ...base.lastSeq, [event.sessionId]: event.seq } };
 
   // A different session id means a new conversation (clearContext, or a
-  // transcript spanning several sessions). Keep history; add a divider.
+  // transcript spanning several sessions). Start with an empty view.
   if (state.sessionId !== event.sessionId) {
     state = startSession(state, event);
   }
@@ -394,6 +484,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const d = event.data;
       return {
         ...state,
+        sessionStartedAt: Math.max(state.sessionStartedAt ?? 0, event.ts),
         driver: d.driver,
         provider: d.provider,
         capabilities: d.capabilities,
@@ -407,6 +498,15 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         levelNames: {},
         mcpServers: null,
         state: 'idle',
+        // A new run: whatever the last one left open (the app quit mid-turn,
+        // with no session_ended) is over. Nothing still streams or waits.
+        turnId: null,
+        turnStartedAt: null,
+        items: expireQuestions(stopStreaming(state.items, undefined), () => true),
+        pendingPermissions: [],
+        pendingQuestions: [],
+        // Unrecognized messages are counted per CLI run, not over the whole history.
+        protocolUnknown: {},
       };
     }
     case 'session_info': {
@@ -430,12 +530,14 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
     case 'session_state':
       return { ...state, state: event.data.state };
     case 'session_ended':
+      state = settleCompaction(state);
       return {
         ...state,
         state: event.data.reason === 'error' ? 'error' : 'sleeping',
         turnId: null,
         turnStartedAt: null,
-        items: stopStreaming(state.items, undefined),
+        items: expireQuestions(stopStreaming(state.items, undefined), (q) => q.sessionId === sid),
+        pendingQuestions: [],
       };
 
     case 'turn_started': {
@@ -454,6 +556,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       };
     }
     case 'turn_ended': {
+      // A compaction the turn didn't see finish (cancelled, failed) is over too.
+      state = settleCompaction(state);
       const d = event.data;
       const hasUsage = d.usage !== undefined || d.costUsd !== undefined;
       const durationMs = d.durationMs ?? (state.turnStartedAt !== null ? event.ts - state.turnStartedAt : undefined);
@@ -471,8 +575,14 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         turnId: null,
         turnStartedAt: null,
         state: d.stopReason === 'error' ? 'error' : 'idle',
-        items: [...stopStreaming(state.items, event.turnId), end],
-        usage: hasUsage ? { ...state.usage, turn: usageSnapshot(d) } : state.usage,
+        // A question still open when its turn ends will never be answered.
+        items: [...expireQuestions(stopStreaming(state.items, event.turnId), (q) => q.sessionId === sid && endsWithTurn(q.turnId, event.turnId)), end],
+        pendingQuestions: state.pendingQuestions.filter((q) => !endsWithTurn(q.turnId, event.turnId)),
+        usage: {
+          ...state.usage,
+          ...(hasUsage && { turn: usageSnapshot(d) }),
+          ...(tokens !== undefined && { turnTotal: addTokens(state.usage.turnTotal, tokens) }),
+        },
       };
     }
 
@@ -601,22 +711,49 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const pendingPermissions = state.pendingPermissions.filter((p) => p.requestId !== req.requestId);
       return { ...state, pendingPermissions: [...pendingPermissions, req] };
     }
-    case 'permission_resolved':
-      return {
-        ...state,
-        pendingPermissions: state.pendingPermissions.filter((p) => p.requestId !== event.data.requestId),
-      };
+    case 'permission_resolved': {
+      const resolved = state.pendingPermissions.find((p) => p.requestId === event.data.requestId);
+      const pendingPermissions = state.pendingPermissions.filter((p) => p.requestId !== event.data.requestId);
+      // A plan approval (or denial) settles the plan card for that tool call.
+      const decision = event.data.decision === 'allow' ? 'approved' : event.data.decision === 'deny' ? 'rejected' : undefined;
+      const toolCallId = resolved?.toolCallId;
+      if (!decision || !toolCallId) return { ...state, pendingPermissions };
+      if (!state.items.some((item) => item.kind === 'plan_document' && item.toolCallId === toolCallId)) {
+        return { ...state, pendingPermissions };
+      }
+      const items = state.items.map((item): ChatItem =>
+        item.kind === 'plan_document' && item.toolCallId === toolCallId ? { ...item, decision } : item);
+      return { ...state, pendingPermissions, items };
+    }
     case 'question': {
       const q: PendingQuestion = { ...event.data, ts: event.ts };
       if (event.turnId) q.turnId = event.turnId;
       const pendingQuestions = state.pendingQuestions.filter((p) => p.requestId !== q.requestId);
-      return { ...state, pendingQuestions: [...pendingQuestions, q] };
+      const id = `question:${sid}:${event.data.requestId}`;
+      const items = upsertItem<QuestionItem>(
+        state.items,
+        id,
+        () => {
+          const item: QuestionItem = { ...itemBase(event, id), kind: 'question', requestId: event.data.requestId, questions: event.data.questions };
+          if (event.data.toolCallId !== undefined) item.toolCallId = event.data.toolCallId;
+          return item;
+        },
+        (existing) => ({ ...existing, questions: event.data.questions }),
+      );
+      return { ...state, items, pendingQuestions: [...pendingQuestions, q] };
     }
-    case 'question_resolved':
-      return {
-        ...state,
-        pendingQuestions: state.pendingQuestions.filter((p) => p.requestId !== event.data.requestId),
-      };
+    case 'question_resolved': {
+      const id = `question:${sid}:${event.data.requestId}`;
+      const idx = findItemIndex(state.items, id);
+      const pendingQuestions = state.pendingQuestions.filter((p) => p.requestId !== event.data.requestId);
+      if (idx === -1) return { ...state, pendingQuestions };
+      const items = state.items.slice();
+      const answered: QuestionItem = { ...(items[idx] as QuestionItem), answers: event.data.answers };
+      if (event.data.cancelled) answered.cancelled = true;
+      delete answered.expired;
+      items[idx] = answered;
+      return { ...state, items, pendingQuestions };
+    }
 
     case 'plan':
       return { ...state, plan: event.data.entries };
@@ -646,14 +783,15 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       if (d.tokens !== undefined || d.costUsd !== undefined) {
         usage[d.scope] = usageSnapshot(d);
       }
-      if (d.limits) usage.limits = d.limits;
+      // A driver may report one window at a time (Claude's rate_limit_event): replace by window, keep the rest.
+      if (d.limits) usage.limits = mergeLimits(state.usage.limits, d.limits);
       if (d.context) usage.context = d.context;
       return { ...state, usage };
     }
     case 'mode_changed':
       return { ...state, level: event.data.level };
     case 'model_changed':
-      return { ...state, model: event.data.modelId, effort: event.data.effort ?? null, effortIsDefault: event.data.effortIsDefault === true };
+      return { ...state, model: event.data.modelId, effort: event.data.effort ?? null, effortIsDefault: event.data.effortIsDefault === true, effortReported: true };
     case 'commands_available':
       return { ...state, commands: event.data.commands };
 
@@ -661,6 +799,12 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const d = event.data;
       if (d.code === 'untested_cli_version') return { ...state, untestedCliNote: d.message };
       const item: NoticeItem = { ...itemBase(event, `notice:${sid}:${event.seq}`), kind: 'notice', level: d.level, code: d.code, message: d.message };
+      if (d.code === COMPACTION_STARTED) {
+        // One running row per compaction, however often the provider repeats it.
+        if (state.compactionItemId !== null) return state;
+        return { ...state, items: [...state.items, { ...item, running: true }], compactionItemId: item.id };
+      }
+      if (COMPACTION_SETTLED.includes(d.code) && state.compactionItemId !== null) return settleCompaction(state, item);
       return { ...state, items: [...state.items, item] };
     }
     case 'error': {
@@ -668,6 +812,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const item: ErrorItem = { ...itemBase(event, `error:${sid}:${event.seq}`), kind: 'error', code: d.code, message: d.message, fatal: d.fatal };
       if (d.willRetry !== undefined) item.willRetry = d.willRetry;
       if (d.toolCallId !== undefined) item.toolCallId = d.toolCallId;
+      // A fatal error ends whatever was running, compaction included.
+      if (d.fatal) state = settleCompaction(state);
       return { ...state, items: [...state.items, item] };
     }
 
@@ -732,6 +878,16 @@ interface ChatStoreState {
  */
 const pendingLive = new Map<string, ChatEvent[]>();
 
+/** True or false when main says whether a chat runtime runs the agent; undefined when it can't say. */
+async function runtimeIsLive(agentId: string): Promise<boolean | undefined> {
+  try {
+    const info = await window.clubhouse.chat.getAgentRuntime?.(agentId);
+    return typeof info?.chat === 'boolean' ? info.chat : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function answerKey(agentId: string, requestId: string): string {
   return `${agentId}:${requestId}`;
 }
@@ -764,15 +920,21 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     answering: {},
 
     loadTranscript: async (agentId, tail) => {
-      pendingLive.set(agentId, []);
+      if (get().loading[agentId]) return;
+      const pending: ChatEvent[] = [];
+      pendingLive.set(agentId, pending);
       set((s) => ({ loading: { ...s.loading, [agentId]: true } }));
       let events: ChatEvent[] | null = null;
+      // Whether a chat runtime runs this agent now; asked alongside the read.
+      const live = runtimeIsLive(agentId);
       try {
         events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
       } catch {
         // Unreadable right now: handled below by keeping what this window has.
       }
-      const buffered = pendingLive.get(agentId) ?? [];
+      const runtimeLive = await live;
+      if (pendingLive.get(agentId) !== pending) return; // Reset/replaced while the read was in flight.
+      const buffered = pending;
       pendingLive.delete(agentId);
       if (events === null) {
         // Keep the state this window already had, with the live events that
@@ -790,10 +952,17 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       // came from events main had already written to the transcript (it
       // appends before it broadcasts), so nothing seen live is lost, and seq
       // dedupe drops the buffered events the transcript already holds.
-      const fromTranscript = foldChatEvents(undefined, agentId, events);
-      const next = foldChatEvents(fromTranscript, agentId, buffered);
+      let fromTranscript = foldChatEvents(undefined, agentId, events);
+      // Nothing runs the transcript's session any more (the app quit or
+      // crashed mid-turn): what it was waiting on can't be answered.
+      if (runtimeLive === false) fromTranscript = settleDeadSession(fromTranscript);
       // A tail that came back full may have cut earlier events off.
-      const cut = tail !== undefined && events.length >= tail;
+      const transcriptCut = tail !== undefined && events.length >= tail;
+      // ...including the model_changed that reported the effort: show what's known.
+      if (transcriptCut) fromTranscript = { ...fromTranscript, effortReported: true };
+      const next = foldChatEvents(fromTranscript, agentId, buffered);
+      const changedSession = next.sessionId !== fromTranscript.sessionId;
+      const cut = !changedSession && transcriptCut;
       set((s) => {
         const loading = { ...s.loading };
         delete loading[agentId];
@@ -804,6 +973,11 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           loaded: { ...s.loaded, [agentId]: true },
         };
       });
+      // A resume that arrived during the read needs that session's earlier
+      // events too, not just the live session_started buffered above.
+      if (changedSession && buffered.some((e) => e.sessionId === next.sessionId && e.type === 'session_started' && e.data.resumed)) {
+        await get().loadTranscript(agentId, tail);
+      }
     },
 
     applyEvent: (event) => {
@@ -815,7 +989,15 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       const prev = get().agents[event.agentId];
       const next = reduceChatEvent(prev, event);
       if (next === prev) return;
-      set((s) => ({ agents: { ...s.agents, [event.agentId]: next } }));
+      const changedSession = prev?.sessionId !== next.sessionId;
+      set((s) => ({
+        agents: { ...s.agents, [event.agentId]: next },
+        ...(changedSession && prev ? {
+          partial: { ...s.partial, [event.agentId]: false },
+          loaded: { ...s.loaded, [event.agentId]: event.seq === 1 },
+        } : {}),
+      }));
+      if (changedSession && event.type === 'session_started' && event.data.resumed) void get().loadTranscript(event.agentId);
     },
 
     reset: (agentId) => {

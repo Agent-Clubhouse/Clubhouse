@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChatEvent, ChatEventDataMap, ChatEventType } from '../../shared/chat';
-import { MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
+import { COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
 import {
   createChatViewState,
   foldChatEvents,
   initChatEventListener,
   reduceChatEvent,
+  settleDeadSession,
+  totalOf,
   useChatStore,
   type AgentMessageItem,
   type ChatViewState,
+  type QuestionItem,
   type ThoughtItem,
   type ToolCallItem,
   type UserMessageItem,
@@ -260,6 +263,107 @@ describe('reduceChatEvent', () => {
     expect(s.pendingQuestions).toEqual([]);
   });
 
+  describe('questions nobody can answer any more (#2183 review)', () => {
+    const asked = (requestId: string, turnId: string, sessionId = 's1') => ev('question', {
+      requestId,
+      toolCallId: `tc-${requestId}`,
+      questions: [{ id: 'db', prompt: 'Which DB?', allowFreeText: true }],
+    }, { turnId, sessionId });
+    const questionItem = (s: ChatViewState, requestId: string) =>
+      s.items.find((i): i is QuestionItem => i.kind === 'question' && i.requestId === requestId);
+
+    it('expire when their turn ends unanswered', () => {
+      const s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        asked('q1', 't1'),
+        ev('turn_ended', { stopReason: 'cancelled' }, { turnId: 't1' }),
+      ]);
+      expect(questionItem(s, 'q1')?.expired).toBe(true);
+      expect(s.pendingQuestions).toEqual([]);
+    });
+
+    it('stay answered, and an answer arriving late still lands', () => {
+      let s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        asked('q1', 't1'),
+        ev('question_resolved', { requestId: 'q1', answers: { db: 'pg' } }, { turnId: 't1' }),
+        ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't1' }),
+      ]);
+      expect(questionItem(s, 'q1')?.expired).toBeUndefined();
+      s = fold([sessionStarted(ev), ev('turn_started', { trigger: 'prompt' }, { turnId: 't2' }), asked('q2', 't2'), ev('session_ended', { reason: 'stopped' })], createChatViewState(AGENT));
+      expect(questionItem(s, 'q2')?.expired).toBe(true);
+      s = fold([ev('question_resolved', { requestId: 'q2', answers: { db: 'pg' } })], s);
+      expect(questionItem(s, 'q2')).toMatchObject({ answers: { db: 'pg' } });
+      expect(questionItem(s, 'q2')?.expired).toBeUndefined();
+    });
+
+    it.each(['s1', 's2'])('settles a new run of %s after the app quit mid-turn (no session_ended)', (sessionId) => {
+      const s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        asked('q1', 't1'),
+        sessionStarted(ev, sessionId),
+      ]);
+      if (sessionId === 's1') expect(questionItem(s, 'q1')?.expired).toBe(true);
+      else expect(questionItem(s, 'q1')).toBeUndefined();
+      expect(s.pendingQuestions).toEqual([]);
+    });
+
+    it('settleDeadSession expires what a dead session left open', () => {
+      const s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        asked('q1', 't1'),
+        ev('permission_request', { requestId: 'p1', title: 'Run ls', options: [] }, { turnId: 't1' }),
+      ]);
+      expect(questionItem(s, 'q1')?.expired).toBeUndefined();
+      const settled = settleDeadSession(s);
+      expect(questionItem(settled, 'q1')?.expired).toBe(true);
+      expect(settled.pendingQuestions).toEqual([]);
+      expect(settled.pendingPermissions).toEqual([]);
+      expect(settleDeadSession(settled)).toBe(settled);
+    });
+  });
+
+  describe('a new run after the app quit mid-turn (#2183)', () => {
+    it('closes the dead turn: nothing streams, no turn runs', () => {
+      const s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        ev('agent_thought_chunk', { messageId: 'th1', text: 'Thinking' }, { turnId: 't1' }),
+        ev('agent_message_chunk', { messageId: 'm1', text: 'Hal' }, { turnId: 't1' }),
+        sessionStarted(ev, 's2'),
+      ]);
+      expect(s.turnId).toBeNull();
+      expect(s.turnStartedAt).toBeNull();
+      expect(s.state).toBe('idle');
+      expect(s.items.filter((i) => (i.kind === 'thought' || i.kind === 'agent_message') && i.streaming)).toEqual([]);
+    });
+
+    it('counts unrecognized messages per run, not over the whole history', () => {
+      let s = fold([
+        sessionStarted(ev),
+        ev('protocol_unknown', { driver: 'claude_agent_sdk', kind: 'message', name: 'system/thinking_tokens' }),
+      ]);
+      expect(s.protocolUnknown).toEqual({ 'message:system/thinking_tokens': 1 });
+      s = fold([sessionStarted(ev, 's2')], s);
+      expect(s.protocolUnknown).toEqual({});
+      s = fold([ev('protocol_unknown', { driver: 'claude_agent_sdk', kind: 'field', name: 'x' }, { sessionId: 's2' })], s);
+      expect(s.protocolUnknown).toEqual({ 'field:x': 1 });
+    });
+
+    it('waits for model_changed before treating the effort as known', () => {
+      let s = fold([sessionStarted(ev), ev('session_info', { efforts: ['low', 'high'] })]);
+      expect(s.effortReported).toBe(false);
+      s = fold([ev('model_changed', { modelId: 'opus', effort: 'high', effortIsDefault: true })], s);
+      expect(s.effortReported).toBe(true);
+      s = fold([sessionStarted(ev, 's2')], s);
+      expect(s.effortReported).toBe(false);
+    });
+  });
+
   it('ignores events with seq at or below the last seen seq for that session', () => {
     const e1 = sessionStarted(ev);
     const e2 = ev('agent_message_chunk', { messageId: 'm1', text: 'a' });
@@ -271,7 +375,7 @@ describe('reduceChatEvent', () => {
     expect((s1.items[0] as AgentMessageItem).text).toBe('a');
   });
 
-  it('appends a session divider on a new session id without wiping history', () => {
+  it('starts an empty conversation on a new session id', () => {
     let s = fold([
       sessionStarted(ev, 's1'),
       ev('user_message', { messageId: 'u1', content: text('hi'), source: 'user', delivery: 'prompt' }, { sessionId: 's1' }),
@@ -283,15 +387,32 @@ describe('reduceChatEvent', () => {
       sessionStarted(ev, 's2'),
     ], s);
     expect(s.sessionId).toBe('s2');
-    expect(s.items.map((i) => i.kind)).toEqual(['user_message', 'session_divider', 'notice']);
-    const divider = s.items[1];
-    expect(divider.kind === 'session_divider' && divider.previousSessionId).toBe('s1');
+    expect(s.items.map((i) => i.kind)).toEqual(['notice']);
     // Session-scoped state is reset for the new conversation.
     expect(s.plan).toEqual([]);
     expect(s.pendingPermissions).toEqual([]);
     expect(s.lastSeq).toEqual({ s1: 4, s2: 2 });
-    // Only one divider even though two s2 events arrived.
-    expect(s.items.filter((i) => i.kind === 'session_divider')).toHaveLength(1);
+    // Old messages stay in their own session transcript.
+    expect(s.items.filter((i) => i.kind === 'session_divider')).toHaveLength(0);
+  });
+
+  it('ignores late events from an older session but allows a later explicit resume', () => {
+    const oldStart = { ...sessionStarted(ev, 'old'), ts: 100 };
+    const newStart = { ...sessionStarted(ev, 'new'), ts: 200 };
+    const reply = { ...ev('agent_message', { messageId: 'new-reply', text: 'Live conversation' }, { sessionId: 'new' }), ts: 210 };
+    const state = fold([oldStart, newStart, reply]);
+    const lateEnd = { ...ev('session_ended', { reason: 'stopped' }, { sessionId: 'old' }), ts: 300 };
+    const lateReply = { ...ev('agent_message', { messageId: 'late', text: 'Obsolete reply' }, { sessionId: 'old' }), ts: 310 };
+    expect(fold([lateEnd, lateReply], state)).toBe(state);
+    expect(fold([{ ...sessionStarted(ev, 'unseen-old'), ts: 50 }], state)).toBe(state);
+    const resumed = fold([{ ...sessionStarted(ev, 'old', { resumed: true }), ts: 400 }], state);
+    expect(resumed.sessionId).toBe('old');
+    expect(resumed.items).toEqual([]);
+  });
+
+  it('ignores an unknown old session ending after a current-only transcript load', () => {
+    const state = fold([{ ...sessionStarted(ev, 'current'), ts: 200 }]);
+    expect(fold([{ ...ev('session_ended', { reason: 'stopped' }, { sessionId: 'old' }), ts: 300 }], state)).toBe(state);
   });
 
   it('does not add a divider when session_started repeats the same session id (resume)', () => {
@@ -362,6 +483,9 @@ describe('reduceChatEvent', () => {
     expect(s.usage.session).toEqual({ tokens: { total: 100 }, costUsd: 0.5 });
     expect(s.usage.context).toEqual({ used: 2000, size: 200000 });
     expect(s.usage.limits).toEqual([{ window: '5h', utilization: 0.4 }, { window: 'week', status: 'warning' }]);
+    // A status-only update for a window keeps the utilization it already had.
+    s = fold([ev('usage', { scope: 'session', limits: [{ window: '5h', status: 'ok' }] })], s);
+    expect(s.usage.limits).toEqual([{ window: '5h', utilization: 0.4, status: 'ok' }, { window: 'week', status: 'warning' }]);
 
     s = fold([ev('turn_ended', { stopReason: 'end_turn', usage: { output: 42 }, costUsd: 0.02 })], s);
     expect(s.usage.turn).toEqual({ tokens: { output: 42 }, costUsd: 0.02 });
@@ -371,6 +495,50 @@ describe('reduceChatEvent', () => {
     expect(s.usage.limits).toHaveLength(2);
     expect(s.usage.context).toBeNull();
     expect(s.usage.session).toBeNull();
+  });
+
+  it('merges limits by window, so a one-window update keeps the others', () => {
+    const s = fold([
+      sessionStarted(ev),
+      ev('usage', { scope: 'session', limits: [{ window: '5h', utilization: 0.4 }, { window: 'week', utilization: 0.6 }] }),
+      ev('usage', { scope: 'session', limits: [{ window: 'week', utilization: 0.71, status: 'warning' }] }),
+      ev('usage', { scope: 'session', limits: [{ window: 'overage', status: 'ok' }] }),
+    ]);
+    expect(s.usage.limits).toEqual([
+      { window: '5h', utilization: 0.4 },
+      { window: 'week', utilization: 0.71, status: 'warning' },
+      { window: 'overage', status: 'ok' },
+    ]);
+  });
+
+  it('sums each turn\'s tokens once, for drivers without a session total, and resets per session', () => {
+    let s = fold([
+      sessionStarted(ev),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+      ev('usage', { scope: 'turn', tokens: { input: 100, output: 20 } }, { turnId: 't1' }),
+      ev('turn_ended', { stopReason: 'end_turn', usage: { input: 100, output: 20 } }, { turnId: 't1' }),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't2' }),
+      ev('usage', { scope: 'turn', tokens: { input: 50, output: 5, total: 60 } }, { turnId: 't2' }),
+      ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't2' }),
+      // ACP's usage_update carries context only: no session tokens.
+      ev('usage', { scope: 'session', context: { used: 1000, size: 128000 } }),
+    ]);
+    expect(s.usage.session).toBeNull();
+    expect(s.usage.turnTotal).toEqual({ input: 150, output: 25, total: 180 });
+    s = fold([sessionStarted(ev, 's2')], s);
+    expect(s.usage.turnTotal).toBeNull();
+  });
+
+  it('totals a usage without a total as input + output: cache is already part of input (#2170)', () => {
+    expect(totalOf({ input: 110, cachedInput: 100, cacheWrite: 5, output: 5 })).toBe(115);
+    expect(totalOf({ input: 10, output: 5, total: 99 })).toBe(99);
+    expect(totalOf({})).toBe(0);
+    const s = fold([
+      sessionStarted(ev),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+      ev('turn_ended', { stopReason: 'end_turn', usage: { input: 110, cachedInput: 100, cacheWrite: 5, output: 5 } }, { turnId: 't1' }),
+    ]);
+    expect(s.usage.turnTotal).toEqual({ input: 110, cachedInput: 100, cacheWrite: 5, output: 5, total: 115 });
   });
 
   it('tracks plan, plan documents, subagents, commands, level and model', () => {
@@ -458,6 +626,25 @@ describe('useChatStore', () => {
     expect(agents['agent-2'].items).toHaveLength(0);
   });
 
+  it.each([[false, true], [true, undefined]] as const)('loadTranscript settles a transcript nobody runs any more (runtime live: %s)', async (live, expired) => {
+    const getAgentRuntime = window.clubhouse.chat.getAgentRuntime;
+    window.clubhouse.chat.getAgentRuntime = vi.fn(async () => ({ chat: live, chatAvailable: true }));
+    try {
+      window.clubhouse.chat.readTranscript = vi.fn().mockResolvedValue([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        ev('question', { requestId: 'q1', questions: [{ id: 'a', prompt: 'A?', allowFreeText: true }] }, { turnId: 't1' }),
+      ]);
+      await useChatStore.getState().loadTranscript(AGENT);
+      const s = useChatStore.getState().agents[AGENT];
+      const q = s.items.find((i): i is QuestionItem => i.kind === 'question');
+      expect(q?.expired).toBe(expired);
+      expect(s.pendingQuestions).toHaveLength(live ? 1 : 0);
+    } finally {
+      window.clubhouse.chat.getAgentRuntime = getAgentRuntime;
+    }
+  });
+
   it('loadTranscript folds the transcript and merges live events that arrive mid-load', async () => {
     const e1 = sessionStarted(ev);
     const e2 = ev('agent_message_chunk', { messageId: 'm1', text: 'Hel' });
@@ -517,6 +704,51 @@ describe('useChatStore', () => {
     expect(state.items.map((i) => i.seq)).toEqual([2, 3, 4, 5]);
     expect(state.items.map((i) => i.kind)).toEqual(['user_message', 'agent_message', 'agent_message', 'agent_message']);
     expect(state.items.slice(1).map((i) => (i as AgentMessageItem).text)).toEqual(['On it.', 'Done.', 'Anything else?']);
+  });
+
+  it('clears the live view and its Show earlier flag when a new session starts', async () => {
+    const old = [sessionStarted(ev), ev('agent_message', { messageId: 'm1', text: 'Old context' })];
+    window.clubhouse.chat.readTranscript = vi.fn().mockResolvedValue(old);
+    await useChatStore.getState().loadTranscript(AGENT, 2);
+    expect(useChatStore.getState().partial[AGENT]).toBe(true);
+    useChatStore.getState().applyEvent(sessionStarted(ev, 'fresh'));
+    expect(useChatStore.getState().agents[AGENT].items).toEqual([]);
+    expect(useChatStore.getState().partial[AGENT]).toBe(false);
+  });
+
+  it('loads the matching history when resuming a different session', async () => {
+    const older = [sessionStarted(ev), ev('agent_message', { messageId: 'm1', text: 'Remembered task' })];
+    useChatStore.getState().applyEvent(sessionStarted(ev, 'fresh'));
+    const resumed = sessionStarted(ev, 's1', { resumed: true });
+    window.clubhouse.chat.readTranscript = vi.fn().mockResolvedValue([...older, resumed]);
+    useChatStore.getState().applyEvent(resumed);
+    await vi.waitFor(() => expect(useChatStore.getState().loading[AGENT]).toBeUndefined());
+    expect(useChatStore.getState().agents[AGENT].sessionId).toBe('s1');
+    expect(useChatStore.getState().agents[AGENT].items.map((i) => i.kind)).toEqual(['agent_message']);
+    expect((useChatStore.getState().agents[AGENT].items[0] as AgentMessageItem).text).toBe('Remembered task');
+  });
+
+  it('does not restore old messages when a clear arrives during Show earlier', async () => {
+    const old = [sessionStarted(ev), ev('agent_message', { messageId: 'm1', text: 'Old context' })];
+    let resolve!: (events: ChatEvent[]) => void;
+    window.clubhouse.chat.readTranscript = vi.fn(() => new Promise<ChatEvent[]>((r) => { resolve = r; }));
+    const loading = useChatStore.getState().loadTranscript(AGENT, 2);
+    useChatStore.getState().applyEvent(sessionStarted(ev, 'fresh'));
+    resolve(old);
+    await loading;
+    expect(useChatStore.getState().agents[AGENT].sessionId).toBe('fresh');
+    expect(useChatStore.getState().agents[AGENT].items).toEqual([]);
+    expect(useChatStore.getState().partial[AGENT]).toBe(false);
+  });
+
+  it('ignores a read completing after the agent store was reset', async () => {
+    let resolve!: (events: ChatEvent[]) => void;
+    window.clubhouse.chat.readTranscript = vi.fn(() => new Promise<ChatEvent[]>((r) => { resolve = r; }));
+    const loading = useChatStore.getState().loadTranscript(AGENT);
+    useChatStore.getState().reset(AGENT);
+    resolve([sessionStarted(ev)]);
+    await loading;
+    expect(useChatStore.getState().agents[AGENT]).toBeUndefined();
   });
 
   it('reset forgets that history was loaded', async () => {
@@ -706,5 +938,81 @@ describe('MCP servers on session_info', () => {
     expect(state.mcpServers).toEqual([{ name: 'clubhouse', status: 'connected' }]);
     state = fold([sessionStarted(ev)], state);
     expect(state.mcpServers).toBeNull();
+  });
+});
+
+describe('reduceChatEvent: context compaction', () => {
+  let ev: ReturnType<typeof makeEmitter>;
+  beforeEach(() => { ev = makeEmitter(); });
+  const started = () => ev('notice', { level: 'info', code: COMPACTION_STARTED, message: 'Compacting context…' }, { turnId: 't1' });
+  const notices = (s: ChatViewState) => s.items.flatMap((i) => (i.kind === 'notice' ? [[i.code, i.message, i.running ?? false]] : []));
+
+  it('shows one running row while compaction runs, then settles it in place', () => {
+    const running = fold([
+      sessionStarted(ev),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+      started(),
+      // Providers can repeat the start (ACP compaction_update, a repeated status frame).
+      started(),
+    ]);
+    expect(notices(running)).toEqual([[COMPACTION_STARTED, 'Compacting context…', true]]);
+    expect(running.compactionItemId).toBe(running.items[0].id);
+
+    const done = fold([
+      ev('agent_message', { messageId: 'm1', text: 'later' }, { turnId: 't1' }),
+      // Codex sends its completed notice without a turn id.
+      ev('notice', { level: 'info', code: 'context_compacted', message: 'Context compacted' }),
+    ], running);
+    expect(notices(done)).toEqual([['context_compacted', 'Context compacted', false]]);
+    // Same row, same place: before the message that came while it ran.
+    expect(done.items.map((i) => i.kind)).toEqual(['notice', 'agent_message']);
+    expect(done.items[0].id).toBe(running.items[0].id);
+    expect(done.compactionItemId).toBeNull();
+  });
+
+  it('settles into whichever code finished it (Claude, ACP, failures)', () => {
+    for (const code of ['compacted', 'compaction_completed', 'compaction_failed', 'compaction_cancelled']) {
+      ev = makeEmitter();
+      const s = fold([sessionStarted(ev), started(), ev('notice', { level: 'warn', code, message: code })]);
+      expect(notices(s)).toEqual([[code, code, false]]);
+    }
+  });
+
+  it('appends a completed notice as before when no start was seen', () => {
+    const s = fold([sessionStarted(ev), ev('notice', { level: 'info', code: 'context_compacted', message: 'Context compacted' })]);
+    expect(notices(s)).toEqual([['context_compacted', 'Context compacted', false]]);
+  });
+
+  it('drops the running row when the turn ends, is cancelled or the session ends without a result', () => {
+    const turnEnd = fold([
+      sessionStarted(ev),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+      started(),
+      ev('turn_ended', { stopReason: 'cancelled' }, { turnId: 't1' }),
+    ]);
+    expect(notices(turnEnd)).toEqual([]);
+    expect(turnEnd.compactionItemId).toBeNull();
+    // A later completed notice is an ordinary row again.
+    const after = fold([ev('notice', { level: 'info', code: 'compacted', message: 'Context compacted' })], turnEnd);
+    expect(notices(after)).toEqual([['compacted', 'Context compacted', false]]);
+
+    ev = makeEmitter();
+    const ended = fold([sessionStarted(ev), started(), ev('session_ended', { reason: 'process_exit' })]);
+    expect(notices(ended)).toEqual([]);
+
+    ev = makeEmitter();
+    const failed = fold([sessionStarted(ev), started(), ev('error', { code: 'process_exited', message: 'gone', fatal: true })]);
+    expect(notices(failed)).toEqual([]);
+    expect(failed.compactionItemId).toBeNull();
+
+    ev = makeEmitter();
+    const retrying = fold([sessionStarted(ev), started(), ev('error', { code: 'rate_limited', message: 'slow down', fatal: false, willRetry: true })]);
+    expect(notices(retrying)).toEqual([[COMPACTION_STARTED, 'Compacting context…', true]]);
+  });
+
+  it('drops a running row when a new session starts', () => {
+    const s = fold([sessionStarted(ev, 's1'), started(), sessionStarted(ev, 's2')]);
+    expect(notices(s)).toEqual([]);
+    expect(s.compactionItemId).toBeNull();
   });
 });

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -10,9 +12,9 @@ vi.mock('child_process', () => ({
 import { spawn } from 'child_process';
 import { createCopilotAcpChatDriver, createGenericAcpChatDriver } from './acp-chat-driver';
 import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
-import { copilotAcpCapabilities, COPILOT_PERMISSION_LEVELS } from './copilot-acp';
-import { AcpFixtureReplayer, loadAcpFixture, withoutRequest, type AcpFixtureRecord } from './__fixtures__/acp/acp-replay';
-import { CHAT_EVENT_TYPES, type ChatEventDraft } from '../../../shared/chat/events';
+import { copilotAcpCapabilities, COPILOT_ACP_PROFILE, COPILOT_PERMISSION_LEVELS } from './copilot-acp';
+import { AcpFixtureReplayer, loadAcpFixture, promptAnsweredEarly, withoutRequest, type AcpFixtureRecord } from './__fixtures__/acp/acp-replay';
+import { CHAT_EVENT_TYPES, COMPACTION_SETTLED, COMPACTION_STARTED, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import type { InitializeResponse } from './acp-schema';
 import type { AcpSessionState } from './acp-session';
@@ -40,6 +42,25 @@ function createMockProcess() {
 
 function startOpts(extra: Partial<ChatDriverStartOptions> = {}): ChatDriverStartOptions {
   return { agentId: 'agent-1', provider: 'copilot-cli', cwd: CWD, binaryPath: 'copilot', level: 'ask', ...extra };
+}
+
+/** A COPILOT_HOME whose session-state holds the given session ids (#2155: resume checks the disk first). */
+function copilotHomeWith(...sessionIds: string[]): Record<string, string> {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
+  for (const id of sessionIds) fs.mkdirSync(path.join(home, 'session-state', id), { recursive: true });
+  return { COPILOT_HOME: home };
+}
+
+/** The level re-send a resumed Copilot session gets (allow_all, then mode), answered as recorded. */
+function levelResend(records: AcpFixtureRecord[], firstId: number, mode = 'agent'): AcpFixtureRecord[] {
+  const loadResult = records.find((r) => r.dir === 'in' && (r.msg.result as { configOptions?: unknown } | undefined)?.configOptions);
+  const configOptions = (loadResult?.msg.result as { configOptions: unknown }).configOptions;
+  return [
+    { dir: 'out', msg: { jsonrpc: '2.0', id: firstId, method: 'session/set_config_option' } },
+    { dir: 'in', msg: { jsonrpc: '2.0', id: firstId, result: { configOptions } } },
+    { dir: 'out', msg: { jsonrpc: '2.0', id: firstId + 1, method: 'session/set_mode', params: { modeId: `https://agentclientprotocol.com/protocol/session-modes#${mode}` } } },
+    { dir: 'in', msg: { jsonrpc: '2.0', id: firstId + 1, result: {} } },
+  ];
 }
 
 function setup(records: AcpFixtureRecord[]) {
@@ -71,7 +92,7 @@ describe('Copilot ACP chat driver', () => {
     const { driver, replayer } = setup(loadAcpFixture(COPILOT, 'one-prompt.jsonl'));
     const session = await driver.start(startOpts({ model: 'gpt-5-mini' }));
 
-    expect(mockSpawn.mock.calls[0][1]).toEqual(['--acp', '--stdio', '--no-auto-update']);
+    expect(mockSpawn.mock.calls[0][1]).toEqual(['--acp', '--stdio']);
     expect(session.nativeSessionId).toBe('5af70548-c3ac-4e25-b105-bec13faa1f20');
     expect(session.capabilities).toMatchObject({
       steer: false, queue: 'client', interrupt: true, resume: 'replay', usage: 'tokens',
@@ -147,8 +168,12 @@ describe('Copilot ACP chat driver', () => {
   });
 
   it('drops replayed history when resuming through session/load', async () => {
-    const { driver, replayer, proc } = setup(loadAcpFixture(COPILOT, 'load-replay.jsonl'));
-    const session = await driver.start(startOpts({ resumeNativeSessionId: '5af70548-c3ac-4e25-b105-bec13faa1f20' }));
+    const load = loadAcpFixture(COPILOT, 'load-replay.jsonl');
+    const { driver, replayer, proc } = setup([...load, ...levelResend(load, 3)]);
+    const session = await driver.start(startOpts({
+      resumeNativeSessionId: '5af70548-c3ac-4e25-b105-bec13faa1f20',
+      env: copilotHomeWith('5af70548-c3ac-4e25-b105-bec13faa1f20'),
+    }));
     proc.emit('exit', 0, null);
     const drafts: ChatEventDraft[] = [];
     for await (const d of session.events) drafts.push(d);
@@ -289,11 +314,76 @@ describe('ACP → chat contract mapping', () => {
     expect(mapper.map(update, after)).toEqual([]);
   });
 
+  it('drops a turn usage that repeats the previous turn exactly, as Copilot sends for /context (#2180)', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp', { now: () => 0 });
+    const usage = { inputTokens: 15750, outputTokens: 5, totalTokens: 15755, cachedReadTokens: 7680, cachedWriteTokens: 0 };
+    const turn = (u?: typeof usage) => {
+      mapper.map({ type: 'turn_started', sessionId: 's1' }, state());
+      return mapper.map({ type: 'turn_ended', sessionId: 's1', stopReason: 'end_turn', ...(u && { usage: u }) }, state());
+    };
+    const first = turn(usage);
+    expect(first.map((d) => d.type)).toEqual(['usage', 'turn_ended']);
+    expect(first[1]).toMatchObject({ data: { usage: { input: 15750, output: 5 } } });
+    const repeat = turn({ ...usage });
+    expect(repeat.map((d) => d.type)).toEqual(['turn_ended']);
+    expect(repeat[0].type === 'turn_ended' && repeat[0].data.usage).toBeFalsy();
+    // A turn with new usage reports it again.
+    expect(turn({ ...usage, inputTokens: 16000, totalTokens: 16005 })[1]).toMatchObject({ data: { usage: { input: 16000 } } });
+  });
+
+  it('reports the starting effort as the default until one is chosen (#2181)', () => {
+    const select = (current: string) => ({ type: 'select' as const, id: 'reasoning_effort', name: 'Effort', category: 'thought_level', currentValue: current, options: ['low', 'medium', 'high'].map((v) => ({ value: v, name: v })) });
+    const model = { type: 'select' as const, id: 'model', name: 'Model', category: 'model', currentValue: 'gpt', options: [{ value: 'gpt', name: 'GPT' }] };
+    const at = (effort: string) => state({ configOptions: [model, select(effort)] });
+    const update = (s: AcpSessionState) => ({ type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'config_option_update' as const, configOptions: s.configOptions } });
+
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    mapper.prime(state({ configOptions: [model] }));
+    expect(mapper.map(update(at('medium')), at('medium'))[0])
+      .toEqual({ type: 'model_changed', data: { modelId: 'gpt', effort: 'medium', effortIsDefault: true } });
+    // Choosing the level it's already on pins it, so the default mark goes.
+    expect(mapper.pinEffort(at('medium'))).toEqual([{ type: 'model_changed', data: { modelId: 'gpt', effort: 'medium' } }]);
+    expect(mapper.map(update(at('high')), at('high'))[0]).toEqual({ type: 'model_changed', data: { modelId: 'gpt', effort: 'high' } });
+
+    // An effort requested at start isn't the default either.
+    const pinned = new AcpChatEventMapper('copilot_acp', { effortPinned: true });
+    pinned.prime(state({ configOptions: [model] }));
+    expect(pinned.map(update(at('low')), at('low'))[0]).toEqual({ type: 'model_changed', data: { modelId: 'gpt', effort: 'low' } });
+  });
+
   it('reports an unchanged command list only once', () => {
     const mapper = new AcpChatEventMapper('copilot_acp');
     const cmds = { type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'available_commands_update' as const, availableCommands: [{ name: 'compact', description: 'Compact' }] } };
     expect(mapper.map(cmds, state())).toHaveLength(1);
     expect(mapper.map(cmds, state())).toEqual([]);
+  });
+
+  it('maps compaction updates onto the shared compaction notice codes', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    const compaction = (status: string, error?: string) => mapper.map(
+      { type: 'update', sessionId: 's1', replay: false, update: { sessionUpdate: 'compaction_update', compactionId: 'c1', status, ...(error && { error }) } },
+      state(),
+    ).map((d) => d.type === 'notice' && [d.data.level, d.data.code, d.data.message]);
+    expect(compaction('in_progress')).toEqual([['info', COMPACTION_STARTED, 'Compacting context…']]);
+    expect(compaction('completed')).toEqual([['info', 'compaction_completed', 'Context compacted']]);
+    expect(compaction('failed', 'no room')).toEqual([['warn', 'compaction_failed', 'no room']]);
+    expect(COMPACTION_SETTLED).toEqual(expect.arrayContaining(['compaction_completed', 'compaction_failed', 'compaction_cancelled']));
+  });
+
+  it('maps a compaction in an agent-initiated turn between that turn\'s start and end', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    const compaction = (status: string) => ({ type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'compaction_update' as const, compactionId: 'c1', status } });
+    const drafts = [
+      ...mapper.map({ type: 'turn_started', sessionId: 's1', trigger: 'agent' }, state()),
+      ...mapper.map(compaction('in_progress'), state()),
+      ...mapper.map(compaction('completed'), state()),
+      ...mapper.map({ type: 'turn_ended', sessionId: 's1', stopReason: 'end_turn' }, state()),
+    ];
+    expect(drafts.map((d) => (d.type === 'notice' ? d.data.code : d.type === 'turn_started' ? `turn_started:${d.data.trigger}` : d.type)))
+      .toEqual(['turn_started:system', COMPACTION_STARTED, 'compaction_completed', 'turn_ended']);
+    // Notices are session-scoped (as for Codex); the chat shows the row between the turn's bounds.
+    expect(drafts[0].turnId).toBeDefined();
+    expect(drafts[3].turnId).toBe(drafts[0].turnId);
   });
 
   it('gives each driver session its own turn and message ids', () => {
@@ -457,7 +547,7 @@ describe('ACP chat driver resume stalls and cancellation (#2087)', () => {
     mockSpawn.mockReturnValueOnce(procs[0] as unknown as ReturnType<typeof spawn>).mockReturnValueOnce(procs[1] as unknown as ReturnType<typeof spawn>);
     const replayers = [new AcpFixtureReplayer(procs[0], first), new AcpFixtureReplayer(procs[1], second)];
     const driver = createCopilotAcpChatDriver();
-    driver.sessionOverrides = { resumeStallTimeoutMs: 40 };
+    driver.sessionOverrides = { resumeFirstReplyTimeoutMs: 40, resumeStallTimeoutMs: 40 };
     return { procs, replayers, driver };
   }
 
@@ -486,7 +576,7 @@ describe('ACP chat driver resume stalls and cancellation (#2087)', () => {
     mockSpawn.mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
     const replayer = new AcpFixtureReplayer(proc, loadOnly);
     const driver = createCopilotAcpChatDriver();
-    driver.sessionOverrides = { resumeStallTimeoutMs: 200 };
+    driver.sessionOverrides = { resumeFirstReplyTimeoutMs: 200, resumeStallTimeoutMs: 200 };
     const started = driver.start(startOpts({ resumeNativeSessionId: 'long' }));
 
     const say = (msg: Record<string, unknown>) => proc.stdout.emit('data', JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
@@ -523,5 +613,286 @@ describe('ACP chat driver resume stalls and cancellation (#2087)', () => {
     controller.abort();
     await expect(createCopilotAcpChatDriver().start(startOpts({ signal: controller.signal }))).rejects.toThrow(/cancelled/);
     expect(mockSpawn).not.toHaveBeenCalled();
+  });
+});
+
+describe('Copilot resume and level after a respawn (#2155)', () => {
+  const copilotInit = loadAcpFixture(COPILOT, 'handshake-list-close.jsonl').slice(0, 2);
+
+  it.each([
+    ['a session that is not on disk', 'a27ef93a-0000-4000-8000-000000000000'],
+    ['an id that is not a plain token', '../../etc'],
+  ])('skips session/load for %s and starts fresh at once', async (_label, id) => {
+    const { driver, replayer } = setup([
+      ...copilotInit,
+      { dir: 'out', msg: { jsonrpc: '2.0', id: 2, method: 'session/new' } },
+      { dir: 'in', msg: { jsonrpc: '2.0', id: 2, result: { sessionId: 's-new' } } },
+    ]);
+    const startedAt = Date.now();
+    const session = await driver.start(startOpts({ resumeNativeSessionId: id, env: copilotHomeWith() }));
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(session.nativeSessionId).toBe('s-new');
+    expect(replayer.written.some((m) => m.method === 'session/load')).toBe(false);
+    const notice = (await session.events[Symbol.asyncIterator]().next()).value;
+    expect(notice).toMatchObject({ type: 'notice', data: { code: 'resume_unavailable', message: expect.stringContaining('previous session was not found') } });
+    expect(replayer.errors).toEqual([]);
+  });
+
+  it('re-sends Full access (allow_all on) after resuming, even though the session reports it', async () => {
+    const load = loadAcpFixture(COPILOT, 'load-replay.jsonl');
+    // Make the loaded session report allow_all "on", as one created in the terminal at Full access would.
+    const reportsOn = load.map((r) => {
+      const result = r.msg.result as { configOptions?: Array<{ id: string; currentValue: string }> } | undefined;
+      if (r.dir !== 'in' || !result?.configOptions) return r;
+      return { ...r, msg: { ...r.msg, result: { ...result, configOptions: result.configOptions.map((o) => (o.id === 'allow_all' ? { ...o, currentValue: 'on' } : o)) } } };
+    });
+    const { driver, replayer } = setup([...reportsOn, ...levelResend(reportsOn, 3)]);
+    await driver.start(startOpts({
+      level: 'full_access',
+      resumeNativeSessionId: '5af70548-c3ac-4e25-b105-bec13faa1f20',
+      env: copilotHomeWith('5af70548-c3ac-4e25-b105-bec13faa1f20'),
+    }));
+    expect(replayer.written.find((m) => m.method === 'session/set_config_option')).toMatchObject({ params: { configId: 'allow_all', value: 'on' } });
+    expect(replayer.errors).toEqual([]);
+  });
+});
+
+describe('ACP permission card content (#2159)', () => {
+  const state = (): AcpSessionState => ({
+    sessionId: 's1', modes: null, configOptions: [], legacyModels: null, availableCommands: [], title: null, context: null, turnInFlight: false,
+  });
+  const options = [{ optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' as const }];
+
+  it("takes the path and diff from the tool call when Copilot's request has neither", () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    mapper.map({ type: 'update', sessionId: 's1', replay: false, update: {
+      sessionUpdate: 'tool_call', toolCallId: 'call_1', title: 'Creating hello.txt', kind: 'edit', status: 'pending',
+      locations: [{ path: '/workspace/project/hello.txt' }],
+      content: [{ type: 'diff', path: '/workspace/project/hello.txt', oldText: '', newText: 'hi' }],
+    } }, state());
+    const [draft] = mapper.map({ type: 'permission_request', sessionId: 's1', requestId: '0', toolCall: { toolCallId: 'call_1', title: 'Create file', kind: 'edit' }, options }, state());
+    expect(draft).toMatchObject({
+      type: 'permission_request',
+      data: { title: 'Create file', description: '/workspace/project/hello.txt', content: [{ type: 'diff', path: '/workspace/project/hello.txt', newText: 'hi' }] },
+    });
+  });
+
+  it("falls back to the request's raw input (Copilot's fileName and unified diff)", () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    const diff = '--- a/dev/null\n+++ b/workspace/project/hello.txt\n@@ -1,0 +1,1 @@\n+hi\n';
+    const [draft] = mapper.map({ type: 'permission_request', sessionId: 's1', requestId: '0', toolCall: {
+      toolCallId: 'call_2', title: 'Create file', rawInput: { fileName: '/workspace/project/hello.txt', diff },
+    }, options }, state());
+    expect(draft).toMatchObject({ data: { description: '/workspace/project/hello.txt', content: [{ type: 'diff', path: '/workspace/project/hello.txt', unifiedDiff: diff }] } });
+  });
+
+  it('uses the request locations, with line numbers, when they are present', () => {
+    const mapper = new AcpChatEventMapper('acp');
+    const [draft] = mapper.map({ type: 'permission_request', sessionId: 's1', requestId: '0', toolCall: {
+      toolCallId: 'c', title: 'Edit', locations: [{ path: 'a.ts', line: 3 }, { path: 'b.ts' }],
+    }, options }, state());
+    expect(draft).toMatchObject({ data: { description: 'a.ts:3, b.ts' } });
+    expect((draft as { data: { content?: unknown } }).data.content).toBeUndefined();
+  });
+});
+
+describe('Copilot plan card, tasks, titles and context (#2176, #2177, #2178)', () => {
+  const state = (): AcpSessionState => ({
+    sessionId: 's1', modes: null, configOptions: [], legacyModels: null, availableCommands: [], title: null, context: null, turnInFlight: false,
+  });
+  const upd = (update: Record<string, unknown>) => ({ type: 'update' as const, sessionId: 's1', replay: false, update: update as never });
+
+  // Copilot 1.0.82's plan write, from a real chat transcript (seq 95 and 96), with
+  // its home directory swapped for a temp one. The tool_call has only a string
+  // rawInput; the path and diff arrive on the tool_call_update.
+  const sid = 'd71aeae6-cc77-49f5-b5a3-12c313ea0959';
+  const planText = "# Fictional Fix Changelog Plan\n\n## Problem and approach\n\nAdd a fictional, user-visible bug fix to the repository's established release-note flow. Because this project does not maintain a standalone changelog, the entry should be represented in the version-bump pull request under `# Bug Fixes`, using the concise, past-tense style consumed by the release pipeline.\n\n## Steps\n\n1. Define a short, user-facing description of the fictional fix in past tense, describing the corrected behavior without implementation details.\n2. Add the description as one bullet under `# Bug Fixes` in the next version-bump pull request body, preserving the required `Release: <title>` first line and omitting unrelated sections.\n3. Preview the rendered pull request body and confirm that the release parser will classify and display the entry in the What's New release notes.\n\n## Notes\n\n- Do not add or modify a repository-level `CHANGELOG` file; none exists and the documented release workflow uses pull request metadata.\n- Keep the entry fictional and clearly scoped if it is used for a test or demonstration, so it cannot be mistaken for a shipped fix.\n";
+  const realPlanWrite = (planFile: string) => ({
+    call: {
+      sessionUpdate: 'tool_call', toolCallId: 'custom_call_Tfkd56Uq6eVMcvUuVIQksTN6', kind: 'edit', title: 'apply_patch', status: 'pending',
+      rawInput: `*** Begin Patch\n*** Add File: ${planFile}\n${planText.replace(/\n$/, '').split('\n').map((l) => `+${l}`).join('\n')}\n*** End Patch\n`,
+    },
+    update: {
+      sessionUpdate: 'tool_call_update', toolCallId: 'custom_call_Tfkd56Uq6eVMcvUuVIQksTN6', status: 'completed',
+      content: [{ type: 'diff', path: planFile, newText: planText }],
+      rawOutput: { content: `Added 1 file(s): ${planFile}` },
+    },
+  });
+  const copilotMapper = (home: string) => new AcpChatEventMapper('copilot_acp', { profile: COPILOT_ACP_PROFILE, env: { COPILOT_HOME: home } });
+  const inSession = (): AcpSessionState => ({ ...state(), sessionId: sid });
+
+  it("shows Copilot's real apply_patch plan write as the plan, never a workspace edit", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
+    const planFile = path.join(home, 'session-state', sid, 'plan.md');
+    const { call, update } = realPlanWrite(planFile);
+    const mapper = copilotMapper(home);
+    mapper.map({ type: 'turn_started', sessionId: sid }, inSession());
+
+    const started = mapper.map(upd(call), inSession());
+    expect(started).toEqual([expect.objectContaining({ type: 'plan_document', data: { planId: planFile, markdown: planText, status: 'streaming', toolCallId: call.toolCallId } })]);
+    // No file on disk: the update's diff is the plan.
+    const done = mapper.map(upd(update), inSession());
+    expect(done).toEqual([expect.objectContaining({ type: 'plan_document', data: { planId: planFile, markdown: planText, status: 'ready', toolCallId: call.toolCallId } })]);
+  });
+
+  it('reads the plan file from disk when the write completes', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
+    const planFile = path.join(home, 'session-state', sid, 'plan.md');
+    fs.mkdirSync(path.dirname(planFile), { recursive: true });
+    fs.writeFileSync(planFile, `${planText}\n## Edited later\n`);
+    const { call, update } = realPlanWrite(planFile);
+    const mapper = copilotMapper(home);
+    mapper.map(upd(call), inSession());
+    expect(mapper.map(upd(update), inSession())).toEqual([expect.objectContaining({ type: 'plan_document', data: expect.objectContaining({ markdown: `${planText}\n## Edited later\n`, status: 'ready' }) })]);
+  });
+
+  it('spots the plan file on the tool_call_update when the tool_call did not name it', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
+    const planFile = path.join(home, 'session-state', sid, 'plan.md');
+    const { call, update } = realPlanWrite(planFile);
+    const mapper = copilotMapper(home);
+    const [card] = mapper.map(upd({ ...call, rawInput: undefined }), inSession());
+    expect(card).toMatchObject({ type: 'tool_call', data: { title: 'apply_patch' } });
+    const done = mapper.map(upd(update), inSession());
+    expect(done).toEqual([
+      expect.objectContaining({ type: 'plan_document', data: { planId: planFile, markdown: planText, status: 'ready', toolCallId: call.toolCallId } }),
+      // The card already shown settles instead of hanging as pending.
+      expect.objectContaining({ type: 'tool_call_update', data: { toolCallId: call.toolCallId, status: 'completed' } }),
+    ]);
+  });
+
+  it("keeps a workspace plan.md and another session's plan as ordinary edits", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
+    for (const file of [path.join(home, 'project', 'plan.md'), path.join(home, 'session-state', '90936e2a-b030-43d9-9924-44a66e171a4a', 'plan.md')]) {
+      const { call, update } = realPlanWrite(file);
+      const mapper = copilotMapper(home);
+      expect(mapper.map(upd(call), inSession()).map((d) => d.type)).toEqual(['tool_call']);
+      expect(mapper.map(upd(update), inSession()).map((d) => d.type)).toEqual(['tool_call_update']);
+    }
+  });
+
+  it('feeds the todos sql call into the task list when it completes', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp', { profile: COPILOT_ACP_PROFILE });
+    mapper.map(upd({
+      sessionUpdate: 'tool_call', toolCallId: 'call_sql', title: 'Store changelog plan todos', kind: 'other', status: 'pending',
+      rawInput: { description: 'Store changelog plan todos', query: "INSERT INTO todos (id, title, status) VALUES ('a', 'Draft entry', 'pending'), ('b', 'Place entry', 'pending')" },
+    }), state());
+    const drafts = mapper.map(upd({ sessionUpdate: 'tool_call_update', toolCallId: 'call_sql', status: 'completed' }), state());
+    expect(drafts[0]).toEqual({ type: 'plan', data: { entries: [{ id: 'a', content: 'Draft entry', status: 'pending' }, { id: 'b', content: 'Place entry', status: 'pending' }] } });
+    expect(drafts[1]).toMatchObject({ type: 'tool_call_update', data: { toolCallId: 'call_sql', status: 'completed' } });
+  });
+
+  it('gives a punctuation-only title a readable fallback', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    const title = (update: Record<string, unknown>) => {
+      const [d] = mapper.map(upd({ sessionUpdate: 'tool_call', toolCallId: String(Math.random()), status: 'pending', ...update }), state());
+      return d.type === 'tool_call' ? d.data.title : '';
+    };
+    expect(title({ title: '.', kind: 'execute' })).toBe('Run command');
+    expect(title({ title: ' ', name: 'view', kind: 'read' })).toBe('view');
+    expect(title({ title: '…' })).toBe('Tool');
+    expect(title({ title: 'Viewing a.ts', kind: 'read' })).toBe('Viewing a.ts');
+  });
+
+  it('never lets a punctuation-only update title replace a readable one', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    mapper.map(upd({ sessionUpdate: 'tool_call', toolCallId: 'a', title: 'Viewing a.ts', kind: 'read', status: 'pending' }), state());
+    mapper.map(upd({ sessionUpdate: 'tool_call', toolCallId: 'b', title: '.', kind: 'execute', status: 'pending' }), state());
+    const title = (toolCallId: string, t: string) => {
+      const [d] = mapper.map(upd({ sessionUpdate: 'tool_call_update', toolCallId, title: t, status: 'in_progress' }), state());
+      return d.type === 'tool_call_update' ? d.data.title : undefined;
+    };
+    expect(title('a', '.')).toBe('Viewing a.ts');
+    expect(title('b', '.')).toBe('Run command');
+    expect(title('unseen', '.')).toBe('Tool');
+    expect(title('a', 'Viewed a.ts')).toBe('Viewed a.ts');
+  });
+
+  it("marks Copilot's context size as the input window, and leaves other agents' alone", () => {
+    const usage = { sessionUpdate: 'usage_update', used: 17_000, size: 272_000 };
+    expect(new AcpChatEventMapper('copilot_acp', { profile: COPILOT_ACP_PROFILE }).map(upd(usage), state()))
+      .toEqual([{ type: 'usage', data: { scope: 'session', context: { used: 17_000, size: 272_000, window: 'input' } } }]);
+    expect(new AcpChatEventMapper('acp').map(upd(usage), state()))
+      .toEqual([{ type: 'usage', data: { scope: 'session', context: { used: 17_000, size: 272_000 } } }]);
+  });
+});
+
+describe('Copilot ACP chat driver: work Copilot starts after the prompt ended (#2191)', () => {
+  // The recorded 1.0.98 background-agent session, with the prompt answered
+  // right after "STARTED" as 1.0.82 did. The driver doesn't choose agent mode
+  // (it is already the default), so the recording's set_mode is dropped.
+  function earlyAnswer() {
+    const records = promptAnsweredEarly(
+      withoutRequest(loadAcpFixture(COPILOT, 'background-agent.jsonl'), 'session/set_mode'),
+      (r) => r.dir === 'in' && (r.msg.params as { update?: { content?: { text?: string } } } | undefined)?.update?.content?.text === 'STARTED',
+    );
+    const { driver, replayer } = setup(records);
+    driver.sessionOverrides = { agentTurnIdleMs: 30, agentTurnToolIdleMs: 2_000, agentTurnCancelSettleMs: 20 };
+    return { driver, replayer };
+  }
+  const turnDrafts = (drafts: ChatEventDraft[]) => drafts.flatMap((d) => {
+    if (d.type === 'turn_started') return [`started:${d.data.trigger}`];
+    if (d.type === 'turn_ended') return [`ended:${d.data.stopReason}`];
+    return [];
+  });
+
+  it('reports the work as its own running turn (trigger system), not as orphaned events after Done', async () => {
+    const { driver, replayer } = earlyAnswer();
+    const session = await driver.start(startOpts({ model: 'claude-haiku-4.5' }));
+    await session.send([{ type: 'text', text: 'Start a background agent, then report when notified.' }], 'prompt');
+    const first = await collect(session, (d) => d.type === 'turn_ended');
+    expect(turnDrafts(first)).toEqual(['started:prompt', 'ended:end_turn']);
+
+    replayer.openGate();
+    const second = await collect(session, (d) => d.type === 'turn_ended');
+    expect(turnDrafts(second)).toEqual(['started:system', 'ended:end_turn']);
+    // Everything the agent did lands inside that turn, under its id.
+    const turnId = second[0].turnId;
+    expect(turnId).toBeDefined();
+    expect(turnId).not.toBe(first[0].turnId);
+    const work = second.filter((d) => d.type === 'tool_call' || d.type === 'agent_message_chunk' || d.type === 'permission_request');
+    expect(work.length).toBeGreaterThan(5);
+    expect(work.every((d) => d.turnId === turnId)).toBe(true);
+    expect(second.filter((d) => d.type === 'tool_call').map((d) => (d.data as { title: string }).title))
+      .toEqual(['Sleep for 30 seconds then list files', 'read_agent', expect.stringContaining('found.txt')]);
+    expect(replayer.errors).toEqual([]);
+    expect(replayer.done).toBe(true);
+  });
+
+  it('interrupt during that turn sends session/cancel and ends it as cancelled', async () => {
+    // Stop while the agent waits on the first permission request of its own work.
+    const records = promptAnsweredEarly(
+      withoutRequest(loadAcpFixture(COPILOT, 'background-agent.jsonl'), 'session/set_mode'),
+      (r) => r.dir === 'in' && (r.msg.params as { update?: { content?: { text?: string } } } | undefined)?.update?.content?.text === 'STARTED',
+    );
+    const ask = records.findIndex((r) => r.dir === 'in' && r.msg.method === 'session/request_permission');
+    const { driver, replayer } = setup([
+      ...records.slice(0, ask + 1),
+      { dir: 'out', msg: { jsonrpc: '2.0', id: records[ask].msg.id, result: { outcome: { outcome: 'cancelled' } } } },
+      { dir: 'out', msg: { jsonrpc: '2.0', method: 'session/cancel' } },
+    ]);
+    driver.sessionOverrides = { agentTurnIdleMs: 30, agentTurnToolIdleMs: 2_000, agentTurnCancelSettleMs: 20 };
+    const session = await driver.start(startOpts({ model: 'claude-haiku-4.5' }));
+    const drafts: ChatEventDraft[] = [];
+    void (async () => {
+      for await (const d of session.events) drafts.push(d);
+    })();
+    const waitFor = async (check: () => boolean) => {
+      for (let i = 0; i < 400 && !check(); i++) await new Promise((r) => setTimeout(r, 5));
+      expect(check()).toBe(true);
+    };
+    await session.send([{ type: 'text', text: 'Start a background agent, then report when notified.' }], 'prompt');
+    await waitFor(() => drafts.some((d) => d.type === 'turn_ended'));
+
+    replayer.openGate();
+    await waitFor(() => drafts.some((d) => d.type === 'permission_request'));
+    expect(turnDrafts(drafts)).toEqual(['started:prompt', 'ended:end_turn', 'started:system']);
+    await session.interrupt();
+    expect(replayer.written.at(-1)).toMatchObject({ method: 'session/cancel' });
+    await waitFor(() => turnDrafts(drafts).length === 4);
+    expect(turnDrafts(drafts)).toEqual(['started:prompt', 'ended:end_turn', 'started:system', 'ended:cancelled']);
+    expect(drafts.find((d) => d.type === 'permission_resolved')).toMatchObject({ data: { decision: 'cancelled' } });
+    expect(replayer.errors).toEqual([]);
+    expect(replayer.done).toBe(true);
   });
 });

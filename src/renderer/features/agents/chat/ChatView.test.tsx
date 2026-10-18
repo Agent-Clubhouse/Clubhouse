@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
 import type { ChatEvent } from '../../../../shared/chat';
@@ -573,8 +573,27 @@ describe('ChatView failures', () => {
 });
 
 describe('ChatView (store-bound)', () => {
+  const getAgentRuntime = window.clubhouse.chat.getAgentRuntime;
   beforeEach(() => {
     useChatStore.setState({ agents: {}, loading: {}, partial: {}, loaded: {}, answering: {} });
+    // The agent runs in the chat runtime, so what its transcript waits on is still open.
+    vi.mocked(window.clubhouse.chat).getAgentRuntime = vi.fn(async () => ({ chat: true, chatAvailable: true }));
+  });
+  afterEach(() => {
+    vi.mocked(window.clubhouse.chat).getAgentRuntime = getAgentRuntime;
+  });
+
+  it('opens read-only saved history and returns to the current conversation', async () => {
+    window.clubhouse.chat.readTranscript = vi.fn(async () => chatFixture('claude', 'conversation'));
+    window.clubhouse.chat.listSessions = vi.fn(async () => []);
+    render(<ChatView agent={agent} />);
+    await screen.findByTestId('chat-user-message');
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    expect(await screen.findByText('No saved conversations.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Message')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Back to current chat'));
+    expect(screen.getByTestId('chat-user-message')).toHaveTextContent('The agent list rows are too tall');
+    expect(screen.getByLabelText('Message')).toBeInTheDocument();
   });
 
   it('reuses loaded state when a view remounts, as a canvas card does when zooming', async () => {
@@ -1045,5 +1064,24 @@ describe('compound actions stop when their first step fails (#2057)', () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(actions.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('slash command output (#2179)', () => {
+  const GRID = 'Context Usage\n\n· · · ·   ○ System Prompt           8.9k   (2%)\n· · · ·   ◌ System Tools            6.0k   (2%)';
+
+  it('shows a command\'s laid-out reply as is, keeping its lines and spacing', () => {
+    const events = extend(chatFixture('copilot', 'conversation'),
+      { type: 'commands_available', data: { commands: [{ name: 'context', description: 'Show context usage' }] } },
+      { type: 'user_message', data: { messageId: 'u-ctx', content: [{ type: 'text', text: '/context' }], source: 'user', delivery: 'prompt' } },
+      { type: 'agent_message', data: { messageId: 'm-ctx', text: GRID } },
+    );
+    renderState(fold(events));
+    const out = screen.getByTestId('chat-command-output');
+    expect(out.tagName).toBe('PRE');
+    expect(out.textContent).toBe(GRID);
+    // Ordinary replies in the same conversation still render as markdown.
+    expect(screen.getAllByTestId('chat-agent-message').length).toBeGreaterThan(1);
+    expect(screen.getAllByTestId('chat-command-output')).toHaveLength(1);
   });
 });

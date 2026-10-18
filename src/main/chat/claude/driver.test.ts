@@ -2,15 +2,18 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CHAT_CONTRACT_VERSION, isChatEvent, type ChatEventDraft } from '../../../shared/chat/events';
+import { CHAT_CONTRACT_VERSION, COMPACTION_STARTED, isChatEvent, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import {
   ClaudeChatDriver,
   claudeCapabilities,
   claudeImageInput,
+  claudeInputDiff,
   claudeQuestionInput,
   claudeTurnErrorCode,
+  claudeContextWindow,
   claudeModeFromLevel,
+  planLimitsFromWire,
   claudeModelRow,
   APPLIED_SETTINGS_TIMEOUT_MS,
   claudePermissionOptions,
@@ -126,12 +129,20 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     const s = await start();
     expect(await s.send([{ type: 'text', text: 'hello' }], 'steer')).toBe('prompt');
     const ended = await drafts.waitFor('turn_ended');
-    expect(ended).toMatchObject({ turnId: 'turn-1', data: { stopReason: 'end_turn', costUsd: 0.0012, usage: { input: 10, cachedInput: 100, output: 5, total: 115 } } });
+    expect(ended).toMatchObject({ turnId: 'turn-1', data: { stopReason: 'end_turn', costUsd: 0.0012, usage: { input: 110, cachedInput: 100, output: 5, total: 115 } } });
     const turnTypes = drafts.all.filter((d) => d.turnId === 'turn-1').map((d) => d.type);
     expect(turnTypes).toEqual(['turn_started', 'agent_message_chunk', 'agent_message_chunk', 'agent_message', 'usage', 'usage', 'turn_ended']);
-    expect(drafts.of('usage').map((d) => [d.data.scope, d.data.costUsd])).toEqual([['turn', 0.0012], ['session', 0.0012]]);
+    const turnUsage = drafts.of('usage').filter((d) => d.turnId === 'turn-1');
+    expect(turnUsage.map((d) => [d.data.scope, d.data.costUsd])).toEqual([['turn', 0.0012], ['session', 0.0012]]);
     expect(drafts.of('agent_message')[0].data).toEqual({ messageId: 'msg_hello', text: 'Hello' });
-    expect(drafts.of('usage')[0].data).toMatchObject({ scope: 'turn', costIsEstimate: true });
+    // Context is the last main-loop call's prompt (2,000 + 30,000 cache read + 8,000 cache write)
+    // against the model's window from modelUsage.
+    expect(turnUsage[0].data).toMatchObject({ scope: 'turn', costIsEstimate: true, context: { used: 40_000, size: 200_000 } });
+    // TokenUsage.input is the total input, cache included, for turn and session totals alike (#2170).
+    for (const u of turnUsage) {
+      const t = u.data.tokens;
+      if (t) expect(t.input).toBe((t.total ?? 0) - (t.output ?? 0));
+    }
     expect(s.nativeSessionId).toBe('fake-session-1');
     // system/init arrives with the first prompt: native id and model via session_info.
     // ...and the MCP servers it loaded, in the shared status words (#2093).
@@ -158,7 +169,9 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
 
     await s.respondPermission(req.data.requestId, 'allow_always');
     expect((await drafts.waitFor('permission_resolved')).data).toEqual({ requestId: req.data.requestId, optionId: 'allow_always', decision: 'allow', by: 'user' });
-    const update = await drafts.waitFor('tool_call_update');
+    // Approved: it runs now (#2183 review), then completes.
+    expect((await drafts.waitFor('tool_call_update')).data).toEqual({ toolCallId: 'toolu_1', status: 'in_progress' });
+    const update = await drafts.waitFor('tool_call_update', (d) => d.data.status === 'completed');
     expect(update.data).toMatchObject({ toolCallId: 'toolu_1', status: 'completed', content: [{ type: 'terminal', command: 'ls', output: 'file.txt' }] });
     await drafts.waitFor('agent_message', (d) => d.data.text === `allowed:{"command":"ls"}:${JSON.stringify([{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'ls' }], behavior: 'allow', destination: 'localSettings' }])}`);
     await drafts.waitFor('turn_ended');
@@ -290,12 +303,26 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
   it('maps rate limits to session usage, and unknown messages to protocol_unknown', async () => {
     const s = await start();
     await s.send([{ type: 'text', text: 'limit' }], 'prompt');
-    expect((await drafts.waitFor('usage', (d) => d.data.scope === 'session')).data.limits).toEqual([
+    expect((await drafts.waitFor('usage', (d) => d.data.limits?.length === 1)).data.limits).toEqual([
       { window: '5h', utilization: 0.91, status: 'warning', resetsAt: 1760000000000 },
     ]);
     await drafts.waitFor('turn_ended');
     await s.send([{ type: 'text', text: 'novel' }], 'prompt');
     expect((await drafts.waitFor('protocol_unknown')).data).toEqual({ driver: id, kind: 'field', name: 'system/brand_new_thing' });
+  });
+
+  it('reads every plan window from get_usage at start: 5-hour, weekly and per-model', async () => {
+    await start();
+    const usage = await drafts.waitFor('usage', (d) => (d.data.limits?.length ?? 0) > 1);
+    expect(usage.data).toEqual({
+      scope: 'session',
+      limits: [
+        { window: '5h', utilization: 0.42, resetsAt: Date.parse('2026-10-18T15:00:00.000Z') },
+        { window: 'week', utilization: 0.71, resetsAt: Date.parse('2026-10-21T09:00:00.000Z') },
+        { window: 'week_sonnet', utilization: 0.12, resetsAt: Date.parse('2026-10-21T09:00:00.000Z') },
+        { window: 'week:Fable', utilization: 0.05, resetsAt: Date.parse('2026-10-21T09:00:00.000Z') },
+      ],
+    });
   });
 
   it('ends with session_ended: stopped on close, error on crash', async () => {
@@ -359,7 +386,7 @@ describe('Claude contract mapping helpers', () => {
   it('offers "always" only when Claude suggests a rule', () => {
     expect(claudePermissionOptions([]).map((o) => o.kind)).toEqual(['allow_once', 'reject_once']);
     expect(claudePermissionOptions([{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }])[1]).toMatchObject({
-      kind: 'allow_always', scope: 'acceptEdits mode',
+      kind: 'allow_always', scope: 'Auto-accept edits',
     });
   });
 });
@@ -418,6 +445,42 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     { value: 'opus', displayName: 'Opus 5.5', resolvedModel: 'claude-opus-5-5', efforts: ['low', 'high'] },
     { value: 'haiku', displayName: 'Haiku', resolvedModel: 'claude-haiku-5-5', efforts: [] },
   ];
+
+  it('reports context fill per turn from the last main-loop call, against the 1M window', async () => {
+    const { transport, session, drafts } = await scripted({ model: 'claude-opus-5-5[1m]' });
+    await session.send([{ type: 'text', text: 'go' }], 'prompt');
+    const usage = { inputTokens: 3, outputTokens: 400, cacheReadInputTokens: 150_000, cacheCreationInputTokens: 49_997 };
+    transport.emit({ kind: 'assistant_usage', messageId: 'm1', model: 'claude-opus-5-5', usage: { ...usage, cacheReadInputTokens: 10 } });
+    transport.emit({ kind: 'assistant_usage', messageId: 'm2', model: 'claude-opus-5-5', usage });
+    transport.emit(result({ modelUsage: { 'claude-opus-5-5[1m]': { inputTokens: 6, outputTokens: 800, contextWindow: 1_000_000 } } }));
+    const turn = await drafts.waitFor('usage', (d) => d.data.scope === 'turn');
+    expect(turn.data.context).toEqual({ used: 200_000, size: 1_000_000 });
+  });
+
+  it('maps every rate-limit window, extra usage, and keeps the status on get_usage windows', async () => {
+    let answer!: (v: unknown) => void;
+    const { transport, drafts } = await scripted({}, (t) => {
+      (t as ScriptedTransport & { planUsage: () => Promise<unknown> }).planUsage = () => new Promise((r) => { answer = r; });
+    });
+    transport.emit({ kind: 'rate_limit', status: 'allowed_warning', rateLimitType: 'seven_day', utilization: 0.71, resetsAt: 1_760_000_000, overageStatus: 'allowed', overageResetsAt: 1_760_500_000 });
+    expect((await drafts.waitFor('usage', (d) => !!d.data.limits)).data.limits).toEqual([
+      { window: 'week', utilization: 0.71, status: 'warning', resetsAt: 1_760_000_000_000 },
+      { window: 'overage', status: 'ok', resetsAt: 1_760_500_000_000 },
+    ]);
+    transport.emit({ kind: 'rate_limit', status: 'allowed', rateLimitType: 'seven_day_opus' });
+    expect((await drafts.waitFor('usage', (d) => d.data.limits?.[0]?.window === 'week_opus')).data.limits).toEqual([{ window: 'week_opus', status: 'ok' }]);
+    answer({ rate_limits_available: true, rate_limits: { five_hour: { utilization: 30, resets_at: null }, seven_day: { utilization: 72, resets_at: null } } });
+    expect((await drafts.waitFor('usage', (d) => d.data.limits?.length === 2 && d.data.limits[0].window === '5h')).data.limits).toEqual([
+      { window: '5h', utilization: 0.3 },
+      { window: 'week', utilization: 0.72, status: 'warning' },
+    ]);
+  });
+
+  it('ignores overageStatus "rejected" when extra usage is turned off (not a reached limit)', async () => {
+    const { transport, drafts } = await scripted({});
+    transport.emit({ kind: 'rate_limit', status: 'allowed', rateLimitType: 'five_hour', overageStatus: 'rejected', overageDisabledReason: 'org_level_disabled' });
+    expect((await drafts.waitFor('usage', (d) => !!d.data.limits)).data.limits).toEqual([{ window: '5h', status: 'ok' }]);
+  });
 
   it('starts even when get_settings never answers (#2091)', async () => {
     vi.useFakeTimers();
@@ -688,6 +751,38 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     expect(drafts.of('mode_changed')[0].turnId).toBeUndefined();
   });
 
+  it('shows a running compaction notice for /compact and settles it on compact_boundary', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: '/compact' }], 'prompt');
+    transport.emit({ kind: 'compaction', phase: 'started' });
+    // The CLI can repeat the status; one start notice goes out.
+    transport.emit({ kind: 'compaction', phase: 'started' });
+    transport.emit({ kind: 'compacted', trigger: 'manual', preTokens: 180_000 });
+    transport.emit(result());
+    await drafts.waitFor('turn_ended');
+    expect(drafts.of('notice').map((d) => [d.turnId, d.data.code, d.data.message])).toEqual([
+      ['turn-1', COMPACTION_STARTED, 'Compacting context…'],
+      ['turn-1', 'compacted', 'Context compacted'],
+    ]);
+  });
+
+  it('reports a failed compaction, then starts a new one on the next status', async () => {
+    const { transport, drafts } = await scripted();
+    transport.emit({ kind: 'compaction', phase: 'failed', error: 'ignored: nothing running' });
+    transport.emit({ kind: 'compaction', phase: 'started' });
+    transport.emit({ kind: 'compaction', phase: 'failed', error: 'summary too long' });
+    transport.emit({ kind: 'compaction', phase: 'started' });
+    transport.emit({ kind: 'conversation_reset', trigger: 'clear' });
+    await drafts.waitFor('notice', (d) => d.data.code === 'conversation_reset');
+    expect(drafts.of('notice').map((d) => [d.data.level, d.data.code, d.data.message])).toEqual([
+      ['info', COMPACTION_STARTED, 'Compacting context…'],
+      ['warn', 'compaction_failed', 'Context compaction failed: summary too long'],
+      ['info', COMPACTION_STARTED, 'Compacting context…'],
+      ['info', 'conversation_reset', 'Context cleared'],
+    ]);
+    expect(drafts.of('protocol_unknown')).toHaveLength(0);
+  });
+
   it('does not open a turn for an idle crash or session-level events', async () => {
     const { transport, drafts } = await scripted();
     transport.emit({ kind: 'rate_limit', status: 'allowed' });
@@ -733,6 +828,111 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     await expect(claudeImageInput({ type: 'image', mimeType: 'image/png', uri: 'https://example.com/a.png' })).rejects.toThrow(/only inline data or local files/);
     await expect(claudeImageInput({ type: 'image', mimeType: 'image/tiff', data: 'AA' })).rejects.toThrow(/image\/tiff/);
     fs.rmSync(path.dirname(file), { recursive: true, force: true });
+  });
+
+  it('attaches the input diff to a pending Edit call', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'edit' }], 'prompt');
+    transport.emit({ kind: 'tool_call', toolCallId: 'toolu_edit', name: 'Edit', input: { file_path: '/work/PRINCIPLES.md', old_string: '2026-10-18', new_string: '2026-10-19' } });
+    const call = await drafts.waitFor('tool_call');
+    expect(call.data).toMatchObject({ status: 'pending', content: [{ type: 'diff', path: '/work/PRINCIPLES.md', oldText: '2026-10-18', newText: '2026-10-19' }] });
+  });
+
+  it('re-emits the plan document with the edited text when an edited plan is approved (#2167)', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'plan' }], 'prompt');
+    transport.emit({ kind: 'tool_call', toolCallId: 'toolu_plan', name: 'ExitPlanMode', input: { plan: 'Ship on 2026-10-18' } });
+    transport.emit({ kind: 'permission_request', requestId: 'p1', toolName: 'ExitPlanMode', toolCallId: 'toolu_plan', input: { plan: 'Ship on 2026-10-18' }, suggestions: [] });
+    await drafts.waitFor('permission_request');
+    await session.respondPermission('p1', 'allow', { updatedInput: { plan: 'Ship on 2026-10-19' } });
+    await drafts.waitFor('permission_resolved');
+    const plans = drafts.of('plan_document');
+    expect(plans.map((p) => p.data.markdown)).toEqual(['Ship on 2026-10-18', 'Ship on 2026-10-19']);
+    expect(plans[1].data).toMatchObject({ planId: 'toolu_plan', toolCallId: 'toolu_plan', status: 'ready' });
+    // The updated plan comes before the resolution, so the card is current when it's marked approved.
+    const types = drafts.types();
+    expect(types.lastIndexOf('plan_document')).toBeLessThan(types.lastIndexOf('permission_resolved'));
+  });
+
+  it('leaves the plan alone when it is denied or approved unedited', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'plan' }], 'prompt');
+    transport.emit({ kind: 'tool_call', toolCallId: 'toolu_plan', name: 'ExitPlanMode', input: { plan: 'P' } });
+    transport.emit({ kind: 'permission_request', requestId: 'p1', toolName: 'ExitPlanMode', toolCallId: 'toolu_plan', input: { plan: 'P' }, suggestions: [] });
+    await drafts.waitFor('permission_request');
+    await session.respondPermission('p1', 'deny', { message: 'no' });
+    await drafts.waitFor('permission_resolved');
+    expect(drafts.of('plan_document')).toHaveLength(1);
+  });
+
+  it('marks an approved tool call in progress, and leaves a denied one alone', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'run' }], 'prompt');
+    transport.emit({ kind: 'tool_call', toolCallId: 'toolu_ok', name: 'Bash', input: { command: 'ls' } });
+    transport.emit({ kind: 'permission_request', requestId: 'p1', toolName: 'Bash', toolCallId: 'toolu_ok', input: { command: 'ls' }, suggestions: [] });
+    await drafts.waitFor('permission_request');
+    await session.respondPermission('p1', 'allow');
+    transport.emit({ kind: 'tool_call', toolCallId: 'toolu_no', name: 'Bash', input: { command: 'rm -rf /' } });
+    transport.emit({ kind: 'permission_request', requestId: 'p2', toolName: 'Bash', toolCallId: 'toolu_no', input: { command: 'rm -rf /' }, suggestions: [] });
+    await drafts.waitFor('permission_request', (d) => d.data.requestId === 'p2');
+    await session.respondPermission('p2', 'deny', { message: 'no' });
+    const running = drafts.of('tool_call_update').filter((d) => d.data.status === 'in_progress').map((d) => d.data.toolCallId);
+    expect(running).toEqual(['toolu_ok']);
+    const types = drafts.types();
+    expect(types.indexOf('tool_call_update')).toBeGreaterThan(types.indexOf('permission_resolved'));
+  });
+});
+
+describe('Claude chat UI fixes (chat-itest-2026-10-18)', () => {
+  it('previews Edit, MultiEdit and Write changes from the tool input (#2168)', () => {
+    expect(claudeInputDiff('Edit', { file_path: '/p/PRINCIPLES.md', old_string: 'a', new_string: 'b' }))
+      .toEqual([{ type: 'diff', path: '/p/PRINCIPLES.md', oldText: 'a', newText: 'b' }]);
+    expect(claudeInputDiff('MultiEdit', { file_path: '/p/x.ts', edits: [{ old_string: '1', new_string: '2' }, { old_string: '3', new_string: '4' }] }))
+      .toHaveLength(2);
+    const write = claudeInputDiff('Write', { file_path: '/p/new.md', content: 'one\ntwo\n' });
+    expect(write).toEqual([{ type: 'diff', path: '/p/new.md', newText: 'one\ntwo\n', unifiedDiff: '@@ -0,0 +1,2 @@\n+one\n+two' }]);
+    expect(claudeInputDiff('Bash', { command: 'ls' })).toBeUndefined();
+    expect(claudeInputDiff('Edit', { old_string: 'a', new_string: 'b' })).toBeUndefined();
+  });
+
+  it('names an always-allow mode switch by its level (#2169)', () => {
+    const [, always] = claudePermissionOptions([{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }]);
+    expect(always.scope).toBe('Auto-accept edits');
+    expect(claudePermissionOptions([{ type: 'setMode', mode: 'bypassPermissions', destination: 'session' }])[1].scope).toBe('Full access');
+  });
+
+});
+
+describe('Claude usage helpers', () => {
+  it('reads plan windows from get_usage, skipping empty ones and accounts without plan limits', () => {
+    expect(planLimitsFromWire({ rate_limits_available: false, rate_limits: null })).toBeNull();
+    expect(planLimitsFromWire({ rate_limits_available: true, rate_limits: { five_hour: null, seven_day: { utilization: null, resets_at: null } } })).toBeNull();
+    expect(planLimitsFromWire({
+      rate_limits_available: true,
+      rate_limits: {
+        seven_day_oauth_apps: { utilization: 3, resets_at: '2026-10-21T09:00:00Z' },
+        extra_usage: { is_enabled: true, monthly_limit: 50, used_credits: 10, utilization: 20 },
+      },
+    })).toEqual([
+      { window: 'week_oauth_apps', utilization: 0.03, resetsAt: Date.parse('2026-10-21T09:00:00Z') },
+      { window: 'overage', utilization: 0.2 },
+    ]);
+    // get_usage reports percent: 1 is 1%, not 100%; 0.5 is 0.5%.
+    expect(planLimitsFromWire({ rate_limits_available: true, rate_limits: { five_hour: { utilization: 1, resets_at: null }, seven_day: { utilization: 0.5, resets_at: null } } })).toEqual([
+      { window: '5h', utilization: 0.01 },
+      { window: 'week', utilization: 0.005 },
+    ]);
+  });
+
+  it('finds the context window of the model that served the call: modelUsage, then the [1m] suffix, then 200K', () => {
+    const mu = { 'claude-opus-5-5[1m]': { contextWindow: 1_000_000 }, 'claude-haiku-5-5': { contextWindow: 200_000 } };
+    expect(claudeContextWindow('claude-opus-5-5', mu, 'claude-opus-5-5[1m]')).toBe(1_000_000);
+    // A different model served the call (a fallback): its own window.
+    expect(claudeContextWindow('claude-haiku-5-5', mu, 'claude-opus-5-5[1m]')).toBe(200_000);
+    expect(claudeContextWindow('claude-haiku-5-5', mu)).toBe(200_000);
+    expect(claudeContextWindow('claude-opus-5-5', undefined, 'opus[1m]')).toBe(1_000_000);
+    expect(claudeContextWindow('claude-sonnet-5-5', undefined)).toBe(200_000);
+    expect(claudeContextWindow(undefined, undefined)).toBeUndefined();
   });
 });
 

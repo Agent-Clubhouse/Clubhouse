@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 import { CodexChatEventMapper, codexErrorCode, codexErrorName, toCodexInput, toCodexMcpServers } from './codex-chat-events';
-import { isChatEvent, CHAT_CONTRACT_VERSION, type ChatEventDraft } from '../../../shared/chat/events';
+import { isChatEvent, CHAT_CONTRACT_VERSION, COMPACTION_SETTLED, COMPACTION_STARTED, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ServerNotification } from './codex-protocol';
 import * as fx from './codex-protocol/__fixtures__/app-server-session';
 
@@ -243,10 +243,16 @@ describe('CodexChatEventMapper', () => {
       expect(completed({ type: 'exitedReviewMode', id: 'rv-3', review: '' })).toEqual([]);
     });
 
-    it('maps a context compaction to a notice', () => {
-      expect(completed({ type: 'contextCompaction', id: 'cc-1' })).toEqual([
+    it('maps a context compaction to a running notice that the completed item settles', () => {
+      // Auto compaction and /compact (thread/compact/start) both arrive as a contextCompaction item.
+      expect(started({ type: 'contextCompaction', id: 'cc-1' })).toEqual([
+        { type: 'notice', data: { level: 'info', code: COMPACTION_STARTED, message: 'Compacting context…' } },
+      ]);
+      const done = completed({ type: 'contextCompaction', id: 'cc-1' });
+      expect(done).toEqual([
         { type: 'notice', data: { level: 'info', code: 'context_compacted', message: 'Context compacted' } },
       ]);
+      expect(COMPACTION_SETTLED).toContain((done[0] as Extract<ChatEventDraft, { type: 'notice' }>).data.code);
     });
   });
 

@@ -150,6 +150,10 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
     return appliedSettingsFromWire(await this.control({ subtype: 'get_settings' }, 5_000));
   }
 
+  async planUsage(): Promise<unknown> {
+    return this.control({ subtype: 'get_usage', skip_behaviors: true }, 5_000);
+  }
+
   async close(): Promise<void> {
     const child = this.child;
     if (!child || this.isEnded) return;

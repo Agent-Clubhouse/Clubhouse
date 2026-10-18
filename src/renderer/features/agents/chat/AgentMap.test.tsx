@@ -163,6 +163,15 @@ describe('Subagents card', () => {
     expect(screen.queryByTestId('details-card-subagents')).not.toBeInTheDocument();
   });
 
+  it('sums per-turn tokens in the Session card when the driver sends no session total (Copilot)', () => {
+    renderState(fold(chatFixture('copilot', 'conversation')));
+    fireEvent.click(screen.getByTestId('agent-details-toggle'));
+    fireEvent.click(screen.getByTestId('details-card-session-toggle'));
+    const session = screen.getByTestId('details-card-session');
+    expect(session).not.toHaveTextContent('none yet');
+    expect(session).toHaveTextContent(/27(\.0)?k tokens/);
+  });
+
   it('says none yet before there is a subagent', () => {
     renderState(fold(chatFixture('claude', 'conversation')));
     fireEvent.click(screen.getByTestId('agent-details-toggle'));

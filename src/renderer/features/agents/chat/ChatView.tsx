@@ -12,6 +12,7 @@ import type { Agent } from '../../../../shared/types';
 import type { PermissionLevel } from '../../../../shared/chat';
 import { createChatViewState, useAnswering, type ChatViewState } from '../../../stores/chatStore';
 import { ChatHeader } from './ChatHeader';
+import { ChatHistory } from './ChatHistory';
 import { isNewChromeEnabled } from '../../../chrome/chromeFlag';
 import { ChatStream, type StreamJump } from './ChatStream';
 import { AgentDetails } from '../details/AgentDetails';
@@ -26,7 +27,7 @@ import { XIcon } from './icons';
 import { Composer, QueueList, TaskList, type ComposerLayout } from './Composer';
 import { useNarrow, useShortWindow } from '../pane/useNarrow';
 import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions } from './useChatSession';
-import { buildAgentMap, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
+import { buildAgentMap, commandForRequest, diffsForRequest, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
 
 /** Where a ChatView is shown; several can show the same agent at once. */
 export type ChatViewContext = 'main' | 'popout' | 'canvas' | 'plugin';
@@ -46,6 +47,7 @@ export interface ChatViewBodyProps {
   context?: ChatViewContext;
   /** Set when earlier history wasn't loaded. */
   onShowEarlier?: () => void;
+  onBrowseHistory?: () => void;
 }
 
 /**
@@ -122,7 +124,7 @@ function PlanHandoff({ state, onImplement }: { state: ChatViewState; onImplement
   );
 }
 
-export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier }: ChatViewBodyProps) {
+export function ChatViewBody({ agent, state, actions, loading, onSwitchToTerminal, switching, context = 'main', onShowEarlier, onBrowseHistory }: ChatViewBodyProps) {
   const running = isRunningState(state.state);
   const permission = state.pendingPermissions[0];
   const question = state.pendingQuestions[0];
@@ -208,6 +210,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
         request={permission}
         busy={permissionBusy}
         plan={plan}
+        diffs={diffsForRequest(state.items, permission)}
+        command={commandForRequest(state.items, permission)}
         queueSize={state.pendingPermissions.length}
         onRespond={actions.respondPermission}
       />
@@ -228,6 +232,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           model={state.model}
           effort={state.effort}
           effortIsDefault={state.effortIsDefault}
+          effortReported={state.effortReported}
           models={state.models}
           efforts={state.efforts}
           levelNames={state.levelNames}
@@ -256,7 +261,10 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
         showName={context === 'main' && !isNewChromeEnabled()}
         onSwitchToTerminal={onSwitchToTerminal}
         switching={switching}
-        detailsToggle={detailsAvailable ? <DetailsToggle /> : undefined}
+        detailsToggle={<>
+          {onBrowseHistory && <button type="button" onClick={onBrowseHistory} className="h-7 px-2 text-xs text-ctp-subtext0 hover:text-ctp-text">History</button>}
+          {detailsAvailable && <DetailsToggle />}
+        </>}
         review={detailsAvailable ? review.view : undefined}
       />
       {reviewing && (permission || question) && (
@@ -317,12 +325,14 @@ export interface ChatViewProps {
 
 /** ChatView bound to the chat store. */
 export function ChatView({ agent, onSwitchToTerminal, switching, context = 'main' }: ChatViewProps) {
+  const [historyOpen, setHistoryOpen] = useState(false);
   useChatTranscript(agent.id, context === 'canvas' ? CANVAS_TRANSCRIPT_TAIL : undefined);
   const earlier = useEarlierHistory(agent.id);
   const stored = useChatState(agent.id);
   const loading = useChatLoading(agent.id);
   const actions = useChatActions(agent.id);
   const empty = useMemo(() => createChatViewState(agent.id), [agent.id]);
+  if (historyOpen) return <ChatHistory key={agent.id} agentId={agent.id} currentSessionId={stored?.sessionId ?? null} onClose={() => setHistoryOpen(false)} />;
   return (
     <ChatViewBody
       agent={agent}
@@ -333,6 +343,7 @@ export function ChatView({ agent, onSwitchToTerminal, switching, context = 'main
       switching={switching}
       context={context}
       onShowEarlier={earlier.partial ? earlier.loadAll : undefined}
+      onBrowseHistory={() => setHistoryOpen(true)}
     />
   );
 }

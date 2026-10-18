@@ -80,7 +80,6 @@ describe('ClaudeNormalizer', () => {
     expect(n.normalize({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'auto', pre_tokens: 9000 } })).toMatchObject([
       { kind: 'compacted', trigger: 'auto', preTokens: 9000 },
     ]);
-    expect(n.normalize({ type: 'system', subtype: 'status', status: 'compacting' })).toEqual([]);
     expect(n.normalize({ type: 'system', subtype: 'task_started', task_id: 'task-1' })).toMatchObject([
       { kind: 'subagent', phase: 'started', taskId: 'task-1' },
     ]);
@@ -90,6 +89,34 @@ describe('ClaudeNormalizer', () => {
     expect(n.normalize({ type: 'keep_alive' })).toEqual([]);
     expect(n.normalize({ type: 'system', subtype: 'something_new' })).toMatchObject([{ kind: 'unmapped', type: 'system', subtype: 'something_new' }]);
     expect(n.normalize({ type: 'something_new' })).toMatchObject([{ kind: 'unmapped', type: 'something_new' }]);
+  });
+
+  it('maps status frames around a compaction', () => {
+    const n = new ClaudeNormalizer();
+    expect(n.normalize({ type: 'system', subtype: 'status', status: 'compacting' })).toMatchObject([
+      { kind: 'compaction', phase: 'started' },
+    ]);
+    // Success settles on compact_boundary, so a successful status adds nothing.
+    expect(n.normalize({ type: 'system', subtype: 'status', status: null, compact_result: 'success' })).toEqual([]);
+    expect(n.normalize({ type: 'system', subtype: 'status', status: null, compact_result: 'failed', compact_error: 'too short' })).toMatchObject([
+      { kind: 'compaction', phase: 'failed', error: 'too short' },
+    ]);
+    expect(n.normalize({ type: 'system', subtype: 'status', status: 'requesting' })).toEqual([]);
+    // A frame can carry a mode change too.
+    expect(n.normalize({ type: 'system', subtype: 'status', status: 'compacting', permissionMode: 'plan' })).toMatchObject([
+      { kind: 'mode_changed', permissionMode: 'plan' },
+      { kind: 'compaction', phase: 'started' },
+    ]);
+  });
+
+  it('maps conversation_reset and drops permission-check and dev-intent frames without reporting drift', () => {
+    const n = new ClaudeNormalizer();
+    expect(n.normalize({ type: 'conversation_reset', new_conversation_id: 'c2', trigger: 'clear', uuid: 'u', session_id: 's' })).toMatchObject([
+      { kind: 'conversation_reset', trigger: 'clear' },
+    ]);
+    expect(n.normalize({ type: 'system', subtype: 'permission_check_status', tool_use_id: 't1', status: 'checking' })).toEqual([]);
+    expect(n.normalize({ type: 'system', subtype: 'permission_check_status', tool_use_id: 't1', status: 'done' })).toEqual([]);
+    expect(n.normalize({ type: 'system', subtype: 'dev_intent', kind: 'ios_app', trigger: 'xcodebuild' })).toEqual([]);
   });
 
   it('drops thinking-token estimates instead of reporting them as unknown', () => {
@@ -178,6 +205,19 @@ describe('ClaudeNormalizer', () => {
     const n = new ClaudeNormalizer();
     const evs = n.normalize({ type: 'assistant', message: { id: 'm', content: [{ type: 'text', text: 'partial' }] }, error: 'rate_limit' });
     expect(evs).toMatchObject([{ kind: 'message', text: 'partial' }, { kind: 'error', message: 'rate_limit', fatal: false, apiError: 'rate_limit' }]);
+  });
+
+  it('reports a main-loop call\'s usage for context, and not a subagent\'s', () => {
+    const n = new ClaudeNormalizer();
+    const usage = { input_tokens: 1, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4 };
+    const main = n.normalize({ type: 'assistant', message: { id: 'm', model: 'claude-opus-5-5', content: [], usage }, parent_tool_use_id: null });
+    expect(main).toMatchObject([{ kind: 'assistant_usage', messageId: 'm', model: 'claude-opus-5-5', usage: { inputTokens: 1, outputTokens: 2, cacheReadInputTokens: 3, cacheCreationInputTokens: 4 } }]);
+    expect(n.normalize({ type: 'assistant', message: { id: 's', content: [], usage }, parent_tool_use_id: 'toolu_task' })).toHaveLength(0);
+  });
+
+  it('keeps extra usage on a rate_limit_event', () => {
+    const [ev] = new ClaudeNormalizer().normalize({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', rateLimitType: 'five_hour', overageStatus: 'allowed_warning', overageResetsAt: 1_760_000_000 } });
+    expect(ev).toMatchObject({ kind: 'rate_limit', rateLimitType: 'five_hour', overageStatus: 'allowed_warning', overageResetsAt: 1_760_000_000 });
   });
 
   it('maps an error result', () => {

@@ -1,22 +1,34 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ChatCapabilities, ChatMcpServer } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
-import { buildStreamBlocks, type StreamBlock } from './view-model';
+import { buildStreamBlocks, commandOutputIds, toolErrorText, type StreamBlock } from './view-model';
 import { scrollWithin } from './scroll';
 import {
   AgentMessage,
   ErrorRow,
   NoticeRow,
   PlanDocumentCard,
+  QuestionRow,
   SessionDivider,
   ThoughtRow,
   TurnFooter,
   UserMessage,
 } from './MessageBlocks';
-import { ExploreGroup, SubagentCard, ToolCallView } from './ToolBlocks';
+import {
+  AwaitingApprovalContext,
+  createTranscriptExpansionStore,
+  ExploreGroup,
+  LiveTurnContext,
+  SubagentCard,
+  ToolCallView,
+  TranscriptExpansionProvider,
+} from './ToolBlocks';
 
 /** Distance from the bottom (px) within which new content keeps the view pinned. */
 const STICK_THRESHOLD = 80;
+
+/** Maximum transcript rows mounted at once. */
+export const CHAT_STREAM_WINDOW_SIZE = 250;
 
 interface BlockProps {
   block: StreamBlock;
@@ -28,6 +40,8 @@ interface BlockProps {
   inlineSubagentId?: string;
   /** Open the agent map at a subagent; omitted hides the jump links. */
   onOpenSubagent?: (subagentId: string) => void;
+  /** An agent message that is a slash command's laid-out output. */
+  preformatted?: boolean;
 }
 
 /** The subagent a top-level block belongs to, when its work shows inline (ids_only, or nesting off). */
@@ -64,10 +78,10 @@ function sameItems<T>(a: readonly T[], b: readonly T[]): boolean {
  */
 function sameBlock(prev: BlockProps, next: BlockProps): boolean {
   if (prev.turnNumber !== next.turnNumber || prev.capabilities !== next.capabilities || prev.mcpServers !== next.mcpServers) return false;
-  if (prev.inlineSubagentId !== next.inlineSubagentId || prev.onOpenSubagent !== next.onOpenSubagent) return false;
+  if (prev.inlineSubagentId !== next.inlineSubagentId || prev.onOpenSubagent !== next.onOpenSubagent || prev.preformatted !== next.preformatted) return false;
   const a = prev.block;
   const b = next.block;
-  if (a.type === 'item' && b.type === 'item') return a.item === b.item;
+  if (a.type === 'item' && b.type === 'item') return a.item === b.item && a.tool === b.tool;
   if (a.type === 'explore' && b.type === 'explore') return sameItems(a.tools, b.tools);
   if (a.type === 'subagent' && b.type === 'subagent') return a.info === b.info && a.tool === b.tool && sameItems(a.children, b.children);
   return false;
@@ -75,7 +89,7 @@ function sameBlock(prev: BlockProps, next: BlockProps): boolean {
 
 const Block = memo(function Block(props: BlockProps) {
   const { block, inlineSubagentId, onOpenSubagent } = props;
-  if (block.type === 'subagent') return <SubagentCard block={block} onOpenInMap={onOpenSubagent} />;
+  if (block.type === 'subagent') return <SubagentCard block={block} onOpenInMap={onOpenSubagent} expansionKey={`${block.key}:subagent`} />;
   const subagentId = blockSubagentId(block);
   if (subagentId) {
     // Inline subagent work: tag it so "Show in conversation" can find it.
@@ -89,16 +103,17 @@ const Block = memo(function Block(props: BlockProps) {
   return <BlockBody {...props} />;
 }, sameBlock);
 
-function BlockBody({ block, turnNumber, capabilities, mcpServers }: BlockProps) {
-  if (block.type === 'explore') return <ExploreGroup tools={block.tools} />;
+function BlockBody({ block, turnNumber, capabilities, mcpServers, preformatted }: BlockProps) {
+  if (block.type === 'explore') return <ExploreGroup tools={block.tools} expansionKey={`${block.key}:explore`} />;
   if (block.type === 'subagent') return null;
   const item = block.item;
   switch (item.kind) {
     case 'user_message': return <UserMessage item={item} />;
-    case 'agent_message': return <AgentMessage item={item} />;
+    case 'agent_message': return <AgentMessage item={item} preformatted={preformatted} />;
     case 'thought': return <ThoughtRow item={item} />;
-    case 'tool_call': return <ToolCallView tool={item} mcpServers={mcpServers} />;
-    case 'plan_document': return <PlanDocumentCard item={item} />;
+    case 'tool_call': return <ToolCallView tool={item} mcpServers={mcpServers} expansionKey={`${block.key}:tool`} />;
+    case 'plan_document': return <PlanDocumentCard item={item} error={block.tool && toolErrorText(block.tool)} />;
+    case 'question': return <QuestionRow item={item} error={block.tool && toolErrorText(block.tool)} />;
     case 'notice': return <NoticeRow item={item} />;
     case 'error': return <ErrorRow item={item} />;
     case 'turn_end': return <TurnFooter item={item} turnNumber={turnNumber} capabilities={capabilities} />;
@@ -129,11 +144,79 @@ export interface ChatStreamProps {
   onShowEarlier?: () => void;
 }
 
-export function ChatStream({ state, onOpenSubagent, jump, onJumpResult, announce = true, onShowEarlier }: ChatStreamProps) {
+function sameTranscriptShape(a: ChatViewState, b: ChatViewState): boolean {
+  if (a.agentId !== b.agentId || a.sessionId !== b.sessionId || a.items.length !== b.items.length) return false;
+  if (a.capabilities !== b.capabilities || a.subagents !== b.subagents || a.mcpServers !== b.mcpServers) return false;
+  if (a.items.length === 0) return true;
+  return a.items[0].id === b.items[0].id && a.items[a.items.length - 1].id === b.items[b.items.length - 1].id;
+}
+
+/** Coalesce repeated live updates without delaying the first or structural render. */
+function useFrameState(state: ChatViewState): ChatViewState {
+  const shown = useRef(state);
+  const latest = useRef(state);
+  const frame = useRef<number | null>(null);
+  const [, forceRender] = useReducer((n: number) => n + 1, 0);
+  latest.current = state;
+  if (!sameTranscriptShape(shown.current, state)) shown.current = state;
+
+  useLayoutEffect(() => {
+    if (state === shown.current) {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      frame.current = null;
+      return;
+    }
+    if (frame.current === null) {
+      frame.current = requestAnimationFrame(() => {
+        frame.current = null;
+        shown.current = latest.current;
+        forceRender();
+      });
+    }
+  }, [state]);
+
+  useEffect(() => () => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+  }, []);
+  return shown.current;
+}
+
+function targetBlockIndex(blocks: StreamBlock[], subagentId: string): number {
+  return blocks.findIndex((block) => (
+    block.type === 'subagent'
+      ? block.info.subagentId === subagentId
+      : blockSubagentId(block) === subagentId
+  ));
+}
+
+export function ChatStream(props: ChatStreamProps) {
+  const state = useFrameState(props.state);
+  return <ChatStreamInner key={`${state.agentId}:${state.sessionId ?? ''}`} {...props} state={state} />;
+}
+
+const ChatStreamInner = memo(function ChatStreamInner({
+  state,
+  onOpenSubagent,
+  jump,
+  onJumpResult,
+  announce = true,
+  onShowEarlier,
+}: ChatStreamProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
-  const { items, subagents, capabilities } = state;
+  const expansionStore = useMemo(() => createTranscriptExpansionStore(), []);
+  const onJumpResultRef = useRef(onJumpResult);
+  onJumpResultRef.current = onJumpResult;
+  const { items, subagents, capabilities, commands } = state;
   const blocks = useMemo(() => buildStreamBlocks({ items, subagents, capabilities }), [items, subagents, capabilities]);
+  const commandOutput = useMemo(() => commandOutputIds(items, commands), [items, commands]);
+  const [windowStart, setWindowStart] = useState(() => Math.max(0, blocks.length - CHAT_STREAM_WINDOW_SIZE));
+  const [followTail, setFollowTail] = useState(true);
+  const tailStart = Math.max(0, blocks.length - CHAT_STREAM_WINDOW_SIZE);
+  const start = followTail ? tailStart : Math.min(windowStart, tailStart);
+  const end = Math.min(blocks.length, start + CHAT_STREAM_WINDOW_SIZE);
+  const visibleBlocks = useMemo(() => blocks.slice(start, end), [blocks, start, end]);
+  const atTail = end === blocks.length;
   const turnNumbers = useMemo(() => {
     const m = new Map<string, number>();
     let n = 0;
@@ -156,7 +239,7 @@ export function ChatStream({ state, onOpenSubagent, jump, onJumpResult, announce
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [blocks]);
+  }, [visibleBlocks]);
 
   // The first block of each consecutive run of inline subagent work gets a jump link.
   const inlineJumps = useMemo(() => {
@@ -170,11 +253,35 @@ export function ChatStream({ state, onOpenSubagent, jump, onJumpResult, announce
     return m;
   }, [blocks]);
 
+  const jumpRequest = useMemo(
+    () => jump ? { subagentId: jump.subagentId, nonce: jump.nonce } : null,
+    [jump?.subagentId, jump?.nonce],
+  );
+  const jumpTargetIndex = useMemo(
+    () => jumpRequest ? targetBlockIndex(blocks, jumpRequest.subagentId) : -1,
+    [blocks, jumpRequest],
+  );
+  const jumpTargetOutsideWindow = jumpTargetIndex >= 0 && (jumpTargetIndex < start || jumpTargetIndex >= end);
+  const jumpWindowStart = jumpTargetOutsideWindow
+    ? Math.max(0, Math.min(jumpTargetIndex - Math.floor(CHAT_STREAM_WINDOW_SIZE / 2), tailStart))
+    : null;
+  const jumpTargetStatus = jumpTargetIndex < 0 ? 'missing' : jumpTargetOutsideWindow ? 'outside' : 'visible';
+
   useEffect(() => {
-    if (!jump) return;
+    if (!jumpRequest) return;
+    if (jumpTargetStatus === 'missing') {
+      onJumpResultRef.current?.(jumpRequest, false);
+      return;
+    }
+    if (jumpTargetStatus === 'outside') {
+      pinned.current = false;
+      setFollowTail(false);
+      setWindowStart(jumpWindowStart!);
+      return;
+    }
     const root = scroller.current;
-    const target = root?.querySelector<HTMLElement>(`[data-subagent-id="${CSS.escape(jump.subagentId)}"]`);
-    onJumpResult?.(jump, !!target);
+    const target = root?.querySelector<HTMLElement>(`[data-subagent-id="${CSS.escape(jumpRequest.subagentId)}"]`);
+    onJumpResultRef.current?.(jumpRequest, !!target);
     if (!root || !target) return;
     pinned.current = false;
     scrollWithin(root, target, 'center', 'smooth');
@@ -187,20 +294,62 @@ export function ChatStream({ state, onOpenSubagent, jump, onJumpResult, announce
     const t = setTimeout(clear, JUMP_HIGHLIGHT_MS);
     // A newer jump (or unmount) clears this one's outline straight away.
     return () => { clearTimeout(t); clear(); };
-    // Only a new jump re-runs this; a new onJumpResult callback alone isn't a jump.
-  }, [jump]);
+  }, [jumpRequest, jumpTargetStatus, jumpWindowStart]);
 
   const onScroll = () => {
     const el = scroller.current;
     if (!el) return;
-    pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD;
+    const isPinned = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD;
+    pinned.current = isPinned;
+    if (!isPinned && followTail) {
+      setFollowTail(false);
+      setWindowStart(start);
+    } else if (isPinned && atTail && !followTail) {
+      setFollowTail(true);
+    }
   };
 
+  const showOlder = () => {
+    pinned.current = false;
+    setFollowTail(false);
+    setWindowStart(Math.max(0, start - CHAT_STREAM_WINDOW_SIZE));
+  };
+
+  const showLater = () => {
+    const next = Math.min(tailStart, start + CHAT_STREAM_WINDOW_SIZE);
+    const latest = next === tailStart;
+    pinned.current = latest;
+    setFollowTail(latest);
+    setWindowStart(next);
+  };
+
+  const showLatest = () => {
+    pinned.current = true;
+    setFollowTail(true);
+    setWindowStart(tailStart);
+  };
+
+  // Tool calls whose permission request is still open (only those say "waiting for approval").
+  const awaitingKey = state.pendingPermissions.map((p) => p.toolCallId ?? '').join('\n');
+  const awaiting = useMemo(() => new Set(awaitingKey.split('\n').filter(Boolean)), [awaitingKey]);
+
   return (
+    <LiveTurnContext.Provider value={state.turnId}>
+    <AwaitingApprovalContext.Provider value={awaiting}>
     <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-7 pt-5 pb-2.5" data-testid="chat-stream">
       <div className="mx-auto w-full max-w-[740px] flex flex-col gap-2.5 min-h-full justify-end">
         {announce && <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="chat-live-region">{announcement}</div>}
-        {onShowEarlier && (
+        {start > 0 && (
+          <button
+            type="button"
+            onClick={showOlder}
+            className="self-center h-7 px-3 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px]"
+            data-testid="chat-window-older"
+          >
+            Show older messages
+          </button>
+        )}
+        {start === 0 && onShowEarlier && (
           <button
             type="button"
             onClick={() => { pinned.current = false; onShowEarlier(); }}
@@ -213,18 +362,44 @@ export function ChatStream({ state, onOpenSubagent, jump, onJumpResult, announce
         {blocks.length === 0 && (
           <div className="text-center text-[13px] text-ctp-overlay0 py-10">No messages yet. Send one to start.</div>
         )}
-        {blocks.map((b) => (
-          <Block
-            key={b.key}
-            block={b}
-            turnNumber={b.type === 'item' ? turnNumbers.get(b.item.id) ?? 0 : 0}
-            capabilities={capabilities}
-            mcpServers={state.mcpServers}
-            inlineSubagentId={inlineJumps.get(b.key)}
-            onOpenSubagent={onOpenSubagent}
-          />
-        ))}
+        <TranscriptExpansionProvider store={expansionStore}>
+          {visibleBlocks.map((b, index) => (
+            <div key={b.key} data-testid="chat-stream-block" data-block-index={start + index}>
+              <Block
+                block={b}
+                turnNumber={b.type === 'item' ? turnNumbers.get(b.item.id) ?? 0 : 0}
+                capabilities={capabilities}
+                mcpServers={state.mcpServers}
+                inlineSubagentId={inlineJumps.get(b.key)}
+                onOpenSubagent={onOpenSubagent}
+                preformatted={b.type === 'item' && commandOutput.has(b.item.id)}
+              />
+            </div>
+          ))}
+        </TranscriptExpansionProvider>
+        {!atTail && (
+          <div className="self-center flex items-center gap-2">
+            <button
+              type="button"
+              onClick={showLater}
+              className="h-7 px-3 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px]"
+              data-testid="chat-window-later"
+            >
+              Show later messages
+            </button>
+            <button
+              type="button"
+              onClick={showLatest}
+              className="h-7 px-3 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px]"
+              data-testid="chat-window-latest"
+            >
+              Jump to latest
+            </button>
+          </div>
+        )}
       </div>
     </div>
+    </AwaitingApprovalContext.Provider>
+    </LiveTurnContext.Provider>
   );
-}
+});

@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ResizeDivider } from '../../../components/ResizeDivider';
+import { Tooltip } from '../../../components/Tooltip';
 import { stopPlainWheelPropagation, useWheelContainment } from '../../../hooks/useWheelContainment';
 
 /* ---------- Constants ---------- */
@@ -157,23 +158,27 @@ export function GroupProjectPanelSidebar({
         data-testid="group-project-panel-rail"
       >
         {/* Collapsed rail strip */}
-        <div
-          className="h-full border-r border-surface-1 bg-ctp-mantle/30 flex items-center justify-center cursor-pointer"
-          onMouseEnter={handleEnter}
-          onMouseLeave={handleLeave}
-          onClick={onToggleCollapse}
-          title="Expand panel"
-          data-testid="panel-rail-toggle"
-        >
-          <span className="text-[8px] text-ctp-subtext0 select-none" data-testid="panel-rail-icon">
-            &#x25B6;
-          </span>
-        </div>
+        {/* No tooltip while the slide-out shows: it would sit on top of the panel. */}
+        <Tooltip content="Expand panel" side="right" disabled={hovered}>
+          <button
+            type="button"
+            className="h-full w-full border-r border-surface-0 bg-ctp-mantle flex items-center justify-center text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text focus-ring"
+            onMouseEnter={handleEnter}
+            onMouseLeave={handleLeave}
+            onClick={onToggleCollapse}
+            aria-label="Expand panel"
+            data-testid="panel-rail-toggle"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" data-testid="panel-rail-icon">
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </button>
+        </Tooltip>
 
         {/* Hover overlay — floats over the content area */}
         {hovered && (
           <div
-            className="absolute top-0 left-0 z-10 h-full shadow-xl border-r border-surface-1 bg-ctp-mantle overflow-y-auto"
+            className="absolute top-0 left-0 z-10 h-full shadow-xl border-r border-surface-0 bg-ctp-mantle overflow-y-auto"
             style={{ width }}
             onMouseEnter={handleEnter}
             onMouseLeave={handleLeave}

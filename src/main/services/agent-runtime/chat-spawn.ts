@@ -13,7 +13,7 @@ import { randomUUID } from 'crypto';
 import * as path from 'path';
 import type { OrchestratorProvider } from '../../orchestrators';
 import type { FreeAgentPermissionMode, DurableAgentConfig } from '../../../shared/types';
-import type { PermissionLevel, SessionEndReason, ChatEvent } from '../../../shared/chat';
+import type { PermissionLevel, SessionEndReason } from '../../../shared/chat';
 import { agentRegistry, untrackAgent } from '../agent-registry';
 import * as configPipeline from '../config-pipeline';
 import { waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server';
@@ -32,7 +32,7 @@ import { driverHealthKey, driverPausedReason, probeDriver, recordDriverFailure, 
 import { cliLabel, evaluateCliVersion } from './chat-version-policy';
 import { ChatAgentRuntime, ChatStartCancelledError } from './chat-runtime';
 import { registerChatRuntime, unregisterChatRuntime } from './index';
-import { readChatTranscript } from './chat-transcript';
+import { listChatSessions } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
 import { noteChatStartFailure } from './stale-session';
 import { chatSleepInfo, recordSleep, takeKillRequest } from './sleep-reason';
@@ -64,14 +64,8 @@ export function levelForFreeAgent(freeAgentMode: boolean | undefined, permission
 
 /** Find the Clubhouse chat session that last ran this native session, to continue its sequence. */
 export async function findChatSessionFor(agentId: string, nativeSessionId: string): Promise<{ sessionId: string; lastSeq: number } | undefined> {
-  const events = await readChatTranscript(agentId);
-  let sessionId: string | undefined;
-  for (const e of events) {
-    if (e.type === 'session_started' && e.data.nativeSessionId === nativeSessionId) sessionId = e.sessionId;
-  }
-  if (!sessionId) return undefined;
-  const lastSeq = events.filter((e: ChatEvent) => e.sessionId === sessionId).reduce((m, e) => Math.max(m, e.seq), 0);
-  return { sessionId, lastSeq };
+  const session = (await listChatSessions(agentId)).find((s) => s.nativeSessionId === nativeSessionId);
+  return session ? { sessionId: session.sessionId, lastSeq: session.lastSeq } : undefined;
 }
 
 /** A chat runtime notice, also shown to the user when an agent falls back. */

@@ -26,6 +26,15 @@ export type PermissionLevel = 'plan' | 'ask' | 'auto_edit' | 'auto' | 'full_acce
 
 export const PERMISSION_LEVELS: readonly PermissionLevel[] = ['plan', 'ask', 'auto_edit', 'auto', 'full_access'];
 
+/** The user-facing name of each level, shared by the level menu and driver-written labels. */
+export const PERMISSION_LEVEL_LABELS: Readonly<Record<PermissionLevel, string>> = {
+  plan: 'Plan',
+  ask: 'Ask first',
+  auto_edit: 'Auto-accept edits',
+  auto: 'Auto',
+  full_access: 'Full access',
+};
+
 export interface ChatCapabilities {
   /** Send a message into the running turn. */
   steer: boolean;

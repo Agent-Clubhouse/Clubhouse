@@ -148,6 +148,7 @@ export const IPC = {
   CHAT: {
     EVENT: 'chat:event',                                       // Main → Renderer
     READ_TRANSCRIPT: 'chat:read-transcript',
+    LIST_SESSIONS: 'chat:list-sessions',
     SEND_MESSAGE: 'chat:send-message',
     STAGE_ATTACHMENT: 'chat:stage-attachment',
     INTERRUPT: 'chat:interrupt',
@@ -460,6 +461,8 @@ export const IPC = {
     SET_DISABLED_TOOLS: 'mcp-binding:set-disabled-tools',
     /** Renderer→main: the agent's Clubhouse MCP connection (AgentMcpConnection | null). */
     GET_AGENT_CONNECTION: 'mcp-binding:get-agent-connection',
+    /** Main→renderer: the agent id whose connection or tool count changed. */
+    AGENT_CONNECTION_CHANGED: 'mcp-binding:agent-connection-changed',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },
