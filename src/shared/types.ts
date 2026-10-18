@@ -401,6 +401,23 @@ export interface HelperDisposeBlock {
   checks: HelperDisposeChecks;
 }
 
+/**
+ * The result of disposing a helper from the UI (#2232). `changed` means the
+ * checks after stopping it found more at risk than `seen`, the checks the
+ * user confirmed; nothing was disposed and `checks` holds the new ones.
+ */
+export interface HelperDisposeResult {
+  ok: boolean;
+  message: string;
+  checks?: HelperDisposeChecks;
+  changed?: boolean;
+  /** The helper was running and was stopped, whatever the outcome. */
+  stopped?: boolean;
+}
+
+/** What the user decided about an orchestrator's dispose request (#2232). */
+export type HelperDisposeDecision = 'disposed' | 'declined';
+
 /** Result of resolving an orchestrator's helpers before it is deleted (#2224). */
 export interface HelperCascadeResult {
   ok: boolean;

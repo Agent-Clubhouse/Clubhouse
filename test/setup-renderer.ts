@@ -90,6 +90,7 @@ vi.stubGlobal('clubhouse', {
     getDisposeChecks: async () => ({ dirty: 0, unpushed: 0, unmerged: 0 }),
     disposeHelper: async () => ({ ok: true, message: 'Disposed' }),
     removeDisposed: async () => ({ ok: true, message: 'Removed' }),
+    reportDisposeDecision: async () => false,
     getOrchestrationPolicy: async () => null,
     setOrchestrationPolicy: async () => ({ ok: true, message: 'Saved' }),
     turnOffOrchestration: async () => ({ ok: true, message: 'Cancelled', cancelled: true }),

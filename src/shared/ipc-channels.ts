@@ -64,6 +64,7 @@ export const IPC = {
     GET_DISPOSE_CHECKS: 'agent:get-dispose-checks',
     DISPOSE_HELPER: 'agent:dispose-helper',
     REMOVE_DISPOSED: 'agent:remove-disposed',
+    REPORT_DISPOSE_DECISION: 'agent:report-dispose-decision',
     GET_ORCHESTRATION_POLICY: 'agent:get-orchestration-policy',
     SET_ORCHESTRATION_POLICY: 'agent:set-orchestration-policy',
     TURN_OFF_ORCHESTRATION: 'agent:turn-off-orchestration',

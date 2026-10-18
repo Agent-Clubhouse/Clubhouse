@@ -36,6 +36,8 @@ interface AgentSettingsPagesState {
   dirtyPages: AgentSettingsPage[];
   /** Items on the list pages, for the sidebar. Missing until loaded. */
   counts: Partial<Record<AgentSettingsPage, number>>;
+  /** Pages this agent doesn't have (Helpers for a helper or a remote agent). */
+  hiddenPages: AgentSettingsPage[];
   shellOpen: boolean;
   /**
    * Someone asked to leave settings while edits were unsaved; the view asks to
@@ -45,6 +47,7 @@ interface AgentSettingsPagesState {
   setPage: (page: AgentSettingsPage) => void;
   setDirtyPages: (pages: AgentSettingsPage[]) => void;
   setCount: (page: AgentSettingsPage, count: number) => void;
+  setHiddenPages: (pages: AgentSettingsPage[]) => void;
   clearCounts: () => void;
   setShellOpen: (open: boolean) => void;
   setPendingLeave: (then: (() => void) | null) => void;
@@ -52,10 +55,11 @@ interface AgentSettingsPagesState {
   reset: () => void;
 }
 
-const INITIAL: Pick<AgentSettingsPagesState, 'page' | 'dirtyPages' | 'counts' | 'shellOpen' | 'pendingLeave'> = {
+const INITIAL: Pick<AgentSettingsPagesState, 'page' | 'dirtyPages' | 'counts' | 'hiddenPages' | 'shellOpen' | 'pendingLeave'> = {
   page: 'general',
   dirtyPages: [],
   counts: {},
+  hiddenPages: [],
   shellOpen: false,
   pendingLeave: null,
 };
@@ -71,6 +75,12 @@ export const useAgentSettingsPages = create<AgentSettingsPagesState>((set, get) 
   setCount: (page, count) => {
     if (get().counts[page] === count) return;
     set((s) => ({ counts: { ...s.counts, [page]: count } }));
+  },
+  setHiddenPages: (pages) => {
+    const prev = get().hiddenPages;
+    if (prev.length === pages.length && prev.every((p, i) => p === pages[i])) return;
+    // A hidden page can't stay selected.
+    set((s) => ({ hiddenPages: pages, page: pages.includes(s.page) ? 'general' : s.page }));
   },
   clearCounts: () => {
     if (Object.keys(get().counts).length > 0) set({ counts: {} });
@@ -149,4 +159,13 @@ export function useAgentSettingsTarget(explorerTab: string): Agent | null {
   );
   if (explorerTab !== 'agents' || !agent) return null;
   return agent.kind === 'durable' && agent.projectId === activeProjectId ? agent : null;
+}
+
+/**
+ * The pages an agent leaves out (#2232): Helpers for a helper, which can't
+ * orchestrate in v1, and for an agent on another machine, whose policy lives
+ * there. The same rule as the Orchestrate card.
+ */
+export function hiddenAgentSettingsPages(agent: Pick<Agent, 'parentAgentId' | 'projectId'>, remote: boolean): AgentSettingsPage[] {
+  return agent.parentAgentId || remote ? ['helpers'] : [];
 }

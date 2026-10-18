@@ -28,7 +28,9 @@ type Phase =
   | { kind: 'choose' }
   | { kind: 'working'; choice: OrchestrationOffChoice; force: boolean }
   | { kind: 'blocked'; blocked: HelperDisposeBlock[]; message: string }
-  | { kind: 'failed'; message: string };
+  | { kind: 'failed'; message: string }
+  /** Orchestration went off, but some helpers couldn't be settled. */
+  | { kind: 'partial'; policy: ResolvedOrchestrationPolicy; message: string };
 
 export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDone }: Props) {
   const rail = useAgentStore((s) => s.agents);
@@ -50,6 +52,7 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
 
   const cancel = () => {
     if (working) return;
+    if (phase.kind === 'partial') { onDone(phase.policy); return; }
     // Nothing changes on cancel; main is told so it can drop anything held for the choice.
     void Promise.resolve().then(() => window.clubhouse.agent.turnOffOrchestration(projectPath, agent.id, 'cancel')).catch(() => {
       // telemetry-exempt: cancelling changes nothing, so a failed call has nothing to undo.
@@ -76,6 +79,19 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
     if (choice === 'dispose' && (result.helperIds?.length ?? 0) > 0) {
       await reloadProjectAgents(agent.projectId, projectPath, result.helperIds);
     }
+    // Off even so: main turned orchestration off and only some helpers failed.
+    if (result.policy && !result.policy.orchestrate) {
+      if (choice !== 'dispose' || !result.helperIds?.length) await reloadProjectAgents(agent.projectId, projectPath);
+      const names = result.failed?.map((f) => `${f.name} (${f.reason})`);
+      setPhase({
+        kind: 'partial',
+        policy: result.policy,
+        message: names?.length
+          ? `Orchestration is off, but ${names.join(', ')} couldn’t be settled and ${names.length === 1 ? 'stays as it was' : 'stay as they were'}.`
+          : `Orchestration is off, but some helpers couldn’t be settled. ${result.message}.`,
+      });
+      return;
+    }
     if (result.blocked && result.blocked.length > 0) {
       setPhase({ kind: 'blocked', blocked: result.blocked, message: result.message });
     } else {
@@ -89,7 +105,9 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
   const forceable = blocked.length > 0 && blocked.every((b) => !b.checks.error);
 
   let footer;
-  if (phase.kind === 'blocked') {
+  if (phase.kind === 'partial') {
+    footer = <Button kind="primary" onClick={() => onDone(phase.policy)} data-testid="turn-off-close">Close</Button>;
+  } else if (phase.kind === 'blocked') {
     footer = (
       <>
         <Button kind="quiet" onClick={cancel} data-testid="turn-off-cancel">Cancel</Button>
@@ -113,7 +131,9 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
 
   return (
     <Modal open onClose={cancel} title={`Stop ${agent.name} orchestrating?`} width="w-[520px]" testId="turn-off-orchestration" footer={footer}>
-      {phase.kind === 'blocked' ? (
+      {phase.kind === 'partial' ? (
+        <p className="text-[13px] text-ctp-subtext1 leading-normal" role="alert" data-testid="turn-off-partial">{phase.message}</p>
+      ) : phase.kind === 'blocked' ? (
         <div className="flex flex-col gap-3 text-[13px] text-ctp-subtext1 leading-normal">
           <p>
             {blocked.length === 1

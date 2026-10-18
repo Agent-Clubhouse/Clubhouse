@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { AgentSettingsNav } from './AgentSettingsNav';
-import { useAgentSettingsPages } from '../../features/agents/agentSettingsPages';
+import { hiddenAgentSettingsPages, useAgentSettingsPages } from '../../features/agents/agentSettingsPages';
 
 beforeEach(() => {
   useAgentSettingsPages.getState().reset();
@@ -16,6 +16,20 @@ describe('AgentSettingsNav', () => {
       'General', 'Instructions', 'Skills', 'Agent definitions', 'MCP servers', 'Permissions', 'Helpers', 'Quick agents', 'Shell in worktree',
     ]);
     expect(screen.getByTestId('agent-settings-nav-general').getAttribute('aria-current')).toBe('page');
+  });
+
+  it('leaves out hidden pages and moves off one that was selected (#2232)', () => {
+    render(<AgentSettingsNav />);
+    act(() => { useAgentSettingsPages.getState().setPage('helpers'); });
+    act(() => { useAgentSettingsPages.getState().setHiddenPages(['helpers']); });
+    expect(screen.queryByTestId('agent-settings-nav-helpers')).toBeNull();
+    expect(useAgentSettingsPages.getState().page).toBe('general');
+  });
+
+  it('hides Helpers for a helper and for a remote agent', () => {
+    expect(hiddenAgentSettingsPages({ projectId: 'p1' }, false)).toEqual([]);
+    expect(hiddenAgentSettingsPages({ projectId: 'p1', parentAgentId: 'lead' }, false)).toEqual(['helpers']);
+    expect(hiddenAgentSettingsPages({ projectId: 'remote||sat||p1' }, true)).toEqual(['helpers']);
   });
 
   it('selects a page', () => {

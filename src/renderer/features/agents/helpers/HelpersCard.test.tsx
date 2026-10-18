@@ -157,7 +157,7 @@ describe('Helpers card (#2232)', () => {
     await waitFor(() => expect(screen.getByTestId('dispose-confirm')).not.toBeDisabled());
     fireEvent.click(screen.getByTestId('dispose-confirm'));
     await waitFor(() => expect(screen.queryByTestId('dispose-helper-dialog')).not.toBeInTheDocument());
-    expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h2', undefined);
+    expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h2', undefined, { dirty: 0, unpushed: 0, unmerged: 0 });
     // It moves to Disposed.
     await waitFor(() => expect(screen.queryByTestId('helper-row-h2')).not.toBeInTheDocument());
     expect(screen.getByTestId('helpers-disposed-toggle')).toHaveTextContent('Disposed 2');

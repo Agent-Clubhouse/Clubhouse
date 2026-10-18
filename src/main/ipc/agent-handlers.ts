@@ -20,7 +20,8 @@ import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as permissionQueue from '../services/annex-permission-queue';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
 import { ATTR } from '../../shared/telemetry/attributes';
-import type { DeleteResult } from '../../shared/types';
+import type { DeleteResult, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeResult } from '../../shared/types';
+import { getAgentRuntime } from '../services/agent-runtime';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { orchestratorAttr } from '../telemetry/spawn-telemetry';
 import { assertAgentGitName } from '../../shared/agent-name';
@@ -30,6 +31,93 @@ import { cancelDurableCreation, onDurableCreationEvent, startDurableCreation } f
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
 type DeleteMode = Parameters<typeof ATTR.deleteMode>[0];
+
+/** Work disposing would lose. A check that couldn't run is handled on its own: force never overrides it. */
+function workAtRisk(checks: HelperDisposeChecks): boolean {
+  return checks.dirty > 0 || checks.unpushed > 0;
+}
+
+/** More at risk now than the user saw: a failed check, or more dirty files or unpushed commits. */
+function worseThan(now: HelperDisposeChecks, seen: HelperDisposeChecks): boolean {
+  return (!!now.error && !seen.error) || now.dirty > seen.dirty || now.unpushed > seen.unpushed;
+}
+
+/**
+ * Dispose a helper for the user (#2232), in the dispose_helper tool's order:
+ * check; refuse a failed check, or work at risk without force, before
+ * stopping anything; stop it if main has it running (never the renderer's
+ * status, which can be stale) and wait for the exit; check again, and refuse
+ * with `changed` when more is at risk than the user confirmed; then dispose.
+ * Runs under the orchestrator's policy lock, as the tool and turn-off do.
+ */
+export async function disposeHelperForUser(
+  projectPath: string,
+  helperId: string,
+  options: { force: boolean; seen?: HelperDisposeChecks },
+): Promise<HelperDisposeResult> {
+  const config = await agentConfig.getDurableConfig(projectPath, helperId);
+  if (!config) return { ok: false, message: 'Agent not found' };
+  const parentId = config.parentAgentId;
+  if (!parentId) return { ok: false, message: `${config.name} isn't a helper` };
+  return orchestrationPolicy.withAgentLock(projectPath, parentId, async () => {
+    const checks = await agentConfig.getDisposeChecks(projectPath, helperId);
+    if (checks.error) {
+      return { ok: false, message: `${config.name} wasn't disposed (${checks.error})`, checks };
+    }
+    if (workAtRisk(checks) && !options.force) {
+      return { ok: false, message: `${config.name} has work that disposing would lose`, checks };
+    }
+    const seen = options.seen ?? checks;
+    if (worseThan(checks, seen)) {
+      return { ok: false, changed: true, message: `${config.name} has more unsaved work than when you confirmed`, checks };
+    }
+
+    let stopped = false;
+    if (agentSystem.isAgentRunning(helperId)) {
+      // It holds its worktree open while it runs (EBUSY on Windows).
+      await agentSystem.killAgent(helperId, projectPath, undefined, 'user', { waitForExit: true });
+      stopped = true;
+      const after = await agentConfig.getDisposeChecks(projectPath, helperId);
+      if (after.error || worseThan(after, seen)) {
+        return {
+          ok: false,
+          changed: true,
+          stopped,
+          message: after.error
+            ? `${config.name} was stopped, then couldn't be checked (${after.error})`
+            : `${config.name} saved more work before it stopped`,
+          checks: after,
+        };
+      }
+    }
+
+    const result = await agentConfig.disposeHelper(projectPath, helperId, { force: options.force, expectedParentId: parentId });
+    return { ok: result.ok, message: result.message, ...(result.checks ? { checks: result.checks } : {}), ...(stopped ? { stopped } : {}) };
+  });
+}
+
+/**
+ * Tell an orchestrator what the user decided about the dispose it asked for
+ * (#2229 ask-everything), through its runtime as the helper tools do. Returns
+ * false when the orchestrator isn't running, so nothing was delivered.
+ */
+export async function reportDisposeDecision(orchestratorId: string, helperName: string, decision: HelperDisposeDecision): Promise<boolean> {
+  const runtime = getAgentRuntime(orchestratorId);
+  if (!runtime) return false;
+  const text = decision === 'disposed'
+    ? `[Clubhouse] The user approved your request and disposed of ${helperName}.`
+    : `[Clubhouse] The user declined your request to dispose of ${helperName}. Nothing was changed.`;
+  try {
+    await runtime.sendMessage(text, { source: 'mcp', taskId: `dispose_${Date.now().toString(36)}` });
+    return true;
+  } catch (err) {
+    // telemetry-exempt: logged; the user's decision already stands
+    appLog('core:orchestration', 'warn', 'Dispose decision not delivered', {
+      meta: { orchestratorId, error: err instanceof Error ? err.message : String(err) },
+    });
+    return false;
+  }
+}
 
 /**
  * Wrap a durable-agent delete in the `clubhouse.agent.delete` flow. A thrown
@@ -428,15 +516,24 @@ export function registerAgentHandlers(): void {
   ));
 
   ipcMain.handle(IPC.AGENT.DISPOSE_HELPER, withValidatedArgs(
-    [stringArg(), stringArg(), booleanArg({ optional: true })],
-    async (_event, projectPath, agentId, force) => {
-      const config = await agentConfig.getDurableConfig(projectPath, agentId);
-      if (!config) return { ok: false, message: 'Agent not found' };
-      if (!config.parentAgentId) return { ok: false, message: `${config.name} isn't a helper` };
-      // `force` overrides work at risk only; disposeHelper refuses a check that couldn't run.
-      const result = await agentConfig.disposeHelper(projectPath, agentId, { force, expectedParentId: config.parentAgentId });
+    [stringArg(), stringArg(), booleanArg({ optional: true }), objectArg<HelperDisposeChecks>({
+      optional: true,
+      validate: (v, name) => {
+        if (!Number.isInteger(v.dirty) || !Number.isInteger(v.unpushed)) throw new Error(`${name} must have whole-number dirty and unpushed counts`);
+      },
+    })],
+    async (_event, projectPath, agentId, force, seen) => {
+      const result = await disposeHelperForUser(projectPath, agentId, { force: force === true, seen });
       if (result.ok) broadcastSnapshotRefresh();
       return result;
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.REPORT_DISPOSE_DECISION, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg()],
+    async (_event, orchestratorId, helperName, decision) => {
+      if (decision !== 'disposed' && decision !== 'declined') throw new Error(`Unknown decision: ${decision}`);
+      return reportDisposeDecision(orchestratorId, helperName, decision);
     },
   ));
 

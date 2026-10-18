@@ -24,6 +24,7 @@ beforeEach(() => {
   window.clubhouse.agent.getDisposeChecks = vi.fn(async () => checks);
   window.clubhouse.agent.killAgent = vi.fn(async () => { order.push('kill'); });
   window.clubhouse.agent.disposeHelper = vi.fn(async () => { order.push('dispose'); return { ok: true, message: 'Disposed' }; });
+  window.clubhouse.agent.reportDisposeDecision = vi.fn(async () => true);
 });
 
 afterEach(() => {
@@ -54,20 +55,40 @@ describe('Dispose helper dialog (#2232)', () => {
 
     fireEvent.click(confirm);
     await waitFor(() => expect(onDisposed).toHaveBeenCalled());
-    expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h1', undefined);
+    // What the user saw goes with it, so main can tell if more is at risk after a stop.
+    expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h1', undefined, { dirty: 0, unpushed: 0, unmerged: 0 });
     expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
     expect(useAgentStore.getState().agents.h1).toBeUndefined();
   });
 
-  it('stops a running helper before disposing of it', async () => {
+  it('leaves stopping a running helper to main', async () => {
     setRail('running');
     renderDialog();
     await screen.findByTestId('dispose-checks');
     expect(screen.getByTestId('dispose-sleep')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('dispose-confirm'));
-    await waitFor(() => expect(order).toEqual(['kill', 'dispose']));
-    expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('h1', PROJECT, true);
+    await waitFor(() => expect(order).toEqual(['dispose']));
+    expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
+  });
+
+  it('shows the new list and asks again when more is at risk after the stop', async () => {
+    checks = { dirty: 1, unpushed: 0, unmerged: 0 };
+    window.clubhouse.agent.disposeHelper = vi.fn(async () => ({
+      ok: false, changed: true, stopped: true, message: 'impl-ipc saved more work before it stopped', checks: { dirty: 1, unpushed: 3, unmerged: 3 },
+    }));
+    const { onClose } = renderDialog();
+    await screen.findByTestId('dispose-checks');
+    fireEvent.click(screen.getByTestId('dispose-confirm'));
+    expect(await screen.findByTestId('dispose-error')).toHaveTextContent(
+      'impl-ipc saved more work before it stopped. Review what would be lost and confirm again. impl-ipc is stopped.',
+    );
+    expect(screen.getByTestId('dispose-checks')).toHaveTextContent('3 commits not pushed');
+    expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    // Confirming again sends the new list as what the user saw.
+    fireEvent.click(screen.getByTestId('dispose-confirm'));
+    await waitFor(() => expect(window.clubhouse.agent.disposeHelper).toHaveBeenLastCalledWith(PROJECT, 'h1', true, { dirty: 1, unpushed: 3, unmerged: 3 }));
   });
 
   it('lists work at risk and forces only with Dispose anyway', async () => {
@@ -83,7 +104,7 @@ describe('Dispose helper dialog (#2232)', () => {
     const confirm = screen.getByTestId('dispose-confirm');
     expect(confirm).toHaveTextContent('Dispose anyway');
     fireEvent.click(confirm);
-    await waitFor(() => expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h1', true));
+    await waitFor(() => expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h1', true, { dirty: 3, unpushed: 2, unmerged: 4 }));
   });
 
   it('never offers force when a check couldn\'t run', async () => {
@@ -155,6 +176,8 @@ describe('Dispose requests from Needs you (#2229)', () => {
     await waitFor(() => expect(screen.queryByTestId('dispose-helper-dialog')).not.toBeInTheDocument());
     expect(useHelperDisposeRequestStore.getState().requests).toEqual({});
     expect(window.clubhouse.agent.disposeHelper).not.toHaveBeenCalled();
+    // The orchestrator hears the answer.
+    await waitFor(() => expect(window.clubhouse.agent.reportDisposeDecision).toHaveBeenCalledWith('lead', 'impl-ipc', 'declined'));
   });
 
   it('disposes on accept and clears the request', async () => {
@@ -168,7 +191,8 @@ describe('Dispose requests from Needs you (#2229)', () => {
     render(<HelperDisposeRequestDialog />);
     await screen.findByTestId('dispose-checks');
     fireEvent.click(screen.getByTestId('dispose-confirm'));
-    await waitFor(() => expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h1', undefined));
+    await waitFor(() => expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h1', undefined, { dirty: 0, unpushed: 0, unmerged: 0 }));
     await waitFor(() => expect(useHelperDisposeRequestStore.getState().requests).toEqual({}));
+    await waitFor(() => expect(window.clubhouse.agent.reportDisposeDecision).toHaveBeenCalledWith('lead', 'impl-ipc', 'disposed'));
   });
 });

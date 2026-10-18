@@ -208,7 +208,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const orch = useOrchestration(orchestrationPath, agent);
   const { configs, reload: reloadConfigs } = useProjectAgentConfigs(orchestrationPath, agent.projectId);
   const ownConfig = configs?.find((c) => c.id === agent.id);
-  const isHelper = !!ownConfig?.parentAgentId;
+  const isHelper = !!(ownConfig?.parentAgentId ?? agent.parentAgentId);
   const helpers = useMemo(() => (configs ? splitHelpers(configs, agent.id) : { live: [], disposed: [] }), [configs, agent.id]);
   const helperIds = useMemo(() => new Set(helpers.live.map((h) => h.id)), [helpers.live]);
   const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === agent.id || (b.targetKind === 'agent' && b.targetId === agent.id)));

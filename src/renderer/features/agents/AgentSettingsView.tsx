@@ -33,8 +33,10 @@ import {
   useAgentSettingsPages,
   type AgentSettingsPage,
   requestCloseAgentSettings,
+  hiddenAgentSettingsPages,
   type SaveHandle,
 } from './agentSettingsPages';
+import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
 import { AgentHelpersSettings } from './helpers/AgentHelpersSettings';
 
@@ -181,6 +183,17 @@ export function AgentSettingsView({ agent }: Props) {
   useEffect(() => {
     resetPages();
   }, [agent.id, resetPages]);
+
+  // Helpers (#2232): not for a helper or an agent on another machine, like the Orchestrate card.
+  const setHiddenPages = useAgentSettingsPages((s) => s.setHiddenPages);
+  const hiddenPages = useMemo(
+    () => hiddenAgentSettingsPages(agent, isRemoteProjectId(agent.projectId)),
+    [agent.parentAgentId, agent.projectId],
+  );
+  useEffect(() => {
+    setHiddenPages(hiddenPages);
+  }, [agent.id, hiddenPages, setHiddenPages]);
+  const showHelpers = !hiddenPages.includes('helpers');
 
   // Shell in worktree: the sidebar row (new chrome) or the row under the page
   // (classic) opens it. It stays mounted once opened.
@@ -1429,7 +1442,7 @@ export function AgentSettingsView({ agent }: Props) {
   );
 
   // Orchestration (#2232): saved by its own controls, like the Orchestrate card.
-  const helpersSettings = <AgentHelpersSettings agent={agent} projectPath={projectPath} />;
+  const helpersSettings = showHelpers ? <AgentHelpersSettings agent={agent} projectPath={projectPath} /> : null;
 
   const managedNote = (
     <p data-testid="agent-settings-managed" className="mt-3 text-[13px] text-ctp-subtext1">
@@ -1467,7 +1480,7 @@ export function AgentSettingsView({ agent }: Props) {
     };
     // Every page stays mounted and only the selected one shows, so edits held
     // inside a page (an open skill editor, .mcp.json) survive a page switch.
-    body = AGENT_SETTINGS_PAGES.map(({ page: p, label }) => {
+    body = AGENT_SETTINGS_PAGES.filter(({ page: p }) => !hiddenPages.includes(p)).map(({ page: p, label }) => {
       // Clubhouse Mode manages files in the worktree; the orchestration policy isn't one.
       const managed = isManagedByClubhouse && p !== 'general' && p !== 'quick' && p !== 'helpers';
       return (

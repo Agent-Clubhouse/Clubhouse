@@ -295,6 +295,27 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     expect(useAgentStore.getState().agents.h2).toBeUndefined();
     expect(useAgentStore.getState().agents.h1).toBeDefined();
   });
+  it('treats a failed dispose that still turned orchestration off as off', async () => {
+    window.clubhouse.agent.turnOffOrchestration = vi.fn(async () => {
+      dispose('h2');
+      return {
+        ok: false,
+        message: 'Disposed 1 of 2 helpers',
+        helperIds: ['h2'],
+        failed: [{ agentId: 'h1', name: 'impl-ipc', reason: 'EBUSY' }],
+        policy: resolved({ ...stored, orchestrate: false }),
+      };
+    });
+    const { toggle } = await openDialog();
+    fireEvent.click(screen.getByTestId('turn-off-dispose'));
+    expect(await screen.findByTestId('turn-off-partial')).toHaveTextContent(
+      'Orchestration is off, but impl-ipc (EBUSY) couldn’t be settled and stays as it was.',
+    );
+    fireEvent.click(screen.getByTestId('turn-off-close'));
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+    expect(screen.queryByTestId('turn-off-orchestration')).not.toBeInTheDocument();
+    expect(useAgentStore.getState().agents.h2).toBeUndefined();
+  });
 });
 
 describe('Orchestration cards in Agent details', () => {

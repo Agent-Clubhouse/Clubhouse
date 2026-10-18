@@ -4,8 +4,10 @@
  * - clean: Dispose is the main action;
  * - work would be lost: the dialog lists it and offers Dispose anyway;
  * - a check couldn't run: no dispose at all, only Check again.
- * Dispose stops a running helper first, then main checks again before it
- * deletes anything. "Just sleep" stops it and keeps everything.
+ * Main does the rest in the dispose_helper tool's order: check, stop the
+ * helper if it runs, check again, dispose. If more is at risk after the stop
+ * than the user confirmed, nothing is disposed and the dialog shows the new
+ * list to confirm again. "Just sleep" stops it and keeps everything.
  *
  * `requestedBy` is for a dispose the orchestrator asked the user to decide
  * (#2251's HELPER_DISPOSE_REQUEST); Cancel then reads Decline and reports it.
@@ -77,20 +79,24 @@ export function DisposeHelperDialog({ helper, projectPath, requestedBy, onClose,
   };
 
   const dispose = async () => {
+    if (!checks) return;
     setPhase('disposing');
     setError(null);
     try {
-      // A running helper holds its folder open; stop it and wait for the exit.
-      if (running) await killAgent(helper.id, projectPath, { waitForExit: true });
-      const result = await window.clubhouse.agent.disposeHelper(projectPath, helper.id, atRisk || undefined);
+      // Main checks again, stops the helper if it runs, and checks once more
+      // before it deletes anything. `checks` is what the user confirmed.
+      const result = await window.clubhouse.agent.disposeHelper(projectPath, helper.id, atRisk || undefined, checks);
       if (result.ok) {
         removeAgent(helper.id);
         onDisposed?.();
         onClose();
         return;
       }
-      setError(running ? `${result.message}. ${helper.name} is stopped and nothing was deleted.` : `${result.message}. Nothing was deleted.`);
       if (result.checks) setChecks(result.checks);
+      const stopped = result.stopped ? ` ${helper.name} is stopped and nothing was deleted.` : ' Nothing was deleted.';
+      setError(result.changed
+        ? `${result.message}. Review what would be lost and confirm again.${result.stopped ? ` ${helper.name} is stopped.` : ''}`
+        : `${result.message}.${stopped}`);
     } catch (err) {
       // telemetry-exempt: shown in the dialog.
       setError(err instanceof Error ? err.message : String(err));

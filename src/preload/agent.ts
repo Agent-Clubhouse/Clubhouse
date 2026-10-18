@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeRequest, StartDurableCreationParams } from '../shared/types';
+import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, StartDurableCreationParams } from '../shared/types';
 import type { HelperAccessResolution, HelperLimitCheck, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
@@ -66,9 +66,16 @@ export const agent = {
   /** What disposing a helper would lose: dirty files, unpushed and unmerged commits (#2232). */
   getDisposeChecks: (projectPath: string, agentId: string): Promise<HelperDisposeChecks> =>
     ipcRenderer.invoke(IPC.AGENT.GET_DISPOSE_CHECKS, projectPath, agentId),
-  /** Dispose one helper after its checks. `force` overrides work at risk, never a check that couldn't run. */
-  disposeHelper: (projectPath: string, agentId: string, force?: boolean): Promise<DeleteResult & { checks?: HelperDisposeChecks }> =>
-    ipcRenderer.invoke(IPC.AGENT.DISPOSE_HELPER, projectPath, agentId, force),
+  /**
+   * Dispose one helper (#2232). Main checks, stops it if running, checks again
+   * and disposes. `force` overrides work at risk only. `seen` is what the user
+   * confirmed: more at risk after the stop returns `changed` and disposes nothing.
+   */
+  disposeHelper: (projectPath: string, agentId: string, force?: boolean, seen?: HelperDisposeChecks): Promise<HelperDisposeResult> =>
+    ipcRenderer.invoke(IPC.AGENT.DISPOSE_HELPER, projectPath, agentId, force, seen),
+  /** Tell the orchestrator what the user decided about its dispose request. False when it isn't running. */
+  reportDisposeDecision: (orchestratorId: string, helperName: string, decision: HelperDisposeDecision): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.AGENT.REPORT_DISPOSE_DECISION, orchestratorId, helperName, decision),
   /** Remove a disposed helper's row for good. Refuses an agent that isn't disposed. */
   removeDisposed: (projectPath: string, agentId: string): Promise<DeleteResult> =>
     ipcRenderer.invoke(IPC.AGENT.REMOVE_DISPOSED, projectPath, agentId),
