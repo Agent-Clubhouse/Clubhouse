@@ -4,7 +4,7 @@ import type { Agent } from '../../../../shared/types';
 import { useChatStore } from '../../../stores/chatStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useAgentStore } from '../../../stores/agentStore';
-import { AgentRuntimePane, resetChatFlagCache } from './AgentRuntimePane';
+import { AgentRuntimePane, resetChatFlagCache, switchAgentRuntime } from './AgentRuntimePane';
 import { chatFixture, FIXTURE_AGENT_ID } from './fixtures';
 import { CHAT_DEFAULT_TIP_KEY } from './chat-default-tip';
 
@@ -230,5 +230,19 @@ describe('AgentRuntimePane', () => {
     expect(screen.getByTestId('agent-runtime-pending')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-view')).not.toBeInTheDocument();
     expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
+  });
+});
+
+describe('switchAgentRuntime breadcrumbs (#2098)', () => {
+  it('notes the switch and its failure for feedback reports, with the mode only', async () => {
+    useProjectStore.setState({ projects: [] } as never);
+    const write = vi.spyOn(window.clubhouse.log, 'write');
+    await expect(switchAgentRuntime(agent, 'chat')).rejects.toThrow('Project not found');
+    const crumbs = write.mock.calls.map(([e]) => (e.meta as { breadcrumb?: unknown } | undefined)?.breadcrumb).filter(Boolean);
+    expect(crumbs).toEqual([
+      { kind: 'event', code: 'runtime.switch.chat' },
+      { kind: 'error', code: 'runtime.switch_failed.chat' },
+    ]);
+    write.mockRestore();
   });
 });

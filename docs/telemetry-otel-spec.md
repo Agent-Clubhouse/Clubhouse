@@ -613,7 +613,7 @@ The first draft left these as gaps. The maintainer set the goal as broad coverag
 - **Limits.** At most six lines a minute; anything held back is counted as `suppressed` on the next line. The cap covers `c.ui.hang` too, so a hang storm sends at most six events a minute.
 - **Scrubbing.** LoAF `sourceURL`, and `invoker` when it's a script URL, are cut to `scheme:basename`.
 - **Unresponsive windows.** Main logs the `unresponsive` / `responsive` pair under the same namespace with `durationMs`.
-- **Breadcrumbs.** The last 20 `ui:perf` entries are kept in memory regardless of log settings (`getRecentUiPerf()` in log-service) for feedback breadcrumbs.
+- **Breadcrumbs.** `ui:perf` lines become performance breadcrumbs on feedback reports regardless of log settings (`services/breadcrumbs.ts`, #2098).
 - **Idle cost.** The LoAF and Event Timing observers fire only for long frames and interactions. Three passive capture listeners (pointerdown, keydown, wheel) store one small object per input.
 
 ---

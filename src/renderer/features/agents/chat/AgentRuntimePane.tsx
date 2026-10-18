@@ -110,7 +110,8 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
 /** Restart a durable agent in the other runtime, resuming its CLI session. */
 export async function switchAgentRuntime(agent: Agent, mode: AgentRuntimeMode): Promise<void> {
   const meta = { agentId: agent.id, to: mode };
-  rendererLog(SWITCH_LOG_NS, 'info', 'Runtime switch requested', { meta });
+  // `breadcrumb` lands on feedback reports (#2098): the mode only, never ids.
+  rendererLog(SWITCH_LOG_NS, 'info', 'Runtime switch requested', { meta: { ...meta, breadcrumb: { kind: 'event', code: `runtime.switch.${mode}` } } });
   try {
     const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
     if (!project) throw new Error('Project not found');
@@ -126,7 +127,9 @@ export async function switchAgentRuntime(agent: Agent, mode: AgentRuntimeMode): 
     rendererLog(SWITCH_LOG_NS, 'info', 'Runtime switch: respawning', { meta: { ...meta, resumeSessionId: config.lastSessionId ?? null } });
     await store.spawnDurableAgent(project.id, project.path, config, !!config.lastSessionId);
   } catch (err) {
-    rendererLog(SWITCH_LOG_NS, 'error', 'Runtime switch failed', { meta: { ...meta, error: err instanceof Error ? err.message : String(err) } });
+    rendererLog(SWITCH_LOG_NS, 'error', 'Runtime switch failed', {
+      meta: { ...meta, error: err instanceof Error ? err.message : String(err), breadcrumb: { kind: 'error', code: `runtime.switch_failed.${mode}` } },
+    });
     throw err;
   }
 }

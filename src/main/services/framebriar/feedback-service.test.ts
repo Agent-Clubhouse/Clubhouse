@@ -115,6 +115,25 @@ describe('FeedbackService (fake SDK)', () => {
     expect(s.status().started).toBe(true);
   });
 
+  it('passes the build commit to the SDK, and null when there is none (#2098)', async () => {
+    const withSha = fakeSdk();
+    await new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', buildSha: '71b4bc9d', isOnline: () => true, create: withSha.create as never }).start();
+    expect(withSha.opts()).toMatchObject({ buildSha: '71b4bc9d' });
+    const without = fakeSdk();
+    await service(without.create).start();
+    expect(without.opts()).toMatchObject({ buildSha: null });
+  });
+
+  it('sends the recent breadcrumbs with the report, at most 40 (#2098)', async () => {
+    const { create, fb } = fakeSdk();
+    const crumbs = Array.from({ length: 45 }, (_, i) => ({ kind: 'event' as const, atMs: 1_000 - i, code: 'view.agent' }));
+    const s = new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', isOnline: () => true, create: create as never, breadcrumbs: () => crumbs });
+    await s.send({ notes: 'it froze', includeScreenshot: false, scene: 'agents' });
+    const context = (fb.feedback.prepare.mock.lastCall![0] as { context: { breadcrumbs: unknown[] } }).context;
+    expect(context.breadcrumbs).toHaveLength(40);
+    expect(context.breadcrumbs[0]).toEqual({ kind: 'event', atMs: 1_000, code: 'view.agent' });
+  });
+
   it('reports a stopped status before start', () => {
     const { create } = fakeSdk();
     expect(service(create).status()).toMatchObject({ started: false, canCapture: false, state: 'disconnected' });
@@ -175,12 +194,12 @@ describe('FeedbackService (fake SDK)', () => {
     const s = service(create);
     const draft = await s.captureDraft(async () => PNG);
     await s.send({ draftId: draft.draftId, notes: 'broken', includeScreenshot: true, scene: 'agents' });
-    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ notes: 'broken', png: PNG, context: { scene: 'agents' } }));
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ notes: 'broken', png: PNG, context: { scene: 'agents', breadcrumbs: [] } }));
     expect(fb.feedback.submit).toHaveBeenLastCalledWith(expect.anything(), { includeDiagnostics: false });
 
     const second = await s.captureDraft(async () => PNG);
     await s.send({ draftId: second.draftId, notes: 'just text', includeScreenshot: false, scene: 'Not A Code!' });
-    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null, capturedAt: '2026-10-17T10:00:00.000Z', context: { scene: 'app' } }));
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null, capturedAt: '2026-10-17T10:00:00.000Z', context: { scene: 'app', breadcrumbs: [] } }));
 
     await s.send({ notes: 'no capture at all', includeScreenshot: false });
     expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null }));

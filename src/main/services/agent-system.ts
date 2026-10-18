@@ -4,6 +4,7 @@ import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isH
 import { waitReady as waitHookServerReady, portEnv as hookPortEnv } from './hook-server';
 import * as ptyManager from './pty-manager';
 import { appLog } from './log-service';
+import { recordBreadcrumb } from './breadcrumbs';
 import * as headlessManager from './headless-manager';
 import * as headlessSettings from './headless-settings';
 import * as freeAgentSettings from './free-agent-settings';
@@ -542,6 +543,8 @@ async function spawnPtyAgent(
     configPipeline.restoreForAgent(exitAgentId);
     if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
+    // A terminal agent's run ended: a non-zero exit nobody asked for is an error (#2098).
+    recordBreadcrumb(exitCode !== 0 && killed !== true ? 'error' : 'event', exitCode !== 0 && killed !== true ? 'pty.exit_error' : 'pty.exit', exitCode);
 
     const kill = takeKillRequest(exitAgentId);
     if (params.kind === 'durable') {

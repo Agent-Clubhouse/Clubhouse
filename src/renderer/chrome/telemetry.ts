@@ -11,9 +11,26 @@
  * - `clubhouse.ui.chrome` (`legacy` | `v2`) is a resource attribute set by main
  *   for the whole session, so it is not repeated here.
  *
- * Every function is a cheap no-op while telemetry is off.
+ * Every function is a cheap no-op while telemetry is off, except that a view
+ * change is also noted as a feedback breadcrumb (#2098): one log write per
+ * actual change, carrying only the view name.
  */
-import { ATTR, setTelemetrySurface, setTelemetryView, tel, type TelemetryView } from '../telemetry';
+import { ATTR, setTelemetrySurface, setTelemetryView as setTelemetryViewOnly, tel, type TelemetryView } from '../telemetry';
+import { rendererLog } from '../plugins/renderer-logger';
+
+let breadcrumbView: TelemetryView | null = null;
+
+/** Set the telemetry view, and note a change for feedback reports. */
+function setTelemetryView(view: TelemetryView): void {
+  setTelemetryViewOnly(view);
+  if (view === breadcrumbView) return;
+  breadcrumbView = view;
+  try {
+    rendererLog('ui:nav', 'debug', 'View changed', { meta: { view, breadcrumb: { kind: 'event', code: `view.${view}` } } });
+  } catch {
+    // telemetry-exempt: no log bridge (tests, early startup); the breadcrumb is optional.
+  }
+}
 
 export type ChromeSurface = Parameters<typeof ATTR.uiSurface>[0];
 export type ChromeFeature = Parameters<typeof ATTR.uiFeature>[0];

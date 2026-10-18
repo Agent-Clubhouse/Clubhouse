@@ -55,6 +55,17 @@ const ACCESS_PROBLEMS = new Set(['offline', 'expired', 'access-required', 'conne
 /** In-between states, logged at debug only. */
 const ACCESS_TRANSIENT = new Set(['checking', 'connecting', 'disconnecting']);
 
+/** The SDK's per-report cap on breadcrumbs. */
+const MAX_REPORT_BREADCRUMBS = 40;
+
+/** One breadcrumb as the SDK takes it: `atMs` in epoch ms, `code` never user text. */
+export interface FeedbackBreadcrumb {
+  kind: 'error' | 'performance' | 'event';
+  atMs: number;
+  code: string;
+  value?: number;
+}
+
 export type FeedbackLogLevel = 'debug' | 'info' | 'warn' | 'error';
 /** Local diagnostics sink (appLog in the app). Never pass secrets or user text in meta. */
 export type FeedbackLog = (level: FeedbackLogLevel, msg: string, meta?: Record<string, unknown>) => void;
@@ -68,6 +79,10 @@ export interface FeedbackServiceDeps {
   safeStorage: SafeStorageLike;
   dataDir: string;
   appVersion: string;
+  /** The build commit (7 to 40 hex), or null (#2098). */
+  buildSha?: string | null;
+  /** Recent app events for the report, newest first, at most 40 (#2098). Defaults to none. */
+  breadcrumbs?: () => FeedbackBreadcrumb[];
   isOnline: () => boolean;
   /** For tests: the SDK factory (defaults to the vendored createFramebriar). */
   create?: typeof createFramebriar;
@@ -163,6 +178,7 @@ export class FeedbackService {
         dataDir: this.deps.dataDir,
         appId: FRAMEBRIAR_APP_ID,
         appVersion: sdkVersion(this.deps.appVersion),
+        buildSha: this.deps.buildSha ?? null,
         telemetry: 'off',
         // No SDK-side capture: captureDraft grabs the calling window itself, so two
         // windows capturing at once can never get each other's screenshot.
@@ -307,9 +323,10 @@ export class FeedbackService {
     if (!input.includeScreenshot && notes.trim() === '') throw new Error('Add a note to send feedback without a screenshot.');
     const scene = input.scene && SCENE.test(input.scene) ? input.scene : 'app';
     const png = input.includeScreenshot && draft ? this.annotatedOrCaptured(draft.snapshot.png!, input.annotatedPng) : null;
+    const breadcrumbs = (this.deps.breadcrumbs?.() ?? []).slice(0, MAX_REPORT_BREADCRUMBS);
     const prepared = await fb.feedback.prepare({
       notes,
-      context: { scene },
+      context: { scene, breadcrumbs },
       ...(input.includeScreenshot && draft
         ? { ...draft.snapshot, png }
         : { png: null, ...(draft ? { capturedAt: draft.snapshot.capturedAt } : {}) }),
