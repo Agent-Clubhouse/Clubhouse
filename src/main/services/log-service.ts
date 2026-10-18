@@ -113,6 +113,19 @@ export async function flush(): Promise<void> {
   }
 }
 
+/** How many recent `ui:perf` entries are kept for feedback breadcrumbs. */
+export const UI_PERF_BREADCRUMB_LIMIT = 20;
+const recentUiPerf: LogEntry[] = [];
+
+/**
+ * The last few hang and lag entries (`ui:perf`, #2126), newest last. Kept
+ * whatever the local log settings are, so a feedback report sent after a hang
+ * can carry them as breadcrumbs (#2098 attaches them).
+ */
+export function getRecentUiPerf(): LogEntry[] {
+  return recentUiPerf.slice();
+}
+
 /**
  * `telemetry` (opt-in, spec §6.6) is bridged before the local logging
  * filters: turning local logging off does not turn telemetry off, and the
@@ -120,6 +133,10 @@ export async function flush(): Promise<void> {
  */
 export function log(entry: LogEntry, telemetry?: LogTelemetry): void {
   if (telemetry) bridgeLog(entry.level, telemetry);
+  if (entry.ns === 'ui:perf') {
+    recentUiPerf.push(entry);
+    if (recentUiPerf.length > UI_PERF_BREADCRUMB_LIMIT) recentUiPerf.shift();
+  }
 
   const settings = logSettings.getSettings();
   if (!settings.enabled) return;

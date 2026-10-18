@@ -7,7 +7,9 @@
  * - `render-process-gone` / `child-process-gone`: events with Electron's
  *   reason enum, never details like the exit message.
  * - `unresponsive` → `responsive` on any window: one span per hang, plus a
- *   counter.
+ *   counter. Both ends are also written to the local log under `ui:perf`
+ *   with the duration, telemetry or not (#2126): these are the hangs the
+ *   renderer can't report itself.
  *
  * Nothing here changes existing behavior: the app's own handlers and logging
  * stay as they are; these only add telemetry calls next to them.
@@ -16,6 +18,7 @@ import { app, type BrowserWindow } from 'electron';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { forceFlushTelemetry, replaySpan, tel } from './facade';
 import { windowKindFor } from './renderer-bridge';
+import { appLog } from '../services/log-service';
 
 export const CRASH_FLUSH_TIMEOUT_MS = 2000;
 
@@ -33,6 +36,7 @@ function trackUnresponsive(win: BrowserWindow): void {
   let since: number | null = null;
   win.on('unresponsive', () => {
     since = Date.now();
+    if (!win.isDestroyed()) appLog('ui:perf', 'warn', 'Window unresponsive', { meta: { windowKind: windowKindFor(win.webContents) } });
   });
   win.on('responsive', () => {
     if (since === null) return;
@@ -40,6 +44,7 @@ function trackUnresponsive(win: BrowserWindow): void {
     since = null;
     if (win.isDestroyed()) return;
     const kind = windowKindFor(win.webContents);
+    appLog('ui:perf', 'warn', 'Window responsive again', { meta: { windowKind: kind, durationMs: Date.now() - startMs } });
     replaySpan({
       name: 'clubhouse.renderer.unresponsive',
       startMs,

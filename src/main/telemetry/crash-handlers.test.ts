@@ -4,8 +4,10 @@ import { EventEmitter } from 'node:events';
 const appEvents = vi.hoisted(() => new (require('node:events').EventEmitter)());
 vi.mock('electron', () => ({ app: appEvents, ipcMain: { on: vi.fn(), handle: vi.fn() } }));
 vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
 
 import { ATTR } from '../../shared/telemetry/attributes';
+import { appLog } from '../services/log-service';
 import { _resetCrashTelemetryForTests, installCrashTelemetry, reportMainProcessError } from './crash-handlers';
 import { setRuntime } from './facade';
 import type { TelemetryRuntime } from './types';
@@ -75,5 +77,21 @@ describe('crash telemetry', () => {
     win.emit('responsive');
     expect(rt.replaySpan).toHaveBeenCalledWith(expect.objectContaining({ name: 'clubhouse.renderer.unresponsive' }));
     expect(rt.count).toHaveBeenCalledWith('clubhouse.renderer.unresponsive_count', 1, [ATTR.windowKind('popout')]);
+  });
+
+  it('logs both ends of a hang locally under ui:perf, with the duration, even with telemetry off', () => {
+    setRuntime(null);
+    vi.useFakeTimers();
+    try {
+      const win = Object.assign(new EventEmitter(), { isDestroyed: () => false, webContents: { id: 3 } });
+      appEvents.emit('browser-window-created', {}, win);
+      win.emit('unresponsive');
+      expect(appLog).toHaveBeenLastCalledWith('ui:perf', 'warn', 'Window unresponsive', { meta: { windowKind: 'popout' } });
+      vi.advanceTimersByTime(2_500);
+      win.emit('responsive');
+      expect(appLog).toHaveBeenLastCalledWith('ui:perf', 'warn', 'Window responsive again', { meta: { windowKind: 'popout', durationMs: 2_500 } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

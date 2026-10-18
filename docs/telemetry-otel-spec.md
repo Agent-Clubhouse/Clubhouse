@@ -602,9 +602,19 @@ The first draft left these as gaps. The maintainer set the goal as broad coverag
 | `c.process.memory` (observable gauge, By) | `app.getAppMetrics()` every 60 s: `workingSetSize`, `privateBytes` | `c.process.type` (`browser`/`renderer`/`gpu`/`utility`), `c.window.kind` | S |
 | `c.process.cpu` (observable gauge, %) | `app.getAppMetrics()` `percentCPUUsage` | `c.process.type` | S |
 | `c.renderer.long_frames` (counter) + `c.renderer.long_frame.duration` (histogram, s) | `PerformanceObserver` for `long-animation-frame` (Chromium LoAF), aggregated in the renderer facade and sent once a minute | `c.view` (the active main view: `agent`/`terminal`/`canvas`/`files`/`git`/`settings`/`plugin`/`other`) | S |
+| `c.ui.hang` (event) | the same LoAF observer: one event per coalesced burst of frames over the hang threshold (200 ms) (#2126) | `c.view`, `c.ui.surface`, `c.ui.hang.duration_ms` (longest frame), `c.ui.hang.frames`, `c.ui.hang.script_source` (`app`/`plugin`/`extension`/`none`, never the URL), `c.ui.interaction.type` (the input just before it) | S |
+| `c.ui.interaction.duration` (histogram, s) | Event Timing API: input to next paint per interaction, its longest entry. The browser only reports interactions of 16 ms and over, so faster ones are missing and the percentiles lean slow. | `c.view`, `c.ui.surface`, `c.ui.interaction.type` (`click`/`keydown`/`wheel`) | S |
 | `c.telemetry.export.failures` (counter) | exporter result callbacks | `c.telemetry.signal` (`traces`/`metrics`/`logs`), `c.http.class` | E |
 | `c.telemetry.offline.items` (observable gauge) | offline queue size; exported once connectivity returns | — | E |
 | `c.shell.spawn` (span) | non-agent PTYs (`ShellTerminal`, utility terminals) | `error.type` (`pty_spawn_failed`, `cwd_invalid`, `spawn_helper_not_executable`) | S |
+
+**Local hang log (#2126).** Hangs are also written to the local session log under `ui:perf`, whether or not telemetry is on (`src/renderer/telemetry/ui-perf.ts`):
+- **What is logged.** Frames and interactions at or over the hang threshold (200 ms; `localStorage clubhouse.uiPerf.hangMs` overrides it, minimum 50) are coalesced per second into one line. A line has the count, the max and total ms, view and surface, the last interaction (its type, a stable target id from `data-testid` or `data-tree-key`, named keys only, never text), and the top three LoAF scripts with the URL cut to `scheme:basename`.
+- **Limits.** At most six lines a minute; anything held back is counted as `suppressed` on the next line. The cap covers `c.ui.hang` too, so a hang storm sends at most six events a minute.
+- **Scrubbing.** LoAF `sourceURL`, and `invoker` when it's a script URL, are cut to `scheme:basename`.
+- **Unresponsive windows.** Main logs the `unresponsive` / `responsive` pair under the same namespace with `durationMs`.
+- **Breadcrumbs.** The last 20 `ui:perf` entries are kept in memory regardless of log settings (`getRecentUiPerf()` in log-service) for feedback breadcrumbs.
+- **Idle cost.** The LoAF and Event Timing observers fire only for long frames and interactions. Three passive capture listeners (pointerdown, keydown, wheel) store one small object per input.
 
 ---
 

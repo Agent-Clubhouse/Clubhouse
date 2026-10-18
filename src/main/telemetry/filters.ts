@@ -49,6 +49,8 @@ export const USER_ACTIVITY = {
     'clubhouse.telemetry.enabled',
     'clubhouse.telemetry.disabled',
     'clubhouse.ui.feature_used',
+    // A hang the user felt (#2126); at most six a minute.
+    'clubhouse.ui.hang',
     'clubhouse.popout.opened',
     'clubhouse.settings.changed',
     'clubhouse.theme.changed',

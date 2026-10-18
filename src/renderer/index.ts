@@ -6,7 +6,7 @@ import { createElement } from 'react';
 import { App } from './App';
 import { PopoutWindow } from './features/popout/PopoutWindow';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
-import { initRendererTelemetry, installRendererErrorHandlers, startLongFrameCollection } from './telemetry';
+import { initRendererTelemetry, installRendererErrorHandlers, startLongFrameCollection, startUiPerf } from './telemetry';
 import './index.css';
 
 // Expose React on globalThis so community plugins loaded via native ESM
@@ -21,6 +21,8 @@ import './index.css';
 initRendererTelemetry();
 installRendererErrorHandlers();
 startLongFrameCollection();
+// The local hang and lag log (#2126) runs whether or not telemetry is on.
+startUiPerf();
 
 const container = document.getElementById('root');
 if (container) {
