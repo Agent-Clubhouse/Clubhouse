@@ -143,6 +143,11 @@ describe('chatActivity', () => {
     };
     expect(chatActivity(state, 192_000)).toBe('3:12 · Edit AgentRow.tsx');
   });
+  it('says when the context is compacting, in a turn or idle', () => {
+    const row = { id: 'n', sessionId: 's', seq: 1, ts: 0, kind: 'notice' as const, level: 'info' as const, code: 'compaction_in_progress', message: 'Compacting context…', running: true };
+    expect(chatActivity({ ...base, state: 'running', turnStartedAt: 0, items: [row], compactionItemId: 'n' }, 85_000)).toBe('1:25 · Compacting context');
+    expect(chatActivity({ ...base, state: 'idle', items: [row], compactionItemId: 'n' }, 0)).toBe('Compacting context');
+  });
   describe('chatUsage', () => {
     const caps = { usage: 'tokens', limits: true } as never;
     const at = (context: { used: number; size: number } | null, limits: unknown[]) =>

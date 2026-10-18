@@ -20,6 +20,7 @@ import type {
   TurnStopReason,
   UsageLimit,
 } from '../../../shared/chat/events';
+import { COMPACTION_STARTED } from '../../../shared/chat/events';
 import {
   commandApprovalDecisions,
   FILE_CHANGE_APPROVAL_DECISIONS,
@@ -491,6 +492,10 @@ export class CodexChatEventMapper {
           type: 'subagent' as const,
           data: { subagentId: threadId, name: item.tool, status: 'running' as const, parentToolCallId: item.id, nativeSessionId: threadId },
         }));
+      // Auto compaction, or /compact (thread/compact/start). It can run for a
+      // minute or more, so say so now; item/completed settles it.
+      case 'contextCompaction':
+        return [{ type: 'notice', data: { level: 'info', code: COMPACTION_STARTED, message: 'Compacting context…' } }];
       default:
         return [];
     }

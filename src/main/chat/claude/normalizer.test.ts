@@ -80,7 +80,6 @@ describe('ClaudeNormalizer', () => {
     expect(n.normalize({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'auto', pre_tokens: 9000 } })).toMatchObject([
       { kind: 'compacted', trigger: 'auto', preTokens: 9000 },
     ]);
-    expect(n.normalize({ type: 'system', subtype: 'status', status: 'compacting' })).toEqual([]);
     expect(n.normalize({ type: 'system', subtype: 'task_started', task_id: 'task-1' })).toMatchObject([
       { kind: 'subagent', phase: 'started', taskId: 'task-1' },
     ]);
@@ -90,6 +89,34 @@ describe('ClaudeNormalizer', () => {
     expect(n.normalize({ type: 'keep_alive' })).toEqual([]);
     expect(n.normalize({ type: 'system', subtype: 'something_new' })).toMatchObject([{ kind: 'unmapped', type: 'system', subtype: 'something_new' }]);
     expect(n.normalize({ type: 'something_new' })).toMatchObject([{ kind: 'unmapped', type: 'something_new' }]);
+  });
+
+  it('maps status frames around a compaction', () => {
+    const n = new ClaudeNormalizer();
+    expect(n.normalize({ type: 'system', subtype: 'status', status: 'compacting' })).toMatchObject([
+      { kind: 'compaction', phase: 'started' },
+    ]);
+    // Success settles on compact_boundary, so a successful status adds nothing.
+    expect(n.normalize({ type: 'system', subtype: 'status', status: null, compact_result: 'success' })).toEqual([]);
+    expect(n.normalize({ type: 'system', subtype: 'status', status: null, compact_result: 'failed', compact_error: 'too short' })).toMatchObject([
+      { kind: 'compaction', phase: 'failed', error: 'too short' },
+    ]);
+    expect(n.normalize({ type: 'system', subtype: 'status', status: 'requesting' })).toEqual([]);
+    // A frame can carry a mode change too.
+    expect(n.normalize({ type: 'system', subtype: 'status', status: 'compacting', permissionMode: 'plan' })).toMatchObject([
+      { kind: 'mode_changed', permissionMode: 'plan' },
+      { kind: 'compaction', phase: 'started' },
+    ]);
+  });
+
+  it('maps conversation_reset and drops permission-check and dev-intent frames without reporting drift', () => {
+    const n = new ClaudeNormalizer();
+    expect(n.normalize({ type: 'conversation_reset', new_conversation_id: 'c2', trigger: 'clear', uuid: 'u', session_id: 's' })).toMatchObject([
+      { kind: 'conversation_reset', trigger: 'clear' },
+    ]);
+    expect(n.normalize({ type: 'system', subtype: 'permission_check_status', tool_use_id: 't1', status: 'checking' })).toEqual([]);
+    expect(n.normalize({ type: 'system', subtype: 'permission_check_status', tool_use_id: 't1', status: 'done' })).toEqual([]);
+    expect(n.normalize({ type: 'system', subtype: 'dev_intent', kind: 'ios_app', trigger: 'xcodebuild' })).toEqual([]);
   });
 
   it('drops thinking-token estimates instead of reporting them as unknown', () => {

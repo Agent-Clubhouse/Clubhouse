@@ -32,6 +32,7 @@ export function chatActivity(state: ChatViewState, now: number): string {
   if (state.state === 'running') {
     const parts: string[] = [];
     if (state.turnStartedAt !== null) parts.push(formatElapsed(now - state.turnStartedAt));
+    if (state.compactionItemId !== null) return [...parts, 'Compacting context'].join(' · ');
     for (let i = state.items.length - 1; i >= 0; i--) {
       const it = state.items[i];
       if (it.kind === 'tool_call' && (it.status === 'in_progress' || it.status === 'pending')) { parts.push(it.title); break; }
@@ -41,6 +42,8 @@ export function chatActivity(state: ChatViewState, now: number): string {
   }
   if (state.state === 'waiting_permission') return state.pendingPermissions[0]?.title ?? 'Waiting for approval';
   if (state.state === 'waiting_input') return 'Has a question';
+  // Claude can compact an idle session on its own.
+  if (state.compactionItemId !== null) return 'Compacting context';
   return '';
 }
 

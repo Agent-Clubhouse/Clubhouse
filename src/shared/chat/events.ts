@@ -442,6 +442,23 @@ export interface ChatEventDataMap {
   protocol_unknown: { driver: ChatDriverId; kind: 'request' | 'notification' | 'field'; name: string };
 }
 
+/**
+ * Context compaction rides on `notice` events. A driver that learns that
+ * compaction has started sends a notice with {@link COMPACTION_STARTED}; a
+ * later notice with one of {@link COMPACTION_SETTLED} (or the turn or session
+ * ending) settles it. Consumers show one in-progress row between the two. The
+ * codes follow ACP's `compaction_update` statuses; `context_compacted` (Codex)
+ * and `compacted` (Claude) are kept because transcripts already hold them.
+ */
+export const COMPACTION_STARTED = 'compaction_in_progress';
+export const COMPACTION_SETTLED: readonly string[] = [
+  'context_compacted',
+  'compacted',
+  'compaction_completed',
+  'compaction_failed',
+  'compaction_cancelled',
+];
+
 type AssertTrue<T extends true> = T;
 /** Compile-time check that CHAT_EVENT_TYPES and ChatEventDataMap list the same event types. */
 export type ChatEventTypesInSync = AssertTrue<

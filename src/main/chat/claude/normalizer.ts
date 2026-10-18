@@ -118,6 +118,8 @@ export class ClaudeNormalizer {
       }
       case 'keep_alive':
         return [];
+      case 'conversation_reset':
+        return [{ kind: 'conversation_reset', trigger: str(msg.trigger) }];
       case 'tool_progress':
         return [this.mapToolProgress(msg, parentToolCallId)];
       // A queued prompt's fate (queued, started, completed, …). Clubhouse
@@ -155,9 +157,21 @@ export class ClaudeNormalizer {
       return [{ kind: 'compacted', trigger: str(meta.trigger), preTokens: num(meta.pre_tokens) }];
     }
     if (subtype === 'status') {
+      // One frame can carry a mode change and a compaction state together.
+      const out: ClaudeChatEventBody[] = [];
       const mode = str(msg.permissionMode);
-      return mode ? [{ kind: 'mode_changed', permissionMode: mode }] : [];
+      if (mode) out.push({ kind: 'mode_changed', permissionMode: mode });
+      if (msg.status === 'compacting') out.push({ kind: 'compaction', phase: 'started' });
+      else if (msg.compact_result === 'failed') out.push({ kind: 'compaction', phase: 'failed', error: str(msg.compact_error) });
+      // `requesting` (an API call is in flight) adds nothing the turn doesn't already show.
+      return out;
     }
+    // An automatic permission check that is taking a while (`checking`, then
+    // `done`) for a tool call. The tool row already shows as running, so it adds nothing.
+    if (subtype === 'permission_check_status') return [];
+    // A hint about what kind of development the conversation shows (e.g.
+    // `kind: 'ios_app'`), for hosts that offer matching tools. Chat has none.
+    if (subtype === 'dev_intent') return [];
     if (subtype === 'permission_denied') {
       return [{ kind: 'permission_denied', toolName: str(msg.tool_name), raw: msg }];
     }

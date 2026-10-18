@@ -14,7 +14,7 @@ import { createCopilotAcpChatDriver, createGenericAcpChatDriver } from './acp-ch
 import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
 import { copilotAcpCapabilities, COPILOT_ACP_PROFILE, COPILOT_PERMISSION_LEVELS } from './copilot-acp';
 import { AcpFixtureReplayer, loadAcpFixture, promptAnsweredEarly, withoutRequest, type AcpFixtureRecord } from './__fixtures__/acp/acp-replay';
-import { CHAT_EVENT_TYPES, type ChatEventDraft } from '../../../shared/chat/events';
+import { CHAT_EVENT_TYPES, COMPACTION_SETTLED, COMPACTION_STARTED, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import type { InitializeResponse } from './acp-schema';
 import type { AcpSessionState } from './acp-session';
@@ -356,6 +356,18 @@ describe('ACP → chat contract mapping', () => {
     const cmds = { type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'available_commands_update' as const, availableCommands: [{ name: 'compact', description: 'Compact' }] } };
     expect(mapper.map(cmds, state())).toHaveLength(1);
     expect(mapper.map(cmds, state())).toEqual([]);
+  });
+
+  it('maps compaction updates onto the shared compaction notice codes', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    const compaction = (status: string, error?: string) => mapper.map(
+      { type: 'update', sessionId: 's1', replay: false, update: { sessionUpdate: 'compaction_update', compactionId: 'c1', status, ...(error && { error }) } },
+      state(),
+    ).map((d) => d.type === 'notice' && [d.data.level, d.data.code, d.data.message]);
+    expect(compaction('in_progress')).toEqual([['info', COMPACTION_STARTED, 'Compacting context…']]);
+    expect(compaction('completed')).toEqual([['info', 'compaction_completed', 'Context compacted']]);
+    expect(compaction('failed', 'no room')).toEqual([['warn', 'compaction_failed', 'no room']]);
+    expect(COMPACTION_SETTLED).toEqual(expect.arrayContaining(['compaction_completed', 'compaction_failed', 'compaction_cancelled']));
   });
 
   it('gives each driver session its own turn and message ids', () => {
