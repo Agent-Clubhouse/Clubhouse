@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { useState } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MINIMAL_CHAT_CAPABILITIES, type AvailableCommand } from '../../../../shared/chat';
 import { Composer, slashTokenAt, type ComposerProps } from './Composer';
 
@@ -10,8 +10,11 @@ const COMMANDS: AvailableCommand[] = [
   { name: 'review' },
 ];
 
+let setDraftFromOutside: (text: string) => void = () => {};
+
 function Harness(props: Partial<ComposerProps>) {
   const [text, setText] = useState('');
+  setDraftFromOutside = setText;
   return (
     <Composer
       agentName="gallant-swift"
@@ -127,5 +130,44 @@ describe('Composer slash menu (#2090)', () => {
     type('then /compact');
     fireEvent.keyDown(box(), { key: 'Enter' });
     expect(onSend).toHaveBeenCalledWith('then /compact', 'send');
+  });
+
+  it('a pick that changes nothing leaves no caret jump for the next edit', () => {
+    render(<Harness />);
+    type('/effort foo', 7);
+    fireEvent.keyDown(box(), { key: 'Tab' });
+    expect(box()).toHaveValue('/effort foo');
+    expect(box().selectionStart).toBe(8);
+    type('a/effort foo', 1);
+    expect(box().selectionStart).toBe(1);
+  });
+
+  it('a draft changed from outside opens no menu until the user types', () => {
+    render(<Harness />);
+    type('hello!', 6);
+    act(() => setDraftFromOutside('see /co'));
+    expect(box()).toHaveValue('see /co');
+    expect(menu()).toBeNull();
+    type('see /com');
+    expect(menu()).toHaveTextContent('/compact');
+  });
+
+  it('Enter after a bare slash sends; Tab still picks', () => {
+    const onSend = vi.fn();
+    render(<Harness onSend={onSend} />);
+    type('yes and /');
+    expect(menu()).not.toBeNull();
+    fireEvent.keyDown(box(), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledWith('yes and /', 'send');
+    type('yes and /');
+    fireEvent.keyDown(box(), { key: 'Tab' });
+    expect(box()).toHaveValue('yes and /effort ');
+  });
+
+  it('an Enter that commits an IME composition does not pick', () => {
+    render(<Harness />);
+    type('hi /co');
+    fireEvent.keyDown(box(), { key: 'Enter', isComposing: true });
+    expect(box()).toHaveValue('hi /co');
   });
 });

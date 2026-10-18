@@ -353,7 +353,12 @@ export function Composer(props: ComposerProps) {
   const agentId = props.attachmentAgentId;
   const canAttach = !!props.onAttachmentsChange && !!agentId;
   const [cmdIndex, setCmdIndex] = useState(0);
-  const [caret, setCaret] = useState(text.length);
+  // The caret, tagged with the draft it was read from. The draft is owned by the
+  // caller: when it changes from outside (a restored draft after a failed send,
+  // another agent's draft), the caret is unknown until the user types or moves it,
+  // so no menu opens on its own.
+  const [caretAt, setCaretAt] = useState<{ text: string; at: number } | null>(null);
+  const caret = caretAt?.text === text ? Math.min(caretAt.at, text.length) : null;
   // Where the slash was when Esc closed the menu; it stays closed for that word.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const pendingCaret = useRef<number | null>(null);
@@ -378,9 +383,8 @@ export function Composer(props: ComposerProps) {
     el.style.height = `${Math.min(el.scrollHeight, line ? 72 : 200)}px`;
   }, [text, line]);
 
-  // The draft is owned by the caller, so the caret can go stale when it changes elsewhere.
   const slash = useMemo(
-    () => (capabilities?.slashCommands ? slashTokenAt(text, Math.min(caret, text.length)) : null),
+    () => (capabilities?.slashCommands && caret !== null ? slashTokenAt(text, caret) : null),
     [capabilities?.slashCommands, text, caret],
   );
   const slashMatches = useMemo(() => {
@@ -469,19 +473,28 @@ export function Composer(props: ComposerProps) {
     const after = text.slice(slash.end).replace(/^ /, '');
     const inserted = `/${c.name} `;
     const at = slash.start + inserted.length;
-    pendingCaret.current = at;
-    setCaret(at);
-    setText(text.slice(0, slash.start) + inserted + after);
+    const next = text.slice(0, slash.start) + inserted + after;
+    setCaretAt({ text: next, at });
     area.current?.focus();
+    if (next === text) {
+      // Nothing re-renders the textarea, so place the caret now rather than after the next edit.
+      area.current?.setSelectionRange(at, at);
+      return;
+    }
+    pendingCaret.current = at;
+    setText(next);
   };
 
-  const trackCaret = (el: HTMLTextAreaElement) => setCaret(el.selectionStart ?? el.value.length);
+  const trackCaret = (el: HTMLTextAreaElement) => setCaretAt({ text: el.value, at: el.selectionStart ?? el.value.length });
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (slashMatches.length > 0) {
+    // An Enter that commits an IME composition never picks or sends.
+    if (slashMatches.length > 0 && !e.nativeEvent.isComposing) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex((i) => (i + 1) % slashMatches.length); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length); return; }
-      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && slash?.query !== slashMatches[cmdIndex].name)) {
+      // Enter picks only once a name is started: "yes and /" sends as typed. Tab always picks.
+      const enterPicks = e.key === 'Enter' && !e.shiftKey && !!slash?.query && slash.query !== slashMatches[cmdIndex].name;
+      if (e.key === 'Tab' || enterPicks) {
         e.preventDefault();
         pickCommand(slashMatches[cmdIndex]);
         return;
