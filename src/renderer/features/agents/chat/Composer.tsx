@@ -80,7 +80,8 @@ export function QueueList({ queued }: { queued: QueuedMessage[] }) {
 
 // ── Level menu ──────────────────────────────────────────────────────────────
 
-function LevelPill({ level, capabilities, levelNames, onChange, compact }: { level: PermissionLevel | null; capabilities: ChatCapabilities | null; levelNames?: Partial<Record<PermissionLevel, string>>; onChange: (l: PermissionLevel) => void; compact?: boolean }) {
+/** The permission level and its menu. The composer shows it; so does the approval dock, which replaces the composer while a request waits. */
+export function LevelPill({ level, capabilities, levelNames, onChange, compact }: { level: PermissionLevel | null; capabilities: ChatCapabilities | null; levelNames?: Partial<Record<PermissionLevel, string>>; onChange: (l: PermissionLevel) => void; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const live = capabilities?.liveLevels ?? [];
   const current = level ?? 'ask';

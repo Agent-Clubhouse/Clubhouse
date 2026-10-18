@@ -24,7 +24,7 @@ import { useAgentReview } from '../review/useAgentReview';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
 import { XIcon } from './icons';
-import { Composer, QueueList, TaskList, type ComposerLayout } from './Composer';
+import { Composer, LevelPill, QueueList, TaskList, type ComposerLayout } from './Composer';
 import { useNarrow, useShortWindow } from '../pane/useNarrow';
 import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions } from './useChatSession';
 import { buildAgentMap, commandForRequest, diffsForRequest, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
@@ -215,6 +215,22 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
         queueSize={state.pendingPermissions.length}
         onRespond={actions.respondPermission}
       />
+    );
+    // The card replaces the composer, and with it the level pill: keep the pill reachable, so the user can
+    // move to a looser level from here. It sits outside the card so its keys never answer the request.
+    dock = (
+      <>
+        {dock}
+        <div className="flex items-center" data-testid="chat-permission-level">
+          <LevelPill
+            level={state.level}
+            capabilities={state.capabilities}
+            levelNames={state.levelNames}
+            onChange={(l) => { void actions.setLevel(l); }}
+            compact={composerLayout !== 'wide'}
+          />
+        </div>
+      </>
     );
   } else if (question) {
     dock = <QuestionCard key={question.requestId} request={question} busy={questionBusy} onAnswer={actions.answerQuestion} />;
