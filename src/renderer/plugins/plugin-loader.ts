@@ -1202,12 +1202,15 @@ export async function refreshCommunityPlugins(opts?: {
       // theme registry reflects any manifest changes (new colors, added/
       // removed themes).  The registry is separate from the store, so
       // just preserving the 'activated' status above is not enough.
-      if (isActive && validation.manifest.kind === 'pack' && validation.manifest.contributes?.themes) {
-        // Unregister old themes first (safe even if they weren't registered)
-        if (existing?.manifest.contributes?.themes) {
-          unregisterPackThemes(id, existing.manifest.contributes.themes);
-        }
-        registerPackThemes(id, validation.manifest.contributes.themes);
+      if (isActive && validation.manifest.kind === 'pack') {
+        // Register over the existing entries, then drop only the themes the new
+        // manifest removed. Unregistering first would leave the active theme
+        // missing for a moment and the theme store would fall back (#2096).
+        const nextThemes = validation.manifest.contributes?.themes ?? [];
+        registerPackThemes(id, nextThemes);
+        const nextIds = new Set(nextThemes.map((t) => t.id));
+        const removed = (existing?.manifest.contributes?.themes ?? []).filter((t) => !nextIds.has(t.id));
+        unregisterPackThemes(id, removed);
       }
 
       // Activate if the plugin is in app-enabled but not yet active

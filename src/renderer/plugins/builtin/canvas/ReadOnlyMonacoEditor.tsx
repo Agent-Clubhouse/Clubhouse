@@ -24,7 +24,8 @@ export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave 
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
-  const themeId = useThemeStore((s) => s.themeId);
+  // The applied theme, not the selection: they differ while a plugin theme is unregistered.
+  const themeId = useThemeStore((s) => s.theme.id);
   const themeIdRef = useRef(themeId);
   // Latest props for the async editor creation and the Cmd+S handler — props can
   // change while Monaco is loading, and the keybinding outlives the mount render.
