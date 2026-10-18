@@ -209,6 +209,8 @@ describe('AcpClient', () => {
       mcpServers: [
         { name: 'clubhouse', command: 'node', args: ['bridge.js'], env: [{ name: 'CLUBHOUSE_AGENT_ID', value: 'a1' }, { name: 'CLUBHOUSE_HOOK_NONCE', value: nonce }] },
         { type: 'http', name: 'remote', url: 'https://example.test/mcp', headers: [{ name: 'Authorization', value: 'Bearer secret-token' }] },
+        // The bridge as an http server (#2240): its nonce rides in a header.
+        { type: 'http', name: 'clubhouse-http', url: 'http://127.0.0.1:4321/mcp/a1', headers: [{ name: 'X-Clubhouse-Nonce', value: 'header-nonce' }] },
       ],
     };
     void client.request('session/new', params).catch(() => {});
@@ -219,6 +221,8 @@ describe('AcpClient', () => {
     expect(logged).toContain('CLUBHOUSE_HOOK_NONCE');
     expect(logged).not.toContain(nonce);
     expect(logged).not.toContain('secret-token');
+    expect(logged).toContain('X-Clubhouse-Nonce');
+    expect(logged).not.toContain('header-nonce');
   });
 
   it('redactAcpParamsForLog keeps names and leaves other params untouched', () => {

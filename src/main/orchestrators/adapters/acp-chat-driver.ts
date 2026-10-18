@@ -218,8 +218,30 @@ export class AcpChatDriver implements ChatDriver {
     opts.signal?.addEventListener('abort', onAbort, { once: true });
     try {
       const caps = await session.start();
-      const { servers, skipped } = toAcpMcpServers(opts.mcpServers, opts.env);
+      const { servers, skipped, unsupported } = toAcpMcpServers(opts.mcpServers, opts.env, {
+        transports: caps.mcp,
+        httpEndpoints: opts.mcpHttpEndpoints,
+      });
       if (skipped.length) this.log('warn', 'MCP servers not expressible over ACP', { skipped });
+      if (unsupported.length) {
+        // Copilot over ACP drops client stdio servers (#2240). They are still
+        // sent, in case a later version takes them.
+        this.log('warn', 'Agent does not accept stdio MCP servers over ACP; these will not load in chat', {
+          unsupported,
+          accepts: caps.mcp,
+        });
+        queue.push({
+          type: 'notice',
+          data: {
+            level: 'warn',
+            code: 'mcp_servers_unsupported',
+            message: `${caps.agent.title ?? caps.agent.name} chat can't load stdio MCP servers, so these are off: ${unsupported.join(', ')}. Run them in Terminal mode, or set them up as HTTP servers.`,
+          },
+        });
+      }
+      this.log('info', 'MCP servers for session', {
+        servers: servers.map((s) => ({ name: s.name, transport: 'type' in s ? s.type : 'stdio' })),
+      });
       const setup = { cwd: opts.cwd, mcpServers: servers };
       const startFresh = async (logMessage: string, message: string) => {
         this.log('warn', logMessage, { sessionId: resumeNativeSessionId });

@@ -218,6 +218,8 @@ const mockCodexProvider = {
 const mockMcpWaitReady = vi.fn(() => Promise.reject(new Error('MCP bridge server not started')));
 vi.mock('./clubhouse-mcp/bridge-server', () => ({
   waitReady: (...args: unknown[]) => mockMcpWaitReady(...args),
+  NONCE_HEADER: 'X-Clubhouse-Nonce',
+  agentEndpointUrl: (port: number, agentId: string) => `http://127.0.0.1:${port}/mcp/${agentId}`,
 }));
 
 const mockInjectClubhouseMcp = vi.fn(() => Promise.resolve());
@@ -229,6 +231,7 @@ const mockBuildClubhouseMcpDef = vi.fn((port: number) => ({
 vi.mock('./clubhouse-mcp/injection', () => ({
   injectClubhouseMcp: (...args: unknown[]) => mockInjectClubhouseMcp(...args),
   buildClubhouseMcpDef: (...args: unknown[]) => mockBuildClubhouseMcpDef(...args),
+  CLUBHOUSE_NONCE_ENV: 'CLUBHOUSE_HOOK_NONCE',
 }));
 
 vi.mock('../orchestrators', () => ({

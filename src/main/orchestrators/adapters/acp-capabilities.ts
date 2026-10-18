@@ -54,7 +54,11 @@ export interface AcpDriverCapabilities {
   };
 
   prompt: { image: boolean; audio: boolean; embeddedContext: boolean };
-  mcp: { stdio: true; http: boolean; sse: boolean };
+  /**
+   * MCP transports the agent takes in `session/new`. ACP makes stdio the
+   * baseline, but an agent can still refuse it (Copilot does, #2240).
+   */
+  mcp: { stdio: boolean; http: boolean; sse: boolean };
 
   slashCommands: boolean;
   /** Commands that open TUI pickers don't work as prompt text. */

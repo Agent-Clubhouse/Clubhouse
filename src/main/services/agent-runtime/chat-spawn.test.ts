@@ -31,10 +31,15 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 const registry = vi.hoisted(() => ({ setNonce: vi.fn(), setRuntime: vi.fn(), get: vi.fn() }));
 vi.mock('../agent-registry', () => ({ agentRegistry: registry, untrackAgent: vi.fn() }));
 vi.mock('../config-pipeline', () => ({ snapshotFile: vi.fn(), restoreForAgent: vi.fn() }));
-vi.mock('../clubhouse-mcp/bridge-server', () => ({ waitReady: vi.fn(async () => 4321) }));
+vi.mock('../clubhouse-mcp/bridge-server', () => ({
+  waitReady: vi.fn(async () => 4321),
+  NONCE_HEADER: 'X-Clubhouse-Nonce',
+  agentEndpointUrl: (port: number, agentId: string) => `http://127.0.0.1:${port}/mcp/${agentId}`,
+}));
 vi.mock('../clubhouse-mcp/injection', () => ({
   injectClubhouseMcp: vi.fn(async () => {}),
   buildClubhouseMcpDef: vi.fn(() => ({ type: 'http', url: 'http://127.0.0.1:4321/mcp' })),
+  CLUBHOUSE_NONCE_ENV: 'CLUBHOUSE_HOOK_NONCE',
 }));
 vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => true) }));
 vi.mock('../materialization-service', () => ({ resolveProjectMcpServers: vi.fn(async () => ({})) }));
@@ -298,6 +303,11 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(vi.mocked(injectClubhouseMcp)).toHaveBeenCalledWith('/p/wt', 'agent-1', 4321, p.conventions, { projectPath: '/p', agentOverride: undefined });
     expect(vi.mocked(buildClubhouseMcpDef)).toHaveBeenCalledWith(4321, 'agent-1');
     expect(JSON.stringify(opts.mcpServers)).not.toContain(nonce);
+    // The bridge's HTTP endpoint names the nonce's env var, not its value (#2240).
+    expect(opts.mcpHttpEndpoints).toEqual({
+      clubhouse: { url: 'http://127.0.0.1:4321/mcp/agent-1', headersFromEnv: { 'X-Clubhouse-Nonce': 'CLUBHOUSE_HOOK_NONCE' } },
+    });
+    expect(JSON.stringify(opts.mcpHttpEndpoints)).not.toContain(nonce);
   });
 
   it('reads the agent\'s own auto-sleep at start and re-arms when it changes, until the session ends (#2143)', async () => {

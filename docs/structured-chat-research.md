@@ -243,6 +243,7 @@ Each CLI was checked with `--help`, schema generators and handshakes. Each got a
 - **Permissions:** `allow_once`, `allow_always`, `reject_once`. There is no `reject_always`, and nothing says what "always" covers. Rules can be set only at launch.
 - **Quirks:**
   - It ignored the client's file-system capabilities and wrote the file itself.
+  - MCP servers from the client must be `http` or `sse` (1.0.98, #2240). A stdio server in `session/new` is dropped, and Copilot's own log (`~/.copilot/logs/process-*.log`) shows `Rejecting non-http/sse MCP server "<name>" from client`. Clubhouse sends its bridge as an `http` server pointing at the bridge endpoint (`http://127.0.0.1:<port>/mcp/<agentId>`) with the nonce in an `X-Clubhouse-Nonce` header, over the RPC pipe only. It does this for any ACP agent that advertises `mcpCapabilities.http`. The bridge returns an `Mcp-Session-Id` on `initialize`. Copilot echoes it, opens `GET /mcp/<agentId>` (`Accept: text/event-stream`) for `notifications/tools/list_changed`, and sends `DELETE` at `session/close`. Without the session id it never opens the stream. The session id never replaces the nonce. Project MCP servers that are stdio can't be converted: Copilot chat warns that they won't load. To use them in Copilot chat, run them as HTTP servers and configure them by `url`, add them to Copilot's own `~/.copilot/mcp-config.json` (which Copilot loads itself), or use Terminal mode, which takes stdio.
   - A stray `Info: <path>` line appeared in assistant text.
   - Pass `--no-auto-update` to pin the version.
 

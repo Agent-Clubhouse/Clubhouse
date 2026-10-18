@@ -16,8 +16,22 @@ export interface AgentRegistration {
   nonce?: string;
 }
 
+/** Called when an agent's nonce changes or it is untracked. */
+export type AgentAuthListener = (agentId: string) => void;
+
 class AgentRegistry {
   private readonly registrations = new Map<string, AgentRegistration>();
+  private readonly authListeners = new Set<AgentAuthListener>();
+
+  /** Listen for nonce changes and untracking; returns an unsubscribe. */
+  onAuthChange(listener: AgentAuthListener): () => void {
+    this.authListeners.add(listener);
+    return () => { this.authListeners.delete(listener); };
+  }
+
+  private emitAuthChange(agentId: string): void {
+    for (const listener of [...this.authListeners]) listener(agentId);
+  }
 
   register(agentId: string, registration: AgentRegistration): void {
     this.registrations.set(agentId, registration);
@@ -30,7 +44,9 @@ class AgentRegistry {
   setNonce(agentId: string, nonce: string): void {
     const registration = this.registrations.get(agentId);
     if (!registration) return;
+    const changed = registration.nonce !== nonce;
     registration.nonce = nonce;
+    if (changed) this.emitAuthChange(agentId);
   }
 
   setRuntime(agentId: string, runtime: AgentRuntime): void {
@@ -40,7 +56,7 @@ class AgentRegistry {
   }
 
   untrack(agentId: string): void {
-    this.registrations.delete(agentId);
+    if (this.registrations.delete(agentId)) this.emitAuthChange(agentId);
   }
 
   getAllRegistrations(): Map<string, AgentRegistration> {
