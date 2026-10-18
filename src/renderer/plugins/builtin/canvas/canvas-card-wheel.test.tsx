@@ -13,6 +13,7 @@ vi.mock('./AgentCanvasView', () => ({
         <p data-testid="message">old reply</p>
       </div>
       <div data-testid="status-strip">idle</div>
+      <div className="xterm"><div className="xterm-viewport" /><div data-testid="terminal-text" className="xterm-screen">$ ls</div></div>
     </div>
   ),
 }));
@@ -101,6 +102,12 @@ describe('canvas card wheel (#2111)', () => {
     renderCard(false);
     fireEvent.wheel(screen.getByTestId('canvas-view-titlebar'), { deltaY: 120 });
     expect(canvasWheel.mock.calls).toEqual([['pan']]);
+  });
+
+  it('keeps a wheel over a terminal at the end of its scrollback from panning', () => {
+    renderCard(false);
+    fireEvent.wheel(screen.getByTestId('terminal-text'), { deltaY: 120 });
+    expect(canvasWheel).not.toHaveBeenCalled();
   });
 
   it('pans from non-scrolling content in an unselected card', () => {

@@ -85,3 +85,47 @@ describe('isInScrollableRegion / containScrollableWheel', () => {
     expect(stopPropagation).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('terminals, opt-in regions and wheel direction (#2111 review)', () => {
+  it('treats a terminal as a wheel region even with no scrolling ancestor (xterm scrollback at its end)', () => {
+    const boundary = document.createElement('div');
+    const term = document.createElement('div');
+    term.className = 'xterm';
+    const screenEl = document.createElement('div');
+    screenEl.className = 'xterm-screen';
+    const viewport = document.createElement('div');
+    viewport.className = 'xterm-viewport'; // a sibling of the screen, not an ancestor
+    term.append(viewport, screenEl);
+    boundary.appendChild(term);
+    document.body.appendChild(boundary);
+    expect(isInScrollableRegion(screenEl, boundary)).toBe(true);
+  });
+
+  it('honours a data-wheel-region opt-in', () => {
+    const boundary = document.createElement('div');
+    const region = document.createElement('div');
+    region.dataset.wheelRegion = '';
+    const leaf = document.createElement('span');
+    region.appendChild(leaf);
+    boundary.appendChild(region);
+    document.body.appendChild(boundary);
+    expect(isInScrollableRegion(leaf, boundary)).toBe(true);
+  });
+
+  it('only counts an axis the wheel moves on', () => {
+    const boundary = document.createElement('div');
+    const code = document.createElement('pre');
+    code.style.overflowX = 'auto';
+    Object.defineProperty(code, 'scrollWidth', { configurable: true, value: 800 });
+    Object.defineProperty(code, 'clientWidth', { configurable: true, value: 200 });
+    boundary.appendChild(code);
+    document.body.appendChild(boundary);
+    const stopPropagation = vi.fn();
+    // A vertical wheel over a sideways-scrolling code block isn't contained...
+    containScrollableWheel({ ctrlKey: false, metaKey: false, stopPropagation, target: code, deltaX: 0, deltaY: 120 } as unknown as React.WheelEvent, boundary);
+    expect(stopPropagation).not.toHaveBeenCalled();
+    // ...a sideways one (shift+wheel) is.
+    containScrollableWheel({ ctrlKey: false, metaKey: false, stopPropagation, target: code, deltaX: 120, deltaY: 0 } as unknown as React.WheelEvent, boundary);
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
+  });
+});

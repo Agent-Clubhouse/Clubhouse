@@ -920,9 +920,9 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
           Keyboard isolation is handled by the workspace's focus management
           (auto-focus on mount, reclaim on deselect via Escape / empty click).
           Wheel: a selected view contains every plain wheel. An unselected
-          view contains a wheel over a region that scrolls (a chat
-          transcript, a terminal's scrollback), even at its scroll end, and
-          lets the rest pan the canvas. Ctrl/Cmd+wheel always reaches the
+          view contains a wheel over a region that scrolls on the wheel's
+          axis (a chat transcript) or over a terminal, even at its scroll
+          end, and lets the rest pan the canvas. Ctrl/Cmd+wheel always reaches the
           canvas to zoom. The header is outside this area, so it pans.
           When the view is zoomed, the overlay renders a full-size copy of the
           content, so skip rendering here to prevent duplicate terminals from

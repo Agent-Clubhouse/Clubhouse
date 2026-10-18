@@ -57,7 +57,7 @@ test.afterAll(async () => {
   await electronApp?.close();
 });
 
-test('wheel over a scrolling region in an unselected card scrolls it and does not pan; the header pans', async () => {
+test('a wheel over a scrolling region in an unselected card does not pan the canvas; the header pans', async () => {
   const workspace = window.locator('[data-testid="canvas-workspace"]');
   await expect(workspace).toBeVisible({ timeout: 5_000 });
   await workspace.click({ button: 'right', position: { x: 150, y: 150 }, force: true });
