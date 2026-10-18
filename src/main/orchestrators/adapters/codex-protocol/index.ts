@@ -23,6 +23,7 @@ import type { FileChangeRequestApprovalResponse } from './generated/v2/FileChang
 import type { GetAccountRateLimitsResponse } from './generated/v2/GetAccountRateLimitsResponse';
 import type { McpServerElicitationRequestResponse } from './generated/v2/McpServerElicitationRequestResponse';
 import type { PermissionsRequestApprovalResponse } from './generated/v2/PermissionsRequestApprovalResponse';
+import type { ModelListResponse } from './generated/v2/ModelListResponse';
 import type { ThreadListResponse } from './generated/v2/ThreadListResponse';
 import type { ThreadReadResponse } from './generated/v2/ThreadReadResponse';
 import type { ThreadResumeResponse } from './generated/v2/ThreadResumeResponse';
@@ -48,6 +49,8 @@ export type { SandboxMode } from './generated/v2/SandboxMode';
 export type { SandboxPolicy } from './generated/v2/SandboxPolicy';
 export type { ReviewTarget } from './generated/v2/ReviewTarget';
 export type { ReviewStartResponse } from './generated/v2/ReviewStartResponse';
+export type { Model } from './generated/v2/Model';
+export type { ModelListResponse };
 export type { Thread } from './generated/v2/Thread';
 export type { ThreadItem } from './generated/v2/ThreadItem';
 export type { ThreadStatus } from './generated/v2/ThreadStatus';
@@ -92,6 +95,7 @@ export interface CodexResponseMap {
   'turn/interrupt': TurnInterruptResponse;
   'account/rateLimits/read': GetAccountRateLimitsResponse;
   'review/start': ReviewStartResponse;
+  'model/list': ModelListResponse;
 }
 
 /** Result of a client request; `unknown` for methods not yet in CodexResponseMap. */

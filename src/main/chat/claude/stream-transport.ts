@@ -146,7 +146,8 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
   }
 
   async appliedSettings(): Promise<ClaudeAppliedSettings> {
-    return appliedSettingsFromWire(await this.control({ subtype: 'get_settings' }));
+    // Short: start() waits on the first read, and a CLI without get_settings mustn't hold it up.
+    return appliedSettingsFromWire(await this.control({ subtype: 'get_settings' }, 5_000));
   }
 
   async close(): Promise<void> {

@@ -11,6 +11,11 @@
 // stderr. Every other argument (`-p`, `app-server`, `--acp`, …) is accepted
 // and recorded in the report, so a test can assert how the CLI was launched.
 //
+// Standing queries: read-only requests a driver may send at any point (the
+// applied model and effort, the model list) are answered with an empty result
+// whenever they arrive, unless the fixture records that request itself. So a
+// fixture recorded before a driver started asking still replays.
+//
 // Options (flag or environment variable):
 //   --fake-fixture <path>      CLUBHOUSE_FAKE_CLI_FIXTURE   fixture to replay (required)
 //   --fake-report <path>       CLUBHOUSE_FAKE_CLI_REPORT    JSON progress report, rewritten after every step
@@ -23,6 +28,7 @@ import {
   clientRequestId,
   loadFixture,
   matchClientMessage,
+  messageKey,
   remapCliMessage,
   splitLines,
 } from './fixture-format.mjs';
@@ -59,6 +65,28 @@ if (!opts.fixture) {
 
 const { header, entries } = await loadFixture(opts.fixture);
 const protocol = header.protocol;
+
+/** Empty answers to the standing queries, by message key (see the header comment). */
+const STANDING_QUERIES = {
+  'claude-stream-json': {
+    'control_request:get_settings': (msg) => ({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: {} } }),
+  },
+  'codex-app-server': {
+    'request:model/list': (msg) => ({ id: msg.id, result: { data: [], nextCursor: null } }),
+  },
+};
+const recordedKeys = new Set(entries.filter((e) => e.from === 'client' && e.msg).map((e) => messageKey(protocol, e.msg)));
+const standing = Object.fromEntries(
+  Object.entries(STANDING_QUERIES[protocol] ?? {}).filter(([key]) => !recordedKeys.has(key)),
+);
+
+/** Answer a standing query; false for anything the fixture should match. */
+function answerStandingQuery(msg) {
+  const answer = standing[messageKey(protocol, msg)];
+  if (!answer) return false;
+  process.stdout.write(JSON.stringify(answer(msg)) + '\n');
+  return true;
+}
 
 const report = {
   pid: process.pid,
@@ -151,11 +179,14 @@ async function replay() {
     const { lines, rest } = splitLines(stdinBuffer + chunk);
     stdinBuffer = rest;
     for (const line of lines) {
+      let msg;
       try {
-        inbox.push(JSON.parse(line));
+        msg = JSON.parse(line);
       } catch {
         inbox.push({ __unparsed: line });
+        continue;
       }
+      if (!answerStandingQuery(msg)) inbox.push(msg);
     }
     notify();
   });

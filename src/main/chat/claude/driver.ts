@@ -385,6 +385,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private efforts: string[] | undefined;
   /** A slash command (/model, /effort, …) ran this turn: re-read the applied settings when it ends. */
   private slashThisTurn = false;
+  /** Set once session_started is out; model changes wait for it. */
+  private started = false;
+  /** The last applied model and effort, held until session_started when they arrive first. */
+  private applied: { model?: string; effort?: string } | undefined;
   /** apiKeySource 'none' means a claude.ai login: dollars are API-price estimates. */
   private costIsEstimate = true;
   /**
@@ -420,6 +424,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   async start(): Promise<void> {
     this.pump = this.drain();
     await this.transport.start();
+    // Before the first prompt, so the request order on the wire is fixed.
+    await this.refreshApplied();
   }
 
   async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
@@ -509,10 +515,19 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       return false;
     }
     if (!applied.model && applied.effort === undefined) return false;
-    const model = applied.model ? claudeModelRow(this.modelRows, applied.model)?.value ?? applied.model : this.model;
-    const effort = applied.effort === undefined ? this.effort : applied.effort ?? undefined;
-    if (model) this.noteModel(model, effort);
+    this.applied = {
+      model: applied.model ?? this.applied?.model,
+      effort: applied.effort === undefined ? this.applied?.effort ?? this.effort : applied.effort ?? undefined,
+    };
+    this.noteApplied();
     return true;
+  }
+
+  private noteApplied(): void {
+    if (!this.started || !this.applied) return;
+    const { model, effort } = this.applied;
+    const id = model ? claudeModelRow(this.modelRows, model)?.value ?? model : this.model;
+    if (id) this.noteModel(id, effort);
   }
 
   /** Report a model or effort change, and the effort levels the model offers when they differ. */
@@ -609,7 +624,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
             data: { models: this.modelRows.map((m) => ({ id: m.value, label: m.displayName || m.value, description: m.description || undefined })) },
           });
         }
-        void this.refreshApplied();
+        this.started = true;
+        this.noteApplied();
         return;
       }
       case 'session_started':

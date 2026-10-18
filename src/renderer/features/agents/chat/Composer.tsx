@@ -4,7 +4,7 @@
  * queues. Stop (Esc) interrupts the turn and keeps the session.
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
@@ -166,6 +166,22 @@ export function switchNote(modelSwitch: string, effortSwitch: string): string | 
   return model || effort ? `${parts.join('; ')}.` : undefined;
 }
 
+/** Closes an open menu on any mousedown outside it (the menu stops its own). */
+function useCloseOnMouseDown(open: boolean, close: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [open, close]);
+}
+
+const chipClass = 'h-[26px] flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] disabled:opacity-100 disabled:cursor-default';
+const menuClass = 'absolute left-0 bottom-9 bg-ctp-crust border border-surface-1 rounded-lg shadow-xl p-1.5 z-dropdown flex flex-col gap-px';
+
+function Radio({ on }: { on: boolean }) {
+  return <span className={`w-3 h-3 rounded-full flex-shrink-0 ${on ? 'border-[3.5px] border-ctp-accent' : 'border-[1.5px] border-surface-2'}`} />;
+}
+
 function ModelPill({ models, efforts, model, effort, capabilities, onChange }: {
   models: ChatModelOption[];
   efforts: string[];
@@ -175,22 +191,17 @@ function ModelPill({ models, efforts, model, effort, capabilities, onChange }: {
   onChange: (modelId: string, effort?: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  useCloseOnMouseDown(open, close);
   const modelSwitch = capabilities?.modelSwitch ?? 'none';
-  const effortSwitch = capabilities?.effortSwitch ?? 'none';
-  const canChange = models.length > 0 && (modelSwitch !== 'none' || effortSwitch !== 'none');
+  const canChange = models.length > 0 && modelSwitch !== 'none';
   const current = models.find((m) => m.id === model);
   const label = current?.label ?? model;
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener('mousedown', close);
-    return () => window.removeEventListener('mousedown', close);
-  }, [open]);
   if (!label) return null;
   // Keep the effort across a model switch only if it's still on offer.
   const keptEffort = effort && efforts.includes(effort) ? effort : undefined;
+  const note = switchNote(modelSwitch, 'none');
 
-  const note = switchNote(modelSwitch, effortSwitch);
   return (
     <div className="relative">
       <button
@@ -200,59 +211,90 @@ function ModelPill({ models, efforts, model, effort, capabilities, onChange }: {
         aria-haspopup="menu"
         aria-expanded={open}
         title={canChange ? 'Model' : "This agent can't change model mid-session"}
-        className="h-[26px] flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] disabled:opacity-100 disabled:cursor-default"
+        className={chipClass}
         data-testid="chat-model-pill"
       >
         {label}
-        {effort && <span className="text-ctp-overlay0">· {effort}</span>}
         {canChange && <ChevronDown className="text-ctp-overlay1" />}
       </button>
       {open && (
-        <div
-          role="menu"
-          className="absolute left-0 bottom-9 w-[300px] max-h-[360px] overflow-y-auto bg-ctp-crust border border-surface-1 rounded-lg shadow-xl p-1.5 z-dropdown flex flex-col gap-px"
-          onMouseDown={(e) => e.stopPropagation()}
-          data-testid="chat-model-menu"
-        >
+        <div role="menu" className={`${menuClass} w-[300px] max-h-[360px] overflow-y-auto`} onMouseDown={(e) => e.stopPropagation()} data-testid="chat-model-menu">
           <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Model</div>
           {models.map((m) => {
             const selected = m.id === current?.id;
-            const selectable = selected || modelSwitch !== 'none';
             return (
-              <div key={m.id} className={`flex flex-col gap-1 px-2 py-1.5 rounded-md ${selected ? 'bg-surface-0' : ''}`}>
-                <button
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={selected}
-                  disabled={!selectable}
-                  onClick={() => { if (!selected) { setOpen(false); onChange(m.id, keptEffort); } }}
-                  className="flex items-center gap-2.5 text-left text-[12.5px] text-ctp-text disabled:opacity-45"
-                >
-                  <span className={`w-3 h-3 rounded-full flex-shrink-0 ${selected ? 'border-[3.5px] border-ctp-accent' : 'border-[1.5px] border-surface-2'}`} />
-                  <span className="flex flex-col min-w-0">
-                    <span className="truncate">{m.label}</span>
-                    {m.description && <span className="text-[11px] text-ctp-overlay1 truncate">{m.description}</span>}
-                  </span>
-                  {m.costHint && <span className="ml-auto text-[11px] text-ctp-overlay1 whitespace-nowrap">{m.costHint}</span>}
-                </button>
-                {selected && efforts.length > 0 && effortSwitch !== 'none' && (
-                  <div className="flex flex-wrap gap-1 pl-[22px]" role="group" aria-label="Effort">
-                    {efforts.map((e) => (
-                      <button
-                        key={e}
-                        type="button"
-                        aria-pressed={e === effort}
-                        onClick={() => { if (e !== effort) { setOpen(false); onChange(m.id, e); } }}
-                        className={`px-2 py-0.5 rounded text-[11px] ${e === effort ? 'bg-ctp-accent text-ctp-crust' : 'bg-surface-1 text-ctp-subtext1'}`}
-                      >
-                        {e}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <button
+                key={m.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                onClick={() => { setOpen(false); if (!selected) onChange(m.id, keptEffort); }}
+                className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${selected ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
+              >
+                <Radio on={selected} />
+                <span className="flex flex-col min-w-0">
+                  <span className="truncate">{m.label}</span>
+                  {m.description && <span className="text-[11px] text-ctp-overlay1 truncate">{m.description}</span>}
+                </span>
+                {m.costHint && <span className="ml-auto text-[11px] text-ctp-overlay1 whitespace-nowrap">{m.costHint}</span>}
+              </button>
             );
           })}
+          {note && <div className="px-2 pt-1.5 text-[11px] text-ctp-overlay1">{note}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Reasoning effort for the current model (#2091); absent when the model has none. */
+function EffortPill({ efforts, model, effort, capabilities, onChange }: {
+  efforts: string[];
+  model: string | null;
+  effort: string | null;
+  capabilities: ChatCapabilities | null;
+  onChange: (modelId: string, effort: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  useCloseOnMouseDown(open, close);
+  const effortSwitch = capabilities?.effortSwitch ?? 'none';
+  if (!efforts.length && !effort) return null;
+  const canChange = !!model && efforts.length > 0 && effortSwitch !== 'none';
+  const note = switchNote('none', effortSwitch);
+  const label = effort ? `${effort} effort` : 'Default effort';
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        disabled={!canChange}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={canChange ? 'Reasoning effort' : "This agent can't change effort mid-session"}
+        className={chipClass}
+        data-testid="chat-effort-pill"
+      >
+        {label}
+        {canChange && <ChevronDown className="text-ctp-overlay1" />}
+      </button>
+      {open && model && (
+        <div role="menu" className={`${menuClass} w-[220px]`} onMouseDown={(e) => e.stopPropagation()} data-testid="chat-effort-menu">
+          <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Effort</div>
+          {efforts.map((e) => (
+            <button
+              key={e}
+              type="button"
+              role="menuitemradio"
+              aria-checked={e === effort}
+              onClick={() => { setOpen(false); if (e !== effort) onChange(model, e); }}
+              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${e === effort ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
+            >
+              <Radio on={e === effort} />
+              {e}
+            </button>
+          ))}
           {note && <div className="px-2 pt-1.5 text-[11px] text-ctp-overlay1">{note}</div>}
         </div>
       )}
@@ -560,6 +602,13 @@ export function Composer(props: ComposerProps) {
       <ModelPill
         models={props.onModelChange ? props.models ?? [] : []}
         efforts={props.efforts ?? []}
+        model={props.model}
+        effort={props.effort}
+        capabilities={capabilities}
+        onChange={(m, e) => props.onModelChange?.(m, e)}
+      />
+      <EffortPill
+        efforts={props.onModelChange ? props.efforts ?? [] : []}
         model={props.model}
         effort={props.effort}
         capabilities={capabilities}
