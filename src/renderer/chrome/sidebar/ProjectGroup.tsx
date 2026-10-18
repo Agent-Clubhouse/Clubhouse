@@ -1,12 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { AgentRow } from './AgentRow';
-import { agentDot, groupProjectAgents, projectRollup } from './treeModel';
+import { agentDot, groupProjectAgents, moveWithinGroup, projectRollup } from './treeModel';
 import type { ProjectFold } from '../chromeStore';
 import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
 import { reportChromeFeature } from '../telemetry';
 import type { ActionDef } from '../../features/agents/useAgentRowActions';
+import type { AgentDragHandlers } from './AgentRow';
 import { Tooltip } from '../../components/Tooltip';
 import { TruncatedLabel } from '../../components/TruncatedLabel';
 import { markdownToPlainText } from '../../utils/safe-markdown';
@@ -106,6 +107,8 @@ export interface ProjectGroupProps {
 }
 
 const HEADER_INDENT = 6;
+/** Drag data type for agent rows, so a project drop never mistakes one for a project. */
+const AGENT_DRAG_TYPE = 'application/x-clubhouse-agent';
 const ROW_INDENT = 26;
 
 export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroupProps) {
@@ -124,38 +127,80 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   const isActiveProject = project.id === activeProjectId;
   const expanded = !collapsed;
 
-  // Move up / Move down for durable agents (§4.8). A move swaps a row with its
-  // visible neighbour in the same group (awake, or inside the sleeping fold);
-  // the group's new order goes back into the saved order at the same places.
+  // Reordering durable agents (§4.8): by drag, by Move up / Move down in the
+  // row menu, or by Alt+Up / Alt+Down on the row. A move stays inside the
+  // agent's group (awake, or inside the sleeping fold); the group's new order
+  // goes back into the saved order at the same places (moveWithinGroup).
   // Memoized on the order and grouping, so memoized rows don't re-render on
   // every status change.
   const durableKey = agents.filter((a) => a.kind === 'durable').map((a) => `${a.id}${a.status === 'sleeping' ? ' s' : ''}`).join('\n');
-  const moveActionsById = useMemo(() => {
-    const map = new Map<string, ActionDef[]>();
-    if (!onReorderAgents || !durableKey) return map;
-    const entries = durableKey.split('\n').map((e) => ({ id: e.replace(/ s$/, ''), sleeping: e.endsWith(' s') }));
+  const reorder = useMemo(() => {
+    const entries = durableKey ? durableKey.split('\n').map((e) => ({ id: e.replace(/ s$/, ''), sleeping: e.endsWith(' s') })) : [];
     const order = entries.map((e) => e.id);
+    const groupOf = new Map<string, string[]>();
     for (const sleeping of [false, true]) {
       const group = entries.filter((e) => e.sleeping === sleeping).map((e) => e.id);
-      const slots = group.map((id) => order.indexOf(id));
-      group.forEach((id, i) => {
-        const move = (to: number) => {
-          const reordered = [...group];
-          reordered.splice(i, 1);
-          reordered.splice(to, 0, id);
-          const next = [...order];
-          slots.forEach((slot, k) => { next[slot] = reordered[k]; });
-          onReorderAgents(project.id, next);
-        };
-        const list: ActionDef[] = [];
-        if (i > 0) list.push({ id: 'move-up', label: 'Move up', icon: null, hoverColor: '', visible: true, handler: () => move(i - 1) });
-        if (i < group.length - 1) list.push({ id: 'move-down', label: 'Move down', icon: null, hoverColor: '', visible: true, handler: () => move(i + 1) });
-        map.set(id, list);
-      });
+      group.forEach((id) => groupOf.set(id, group));
     }
-    return map;
+    const move = (draggedId: string, targetId: string): boolean => {
+      const group = groupOf.get(draggedId);
+      if (!onReorderAgents || !group || groupOf.get(targetId) !== group) return false;
+      const next = moveWithinGroup(order, group, draggedId, targetId);
+      if (next) onReorderAgents(project.id, next);
+      return next !== null;
+    };
+    const actions = new Map<string, ActionDef[]>();
+    if (onReorderAgents) {
+      for (const [id, group] of groupOf) {
+        const i = group.indexOf(id);
+        const list: ActionDef[] = [];
+        if (i > 0) list.push({ id: 'move-up', label: 'Move up', icon: null, hoverColor: '', visible: true, handler: () => { move(id, group[i - 1]); } });
+        if (i < group.length - 1) list.push({ id: 'move-down', label: 'Move down', icon: null, hoverColor: '', visible: true, handler: () => { move(id, group[i + 1]); } });
+        actions.set(id, list);
+      }
+    }
+    return { groupOf, move, actions };
   }, [durableKey, onReorderAgents, project.id]);
-  const moveActions = (agent: Agent) => moveActionsById.get(agent.id);
+  const moveActions = (agent: Agent) => reorder.actions.get(agent.id);
+
+  // Drag to reorder agents, with a line where the row will land. The ref is
+  // the live drag (dragover must decide synchronously); the state draws the line.
+  const agentDragRef = useRef<string | null>(null);
+  const [agentDrag, setAgentDrag] = useState<{ id: string; overId: string | null } | null>(null);
+  const agentDragHandlers = useMemo<AgentDragHandlers>(() => ({
+    onDragStart: (e, id) => {
+      e.stopPropagation();
+      agentDragRef.current = id;
+      setAgentDrag({ id, overId: null });
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData(AGENT_DRAG_TYPE, id);
+    },
+    onDragOver: (e, id) => {
+      const dragged = agentDragRef.current;
+      // Only within the dragged agent's own group.
+      if (!dragged || dragged === id || reorder.groupOf.get(dragged) !== reorder.groupOf.get(id)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      setAgentDrag((drag) => (drag && drag.overId !== id ? { ...drag, overId: id } : drag));
+    },
+    onDrop: (e, id) => {
+      const dragged = agentDragRef.current;
+      if (!dragged) return;
+      e.preventDefault();
+      e.stopPropagation();
+      agentDragRef.current = null;
+      setAgentDrag(null);
+      reorder.move(dragged, id);
+    },
+    onDragEnd: () => { agentDragRef.current = null; setAgentDrag(null); },
+  }), [reorder]);
+  /** Where the drop line goes: above the target when moving up, below it when moving down. */
+  const dropEdge = useCallback((agentId: string): 'top' | 'bottom' | undefined => {
+    if (!agentDrag || agentDrag.overId !== agentId) return undefined;
+    const group = reorder.groupOf.get(agentId) ?? [];
+    return group.indexOf(agentDrag.id) < group.indexOf(agentId) ? 'bottom' : 'top';
+  }, [agentDrag, reorder]);
 
   const renderAgent = (agent: Agent, indent = ROW_INDENT, parentKey = projectKey, depth = 1) => (
     <AgentRow
@@ -171,6 +216,8 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
       parentKey={parentKey}
       extraActions={moveActions(agent)}
       onSelect={onSelectAgent}
+      drag={reorder.actions.has(agent.id) && reorder.groupOf.get(agent.id)!.length > 1 ? agentDragHandlers : undefined}
+      dropEdge={dropEdge(agent.id)}
     />
   );
 
@@ -208,7 +255,13 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectProject(project.id); }
-          else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+          else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+            // Alt+Up / Alt+Down: Move up / Move down, as for agent rows.
+            e.preventDefault();
+            e.stopPropagation();
+            const up = e.key === 'ArrowUp';
+            if (onMoveProject && (up ? canMoveUp : canMoveDown)) onMoveProject(project.id, up ? -1 : 1);
+          } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
             e.preventDefault();
             const r = e.currentTarget.getBoundingClientRect();
             openMenu(r.left + 24, r.bottom);

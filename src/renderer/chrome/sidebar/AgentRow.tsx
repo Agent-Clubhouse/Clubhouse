@@ -46,6 +46,18 @@ interface AgentRowProps {
   extraActions?: ActionDef[];
   /** The sidebar filter's query, marked in the name. */
   highlight?: string;
+  /** Drag-to-reorder handlers; absent when the row can't be reordered. */
+  drag?: AgentDragHandlers;
+  /** Shows the drop line above or below the row while a drag is over it. */
+  dropEdge?: 'top' | 'bottom';
+}
+
+/** Drag handlers for a reorderable agent row, keyed by agent id so one set serves every row. */
+export interface AgentDragHandlers {
+  onDragStart: (e: React.DragEvent, agentId: string) => void;
+  onDragOver: (e: React.DragEvent, agentId: string) => void;
+  onDrop: (e: React.DragEvent, agentId: string) => void;
+  onDragEnd: () => void;
 }
 
 /** `text` with the first case-insensitive match of `query` marked, as the sidebar filter shows it. */
@@ -61,7 +73,7 @@ export function MarkedText({ text, query }: { text: string; query?: string }) {
   );
 }
 
-export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions, highlight }: AgentRowProps) {
+export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions, highlight, drag, dropEdge }: AgentRowProps) {
   const note = dot === 'needs' ? 'needs you' : dot === 'error' ? 'error' : agent.kind === 'quick' ? 'quick' : '';
   const rowRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -133,10 +145,21 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
         onContextMenu={(e) => { e.preventDefault(); openMenuAt(e.clientX, e.clientY); }}
         onMouseEnter={scheduleOpen}
         onMouseLeave={scheduleClose}
+        draggable={drag ? true : undefined}
+        onDragStart={drag ? (e) => { clearTimers(); setCard(null); drag.onDragStart(e, agent.id); } : undefined}
+        onDragOver={drag ? (e) => drag.onDragOver(e, agent.id) : undefined}
+        onDrop={drag ? (e) => drag.onDrop(e, agent.id) : undefined}
+        onDragEnd={drag?.onDragEnd}
         className={`group/row relative w-full h-[30px] flex-shrink-0 rounded-md flex items-center cursor-pointer transition-colors duration-100 ${
           active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0/60 hover:text-ctp-text'
         }`}
       >
+        {dropEdge && (
+          <div
+            data-testid="agent-drop-indicator"
+            className={`absolute left-2 right-2 h-0.5 rounded-full bg-ctp-accent pointer-events-none ${dropEdge === 'top' ? '-top-px' : '-bottom-px'}`}
+          />
+        )}
         <div
           role="treeitem"
           aria-level={level}
@@ -146,7 +169,12 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
           data-tree-parent={parentKey}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(agent); }
-            else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+            else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+              // Alt+Up / Alt+Down: Move up / Move down, the keyboard equivalent of dragging.
+              e.preventDefault();
+              e.stopPropagation();
+              extraActions?.find((a) => a.id === (e.key === 'ArrowUp' ? 'move-up' : 'move-down'))?.handler();
+            } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
               e.preventDefault();
               const r = e.currentTarget.getBoundingClientRect();
               openMenuAt(r.left + 24, r.bottom);

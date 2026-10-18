@@ -98,6 +98,32 @@ export function moveProject(orderedIds: readonly string[], draggedId: string, ta
   return next.every((id, i) => id === orderedIds[i]) ? null : next;
 }
 
+/**
+ * Move `draggedId` onto `targetId` inside one group of agents (the awake ones,
+ * or the sleeping ones), and write the group's new order back into the full
+ * saved order at the same places, so agents outside the group keep theirs.
+ * Moving down lands after the target and moving up lands before it, so either
+ * end of the group can be reached. Returns null when nothing changes.
+ */
+export function moveWithinGroup(
+  order: readonly string[],
+  group: readonly string[],
+  draggedId: string,
+  targetId: string,
+): string[] | null {
+  const from = group.indexOf(draggedId);
+  const to = group.indexOf(targetId);
+  if (from === -1 || to === -1 || from === to) return null;
+  const reordered = group.filter((id) => id !== draggedId);
+  reordered.splice(to, 0, draggedId);
+  const next = [...order];
+  group.forEach((id, k) => {
+    const slot = order.indexOf(id);
+    if (slot !== -1) next[slot] = reordered[k];
+  });
+  return next.every((id, i) => id === order[i]) ? null : next;
+}
+
 export interface ProjectAgentGroups {
   /** Durable agents that are not asleep, in saved order. */
   durable: Agent[];
