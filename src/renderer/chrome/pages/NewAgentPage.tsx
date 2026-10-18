@@ -371,11 +371,11 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
         )}
 
         <Row
-          label="Orchestrator"
+          label="Runs on"
           htmlFor="new-agent-orchestrator"
           help={avail && !avail.available
             ? <span className="text-ctp-warning">{avail.error || 'CLI not found. The agent may fail to start.'}</span>
-            : parent ? `Uses ${parent.name}’s orchestrator.` : durable ? 'The model list follows the orchestrator.' : undefined}
+            : parent ? `Runs on the same CLI as ${parent.name}.` : durable ? 'The model list follows the CLI.' : undefined}
         >
           <select
             id="new-agent-orchestrator"
@@ -430,7 +430,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
         <Row
           label="Permissions"
           help={!supportsPermissions
-            ? `${selectedOrch?.displayName ?? 'This orchestrator'} doesn't support it.`
+            ? `${selectedOrch?.displayName ?? 'This CLI'} doesn't support it.`
             : durable ? 'Skips every permission prompt. Off unless you trust this agent with the project.' : 'Skips every permission prompt.'}
         >
           <Toggle checked={supportsPermissions && freeAgentMode} onChange={setFreeAgentMode} disabled={!supportsPermissions} aria-label="Free Agent Mode" />

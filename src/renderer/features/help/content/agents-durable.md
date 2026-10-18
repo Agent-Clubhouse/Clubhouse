@@ -5,7 +5,7 @@ Durable agents are persistent, long-lived agents designed for ongoing work. They
 ## Creating a Durable Agent
 
 1. Select a project, open the Agents tab, click **New Agent**
-2. Configure: **Name**, **Color**, **Emoji**, **Branch**, **Model**, **Orchestrator**
+2. Configure: **Name**, **Color**, **Emoji**, **Branch**, **Model**, **Runs on**
 3. Click **Create** — the agent appears in the explorer immediately
 4. Give it a mission to start working, or leave it sleeping
 

@@ -26,7 +26,7 @@ The dot at the start of a row is the agent's status:
 
 Agents that need you or hit an error also appear under **Needs you** at the top of the sidebar, so you don't have to look through every project.
 
-Hover a row for details: the orchestrator and model, branch, worktree and MCP servers. The card also has **Stop** or **Wake** and **Settings**, plus **Open terminal** when the project has the Terminal plugin on.
+Hover a row for details: what it runs on and its model, its branch, worktree and MCP servers. The card also has **Stop** or **Wake** and **Settings**, plus **Open terminal** when the project has the Terminal plugin on.
 
 ## Row menu
 

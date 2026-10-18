@@ -81,6 +81,16 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('persona-judge');
     expect(allTopicIds).toContain('persona-researcher');
   });
+
+  it('calls the CLI field "Runs on" where help names it (#2233)', () => {
+    const find = (id: string) => CHROME_HELP_SECTIONS.flatMap((s) => s.topics).find((t) => t.id === id)!;
+    // "Orchestrator" will name a persona, so articles no longer use it for the CLI field.
+    const articles = HELP_SECTIONS.concat(CHROME_HELP_SECTIONS).filter((s) => s.id !== 'personas').flatMap((s) => s.topics);
+    for (const t of articles) expect(t.content, t.id).not.toMatch(/\*\*(Default )?Orchestrator\*\*/);
+    expect(find('agents-durable').content).toContain('**Runs on**');
+    expect(find('agents-quick').content).toContain('**Runs on**');
+    expect(find('projects-settings').content).toContain('**Agents run on**');
+  });
 });
 
 describe('help-content in the new shell', () => {

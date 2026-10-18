@@ -143,7 +143,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
 
           {/* Orchestrator */}
           <label className="block mb-3">
-            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
+            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Runs on</span>
             <select
               value={orchestrator}
               onChange={(e) => { setOrchestrator(e.target.value); setModel('default'); }}
@@ -197,7 +197,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
           {/* Free Agent Mode */}
           <label
             className={`flex items-center gap-2 mb-4 ${supportsPermissions ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-            title={supportsPermissions ? 'Skip all permission prompts when running' : 'Not supported by this orchestrator'}
+            title={supportsPermissions ? 'Skip all permission prompts when running' : 'Not supported by this CLI'}
           >
             <input
               type="checkbox"

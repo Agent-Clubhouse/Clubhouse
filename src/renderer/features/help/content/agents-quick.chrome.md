@@ -8,7 +8,7 @@ The quickest way is the project's start page:
 
 1. Select the project's name in the sidebar, or press `⇧⌘N` to open the active project's start page with the box focused.
 2. Type what the agent should do.
-3. Pick the **Orchestrator** and **Model** if you want something other than the defaults.
+3. Pick **Runs on** and **Model** if you want something other than the defaults.
 4. Press `⌘Enter` or click **Start**.
 
 For more options, click **New** at the top of the sidebar and choose **Quick agent…**. That dialog adds:

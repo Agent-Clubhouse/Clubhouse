@@ -138,7 +138,7 @@ async function createThenWakeProviderAgent(providerCase: ProviderCase): Promise<
 
     await window.locator('input[type="text"]').first().fill(createdName);
     await window.getByText('Use git worktree', { exact: false }).click();
-    await window.locator('label:has-text("Orchestrator") select').selectOption(providerCase.id);
+    await window.locator('label:has-text("Runs on") select').selectOption(providerCase.id);
     await window.locator('label:has-text("Free Agent Mode") input').check();
     await window.locator('button:has-text("Create Agent")').click();
 

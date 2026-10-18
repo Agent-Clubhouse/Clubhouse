@@ -448,7 +448,7 @@ function AgentListInner() {
         {/* Free Agent Mode toggle */}
         <label
           className={`flex items-center gap-1.5 ${supportsPermissions ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-          title={supportsPermissions ? 'Skip all permission prompts' : 'Not supported by this orchestrator'}
+          title={supportsPermissions ? 'Skip all permission prompts' : 'Not supported by this CLI'}
         >
           <input
             type="checkbox"

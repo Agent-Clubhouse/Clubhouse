@@ -530,7 +530,7 @@ describe('OrchestratorSettingsView', () => {
 
     it('does not show orchestrator picker with single orchestrator', () => {
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.queryByText('Default orchestrator')).not.toBeInTheDocument();
+      expect(screen.queryByText('Agents run on')).not.toBeInTheDocument();
     });
 
     it('shows orchestrator picker with multiple orchestrators', () => {
@@ -542,7 +542,8 @@ describe('OrchestratorSettingsView', () => {
         ],
       });
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.getByText('Default orchestrator')).toBeInTheDocument();
+      expect(screen.getByText('Agents run on')).toBeInTheDocument();
+      expect(screen.queryByText('Default orchestrator')).not.toBeInTheDocument();
     });
 
     it('returns null for invalid project', () => {
