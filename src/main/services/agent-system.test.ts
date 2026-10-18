@@ -67,7 +67,11 @@ vi.mock('./mcp-settings', () => ({
 const mockGetDurableConfig = vi.fn(() => null);
 const mockAddSessionEntry = vi.fn();
 const mockUpdateSessionId = vi.fn(async () => {});
+const mockGetSessionHistory = vi.fn(async (): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> => []);
+const mockRemoveSessionEntries = vi.fn(async () => {});
 vi.mock('./agent-config', () => ({
+  getSessionHistory: (...args: unknown[]) => mockGetSessionHistory(...(args as [])),
+  removeSessionEntries: (...args: unknown[]) => mockRemoveSessionEntries(...(args as [])),
   getDurableConfig: (...args: unknown[]) => mockGetDurableConfig(...args),
   addSessionEntry: (...args: unknown[]) => mockAddSessionEntry(...args),
   updateSessionId: (...args: unknown[]) => mockUpdateSessionId(...args),
@@ -261,6 +265,7 @@ import {
   isAgentRunning,
   getRunningAgentIds,
   expandHome,
+  listSessions,
 } from './agent-system';
 import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
@@ -1132,6 +1137,43 @@ describe('agent-system', () => {
           const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
           expect(spawnArgs).toMatchObject({ resume: true, sessionId: DEAD });
         }
+      });
+    });
+
+    describe('never saving an id the CLI store lacks (#2156)', () => {
+      beforeEach(() => sessionCapable(mockCodexProvider));
+
+      it('drops a scraped id the store does not have and uses the run\'s real session', async () => {
+        config = {};
+        const SCRAPED = 'a27ef93a-2030-45fd-943e-6e07ac0a811c';
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async (id: string) => id !== SCRAPED);
+        (mockCodexProvider.extractSessionId as ReturnType<typeof vi.fn>).mockReturnValueOnce(SCRAPED);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => REAL);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, `session: ${SCRAPED}`);
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+        expect(mockAddSessionEntry).not.toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: SCRAPED }));
+      });
+
+      it('does not save the resumed id on a clean exit when the store does not have it', async () => {
+        // Present when the wake checked it, gone by the time the run ended
+        const hasSession = vi.fn(async () => true).mockResolvedValueOnce(true).mockResolvedValue(false);
+        (mockCodexProvider as Record<string, unknown>).hasSession = hasSession;
+        (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => null);
+        const { onExit, resumedWith } = await wake('codex-cli');
+        expect(resumedWith).toBe(DEAD);
+        onExit('agent-1', 0, 'bye');
+        await settle();
+        expect(mockAddSessionEntry).not.toHaveBeenCalled();
+      });
+
+      it('keeps a scraped id when the store can\'t tell', async () => {
+        config = {};
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => undefined);
+        (mockCodexProvider.extractSessionId as ReturnType<typeof vi.fn>).mockReturnValueOnce(REAL);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, `session: ${REAL}`);
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
       });
     });
 
@@ -2240,5 +2282,33 @@ describe('agent-system', () => {
     it('returns an empty array when none are running', () => {
       expect(getRunningAgentIds(['x', 'y'])).toEqual([]);
     });
+  });
+});
+
+describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
+  const entry = (id: string) => ({ sessionId: id, startedAt: '2026-10-17T00:00:00Z', lastActiveAt: '2026-10-17T01:00:00Z' });
+
+  afterEach(() => notSessionCapable(mockCodexProvider));
+
+  it('hides history entries the store does not have and prunes them; keeps ones it has or can\'t check', async () => {
+    sessionCapable(mockCodexProvider);
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli', worktreePath: '/wt' });
+    mockGetSessionHistory.mockResolvedValue([entry('dead-1'), entry('real-1'), entry('unknown-1')]);
+    (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async (id: string) => (id === 'dead-1' ? false : id === 'real-1' ? true : undefined));
+
+    const sessions = await listSessions('/project', 'durable_cp', 'codex-cli');
+
+    expect(sessions.map((s) => s.sessionId).sort()).toEqual(['real-1', 'unknown-1']);
+    expect(mockRemoveSessionEntries).toHaveBeenCalledWith('/project', 'durable_cp', ['dead-1']);
+  });
+
+  it('prunes nothing when every entry exists', async () => {
+    sessionCapable(mockCodexProvider);
+    mockRemoveSessionEntries.mockClear();
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli' });
+    mockGetSessionHistory.mockResolvedValue([entry('real-1')]);
+    (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => true);
+    await listSessions('/project', 'durable_cp', 'codex-cli');
+    expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
   });
 });
