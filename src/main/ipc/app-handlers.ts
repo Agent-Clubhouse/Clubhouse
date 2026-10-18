@@ -42,12 +42,14 @@ const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
 
 type RestartAgentMeta = Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string; permissionMode?: import('../../shared/types').FreeAgentPermissionMode }>;
 
+type RestartData = { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> };
+
 /**
  * Capture what the restart resumes, then run the app shutdown (#2053):
  * stop every runtime, save their session ids and restore config. app.exit()
  * skips before-quit, so these paths await it before exiting.
  */
-async function captureAndShutDown(data: { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }): Promise<void> {
+async function captureAndShutDown(data: RestartData): Promise<void> {
   const agentNames = new Map(Object.entries(data.agentNames));
   const agentMeta = data.agentMeta ? new Map(Object.entries(data.agentMeta)) as RestartAgentMeta : undefined;
   // Before the stop: it reads the live runtimes and terminal buffers.
@@ -55,17 +57,31 @@ async function captureAndShutDown(data: { agentNames: Record<string, string>; ag
   await runAppShutdown('update');
 }
 
+/** The update restart in progress, which a second click joins. */
+let updateRestart: Promise<void> | null = null;
+
 /**
- * Apply the update after the shutdown ran. Installing exits the app; if it
- * returns or throws instead (an error state), the app is still running, so
+ * Shut down and apply the update, once. A second request while one is in
+ * progress (a double-click on Restart) joins it instead of applying again.
+ * Nothing stops before the update is known to be ready. Installing exits the
+ * app; if this apply returns or throws instead, the app is still running, so
  * launches reopen and agents can be woken again.
  */
-async function applyUpdateOrReopen(): Promise<void> {
-  try {
-    await autoUpdateService.applyUpdate();
-  } finally {
-    cancelAppShutdown();
-  }
+function applyUpdateRestart(data?: RestartData): Promise<void> {
+  if (updateRestart) return updateRestart;
+  if (autoUpdateService.getStatus().state !== 'ready') return Promise.reject(new Error('No update ready to apply'));
+  const run = (async () => {
+    try {
+      if (data) await captureAndShutDown(data);
+      else await runAppShutdown('update');
+      await autoUpdateService.applyUpdate();
+    } finally {
+      cancelAppShutdown();
+      updateRestart = null;
+    }
+  })();
+  updateRestart = run;
+  return run;
 }
 
 export function registerAppHandlers(): void {
@@ -315,10 +331,7 @@ export function registerAppHandlers(): void {
     return autoUpdateService.getStatus();
   });
 
-  ipcMain.handle(IPC.APP.APPLY_UPDATE, async () => {
-    await runAppShutdown('update');
-    await applyUpdateOrReopen();
-  });
+  ipcMain.handle(IPC.APP.APPLY_UPDATE, () => applyUpdateRestart());
 
   ipcMain.handle(IPC.APP.GET_PENDING_RELEASE_NOTES, async () => {
     return autoUpdateService.getPendingReleaseNotes();
@@ -524,10 +537,7 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.APP.CONFIRM_UPDATE_RESTART, withValidatedArgs(
     [objectArg<{ agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }>()],
-    async (_event, data) => {
-      await captureAndShutDown(data);
-      await applyUpdateOrReopen();
-    },
+    (_event, data) => applyUpdateRestart(data),
   ));
 
   // Dev-only: simulate update restart to test session resume flow.

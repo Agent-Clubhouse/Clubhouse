@@ -2,18 +2,23 @@ export interface BeforeQuitEvent {
   preventDefault: () => void;
 }
 
-export type ShutdownStepName =
-  | 'pty_kill_all'
-  | 'chat_stop'
-  | 'headless_stop'
-  | 'session_capture'
-  | 'transcript_flush'
-  | 'checkpoint_drain'
-  | 'agent_config_flush'
-  | 'group_project_flush'
-  | 'bulletin_flush'
-  | 'config_restore'
-  | 'update_apply_on_quit';
+/** Every shutdown step, as reported in `clubhouse.shutdown.step`. */
+export const SHUTDOWN_STEPS = [
+  'spawn_drain',
+  'pty_kill_all',
+  'chat_stop',
+  'headless_stop',
+  'session_capture',
+  'transcript_flush',
+  'checkpoint_drain',
+  'agent_config_flush',
+  'group_project_flush',
+  'bulletin_flush',
+  'config_restore',
+  'update_apply_on_quit',
+] as const;
+
+export type ShutdownStepName = typeof SHUTDOWN_STEPS[number];
 
 export interface ShutdownTelemetry {
   started(): void;
@@ -37,6 +42,8 @@ export interface ShutdownTask {
 export interface ShutdownPlan {
   /** Synchronous: close launches, stop timers and servers. Runs first. */
   begin?: () => void;
+  /** Let launches already past the gate finish, so the stop below sees their runtimes. Run together. */
+  drain?: ShutdownTask[];
   /** Stop or drain every runtime (terminal, chat, headless). Run together. */
   stop: ShutdownTask[];
   /** Finish session ids, transcripts, checkpoints and config writes. Run in order. */
@@ -54,14 +61,28 @@ export interface ShutdownCoordinator {
    */
   run(after?: ShutdownTask[]): Promise<void>;
   readonly started: boolean;
-  /** Allow a new run after one that didn't end the app (a failed update apply). */
-  reset(): void;
+  /**
+   * Allow a new run after one that didn't end the app (a failed update
+   * apply). Ignored while a run is in progress, so a caller still inside it
+   * isn't cut loose. Returns whether it reset.
+   */
+  reset(): boolean;
 }
 
 export interface ShutdownCoordinatorOptions {
   plan: () => ShutdownPlan;
   telemetry?: ShutdownTelemetry;
   onCleanupError: (operation: string, error: unknown) => void;
+  /**
+   * Cap on the whole run. Each step gets the lesser of its own timeout and
+   * what's left; a step with nothing left is skipped and reported.
+   */
+  deadlineMs?: number;
+  /**
+   * Kept back from the steps before restore, so the config restore always
+   * gets at least this long, even after the deadline.
+   */
+  restoreReserveMs?: number;
 }
 
 function safely(fn: () => void): void {
@@ -79,16 +100,24 @@ export class ShutdownTimeoutError extends Error {
   }
 }
 
-/** Run a task, bounded by its timeout. Resolves either way; failures and timeouts go to onError. */
+export class ShutdownDeadlineError extends Error {
+  constructor(label: string, deadlineMs: number) {
+    super(`${label} skipped: the ${deadlineMs}ms shutdown deadline was reached`);
+    this.name = 'ShutdownDeadlineError';
+  }
+}
+
+/** Run a task, bounded by `budgetMs`. Resolves either way; failures and timeouts go to onError. */
 async function runTask(
   task: ShutdownTask,
+  budgetMs: number,
   telemetry: ShutdownTelemetry | undefined,
   onError: (operation: string, error: unknown) => void,
 ): Promise<void> {
   const startMs = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new ShutdownTimeoutError(task.label, task.timeoutMs)), task.timeoutMs);
+    timer = setTimeout(() => reject(new ShutdownTimeoutError(task.label, budgetMs)), budgetMs);
   });
   try {
     await Promise.race([Promise.resolve().then(task.run), timeout]);
@@ -101,22 +130,46 @@ async function runTask(
   }
 }
 
-export function createShutdownCoordinator({ plan, telemetry, onCleanupError }: ShutdownCoordinatorOptions): ShutdownCoordinator {
+export function createShutdownCoordinator({
+  plan,
+  telemetry,
+  onCleanupError,
+  deadlineMs = Number.POSITIVE_INFINITY,
+  restoreReserveMs = 0,
+}: ShutdownCoordinatorOptions): ShutdownCoordinator {
   let running: Promise<void> | undefined;
+  let inProgress = false;
 
   const execute = async (after: ShutdownTask[]): Promise<void> => {
-    safely(() => telemetry?.started());
-    const { begin, stop, persist, restore } = plan();
+    inProgress = true;
+    const deadlineAt = Date.now() + deadlineMs;
+    /** `floorMs`: the least the step gets, even past the deadline (the restore's reserve). */
+    const bounded = async (task: ShutdownTask, reserveMs: number, floorMs = 0): Promise<void> => {
+      const left = Math.max(deadlineAt - reserveMs - Date.now(), floorMs);
+      if (left <= 0) {
+        safely(() => telemetry?.step(task.step, Date.now(), Date.now(), false));
+        onCleanupError(task.label, new ShutdownDeadlineError(task.label, deadlineMs));
+        return;
+      }
+      await runTask(task, Math.min(task.timeoutMs, left), telemetry, onCleanupError);
+    };
     try {
-      begin?.();
-    } catch (error) {
-      onCleanupError('begin shutdown', error);
+      safely(() => telemetry?.started());
+      const { begin, drain = [], stop, persist, restore } = plan();
+      try {
+        begin?.();
+      } catch (error) {
+        onCleanupError('begin shutdown', error);
+      }
+      await Promise.all(drain.map((task) => bounded(task, restoreReserveMs)));
+      await Promise.all(stop.map((task) => bounded(task, restoreReserveMs)));
+      for (const task of persist) await bounded(task, restoreReserveMs);
+      for (const task of restore) await bounded(task, 0, restoreReserveMs);
+      for (const task of after) await bounded(task, 0);
+      safely(() => telemetry?.completed());
+    } finally {
+      inProgress = false;
     }
-    await Promise.all(stop.map((task) => runTask(task, telemetry, onCleanupError)));
-    for (const task of persist) await runTask(task, telemetry, onCleanupError);
-    for (const task of restore) await runTask(task, telemetry, onCleanupError);
-    for (const task of after) await runTask(task, telemetry, onCleanupError);
-    safely(() => telemetry?.completed());
   };
 
   return {
@@ -125,7 +178,9 @@ export function createShutdownCoordinator({ plan, telemetry, onCleanupError }: S
       return running !== undefined;
     },
     reset: () => {
+      if (inProgress) return false;
       running = undefined;
+      return true;
     },
   };
 }

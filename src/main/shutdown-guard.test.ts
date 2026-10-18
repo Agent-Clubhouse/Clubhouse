@@ -336,3 +336,78 @@ describe('before-quit handler', () => {
     expect(onError).toHaveBeenCalledWith('flush telemetry', expect.any(Error));
   });
 });
+
+describe('shutdown deadline and reset (#2053 review)', () => {
+  it('caps the whole run, skips what\'s left, and still restores config within its reserve', async () => {
+    vi.useFakeTimers();
+    const events: string[] = [];
+    const onError = vi.fn();
+    const never = () => new Promise<void>(() => undefined);
+    const run = createShutdownCoordinator({
+      plan: () => ({
+        stop: [task('chat_stop', never, 10_000)],
+        persist: [task('session_capture', never, 5_000), task('agent_config_flush', async () => { events.push('flushed'); }, 5_000)],
+        restore: [task('config_restore', async () => { events.push('restored'); }, 5_000)],
+      }),
+      onCleanupError: onError,
+      deadlineMs: 12_000,
+      restoreReserveMs: 3_000,
+    }).run([task('update_apply_on_quit', async () => { events.push('applied'); }, 30_000)]);
+    // Steps before the restore share 9s (12s minus the restore's 3s), so the
+    // stop times out at 9s and the persist steps after it have nothing left.
+    await vi.advanceTimersByTimeAsync(9_000);
+    expect(onError).toHaveBeenCalledWith('chat_stop', expect.objectContaining({ name: 'ShutdownTimeoutError' }));
+    await vi.advanceTimersByTimeAsync(60_000);
+    await run;
+    const failures = onError.mock.calls.map(([label, err]) => `${label}:${(err as Error).name}`);
+    expect(failures).toEqual([
+      'chat_stop:ShutdownTimeoutError',
+      'session_capture:ShutdownDeadlineError',
+      'agent_config_flush:ShutdownDeadlineError',
+    ]);
+    // The restore still ran within its reserve; the trailing step ran in what was left.
+    expect(events).toEqual(['restored', 'applied']);
+  });
+
+  it('names the step that ran out of time', async () => {
+    vi.useFakeTimers();
+    const onError = vi.fn();
+    const run = createShutdownCoordinator({
+      plan: () => ({ stop: [task('headless_stop', () => new Promise<void>(() => undefined), 8_000)], persist: [], restore: [] }),
+      onCleanupError: onError,
+      deadlineMs: 5_000,
+    }).run();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await run;
+    expect(onError).toHaveBeenCalledWith('headless_stop', expect.objectContaining({ message: 'headless_stop did not finish within 5000ms' }));
+  });
+
+  it('drains in-flight spawns before stopping runtimes', async () => {
+    const events: string[] = [];
+    await createShutdownCoordinator({
+      plan: () => ({
+        drain: [task('spawn_drain', async () => { await new Promise((r) => setTimeout(r, 10)); events.push('spawns-settled'); })],
+        stop: [task('pty_kill_all', async () => { events.push('stopped'); })],
+        persist: [],
+        restore: [],
+      }),
+      onCleanupError: vi.fn(),
+    }).run();
+    expect(events).toEqual(['spawns-settled', 'stopped']);
+  });
+
+  it('ignores reset while a run is in progress', async () => {
+    const restore = deferred();
+    const coordinator = createShutdownCoordinator({
+      plan: () => ({ stop: [], persist: [], restore: [task('config_restore', () => restore.promise, 10_000)] }),
+      onCleanupError: vi.fn(),
+    });
+    const first = coordinator.run();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(coordinator.reset()).toBe(false);
+    expect(coordinator.run()).toBe(first);
+    restore.resolve();
+    await first;
+    expect(coordinator.reset()).toBe(true);
+  });
+});

@@ -11,13 +11,16 @@ const mocks = vi.hoisted(() => ({
   flushGroups: vi.fn(),
   flushBulletins: vi.fn(),
   restoreAll: vi.fn(),
+  cancelChatStarts: vi.fn(),
+  spawnsSettled: vi.fn(),
 }));
 
 vi.mock('./log-service', () => ({ appLog: vi.fn() }));
 vi.mock('../telemetry/lifecycle', () => ({ shutdownStarted: vi.fn(), shutdownStep: vi.fn(), shutdownCompleted: vi.fn() }));
 vi.mock('./pty-manager', () => ({ killAll: () => mocks.killAll() }));
 vi.mock('./headless-manager', () => ({ stopAll: () => mocks.stopAllHeadless() }));
-vi.mock('./agent-runtime/chat-spawn', () => ({ stopAllChatAgents: () => mocks.stopAllChat() }));
+vi.mock('./agent-runtime/chat-spawn', () => ({ stopAllChatAgents: () => mocks.stopAllChat(), cancelAllChatStarts: () => mocks.cancelChatStarts() }));
+vi.mock('./agent-system', () => ({ whenSpawnsSettled: () => mocks.spawnsSettled() }));
 vi.mock('./agent-runtime/chat-transcript', () => ({ flushAllTranscripts: () => mocks.flushTranscripts() }));
 vi.mock('./agent-runtime/checkpoint-tracker', () => ({ whenCheckpointsIdle: () => mocks.checkpointsIdle() }));
 vi.mock('./agent-config', () => ({ flushAllAgentConfigs: () => mocks.flushConfigs() }));
@@ -25,7 +28,7 @@ vi.mock('./group-project-registry', () => ({ groupProjectRegistry: { flush: () =
 vi.mock('./group-project-bulletin', () => ({ flushAllBulletinBoards: () => mocks.flushBulletins() }));
 vi.mock('./config-pipeline', () => ({ restoreAll: () => mocks.restoreAll() }));
 
-import { cancelAppShutdown, runAppShutdown, setShutdownBegin } from './app-shutdown';
+import { cancelAppShutdown, resetAppShutdownForTests, runAppShutdown, setShutdownBegin } from './app-shutdown';
 import { launchesOpen } from './launch-gate';
 import { clearSessionCaptures, trackSessionCapture } from './session-capture-barrier';
 
@@ -49,19 +52,22 @@ beforeEach(() => {
   mocks.flushGroups.mockImplementation(step('groups-flushed'));
   mocks.flushBulletins.mockImplementation(step('bulletins-flushed'));
   mocks.restoreAll.mockImplementation(step('config-restored', 10));
+  mocks.cancelChatStarts.mockImplementation(step('chat-starts-cancelled'));
+  mocks.spawnsSettled.mockImplementation(step('spawns-settled', 5));
 });
 
 afterEach(() => {
-  cancelAppShutdown();
+  resetAppShutdownForTests();
   clearSessionCaptures();
   setShutdownBegin(() => undefined);
 });
 
 describe('app shutdown (#2053)', () => {
-  it('stops terminals, chat and headless, saves session ids before the flush, then awaits the restore', async () => {
+  it('lets spawns settle, stops terminals, chat and headless, saves session ids before the flush, then awaits the restore', async () => {
     await runAppShutdown('update');
-    expect(events.slice(0, 3).sort()).toEqual(['chat-stopped', 'headless-stopped', 'pty-stopped']);
-    expect(events.slice(3)).toEqual([
+    expect(events.slice(0, 2)).toEqual(['chat-starts-cancelled', 'spawns-settled']);
+    expect(events.slice(2, 5).sort()).toEqual(['chat-stopped', 'headless-stopped', 'pty-stopped']);
+    expect(events.slice(5)).toEqual([
       'chat-session-saved',
       'transcripts-flushed',
       'checkpoints-idle',
@@ -75,11 +81,37 @@ describe('app shutdown (#2053)', () => {
   it('closes launches for the whole run and keeps them closed for the exit', async () => {
     let openDuringStop: boolean | undefined;
     mocks.killAll.mockImplementation(async () => { openDuringStop = launchesOpen(); });
-    await runAppShutdown('quit');
+    await runAppShutdown('update');
     expect(openDuringStop).toBe(false);
     expect(launchesOpen()).toBe(false);
     cancelAppShutdown();
     expect(launchesOpen()).toBe(true);
+  });
+
+  it('a spawn that was in flight is stopped too: the stop waits for it', async () => {
+    let finishSpawn!: () => void;
+    mocks.spawnsSettled.mockImplementation(() => new Promise<void>((r) => { finishSpawn = () => { events.push('late-spawn-started'); r(); }; }));
+    const run = runAppShutdown('quit');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mocks.killAll).not.toHaveBeenCalled();
+    finishSpawn();
+    await run;
+    expect(events.indexOf('late-spawn-started')).toBeLessThan(events.indexOf('pty-stopped'));
+  });
+
+  it('doesn\'t reopen launches while a run is in progress, or once a quit began', async () => {
+    let finishRestore!: () => void;
+    mocks.restoreAll.mockImplementation(() => new Promise<void>((r) => { finishRestore = r; }));
+    const update = runAppShutdown('update');
+    await vi.waitFor(() => expect(mocks.restoreAll).toHaveBeenCalled());
+    cancelAppShutdown();
+    expect(launchesOpen()).toBe(false);
+    finishRestore();
+    await update;
+
+    await runAppShutdown('quit');
+    cancelAppShutdown();
+    expect(launchesOpen()).toBe(false);
   });
 
   it('stops timers and servers on quit only', async () => {

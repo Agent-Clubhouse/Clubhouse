@@ -99,9 +99,27 @@ export function getRunningAgentIds(agentIds: string[]): string[] {
   return agentIds.filter(isAgentRunning);
 }
 
+/** Spawns in progress; shutdown lets them settle before stopping runtimes (#2053). */
+const inflightSpawns = new Set<Promise<void>>();
+
+/** Resolves once every spawn in progress, including ones started meanwhile, has settled. */
+export async function whenSpawnsSettled(): Promise<void> {
+  while (inflightSpawns.size) await Promise.allSettled([...inflightSpawns]);
+}
+
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // Quit and update close this before stopping runtimes (#2053).
   assertLaunchesOpen();
+  const spawn = spawnAgentTracked(params);
+  inflightSpawns.add(spawn);
+  try {
+    await spawn;
+  } finally {
+    inflightSpawns.delete(spawn);
+  }
+}
+
+async function spawnAgentTracked(params: SpawnAgentParams): Promise<void> {
   const facts: SpawnFacts = { model: params.model };
   const startMs = Date.now();
   await tel.flow(
@@ -278,6 +296,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         });
       }
     }
+    // Again here and before each runtime start below: a spawn can pass the
+    // entry check, then reach its runtime after shutdown began (#2053).
+    assertLaunchesOpen();
     try {
       chatStart = await withErrorType('chat_start_failed', () => tryStartChatAgent({
         agentId: params.agentId,
@@ -351,6 +372,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         facts.wrapperApplied = wrapperApplied;
         const spawnEnv = { ...headlessResult.env, ...profileEnv, ...(wrapperApplied ? wrapperConfig?.env : undefined), CLUBHOUSE_AGENT_ID: params.agentId };
         noteSpawnKind(params.agentId, params.kind);
+        assertLaunchesOpen();
         await tel.step('clubhouse.headless.spawn', () => headlessManager.spawnHeadless(
           params.agentId,
           params.cwd,
@@ -543,6 +565,7 @@ async function spawnPtyAgent(
 
   noteSpawnKind(params.agentId, params.kind);
   const spawnedAt = Date.now();
+  assertLaunchesOpen();
   await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, exitCode, buffer, killed) => {
     configPipeline.restoreForAgent(exitAgentId);
     if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);

@@ -170,7 +170,7 @@ vi.mock('../services/agent-config', () => ({
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAppHandlers } from './app-handlers';
-import { cancelAppShutdown } from '../services/app-shutdown';
+import { resetAppShutdownForTests } from '../services/app-shutdown';
 import { launchesOpen } from '../services/launch-gate';
 import { captureSessionState } from '../services/restart-session-service';
 import * as ptyManagerMock from '../services/pty-manager';
@@ -197,7 +197,8 @@ describe('app-handlers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // The shutdown runs once per app; each test is a fresh app.
-    cancelAppShutdown();
+    resetAppShutdownForTests();
+    vi.mocked(autoUpdateService.getStatus).mockReturnValue({ state: 'idle' } as never);
     handleHandlers = new Map();
     onHandlers = new Map();
     vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: any) => {
@@ -633,13 +634,17 @@ describe('app-handlers', () => {
     expect(result).toEqual({ state: 'idle' });
   });
 
+  const updateReady = () => vi.mocked(autoUpdateService.getStatus).mockReturnValue({ state: 'ready' } as never);
+
   it('APPLY_UPDATE delegates to autoUpdateService.applyUpdate', async () => {
+    updateReady();
     const handler = handleHandlers.get(IPC.APP.APPLY_UPDATE)!;
     await handler({});
     expect(autoUpdateService.applyUpdate).toHaveBeenCalled();
   });
 
   it('APPLY_UPDATE flushes pending agent configs before applying', async () => {
+    updateReady();
     const order: string[] = [];
     mockFlushAllAgentConfigs.mockImplementationOnce(async () => { order.push('flush'); });
     vi.mocked(autoUpdateService.applyUpdate).mockImplementationOnce(async () => { order.push('apply'); });
@@ -664,6 +669,7 @@ describe('app-handlers', () => {
   });
 
   it('CONFIRM_UPDATE_RESTART captures sessions, stops agents and flushes before applying (#2053)', async () => {
+    updateReady();
     const order: string[] = [];
     vi.mocked(captureSessionState).mockImplementationOnce(async () => { order.push('capture'); });
     vi.mocked(ptyManagerMock.killAll).mockImplementationOnce(async () => { order.push('stop'); });
@@ -677,7 +683,32 @@ describe('app-handlers', () => {
     expect(order).toEqual(['capture', 'stop', 'flush', 'apply']);
   });
 
+  it('APPLY_UPDATE checks the update is ready before stopping anything', async () => {
+    await expect(handleHandlers.get(IPC.APP.APPLY_UPDATE)!({})).rejects.toThrow('No update ready to apply');
+    expect(ptyManagerMock.killAll).not.toHaveBeenCalled();
+    expect(captureSessionState).not.toHaveBeenCalled();
+    expect(launchesOpen()).toBe(true);
+  });
+
+  it('a second CONFIRM_UPDATE_RESTART joins the first instead of reopening launches mid-apply', async () => {
+    updateReady();
+    let finishApply!: () => void;
+    vi.mocked(autoUpdateService.applyUpdate).mockImplementationOnce(() => new Promise<void>((r) => { finishApply = r; }));
+    const first = handleHandlers.get(IPC.APP.CONFIRM_UPDATE_RESTART)!({}, { agentNames: {} });
+    await vi.waitFor(() => expect(autoUpdateService.applyUpdate).toHaveBeenCalledOnce());
+    // The double-click: the state left 'ready' when the first apply began.
+    vi.mocked(autoUpdateService.getStatus).mockReturnValue({ state: 'idle' } as never);
+    const second = handleHandlers.get(IPC.APP.CONFIRM_UPDATE_RESTART)!({}, { agentNames: {} });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(launchesOpen()).toBe(false);
+    expect(autoUpdateService.applyUpdate).toHaveBeenCalledOnce();
+    expect(captureSessionState).toHaveBeenCalledOnce();
+    finishApply();
+    await Promise.all([first, second]);
+  });
+
   it('CONFIRM_UPDATE_RESTART reopens launches when the update fails to apply', async () => {
+    updateReady();
     vi.mocked(autoUpdateService.applyUpdate).mockRejectedValueOnce(new Error('Update.exe not found'));
     await expect(handleHandlers.get(IPC.APP.CONFIRM_UPDATE_RESTART)!({}, { agentNames: {} })).rejects.toThrow('Update.exe not found');
     expect(launchesOpen()).toBe(true);

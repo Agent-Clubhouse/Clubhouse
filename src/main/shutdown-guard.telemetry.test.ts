@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createBeforeQuitHandler, createShutdownCoordinator } from './shutdown-guard';
+import { createBeforeQuitHandler, createShutdownCoordinator, SHUTDOWN_STEPS } from './shutdown-guard';
+import { ATTR } from '../shared/telemetry/attributes';
 
 describe('shutdown telemetry hooks', () => {
   it('times each step, completes the shutdown span, then flushes telemetry, then quits', async () => {
@@ -60,5 +61,11 @@ describe('shutdown telemetry hooks', () => {
       onCleanupError: () => {},
     })({ preventDefault: () => {} });
     await expect(quitted).resolves.toBeUndefined();
+  });
+});
+
+describe('shutdown step names', () => {
+  it('every step the coordinator reports is a known clubhouse.shutdown.step value, not "other"', () => {
+    for (const step of SHUTDOWN_STEPS) expect(ATTR.shutdownStep(step).value).toBe(step);
   });
 });

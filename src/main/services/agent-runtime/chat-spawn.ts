@@ -202,8 +202,13 @@ export async function cancelChatStart(agentId: string): Promise<boolean> {
  * ones that fail.
  */
 export async function stopAllChatAgents(): Promise<void> {
-  await Promise.allSettled([...inflightStarts.keys()].map((agentId) => cancelChatStart(agentId)));
+  await cancelAllChatStarts();
   await Promise.allSettled(listChatRuntimes().map((runtime) => runtime.stop()));
+}
+
+/** Cancel every chat start in progress, as kills. Settles when each cancel has. */
+export async function cancelAllChatStarts(): Promise<void> {
+  await Promise.allSettled([...inflightStarts.keys()].map((agentId) => cancelChatStart(agentId)));
 }
 
 /** For tests. */
