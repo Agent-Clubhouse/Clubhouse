@@ -122,7 +122,7 @@ export function recordSnapshotBuild(startMs: number, atMs = Date.now()): void {
 
 const EVENT_TYPES = new Set<string>([
   'pty:data', 'pty:exit', 'hook:event', 'chat:event', 'permission:request', 'permission:response',
-  'agent:spawned', 'agent:woken', 'agent:completed', 'snapshot', 'canvas:state', 'theme:changed',
+  'agent:spawned', 'agent:woken', 'agent:status', 'agent:completed', 'snapshot', 'canvas:state', 'theme:changed',
   'group-project:list', 'group-project:changed', 'bulletin:message',
 ]);
 
