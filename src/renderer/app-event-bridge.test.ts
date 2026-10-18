@@ -24,6 +24,7 @@ const mockRemovers = {
   onAgentSleeping: vi.fn(),
   onAgentSleepReason: vi.fn(),
   onDurableCreationEvent: vi.fn(),
+  onHelperDisposeRequest: vi.fn(),
   onAgentSpawned: vi.fn(),
   onEditCommand: vi.fn(),
   onStatusChanged: vi.fn(),
@@ -73,6 +74,7 @@ vi.stubGlobal('window', {
       onAgentSleeping: vi.fn(() => mockRemovers.onAgentSleeping),
       onAgentSleepReason: vi.fn(() => mockRemovers.onAgentSleepReason),
       onDurableCreationEvent: vi.fn(() => mockRemovers.onDurableCreationEvent),
+      onHelperDisposeRequest: vi.fn(() => mockRemovers.onHelperDisposeRequest),
       readTranscript: vi.fn(),
       readQuickSummary: vi.fn(),
       killAgent: vi.fn(),
@@ -748,6 +750,46 @@ describe('initAppEventBridge', () => {
       undefined,
       { message: 'hello' },
     );
+  });
+
+  it('opens the helper\'s delete dialog for a dispose the user decides (#2229)', () => {
+    const openDeleteDialog = vi.fn();
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: {
+        orch: { id: 'orch', name: 'Orchestrator', projectId: 'proj-1', kind: 'durable', status: 'running' },
+        helper: { id: 'helper', name: 'Docs', projectId: 'proj-1', kind: 'durable', status: 'running' },
+      },
+      deleteDialogAgent: null,
+      openDeleteDialog,
+    } as any);
+
+    const callback = vi.mocked(window.clubhouse.agent.onHelperDisposeRequest).mock.calls[0][0];
+    callback({
+      projectPath: '/p', orchestratorId: 'orch', helperId: 'helper', helperName: 'Docs',
+      checks: { dirty: 1, unpushed: 0, unmerged: 0 }, forceRequested: true,
+    });
+
+    expect(openDeleteDialog).toHaveBeenCalledWith('helper');
+    expect(mockCheckAndNotify).toHaveBeenCalledWith(
+      'Orchestrator', 'attention', undefined, 'orch', 'proj-1', { message: 'Wants to dispose Docs' },
+    );
+  });
+
+  it('leaves an open delete dialog alone and ignores an unknown helper', () => {
+    const openDeleteDialog = vi.fn();
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: { helper: { id: 'helper', name: 'Docs', projectId: 'proj-1', kind: 'durable', status: 'running' } },
+      deleteDialogAgent: 'someone-else',
+      openDeleteDialog,
+    } as any);
+    const callback = vi.mocked(window.clubhouse.agent.onHelperDisposeRequest).mock.calls[0][0];
+    const request = {
+      projectPath: '/p', orchestratorId: 'orch', helperId: 'helper', helperName: 'Docs',
+      checks: { dirty: 0, unpushed: 0, unmerged: 0 }, forceRequested: false,
+    };
+    callback(request);
+    callback({ ...request, helperId: 'ghost' });
+    expect(openDeleteDialog).not.toHaveBeenCalled();
   });
 
   it('registers the protocol action listener and pulls any pending action', () => {

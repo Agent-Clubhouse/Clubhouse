@@ -25,7 +25,7 @@ import { pluginHotkeyRegistry } from './plugins/plugin-hotkeys';
 import { pluginEventBus } from './plugins/plugin-events';
 import { useAppCanvasStore, getProjectCanvasStore, hasProjectCanvasStore, getKnownProjectIds } from './plugins/builtin/canvas/main';
 import { applyCanvasMutation } from './plugins/builtin/canvas/canvas-sync';
-import type { AgentHookEvent, AgentStatus, CanvasMutation, SoundEvent, ResolvedProtocolAction } from '../shared/types';
+import type { AgentHookEvent, AgentStatus, CanvasMutation, HelperDisposeRequest, SoundEvent, ResolvedProtocolAction } from '../shared/types';
 import { summarizeHeadlessTranscript } from '../shared/headless-transcript';
 import { fileState } from './plugins/builtin/files/state';
 import { useSoundStore } from './stores/soundStore';
@@ -334,6 +334,35 @@ function initAgentWakingListener(): () => void {
 /** Stages of an asynchronous agent creation (#2226); see applyDurableCreationEvent. */
 function initCreationEventListener(): () => void {
   return window.clubhouse.agent.onDurableCreationEvent(applyDurableCreationEvent);
+}
+
+/**
+ * An orchestrator asked to dispose a helper while its control level is
+ * "ask-everything" (#2229): the user decides. Opens the helper's delete dialog,
+ * which shows its uncommitted and unpushed work, unless another delete dialog
+ * is open, and notifies through the orchestrator.
+ * TODO(#2232): a dedicated dispose confirmation that keeps the helper's row.
+ */
+export function handleHelperDisposeRequest(request: HelperDisposeRequest): void {
+  const state = useAgentStore.getState();
+  const helper = state.agents[request.helperId];
+  if (!helper) return;
+  const orchestrator = state.agents[request.orchestratorId];
+  const orchestratorName = orchestrator?.name ?? 'An orchestrator';
+  useNotificationStore.getState().checkAndNotify(
+    orchestratorName,
+    'attention',
+    undefined,
+    request.orchestratorId,
+    orchestrator?.projectId,
+    { message: `Wants to dispose ${request.helperName}` },
+  );
+  if (!state.deleteDialogAgent) state.openDeleteDialog(request.helperId);
+}
+
+function initHelperDisposeRequestListener(): () => void {
+  if (window.clubhouse.window.isPopout()) return () => {};
+  return window.clubhouse.agent.onHelperDisposeRequest(handleHelperDisposeRequest);
 }
 
 /** Notices that explain a start that didn't go as asked; a launch error card shows them. */
@@ -760,6 +789,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initPtyExitListener());
   cleanups.push(initAgentWakingListener());
   cleanups.push(initCreationEventListener());
+  cleanups.push(initHelperDisposeRequestListener());
   cleanups.push(initChatRuntimeNoticeListener());
   cleanups.push(initHookEventListener());
   cleanups.push(initPermissionQueueListener());

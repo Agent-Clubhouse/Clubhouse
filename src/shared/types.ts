@@ -299,6 +299,11 @@ export interface DurableAgentConfig {
    */
   disposedAt?: string;
   /**
+   * Helpers (#2229): the parent's record of how it took this helper's work
+   * (hand_off). Information only; it never disposes the helper.
+   */
+  handoff?: HelperHandoff;
+  /**
    * True when Clubhouse created `branch` for this agent, so deleting the agent
    * may delete the branch (#2226). False for a branch that already existed.
    * Unset on records from before #2226: those count as owned only when the
@@ -318,6 +323,35 @@ export interface DurableAgentConfig {
    * only through services/orchestration-policy.ts, never updateDurableConfig.
    */
   orchestration?: import('./orchestration-policy').OrchestrationPolicyConfig;
+}
+
+/** How an orchestrator took a helper's work (#2229). */
+export type HelperHandoffHow = 'pushed' | 'merged' | 'copied';
+
+export const HELPER_HANDOFF_HOWS: readonly HelperHandoffHow[] = ['pushed', 'merged', 'copied'];
+
+/** A helper's handoff record (#2229), set by its parent's hand_off tool. */
+export interface HelperHandoff {
+  how: HelperHandoffHow;
+  /** The parent's note about what it took; may be empty. */
+  note: string;
+  /** ISO time of the handoff. */
+  at: string;
+}
+
+/**
+ * A dispose_helper call the user has to decide (#2229): the orchestrator's
+ * control level is "ask-everything". Sent main → renderer, which opens the
+ * helper's delete dialog. TODO(#2232): a dedicated dispose confirmation.
+ */
+export interface HelperDisposeRequest {
+  projectPath: string;
+  orchestratorId: string;
+  helperId: string;
+  helperName: string;
+  checks: HelperDisposeChecks;
+  /** The orchestrator asked to force; refused under "ask-everything". */
+  forceRequested: boolean;
 }
 
 /** What to do with an orchestrator's helpers when it is deleted (#2224). */
