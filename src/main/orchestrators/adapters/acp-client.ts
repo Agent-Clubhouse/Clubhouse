@@ -1,6 +1,35 @@
 import { NdjsonRpcBase, DEFAULT_RPC_TIMEOUT_MS, type BaseRpcOpts, type RpcRequestOptions } from './ndjson-rpc-base';
 import type { InitializeRequest, InitializeResponse } from './acp-schema';
 
+const REDACTED = '[redacted]';
+
+/**
+ * Params as they may be logged. `session/new` and `session/load` carry MCP
+ * servers whose `env` values (the Clubhouse bridge's nonce, #2222) and HTTP
+ * `headers` values (tokens) must never reach the app log; names are kept so
+ * the log still shows what was set.
+ */
+export function redactAcpParamsForLog(params: unknown): unknown {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
+  const p = params as Record<string, unknown>;
+  if (!Array.isArray(p.mcpServers)) return params;
+  const redactPairs = (v: unknown) => (Array.isArray(v)
+    ? v.map((pair) => (pair && typeof pair === 'object' ? { ...(pair as Record<string, unknown>), value: REDACTED } : REDACTED))
+    : v);
+  return {
+    ...p,
+    mcpServers: p.mcpServers.map((server) => {
+      if (!server || typeof server !== 'object') return server;
+      const s = server as Record<string, unknown>;
+      return {
+        ...s,
+        ...('env' in s && { env: redactPairs(s.env) }),
+        ...('headers' in s && { headers: redactPairs(s.headers) }),
+      };
+    }),
+  };
+}
+
 /** Rich RPC error that preserves error code and optional data from the JSON-RPC response. */
 export class RpcError extends Error {
   readonly code: number;
@@ -115,7 +144,7 @@ export class AcpClient extends NdjsonRpcBase<AcpClientOpts> {
       ? this.opts.rpcTimeoutMs ?? DEFAULT_RPC_TIMEOUT_MS
       : options.timeoutMs;
 
-    this.log('info', `RPC request → ${method}`, { id, method, params });
+    this.log('info', `RPC request → ${method}`, { id, method, params: redactAcpParamsForLog(params) });
 
     return new Promise((resolve, reject) => {
       const timer = timeoutMs === null ? undefined : setTimeout(() => {

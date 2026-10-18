@@ -12,6 +12,7 @@ vi.mock('electron', () => ({ app: { getPath: () => '/tmp/clubhouse-test' } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 
 import { buildClubhouseMcpDef, CLUBHOUSE_NONCE_ENV } from './injection';
+import type { McpServerDef } from '../../../shared/types';
 
 const NONCE = 'f3a9c2d1-7b4e-4c6a-9d8f-1e2b3c4d5e6f';
 
@@ -85,14 +86,21 @@ function baseEnv(): Record<string, string> {
   return env;
 }
 
-/** What the CLI's own environment holds: the spawn env Clubhouse gave it. */
-function cliEnv(): Record<string, string> {
-  return { ...baseEnv(), [CLUBHOUSE_NONCE_ENV]: NONCE };
+/** What the CLI's own environment holds: the spawn env Clubhouse gave agent `agentId`. */
+function cliEnv(agentId = 'agent-1'): Record<string, string> {
+  return { ...baseEnv(), CLUBHOUSE_AGENT_ID: agentId, CLUBHOUSE_MCP_PORT: String(port), [CLUBHOUSE_NONCE_ENV]: NONCE };
+}
+
+/** Codex: a minimal base env, the server's `env`, and the names in `env_vars` that the parent has. */
+function codexServerEnv(def: McpServerDef, parent: Record<string, string>): Record<string, string> {
+  const forwarded = Object.fromEntries((def.env_vars ?? []).filter((k) => parent[k] !== undefined).map((k) => [k, parent[k]]));
+  return { ...baseEnv(), ...def.env, ...forwarded };
 }
 
 describe('Clubhouse MCP bridge auth via env (#2222)', () => {
   it('authenticates when the CLI passes its whole env (Claude Code, Copilot CLI)', async () => {
     const def = buildClubhouseMcpDef(port, 'agent-1');
+    // Config `env` is merged over the inherited env, as Claude and Copilot do.
     const result = await runBridge({ ...cliEnv(), ...def.env });
     expect(result.reply).toEqual({ jsonrpc: '2.0', id: 1, result: { ok: true } });
     const post = seen.find((s) => s.method === 'POST');
@@ -101,12 +109,24 @@ describe('Clubhouse MCP bridge auth via env (#2222)', () => {
 
   it('authenticates when the CLI forwards only env_vars (Codex)', async () => {
     const def = buildClubhouseMcpDef(port, 'agent-1');
-    const parent = cliEnv();
-    // Codex: a minimal base env, the server's `env`, and the names in `env_vars`.
-    const forwarded = Object.fromEntries((def.env_vars ?? []).map((k) => [k, parent[k]]));
-    const result = await runBridge({ ...baseEnv(), ...def.env, ...forwarded });
+    const result = await runBridge(codexServerEnv(def, cliEnv()));
     expect(result.reply).toEqual({ jsonrpc: '2.0', id: 1, result: { ok: true } });
-    expect(seen.find((s) => s.method === 'POST')?.nonce).toBe(NONCE);
+    expect(seen.find((s) => s.method === 'POST')).toMatchObject({ url: '/mcp/agent-1', nonce: NONCE });
+  });
+
+  it('a quick agent sharing its parent\'s worktree speaks as itself, not as the file\'s last writer', async () => {
+    // The shared file was last written for the parent.
+    const def = buildClubhouseMcpDef(port, 'parent-agent');
+    await runBridge({ ...cliEnv('quick-1'), ...def.env });
+    await runBridge(codexServerEnv(def, cliEnv('quick-2')));
+    expect(seen.filter((s) => s.method === 'POST').map((s) => s.url)).toEqual(['/mcp/quick-1', '/mcp/quick-2']);
+  });
+
+  it('falls back to the file\'s agent ID and port only when the env has none', async () => {
+    const def = buildClubhouseMcpDef(port, 'agent-1');
+    const result = await runBridge({ ...baseEnv(), [CLUBHOUSE_NONCE_ENV]: NONCE, ...def.env });
+    expect(result.reply).toEqual({ jsonrpc: '2.0', id: 1, result: { ok: true } });
+    expect(seen.find((s) => s.method === 'POST')?.url).toBe('/mcp/agent-1');
   });
 
   it('the config alone carries no usable nonce: the bridge refuses to start', async () => {
@@ -117,9 +137,9 @@ describe('Clubhouse MCP bridge auth via env (#2222)', () => {
     expect(seen).toEqual([]);
   });
 
-  it('treats an unexpanded ${CLUBHOUSE_HOOK_NONCE} placeholder as no nonce', async () => {
+  it.each(['${CLUBHOUSE_HOOK_NONCE}', '$CLUBHOUSE_HOOK_NONCE', '%CLUBHOUSE_HOOK_NONCE%'])('treats an unexpanded %s reference as no nonce', async (ref) => {
     const def = buildClubhouseMcpDef(port, 'agent-1');
-    const result = await runBridge({ ...baseEnv(), ...def.env, [CLUBHOUSE_NONCE_ENV]: '${CLUBHOUSE_HOOK_NONCE}' });
+    const result = await runBridge({ ...cliEnv(), ...def.env, [CLUBHOUSE_NONCE_ENV]: ref });
     expect(result.exitCode).toBe(1);
     expect(seen).toEqual([]);
   });

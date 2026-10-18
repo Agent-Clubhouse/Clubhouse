@@ -101,9 +101,11 @@ function fileLink(target: string, mimeType?: string): ContentBlock {
  *
  * ACP gives a stdio server exactly the env pairs listed, and the spec doesn't
  * say whether the agent's own environment is inherited. So names in
- * `env_vars` (the bridge's CLUBHOUSE_HOOK_NONCE, #2222) are resolved from
- * `cliEnv`, the env the ACP CLI was spawned with. The value travels over the
- * stdio RPC pipe to a process that already holds it, never a file or argv.
+ * `env_vars` (the bridge's nonce, agent ID and port, #2222) are resolved
+ * from `cliEnv`, the env the ACP CLI was spawned with. The values travel over
+ * the stdio RPC pipe to a process that already holds them, never in a config
+ * file or argv, and AcpClient redacts them from its request log
+ * (redactAcpParamsForLog).
  */
 export function toAcpMcpServers(
   servers: Record<string, unknown> | undefined,

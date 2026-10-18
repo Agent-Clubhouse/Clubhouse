@@ -370,7 +370,21 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
           }
         }
         facts.wrapperApplied = wrapperApplied;
-        const spawnEnv = { ...headlessResult.env, ...profileEnv, ...(wrapperApplied ? wrapperConfig?.env : undefined), CLUBHOUSE_AGENT_ID: params.agentId };
+        // Its own nonce and identity, as a terminal quick agent gets: headless
+        // Claude reads the worktree's MCP config (the parent's, for a quick
+        // agent), and the bridge there takes both from this env (#2222).
+        const nonce = randomUUID();
+        agentRegistry.setNonce(params.agentId, nonce);
+        const mcpPort = await waitMcpBridgeReady().catch(() => 0);
+        const spawnEnv = {
+          ...headlessResult.env,
+          ...profileEnv,
+          ...(wrapperApplied ? wrapperConfig?.env : undefined),
+          CLUBHOUSE_AGENT_ID: params.agentId,
+          CLUBHOUSE_HOOK_NONCE: nonce,
+          ...hookPortEnv(),
+          ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
+        };
         noteSpawnKind(params.agentId, params.kind);
         assertLaunchesOpen();
         await tel.step('clubhouse.headless.spawn', () => headlessManager.spawnHeadless(

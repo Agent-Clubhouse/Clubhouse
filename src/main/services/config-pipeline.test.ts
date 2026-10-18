@@ -209,7 +209,8 @@ describe('config-pipeline', () => {
 
       const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
       expect(written).not.toContain(STALE);
-      expect(JSON.parse(written).mcpServers.clubhouse.env).toEqual({ CLUBHOUSE_AGENT_ID: 'a1' });
+      // A bridge entry's stored agent ID goes too: it would shadow the agent's own env.
+      expect(JSON.parse(written).mcpServers.clubhouse.env).toEqual({});
     });
 
     it('scrubs the nonce from a TOML snapshot it writes back when the current file is unreadable', async () => {

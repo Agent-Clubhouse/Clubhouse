@@ -63,11 +63,12 @@ describe('MCP Injection', () => {
       const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
       expect(content.mcpServers.clubhouse).toBeDefined();
       expect(content.mcpServers.clubhouse.command).toBe('node');
-      expect(content.mcpServers.clubhouse.env.CLUBHOUSE_MCP_PORT).toBe('12345');
-      expect(content.mcpServers.clubhouse.env.CLUBHOUSE_AGENT_ID).toBe('agent-1');
+      // Port and agent ID only as fallbacks: the agent's own env wins, and
+      // quick agents sharing this worktree keep their own identity.
+      expect(content.mcpServers.clubhouse.env).toEqual({ CLUBHOUSE_MCP_FALLBACK_PORT: '12345', CLUBHOUSE_MCP_FALLBACK_AGENT_ID: 'agent-1' });
       // The nonce is named, never stored (#2222).
       expect(content.mcpServers.clubhouse.env).not.toHaveProperty('CLUBHOUSE_HOOK_NONCE');
-      expect(content.mcpServers.clubhouse.env_vars).toEqual(['CLUBHOUSE_HOOK_NONCE']);
+      expect(content.mcpServers.clubhouse.env_vars).toEqual(['CLUBHOUSE_AGENT_ID', 'CLUBHOUSE_HOOK_NONCE', 'CLUBHOUSE_MCP_PORT']);
     });
 
     describe('keeps the nonce out of the worktree (#2222)', () => {
@@ -92,7 +93,7 @@ describe('MCP Injection', () => {
         await injectClubhouseMcp(tmpDir, 'agent-1', 12345, { configDir: '.codex', mcpConfigFile: '.codex/config.toml', settingsFormat: 'toml' });
         const content = await fsp.readFile(path.join(tmpDir, '.codex', 'config.toml'), 'utf-8');
         expect(content).not.toMatch(/CLUBHOUSE_HOOK_NONCE\s*=/);
-        expect(content).toContain('env_vars = ["CLUBHOUSE_HOOK_NONCE"]');
+        expect(content).toContain('env_vars = ["CLUBHOUSE_AGENT_ID", "CLUBHOUSE_HOOK_NONCE", "CLUBHOUSE_MCP_PORT"]');
       });
 
       it('migrates a stale nonce away from .mcp.json on the next injection', async () => {
@@ -107,7 +108,8 @@ describe('MCP Injection', () => {
         expect(await allText(tmpDir)).not.toContain(NONCE);
         const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
         expect(content.mcpServers.user).toEqual({ command: 'u', env: { KEEP: '1' } });
-        expect(content.mcpServers['clubhouse-old'].env).toEqual({ CLUBHOUSE_MCP_PORT: '1', CLUBHOUSE_AGENT_ID: 'agent-1' });
+        // A bridge entry's stored identity would shadow the agent's own env.
+        expect(content.mcpServers['clubhouse-old'].env).toEqual({});
       });
 
       it('migrates a stale nonce away from the Codex TOML on the next injection', async () => {
@@ -254,8 +256,9 @@ describe('MCP Injection', () => {
       const content = await fsp.readFile(path.join(tmpDir, '.codex', 'config.toml'), 'utf-8');
       expect(content).toContain('[mcp_servers.clubhouse]');
       expect(content).toContain('command = "node"');
-      expect(content).toContain('CLUBHOUSE_MCP_PORT = "12345"');
-      expect(content).toContain('CLUBHOUSE_AGENT_ID = "agent-1"');
+      expect(content).toContain('CLUBHOUSE_MCP_FALLBACK_PORT = "12345"');
+      expect(content).toContain('CLUBHOUSE_MCP_FALLBACK_AGENT_ID = "agent-1"');
+      expect(content).not.toMatch(/^CLUBHOUSE_AGENT_ID =/m);
       expect(content).not.toContain('CLUBHOUSE_HOOK_NONCE =');
     });
 
@@ -417,11 +420,11 @@ describe('MCP Injection', () => {
       expect(def.args!.length).toBe(1);
       expect(def.args![0]).toContain('clubhouse-mcp-bridge');
       expect(def.env).toEqual({
-        CLUBHOUSE_MCP_PORT: '12345',
-        CLUBHOUSE_AGENT_ID: 'agent-1',
+        CLUBHOUSE_MCP_FALLBACK_PORT: '12345',
+        CLUBHOUSE_MCP_FALLBACK_AGENT_ID: 'agent-1',
       });
       // No nonce in the definition, so none in argv or the spawn log (#2222).
-      expect(def.env_vars).toEqual(['CLUBHOUSE_HOOK_NONCE']);
+      expect(def.env_vars).toEqual(['CLUBHOUSE_AGENT_ID', 'CLUBHOUSE_HOOK_NONCE', 'CLUBHOUSE_MCP_PORT']);
     });
   });
 
@@ -435,6 +438,49 @@ describe('MCP Injection', () => {
         mcpServers: { a: { command: 'x', env: { K: 'v' } }, b: { url: 'http://h' } },
         mcp_servers: { c: { command: 'y', env: {} } },
       });
+    });
+
+    it('keeps references to the nonce: a placeholder is the user\'s, not a stored value', () => {
+      const cfg = {
+        mcpServers: {
+          a: { command: 'x', env: { CLUBHOUSE_HOOK_NONCE: '${CLUBHOUSE_HOOK_NONCE}' } },
+          b: { command: 'y', env: { CLUBHOUSE_HOOK_NONCE: '%CLUBHOUSE_HOOK_NONCE%' } },
+          c: { command: 'z', env: { CLUBHOUSE_HOOK_NONCE: '$CLUBHOUSE_HOOK_NONCE' } },
+        },
+      };
+      expect(scrubClubhouseNonce(structuredClone(cfg))).toEqual(cfg);
+    });
+
+    it('drops a bridge entry\'s stored agent ID and port, but not another server\'s', () => {
+      const cfg = {
+        mcpServers: {
+          bridge: { command: 'node', args: ['/a/clubhouse-mcp-bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1', CLUBHOUSE_MCP_PORT: '1', CLUBHOUSE_MCP_FALLBACK_PORT: '1' } },
+          other: { command: 'x', env: { CLUBHOUSE_AGENT_ID: 'mine' } },
+        },
+      };
+      expect(scrubClubhouseNonce(cfg).mcpServers).toEqual({
+        bridge: { command: 'node', args: ['/a/clubhouse-mcp-bridge.js'], env: { CLUBHOUSE_MCP_FALLBACK_PORT: '1' } },
+        other: { command: 'x', env: { CLUBHOUSE_AGENT_ID: 'mine' } },
+      });
+    });
+
+    it('drops nonce pairs from TOML inline tables and keeps references', () => {
+      const toml = [
+        'env = { CLUBHOUSE_HOOK_NONCE = "n1", KEEP = "1" }',
+        'env = { KEEP = "2", CLUBHOUSE_HOOK_NONCE = "n2" }',
+        'env = { A = "3", CLUBHOUSE_HOOK_NONCE = "n3", B = "4" }',
+        'env = { CLUBHOUSE_HOOK_NONCE = "n4" }',
+        'env = { CLUBHOUSE_HOOK_NONCE = "${CLUBHOUSE_HOOK_NONCE}" }',
+        'CLUBHOUSE_HOOK_NONCE = "%CLUBHOUSE_HOOK_NONCE%"',
+      ].join('\n');
+      expect(scrubClubhouseNonceToml(toml).split('\n')).toEqual([
+        'env = { KEEP = "1" }',
+        'env = { KEEP = "2" }',
+        'env = { A = "3", B = "4" }',
+        'env = {  }',
+        'env = { CLUBHOUSE_HOOK_NONCE = "${CLUBHOUSE_HOOK_NONCE}" }',
+        'CLUBHOUSE_HOOK_NONCE = "%CLUBHOUSE_HOOK_NONCE%"',
+      ]);
     });
 
     it('drops nonce lines from TOML in table and dotted form', () => {

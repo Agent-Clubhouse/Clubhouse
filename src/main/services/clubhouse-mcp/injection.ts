@@ -4,16 +4,21 @@
  *
  * The agent's nonce is never written here (#2222). Any process that can read
  * an agent's worktree could otherwise call Clubhouse MCP tools as that agent.
- * The nonce travels only in the spawned CLI's environment
- * (CLUBHOUSE_HOOK_NONCE), and the bridge script reads it from the environment
- * it inherits from the CLI:
+ * Nor is its identity: quick agents share their parent's worktree, so a file
+ * agent ID would be whichever agent wrote last. The nonce, agent ID and port
+ * travel only in the spawned CLI's environment (CLUBHOUSE_BRIDGE_ENV_VARS),
+ * and the bridge script reads them from the environment it inherits from the
+ * CLI:
  *   - Claude Code (PTY, Agent SDK, stream-json) and Copilot CLI pass their
  *     whole environment to stdio MCP servers.
  *   - Codex starts stdio servers with a minimal environment, so the entry
- *     names the variable in `env_vars` and Codex forwards it.
+ *     names the variables in `env_vars` and Codex forwards them.
  *   - ACP agents get exactly the env pairs in `session/new`; the ACP driver
- *     fills `env_vars` from the CLI's env over the RPC pipe (see
- *     toAcpMcpServers), never through a file or argv.
+ *     fills `env_vars` from the CLI's env and sends the values over the RPC
+ *     pipe (see toAcpMcpServers), never in a config file or argv. The ACP
+ *     client redacts those values from its request log.
+ * The file holds only the port and agent ID under fallback names, used by
+ * the bridge when its env has none.
  */
 
 import * as fsp from 'fs/promises';
@@ -41,6 +46,39 @@ const SHELL_META_RE = /[`$|;&<>(){}!\n\r]/;
  * CLI's environment; config files name it, never hold its value.
  */
 export const CLUBHOUSE_NONCE_ENV = 'CLUBHOUSE_HOOK_NONCE';
+
+/**
+ * What the bridge needs from the agent CLI's environment. Clubhouse sets all
+ * three on every agent's spawn env; Codex forwards them by name (env_vars).
+ */
+export const CLUBHOUSE_BRIDGE_ENV_VARS: readonly string[] = ['CLUBHOUSE_AGENT_ID', CLUBHOUSE_NONCE_ENV, 'CLUBHOUSE_MCP_PORT'];
+
+/**
+ * Fallback names written into the bridge entry, read by the bridge only when
+ * the env has no CLUBHOUSE_AGENT_ID / CLUBHOUSE_MCP_PORT. They use their own
+ * names because a config `env` value overrides the inherited one, which would
+ * let the last agent to write a shared worktree's file speak for all of them.
+ */
+export const CLUBHOUSE_FALLBACK_AGENT_ID_ENV = 'CLUBHOUSE_MCP_FALLBACK_AGENT_ID';
+export const CLUBHOUSE_FALLBACK_PORT_ENV = 'CLUBHOUSE_MCP_FALLBACK_PORT';
+
+/** `${VAR}`, `$VAR` or `%VAR%`: a reference to a variable, not a stored value. */
+export function isEnvReference(value: unknown): boolean {
+  return typeof value === 'string' && /^(?:\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*|%[^%]+%)$/.test(value);
+}
+
+/** The bridge entry: no nonce, and identity only as a fallback (see top). */
+function bridgeServerDef(mcpPort: number, agentId: string): McpServerDef {
+  return {
+    command: 'node',
+    args: [getBridgeScriptPath()],
+    env: {
+      [CLUBHOUSE_FALLBACK_PORT_ENV]: String(mcpPort),
+      [CLUBHOUSE_FALLBACK_AGENT_ID_ENV]: agentId,
+    },
+    env_vars: [...CLUBHOUSE_BRIDGE_ENV_VARS],
+  };
+}
 
 /** Allowed top-level keys for an MCP server definition. */
 const ALLOWED_MCP_KEYS = new Set(['command', 'args', 'env', 'type', 'url']);
@@ -185,19 +223,8 @@ async function injectClubhouseMcpImpl(
 
   const conv = { ...DEFAULT_CONVENTIONS, ...conventions };
 
-  // Resolve bridge script path
-  const bridgeScriptPath = getBridgeScriptPath();
-
-  // No nonce: the bridge inherits it from the CLI's environment (see top).
-  const serverDef: McpServerDef = {
-    command: 'node',
-    args: [bridgeScriptPath],
-    env: {
-      CLUBHOUSE_MCP_PORT: String(mcpPort),
-      CLUBHOUSE_AGENT_ID: agentId,
-    },
-    env_vars: [CLUBHOUSE_NONCE_ENV],
-  };
+  // No nonce, and no identity a sibling's would be shadowed by (see top).
+  const serverDef = bridgeServerDef(mcpPort, agentId);
 
   // Determine the MCP config file path
   const mcpConfigPath = path.join(cwd, conv.mcpConfigFile);
@@ -259,8 +286,8 @@ async function injectJsonMcp(
     config.mcpServers = {};
   }
 
-  // Migration (#2222): an older Clubhouse stored the nonce in this file.
-  // The clubhouse entry is replaced below; scrub any other copy too.
+  // Migration (#2222): an older Clubhouse stored the nonce and agent ID in
+  // this file. The clubhouse entry is replaced below; scrub any other copy.
   scrubClubhouseNonce(config);
   const mcpServers = config.mcpServers as Record<string, McpServerDef>;
   mcpServers['clubhouse'] = serverDef;
@@ -367,10 +394,14 @@ export function stripClubhouseMcp(config: Record<string, unknown>): Record<strin
 }
 
 /**
- * Remove stored Clubhouse nonces from a parsed MCP config (`mcpServers` or
- * Codex-style `mcp_servers`): deletes CLUBHOUSE_HOOK_NONCE from every server's
- * `env`. No server has a reason to hold it; Clubhouse versions before #2222
- * wrote it into the bridge entry. Mutates and returns the config.
+ * Remove stored Clubhouse credentials from a parsed MCP config (`mcpServers`
+ * or Codex-style `mcp_servers`), as Clubhouse versions before #2222 wrote
+ * them:
+ *   - a literal CLUBHOUSE_HOOK_NONCE in any server's `env`;
+ *   - a literal CLUBHOUSE_AGENT_ID / CLUBHOUSE_MCP_PORT in a bridge entry's
+ *     `env`, which would override the agent's own inherited values.
+ * References (`${VAR}`, `$VAR`, `%VAR%`) are the user's and are kept.
+ * Mutates and returns the config.
  */
 export function scrubClubhouseNonce<T extends Record<string, unknown>>(config: T): T {
   for (const key of ['mcpServers', 'mcp_servers']) {
@@ -379,45 +410,55 @@ export function scrubClubhouseNonce<T extends Record<string, unknown>>(config: T
     for (const entry of Object.values(servers as Record<string, unknown>)) {
       if (!entry || typeof entry !== 'object') continue;
       const env = (entry as Record<string, unknown>).env;
-      if (env && typeof env === 'object' && !Array.isArray(env)) {
-        delete (env as Record<string, unknown>)[CLUBHOUSE_NONCE_ENV];
+      if (!env || typeof env !== 'object' || Array.isArray(env)) continue;
+      const names = isClubhouseMcpEntry(entry) ? CLUBHOUSE_BRIDGE_ENV_VARS : [CLUBHOUSE_NONCE_ENV];
+      const vars = env as Record<string, unknown>;
+      for (const name of names) {
+        if (name in vars && !isEnvReference(vars[name])) delete vars[name];
       }
     }
   }
   return config;
 }
 
-/**
- * A TOML line assigning the nonce, under any table or dotted key:
- * `CLUBHOUSE_HOOK_NONCE = "…"`, `env.CLUBHOUSE_HOOK_NONCE = "…"`.
- */
-const TOML_NONCE_LINE_RE = /^[ \t]*(?:[\w.-]+\.)?["']?CLUBHOUSE_HOOK_NONCE["']?[ \t]*=.*(?:\r?\n|$)/gm;
+/** `CLUBHOUSE_HOOK_NONCE = "…"` as a whole line, under any table or dotted key. */
+const TOML_NONCE_LINE_RE = /^[ \t]*(?:[\w.-]+\.)?["']?CLUBHOUSE_HOOK_NONCE["']?[ \t]*=[ \t]*(["'])(.*?)\1[ \t]*(?:#.*)?$/;
+/** The same pair inside an inline table, with the comma on either side. */
+const TOML_NONCE_PAIR_RE = /(,[ \t]*)?["']?CLUBHOUSE_HOOK_NONCE["']?[ \t]*=[ \t]*(["'])(.*?)\2([ \t]*,[ \t]*)?/g;
 
-/** The TOML counterpart of scrubClubhouseNonce: drops every line that assigns the nonce. */
+/**
+ * The TOML counterpart of scrubClubhouseNonce: drops literal nonce
+ * assignments, as lines or inline-table pairs. References are kept.
+ */
 export function scrubClubhouseNonceToml(toml: string): string {
-  return toml.replace(TOML_NONCE_LINE_RE, '');
+  const out: string[] = [];
+  for (const line of toml.split('\n')) {
+    const whole = line.match(TOML_NONCE_LINE_RE);
+    if (whole) {
+      if (!isEnvReference(whole[2])) continue;
+      out.push(line);
+      continue;
+    }
+    out.push(line.includes('{')
+      ? line.replace(TOML_NONCE_PAIR_RE, (pair, before: string | undefined, _q, value: string, after: string | undefined) =>
+        isEnvReference(value) ? pair : (before && after ? ', ' : ''))
+      : line);
+  }
+  return out.join('\n');
 }
 
 /**
  * Build the Clubhouse MCP server definition for use in CLI args or a chat
  * driver's session config. It carries no nonce: the bridge reads
- * CLUBHOUSE_HOOK_NONCE from the environment it inherits from the CLI, which
- * the caller must set on the CLI's spawn env (#2222). Keeping it out of the
+ * CLUBHOUSE_HOOK_NONCE, CLUBHOUSE_AGENT_ID and CLUBHOUSE_MCP_PORT from the
+ * environment it inherits from the CLI, which the caller must set on the
+ * CLI's spawn env (#2222). Keeping it out of the
  * definition also keeps it out of argv (`--mcp-config`, Codex `-c`, Copilot
  * `--additional-mcp-config`) and the spawn log.
  */
 export function buildClubhouseMcpDef(mcpPort: number, agentId: string): McpServerDef {
   validateBridgeScript();
-  return {
-    type: 'stdio',
-    command: 'node',
-    args: [getBridgeScriptPath()],
-    env: {
-      CLUBHOUSE_MCP_PORT: String(mcpPort),
-      CLUBHOUSE_AGENT_ID: agentId,
-    },
-    env_vars: [CLUBHOUSE_NONCE_ENV],
-  };
+  return { type: 'stdio', ...bridgeServerDef(mcpPort, agentId) };
 }
 
 /**

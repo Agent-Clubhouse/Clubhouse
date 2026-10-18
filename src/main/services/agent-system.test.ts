@@ -722,6 +722,24 @@ describe('agent-system', () => {
   });
 
   describe('MCP nonce stays in the CLI env (#2222)', () => {
+    it('headless quick agent gets its own nonce and identity in its spawn env', async () => {
+      mockGetSpawnMode.mockReturnValueOnce('headless');
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      const headlessProvider = mockProvider as unknown as { buildHeadlessCommand?: unknown };
+      headlessProvider.buildHeadlessCommand = vi.fn(() => Promise.resolve({
+        binary: '/usr/local/bin/claude', args: ['-p', 'mission'], env: {}, outputKind: 'stream-json' as const,
+      }));
+      try {
+        await spawnAgent({ agentId: 'quick-1', projectPath: '/project', cwd: '/project/parent-wt', kind: 'quick', mission: 'do thing' });
+        const nonce = getAgentNonce('quick-1');
+        expect(nonce).toMatch(/^[0-9a-f-]{36}$/);
+        const env = mockHeadlessSpawn.mock.calls.at(-1)![4] as Record<string, string>;
+        expect(env).toMatchObject({ CLUBHOUSE_AGENT_ID: 'quick-1', CLUBHOUSE_HOOK_NONCE: nonce, CLUBHOUSE_MCP_PORT: '23456' });
+      } finally {
+        delete headlessProvider.buildHeadlessCommand;
+      }
+    });
+
     it.each([
       ['claude-code', undefined],
       ['codex-cli', 'codex-cli'],

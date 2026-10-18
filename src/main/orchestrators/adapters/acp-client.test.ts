@@ -7,7 +7,7 @@ vi.mock('child_process', () => ({
 }));
 
 import { spawn } from 'child_process';
-import { AcpClient, RpcError } from './acp-client';
+import { AcpClient, RpcError, redactAcpParamsForLog } from './acp-client';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../../util/__fixtures__/host-session-env';
 
 const mockSpawn = vi.mocked(spawn);
@@ -195,6 +195,37 @@ describe('AcpClient', () => {
 
     const result = await promise;
     expect(result).toEqual({ sessionId: 'abc' });
+  });
+
+  it('never logs MCP env or header values from session/new (#2222)', async () => {
+    autoHandshake(mockProc);
+    const onLog = vi.fn();
+    const client = new AcpClient({ binary: 'copilot', args: [], onLog });
+    await client.start();
+
+    const nonce = 'nonce-in-session-new';
+    const params = {
+      cwd: '/tmp',
+      mcpServers: [
+        { name: 'clubhouse', command: 'node', args: ['bridge.js'], env: [{ name: 'CLUBHOUSE_AGENT_ID', value: 'a1' }, { name: 'CLUBHOUSE_HOOK_NONCE', value: nonce }] },
+        { type: 'http', name: 'remote', url: 'https://example.test/mcp', headers: [{ name: 'Authorization', value: 'Bearer secret-token' }] },
+      ],
+    };
+    void client.request('session/new', params).catch(() => {});
+
+    // The request itself carries the values: only the log is redacted.
+    expect(String(mockProc.stdin.write.mock.calls.at(-1)?.[0])).toContain(nonce);
+    const logged = JSON.stringify(onLog.mock.calls.filter(([, message]) => String(message).includes('session/new')));
+    expect(logged).toContain('CLUBHOUSE_HOOK_NONCE');
+    expect(logged).not.toContain(nonce);
+    expect(logged).not.toContain('secret-token');
+  });
+
+  it('redactAcpParamsForLog keeps names and leaves other params untouched', () => {
+    expect(redactAcpParamsForLog({ mcpServers: [{ name: 's', env: [{ name: 'K', value: 'v' }] }] }))
+      .toEqual({ mcpServers: [{ name: 's', env: [{ name: 'K', value: '[redacted]' }] }] });
+    const plain = { sessionId: 'x' };
+    expect(redactAcpParamsForLog(plain)).toBe(plain);
   });
 
   it('rejects request on JSON-RPC error response', async () => {
