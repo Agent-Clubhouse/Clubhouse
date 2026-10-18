@@ -2264,12 +2264,54 @@ describe('plugin-loader', () => {
 
       await refreshCommunityPlugins();
 
-      // Should unregister old themes and register new ones
-      expect(unregisterTheme).toHaveBeenCalledWith('plugin:theme-pack:dark');
+      // Registers over the existing entry. A theme kept by the new manifest is never
+      // unregistered, so the active theme can't go missing mid-refresh (#2096).
       expect(registerTheme).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'plugin:theme-pack:dark', name: 'New Dark' }),
       );
+      expect(unregisterTheme).not.toHaveBeenCalled();
       expect(usePluginStore.getState().plugins['theme-pack'].status).toBe('activated');
+    });
+
+    it('unregisters only the pack themes the refreshed manifest removed', async () => {
+      const theme = (id: string) => ({
+        id,
+        name: id,
+        type: 'dark' as const,
+        colors: {} as Record<string, string>,
+        hljs: {} as Record<string, string>,
+        terminal: {} as Record<string, string>,
+      });
+      const packManifest = (themes: ReturnType<typeof theme>[]) => makeManifest({
+        id: 'theme-pack',
+        scope: 'app',
+        kind: 'pack',
+        engine: { api: 0.7 },
+        permissions: [],
+        contributes: { themes },
+      });
+
+      usePluginStore.getState().registerPlugin(
+        packManifest([theme('keep'), theme('drop')]),
+        'community', '/plugins/theme-pack', 'activated',
+      );
+      usePluginStore.setState({ externalPluginsEnabled: true });
+      mockPlugin.discoverCommunity.mockResolvedValue([{
+        manifest: packManifest([theme('keep'), theme('added')]),
+        pluginPath: '/plugins/theme-pack',
+        fromMarketplace: false,
+      }]);
+
+      vi.mocked(registerTheme).mockClear();
+      vi.mocked(unregisterTheme).mockClear();
+
+      await refreshCommunityPlugins();
+
+      expect(vi.mocked(registerTheme).mock.calls.map(([t]) => t.id)).toEqual([
+        'plugin:theme-pack:keep',
+        'plugin:theme-pack:added',
+      ]);
+      expect(vi.mocked(unregisterTheme).mock.calls).toEqual([['plugin:theme-pack:drop']]);
     });
 
     it('handles mix of new, existing, and incompatible plugins', async () => {

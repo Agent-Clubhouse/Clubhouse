@@ -241,8 +241,38 @@ describe('themeStore', () => {
         color: THEMES['catppuccin-mocha'].colors.mantle,
         symbolColor: THEMES['catppuccin-mocha'].colors.text,
       });
-      expect(useThemeStore.getState().themeId).toBe('catppuccin-mocha');
+      // themeId keeps the user's selection; only the applied theme falls back
+      expect(useThemeStore.getState().themeId).toBe(fakePluginTheme.id);
       expect(useThemeStore.getState().theme).toBe(THEMES['catppuccin-mocha']);
+      expect(mockApp.saveTheme).not.toHaveBeenCalled();
+    });
+
+    it('restores the selected theme when a pack refresh unregisters and re-registers it (#2096)', async () => {
+      registerTheme(fakePluginTheme);
+      await getState().setTheme(fakePluginTheme.id as ThemeId);
+      vi.clearAllMocks();
+
+      unregisterTheme(fakePluginTheme.id);
+      registerTheme(fakePluginTheme);
+
+      expect(useThemeStore.getState().themeId).toBe(fakePluginTheme.id);
+      expect(useThemeStore.getState().theme).toBe(fakePluginTheme);
+      expect(applyTheme).toHaveBeenLastCalledWith(fakePluginTheme, { experimentalGradients: false });
+      expect(mockApp.saveTheme).not.toHaveBeenCalled();
+    });
+
+    it('does not re-apply the fallback on every registry change while the selection is missing', async () => {
+      registerTheme(fakePluginTheme);
+      await getState().setTheme(fakePluginTheme.id as ThemeId);
+      unregisterTheme(fakePluginTheme.id);
+      vi.clearAllMocks();
+
+      const other: ThemeDefinition = { ...fakePluginTheme, id: 'plugin:test:other', name: 'Other' };
+      registerTheme(other);
+      unregisterTheme(other.id);
+
+      expect(applyTheme).not.toHaveBeenCalled();
+      expect(useThemeStore.getState().themeId).toBe(fakePluginTheme.id);
     });
 
     it('respects experimentalGradients when re-applying deferred theme', () => {
@@ -365,7 +395,7 @@ describe('themeStore', () => {
       expect(localStorage.removeItem).toHaveBeenCalledWith('clubhouse-theme-vars');
     });
 
-    it('falls back to catppuccin-mocha and does not leave stale cache when theme unregistered', async () => {
+    it('applies catppuccin-mocha and does not leave stale cache when theme unregistered', async () => {
       registerTheme(pluginTheme);
       await getState().setTheme(pluginTheme.id as ThemeId);
       localStorageStore['clubhouse-theme-vars'] = 'stale-vars';
@@ -373,7 +403,7 @@ describe('themeStore', () => {
 
       unregisterTheme(pluginTheme.id);
 
-      expect(useThemeStore.getState().themeId).toBe('catppuccin-mocha');
+      expect(useThemeStore.getState().theme).toBe(THEMES['catppuccin-mocha']);
       expect(applyTheme).toHaveBeenCalledWith(THEMES['catppuccin-mocha'], { experimentalGradients: false });
       // Cache was removed, not left stale
       expect(localStorageStore['clubhouse-theme-vars']).toBeUndefined();

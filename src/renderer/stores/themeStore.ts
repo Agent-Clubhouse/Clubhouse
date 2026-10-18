@@ -94,11 +94,16 @@ export const unsubscribeThemeRegistryListener = onRegistryChange(() => {
     // Active theme was unregistered — clear stale flash-prevention cache and fall back.
     // The cache is only removed here, atomically with applying the fallback that replaces it,
     // so we never leave the cache in a state that doesn't match the applied CSS.
-    try { localStorage.removeItem('clubhouse-theme-vars'); } catch { /* ignore */ }
+    // themeId keeps the user's selection (same as loadTheme when a plugin theme isn't
+    // registered yet): a pack refresh unregisters and re-registers its themes, and
+    // overwriting themeId here would strand the user on the fallback (#2096).
     const fallback = BUILTIN_THEMES['catppuccin-mocha'];
-    applyTheme(fallback, { experimentalGradients: store.experimentalGradients });
-    syncTitleBarOverlay(fallback);
-    useThemeStore.setState({ themeId: 'catppuccin-mocha', theme: fallback });
+    if (store.theme.id !== fallback.id) {
+      try { localStorage.removeItem('clubhouse-theme-vars'); } catch { /* ignore */ }
+      applyTheme(fallback, { experimentalGradients: store.experimentalGradients });
+      syncTitleBarOverlay(fallback);
+      useThemeStore.setState({ theme: fallback });
+    }
   } else {
     // Theme is still registered — re-apply to pick up any variable changes from updated
     // plugin themes. applyTheme atomically re-writes the flash-prevention cache so it stays
