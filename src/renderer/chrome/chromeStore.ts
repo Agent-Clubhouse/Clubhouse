@@ -22,6 +22,10 @@ const PERSIST_DEBOUNCE_MS = 300;
 /** A per-project fold inside the tree: sleeping agents or finished quick agents. */
 export type ProjectFold = 'sleeping' | 'finished';
 
+/** How the sidebar orders projects or agents (#2116): the user's own order, or most recent activity first. */
+export type SidebarSort = 'manual' | 'recent';
+export const SIDEBAR_SORTS: readonly SidebarSort[] = ['manual', 'recent'];
+
 interface PersistedChromeState {
   version: number;
   sidebarWidth: number;
@@ -38,6 +42,12 @@ interface PersistedChromeState {
   projectActivity?: Record<string, number>;
   idleDays?: number;
   idleOpen?: boolean;
+  projectSort?: SidebarSort;
+  agentSort?: SidebarSort;
+  /** Projects the user marked inactive: they stay in the idle section until marked active (#2116). */
+  inactiveProjectIds?: string[];
+  /** Last activity per agent (wake, or a turn starting), for the Recent agent order. */
+  agentActivity?: Record<string, number>;
 }
 
 /** Options an app view takes for one visit. */
@@ -154,6 +164,18 @@ export interface ChromeState {
   idleDays: number;
   /** Whether the "N idle projects" row is expanded. */
   idleOpen: boolean;
+  projectSort: SidebarSort;
+  agentSort: SidebarSort;
+  inactiveProjectIds: string[];
+  agentActivity: Record<string, number>;
+  setProjectSort: (sort: SidebarSort) => void;
+  setAgentSort: (sort: SidebarSort) => void;
+  /** Move a project to the idle section now, until it is marked active. Pinned projects can't be (unpin first). */
+  markProjectInactive: (projectId: string) => void;
+  /** Bring a project out of the idle section: clears a manual mark and counts as activity now. */
+  markProjectActive: (projectId: string, at?: number) => void;
+  /** Record activity for an agent (a wake, or a turn starting), for the Recent agent order. */
+  markAgentActivity: (agentId: string, at?: number) => void;
   /** Record activity in a project: an agent ran or woke, a quick agent started, a tab opened. */
   markActivity: (projectId: string, at?: number) => void;
   /** Record a time only for projects with none yet, so existing projects don't start out idle. */
@@ -180,7 +202,7 @@ export interface ChromeState {
 
 type PersistedFields = Pick<ChromeState,
   'sidebarWidth' | 'sidebarCollapsed' | 'lastProjectId' | 'pinnedProjectIds' | 'collapsedProjectIds' | 'expandedFolds' | 'tabMru'
-  | 'projectActivity' | 'idleDays' | 'idleOpen'>;
+  | 'projectActivity' | 'idleDays' | 'idleOpen' | 'projectSort' | 'agentSort' | 'inactiveProjectIds' | 'agentActivity'>;
 
 const DEFAULTS: PersistedFields = {
   sidebarWidth: SIDEBAR_DEFAULT,
@@ -193,7 +215,13 @@ const DEFAULTS: PersistedFields = {
   projectActivity: {},
   idleDays: DEFAULT_IDLE_DAYS,
   idleOpen: false,
+  projectSort: 'manual',
+  agentSort: 'manual',
+  inactiveProjectIds: [],
+  agentActivity: {},
 };
+
+const sidebarSort = (value: unknown): SidebarSort => (value === 'recent' ? 'recent' : 'manual');
 
 const numberRecord = (value: unknown): Record<string, number> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -232,6 +260,10 @@ export function loadChromeState(): PersistedFields {
       projectActivity: numberRecord(parsed.projectActivity),
       idleDays: typeof parsed.idleDays === 'number' && parsed.idleDays >= 0 ? parsed.idleDays : DEFAULT_IDLE_DAYS,
       idleOpen: parsed.idleOpen === true,
+      projectSort: sidebarSort(parsed.projectSort),
+      agentSort: sidebarSort(parsed.agentSort),
+      inactiveProjectIds: stringArray(parsed.inactiveProjectIds),
+      agentActivity: numberRecord(parsed.agentActivity),
     };
   } catch {
     // telemetry-exempt: read at module load, before telemetry is connected; corrupt state falls back to defaults
@@ -262,6 +294,10 @@ function persistChromeState(state: PersistedFields): void {
     projectActivity: state.projectActivity,
     idleDays: state.idleDays,
     idleOpen: state.idleOpen,
+    projectSort: state.projectSort,
+    agentSort: state.agentSort,
+    inactiveProjectIds: state.inactiveProjectIds,
+    agentActivity: state.agentActivity,
   };
   try {
     // Keyboard shortcut overrides share the key but are written by their own store; keep them.
@@ -371,6 +407,42 @@ export const useChromeStore = create<ChromeState>((set, get) => {
       schedulePersist();
     },
 
+    setProjectSort: (sort) => {
+      if (get().projectSort === sort) return;
+      set({ projectSort: sort });
+      schedulePersist();
+    },
+
+    setAgentSort: (sort) => {
+      if (get().agentSort === sort) return;
+      set({ agentSort: sort });
+      schedulePersist();
+    },
+
+    markProjectInactive: (projectId) => {
+      const s = get();
+      if (s.pinnedProjectIds.includes(projectId) || s.inactiveProjectIds.includes(projectId)) return;
+      set({ inactiveProjectIds: [...s.inactiveProjectIds, projectId] });
+      schedulePersist();
+    },
+
+    markProjectActive: (projectId, at = Date.now()) => {
+      const s = get();
+      // Unthrottled, unlike markActivity: the user asked for it now.
+      set({
+        inactiveProjectIds: s.inactiveProjectIds.filter((id) => id !== projectId),
+        projectActivity: { ...s.projectActivity, [projectId]: at },
+      });
+      schedulePersist();
+    },
+
+    markAgentActivity: (agentId, at = Date.now()) => {
+      const last = get().agentActivity[agentId];
+      if (last !== undefined && at - last < ACTIVITY_WRITE_INTERVAL_MS) return;
+      set({ agentActivity: { ...get().agentActivity, [agentId]: at } });
+      schedulePersist();
+    },
+
     toggleIdleOpen: () => {
       set({ idleOpen: !get().idleOpen });
       schedulePersist();
@@ -438,6 +510,7 @@ export const useChromeStore = create<ChromeState>((set, get) => {
         ...(s.lastProjectId ? [s.lastProjectId] : []),
         ...Object.keys(s.tabMru),
         ...Object.keys(s.projectActivity),
+        ...s.inactiveProjectIds,
       ];
       get().forgetProjects([...new Set(stored.filter((id) => id.startsWith(prefix)))]);
     },
@@ -453,6 +526,7 @@ export const useChromeStore = create<ChromeState>((set, get) => {
         lastProjectId: s.lastProjectId && gone.has(s.lastProjectId) ? null : s.lastProjectId,
         tabMru: Object.fromEntries(Object.entries(s.tabMru).filter(([id]) => !gone.has(id))),
         projectActivity: Object.fromEntries(Object.entries(s.projectActivity).filter(([id]) => !gone.has(id))),
+        inactiveProjectIds: s.inactiveProjectIds.filter((id) => !gone.has(id)),
       });
       schedulePersist();
     },
@@ -465,11 +539,20 @@ export const useChromeStore = create<ChromeState>((set, get) => {
  */
 export function syncProjectActivityWithAgents(): () => void {
   return useAgentStore.subscribe((state, prev) => {
-    if (state.agentSpawnedAt === prev.agentSpawnedAt) return;
-    for (const [id, at] of Object.entries(state.agentSpawnedAt)) {
-      if (prev.agentSpawnedAt[id] === at) continue;
-      const projectId = state.agents[id]?.projectId;
-      if (projectId) useChromeStore.getState().markActivity(projectId, at);
+    const chrome = useChromeStore.getState();
+    if (state.agentSpawnedAt !== prev.agentSpawnedAt) {
+      for (const [id, at] of Object.entries(state.agentSpawnedAt)) {
+        if (prev.agentSpawnedAt[id] === at) continue;
+        const projectId = state.agents[id]?.projectId;
+        if (projectId) chrome.markActivity(projectId, at);
+        chrome.markAgentActivity(id, at);
+      }
+    }
+    // A turn starting is agent activity too (the Recent agent order, #2116).
+    if (state.agentDetailedStatus !== prev.agentDetailedStatus) {
+      for (const [id, status] of Object.entries(state.agentDetailedStatus)) {
+        if (status.state === 'working' && prev.agentDetailedStatus[id]?.state !== 'working') chrome.markAgentActivity(id);
+      }
     }
   });
 }

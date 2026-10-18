@@ -1,8 +1,10 @@
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { useChromeStore, foldKey, type ProjectFold } from '../chromeStore';
 import { ProjectGroup } from './ProjectGroup';
-import { moveProject, orderProjects } from './treeModel';
+import { holdOrder, moveProject, orderProjects } from './treeModel';
+import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
+import { useToastStore } from '../../stores/toastStore';
 import { partitionIdle } from '../projectActivity';
 import { reportChromeFeature } from '../telemetry';
 import { Tooltip } from '../../components/Tooltip';
@@ -12,6 +14,12 @@ import { Tooltip } from '../../components/Tooltip';
  * first, then active ones in saved order, then one "N idle projects" row.
  * Projects collapse one by one or all at once, and reorder by drag or by Move
  * up / Move down in the project menu, within their section.
+ *
+ * Order (#2116): projects and agents each follow the saved, manual order or
+ * most recent activity first (sorted upstream by useSidebarOrder). In Recent
+ * order reordering is off, and trying to drag says how to turn it back on.
+ * While the pointer is over the tree, a changing Recent order is held still,
+ * and it catches up when the pointer leaves, so no row jumps under it.
  *
  * Keyboard (§4.8): a tree with one tab stop (roving tabindex). Up and Down
  * move, Home and End jump, Right expands or steps in, Left collapses or steps
@@ -47,6 +55,18 @@ export interface ProjectTreeProps {
   onOpenSettings?: (projectId: string) => void;
   onReorderAgents?: (projectId: string, orderedIds: string[]) => void;
 }
+
+const SortIcon = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M7 4v16M4 17l3 3 3-3M14 6h7M14 12h5M14 18h3" />
+  </svg>
+);
+
+const REORDER_HINT = {
+  project: 'Projects are sorted by recent activity. Switch to manual order in the Order menu to reorder them.',
+  agent: 'Agents are sorted by recent activity. Switch to manual order in the Order menu to reorder them.',
+} as const;
+const showReorderHint = (kind: keyof typeof REORDER_HINT) => useToastStore.getState().addToast(REORDER_HINT[kind], 'info');
 
 const CollapseAllIcon = (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -129,7 +149,40 @@ export function useTreeKeyboard(treeRef: React.RefObject<HTMLDivElement | null>,
 }
 
 export function ProjectTree(props: ProjectTreeProps) {
-  const { projects, projectIcons, agentsByProject, detailed, completedByProject, activeProjectId, activeAgentId, selectedCompletedId, onReorder } = props;
+  const { projectIcons, detailed, completedByProject, activeProjectId, activeAgentId, selectedCompletedId } = props;
+  const projectSort = useChromeStore((s) => s.projectSort);
+  const agentSort = useChromeStore((s) => s.agentSort);
+  const setProjectSort = useChromeStore((s) => s.setProjectSort);
+  const setAgentSort = useChromeStore((s) => s.setAgentSort);
+  const inactiveProjectIds = useChromeStore((s) => s.inactiveProjectIds);
+  const markProjectInactive = useChromeStore((s) => s.markProjectInactive);
+  const markProjectActive = useChromeStore((s) => s.markProjectActive);
+  // Reordering is a manual-order action.
+  const onReorder = projectSort === 'manual' ? props.onReorder : undefined;
+  const onReorderAgents = agentSort === 'manual' ? props.onReorderAgents : undefined;
+
+  // Hold a Recent order still while the pointer is over the tree.
+  const [pointerInside, setPointerInside] = useState(false);
+  const held = useRef<{ projects: string[]; agents: Record<string, string[]> }>({ projects: [], agents: {} });
+  const holdProjects = pointerInside && projectSort === 'recent';
+  const holdAgents = pointerInside && agentSort === 'recent';
+  const projects = useMemo(
+    () => (holdProjects ? holdOrder(props.projects, held.current.projects) : props.projects),
+    [holdProjects, props.projects],
+  );
+  const agentsByProject = useMemo(
+    () => (holdAgents
+      ? Object.fromEntries(Object.entries(props.agentsByProject).map(([id, list]) => [id, holdOrder(list, held.current.agents[id] ?? [])]))
+      : props.agentsByProject),
+    [holdAgents, props.agentsByProject],
+  );
+  useEffect(() => {
+    if (!holdProjects) held.current.projects = props.projects.map((p) => p.id);
+    if (!holdAgents) {
+      held.current.agents = Object.fromEntries(Object.entries(props.agentsByProject).map(([id, list]) => [id, list.map((a) => a.id)]));
+    }
+  }, [holdProjects, holdAgents, props.projects, props.agentsByProject]);
+
   const pinnedProjectIds = useChromeStore((s) => s.pinnedProjectIds);
   const collapsedProjectIds = useChromeStore((s) => s.collapsedProjectIds);
   const expandedFolds = useChromeStore((s) => s.expandedFolds);
@@ -147,8 +200,8 @@ export function ProjectTree(props: ProjectTreeProps) {
   ), [agentsByProject]);
   const { pinned, rest } = useMemo(() => orderProjects(projects, pinnedProjectIds), [projects, pinnedProjectIds]);
   const { active, idle } = useMemo(() => partitionIdle(rest, {
-    activity: projectActivity, pinnedIds: pinnedProjectIds, runningIds, activeProjectId, idleDays, now: Date.now(),
-  }), [rest, projectActivity, pinnedProjectIds, runningIds, activeProjectId, idleDays]);
+    activity: projectActivity, pinnedIds: pinnedProjectIds, runningIds, activeProjectId, idleDays, now: Date.now(), inactiveIds: inactiveProjectIds,
+  }), [rest, projectActivity, pinnedProjectIds, runningIds, activeProjectId, idleDays, inactiveProjectIds]);
 
   const collapsedSet = useMemo(() => new Set(collapsedProjectIds), [collapsedProjectIds]);
   const foldSet = useMemo(() => new Set(expandedFolds), [expandedFolds]);
@@ -170,6 +223,12 @@ export function ProjectTree(props: ProjectTreeProps) {
   const [overId, setOverId] = useState<string | null>(null);
   const dragHandlers = useMemo(() => ({
     onDragStart: (e: React.DragEvent, id: string) => {
+      if (!onReorder) {
+        // Recent order: nothing to drag, but say how to get manual order back.
+        e.preventDefault();
+        if (props.onReorder) showReorderHint('project');
+        return;
+      }
       setDragId(id);
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', id);
@@ -190,7 +249,7 @@ export function ProjectTree(props: ProjectTreeProps) {
       if (next) onReorder?.(next);
     },
     onDragEnd: () => { setDragId(null); setOverId(null); },
-  }), [dragId, displayIds, sectionOf, onReorder]);
+  }), [dragId, displayIds, sectionOf, onReorder, props.onReorder]);
 
   /** Move up / Move down: the neighbour in the same section, as shown. */
   const neighbour = useCallback((id: string, direction: -1 | 1) => {
@@ -216,6 +275,20 @@ export function ProjectTree(props: ProjectTreeProps) {
     toggleProjectCollapsed(projectId);
     reportChromeFeature('project_collapse');
   }, [toggleProjectCollapsed]);
+  const onSetInactive = useCallback((projectId: string, inactive: boolean) => {
+    if (inactive) markProjectInactive(projectId);
+    else markProjectActive(projectId);
+  }, [markProjectInactive, markProjectActive]);
+  const onAgentReorderHint = useCallback(() => showReorderHint('agent'), []);
+
+  const [sortMenu, setSortMenu] = useState<{ x: number; y: number } | null>(null);
+  const sortItems: MenuItem[] = [
+    { id: 'projects-manual', label: 'Projects in manual order', selected: projectSort === 'manual', onSelect: () => setProjectSort('manual') },
+    { id: 'projects-recent', label: 'Projects most recent first', selected: projectSort === 'recent', onSelect: () => setProjectSort('recent') },
+    { id: 'agents-manual', label: 'Agents in manual order', selected: agentSort === 'manual', onSelect: () => setAgentSort('manual') },
+    { id: 'agents-recent', label: 'Agents most recent first', selected: agentSort === 'recent', onSelect: () => setAgentSort('recent') },
+  ];
+
   const onTogglePinned = useCallback((projectId: string) => {
     togglePinned(projectId);
     reportChromeFeature('project_pin');
@@ -252,7 +325,7 @@ export function ProjectTree(props: ProjectTreeProps) {
       onTogglePinned={onTogglePinned}
       onToggleFold={onToggleFold}
       onNewAgent={props.onNewAgent}
-      draggable={!!onReorder}
+      draggable={!!props.onReorder}
       onSelectAgent={props.onSelectAgent}
       onOpenTerminal={props.terminalProjectIds?.has(project.id) ? props.onOpenTerminal : undefined}
       onSelectCompleted={props.onSelectCompleted}
@@ -261,10 +334,14 @@ export function ProjectTree(props: ProjectTreeProps) {
       dragHandlers={dragHandlers}
       dropIndicator={overId === project.id && dragId !== null && dragId !== project.id}
       onMoveProject={onReorder ? onMoveProject : undefined}
+      sortedByRecent={!!props.onReorder && !onReorder}
+      inSection={underIdle ? 'idle' : sectionOf.get(project.id) ?? 'active'}
+      onSetInactive={props.onReorder ? onSetInactive : undefined}
+      onAgentReorderHint={props.onReorderAgents && !onReorderAgents ? onAgentReorderHint : undefined}
       canMoveUp={neighbour(project.id, -1) !== null}
       canMoveDown={neighbour(project.id, 1) !== null}
       onOpenSettings={props.onOpenSettings}
-      onReorderAgents={props.onReorderAgents}
+      onReorderAgents={onReorderAgents}
     />
   );
 
@@ -273,6 +350,18 @@ export function ProjectTree(props: ProjectTreeProps) {
       <div className="flex-shrink-0 flex items-center px-3 pt-2 pb-1 border-t border-surface-0">
         <span className="text-xs font-semibold text-ctp-subtext0">Projects</span>
         <span className="ml-auto text-xs text-ctp-overlay1">{projects.length}</span>
+        <Tooltip content="Order">
+        <button
+          type="button"
+          data-testid="sidebar-sort-menu"
+          aria-label="Projects order"
+          aria-haspopup="menu"
+          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setSortMenu({ x: r.right, y: r.bottom }); }}
+          className="ml-1.5 w-6 h-6 rounded flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
+        >
+          {SortIcon}
+        </button>
+        </Tooltip>
         <Tooltip content={allCollapsed ? 'Expand all projects' : 'Collapse all projects'}>
         <button
           type="button"
@@ -293,6 +382,8 @@ export function ProjectTree(props: ProjectTreeProps) {
         aria-label="Projects and agents"
         onKeyDown={keyboard.onKeyDown}
         onFocus={keyboard.onFocus}
+        onPointerEnter={() => setPointerInside(true)}
+        onPointerLeave={() => setPointerInside(false)}
         className="flex-1 min-h-0 overflow-y-auto pb-2 flex flex-col gap-px"
       >
         {pinned.map((p) => renderGroup(p))}
@@ -320,6 +411,7 @@ export function ProjectTree(props: ProjectTreeProps) {
           </>
         )}
       </div>
+      {sortMenu && <PopupMenu items={sortItems} position={sortMenu} label="Projects order" testId="sidebar-sort" onClose={() => setSortMenu(null)} />}
     </section>
   );
 }

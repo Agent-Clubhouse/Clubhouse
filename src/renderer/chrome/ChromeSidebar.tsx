@@ -11,6 +11,7 @@ import { useOrderedShallow } from '../hooks/useOrderedShallow';
 import type { PluginRegistryEntry } from '../../shared/plugin-types';
 import type { Agent } from '../../shared/types';
 import { sanitizeSvg } from '../utils/sanitize-svg';
+import { useSidebarOrder } from './sidebar/useSidebarOrder';
 import { ProjectTree } from './sidebar/ProjectTree';
 import { FilterResults } from './sidebar/FilterResults';
 import { useKeyboardShortcutsStore } from '../stores/keyboardShortcutsStore';
@@ -389,6 +390,8 @@ export function ChromeSidebar() {
     }
     return map;
   }, [treeAgents, treeProjects]);
+  // Manual or most-recent order (#2116), shared by the tree and the filter results.
+  const ordered = useSidebarOrder(treeProjects, agentsByProject);
 
   // Needs you covers every host, so a blocked agent anywhere is one click away.
   const needs = useMemo(() => mergeNeedsAttention(
@@ -629,9 +632,9 @@ export function ChromeSidebar() {
         <div className="flex-1 min-h-0 flex flex-col">
           <FilterResults
             query={filter}
-            projects={treeProjects}
+            projects={ordered.projects}
             projectIcons={isRemoteHost ? remoteProjectIcons : projectIcons}
-            agentsByProject={agentsByProject}
+            agentsByProject={ordered.agentsByProject}
             detailed={treeDetailed}
             activeAgentId={isProjectTab ? activeAgentId : null}
             onSelectProject={selectProject}
@@ -656,9 +659,9 @@ export function ChromeSidebar() {
       <div className={`flex-1 min-h-0 flex-col ${mode === 'tree' && !filtering ? 'flex' : 'hidden'}`}>
         <ProjectTree
           projectScopeId={projectScopeId}
-          projects={treeProjects}
+          projects={ordered.projects}
           projectIcons={isRemoteHost ? remoteProjectIcons : projectIcons}
-          agentsByProject={agentsByProject}
+          agentsByProject={ordered.agentsByProject}
           detailed={treeDetailed}
           completedByProject={isRemoteHost ? NO_COMPLETED : completedByProject}
           activeProjectId={treeActiveProjectId}

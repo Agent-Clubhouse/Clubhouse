@@ -340,3 +340,113 @@ describe('ProjectTree keeps focus on a moved row (#2115 review)', () => {
     expect(screen.queryByTestId('agent-drop-indicator')).toBeNull();
   });
 });
+
+describe('ProjectTree sort modes and inactive projects (#2116)', () => {
+  const dataTransfer = () => ({ setData: vi.fn(), getData: vi.fn(), effectAllowed: '', dropEffect: '' });
+  const shownProjects = () => [...document.querySelectorAll<HTMLElement>('[data-tree-key^="project:"]')].map((el) => el.dataset.treeKey!.slice(8));
+  const shownAgents = () => [...document.querySelectorAll<HTMLElement>('[data-tree-key^="agent:"]')].map((el) => el.dataset.treeKey!.slice(6));
+
+  beforeEach(async () => {
+    const { useToastStore } = await import('../../stores/toastStore');
+    useToastStore.setState({ toasts: [] } as never);
+    useChromeStore.setState({ projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [] });
+  });
+  const toasts = async () => {
+    const { useToastStore } = await import('../../stores/toastStore');
+    return (useToastStore.getState() as unknown as { toasts: Array<{ message: string }> }).toasts.map((t) => t.message);
+  };
+
+  it('in Recent project order, has no Move items, a note instead, and a drag only explains how to reorder', async () => {
+    useChromeStore.setState({ projectSort: 'recent' });
+    const props = setup();
+    fireEvent.contextMenu(key('project:b'));
+    expect(screen.queryByTestId('ctx-move-up')).toBeNull();
+    expect(screen.getByText('Sorted by recent activity')).toBeTruthy();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    fireEvent.dragStart(key('project:b'), { dataTransfer: dataTransfer() });
+    fireEvent.dragOver(screen.getByTestId('project-group-a'), { dataTransfer: dataTransfer() });
+    fireEvent.drop(screen.getByTestId('project-group-a'), { dataTransfer: dataTransfer() });
+    expect(props.onReorder).not.toHaveBeenCalled();
+    expect((await toasts()).some((m) => m.startsWith('Projects are sorted by recent activity'))).toBe(true);
+  });
+
+  it('in Recent agent order, agent rows have no Move items and a drag explains how to reorder', async () => {
+    useChromeStore.setState({ agentSort: 'recent' });
+    const props = setup();
+    fireEvent.contextMenu(screen.getByTestId('agent-item-a1'));
+    expect(screen.queryByTestId('ctx-move-down')).toBeNull();
+    fireEvent.dragStart(screen.getByTestId('agent-item-a3'), { dataTransfer: dataTransfer() });
+    expect(props.onReorderAgents).not.toHaveBeenCalled();
+    expect((await toasts()).some((m) => m.startsWith('Agents are sorted by recent activity'))).toBe(true);
+  });
+
+  it('holds the given order while the pointer is over the tree, then catches up', () => {
+    useChromeStore.setState({ projectSort: 'recent', agentSort: 'recent', collapsedProjectIds: ['b', 'c'] });
+    const base = {
+      projects: [project('a'), project('b'), project('c')],
+      agentsByProject: { a: [agent('a1', 'a'), agent('a3', 'a')] },
+    };
+    const props = setup(base);
+    const tree = screen.getByTestId('project-tree');
+    // Re-render the same tree (same container, so the same root) with a new upstream order.
+    const rerender = (over: Partial<ProjectTreeProps>) =>
+      render(<ProjectTree {...props} {...over} />, { container: tree.closest('section')!.parentElement! });
+    expect(shownProjects()).toEqual(['a', 'b', 'c']);
+    fireEvent.pointerEnter(tree);
+    rerender({ projects: [project('c'), project('a'), project('b')], agentsByProject: { a: [agent('a3', 'a'), agent('a1', 'a')] } });
+    expect(shownProjects()).toEqual(['a', 'b', 'c']);
+    expect(shownAgents()).toEqual(['a1', 'a3']);
+    fireEvent.pointerLeave(screen.getByTestId('project-tree'));
+    expect(shownProjects()).toEqual(['c', 'a', 'b']);
+    expect(shownAgents()).toEqual(['a3', 'a1']);
+  });
+
+  it('does not hold the order in manual mode, so a reorder shows at once', () => {
+    const props = setup({ projects: [project('a'), project('b')] });
+    fireEvent.pointerEnter(screen.getByTestId('project-tree'));
+    render(<ProjectTree {...props} projects={[project('b'), project('a')]} />, { container: screen.getByTestId('project-tree').closest('section')!.parentElement! });
+    expect(shownProjects()).toEqual(['b', 'a']);
+  });
+
+  it('Mark inactive moves a project to the idle row at once; Mark active brings it back', () => {
+    useChromeStore.setState({ idleOpen: true });
+    setup();
+    fireEvent.contextMenu(key('project:b'));
+    fireEvent.click(screen.getByText('Mark inactive'));
+    expect(useChromeStore.getState().inactiveProjectIds).toEqual(['b']);
+    expect(screen.getByTestId('idle-projects').textContent).toBe('2 idle projects');
+    expect(key('project:b').dataset.treeParent).toBe('idle');
+
+    fireEvent.contextMenu(key('project:b'));
+    expect(screen.queryByText('Mark inactive')).toBeNull();
+    fireEvent.click(screen.getByText('Mark active'));
+    expect(useChromeStore.getState().inactiveProjectIds).toEqual([]);
+    expect(key('project:b').dataset.treeParent).toBeUndefined();
+  });
+
+  it('offers Mark active for a project that went idle by time, and no Mark inactive on a pinned one', () => {
+    useChromeStore.setState({ idleOpen: true, pinnedProjectIds: ['c'] });
+    setup();
+    fireEvent.contextMenu(key('project:old'));
+    fireEvent.click(screen.getByText('Mark active'));
+    expect(key('project:old').dataset.treeParent).toBeUndefined();
+    fireEvent.contextMenu(key('project:c'));
+    expect(screen.queryByText('Mark inactive')).toBeNull();
+  });
+
+  it('switches project and agent order from the header menu', () => {
+    setup();
+    fireEvent.click(screen.getByTestId('sidebar-sort-menu'));
+    fireEvent.click(screen.getByText('Projects most recent first'));
+    fireEvent.click(screen.getByTestId('sidebar-sort-menu'));
+    fireEvent.click(screen.getByText('Agents most recent first'));
+    expect(useChromeStore.getState()).toMatchObject({ projectSort: 'recent', agentSort: 'recent' });
+  });
+
+  it('has no Mark inactive on a satellite', () => {
+    setup({ onReorder: undefined, onOpenSettings: undefined, onReorderAgents: undefined, onNewAgent: undefined });
+    fireEvent.contextMenu(key('project:a'));
+    expect(screen.queryByText('Mark inactive')).toBeNull();
+  });
+});
