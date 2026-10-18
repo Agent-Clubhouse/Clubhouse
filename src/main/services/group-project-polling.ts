@@ -17,6 +17,66 @@ import { inboxChannelName } from './group-project-bulletin';
 import { pollingStartMsg, pollingStopMsg } from '../../shared/polling-messages';
 import * as annexEventBus from './annex-event-bus';
 import { appLog } from './log-service';
+import { onAgentMcpConnected } from './clubhouse-mcp/connection-events';
+
+/**
+ * Delay (ms) between a member's MCP handshake and its deferred polling-start
+ * message, so the CLI has finished starting up.
+ */
+const DEFERRED_POLLING_DELAY_MS = 3_000;
+
+/**
+ * Members that were asleep when the user turned polling on: agentId →
+ * projectIds. They get the start message after their next MCP handshake.
+ * Only the user's toggle queues here; restoring bindings never does (#1544).
+ * In memory only, so nothing carries over a restart.
+ */
+const pendingStarts = new Map<string, Set<string>>();
+let unsubscribeConnected: (() => void) | null = null;
+
+function queuePendingStart(agentId: string, projectId: string): void {
+  let pending = pendingStarts.get(agentId);
+  if (!pending) {
+    pending = new Set();
+    pendingStarts.set(agentId, pending);
+  }
+  pending.add(projectId);
+  if (!unsubscribeConnected) {
+    unsubscribeConnected = onAgentMcpConnected((id) => { void flushPendingStarts(id); });
+  }
+}
+
+function clearPendingStarts(projectId: string): void {
+  for (const [agentId, projects] of pendingStarts) {
+    projects.delete(projectId);
+    if (projects.size === 0) pendingStarts.delete(agentId);
+  }
+}
+
+/** Send the start message a member missed while asleep, if it still applies. */
+async function flushPendingStarts(agentId: string): Promise<void> {
+  const pending = pendingStarts.get(agentId);
+  if (!pending) return;
+  pendingStarts.delete(agentId);
+  for (const projectId of pending) {
+    const binding = groupProjectMemberBindings(projectId).find((b) => b.agentId === agentId);
+    if (!binding) continue;
+    let project: Awaited<ReturnType<typeof groupProjectRegistry.get>>;
+    try {
+      project = await groupProjectRegistry.get(projectId);
+    } catch {
+      // telemetry-exempt: the registry logs its own read failures; skip this project
+      continue;
+    }
+    if (!project?.metadata?.pollingEnabled) continue;
+    const agentName = binding.agentName || agentId;
+    const msg = pollingStartMsg(project.name || projectId, getAgentOrchestrator(agentId), inboxChannelName(agentName));
+    appLog('core:group-project', 'info', 'Sending polling start to member that was asleep when polling was turned on', {
+      meta: { agentId, projectId },
+    });
+    setTimeout(() => injectPtyMessage(agentId, msg), DEFERRED_POLLING_DELAY_MS);
+  }
+}
 
 export interface PollingMemberState {
   agentId: string;
@@ -77,6 +137,7 @@ export async function setProjectPolling(projectId: string, enabled: boolean): Pr
 
   const updated = await groupProjectRegistry.update(projectId, { metadata: { pollingEnabled: enabled } });
   if (updated) annexEventBus.emitGroupProjectChanged('updated', updated);
+  if (!enabled) clearPendingStarts(projectId);
 
   const members = groupProjectMemberBindings(projectId).map((b) => {
     const state = toMemberState(b);
@@ -87,6 +148,8 @@ export async function setProjectPolling(projectId: string, enabled: boolean): Pr
         ? pollingStartMsg(projectName, orchestrator, inbox)
         : pollingStopMsg(projectName, orchestrator);
       injectPtyMessage(b.agentId, msg);
+    } else if (enabled) {
+      queuePendingStart(b.agentId, projectId);
     }
     return state;
   });
@@ -101,3 +164,12 @@ export async function setProjectPolling(projectId: string, enabled: boolean): Pr
 
   return { pollingEnabled: enabled, members };
 }
+
+/** For testing: drop queued starts and the connection listener. */
+export function _resetPollingForTesting(): void {
+  pendingStarts.clear();
+  unsubscribeConnected?.();
+  unsubscribeConnected = null;
+}
+
+export { pendingStarts as _pendingStartsForTesting, DEFERRED_POLLING_DELAY_MS as _DEFERRED_POLLING_DELAY_MS_FOR_TESTING };

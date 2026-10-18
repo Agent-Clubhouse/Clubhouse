@@ -4,6 +4,7 @@
  */
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { consumeRestoredBinding } from './persisted-bindings';
 import { getBulletinBoard, ensureInboxChannel, ensureProjectChannels } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
 import * as ptyManager from './pty-manager';
@@ -151,6 +152,12 @@ async function syncMemberships(agentId: string): Promise<void> {
 
       const agentName = resolveAgentName(agentId);
       agentNames.set(agentId, agentName);
+
+      // A membership restored at startup existed before this launch, so its
+      // channels and inbox already exist. Track it, but post no join bulletin
+      // and send no polling start (#1544). ensureProjectChannels is skipped
+      // too: it rewrites the board on every call.
+      if (consumeRestoredBinding(agentId, projectId)) continue;
 
       // Fetch project info for name inclusion in messages
       let project: Awaited<ReturnType<typeof groupProjectRegistry.get>> | undefined;

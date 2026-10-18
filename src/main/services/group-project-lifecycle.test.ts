@@ -56,6 +56,7 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { getBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
 import { agentRegistry } from './agent-registry';
+import { applyPersistedBinding, _resetPersistedBindingSourcesForTesting } from './persisted-bindings';
 import {
   initGroupProjectLifecycle,
   _resetLifecycleForTesting,
@@ -72,6 +73,7 @@ describe('GroupProjectLifecycle', () => {
     bindingManager._resetForTesting();
     _resetAllBoardsForTesting();
     _resetLifecycleForTesting();
+    _resetPersistedBindingSourcesForTesting();
   });
 
   it('posts join event when agent binds to group project', async () => {
@@ -625,5 +627,48 @@ describe('GroupProjectLifecycle', () => {
     );
     expect(pollingCall).toBeDefined();
     expect(pollingCall![1]).toContain('"inbox-falcon"');
+  });
+
+  describe('bindings restored at startup (#1544)', () => {
+    const restore = (agentId: string, projectId: string, agentName: string) =>
+      applyPersistedBinding({ agentId, targetId: projectId, targetKind: 'group-project', label: 'GP', agentName });
+
+    it('posts no join bulletin and sends no polling start for a restored member', async () => {
+      const project = await groupProjectRegistry.create('Goobers');
+      await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
+      initGroupProjectLifecycle();
+      mockIsRunning.mockReturnValue(true);
+
+      expect(restore('agent-1', project.id, 'robin')).toBe('created');
+      await new Promise(r => setTimeout(r, 800));
+
+      expect(await getBulletinBoard(project.id).getTopicMessages('system')).toHaveLength(0);
+      // Timers from earlier tests may still write a bare Enter; no message text was written.
+      expect(mockPtyWrite.mock.calls.filter((c: unknown[]) => String(c[1]).length > 1)).toHaveLength(0);
+    });
+
+    it('still announces a member the user draws afterwards', async () => {
+      initGroupProjectLifecycle();
+      restore('agent-1', 'gp_r', 'robin');
+      bindingManager.bind('agent-2', { targetId: 'gp_r', targetKind: 'group-project', label: 'GP', agentName: 'finch' });
+      await new Promise(r => setTimeout(r, 50));
+
+      const messages = await getBulletinBoard('gp_r').getTopicMessages('system');
+      expect(messages.map((m) => m.body)).toEqual([expect.stringContaining('finch joined')]);
+    });
+
+    it('announces a restored member that leaves and is drawn again', async () => {
+      initGroupProjectLifecycle();
+      restore('agent-1', 'gp_r', 'robin');
+      await new Promise(r => setTimeout(r, 50));
+      bindingManager.unbind('agent-1', 'gp_r');
+      _recentLeavesForTesting.clear();
+      await new Promise(r => setTimeout(r, 50));
+      bindingManager.bind('agent-1', { targetId: 'gp_r', targetKind: 'group-project', label: 'GP', agentName: 'robin' });
+      await new Promise(r => setTimeout(r, 50));
+
+      const bodies = (await getBulletinBoard('gp_r').getTopicMessages('system')).map((m) => m.body);
+      expect(bodies.filter((b) => b.includes('joined'))).toHaveLength(1);
+    });
   });
 });

@@ -457,6 +457,7 @@ vi.stubGlobal('clubhouse', {
   },
   canvas: {
     layoutElk: vi.fn(async () => ({ nodes: [], edges: [] })),
+    getAgentCanvases: vi.fn(async () => []),
   },
   goobers: {
     getState: async () => null,
