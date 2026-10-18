@@ -9,7 +9,6 @@ import {
   NoticeRow,
   PlanDocumentCard,
   QuestionRow,
-  SessionDivider,
   ThoughtRow,
   TurnFooter,
   UserMessage,
@@ -117,7 +116,6 @@ function BlockBody({ block, turnNumber, capabilities, mcpServers, preformatted }
     case 'notice': return <NoticeRow item={item} />;
     case 'error': return <ErrorRow item={item} />;
     case 'turn_end': return <TurnFooter item={item} turnNumber={turnNumber} capabilities={capabilities} />;
-    case 'session_divider': return <SessionDivider item={item} />;
     default: return null;
   }
 }
@@ -224,7 +222,6 @@ const ChatStreamInner = memo(function ChatStreamInner({
     const m = new Map<string, number>();
     let n = 0;
     for (const item of items) {
-      if (item.kind === 'session_divider') n = 0;
       if (item.kind === 'turn_end') m.set(item.id, ++n);
     }
     return m;

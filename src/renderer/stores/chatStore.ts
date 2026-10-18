@@ -151,13 +151,6 @@ export interface TurnEndItem extends ChatItemBase {
   costIsEstimate?: boolean;
 }
 
-/** Marks the start of a new chat session (e.g. after clearing context). */
-export interface SessionDividerItem extends ChatItemBase {
-  kind: 'session_divider';
-  previousSessionId: string;
-  resumed: boolean;
-}
-
 export type ChatItem =
   | UserMessageItem
   | AgentMessageItem
@@ -167,8 +160,7 @@ export type ChatItem =
   | ErrorItem
   | PlanDocumentItem
   | QuestionItem
-  | TurnEndItem
-  | SessionDividerItem;
+  | TurnEndItem;
 
 export type PendingPermission = ChatEventDataMap['permission_request'] & { turnId?: string; ts: number };
 export type PendingQuestion = ChatEventDataMap['question'] & { turnId?: string; ts: number };
