@@ -28,6 +28,70 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
+describe('AgentRow identity and activity', () => {
+  it.each([
+    ['claude-code', 'Claude Code', 'C'],
+    ['codex-cli', 'Codex', 'X'],
+    ['copilot-cli', 'GitHub Copilot', 'G'],
+    ['custom-provider', 'custom-provider', 'C'],
+    [undefined, 'Claude Code', 'C'],
+  ])('shows a neutral glyph for %s without adding a tree tab stop', (orchestrator, label, letter) => {
+    const { focusable, onSelect } = setup(durable({ orchestrator }));
+    const glyph = screen.getByRole('img', { name: label });
+    expect(glyph).toHaveTextContent(letter!);
+    expect(glyph).toHaveClass('text-ctp-overlay1');
+    expect(glyph).not.toHaveAttribute('style');
+    expect(glyph).not.toHaveAttribute('tabindex');
+    expect(focusable.querySelector('[tabindex="0"]')).toBeNull();
+    expect(screen.getByText('SF')).toHaveClass('w-[18px]', 'h-[18px]');
+    fireEvent.click(glyph);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the latest activity time and refreshes it without new agent events', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-18T12:00:00Z'));
+    useAgentStore.setState({ agentSpawnedAt: { a1: Date.now() - 3_600_000 } });
+    setup(durable({ status: 'running' }), {
+      detailed: { state: 'idle', message: '', timestamp: Date.now() - 120_000 },
+    });
+    const time = screen.getByLabelText('Last activity: 2m ago');
+    expect(time).toHaveAttribute('datetime', '2026-10-18T11:58:00.000Z');
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(time).toHaveTextContent('3m ago');
+    expect(time).toHaveAttribute('aria-label', 'Last activity: 3m ago');
+  });
+
+  it('falls back to the start time before the first activity event', () => {
+    useAgentStore.setState({ agentSpawnedAt: { a1: Date.now() - 180_000 } });
+    setup(durable({ status: 'running' }));
+    expect(screen.getByLabelText('Started: 3m ago')).toBeInTheDocument();
+  });
+
+  it('uses the persisted sleep time instead of stale run activity', () => {
+    const at = new Date(Date.now() - 7_200_000).toISOString();
+    setup(durable({ lastSleep: { at, reason: 'user' } }), {
+      detailed: { state: 'idle', message: '', timestamp: Date.now() - 10_000 },
+    });
+    expect(screen.getByLabelText('Sleeping since: 2h ago')).toHaveAttribute('datetime', at);
+  });
+
+  it.each([undefined, 'invalid-date'])('omits relative time when sleep time is %s', (at) => {
+    const { row } = setup(durable({ lastSleep: at ? { at, reason: 'user' } : undefined }));
+    expect(row.querySelector('time')).toBeNull();
+  });
+
+  it.each(['needs', 'error', 'idle'] as const)('preserves the %s note beside the glyph and time', (dot) => {
+    setup(durable({ status: 'running', kind: 'quick' }), {
+      dot,
+      detailed: { state: 'idle', message: '', timestamp: Date.now() - 60_000 },
+    });
+    expect(screen.getByText(dot === 'needs' ? 'needs you' : dot === 'error' ? 'error' : 'quick')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Claude Code' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Last activity: 1m ago')).toBeInTheDocument();
+  });
+});
+
 describe('AgentRow menu', () => {
   it('opens the legacy context menu on right-click, with ctx-delete for a sleeping durable agent', () => {
     const { row } = setup(durable());

@@ -13,10 +13,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
-import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { Tooltip } from '../../../components/Tooltip';
 import { holdChromeSurface, reportChromeFeature } from '../../../chrome/telemetry';
-import { getOrchestratorLabel } from '../orchestrator-colors';
+import { OrchestratorGlyph } from '../OrchestratorGlyph';
+export { OrchestratorGlyph } from '../OrchestratorGlyph';
 import { AgentContextMenu, useAgentRowActions } from '../useAgentRowActions';
 import { agentDot, DOT_LABEL, StatusDot, type AgentDot } from '../agent-status';
 import { useNarrow } from './useNarrow';
@@ -101,8 +101,6 @@ export function RuntimeSwitch({ value, onChange, disabled, compact, review }: {
   );
 }
 
-const ORCH_GLYPH: Record<string, string> = { 'claude-code': 'C', 'codex-cli': 'X', 'copilot-cli': 'G' };
-
 /** Tooltip body: an optional title line, then detail lines. */
 function TipLines({ title, lines }: { title?: string; lines: string[] }) {
   return (
@@ -110,26 +108,6 @@ function TipLines({ title, lines }: { title?: string; lines: string[] }) {
       {title && <span className="font-medium text-ctp-text">{title}</span>}
       {lines.map((l) => <span key={l}>{l}</span>)}
     </span>
-  );
-}
-
-/** A neutral 14px tile with the provider's initial; its tooltip carries the session details. */
-export function OrchestratorGlyph({ orchestrator, details = [] }: { orchestrator: string; details?: string[] }) {
-  const all = useOrchestratorStore((s) => s.allOrchestrators);
-  const name = getOrchestratorLabel(orchestrator, all);
-  const letter = ORCH_GLYPH[orchestrator] ?? (name.charAt(0).toUpperCase() || '?');
-  return (
-    <Tooltip content={<TipLines title={name} lines={details} />}>
-      <span
-        role="img"
-        tabIndex={0}
-        aria-label={[name, ...details].join(', ')}
-        data-testid="pane-orchestrator"
-        className="flex-shrink-0 w-3.5 h-3.5 rounded grid place-items-center bg-surface-0 text-ctp-overlay1 text-[8.5px] font-semibold leading-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent"
-      >
-        {letter}
-      </span>
-    </Tooltip>
   );
 }
 

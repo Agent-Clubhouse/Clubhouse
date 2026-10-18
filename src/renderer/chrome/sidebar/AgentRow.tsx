@@ -2,6 +2,9 @@ import { useRefocusAfterMove } from './useRefocusAfterMove';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
+import { OrchestratorGlyph } from '../../features/agents/OrchestratorGlyph';
+import { formatAgo } from '../../features/agents/states/format';
+import { useAgentStore } from '../../stores/agentStore';
 import { AgentContextMenu, OverflowIcon, useAgentRowActions, type ActionDef } from '../../features/agents/useAgentRowActions';
 import { holdChromeSurface, reportChromeFeature, type ChromeSurface } from '../telemetry';
 import { AgentHoverCard } from './AgentHoverCard';
@@ -11,7 +14,7 @@ import { Tooltip } from '../../components/Tooltip';
 
 /**
  * One 30px agent row (docs/chrome-redesign-spec.md §2): status dot, 18px
- * avatar, name, then a short right-aligned note. The details the old row showed
+ * avatar, name, neutral provider glyph, relative time and a short note. The details the old row showed
  * as chips are in a hover card, and the right-click menu is the legacy row's
  * (useAgentRowActions), with its `ctx-<id>` test ids. Keeps the legacy
  * `agent-item-<id>` test id (§9).
@@ -76,8 +79,25 @@ export function MarkedText({ text, query }: { text: string; query?: string }) {
   );
 }
 
+/** Update the relative label even when no new agent event arrives. */
+function ActivityTime({ at, label }: { at: number; label: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [at]);
+  const ago = formatAgo(at, now);
+  return <time dateTime={new Date(at).toISOString()} aria-label={`${label}: ${ago}`} className="text-ctp-overlay1 tabular-nums whitespace-nowrap">{ago}</time>;
+}
+
 export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions, highlight, drag, dropEdge }: AgentRowProps) {
   const note = dot === 'needs' ? 'needs you' : dot === 'error' ? 'error' : agent.kind === 'quick' ? 'quick' : '';
+  const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
+  const sleeping = agent.status === 'sleeping';
+  const activityAt = sleeping ? Date.parse(agent.lastSleep?.at ?? '') : detailed?.timestamp ?? spawnedAt;
+  const hasActivityTime = activityAt !== undefined && Number.isFinite(activityAt);
+  const timeLabel = sleeping ? 'Sleeping since' : detailed ? 'Last activity' : 'Started';
   const rowRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const rowActions = useAgentRowActions(agent);
@@ -208,9 +228,11 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
             )}
           </span>
           <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}><MarkedText text={agent.name} query={highlight} /></span>
-          {note && (
-            <span className={`ml-auto flex-shrink-0 text-xs group-hover/row:hidden ${dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}`}>
-              {note}
+          <OrchestratorGlyph orchestrator={agent.orchestrator || 'claude-code'} focusable={false} />
+          {(note || hasActivityTime) && (
+            <span className="ml-auto flex-shrink-0 flex items-center gap-2 text-xs group-hover/row:hidden">
+              {note && <span className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}
+              {hasActivityTime && <ActivityTime at={activityAt} label={timeLabel} />}
             </span>
           )}
         </div>
