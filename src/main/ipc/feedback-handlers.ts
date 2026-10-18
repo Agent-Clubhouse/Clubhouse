@@ -7,13 +7,16 @@
  */
 import { BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import type { FeedbackSendInput } from '../../shared/feedback-types';
+import { FEEDBACK_MAX_PNG_BYTES, type FeedbackSendInput } from '../../shared/feedback-types';
 import { getFeedbackService, isFeedbackEnabled } from '../services/framebriar';
 import { stoppedFeedbackStatus } from '../services/framebriar/feedback-service';
 import { appLog } from '../services/log-service';
 import { objectArg, stringArg, withValidatedArgs } from './validation';
 
 const MAX_NOTES = 4000;
+/** Base64 length of the largest PNG feedback sends (4 chars per 3 bytes, padded). */
+const MAX_ANNOTATED_BASE64 = Math.ceil(FEEDBACK_MAX_PNG_BYTES / 3) * 4;
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const DRAFT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The calling application window; webviews and other senders are refused. */
@@ -33,7 +36,7 @@ function requireEnabled(event: Electron.IpcMainInvokeEvent): BrowserWindow {
 }
 
 export function validateSendInput(value: FeedbackSendInput, argName: string): void {
-  const allowed = new Set(['draftId', 'notes', 'includeScreenshot', 'scene']);
+  const allowed = new Set(['draftId', 'notes', 'includeScreenshot', 'scene', 'annotatedPng']);
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) throw new Error(`${argName}.${key} is not a recognized field`);
   }
@@ -41,6 +44,10 @@ export function validateSendInput(value: FeedbackSendInput, argName: string): vo
   if (typeof value.includeScreenshot !== 'boolean') throw new Error(`${argName}.includeScreenshot must be a boolean`);
   if (value.draftId !== undefined && (typeof value.draftId !== 'string' || !DRAFT_ID.test(value.draftId))) throw new Error(`${argName}.draftId is invalid`);
   if (value.scene !== undefined && (typeof value.scene !== 'string' || value.scene.length > 40)) throw new Error(`${argName}.scene is invalid`);
+  // Shape only here; the service decodes it and enforces the byte cap and dimensions.
+  if (value.annotatedPng !== undefined && (typeof value.annotatedPng !== 'string' || value.annotatedPng.length > MAX_ANNOTATED_BASE64 || !BASE64.test(value.annotatedPng))) {
+    throw new Error(`${argName}.annotatedPng must be base64 PNG data of at most ${FEEDBACK_MAX_PNG_BYTES} bytes`);
+  }
 }
 
 export function registerFeedbackHandlers(): void {

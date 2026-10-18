@@ -108,6 +108,9 @@ describe('validateSendInput', () => {
   it('accepts a minimal text-only review', () => {
     expect(() => validateSendInput(ok, 'arg1')).not.toThrow();
   });
+  it('accepts a base64 annotated screenshot', () => {
+    expect(() => validateSendInput({ ...ok, includeScreenshot: true, annotatedPng: Buffer.from('png-bytes').toString('base64') }, 'arg1')).not.toThrow();
+  });
   it.each([
     [{ ...ok, extra: 1 }, /not a recognized field/],
     [{ ...ok, notes: 3 }, /notes/],
@@ -115,7 +118,10 @@ describe('validateSendInput', () => {
     [{ ...ok, includeScreenshot: 'yes' }, /includeScreenshot/],
     [{ ...ok, draftId: '../etc' }, /draftId/],
     [{ ...ok, scene: 'x'.repeat(41) }, /scene/],
-  ])('rejects %j', (value, error) => {
+    [{ ...ok, annotatedPng: 42 }, /annotatedPng/],
+    [{ ...ok, annotatedPng: 'not base64!' }, /annotatedPng/],
+    [{ ...ok, annotatedPng: 'A'.repeat(Math.ceil((8 * 1024 * 1024) / 3) * 4 + 4) }, /annotatedPng/],
+  ])('rejects %s', (value, error) => {
     expect(() => validateSendInput(value as never, 'arg1')).toThrow(error);
   });
 });

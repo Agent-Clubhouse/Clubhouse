@@ -48,7 +48,15 @@ export interface FeedbackSendInput {
   includeScreenshot: boolean;
   /** Where in Clubhouse feedback was given, e.g. 'agents' or 'settings'. A code, never user text. */
   scene?: string;
+  /**
+   * The captured screenshot with the user's drawing baked in, as base64 PNG (no data:
+   * prefix). Only used with includeScreenshot; it must match the capture's dimensions.
+   */
+  annotatedPng?: string;
 }
+
+/** Largest screenshot PNG feedback will send, decoded. */
+export const FEEDBACK_MAX_PNG_BYTES = 8 * 1024 * 1024;
 
 export interface FeedbackSendResult {
   id: string;

@@ -1,8 +1,10 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Modal } from '../../components/Modal';
 import type { FeedbackCaptureResult } from '../../../shared/feedback-types';
 import { useFeedbackStore } from '../../stores/feedbackStore';
 import { useUIStore } from '../../stores/uiStore';
+import { compositeAnnotatedPng, type Stroke } from './annotation';
+import { ScreenshotAnnotator } from './ScreenshotAnnotator';
 
 interface Props {
   draft: FeedbackCaptureResult;
@@ -28,7 +30,11 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
   const [reportId, setReportId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const received = useFeedbackStore((s) => (reportId ? s.status?.received.includes(reportId) === true : false));
+  const [strokes, setStrokes] = useState<Stroke[]>([]);
   const hasScreenshot = draft.preview !== null;
+
+  // Ink belongs to one capture: a new capture starts clean.
+  useEffect(() => { setStrokes([]); }, [draft.draftId]);
 
   const cancel = useCallback(() => {
     if (phase === 'review') void window.clubhouse.feedback.cancel(draft.draftId);
@@ -39,7 +45,17 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
     setPhase('sending');
     setError(null);
     try {
-      const result = await window.clubhouse.feedback.send({ draftId: draft.draftId, notes, includeScreenshot, scene: currentScene() });
+      // The drawing is baked into the capture at full size; main checks it is the same image size.
+      const annotatedPng = includeScreenshot && draft.preview && strokes.length > 0
+        ? await compositeAnnotatedPng(draft.preview, strokes)
+        : undefined;
+      const result = await window.clubhouse.feedback.send({
+        draftId: draft.draftId,
+        notes,
+        includeScreenshot,
+        scene: currentScene(),
+        ...(annotatedPng !== undefined && { annotatedPng }),
+      });
       setReportId(result.id);
       setPhase('saved');
     } catch (err) {
@@ -64,12 +80,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
         ) : (
           <>
             {hasScreenshot ? (
-              <img
-                src={draft.preview!}
-                alt="Screenshot of the Clubhouse window that will be sent"
-                className="w-full max-h-[300px] object-contain rounded-md border border-surface-0 bg-ctp-base"
-                data-testid="feedback-preview"
-              />
+              <ScreenshotAnnotator src={draft.preview!} strokes={strokes} onChange={setStrokes} />
             ) : (
               <p className="text-sm text-ctp-subtext0">No screenshot could be taken. You can still send a note.</p>
             )}
