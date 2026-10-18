@@ -122,6 +122,15 @@ describe('ProjectStartPage', () => {
     expect(screen.queryByTestId('start-page-finished')).toBeNull();
   });
 
+  it('shows a finished quick agent\'s markdown summary as plain text (#2092)', () => {
+    const q1 = useQuickAgentStore.getState().completedAgents.p1[0];
+    useQuickAgentStore.setState({ completedAgents: { p1: [{ ...q1, summary: '**Deflaked** the `retry` test' }] } });
+    render(<ProjectStartPage project={project} />);
+    const card = screen.getByTestId('start-page-finished-q1');
+    expect(card.textContent).toContain('Deflaked the retry test');
+    expect(card.textContent).not.toContain('**');
+  });
+
   it('links to the project settings', () => {
     render(<ProjectStartPage project={project} />);
     fireEvent.click(screen.getByTestId('start-page-settings'));

@@ -9,6 +9,7 @@ import { reportChromeFeature } from '../telemetry';
 import type { ActionDef } from '../../features/agents/useAgentRowActions';
 import { Tooltip } from '../../components/Tooltip';
 import { TruncatedLabel } from '../../components/TruncatedLabel';
+import { markdownToPlainText } from '../../utils/safe-markdown';
 
 /**
  * One project in the sidebar tree: a header (chevron, square, name, roll-up,
@@ -361,7 +362,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
                   >
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c.exitCode === 0 ? 'bg-ctp-info' : 'bg-ctp-error'}`} aria-hidden="true" />
                     <span className="text-[13px] text-ctp-subtext1 truncate">{c.name}</span>
-                    <TruncatedLabel text={c.summary || c.mission || ''} className="text-xs text-ctp-overlay1 min-w-0" />
+                    <TruncatedLabel text={(c.summary && markdownToPlainText(c.summary)) || c.mission || ''} className="text-xs text-ctp-overlay1 min-w-0" />
                   </button>
                   <Tooltip content="Dismiss">
                     <button
