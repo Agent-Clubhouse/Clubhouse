@@ -34,6 +34,8 @@ class AcpChatDriverSession implements ChatDriverSession {
   readonly capabilities: ChatCapabilities;
   private exited = false;
   private readonly exitWaiters: Array<() => void> = [];
+  /** Called after an effort is chosen in the session (set once mapping starts). */
+  onEffortChosen: (() => void) | undefined;
 
   constructor(
     private readonly session: AcpSession,
@@ -106,6 +108,7 @@ class AcpChatDriverSession implements ChatDriverSession {
     const option = this.session.getState().configOptions.find((o) => o.category === 'thought_level');
     if (!option) throw new Error('This ACP agent has no reasoning-effort option');
     await this.session.setConfigOption(option.id, effort);
+    this.onEffortChosen?.();
   }
 
   /** Prompts resolve when the turn ends; outcomes reach the stream as turn_ended. */
@@ -253,7 +256,7 @@ export class AcpChatDriver implements ChatDriver {
         this.log('warn', 'Permission level not available over ACP; keeping the agent default', { level: opts.level });
       }
 
-      mapper = new AcpChatEventMapper(this.id, { profile: session.agentProfile });
+      mapper = new AcpChatEventMapper(this.id, { profile: session.agentProfile, effortPinned: !!opts.effort });
       const state = session.getState();
       queue.push(mapper.initialInfo(state, session.initializeResponse?.agentInfo?.version));
       // Session-scoped state that arrived during setup. Replayed copies count:
@@ -267,6 +270,8 @@ export class AcpChatDriver implements ChatDriver {
         }
       }
       mapper.prime(session.getState());
+      const primed = mapper;
+      driverSession.onEffortChosen = () => { for (const draft of primed.pinEffort(session.getState())) queue.push(draft); };
       if (opts.signal?.aborted) throw new Error('Chat start cancelled');
       return driverSession;
     } catch (err) {

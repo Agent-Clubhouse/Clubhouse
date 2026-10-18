@@ -289,6 +289,43 @@ describe('ACP → chat contract mapping', () => {
     expect(mapper.map(update, after)).toEqual([]);
   });
 
+  it('drops a turn usage that repeats the previous turn exactly, as Copilot sends for /context (#2180)', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp', { now: () => 0 });
+    const usage = { inputTokens: 15750, outputTokens: 5, totalTokens: 15755, cachedReadTokens: 7680, cachedWriteTokens: 0 };
+    const turn = (u?: typeof usage) => {
+      mapper.map({ type: 'turn_started', sessionId: 's1' }, state());
+      return mapper.map({ type: 'turn_ended', sessionId: 's1', stopReason: 'end_turn', ...(u && { usage: u }) }, state());
+    };
+    const first = turn(usage);
+    expect(first.map((d) => d.type)).toEqual(['usage', 'turn_ended']);
+    expect(first[1]).toMatchObject({ data: { usage: { input: 15750, output: 5 } } });
+    const repeat = turn({ ...usage });
+    expect(repeat.map((d) => d.type)).toEqual(['turn_ended']);
+    expect(repeat[0].type === 'turn_ended' && repeat[0].data.usage).toBeFalsy();
+    // A turn with new usage reports it again.
+    expect(turn({ ...usage, inputTokens: 16000, totalTokens: 16005 })[1]).toMatchObject({ data: { usage: { input: 16000 } } });
+  });
+
+  it('reports the starting effort as the default until one is chosen (#2181)', () => {
+    const select = (current: string) => ({ type: 'select' as const, id: 'reasoning_effort', name: 'Effort', category: 'thought_level', currentValue: current, options: ['low', 'medium', 'high'].map((v) => ({ value: v, name: v })) });
+    const model = { type: 'select' as const, id: 'model', name: 'Model', category: 'model', currentValue: 'gpt', options: [{ value: 'gpt', name: 'GPT' }] };
+    const at = (effort: string) => state({ configOptions: [model, select(effort)] });
+    const update = (s: AcpSessionState) => ({ type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'config_option_update' as const, configOptions: s.configOptions } });
+
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    mapper.prime(state({ configOptions: [model] }));
+    expect(mapper.map(update(at('medium')), at('medium'))[0])
+      .toEqual({ type: 'model_changed', data: { modelId: 'gpt', effort: 'medium', effortIsDefault: true } });
+    // Choosing the level it's already on pins it, so the default mark goes.
+    expect(mapper.pinEffort(at('medium'))).toEqual([{ type: 'model_changed', data: { modelId: 'gpt', effort: 'medium' } }]);
+    expect(mapper.map(update(at('high')), at('high'))[0]).toEqual({ type: 'model_changed', data: { modelId: 'gpt', effort: 'high' } });
+
+    // An effort requested at start isn't the default either.
+    const pinned = new AcpChatEventMapper('copilot_acp', { effortPinned: true });
+    pinned.prime(state({ configOptions: [model] }));
+    expect(pinned.map(update(at('low')), at('low'))[0]).toEqual({ type: 'model_changed', data: { modelId: 'gpt', effort: 'low' } });
+  });
+
   it('reports an unchanged command list only once', () => {
     const mapper = new AcpChatEventMapper('copilot_acp');
     const cmds = { type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'available_commands_update' as const, availableCommands: [{ name: 'compact', description: 'Compact' }] } };

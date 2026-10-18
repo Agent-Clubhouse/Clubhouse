@@ -231,6 +231,10 @@ export function sessionChoices(
   return { ...(models.length && { models }), ...(efforts.length && { efforts }) };
 }
 
+function modelChanged(modelId: string, effort: string | undefined, isDefault: boolean): ChatEventDraft {
+  return { type: 'model_changed', data: { modelId, ...(effort && { effort }), ...(isDefault && { effortIsDefault: true }) } };
+}
+
 function selectValue(options: SessionConfigOption[], match: (o: SessionConfigOption) => boolean): string | undefined {
   const o = options.find(match);
   return o?.type === 'select' ? o.currentValue : undefined;
@@ -257,6 +261,11 @@ export class AcpChatEventMapper {
   private thoughtId = '';
   private model: string | undefined;
   private effort: string | undefined;
+  /** ACP has no "default" effort: the session's starting level counts as it until one is chosen. */
+  private effortPinned: boolean;
+  private reportedDefault: boolean | undefined;
+  /** The last turn's reported usage, to spot a repeat (see turn_ended). */
+  private lastUsageKey: string | undefined;
   private level: PermissionLevel | undefined;
 
   private choicesKey = '';
@@ -267,17 +276,33 @@ export class AcpChatEventMapper {
 
   constructor(
     private readonly driver: ChatDriverId,
-    opts: { profile?: Pick<AcpAgentProfile, 'permissionLevels' | 'modelCostHint'>; now?: () => number } = {},
+    opts: {
+      profile?: Pick<AcpAgentProfile, 'permissionLevels' | 'modelCostHint'>;
+      now?: () => number;
+      /** The session was started with a chosen effort, so it isn't the agent's default. */
+      effortPinned?: boolean;
+    } = {},
   ) {
+    this.effortPinned = opts.effortPinned ?? false;
     this.levels = opts.profile?.permissionLevels;
     this.modelCostHint = opts.profile?.modelCostHint;
     this.now = opts.now ?? Date.now;
+  }
+
+  /**
+   * An effort was chosen in the session, so it's no longer the agent's default.
+   * Reports the change when the agent's own update didn't already.
+   */
+  pinEffort(state: Readonly<AcpSessionState>): ChatEventDraft[] {
+    this.effortPinned = true;
+    return this.configChanges(state);
   }
 
   /** Seed model/effort/level/choices from the session state so only changes are reported. */
   prime(state: Readonly<AcpSessionState>): void {
     this.model = this.currentModel(state);
     this.effort = selectValue(state.configOptions, (o) => o.category === 'thought_level');
+    this.reportedDefault = !!this.effort && !this.effortPinned;
     this.level = this.levels?.current(state);
     this.choicesKey = JSON.stringify(sessionChoices(state, this.modelCostHint));
   }
@@ -310,7 +335,12 @@ export class AcpChatEventMapper {
       }
       case 'turn_ended': {
         const out: ChatEventDraft[] = [];
-        const tokens = toTokenUsage(event.usage);
+        // Copilot answers a local command such as /context with the previous
+        // prompt's usage unchanged (#2180); an exact repeat is no usage.
+        const usageKey = event.usage ? JSON.stringify(event.usage) : undefined;
+        const repeated = usageKey !== undefined && usageKey === this.lastUsageKey;
+        if (usageKey !== undefined) this.lastUsageKey = usageKey;
+        const tokens = repeated ? undefined : toTokenUsage(event.usage);
         let stopReason = STOP_REASONS[event.stopReason];
         if (!stopReason) {
           stopReason = 'end_turn';
@@ -476,8 +506,10 @@ export class AcpChatEventMapper {
     const out: ChatEventDraft[] = [];
     const model = this.currentModel(state);
     const effort = selectValue(state.configOptions, (o) => o.category === 'thought_level');
-    if (model && (model !== this.model || effort !== this.effort)) {
-      out.push({ type: 'model_changed', data: { modelId: model, ...(effort && { effort }) } });
+    const isDefault = !!effort && !this.effortPinned;
+    if (model && (model !== this.model || effort !== this.effort || isDefault !== this.reportedDefault)) {
+      out.push(modelChanged(model, effort, isDefault));
+      this.reportedDefault = isDefault;
     }
     this.model = model;
     this.effort = effort;
