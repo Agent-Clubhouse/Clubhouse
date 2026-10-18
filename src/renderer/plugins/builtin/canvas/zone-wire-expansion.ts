@@ -248,23 +248,3 @@ export function diffZoneBindings(
     .map((b) => ({ agentId: b.agentId, targetId: b.targetId }));
   return { toAdd, toRemove };
 }
-
-/**
- * Reconcile expanded zone bindings with current MCP bindings.
- * Returns lists of bindings to add and remove.
- */
-export function reconcileZoneBindings(
-  desired: ExpandedBinding[],
-  current: Array<{ agentId: string; targetId: string }>,
-): {
-  toAdd: ExpandedBinding[];
-  toRemove: Array<{ agentId: string; targetId: string }>;
-} {
-  const desiredSet = new Set(desired.map((b) => `${b.agentId}:${b.targetId}`));
-  const currentSet = new Set(current.map((b) => `${b.agentId}:${b.targetId}`));
-
-  const toAdd = desired.filter((b) => !currentSet.has(`${b.agentId}:${b.targetId}`));
-  const toRemove = current.filter((b) => !desiredSet.has(`${b.agentId}:${b.targetId}`));
-
-  return { toAdd, toRemove };
-}

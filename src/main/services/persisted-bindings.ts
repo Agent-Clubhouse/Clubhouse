@@ -155,12 +155,16 @@ export function clearBindingRemovedByUser(agentId: string, targetId: string): vo
 /**
  * Canvas cleanup wants to unbind this pair (a card or canvas tab closed, a
  * zone member left), not the user deleting the wire. When a pruning source
- * still lists the pair, returns true and makes the binding that source's, so
+ * still lists the pair and main holds the binding (not removed by the user),
+ * returns true and makes the binding that source's, so
  * it stays while the source lists it and goes when it stops. Otherwise false:
  * unbind as usual.
  */
 export function keepHeldBinding(agentId: string, targetId: string): boolean {
   const key = pairKey(agentId, targetId);
+  // Only a binding main actually holds can be kept, and never one the user removed.
+  if (removedByUser.has(key)) return false;
+  if (!bindingManager.getBindingsForAgent(agentId).some((b) => b.targetId === targetId)) return false;
   let held = false;
   for (const [sourceId, pairs] of heldBySource) {
     if (!pairs.has(key) || !sources.get(sourceId)?.prune) continue;

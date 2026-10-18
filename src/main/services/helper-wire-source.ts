@@ -115,9 +115,11 @@ export function watchHelperWires(onWiresChanged: () => unknown): () => void {
   let attempt = 0;
   const dirtyProjects = new Set<string>();
 
-  const schedule = (delayMs: number): void => {
-    if (stopped || timer) return;
+  /** Returns false when nothing was scheduled (stopped, or a check is already pending). */
+  const schedule = (delayMs: number): boolean => {
+    if (stopped || timer) return false;
     timer = setTimeout(() => { timer = null; void check(); }, delayMs);
+    return true;
   };
 
   const check = async (): Promise<void> => {
@@ -160,7 +162,8 @@ export function watchHelperWires(onWiresChanged: () => unknown): () => void {
       return;
     }
     for (const [projectPath] of missed) dirtyProjects.add(projectPath);
-    schedule(RETRY_DELAYS_MS[attempt++]);
+    // A check already pending covers these projects; only a scheduled retry uses up an attempt.
+    if (schedule(RETRY_DELAYS_MS[attempt])) attempt++;
   };
 
   const unsubscribe = onAgentConfigChanged((projectPath) => {

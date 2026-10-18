@@ -38,6 +38,7 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   clearBindingRemovedByUser,
   keepHeldBinding,
+  markBindingRemovedByUser,
   rebuildPersistedBindings,
   registerPersistedBindingSource,
   _resetPersistedBindingSourcesForTesting,
@@ -413,6 +414,23 @@ describe('canvas cleanup and zone wires', () => {
     await rebuildPersistedBindings();
     expect(boundPairs()).not.toContain('durable_lead->durable_h1');
     expect(keepHeldBinding('durable_lead', 'durable_h1')).toBe(false);
+  });
+
+  it('does not report a pair as kept unless main holds it and the user has not removed it', async () => {
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings();
+
+    // Gone from main (e.g. agent exited): nothing to keep.
+    bindingManager.unbind('durable_lead', 'durable_h1');
+    expect(keepHeldBinding('durable_lead', 'durable_h1')).toBe(false);
+
+    // The user deleted the wire this session.
+    bindingManager.unbind('durable_lead', 'durable_h2');
+    markBindingRemovedByUser('durable_lead', 'durable_h2');
+    bindingManager.bind('durable_lead', { targetId: 'durable_h2', targetKind: 'agent', label: 'h2' });
+    expect(keepHeldBinding('durable_lead', 'durable_h2')).toBe(false);
+
+    expect(keepHeldBinding('durable_h1', 'durable_lead')).toBe(true);
   });
 
   it('a zone that binds a helper pair keeps it after the helper is disposed', async () => {
