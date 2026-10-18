@@ -76,15 +76,25 @@ export function mcpSummary(rows: McpRow[], configuredOnly: string[]): string {
 export function useClubhouseMcpConnection(agent: Agent, spawnedAt: number | undefined, refreshKey: unknown): AgentMcpConnection | null {
   const [conn, setConn] = useState<AgentMcpConnection | null>(null);
   const live = agent.status === 'running' && !isRemoteProjectId(agent.projectId);
+  useEffect(() => { setConn(null); }, [agent.id, live, spawnedAt]);
   useEffect(() => {
-    if (!live) { setConn(null); return; }
+    if (!live) return;
     let alive = true;
-    Promise.resolve().then(() => window.clubhouse.mcpBinding.getAgentConnection(agent.id)).then(
-      (c) => { if (alive) setConn(c && (spawnedAt === undefined || c.connectedAt >= spawnedAt) ? c : null); },
-      // telemetry-exempt: with the Clubhouse MCP off everywhere its handlers aren't registered; the card lists no connection.
-      () => { if (alive) setConn(null); },
-    );
-    return () => { alive = false; };
+    let request = 0;
+    const refresh = () => {
+      const current = ++request;
+      Promise.resolve().then(() => window.clubhouse.mcpBinding.getAgentConnection(agent.id)).then(
+        (c) => { if (alive && current === request) setConn(c && (spawnedAt === undefined || c.connectedAt >= spawnedAt) ? c : null); },
+        // telemetry-exempt: with the Clubhouse MCP off everywhere its handlers aren't registered; the card lists no connection.
+        () => { if (alive && current === request) setConn(null); },
+      );
+    };
+    // Subscribe before the read so a handshake during the request isn't missed.
+    const unsubscribe = window.clubhouse.mcpBinding.onAgentConnectionChanged((agentId) => {
+      if (agentId === agent.id) refresh();
+    });
+    refresh();
+    return () => { alive = false; unsubscribe(); };
   }, [agent.id, live, spawnedAt, refreshKey]);
   return conn;
 }

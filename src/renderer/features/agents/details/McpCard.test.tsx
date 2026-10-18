@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { Agent } from '../../../../shared/types';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import type { Agent, AgentMcpConnection } from '../../../../shared/types';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { createChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
@@ -8,7 +8,7 @@ import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { AgentDetails } from './AgentDetails';
 import { useAgentDetailsStore } from './detailsStore';
-import { mcpRows, mcpSummary } from './McpCard';
+import { mcpRows, mcpSummary, useClubhouseMcpConnection } from './McpCard';
 
 const SPAWNED = 1_000;
 
@@ -43,7 +43,17 @@ describe('mcpRows and mcpSummary', () => {
 });
 
 describe('MCP servers card', () => {
+  const connectionListeners = new Set<(agentId: string) => void>();
+  const notifyConnection = (agentId = agent.id) => act(() => {
+    for (const listener of connectionListeners) listener(agentId);
+  });
+
   beforeEach(() => {
+    connectionListeners.clear();
+    window.clubhouse.mcpBinding.onAgentConnectionChanged = vi.fn((listener) => {
+      connectionListeners.add(listener);
+      return () => { connectionListeners.delete(listener); };
+    });
     useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] as never });
     useAgentDetailsStore.setState({ open: true, focus: null });
     useAgentStore.setState({ agentSpawnedAt: { a1: SPAWNED } } as never);
@@ -102,6 +112,89 @@ describe('MCP servers card', () => {
     expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('none');
     fireEvent.click(screen.getByTestId('details-card-mcp-toggle'));
     expect(screen.getByTestId('details-card-mcp')).toHaveTextContent('isn’t connected to any MCP servers');
+  });
+
+  it('updates an open terminal card after a delayed handshake and later tool discovery (#2163)', async () => {
+    const getConnection = vi.fn<() => Promise<AgentMcpConnection | null>>().mockResolvedValue(null);
+    window.clubhouse.mcpBinding.getAgentConnection = getConnection;
+    render(<AgentDetails agent={{ ...agent, orchestrator: 'copilot-cli', mcpIds: [] }} />);
+    fireEvent.click(screen.getByTestId('details-card-mcp-toggle'));
+    await act(async () => {});
+    expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('none');
+
+    const calls = getConnection.mock.calls.length;
+    notifyConnection('other-agent');
+    await act(async () => {});
+    expect(getConnection).toHaveBeenCalledTimes(calls);
+
+    getConnection.mockResolvedValue({ connectedAt: SPAWNED + 4_000, toolCount: null });
+    notifyConnection();
+    await waitFor(() => expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('1 connected'));
+    expect(screen.getByTestId('details-mcp-row')).toHaveTextContent('ClubhouseConnected');
+    getConnection.mockResolvedValue({ connectedAt: SPAWNED + 4_000, toolCount: 9 });
+    notifyConnection();
+    await waitFor(() => expect(screen.getByTestId('details-mcp-row')).toHaveTextContent('Connected · 9 tools'));
+
+    getConnection.mockResolvedValue(null);
+    notifyConnection();
+    await waitFor(() => expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('none'));
+  });
+
+  it.each(['resolve', 'reject'] as const)('ignores a stale initial read that later %ss after a connection event', async (outcome) => {
+    let resolve!: (connection: AgentMcpConnection | null) => void;
+    let reject!: (error: Error) => void;
+    const pending = new Promise<AgentMcpConnection | null>((res, rej) => { resolve = res; reject = rej; });
+    const connected = { connectedAt: SPAWNED + 4_000, toolCount: 9 };
+    window.clubhouse.mcpBinding.getAgentConnection = vi.fn()
+      .mockReturnValueOnce(pending).mockResolvedValue(connected);
+    const { result } = renderHook(() => useClubhouseMcpConnection(agent, SPAWNED, 'unchanged'));
+    await act(async () => {});
+    notifyConnection();
+    await waitFor(() => expect(result.current).toEqual(connected));
+    await act(async () => {
+      if (outcome === 'resolve') resolve(null);
+      else reject(new Error('stale read failed'));
+    });
+    expect(result.current).toEqual(connected);
+  });
+
+  it('clears the old run on respawn, rejects old handshakes, and unsubscribes on stop and unmount', async () => {
+    const { result, rerender, unmount } = renderHook(
+      ({ currentAgent, spawnedAt }) => useClubhouseMcpConnection(currentAgent, spawnedAt, 'unchanged'),
+      { initialProps: { currentAgent: agent, spawnedAt: SPAWNED } },
+    );
+    await waitFor(() => expect(result.current?.toolCount).toBe(9));
+    expect(connectionListeners.size).toBe(1);
+    rerender({ currentAgent: agent, spawnedAt: SPAWNED + 10_000 });
+    await act(async () => {});
+    expect(result.current).toBeNull();
+    notifyConnection();
+    await act(async () => {});
+    expect(result.current).toBeNull();
+    expect(connectionListeners.size).toBe(1);
+
+    rerender({ currentAgent: { ...agent, status: 'sleeping' }, spawnedAt: SPAWNED + 10_000 });
+    expect(connectionListeners.size).toBe(0);
+    rerender({ currentAgent: agent, spawnedAt: SPAWNED });
+    await waitFor(() => expect(result.current?.toolCount).toBe(9));
+    unmount();
+    expect(connectionListeners.size).toBe(0);
+  });
+
+  it('ignores a pending read from the previous agent after switching agents', async () => {
+    let resolve!: (connection: AgentMcpConnection | null) => void;
+    window.clubhouse.mcpBinding.getAgentConnection = vi.fn()
+      .mockReturnValueOnce(new Promise<AgentMcpConnection | null>((res) => { resolve = res; }))
+      .mockResolvedValue(null);
+    const { result, rerender } = renderHook(
+      (currentAgent) => useClubhouseMcpConnection(currentAgent, SPAWNED, 'unchanged'),
+      { initialProps: agent },
+    );
+    await act(async () => {});
+    rerender({ ...agent, id: 'other' });
+    await act(async () => { resolve({ connectedAt: SPAWNED + 5, toolCount: 9 }); });
+    expect(result.current).toBeNull();
+    expect(connectionListeners.size).toBe(1);
   });
 
   it('lists no connection when the Clubhouse MCP is off and its handler is missing', async () => {
