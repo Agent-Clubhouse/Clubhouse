@@ -600,6 +600,16 @@ describe('reduceChatEvent: turn footers and diagnostics', () => {
     expect(s.protocolUnknown).toEqual({ 'notification:item/new': 2, 'field:usage.x': 1 });
     expect(s.items).toEqual([]);
   });
+
+  it('bumps the workspace revision on workspace_changed, without a transcript item (#2109)', () => {
+    const s = fold([
+      sessionStarted(ev),
+      ev('workspace_changed', { reason: 'vcs', vcsKind: 'commit' }),
+      ev('workspace_changed', { reason: 'vcs', vcsKind: 'push', branch: 'main' }),
+    ]);
+    expect(s.workspaceRevision).toBe(2);
+    expect(s.items).toEqual([]);
+  });
 });
 
 describe('picker lists on session_info', () => {

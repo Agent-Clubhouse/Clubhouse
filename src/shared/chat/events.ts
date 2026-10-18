@@ -59,6 +59,8 @@ export const CHAT_EVENT_TYPES = [
   'mode_changed',
   'model_changed',
   'commands_available',
+  // Workspace
+  'workspace_changed',
   // Diagnostics
   'notice',
   'error',
@@ -394,6 +396,13 @@ export interface ChatEventDataMap {
   mode_changed: { level: PermissionLevel; nativeMode?: string };
   model_changed: { modelId: string; effort?: string };
   commands_available: { commands: AvailableCommand[] };
+
+  /**
+   * The agent changed the workspace's git state (a commit, push, merge or
+   * rebase), so views of its branch and changes should re-read it. A hint
+   * only: consumers may coalesce several.
+   */
+  workspace_changed: { reason: 'vcs'; vcsKind?: string; branch?: string };
 
   notice: {
     level: 'info' | 'warn';

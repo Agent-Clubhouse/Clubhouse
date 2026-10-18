@@ -22,6 +22,7 @@ import { Button } from '../../../components/Button';
 import { useAgentReview } from '../review/useAgentReview';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { PermissionCard, QuestionCard } from './ApprovalDock';
+import { XIcon } from './icons';
 import { Composer, QueueList, TaskList, type ComposerLayout } from './Composer';
 import { useNarrow, useShortWindow } from '../pane/useNarrow';
 import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions } from './useChatSession';
@@ -50,21 +51,36 @@ export interface ChatViewBodyProps {
 /**
  * Unrecognized CLI messages, plus the "newer than tested" CLI note. That note
  * is only shown here, next to a real problem (drift or a fatal error), since
- * a CLI newer than the tested one is the normal case.
+ * a CLI newer than the tested one is the normal case. One line (the names and
+ * full text are in the tooltip), shorter on canvas cards, and dismissible
+ * until a new kind of message turns up.
  */
-function ProtocolDriftNote({ state }: { state: ChatViewState }) {
+function ProtocolDriftNote({ state, compact }: { state: ChatViewState; compact: boolean }) {
+  const [dismissedKinds, setDismissedKinds] = useState<number | null>(null);
   const counts = state.protocolUnknown;
   const names = Object.keys(counts);
   const fatal = state.items.some((i) => i.kind === 'error' && i.fatal);
   const versionNote = state.untestedCliNote && (names.length > 0 || fatal) ? state.untestedCliNote : null;
   if (names.length === 0 && !versionNote) return null;
+  if (dismissedKinds !== null && names.length <= dismissedKinds) return null;
   const total = names.reduce((n, k) => n + counts[k], 0);
+  const messages = total === 1 ? 'message' : 'messages';
+  const drift = names.length === 0 ? ''
+    : compact ? `${total} unrecognized CLI ${messages}. `
+    : `This CLI sent ${total} ${messages} Clubhouse doesn't recognize yet. The terminal view shows everything. `;
+  const text = `${drift}${versionNote ?? ''}`.trim();
   return (
-    <div className="text-[12px] text-ctp-overlay1 px-1" title={names.join('\n') || undefined} data-testid="chat-protocol-unknown">
-      {names.length > 0 && (
-        <>This CLI sent {total} {total === 1 ? 'message' : 'messages'} Clubhouse doesn't recognize yet, so some activity may be missing here. The terminal view shows everything. </>
-      )}
-      {versionNote}
+    <div className="flex items-center gap-1.5 min-w-0 text-[12px] text-ctp-overlay0 px-1" data-testid="chat-protocol-unknown">
+      <span className="truncate min-w-0" title={[text, ...names].join('\n')}>{text}</span>
+      <button
+        type="button"
+        className="flex-shrink-0 p-0.5 rounded text-ctp-overlay0 hover:text-ctp-text"
+        aria-label="Dismiss"
+        data-testid="chat-protocol-unknown-dismiss"
+        onClick={() => setDismissedKinds(names.length)}
+      >
+        <XIcon size={10} />
+      </button>
     </div>
   );
 }
@@ -257,7 +273,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           cwd={review.cwd}
           branch={review.branch}
           onChanged={review.reload}
-          refreshKey={`${state.turnId ?? 'idle'}:${state.state ?? ''}`}
+          refreshKey={`${state.turnId ?? 'idle'}:${state.state ?? ''}:${state.workspaceRevision}`}
           onAskAgent={ended ? undefined : (text) => { void actions.send(text, running ? 'queued' : 'auto'); }}
         />
       )}
@@ -275,7 +291,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           />
           <div className={`flex-shrink-0 flex justify-center ${narrow || short ? 'px-2 pb-2' : 'px-7 pb-4'}`} data-testid="chat-dock">
             <div className="w-full max-w-[740px] flex flex-col gap-2">
-              <ProtocolDriftNote state={state} />
+              <ProtocolDriftNote state={state} compact={context === 'canvas' || narrow} />
               <LoginBanner state={state} onSwitchToTerminal={onSwitchToTerminal} />
               {state.plan.length > 0 && <TaskList entries={state.plan} />}
               {state.queued.length > 0 && <QueueList queued={state.queued} />}

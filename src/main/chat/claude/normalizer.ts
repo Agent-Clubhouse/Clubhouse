@@ -1,4 +1,4 @@
-import type { ClaudeChatEvent, ClaudeChatEventBody, ClaudePermissionUpdate, ClaudeUsage } from './events';
+import type { ClaudeBackgroundTask, ClaudeChatEvent, ClaudeChatEventBody, ClaudePermissionUpdate, ClaudeUsage } from './events';
 
 /**
  * One stream-json wire message as `claude -p --output-format stream-json`
@@ -115,6 +115,12 @@ export class ClaudeNormalizer {
       }
       case 'keep_alive':
         return [];
+      case 'tool_progress':
+        return [this.mapToolProgress(msg, parentToolCallId)];
+      // A queued prompt's fate (queued, started, completed, …). Clubhouse
+      // tracks its own queue and sends no command uuids, so there's nothing to show.
+      case 'command_lifecycle':
+        return [];
       default:
         return [{ kind: 'unmapped', type: msg.type, subtype: str(msg.subtype), raw: msg }];
     }
@@ -154,10 +160,47 @@ export class ClaudeNormalizer {
     }
     // A running estimate of thinking progress, not billed usage; turn_ended carries the real token counts.
     if (subtype === 'thinking_tokens') return [];
+    if (subtype === 'background_tasks_changed') {
+      const tasks: ClaudeBackgroundTask[] = arr(msg.tasks).filter(isObj).map((t) => ({
+        taskId: str(t.task_id) ?? '',
+        taskType: str(t.task_type) ?? '',
+        description: str(t.description) ?? '',
+        ...(str(t.subagent_type) ? { subagentType: str(t.subagent_type) } : {}),
+        ambient: t.ambient === true,
+      }));
+      return [{ kind: 'background_tasks', tasks }];
+    }
+    if (subtype === 'vcs_state_changed') {
+      return [{ kind: 'vcs_changed', vcsKind: str(msg.kind) ?? 'unknown', branch: str(msg.branch), cwd: str(msg.cwd) }];
+    }
+    // A PR or MR was published or linked (github, gitlab, …). Nothing in chat shows PRs yet.
+    if (subtype === 'code_change_published') return [];
     if (subtype && SUBAGENT_PHASES[subtype]) {
       return [{ kind: 'subagent', phase: SUBAGENT_PHASES[subtype], taskId: str(msg.task_id) ?? '', raw: msg }];
     }
     return [{ kind: 'unmapped', type: 'system', subtype, raw: msg }];
+  }
+
+  private mapToolProgress(msg: ClaudeWireMessage, parentToolCallId?: string): ClaudeChatEventBody {
+    const r = isObj(msg.subagent_retry) ? msg.subagent_retry : undefined;
+    return {
+      kind: 'tool_progress',
+      toolCallId: str(msg.tool_use_id) ?? '',
+      toolName: str(msg.tool_name) ?? '',
+      elapsedSeconds: num(msg.elapsed_time_seconds) ?? 0,
+      heartbeat: msg.heartbeat === true,
+      ...(parentToolCallId ? { parentToolCallId } : {}),
+      ...(str(msg.subagent_type) ? { subagentType: str(msg.subagent_type) } : {}),
+      ...(r ? {
+        retry: {
+          attempt: num(r.attempt) ?? 0,
+          maxRetries: num(r.max_retries) ?? 0,
+          retryDelayMs: num(r.retry_delay_ms),
+          errorStatus: num(r.error_status),
+          errorCategory: str(r.error_category),
+        },
+      } : {}),
+    };
   }
 
   private mapStreamEvent(msg: ClaudeWireMessage, parentToolCallId?: string): ClaudeChatEventBody[] {

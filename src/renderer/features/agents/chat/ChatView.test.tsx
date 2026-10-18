@@ -511,6 +511,32 @@ describe('ChatView untested CLI version', () => {
     expect(note).toHaveTextContent('Claude Code 2.1.302 is newer than the version chat was tested with (2.1.301).');
   });
 
+  it('keeps the drift note to one line and lets it be dismissed until a new kind turns up (#2109)', () => {
+    const drift = fold(chatFixture('claude', 'protocol_drift'));
+    const { rerender } = renderState(drift);
+    const note = screen.getByTestId('chat-protocol-unknown');
+    expect(note.querySelector('.truncate')).not.toBeNull();
+    expect(note).not.toHaveTextContent('some activity may be missing');
+    fireEvent.click(screen.getByTestId('chat-protocol-unknown-dismiss'));
+    expect(screen.queryByTestId('chat-protocol-unknown')).not.toBeInTheDocument();
+
+    // More of the same kinds stay dismissed; a new kind brings it back.
+    const kinds = Object.keys(drift.protocolUnknown);
+    const more = { ...drift, protocolUnknown: { ...drift.protocolUnknown, [kinds[0]]: drift.protocolUnknown[kinds[0]] + 5 } };
+    rerender(<ChatViewBody agent={agent} state={more} actions={makeActions()} providerName="Provider" onSwitchToTerminal={vi.fn()} />);
+    expect(screen.queryByTestId('chat-protocol-unknown')).not.toBeInTheDocument();
+    const newKind = { ...more, protocolUnknown: { ...more.protocolUnknown, 'field:system/next_thing': 1 } };
+    rerender(<ChatViewBody agent={agent} state={newKind} actions={makeActions()} providerName="Provider" onSwitchToTerminal={vi.fn()} />);
+    expect(screen.getByTestId('chat-protocol-unknown')).toBeInTheDocument();
+  });
+
+  it('uses a short drift note on canvas cards (#2109)', () => {
+    render(<ChatViewBody agent={agent} state={fold(chatFixture('claude', 'protocol_drift'))} actions={makeActions()} providerName="Provider" context="canvas" />);
+    const note = screen.getByTestId('chat-protocol-unknown');
+    expect(note).toHaveTextContent('2 unrecognized CLI messages.');
+    expect(note).not.toHaveTextContent('recognize yet');
+  });
+
   it('shows the version after a fatal error', () => {
     renderState(fold(extend(chatFixture('claude', 'conversation'), versionNotice, { type: 'error', data: { code: 'process_exited', message: 'The CLI exited unexpectedly', fatal: true } })));
     const note = screen.getByTestId('chat-protocol-unknown');

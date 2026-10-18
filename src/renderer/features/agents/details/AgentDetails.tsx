@@ -209,8 +209,9 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const orchestrators = useOrchestratorStore((s) => s.allOrchestrators);
 
-  // Chat refreshes when a turn starts or ends; the terminal when its hook status moves on.
-  const refreshKey = chat ? `${chat.turnId ?? 'idle'}:${chat.state ?? ''}` : `${hook?.state ?? ''}:${hook?.toolName ?? ''}:${agent.status}`;
+  // Chat refreshes when a turn starts or ends, or the agent commits, pushes
+  // or rebases mid-turn; the terminal when its hook status moves on.
+  const refreshKey = chat ? `${chat.turnId ?? 'idle'}:${chat.state ?? ''}:${chat.workspaceRevision ?? 0}` : `${hook?.state ?? ''}:${hook?.toolName ?? ''}:${agent.status}`;
   const ownBranch = useBranchChanges(givenBranch === undefined ? cwd : undefined, refreshKey);
   const branch = givenBranch === undefined ? ownBranch : givenBranch;
 
