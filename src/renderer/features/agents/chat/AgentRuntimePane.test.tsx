@@ -120,6 +120,18 @@ describe('AgentRuntimePane', () => {
     expect(screen.queryByTestId('agent-runtime-pending')).not.toBeInTheDocument();
   });
 
+  it('says it is connecting when the runtime takes a while to answer', async () => {
+    setFlag(true);
+    api.chat.getAgentRuntime = vi.fn(() => new Promise(() => {}));
+    render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    // Blank at first, so a fast answer doesn't flash text.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(await screen.findByText('Connecting to gallant-swift…')).toBeInTheDocument();
+    // Still unknown after the flag loads: no terminal in the meantime.
+    expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agent-runtime-pending')).toHaveAttribute('aria-busy', 'true');
+  });
+
   it('renders quick agents\' terminals from the first paint, even before the flag loads', () => {
     setFlag(true);
     render(<AgentRuntimePane agent={{ ...agent, kind: 'quick' }} terminal={terminal} />);
