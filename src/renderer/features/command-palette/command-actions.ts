@@ -1,4 +1,5 @@
 import { useCommandPaletteStore } from '../../stores/commandPaletteStore';
+import { useAgentDetailsStore } from '../agents/details/detailsStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -6,7 +7,7 @@ import { usePanelStore } from '../../stores/panelStore';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { FOCUS_ACTIVE_TERMINAL_EVENT } from '../agents/AgentTerminal';
-import { openNewQuickAgent } from '../../chrome/startPage';
+import { openNewAgentFromShortcut } from '../../chrome/startPage';
 import { groupProjectAgents } from '../../chrome/sidebar/treeModel';
 
 export interface CommandAction {
@@ -50,8 +51,8 @@ export function getCommandActions(): CommandAction[] {
     {
       id: 'new-quick-agent',
       global: true,
-      // The new shell opens the start page composer (spec §4.3).
-      execute: () => openNewQuickAgent(),
+      // The new shell opens the New agent page with Durable chosen (#2031).
+      execute: () => openNewAgentFromShortcut(),
     },
     {
       id: 'focus-active-terminal',
@@ -59,6 +60,12 @@ export function getCommandActions(): CommandAction[] {
       // technically holds focus — that's the exact state we need to unwedge.
       global: true,
       execute: () => window.dispatchEvent(new CustomEvent(FOCUS_ACTIVE_TERMINAL_EVENT)),
+    },
+    {
+      id: 'toggle-agent-details',
+      // Global so it works while typing in the composer.
+      global: true,
+      execute: () => useAgentDetailsStore.getState().toggle(),
     },
     {
       id: 'add-project',

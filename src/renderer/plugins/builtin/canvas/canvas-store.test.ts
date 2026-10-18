@@ -1312,3 +1312,277 @@ describe('hydrateFromRemote', () => {
     });
   });
 });
+
+// #2076: the app canvas store is shared by the local and remote (satellite)
+// views. After hydrateFromRemote, nothing of the satellite's may be saved to
+// this machine's storage: not while a slow local load runs on the switch
+// back, and not when the local wires file is empty.
+describe('canvas store: remote then local', () => {
+  const REMOTE_CANVAS = { id: 'REMOTE-CANVAS', name: 'Remote', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0 };
+  const REMOTE_WIRE = { agentId: 'REMOTE-AGENT', targetId: 'remote-target', targetKind: 'agent', label: 'Remote wire' };
+  const REMOTE_ZONE_WIRE = { id: 'REMOTE-ZONE-WIRE', sourceZoneId: 'z', targetId: 't', targetType: 'agent' };
+
+  function memory(slow: Record<string, Promise<void>> = {}) {
+    const files = new Map<string, unknown>();
+    const storage = {
+      read: vi.fn(async (key: string) => { await slow[key]; return files.get(key); }),
+      write: vi.fn(async (key: string, value: unknown) => { files.set(key, value); }),
+      delete: vi.fn(async (key: string) => { files.delete(key); }),
+      list: vi.fn(async () => [...files.keys()]),
+    } as unknown as ScopedStorage;
+    const saved = () => JSON.stringify([...files.entries()]);
+    return { files, storage, saved };
+  }
+
+  async function localThenRemote(storage: ScopedStorage) {
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    store.getState().addView('agent', { x: 0, y: 0 });
+    await store.getState().saveCanvas(storage);
+    store.getState().hydrateFromRemote([REMOTE_CANVAS], 'REMOTE-CANVAS', [REMOTE_WIRE], [REMOTE_ZONE_WIRE]);
+    return store;
+  }
+
+  it('saves nothing while the store holds a satellite canvas', async () => {
+    const { storage, saved } = memory();
+    const store = await localThenRemote(storage);
+    await store.getState().saveCanvas(storage);
+    await store.getState().saveWires(storage);
+    expect(saved()).not.toMatch(/REMOTE-/);
+  });
+
+  it('keeps saves closed until a slow local load has swapped in the local canvas', async () => {
+    const slow: Record<string, Promise<void>> = {};
+    const { storage, saved } = memory(slow);
+    const store = await localThenRemote(storage);
+
+    // Back to local; the active-id read (the last before the swap) hangs.
+    let finishActiveRead!: () => void;
+    slow['canvas-active-id'] = new Promise<void>((r) => { finishActiveRead = r; });
+    const loading = store.getState().loadCanvas(storage);
+    await new Promise((r) => setTimeout(r, 10));
+    // An autosave mid-load: the store still holds the satellite's canvas.
+    expect(store.getState().activeCanvasId).toBe('REMOTE-CANVAS');
+    await store.getState().saveCanvas(storage);
+    expect(saved()).not.toMatch(/REMOTE-/);
+
+    finishActiveRead();
+    await loading;
+    expect(store.getState().activeCanvasId).not.toBe('REMOTE-CANVAS');
+    await store.getState().saveCanvas(storage);
+    expect(saved()).not.toMatch(/REMOTE-/);
+  });
+
+  it('drops the satellite\'s wires when the local wires file is empty', async () => {
+    const { storage, saved } = memory();
+    const store = await localThenRemote(storage);
+    expect(store.getState().wireDefinitions).toHaveLength(1);
+
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    expect(store.getState().wireDefinitions).toEqual([]);
+    await store.getState().saveCanvas(storage);
+    await store.getState().saveWires(storage);
+    expect(saved()).not.toMatch(/REMOTE-/);
+  });
+
+  it('keeps wire saves closed while the switch back re-binds local wires', async () => {
+    const { storage, files, saved } = memory();
+    const store = await localThenRemote(storage);
+    files.set('canvas-wires', [{ agentId: 'local-agent', targetId: 'local-target', targetKind: 'agent', label: 'Local wire' }]);
+
+    // A re-bind that hangs, like a slow MCP call.
+    let finishBind!: () => void;
+    const bindOpen = new Promise<void>((r) => { finishBind = r; });
+    const previous = (globalThis as any).window?.clubhouse;
+    (globalThis as any).window = {
+      ...(globalThis as any).window,
+      clubhouse: { ...(previous || {}), mcpBinding: { bind: vi.fn(() => bindOpen), setInstructions: vi.fn(), setDisabledTools: vi.fn() } },
+    };
+    try {
+      const loading = store.getState().loadWires(storage);
+      await new Promise((r) => setTimeout(r, 10));
+      // The autosave lands mid-rebind: the store still holds the satellite's wires.
+      expect(store.getState().wireDefinitions.some((w) => w.agentId === 'REMOTE-AGENT')).toBe(true);
+      await store.getState().saveWires(storage);
+      expect(saved()).not.toMatch(/REMOTE-/);
+
+      finishBind();
+      await loading;
+      expect(store.getState().wireDefinitions.map((w) => w.agentId)).toEqual(['local-agent']);
+    } finally {
+      (globalThis as any).window.clubhouse = previous;
+    }
+  });
+
+  it('saves the local zone wires a save captured before the store went remote', async () => {
+    let releaseBackup!: () => void;
+    const backupWrite = new Promise<void>((r) => { releaseBackup = r; });
+    const { storage, files } = memory();
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    await store.getState().saveCanvas(storage); // first save opens the guard
+    const local = store.getState().addZoneWireDefinition({ sourceZoneId: 'zone-1', targetId: 'agent-1', targetType: 'agent' });
+
+    const write = (storage.write as ReturnType<typeof vi.fn>).getMockImplementation()!;
+    (storage.write as ReturnType<typeof vi.fn>).mockImplementation(async (key: string, value: unknown) => {
+      if (key === 'canvas-instances-backup') await backupWrite;
+      return write(key, value);
+    });
+    const saving = store.getState().saveCanvas(storage);
+    // The store goes remote while the save is writing.
+    store.getState().hydrateFromRemote([REMOTE_CANVAS], 'REMOTE-CANVAS', [REMOTE_WIRE], [REMOTE_ZONE_WIRE]);
+    releaseBackup();
+    await saving;
+
+    const zoneWires = JSON.stringify(files.get('canvas-zone-wires'));
+    expect(zoneWires).toContain(local.id);
+    expect(zoneWires).not.toContain('REMOTE-ZONE-WIRE');
+    expect(JSON.stringify(files.get('canvas-instances'))).not.toContain('REMOTE-CANVAS');
+  });
+});
+describe('deferred blueprint wires (#2069)', () => {
+  const base = { position: { x: 0, y: 0 }, size: { width: 300, height: 200 }, zIndex: 0 };
+  /** An imported canvas: a bound Lead, an unbound stub Newcomer and a board with no project yet. */
+  function importedCanvas() {
+    return {
+      id: 'IMPORTED', name: 'Imported', viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 3,
+      zoomedViewId: null, selectedViewId: null, minimapAutoHide: true, elkAlgorithm: 'layered' as const, elkDirection: 'RIGHT' as const, layoutCenterId: null,
+      views: [
+        { ...base, id: 'v-lead', type: 'agent', title: 'Lead', displayName: 'Lead', metadata: {}, agentId: 'agent-lead' },
+        { ...base, id: 'v-new', type: 'agent', title: 'Newcomer', displayName: 'Newcomer', metadata: { blueprintStub: 'true' }, agentId: null },
+        { ...base, id: 'v-board', type: 'plugin', title: 'Board', displayName: 'Board', pluginWidgetType: 'plugin:group-project:group-project', pluginId: 'group-project', metadata: {} },
+      ] as never,
+      deferredWires: [
+        { wire: { sourceRef: 'lead', targetRef: 'new', bidirectional: true, disabledTools: ['broadcast'] }, sourceViewId: 'v-lead', targetViewId: 'v-new' },
+        { wire: { sourceRef: 'lead', targetRef: 'board', instructions: { '*': 'Post status' } }, sourceViewId: 'v-lead', targetViewId: 'v-board' },
+      ],
+    };
+  }
+  const wireKeys = (store: ReturnType<typeof createCanvasStore>) =>
+    store.getState().wireDefinitions.map((w) => `${w.agentId}->${w.targetId}:${w.targetKind}`);
+
+  it('creates the wires once the stub gets an agent, both ways and with their options (the issue\'s repro)', () => {
+    const store = createCanvasStore();
+    store.getState().insertCanvas(importedCanvas());
+    store.getState().updateView('v-new', { agentId: 'agent-new' } as never);
+    expect(wireKeys(store)).toEqual(['agent-lead->agent-new:agent', 'agent-new->agent-lead:agent']);
+    expect(store.getState().wireDefinitions[0].disabledTools).toEqual(['broadcast']);
+    // The board's wire is still waiting.
+    expect(store.getState().activeCanvas().deferredWires).toHaveLength(1);
+  });
+
+  it('creates a group-project wire once the widget gets its project', () => {
+    const store = createCanvasStore();
+    store.getState().insertCanvas(importedCanvas());
+    store.getState().updateViewMetadata('v-board', { groupProjectId: 'gp-1' });
+    expect(wireKeys(store)).toEqual(['agent-lead->gp-1:group-project']);
+    expect(store.getState().wireDefinitions[0].instructions).toEqual({ '*': 'Post status' });
+  });
+
+  it('clears the deferred list when every wire has been created', () => {
+    const store = createCanvasStore();
+    store.getState().insertCanvas(importedCanvas());
+    store.getState().updateView('v-new', { agentId: 'agent-new' } as never);
+    store.getState().updateViewMetadata('v-board', { groupProjectId: 'gp-1' });
+    expect(store.getState().activeCanvas().deferredWires).toBeUndefined();
+  });
+
+  it('drops deferred wires for a removed view', () => {
+    const store = createCanvasStore();
+    store.getState().insertCanvas(importedCanvas());
+    store.getState().removeView('v-new');
+    expect(store.getState().activeCanvas().deferredWires?.map((d) => d.targetViewId)).toEqual(['v-board']);
+    store.getState().updateView('v-new', { agentId: 'agent-new' } as never);
+    expect(wireKeys(store)).toEqual([]);
+  });
+
+  it('saves deferred wires with the canvas and restores them on load, dropping ones whose views are gone', async () => {
+    const storage = createMockStorage();
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadAndInsertCanvas(importedCanvas(), storage);
+
+    const reloaded = createCanvasStore();
+    await reloaded.getState().loadCanvas(storage);
+    reloaded.getState().setActiveCanvas('IMPORTED');
+    expect(reloaded.getState().activeCanvas().deferredWires).toHaveLength(2);
+    reloaded.getState().updateView('v-new', { agentId: 'agent-new' } as never);
+    expect(wireKeys(reloaded)).toEqual(['agent-lead->agent-new:agent', 'agent-new->agent-lead:agent']);
+
+    // A stored entry pointing at a view that no longer exists is dropped at load.
+    const corrupt = createMockStorage();
+    const s2 = createCanvasStore();
+    await s2.getState().loadCanvas(corrupt);
+    await s2.getState().loadAndInsertCanvas({ ...importedCanvas(), deferredWires: [{ wire: { sourceRef: 'a', targetRef: 'b' }, sourceViewId: 'v-lead', targetViewId: 'v-gone' }] }, corrupt);
+    const s3 = createCanvasStore();
+    await s3.getState().loadCanvas(corrupt);
+    s3.getState().setActiveCanvas('IMPORTED');
+    expect(s3.getState().activeCanvas().deferredWires).toBeUndefined();
+  });
+
+  it('drops stored deferred wires with malformed fields', async () => {
+    const storage = createMockStorage();
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    const good = { wire: { sourceRef: 'a', targetRef: 'b', disabledTools: ['broadcast'], instructions: { '*': 'ok' } }, sourceViewId: 'v-lead', targetViewId: 'v-new' };
+    const bad = [
+      { wire: { sourceRef: 'a', targetRef: 'b', disabledTools: 'broadcast' }, sourceViewId: 'v-lead', targetViewId: 'v-new' },
+      { wire: { sourceRef: 'a', targetRef: 'b', instructions: { '*': 3 } }, sourceViewId: 'v-lead', targetViewId: 'v-new' },
+      { wire: { sourceRef: 'a', targetRef: 'b', bidirectional: 'yes' }, sourceViewId: 'v-lead', targetViewId: 'v-new' },
+      { wire: { sourceRef: 'a' }, sourceViewId: 'v-lead', targetViewId: 'v-new' },
+    ];
+    await store.getState().loadAndInsertCanvas({ ...importedCanvas(), deferredWires: [good, ...bad] as never }, storage);
+    const reloaded = createCanvasStore();
+    await reloaded.getState().loadCanvas(storage);
+    reloaded.getState().setActiveCanvas('IMPORTED');
+    expect(reloaded.getState().activeCanvas().deferredWires).toEqual([good]);
+  });
+
+  it('is saved only under the canvas save guards: not before hydration, not while remote', async () => {
+    const storage = createMockStorage();
+    const store = createCanvasStore();
+    // Not hydrated: nothing is written.
+    store.getState().insertCanvas(importedCanvas());
+    await store.getState().saveCanvas(storage);
+    expect(storage.write).not.toHaveBeenCalled();
+
+    // Remote: the satellite's canvas (with deferred wires) is never written locally.
+    const local = createCanvasStore();
+    await local.getState().loadCanvas(storage);
+    local.getState().hydrateFromRemote([{ ...importedCanvas(), id: 'REMOTE' }], 'REMOTE');
+    expect(local.getState().activeCanvas().deferredWires).toHaveLength(2);
+    vi.mocked(storage.write).mockClear();
+    await local.getState().saveCanvas(storage);
+    expect(storage.write).not.toHaveBeenCalled();
+  });
+});
+
+describe('deferred blueprint wires through a real import (#2069 repro)', () => {
+  it('import with an unmatched agent, assign it later, and the wire appears', async () => {
+    const { parseAnyBlueprint } = await import('../../../features/blueprints/parse-blueprint');
+    const manifest = {
+      id: 'bp', name: 'Team', version: '1.0.0', schemaVersion: 1, createdAt: '2026-10-17T00:00:00.000Z',
+      agents: [{ refId: 'lead', name: 'Lead', matchBy: { name: 'Lead' } }, { refId: 'new', name: 'Newcomer', matchBy: { name: 'Newcomer' } }],
+      canvas: {
+        views: [
+          { refId: 'lead', type: 'agent', displayName: 'Lead', agentRef: 'lead', position: { x: 0, y: 0 } },
+          { refId: 'new', type: 'agent', displayName: 'Newcomer', agentRef: 'new', position: { x: 600, y: 0 } },
+        ],
+        wires: [{ sourceRef: 'lead', targetRef: 'new', instructions: { send_message: 'Onboard them' } }],
+      },
+    };
+    const result = parseAnyBlueprint(manifest, { agents: [{ id: 'agent-lead', name: 'Lead' } as never], projects: [] });
+    expect(result.wires.create).toEqual([]);
+
+    const store = createCanvasStore();
+    store.getState().insertCanvas(result.canvas);
+    const stub = store.getState().views.find((v) => v.displayName === 'Newcomer')!;
+    store.getState().updateView(stub.id, { agentId: 'agent-new' } as never);
+    expect(store.getState().wireDefinitions).toEqual([
+      expect.objectContaining({ agentId: 'agent-lead', targetId: 'agent-new', targetKind: 'agent', instructions: { send_message: 'Onboard them' } }),
+    ]);
+  });
+});

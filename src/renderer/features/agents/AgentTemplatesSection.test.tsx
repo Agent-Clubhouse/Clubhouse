@@ -48,7 +48,7 @@ describe('AgentTemplatesSection', () => {
   describe('list view', () => {
     it('renders the Agent Definitions heading', async () => {
       renderSection();
-      expect(screen.getByText('Agent Definitions')).toBeInTheDocument();
+      expect(screen.getByText('Agent definitions')).toBeInTheDocument();
     });
 
     it('renders template entries after loading', async () => {
@@ -65,7 +65,7 @@ describe('AgentTemplatesSection', () => {
 
     it('renders the + Agent button', async () => {
       renderSection();
-      expect(await screen.findByText('+ Agent')).toBeInTheDocument();
+      expect(await screen.findByText('New definition')).toBeInTheDocument();
     });
 
     it('shows custom path label', () => {
@@ -80,7 +80,7 @@ describe('AgentTemplatesSection', () => {
 
     it('disables + Agent button when disabled', async () => {
       renderSection({ disabled: true });
-      const btn = await screen.findByText('+ Agent');
+      const btn = await screen.findByText('New definition');
       expect(btn).toBeDisabled();
     });
   });
@@ -89,22 +89,22 @@ describe('AgentTemplatesSection', () => {
     it('switches to create view on + Agent click', async () => {
       renderSection();
       await screen.findByText('researcher');
-      fireEvent.click(screen.getByText('+ Agent'));
-      expect(screen.getByText('New Agent Definition')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('New definition'));
+      expect(screen.getByText('New agent definition')).toBeInTheDocument();
       expect(screen.getByPlaceholderText('agent-name (lowercase, hyphens)')).toBeInTheDocument();
     });
 
     it('Save button is disabled when name is empty', async () => {
       renderSection();
       await screen.findByText('researcher');
-      fireEvent.click(screen.getByText('+ Agent'));
+      fireEvent.click(screen.getByText('New definition'));
       expect(screen.getByText('Save')).toBeDisabled();
     });
 
     it('saves new template and returns to list', async () => {
       renderSection();
       await screen.findByText('researcher');
-      fireEvent.click(screen.getByText('+ Agent'));
+      fireEvent.click(screen.getByText('New definition'));
       fireEvent.change(screen.getByPlaceholderText('agent-name (lowercase, hyphens)'), {
         target: { value: 'planner' },
       });
@@ -120,9 +120,9 @@ describe('AgentTemplatesSection', () => {
     it('Cancel returns to list view', async () => {
       renderSection();
       await screen.findByText('researcher');
-      fireEvent.click(screen.getByText('+ Agent'));
+      fireEvent.click(screen.getByText('New definition'));
       fireEvent.click(screen.getByText('Cancel'));
-      expect(await screen.findByText('Agent Definitions')).toBeInTheDocument();
+      expect(await screen.findByText('Agent definitions')).toBeInTheDocument();
     });
   });
 
@@ -158,7 +158,7 @@ describe('AgentTemplatesSection', () => {
       renderSection();
       await screen.findByText('researcher');
       fireEvent.click(screen.getAllByTitle('Delete agent definition')[0]);
-      expect(screen.getByText('Delete Agent Definition')).toBeInTheDocument();
+      expect(screen.getByText('Delete agent definition')).toBeInTheDocument();
       expect(screen.getByText(/cannot be undone/)).toBeInTheDocument();
     });
 
@@ -180,7 +180,7 @@ describe('AgentTemplatesSection', () => {
       await screen.findByText('researcher');
       fireEvent.click(screen.getAllByTitle('Delete agent definition')[0]);
       fireEvent.click(screen.getAllByText('Cancel')[0]);
-      expect(screen.queryByText('Delete Agent Definition')).not.toBeInTheDocument();
+      expect(screen.queryByText('Delete agent definition')).not.toBeInTheDocument();
     });
 
     it('disables delete when disabled', async () => {

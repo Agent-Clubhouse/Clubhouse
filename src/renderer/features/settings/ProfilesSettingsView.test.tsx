@@ -50,9 +50,9 @@ describe('ProfilesSettingsView', () => {
     expect(screen.getByText('No profiles configured yet.')).toBeInTheDocument();
   });
 
-  it('shows New Profile button', () => {
+  it('shows New profile button', () => {
     render(<ProfilesSettingsView />);
-    expect(screen.getByText('+ New Profile')).toBeInTheDocument();
+    expect(screen.getByText('New profile')).toBeInTheDocument();
   });
 
   it('renders existing profiles', () => {
@@ -111,7 +111,7 @@ describe('ProfilesSettingsView', () => {
 
     render(<ProfilesSettingsView />);
     fireEvent.click(screen.getByText('Delete'));
-    expect(screen.getByText('Delete Profile?')).toBeInTheDocument();
+    expect(screen.getByText('Delete profile?')).toBeInTheDocument();
   });
 
   it('cancels delete dialog', () => {
@@ -126,7 +126,7 @@ describe('ProfilesSettingsView', () => {
     // Click the Cancel button inside the confirm dialog
     const cancelButtons = screen.getAllByText('Cancel');
     fireEvent.click(cancelButtons[cancelButtons.length - 1]);
-    expect(screen.queryByText('Delete Profile?')).not.toBeInTheDocument();
+    expect(screen.queryByText('Delete profile?')).not.toBeInTheDocument();
   });
 
   it('creates a new profile on button click', () => {
@@ -140,10 +140,10 @@ describe('ProfilesSettingsView', () => {
     useProfileStore.setState({ saveProfile: saveFn });
 
     render(<ProfilesSettingsView />);
-    fireEvent.click(screen.getByText('+ New Profile'));
+    fireEvent.click(screen.getByText('New profile'));
     expect(saveFn).toHaveBeenCalled();
-    // Edit form should appear with Profile Name label
-    expect(screen.getByText('Profile Name')).toBeInTheDocument();
+    // Edit form should appear with Profile name label
+    expect(screen.getByText('Profile name')).toBeInTheDocument();
   });
 
   it('shows usage instructions', () => {

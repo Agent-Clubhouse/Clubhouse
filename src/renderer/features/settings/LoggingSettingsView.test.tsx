@@ -84,6 +84,6 @@ describe('LoggingSettingsView', () => {
 
   it('toggles logging on/off via saveSettings', () => {
     render(<LoggingSettingsView />);
-    expect(screen.getByText('Enable Logging')).toBeInTheDocument();
+    expect(screen.getByText('Write logs')).toBeInTheDocument();
   });
 });

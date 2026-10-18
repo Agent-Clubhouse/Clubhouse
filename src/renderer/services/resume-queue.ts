@@ -92,6 +92,8 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       resuming: true,
       orchestrator: entry.orchestrator,
       model: entry.model || durableConfig?.model,
+      // Kept on the agent for display (the run header, a quick agent's record);
+      // it is not sent to the resumed CLI.
       mission: entry.mission,
       worktreePath: entry.worktreePath,
       branch: durableConfig?.branch,
@@ -110,16 +112,21 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       useAgentStore.getState().loadAgentIcon(agent);
     }
 
+    // An agent still starting when the app restarted never had a session to
+    // resume: start it fresh with its mission. Anything else resumes, and a
+    // resumed session already has its mission, so it isn't sent again: every
+    // provider would re-run it as a new turn (#2074).
+    const fresh = !entry.sessionId && entry.sessionStarted === false;
     await window.clubhouse.agent.spawnAgent({
       agentId: entry.agentId,
       projectPath: entry.projectPath,
       cwd,
       kind: entry.kind,
-      resume: true,
+      resume: !fresh,
       sessionId: entry.sessionId || undefined,
       orchestrator: entry.orchestrator,
       model: entry.model || durableConfig?.model,
-      mission: entry.mission,
+      ...(fresh && entry.mission ? { mission: entry.mission } : {}),
       permissionMode: entry.permissionMode,
       freeAgentMode: entry.freeAgentMode ?? durableConfig?.freeAgentMode,
     });
@@ -157,7 +164,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
           sessionId: undefined, // --continue instead of --resume <id>
           orchestrator: entry.orchestrator,
           model: entry.model || fallbackConfig?.model,
-          mission: entry.mission,
+          // No mission on resume (#2074), here as on the first attempt
           permissionMode: entry.permissionMode,
           freeAgentMode: entry.freeAgentMode ?? fallbackConfig?.freeAgentMode,
         });

@@ -10,7 +10,7 @@
  * during a turn, confirm "Interrupt and switch?" first).
  */
 
-import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { AgentRuntimeMode, ChatAgentRuntimeInfo } from '../../../../shared/chat';
 import { useChatStore } from '../../../stores/chatStore';
@@ -19,7 +19,14 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { useToastStore } from '../../../stores/toastStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
-import { RuntimeSwitch } from './ChatHeader';
+import { TerminalPaneToolbar } from '../pane/AgentPaneToolbar';
+import { AgentDetails } from '../details/AgentDetails';
+import { DetailsToggle } from '../details/DetailsToggle';
+import { useAgentDetailsStore } from '../details/detailsStore';
+import { useNarrow } from '../pane/useNarrow';
+import { ChangesReview } from '../review/ChangesReview';
+import { useAgentReview } from '../review/useAgentReview';
+import { isNewChromeEnabled } from '../../../chrome/chromeFlag';
 import type { ChatViewContext } from './ChatView';
 import { isRunningState } from './view-model';
 import { noteExplicitTerminalChoice } from './chat-default-tip';
@@ -163,7 +170,9 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
     }
   }, [agent]);
 
-  if (flag === false || !couldBeChat) return <>{terminal}</>;
+  // The main pane always gets the toolbar and Agent details; other views show the terminal alone.
+  const plainTerminal = canSwitch ? <MainTerminal agent={agent} terminal={terminal} /> : <>{terminal}</>;
+  if (flag === false || !couldBeChat) return plainTerminal;
   // Flag or runtime still loading: a terminal here would flash before ChatView replaces it.
   if (flag === null || info === null) return <RuntimePending />;
 
@@ -195,15 +204,44 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
     );
   }
 
-  if (!info.chatAvailable || !canSwitch) return <>{terminal}</>;
+  if (!info.chatAvailable || !canSwitch) return plainTerminal;
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="h-8 flex-shrink-0 flex items-center justify-end px-3 border-b border-surface-0 bg-ctp-base" data-testid="terminal-runtime-bar">
-        <RuntimeSwitch value="terminal" onChange={() => requestSwitch('chat')} disabled={switching} />
-      </div>
-      <div className="flex-1 min-h-0 relative">{terminal}</div>
+    <>
+      <MainTerminal agent={agent} terminal={terminal} runtime={{ value: 'terminal', onChange: () => requestSwitch('chat'), disabled: switching }} />
       {confirmDialog}
+    </>
+  );
+}
+
+/** A terminal in the main pane: the pane toolbar above it and Agent details beside it (#2032). */
+function MainTerminal({ agent, terminal, runtime }: { agent: Agent; terminal: ReactNode; runtime?: { value: 'terminal'; onChange: () => void; disabled?: boolean } }) {
+  const paneRef = useRef<HTMLDivElement>(null);
+  // Below 640px of pane there's no room beside the terminal, so details hides.
+  const paneNarrow = useNarrow(paneRef);
+  const detailsOpen = useAgentDetailsStore((s) => s.open) && !paneNarrow;
+  const hook = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
+  const review = useAgentReview(agent, `${hook?.state ?? ''}:${hook?.toolName ?? ''}:${agent.status}`);
+  return (
+    <div ref={paneRef} className="flex flex-col h-full" data-agent-pane={agent.id}>
+      <div data-testid={runtime ? 'terminal-runtime-bar' : 'terminal-pane-bar'}>
+        <TerminalPaneToolbar
+          agent={agent}
+          runtime={runtime}
+          review={review.view}
+          detailsToggle={<DetailsToggle />}
+          showMenu
+          showName={!isNewChromeEnabled()}
+        />
+      </div>
+      {review.active && review.cwd && (
+        <ChangesReview agentName={agent.name} cwd={review.cwd} branch={review.branch} onChanged={review.reload} />
+      )}
+      {/* Hidden, not unmounted, while reviewing: the terminal keeps its session and scrollback. */}
+      <div className={`flex-1 min-h-0 flex ${review.active ? 'hidden' : ''}`}>
+        <div className="flex-1 min-w-0 relative">{terminal}</div>
+        {detailsOpen && <AgentDetails agent={agent} branch={review.branch} onReviewAll={review.cwd ? review.open : undefined} />}
+      </div>
     </div>
   );
 }

@@ -1,10 +1,25 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useEffect, useRef } from 'react';
 import { useCommandPaletteStore } from '../../stores/commandPaletteStore';
+import { useUIStore } from '../../stores/uiStore';
 import { CommandPaletteInput } from './CommandPaletteInput';
-import { CommandPaletteList } from './CommandPaletteList';
+import { CommandPaletteList, optionId } from './CommandPaletteList';
 import { useCommandSource } from './use-command-source';
 import { fuzzyFilter, FuzzyFilterItem } from './fuzzy-match';
-import { CommandItem } from './command-registry';
+import { CATEGORY, CommandItem } from './command-registry';
+import { HELP_SECTIONS } from '../help/help-content';
+import { searchHelpTopics } from '../help/help-search';
+import { pushModal, removeModal } from '../../components/layers';
+
+const LISTBOX_ID = 'command-palette-results';
+/** Help answers the same question as the palette, so a few topics join the results. */
+const HELP_RESULTS = 3;
+
+const MODE_HINTS: { prefix: string; label: string }[] = [
+  { prefix: '>', label: 'commands' },
+  { prefix: '@', label: 'agents' },
+  { prefix: '/', label: 'projects' },
+  { prefix: '#', label: 'canvases' },
+];
 
 function stripPrefix(query: string): string {
   if (query.startsWith('>') || query.startsWith('@') || query.startsWith('#') || query.startsWith('/')) {
@@ -13,6 +28,32 @@ function stripPrefix(query: string): string {
   return query;
 }
 
+function helpItems(query: string): FuzzyFilterItem<CommandItem>[] {
+  return searchHelpTopics(HELP_SECTIONS, query).slice(0, HELP_RESULTS).map((r) => ({
+    item: {
+      id: `help:${r.sectionId}:${r.topic.id}`,
+      label: r.topic.title,
+      category: CATEGORY.help,
+      icon: 'help',
+      detail: r.sectionTitle,
+      execute: () => {
+        const ui = useUIStore.getState();
+        if (ui.explorerTab !== 'help') ui.toggleHelp();
+        ui.setHelpSection(r.sectionId);
+        // setHelpSection clears the topic, so set it after.
+        ui.setHelpTopic(r.topic.id);
+      },
+    },
+    score: r.score,
+    matches: [] as number[],
+  }));
+}
+
+/**
+ * The command palette (spec #2024): centered over the window in the chrome menu
+ * style, with dialog semantics. Prefix modes (> @ / #) narrow the list, with
+ * their hints in the footer.
+ */
 export function CommandPalette() {
   const isOpen = useCommandPaletteStore((s) => s.isOpen);
   const query = useCommandPaletteStore((s) => s.query);
@@ -23,14 +64,29 @@ export function CommandPalette() {
   const recordRecent = useCommandPaletteStore((s) => s.recordRecent);
   const isRecent = useCommandPaletteStore((s) => s.isRecent);
   const allCommands = useCommandSource();
+  const dialogRef = useRef<HTMLDivElement>(null);
 
+  // Focus goes back where it was when the palette closes. While open the
+  // palette is the top layer, so a Modal under it leaves Tab and Esc alone (layers.ts).
+  useEffect(() => {
+    if (!isOpen) return;
+    const token = Symbol('command-palette');
+    pushModal(token);
+    const previous = document.activeElement as HTMLElement | null;
+    return () => {
+      removeModal(token);
+      if (previous?.isConnected && (document.activeElement === document.body || dialogRef.current?.contains(document.activeElement))) {
+        previous.focus();
+      }
+    };
+  }, [isOpen]);
 
   // Filter by mode
   const modeFiltered = useMemo(() => {
-    if (mode === 'commands') return allCommands.filter((c) => c.category === 'Actions' || c.category === 'Settings' || c.category === 'Navigation');
-    if (mode === 'agents') return allCommands.filter((c) => c.category === 'Agents');
-    if (mode === 'projects') return allCommands.filter((c) => c.category === 'Projects');
-    if (mode === 'spaces') return allCommands.filter((c) => c.category === 'Spaces');
+    if (mode === 'commands') return allCommands.filter((c) => c.category === CATEGORY.commands || c.category === CATEGORY.settings);
+    if (mode === 'agents') return allCommands.filter((c) => c.category === CATEGORY.agents);
+    if (mode === 'projects') return allCommands.filter((c) => c.category === CATEGORY.projects);
+    if (mode === 'canvases') return allCommands.filter((c) => c.category === CATEGORY.canvases);
     return allCommands;
   }, [allCommands, mode]);
 
@@ -38,20 +94,20 @@ export function CommandPalette() {
   const filteredItems: FuzzyFilterItem<CommandItem>[] = useMemo(() => {
     const searchQuery = stripPrefix(query).trim();
     const filtered = fuzzyFilter(
-      modeFiltered,
+      searchQuery ? modeFiltered : modeFiltered.filter((c) => !c.searchOnly),
       searchQuery,
       (item) => item.label,
       (item) => item.keywords || [],
     );
 
-    // Promote recent commands: show in "Recently Used" group when no query,
+    // Promote recent commands: show in "Recent" group when no query,
     // boost score when query is active so recents rank higher among matches
     const recents: FuzzyFilterItem<CommandItem>[] = [];
     const rest: FuzzyFilterItem<CommandItem>[] = [];
     for (const item of filtered) {
       if (isRecent(item.item.id)) {
         if (!searchQuery) {
-          recents.push({ ...item, item: { ...item.item, category: 'Recently Used' } });
+          recents.push({ ...item, item: { ...item.item, category: CATEGORY.recent } });
         } else {
           recents.push({ ...item, score: item.score + 20 });
         }
@@ -65,8 +121,9 @@ export function CommandPalette() {
     }
 
     // Re-sort with boosted scores
-    return [...recents, ...rest].sort((a, b) => b.score - a.score);
-  }, [modeFiltered, query, isRecent]);
+    const ranked = [...recents, ...rest].sort((a, b) => b.score - a.score);
+    return mode === 'all' ? [...ranked, ...helpItems(searchQuery)] : ranked;
+  }, [modeFiltered, query, mode, isRecent]);
 
   const executeItem = useCallback((item: CommandItem) => {
     recordRecent(item.id);
@@ -79,9 +136,16 @@ export function CommandPalette() {
   // window-level listeners (e.g. the global shortcut dispatcher in App).
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
+      // A menu over the palette handled this Esc (layers.ts): one press, one layer.
+      if (e.defaultPrevented) return;
       e.preventDefault();
       e.stopPropagation();
       close();
+    } else if (e.key === 'Tab') {
+      // The search field is the dialog's only stop; rows are reached with the arrows.
+      e.preventDefault();
+      e.stopPropagation();
+      dialogRef.current?.querySelector('input')?.focus();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       moveSelection(1, filteredItems.length - 1);
@@ -97,16 +161,36 @@ export function CommandPalette() {
 
   if (!isOpen) return null;
 
+  const activeOptionId = filteredItems[selectedIndex] ? optionId(LISTBOX_ID, selectedIndex) : undefined;
+
   return (
     // eslint-disable-next-line no-restricted-syntax
     <div className="fixed inset-0 z-modal" data-testid="command-palette-overlay" onKeyDown={handleKeyDown}>
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={close} />
-      {/* Palette */}
-      <div className="relative flex justify-center pt-[15vh]">
-        <div className="w-[560px] bg-ctp-mantle border border-surface-0 rounded-lg shadow-2xl overflow-hidden">
-          <CommandPaletteInput />
-          <CommandPaletteList items={filteredItems} onExecute={executeItem} />
+      <div className="absolute inset-0 bg-ctp-crust/40" onClick={close} />
+      <div className="relative flex justify-center pt-[12vh] px-4 pointer-events-none">
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Command palette"
+          className="pointer-events-auto w-[560px] max-w-full bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl overflow-hidden"
+        >
+          <CommandPaletteInput listboxId={LISTBOX_ID} activeOptionId={activeOptionId} />
+          <CommandPaletteList id={LISTBOX_ID} items={filteredItems} onExecute={executeItem} />
+          <div className="h-[30px] flex items-center gap-3 px-3 border-t border-surface-0 text-xs text-ctp-overlay1">
+            <span className="flex gap-3" data-testid="command-palette-hints">
+              {MODE_HINTS.map((hint) => (
+                <span key={hint.prefix} className="flex items-center gap-1">
+                  <span className="font-mono text-ctp-subtext1">{hint.prefix}</span>
+                  {hint.label}
+                </span>
+              ))}
+            </span>
+            <span className="ml-auto flex gap-2.5">
+              <span>↵ open</span>
+              <span>↑↓ move</span>
+            </span>
+          </div>
         </div>
       </div>
     </div>

@@ -5,6 +5,8 @@ import { AgentContextMenu, OverflowIcon, useAgentRowActions, type ActionDef } fr
 import { holdChromeSurface, reportChromeFeature, type ChromeSurface } from '../telemetry';
 import { AgentHoverCard } from './AgentHoverCard';
 import type { AgentDot } from './treeModel';
+import { StatusDot } from '../../features/agents/agent-status';
+import { Tooltip } from '../../components/Tooltip';
 
 /**
  * One 30px agent row (docs/chrome-redesign-spec.md §2): status dot, 18px
@@ -26,35 +28,6 @@ function useSurfaceWhile(open: boolean, surface: ChromeSurface) {
   useEffect(() => (open ? holdChromeSurface(surface) : undefined), [open, surface]);
 }
 
-const DOT_CLASS: Record<AgentDot, string> = {
-  working: 'bg-ctp-success',
-  idle: 'bg-ctp-info',
-  needs: 'bg-ctp-warning',
-  error: 'bg-ctp-error',
-  sleeping: 'border border-ctp-overlay0',
-  starting: 'border border-ctp-info',
-};
-
-const DOT_LABEL: Record<AgentDot, string> = {
-  working: 'Working',
-  idle: 'Idle',
-  needs: 'Needs you',
-  error: 'Error',
-  sleeping: 'Sleeping',
-  starting: 'Starting',
-};
-
-export function StatusDot({ dot }: { dot: AgentDot }) {
-  return (
-    <span
-      className={`w-2 h-2 rounded-full flex-shrink-0 ${DOT_CLASS[dot]}`}
-      role="img"
-      aria-label={DOT_LABEL[dot]}
-      title={DOT_LABEL[dot]}
-    />
-  );
-}
-
 interface AgentRowProps {
   agent: Agent;
   dot: AgentDot;
@@ -71,9 +44,24 @@ interface AgentRowProps {
   parentKey?: string;
   /** New-shell-only actions appended to the menu, such as Move up / Move down. */
   extraActions?: ActionDef[];
+  /** The sidebar filter's query, marked in the name. */
+  highlight?: string;
 }
 
-export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions }: AgentRowProps) {
+/** `text` with the first case-insensitive match of `query` marked, as the sidebar filter shows it. */
+export function MarkedText({ text, query }: { text: string; query?: string }) {
+  const at = query ? text.toLowerCase().indexOf(query.toLowerCase()) : -1;
+  if (!query || at < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark className="bg-transparent text-ctp-text font-bold underline underline-offset-2">{text.slice(at, at + query.length)}</mark>
+      {text.slice(at + query.length)}
+    </>
+  );
+}
+
+export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions, highlight }: AgentRowProps) {
   const note = dot === 'needs' ? 'needs you' : dot === 'error' ? 'error' : agent.kind === 'quick' ? 'quick' : '';
   const rowRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -177,11 +165,10 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
                 role="img"
                 aria-label="Free Agent Mode: all permissions bypassed"
                 className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-ctp-error ring-1 ring-ctp-mantle"
-                title="Free Agent Mode: all permissions bypassed"
               />
             )}
           </span>
-          <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}>{agent.name}</span>
+          <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}><MarkedText text={agent.name} query={highlight} /></span>
           {note && (
             <span className={`ml-auto flex-shrink-0 text-xs group-hover/row:hidden ${dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}`}>
               {note}
@@ -189,11 +176,11 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
           )}
         </div>
         {actions.length > 0 && (
+          <Tooltip content="More actions">
           <button
             type="button"
             tabIndex={-1}
             data-testid="action-overflow"
-            title="More actions"
             aria-label={`More actions for ${agent.name}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -204,6 +191,7 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
           >
             <OverflowIcon />
           </button>
+          </Tooltip>
         )}
       </div>
       {menu && <AgentContextMenu actions={menuActions} position={menu} onClose={() => setMenu(null)} />}

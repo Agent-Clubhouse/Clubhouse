@@ -79,8 +79,35 @@ function useProtocolSettings(api: PluginAPI): ProtocolSettings {
 
 // ── Sidebar Panel ──────────────────────────────────────────────────────
 
+/** Which kinds of address the browser opens, as one sentence ("Opens https and localhost addresses."). */
+export function protocolSummary(settings: ProtocolSettings): string {
+  const kinds = ['https'];
+  if (settings.allowLocalhost) kinds.push('localhost');
+  if (settings.allowFileProtocol) kinds.push('file');
+  const list = kinds.length === 1 ? kinds[0] : `${kinds.slice(0, -1).join(', ')} and ${kinds[kinds.length - 1]}`;
+  return `Opens ${list} addresses.`;
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
+}
+
+const GlobeIcon = (size: number, className = '') => React.createElement('svg', {
+  width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
+  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+  className,
+},
+  React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+  React.createElement('line', { x1: 2, y1: 12, x2: 22, y2: 12 }),
+  React.createElement('path', { d: 'M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z' }),
+);
+
 export function SidebarPanel({ api }: { api: PluginAPI }) {
-  const { history } = useBrowserState();
+  const { history, currentUrl } = useBrowserState();
   const protocolSettings = useProtocolSettings(api);
 
   const handleHistoryClick = useCallback((url: string) => {
@@ -88,52 +115,36 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
   }, []);
 
   return React.createElement('div', { className: 'flex flex-col h-full bg-ctp-mantle', 'data-testid': 'browser-sidebar-panel' },
-    // Protocol status section
     React.createElement('div', {
-      className: 'px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0',
-    }, 'Protocols'),
-    React.createElement('div', { className: 'px-3 py-2 space-y-1.5 border-b border-surface-0' },
-      React.createElement('div', { className: 'flex items-center gap-2 text-xs' },
-        React.createElement('span', { className: 'w-2 h-2 rounded-full bg-ctp-green flex-shrink-0' }),
-        React.createElement('span', { className: 'text-ctp-subtext1' }, 'HTTPS'),
-      ),
-      React.createElement('div', { className: 'flex items-center gap-2 text-xs' },
-        React.createElement('span', {
-          className: `w-2 h-2 rounded-full flex-shrink-0 ${protocolSettings.allowLocalhost ? 'bg-ctp-green' : 'bg-ctp-overlay0 opacity-40'}`,
-        }),
-        React.createElement('span', {
-          className: protocolSettings.allowLocalhost ? 'text-ctp-subtext1' : 'text-ctp-overlay0',
-        }, 'Localhost'),
-      ),
-      React.createElement('div', { className: 'flex items-center gap-2 text-xs' },
-        React.createElement('span', {
-          className: `w-2 h-2 rounded-full flex-shrink-0 ${protocolSettings.allowFileProtocol ? 'bg-ctp-green' : 'bg-ctp-overlay0 opacity-40'}`,
-        }),
-        React.createElement('span', {
-          className: protocolSettings.allowFileProtocol ? 'text-ctp-subtext1' : 'text-ctp-overlay0',
-        }, 'File'),
-      ),
-    ),
-
-    // History section
-    React.createElement('div', {
-      className: 'px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider',
+      className: 'h-7 flex-shrink-0 flex items-center px-3.5 text-xs font-semibold text-ctp-overlay1',
     }, 'History'),
-    React.createElement('div', { className: 'flex-1 overflow-y-auto py-1' },
+    React.createElement('div', { className: 'flex-1 overflow-y-auto pb-1' },
       history.length === 0
-        ? React.createElement('div', { className: 'px-3 py-2 text-xs text-ctp-overlay0 italic' }, 'No pages visited yet')
-        : history.map((entry: HistoryEntry, index: number) =>
-            React.createElement('button', {
+        ? React.createElement('div', { className: 'px-3.5 py-1 text-xs text-ctp-overlay1' }, 'Pages you open show up here.')
+        : history.map((entry: HistoryEntry, index: number) => {
+            const current = entry.url === currentUrl;
+            return React.createElement('button', {
               key: `${entry.url}-${index}`,
-              className: 'w-full text-left px-3 py-2 text-sm cursor-pointer transition-colors text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text',
+              type: 'button',
+              className: `mx-1.5 h-7 w-[calc(100%-12px)] flex items-center gap-2 px-2.5 rounded-md text-left text-[13px] cursor-pointer transition-colors focus-ring ${
+                current ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text'
+              }`,
               onClick: () => handleHistoryClick(entry.url),
               title: entry.url,
             },
-              React.createElement('div', { className: 'truncate text-[11px]' }, entry.title || entry.url),
-              React.createElement('div', { className: 'truncate text-[9px] text-ctp-overlay0' }, entry.url),
-            ),
-          ),
+              GlobeIcon(14, 'text-ctp-overlay1 flex-shrink-0'),
+              React.createElement('span', { className: 'truncate flex-shrink' }, entry.title || hostOf(entry.url)),
+              entry.title
+                ? React.createElement('span', { className: 'text-xs text-ctp-overlay1 truncate min-w-0 flex-shrink-[2]' }, hostOf(entry.url))
+                : null,
+            );
+          }),
     ),
+    // What the browser may open, as one line instead of a block in the list
+    React.createElement('div', {
+      className: 'flex-shrink-0 px-3.5 py-2.5 border-t border-surface-0 text-xs text-ctp-overlay1',
+      'data-testid': 'browser-protocols',
+    }, protocolSummary(protocolSettings)),
   );
 }
 
@@ -272,75 +283,48 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     className: 'flex flex-col h-full bg-ctp-base',
     'data-testid': 'browser-main-panel',
   },
-    // Header bar with navigation
+    // Toolbar: navigation, the address and DevTools in one 32px row
     React.createElement('div', {
-      className: 'flex items-center gap-1 px-2 py-1.5 border-b border-surface-0 bg-ctp-mantle flex-shrink-0',
+      className: 'h-8 flex items-center gap-0.5 px-2 border-b border-surface-0 flex-shrink-0',
     },
-      // Back button
-      React.createElement('button', {
-        className: 'w-6 h-6 flex items-center justify-center rounded text-xs text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors',
-        onClick: handleBack,
-        title: 'Back',
-        'data-testid': 'browser-back-btn',
-      }, '\u2190'),
-      // Forward button
-      React.createElement('button', {
-        className: 'w-6 h-6 flex items-center justify-center rounded text-xs text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors',
-        onClick: handleForward,
-        title: 'Forward',
-        'data-testid': 'browser-forward-btn',
-      }, '\u2192'),
-      // Reload button
-      React.createElement('button', {
-        className: 'w-6 h-6 flex items-center justify-center rounded text-xs text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors',
-        onClick: handleReload,
-        title: 'Reload',
-        'data-testid': 'browser-reload-btn',
-      }, '\u21BB'),
+      navButton('Back', 'browser-back-btn', handleBack, React.createElement('polyline', { points: '15 18 9 12 15 6' })),
+      navButton('Forward', 'browser-forward-btn', handleForward, React.createElement('polyline', { points: '9 18 15 12 9 6' })),
+      navButton('Reload', 'browser-reload-btn', handleReload,
+        React.createElement('polyline', { points: '23 4 23 10 17 10' }),
+        React.createElement('path', { d: 'M20.49 15a9 9 0 1 1-2.12-9.36L23 10' }),
+      ),
       // Address bar
       React.createElement('input', {
         type: 'text',
         value: addressBar,
         onChange: (e: React.ChangeEvent<HTMLInputElement>) => setAddressBar(e.target.value),
         onKeyDown: handleKeyDown,
-        className: 'flex-1 min-w-0 px-2 py-0.5 rounded bg-surface-0 text-xs text-ctp-text border border-surface-1 focus-ring',
-        placeholder: 'Enter URL (https://example.com, localhost:3000, file:///path)...',
+        className: 'flex-1 min-w-0 h-7 mx-1.5 px-2.5 rounded-md bg-surface-0 text-xs text-ctp-text placeholder:text-ctp-overlay1 focus-ring',
+        placeholder: 'Enter an address',
+        'aria-label': 'Address',
         'data-testid': 'browser-address-bar',
       }),
-      // DevTools button
       React.createElement('button', {
-        className: 'flex items-center gap-1 px-2 py-0.5 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
+        type: 'button',
+        className: 'h-7 flex items-center px-2.5 text-xs text-ctp-subtext1 hover:text-ctp-text hover:bg-surface-0 rounded-md transition-colors focus-ring',
         onClick: handleDevTools,
         title: 'Toggle DevTools',
         'data-testid': 'browser-devtools-btn',
-      },
-        React.createElement('svg', {
-          width: 14,
-          height: 14,
-          viewBox: '0 0 24 24',
-          fill: 'none',
-          stroke: 'currentColor',
-          strokeWidth: 2,
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-        },
-          React.createElement('circle', { cx: 12, cy: 12, r: 3 }),
-          React.createElement('path', { d: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z' }),
-        ),
-        'DevTools',
-      ),
+      }, 'DevTools'),
     ),
 
     // Error banner
     error && React.createElement('div', {
-      className: 'px-3 py-2 bg-ctp-red/10 border-b border-ctp-red/20 text-xs text-ctp-red flex-shrink-0',
+      className: 'px-3.5 py-2 border-b border-surface-0 text-xs text-ctp-red flex-shrink-0',
+      role: 'alert',
       'data-testid': 'browser-error-banner',
     }, error),
 
-    // Webview content
-    React.createElement('div', { className: 'flex-1 min-h-0 bg-white' },
-      navigatedUrl
-        ? React.createElement('webview' as any, {
+    // Webview content. Pages get a white canvas, as in any browser; the empty
+    // state sits on the theme.
+    navigatedUrl
+      ? React.createElement('div', { className: 'flex-1 min-h-0 bg-white' },
+          React.createElement('webview' as any, {
             ref: webviewRef,
             src: navigatedUrl,
             partition: 'persist:plugin-browser',
@@ -348,28 +332,43 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             nodeintegration: 'false',
             sandbox: 'true',
             contextIsolation: 'true',
-          })
-        : React.createElement('div', {
-            className: 'flex flex-col items-center justify-center h-full text-ctp-overlay0 gap-3',
-          },
-            React.createElement('svg', {
-              width: 48,
-              height: 48,
-              viewBox: '0 0 24 24',
-              fill: 'none',
-              stroke: 'currentColor',
-              strokeWidth: 1.5,
-              strokeLinecap: 'round',
-              strokeLinejoin: 'round',
-              className: 'text-surface-2',
-            },
-              React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
-              React.createElement('line', { x1: 2, y1: 12, x2: 22, y2: 12 }),
-              React.createElement('path', { d: 'M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z' }),
-            ),
-            React.createElement('div', { className: 'text-xs' }, 'Enter a URL above to browse'),
+          }),
+        )
+      : React.createElement('div', {
+          className: 'flex-1 min-h-0 flex justify-center pt-[22vh] px-4',
+          'data-testid': 'browser-empty-state',
+        },
+          React.createElement('div', { className: 'w-[380px] max-w-full flex flex-col gap-2' },
+            React.createElement('div', { className: 'text-[13px] text-ctp-text' }, 'Open a page'),
+            React.createElement('div', { className: 'text-xs text-ctp-overlay1 leading-relaxed' }, emptyHint(protocolSettings)),
           ),
-    ),
+        ),
+  );
+}
+
+/** The empty state's hint: which addresses work, and that the rest are off in Settings. */
+export function emptyHint(settings: ProtocolSettings): string {
+  const works = settings.allowLocalhost ? 'localhost:3000 and https:// addresses work.' : 'https:// addresses work.';
+  const off = [!settings.allowLocalhost && 'Localhost', !settings.allowFileProtocol && 'File'].filter(Boolean) as string[];
+  const offLine = off.length === 0 ? '' : off.length === 1
+    ? ` ${off[0]} addresses are off in Settings.`
+    : ` ${off[0]} and ${off[1].toLowerCase()} addresses are off in Settings.`;
+  return `Type an address above. ${works}${offLine}`;
+}
+
+function navButton(label: string, testId: string, onClick: () => void, ...icon: React.ReactElement[]) {
+  return React.createElement('button', {
+    type: 'button',
+    className: 'w-7 h-7 flex items-center justify-center rounded-md text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text transition-colors focus-ring',
+    onClick,
+    title: label,
+    'aria-label': label,
+    'data-testid': testId,
+  },
+    React.createElement('svg', {
+      width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+      stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+    }, ...icon),
   );
 }
 

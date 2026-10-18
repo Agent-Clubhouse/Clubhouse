@@ -4,7 +4,7 @@ import { rendererLog } from '../plugins/renderer-logger';
 const RECENTS_KEY = 'clubhouse_command_palette_recents';
 const MAX_RECENTS = 20;
 
-export type PaletteMode = 'all' | 'commands' | 'agents' | 'projects' | 'spaces';
+export type PaletteMode = 'all' | 'commands' | 'agents' | 'projects' | 'canvases';
 
 interface RecentCommand {
   id: string;
@@ -32,7 +32,7 @@ function saveRecents(recents: RecentCommand[]): void {
 function deriveMode(query: string): PaletteMode {
   if (query.startsWith('>')) return 'commands';
   if (query.startsWith('@')) return 'agents';
-  if (query.startsWith('#')) return 'spaces';
+  if (query.startsWith('#')) return 'canvases';
   if (query.startsWith('/')) return 'projects';
   return 'all';
 }
@@ -46,7 +46,8 @@ interface CommandPaletteState {
   selectedIndex: number;
   lastInteraction: InteractionSource;
   recentCommands: RecentCommand[];
-  open: () => void;
+  /** Open, optionally with a query already typed (the sidebar filter's Search everything). */
+  open: (query?: string) => void;
   close: () => void;
   toggle: () => void;
   setQuery: (query: string) => void;
@@ -64,7 +65,7 @@ export const useCommandPaletteStore = create<CommandPaletteState>((set, get) => 
   lastInteraction: 'keyboard' as InteractionSource,
   recentCommands: loadRecents(),
 
-  open: () => set({ isOpen: true, query: '', mode: 'all', selectedIndex: 0, lastInteraction: 'keyboard' }),
+  open: (query = '') => set({ isOpen: true, query, mode: deriveMode(query), selectedIndex: 0, lastInteraction: 'keyboard' }),
   close: () => set({ isOpen: false, query: '', mode: 'all', selectedIndex: 0, lastInteraction: 'keyboard' }),
   toggle: () => {
     const { isOpen } = get();

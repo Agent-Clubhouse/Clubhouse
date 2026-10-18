@@ -33,7 +33,9 @@ export function getOrCreateModel(
     return existing;
   }
 
-  const uri = monaco.Uri.parse(`file:///${filePath}`);
+  // Files passes a checkout-qualified key (`<checkout>/<path>`), so models of
+  // the same relative path in two checkouts get different URIs.
+  const uri = monaco.Uri.parse(`file:///${filePath.replace(/^\/+/, '')}`);
   // Check if a model already exists at this URI (e.g., from a previous session)
   let model = monaco.editor.getModel(uri);
   if (!model) {
@@ -64,6 +66,19 @@ export function disposeAllModels(): void {
     cached.model.dispose();
   }
   modelCache.clear();
+}
+
+/**
+ * Dispose every model without unsaved edits. Files calls this when the scope
+ * changes, since a worktree outside the project reuses the same relative paths
+ * as the root and a cached model would show the other checkout's content.
+ */
+export function disposeCleanModels(): void {
+  for (const [filePath, cached] of modelCache) {
+    if (cached.model.getValue() !== cached.savedContent) continue;
+    cached.model.dispose();
+    modelCache.delete(filePath);
+  }
 }
 
 export function updateSavedContent(filePath: string, content: string): void {

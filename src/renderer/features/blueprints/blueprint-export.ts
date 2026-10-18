@@ -4,6 +4,7 @@
 // portable BlueprintManifest that can be saved/shared/imported.
 
 import type { CanvasInstance, AgentCanvasView, PluginCanvasView, StickyNoteCanvasView, ZoneCanvasView, AnchorCanvasView } from '../../plugins/builtin/canvas/canvas-types';
+import { GROUP_PROJECT_WIDGET_TYPE } from './blueprint-wire-plan';
 import type { McpBindingEntry } from '../../stores/mcpBindingStore';
 import type { Agent, Project } from '../../../shared/types';
 import type {
@@ -26,7 +27,15 @@ function generateRefId(prefix: string, entityId: string): string {
   return `${prefix}_${entityId.replace(/[^a-z0-9]/gi, '').slice(0, 16)}`;
 }
 
+/** Same instructions and disabled tools (order of disabled tools doesn't matter). */
+function sameWireOptions(a: BlueprintWire, b: BlueprintWire): boolean {
+  const entries = (w: BlueprintWire) => JSON.stringify(Object.entries(w.instructions ?? {}).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
+  const tools = (w: BlueprintWire) => JSON.stringify([...(w.disabledTools ?? [])].sort());
+  return entries(a) === entries(b) && tools(a) === tools(b);
+}
+
 /** Kept for backward compatibility; no-op since the counter was removed. */
+
 export function resetRefCounter(): void {}
 
 // ── Slugify ─────────────────────────────────────────────────────────
@@ -101,6 +110,8 @@ export function exportCanvasToBlueprint(
   const agentIdToRefId = new Map<string, string>();
   // Track agent refIds (agentId → agentDef refId)
   const agentIdToAgentRef = new Map<string, string>();
+  // Group project id → refId of the widget showing it (group-project wire targets)
+  const groupProjectIdToRefId = new Map<string, string>();
   // Track project refIds (projectId → projectRef refId)
   const projectIdToProjectRef = new Map<string, string>();
 
@@ -118,6 +129,13 @@ export function exportCanvasToBlueprint(
       if (agentView.agentId) {
         agentIdToRefId.set(agentView.agentId, refId);
       }
+    }
+    // Group-project wires address the widget by its group project id (#2068).
+    const groupProjectId = view.type === 'plugin' && (view as PluginCanvasView).pluginWidgetType === GROUP_PROJECT_WIDGET_TYPE
+      ? view.metadata?.groupProjectId
+      : undefined;
+    if (typeof groupProjectId === 'string' && groupProjectId) {
+      groupProjectIdToRefId.set(groupProjectId, refId);
     }
   }
 
@@ -276,11 +294,16 @@ export function exportCanvasToBlueprint(
   // ── Phase 5: Remap wires to refIds ──────────────────────────────
 
   const blueprintWires: BlueprintWire[] = [];
+  /** Agent-to-agent wires by "source\0target", to fold matching pairs into one bidirectional wire. */
+  const agentWires = new Map<string, BlueprintWire>();
 
   for (const wire of ctx.wireDefinitions) {
-    // Wires use agentId as source, targetId can be agentId, viewId, or GP id
+    // Wires use agentId as source; the target is an agent id, a view id
+    // (browsers) or a group project id, matching how the import addresses it.
     const sourceRef = agentIdToRefId.get(wire.agentId);
-    const targetRef = agentIdToRefId.get(wire.targetId) ?? viewIdToRefId.get(wire.targetId);
+    const targetRef = wire.targetKind === 'group-project'
+      ? groupProjectIdToRefId.get(wire.targetId) ?? viewIdToRefId.get(wire.targetId)
+      : agentIdToRefId.get(wire.targetId) ?? viewIdToRefId.get(wire.targetId);
 
     // Only include wires where both endpoints resolve to views on this canvas
     if (!sourceRef || !targetRef) continue;
@@ -297,7 +320,30 @@ export function exportCanvasToBlueprint(
       bw.disabledTools = [...wire.disabledTools];
     }
 
+    // A two-way agent wire is stored as two definitions. When the reverse is
+    // already exported with the same instructions and disabled tools, mark
+    // that one bidirectional instead of exporting a second wire.
+    if (wire.targetKind === 'agent') {
+      const reverse = agentWires.get(`${targetRef}\0${sourceRef}`);
+      if (reverse && !reverse.bidirectional && sameWireOptions(reverse, bw)) {
+        reverse.bidirectional = true;
+        continue;
+      }
+      agentWires.set(`${sourceRef}\0${targetRef}`, bw);
+    }
+
     blueprintWires.push(bw);
+  }
+
+  // Wires still waiting for a stub to be bound (#2069) go out as they came in,
+  // so the next import defers them again rather than losing them.
+  const exportedPairs = new Set(blueprintWires.map((w) => `${w.sourceRef}\0${w.targetRef}`));
+  for (const deferred of canvas.deferredWires ?? []) {
+    const sourceRef = viewIdToRefId.get(deferred.sourceViewId);
+    const targetRef = viewIdToRefId.get(deferred.targetViewId);
+    if (!sourceRef || !targetRef || exportedPairs.has(`${sourceRef}\0${targetRef}`)) continue;
+    exportedPairs.add(`${sourceRef}\0${targetRef}`);
+    blueprintWires.push({ ...deferred.wire, sourceRef, targetRef });
   }
 
   // ── Phase 6: Assemble manifest ──────────────────────────────────

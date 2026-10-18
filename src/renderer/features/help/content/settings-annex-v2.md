@@ -4,15 +4,15 @@ Annex V2 enables **desktop-to-desktop remote control** between Clubhouse instanc
 
 ## Overview
 
-- **Satellite**: The Clubhouse instance whose agents are being controlled remotely. Enable the Annex Server in Settings.
+- **Satellite**: The Clubhouse instance whose agents are being controlled remotely. Turn on **Allow remote control** in **Settings > Annex**.
 - **Controller**: The Clubhouse instance issuing commands. Use the Annex Control settings page to pair and manage satellites.
 - **Security**: Paired Annex connections use mutual TLS (mTLS) with self-signed certificates, and the controller verifies the peer certificate fingerprint against the paired satellite before treating the socket as authenticated. Identity remains based on Ed25519 keypairs.
 
 ## Setup
 
 ### On the Satellite (Instance A)
-1. Go to **Settings > Annex Server**
-2. Toggle **Enable Annex server** on
+1. Go to **Settings > Annex**
+2. Toggle **Allow remote control** on
 3. Set a recognizable **Alias** and **Color** for identification
 4. Note the **Pairing PIN** — you'll need this on the controller
 
@@ -38,7 +38,7 @@ After pairing, connections use **mutual TLS** — no PIN required for reconnecti
 - 3 free PIN attempts per source IP
 - Exponential delay after 3 failures (5s, 15s, 45s)
 - Full lockout after 6 failed attempts (5-minute cooldown)
-- Manual unlock available in Settings > Annex Server
+- The lockout clears on its own after the cooldown
 
 ## Usage
 
@@ -91,7 +91,6 @@ When a controller connects to a satellite:
 
 ### Pairing locked out
 - After 6 failed PIN attempts, pairing is locked for 5 minutes
-- To unlock immediately: Settings > Annex Server > Unlock Pairing
 - Or wait for the 5-minute cooldown to expire
 
 ### Cannot control agents (permission denied)

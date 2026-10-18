@@ -617,7 +617,7 @@ describe('headless-manager', () => {
 
       mockProcess.emit('error', new Error('spawn failed'));
 
-      expect(mockSend).toHaveBeenCalledWith(IPC.PTY.EXIT, 'test-agent', 1);
+      expect(mockSend).toHaveBeenCalledWith(IPC.PTY.EXIT, 'test-agent', 1, 'spawn failed');
       expect(isHeadless('test-agent')).toBe(false);
     });
 
@@ -1914,5 +1914,175 @@ describe('resolveExitCode', () => {
 
   it('treats a missing code and signal as a clean exit', () => {
     expect(resolveExitCode(null, null)).toBe(0);
+  });
+});
+
+describe('headless-manager run monitor data (#2033)', () => {
+  const NOW = new Date('2026-01-15T10:00:00Z').getTime();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    mockProcess = createMockProcess();
+  });
+
+  afterEach(() => {
+    if (isHeadless('test-agent')) {
+      kill('test-agent');
+      mockProcess.emit('close', 0);
+    }
+    vi.useRealTimers();
+  });
+
+  function hookEvents(): Array<Record<string, unknown>> {
+    return mockSend.mock.calls
+      .filter((c) => c[0] === IPC.AGENT.HOOK_EVENT)
+      .flatMap((c) => (Array.isArray(c[2]) ? c[2] : [c[2]])) as Array<Record<string, unknown>>;
+  }
+
+  describe('_ts stamps', () => {
+    it('stamps each appended event with the receive time and persists it', () => {
+      const session = _internal.createSessionRecord('agent-1', mockProcess as any, 'stream-json', '/tmp/t.jsonl');
+      _internal.appendTranscriptEvent(session, { type: 'assistant' }, mockWriteStream as any);
+
+      expect(session.transcript[0]._ts).toBe(NOW);
+      expect(JSON.parse(session.transcriptLines[0])._ts).toBe(NOW);
+      expect(mockWriteStream.write).toHaveBeenCalledWith(expect.stringContaining(`"_ts":${NOW}`));
+    });
+
+    it('keeps an existing numeric _ts', () => {
+      const session = _internal.createSessionRecord('agent-1', mockProcess as any, 'stream-json', '/tmp/t.jsonl');
+      _internal.appendTranscriptEvent(session, { type: 'result', _ts: 42 }, mockWriteStream as any);
+      expect(session.transcript[0]._ts).toBe(42);
+    });
+
+    it('replaces a non-numeric _ts', () => {
+      const session = _internal.createSessionRecord('agent-1', mockProcess as any, 'stream-json', '/tmp/t.jsonl');
+      _internal.appendTranscriptEvent(session, { type: 'result', _ts: 'soon' as unknown as number }, mockWriteStream as any);
+      expect(session.transcript[0]._ts).toBe(NOW);
+    });
+
+    it('returns stamped events from readTranscriptPage', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify({ type: 'system', subtype: 'init' }) + '\n'));
+      vi.setSystemTime(NOW + 1500);
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify({ type: 'result', result: 'ok' }) + '\n'));
+
+      const page = await readTranscriptPage('test-agent', 0, 10);
+      expect(page!.events.map((e) => e._ts)).toEqual([NOW, NOW + 1500]);
+    });
+  });
+
+  describe('tool_use_id pairing', () => {
+    it('carries toolUseId on pre_tool and post_tool, names the tool on post_tool, and uses _ts', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      const pre = {
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id: 'toolu_1', name: 'Edit', input: { file_path: '/a.ts' } }] },
+      };
+      const post = {
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'ok' }] },
+      };
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(pre) + '\n'));
+      vi.setSystemTime(NOW + 2000);
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(post) + '\n'));
+
+      const events = hookEvents();
+      expect(events).toContainEqual(expect.objectContaining({
+        kind: 'pre_tool', toolName: 'Edit', toolUseId: 'toolu_1', toolInput: { file_path: '/a.ts' }, timestamp: NOW,
+      }));
+      expect(events).toContainEqual(expect.objectContaining({
+        kind: 'post_tool', toolName: 'Edit', toolUseId: 'toolu_1', timestamp: NOW + 2000,
+      }));
+    });
+
+    it('omits toolUseId and toolName when the blocks carry no id', () => {
+      const out = _internal.mapToHookEvent(
+        { type: 'user', message: { content: [{ type: 'tool_result' }] } },
+        new Map(),
+        new Map(),
+      );
+      expect(out).toEqual([{ kind: 'post_tool', timestamp: NOW }]);
+    });
+
+    it('emits one pre_tool per id when a provider repeats the tool_use (Codex file_change)', () => {
+      const names = new Map<string, string>();
+      const use = { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'i1', name: 'apply_patch', input: { path: 'a' } }] } };
+      const first = _internal.mapToHookEvent(use, new Map(), names);
+      const repeat = _internal.mapToHookEvent(use, new Map(), names);
+      const done = _internal.mapToHookEvent(
+        { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'i1', content: 'a' }] } },
+        new Map(),
+        names,
+      );
+      expect(first).toHaveLength(1);
+      expect(repeat).toHaveLength(0);
+      expect(done).toEqual([{ kind: 'post_tool', toolName: 'apply_patch', toolUseId: 'i1', timestamp: NOW }]);
+      expect(names.size).toBe(0);
+    });
+
+    it('pairs Codex tool events through the normalizer', async () => {
+      const { createCodexHeadlessNormalizer } = await import('../orchestrators/codex-headless-events');
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/codex', ['exec'], {}, 'stream-json', undefined, undefined, createCodexHeadlessNormalizer);
+      const lines = [
+        { type: 'item.started', item: { id: 'c1', type: 'command_execution', command: 'ls' } },
+        { type: 'item.completed', item: { id: 'c1', type: 'command_execution', command: 'ls', exit_code: 0, aggregated_output: 'a' } },
+      ];
+      mockProcess.stdout!.emit('data', Buffer.from(lines.map((l) => JSON.stringify(l)).join('\n') + '\n'));
+
+      const events = hookEvents();
+      expect(events).toContainEqual(expect.objectContaining({ kind: 'pre_tool', toolName: 'shell', toolUseId: 'c1' }));
+      expect(events).toContainEqual(expect.objectContaining({ kind: 'post_tool', toolName: 'shell', toolUseId: 'c1' }));
+    });
+
+    it('passes provider events without ids through unchanged (Copilot raw stream-json)', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/copilot', ['-p', 'x']);
+      mockProcess.stdout!.emit('data', Buffer.from('{"type":"session.start"}\n42\n'));
+      const page = await readTranscriptPage('test-agent', 0, 10);
+      expect(page!.events[0]).toEqual({ type: 'session.start', _ts: NOW });
+      expect(page!.events[1]).toBe(42);
+    });
+  });
+
+  describe('stderr tail on exit', () => {
+    it('passes the stderr tail as lastOutput on close', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      mockProcess.stderr!.emit('data', Buffer.from('Error: bad auth'));
+      mockProcess.stderr!.emit('data', Buffer.from('exiting'));
+      mockProcess.emit('close', 1);
+
+      expect(mockSend).toHaveBeenCalledWith(IPC.PTY.EXIT, 'test-agent', 1, 'Error: bad auth\nexiting');
+    });
+
+    it('omits lastOutput when nothing was written to stderr', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      mockProcess.emit('close', 0);
+
+      expect(mockSend).toHaveBeenCalledWith(IPC.PTY.EXIT, 'test-agent', 0);
+    });
+
+    it('keeps only the last 4 KB', () => {
+      const tail = _internal.stderrTail({
+        stdoutBytes: 0,
+        stderrChunks: ['a'.repeat(3000), 'b'.repeat(3000)],
+        stderrChunkSizes: [3000, 3000],
+        stderrBytes: 6000,
+      });
+      expect(tail).toHaveLength(4096);
+      expect(tail!.endsWith('b'.repeat(3000))).toBe(true);
+    });
+
+    it('does not start the tail with a broken multi-byte character', () => {
+      const tail = _internal.stderrTail({
+        stdoutBytes: 0,
+        stderrChunks: ['€'.repeat(2000)],
+        stderrChunkSizes: [6000],
+        stderrBytes: 6000,
+      });
+      expect(tail!.startsWith('€')).toBe(true);
+      expect(Buffer.byteLength(tail!, 'utf-8')).toBeLessThanOrEqual(4096);
+    });
   });
 });

@@ -1,58 +1,16 @@
 import { test, expect, _electron as electron, Page } from '@playwright/test';
-import * as path from 'path';
-import { recordElectronApp, trackOpenApp } from './e2e-cleanup';
-
-const APP_PATH = path.resolve(__dirname, '..');
-const MAIN_ENTRY = path.join(APP_PATH, '.webpack', process.arch, 'main');
+import { launchApp } from './launch';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 
 /**
- * Launch the app with a clean onboarding state (not completed).
- * This intentionally does NOT call the shared launchApp helper because
- * that helper marks onboarding as completed.
+ * Launch the app with a clean onboarding state (not completed), against its
+ * own disposable profile. `onboarding: 'show'` keeps the shared helper from
+ * dismissing onboarding the way it does for every other suite.
  */
 async function launchFresh() {
-  electronApp = await electron.launch({
-    args: [MAIN_ENTRY],
-    cwd: APP_PATH,
-  });
-
-  recordElectronApp(electronApp.process().pid);
-  trackOpenApp(electronApp);
-
-  // Find renderer window — DevTools may briefly have a non-devtools:// URL,
-  // so after the URL check we verify the page has <div id="root">.
-  type PageType = Awaited<ReturnType<typeof electronApp.firstWindow>>;
-  const seen = new Set<PageType>();
-
-  for (const page of electronApp.windows()) {
-    if (page.url().startsWith('devtools://')) { seen.add(page); continue; }
-    try {
-      await page.waitForLoadState('load');
-      if (await page.evaluate(() => !!document.getElementById('root'))) { window = page; break; }
-    } catch { /* not ready */ }
-    seen.add(page);
-  }
-
-  if (!window) {
-    const deadline = Date.now() + 30_000;
-    while (Date.now() < deadline) {
-      const page: PageType = await electronApp.waitForEvent('window', {
-        timeout: Math.max(1_000, deadline - Date.now()),
-      });
-      if (seen.has(page) || page.url().startsWith('devtools://')) { seen.add(page); continue; }
-      seen.add(page);
-      try {
-        await page.waitForLoadState('load');
-        if (await page.evaluate(() => !!document.getElementById('root'))) { window = page; break; }
-      } catch { /* not ready */ }
-    }
-  }
-  if (!window) throw new Error('Timed out waiting for renderer window (30 s)');
-
-  await window.waitForLoadState('load');
+  ({ electronApp, window } = await launchApp({ onboarding: 'show' }));
 
   // Ensure onboarding state is cleared so modal appears
   await window.evaluate(() => {

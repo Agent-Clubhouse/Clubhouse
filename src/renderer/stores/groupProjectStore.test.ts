@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useGroupProjectStore } from './groupProjectStore';
+import { initGroupProjectListener, useGroupProjectStore } from './groupProjectStore';
 
 // Mock window.clubhouse.groupProject IPC
 const mockList = vi.fn();
@@ -69,6 +69,16 @@ describe('groupProjectStore', () => {
       const state = useGroupProjectStore.getState();
       expect(state.loadError).toBeNull();
       expect(state.projects).toHaveLength(1);
+    });
+  });
+
+  describe('change listener', () => {
+    it('clears an earlier load failure when a list arrives', () => {
+      useGroupProjectStore.setState({ projects: [], loaded: true, loadError: 'IPC failed' });
+      initGroupProjectListener();
+      const deliver = (mockOnChanged.mock.calls.at(-1) as unknown as [(projects: unknown) => void])[0];
+      deliver([{ id: 'gp-1', name: 'Board' }]);
+      expect(useGroupProjectStore.getState()).toMatchObject({ loaded: true, loadError: null, projects: [{ id: 'gp-1', name: 'Board' }] });
     });
   });
 });

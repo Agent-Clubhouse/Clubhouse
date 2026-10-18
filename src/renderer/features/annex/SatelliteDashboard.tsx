@@ -19,7 +19,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { EmptyState } from '../../components/EmptyState';
 import { AgentAvatar } from '../agents/AgentAvatar';
-import { STATUS_RING_COLORS as STATUS_RING_COLOR } from '../agents/status-colors';
+import { agentDot, DOT_LABEL, StatusDot, statusCounts, STATUS_TONE, statusRingColor, statusText } from '../agents/agent-status';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -55,14 +55,10 @@ function RemoteAgentRow({ agent, satelliteId, detailedStatus, iconDataUrl, navig
   const sendAgentKill = useAnnexClientStore((s) => s.sendAgentKill);
   const sendAgentWake = useAnnexClientStore((s) => s.sendAgentWake);
 
-  const isWorking = agent.status === 'running' && detailedStatus?.state === 'working';
-  const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
-  const ringColor = agent.status === 'running' && detailedStatus?.state === 'needs_permission' ? STATUS_RING_COLOR.needs_permission
-    : agent.status === 'running' && detailedStatus?.state === 'tool_error' ? STATUS_RING_COLOR.tool_error
-    : baseRingColor;
+  const isWorking = agentDot(agent, detailedStatus) === 'working';
+  const ringColor = statusRingColor(agent, detailedStatus);
 
-  const hasDetailed = agent.status === 'running' && detailedStatus;
-  const statusLabel = hasDetailed ? detailedStatus.message : agent.status.charAt(0).toUpperCase() + agent.status.slice(1);
+  const statusLabel = statusText(agent, detailedStatus);
 
   // Extract the original (non-namespaced) agent ID for annex operations
   const parsed = parseNamespacedId(agent.id);
@@ -101,11 +97,7 @@ function RemoteAgentRow({ agent, satelliteId, detailedStatus, iconDataUrl, navig
 
       <span
         className={`text-xs truncate flex-shrink-0 ${
-          hasDetailed && detailedStatus.state === 'needs_permission'
-            ? 'text-orange-400'
-            : hasDetailed && detailedStatus.state === 'tool_error'
-              ? 'text-ctp-error'
-              : 'text-ctp-subtext0'
+          STATUS_TONE[agentDot(agent, detailedStatus)]
         }`}
       >
         {statusLabel}
@@ -143,23 +135,7 @@ function RemoteProjectCard({ project, agents, satelliteId, agentIcons, detailedS
 }) {
   const iconDataUrl = useRemoteProjectStore((s) => s.remoteProjectIcons[project.id]);
 
-  const statusDots = useMemo(() => {
-    let working = 0, idle = 0, sleeping = 0, errored = 0;
-    for (const a of agents) {
-      if (a.status === 'running') {
-        const d = detailedStatuses[a.id];
-        if (d?.state === 'working') working++;
-        else idle++;
-      } else if (a.status === 'sleeping') sleeping++;
-      else if (a.status === 'error') errored++;
-    }
-    const dots: { color: string; pulse: boolean; label: string; count: number }[] = [];
-    if (working > 0) dots.push({ color: 'bg-ctp-success', pulse: true, label: 'working', count: working });
-    if (idle > 0) dots.push({ color: 'bg-blue-400', pulse: false, label: 'idle', count: idle });
-    if (errored > 0) dots.push({ color: 'bg-ctp-error', pulse: false, label: 'error', count: errored });
-    if (sleeping > 0) dots.push({ color: 'bg-ctp-subtext0/50', pulse: false, label: 'sleeping', count: sleeping });
-    return dots;
-  }, [agents, detailedStatuses]);
+  const statusDots = useMemo(() => statusCounts(agents, detailedStatuses), [agents, detailedStatuses]);
 
   return (
     <div
@@ -193,11 +169,11 @@ function RemoteProjectCard({ project, agents, satelliteId, agentIcons, detailedS
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {statusDots.map((d) => (
             <span
-              key={d.label}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-0 text-xs text-ctp-subtext1"
-              title={`${d.count} ${d.label}`}
+              key={d.dot}
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-0 text-xs text-ctp-subtext1"
+              title={`${d.count} ${DOT_LABEL[d.dot]}`}
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${d.color} ${d.pulse ? 'animate-pulse' : ''}`} />
+              <StatusDot dot={d.dot} />
               {d.count}
             </span>
           ))}
@@ -249,8 +225,9 @@ function SatelliteStats({ projects, agents, detailedStatuses }: {
     for (const a of agents) {
       if (a.status === 'running') {
         const d = detailedStatuses[a.id];
-        if (d?.state === 'working') working++;
-        if (d?.state === 'needs_permission' || d?.state === 'tool_error') attention++;
+        const dot = agentDot(a, d);
+        if (dot === 'working') working++;
+        if (dot === 'needs' || dot === 'error') attention++;
       }
       if (a.status === 'error') attention++;
     }

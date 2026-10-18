@@ -6,8 +6,9 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { getOrchestratorLabel, formatModelLabel } from '../../features/agents/orchestrator-colors';
 import type { ActionDef } from '../../features/agents/useAgentRowActions';
 import { relativeTo } from '../scope';
-import { StatusDot } from './AgentRow';
+import { DOT_LABEL, StatusDot } from '../../features/agents/agent-status';
 import type { AgentDot } from './treeModel';
+import { Tooltip } from '../../components/Tooltip';
 
 /**
  * The agent hover card (docs/chrome-redesign-spec.md §2, §4.2): the details the
@@ -15,9 +16,6 @@ import type { AgentDot } from './treeModel';
  * short hover or keyboard focus on a row and closes on Esc or leaving.
  */
 
-const DOT_TEXT: Record<AgentDot, string> = {
-  working: 'Working', idle: 'Idle', needs: 'Needs you', error: 'Error', sleeping: 'Sleeping', starting: 'Starting',
-};
 
 export function formatDuration(ms: number): string {
   const min = Math.floor(ms / 60_000);
@@ -78,7 +76,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
         <StatusDot dot={dot} />
         <span className="text-[13px] font-medium text-ctp-text truncate">{agent.name}</span>
         <span className="ml-auto flex-shrink-0 text-ctp-overlay1">
-          {DOT_TEXT[dot]}{running ? ` for ${formatDuration(Date.now() - spawnedAt)}` : ''}
+          {DOT_LABEL[dot]}{running && dot !== 'idle' ? ` for ${formatDuration(Date.now() - spawnedAt)}` : ''}
         </span>
       </div>
       {(detailed?.message || agent.errorMessage) && (
@@ -91,7 +89,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
           {getOrchestratorLabel(agent.orchestrator || 'claude-code', allOrchestrators)}, {formatModelLabel(agent.model)}
         </Row>
         {agent.branch && <Row label="Branch"><span className="font-mono">{agent.branch}</span></Row>}
-        {worktree && <Row label="Worktree"><span className="font-mono" title={agent.worktreePath}>{worktree}</span></Row>}
+        {worktree && <Row label="Worktree"><Tooltip content={agent.worktreePath} disabled={worktree === agent.worktreePath}><span className="font-mono">{worktree}</span></Tooltip></Row>}
         {agent.mcpIds && agent.mcpIds.length > 0 && <Row label="MCP">{agent.mcpIds.join(', ')}</Row>}
         {agent.freeAgentMode && <Row label="Permissions"><span className="text-ctp-error">Free Agent Mode, all bypassed</span></Row>}
       </dl>

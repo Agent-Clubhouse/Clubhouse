@@ -5,6 +5,7 @@ import { disposeAllModels } from './MonacoEditor';
 import { FileTree } from './FileTree';
 import { FileViewer, clearFileCache } from './FileViewer';
 import { SearchPanel } from './SearchPanel';
+import { useFilesScope } from './filesScope';
 import { FileViewerCanvasWidget } from './FileViewerCanvasWidget';
 
 export function activate(ctx: PluginContext, api: PluginAPI): void {
@@ -101,8 +102,11 @@ export function deactivate(): void {
   clearFileCache();
 }
 
-function SidebarWrapper({ api }: { api: PluginAPI }) {
+function SidebarWrapper({ api: rawApi }: { api: PluginAPI }) {
   const [searchMode, setSearchMode] = useState(fileState.searchMode);
+  // One API pointed at the scope's cwd, shared by the tree and search, so a
+  // search result's path means the same file the tree and the viewer open.
+  const { api, root, key } = useFilesScope(rawApi);
 
   useEffect(() => {
     return fileState.subscribe(() => {
@@ -113,7 +117,7 @@ function SidebarWrapper({ api }: { api: PluginAPI }) {
   if (searchMode) {
     return React.createElement(SearchPanel, { api });
   }
-  return React.createElement(FileTree, { api });
+  return React.createElement(FileTree, { api, scopeRoot: root, scopeKey: key });
 }
 
 export const SidebarPanel = SidebarWrapper;

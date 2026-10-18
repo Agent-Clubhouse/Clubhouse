@@ -51,3 +51,37 @@ describe('ResumeBanner', () => {
     expect(onDismiss).toHaveBeenCalled();
   });
 });
+
+describe('ResumeBanner card variant (new chrome)', () => {
+  it('lists sessions with a dot and one status word, and resumes manual ones', () => {
+    const onManualResume = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <ResumeBanner
+        variant="card"
+        sessions={[
+          { agentId: 'a', agentName: 'darling-gazelle', status: 'resumed' },
+          { agentId: 'b', agentName: 'mega-camel', status: 'failed', error: 'No session' },
+          { agentId: 'c', agentName: 'zesty-lynx', status: 'manual' },
+          { agentId: 'd', agentName: 'calm-heron', status: 'pending' },
+        ]}
+        onManualResume={onManualResume}
+        onDismiss={onDismiss}
+      />,
+    );
+    const card = screen.getByTestId('resume-banner');
+    expect(card).toHaveTextContent('Resuming 4 sessions');
+    expect(card).toHaveTextContent('Sleeping');
+    expect(card).not.toHaveTextContent('Waiting');
+    expect(card).toHaveTextContent('Done');
+    expect(card).toHaveTextContent('Error');
+    expect(card).toHaveTextContent('No session');
+    expect(card).toHaveTextContent('Needs you');
+    expect(card.textContent).not.toMatch(/[✓↻○▸✗⏱]/);
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    expect(onManualResume).toHaveBeenCalledWith('c');
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(onDismiss).toHaveBeenCalled();
+  });
+});
+

@@ -2,7 +2,7 @@ import { create, StoreApi, UseBoundStore } from 'zustand';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
 import { generateCanvasName } from '../../../../shared/name-generator';
 import { rendererLog } from '../../renderer-logger';
-import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, AgentCanvasView, ZoneCanvasView, Position, Size, Viewport } from './canvas-types';
+import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, AgentCanvasView, DeferredCanvasWire, ZoneCanvasView, Position, Size, Viewport } from './canvas-types';
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { generateZoneWireId, type ZoneWireDefinition } from './zone-wire-store';
@@ -33,6 +33,8 @@ import {
   generateCanvasId,
   recomputeZones,
 } from './canvas-operations';
+import { bindWireDefinition } from './wire-binding';
+import { pruneDeferredWires, resolveDeferredWires } from '../../../features/blueprints/blueprint-wire-plan';
 
 // ── Store state ──────────────────────────────────────────────────────
 
@@ -250,6 +252,67 @@ function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): P
   };
 }
 
+/**
+ * After a view update on the active canvas, create any deferred wires whose
+ * ends are now bound (a stub card got an agent, a group-project widget got a
+ * project) in the same state update, and keep the rest deferred (#2069).
+ */
+function resolveDeferredOnActive(state: CanvasState, update: Partial<CanvasState>): Partial<CanvasState> {
+  const canvases = update.canvases ?? state.canvases;
+  const active = canvases.find((c) => c.id === state.activeCanvasId);
+  if (!active?.deferredWires?.length) return update;
+  const { create, deferred } = resolveDeferredWires(active.deferredWires, active.views);
+  if (create.length === 0 && deferred.length === active.deferredWires.length) return update;
+  const nextCanvases = canvases.map((c) => (c.id === active.id ? { ...c, deferredWires: deferred.length ? deferred : undefined } : c));
+  // Same de-duplication as addWireDefinition.
+  const keys = new Set(state.wireDefinitions.map((w) => `${w.agentId}\0${w.targetId}`));
+  const added = create.filter((w) => {
+    const key = `${w.agentId}\0${w.targetId}`;
+    if (keys.has(key)) return false;
+    keys.add(key);
+    return true;
+  });
+  return {
+    ...update,
+    canvases: nextCanvases,
+    ...(added.length ? { wireDefinitions: [...state.wireDefinitions, ...added] } : {}),
+  };
+}
+
+/** A stored blueprint wire: string refs, and optional fields of the right shape. */
+function isWellFormedWire(wire: unknown): boolean {
+  if (!wire || typeof wire !== 'object') return false;
+  const w = wire as Record<string, unknown>;
+  if (typeof w.sourceRef !== 'string' || typeof w.targetRef !== 'string') return false;
+  if (w.bidirectional !== undefined && typeof w.bidirectional !== 'boolean') return false;
+  if (w.disabledTools !== undefined && !(Array.isArray(w.disabledTools) && w.disabledTools.every((t) => typeof t === 'string'))) return false;
+  if (w.instructions !== undefined) {
+    if (!w.instructions || typeof w.instructions !== 'object' || Array.isArray(w.instructions)) return false;
+    if (!Object.values(w.instructions).every((v) => typeof v === 'string')) return false;
+  }
+  return true;
+}
+
+/** Deferred wires from storage or a satellite: well-formed entries whose views still exist (#2069). */
+function normalizeDeferredWires(
+  raw: unknown,
+  views: CanvasView[],
+  canvasId: string | undefined,
+  issues?: string[],
+): { deferredWires?: DeferredCanvasWire[] } {
+  if (raw === undefined) return {};
+  if (!Array.isArray(raw)) { issues?.push(`canvas ${canvasId}: deferredWires is not an array`); return {}; }
+  const viewIds = new Set(views.map((v) => v.id));
+  const kept = raw.filter((d): d is DeferredCanvasWire => {
+    const ok = !!d && typeof d === 'object'
+      && typeof d.sourceViewId === 'string' && typeof d.targetViewId === 'string'
+      && isWellFormedWire(d.wire);
+    if (!ok) issues?.push(`canvas ${canvasId}: dropped malformed deferred wire`);
+    return ok && viewIds.has(d.sourceViewId) && viewIds.has(d.targetViewId);
+  });
+  return kept.length ? { deferredWires: kept } : {};
+}
+
 function normalizeCanvasInstance(
   raw: unknown,
   /** `issues` collects a note for every record dropped or reset while
@@ -300,6 +363,7 @@ function normalizeCanvasInstance(
       elkAlgorithm: options.existing?.elkAlgorithm ?? s.elkAlgorithm ?? 'layered',
       elkDirection: options.existing?.elkDirection ?? s.elkDirection ?? 'RIGHT',
       layoutCenterId: options.existing?.layoutCenterId ?? s.layoutCenterId ?? null,
+      ...normalizeDeferredWires(s.deferredWires, restoredViews, s.id, options.issues),
     };
   } catch (err) {
     options.issues?.push(`canvas ${s?.id}: ${errorMessage(err)}`);
@@ -381,7 +445,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         // bindings at runtime (no MCP state of their own), so they belong with
         // the canvas data rather than the MCP wire restore.
         let loadedZoneWires: ZoneWireDefinition[] = [];
-        _zoneWiresPersistBlocked = false;
+        // The guards re-open only with the set() that swaps in this data: until
+        // then the store may still hold a satellite's canvas (hydrateFromRemote),
+        // and an autosave during a slow load must not write it here.
+        let nextZoneWiresBlocked = false;
+        let nextPersist: 'blocked' | 'verify-empty' | 'snapshot-first' | 'ok' = 'blocked';
         try {
           const savedZoneWires = await readWithRetry(storage, STORAGE_KEY_ZONE_WIRES) as ZoneWireDefinition[] | null;
           if (savedZoneWires && Array.isArray(savedZoneWires)) {
@@ -391,7 +459,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           }
         } catch (err) {
           // Unreadable — don't let saveCanvas persist the empty list over it.
-          _zoneWiresPersistBlocked = true;
+          nextZoneWiresBlocked = true;
           rendererLog('canvas', 'error', 'Zone wires unreadable — zone wire saves disabled for this session', {
             meta: { error: errorMessage(err) },
           });
@@ -434,11 +502,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         let canvases: CanvasInstance[];
         if (chosen.status === 'ok') {
           canvases = chosen.canvases;
-          _canvasPersist = 'ok';
+          nextPersist = 'ok';
           if (loadResult !== 'recovered_from_backup') loadResult = 'ok';
         } else if (chosen.status === 'missing') {
           canvases = [createCanvasInstance()];
-          _canvasPersist = 'verify-empty';
+          nextPersist = 'verify-empty';
           loadResult = 'new';
         } else if (chosen.status === 'unreadable') {
           throw chosen.error; // unreachable — handled above
@@ -447,7 +515,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           // the raw data before the first save rewrites primary and backup.
           canvases = chosen.status === 'degraded' ? chosen.canvases : [createCanvasInstance()];
           _recoverySnapshot = chosen.raw;
-          _canvasPersist = 'snapshot-first';
+          nextPersist = 'snapshot-first';
           loadResult = 'degraded';
           persist.recovery('canvas', 'records_dropped');
           rendererLog('canvas', 'warn', 'Canvas data had malformed records — loaded what was valid', {
@@ -469,6 +537,8 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           ? savedActive
           : canvases[0].id;
 
+        _canvasPersist = nextPersist;
+        _zoneWiresPersistBlocked = nextZoneWiresBlocked;
         set({ canvases, activeCanvasId, zoneWireDefinitions: loadedZoneWires, loaded: true, loadError: null, ...syncDerivedState(canvases, activeCanvasId) });
         span.set(
           ATTR.canvasCount(canvases.length),
@@ -515,16 +585,29 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           await get().loadCanvas(storage);
           return;
         }
+        // The guard may have closed while we read (hydrateFromRemote); keep it closed.
+        if (_canvasPersist !== 'verify-empty') return;
         _canvasPersist = 'ok';
       }
       if (_canvasPersist === 'snapshot-first') {
         // If this write fails we stay in 'snapshot-first' and retry next save.
         await storage.write(`${STORAGE_KEY_INSTANCES_RECOVERY_PREFIX}${Date.now()}`, _recoverySnapshot);
+        if (_canvasPersist !== 'snapshot-first') return;
         _recoverySnapshot = undefined;
         _canvasPersist = 'ok';
       }
+      if (_canvasPersist !== 'ok') return;
 
-      const { canvases, activeCanvasId } = get();
+      // Capture everything before the first await: the store can switch to a
+      // satellite's canvas while these writes are in flight.
+      const { canvases, activeCanvasId, zoneWireDefinitions } = get();
+      const zoneWiresBlocked = _zoneWiresPersistBlocked;
+      const zoneData = zoneWireDefinitions.map((w) => ({
+        id: w.id,
+        sourceZoneId: w.sourceZoneId,
+        targetId: w.targetId,
+        targetType: w.targetType,
+      }));
       const data: CanvasInstanceData[] = canvases.map((c) => ({
         id: c.id,
         name: c.name,
@@ -535,6 +618,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         elkAlgorithm: c.elkAlgorithm,
         elkDirection: c.elkDirection,
         layoutCenterId: c.layoutCenterId,
+        ...(c.deferredWires?.length ? { deferredWires: c.deferredWires } : {}),
       }));
       // Ordered double-write for crash recovery. Write the backup FIRST, then
       // the primary. A crash can tear at most one of the two files, so the
@@ -548,13 +632,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
       // Persist zone wire definitions — the canvas-owned source of truth for
       // zone-level wires. They survive reload and feed the annex snapshot.
-      if (_zoneWiresPersistBlocked) return;
-      const zoneData = get().zoneWireDefinitions.map((w) => ({
-        id: w.id,
-        sourceZoneId: w.sourceZoneId,
-        targetId: w.targetId,
-        targetType: w.targetType,
-      }));
+      if (zoneWiresBlocked) return;
       await storage.write(STORAGE_KEY_ZONE_WIRES, zoneData);
     },
 
@@ -575,9 +653,12 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           set({ wiresLoaded: true });
           return;
         }
-        _wiresPersistBlocked = false;
+        // Re-open the guard only with the set() that swaps in local wires: the
+        // store may still hold a satellite's (hydrateFromRemote), and they must
+        // never be saved here. No local wires means none, not the satellite's.
         if (!saved || !Array.isArray(saved) || saved.length === 0) {
-          set({ wiresLoaded: true });
+          _wiresPersistBlocked = false;
+          set({ wireDefinitions: [], wiresLoaded: true });
           return;
         }
 
@@ -618,27 +699,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           }
           restoredDefinitions.push(entry);
           try {
-            await window.clubhouse.mcpBinding.bind(entry.agentId, {
-              targetId: entry.targetId,
-              targetKind: entry.targetKind,
-              label: entry.label,
-              agentName: entry.agentName,
-              targetName: entry.targetName,
-              projectName: entry.projectName,
-            });
-            // Restore instructions if present
-            if (entry.instructions && Object.keys(entry.instructions).length > 0) {
-              await window.clubhouse.mcpBinding.setInstructions(entry.agentId, entry.targetId, entry.instructions);
-            }
-            // Restore disabled tools if present
-            if (entry.disabledTools && entry.disabledTools.length > 0) {
-              await window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, entry.disabledTools);
-            }
+            await bindWireDefinition(entry);
           } catch {
             // Binding restore failed (e.g. MCP not enabled or agent sleeping) —
             // keep the wire definition so the wire remains visible and persisted
           }
         }
+        _wiresPersistBlocked = false;
         set({ wireDefinitions: restoredDefinitions, wiresLoaded: true });
       } catch (err) {
         // Restore failed part-way — keep whatever was persisted rather than
@@ -722,6 +789,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
     hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?, remoteZoneWireDefinitions?) => {
       if (!canvasData || !Array.isArray(canvasData) || canvasData.length === 0) return;
+      // From here the store holds a satellite's canvas, which must never be
+      // written to this machine's storage (the app canvas store is shared by
+      // the local and remote views). The next loadCanvas/loadWires from local
+      // storage re-opens the guards.
+      _canvasPersist = 'blocked';
+      _wiresPersistBlocked = true;
+      _zoneWiresPersistBlocked = true;
       const existingState = get();
       const existingCanvasMap = new Map(existingState.canvases.map((c) => [c.id, c]));
 
@@ -856,6 +930,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         selectedViewId: canvas.selectedViewId === viewId ? null : canvas.selectedViewId,
         // LB-M05: clear layoutCenterId if the removed view was the ELK layout center
         layoutCenterId: canvas.layoutCenterId === viewId ? null : canvas.layoutCenterId,
+        deferredWires: pruneDeferredWires(canvas.deferredWires, [viewId]),
       }));
 
       // LB-M07: remove orphaned wire definitions referencing the removed view
@@ -931,21 +1006,23 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     },
 
     updateView: (viewId, updates) => {
-      set(updateActiveCanvas(get(), (canvas) => ({
+      // Binding a stub card's agent may complete deferred wires.
+      set(resolveDeferredOnActive(get(), updateActiveCanvas(get(), (canvas) => ({
         views: canvas.views.map((v) =>
           v.id === viewId ? { ...v, ...updates } as CanvasView : v
         ),
-      })));
+      }))));
     },
 
     updateViewMetadata: (viewId, metadataUpdates) => {
-      set(updateActiveCanvas(get(), (canvas) => ({
+      // A group-project widget getting its project may complete deferred wires.
+      set(resolveDeferredOnActive(get(), updateActiveCanvas(get(), (canvas) => ({
         views: canvas.views.map((v) =>
           v.id === viewId
             ? { ...v, metadata: { ...v.metadata, ...metadataUpdates } } as CanvasView
             : v
         ),
-      })));
+      }))));
     },
 
     queryViews: (filter?) => {
@@ -969,6 +1046,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         return {
           views: recomputeZones(views),
           selectedViewId: canvas.selectedViewId === zoneId ? null : canvas.selectedViewId,
+          deferredWires: pruneDeferredWires(canvas.deferredWires, removeContents ? [zoneId, ...zone.containedViewIds] : [zoneId]),
         };
       });
 

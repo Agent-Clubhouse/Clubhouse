@@ -1,3 +1,4 @@
+import { isNewChromeEnabled } from './chromeFlag';
 import { ReactNode, useCallback, useMemo, useState } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId, type PluginMatchResult } from '../stores/remoteProjectStore';
@@ -164,6 +165,8 @@ export function useProjectTabs() {
         if (entry.manifest.scope !== 'project' && entry.manifest.scope !== 'dual') return false;
         if (entry.status !== 'activated') return false;
         if (!entry.manifest.contributes?.tab) return false;
+        // The new layout reviews git from an agent's Changes view and the project page (#2032).
+        if (entry.manifest.id === 'git' && isNewChromeEnabled()) return false;
         // Dual-scope plugins must also be enabled at app level (app-first gate)
         if (entry.manifest.scope === 'dual' && !appEnabled.includes(entry.manifest.id)) return false;
         return true;

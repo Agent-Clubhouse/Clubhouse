@@ -1,7 +1,7 @@
 import type { Agent } from '../../../shared/types';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
 import type { NeedsAttentionItem } from './treeModel';
-import { StatusDot } from './AgentRow';
+import { StatusDot } from '../../features/agents/agent-status';
 
 /**
  * Pinned list of agents waiting on the user (docs/chrome-redesign-spec.md §2).
@@ -74,7 +74,6 @@ export function NeedsYouStrip({ items, onSelect, onReview }: {
         type="button"
         onClick={() => onSelect(items[0].agent)}
         className="min-w-0 flex-1 h-full flex items-center gap-2 text-left cursor-pointer"
-        title={`${items.length} waiting on you`}
       >
         <StatusDot dot="needs" />
         <span className="flex items-center">

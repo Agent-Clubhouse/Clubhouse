@@ -49,20 +49,20 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('always-visible state', () => {
     it('renders the Default Agent Settings header', async () => {
       renderSection();
-      expect(await screen.findByText('Default Agent Settings')).toBeInTheDocument();
+      expect(await screen.findByText('Default agent settings')).toBeInTheDocument();
     });
 
     it('shows form fields without needing to expand', async () => {
       renderSection();
-      expect(await screen.findByText('Default Instructions')).toBeInTheDocument();
-      expect(screen.getByText('Default Permissions')).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: 'Default instructions' })).toBeInTheDocument();
+      expect(screen.getByText('Default permissions')).toBeInTheDocument();
       expect(screen.getByText('Default .mcp.json')).toBeInTheDocument();
-      expect(screen.getByText('Free Agent Mode by default')).toBeInTheDocument();
+      expect(screen.getByText('Free agent mode by default')).toBeInTheDocument();
     });
 
     it('shows Save button always', async () => {
       renderSection();
-      expect(await screen.findByText('Save Defaults')).toBeInTheDocument();
+      expect(await screen.findByText('Save defaults')).toBeInTheDocument();
     });
 
     it('shows Skills section', async () => {
@@ -72,7 +72,7 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('shows Agent Definitions section', async () => {
       renderSection();
-      expect(await screen.findByText('Agent Definitions')).toBeInTheDocument();
+      expect(await screen.findByText('Agent definitions')).toBeInTheDocument();
     });
   });
 
@@ -84,9 +84,9 @@ describe('ProjectAgentDefaultsSection', () => {
       });
     });
 
-    it('Save Defaults is disabled when not dirty', async () => {
+    it('Save defaults is disabled when not dirty', async () => {
       renderSection();
-      const btn = await screen.findByText('Save Defaults');
+      const btn = await screen.findByText('Save defaults');
       expect(btn).toBeDisabled();
     });
   });
@@ -94,22 +94,22 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('editing and saving', () => {
     it('enables Save when instructions change', async () => {
       renderSection();
-      await screen.findByText('Default Instructions');
+      await screen.findByRole('heading', { name: 'Default instructions' });
 
       const textarea = screen.getByDisplayValue('Default instructions');
       fireEvent.change(textarea, { target: { value: 'Updated instructions' } });
 
-      expect(screen.getByText('Save Defaults')).not.toBeDisabled();
+      expect(screen.getByText('Save defaults')).not.toBeDisabled();
     });
 
     it('saves all fields on Save click', async () => {
       renderSection();
-      await screen.findByText('Default Instructions');
+      await screen.findByRole('heading', { name: 'Default instructions' });
 
       // Modify instructions to enable save
       const textarea = screen.getByDisplayValue('Default instructions');
       fireEvent.change(textarea, { target: { value: 'Updated instructions' } });
-      fireEvent.click(screen.getByText('Save Defaults'));
+      fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
         expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
@@ -126,10 +126,12 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('free agent mode', () => {
     it('shows warning when free agent mode is enabled', async () => {
       renderSection();
-      await screen.findByText('Free Agent Mode by default');
+      await screen.findByText('Free agent mode by default');
 
-      const checkbox = screen.getByRole('checkbox');
-      fireEvent.click(checkbox);
+      const toggle = screen.getByRole('switch', { name: 'Free agent mode by default' });
+      expect(toggle).toHaveAttribute('aria-checked', 'false');
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute('aria-checked', 'true');
 
       expect(await screen.findByText(/skip all permission prompts/)).toBeInTheDocument();
     });
@@ -143,7 +145,7 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('shows clubhouse mode active banner when on', async () => {
       renderSection({ clubhouseMode: true });
-      expect(await screen.findByText(/Clubhouse Mode active/)).toBeInTheDocument();
+      expect(await screen.findByText(/Clubhouse Mode is on/)).toBeInTheDocument();
       expect(screen.getByText('@@AgentName')).toBeInTheDocument();
       expect(screen.getByText('@@StandbyBranch')).toBeInTheDocument();
       expect(screen.getByText('@@Path')).toBeInTheDocument();
@@ -151,7 +153,7 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('lists @@Mission and @@Persona in the active banner', async () => {
       renderSection({ clubhouseMode: true });
-      await screen.findByText(/Clubhouse Mode active/);
+      await screen.findByText(/Clubhouse Mode is on/);
       // Both tokens are mentioned in the banner *and* in helper text under
       // their respective inputs — just assert presence.
       expect(screen.getAllByText('@@Mission').length).toBeGreaterThanOrEqual(1);
@@ -160,7 +162,7 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('references the self-edit guide path when clubhouse mode is on', async () => {
       renderSection({ clubhouseMode: true });
-      await screen.findByText(/Clubhouse Mode active/);
+      await screen.findByText(/Clubhouse Mode is on/);
       // Referenced in the banner and again in the persona helper text.
       expect(screen.getAllByText('.clubhouse/clubhouse-mode.md').length).toBeGreaterThanOrEqual(1);
     });
@@ -169,7 +171,7 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('default mission', () => {
     it('renders the Default Mission input', async () => {
       renderSection();
-      expect(await screen.findByText('Default Mission')).toBeInTheDocument();
+      expect(await screen.findByText('Default mission')).toBeInTheDocument();
     });
 
     it('loads a saved mission value', async () => {
@@ -197,7 +199,7 @@ describe('ProjectAgentDefaultsSection', () => {
       renderSection();
       const input = await screen.findByPlaceholderText('implement-and-ship');
       fireEvent.change(input, { target: { value: 'my-mission' } });
-      fireEvent.click(screen.getByText('Save Defaults'));
+      fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
         const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
@@ -207,11 +209,11 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('omits mission when left blank', async () => {
       renderSection();
-      await screen.findByText('Default Mission');
+      await screen.findByText('Default mission');
       // Trigger dirty without setting mission
       const textarea = screen.getByDisplayValue('Default instructions');
       fireEvent.change(textarea, { target: { value: 'Updated' } });
-      fireEvent.click(screen.getByText('Save Defaults'));
+      fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
         const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
@@ -223,7 +225,7 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('default persona', () => {
     it('renders the Default Persona dropdown', async () => {
       renderSection();
-      expect(await screen.findByText('Default Persona')).toBeInTheDocument();
+      expect(await screen.findByText('Default persona')).toBeInTheDocument();
     });
 
     it('loads a saved persona value', async () => {
@@ -249,10 +251,10 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('saves persona when set', async () => {
       renderSection();
-      await screen.findByText('Default Persona');
+      await screen.findByText('Default persona');
       const select = screen.getByDisplayValue('None') as HTMLSelectElement;
       fireEvent.change(select, { target: { value: 'qa' } });
-      fireEvent.click(screen.getByText('Save Defaults'));
+      fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
         const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
@@ -262,11 +264,11 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('omits persona when left as None', async () => {
       renderSection();
-      await screen.findByText('Default Persona');
+      await screen.findByText('Default persona');
       // Trigger dirty without changing persona
       const textarea = screen.getByDisplayValue('Default instructions');
       fireEvent.change(textarea, { target: { value: 'Updated' } });
-      fireEvent.click(screen.getByText('Save Defaults'));
+      fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
         const call = vi.mocked(window.clubhouse.agentSettings.writeProjectAgentDefaults).mock.calls[0];
@@ -278,12 +280,12 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('source control provider', () => {
     it('renders the source control provider dropdown', async () => {
       renderSection();
-      expect(await screen.findByText('Source Control Provider')).toBeInTheDocument();
+      expect(await screen.findByText('Source control provider')).toBeInTheDocument();
     });
 
     it('defaults to GitHub', async () => {
       renderSection();
-      await screen.findByText('Source Control Provider');
+      await screen.findByText('Source control provider');
 
       const select = screen.getByDisplayValue('GitHub (gh CLI)');
       expect(select).toBeInTheDocument();
@@ -312,21 +314,21 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('marks dirty when provider changes', async () => {
       renderSection();
-      await screen.findByText('Source Control Provider');
+      await screen.findByText('Source control provider');
 
       const select = screen.getByDisplayValue('GitHub (gh CLI)');
       fireEvent.change(select, { target: { value: 'azure-devops' } });
 
-      expect(screen.getByText('Save Defaults')).not.toBeDisabled();
+      expect(screen.getByText('Save defaults')).not.toBeDisabled();
     });
 
     it('saves sourceControlProvider when non-default', async () => {
       renderSection();
-      await screen.findByText('Source Control Provider');
+      await screen.findByText('Source control provider');
 
       const select = screen.getByDisplayValue('GitHub (gh CLI)');
       fireEvent.change(select, { target: { value: 'azure-devops' } });
-      fireEvent.click(screen.getByText('Save Defaults'));
+      fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
         expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
@@ -340,12 +342,12 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('omits sourceControlProvider when set to github (default)', async () => {
       renderSection();
-      await screen.findByText('Default Instructions');
+      await screen.findByRole('heading', { name: 'Default instructions' });
 
       // Change instructions to enable save
       const textarea = screen.getByDisplayValue('Default instructions');
       fireEvent.change(textarea, { target: { value: 'Changed' } });
-      fireEvent.click(screen.getByText('Save Defaults'));
+      fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
         const call = (window.clubhouse.agentSettings.writeProjectAgentDefaults as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -357,7 +359,7 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('command prefix', () => {
     it('renders the Command Prefix input', async () => {
       renderSection();
-      expect(await screen.findByText('Command Prefix')).toBeInTheDocument();
+      expect(await screen.findByText('Command prefix')).toBeInTheDocument();
     });
 
     it('loads and displays existing command prefix', async () => {
@@ -382,21 +384,21 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('marks dirty when command prefix changes', async () => {
       renderSection();
-      await screen.findByText('Command Prefix');
+      await screen.findByText('Command prefix');
 
       const input = screen.getByPlaceholderText('. ./init.sh');
       fireEvent.change(input, { target: { value: '. ./setup.sh' } });
 
-      expect(screen.getByText('Save Defaults')).not.toBeDisabled();
+      expect(screen.getByText('Save defaults')).not.toBeDisabled();
     });
 
     it('saves commandPrefix when set', async () => {
       renderSection();
-      await screen.findByText('Command Prefix');
+      await screen.findByText('Command prefix');
 
       const input = screen.getByPlaceholderText('. ./init.sh');
       fireEvent.change(input, { target: { value: '. ./setup.sh' } });
-      fireEvent.click(screen.getByText('Save Defaults'));
+      fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
         expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
@@ -410,12 +412,12 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('omits commandPrefix when empty', async () => {
       renderSection();
-      await screen.findByText('Default Instructions');
+      await screen.findByRole('heading', { name: 'Default instructions' });
 
       // Change instructions to enable save
       const textarea = screen.getByDisplayValue('Default instructions');
       fireEvent.change(textarea, { target: { value: 'Changed' } });
-      fireEvent.click(screen.getByText('Save Defaults'));
+      fireEvent.click(screen.getByText('Save defaults'));
 
       await waitFor(() => {
         const call = (window.clubhouse.agentSettings.writeProjectAgentDefaults as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -425,23 +427,23 @@ describe('ProjectAgentDefaultsSection', () => {
   });
 
   describe('reset to defaults', () => {
-    it('renders the Reset to Defaults button', async () => {
+    it('renders the Reset to defaults button', async () => {
       renderSection();
-      expect(await screen.findByText('Reset to Defaults')).toBeInTheDocument();
+      expect(await screen.findByText('Reset to defaults')).toBeInTheDocument();
     });
 
     it('shows confirmation dialog on click', async () => {
       renderSection();
-      fireEvent.click(await screen.findByText('Reset to Defaults'));
-      expect(screen.getByText('Reset to Defaults?')).toBeInTheDocument();
-      expect(screen.getByText(/replace all project-level agent default settings/)).toBeInTheDocument();
+      fireEvent.click(await screen.findByText('Reset to defaults'));
+      expect(screen.getByText('Reset to defaults?')).toBeInTheDocument();
+      expect(screen.getByText(/replaces every project-level agent default/)).toBeInTheDocument();
     });
 
     it('cancels confirmation dialog', async () => {
       renderSection();
-      fireEvent.click(await screen.findByText('Reset to Defaults'));
+      fireEvent.click(await screen.findByText('Reset to defaults'));
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      expect(screen.queryByText('Reset to Defaults?')).not.toBeInTheDocument();
+      expect(screen.queryByText('Reset to defaults?')).not.toBeInTheDocument();
     });
 
     it('calls resetProjectAgentDefaults and reloads on confirm', async () => {
@@ -469,8 +471,8 @@ describe('ProjectAgentDefaultsSection', () => {
       });
 
       renderSection();
-      await screen.findByText('Default Agent Settings');
-      fireEvent.click(screen.getByText('Reset to Defaults'));
+      await screen.findByText('Default agent settings');
+      fireEvent.click(screen.getByText('Reset to defaults'));
       fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
 
       await waitFor(() => {
@@ -495,7 +497,7 @@ describe('ProjectAgentDefaultsSection', () => {
       window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockRejectedValue(new Error('fail'));
       window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockRejectedValue(new Error('fail'));
       renderSection();
-      expect(await screen.findByText('Default Agent Settings')).toBeInTheDocument();
+      expect(await screen.findByText('Default agent settings')).toBeInTheDocument();
     });
   });
 });

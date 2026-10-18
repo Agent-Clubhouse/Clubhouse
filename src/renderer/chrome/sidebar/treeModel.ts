@@ -1,4 +1,5 @@
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
+import { agentDot } from '../../features/agents/agent-status';
 
 /**
  * Pure helpers behind the sidebar tree (docs/chrome-redesign-spec.md §4.2).
@@ -6,17 +7,8 @@ import type { Agent, AgentDetailedStatus } from '../../../shared/types';
  * on their own.
  */
 
-/** What the status dot on a row shows. */
-export type AgentDot = 'working' | 'idle' | 'needs' | 'error' | 'sleeping' | 'starting';
-
-export function agentDot(agent: Agent, detailed: AgentDetailedStatus | undefined): AgentDot {
-  if (agent.status === 'error' || detailed?.state === 'tool_error') return 'error';
-  if (detailed?.state === 'needs_permission') return 'needs';
-  if (agent.status === 'sleeping') return 'sleeping';
-  if (agent.status === 'creating' || agent.status === 'spawning' || agent.status === 'waking') return 'starting';
-  if (detailed?.state === 'working') return 'working';
-  return 'idle';
-}
+/** What the status dot on a row shows; shared with every status surface (#2018). */
+export { agentDot, type AgentDot } from '../../features/agents/agent-status';
 
 export interface NeedsAttentionItem {
   agent: Agent;
@@ -138,4 +130,37 @@ export function projectRollup(agents: Agent[], detailed: Record<string, AgentDet
     else if (dot === 'needs' || dot === 'error') waiting++;
   }
   return { working, waiting };
+}
+
+export interface FilteredProject<P> {
+  project: P;
+  /** The project's own name matches. */
+  nameMatch: boolean;
+  /** Its agents whose names match, awake first, then quick, then sleeping. */
+  agents: Agent[];
+}
+
+/**
+ * The sidebar filter (#2031): projects whose name matches, and agents whose
+ * name matches, sleeping ones included, under their project. Case-insensitive
+ * substring, in tree order. `count` is matched projects plus matched agents.
+ */
+export function filterTree<P extends { id: string; name: string; displayName?: string }>(
+  query: string,
+  projects: P[],
+  agentsByProject: Record<string, Agent[]>,
+): { groups: FilteredProject<P>[]; count: number } {
+  const q = query.trim().toLowerCase();
+  const groups: FilteredProject<P>[] = [];
+  let count = 0;
+  if (!q) return { groups, count };
+  for (const project of projects) {
+    const nameMatch = (project.displayName || project.name).toLowerCase().includes(q);
+    const { durable, quick, sleeping } = groupProjectAgents(agentsByProject[project.id] ?? []);
+    const agents = [...durable, ...quick, ...sleeping].filter((a) => a.name.toLowerCase().includes(q));
+    if (!nameMatch && agents.length === 0) continue;
+    groups.push({ project, nameMatch, agents });
+    count += agents.length + (nameMatch ? 1 : 0);
+  }
+  return { groups, count };
 }

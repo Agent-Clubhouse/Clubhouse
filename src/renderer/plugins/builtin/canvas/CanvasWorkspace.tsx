@@ -11,7 +11,6 @@ import { useZoneContainment, getViewThemeOverride } from './zone-containment';
 import { CanvasViewComponent } from './CanvasView';
 import { CanvasControls } from './CanvasControls';
 import { CanvasContextMenu } from './CanvasContextMenu';
-import { MenuPortal } from './MenuPortal';
 import { CanvasAttentionIndicators } from './CanvasAttentionIndicators';
 import { useCanvasAttention, computeOffScreenIndicators } from './canvas-attention';
 import { WireOverlay } from './WireOverlay';
@@ -26,11 +25,11 @@ import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
 import { useProjectStore } from '../../../stores/projectStore';
-import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
+import type { PluginAPI } from '../../../../shared/plugin-types';
 import { useBlueprintDrop } from './useBlueprintDrop';
 import { getProjectCanvasStore, useAppCanvasStore } from './main';
-import { buildWireDefinitionsFromResult, type ParseResult } from '../../../features/blueprints/parse-blueprint';
-import { useAgentStore } from '../../../stores/agentStore';
+import { applyParsedBlueprint, type ParseResult } from '../../../features/blueprints/parse-blueprint';
+import { blueprintParseContext } from '../../../features/blueprints/blueprint-parse-context';
 import { useViewportControls } from './useViewportControls';
 import { useBatchedViewportChange } from './canvas-viewport-batching';
 import { useSelectionManager } from './useSelectionManager';
@@ -38,6 +37,25 @@ import { useZoneManager } from './useZoneManager';
 import { useCanvasContextMenu } from './useCanvasContextMenu';
 import { ZoomedViewOverlay } from './ZoomedViewOverlay';
 import { PinnedWidgetBar } from './PinnedWidgetBar';
+import { CANVAS_Z } from './canvas-chrome';
+import { PopupMenu } from '../../../components/PopupMenu';
+
+const LayoutCenterIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+const CenterIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <circle cx="12" cy="12" r="3" />
+    <line x1="12" y1="2" x2="12" y2="6" />
+    <line x1="12" y1="18" x2="12" y2="22" />
+    <line x1="2" y1="12" x2="6" y2="12" />
+    <line x1="18" y1="12" x2="22" y2="12" />
+  </svg>
+);
 
 interface CanvasWorkspaceProps {
   views: CanvasView[];
@@ -63,7 +81,7 @@ interface CanvasWorkspaceProps {
   onResizeView: (viewId: string, size: Size) => void;
   onFocusView: (viewId: string) => void;
   onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
-  onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
+  onCreateAgentCard?: (parentView: AgentCanvasViewType, agentId: string) => void;
   onZoomView: (viewId: string | null) => void;
   onSelectView: (viewId: string | null) => void;
   onToggleSelectView: (viewId: string) => void;
@@ -107,7 +125,7 @@ interface CanvasViewCardProps {
   onDragEnd: (viewId: string, position: Position) => void;
   onResizeEnd: (viewId: string, size: Size, position: Position) => void;
   onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
-  onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
+  onCreateAgentCard?: (parentView: AgentCanvasViewType, agentId: string) => void;
   onViewContextMenu: (viewId: string, event: React.MouseEvent) => void;
   isLayoutCenter: boolean;
 }
@@ -298,21 +316,19 @@ export function CanvasWorkspace({
 
   const handleBlueprintImport = useCallback((result: ParseResult) => {
     const store = projectId ? getProjectCanvasStore(projectId) : useAppCanvasStore;
-    store.getState().insertCanvas(result.canvas);
-    for (const wire of buildWireDefinitionsFromResult(result)) {
-      store.getState().addWireDefinition(wire);
-    }
+    // Same parse and wire plan as the gallery; only the store method differs.
+    // Returned so useBlueprintDrop reports a failure through onError.
+    return applyParsedBlueprint(result, {
+      insertCanvas: (canvas) => store.getState().insertCanvas(canvas),
+      addWireDefinition: (wire) => store.getState().addWireDefinition(wire),
+    });
   }, [projectId]);
 
   const handleBlueprintError = useCallback((message: string) => {
     setBlueprintError(message);
   }, []);
 
-  const getBlueprintParseContext = useCallback(() => ({
-    agents: Object.values(useAgentStore.getState().agents),
-    projects: useProjectStore.getState().projects.map((p) => ({ id: p.id, name: p.name, path: p.path })),
-    activeProjectId: projectId ?? undefined,
-  }), [projectId]);
+  const getBlueprintParseContext = useCallback(() => blueprintParseContext(projectId ?? undefined), [projectId]);
 
   const { isDragOver: isBlueprintDragOver } = useBlueprintDrop({
     containerRef,
@@ -468,13 +484,12 @@ export function CanvasWorkspace({
   const {
     contextMenu,
     viewContextMenu,
-    viewMenuRef,
     handleContextMenu,
     handleContextMenuAction,
     handleDismissContextMenu,
     handleViewContextMenu,
     handleSetLayoutCenter,
-    handleDismissViewContextMenu: _handleDismissViewContextMenu,
+    handleDismissViewContextMenu,
     handleCenterViewFromMenu,
   } = useCanvasContextMenu({
     viewport,
@@ -595,7 +610,9 @@ export function CanvasWorkspace({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full overflow-hidden select-none bg-ctp-crust focus:outline-none"
+      // `isolate` keeps every canvas layer (up to 100000) inside the pane, so
+      // body-level modals, menus and tooltips always sit above the board.
+      className="relative isolate w-full h-full overflow-hidden select-none bg-ctp-crust focus:outline-none"
       tabIndex={-1}
       style={dotGridStyle}
       onMouseDown={handleMouseDown}
@@ -717,7 +734,7 @@ export function CanvasWorkspace({
               top: Math.min(selectionRect.startY, selectionRect.currentY),
               width: Math.abs(selectionRect.currentX - selectionRect.startX),
               height: Math.abs(selectionRect.currentY - selectionRect.startY),
-              zIndex: 99998,
+              zIndex: CANVAS_Z.worldTop,
             }}
             data-testid="canvas-selection-rect"
           />
@@ -733,7 +750,7 @@ export function CanvasWorkspace({
           return (
             <div
               className="absolute pointer-events-none bg-ctp-accent text-ctp-base text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center"
-              style={{ left: badgeX, top: badgeY, zIndex: 99997 }}
+              style={{ left: badgeX, top: badgeY, zIndex: CANVAS_Z.worldBadge }}
               data-testid="canvas-multi-drag-badge"
             >
               {selectedViewIds.length}
@@ -745,7 +762,8 @@ export function CanvasWorkspace({
       {/* Satellite pause overlay */}
       {isAnySatellitePaused && (
         <div
-          className="absolute inset-0 z-[9998] flex items-center justify-center bg-ctp-crust/80 backdrop-blur-sm"
+          className="absolute inset-0 flex items-center justify-center bg-ctp-crust/80 backdrop-blur-sm"
+          style={{ zIndex: CANVAS_Z.paneOverlay }}
           data-testid="canvas-satellite-paused-overlay"
         >
           <div className="text-center">
@@ -764,7 +782,8 @@ export function CanvasWorkspace({
       {/* Blueprint drag-drop overlay */}
       {isBlueprintDragOver && (
         <div
-          className="absolute inset-0 z-[9997] flex items-center justify-center bg-ctp-accent/10 border-2 border-dashed border-ctp-accent/50 pointer-events-none"
+          className="absolute inset-0 flex items-center justify-center bg-ctp-accent/10 border-2 border-dashed border-ctp-accent/50 pointer-events-none"
+          style={{ zIndex: CANVAS_Z.blueprintDrop }}
           data-testid="canvas-blueprint-drop-overlay"
         >
           <div className="text-center">
@@ -870,44 +889,27 @@ export function CanvasWorkspace({
 
       {/* View context menu */}
       {viewContextMenu && (
-        <MenuPortal>
-          <div
-            ref={viewMenuRef}
-            className="fixed z-canvas-overlay min-w-[180px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1 backdrop-blur-none"
-            style={{ left: viewContextMenu.x, top: viewContextMenu.y }}
-            data-testid="view-context-menu"
-          >
-            <button
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
-              onClick={() => handleSetLayoutCenter(viewContextMenu.viewId)}
-              data-testid="view-context-menu-set-layout-center"
-            >
-              <span className="w-4 text-center text-ctp-overlay0">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              </span>
-              {layoutCenterId === viewContextMenu.viewId ? 'Remove as Layout Center' : 'Set as Layout Center'}
-            </button>
-            <button
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
-              onClick={() => handleCenterViewFromMenu(viewContextMenu.viewId, handleCenterView)}
-              data-testid="view-context-menu-center-view"
-            >
-              <span className="w-4 text-center text-ctp-overlay0">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="3" />
-                  <line x1="12" y1="2" x2="12" y2="6" />
-                  <line x1="12" y1="18" x2="12" y2="22" />
-                  <line x1="2" y1="12" x2="6" y2="12" />
-                  <line x1="18" y1="12" x2="22" y2="12" />
-                </svg>
-              </span>
-              Center in Viewport
-            </button>
-          </div>
-        </MenuPortal>
+        <PopupMenu
+          label="Card"
+          testId="view-context-menu"
+          position={{ x: viewContextMenu.x, y: viewContextMenu.y }}
+          minWidth={200}
+          onClose={handleDismissViewContextMenu}
+          items={[
+            {
+              id: 'set-layout-center',
+              label: layoutCenterId === viewContextMenu.viewId ? 'Remove as layout center' : 'Set as layout center',
+              icon: LayoutCenterIcon,
+              onSelect: () => handleSetLayoutCenter(viewContextMenu.viewId),
+            },
+            {
+              id: 'center-view',
+              label: 'Center in viewport',
+              icon: CenterIcon,
+              onSelect: () => handleCenterViewFromMenu(viewContextMenu.viewId, handleCenterView),
+            },
+          ]}
+        />
       )}
 
       {/* Wire config popover */}

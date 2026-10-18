@@ -1,4 +1,3 @@
-import React from 'react';
 import { useUIStore } from '../../stores/uiStore';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { PluginAPIProvider } from '../../plugins/plugin-context';
@@ -7,22 +6,99 @@ import { getActiveContext } from '../../plugins/plugin-loader';
 import { useProjectStore } from '../../stores/projectStore';
 import { PluginSettingsRenderer } from '../../plugins/plugin-settings-renderer';
 import { PluginErrorBoundary } from '../../panels/PluginContentView';
-import type { PluginPermission } from '../../../shared/plugin-types';
-import { PERMISSION_DESCRIPTIONS } from '../../../shared/plugin-types';
+import type { PluginPermission, PermissionRiskLevel, PluginRegistryEntry } from '../../../shared/plugin-types';
+import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
+import { Toggle } from '../../components/Toggle';
+import { SettingsPage, SettingsSection, settingsHelp } from './SettingsLayout';
+import { pluginMetaText, usePluginEnableToggle } from './PluginListSettings';
+import { PluginStatusLines } from './PluginStatusLines';
+
+const CROSS_PROJECT_PERMISSIONS: readonly PluginPermission[] = [
+  'agent-config.cross-project',
+  'workspace.cross-project',
+];
+
+/** Risk groups, most dangerous first. */
+const RISK_GROUPS: { level: PermissionRiskLevel; title: string; help: string; titleClass: string }[] = [
+  {
+    level: 'dangerous',
+    title: 'Can bypass safety',
+    help: 'Can skip permission prompts, change permission rules or reach other projects.',
+    titleClass: 'text-ctp-error',
+  },
+  {
+    level: 'elevated',
+    title: 'Can change things',
+    help: 'Writes files, runs terminals, processes and agents, or changes agent setup.',
+    titleClass: 'text-ctp-text',
+  },
+  {
+    level: 'safe',
+    title: 'Read only',
+    help: 'Reads state, or keeps to its own storage and UI.',
+    titleClass: 'text-ctp-text',
+  },
+];
+
+function describePermission(perm: PluginPermission, isAppScoped: boolean): string {
+  const base = PERMISSION_DESCRIPTIONS[perm] ?? 'Unknown permission';
+  const text = isAppScoped && CROSS_PROJECT_PERMISSIONS.includes(perm)
+    ? base.replace(/where the plugin is (?:also )?enabled/, 'across all projects, since the plugin is app-wide')
+    : base;
+  // Risk is shown by the group heading, so drop the "(elevated)" style suffix.
+  return text.replace(/ \([^)]*\)$/, '');
+}
+
+function PermissionGroups({ entry }: { entry: PluginRegistryEntry }) {
+  const permissions = entry.manifest.permissions ?? [];
+  if (permissions.length === 0) return null;
+
+  const isAppScoped = entry.manifest.scope === 'app';
+  const hasCrossProjectPerm = permissions.some((p) => CROSS_PROJECT_PERMISSIONS.includes(p));
+
+  return (
+    <SettingsSection title="Permissions" meta={String(permissions.length)}>
+      {isAppScoped && hasCrossProjectPerm && (
+        <p className={`${settingsHelp} mb-1`} data-testid="app-scope-cross-project-note">
+          This plugin works across the whole app, so its cross-project access does not need turning on in each project.
+        </p>
+      )}
+      {RISK_GROUPS.map((group) => {
+        const list = permissions.filter((p) => (PERMISSION_RISK_LEVELS[p] ?? 'safe') === group.level);
+        if (list.length === 0) return null;
+        return (
+          <div key={group.level} data-testid={`permission-group-${group.level}`}>
+            <div className="flex items-baseline gap-2 mt-4 mb-1">
+              <span className={`text-[13px] font-semibold ${group.titleClass}`}>{group.title}</span>
+              <span className="text-xs text-ctp-overlay1">{list.length} · {group.help}</span>
+            </div>
+            {list.map((perm) => (
+              <div key={perm} className="flex items-center gap-3 h-[30px] border-t border-surface-0">
+                <span className="w-[190px] flex-none truncate font-mono text-xs text-ctp-text">{perm}</span>
+                <span className="flex-1 min-w-0 truncate text-[12.5px] text-ctp-overlay1">
+                  {describePermission(perm, isAppScoped)}
+                </span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </SettingsSection>
+  );
+}
 
 export function PluginDetailSettings() {
   const pluginSettingsId = useUIStore((s) => s.pluginSettingsId);
-  const _setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
   const settingsContext = useUIStore((s) => s.settingsContext);
-  const closePluginSettings = useUIStore((s) => s.closePluginSettings);
   const plugins = usePluginStore((s) => s.plugins);
   const modules = usePluginStore((s) => s.modules);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const { isEnabled, toggle } = usePluginEnableToggle();
 
   if (!pluginSettingsId) {
     return (
-      <div className="h-full overflow-y-auto bg-ctp-base p-6">
-        <p className="text-ctp-subtext0">No plugin selected</p>
+      <div className="h-full overflow-y-auto bg-ctp-base px-10 pt-7">
+        <p className={settingsHelp}>No plugin selected</p>
       </div>
     );
   }
@@ -30,15 +106,11 @@ export function PluginDetailSettings() {
   const entry = plugins[pluginSettingsId];
   if (!entry) {
     return (
-      <div className="h-full overflow-y-auto bg-ctp-base p-6">
-        <p className="text-ctp-subtext0">Plugin not found</p>
+      <div className="h-full overflow-y-auto bg-ctp-base px-10 pt-7">
+        <p className={settingsHelp}>Plugin not found</p>
       </div>
     );
   }
-
-  const goBack = () => {
-    closePluginSettings();
-  };
 
   const mod = modules[pluginSettingsId];
   // For project-scoped plugins, always use the active project as the settings scope,
@@ -55,62 +127,33 @@ export function PluginDetailSettings() {
     || (!entry.manifest.settingsPanel && entry.manifest.contributes?.settings && entry.manifest.contributes.settings.length > 0);
   const isCustom = entry.manifest.settingsPanel === 'custom' && mod?.SettingsPanel;
 
+  const enabled = isEnabled(pluginSettingsId);
+  const meta = pluginMetaText(entry);
+  const apiVersion = entry.manifest.engine?.api;
+  const description = [meta, apiVersion !== undefined ? `Plugin API ${apiVersion}` : null, entry.manifest.description]
+    .filter(Boolean).join(' · ');
+
   return (
-    <div className="h-full overflow-y-auto bg-ctp-base p-6">
-      <div className="max-w-2xl">
-        {/* Back button */}
-        <button
-          onClick={goBack}
-          className="flex items-center gap-1.5 text-sm text-ctp-subtext0 hover:text-ctp-text mb-4 cursor-pointer"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-          Back to Plugins
-        </button>
+    <SettingsPage
+      title={entry.manifest.name}
+      description={<span data-testid="plugin-detail-meta">{description}</span>}
+      actions={
+        <span className="flex items-center gap-2 text-[12.5px] text-ctp-subtext1">
+          {enabled ? 'On' : 'Off'}
+          <Toggle
+            checked={enabled}
+            onChange={() => toggle(pluginSettingsId)}
+            disabled={entry.status === 'incompatible'}
+            aria-label={`Turn on ${entry.manifest.name}`}
+          />
+        </span>
+      }
+    >
+      <div className="mt-1" data-testid="plugin-detail-status">
+        <PluginStatusLines entry={entry} />
+      </div>
 
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">{entry.manifest.name} Settings</h2>
-        <p className="text-xs text-ctp-subtext0 mb-6">v{entry.manifest.version}</p>
-
-        {entry.manifest.permissions && entry.manifest.permissions.length > 0 && (
-          <div className="mb-6 p-4 rounded-lg bg-ctp-mantle border border-surface-0">
-            <h3 className="text-sm font-semibold text-ctp-text mb-3">Permissions</h3>
-            <div className="space-y-2">
-              {entry.manifest.permissions.map((perm: PluginPermission) => (
-                <div key={perm} className="flex items-start gap-2">
-                  <span className="text-xs font-mono text-ctp-accent whitespace-nowrap">{perm}</span>
-                  <span className="text-xs text-ctp-subtext0">{PERMISSION_DESCRIPTIONS[perm]}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {entry.manifest.externalRoots && entry.manifest.externalRoots.length > 0 && (
-          <div className="mb-6 p-4 rounded-lg bg-ctp-mantle border border-surface-0">
-            <h3 className="text-sm font-semibold text-ctp-text mb-3">External Roots</h3>
-            <div className="space-y-2">
-              {entry.manifest.externalRoots.map((root) => (
-                <div key={root.root} className="flex items-start gap-2">
-                  <span className="text-xs font-mono text-ctp-accent whitespace-nowrap">{root.root}</span>
-                  <span className="text-xs text-ctp-subtext0">Setting: <code className="font-mono bg-surface-0 px-1 py-0.5 rounded">{root.settingKey}</code></span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {entry.manifest.allowedCommands && entry.manifest.allowedCommands.length > 0 && (
-          <div className="mb-6 p-4 rounded-lg bg-ctp-mantle border border-surface-0">
-            <h3 className="text-sm font-semibold text-ctp-text mb-3">Allowed Commands</h3>
-            <div className="flex flex-wrap gap-2">
-              {entry.manifest.allowedCommands.map((cmd) => (
-                <code key={cmd} className="text-xs font-mono bg-surface-0 px-2 py-1 rounded text-ctp-accent">{cmd}</code>
-              ))}
-            </div>
-          </div>
-        )}
-
+      <SettingsSection title="Settings">
         {isDeclarative && entry.manifest.contributes?.settings && (
           <PluginSettingsRenderer
             pluginId={pluginSettingsId}
@@ -121,7 +164,13 @@ export function PluginDetailSettings() {
 
         {isCustom && mod?.SettingsPanel && (() => {
           const ctx = getActiveContext(pluginSettingsId, activeProjectId || undefined);
-          if (!ctx) return <p className="text-ctp-subtext0 text-sm">Plugin is not activated</p>;
+          if (!ctx) {
+            return (
+              <p className={`${settingsHelp} py-2.5 border-t border-surface-0`}>
+                {enabled ? "Settings aren't available because the plugin didn't start." : 'Turn the plugin on to change its settings.'}
+              </p>
+            );
+          }
           const api = createPluginAPI(ctx, undefined, entry.manifest);
           const SettingsPanel = mod.SettingsPanel!;
           return (
@@ -134,9 +183,34 @@ export function PluginDetailSettings() {
         })()}
 
         {!isDeclarative && !isCustom && (
-          <p className="text-sm text-ctp-subtext0">This plugin has no configurable settings.</p>
+          <p className={`${settingsHelp} py-2.5 border-t border-surface-0`}>This plugin has no settings.</p>
         )}
-      </div>
-    </div>
+      </SettingsSection>
+
+      <PermissionGroups entry={entry} />
+
+      {entry.manifest.externalRoots && entry.manifest.externalRoots.length > 0 && (
+        <SettingsSection title="External roots" meta={String(entry.manifest.externalRoots.length)}>
+          {entry.manifest.externalRoots.map((root) => (
+            <div key={root.root} className="flex items-center gap-3 h-[30px] border-t border-surface-0">
+              <span className="w-[190px] flex-none truncate font-mono text-xs text-ctp-text">{root.root}</span>
+              <span className="flex-1 min-w-0 truncate text-[12.5px] text-ctp-overlay1">
+                Set by <code className="font-mono text-ctp-subtext1">{root.settingKey}</code>
+              </span>
+            </div>
+          ))}
+        </SettingsSection>
+      )}
+
+      {entry.manifest.allowedCommands && entry.manifest.allowedCommands.length > 0 && (
+        <SettingsSection title="Allowed commands" meta={String(entry.manifest.allowedCommands.length)}>
+          {entry.manifest.allowedCommands.map((cmd) => (
+            <div key={cmd} className="flex items-center h-[30px] border-t border-surface-0">
+              <code className="font-mono text-xs text-ctp-text">{cmd}</code>
+            </div>
+          ))}
+        </SettingsSection>
+      )}
+    </SettingsPage>
   );
 }

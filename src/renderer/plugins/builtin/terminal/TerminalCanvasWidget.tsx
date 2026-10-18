@@ -10,18 +10,9 @@ import type { TerminalIO } from '../../../features/terminal/ShellTerminal';
 import { ShellTerminal } from '../../../features/terminal/ShellTerminal';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { satellitePtyDataBus, satellitePtyExitBus } from '../../../stores/annexClientStore';
-import { EmptyState } from '../../../components/EmptyState';
+import { WidgetPicker, PickerBack, projectRows } from '../canvas/WidgetPicker';
 
 type TerminalStatus = 'starting' | 'running' | 'exited';
-
-function projectColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 55%, 55%)`;
-}
 
 /**
  * Create a TerminalIO adapter that routes PTY operations through the
@@ -61,6 +52,17 @@ function createRemoteTerminalIO(satelliteIdRef: React.RefObject<string | null>, 
       });
     },
   };
+}
+
+function GitBranchIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 text-ctp-overlay1" aria-hidden="true">
+      <line x1="6" y1="3" x2="6" y2="15" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M18 9a9 9 0 0 1-9 9" />
+    </svg>
+  );
 }
 
 export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata, size: _size }: CanvasWidgetComponentProps) {
@@ -209,36 +211,11 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
   // Step 1: Project picker
   if (!projectId) {
     return (
-      <div className="flex flex-col h-full p-2">
-        <div className="text-xs font-medium text-ctp-subtext1 uppercase tracking-wider mb-2">
-          Select a project
-        </div>
-        {projects.length === 0 ? (
-          <EmptyState title="No projects open" compact />
-        ) : (
-          <div className="flex-1 overflow-y-auto space-y-1">
-            {projects.map((p) => {
-              const color = projectColor(p.name);
-              const initials = p.name.slice(0, 2).toUpperCase();
-              return (
-                <button
-                  key={p.id}
-                  className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg bg-surface-0 hover:bg-surface-1 text-left transition-colors"
-                  onClick={() => handleSelectProject(p.id)}
-                >
-                  <div
-                    className="w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
-                    style={{ backgroundColor: color }}
-                  >
-                    {initials}
-                  </div>
-                  <span className="text-[11px] text-ctp-text truncate">{p.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <WidgetPicker
+        searchPlaceholder="Find a project"
+        emptyText="No projects open"
+        sections={[{ id: 'projects', rows: projectRows(projects, handleSelectProject) }]}
+      />
     );
   }
 
@@ -260,52 +237,34 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
       );
     }
 
-    return (
-      <div className="flex flex-col h-full p-2">
-        <div className="flex items-center gap-1 mb-2">
-          {isAppMode && (
-            <button
-              className="text-xs text-ctp-subtext0 hover:text-ctp-text transition-colors mr-1"
-              onClick={handleBackToProjects}
-              title="Back to projects"
-            >
-              &larr;
-            </button>
-          )}
-          <div className="text-xs font-medium text-ctp-subtext1 uppercase tracking-wider">
-            Select a directory
-          </div>
-        </div>
-        {loadingWorktrees ? (
-          <div className="flex items-center justify-center flex-1 text-ctp-subtext0 text-xs">
+    if (loadingWorktrees) {
+      return (
+        <div className="flex flex-col h-full p-2">
+          {isAppMode && <PickerBack onBack={handleBackToProjects} label="Projects" />}
+          <div className="flex flex-1 items-center justify-center text-ctp-subtext0 text-xs">
             Loading worktrees&hellip;
           </div>
-        ) : (
-          <div className="flex-1 overflow-y-auto space-y-1">
-            {worktrees.map((wt) => (
-              <button
-                key={wt.path}
-                className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg bg-surface-0 hover:bg-surface-1 text-left transition-colors"
-                onClick={() => handleSelectCwd(wt.path)}
-              >
-                <div className={`w-5 h-5 rounded flex items-center justify-center text-xs font-mono flex-shrink-0 ${
-                  wt.isBare ? 'text-ctp-green bg-ctp-green/10' : 'text-ctp-mauve bg-ctp-mauve/10'
-                }`}>
-                  {wt.isBare ? '*' : 'W'}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] text-ctp-text truncate">
-                    {wt.isBare ? `${activeProject?.name ?? 'Project'} (main)` : wt.label}
-                  </div>
-                  {wt.branch && (
-                    <div className="text-[9px] text-ctp-overlay0 truncate">{wt.branch}</div>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+        </div>
+      );
+    }
+
+    return (
+      <WidgetPicker
+        searchPlaceholder="Find a directory"
+        emptyText="No worktrees"
+        onBack={isAppMode ? handleBackToProjects : undefined}
+        backLabel="Projects"
+        sections={[{
+          id: 'worktrees',
+          rows: worktrees.map((wt) => ({
+            id: wt.path,
+            label: wt.isBare ? `${activeProject?.name ?? 'Project'} (main)` : wt.label,
+            detail: wt.branch,
+            leading: <GitBranchIcon />,
+            onSelect: () => handleSelectCwd(wt.path),
+          })),
+        }]}
+      />
     );
   }
 

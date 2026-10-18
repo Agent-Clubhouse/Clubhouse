@@ -16,6 +16,7 @@ const {
   mockLoadUpdateSettings,
   mockCheckWhatsNew,
   mockStartOnboarding,
+  mockDismissOnboarding,
   mockInitBadgeSideEffects,
   mockInitializePluginSystem,
 } = vi.hoisted(() => ({
@@ -32,6 +33,7 @@ const {
   mockLoadUpdateSettings: vi.fn().mockResolvedValue(undefined),
   mockCheckWhatsNew: vi.fn(),
   mockStartOnboarding: vi.fn(),
+  mockDismissOnboarding: vi.fn(),
   mockInitBadgeSideEffects: vi.fn(),
   mockInitializePluginSystem: vi.fn().mockResolvedValue(undefined),
 }));
@@ -116,6 +118,7 @@ vi.mock('./stores/onboardingStore', () => ({
     getState: vi.fn(() => ({
       completed: mockOnboardingCompleted,
       startOnboarding: mockStartOnboarding,
+      dismissOnboarding: mockDismissOnboarding,
     })),
   }),
 }));
@@ -125,6 +128,7 @@ vi.mock('./plugins/plugin-loader', () => ({
 }));
 
 import { initApp } from './app-initializer';
+import { useChromeFlagStore } from './chrome/chromeFlag';
 import { initUpdateListener } from './stores/updateStore';
 import { initAnnexListener } from './stores/annexStore';
 import { initPluginUpdateListener } from './stores/pluginUpdateStore';
@@ -278,5 +282,29 @@ describe('initApp – onboarding', () => {
     expect(mockStartOnboarding).not.toHaveBeenCalled();
     vi.advanceTimersByTime(500);
     expect(mockStartOnboarding).toHaveBeenCalled();
+    expect(mockDismissOnboarding).not.toHaveBeenCalled();
+  });
+});
+
+describe('initApp – onboarding in the new shell', () => {
+  it('never starts the onboarding modal, and saves onboarding as done: the first-run page is the welcome', async () => {
+    vi.useFakeTimers();
+    mockOnboardingCompleted = false;
+    mockInitializePluginSystem.mockResolvedValue(undefined);
+    (initUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (initAnnexListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (initPluginUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (window.clubhouse.app.getPendingResumes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    useChromeFlagStore.setState({ enabled: true });
+    const cleanup = await initApp();
+    try {
+      vi.advanceTimersByTime(1000);
+      expect(mockStartOnboarding).not.toHaveBeenCalled();
+      expect(mockDismissOnboarding).toHaveBeenCalledTimes(1);
+    } finally {
+      cleanup();
+      useChromeFlagStore.setState({ enabled: false });
+      vi.useRealTimers();
+    }
   });
 });

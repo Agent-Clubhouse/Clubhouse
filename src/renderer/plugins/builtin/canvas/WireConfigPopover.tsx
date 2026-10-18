@@ -10,6 +10,7 @@ import { Toggle } from '../../../components/Toggle';
 import { WireInstructionsDialog } from './WireInstructionsDialog';
 import { WireToolPermissionsDialog } from './WireToolPermissionsDialog';
 import { useDismissibleLayer } from './useDismissibleLayer';
+import { CANVAS_Z } from './canvas-chrome';
 
 interface WireConfigPopoverProps {
   binding: McpBindingEntry;
@@ -122,38 +123,37 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
     <>
       <div
         ref={popoverRef}
-        className="fixed bg-ctp-mantle border border-surface-2 rounded-lg shadow-xl overflow-hidden"
-        style={{ left: x, top: y, zIndex: 99999, minWidth: 200 }}
+        className="fixed bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl overflow-hidden"
+        style={{ left: x, top: y, zIndex: CANVAS_Z.popover, minWidth: 220 }}
         data-testid="wire-config-popover"
       >
         {/* Header */}
-        <div className="px-3 py-2 bg-ctp-base border-b border-surface-0">
-          <div className="text-xs text-ctp-text font-medium">Wire Connection</div>
-          <div className="text-xs text-ctp-subtext0 mt-0.5">
-            {binding.label} ({binding.targetKind})
-          </div>
+        <div className="px-3 py-2 border-b border-surface-0">
+          <div className="text-[13px] text-ctp-text font-medium truncate">{binding.label}</div>
+          <div className="text-xs text-ctp-overlay1">Wire to {binding.targetKind === 'agent' ? 'an agent' : binding.targetKind}</div>
         </div>
 
         {/* Actions */}
-        <div className="p-2 space-y-1">
+        <div className="p-1 flex flex-col gap-0.5">
           {/* Bidirectional toggle (agent-to-agent only) */}
           {isAgentToAgent && (
             <div
-              className="flex items-center gap-2 px-2 py-1.5"
+              className="h-7 flex items-center gap-2 px-2"
               data-testid="wire-bidirectional-toggle"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-ctp-subtext0 flex-shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-ctp-overlay1 flex-shrink-0">
                 <polyline points="7 17 2 12 7 7" />
                 <polyline points="17 7 22 12 17 17" />
                 <line x1="2" y1="12" x2="22" y2="12" />
               </svg>
-              <span className="flex-1 text-xs text-ctp-subtext0">
-                Bidirectional
+              <span className="flex-1 text-xs text-ctp-subtext1">
+                Both directions
                 {forceBidirectional && !bidirectional && (
-                  <span className="ml-1 text-xs text-ctp-subtext1">(project setting)</span>
+                  <span className="ml-1.5 text-xs text-ctp-overlay1">set by project</span>
                 )}
               </span>
               <Toggle
+                aria-label="Both directions"
                 checked={bidirectional || (forceBidirectional ?? false)}
                 onChange={handleBidirectionalToggle}
                 disabled={!!(forceBidirectional && !bidirectional)}
@@ -163,7 +163,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
 
           {/* Tool Permissions */}
           <button
-            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-ctp-subtext0 hover:bg-surface-1 rounded transition-colors"
+            className="w-full h-7 flex items-center gap-2 px-2 text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text rounded-md transition-colors"
             onClick={() => setShowPermissions(true)}
             data-testid="wire-permissions-button"
           >
@@ -172,10 +172,10 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
             <span className="flex-1 text-left">
-              Tool Permissions
+              Tool permissions
             </span>
             {hasDisabledTools && (
-              <span className="text-xs text-ctp-overlay0 flex-shrink-0">
+              <span className="text-xs text-ctp-overlay1 flex-shrink-0">
                 {liveBinding.disabledTools!.length} off
               </span>
             )}
@@ -183,7 +183,7 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
 
           {/* Set Instructions */}
           <button
-            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-ctp-subtext0 hover:bg-surface-1 rounded transition-colors"
+            className="w-full h-7 flex items-center gap-2 px-2 text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text rounded-md transition-colors"
             onClick={() => setShowInstructions(true)}
             data-testid="wire-instructions-button"
           >
@@ -194,16 +194,16 @@ export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition,
               <line x1="16" y1="17" x2="8" y2="17" />
             </svg>
             <span className="flex-1 text-left">
-              {hasInstructions ? 'Edit Instructions' : 'Set Instructions'}
+              {hasInstructions ? 'Edit instructions' : 'Set instructions'}
             </span>
             {hasInstructions && (
-              <span className="w-1.5 h-1.5 rounded-full bg-ctp-accent flex-shrink-0" />
+              <span className="text-xs text-ctp-overlay1 flex-shrink-0">Set</span>
             )}
           </button>
 
           {/* Disconnect */}
           <button
-            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-ctp-error hover:bg-ctp-error/10 rounded transition-colors"
+            className="w-full h-7 flex items-center gap-2 px-2 text-xs text-ctp-red hover:bg-surface-0 rounded-md transition-colors"
             onClick={handleDisconnect}
             data-testid="wire-disconnect"
           >

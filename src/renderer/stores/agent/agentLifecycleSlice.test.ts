@@ -123,6 +123,53 @@ describe('agentLifecycleSlice – spawnQuickAgent', () => {
     expect(state().activeAgentId).toBe(agentId);
     expect(state().agents[agentId]).toBeTruthy();
   });
+
+  describe('run cwd and base sha (#2033)', () => {
+    const PARENT = { id: 'dur-1', projectId: PROJECT_ID, name: 'Parent', kind: 'durable', status: 'running', color: 'blue', worktreePath: '/test/project/.wt/parent' } as any;
+
+    beforeEach(() => {
+      (window as any).clubhouse.git.headSha = vi.fn().mockResolvedValue('abc1234def');
+    });
+
+    it('records the project root as runCwd and captures the base sha', async () => {
+      const { state, slice } = createTestStore();
+      const agentId = await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'm');
+
+      expect(window.clubhouse.git.headSha).toHaveBeenCalledWith(PROJECT_PATH);
+      expect(state().agents[agentId].runCwd).toBe(PROJECT_PATH);
+      await vi.waitFor(() => expect(state().agents[agentId].runBaseSha).toBe('abc1234def'));
+    });
+
+    it("uses the parent's worktree as cwd", async () => {
+      const { state, slice } = createTestStore({ agents: { 'dur-1': PARENT } });
+      const agentId = await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'm', undefined, 'dur-1');
+
+      expect(state().agents[agentId].runCwd).toBe(PARENT.worktreePath);
+      expect(window.clubhouse.agent.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ cwd: PARENT.worktreePath }));
+    });
+
+    it('prefers cwdOverride over the parent worktree', async () => {
+      const { state, slice } = createTestStore({ agents: { 'dur-1': PARENT } });
+      const agentId = await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'm', undefined, 'dur-1', undefined, undefined, undefined, '/retry/here');
+
+      expect(state().agents[agentId].runCwd).toBe('/retry/here');
+      expect(window.clubhouse.git.headSha).toHaveBeenCalledWith('/retry/here');
+      expect(window.clubhouse.agent.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/retry/here' }));
+    });
+
+    it('still spawns when the base sha lookup fails or returns null', async () => {
+      (window as any).clubhouse.git.headSha = vi.fn().mockRejectedValue(new Error('not a repo'));
+      const { state, slice } = createTestStore();
+      const agentId = await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'm');
+      expect(state().agents[agentId].status).toBe('running');
+      expect(state().agents[agentId].runBaseSha).toBeUndefined();
+
+      (window as any).clubhouse.git.headSha = vi.fn().mockResolvedValue(null);
+      const second = await slice.spawnQuickAgent(PROJECT_ID, PROJECT_PATH, 'm');
+      await Promise.resolve();
+      expect(state().agents[second].runBaseSha).toBeUndefined();
+    });
+  });
 });
 
 describe('agentLifecycleSlice – spawnDurableAgent', () => {

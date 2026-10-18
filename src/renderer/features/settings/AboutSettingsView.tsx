@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../../shared/marketplace-types';
+import { SettingsPage, SettingsField } from './SettingsLayout';
 
 interface ArchInfo {
   arch: string;
@@ -12,6 +13,8 @@ function formatArch(info: ArchInfo): string {
   return info.arch;
 }
 
+const valueClass = 'text-xs text-ctp-subtext1 font-mono';
+
 export function AboutSettingsView() {
   const [appVersion, setAppVersion] = useState('');
   const [archInfo, setArchInfo] = useState<ArchInfo | null>(null);
@@ -22,40 +25,29 @@ export function AboutSettingsView() {
   }, []);
 
   return (
-    <div className="h-full overflow-y-auto bg-ctp-base p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">About</h2>
-        <p className="text-sm text-ctp-subtext0 mb-6">App version and compatibility information.</p>
+    <SettingsPage title="About" description="App version and compatibility.">
+      <div className="mt-[22px]">
+        <SettingsField label="Application">
+          <span className={valueClass}>Clubhouse v{appVersion}</span>
+        </SettingsField>
 
-        <div className="space-y-4">
-          <div>
-            <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">Application</h3>
-            <p className="text-sm text-ctp-text">Clubhouse v{appVersion}</p>
-          </div>
+        {archInfo && (
+          <SettingsField
+            label="Architecture"
+            help={archInfo.rosetta ? (
+              <span className="text-ctp-warning">
+                This app is running under Rosetta translation. An arm64 build is available for better performance on Apple Silicon.
+              </span>
+            ) : undefined}
+          >
+            <span className={valueClass}>{formatArch(archInfo)}</span>
+          </SettingsField>
+        )}
 
-          {archInfo && (
-            <>
-              <div className="border-t border-surface-0" />
-              <div>
-                <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">Architecture</h3>
-                <p className="text-sm text-ctp-text">{formatArch(archInfo)}</p>
-                {archInfo.rosetta && (
-                  <p className="text-xs text-ctp-peach mt-1">
-                    This app is running under Rosetta translation. An arm64 build is available for better performance on Apple Silicon.
-                  </p>
-                )}
-              </div>
-            </>
-          )}
-
-          <div className="border-t border-surface-0" />
-
-          <div>
-            <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">Supported Plugin API Versions</h3>
-            <p className="text-sm text-ctp-text">{SUPPORTED_PLUGIN_API_VERSIONS.join(', ')}</p>
-          </div>
-        </div>
+        <SettingsField label="Supported plugin API versions">
+          <span className={valueClass}>{SUPPORTED_PLUGIN_API_VERSIONS.join(', ')}</span>
+        </SettingsField>
       </div>
-    </div>
+    </SettingsPage>
   );
 }

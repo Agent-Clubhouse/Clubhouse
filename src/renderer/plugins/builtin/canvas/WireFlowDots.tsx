@@ -1,5 +1,5 @@
 /**
- * WireFlowDots — animated glowing dots that travel along wire paths.
+ * WireFlowDots — plain dots that travel along wire paths (no glow, #2020).
  *
  * Renders SVG circles with `<animateMotion>` + `<mpath>` referencing
  * a `<path>` defined in `<defs>` by the parent `<svg>`.
@@ -20,14 +20,12 @@ const AMBIENT_DOT_DURATION = 6; // slow traversal
 const AMBIENT_DOT_STAGGER = 3;
 const AMBIENT_OPACITY = '0;0.3;0.3;0';
 const AMBIENT_DOT_RADIUS = 2.5;
-const AMBIENT_GLOW_STD_DEV = 2;
 
 const ACTIVE_DOT_COUNT = 5;
 const ACTIVE_DOT_DURATION = 1.4; // fast burst traversal
 const ACTIVE_DOT_STAGGER = 0.3;
 const ACTIVE_OPACITY = '0;1;1;0';
 const ACTIVE_DOT_RADIUS = 3.5;
-const ACTIVE_GLOW_STD_DEV = 3.5;
 
 interface WireFlowDotsProps {
   wireKey: string;
@@ -39,26 +37,6 @@ interface WireFlowDotsProps {
    * wires (group-project, MCP) where green signals "two-way communication".
    */
   targetKind?: string;
-}
-
-/**
- * Shared SVG filter definitions for dot glow — rendered once in <defs>,
- * referenced by all WireFlowDots via url(#wire-dot-glow-ambient/active).
- * This avoids creating a separate <feGaussianBlur> per wire (24+ filters).
- */
-export function WireFlowDotFilters(): React.ReactElement {
-  return (
-    <>
-      <filter id="wire-dot-glow-ambient">
-        <feGaussianBlur stdDeviation={AMBIENT_GLOW_STD_DEV} result="blur" />
-        <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-      </filter>
-      <filter id="wire-dot-glow-active">
-        <feGaussianBlur stdDeviation={ACTIVE_GLOW_STD_DEV} result="blur" />
-        <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-      </filter>
-    </>
-  );
 }
 
 export const WireFlowDots = React.memo(function WireFlowDots({
@@ -77,7 +55,6 @@ export const WireFlowDots = React.memo(function WireFlowDots({
   const stagger = isActive ? ACTIVE_DOT_STAGGER : AMBIENT_DOT_STAGGER;
   const opacityValues = isActive ? ACTIVE_OPACITY : AMBIENT_OPACITY;
   const dotRadius = isActive ? ACTIVE_DOT_RADIUS : AMBIENT_DOT_RADIUS;
-  const filterId = isActive ? 'wire-dot-glow-active' : 'wire-dot-glow-ambient';
   const isA2A = targetKind === 'agent';
   const dotColor = bidir && !isA2A
     ? 'rgb(var(--ctp-success, 166 227 161))'
@@ -94,7 +71,6 @@ export const WireFlowDots = React.memo(function WireFlowDots({
           key={`fwd-${i}`}
           r={dotRadius}
           fill={dotColor}
-          filter={`url(#${filterId})`}
           data-testid={`wire-dot-fwd-${wireKey}-${i}`}
         >
           <animateMotion
@@ -121,7 +97,6 @@ export const WireFlowDots = React.memo(function WireFlowDots({
           key={`rev-${i}`}
           r={dotRadius}
           fill={dotColor}
-          filter={`url(#${filterId})`}
           data-testid={`wire-dot-rev-${wireKey}-${i}`}
         >
           <animateMotion

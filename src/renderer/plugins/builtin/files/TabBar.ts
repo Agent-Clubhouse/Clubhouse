@@ -1,8 +1,9 @@
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import { fileState } from './state';
 import type { Tab } from './state';
 import { getFileIconColor } from './file-icons';
+import { PopupMenu, type MenuEntry } from '../../../components/PopupMenu';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -40,80 +41,14 @@ function _PinIcon() {
 }
 
 const ChevronLeftIcon = React.createElement('svg', {
-  width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none',
+  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, React.createElement('polyline', { points: '15 18 9 12 15 6' }));
 
 const ChevronRightIcon = React.createElement('svg', {
-  width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none',
+  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, React.createElement('polyline', { points: '9 6 15 12 9 18' }));
-
-// ── Tab Context Menu ─────────────────────────────────────────────────
-
-interface TabContextMenuProps {
-  x: number;
-  y: number;
-  tab: Tab;
-  onClose: () => void;
-  onAction: (action: string) => void;
-}
-
-function TabContextMenu({ x, y, tab, onClose, onAction }: TabContextMenuProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
-
-  const items = [
-    { label: 'Close', action: 'close' },
-    { label: 'Close Others', action: 'closeOthers' },
-    { label: 'Close All', action: 'closeAll' },
-    { label: 'Close to the Right', action: 'closeToRight' },
-    { label: '—', action: 'separator1' },
-    { label: tab.isPinned ? 'Unpin' : 'Pin', action: 'togglePin' },
-    { label: '—', action: 'separator2' },
-    { label: 'Copy Path', action: 'copyPath' },
-    { label: 'Reveal in File Tree', action: 'revealInTree' },
-  ];
-
-  const style = useMemo(() => {
-    const menuWidth = 170;
-    const menuHeight = items.length * 22 + 8; // estimated height per item + padding
-    return {
-      left: Math.min(x, window.innerWidth - menuWidth - 8),
-      top: Math.min(y, window.innerHeight - menuHeight - 8),
-    };
-  }, [x, y, items.length]);
-
-  return React.createElement('div', {
-    ref: menuRef,
-    className: 'fixed z-dropdown bg-ctp-mantle border border-surface-0 rounded shadow-lg py-1 min-w-[170px]',
-    style,
-  },
-    ...items.map((item) => {
-      if (item.label === '—') {
-        return React.createElement('div', {
-          key: item.action,
-          className: 'border-t border-surface-0 my-1',
-        });
-      }
-      return React.createElement('button', {
-        key: item.action,
-        className: 'w-full text-left px-2 py-1 mx-1 rounded-sm text-xs text-ctp-text hover:bg-surface-1 hover:text-ctp-text transition-colors',
-        style: { width: 'calc(100% - 8px)' },
-        onClick: () => { onAction(item.action); onClose(); },
-      }, item.label);
-    }),
-  );
-}
 
 // ── Individual Tab ───────────────────────────────────────────────────
 
@@ -156,19 +91,14 @@ function TabItem({
     onDragOver(tab.id);
   }, [tab.id, onDragOver]);
 
+  const base = `group relative flex items-center h-[26px] rounded-md cursor-pointer select-none flex-shrink-0 transition-colors ${
+    isActive ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text'
+  } ${isDragTarget ? 'ring-1 ring-inset ring-ctp-accent' : ''}`;
+
   // Pinned tab: show only icon
   if (tab.isPinned) {
     return React.createElement('div', {
-      className: `
-        group relative flex items-center justify-center px-2 py-1 cursor-pointer select-none
-        transition-colors duration-100 flex-shrink-0 border-b-2
-        ${isActive
-          ? 'bg-ctp-base border-ctp-accent'
-          : 'bg-ctp-mantle border-transparent hover:bg-surface-0'
-        }
-        ${isDragTarget ? 'border-l-2 border-l-ctp-accent' : ''}
-      `.trim(),
-      style: { minWidth: 32, height: 35 },
+      className: `${base} justify-center w-7`,
       onClick: onActivate,
       onContextMenu: (e: React.MouseEvent) => onContextMenu(e, tab),
       onDoubleClick,
@@ -189,16 +119,7 @@ function TabItem({
 
   // Regular tab
   return React.createElement('div', {
-    className: `
-      group relative flex items-center gap-1.5 px-2.5 py-1 cursor-pointer select-none
-      transition-colors duration-100 flex-shrink-0 border-b-2
-      ${isActive
-        ? 'bg-ctp-base border-ctp-accent'
-        : 'bg-ctp-mantle border-transparent hover:bg-surface-0'
-      }
-      ${isDragTarget ? 'border-l-2 border-l-ctp-accent' : ''}
-    `.trim(),
-    style: { minWidth: 100, maxWidth: 200, height: 35 },
+    className: `${base} gap-1.5 pl-2.5 pr-1 max-w-[200px] text-xs`,
     onClick: onActivate,
     onContextMenu: (e: React.MouseEvent) => onContextMenu(e, tab),
     onDoubleClick,
@@ -210,30 +131,30 @@ function TabItem({
     onDragEnd,
     title: tab.filePath,
   },
-    React.createElement(FileIconSvg, { color: iconColor }),
-    React.createElement('span', {
-      className: `text-[11px] truncate ${tab.isPreview ? 'italic' : ''} ${isActive ? 'text-ctp-text' : 'text-ctp-subtext0'}`,
-    }, fileName),
-    // Dirty dot / Close button area
-    React.createElement('div', {
-      className: 'flex-shrink-0 w-4 h-4 flex items-center justify-center ml-auto',
+    React.createElement('span', { className: `truncate ${tab.isPreview ? 'italic' : ''}` }, fileName),
+    tab.isDirty
+      ? React.createElement('span', {
+          className: 'w-1.5 h-1.5 rounded-full bg-ctp-warning flex-shrink-0',
+          title: 'Unsaved changes',
+        })
+      : null,
+    // Close button: visible on the active or hovered tab, space kept otherwise
+    React.createElement('button', {
+      type: 'button',
+      className: `w-4 h-4 flex-shrink-0 flex items-center justify-center rounded text-ctp-overlay1 hover:bg-surface-1 hover:text-ctp-text ${
+        hovered || isActive ? '' : 'opacity-0'
+      }`,
+      onClick: handleClose,
+      title: 'Close tab',
+      'aria-label': `Close ${fileName}`,
     },
-      // Show close button on hover, dirty dot otherwise
-      (hovered || isActive)
-        ? React.createElement('button', {
-            className: `w-4 h-4 flex items-center justify-center rounded text-xs
-              ${tab.isDirty
-                ? 'text-ctp-warning hover:bg-surface-1'
-                : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
-              }`,
-            onClick: handleClose,
-            title: 'Close tab',
-          }, '\u00D7')
-        : tab.isDirty
-          ? React.createElement('span', {
-              className: 'w-2 h-2 rounded-full bg-ctp-warning',
-            })
-          : null,
+      React.createElement('svg', {
+        width: 11, height: 11, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+      },
+        React.createElement('line', { x1: 18, y1: 6, x2: 6, y2: 18 }),
+        React.createElement('line', { x1: 6, y1: 6, x2: 18, y2: 18 }),
+      ),
     ),
   );
 }
@@ -244,9 +165,16 @@ interface TabBarProps {
   api: PluginAPI;
   onCloseTab: (tabId: string) => void;
   onRevealInTree: (filePath: string) => void;
+  /** The strip's right side: the active file's path, cursor position and menu. */
+  trailing?: React.ReactNode;
 }
 
-export function TabBar({ api: _api, onCloseTab, onRevealInTree }: TabBarProps) {
+/**
+ * Open files as one 32px strip (spec #2023): tabs on the left, the active
+ * file's path, cursor position and menu on the right. It replaces the tab
+ * bar, the file header and the status bar.
+ */
+export function TabBar({ api, onCloseTab, onRevealInTree, trailing }: TabBarProps) {
   const [tabs, setTabs] = useState<Tab[]>(fileState.getOrderedTabs());
   const [activeTabId, setActiveTabId] = useState<string | null>(fileState.activeTabId);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tab: Tab } | null>(null);
@@ -319,38 +247,22 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree }: TabBarProps) {
     setContextMenu({ x: e.clientX, y: e.clientY, tab });
   }, []);
 
-  const handleContextAction = useCallback((action: string) => {
-    if (!contextMenu) return;
-    const { tab } = contextMenu;
-
-    switch (action) {
-      case 'close':
-        onCloseTab(tab.id);
-        break;
-      case 'closeOthers':
-        fileState.closeOtherTabs(tab.id);
-        break;
-      case 'closeAll':
-        fileState.closeAllTabs();
-        break;
-      case 'closeToRight':
-        fileState.closeTabsToRight(tab.id);
-        break;
-      case 'togglePin':
-        if (tab.isPinned) {
-          fileState.unpinTab(tab.id);
-        } else {
-          fileState.pinTab(tab.id);
-        }
-        break;
-      case 'copyPath':
-        navigator.clipboard.writeText(tab.filePath).catch(() => {});
-        break;
-      case 'revealInTree':
-        onRevealInTree(tab.filePath);
-        break;
-    }
-  }, [contextMenu, onCloseTab, onRevealInTree]);
+  const contextItems = useCallback((tab: Tab): MenuEntry[] => [
+    // The binding the user has now (manifest default or their override), if any
+    { id: 'close', label: 'Close', shortcut: api.commands.getBinding('close-tab') ?? undefined, onSelect: () => onCloseTab(tab.id) },
+    { id: 'close-others', label: 'Close others', onSelect: () => fileState.closeOtherTabs(tab.id) },
+    { id: 'close-right', label: 'Close to the right', onSelect: () => fileState.closeTabsToRight(tab.id) },
+    { id: 'close-all', label: 'Close all', onSelect: () => fileState.closeAllTabs() },
+    { id: 'sep-pin', separator: true },
+    {
+      id: 'pin',
+      label: tab.isPinned ? 'Unpin' : 'Pin',
+      onSelect: () => (tab.isPinned ? fileState.unpinTab(tab.id) : fileState.pinTab(tab.id)),
+    },
+    { id: 'sep-path', separator: true },
+    { id: 'copy-path', label: 'Copy path', onSelect: () => { navigator.clipboard.writeText(tab.filePath).catch(() => {}); } },
+    { id: 'reveal', label: 'Reveal in file tree', onSelect: () => onRevealInTree(tab.filePath) },
+  ], [api, onCloseTab, onRevealInTree]);
 
   // Drag handlers
   const handleDragStart = useCallback((tabId: string) => {
@@ -376,22 +288,24 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree }: TabBarProps) {
 
   if (tabs.length === 0) return null;
 
+  const chevron = (onClick: () => void, icon: React.ReactElement, label: string) =>
+    React.createElement('button', {
+      type: 'button',
+      className: 'flex-shrink-0 w-6 h-7 flex items-center justify-center rounded-md text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0 transition-colors',
+      onClick,
+      'aria-label': label,
+    }, icon);
+
   return React.createElement('div', {
-    className: 'flex items-center bg-ctp-mantle border-b border-surface-0 flex-shrink-0',
-    style: { height: 35 },
+    className: 'h-8 flex items-center gap-1 pl-1.5 pr-2 border-b border-surface-0 flex-shrink-0 min-w-0',
+    'data-testid': 'files-tab-strip',
   },
-    // Left chevron
-    showLeftChevron
-      ? React.createElement('button', {
-          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay1 bg-surface-0/50 hover:text-ctp-text hover:bg-surface-0 transition-colors',
-          onClick: scrollLeft,
-        }, ChevronLeftIcon)
-      : null,
+    showLeftChevron ? chevron(scrollLeft, ChevronLeftIcon, 'Scroll tabs left') : null,
 
     // Scrollable tab container
     React.createElement('div', {
       ref: scrollContainerRef,
-      className: 'flex items-center flex-1 overflow-x-auto scrollbar-none',
+      className: 'flex items-center gap-0.5 min-w-0 overflow-x-auto scrollbar-none',
       onDragOver: (e: React.DragEvent) => e.preventDefault(),
     },
       ...tabs.map((tab) =>
@@ -415,22 +329,19 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree }: TabBarProps) {
       ),
     ),
 
-    // Right chevron
-    showRightChevron
-      ? React.createElement('button', {
-          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay1 bg-surface-0/50 hover:text-ctp-text hover:bg-surface-0 transition-colors',
-          onClick: scrollRight,
-        }, ChevronRightIcon)
+    showRightChevron ? chevron(scrollRight, ChevronRightIcon, 'Scroll tabs right') : null,
+
+    trailing
+      ? React.createElement('div', { className: 'ml-auto pl-2 flex items-center gap-1.5 min-w-0 flex-shrink text-xs text-ctp-overlay1' }, trailing)
       : null,
 
-    // Context menu
     contextMenu
-      ? React.createElement(TabContextMenu, {
-          x: contextMenu.x,
-          y: contextMenu.y,
-          tab: contextMenu.tab,
+      ? React.createElement(PopupMenu, {
+          items: contextItems(contextMenu.tab),
+          position: { x: contextMenu.x, y: contextMenu.y },
+          label: 'Tab actions',
+          testId: 'files-tab-menu',
           onClose: () => setContextMenu(null),
-          onAction: handleContextAction,
         })
       : null,
   );

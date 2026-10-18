@@ -5,7 +5,10 @@ import { render, screen, act } from '@testing-library/react';
 vi.mock('./ChromeSidebar', () => ({ ChromeSidebar: () => <div data-testid="chrome-sidebar" /> }));
 vi.mock('../panels/MainContentView', () => ({ MainContentView: () => <div data-testid="main-content" /> }));
 vi.mock('./pages/ProjectStartPage', () => ({ ProjectStartPage: ({ project }: { project: { id: string } }) => <div data-testid="start-page">{project.id}</div> }));
+vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => <div data-testid="chrome-agent-dialogs" />, useChromeDialogStore: { getState: () => ({}) } }));
 vi.mock('./pages/FirstRun', () => ({ FirstRun: () => <div data-testid="first-run" /> }));
+vi.mock('./pages/SatelliteStartPage', () => ({ SatelliteStartPage: ({ activeHostId }: { activeHostId: string }) => <div data-testid="satellite-start-page">{activeHostId}</div> }));
+vi.mock('./pages/NewAgentPage', () => ({ NewAgentPage: ({ request }: { request: { kind: string } }) => <div data-testid="new-agent-page">{request.kind}</div> }));
 
 import { ChromeBody } from './ChromeBody';
 import { useChromeFlagStore } from './chromeFlag';
@@ -24,12 +27,79 @@ beforeEach(() => {
     activeAgentId: 'a1',
   });
   useQuickAgentStore.setState({ selectedCompletedId: null });
-  useChromeStore.setState({ projectScopeId: null });
+  useChromeStore.setState({ projectScopeId: null, newAgent: null, newAgentBusy: false, newAgentKnownIds: null });
 });
 
 afterEach(() => useChromeFlagStore.setState({ enabled: false }));
 
 describe('ChromeBody', () => {
+  it('shows the New agent page over the pane until something else opens', () => {
+    useUIStore.setState({ explorerTab: 'settings' });
+    render(<ChromeBody />);
+    act(() => useChromeStore.getState().openNewAgent('quick'));
+    expect(screen.getByTestId('new-agent-page').textContent).toBe('quick');
+    act(() => useUIStore.setState({ explorerTab: 'help' }));
+    expect(useChromeStore.getState().newAgent).toBeNull();
+    expect(screen.queryByTestId('new-agent-page')).toBeNull();
+  });
+
+  const goBusy = () => useChromeStore.getState().setNewAgentBusy(true, {
+    projectIds: useProjectStore.getState().projects.map((p) => p.id),
+    agentIds: Object.keys(useAgentStore.getState().agents),
+  });
+
+  it('keeps the New agent page through its own creating placeholder', () => {
+    render(<ChromeBody />);
+    act(() => { useChromeStore.getState().openNewAgent('durable'); goBusy(); });
+    act(() => useAgentStore.setState({ activeAgentId: 'tmp-creating' }));
+    expect(useChromeStore.getState().newAgent).not.toBeNull();
+    act(() => useUIStore.setState({ explorerTab: 'help' }));
+    expect(useChromeStore.getState().newAgent).toBeNull();
+  });
+
+  it('keeps the page when the project it added becomes active and busy clears at once', () => {
+    render(<ChromeBody />);
+    act(() => { useChromeStore.getState().openNewAgent('durable'); goBusy(); });
+    act(() => {
+      useProjectStore.setState((s) => ({ projects: [...s.projects, { id: 'p9', name: 'New', path: '/new' }] as never, activeProjectId: 'p9' }));
+      useAgentStore.setState({ activeAgentId: null });
+      useChromeStore.getState().setNewAgentBusy(false);
+    });
+    expect(useChromeStore.getState().newAgent).not.toBeNull();
+  });
+
+  it('closes the page for navigation the user makes while it is busy', () => {
+    useAgentStore.setState((s) => ({ agents: { ...s.agents, a2: { id: 'a2', projectId: 'p1', name: 'other', kind: 'durable', status: 'running', color: 'blue' } as never } }));
+    render(<ChromeBody />);
+    act(() => { useChromeStore.getState().openNewAgent('durable'); goBusy(); });
+    // The palette or ⌥⌘N switches to an agent that already existed.
+    act(() => useAgentStore.setState({ activeAgentId: 'a2' }));
+    expect(useChromeStore.getState().newAgent).toBeNull();
+  });
+
+  it('closes the page for a tab change while busy (⌘1–9, title-bar tabs)', () => {
+    render(<ChromeBody />);
+    act(() => { useChromeStore.getState().openNewAgent('quick'); goBusy(); });
+    act(() => useUIStore.setState({ explorerTab: 'plugin:files' }));
+    expect(useChromeStore.getState().newAgent).toBeNull();
+  });
+
+  it("shows a satellite's start page, not the old dashboard, with no project selected", () => {
+    useUIStore.setState({ activeHostId: 's1' });
+    useProjectStore.setState({ activeProjectId: null });
+    render(<ChromeBody />);
+    expect(screen.getByTestId('satellite-start-page').textContent).toBe('s1');
+    expect(screen.queryByTestId('satellite-dashboard')).toBeNull();
+  });
+
+  it('hosts the agent dialogs even with the sidebar hidden', () => {
+    useChromeStore.setState({ sidebarCollapsed: true });
+    render(<ChromeBody />);
+    expect(screen.getByTestId('chrome-agent-dialogs')).toBeTruthy();
+    expect(screen.queryByTestId('chrome-sidebar')).toBeNull();
+    useChromeStore.setState({ sidebarCollapsed: false });
+  });
+
   it('shows the selected agent on the Agents tab', () => {
     render(<ChromeBody />);
     expect(screen.getByTestId('main-content')).toBeTruthy();

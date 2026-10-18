@@ -29,8 +29,12 @@ import { useAnnexClientStore } from '../stores/annexClientStore';
 import { useRemoteProjectStore, namespacedAgentId, namespacedProjectId } from '../stores/remoteProjectStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useChromeStore, SIDEBAR_DEFAULT, syncProjectScopeWithActiveAgent } from './chromeStore';
+import { useAgentSettingsPages } from '../features/agents/agentSettingsPages';
 import type { PluginManifest, PluginSource } from '../../shared/plugin-types';
 import type { Agent } from '../../shared/types';
+import { useCommandPaletteStore } from '../stores/commandPaletteStore';
+import { useKeyboardShortcutsStore } from '../stores/keyboardShortcutsStore';
+import { useChromeFlagStore } from './chromeFlag';
 
 function registerAppPlugin(id: string, label: string, position: 'top' | 'bottom' = 'top') {
   usePluginStore.getState().registerPlugin(
@@ -158,7 +162,7 @@ describe('ChromeSidebar', () => {
     registerAppPlugin('goobers', 'Goobers');
     usePluginStore.setState({ appEnabled: ['canvas', 'review', 'goobers'] });
     render(<ChromeSidebar />);
-    fireEvent.click(screen.getByTitle('Canvas'));
+    fireEvent.click(screen.getByTestId('app-row-canvas'));
     expect(useUIStore.getState().explorerTab).toBe('plugin:app:canvas');
     expect(screen.queryByText('Goobers', { selector: '[role=menuitem]' })).toBeNull();
     fireEvent.click(screen.getByLabelText('More app views'));
@@ -166,12 +170,64 @@ describe('ChromeSidebar', () => {
     expect(useUIStore.getState().explorerTab).toBe('plugin:app:goobers');
   });
 
-  it('opens the new-agent dialog from a project header', () => {
+  describe('New agent page', () => {
+    beforeEach(() => { useChromeFlagStore.setState({ enabled: true }); useChromeStore.setState({ newAgent: null }); });
+    afterEach(() => useChromeFlagStore.setState({ enabled: false }));
+
+    it("opens from a project header's + with that project", () => {
+      render(<ChromeSidebar />);
+      const header = screen.getByTestId('project-p2').parentElement!;
+      fireEvent.mouseEnter(header);
+      fireEvent.click(screen.getByLabelText('New agent in Goobers'));
+      expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable', projectId: 'p2' });
+      expect(useChromeDialogStore.getState().request).toBeNull();
+    });
+
+    it('opens from each New menu item with that kind chosen', () => {
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('chrome-new'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /Quick agent/ }));
+      expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'quick' });
+      expect(useUIStore.getState().quickAgentDialogOpen).toBe(false);
+      fireEvent.click(screen.getByTestId('chrome-new'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /Durable agent/ }));
+      expect(useChromeStore.getState().newAgent).toMatchObject({ kind: 'durable' });
+    });
+
+    it("shows the New agent shortcut the platform's way", () => {
+      const platform = window.clubhouse.platform;
+      useKeyboardShortcutsStore.setState({ shortcuts: { 'new-quick-agent': { id: 'new-quick-agent', label: 'New Agent', category: 'Agents', defaultBinding: 'Meta+Shift+N', currentBinding: 'Meta+Shift+N' } } as never });
+      try {
+        (window.clubhouse as { platform: string }).platform = 'darwin';
+        render(<ChromeSidebar />);
+        fireEvent.click(screen.getByTestId('chrome-new'));
+        expect(screen.getByRole('menuitem', { name: /Durable agent/ }).textContent).toBe('Durable agent…⇧⌘N');
+      } finally {
+        (window.clubhouse as { platform: string }).platform = platform;
+      }
+    });
+
+    it('closes when an agent is opened from the tree', () => {
+      useChromeStore.getState().openNewAgent('durable');
+      render(<ChromeSidebar />);
+      fireEvent.click(screen.getByTestId('agent-item-a1'));
+      expect(useChromeStore.getState().newAgent).toBeNull();
+    });
+  });
+
+  it('puts the app-wide notices slot above the footer', () => {
     render(<ChromeSidebar />);
-    const header = screen.getByTestId('project-p2').parentElement!;
-    fireEvent.mouseEnter(header);
-    fireEvent.click(screen.getByLabelText('New agent in Goobers'));
-    expect(useChromeDialogStore.getState().request).toEqual({ kind: 'durable', projectId: 'p2' });
+    const slot = screen.getByTestId('sidebar-notices');
+    expect(slot.nextElementSibling).toContainElement(screen.getByTestId('nav-settings'));
+  });
+
+  it('labels footer icon buttons with a Tooltip instead of title=', () => {
+    render(<ChromeSidebar />);
+    const settings = screen.getByTestId('nav-settings');
+    expect(settings).not.toHaveAttribute('title');
+    fireEvent.keyDown(document, { key: 'Tab' });
+    act(() => { settings.focus(); });
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Settings');
   });
 
   it('keeps the footer test ids', () => {
@@ -196,6 +252,87 @@ describe('ChromeSidebar', () => {
     render(<ChromeSidebar />);
     expect(screen.getByTestId('app-row-canvas')).toBeTruthy();
     expect(screen.getByTestId('app-row-review')).toBeTruthy();
+  });
+
+  it('opens Review from Needs you with Needs you only for that visit, and plainly from the app row', () => {
+    registerAppPlugin('review', 'Review');
+    usePluginStore.setState({ appEnabled: ['review'] });
+    render(<ChromeSidebar />);
+    fireEvent.click(within(screen.getByTestId('needs-you')).getByText('Review'));
+    expect(useUIStore.getState().explorerTab).toBe('plugin:app:review');
+    expect(useChromeStore.getState().appLaunch).toMatchObject({ id: 'review', params: { needsYouOnly: true } });
+    fireEvent.click(screen.getByTestId('app-row-review'));
+    expect(useChromeStore.getState().appLaunch).toMatchObject({ id: 'review', params: {} });
+  });
+
+  it('selects the agent Review is showing while Review is open', () => {
+    registerAppPlugin('review', 'Review');
+    usePluginStore.setState({ appEnabled: ['review'] });
+    useUIStore.setState({ explorerTab: 'plugin:app:review' });
+    act(() => useChromeStore.getState().setAppViewAgent('a1'));
+    render(<ChromeSidebar />);
+    expect(screen.getByTestId('agent-item-a1').getAttribute('data-active')).toBe('true');
+    act(() => useChromeStore.getState().setAppViewAgent(null));
+  });
+
+  describe('filter and palette button', () => {
+    afterEach(() => { useCommandPaletteStore.setState({ isOpen: false, query: '', mode: 'all' }); });
+
+    it('narrows the tree in place, sleeping matches included, with the match marked', () => {
+      render(<ChromeSidebar />);
+      fireEvent.change(screen.getByTestId('chrome-filter'), { target: { value: 'a' } });
+      const results = screen.getByTestId('filter-results');
+      expect(within(results).getByTestId('agent-item-a1')).toBeTruthy();
+      expect(within(results).getByTestId('agent-item-a2')).toBeTruthy();
+      expect(within(results).queryByTestId('agent-item-b1')).toBeNull();
+      expect(screen.queryByTestId('project-tree')?.closest('.hidden')).toBeTruthy();
+      expect(within(results).getByTestId('agent-item-a3').querySelector('mark')?.textContent).toBe('a');
+      expect(results.textContent).toContain('3 matches');
+    });
+
+    it('clears on Esc', () => {
+      render(<ChromeSidebar />);
+      const field = screen.getByTestId('chrome-filter') as HTMLInputElement;
+      fireEvent.change(field, { target: { value: 'b1' } });
+      fireEvent.keyDown(field, { key: 'Escape' });
+      expect(field.value).toBe('');
+      expect(screen.queryByTestId('filter-results')).toBeNull();
+    });
+
+    it('opens the first match on Enter', () => {
+      render(<ChromeSidebar />);
+      const field = screen.getByTestId('chrome-filter');
+      fireEvent.change(field, { target: { value: 'b1' } });
+      fireEvent.keyDown(field, { key: 'Enter' });
+      expect(useAgentStore.getState().activeAgentId).toBe('b1');
+    });
+
+    it('hands the query to the palette when nothing matches', () => {
+      render(<ChromeSidebar />);
+      fireEvent.change(screen.getByTestId('chrome-filter'), { target: { value: 'deploy' } });
+      expect(screen.getByTestId('filter-results').textContent).toContain('No matches');
+      fireEvent.click(screen.getByTestId('filter-search-everything'));
+      expect(useCommandPaletteStore.getState()).toMatchObject({ isOpen: true, query: 'deploy' });
+    });
+
+    it('shows the ⌘ glyph on macOS and a Ctrl K keycap elsewhere', () => {
+      const platform = window.clubhouse.platform;
+      useKeyboardShortcutsStore.setState({ shortcuts: { 'command-palette': { id: 'command-palette', label: 'Command Palette', category: 'General', defaultBinding: 'Meta+K', currentBinding: 'Meta+K' } } as never });
+      try {
+        (window.clubhouse as { platform: string }).platform = 'darwin';
+        const { unmount } = render(<ChromeSidebar />);
+        expect(screen.getByTestId('chrome-palette-button').textContent).toBe('');
+        unmount();
+        (window.clubhouse as { platform: string }).platform = 'win32';
+        render(<ChromeSidebar />);
+        expect(screen.getByTestId('chrome-palette-button').textContent).toBe('Ctrl K');
+        fireEvent.click(screen.getByTestId('chrome-palette-button'));
+        expect(useCommandPaletteStore.getState().isOpen).toBe(true);
+        expect(screen.getByTestId('chrome-palette-button').getAttribute('aria-pressed')).toBe('true');
+      } finally {
+        (window.clubhouse as { platform: string }).platform = platform;
+      }
+    });
   });
 
   describe('drag to reorder', () => {
@@ -329,6 +466,61 @@ describe('ChromeSidebar', () => {
       render(<ChromeSidebar />);
       expect(screen.queryByTestId('sidebar-list')).toBeNull();
       expect(screen.getByTestId('needs-you')).toBeTruthy();
+    });
+
+    it('swaps the tree for the agent settings pages, named in the breadcrumb', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'a1', activeAgentId: 'a1' });
+      render(<ChromeSidebar />);
+      expect(screen.getByTestId('agent-settings-nav')).toBeTruthy();
+      expect(screen.getByTestId('list-breadcrumb').textContent).toContain('a1');
+      expect(screen.queryByTestId('agent-item-a2')).toBeNull();
+      fireEvent.click(screen.getByText('Agents'));
+      expect(useAgentStore.getState().agentSettingsOpenFor).toBeNull();
+      expect(screen.queryByTestId('agent-settings-nav')).toBeNull();
+    });
+
+    it('closes agent settings on Esc', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'a1', activeAgentId: 'a1' });
+      render(<ChromeSidebar />);
+      fireEvent.keyDown(screen.getByTestId('agent-settings-nav-general'), { key: 'Escape' });
+      expect(useAgentStore.getState().agentSettingsOpenFor).toBeNull();
+    });
+
+    it('asks before opening another agent while settings edits are unsaved', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'a1', activeAgentId: 'a1' });
+      useAgentSettingsPages.getState().setDirtyPages(['instructions']);
+      render(<ChromeSidebar />);
+      // The tree is hidden in agent settings; the Needs you strip opens b1.
+      fireEvent.click(within(screen.getByTestId('needs-you-strip')).getAllByRole('button')[0]);
+      const pending = useAgentSettingsPages.getState().pendingLeave;
+      expect(pending).not.toBeNull();
+      expect(useAgentStore.getState().activeAgentId).toBe('a1');
+      expect(useAgentStore.getState().agentSettingsOpenFor).toBe('a1');
+
+      // What the view's confirm does.
+      act(() => {
+        useAgentSettingsPages.getState().setPendingLeave(null);
+        useAgentStore.getState().closeAgentSettings();
+        pending!();
+      });
+      expect(useAgentStore.getState().activeAgentId).toBe('b1');
+      useAgentSettingsPages.getState().reset();
+    });
+
+    it('opens another agent at once when nothing is unsaved', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'a1', activeAgentId: 'a1' });
+      useAgentSettingsPages.getState().reset();
+      render(<ChromeSidebar />);
+      fireEvent.click(within(screen.getByTestId('needs-you-strip')).getAllByRole('button')[0]);
+      expect(useAgentSettingsPages.getState().pendingLeave).toBeNull();
+      expect(useAgentStore.getState().activeAgentId).toBe('b1');
+      expect(useAgentStore.getState().agentSettingsOpenFor).toBeNull();
+    });
+
+    it('keeps the tree when settings are open for an agent outside the active project', () => {
+      useAgentStore.setState({ agentSettingsOpenFor: 'b1', activeAgentId: 'b1' });
+      render(<ChromeSidebar />);
+      expect(screen.queryByTestId('agent-settings-nav')).toBeNull();
     });
 
     it('shows the settings navigator in Settings', () => {

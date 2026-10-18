@@ -1,14 +1,14 @@
-# Git Integration
+# Git integration
 
 Clubhouse provides built-in Git awareness — branch tracking, file status, and worktree isolation for agents.
 
-## Git Detection
+## Git detection
 
 When you add a project, Clubhouse checks for a `.git` directory:
 - **Found** — Full Git features enabled automatically
 - **Not found** — A yellow banner appears with a one-click **git init** button. Dismiss if you prefer to work without Git.
 
-## What Clubhouse Tracks
+## What Clubhouse tracks
 
 | Feature | Description |
 |---------|-------------|
@@ -18,7 +18,7 @@ When you add a project, Clubhouse checks for a `.git` directory:
 | **Stash count** | Visual indicator of stashed entries |
 | **Conflicts** | Merge conflict detection in working directory and agent worktrees |
 
-## Git Operations
+## Git operations
 
 Available through the project's Git UI:
 

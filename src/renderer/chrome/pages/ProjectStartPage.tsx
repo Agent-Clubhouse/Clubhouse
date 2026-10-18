@@ -5,7 +5,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useChromeStore } from '../chromeStore';
-import { useChromeDialogStore } from '../sidebar/ChromeAgentDialogs';
+import { openNewAgentOrDialog } from '../startPage';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
 import type { Agent, CompletedQuickAgent, Project } from '../../../shared/types';
 
@@ -37,8 +37,6 @@ function Composer({ project }: { project: Project }) {
   const spawnQuickAgent = useAgentStore((s) => s.spawnQuickAgent);
   const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
   const setProjectScope = useChromeStore((s) => s.setProjectScope);
-  const focusPending = useChromeStore((s) => s.composerFocusPending);
-  const consumeComposerFocus = useChromeStore((s) => s.consumeComposerFocus);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledIds = useOrchestratorStore((s) => s.enabled);
   const orchestrators = useMemo(() => allOrchestrators.filter((o) => enabledIds.includes(o.id)), [allOrchestrators, enabledIds]);
@@ -63,12 +61,6 @@ function Composer({ project }: { project: Project }) {
   useEffect(() => {
     if (runAs !== QUICK && !sleeping.some((a) => a.id === runAs)) setRunAs(QUICK);
   }, [runAs, sleeping]);
-  // Only ⌘⇧N takes focus; opening the page from the tree leaves it in the tree.
-  useEffect(() => {
-    if (!focusPending) return;
-    inputRef.current?.focus();
-    consumeComposerFocus();
-  }, [focusPending, consumeComposerFocus]);
 
   const isQuick = runAs === QUICK;
   const canStart = prompt.trim().length > 0 && !busy;
@@ -215,7 +207,6 @@ function FinishedList({ projectId }: { projectId: string }) {
 
 export function ProjectStartPage({ project }: { project: Project }) {
   const openProjectSettings = useUIStore((s) => s.openProjectSettings);
-  const openNewAgent = useChromeDialogStore((s) => s.openNewAgent);
 
   return (
     <div className="h-full overflow-y-auto bg-ctp-base" data-testid="start-page">
@@ -227,7 +218,7 @@ export function ProjectStartPage({ project }: { project: Project }) {
           </div>
           <Composer project={project} />
           <div className="flex gap-4">
-            <button type="button" onClick={() => { openNewAgent(project.id); reportChromeFeature('new_agent_open'); }} className={linkClass}>
+            <button type="button" onClick={() => { openNewAgentOrDialog('durable', project.id); reportChromeFeature('new_agent_open'); }} className={linkClass}>
               New durable agent…
             </button>
             <button type="button" data-testid="start-page-settings" onClick={() => openProjectSettings(project.id)} className={linkClass}>

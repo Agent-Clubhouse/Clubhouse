@@ -1,7 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useProfileStore } from '../../stores/profileStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { Modal } from '../../components/Modal';
+import { SettingsPage, SettingsSection, SettingsBlock, settingsInput, settingsLabel, settingsHelp } from './SettingsLayout';
 import type { OrchestratorProfile, OrchestratorProfileEntry } from '../../../shared/types';
+import { Button } from '../../components/Button';
+
+const CODE_CLASS = 'font-mono text-ctp-subtext1';
 
 function generateId(): string {
   return `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -36,11 +41,11 @@ function EnvVarEditor({ entries, suggestedKeys, onChange }: EnvEditorProps) {
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {suggestedKeys.length > 0 && (
-        <p className="text-xs text-ctp-subtext0/60">
-          Suggested keys: {suggestedKeys.map((k) => (
-            <code key={k} className="bg-surface-0/30 px-1 rounded mx-0.5">{k}</code>
+        <p className={settingsHelp}>
+          Suggested keys {suggestedKeys.map((k) => (
+            <code key={k} className={`${CODE_CLASS} mx-0.5`}>{k}</code>
           ))}
         </p>
       )}
@@ -51,37 +56,38 @@ function EnvVarEditor({ entries, suggestedKeys, onChange }: EnvEditorProps) {
             value={entry.key}
             onChange={(e) => updateEntry(i, 'key', e.target.value)}
             placeholder="KEY"
+            aria-label="Variable name"
             list={`env-keys-${i}`}
-            className="w-48 px-2 py-1 text-xs font-mono rounded bg-ctp-base border border-surface-2
-              text-ctp-text focus-ring-dim"
+            className={`${settingsInput} w-48 font-mono`}
           />
           <datalist id={`env-keys-${i}`}>
             {suggestedKeys.map((k) => <option key={k} value={k} />)}
           </datalist>
-          <span className="text-ctp-subtext0 text-xs">=</span>
+          <span className="text-ctp-overlay1 text-xs">=</span>
           <input
             type="text"
             value={entry.value}
             onChange={(e) => updateEntry(i, 'value', e.target.value)}
             placeholder="value (~ expands to home dir)"
-            className="flex-1 px-2 py-1 text-xs font-mono rounded bg-ctp-base border border-surface-2
-              text-ctp-text focus-ring-dim"
+            aria-label="Variable value"
+            className={`${settingsInput} flex-1 min-w-0 font-mono`}
           />
-          <button
+          <Button
             onClick={() => removeEntry(i)}
-            className="text-ctp-subtext0 hover:text-ctp-red text-xs cursor-pointer"
+            kind="quiet" className="w-7 px-0 text-ctp-subtext0"
             title="Remove"
+            aria-label="Remove variable"
           >
-            x
-          </button>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </Button>
         </div>
       ))}
-      <button
-        onClick={addEntry}
-        className="text-xs text-ctp-accent hover:underline cursor-pointer"
-      >
-        + Add variable
-      </button>
+      <Button onClick={addEntry} kind="quiet">
+        Add variable
+      </Button>
     </div>
   );
 }
@@ -110,15 +116,12 @@ function OrchestratorSection({ orchestratorName, entry, suggestedKeys, onUpdate,
   };
 
   return (
-    <div className="p-3 rounded-lg bg-ctp-base border border-surface-1 space-y-2">
+    <div className="py-2 border-t border-surface-0 space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-ctp-text">{orchestratorName}</span>
-        <button
-          onClick={onRemove}
-          className="text-xs text-ctp-red hover:underline cursor-pointer"
-        >
+        <span className="text-[13px] text-ctp-text">{orchestratorName}</span>
+        <Button onClick={onRemove} kind="danger">
           Remove
-        </button>
+        </Button>
       </div>
       <EnvVarEditor entries={entries} suggestedKeys={suggestedKeys} onChange={handleEnvChange} />
     </div>
@@ -183,21 +186,21 @@ function ProfileEditForm({ profile, onSave, onCancel }: EditFormProps) {
   const availableToAdd = enabledOrchestrators.filter((o) => !orchestrators[o.id]);
 
   return (
-    <div className="p-4 rounded-lg bg-ctp-mantle border border-surface-0 space-y-4">
-      <div className="space-y-2">
-        <label className="block text-xs text-ctp-subtext0">Profile Name</label>
+    <SettingsBlock className="space-y-3">
+      <div>
+        <label htmlFor={`profile-name-${profile.id}`} className={settingsLabel}>Profile name</label>
         <input
+          id={`profile-name-${profile.id}`}
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Work, Personal"
-          className="w-full px-3 py-1.5 text-sm rounded-lg bg-ctp-base border border-surface-2
-            text-ctp-text focus-ring-dim"
+          placeholder="Work, Personal"
+          className={`${settingsInput} w-full`}
         />
       </div>
 
-      <div className="space-y-3">
-        <label className="block text-xs text-ctp-subtext0">Orchestrators</label>
+      <div>
+        <div className={settingsLabel}>Orchestrators</div>
         {Object.entries(orchestrators).map(([orchId, entry]) => {
           const orchName = allOrchestrators.find((o) => o.id === orchId)?.displayName || orchId;
           return (
@@ -213,11 +216,11 @@ function ProfileEditForm({ profile, onSave, onCancel }: EditFormProps) {
         })}
 
         {Object.keys(orchestrators).length === 0 && (
-          <p className="text-xs text-ctp-subtext0/60">No orchestrators configured. Add one below.</p>
+          <p className={`${settingsHelp} py-1`}>No orchestrators yet. Add one below.</p>
         )}
 
         {availableToAdd.length > 0 && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pt-2 border-t border-surface-0">
             <select
               id="add-orchestrator-select"
               defaultValue=""
@@ -227,10 +230,10 @@ function ProfileEditForm({ profile, onSave, onCancel }: EditFormProps) {
                   e.target.value = '';
                 }
               }}
-              className="px-2 py-1 text-xs rounded bg-ctp-base border border-surface-2
-                text-ctp-text focus-ring-dim"
+              aria-label="Add orchestrator"
+              className={`${settingsInput} w-[200px]`}
             >
-              <option value="" disabled>+ Add Orchestrator</option>
+              <option value="" disabled>Add orchestrator…</option>
               {availableToAdd.map((o) => (
                 <option key={o.id} value={o.id}>{o.displayName}</option>
               ))}
@@ -240,23 +243,14 @@ function ProfileEditForm({ profile, onSave, onCancel }: EditFormProps) {
       </div>
 
       <div className="flex gap-2 justify-end">
-        <button
-          onClick={onCancel}
-          className="px-3 py-1.5 text-xs rounded-lg bg-surface-1 text-ctp-subtext0
-            hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
-        >
+        <Button onClick={onCancel} kind="ghost">
           Cancel
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={!name.trim()}
-          className="px-3 py-1.5 text-xs rounded-lg bg-ctp-accent text-white
-            hover:bg-ctp-accent/80 cursor-pointer transition-colors disabled:opacity-50"
-        >
+        </Button>
+        <Button onClick={handleSave} disabled={!name.trim()} kind="primary">
           Save
-        </button>
+        </Button>
       </div>
-    </div>
+    </SettingsBlock>
   );
 }
 
@@ -303,121 +297,104 @@ export function ProfilesSettingsView() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-ctp-base p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">Profiles</h2>
-        <p className="text-sm text-ctp-subtext0 mb-4">
-          Named profiles allow switching between different accounts or configurations
-          (e.g. Work vs Personal). Each profile can hold env configs for multiple orchestrators.
-          When a profile is active on a project, only its configured orchestrators appear in agent creation.
-        </p>
+    <SettingsPage
+      title="Profiles"
+      description="Switch between accounts or configurations, like work and personal. A profile holds env vars for one or more orchestrators."
+      actions={
+        <Button onClick={handleCreate} disabled={editingId !== null} kind="primary">
+          New profile
+        </Button>
+      }
+    >
+      <p className={`${settingsHelp} mt-3`}>
+        For Claude Code, set <code className={CODE_CLASS}>CLAUDE_CONFIG_DIR</code> to a separate directory, like{' '}
+        <code className={CODE_CLASS}>~/.claude-work</code>. Then run <code className={CODE_CLASS}>/login</code> once with that profile to cache its credentials.
+      </p>
 
-        <div className="mb-4 px-3 py-2 rounded-lg bg-ctp-info/10 border border-ctp-info/20 text-xs text-ctp-info">
-          For Claude Code, set <code className="bg-ctp-info/10 px-1 rounded">CLAUDE_CONFIG_DIR</code> to
-          a separate directory (e.g. <code className="bg-ctp-info/10 px-1 rounded">~/.claude-work</code>).
-          Run <code className="bg-ctp-info/10 px-1 rounded">/login</code> once via that profile to cache credentials.
-        </div>
-
-        <div className="space-y-3 mb-6">
-          {profiles.map((p) => (
-            <div key={p.id}>
-              {editingId === p.id ? (
-                <ProfileEditForm
-                  profile={p}
-                  onSave={handleSave}
-                  onCancel={() => {
-                    setEditingId(null);
-                    // If name is empty, it was just created — remove it
-                    if (!p.name) deleteProfile(p.id);
-                  }}
-                />
-              ) : (
-                <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-ctp-text font-medium">{p.name}</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-surface-1 text-ctp-subtext0">
-                        {getOrchestratorNames(p)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-ctp-subtext0 mt-0.5 font-mono">
-                      {Object.entries(p.orchestrators).map(([orchId, entry]) => {
-                        const envStr = Object.entries(entry.env).map(([k, v]) => `${k}=${v}`).join(', ');
-                        const orchName = allOrchestrators.find((o) => o.id === orchId)?.displayName || orchId;
-                        return envStr ? `${orchName}: ${envStr}` : null;
-                      }).filter(Boolean).join(' | ') || 'No env vars set'}
-                    </div>
+      <SettingsSection title="Saved profiles" meta={profiles.length > 0 ? String(profiles.length) : undefined}>
+        {profiles.map((p) => (
+          <div key={p.id}>
+            {editingId === p.id ? (
+              <ProfileEditForm
+                profile={p}
+                onSave={handleSave}
+                onCancel={() => {
+                  setEditingId(null);
+                  // If name is empty, it was just created, so remove it
+                  if (!p.name) deleteProfile(p.id);
+                }}
+              />
+            ) : (
+              <div className="flex items-center gap-4 min-h-[46px] py-2 border-t border-surface-0" data-testid={`profile-row-${p.id}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[13px] text-ctp-text">{p.name}</span>
+                    <span className="text-xs text-ctp-overlay1">{getOrchestratorNames(p)}</span>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setEditingId(p.id)}
-                      className="text-xs text-ctp-accent hover:underline cursor-pointer"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setShowConfirmDelete(p.id)}
-                      className="text-xs text-ctp-red hover:underline cursor-pointer"
-                    >
-                      Delete
-                    </button>
+                  <div className="text-xs text-ctp-overlay1 mt-px font-mono truncate">
+                    {Object.entries(p.orchestrators).map(([orchId, entry]) => {
+                      const envStr = Object.entries(entry.env).map(([k, v]) => `${k}=${v}`).join(', ');
+                      const orchName = allOrchestrators.find((o) => o.id === orchId)?.displayName || orchId;
+                      return envStr ? `${orchName} ${envStr}` : null;
+                    }).filter(Boolean).join(' · ') || 'No env vars set'}
                   </div>
                 </div>
-              )}
-            </div>
-          ))}
+                <div className="flex-shrink-0 flex gap-1.5">
+                  <Button onClick={() => setEditingId(p.id)} kind="ghost">
+                    Edit
+                  </Button>
+                  <Button onClick={() => setShowConfirmDelete(p.id)} kind="danger">
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
 
-          {profiles.length === 0 && !editingId && (
-            <p className="text-sm text-ctp-subtext0">No profiles configured yet.</p>
-          )}
-        </div>
+        {profiles.length === 0 && !editingId && (
+          <SettingsBlock>
+            <p className={settingsHelp}>No profiles configured yet.</p>
+          </SettingsBlock>
+        )}
+      </SettingsSection>
 
-        <button
-          onClick={handleCreate}
-          disabled={editingId !== null}
-          className="px-4 py-2 text-sm rounded-lg bg-ctp-accent text-white
-            hover:bg-ctp-accent/80 cursor-pointer transition-colors disabled:opacity-50"
-        >
-          + New Profile
-        </button>
+      <SettingsSection title="Usage">
+        <SettingsBlock>
+          <p className={settingsHelp}>
+            Assign a profile to a project in its Orchestrators &amp; agents settings. While a profile is active, agent
+            creation only offers the orchestrators the profile configures, and the profile&apos;s env vars are injected
+            when an agent starts.
+          </p>
+        </SettingsBlock>
+      </SettingsSection>
 
-        {/* Usage instructions */}
-        <div className="mt-8 space-y-2">
-          <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Usage</h3>
-          <p className="text-xs text-ctp-subtext0">
-            Once created, assign a profile in <strong>Orchestrators & Agents</strong> settings at the project level.
-            When a profile is active, only orchestrators configured in that profile appear in agent creation.
-            The profile's environment variables are injected when the agent spawns.
+      <Modal
+        open={showConfirmDelete !== null}
+        onClose={() => setShowConfirmDelete(null)}
+        title="Delete profile?"
+        testId="profile-delete-confirm"
+        width="w-[400px] max-w-[calc(100vw-32px)]"
+        footer={
+          <>
+            <Button onClick={() => setShowConfirmDelete(null)} kind="ghost">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => { if (showConfirmDelete) handleDelete(showConfirmDelete); }}
+              kind="danger-solid"
+            >
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <div>
+          <p className={settingsHelp}>
+            Agents that use this profile will fall back to the default configuration.
           </p>
         </div>
-
-        {/* Confirm delete dialog */}
-        {showConfirmDelete && (
-          // eslint-disable-next-line no-restricted-syntax
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
-            <div className="bg-ctp-base border border-surface-1 rounded-xl p-6 max-w-md mx-4 shadow-xl">
-              <h3 className="text-sm font-semibold text-ctp-text mb-2">Delete Profile?</h3>
-              <p className="text-xs text-ctp-subtext0 mb-4">
-                Agents referencing this profile will fall back to the default configuration.
-              </p>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setShowConfirmDelete(null)}
-                  className="px-3 py-1.5 text-xs rounded-lg bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleDelete(showConfirmDelete)}
-                  className="px-3 py-1.5 text-xs rounded-lg bg-ctp-red text-white hover:bg-ctp-red/80 cursor-pointer transition-colors"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+      </Modal>
+    </SettingsPage>
   );
 }

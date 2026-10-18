@@ -56,6 +56,7 @@ vi.mock('../services/headless-manager', () => ({
   readTranscript: vi.fn(() => 'transcript text'),
   getTranscriptInfo: vi.fn(async () => ({ totalEvents: 10, fileSizeBytes: 1024 })),
   readTranscriptPage: vi.fn(async () => ({ events: [{ type: 'result' }], totalEvents: 10 })),
+  readTranscriptFrom: vi.fn(async () => ({ events: [], cursor: 42, skipped: 0, more: false, reset: false })),
 }));
 
 vi.mock('../orchestrators/shared', () => ({
@@ -121,7 +122,7 @@ describe('agent-handlers', () => {
       IPC.AGENT.CHECK_ORCHESTRATOR, IPC.AGENT.GET_ORCHESTRATORS,
       IPC.AGENT.GET_TOOL_VERB, IPC.AGENT.GET_SUMMARY_INSTRUCTION,
       IPC.AGENT.READ_TRANSCRIPT, IPC.AGENT.GET_TRANSCRIPT_INFO,
-      IPC.AGENT.READ_TRANSCRIPT_PAGE, IPC.AGENT.IS_HEADLESS_AGENT,
+      IPC.AGENT.READ_TRANSCRIPT_PAGE, IPC.AGENT.READ_TRANSCRIPT_FROM, IPC.AGENT.IS_HEADLESS_AGENT,
       IPC.AGENT.GET_RUNNING_STATUSES,
     ];
     for (const channel of expectedChannels) {
@@ -437,6 +438,13 @@ describe('agent-handlers', () => {
     const result = await handler({}, 'a1', 0, 50);
     expect(headlessManager.readTranscriptPage).toHaveBeenCalledWith('a1', 0, 50);
     expect(result).toEqual({ events: [{ type: 'result' }], totalEvents: 10 });
+  });
+
+  it('READ_TRANSCRIPT_FROM delegates to headlessManager.readTranscriptFrom with the cursor', async () => {
+    const handler = handlers.get(IPC.AGENT.READ_TRANSCRIPT_FROM)!;
+    const result = await handler({}, 'a1', 1024);
+    expect(headlessManager.readTranscriptFrom).toHaveBeenCalledWith('a1', 1024);
+    expect(result).toMatchObject({ cursor: 42 });
   });
 
   it('IS_HEADLESS_AGENT delegates to agentSystem.isHeadlessAgent', async () => {

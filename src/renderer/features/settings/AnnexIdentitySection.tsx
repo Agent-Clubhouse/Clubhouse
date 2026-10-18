@@ -1,5 +1,6 @@
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import type { AnnexSettings, AnnexStatus } from '../../../shared/types';
+import { SettingsField, settingsInput } from './SettingsLayout';
 
 interface Props {
   settings: AnnexSettings;
@@ -9,52 +10,47 @@ interface Props {
 
 export function AnnexIdentitySection({ settings, status, onSave }: Props) {
   return (
-    <div className="space-y-3">
-      {/* Alias */}
-      <div className="py-3 border-b border-surface-0">
-        <div className="text-sm text-ctp-text font-medium mb-2">Alias</div>
+    <>
+      <SettingsField label="Alias" help="How this machine appears to other Clubhouse instances." htmlFor="annex-alias">
         <input
+          id="annex-alias"
           type="text"
           value={settings.alias}
           onChange={(e) => onSave({ ...settings, alias: e.target.value })}
-          className="w-full px-3 py-1.5 text-sm rounded bg-surface-0 border border-surface-1
-            text-ctp-text placeholder:text-ctp-subtext0 focus-ring"
+          className={`${settingsInput} w-[220px]`}
           placeholder="My Mac"
         />
-      </div>
+      </SettingsField>
 
-      {/* Color picker */}
-      <div className="py-3 border-b border-surface-0">
-        <div className="text-sm text-ctp-text font-medium mb-2">Color</div>
-        <div className="flex gap-2">
-          {AGENT_COLORS.map((color) => (
-            <button
-              key={color.id}
-              onClick={() => onSave({ ...settings, color: color.id })}
-              className={`w-7 h-7 rounded-full transition-all cursor-pointer ${
-                settings.color === color.id
-                  ? 'ring-2 ring-offset-2 ring-offset-ctp-base scale-110'
-                  : 'hover:scale-105'
-              }`}
-              style={{
-                backgroundColor: color.hex,
-                ...(settings.color === color.id ? { ringColor: color.hex } : {}),
-              }}
-              title={color.label}
-            />
-          ))}
+      <SettingsField label="Color">
+        <div className="flex gap-1.5">
+          {AGENT_COLORS.map((color) => {
+            const selected = settings.color === color.id;
+            return (
+              <button
+                key={color.id}
+                type="button"
+                aria-label={color.label}
+                aria-pressed={selected}
+                onClick={() => onSave({ ...settings, color: color.id })}
+                className="w-5 h-5 rounded-full cursor-pointer focus-ring"
+                style={{
+                  backgroundColor: color.hex,
+                  ...(selected ? { outline: `2px solid ${color.hex}`, outlineOffset: 2 } : {}),
+                }}
+                title={color.label}
+              />
+            );
+          })}
         </div>
-      </div>
+      </SettingsField>
 
-      {/* Fingerprint */}
       {status.fingerprint && (
-        <div className="py-3 border-b border-surface-0">
-          <div className="text-sm text-ctp-text font-medium mb-1">Fingerprint</div>
-          <div className="text-xs font-mono text-ctp-subtext0 select-all">
-            {status.fingerprint}
-          </div>
-        </div>
+        <SettingsField
+          label="Fingerprint"
+          help={<span className="font-mono select-all break-all">{status.fingerprint}</span>}
+        />
       )}
-    </div>
+    </>
   );
 }

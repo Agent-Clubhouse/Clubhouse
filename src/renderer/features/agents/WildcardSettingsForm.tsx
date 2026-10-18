@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AgentWildcardSettings, SourceControlProvider } from '../../../shared/types';
 import { WildcardLibraryField, LibraryOption } from './WildcardLibraryField';
+import { Button } from '../../components/Button';
+import { useReportDirty, useSaveBarSlot, type SaveHandle } from './agentSettingsPages';
 
 interface Props {
   projectPath: string;
@@ -9,6 +11,10 @@ interface Props {
   disabled: boolean;
   /** Bump to force a re-read from disk. */
   refreshKey: number;
+  /** Whether the form holds unsaved edits. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** Joins the agent settings save bar; the form then drops its own Save button. */
+  onRegisterSave?: (handle: SaveHandle | null) => void;
 }
 
 /** Editable form state derived from the resolved wildcard actuals. */
@@ -30,7 +36,7 @@ function ReadOnlyField({ token, value }: { token: string; value: string }) {
         value={value}
         readOnly
         tabIndex={-1}
-        className="mt-1 w-full bg-surface-0/60 border border-surface-1 rounded px-2 py-1 text-sm text-ctp-subtext0 cursor-default select-text"
+        className="mt-1 w-full h-7 rounded-md border border-surface-0 bg-transparent px-2.5 text-xs text-ctp-subtext0 cursor-default select-text"
       />
     </div>
   );
@@ -58,7 +64,7 @@ function CommandField({
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text placeholder:text-ctp-overlay0 focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
+        className="mt-1 w-full h-7 rounded-md border border-surface-1 bg-ctp-crust px-2.5 text-xs text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent disabled:opacity-50 disabled:cursor-not-allowed"
       />
     </div>
   );
@@ -70,7 +76,7 @@ function CommandField({
  * with its current actual; edits are saved as per-agent overrides to
  * `.clubhouse/agents.json` — the same surface the self-edit guide documents.
  */
-export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKey }: Props) {
+export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKey, onDirtyChange, onRegisterSave }: Props) {
   const [data, setData] = useState<AgentWildcardSettings | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -102,16 +108,9 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
     load();
   }, [load, refreshKey, internalRefresh]);
 
-  if (!data || !form) {
-    return <p className="text-xs text-ctp-subtext0/60">Loading wildcard settings…</p>;
-  }
-
-  const update = (patch: Partial<FormState>) => {
-    setForm((prev) => (prev ? { ...prev, ...patch } : prev));
-    setDirty(true);
-  };
-
+  /** Rejects when the write fails, so the save bar can say so. */
   const handleSave = async () => {
+    if (!form) return;
     setSaving(true);
     try {
       await window.clubhouse.agent.updateDurableConfig(projectPath, agentId, {
@@ -126,6 +125,23 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
     } finally {
       setSaving(false);
     }
+  };
+
+  // The form's own Save button (outside agent settings) keeps the old behaviour.
+  const handleOwnSave = () => {
+    handleSave().catch(() => { /* telemetry-exempt: the form stays dirty so the edit is not lost */ });
+  };
+
+  useReportDirty(onDirtyChange, dirty);
+  useSaveBarSlot(onRegisterSave, handleSave, () => { void load(); });
+
+  if (!data || !form) {
+    return <p className="text-xs text-ctp-overlay1">Loading wildcard settings…</p>;
+  }
+
+  const update = (patch: Partial<FormState>) => {
+    setForm((prev) => (prev ? { ...prev, ...patch } : prev));
+    setDirty(true);
   };
 
   const missionOptions: LibraryOption[] = data.missions.map((m) => ({ id: m.id }));
@@ -144,30 +160,23 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Wildcards</h3>
-        <button
-          onClick={handleSave}
-          disabled={disabled || !dirty || saving}
-          className={`text-xs px-3 py-1 rounded transition-colors ${
-            disabled ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed' :
-            dirty
-              ? 'bg-ctp-accent text-white hover:bg-ctp-accent/80 cursor-pointer'
-              : 'bg-surface-1 text-ctp-subtext0 cursor-default'
-          }`}
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+        <h3 className="text-[13px] font-semibold text-ctp-text">Wildcards</h3>
+        {!onRegisterSave && (
+          <Button kind={dirty ? 'primary' : 'ghost'} onClick={handleOwnSave} disabled={disabled || !dirty || saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+        )}
       </div>
 
-      <p className="text-xs text-ctp-subtext0/60">
+      <p className="text-xs text-ctp-overlay1">
         These are this agent&apos;s wildcard values. Edits save as per-agent overrides to
-        <span className="font-mono"> .clubhouse/agents.json</span> — the same setting an agent
+        <span className="font-mono"> .clubhouse/agents.json</span>, the same setting an agent
         edits from the Clubhouse self-edit guide. Leave a field blank to inherit the project default.
       </p>
 
       {/* Identity — read-only computed actuals */}
       <section className="space-y-2">
-        <h4 className="text-xs text-ctp-subtext0/60 uppercase tracking-wider">Identity (read-only)</h4>
+        <h4 className="text-xs font-semibold text-ctp-subtext0">Identity (read-only)</h4>
         <ReadOnlyField token="@@AgentName" value={data.agentName} />
         <ReadOnlyField token="@@StandbyBranch" value={data.standbyBranch} />
         <ReadOnlyField token="@@Path" value={data.agentPath} />
@@ -175,7 +184,7 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
 
       {/* Commands + provider — editable per-agent overrides */}
       <section className="space-y-2">
-        <h4 className="text-xs text-ctp-subtext0/60 uppercase tracking-wider">Commands &amp; provider</h4>
+        <h4 className="text-xs font-semibold text-ctp-subtext0">Commands &amp; provider</h4>
         <CommandField
           token="@@BuildCommand"
           value={form.buildCommand}
@@ -203,7 +212,7 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
             value={form.sourceControlProvider}
             disabled={disabled}
             onChange={(e) => update({ sourceControlProvider: e.target.value as '' | SourceControlProvider })}
-            className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
+            className="mt-1 w-full h-7 rounded-md border border-surface-1 bg-ctp-base px-2 text-xs text-ctp-text focus:outline-none focus:border-ctp-accent disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <option value="">Inherit project default ({data.sourceControlProvider.resolved})</option>
             <option value="github">github</option>
@@ -214,7 +223,7 @@ export function WildcardSettingsForm({ projectPath, agentId, disabled, refreshKe
 
       {/* Mission + persona — authorable library fields */}
       <section className="space-y-3">
-        <h4 className="text-xs text-ctp-subtext0/60 uppercase tracking-wider">Mission &amp; persona</h4>
+        <h4 className="text-xs font-semibold text-ctp-subtext0">Mission &amp; persona</h4>
         <WildcardLibraryField
           token="@@Mission"
           help="The mission body substituted for @@Mission. Authored under .clubhouse/missions/."

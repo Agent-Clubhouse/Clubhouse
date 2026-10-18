@@ -126,29 +126,10 @@ describe('AgentAvatar', () => {
     expect(img).toHaveAttribute('src', 'data:image/png;base64,store-icon');
   });
 
-  it('renders orchestrator mini icon for claude-code agents without custom icon', () => {
-    const { container } = render(
-      <AgentAvatar agent={makeAgent({ orchestrator: 'claude-code' })} />,
-    );
-    // Should render SVG mini icon, not initials
-    expect(container.querySelector('svg')).toBeInTheDocument();
-    expect(screen.queryByText('BF')).not.toBeInTheDocument();
-  });
-
-  it('renders orchestrator mini icon for copilot-cli agents without custom icon', () => {
-    const { container } = render(
-      <AgentAvatar agent={makeAgent({ orchestrator: 'copilot-cli' })} />,
-    );
-    expect(container.querySelector('svg')).toBeInTheDocument();
-    expect(screen.queryByText('BF')).not.toBeInTheDocument();
-  });
-
-  it('renders orchestrator mini icon for codex-cli agents without custom icon', () => {
-    const { container } = render(
-      <AgentAvatar agent={makeAgent({ orchestrator: 'codex-cli' })} />,
-    );
-    expect(container.querySelector('svg')).toBeInTheDocument();
-    expect(screen.queryByText('BF')).not.toBeInTheDocument();
+  it.each(['claude-code', 'copilot-cli', 'codex-cli'])('renders initials, not a brand mascot, for %s agents (#2025)', (orchestrator) => {
+    const { container } = render(<AgentAvatar agent={makeAgent({ orchestrator })} />);
+    expect(screen.getByText('BF')).toBeInTheDocument();
+    expect(container.querySelector('svg')).not.toBeInTheDocument();
   });
 
   it('prefers custom icon over orchestrator mini icon', () => {
@@ -230,13 +211,14 @@ describe('AgentAvatarWithRing', () => {
     expect(styledEl!.getAttribute('style')).toContain('border');
   });
 
-  it('renders amber ring for waking agent', () => {
+  it('renders the starting ring for a waking agent', () => {
     const { container } = render(
       <AgentAvatarWithRing agent={makeAgent({ status: 'waking' })} />,
     );
     const styledEl = container.querySelector('[style]');
     expect(styledEl).toBeTruthy();
-    // Waking uses CSS variable via status-colors.ts
-    expect(styledEl!.getAttribute('style')).toContain('rgb(var(--ctp-warning))');
+    // Waking is Starting in the shared status palette (agent-status.tsx)
+    expect(styledEl!.getAttribute('style')).toContain('rgb(var(--ctp-info))');
   });
 });
+

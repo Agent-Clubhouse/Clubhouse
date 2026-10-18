@@ -1,4 +1,6 @@
 import { app, ipcMain } from 'electron';
+import { removePluginTools } from '../services/clubhouse-mcp/plugin-tool-registry';
+import { revokePluginTokens } from '../services/clubhouse-mcp/plugin-mcp-tokens';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
@@ -171,6 +173,10 @@ export function registerPluginHandlers(): void {
   }));
 
   ipcMain.handle(IPC.PLUGIN.UNINSTALL, withValidatedArgs([stringArg()], async (_event, pluginId: string) => {
+    // First, so a failed uninstall can't leave the plugin's MCP tools listed
+    // for agents with no handler left to answer them.
+    revokePluginTokens(pluginId);
+    removePluginTools(pluginId);
     await pluginDiscovery.uninstallPlugin(pluginId);
     pluginManifestRegistry.unregisterManifest(pluginId);
   }));

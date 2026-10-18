@@ -44,8 +44,8 @@ describe('UpdateSettingsView', () => {
       status: { state: 'checking', availableVersion: null, downloadProgress: 0, error: null, artifactUrl: null },
     });
     render(<UpdateSettingsView />);
-    // Both the status label and the button say "Checking..."
-    expect(screen.getAllByText('Checking...').length).toBeGreaterThanOrEqual(1);
+    // Both the status label and the button say "Checking…"
+    expect(screen.getAllByText('Checking…').length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows downloading status with progress', () => {
@@ -53,7 +53,7 @@ describe('UpdateSettingsView', () => {
       status: { state: 'downloading', availableVersion: null, downloadProgress: 42, error: null, artifactUrl: null },
     });
     render(<UpdateSettingsView />);
-    expect(screen.getByText('Downloading... (42%)')).toBeInTheDocument();
+    expect(screen.getByText('Downloading… (42%)')).toBeInTheDocument();
   });
 
   it('shows ready status with version', () => {
@@ -84,8 +84,8 @@ describe('UpdateSettingsView', () => {
       status: { state: 'checking', availableVersion: null, downloadProgress: 0, error: null, artifactUrl: null },
     });
     render(<UpdateSettingsView />);
-    // The button text changes to "Checking..." when state is checking
-    const btn = screen.getAllByText('Checking...').find((el) => el.tagName === 'BUTTON');
+    // The button text changes to "Checking…" when state is checking
+    const btn = screen.getAllByText('Checking…').find((el) => el.tagName === 'BUTTON');
     expect(btn).toBeDisabled();
   });
 

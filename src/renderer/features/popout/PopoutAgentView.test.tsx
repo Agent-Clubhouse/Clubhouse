@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { PopoutAgentView } from './PopoutAgentView';
 import { resetChatFlagCache } from '../agents/chat/AgentRuntimePane';
 import { chatFixture } from '../agents/chat/fixtures';
@@ -20,6 +20,12 @@ vi.mock('../agents/AgentAvatar', () => ({
   AgentAvatar: () => <div data-testid="chat-agent-avatar" />,
   AgentAvatarWithRing: ({ agent }: { agent: { name: string } }) => (
     <div data-testid="agent-avatar" data-name={agent.name} />
+  ),
+}));
+
+vi.mock('../agents/HeadlessAgentView', () => ({
+  HeadlessAgentView: ({ agent, stacked }: { agent: { id: string }; stacked?: boolean }) => (
+    <div data-testid="headless-agent-view" data-agent-id={agent.id} data-stacked={stacked} />
   ),
 }));
 
@@ -53,7 +59,7 @@ describe('PopoutAgentView', () => {
     window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ chat: false })) as typeof window.clubhouse.app.getExperimentalSettings;
   });
 
-  it('shows chat for an agent running in chat, with the action bar docked above it', async () => {
+  it('shows chat for an agent running in chat, with one toolbar', async () => {
     window.clubhouse.app.getExperimentalSettings = vi.fn(async () => ({ chat: true })) as typeof window.clubhouse.app.getExperimentalSettings;
     window.clubhouse.app.isPreviewEligible = vi.fn(async () => true);
     window.clubhouse.chat.getAgentRuntime = vi.fn(async () => ({ chat: true, chatAvailable: true }));
@@ -68,8 +74,9 @@ describe('PopoutAgentView', () => {
     expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
     // Switching runtimes stays in the main window.
     expect(screen.queryByTestId('runtime-switch')).not.toBeInTheDocument();
-    expect(screen.getByTestId('popout-action-bar').className).not.toContain('absolute');
-    expect(screen.getByTestId('popout-stop-button')).toBeInTheDocument();
+    // ChatView's own toolbar, not a second bar from the popout; Stop is in the title bar.
+    expect(screen.getAllByTestId('agent-pane-toolbar')).toHaveLength(1);
+    expect(screen.queryByTestId('popout-stop-button')).not.toBeInTheDocument();
   });
 
   it('follows the agent between chat and the terminal, and from sleeping to running', async () => {
@@ -93,16 +100,22 @@ describe('PopoutAgentView', () => {
     view.rerender(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
     await screen.findByTestId('agent-terminal');
     expect(screen.queryByTestId('chat-view')).not.toBeInTheDocument();
-    expect(screen.getByTestId('popout-action-bar').className).toContain('absolute');
+    expect(screen.getAllByTestId('agent-pane-toolbar')).toHaveLength(1);
   });
 
-  it('floats the action bar over the terminal', () => {
+  it('docks the toolbar above the terminal instead of floating over its Bottom button', async () => {
     mockAgents['agent-1'] = {
       id: 'agent-1', name: 'test-agent', status: 'running',
       kind: 'durable', projectId: 'proj-1', color: 'red',
     };
     render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
-    expect(screen.getByTestId('popout-action-bar').className).toContain('absolute');
+    const terminal = await screen.findByTestId('agent-terminal');
+    const toolbar = screen.getByTestId('agent-pane-toolbar');
+    expect(toolbar.className).not.toContain('absolute');
+    // A sibling before the terminal's container, not layered over it.
+    expect(toolbar.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(toolbar.contains(terminal)).toBe(false);
+    expect(screen.queryByTestId('popout-action-bar')).not.toBeInTheDocument();
   });
 
   it('renders "No agent specified" when no agentId', () => {
@@ -152,64 +165,6 @@ describe('PopoutAgentView', () => {
     expect(screen.queryByTestId('sleeping-agent')).not.toBeInTheDocument();
   });
 
-  it('renders avatar and name in floating bar', () => {
-    mockAgents['agent-1'] = {
-      id: 'agent-1', name: 'test-agent', status: 'running',
-      kind: 'durable', projectId: 'proj-1', color: 'red',
-    };
-    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
-    expect(screen.getByTestId('agent-avatar')).toBeInTheDocument();
-    expect(screen.getByText('test-agent')).toBeInTheDocument();
-  });
-
-  it('renders stop button when running', () => {
-    mockAgents['agent-1'] = {
-      id: 'agent-1', name: 'test-agent', status: 'running',
-      kind: 'durable', projectId: 'proj-1', color: 'red',
-    };
-    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
-    expect(screen.getByTestId('popout-stop-button')).toBeInTheDocument();
-  });
-
-  it('renders wake button when sleeping durable agent', () => {
-    mockAgents['agent-1'] = {
-      id: 'agent-1', name: 'test-agent', status: 'sleeping',
-      kind: 'durable', projectId: 'proj-1', color: 'red',
-    };
-    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
-    expect(screen.getByTestId('popout-wake-button')).toBeInTheDocument();
-    expect(screen.queryByTestId('popout-stop-button')).not.toBeInTheDocument();
-  });
-
-  it('does not render wake button for sleeping quick agent', () => {
-    mockAgents['agent-1'] = {
-      id: 'agent-1', name: 'test-agent', status: 'sleeping',
-      kind: 'quick', projectId: 'proj-1', color: 'red',
-    };
-    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
-    expect(screen.queryByTestId('popout-wake-button')).not.toBeInTheDocument();
-  });
-
-  it('renders View button that calls focusMain', () => {
-    mockAgents['agent-1'] = {
-      id: 'agent-1', name: 'test-agent', status: 'running',
-      kind: 'durable', projectId: 'proj-1', color: 'red',
-    };
-    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
-    fireEvent.click(screen.getByTestId('popout-view-button'));
-    expect(window.clubhouse.window.focusMain).toHaveBeenCalledWith('agent-1');
-  });
-
-  it('calls killAgent when stop is clicked', () => {
-    mockAgents['agent-1'] = {
-      id: 'agent-1', name: 'test-agent', status: 'running',
-      kind: 'durable', projectId: 'proj-1', color: 'red',
-    };
-    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
-    fireEvent.click(screen.getByTestId('popout-stop-button'));
-    expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('agent-1', 'proj-1');
-  });
-
   it('does not render AgentTerminal when no agentId', () => {
     render(<PopoutAgentView />);
     expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
@@ -232,5 +187,13 @@ describe('PopoutAgentView', () => {
     // Verify no direct subscriptions to PTY/hook events
     expect(window.clubhouse.pty.onExit).not.toHaveBeenCalled();
     expect(window.clubhouse.agent.onHookEvent).not.toHaveBeenCalled();
+  });
+
+  it('shows the run monitor, stacked, for a headless quick agent instead of a terminal (#2019)', () => {
+    mockAgents['q-1'] = { id: 'q-1', name: 'quick-one', status: 'running', kind: 'quick', headless: true, projectId: 'proj-1', color: 'gray' };
+    render(<PopoutAgentView agentId="q-1" projectId="proj-1" />);
+    expect(screen.getByTestId('headless-agent-view')).toHaveAttribute('data-stacked', 'true');
+    expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('popout-action-bar')).not.toBeInTheDocument();
   });
 });

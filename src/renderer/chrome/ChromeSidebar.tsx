@@ -12,20 +12,29 @@ import type { PluginRegistryEntry } from '../../shared/plugin-types';
 import type { Agent } from '../../shared/types';
 import { sanitizeSvg } from '../utils/sanitize-svg';
 import { ProjectTree } from './sidebar/ProjectTree';
+import { FilterResults } from './sidebar/FilterResults';
+import { useKeyboardShortcutsStore } from '../stores/keyboardShortcutsStore';
+import { Tooltip, formatShortcut } from '../components/Tooltip';
 import { NeedsYou, NeedsYouStrip } from './sidebar/NeedsYou';
 import { ListBody } from './sidebar/ListBody';
 import { SettingsNav } from './sidebar/SettingsNav';
+import { AgentSettingsNav } from './sidebar/AgentSettingsNav';
+import { requestCloseAgentSettings, requestLeaveAgentSettings } from '../features/agents/agentSettingsPages';
+import { HelpNav } from './sidebar/HelpNav';
 import { SidebarBreadcrumb } from './sidebar/SidebarBreadcrumb';
 import { useSidebarMode } from './listTabs';
 import { SCOPE_FOLLOWING_TABS } from './scope';
-import { ChromeAgentDialogs, useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
+import { useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
 import { selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './sidebar/treeModel';
 import { HostSwitcher, LOCAL_HOST } from './sidebar/HostSwitcher';
 import { useClickOutside } from './sidebar/useClickOutside';
 import { hostOf, switchHost } from './hosts';
-import { useChromeStore } from './chromeStore';
+import { openNewAgentOrDialog } from './startPage';
+import { useChromeStore, type AppLaunchParams } from './chromeStore';
 import { reportChromeFeature, reportChromeActionFailed } from './telemetry';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
+import { AppNotices } from '../features/app/AppNotices';
+import { TruncatedLabel } from '../components/TruncatedLabel';
 
 /**
  * Sidebar for the new chrome (docs/chrome-redesign-spec.md §2, §4.2): the host
@@ -58,7 +67,7 @@ function MenuButton({ label, testId, children, items, disabled }: {
   label: string;
   testId: string;
   children: React.ReactNode;
-  items: Array<{ label: string; onSelect: () => void }>;
+  items: Array<{ label: string; shortcut?: string; onSelect: () => void }>;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -67,18 +76,20 @@ function MenuButton({ label, testId, children, items, disabled }: {
   useClickOutside(ref, open, close);
   return (
     <div ref={ref} className="relative">
-      <button
-        type="button"
-        data-testid={testId}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
-        className="h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs font-medium text-ctp-accent bg-ctp-accent/15 hover:bg-ctp-accent/25 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-        title={label}
-      >
-        {children}
-      </button>
+      <Tooltip content={label} disabled={open}>
+        <button
+          type="button"
+          data-testid={testId}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={label}
+          disabled={disabled}
+          onClick={() => setOpen((o) => !o)}
+          className="h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs font-medium text-ctp-accent bg-ctp-accent/15 hover:bg-ctp-accent/25 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {children}
+        </button>
+      </Tooltip>
       {open && (
         <div role="menu" className="absolute right-0 top-8 z-dropdown min-w-[180px] py-1 rounded-lg border border-surface-1 bg-ctp-mantle shadow-xl">
           {items.map((item) => (
@@ -87,9 +98,10 @@ function MenuButton({ label, testId, children, items, disabled }: {
               type="button"
               role="menuitem"
               onClick={() => { setOpen(false); item.onSelect(); }}
-              className="w-full px-3 py-1.5 text-left text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
+              className="w-full px-3 py-1.5 flex items-center gap-4 text-left text-xs text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
             >
               {item.label}
+              {item.shortcut && <kbd className="ml-auto font-sans text-ctp-overlay1">{item.shortcut}</kbd>}
             </button>
           ))}
         </div>
@@ -115,10 +127,9 @@ function AppRow({ inline, overflow, explorerTab, onOpen }: {
         const rail = entry.manifest.contributes!.railItem!;
         const active = explorerTab === `plugin:app:${entry.manifest.id}`;
         return (
+          <Tooltip key={entry.manifest.id} content={rail.title || rail.label} disabled={!rail.title || rail.title === rail.label}>
           <button
-            key={entry.manifest.id}
             type="button"
-            title={rail.title || rail.label}
             data-testid={`app-row-${entry.manifest.id}`}
             data-active={active}
             onClick={() => onOpen(entry.manifest.id)}
@@ -127,23 +138,26 @@ function AppRow({ inline, overflow, explorerTab, onOpen }: {
             }`}
           >
             {railIcon(entry)}
-            <span className="truncate">{rail.label}</span>
+            {/* With a distinct title the outer Tooltip already says it all; don't open a second. */}
+            {rail.title && rail.title !== rail.label ? <span className="truncate">{rail.label}</span> : <TruncatedLabel text={rail.label} />}
           </button>
+          </Tooltip>
         );
       })}
       {overflow.length > 0 && (
         <div ref={moreRef} className="relative">
-          <button
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={moreOpen}
-            title="More app views"
-            aria-label="More app views"
-            onClick={() => setMoreOpen((o) => !o)}
-            className="h-[30px] w-[30px] rounded-md border border-surface-0 flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0/60 hover:text-ctp-text cursor-pointer"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
-          </button>
+          <Tooltip content="More app views" disabled={moreOpen}>
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-label="More app views"
+              onClick={() => setMoreOpen((o) => !o)}
+              className="h-[30px] w-[30px] rounded-md border border-surface-0 flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0/60 hover:text-ctp-text cursor-pointer"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+            </button>
+          </Tooltip>
           {moreOpen && (
             <div role="menu" className="absolute right-0 top-9 z-dropdown min-w-[180px] py-1 rounded-lg border border-surface-1 bg-ctp-mantle shadow-xl">
               {overflow.map((entry) => (
@@ -163,6 +177,101 @@ function AppRow({ inline, overflow, explorerTab, onOpen }: {
         </div>
       )}
     </nav>
+  );
+}
+
+const FunnelIcon = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 5h16l-6 7.5V18l-4 2v-7.5z" />
+  </svg>
+);
+
+/**
+ * The filter field (#2031): a real text field that narrows the project tree in
+ * place. Esc clears it, Down moves into the results, Enter opens the first one.
+ */
+function SidebarFilter({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const results = () => e.currentTarget.closest('aside')?.querySelectorAll<HTMLElement>('[data-testid="filter-results"] [role="treeitem"]');
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (value) onChange('');
+      else e.currentTarget.blur();
+    } else if (e.key === 'ArrowDown' && value) {
+      const first = results()?.[0];
+      if (first) { e.preventDefault(); first.focus(); }
+    } else if (e.key === 'Enter' && value) {
+      e.preventDefault();
+      // The first agent if there is one, else the first project.
+      const items = [...(results() ?? [])];
+      (items.find((el) => el.dataset.treeKey?.startsWith('agent:')) ?? items[0])?.click();
+    }
+  };
+  return (
+    <div className="relative flex-1 min-w-0">
+      <span className="absolute left-2 top-1/2 -translate-y-1/2 flex text-ctp-overlay1 pointer-events-none">{FunnelIcon}</span>
+      <input
+        ref={inputRef}
+        type="text"
+        data-testid="chrome-filter"
+        aria-label="Filter projects and agents"
+        placeholder="Filter"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        spellCheck={false}
+        autoComplete="off"
+        className={`w-full h-7 pl-[26px] ${value ? 'pr-7' : 'pr-2'} rounded-md border border-surface-1 bg-ctp-crust text-[12.5px] text-ctp-text placeholder:text-ctp-overlay0 focus-ring`}
+      />
+      {value && (
+        <button
+          type="button"
+          aria-label="Clear filter"
+          title="Clear filter"
+          onClick={() => { onChange(''); inputRef.current?.focus(); }}
+          className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded flex items-center justify-center text-ctp-overlay1 hover:text-ctp-text cursor-pointer focus-ring"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" /></svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+const CommandGlyph = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z" />
+  </svg>
+);
+
+/**
+ * The bordered command palette button (#2031): the ⌘ glyph on macOS, a Ctrl K
+ * keycap elsewhere, where ⌘ means nothing. Pressed while the palette is open.
+ */
+function PaletteButton({ onOpen }: { onOpen: () => void }) {
+  const isOpen = useCommandPaletteStore((s) => s.isOpen);
+  const binding = useKeyboardShortcutsStore((s) => s.shortcuts['command-palette']?.currentBinding);
+  const mac = window.clubhouse.platform === 'darwin';
+  // ⌘K on macOS, Ctrl+K elsewhere; the keycap spells it "Ctrl K".
+  const shortcut = binding ? formatShortcut(binding) : '';
+  return (
+    <Tooltip content="Command palette" shortcutAction="command-palette">
+    <button
+      type="button"
+      data-testid="chrome-palette-button"
+      aria-label="Command palette"
+      aria-keyshortcuts={binding ? binding.replace('Meta', mac ? 'Meta' : 'Control') : undefined}
+      aria-pressed={isOpen}
+      onClick={onOpen}
+      className={`flex-shrink-0 h-7 rounded-md border flex items-center justify-center cursor-pointer focus-ring ${
+        mac || !shortcut ? 'w-7' : 'px-2 text-xs font-medium whitespace-nowrap'
+      } ${isOpen ? 'border-surface-2 bg-surface-0 text-ctp-text' : 'border-surface-1 text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text'}`}
+    >
+      {mac || !shortcut ? CommandGlyph : shortcut.replace(/\+/g, ' ')}
+    </button>
+    </Tooltip>
   );
 }
 
@@ -202,6 +311,14 @@ export function ChromeSidebar() {
   const remoteDetailed = useRemoteProjectStore((s) => s.remoteAgentDetailedStatus);
   const remoteProjectIcons = useRemoteProjectStore((s) => s.remoteProjectIcons);
   const isRemoteHost = activeHostId !== null;
+
+  // The filter narrows the tree in place (#2031); it applies only while the tree is shown.
+  const [filter, setFilter] = useState('');
+  const filtering = mode === 'tree' && filter.trim().length > 0;
+  const changeFilter = useCallback((value: string) => {
+    if (!filter.trim() && value.trim()) reportChromeFeature('sidebar_filter');
+    setFilter(value);
+  }, [filter]);
 
   // A satellite that was unpaired can't stay the host (as in the legacy rail).
   useEffect(() => {
@@ -291,17 +408,32 @@ export function ChromeSidebar() {
   }, [projects, satelliteProjects]);
   const reviewEnabled = inlineItems.some((e) => e.manifest.id === 'review');
 
-  const openAppItem = useCallback((id: string) => {
+  // Every open goes through launchApp, so a plain open ends a visit that Needs you started.
+  const openAppItem = useCallback((id: string, params?: AppLaunchParams) => {
+    useChromeStore.getState().launchApp(id, params);
+    useChromeStore.getState().closeNewAgent();
     setExplorerTab(`plugin:app:${id}`);
     reportChromeFeature('app_item_open');
   }, [setExplorerTab]);
+  // Needs you > Review shows only the agents waiting on you, for this visit (#2021).
+  const openNeedsYouReview = useCallback(() => {
+    openAppItem('review', { needsYouOnly: true });
+    reportChromeFeature('needs_you_review');
+  }, [openAppItem]);
 
   const isProjectTab = explorerTab !== 'settings' && explorerTab !== 'help' && !explorerTab.startsWith('plugin:app:');
+  // In an app view that shows one agent at a time (Review), the selection follows that agent.
+  const appViewAgentIdRaw = useChromeStore((s) => s.appViewAgentId);
+  const appViewAgentId = explorerTab.startsWith('plugin:app:') ? appViewAgentIdRaw : null;
+  const appViewProjectId = appViewAgentId ? treeAgents[appViewAgentId]?.projectId ?? null : null;
+  const treeActiveAgentId = isProjectTab ? activeAgentId : appViewAgentId;
+  const treeActiveProjectId = isProjectTab ? activeProjectId : appViewProjectId;
 
   // Selecting a project header makes the project root the scope (spec §4.5).
   // The project's remembered agent is cleared too, so the project-switch effect
   // (App.tsx restoreProjectAgent) doesn't reselect it and end the project scope.
   const selectProject = useCallback((projectId: string) => {
+    useChromeStore.getState().closeNewAgent();
     setActiveProject(projectId);
     setActiveAgent(null, projectId);
     setProjectScope(projectId);
@@ -313,7 +445,8 @@ export function ChromeSidebar() {
   // Selecting an agent makes its worktree the scope. On a tab that follows the
   // scope (Terminal, Files, Git) the tab stays; otherwise the agent opens.
   // An agent on another host switches the host first (a remote Needs you row).
-  const openAgent = useCallback((agent: Agent, keepTab: boolean) => {
+  const openAgent = useCallback((agent: Agent, keepTab: boolean) => requestLeaveAgentSettings(() => {
+    useChromeStore.getState().closeNewAgent();
     useQuickAgentStore.getState().selectCompleted(null);
     switchHost(hostOf(agent.projectId));
     setProjectScope(null);
@@ -323,7 +456,7 @@ export function ChromeSidebar() {
     const tab = keepTab && sameProject && SCOPE_FOLLOWING_TABS.has(explorerTab) ? explorerTab : 'agents';
     setExplorerTab(tab, agent.projectId);
     setActiveAgent(agent.id, agent.projectId);
-  }, [setActiveProject, setProjectScope, setExplorerTab, setActiveAgent, explorerTab]);
+  }), [setActiveProject, setProjectScope, setExplorerTab, setActiveAgent, explorerTab]);
 
   const selectAgent = useCallback((agent: Agent) => {
     openAgent(agent, true);
@@ -382,6 +515,7 @@ export function ChromeSidebar() {
   }, []);
 
   const selectCompleted = useCallback((projectId: string, completedId: string) => {
+    useChromeStore.getState().closeNewAgent();
     setProjectScope(null);
     if (useProjectStore.getState().activeProjectId !== projectId) setActiveProject(projectId);
     setExplorerTab('agents', projectId);
@@ -403,23 +537,46 @@ export function ChromeSidebar() {
     reportChromeFeature('project_reorder');
   }, [reorderProjects]);
 
+  // A project's +, and each New menu item, open the New agent page with that kind chosen (#2031).
   const onNewAgent = useCallback((projectId: string) => {
-    useChromeDialogStore.getState().openNewAgent(projectId);
+    openNewAgentOrDialog('durable', projectId);
     reportChromeFeature('new_agent_open');
   }, []);
+  const newAgentBinding = useKeyboardShortcutsStore((s) => s.shortcuts['new-quick-agent']?.currentBinding);
+
+  // Nothing here matched: hand the query to the palette, which searches everything.
+  const searchEverything = () => {
+    useCommandPaletteStore.getState().open(filter.trim());
+    reportChromeFeature('filter_search_everything');
+  };
 
   const addProject = () => {
     pickAndAddProject().catch((err) => reportChromeActionFailed('add_project', err));
   };
 
-  const newItems = activeProjectId ? [
-    { label: 'Durable agent…', onSelect: () => useChromeDialogStore.getState().openNewAgent(activeProjectId) },
-    { label: 'Agent from a template…', onSelect: () => useChromeDialogStore.getState().openGallery(activeProjectId) },
-    { label: 'Quick agent…', onSelect: () => useUIStore.getState().openQuickAgentDialog() },
-  ] : [];
+  const templateProjectId = activeProjectId ?? projects[0]?.id;
+  const newItems = [
+    {
+      label: 'Durable agent…',
+      shortcut: newAgentBinding ? formatShortcut(newAgentBinding) : undefined,
+      onSelect: () => { openNewAgentOrDialog('durable'); reportChromeFeature('new_agent_open'); },
+    },
+    { label: 'Quick agent…', onSelect: () => { openNewAgentOrDialog('quick'); reportChromeFeature('new_agent_open'); } },
+    ...(templateProjectId ? [{ label: 'Agent from a template…', onSelect: () => useChromeDialogStore.getState().openGallery(templateProjectId) }] : []),
+  ];
 
   // The breadcrumb, or Esc inside the sidebar, returns from a list or Settings to Agents (spec §4.6).
-  const backToAgents = () => (mode === 'settings' ? useUIStore.getState().toggleSettings() : setExplorerTab('agents', activeProjectId ?? undefined));
+  const backToAgents = () => {
+    if (mode === 'settings') useUIStore.getState().toggleSettings();
+    else if (mode === 'help') useUIStore.getState().toggleHelp();
+    else if (mode === 'agent-settings') requestCloseAgentSettings();
+    else setExplorerTab('agents', activeProjectId ?? undefined);
+  };
+  const agentSettingsName = useAgentStore((s) => (mode === 'agent-settings' && s.activeAgentId ? s.agents[s.activeAgentId]?.name : undefined));
+  const breadcrumbLabel = mode === 'settings' ? 'Settings'
+    : mode === 'help' ? 'Help'
+      : mode === 'agent-settings' ? agentSettingsName ?? 'Agent'
+        : listLabel ?? 'List';
   const onSidebarKeyDown = (e: React.KeyboardEvent) => {
     if (mode === 'tree' || e.key !== 'Escape' || e.defaultPrevented) return;
     const target = e.target as HTMLElement;
@@ -447,17 +604,9 @@ export function ChromeSidebar() {
         onAnnexSettings={() => openAnnexSettings('annex')}
       />
       <div className="flex-shrink-0 px-2 pb-2 flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => { useCommandPaletteStore.getState().open(); reportChromeFeature('search_open'); }}
-          data-testid="chrome-search"
-          className="flex-1 min-w-0 h-7 px-2 rounded-md bg-surface-0 flex items-center gap-2 text-xs text-ctp-overlay1 hover:text-ctp-subtext1 cursor-pointer"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
-          <span>Search</span>
-          <kbd className="ml-auto text-xs text-ctp-overlay1">{window.clubhouse.platform === 'darwin' ? '⌘K' : 'Ctrl+K'}</kbd>
-        </button>
-        <MenuButton label="New agent" testId="chrome-new" items={newItems} disabled={!activeProjectId || isRemoteHost}>
+        <SidebarFilter value={filter} onChange={changeFilter} />
+        <PaletteButton onOpen={() => { useCommandPaletteStore.getState().open(); reportChromeFeature('search_open'); }} />
+        <MenuButton label="New agent" testId="chrome-new" items={newItems} disabled={projects.length === 0 || isRemoteHost}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           New
         </MenuButton>
@@ -467,23 +616,44 @@ export function ChromeSidebar() {
 
       {mode !== 'tree' && (
         <>
-          <SidebarBreadcrumb current={mode === 'settings' ? 'Settings' : listLabel ?? 'List'} onBack={backToAgents} />
-          <NeedsYouStrip items={needs} onSelect={selectNeedsYou} onReview={reviewEnabled ? () => openAppItem('review') : undefined} />
-          {mode === 'settings' ? <SettingsNav /> : <ListBody explorerTab={explorerTab} projectId={activeProjectId} />}
+          <SidebarBreadcrumb current={breadcrumbLabel} onBack={backToAgents} />
+          <NeedsYouStrip items={needs} onSelect={selectNeedsYou} onReview={reviewEnabled ? openNeedsYouReview : undefined} />
+          {mode === 'settings' ? <SettingsNav />
+            : mode === 'help' ? <HelpNav />
+              : mode === 'agent-settings' ? <AgentSettingsNav />
+                : <ListBody explorerTab={explorerTab} projectId={activeProjectId} />}
         </>
       )}
 
-      {mode === 'tree' && (
+      {filtering && (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <FilterResults
+            query={filter}
+            projects={treeProjects}
+            projectIcons={isRemoteHost ? remoteProjectIcons : projectIcons}
+            agentsByProject={agentsByProject}
+            detailed={treeDetailed}
+            activeAgentId={isProjectTab ? activeAgentId : null}
+            onSelectProject={selectProject}
+            onSelectAgent={selectAgent}
+            onOpenTerminal={isRemoteHost ? undefined : openTerminal}
+            terminalProjectIds={terminalProjectIds}
+            onSearchEverything={searchEverything}
+          />
+        </div>
+      )}
+
+      {mode === 'tree' && !filtering && (
         <NeedsYou
           items={needs}
           projectNames={projectNames}
           activeAgentId={activeAgentId}
           onSelect={selectNeedsYou}
-          onReview={reviewEnabled ? () => openAppItem('review') : undefined}
+          onReview={reviewEnabled ? openNeedsYouReview : undefined}
         />
       )}
 
-      <div className={`flex-1 min-h-0 flex-col ${mode === 'tree' ? 'flex' : 'hidden'}`}>
+      <div className={`flex-1 min-h-0 flex-col ${mode === 'tree' && !filtering ? 'flex' : 'hidden'}`}>
         <ProjectTree
           projectScopeId={projectScopeId}
           projects={treeProjects}
@@ -491,8 +661,8 @@ export function ChromeSidebar() {
           agentsByProject={agentsByProject}
           detailed={treeDetailed}
           completedByProject={isRemoteHost ? NO_COMPLETED : completedByProject}
-          activeProjectId={isProjectTab ? activeProjectId : null}
-          activeAgentId={isProjectTab ? activeAgentId : null}
+          activeProjectId={treeActiveProjectId}
+          activeAgentId={treeActiveAgentId}
           selectedCompletedId={selectedCompletedId}
           onReorder={isRemoteHost ? undefined : onReorder}
           onSelectProject={selectProject}
@@ -508,38 +678,41 @@ export function ChromeSidebar() {
         />
       </div>
 
+      <AppNotices variant="card" />
+
       <div className="flex-shrink-0 h-10 border-t border-surface-0 flex items-center gap-1 px-2">
+        <Tooltip content="Add project" side="top" shortcutAction="add-project">
         <button
           type="button"
           onClick={addProject}
-          title="Add project"
           data-testid="nav-add-project"
           className="h-7 px-2 rounded-md flex items-center gap-1.5 text-xs text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           Add project
         </button>
+        </Tooltip>
         <span className="flex-1" />
         {bottomItems.map((entry) => {
           const rail = entry.manifest.contributes!.railItem!;
           return (
-            <button
-              key={entry.manifest.id}
-              type="button"
-              title={rail.title || rail.label}
-              aria-label={rail.label}
-              onClick={() => openAppItem(entry.manifest.id)}
-              className="w-7 h-7 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer [&_svg]:w-[15px] [&_svg]:h-[15px]"
-            >
-              {railIcon(entry)}
-            </button>
+            <Tooltip key={entry.manifest.id} content={rail.title || rail.label} side="top">
+              <button
+                type="button"
+                aria-label={rail.label}
+                onClick={() => openAppItem(entry.manifest.id)}
+                className="w-7 h-7 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer [&_svg]:w-[15px] [&_svg]:h-[15px]"
+              >
+                {railIcon(entry)}
+              </button>
+            </Tooltip>
           );
         })}
         <FeedbackButton variant="sidebar" />
+        <Tooltip content="Help" side="top" shortcutAction="toggle-help">
         <button
           type="button"
           onClick={toggleHelp}
-          title="Help"
           aria-label="Help"
           data-testid="nav-help"
           data-active={explorerTab === 'help'}
@@ -549,10 +722,11 @@ export function ChromeSidebar() {
             <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" />
           </svg>
         </button>
+        </Tooltip>
+        <Tooltip content="Settings" side="top" shortcutAction="toggle-settings">
         <button
           type="button"
           onClick={toggleSettings}
-          title="Settings"
           aria-label="Settings"
           data-testid="nav-settings"
           data-active={explorerTab === 'settings'}
@@ -563,9 +737,9 @@ export function ChromeSidebar() {
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </button>
+        </Tooltip>
       </div>
 
-      <ChromeAgentDialogs />
     </aside>
   );
 }

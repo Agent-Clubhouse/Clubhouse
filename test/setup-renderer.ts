@@ -115,6 +115,7 @@ vi.stubGlobal('clubhouse', {
     updateSessionName: asyncNoop,
     getTranscriptInfo: asyncNoop,
     readTranscriptPage: asyncNoop,
+    readTranscriptFrom: asyncNoop,
     readSessionTranscript: async () => null,
     getSessionSummary: async () => null,
   },
@@ -137,6 +138,8 @@ vi.stubGlobal('clubhouse', {
     log: async () => [],
     showCommit: async () => ({ hash: '', files: [] }),
     commitDiff: async () => ({ original: '', modified: '' }),
+    headSha: async () => null,
+    diffNumstat: async () => [],
   },
   agentSettings: {
     readInstructions: async () => '',

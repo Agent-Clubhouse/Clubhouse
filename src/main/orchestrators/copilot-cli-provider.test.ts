@@ -337,6 +337,42 @@ describe('CopilotCliProvider', () => {
       expect(result.args).toContain('-p');
     });
 
+    // #2074: the resume queue sends no mission, so a resumed session gets no new prompt
+    it('a resumed interactive spawn without a mission has no -i or -p', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/project', resume: true, sessionId: 'sess-123', interactive: true });
+      expect(result.args[result.args.indexOf('--resume') + 1]).toBe('sess-123');
+      expect(result.args).not.toContain('-i');
+      expect(result.args).not.toContain('-p');
+    });
+
+    // A durable agent woken with a first message (#2019): -i runs the prompt and
+    // stays interactive, so the resumed session survives the task.
+    it('keeps --resume and uses -i when an interactive (durable) spawn has a mission', async () => {
+      const result = await provider.buildSpawnCommand({
+        cwd: '/project',
+        resume: true,
+        sessionId: 'sess-123',
+        mission: 'Fix the bug',
+        interactive: true,
+      });
+      expect(result.args[result.args.indexOf('--resume') + 1]).toBe('sess-123');
+      expect(result.args[result.args.indexOf('-i') + 1]).toBe('Fix the bug');
+      expect(result.args).not.toContain('-p');
+    });
+
+    it('uses --continue with -i when an interactive spawn resumes the latest session', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/project', resume: true, mission: 'Go', interactive: true });
+      expect(result.args).toContain('--continue');
+      expect(result.args).toContain('-i');
+    });
+
+    it('a fresh interactive spawn with a mission uses -i and no resume flags', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/project', mission: 'Go', interactive: true });
+      expect(result.args).toEqual(expect.arrayContaining(['-i', 'Go']));
+      expect(result.args).not.toContain('--resume');
+      expect(result.args).not.toContain('--continue');
+    });
+
     it('suppresses resume flags when a systemPrompt is set (prompt mode cannot resume)', async () => {
       const result = await provider.buildSpawnCommand({
         cwd: '/project',

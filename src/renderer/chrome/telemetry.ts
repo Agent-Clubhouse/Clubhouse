@@ -48,7 +48,19 @@ function applySurface(): void {
 }
 
 export function reportChromeView(explorerTab: string): void {
-  setTelemetryView(viewForTab(explorerTab));
+  lastTabView = viewForTab(explorerTab);
+  setTelemetryView(lastTabView);
+}
+
+let lastTabView: TelemetryView = 'agent';
+
+/**
+ * A view shown inside the agent pane (the Changes review, #2032) while it's
+ * mounted. Returns the release, which goes back to the tab's view.
+ */
+export function holdChromeView(view: TelemetryView): () => void {
+  setTelemetryView(view);
+  return () => setTelemetryView(lastTabView);
 }
 
 /** Also feeds long-frame metrics and render-error reports (spec §8). */
@@ -73,8 +85,8 @@ export function holdChromeSurface(surface: ChromeSurface): () => void {
   };
 }
 
-/** The start page and first run are panes of their own: `clubhouse.view` is `other` (spec §8). */
-export function reportChromePage(page: 'start_page' | 'first_run'): void {
+/** The start page, first run, New agent and a satellite's start page are panes of their own: `clubhouse.view` is `other` (spec §8). */
+export function reportChromePage(page: 'start_page' | 'first_run' | 'new_agent' | 'satellite_start'): void {
   reportChromeSurface(page);
   setTelemetryView('other');
 }

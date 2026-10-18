@@ -5,10 +5,17 @@
  * a plugin tool, the call is routed through IPC to the plugin's renderer-side handler.
  *
  * Tool naming: plugin__<sanitized_plugin_id>__<tool_name>
+ *
+ * Each plugin's tools are a template set of their own, under target kind
+ * 'plugin' and target id = the pluginId: a binding to plugin X exposes X's
+ * tools and no other plugin's, and two plugins can both have a `lookup`.
  */
 
+import { randomUUID } from 'crypto';
+import { webContents } from 'electron';
 import type { McpToolDefinition, McpToolResult } from './types';
-import { registerToolTemplate, unregisterToolTemplate, sanitizeId } from './tool-registry';
+import { setTargetToolTemplates, clearTargetToolTemplates, sanitizeId, type ToolTemplate } from './tool-registry';
+import { webContentsIdForPlugin } from './plugin-mcp-tokens';
 import { appLog } from '../log-service';
 import { getManifest } from '../plugin-manifest-registry';
 import { IPC } from '../../../shared/ipc-channels';
@@ -24,6 +31,7 @@ const pluginTools = new Map<string, PluginToolEntry[]>();
 
 /** Pending tool call resolvers — keyed by callId */
 const pendingCalls = new Map<string, {
+  pluginId: string;
   resolve: (result: McpToolResult) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -32,11 +40,19 @@ const pendingCalls = new Map<string, {
 /** Default timeout for plugin tool calls (30 seconds). */
 const TOOL_CALL_TIMEOUT_MS = 30_000;
 
-let callIdCounter = 0;
+/**
+ * Tool names a plugin may use: what MCP clients accept in a tool name, less
+ * a leading '_' and any '__'. Tools are named plugin__<id>__<tool>, and the
+ * id is sanitized ('-' becomes '_'), so without those rules 'acme-' + 'x'
+ * and 'acme' + '_x' would build the same name, as would 'acme--notes' +
+ * 'search' and 'acme' + 'notes__search'.
+ */
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9-](?:[A-Za-z0-9-]|_(?!_)){0,63}$/;
 
 /**
- * Register tools contributed by a plugin.
- * Each tool is registered as a template under the 'plugin' target kind.
+ * Register tools contributed by a plugin, replacing its previous set.
+ * All or nothing: the whole set is validated and built first, then swapped
+ * in one step, so a failed contribution leaves the previous set in place.
  */
 export function registerPluginTools(
   pluginId: string,
@@ -47,12 +63,19 @@ export function registerPluginTools(
     throw new Error(`Plugin '${pluginId}' requires 'mcp.tools' permission to contribute MCP tools`);
   }
 
-  // Remove any existing tools for this plugin first
-  removePluginTools(pluginId);
-
   const entries: PluginToolEntry[] = [];
+  const templates: ToolTemplate[] = [];
+  const names = new Set<string>();
 
   for (const tool of tools) {
+    if (!TOOL_NAME_PATTERN.test(tool.name)) {
+      throw new Error(`Plugin '${pluginId}' tool name "${tool.name}" must match ${TOOL_NAME_PATTERN}`);
+    }
+    if (names.has(tool.name)) {
+      throw new Error(`Plugin '${pluginId}' contributed tool "${tool.name}" twice`);
+    }
+    names.add(tool.name);
+
     const entry: PluginToolEntry = {
       pluginId,
       name: tool.name,
@@ -67,17 +90,14 @@ export function registerPluginTools(
     };
     entries.push(entry);
 
-    // Register as a tool template under the 'plugin' target kind
-    registerToolTemplate(
-      'plugin',
-      tool.name,
-      entry.definition,
-      async (_targetId, _agentId, args) => {
-        return invokePluginToolHandler(pluginId, tool.name, args);
-      },
-    );
+    templates.push({
+      nameSuffix: tool.name,
+      definition: entry.definition,
+      handler: async (_targetId, _agentId, args) => invokePluginToolHandler(pluginId, tool.name, args),
+    });
   }
 
+  setTargetToolTemplates('plugin', pluginId, templates);
   pluginTools.set(pluginId, entries);
 
   appLog('core:mcp', 'info', `Plugin ${pluginId} registered ${tools.length} MCP tools`, {
@@ -89,11 +109,21 @@ export function registerPluginTools(
  * Remove all tools contributed by a plugin.
  */
 export function removePluginTools(pluginId: string): void {
+  // Calls already sent to the plugin will never be answered once its tools
+  // are gone: settle them now instead of letting each wait out the timeout.
+  for (const [callId, pending] of pendingCalls) {
+    if (pending.pluginId !== pluginId) continue;
+    clearTimeout(pending.timer);
+    pendingCalls.delete(callId);
+    pending.resolve({
+      content: [{ type: 'text', text: `Plugin ${pluginId} was removed before answering the tool call` }],
+      isError: true,
+    });
+  }
+
+  clearTargetToolTemplates('plugin', pluginId);
   const existing = pluginTools.get(pluginId);
   if (existing) {
-    for (const entry of existing) {
-      unregisterToolTemplate('plugin', entry.name);
-    }
     pluginTools.delete(pluginId);
     appLog('core:mcp', 'info', `Plugin ${pluginId} removed ${existing.length} MCP tools`);
   }
@@ -109,14 +139,15 @@ export function listPluginTools(pluginId: string): string[] {
 
 /**
  * Invoke a plugin's tool handler via IPC.
- * The call is routed to the renderer process where the plugin's onToolCall handler runs.
+ * The call goes to the page holding the plugin's token, where its onToolCall
+ * handler runs.
  */
 async function invokePluginToolHandler(
   pluginId: string,
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<McpToolResult> {
-  const callId = `ptc_${++callIdCounter}_${Date.now()}`;
+  const callId = randomUUID();
 
   return new Promise<McpToolResult>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -127,13 +158,12 @@ async function invokePluginToolHandler(
       });
     }, TOOL_CALL_TIMEOUT_MS);
 
-    pendingCalls.set(callId, { resolve, reject, timer });
+    pendingCalls.set(callId, { pluginId, resolve, reject, timer });
 
-    // Send IPC to renderer — the renderer bridge will route to the plugin
-    const { BrowserWindow } = require('electron');
-    const windows = BrowserWindow.getAllWindows();
-    if (windows.length > 0) {
-      windows[0].webContents.send(IPC.PLUGIN_MCP.TOOL_CALL, {
+    const hostId = webContentsIdForPlugin(pluginId);
+    const host = hostId === undefined ? undefined : webContents.fromId(hostId);
+    if (host && !host.isDestroyed()) {
+      host.send(IPC.PLUGIN_MCP.TOOL_CALL, {
         callId,
         pluginId,
         toolName,
@@ -143,7 +173,7 @@ async function invokePluginToolHandler(
       pendingCalls.delete(callId);
       clearTimeout(timer);
       resolve({
-        content: [{ type: 'text', text: 'No renderer window available for plugin tool call' }],
+        content: [{ type: 'text', text: `Plugin ${pluginId} is not active in any window` }],
         isError: true,
       });
     }
@@ -152,18 +182,21 @@ async function invokePluginToolHandler(
 
 /**
  * Resolve a pending plugin tool call with the result from the renderer.
- * Called by the IPC handler when the plugin's onToolCall handler returns.
+ * Only the plugin the call was sent to can answer it: `fromPluginId` is the
+ * plugin resolved from the sender's token. Returns false, leaving the call
+ * pending, for an unknown call or one owned by another plugin.
  */
 export function resolvePluginToolCall(
   callId: string,
   result: McpToolResult,
-): void {
+  fromPluginId: string,
+): boolean {
   const pending = pendingCalls.get(callId);
-  if (pending) {
-    clearTimeout(pending.timer);
-    pendingCalls.delete(callId);
-    pending.resolve(result);
-  }
+  if (!pending || pending.pluginId !== fromPluginId) return false;
+  clearTimeout(pending.timer);
+  pendingCalls.delete(callId);
+  pending.resolve(result);
+  return true;
 }
 
 /** For testing: clear all registered plugin tools. */
@@ -173,5 +206,4 @@ export function _resetForTesting(): void {
     clearTimeout(pending.timer);
   }
   pendingCalls.clear();
-  callIdCounter = 0;
 }

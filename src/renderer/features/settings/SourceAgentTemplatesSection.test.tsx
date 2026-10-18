@@ -28,7 +28,7 @@ describe('SourceAgentTemplatesSection', () => {
 
   it('renders without crash', async () => {
     render(<SourceAgentTemplatesSection projectPath={projectPath} />);
-    expect(screen.getByText('Agent Definitions')).toBeInTheDocument();
+    expect(screen.getByText('Agent definitions')).toBeInTheDocument();
   });
 
   it('loads and displays templates', async () => {
@@ -47,11 +47,11 @@ describe('SourceAgentTemplatesSection', () => {
     });
   });
 
-  it('shows create view when + Agent clicked', async () => {
+  it('shows create view when New definition clicked', async () => {
     render(<SourceAgentTemplatesSection projectPath={projectPath} />);
     await waitFor(() => screen.getByText('reviewer'));
-    fireEvent.click(screen.getByText('+ Agent'));
-    expect(screen.getByText('New Agent Definition')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('New definition'));
+    expect(screen.getByText('New agent definition')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('agent-name (lowercase, hyphens)')).toBeInTheDocument();
   });
 
@@ -60,7 +60,7 @@ describe('SourceAgentTemplatesSection', () => {
     await waitFor(() => screen.getByText('reviewer'));
     fireEvent.click(screen.getByText('reviewer'));
     await waitFor(() => {
-      expect(screen.getByText('Edit: reviewer')).toBeInTheDocument();
+      expect(screen.getByText('Edit reviewer')).toBeInTheDocument();
     });
   });
 
@@ -70,7 +70,7 @@ describe('SourceAgentTemplatesSection', () => {
     // Click the delete button (trash icon) - find by title
     const deleteButtons = screen.getAllByTitle('Delete agent definition');
     fireEvent.click(deleteButtons[0]);
-    expect(screen.getByText('Delete Agent Definition')).toBeInTheDocument();
+    expect(screen.getByText('Delete agent definition?')).toBeInTheDocument();
   });
 
   it('cancels delete dialog', async () => {
@@ -79,15 +79,15 @@ describe('SourceAgentTemplatesSection', () => {
     const deleteButtons = screen.getAllByTitle('Delete agent definition');
     fireEvent.click(deleteButtons[0]);
     fireEvent.click(screen.getByText('Cancel'));
-    expect(screen.queryByText('Delete Agent Definition')).not.toBeInTheDocument();
+    expect(screen.queryByText('Delete agent definition?')).not.toBeInTheDocument();
   });
 
   it('cancels create view', async () => {
     render(<SourceAgentTemplatesSection projectPath={projectPath} />);
     await waitFor(() => screen.getByText('reviewer'));
-    fireEvent.click(screen.getByText('+ Agent'));
+    fireEvent.click(screen.getByText('New definition'));
     fireEvent.click(screen.getByText('Cancel'));
-    expect(screen.queryByText('New Agent Definition')).not.toBeInTheDocument();
+    expect(screen.queryByText('New agent definition')).not.toBeInTheDocument();
   });
 
   it('shows folder path hint', () => {

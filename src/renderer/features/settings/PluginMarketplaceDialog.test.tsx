@@ -333,6 +333,37 @@ describe('PluginMarketplaceDialog', () => {
     });
   });
 
+  it('renders inside the shared Modal with a sentence-case title', async () => {
+    window.clubhouse.marketplace.fetchRegistry = vi.fn(async () => sampleResult);
+    render(<PluginMarketplaceDialog onClose={vi.fn()} />);
+    expect(screen.getByRole('heading', { level: 2, name: 'Plugin marketplace' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Hello World')).toBeInTheDocument();
+    });
+  });
+
+  it('closes on Escape', async () => {
+    window.clubhouse.marketplace.fetchRegistry = vi.fn(async () => sampleResult);
+    const onClose = vi.fn();
+    render(<PluginMarketplaceDialog onClose={onClose} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('shows plain meta text and risk words instead of chips', async () => {
+    window.clubhouse.marketplace.fetchRegistry = vi.fn(async () => sampleResult);
+    render(<PluginMarketplaceDialog onClose={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByText('Hello World')).toBeInTheDocument();
+    });
+    const row = screen.getByTestId('marketplace-plugin-code-review');
+    expect(row).toHaveTextContent('Official · 1.0.0 · by Clubhouse · 10.0 KB');
+    expect(row).toHaveTextContent('Can change things · View permissions (3)');
+    expect(screen.queryByText('API 0.5')).not.toBeInTheDocument();
+    // API 0.5 is deprecated: one plain warning line per plugin
+    expect(screen.getAllByText('Uses plugin API 0.5, which stops loading in v0.39.').length).toBe(3);
+  });
+
   it('shows error when install fails', async () => {
     window.clubhouse.marketplace.fetchRegistry = vi.fn(async () => sampleResult);
     window.clubhouse.marketplace.installPlugin = vi.fn(async () => ({

@@ -38,14 +38,24 @@ describe('AgentRuntimePane', () => {
     useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'Clubhouse', path: '/work/clubhouse' }] } as never);
   });
 
-  it('renders the terminal unchanged and never asks for the runtime with the flag off', async () => {
+  it('renders the terminal under the pane toolbar and never asks for the runtime with the flag off', async () => {
     setFlag(false);
     setRuntime(true, true);
-    const { container } = render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId('fake-terminal')).toBeInTheDocument();
+    expect(screen.getByTestId('terminal-pane-bar')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-details-toggle')).toBeInTheDocument();
+    expect(api.chat.getAgentRuntime).not.toHaveBeenCalled();
+    // No Chat to switch to: the switch is Terminal and the Changes review.
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['Terminal', 'Changes']);
+  });
+
+  it('renders the terminal alone outside the main pane', async () => {
+    setFlag(false);
+    const { container } = render(<AgentRuntimePane agent={agent} terminal={terminal} canSwitch={false} />);
     await act(async () => { await Promise.resolve(); });
     expect(container.firstChild).toBe(screen.getByTestId('fake-terminal'));
-    expect(api.chat.getAgentRuntime).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('runtime-switch')).not.toBeInTheDocument();
   });
 
   it('keeps the flag off in builds that are not preview-eligible', async () => {
@@ -85,7 +95,7 @@ describe('AgentRuntimePane', () => {
     setFlag(true);
     setRuntime(true, true);
     api.chat.readTranscript = vi.fn(async () => chatFixture('codex', 'conversation'));
-    const { unmount } = render(<AgentRuntimePane agent={agent} terminal={terminal} canSwitch={false} />);
+    const { unmount } = render(<AgentRuntimePane agent={agent} terminal={terminal} canSwitch={false} context="popout" />);
     await screen.findByTestId('chat-view');
     expect(screen.queryByTestId('runtime-switch')).not.toBeInTheDocument();
     unmount();

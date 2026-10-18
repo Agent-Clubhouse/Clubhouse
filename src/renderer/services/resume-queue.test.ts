@@ -149,9 +149,86 @@ describe('resume-queue', () => {
           sessionId: 'session-abc',
           orchestrator: 'claude-code',
           model: 'claude-opus-4',
-          mission: 'Fix the bug',
         }),
       );
+      // The resumed session already has its mission; sending it again replays it (#2074)
+      expect(mockSpawnAgent.mock.calls[0][0]).not.toHaveProperty('mission');
+    });
+
+    it('never sends the original mission with resume: true, including on the --continue fallback (#2074)', async () => {
+      const entry = makeEntry({
+        agentId: 'replay-agent',
+        sessionId: 'session-1',
+        kind: 'durable',
+        mission: 'Refactor the auth module',
+        resumeStrategy: 'auto',
+      });
+      mockSpawnAgent
+        .mockRejectedValueOnce(new Error('session not found'))
+        .mockResolvedValueOnce(undefined);
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['replay-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      expect(mockSpawnAgent).toHaveBeenCalledTimes(2);
+      for (const [params] of mockSpawnAgent.mock.calls) {
+        expect(params).toMatchObject({ resume: true });
+        expect(params.mission).toBeUndefined();
+      }
+    });
+
+    describe('an entry with no session id (#2074)', () => {
+      function settle(id: string) {
+        vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+          mockAgents[id] = { status: 'running' };
+          setTimeout(() => (callback as () => void)(), 0);
+          return vi.fn();
+        });
+      }
+
+      it('an agent that never started a session is spawned fresh WITH its mission', async () => {
+        settle('never-started');
+        const entry = makeEntry({ agentId: 'never-started', sessionId: null, sessionStarted: false, mission: 'Write the spec', resumeStrategy: 'auto' });
+        await processResumeQueue(makeState([entry]));
+        expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
+        expect(mockSpawnAgent.mock.calls[0][0]).toMatchObject({ agentId: 'never-started', resume: false, mission: 'Write the spec' });
+        expect(mockSpawnAgent.mock.calls[0][0].sessionId).toBeUndefined();
+      });
+
+      it('an agent whose id capture failed resumes the most recent session, without the mission', async () => {
+        settle('lost-id');
+        const entry = makeEntry({ agentId: 'lost-id', sessionId: null, mission: 'Write the spec', resumeStrategy: 'auto' });
+        await processResumeQueue(makeState([entry]));
+        expect(mockSpawnAgent.mock.calls[0][0]).toMatchObject({ agentId: 'lost-id', resume: true });
+        expect(mockSpawnAgent.mock.calls[0][0].sessionId).toBeUndefined();
+        expect(mockSpawnAgent.mock.calls[0][0].mission).toBeUndefined();
+      });
+
+      it('an entry from an older version (no sessionStarted) also resumes without the mission', async () => {
+        settle('old-entry');
+        const entry = makeEntry({ agentId: 'old-entry', sessionId: null, mission: 'Old task', resumeStrategy: 'auto' });
+        delete (entry as { sessionStarted?: boolean }).sessionStarted;
+        await processResumeQueue(makeState([entry]));
+        expect(mockSpawnAgent.mock.calls[0][0]).toMatchObject({ resume: true });
+        expect(mockSpawnAgent.mock.calls[0][0].mission).toBeUndefined();
+      });
+    });
+
+    it('still shows the mission on the resumed agent', async () => {
+      const entry = makeEntry({ agentId: 'shown-agent', kind: 'quick', mission: 'Write the spec', resumeStrategy: 'auto' });
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['shown-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+      await processResumeQueue(makeState([entry]));
+      const setState = mockSetState.mock.calls.map(([u]) => (typeof u === 'function' ? u({ agents: {}, agentSpawnedAt: {} } as never) : u));
+      expect(setState.some((s) => (s as { agents?: Record<string, { mission?: string }> }).agents?.['shown-agent']?.mission === 'Write the spec')).toBe(true);
+      expect(mockSpawnAgent.mock.calls[0][0].mission).toBeUndefined();
     });
 
     it('skips spawnAgent for manual agents', async () => {

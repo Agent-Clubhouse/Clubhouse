@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { activate, deactivate, MainPanel, SidebarPanel } from './main';
-import { terminalState, makeSessionId } from './state';
+import { terminalState, makeSessionId, MAX_TERMINAL_SESSIONS } from './state';
 import { manifest } from './manifest';
 import * as terminalModule from './main';
 import { validateBuiltinPlugin } from '../builtin-plugin-testing';
@@ -198,8 +198,8 @@ describe('makeSessionId', () => {
     expect(makeSessionId('proj-abc', 'project')).toBe('terminal:proj-abc:project');
   });
 
-  it('agent produces terminal:<projectId>:agent:<name>', () => {
-    expect(makeSessionId('proj-abc', 'agent', 'snazzy-fox')).toBe('terminal:proj-abc:agent:snazzy-fox');
+  it('agent produces terminal:<projectId>:agent:<agentId>', () => {
+    expect(makeSessionId('proj-abc', 'agent', 'agent-1')).toBe('terminal:proj-abc:agent:agent-1');
   });
 
   it('project and agent IDs never collide even if agent name is "project"', () => {
@@ -628,3 +628,28 @@ describe('terminal plugin module exports', () => {
     expect((terminalModule as any).SettingsPanel).toBeUndefined();
   });
 });
+
+describe('terminalState session cap bookkeeping', () => {
+  beforeEach(() => terminalState.reset());
+
+  it('counts sessions per project, so one project cannot use another\'s slots', () => {
+    for (let i = 0; i < MAX_TERMINAL_SESSIONS; i++) {
+      expect(terminalState.touchSession('p1', `s${i}`)).toEqual([]);
+    }
+    expect(terminalState.touchSession('p2', 'other')).toEqual([]);
+    const candidates = terminalState.touchSession('p1', 'new');
+    expect(candidates[0]).toBe('s0');
+    expect(candidates).not.toContain('new');
+    expect(candidates).not.toContain('other');
+  });
+
+  it('re-showing a session moves it to the back and forgetSession drops it', () => {
+    terminalState.touchSession('p1', 'a');
+    terminalState.touchSession('p1', 'b');
+    terminalState.touchSession('p1', 'a');
+    expect(terminalState.recentSessions.get('p1')).toEqual(['b', 'a']);
+    terminalState.forgetSession('p1', 'b');
+    expect(terminalState.sessionCount('p1')).toBe(1);
+  });
+});
+

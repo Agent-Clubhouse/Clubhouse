@@ -1,5 +1,6 @@
 import React from 'react';
 import type { OffScreenIndicator, OffScreenDirection } from './canvas-attention';
+import { CANVAS_Z } from './canvas-chrome';
 
 interface CanvasAttentionIndicatorsProps {
   indicators: OffScreenIndicator[];
@@ -30,8 +31,9 @@ export function CanvasAttentionIndicators({ indicators, onNavigate }: CanvasAtte
         return (
           <button
             key={ind.viewId}
-            className="absolute z-[9998] flex items-center justify-center group"
+            className="absolute flex items-center justify-center group"
             style={{
+              zIndex: CANVAS_Z.paneOverlay,
               left: ind.screenX,
               top: ind.screenY,
               transform: 'translate(-50%, -50%)',

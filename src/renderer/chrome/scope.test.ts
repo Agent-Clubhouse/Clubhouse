@@ -27,6 +27,12 @@ describe('resolveChromeScope', () => {
     });
   });
 
+  it('carries the worktree branch when the agent has one', () => {
+    expect(resolveChromeScope(project, agent({ branch: 'gallant-swift/rows' }), null)?.branch).toBe('gallant-swift/rows');
+    expect(resolveChromeScope(project, agent(), null)?.branch).toBeUndefined();
+    expect(resolveChromeScope(project, agent({ branch: 'x' }), 'p1')?.branch).toBeUndefined();
+  });
+
   it('falls back to the project root for an agent without a worktree', () => {
     expect(resolveChromeScope(project, agent({ worktreePath: undefined }), null)).toMatchObject({
       kind: 'agent', cwd: '/src/ch', relativeRoot: '.', isWorktree: false, agentName: 'gallant-swift',

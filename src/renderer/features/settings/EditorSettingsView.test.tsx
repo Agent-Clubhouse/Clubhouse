@@ -28,8 +28,8 @@ describe('EditorSettingsView', () => {
 
   it('renders heading and description', () => {
     render(<EditorSettingsView />);
-    expect(screen.getByText('External Editor')).toBeInTheDocument();
-    expect(screen.getByText(/Choose which editor/)).toBeInTheDocument();
+    expect(screen.getByText('External editor')).toBeInTheDocument();
+    expect(screen.getByText(/The editor that opens files/)).toBeInTheDocument();
   });
 
   it('loads settings on mount', () => {
@@ -63,7 +63,7 @@ describe('EditorSettingsView', () => {
 
   it('shows current editor command and name', () => {
     render(<EditorSettingsView />);
-    const status = screen.getByText(/Currently using:/);
+    const status = screen.getByTestId('editor-current');
     expect(status).toBeInTheDocument();
     expect(status.textContent).toContain('code');
     expect(status.textContent).toContain('VS Code');

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useEditorSettingsStore } from '../../stores/editorSettingsStore';
+import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput } from './SettingsLayout';
 
 const EDITOR_PRESETS = [
   { command: 'code', name: 'VS Code' },
@@ -31,43 +32,42 @@ export function EditorSettingsView() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-ctp-base p-6">
-      <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">External Editor</h2>
-        <p className="text-sm text-ctp-subtext0 mb-6">
-          Choose which editor to use when opening files from canvas views.
-        </p>
+    <SettingsPage title="External editor" description="The editor that opens files from canvas views.">
+      <SettingsSection title="Editor">
+        <SettingsBlock>
+          <div className="grid grid-cols-2 gap-2">
+            {EDITOR_PRESETS.map((preset) => {
+              const selected = editorCommand === preset.command;
+              return (
+                <button
+                  key={preset.command}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => handlePresetSelect(preset.command, preset.name)}
+                  className={`h-8 flex items-center gap-2 px-2.5 rounded-md border transition-colors cursor-pointer text-left focus-ring ${
+                    selected
+                      ? 'border-ctp-accent bg-surface-0 text-ctp-text'
+                      : 'border-surface-1 text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text'
+                  }`}
+                  data-testid={`editor-preset-${preset.command}`}
+                >
+                  <span className="text-[13px]">{preset.name}</span>
+                  <span className="ml-auto text-xs font-mono text-ctp-overlay1">{preset.command}</span>
+                </button>
+              );
+            })}
+          </div>
+        </SettingsBlock>
+      </SettingsSection>
 
-        {/* Editor presets */}
-        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Editor</h3>
-        <div className="grid grid-cols-2 gap-2 max-w-lg mb-6">
-          {EDITOR_PRESETS.map((preset) => {
-            const selected = editorCommand === preset.command;
-            return (
-              <button
-                key={preset.command}
-                onClick={() => handlePresetSelect(preset.command, preset.name)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all cursor-pointer text-left ${
-                  selected
-                    ? 'border-ctp-accent bg-ctp-accent/10 text-ctp-text'
-                    : 'border-surface-1 hover:border-surface-2 text-ctp-subtext1 hover:text-ctp-text'
-                }`}
-                data-testid={`editor-preset-${preset.command}`}
-              >
-                <span className="text-xs font-mono text-ctp-overlay1">{preset.command}</span>
-                <span className="text-sm">{preset.name}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Custom command */}
-        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Custom Command</h3>
-        <p className="text-xs text-ctp-subtext0 mb-2">
-          Enter a custom shell command. The file path will be appended as an argument.
-        </p>
-        <div className="flex gap-2 max-w-lg">
+      <SettingsSection title="Custom command">
+        <SettingsField
+          label="Command"
+          help="Any shell command. Clubhouse adds the file path as the last argument."
+          htmlFor="editor-custom-command"
+        >
           <input
+            id="editor-custom-command"
             type="text"
             value={isCustom ? editorCommand : ''}
             placeholder={editorCommand}
@@ -77,14 +77,16 @@ export function EditorSettingsView() {
                 saveSettings({ editorCommand: cmd, editorName: cmd });
               }
             }}
-            className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-surface-1 bg-ctp-mantle text-ctp-text placeholder:text-ctp-overlay0 focus-ring"
+            className={`${settingsInput} w-[220px] font-mono`}
             data-testid="editor-custom-command"
           />
-        </div>
-        <p className="text-xs text-ctp-overlay0 mt-2">
-          Currently using: <span className="font-mono text-ctp-text">{editorCommand}</span> ({editorName})
-        </p>
-      </div>
-    </div>
+        </SettingsField>
+        <SettingsField label="Current editor">
+          <span className="text-xs text-ctp-subtext1" data-testid="editor-current">
+            <span className="font-mono text-ctp-text">{editorCommand}</span> ({editorName})
+          </span>
+        </SettingsField>
+      </SettingsSection>
+    </SettingsPage>
   );
 }

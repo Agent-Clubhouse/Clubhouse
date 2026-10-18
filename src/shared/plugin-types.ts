@@ -730,7 +730,8 @@ export interface WidgetsAPI {
   SleepingAgent: React.ComponentType<{ agentId: string }>;
   AgentAvatar: React.ComponentType<{
     agentId: string;
-    size?: 'sm' | 'md';
+    /** `2xs` is the 18px chrome size (pair it with a status dot, not the ring). Added within API 0.9. */
+    size?: '2xs' | 'sm' | 'md';
     showStatusRing?: boolean;
   }>;
   QuickAgentGhost: React.ComponentType<{
@@ -743,7 +744,7 @@ export interface WidgetsAPI {
    * separate window (v0.9+). Pair with `window.usePopoutState()`.
    */
   PopoutPlaceholder: React.ComponentType<{
-    type: 'agent' | 'hub' | 'canvas';
+    type: 'agent' | 'canvas';
     name?: string;
     windowId: number;
   }>;
@@ -879,6 +880,12 @@ export interface TerminalAPI {
   kill(sessionId: string): Promise<void>;
   /** Get buffered output for replay on reconnect. */
   getBuffer(sessionId: string): Promise<string>;
+  /**
+   * True when the shell is running a command (not just sitting at its prompt),
+   * so closing it would interrupt work. Also true when it can't be told
+   * (Windows, remote projects). False for a session that isn't running.
+   */
+  isBusy(sessionId: string): Promise<boolean>;
   /** Subscribe to terminal data output. */
   onData(sessionId: string, callback: (data: string) => void): Disposable;
   /** Subscribe to terminal exit events. */

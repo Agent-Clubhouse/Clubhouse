@@ -113,7 +113,7 @@ type TriggerProps = {
   onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void;
 };
 
-export function Tooltip({ content, shortcut, shortcutAction, side = 'bottom', disabled, children }: {
+export function Tooltip({ content, shortcut, shortcutAction, side = 'bottom', disabled, onlyWhenTruncated, children }: {
   content: ReactNode;
   /** A binding string like "Meta+Shift+P", shown formatted for the platform. */
   shortcut?: string;
@@ -122,6 +122,8 @@ export function Tooltip({ content, shortcut, shortcutAction, side = 'bottom', di
   side?: TooltipSide;
   /** Render the child alone, with no tooltip. */
   disabled?: boolean;
+  /** Open only while the trigger's text is cut off (its content overflows). */
+  onlyWhenTruncated?: boolean;
   children: ReactElement;
 }) {
   const id = useId();
@@ -146,10 +148,12 @@ export function Tooltip({ content, shortcut, shortcutAction, side = 'bottom', di
 
   const show = useCallback((immediate: boolean) => {
     if (suppressed.current) return;
+    const el = triggerRef.current;
+    if (onlyWhenTruncated && el && el.scrollWidth <= el.clientWidth) return;
     clearTimer();
     if (immediate || Date.now() - lastClosedAt < TOOLTIP_SKIP_MS) { setOpen(true); return; }
     timer.current = setTimeout(() => { timer.current = null; setOpen(true); }, TOOLTIP_DELAY_MS);
-  }, []);
+  }, [onlyWhenTruncated]);
 
   useEffect(() => { trackModality(); return clearTimer; }, []);
 

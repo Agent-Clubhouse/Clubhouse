@@ -7,15 +7,16 @@ import { ChatViewBody } from './ChatView';
 import { useChatDraftStore, type ChatActions } from './useChatSession';
 import { chatFixture, FIXTURE_AGENT_ID, type FixtureProvider } from './fixtures';
 import { buildAgentMap } from './view-model';
+import { useAgentDetailsStore } from '../details/detailsStore';
 
 const agent: Agent = { id: FIXTURE_AGENT_ID, projectId: 'p', name: 'gallant-swift', kind: 'durable', status: 'running', color: 'emerald' };
 
 const actions: ChatActions = {
   send: vi.fn(async () => ({ delivery: 'prompt' as const })),
-  interrupt: vi.fn(async () => {}),
+  interrupt: vi.fn(async () => true),
   respondPermission: vi.fn(async () => true),
   answerQuestion: vi.fn(async () => true),
-  setLevel: vi.fn(async () => {}),
+  setLevel: vi.fn(async () => true),
 };
 
 const fold = (events: ChatEvent[]): ChatViewState => foldChatEvents(undefined, FIXTURE_AGENT_ID, events);
@@ -27,7 +28,14 @@ const renderState = (state: ChatViewState) => render(<ChatViewBody agent={agent}
 
 beforeEach(() => {
   useChatDraftStore.setState({ drafts: {} });
+  useAgentDetailsStore.setState({ open: false, focus: null });
 });
+
+/** Show Agent details and open its Subagents card. */
+function openSubagents() {
+  fireEvent.click(screen.getByTestId('agent-details-toggle'));
+  fireEvent.click(screen.getByTestId('details-card-subagents-toggle'));
+}
 
 describe('buildAgentMap', () => {
   it.each(['claude', 'codex'] as const)('lists reported subagents in order with status, tools, time and tokens (%s)', (p) => {
@@ -63,27 +71,28 @@ describe('buildAgentMap', () => {
   });
 });
 
-describe('agent map panel', () => {
-  it('opens from the header and shows the root agent and both subagents', () => {
+describe('Subagents card', () => {
+  it('answers on one line, then opens to the root agent and both subagents', () => {
     renderState(stateFor('claude'));
-    const toggle = screen.getByTestId('chat-agent-map-toggle');
-    expect(toggle).toHaveTextContent('Agents 2');
+    expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('agent-details-toggle'));
+    expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('2 · 1 running');
     expect(screen.queryByTestId('chat-agent-map')).not.toBeInTheDocument();
-    fireEvent.click(toggle);
+    fireEvent.click(screen.getByTestId('details-card-subagents-toggle'));
     const panel = screen.getByTestId('chat-agent-map');
     expect(within(panel).getByTestId('agent-map-root')).toHaveTextContent('gallant-swift');
-    expect(panel).toHaveTextContent('2 subagents, 1 running');
     const nodes = within(panel).getAllByTestId('agent-map-node');
-    expect(nodes[0]).toHaveTextContent('Explore');
-    expect(nodes[0]).toHaveTextContent('12 tools · 41s · 9.8k tok');
+    expect(nodes[0]).toHaveTextContent('Find every consumer of AgentChips');
+    expect(nodes[0]).toHaveTextContent('Explore · 12 tools · 41s · 9.8k tok');
     expect(nodes[1]).toHaveTextContent('code-reviewer');
-    expect(nodes[1]).toHaveTextContent('running');
-    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    // A running subagent shows what it is doing.
+    expect(nodes[1]).toHaveTextContent('npx contrast-check');
+    expect(screen.getByTestId('agent-details-toggle')).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('expands a subagent to its own stream', () => {
+  it('expands a subagent to its last steps', () => {
     renderState(stateFor('codex'));
-    fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
+    openSubagents();
     const node = screen.getAllByTestId('agent-map-node')[1];
     fireEvent.click(within(node).getByRole('button', { expanded: false }));
     const stream = within(node).getByTestId('agent-map-stream');
@@ -91,23 +100,24 @@ describe('agent map panel', () => {
     expect(stream).toHaveTextContent('Read ChipStyles.ts');
   });
 
-  it('jumps from a subagent card to its node in the map', () => {
+  it('opens from a subagent card in the conversation, expanded to that subagent', () => {
     renderState(stateFor('claude'));
     const cards = screen.getAllByTestId('chat-subagent');
     fireEvent.click(within(cards[1]).getByTestId('chat-subagent-open-map'));
+    expect(screen.getByTestId('details-card-subagents')).toHaveAttribute('data-open', 'true');
     const node = screen.getAllByTestId('agent-map-node')[1];
     expect(within(node).getByRole('button', { expanded: true })).toBeInTheDocument();
     expect(within(node).getByTestId('agent-map-stream')).toBeInTheDocument();
   });
 
-  it('jumps from the map back to the subagent in the conversation', () => {
+  it('jumps from the card back to the subagent in the conversation', () => {
     vi.useFakeTimers();
     const intoView = vi.fn();
     Element.prototype.scrollIntoView = intoView;
     const scrolled = vi.fn();
     Element.prototype.scrollTo = scrolled;
     renderState(stateFor('claude'));
-    fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
+    openSubagents();
     const node = screen.getAllByTestId('agent-map-node')[0];
     fireEvent.click(within(node).getByRole('button', { expanded: false }));
     fireEvent.click(within(node).getByText('Show in conversation'));
@@ -121,7 +131,7 @@ describe('agent map panel', () => {
     vi.useRealTimers();
   });
 
-  it('says names and status are not reported for ids-only drivers, and links inline work to the map', () => {
+  it('says names and status are not reported for ids-only drivers, and links inline work to the card', () => {
     renderState(stateFor('claude', 'ids_only'));
     expect(screen.queryByTestId('chat-subagent')).not.toBeInTheDocument();
     const jumps = screen.getAllByTestId('chat-subagent-jump');
@@ -132,31 +142,35 @@ describe('agent map panel', () => {
     const nodes = within(panel).getAllByTestId('agent-map-node');
     expect(nodes.map((n) => n.getAttribute('data-subagent-id'))).toEqual(['sub-1', 'sub-2']);
     expect(within(nodes[1]).getByTestId('agent-map-stream')).toBeInTheDocument();
-    expect(nodes[0]).toHaveTextContent('status not reported');
+    expect(nodes[0]).toHaveTextContent('Status not reported');
+    expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('2 threads');
   });
 
-  it.each(['none'] as const)('hides the map and jump links when subagents are %s', (mode) => {
+  it.each(['none'] as const)('hides the jump links and says the card has nothing when subagents are %s', (mode) => {
     renderState(stateFor('claude', mode));
-    expect(screen.queryByTestId('chat-agent-map-toggle')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-subagent-jump')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-subagent-open-map')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('agent-details-toggle'));
+    expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('not reported by this agent');
   });
 
-  it('hides the map for the Copilot driver, which reports no subagents', () => {
+  it('says the Copilot driver reports no subagents', () => {
     renderState(fold(chatFixture('copilot', 'agent_map')));
-    expect(screen.queryByTestId('chat-agent-map-toggle')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('agent-details-toggle'));
+    expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('not reported by this agent');
   });
 
-  it('hides the map until there is a subagent', () => {
+  it('says none yet before there is a subagent', () => {
     renderState(fold(chatFixture('claude', 'conversation')));
-    expect(screen.queryByTestId('chat-agent-map-toggle')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('agent-details-toggle'));
+    expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('none yet');
   });
 
-  it('closes from its own button', () => {
+  it('hides details from its own button', () => {
     renderState(stateFor('claude'));
-    fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
-    fireEvent.click(screen.getByLabelText('Close agent map'));
-    expect(screen.queryByTestId('chat-agent-map')).not.toBeInTheDocument();
+    openSubagents();
+    fireEvent.click(screen.getByTestId('agent-details-close'));
+    expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
   });
 });
 
@@ -169,7 +183,7 @@ function extend(events: ChatEvent[], ...more: Array<Pick<ChatEvent, 'type' | 'da
 describe('agent map review fixes', () => {
   it('clears the previous outline when a second jump follows quickly', () => {
     renderState(stateFor('claude'));
-    fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
+    openSubagents();
     const [first, second] = screen.getAllByTestId('agent-map-node');
     fireEvent.click(within(first).getByRole('button', { expanded: false }));
     fireEvent.click(within(first).getByText('Show in conversation'));
@@ -206,23 +220,19 @@ describe('agent map review fixes', () => {
     const s = stateFor('claude');
     const state = { ...s, subagents: { ...s.subagents, ghost: { subagentId: 'ghost', name: 'ghost', status: 'completed' as const } } };
     renderState(state);
-    fireEvent.click(screen.getByTestId('chat-agent-map-toggle'));
+    openSubagents();
     const node = screen.getAllByTestId('agent-map-node').find((n) => n.getAttribute('data-subagent-id') === 'ghost')!;
     fireEvent.click(within(node).getByRole('button', { expanded: false }));
     fireEvent.click(within(node).getByText('Show in conversation'));
     expect(within(node).getByTestId('agent-map-jump-missed')).toHaveTextContent('Not in the loaded conversation.');
   });
 
-  it('ties the toggle to the panel, moves focus in on open and back on close', async () => {
+  it('hides details on Escape and returns focus to the toolbar button', async () => {
     renderState(stateFor('codex'));
-    const toggle = screen.getByTestId('chat-agent-map-toggle');
-    fireEvent.click(toggle);
-    const panel = screen.getByTestId('chat-agent-map');
-    expect(toggle).toHaveAttribute('aria-controls', panel.id);
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByLabelText('Close agent map')).toHaveFocus();
-    fireEvent.keyDown(panel, { key: 'Escape' });
-    expect(screen.queryByTestId('chat-agent-map')).not.toBeInTheDocument();
-    await waitFor(() => expect(toggle).toHaveFocus());
+    openSubagents();
+    const column = screen.getByTestId('agent-details');
+    fireEvent.keyDown(column, { key: 'Escape' });
+    expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('agent-details-toggle')).toHaveFocus());
   });
 });

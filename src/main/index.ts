@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { app, BrowserWindow, ipcMain, powerMonitor, session, net, protocol } from 'electron';
 import { registerAllHandlers } from './ipc';
+import { configurePluginMcpHost } from './ipc/plugin-mcp-handlers';
 import { startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, getActiveWatchCount, stopAllWatches } from './services/file-watch-service';
 import { startStaleSweep as startHeadlessStaleSweep, stopStaleSweep as stopHeadlessStaleSweep } from './services/headless-manager';
@@ -256,6 +257,11 @@ app.on('ready', () => {
 
   markStartup('register_ipc_start');
   registerAllHandlers();
+  // Only the main window's app page may mint plugin MCP tokens.
+  configurePluginMcpHost({
+    getMainWebContentsId: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : undefined),
+    entryUrl: MAIN_WINDOW_WEBPACK_ENTRY,
+  });
   markStartup('register_ipc_end');
   buildMenu();
 

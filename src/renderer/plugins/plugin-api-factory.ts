@@ -23,11 +23,14 @@ import { createThemeAPI } from './plugin-api-theme';
 import { createCanvasAPI } from './plugin-api-canvas';
 import { createWindowAPI } from './plugin-api-window';
 import { createAnnexAPI } from './plugin-api-annex';
+import { createMcpAPI } from './plugin-mcp-host';
 
 // Re-export test helpers and utilities used by external consumers
 export { _resetEnforcedViolations } from './plugin-api-shared';
 export { computeDataDir, computeWorkspaceRoot } from './plugin-api-files';
 export { _resetBadgeStoreCache } from './plugin-api-badges';
+
+export { _resetPluginMcpStateForTests } from './plugin-mcp-host';
 
 export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, manifest?: PluginManifest): PluginAPI {
   // Ref used to pass the fully-constructed API to createCanvasAPI without a circular reference.
@@ -144,34 +147,7 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     ),
     mcp: gated(
       true, scopeLabel, 'mcp', 'mcp.tools',
-      ctx.pluginId, manifest, () => ({
-        async contributeTools(tools) {
-          await window.clubhouse.pluginMcp.contributeTools(ctx.pluginId, tools);
-        },
-        async removeTools() {
-          await window.clubhouse.pluginMcp.removeTools(ctx.pluginId);
-        },
-        async listContributedTools() {
-          return window.clubhouse.pluginMcp.listTools(ctx.pluginId);
-        },
-        onToolCall(handler) {
-          const cleanup = window.clubhouse.pluginMcp.onToolCall(async (data) => {
-            if (data.pluginId !== ctx.pluginId) return;
-            try {
-              const result = await handler(data.toolName, data.args);
-              window.clubhouse.pluginMcp.sendToolResult(data.callId, result);
-            } catch (err) {
-              window.clubhouse.pluginMcp.sendToolResult(data.callId, {
-                content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
-                isError: true,
-              });
-            }
-          });
-          const disposable = { dispose() { cleanup(); } };
-          ctx.subscriptions.push(disposable);
-          return disposable;
-        },
-      }),
+      ctx.pluginId, manifest, () => createMcpAPI(ctx),
     ),
     context: contextInfo, // always available
   };

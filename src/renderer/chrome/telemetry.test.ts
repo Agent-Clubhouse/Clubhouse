@@ -88,6 +88,15 @@ describe('chrome telemetry', () => {
     expect(getTelemetryView()).toBe('files');
   });
 
+  it('reports the Changes review as its own view while it shows, then the tab again (#2032)', async () => {
+    const { holdChromeView } = await import('./telemetry');
+    reportChromeView('agents');
+    const release = holdChromeView('changes');
+    expect(getTelemetryView()).toBe('changes');
+    release();
+    expect(getTelemetryView()).toBe('agent');
+  });
+
   it('emits nothing while telemetry is off', () => {
     reportChromeFeature('tab_select');
     reportChromeActionFailed('add_project', new Error('nope'));

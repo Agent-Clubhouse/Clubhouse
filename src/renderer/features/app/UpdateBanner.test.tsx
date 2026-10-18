@@ -439,3 +439,64 @@ describe('UpdateBanner', () => {
     expect(screen.getByText('Restart to update')).toBeInTheDocument();
   });
 });
+
+describe('UpdateBanner card variant (new chrome)', () => {
+  beforeEach(resetStores);
+
+  const ready = (extra: Partial<ReturnType<typeof useUpdateStore.getState>['status']> = {}) => useUpdateStore.setState({
+    status: {
+      state: 'ready', availableVersion: '0.43.0', releaseNotes: null, releaseMessage: null, downloadProgress: 100,
+      error: null, downloadPath: '/tmp/u', artifactUrl: 'https://example.invalid/u.zip', applyAttempted: false, ...extra,
+    },
+  });
+
+  it('renders the update-ready card with Restart, Download manually and Later', () => {
+    ready();
+    const openUpdateDownload = vi.fn();
+    useUpdateStore.setState({ openUpdateDownload });
+    render(<UpdateBanner variant="card" />);
+    const card = screen.getByTestId('update-banner');
+    expect(card).toHaveTextContent('Update ready');
+    expect(card).toHaveTextContent('v0.43.0');
+    expect(card.className).toContain('rounded-lg');
+    expect(screen.getByTestId('update-restart-btn')).toHaveTextContent('Restart');
+    fireEvent.click(screen.getByTestId('update-manual-download-btn'));
+    expect(openUpdateDownload).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('update-dismiss-btn'));
+    expect(useUpdateStore.getState().dismissed).toBe(true);
+  });
+
+  it('offers Download manually on the ready card only when there is an artifact', () => {
+    ready({ artifactUrl: null });
+    render(<UpdateBanner variant="card" />);
+    expect(screen.queryByTestId('update-manual-download-btn')).toBeNull();
+  });
+
+  it('restarts straight away when no agents are running', () => {
+    ready();
+    render(<UpdateBanner variant="card" />);
+    fireEvent.click(screen.getByTestId('update-restart-btn'));
+    expect(window.clubhouse.app.confirmUpdateRestart).toHaveBeenCalled();
+  });
+
+  it('shows the retry card after a failed apply', () => {
+    ready({ applyAttempted: true });
+    render(<UpdateBanner variant="card" />);
+    expect(screen.getByTestId('update-banner')).toHaveTextContent('Update did not apply');
+    expect(screen.getByTestId('update-restart-btn')).toHaveTextContent('Try again');
+    expect(screen.getByTestId('update-manual-download-btn')).toBeInTheDocument();
+  });
+
+  it('shows the failure card with a manual download', () => {
+    useUpdateStore.setState({
+      status: {
+        state: 'error', availableVersion: '0.43.0', releaseNotes: null, releaseMessage: null, downloadProgress: 0,
+        error: 'Disk full', downloadPath: null, artifactUrl: 'https://example.invalid/u.zip', applyAttempted: false,
+      },
+    });
+    render(<UpdateBanner variant="card" />);
+    expect(screen.getByTestId('update-banner')).toHaveTextContent('Update failed');
+    expect(screen.getByTestId('update-error-message')).toHaveTextContent('Disk full');
+    expect(screen.getByTestId('update-manual-download-btn')).toBeInTheDocument();
+  });
+});

@@ -66,7 +66,7 @@ describe('WhatsNewSettingsView', () => {
 
   it('renders the page header', () => {
     render(<WhatsNewSettingsView />);
-    expect(screen.getByText("What's New")).toBeInTheDocument();
+    expect(screen.getByText("What's new")).toBeInTheDocument();
     expect(screen.getByText(/Release notes for recent versions/)).toBeInTheDocument();
   });
 
@@ -74,7 +74,7 @@ describe('WhatsNewSettingsView', () => {
     resetStore({ versionHistoryLoading: true });
     render(<WhatsNewSettingsView />);
     expect(screen.getByTestId('whats-new-loading')).toBeInTheDocument();
-    expect(screen.getByText('Loading version history...')).toBeInTheDocument();
+    expect(screen.getByText('Loading version history…')).toBeInTheDocument();
   });
 
   it('shows error state', () => {

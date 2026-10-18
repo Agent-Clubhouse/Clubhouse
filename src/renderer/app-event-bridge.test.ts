@@ -317,6 +317,7 @@ vi.mock('./stores/soundStore', () => ({
 
 import { initAppEventBridge, handleProtocolAction } from './app-event-bridge';
 import { useAgentStore } from './stores/agentStore';
+import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useProjectStore } from './stores/projectStore';
 import { useUIStore } from './stores/uiStore';
 import { useToastStore } from './stores/toastStore';
@@ -403,6 +404,93 @@ describe('initAppEventBridge', () => {
     awokeCallback('agent-7');
 
     expect(updateAgentStatus).toHaveBeenCalledWith('agent-7', 'running');
+  });
+
+  describe('quick agent completion (#2033)', () => {
+    let lastSelectCompleted: ReturnType<typeof vi.fn> = vi.fn();
+    async function exitQuickAgent(agent: Record<string, unknown>, transcript: string | null, exitCode: number, lastOutput?: string, activeAgentId: string | null = null) {
+      const addCompleted = vi.fn();
+      const removeAgent = vi.fn();
+      const selectCompleted = vi.fn();
+      lastSelectCompleted = selectCompleted;
+      vi.mocked(useAgentStore.getState).mockReturnValue({
+        agents: { q1: agent },
+        agentSpawnedAt: { q1: 1_000 },
+        activeAgentId,
+        agentDetailedStatus: {},
+        agentIcons: {},
+        updateAgentStatus: vi.fn(),
+        handleHookEvent: vi.fn(),
+        removeAgent,
+        clearStaleStatuses: vi.fn(),
+        setActiveAgent: vi.fn(),
+        restoreProjectAgent: vi.fn(),
+        openConfigChangesDialog: vi.fn(),
+        setSessionNamePrompt: vi.fn(),
+      } as any);
+      vi.mocked(useQuickAgentStore.getState).mockReturnValue({ addCompleted, selectCompleted } as any);
+      vi.mocked(window.clubhouse.agent.readTranscript).mockResolvedValue(transcript as any);
+
+      const onExit = vi.mocked(window.clubhouse.pty.onExit).mock.calls[0][0];
+      await onExit('q1', exitCode, lastOutput);
+      expect(removeAgent).toHaveBeenCalledWith('q1');
+      return addCompleted.mock.calls[0][0];
+    }
+
+    const headlessAgent = {
+      id: 'q1', projectId: 'p1', name: 'quick-fox', kind: 'quick', status: 'running', mission: 'fix it',
+      headless: true, orchestrator: 'claude-code', freeAgentMode: true, runCwd: '/repo/wt', runBaseSha: 'abc1234',
+    };
+
+    it('records files, stats, cwd, base sha and start time for a finished headless run', async () => {
+      const lines = [
+        { type: 'assistant', message: { id: 'm1', content: [{ type: 'tool_use', id: 't1', name: 'Write', input: { file_path: '/repo/wt/a.ts' } }], usage: { input_tokens: 10, output_tokens: 2 } }, _ts: 2_000 },
+        { type: 'assistant', message: { id: 'm2', content: [{ type: 'tool_use', id: 't2', name: 'Edit', input: { file_path: '/repo/wt/b.ts' } }], usage: { input_tokens: 5, output_tokens: 1 } }, _ts: 3_000 },
+        { type: 'result', result: 'Edited two files', total_cost_usd: 0.12, duration_ms: 4_000, _ts: 5_000 },
+      ];
+      const record = await exitQuickAgent(headlessAgent, lines.map((l) => JSON.stringify(l)).join('\n'), 0);
+
+      expect(record).toMatchObject({
+        id: 'q1',
+        summary: 'Edited two files',
+        filesModified: ['/repo/wt/a.ts', '/repo/wt/b.ts'],
+        exitCode: 0,
+        headless: true,
+        costUsd: 0.12,
+        durationMs: 4_000,
+        toolsUsed: ['Write', 'Edit'],
+        toolCalls: 2,
+        inputTokens: 15,
+        outputTokens: 3,
+        cwd: '/repo/wt',
+        baseSha: 'abc1234',
+        startedAt: 1_000,
+        freeAgentMode: true,
+      });
+      expect(record.stderrTail).toBeUndefined();
+    });
+
+    it('keeps the stderr tail and the failing exit code when a headless run fails', async () => {
+      const record = await exitQuickAgent(headlessAgent, '', 1, 'Error: invalid API key');
+      expect(record).toMatchObject({ summary: null, exitCode: 1, stderrTail: 'Error: invalid API key', filesModified: [] });
+    });
+
+    it('keeps the finished run on screen when it was the agent being viewed (#2019)', async () => {
+      await exitQuickAgent(headlessAgent, '', 0, undefined, 'q1');
+      expect(lastSelectCompleted).toHaveBeenCalledWith('q1');
+    });
+
+    it('does not select the finished run when another agent is on screen', async () => {
+      await exitQuickAgent(headlessAgent, '', 0, undefined, 'other');
+      expect(lastSelectCompleted).not.toHaveBeenCalled();
+    });
+
+    it('does not treat PTY output as stderr for non-headless quick agents', async () => {
+      vi.mocked(window.clubhouse.agent.readQuickSummary).mockResolvedValue({ summary: 'done', filesModified: ['x.ts'] } as any);
+      const record = await exitQuickAgent({ ...headlessAgent, headless: undefined }, null, 0, 'terminal noise');
+      expect(record).toMatchObject({ summary: 'done', filesModified: ['x.ts'], cwd: '/repo/wt', startedAt: 1_000 });
+      expect(record.stderrTail).toBeUndefined();
+    });
   });
 
   it('shows a toast when materialization fails but the agent continues waking', () => {

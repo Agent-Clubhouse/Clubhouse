@@ -98,3 +98,21 @@ describe('PermissionViolationBanner', () => {
     expect(usePluginStore.getState().permissionViolations).toHaveLength(0);
   });
 });
+
+describe('PermissionViolationBanner card variant (new chrome)', () => {
+  beforeEach(resetStore);
+
+  it('renders a card per violation and dismisses it', () => {
+    usePluginStore.setState({
+      permissionViolations: [{ pluginId: 'bad-plugin', pluginName: 'Bad Plugin', permission: 'git', apiName: 'git', timestamp: 1000 }],
+    });
+    render(<PermissionViolationBanner variant="card" />);
+    const card = screen.getByTestId('permission-violation-banner');
+    expect(card).toHaveAttribute('role', 'alert');
+    expect(card).toHaveTextContent('Plugin disabled');
+    expect(card).toHaveTextContent('api.git');
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByTestId('permission-violation-banner')).toBeNull();
+    expect(usePluginStore.getState().permissionViolations).toHaveLength(0);
+  });
+});

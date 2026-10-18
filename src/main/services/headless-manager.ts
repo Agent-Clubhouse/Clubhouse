@@ -17,6 +17,7 @@ import { HeadlessOutputKind } from '../orchestrators/types';
 import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
 import { validateSpawnCwd } from './pty-manager';
+import { readTranscriptChunk, type TranscriptChunk } from './transcript-cursor';
 import { agentKillRequested, agentKillStage, agentOutput, agentRunStarted, agentSwept } from '../telemetry/agent-telemetry';
 
 /** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
@@ -280,12 +281,21 @@ function createSessionRecord(
   };
 }
 
-/** Append a single event to the session transcript and persist it to disk. */
+/**
+ * Append a single event to the session transcript and persist it to disk.
+ *
+ * Each event is stamped with `_ts` (epoch ms received) unless it already
+ * carries a numeric one: stream-json events have no time of their own, and
+ * the run monitor needs step times and durations from the persisted JSONL.
+ */
 function appendTranscriptEvent(
   session: HeadlessSession,
   event: StreamJsonEvent,
   logStream: fs.WriteStream,
 ): void {
+  if (typeof event === 'object' && event !== null && !Array.isArray(event) && typeof event._ts !== 'number') {
+    event._ts = Date.now();
+  }
   const serialized = JSON.stringify(event);
   const eventBytes = Buffer.byteLength(serialized, 'utf-8');
 
@@ -313,13 +323,15 @@ function setupTranscriptPipeline(
 
   // Track which content_block indices are tool_use (for matching content_block_stop)
   const activeToolBlocks = new Map<number, string>();
+  // tool_use id → tool name, so post_tool events can name the tool they finish
+  const toolNamesById = new Map<string, string>();
 
   session.parser.on('line', (raw: StreamJsonEvent) => {
     // Providers whose CLI emits its own vocabulary translate here, so the rest
     // of the pipeline only ever sees stream-json. One raw line can expand to
     // several events, or to none.
     const events = session.normalizeEvent ? session.normalizeEvent(raw) : [raw];
-    for (const event of events) handleTranscriptEvent(session, event, logStream, agentId, activeToolBlocks);
+    for (const event of events) handleTranscriptEvent(session, event, logStream, agentId, activeToolBlocks, toolNamesById);
   });
 }
 
@@ -329,6 +341,7 @@ function handleTranscriptEvent(
   logStream: fs.WriteStream,
   agentId: string,
   activeToolBlocks: Map<number, string>,
+  toolNamesById: Map<string, string>,
 ): void {
   appendTranscriptEvent(session, event, logStream);
 
@@ -345,7 +358,7 @@ function handleTranscriptEvent(
   }
 
   // Emit hook events to renderer + annex event bus for status tracking
-  const hookEvents = mapToHookEvent(event, activeToolBlocks);
+  const hookEvents = mapToHookEvent(event, activeToolBlocks, toolNamesById);
   for (const hookEvent of hookEvents) {
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
     annexEventBus.emitHookEvent(agentId, hookEvent as any);
@@ -445,6 +458,23 @@ export function resolveExitCode(code: number | null, signal: NodeJS.Signals | nu
   return signum ? 128 + signum : 1;
 }
 
+/** Bytes of stderr kept on the exit broadcast, so a failed run can show why. */
+const STDERR_TAIL_BYTES = 4 * 1024;
+
+/**
+ * The last ~4 KB of the run's stderr, or undefined when it wrote none. Passed
+ * as `lastOutput` on the exit broadcast so the renderer can keep it on the
+ * completed record after the session is gone.
+ */
+function stderrTail(io: IOState): string | undefined {
+  const all = io.stderrChunks.join('\n');
+  if (!all.trim()) return undefined;
+  if (Buffer.byteLength(all, 'utf-8') <= STDERR_TAIL_BYTES) return all;
+  // Slice by bytes, then drop a partial leading UTF-8 character.
+  const tail = Buffer.from(all, 'utf-8').subarray(-STDERR_TAIL_BYTES).toString('utf-8');
+  return tail.replace(/^�+/, '');
+}
+
 /**
  * Wire the process close and error handlers.
  *
@@ -507,7 +537,7 @@ function setupExitHandlers(
 
       onExit?.(agentId, exitCode);
 
-      broadcastAgentExit(agentId, exitCode);
+      broadcastAgentExit(agentId, exitCode, stderrTail(io));
     } else {
       appLog('core:headless', 'info', `Old process exited after session replacement — skipping cleanup`, {
         meta: { agentId, exitCode, signal },
@@ -529,7 +559,7 @@ function setupExitHandlers(
 
       onExit?.(agentId, 1);
 
-      broadcastAgentExit(agentId, 1);
+      broadcastAgentExit(agentId, 1, err.message || stderrTail(io));
     }
   });
 }
@@ -604,6 +634,8 @@ export const _internal = {
   setupStdoutHandler,
   setupStderrHandler,
   setupExitHandlers,
+  mapToHookEvent,
+  stderrTail,
 };
 
 export function kill(agentId: string): void {
@@ -729,6 +761,16 @@ export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo
 }
 
 /**
+ * Read transcript events from a byte cursor (see transcript-cursor.ts). The
+ * run monitor pages with this: it never re-reads the file, never consumes a
+ * line that's still being written, and steps over malformed lines.
+ */
+export async function readTranscriptFrom(agentId: string, cursor: number): Promise<TranscriptChunk | null> {
+  const transcriptPath = sessions.get(agentId)?.transcriptPath ?? path.join(getLogsDir(), `${agentId}.jsonl`);
+  return readTranscriptChunk(transcriptPath, cursor);
+}
+
+/**
  * Return a page of parsed transcript events.
  * `offset` is the 0-based event index; `limit` is the max events to return.
  * Events are returned in chronological order.
@@ -790,32 +832,39 @@ export async function readTranscriptPage(
  * Without --verbose (legacy streaming format):
  *   content_block_start, content_block_delta, content_block_stop, result
  */
-function mapToHookEvent(
-  event: StreamJsonEvent,
-  activeToolBlocks: Map<number, string>,
-): Array<{
+interface MappedHookEvent {
   kind: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
   message?: string;
+  toolUseId?: string;
   timestamp: number;
-}> {
-  const timestamp = Date.now();
-  const results: Array<{
-    kind: string;
-    toolName?: string;
-    toolInput?: Record<string, unknown>;
-    message?: string;
-    timestamp: number;
-  }> = [];
+}
+
+function mapToHookEvent(
+  event: StreamJsonEvent,
+  activeToolBlocks: Map<number, string>,
+  toolNamesById: Map<string, string> = new Map(),
+): MappedHookEvent[] {
+  // The transcript stamp (appendTranscriptEvent) so hook events and persisted
+  // events agree on when each step happened.
+  const timestamp = typeof event?._ts === 'number' ? event._ts : Date.now();
+  const results: MappedHookEvent[] = [];
 
   // --verbose format: assistant messages contain tool_use blocks
   if (event.type === 'assistant' && event.message) {
-    const msg = event.message as { content?: Array<{ type: string; name?: string; input?: Record<string, unknown>; text?: string }> };
+    const msg = event.message as { content?: Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown>; text?: string }> };
     if (Array.isArray(msg.content)) {
       for (const block of msg.content) {
         if (block.type === 'tool_use' && block.name) {
-          results.push({ kind: 'pre_tool', toolName: block.name, toolInput: block.input, timestamp });
+          const toolUseId = typeof block.id === 'string' && block.id ? block.id : undefined;
+          if (toolUseId) {
+            // Codex re-reports a file_change's tool_use on completion; one
+            // pre_tool per call keeps start/end pairing one-to-one.
+            if (toolNamesById.has(toolUseId)) continue;
+            toolNamesById.set(toolUseId, block.name);
+          }
+          results.push({ kind: 'pre_tool', toolName: block.name, toolInput: block.input, ...(toolUseId ? { toolUseId } : {}), timestamp });
         }
       }
     }
@@ -827,7 +876,15 @@ function mapToHookEvent(
     if (Array.isArray(msg.content)) {
       for (const block of msg.content) {
         if (block.type === 'tool_result') {
-          results.push({ kind: 'post_tool', timestamp });
+          const toolUseId = typeof block.tool_use_id === 'string' && block.tool_use_id ? block.tool_use_id : undefined;
+          const toolName = toolUseId ? toolNamesById.get(toolUseId) : undefined;
+          if (toolUseId) toolNamesById.delete(toolUseId);
+          results.push({
+            kind: 'post_tool',
+            ...(toolName ? { toolName } : {}),
+            ...(toolUseId ? { toolUseId } : {}),
+            timestamp,
+          });
         }
       }
     }

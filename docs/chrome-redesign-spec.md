@@ -71,6 +71,7 @@ Status as of 2026-10-16:
   - `LegacyShell`: today's `TitleBar` + `RailSection` + `ProjectPanelLayout`, unchanged.
   - `ChromeShell`: new, `src/renderer/chrome/ChromeShell.tsx`.
 - Banners, dialogs, the command palette and toasts stay shared outside both shells.
+- Views inside the pane (sleeping, headless, finished quick agent, settings pages and the like) are restyled in both shells. Only the frame and layout (title bar, sidebar, where things live) are gated on the flag.
 - The main process also reads the flag at window creation for the Linux overlay (§4.7). On Linux, toggling the flag requires a restart, and the settings toggle says so.
 
 ### 4.2 New modules (`src/renderer/chrome/`)
@@ -279,7 +280,7 @@ Per [telemetry spec §9.1](telemetry-otel-spec.md), the redesign owns the UI-cou
 
 Owned call sites:
 - `c.view` stays the coarse, bounded enum from the telemetry spec (§4.15: `agent`/`terminal`/`canvas`/`files`/`git`/`settings`/`plugin`/`other`). The new shell sets it from the active title-bar tab and pane. Every non-built-in tab maps to `plugin`, and the start page and first run map to `other`. No new `c.view` values are added.
-- Where in the new chrome the user is goes in a separate bounded attribute, `c.ui.surface`: `sidebar_agents`, `sidebar_list`, `sidebar_settings`, `start_page`, `first_run`, `host_menu`, `more_menu`, `hover_card`, `row_menu`. Plugin-owned lists all report `sidebar_list`, and plugin ids are never used as values, which keeps the long-frame and render-error metrics well under the cap of 200 attribute sets per instrument (telemetry spec, metric export settings). It goes on slow-frame and render-error signals beside `c.view`.
+- Where in the new chrome the user is goes in a separate bounded attribute, `c.ui.surface`: `sidebar_agents`, `sidebar_list`, `sidebar_settings`, `sidebar_help`, `sidebar_agent_settings`, `start_page`, `first_run`, `host_menu`, `more_menu`, `hover_card`, `row_menu`. Plugin-owned lists all report `sidebar_list`, and plugin ids are never used as values, which keeps the long-frame and render-error metrics well under the cap of 200 attribute sets per instrument (telemetry spec, metric export settings). It goes on slow-frame and render-error signals beside `c.view`.
 - The project-switch span, moved out of the `App.tsx` effect into the selection path. It also fires when a remote “Needs you” click switches host.
 - File open and save spans in the Files viewer under the new scope.
 - Command-palette and feature-usage events:

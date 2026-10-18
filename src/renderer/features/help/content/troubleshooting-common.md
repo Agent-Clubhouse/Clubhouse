@@ -5,9 +5,9 @@ Quick fixes for frequently encountered problems.
 ## Agent Won't Start
 
 **Check these in order:**
-1. **Orchestrator installed?** — **Settings > Orchestrators** — look for a green checkmark. Red = not found; follow the setup prompt.
+1. **Orchestrator installed?** — **Settings > Orchestrators & Agents** — look for a green checkmark. Red = not found; follow the setup prompt.
 2. **API keys configured?** — Most orchestrators need an API key (e.g., `ANTHROPIC_API_KEY` env var). See orchestrator docs.
-3. **Orchestrator enabled?** — Ensure it's toggled on in **Settings > Orchestrators**.
+3. **Orchestrator enabled?** — Ensure it's toggled on in **Settings > Orchestrators & Agents**.
 
 ## Agent Stuck (Orange Ring)
 
@@ -20,7 +20,7 @@ To reduce interruptions: enable headless mode or Free Agent mode for quick agent
 1. **App-level enabled?** — **Settings > Plugins** — toggle on.
 2. **Project-level enabled?** — **Project Settings > Plugins** — toggle on for this project.
 3. **API version compatible?** — Check `plugins:loader` logs for version mismatch errors.
-4. **External plugins enabled?** — **Settings > Plugins > External Plugins** master switch must be on.
+4. **External plugins enabled?** — **Allow external plugins** in **Settings > Plugins** must be on.
 
 ## Git Not Detected
 
@@ -51,7 +51,7 @@ Yellow banner = no `.git` directory found. Options:
 Models come from the orchestrator, not Clubhouse. If models are missing:
 - Update your orchestrator CLI to the latest version
 - Verify API keys are valid with the required permissions
-- Check **Settings > Orchestrators** for status indicators
+- Check **Settings > Orchestrators & Agents** for status indicators
 
 ## Command Palette Not Opening
 
