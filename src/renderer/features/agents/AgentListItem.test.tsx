@@ -139,9 +139,9 @@ describe('AgentListItem actions', () => {
     expect(screen.getByTestId('action-wake')).toBeInTheDocument();
   });
 
-  it('renders wake-resume button for sleeping durable agent', () => {
+  it('renders start-new-session button for sleeping durable agent', () => {
     renderItem({ status: 'sleeping' });
-    expect(screen.getByTestId('action-wake-resume')).toBeInTheDocument();
+    expect(screen.getByTestId('action-wake-new')).toBeInTheDocument();
   });
 
   it('renders stop button for running agent', () => {
@@ -183,13 +183,13 @@ describe('AgentListItem context menu', () => {
     expect(screen.getByTestId('agent-context-menu')).toBeInTheDocument();
   });
 
-  it('context menu shows all available actions including Wake & Resume', () => {
+  it('context menu shows all available actions including Start New Session', () => {
     renderItem({ status: 'sleeping' }, { onSpawnQuickChild: vi.fn() });
     const row = screen.getByTestId('agent-item-agent-1');
     fireEvent.contextMenu(row);
 
     expect(screen.getByTestId('ctx-wake')).toBeInTheDocument();
-    expect(screen.getByTestId('ctx-wake-resume')).toBeInTheDocument();
+    expect(screen.getByTestId('ctx-wake-new')).toBeInTheDocument();
     expect(screen.getByTestId('ctx-popout')).toBeInTheDocument();
     expect(screen.getByTestId('ctx-spawn')).toBeInTheDocument();
     expect(screen.getByTestId('ctx-settings')).toBeInTheDocument();
@@ -227,11 +227,11 @@ describe('AgentListItem context menu', () => {
     expect(screen.queryByTestId('agent-context-menu')).toBeNull();
   });
 
-  it('does not show wake-resume in context menu for running agents', () => {
+  it('does not show start-new-session in context menu for running agents', () => {
     renderItem({ status: 'running' });
     const row = screen.getByTestId('agent-item-agent-1');
     fireEvent.contextMenu(row);
-    expect(screen.queryByTestId('ctx-wake-resume')).toBeNull();
+    expect(screen.queryByTestId('ctx-wake-new')).toBeNull();
   });
 
   it('context menu portals to document.body so it is not trapped by stacking contexts', () => {

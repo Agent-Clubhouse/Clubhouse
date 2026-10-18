@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { SleepingAgent } from './SleepingAgent';
@@ -317,7 +317,7 @@ describe('SleepingAgent', () => {
       it('wakes once on a double click, with the task', async () => {
         let resolve: () => void = () => {};
         window.clubhouse.annexClient.agentWake = vi.fn(() => new Promise<void>((r) => { resolve = r; }));
-        renderComponent({ id: remoteId });
+        renderComponent({ id: remoteId, hasSession: true });
         fireEvent.change(screen.getByTestId('wake-task-input'), { target: { value: 'Go' } });
         fireEvent.click(screen.getByTestId('wake-button'));
         fireEvent.click(screen.getByTestId('wake-button'));
@@ -325,6 +325,18 @@ describe('SleepingAgent', () => {
         await waitFor(() => expect(screen.getByTestId('wake-task-input')).toHaveValue(''));
         expect(window.clubhouse.annexClient.agentWake).toHaveBeenCalledTimes(1);
         expect(window.clubhouse.annexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-9', { resume: true, mission: 'Go' });
+      });
+
+      it('starts fresh on a satellite that has no session, or does not say (#2028)', async () => {
+        window.clubhouse.annexClient.agentWake = vi.fn().mockResolvedValue(undefined);
+        renderComponent({ id: remoteId, hasSession: false });
+        fireEvent.click(screen.getByTestId('wake-button'));
+        await waitFor(() => expect(window.clubhouse.annexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-9', expect.objectContaining({ resume: false })));
+        cleanup();
+        vi.mocked(window.clubhouse.annexClient.agentWake).mockClear();
+        renderComponent({ id: remoteId });
+        fireEvent.click(screen.getByTestId('wake-button'));
+        await waitFor(() => expect(window.clubhouse.annexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-9', expect.objectContaining({ resume: false })));
       });
 
       it('keeps the task and shows an error when the remote wake fails', async () => {

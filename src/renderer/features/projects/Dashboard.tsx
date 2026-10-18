@@ -6,6 +6,7 @@ import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { Project, Agent, CompletedQuickAgent } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { AgentAvatar as SharedAgentAvatar } from '../agents/AgentAvatar';
+import { wakeDurableAgent } from '../agents/wake-durable-agent';
 import { formatDuration } from '../../utils/format';
 
 /* ─── Helpers ─── */
@@ -440,7 +441,6 @@ function AgentRow({ agent, project, navigateToAgent }: {
 }) {
   const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
   const killAgent = useAgentStore((s) => s.killAgent);
-  const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const detailed = detailedStatus[agent.id];
 
@@ -457,22 +457,14 @@ function AgentRow({ agent, project, navigateToAgent }: {
   const handleWake = useCallback(async (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (agent.status === 'running') return;
-    const configs = await window.clubhouse.agent.listDurable(project.path);
-    const config = configs.find((c: any) => c.id === agent.id);
-    if (config) {
-      await spawnDurableAgent(project.id, project.path, config, false);
-    }
-  }, [agent.id, agent.status, project.id, project.path, spawnDurableAgent]);
+    await wakeDurableAgent(project.id, project.path, agent.id, 'resume');
+  }, [agent.id, agent.status, project.id, project.path]);
 
-  const handleWakeAndResume = useCallback(async (e?: React.MouseEvent) => {
+  const handleWakeNewSession = useCallback(async (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (agent.status === 'running') return;
-    const configs = await window.clubhouse.agent.listDurable(project.path);
-    const config = configs.find((c: any) => c.id === agent.id);
-    if (config) {
-      await spawnDurableAgent(project.id, project.path, config, true);
-    }
-  }, [agent.id, agent.status, project.id, project.path, spawnDurableAgent]);
+    await wakeDurableAgent(project.id, project.path, agent.id, 'new');
+  }, [agent.id, agent.status, project.id, project.path]);
 
   const handleSettings = useCallback((e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -500,22 +492,22 @@ function AgentRow({ agent, project, navigateToAgent }: {
     } else if (isDurable && (agent.status === 'sleeping' || agent.status === 'error')) {
       list.push({
         id: 'wake',
-        label: 'Wake',
+        label: 'Wake & Resume',
         icon: <span>{'\u25B6'}</span>,
         hoverColor: 'hover:text-ctp-success',
         handler: handleWake,
       });
       list.push({
-        id: 'wake-resume',
-        label: 'Wake & Resume',
+        id: 'wake-new',
+        label: 'Start New Session',
         icon: (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M1 4v6h6" />
-            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
           </svg>
         ),
         hoverColor: 'hover:text-ctp-success',
-        handler: handleWakeAndResume,
+        handler: handleWakeNewSession,
       });
     }
 
@@ -535,13 +527,13 @@ function AgentRow({ agent, project, navigateToAgent }: {
     }
 
     return list;
-  }, [agent.status, isDurable, handleStop, handleWake, handleWakeAndResume, handleSettings]);
+  }, [agent.status, isDurable, handleStop, handleWake, handleWakeNewSession, handleSettings]);
 
   // Inline buttons: primary action + settings
   const primaryAction = agent.status === 'running'
     ? { id: 'stop', title: 'Stop', icon: <span>{'\u25A0'}</span>, hoverColor: 'hover:text-status-warning', handler: handleStop }
     : isDurable && (agent.status === 'sleeping' || agent.status === 'error')
-      ? { id: 'wake', title: 'Wake', icon: <span>{'\u25B6'}</span>, hoverColor: 'hover:text-ctp-success', handler: handleWake }
+      ? { id: 'wake', title: 'Wake & Resume', icon: <span>{'\u25B6'}</span>, hoverColor: 'hover:text-ctp-success', handler: handleWake }
       : null;
 
   return (

@@ -127,10 +127,12 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   }, [task, isRemote, remoteParts, agentProject, agent.id, agent.name, spawnDurableAgent]);
 
   // Wake picks up the last session when there is one (#2019).
-  const defaultMode: WakeMode = hasLastSession || isRemote ? 'resume' : 'fresh';
+  // A satellite says whether it has a session; older ones don't, and start fresh.
+  const canResume = hasLastSession || (isRemote && agent.hasSession === true);
+  const defaultMode: WakeMode = canResume ? 'resume' : 'fresh';
 
   const wakeItems: MenuEntry[] = [
-    { id: 'resume', label: 'Wake and resume last session', disabled: !hasLastSession && !isRemote, selected: defaultMode === 'resume', onSelect: () => { void wake('resume'); } },
+    { id: 'resume', label: 'Wake and resume last session', disabled: !canResume, selected: defaultMode === 'resume', onSelect: () => { void wake('resume'); } },
     { id: 'fresh', label: 'Wake with a fresh session', selected: defaultMode === 'fresh', onSelect: () => { void wake('fresh'); } },
     ...(!isRemote && agentProject ? [
       { id: 'sep', separator: true as const },

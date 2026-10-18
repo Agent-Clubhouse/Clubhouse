@@ -6,6 +6,7 @@ import { useToastStore } from '../../stores/toastStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { NARROW_PANE_PX } from '../agents/pane/useNarrow';
+import { wakeDurableAgent } from '../agents/wake-durable-agent';
 
 /**
  * Show in main window and Stop (Wake while sleeping) on the right of a popout
@@ -38,7 +39,6 @@ const WakeGlyph = () => (
 
 export function PopoutAgentActions({ agentId, projectId }: { agentId: string; projectId?: string }) {
   const agent = useAgentStore((s) => s.agents[agentId]);
-  const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
   const projects = useProjectStore((s) => s.projects);
   const narrow = useWindowNarrow();
 
@@ -57,15 +57,13 @@ export function PopoutAgentActions({ agentId, projectId }: { agentId: string; pr
     try {
       const agentProject = projects.find((p) => p.id === agent.projectId);
       if (!agentProject) throw new Error('Project not found');
-      const configs = await window.clubhouse.agent.listDurable(agentProject.path);
-      const config = configs.find((c: { id: string }) => c.id === agent.id);
-      if (!config) throw new Error('Agent config not found');
-      await spawnDurableAgent(agentProject.id, agentProject.path, config, false);
+      // Resumes the last session when there is one, like every other Wake.
+      await wakeDurableAgent(agentProject.id, agentProject.path, agent.id, 'resume');
     } catch (err) {
       useToastStore.getState().addToast(`Couldn't wake the agent: ${err instanceof Error ? err.message : String(err)}`, 'error');
       reportChromeActionFailed('agent_wake', err);
     }
-  }, [agent, projects, spawnDurableAgent]);
+  }, [agent, projects]);
 
   const handleView = useCallback(() => {
     window.clubhouse.window.focusMain(agentId);

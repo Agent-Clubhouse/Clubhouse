@@ -623,7 +623,7 @@ describe('Dashboard', () => {
         agentDetailedStatus: {},
       });
       render(<Dashboard />);
-      expect(screen.getByTitle('Wake')).toBeInTheDocument();
+      expect(screen.getByTitle('Wake & Resume')).toBeInTheDocument();
     });
 
     it('shows Stop button for running agents', () => {
@@ -660,7 +660,7 @@ describe('Dashboard', () => {
         agentDetailedStatus: {},
       });
       render(<Dashboard />);
-      expect(screen.getByTitle('Wake')).toBeInTheDocument();
+      expect(screen.getByTitle('Wake & Resume')).toBeInTheDocument();
     });
 
     it('Stop button calls killAgent', async () => {
@@ -676,9 +676,9 @@ describe('Dashboard', () => {
       expect(killAgent).toHaveBeenCalledWith('a1');
     });
 
-    it('Wake button calls spawnDurableAgent with resume=false', async () => {
+    it('Wake button resumes the last session', async () => {
       const spawnDurableAgent = vi.fn();
-      const durableConfig = { id: 'a1', name: 'brave-falcon' };
+      const durableConfig = { id: 'a1', name: 'brave-falcon', lastSessionId: 'sess-1' };
       window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
 
       useAgentStore.setState({
@@ -688,11 +688,11 @@ describe('Dashboard', () => {
         setActiveAgent: vi.fn(),
       });
       render(<Dashboard />);
-      fireEvent.click(screen.getByTitle('Wake'));
+      fireEvent.click(screen.getByTitle('Wake & Resume'));
 
       await waitFor(() => {
         expect(spawnDurableAgent).toHaveBeenCalledWith(
-          'proj-1', '/home/user/test-project', durableConfig, false
+          'proj-1', '/home/user/test-project', durableConfig, true
         );
       });
     });
@@ -771,7 +771,7 @@ describe('Dashboard', () => {
       expect(screen.getByTestId('dashboard-agent-context-menu')).toBeInTheDocument();
     });
 
-    it('sleeping durable shows Wake, Wake & Resume, Settings in context menu', () => {
+    it('sleeping durable shows Wake & Resume, Start New Session, Settings in context menu', () => {
       useAgentStore.setState({
         agents: { 'a1': makeAgent({ id: 'a1', status: 'sleeping', kind: 'durable' }) },
         agentDetailedStatus: {},
@@ -780,7 +780,7 @@ describe('Dashboard', () => {
       fireEvent.contextMenu(screen.getByTestId('dashboard-agent-row-a1'));
 
       expect(screen.getByTestId('dashboard-ctx-wake')).toBeInTheDocument();
-      expect(screen.getByTestId('dashboard-ctx-wake-resume')).toBeInTheDocument();
+      expect(screen.getByTestId('dashboard-ctx-wake-new')).toBeInTheDocument();
       expect(screen.getByTestId('dashboard-ctx-settings')).toBeInTheDocument();
     });
 
@@ -810,9 +810,9 @@ describe('Dashboard', () => {
       expect(screen.queryByTestId('dashboard-ctx-wake')).toBeNull();
     });
 
-    it('Wake & Resume in context menu calls spawnDurableAgent with resume=true', async () => {
+    it('Start New Session in context menu starts fresh even with a last session', async () => {
       const spawnDurableAgent = vi.fn();
-      const durableConfig = { id: 'a1', name: 'brave-falcon' };
+      const durableConfig = { id: 'a1', name: 'brave-falcon', lastSessionId: 'sess-1' };
       window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
 
       useAgentStore.setState({
@@ -823,11 +823,11 @@ describe('Dashboard', () => {
       });
       render(<Dashboard />);
       fireEvent.contextMenu(screen.getByTestId('dashboard-agent-row-a1'));
-      fireEvent.click(screen.getByTestId('dashboard-ctx-wake-resume'));
+      fireEvent.click(screen.getByTestId('dashboard-ctx-wake-new'));
 
       await waitFor(() => {
         expect(spawnDurableAgent).toHaveBeenCalledWith(
-          'proj-1', '/home/user/test-project', durableConfig, true
+          'proj-1', '/home/user/test-project', durableConfig, false
         );
       });
     });
