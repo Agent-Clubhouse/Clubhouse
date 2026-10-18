@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
@@ -53,6 +53,13 @@ vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
 
+vi.mock('./copilot-session-store', () => ({
+  listCopilotSessions: vi.fn(async () => []),
+  findCopilotRunSession: vi.fn(async () => null),
+  hasCopilotSession: vi.fn(async () => undefined),
+  copilotSessionInCwd: vi.fn(async () => undefined),
+}));
+
 vi.mock('../util/shell', () => ({
   getShellEnvironment: vi.fn(() => ({ PATH: `/usr/local/bin${path.delimiter}/usr/bin` })),
 }));
@@ -62,6 +69,7 @@ import * as fsp from 'fs/promises';
 import * as childProcess from 'child_process';
 import { getShellEnvironment } from '../util/shell';
 import { CopilotCliProvider } from './copilot-cli-provider';
+import { copilotSessionInCwd, findCopilotRunSession, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
 import { findBinaryInPath } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 
@@ -371,6 +379,53 @@ describe('CopilotCliProvider', () => {
       expect(result.args).toEqual(expect.arrayContaining(['-i', 'Go']));
       expect(result.args).not.toContain('--resume');
       expect(result.args).not.toContain('--continue');
+    });
+
+    describe('--session-id for a fresh durable session (#2156)', () => {
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+      const helpWith = (text: string) => vi.mocked(childProcess.execFile).mockReturnValue({ stdout: text } as never);
+      afterEach(() => { vi.mocked(childProcess.execFile).mockReset(); });
+
+      it('names a fresh interactive session and returns its id when the CLI supports the flag', async () => {
+        helpWith('  --session-id <id>   Resume an existing session or task by ID, or set the UUID for a new session');
+        const result = await provider.buildSpawnCommand({ cwd: '/project', mission: 'Go', interactive: true });
+        expect(result.sessionId).toMatch(UUID_RE);
+        const i = result.args.indexOf('--session-id');
+        expect(result.args[i + 1]).toBe(result.sessionId);
+      });
+
+      it('gives each fresh spawn its own id and reads --help only once', async () => {
+        helpWith('--session-id <id>');
+        const a = await provider.buildSpawnCommand({ cwd: '/project', interactive: true });
+        const b = await provider.buildSpawnCommand({ cwd: '/project', interactive: true });
+        expect(a.sessionId).not.toBe(b.sessionId);
+        expect(vi.mocked(childProcess.execFile).mock.calls.filter((c) => (c[1] as string[])?.[0] === '--help')).toHaveLength(1);
+      });
+
+      it('leaves the flag off for an older CLI without it', async () => {
+        helpWith('  --resume [<value>]  Resume from a previous session');
+        const result = await provider.buildSpawnCommand({ cwd: '/project', interactive: true });
+        expect(result.args).not.toContain('--session-id');
+        expect(result.sessionId).toBeUndefined();
+      });
+
+      it('leaves the flag off when --help can\'t be run', async () => {
+        vi.mocked(childProcess.execFile).mockImplementation(() => { throw new Error('ENOENT'); });
+        const result = await provider.buildSpawnCommand({ cwd: '/project', interactive: true });
+        expect(result.args).not.toContain('--session-id');
+      });
+
+      it('never names a resumed or non-interactive session', async () => {
+        helpWith('--session-id <id>');
+        const resumed = await provider.buildSpawnCommand({ cwd: '/project', resume: true, sessionId: 'abc', interactive: true });
+        expect(resumed.args).not.toContain('--session-id');
+        expect(resumed.sessionId).toBeUndefined();
+        const latest = await provider.buildSpawnCommand({ cwd: '/project', resume: true, interactive: true });
+        expect(latest.args).not.toContain('--session-id');
+        const quick = await provider.buildSpawnCommand({ cwd: '/project', mission: 'Go' });
+        expect(quick.args).not.toContain('--session-id');
+        expect(quick.sessionId).toBeUndefined();
+      });
     });
 
     it('suppresses resume flags when a systemPrompt is set (prompt mode cannot resume)', async () => {
@@ -1003,129 +1058,78 @@ describe('CopilotCliProvider', () => {
     /** Normalize path separators for cross-platform test matching */
     const norm = (p: string | fs.PathLike) => String(p).replace(/\\/g, '/');
 
-    describe('listSessions', () => {
-      it('returns empty array when session directory does not exist', async () => {
-        vi.mocked(fs.existsSync).mockReturnValue(false);
-        const sessions = await provider.listSessions('/project');
-        expect(sessions).toEqual([]);
+    // The store itself is tested against real fixture directories in copilot-session-store.test.ts.
+    describe('session store (listSessions, findRunSession, hasSession)', () => {
+      const store = path.join('/home/user/.copilot', 'session-state');
+      const custom = path.join('/custom-copilot', 'session-state');
+
+      it('lists sessions for the cwd from ~/.copilot/session-state', async () => {
+        vi.mocked(listCopilotSessions).mockResolvedValue([{ sessionId: 'x', startedAt: 'a', lastActiveAt: 'b' }]);
+        expect(await provider.listSessions('/project')).toEqual([{ sessionId: 'x', startedAt: 'a', lastActiveAt: 'b' }]);
+        expect(listCopilotSessions).toHaveBeenCalledWith(store, '/project');
       });
 
-      it('discovers JSONL session files in session-state directory', async () => {
-        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return norm(p).endsWith('/session-state');
-        });
-        vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
-          const d = String(dir);
-          if (norm(d).endsWith('/session-state')) {
-            return [
-              { name: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl', isFile: () => true, isDirectory: () => false },
-              { name: 'f9e8d7c6-b5a4-3210-fedc-ba9876543210.json', isFile: () => true, isDirectory: () => false },
-            ] as any;
-          }
-          return [];
-        });
-        vi.mocked(fsp.stat).mockResolvedValue({
-          birthtime: new Date('2026-04-01T10:00:00Z'),
-          mtime: new Date('2026-04-01T12:00:00Z'),
-        } as any);
-
-        const sessions = await provider.listSessions('/project');
-        expect(sessions).toHaveLength(2);
-        expect(sessions[0].sessionId).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
-        expect(sessions[1].sessionId).toBe('f9e8d7c6-b5a4-3210-fedc-ba9876543210');
+      it('returns [] when the store read throws', async () => {
+        vi.mocked(listCopilotSessions).mockRejectedValue(new Error('EACCES'));
+        expect(await provider.listSessions('/project')).toEqual([]);
       });
 
-      it('skips non-UUID filenames like config files', async () => {
-        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return norm(p).endsWith('/session-state');
-        });
-        vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
-          if (String(dir).endsWith('session-state')) {
-            return [
-              { name: 'config.json', isFile: () => true, isDirectory: () => false },
-              { name: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl', isFile: () => true, isDirectory: () => false },
-            ] as any;
-          }
-          return [];
-        });
-        vi.mocked(fsp.stat).mockResolvedValue({
-          birthtime: new Date('2026-04-01T10:00:00Z'),
-          mtime: new Date('2026-04-01T12:00:00Z'),
-        } as any);
-
-        const sessions = await provider.listSessions('/project');
-        expect(sessions).toHaveLength(1);
-        expect(sessions[0].sessionId).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+      it('finds a terminal run\'s session in the store, honoring the profile\'s COPILOT_HOME', async () => {
+        vi.mocked(findCopilotRunSession).mockResolvedValue('real-id');
+        const run = { cwd: '/wt', startedAt: 1, endedAt: 2, resumedId: 'r', profileEnv: { COPILOT_HOME: '/custom-copilot' } };
+        expect(await provider.findRunSession(run)).toBe('real-id');
+        expect(findCopilotRunSession).toHaveBeenCalledWith(custom, run);
       });
 
-      it('sorts sessions by most recently active first', async () => {
-        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return norm(p).endsWith('/session-state');
-        });
-        vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
-          if (String(dir).endsWith('session-state')) {
-            return [
-              { name: 'aaaa1111-0000-0000-0000-000000000001.jsonl', isFile: () => true, isDirectory: () => false },
-              { name: 'bbbb2222-0000-0000-0000-000000000002.jsonl', isFile: () => true, isDirectory: () => false },
-            ] as any;
-          }
-          return [];
-        });
-        let callCount = 0;
-        vi.mocked(fsp.stat).mockImplementation(async () => {
-          callCount++;
-          if (callCount === 1) {
-            return { birthtime: new Date('2026-04-01T08:00:00Z'), mtime: new Date('2026-04-01T09:00:00Z') } as any;
-          }
-          return { birthtime: new Date('2026-04-02T08:00:00Z'), mtime: new Date('2026-04-02T15:00:00Z') } as any;
+      describe('COPILOT_HOME', () => {
+        const saved = process.env.COPILOT_HOME;
+        beforeEach(() => { delete process.env.COPILOT_HOME; });
+        afterEach(() => {
+          if (saved === undefined) delete process.env.COPILOT_HOME;
+          else process.env.COPILOT_HOME = saved;
+          vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/usr/bin' });
         });
 
-        const sessions = await provider.listSessions('/project');
-        expect(sessions).toHaveLength(2);
-        // Most recently active first
-        expect(sessions[0].sessionId).toBe('bbbb2222-0000-0000-0000-000000000002');
-        expect(sessions[1].sessionId).toBe('aaaa1111-0000-0000-0000-000000000001');
+        it('comes from the login shell when the profile has none', async () => {
+          vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/usr/bin', COPILOT_HOME: '/shell-copilot' });
+          await provider.hasSession('id');
+          expect(hasCopilotSession).toHaveBeenCalledWith(path.join('/shell-copilot', 'session-state'), 'id');
+        });
+
+        it('comes from Clubhouse\'s own environment last', async () => {
+          process.env.COPILOT_HOME = '/proc-copilot';
+          await provider.hasSession('id');
+          expect(hasCopilotSession).toHaveBeenCalledWith(path.join('/proc-copilot', 'session-state'), 'id');
+        });
+
+        it('prefers the profile over the shell and process env', async () => {
+          process.env.COPILOT_HOME = '/proc-copilot';
+          vi.mocked(getShellEnvironment).mockReturnValue({ COPILOT_HOME: '/shell-copilot' });
+          await provider.listSessions('/wt', { COPILOT_HOME: '/custom-copilot' });
+          expect(listCopilotSessions).toHaveBeenCalledWith(custom, '/wt');
+        });
+
+        it('expands a leading ~', async () => {
+          await provider.hasSession('id', { COPILOT_HOME: '~/alt' });
+          expect(hasCopilotSession).toHaveBeenCalledWith(path.join('/home/user/alt', 'session-state'), 'id');
+        });
+
+        it('ignores the undocumented GH_COPILOT_CONFIG_DIR', async () => {
+          await provider.hasSession('id', { GH_COPILOT_CONFIG_DIR: '/custom-copilot' });
+          expect(hasCopilotSession).toHaveBeenCalledWith(store, 'id');
+        });
       });
 
-      it('deduplicates sessions found in multiple directories', async () => {
-        const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
-        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return norm(p).endsWith('/session-state');
-        });
-        vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
-          const d = String(dir);
-          if (norm(d).endsWith('/session-state')) {
-            return [
-              { name: `${sessionId}.jsonl`, isFile: () => true, isDirectory: () => false },
-              { name: 'project-subdir', isFile: () => false, isDirectory: () => true },
-            ] as any;
-          }
-          if (norm(d).endsWith('/project-subdir')) {
-            return [
-              { name: `${sessionId}.jsonl`, isFile: () => true, isDirectory: () => false },
-            ] as any;
-          }
-          return [];
-        });
-        vi.mocked(fsp.stat).mockResolvedValue({
-          birthtime: new Date('2026-04-01T10:00:00Z'),
-          mtime: new Date('2026-04-01T12:00:00Z'),
-        } as any);
-
-        const sessions = await provider.listSessions('/project');
-        expect(sessions).toHaveLength(1);
+      it('checks a scraped id against the agent\'s cwd', async () => {
+        vi.mocked(copilotSessionInCwd).mockResolvedValue(false);
+        expect(await provider.hasSessionForCwd('id', '/wt', { COPILOT_HOME: '/custom-copilot' })).toBe(false);
+        expect(copilotSessionInCwd).toHaveBeenCalledWith(custom, 'id', '/wt');
       });
 
-      it('uses custom config dir from profileEnv', async () => {
-        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return norm(p) === '/custom-copilot/session-state';
-        });
-        vi.mocked(fsp.readdir).mockResolvedValue([]);
-
-        await provider.listSessions('/project', { GH_COPILOT_CONFIG_DIR: '/custom-copilot' });
-        // Should have checked the custom path, not ~/.copilot
-        // Use path.join for cross-platform: Windows produces backslash paths
-        expect(fs.existsSync).toHaveBeenCalledWith(path.join('/custom-copilot', 'session-state'));
+      it('checks a saved id against the store', async () => {
+        vi.mocked(hasCopilotSession).mockResolvedValue(false);
+        expect(await provider.hasSession('a27ef93a-2030-45fd-943e-6e07ac0a811c')).toBe(false);
+        expect(hasCopilotSession).toHaveBeenCalledWith(store, 'a27ef93a-2030-45fd-943e-6e07ac0a811c');
       });
     });
 

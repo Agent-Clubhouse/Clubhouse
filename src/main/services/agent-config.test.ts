@@ -86,6 +86,7 @@ import {
   touchSessionEntry,
   updateSessionName,
   getSessionHistory,
+  removeSessionEntries,
   ensureGitignore as _ensureGitignore,
   saveAgentIcon,
   clearAgentConfigCache,
@@ -1608,6 +1609,41 @@ describe('addSessionEntry', () => {
         sessionId: 'chat-1', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-03T00:00:00Z', friendlyName: 'Refactor',
       });
     });
+  });
+});
+
+describe('removeSessionEntries (#2156)', () => {
+  function setup(agents: any[]) {
+    const written: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    written[agentsJsonPath] = JSON.stringify(agents);
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => written[String(p)] || '[]');
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => { written[String(p)] = String(data); });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      written[String(dest)] = written[String(src)] || '';
+      delete written[String(src)];
+    });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+  }
+  const entry = (id: string) => ({ sessionId: id, startedAt: '2026-10-17T00:00:00Z', lastActiveAt: '2026-10-17T01:00:00Z' });
+
+  it('drops the given history entries and a resume id that points at one of them', async () => {
+    setup([{ id: 'durable_cp', name: 'lucky-mantis', color: 'indigo', createdAt: '2024-01-01', lastSessionId: 'dead-2',
+      sessionHistory: [entry('dead-1'), entry('real-1'), entry('dead-2')] }]);
+    await removeSessionEntries(PROJECT_PATH, 'durable_cp', ['dead-1', 'dead-2']);
+    const config = await getDurableConfig(PROJECT_PATH, 'durable_cp');
+    expect(config!.sessionHistory!.map((s) => s.sessionId)).toEqual(['real-1']);
+    expect(config!.lastSessionId ?? null).toBeNull();
+  });
+
+  it('keeps a resume id that is still valid', async () => {
+    setup([{ id: 'durable_cp2', name: 'x', color: 'indigo', createdAt: '2024-01-01', lastSessionId: 'real-1',
+      sessionHistory: [entry('dead-1'), entry('real-1')] }]);
+    await removeSessionEntries(PROJECT_PATH, 'durable_cp2', ['dead-1']);
+    const config = await getDurableConfig(PROJECT_PATH, 'durable_cp2');
+    expect(config!.lastSessionId).toBe('real-1');
+    expect(config!.sessionHistory).toHaveLength(1);
   });
 });
 

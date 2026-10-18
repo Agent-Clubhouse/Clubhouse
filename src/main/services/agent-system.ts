@@ -551,7 +551,7 @@ async function spawnPtyAgent(
       // A kill nobody asked for through killAgent is Clubhouse's own (quitting): no reason to show.
       if (kill || !killed) void recordSleep(params.projectPath, exitAgentId, sleepInfoForExit(kill, exitCode));
       const capture = captureSessionOnExit(params, provider, exitAgentId, {
-        exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt, profileEnv,
+        exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt, profileEnv, assignedId: spawnCmd.sessionId,
       });
       if (capture) pendingSessionCaptures.set(exitAgentId, capture);
     }
@@ -576,7 +576,7 @@ function captureSessionOnExit(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
   agentId: string,
-  exit: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string> },
+  exit: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string>; assignedId?: string },
 ): Promise<void> {
   // Async: the id may come from the CLI's own session files (it never rejects; failures are logged).
   return captureSession(params, provider, agentId, exit);
@@ -586,7 +586,7 @@ async function captureSession(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
   agentId: string,
-  { exitCode, buffer, killed, runMs, profileEnv }: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string> },
+  { exitCode, buffer, killed, runMs, profileEnv, assignedId }: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string>; assignedId?: string },
 ): Promise<void> {
   const resumedId = params.resume ? params.sessionId : undefined;
   // Only a resume that quit on its own with an error can have failed to resume.
@@ -599,14 +599,39 @@ async function captureSession(
       });
       return clearResume(params.projectPath, agentId, resumedId, 'not_found');
     }
-    let sessionId: string | null = null;
-    if (buffer && isSessionCapable(provider)) sessionId = provider.extractSessionId(buffer);
+    // Never save an id the CLI's own store doesn't have (#2156): a scraped UUID
+    // can come from the conversation text, and a clean exit doesn't prove the
+    // resumed id existed. undefined (can't tell) keeps the id.
+    const exists = async (id: string | null): Promise<string | null> => {
+      if (!id || !isSessionCapable(provider) || !provider.hasSession) return id;
+      const has = await provider.hasSession(id, profileEnv).catch((): undefined => undefined);
+      if (has === false) {
+        appLog('core:agent', 'warn', 'Ignoring a session id the CLI store does not have', { meta: { agentId, sessionId: id } });
+        return null;
+      }
+      return id;
+    };
+    // A scraped UUID must also be this agent's session, where the CLI can say
+    // so: the conversation can mention a real session from another cwd.
+    const scraped = async (id: string | null): Promise<string | null> => {
+      if (!id || !isSessionCapable(provider) || !provider.hasSessionForCwd) return exists(id);
+      const ours = await provider.hasSessionForCwd(id, params.cwd, profileEnv).catch((): undefined => undefined);
+      if (ours === false) {
+        appLog('core:agent', 'warn', 'Ignoring a scraped session id that is not this agent\'s', { meta: { agentId, sessionId: id } });
+        return null;
+      }
+      return id;
+    };
+    // The id Clubhouse gave a fresh session (Copilot's --session-id) is the
+    // run's own; it's checked too, as the CLI may have quit before creating it.
+    let sessionId: string | null = assignedId ? await exists(assignedId) : null;
+    if (!sessionId && buffer && isSessionCapable(provider)) sessionId = await scraped(provider.extractSessionId(buffer));
     // A resume that failed wrote no session of its own, so there's nothing to look up.
     if (!sessionId && !failedResume && isSessionCapable(provider) && provider.findRunSession) {
       const endedAt = Date.now();
       sessionId = await provider.findRunSession({ cwd: params.cwd, startedAt: endedAt - runMs, endedAt, resumedId, profileEnv });
     }
-    if (!sessionId && resumedId && exitCode === 0) sessionId = resumedId;
+    if (!sessionId && resumedId && exitCode === 0) sessionId = await exists(resumedId);
     if (!sessionId) {
       if (failedResume && runMs < RESUME_EARLY_EXIT_MS) {
         appLog('core:agent', 'warn', 'Resume failed: the CLI exited right away', {
@@ -820,11 +845,29 @@ export async function listSessions(
     merged.set(s.sessionId, { ...s, friendlyName: nameMap.get(s.sessionId) });
   }
 
-  // Add Clubhouse-only sessions (not found by provider)
+  // Add Clubhouse-only sessions (not found by provider), except ones the
+  // CLI's store says don't exist: those were saved by earlier builds that
+  // recorded made-up or wrong ids (#2086, #2156). They're pruned from history.
+  const missing: string[] = [];
   for (const s of clubhouseHistory) {
-    if (!merged.has(s.sessionId)) {
-      merged.set(s.sessionId, s);
+    if (merged.has(s.sessionId)) continue;
+    if (isSessionCapable(provider) && provider.hasSession) {
+      const profileEnv = await resolveProfileEnv(projectPath, provider.id);
+      const has = await provider.hasSession(s.sessionId, profileEnv).catch((): undefined => undefined);
+      if (has === false) {
+        missing.push(s.sessionId);
+        continue;
+      }
     }
+    merged.set(s.sessionId, s);
+  }
+  if (missing.length) {
+    const { removeSessionEntries } = await import('./agent-config');
+    await removeSessionEntries(projectPath, agentId, missing).catch((err: unknown) => {
+      appLog('core:agent', 'warn', 'Failed to prune missing sessions from history', {
+        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+    });
   }
 
   // Sort by most recently active

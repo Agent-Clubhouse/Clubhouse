@@ -51,6 +51,11 @@ export interface SpawnCommandResult {
    * between `args` and `trailingArgs`, never append after `trailingArgs`.
    */
   trailingArgs?: string[];
+  /**
+   * The id the provider assigned to a fresh session (Copilot's
+   * `--session-id`), so the run's session is known without searching for it.
+   */
+  sessionId?: string;
 }
 
 export interface HeadlessCommandResult {
@@ -221,6 +226,13 @@ export interface SessionCapable {
 
   /** Whether the CLI still has `sessionId`; undefined when it can't tell. */
   hasSession?(sessionId: string, profileEnv?: Record<string, string>): Promise<boolean | undefined>;
+
+  /**
+   * Whether `sessionId` is a session the CLI recorded for `cwd`; undefined
+   * when it can't tell. Used to vet ids scraped from terminal output, which
+   * can name any session the conversation mentions.
+   */
+  hasSessionForCwd?(sessionId: string, cwd: string, profileEnv?: Record<string, string>): Promise<boolean | undefined>;
 }
 
 /**

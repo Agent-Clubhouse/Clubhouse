@@ -1129,6 +1129,24 @@ export async function updateSessionName(projectPath: string, agentId: string, se
   await writeAgents(projectPath, agents);
 }
 
+/**
+ * Drop session history entries by id, and the resume id if it is one of them
+ * (sessions the CLI's own store no longer has, #2156).
+ */
+export async function removeSessionEntries(projectPath: string, agentId: string, sessionIds: string[]): Promise<void> {
+  if (!sessionIds.length) return;
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) return;
+  const drop = new Set(sessionIds);
+  const before = agent.sessionHistory?.length ?? 0;
+  if (agent.sessionHistory) agent.sessionHistory = agent.sessionHistory.filter((s) => !drop.has(s.sessionId));
+  const clearedResume = !!agent.lastSessionId && drop.has(agent.lastSessionId);
+  if (clearedResume) agent.lastSessionId = null;
+  if ((agent.sessionHistory?.length ?? 0) === before && !clearedResume) return;
+  await writeAgents(projectPath, agents);
+}
+
 /** Get session history for an agent */
 export async function getSessionHistory(projectPath: string, agentId: string): Promise<SessionInfo[]> {
   const agent = await getDurableConfig(projectPath, agentId);
