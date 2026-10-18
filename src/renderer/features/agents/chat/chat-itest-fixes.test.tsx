@@ -243,13 +243,14 @@ describe('restart and failure states (#2183 review)', () => {
     expect(screen.queryByTestId('chat-question')).not.toBeInTheDocument();
   });
 
-  it('a restored question from a run that died with the app expires when the agent starts again', () => {
+  it.each([false, true])('a question from a dead run is settled on restart (new session=%s)', (newSession) => {
     const f = askUserQuestion(claude());
-    // No turn_ended or session_ended: the app quit. The next run is a new session.
-    f.sessionId = 'chat-session-2';
+    // No turn_ended or session_ended: the app quit. Resume or start fresh.
+    if (newSession) f.sessionId = 'chat-session-2';
     f.start(PROFILES.claude.driver, PROFILES.claude.provider, PROFILES.claude.capabilities);
     renderState(fold(f.events));
-    expect(screen.getByTestId('chat-question-row')).toHaveAttribute('data-state', 'expired');
+    if (newSession) expect(screen.queryByTestId('chat-question-row')).not.toBeInTheDocument();
+    else expect(screen.getByTestId('chat-question-row')).toHaveAttribute('data-state', 'expired');
     expect(screen.queryByTestId('chat-question')).not.toBeInTheDocument();
   });
 

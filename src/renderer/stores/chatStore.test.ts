@@ -299,14 +299,15 @@ describe('reduceChatEvent', () => {
       expect(questionItem(s, 'q2')?.expired).toBeUndefined();
     });
 
-    it('expire when a new run starts after the app quit mid-turn (no session_ended)', () => {
+    it.each(['s1', 's2'])('settles a new run of %s after the app quit mid-turn (no session_ended)', (sessionId) => {
       const s = fold([
         sessionStarted(ev),
         ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
         asked('q1', 't1'),
-        sessionStarted(ev, 's2'),
+        sessionStarted(ev, sessionId),
       ]);
-      expect(questionItem(s, 'q1')?.expired).toBe(true);
+      if (sessionId === 's1') expect(questionItem(s, 'q1')?.expired).toBe(true);
+      else expect(questionItem(s, 'q1')).toBeUndefined();
       expect(s.pendingQuestions).toEqual([]);
     });
 

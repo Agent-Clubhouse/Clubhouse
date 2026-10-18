@@ -25,6 +25,9 @@ describe('ChatHistory', () => {
     expect(screen.queryByLabelText('Message')).not.toBeInTheDocument();
     expect(screen.queryByText('Saved reply 1')).not.toBeInTheDocument();
     expect(window.clubhouse.chat.readTranscript).toHaveBeenCalledWith('a1', 500, 'old');
+    for (let page = 0; page < 10 && screen.queryByTestId('chat-window-older'); page++) {
+      fireEvent.click(screen.getByTestId('chat-window-older'));
+    }
     fireEvent.click(screen.getByText('Show earlier'));
     await screen.findByText('Saved reply 1');
     expect(window.clubhouse.chat.readTranscript).toHaveBeenLastCalledWith('a1', undefined, 'old');
