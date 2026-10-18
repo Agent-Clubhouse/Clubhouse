@@ -266,7 +266,6 @@ function ProjectCard({
     return () => { cancelled = true; clearInterval(interval); };
   }, [groupProjectId, fetchDigest, getLastRead]);
 
-  const hasActivity = members.length > 0;
   const description = project?.description || '';
   const pollingEnabled = !!(project?.metadata?.pollingEnabled);
 
