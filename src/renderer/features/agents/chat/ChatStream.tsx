@@ -142,6 +142,8 @@ export interface ChatStreamProps {
   announce?: boolean;
   /** Shown as "Show earlier" above the first message when earlier history wasn't loaded. */
   onShowEarlier?: () => void;
+  /** Saved conversations cannot invite the user to send a message. */
+  emptyMessage?: string;
 }
 
 function sameTranscriptShape(a: ChatViewState, b: ChatViewState): boolean {
@@ -200,6 +202,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
   jump,
   onJumpResult,
   announce = true,
+  emptyMessage = 'No messages yet. Send one to start.',
   onShowEarlier,
 }: ChatStreamProps) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -360,7 +363,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
           </button>
         )}
         {blocks.length === 0 && (
-          <div className="text-center text-[13px] text-ctp-overlay0 py-10">No messages yet. Send one to start.</div>
+          <div className="text-center text-[13px] text-ctp-overlay0 py-10">{emptyMessage}</div>
         )}
         <TranscriptExpansionProvider store={expansionStore}>
           {visibleBlocks.map((b, index) => (

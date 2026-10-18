@@ -603,7 +603,7 @@ describe('ChatView (store-bound)', () => {
     vi.mocked(window.clubhouse.chat).getAgentRuntime = getAgentRuntime;
   });
 
-  it('opens read-only saved history and returns to the current conversation', async () => {
+  it.each(['button', 'Escape'])('opens read-only saved history and returns via %s', async (exit) => {
     window.clubhouse.chat.readTranscript = vi.fn(async () => chatFixture('claude', 'conversation'));
     window.clubhouse.chat.listSessions = vi.fn(async () => []);
     render(<ChatView agent={agent} />);
@@ -611,7 +611,8 @@ describe('ChatView (store-bound)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'History' }));
     expect(await screen.findByText('No saved conversations.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Message')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText('Back to current chat'));
+    if (exit === 'Escape') fireEvent.keyDown(screen.getByRole('region', { name: 'Chat history' }), { key: 'Escape' });
+    else fireEvent.click(screen.getByText('Back to current chat'));
     expect(screen.getByTestId('chat-user-message')).toHaveTextContent('The agent list rows are too tall');
     expect(screen.getByLabelText('Message')).toBeInTheDocument();
   });
