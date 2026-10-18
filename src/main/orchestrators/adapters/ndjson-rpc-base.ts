@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { killStructuredChild } from './structured-spawn';
-import { cleanSpawnEnv } from '../../util/shell';
+import { cleanInheritedEnv, cleanSpawnEnv } from '../../util/shell';
 
 /** Rejection for requests still pending when the agent process exits. */
 export class ProcessExitedError extends Error {
@@ -112,8 +112,9 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
       cwd: this.opts.cwd,
       // Codex app-server and Copilot ACP: never hand them the host Claude
       // Code session's markers or messaging socket, even if a caller's env
-      // (or process.env, when none is given) carries them.
-      env: cleanSpawnEnv({ ...(this.opts.env ?? process.env) }),
+      // (or process.env, when none is given) carries them. process.env is
+      // Clubhouse's own, so it also loses any inherited agent nonce (#2222).
+      env: cleanSpawnEnv({ ...(this.opts.env ?? cleanInheritedEnv({ ...process.env })) }),
       ...(this.opts.windowsVerbatimArguments && { windowsVerbatimArguments: true }),
     });
 

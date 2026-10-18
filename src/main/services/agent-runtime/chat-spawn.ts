@@ -413,7 +413,7 @@ async function runChatStart(
       mcpPort = await waitMcpBridgeReady();
       // A newer start has its own nonce: don't overwrite its MCP config with this one.
       checkpoint();
-      await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, nonce, provider.conventions);
+      await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions);
     } catch (err) {
       if (err instanceof ChatStartCancelledError) throw err;
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped for chat agent', {
@@ -422,11 +422,13 @@ async function runChatStart(
     }
     const mcpServers = {
       ...(mcpEnabled ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined) : {}),
-      ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId, nonce) } : {}),
+      ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
     };
     const env: Record<string, string> = {
       ...launchEnv,
       CLUBHOUSE_AGENT_ID: params.agentId,
+      // The only place the nonce goes: the bridge inherits it from the CLI
+      // (Codex via env_vars, ACP via toAcpMcpServers), never a file (#2222).
       CLUBHOUSE_HOOK_NONCE: nonce,
       ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
     };

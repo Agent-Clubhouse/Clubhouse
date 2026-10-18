@@ -800,7 +800,7 @@ export function toCodexInput(content: ContentBlock[]): UserInput[] {
 
 /** One `mcp_servers` entry as Codex's config reads it. */
 export type CodexMcpServer =
-  | { command: string; args?: string[]; env?: Record<string, string>; cwd?: string }
+  | { command: string; args?: string[]; env?: Record<string, string>; env_vars?: string[]; cwd?: string }
   | { url: string; http_headers?: Record<string, string>; bearer_token_env_var?: string };
 
 /**
@@ -831,10 +831,14 @@ export function toCodexMcpServers(servers: Record<string, unknown> | undefined, 
     if (typeof s.command === 'string' && (type === undefined || type === 'stdio')) {
       const args = Array.isArray(s.args) ? s.args.map(String) : [];
       const env = stringRecord(s.env);
+      const envVars = Array.isArray(s.env_vars) ? s.env_vars.filter((v): v is string => typeof v === 'string') : [];
       out[name] = {
         command: s.command,
         ...(args.length > 0 && { args }),
         ...(env && { env }),
+        // Codex starts stdio servers with a minimal env: names here are
+        // forwarded from the app-server's own (the bridge's nonce, #2222).
+        ...(envVars.length > 0 && { env_vars: envVars }),
         // Codex keeps a relative cwd as written; resolve it against the
         // agent's directory so it doesn't depend on Codex's own cwd.
         ...(typeof s.cwd === 'string' && { cwd: baseDir && !path.isAbsolute(s.cwd) ? path.resolve(baseDir, s.cwd) : s.cwd }),

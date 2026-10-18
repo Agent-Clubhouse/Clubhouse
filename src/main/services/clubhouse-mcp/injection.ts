@@ -1,6 +1,19 @@
 /**
  * MCP Config Injection — injects Clubhouse MCP server entry into
  * the agent's .mcp.json (or orchestrator-equivalent) config file.
+ *
+ * The agent's nonce is never written here (#2222). Any process that can read
+ * an agent's worktree could otherwise call Clubhouse MCP tools as that agent.
+ * The nonce travels only in the spawned CLI's environment
+ * (CLUBHOUSE_HOOK_NONCE), and the bridge script reads it from the environment
+ * it inherits from the CLI:
+ *   - Claude Code (PTY, Agent SDK, stream-json) and Copilot CLI pass their
+ *     whole environment to stdio MCP servers.
+ *   - Codex starts stdio servers with a minimal environment, so the entry
+ *     names the variable in `env_vars` and Codex forwards it.
+ *   - ACP agents get exactly the env pairs in `session/new`; the ACP driver
+ *     fills `env_vars` from the CLI's env over the RPC pipe (see
+ *     toAcpMcpServers), never through a file or argv.
  */
 
 import * as fsp from 'fs/promises';
@@ -22,6 +35,12 @@ const DANGEROUS_COMMANDS = new Set([
 
 /** Shell metacharacters that should not appear in MCP server args. */
 const SHELL_META_RE = /[`$|;&<>(){}!\n\r]/;
+
+/**
+ * The variable carrying an agent's MCP/hook nonce. Set only in the spawned
+ * CLI's environment; config files name it, never hold its value.
+ */
+export const CLUBHOUSE_NONCE_ENV = 'CLUBHOUSE_HOOK_NONCE';
 
 /** Allowed top-level keys for an MCP server definition. */
 const ALLOWED_MCP_KEYS = new Set(['command', 'args', 'env', 'type', 'url']);
@@ -145,11 +164,10 @@ export function injectClubhouseMcp(
   cwd: string,
   agentId: string,
   mcpPort: number,
-  nonce: string,
   conventions?: Partial<SettingsConventions>,
 ): Promise<void> {
   return withInjectionLock(() =>
-    injectClubhouseMcpImpl(cwd, agentId, mcpPort, nonce, conventions),
+    injectClubhouseMcpImpl(cwd, agentId, mcpPort, conventions),
   );
 }
 
@@ -157,7 +175,6 @@ async function injectClubhouseMcpImpl(
   cwd: string,
   agentId: string,
   mcpPort: number,
-  nonce: string,
   conventions?: Partial<SettingsConventions>,
 ): Promise<void> {
   if (!isMcpEnabled()) {
@@ -171,14 +188,15 @@ async function injectClubhouseMcpImpl(
   // Resolve bridge script path
   const bridgeScriptPath = getBridgeScriptPath();
 
+  // No nonce: the bridge inherits it from the CLI's environment (see top).
   const serverDef: McpServerDef = {
     command: 'node',
     args: [bridgeScriptPath],
     env: {
       CLUBHOUSE_MCP_PORT: String(mcpPort),
       CLUBHOUSE_AGENT_ID: agentId,
-      CLUBHOUSE_HOOK_NONCE: nonce,
     },
+    env_vars: [CLUBHOUSE_NONCE_ENV],
   };
 
   // Determine the MCP config file path
@@ -204,8 +222,9 @@ async function injectTomlMcp(
     // File doesn't exist — start fresh
   }
 
-  // Inject the clubhouse MCP server section
-  const updated = injectMcpServerSection(existing, 'clubhouse', serverDef);
+  // Inject the clubhouse MCP server section (replacing any older one, nonce
+  // included), and drop nonces an older Clubhouse left elsewhere in the file.
+  const updated = injectMcpServerSection(scrubClubhouseNonceToml(existing), 'clubhouse', serverDef);
 
   // Write atomically
   const dir = path.dirname(mcpConfigPath);
@@ -240,6 +259,9 @@ async function injectJsonMcp(
     config.mcpServers = {};
   }
 
+  // Migration (#2222): an older Clubhouse stored the nonce in this file.
+  // The clubhouse entry is replaced below; scrub any other copy too.
+  scrubClubhouseNonce(config);
   const mcpServers = config.mcpServers as Record<string, McpServerDef>;
   mcpServers['clubhouse'] = serverDef;
 
@@ -345,9 +367,46 @@ export function stripClubhouseMcp(config: Record<string, unknown>): Record<strin
 }
 
 /**
- * Build the Clubhouse MCP server definition for use in CLI args or config files.
+ * Remove stored Clubhouse nonces from a parsed MCP config (`mcpServers` or
+ * Codex-style `mcp_servers`): deletes CLUBHOUSE_HOOK_NONCE from every server's
+ * `env`. No server has a reason to hold it; Clubhouse versions before #2222
+ * wrote it into the bridge entry. Mutates and returns the config.
  */
-export function buildClubhouseMcpDef(mcpPort: number, agentId: string, nonce: string): McpServerDef {
+export function scrubClubhouseNonce<T extends Record<string, unknown>>(config: T): T {
+  for (const key of ['mcpServers', 'mcp_servers']) {
+    const servers = config[key];
+    if (!servers || typeof servers !== 'object' || Array.isArray(servers)) continue;
+    for (const entry of Object.values(servers as Record<string, unknown>)) {
+      if (!entry || typeof entry !== 'object') continue;
+      const env = (entry as Record<string, unknown>).env;
+      if (env && typeof env === 'object' && !Array.isArray(env)) {
+        delete (env as Record<string, unknown>)[CLUBHOUSE_NONCE_ENV];
+      }
+    }
+  }
+  return config;
+}
+
+/**
+ * A TOML line assigning the nonce, under any table or dotted key:
+ * `CLUBHOUSE_HOOK_NONCE = "…"`, `env.CLUBHOUSE_HOOK_NONCE = "…"`.
+ */
+const TOML_NONCE_LINE_RE = /^[ \t]*(?:[\w.-]+\.)?["']?CLUBHOUSE_HOOK_NONCE["']?[ \t]*=.*(?:\r?\n|$)/gm;
+
+/** The TOML counterpart of scrubClubhouseNonce: drops every line that assigns the nonce. */
+export function scrubClubhouseNonceToml(toml: string): string {
+  return toml.replace(TOML_NONCE_LINE_RE, '');
+}
+
+/**
+ * Build the Clubhouse MCP server definition for use in CLI args or a chat
+ * driver's session config. It carries no nonce: the bridge reads
+ * CLUBHOUSE_HOOK_NONCE from the environment it inherits from the CLI, which
+ * the caller must set on the CLI's spawn env (#2222). Keeping it out of the
+ * definition also keeps it out of argv (`--mcp-config`, Codex `-c`, Copilot
+ * `--additional-mcp-config`) and the spawn log.
+ */
+export function buildClubhouseMcpDef(mcpPort: number, agentId: string): McpServerDef {
   validateBridgeScript();
   return {
     type: 'stdio',
@@ -356,8 +415,8 @@ export function buildClubhouseMcpDef(mcpPort: number, agentId: string, nonce: st
     env: {
       CLUBHOUSE_MCP_PORT: String(mcpPort),
       CLUBHOUSE_AGENT_ID: agentId,
-      CLUBHOUSE_HOOK_NONCE: nonce,
     },
+    env_vars: [CLUBHOUSE_NONCE_ENV],
   };
 }
 

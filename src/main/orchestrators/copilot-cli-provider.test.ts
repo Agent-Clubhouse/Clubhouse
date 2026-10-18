@@ -1019,7 +1019,8 @@ describe('CopilotCliProvider', () => {
       type: 'stdio',
       command: 'node',
       args: ['/mock/bridge.js'],
-      env: { CLUBHOUSE_MCP_PORT: '12345', CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: 'nonce-1' },
+      env: { CLUBHOUSE_MCP_PORT: '12345', CLUBHOUSE_AGENT_ID: 'agent-1' },
+      env_vars: ['CLUBHOUSE_HOOK_NONCE'],
     };
 
     it('returns --additional-mcp-config with JSON containing clubhouse server def', () => {
@@ -1033,7 +1034,10 @@ describe('CopilotCliProvider', () => {
       expect(config.mcpServers.clubhouse.command).toBe('node');
       expect(config.mcpServers.clubhouse.env.CLUBHOUSE_MCP_PORT).toBe('12345');
       expect(config.mcpServers.clubhouse.env.CLUBHOUSE_AGENT_ID).toBe('agent-1');
-      expect(config.mcpServers.clubhouse.env.CLUBHOUSE_HOOK_NONCE).toBe('nonce-1');
+      // Copilot passes its whole env to stdio servers: the bridge inherits the
+      // nonce, so none appears in argv (#2222).
+      expect(config.mcpServers.clubhouse.env).not.toHaveProperty('CLUBHOUSE_HOOK_NONCE');
+      expect(args[1]).not.toMatch(/CLUBHOUSE_HOOK_NONCE"\s*:/);
     });
 
     it('produces valid JSON that can be parsed', () => {

@@ -279,14 +279,15 @@ describe('toml-utils', () => {
         env: {
           CLUBHOUSE_MCP_PORT: '12345',
           CLUBHOUSE_AGENT_ID: 'agent-1',
-          CLUBHOUSE_HOOK_NONCE: 'nonce-1',
         },
+        env_vars: ['CLUBHOUSE_HOOK_NONCE'],
       });
       expect(result).toContain('[mcp_servers.clubhouse]');
       expect(result).toContain('[mcp_servers.clubhouse.env]');
       expect(result).toContain('CLUBHOUSE_MCP_PORT = "12345"');
       expect(result).toContain('CLUBHOUSE_AGENT_ID = "agent-1"');
-      expect(result).toContain('CLUBHOUSE_HOOK_NONCE = "nonce-1"');
+      // env_vars is a key of the server table, so it precedes the env sub-table.
+      expect(result.indexOf('env_vars = ["CLUBHOUSE_HOOK_NONCE"]')).toBeLessThan(result.indexOf('[mcp_servers.clubhouse.env]'));
     });
   });
 });

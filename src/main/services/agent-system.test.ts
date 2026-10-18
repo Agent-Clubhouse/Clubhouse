@@ -721,6 +721,37 @@ describe('agent-system', () => {
     });
   });
 
+  describe('MCP nonce stays in the CLI env (#2222)', () => {
+    it.each([
+      ['claude-code', undefined],
+      ['codex-cli', 'codex-cli'],
+    ] as const)('%s PTY: the nonce is in the spawn env, not in the config or argv', async (_label, orchestrator) => {
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project/worktree',
+        kind: 'durable',
+        ...(orchestrator ? { orchestrator } : {}),
+      });
+      const nonce = getAgentNonce('agent-1')!;
+      expect(nonce).toBeTruthy();
+      const [, , , args, env] = mockPtySpawn.mock.calls[0] as unknown as [string, string, string, string[], Record<string, string>];
+      expect(env).toMatchObject({ CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: nonce, CLUBHOUSE_MCP_PORT: '23456' });
+      expect(args.join(' ')).not.toContain(nonce);
+      // injectClubhouseMcp(cwd, agentId, port, conventions): no nonce argument.
+      expect(mockInjectClubhouseMcp).toHaveBeenCalledTimes(1);
+      const injectArgs = (mockInjectClubhouseMcp.mock.calls[0] as unknown[]);
+      expect(injectArgs.slice(0, 3)).toEqual(['/project/worktree', 'agent-1', 23456]);
+      expect(JSON.stringify(injectArgs)).not.toContain(nonce);
+      // Codex takes MCP servers as `-c` launch flags built from this definition.
+      if (orchestrator === 'codex-cli') expect(mockBuildClubhouseMcpDef).toHaveBeenCalled();
+      for (const call of mockBuildClubhouseMcpDef.mock.calls as unknown[][]) {
+        expect(call).toEqual([23456, 'agent-1']);
+      }
+    });
+  });
+
   describe('MCP arg injection ordering (spawnPtyAgent)', () => {
     it('inserts buildMcpArgs output before trailingArgs so a positional mission stays last', async () => {
       mockMcpWaitReady.mockResolvedValueOnce(23456);

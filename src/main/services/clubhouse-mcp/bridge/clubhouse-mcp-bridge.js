@@ -10,7 +10,8 @@
  * Environment variables:
  *   CLUBHOUSE_MCP_PORT   — bridge server port
  *   CLUBHOUSE_AGENT_ID   — agent identity
- *   CLUBHOUSE_HOOK_NONCE — auth token
+ *   CLUBHOUSE_HOOK_NONCE — auth token. Never in the MCP config file: it is
+ *                          inherited from the agent CLI's environment (#2222).
  *
  * No external dependencies — uses only Node.js built-ins.
  */
@@ -19,7 +20,10 @@ const http = require('http');
 
 const PORT = process.env.CLUBHOUSE_MCP_PORT;
 const AGENT_ID = process.env.CLUBHOUSE_AGENT_ID;
-const NONCE = process.env.CLUBHOUSE_HOOK_NONCE;
+// A literal `${CLUBHOUSE_HOOK_NONCE}` means a CLI passed a placeholder through
+// unexpanded: that is no nonce at all, so fail clearly instead of sending it.
+const rawNonce = process.env.CLUBHOUSE_HOOK_NONCE;
+const NONCE = rawNonce && !/^\$\{.*\}$/.test(rawNonce) ? rawNonce : undefined;
 
 if (!PORT || !AGENT_ID || !NONCE) {
   process.stderr.write(

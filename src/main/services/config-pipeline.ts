@@ -4,7 +4,7 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import { OrchestratorProvider } from '../orchestrators/types';
 import { appLog } from './log-service';
 import { pathExists } from './fs-utils';
-import { stripClubhouseMcpToml } from './clubhouse-mcp/injection';
+import { scrubClubhouseNonce, scrubClubhouseNonceToml, stripClubhouseMcpToml } from './clubhouse-mcp/injection';
 
 interface FileSnapshot {
   originalContent: string | null; // null = file didn't exist before us
@@ -243,6 +243,23 @@ export function stripClubhouseHooksFromFile(filePath: string): Promise<boolean> 
   });
 }
 
+/**
+ * A snapshot taken before #2222 may hold a stored MCP nonce: scrub it before
+ * writing the original back. Text that isn't a JSON object is returned as is.
+ */
+function scrubJsonNonceText(content: string): string {
+  try {
+    const parsed = JSON.parse(content);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return content;
+    const before = JSON.stringify(parsed);
+    const after = JSON.stringify(scrubClubhouseNonce(parsed));
+    return before === after ? content : JSON.stringify(parsed, null, 2);
+  } catch {
+    // telemetry-exempt: not JSON, so there is no entry to scrub; restore it as it was.
+    return content;
+  }
+}
+
 /** Check if a file path looks like a TOML config file. */
 function isTomlFile(filePath: string): boolean {
   return filePath.endsWith('.toml');
@@ -282,7 +299,7 @@ async function restoreJsonSnapshot(absPath: string, originalContent: string | nu
   if (originalContent === null) {
     try {
       const current = JSON.parse(await fsp.readFile(absPath, 'utf-8'));
-      const cleaned = stripClubhouseHooks(current);
+      const cleaned = scrubClubhouseNonce(stripClubhouseHooks(current));
       if (Object.keys(cleaned).length === 0) {
         await fsp.unlink(absPath);
         appLog('core:config-pipeline', 'info', `Restored (deleted, no remaining settings)`, { meta: { filePath: absPath } });
@@ -297,11 +314,11 @@ async function restoreJsonSnapshot(absPath: string, originalContent: string | nu
   } else {
     try {
       const current = JSON.parse(await fsp.readFile(absPath, 'utf-8'));
-      const cleaned = stripClubhouseHooks(current);
+      const cleaned = scrubClubhouseNonce(stripClubhouseHooks(current));
       await fsp.writeFile(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
       appLog('core:config-pipeline', 'info', `Restored (stripped Clubhouse hooks)`, { meta: { filePath: absPath } });
     } catch {
-      await fsp.writeFile(absPath, originalContent, 'utf-8');
+      await fsp.writeFile(absPath, scrubJsonNonceText(originalContent), 'utf-8');
       appLog('core:config-pipeline', 'info', `Restored original (current file corrupt)`, { meta: { filePath: absPath } });
     }
   }
@@ -312,7 +329,7 @@ async function restoreTomlSnapshot(absPath: string, originalContent: string | nu
     // File didn't exist before — strip Clubhouse MCP entry, delete if empty
     try {
       const current = await fsp.readFile(absPath, 'utf-8');
-      const cleaned = stripClubhouseMcpToml(current).trim();
+      const cleaned = scrubClubhouseNonceToml(stripClubhouseMcpToml(current)).trim();
       if (cleaned.length === 0) {
         await fsp.unlink(absPath);
         appLog('core:config-pipeline', 'info', `Restored TOML (deleted, no remaining config)`, { meta: { filePath: absPath } });
@@ -329,11 +346,11 @@ async function restoreTomlSnapshot(absPath: string, originalContent: string | nu
     // File existed before — strip Clubhouse MCP from current state
     try {
       const current = await fsp.readFile(absPath, 'utf-8');
-      const cleaned = stripClubhouseMcpToml(current);
+      const cleaned = scrubClubhouseNonceToml(stripClubhouseMcpToml(current));
       await fsp.writeFile(absPath, cleaned, 'utf-8');
       appLog('core:config-pipeline', 'info', `Restored TOML (stripped Clubhouse MCP)`, { meta: { filePath: absPath } });
     } catch {
-      await fsp.writeFile(absPath, originalContent, 'utf-8');
+      await fsp.writeFile(absPath, scrubClubhouseNonceToml(originalContent), 'utf-8');
       appLog('core:config-pipeline', 'info', `Restored TOML original (current file unreadable)`, { meta: { filePath: absPath } });
     }
   }

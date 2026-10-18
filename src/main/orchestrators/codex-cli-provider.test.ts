@@ -695,8 +695,15 @@ describe('CodexCliProvider', () => {
       type: 'stdio',
       command: 'node',
       args: ['/mock/bridge.js'],
-      env: { CLUBHOUSE_MCP_PORT: '12345', CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: 'nonce-1' },
+      env: { CLUBHOUSE_MCP_PORT: '12345', CLUBHOUSE_AGENT_ID: 'agent-1' },
+      env_vars: ['CLUBHOUSE_HOOK_NONCE'],
     };
+
+    it('forwards the nonce by name with env_vars, never by value (#2222)', () => {
+      const args = provider.buildMcpArgs({ clubhouse: mockServerDef });
+      expect(args).toContain('mcp_servers.clubhouse.env_vars=["CLUBHOUSE_HOOK_NONCE"]');
+      expect(args.some((a) => a.includes('env.CLUBHOUSE_HOOK_NONCE'))).toBe(false);
+    });
 
     it('returns -c flags for command', () => {
       const args = provider.buildMcpArgs({ clubhouse: mockServerDef });

@@ -430,6 +430,15 @@ describe('ACP → chat contract mapping', () => {
       skipped: ['odd'],
     });
   });
+
+  it('fills env_vars from the CLI env, over the RPC pipe only (#2222)', () => {
+    const def = { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' }, env_vars: ['CLUBHOUSE_HOOK_NONCE', 'ABSENT'] };
+    expect(toAcpMcpServers({ clubhouse: def }, { CLUBHOUSE_HOOK_NONCE: 'n1' }).servers).toEqual([
+      { name: 'clubhouse', command: 'node', args: ['bridge.js'], env: [{ name: 'CLUBHOUSE_AGENT_ID', value: 'a1' }, { name: 'CLUBHOUSE_HOOK_NONCE', value: 'n1' }] },
+    ]);
+    // No CLI env: nothing to forward.
+    expect(toAcpMcpServers({ clubhouse: def }).servers[0]).toMatchObject({ env: [{ name: 'CLUBHOUSE_AGENT_ID', value: 'a1' }] });
+  });
 });
 
 // ── Inline scripts ───────────────────────────────────────────────────────────

@@ -180,6 +180,15 @@ export interface McpServerDef {
   command?: string;
   args?: string[];
   env?: Record<string, string>;
+  /**
+   * Names of variables the CLI forwards from its own environment to this
+   * stdio server, as Codex's `env_vars` key. Codex starts stdio servers with
+   * a minimal environment, so a value that must stay out of config files
+   * (the Clubhouse MCP nonce, #2222) reaches the server only through this.
+   * Claude Code and Copilot CLI pass their whole environment to stdio
+   * servers and ignore the key.
+   */
+  env_vars?: string[];
   type?: string;
   url?: string;
 }

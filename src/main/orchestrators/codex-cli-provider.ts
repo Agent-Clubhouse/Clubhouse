@@ -428,6 +428,11 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
           args.push('-c', `mcp_servers.${name}.env.${key}=${tomlValue(val)}`);
         }
       }
+      // Codex gives stdio servers a minimal env; these names are forwarded
+      // from its own (the Clubhouse bridge's nonce, kept out of argv, #2222).
+      if (def.env_vars && def.env_vars.length > 0) {
+        args.push('-c', `mcp_servers.${name}.env_vars=[${def.env_vars.map(tomlValue).join(', ')}]`);
+      }
     }
 
     return args;

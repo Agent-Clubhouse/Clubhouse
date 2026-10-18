@@ -21,7 +21,7 @@ function getShellEnv(): Record<string, string> {
   if (cachedShellEnv) return cachedShellEnv;
 
   if (process.platform === 'win32') {
-    cachedShellEnv = cleanSpawnEnv({ ...process.env } as Record<string, string>);
+    cachedShellEnv = cleanInheritedEnv({ ...process.env } as Record<string, string>);
     return cachedShellEnv;
   }
 
@@ -31,9 +31,9 @@ function getShellEnv(): Record<string, string> {
       encoding: 'utf-8',
       timeout: 5000,
     });
-    cachedShellEnv = cleanSpawnEnv({ ...process.env, ...parseEnvOutput(raw) } as Record<string, string>);
+    cachedShellEnv = cleanInheritedEnv({ ...process.env, ...parseEnvOutput(raw) } as Record<string, string>);
   } catch {
-    cachedShellEnv = cleanSpawnEnv({ ...process.env } as Record<string, string>);
+    cachedShellEnv = cleanInheritedEnv({ ...process.env } as Record<string, string>);
   }
   return cachedShellEnv;
 }
@@ -55,7 +55,7 @@ export function preWarmShellEnvironment(): void {
   if (cachedShellEnv || process.platform === 'win32') {
     // Already cached or not needed on Windows
     if (!cachedShellEnv && process.platform === 'win32') {
-      cachedShellEnv = cleanSpawnEnv({ ...process.env } as Record<string, string>);
+      cachedShellEnv = cleanInheritedEnv({ ...process.env } as Record<string, string>);
     }
     return;
   }
@@ -65,9 +65,9 @@ export function preWarmShellEnvironment(): void {
     // Don't overwrite if getShellEnv() was called synchronously while we were waiting
     if (cachedShellEnv) return;
     if (err) {
-      cachedShellEnv = cleanSpawnEnv({ ...process.env } as Record<string, string>);
+      cachedShellEnv = cleanInheritedEnv({ ...process.env } as Record<string, string>);
     } else {
-      cachedShellEnv = cleanSpawnEnv({ ...process.env, ...parseEnvOutput(stdout) } as Record<string, string>);
+      cachedShellEnv = cleanInheritedEnv({ ...process.env, ...parseEnvOutput(stdout) } as Record<string, string>);
     }
   });
 }
@@ -159,6 +159,42 @@ export function isHostSessionEnvVar(key: string): boolean {
 export function cleanSpawnEnv<T extends Record<string, string | undefined>>(env: T): T {
   for (const key of Object.keys(env)) {
     if (isHostSessionEnvVar(key)) delete env[key];
+  }
+  return env;
+}
+
+/**
+ * Per-agent variables Clubhouse sets on the CLI it spawns for one agent: its
+ * identity, its MCP/hook nonce and the local ports it reports to. The nonce
+ * authenticates MCP and hook calls as that agent, so it lives only in that
+ * agent's process environment, never in a file (#2222).
+ *
+ * When Clubhouse itself runs under an agent (dogfooding: `npm start` in an
+ * agent's terminal) it inherits that agent's values. They must not reach any
+ * child Clubhouse spawns, so they are stripped from the inherited base env
+ * (see cleanInheritedEnv). They are deliberately not in HOST_SESSION_ENV_VARS:
+ * cleanSpawnEnv runs on envs that already carry the spawned agent's own
+ * values, and those must survive.
+ */
+export const INHERITED_AGENT_ENV_VARS: readonly string[] = [
+  'CLUBHOUSE_AGENT_ID',
+  'CLUBHOUSE_HOOK_NONCE',
+  'CLUBHOUSE_MCP_PORT',
+  'CLUBHOUSE_HOOK_PORT',
+];
+
+const INHERITED_AGENT_ENV_SET = new Set(INHERITED_AGENT_ENV_VARS);
+
+/**
+ * Clean an env inherited from Clubhouse's own process (or login shell) before
+ * any per-child overrides are merged in: removes host-session variables and
+ * another agent's identity and nonce (INHERITED_AGENT_ENV_VARS). Mutates and
+ * returns the given env object.
+ */
+export function cleanInheritedEnv<T extends Record<string, string | undefined>>(env: T): T {
+  cleanSpawnEnv(env);
+  for (const key of Object.keys(env)) {
+    if (INHERITED_AGENT_ENV_SET.has(key.toUpperCase())) delete env[key];
   }
   return env;
 }

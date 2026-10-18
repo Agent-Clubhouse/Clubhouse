@@ -35,7 +35,7 @@ vi.mock('../fs-utils', () => ({
   }),
 }));
 
-import { injectClubhouseMcp, injectTemplateMcpServers, isClubhouseMcpEntry, stripClubhouseMcp, stripClubhouseMcpToml, buildClubhouseMcpDef, validateMcpServerDef } from './injection';
+import { injectClubhouseMcp, injectTemplateMcpServers, isClubhouseMcpEntry, stripClubhouseMcp, stripClubhouseMcpToml, buildClubhouseMcpDef, validateMcpServerDef, scrubClubhouseNonce, scrubClubhouseNonceToml } from './injection';
 
 describe('MCP Injection', () => {
   let tmpDir: string;
@@ -51,21 +51,90 @@ describe('MCP Injection', () => {
   describe('injectClubhouseMcp', () => {
     it('does nothing when feature is disabled', async () => {
       mockIsMcpEnabled.mockReturnValue(false);
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
       // .mcp.json should not exist
       await expect(fsp.access(path.join(tmpDir, '.mcp.json'))).rejects.toThrow();
     });
 
     it('creates .mcp.json with clubhouse entry when feature is enabled', async () => {
       mockIsMcpEnabled.mockReturnValue(true);
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
 
       const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
       expect(content.mcpServers.clubhouse).toBeDefined();
       expect(content.mcpServers.clubhouse.command).toBe('node');
       expect(content.mcpServers.clubhouse.env.CLUBHOUSE_MCP_PORT).toBe('12345');
       expect(content.mcpServers.clubhouse.env.CLUBHOUSE_AGENT_ID).toBe('agent-1');
-      expect(content.mcpServers.clubhouse.env.CLUBHOUSE_HOOK_NONCE).toBe('nonce-1');
+      // The nonce is named, never stored (#2222).
+      expect(content.mcpServers.clubhouse.env).not.toHaveProperty('CLUBHOUSE_HOOK_NONCE');
+      expect(content.mcpServers.clubhouse.env_vars).toEqual(['CLUBHOUSE_HOOK_NONCE']);
+    });
+
+    describe('keeps the nonce out of the worktree (#2222)', () => {
+      const NONCE = 'b1f0c3a4-5e6d-4f70-8a9b-0c1d2e3f4a5b';
+
+      /** Every file under dir, recursively, as text. */
+      async function allText(dir: string): Promise<string> {
+        const entries = await fsp.readdir(dir, { withFileTypes: true, recursive: true });
+        const texts = await Promise.all(entries.filter((e) => e.isFile()).map((e) => fsp.readFile(path.join(e.parentPath, e.name), 'utf-8')));
+        return texts.join('\n');
+      }
+
+      it('a sibling reading the JSON worktree config finds no nonce field', async () => {
+        mockIsMcpEnabled.mockReturnValue(true);
+        await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
+        const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+        expect(JSON.stringify(content)).not.toMatch(/CLUBHOUSE_HOOK_NONCE"\s*:/);
+      });
+
+      it('a sibling reading the TOML worktree config finds no nonce', async () => {
+        mockIsMcpEnabled.mockReturnValue(true);
+        await injectClubhouseMcp(tmpDir, 'agent-1', 12345, { configDir: '.codex', mcpConfigFile: '.codex/config.toml', settingsFormat: 'toml' });
+        const content = await fsp.readFile(path.join(tmpDir, '.codex', 'config.toml'), 'utf-8');
+        expect(content).not.toMatch(/CLUBHOUSE_HOOK_NONCE\s*=/);
+        expect(content).toContain('env_vars = ["CLUBHOUSE_HOOK_NONCE"]');
+      });
+
+      it('migrates a stale nonce away from .mcp.json on the next injection', async () => {
+        mockIsMcpEnabled.mockReturnValue(true);
+        const bridge = { command: 'node', args: ['/x/clubhouse-mcp-bridge.js'], env: { CLUBHOUSE_MCP_PORT: '1', CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: NONCE } };
+        await fsp.writeFile(path.join(tmpDir, '.mcp.json'), JSON.stringify({
+          mcpServers: { clubhouse: bridge, 'clubhouse-old': bridge, user: { command: 'u', env: { KEEP: '1' } } },
+        }), 'utf-8');
+
+        await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
+
+        expect(await allText(tmpDir)).not.toContain(NONCE);
+        const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+        expect(content.mcpServers.user).toEqual({ command: 'u', env: { KEEP: '1' } });
+        expect(content.mcpServers['clubhouse-old'].env).toEqual({ CLUBHOUSE_MCP_PORT: '1', CLUBHOUSE_AGENT_ID: 'agent-1' });
+      });
+
+      it('migrates a stale nonce away from the Codex TOML on the next injection', async () => {
+        mockIsMcpEnabled.mockReturnValue(true);
+        await fsp.mkdir(path.join(tmpDir, '.codex'), { recursive: true });
+        await fsp.writeFile(path.join(tmpDir, '.codex', 'config.toml'), [
+          'model = "gpt"',
+          '',
+          '[mcp_servers.clubhouse]',
+          'command = "node"',
+          '',
+          '[mcp_servers.clubhouse.env]',
+          `CLUBHOUSE_HOOK_NONCE = "${NONCE}"`,
+          '',
+          '[mcp_servers.copy.env]',
+          `CLUBHOUSE_HOOK_NONCE = "${NONCE}"`,
+          'KEEP = "1"',
+          '',
+        ].join('\n'), 'utf-8');
+
+        await injectClubhouseMcp(tmpDir, 'agent-1', 12345, { configDir: '.codex', mcpConfigFile: '.codex/config.toml', settingsFormat: 'toml' });
+
+        const content = await fsp.readFile(path.join(tmpDir, '.codex', 'config.toml'), 'utf-8');
+        expect(content).not.toContain(NONCE);
+        expect(content).toContain('model = "gpt"');
+        expect(content).toContain('KEEP = "1"');
+      });
     });
 
     it('preserves existing MCP servers', async () => {
@@ -77,7 +146,7 @@ describe('MCP Injection', () => {
       };
       await fsp.writeFile(path.join(tmpDir, '.mcp.json'), JSON.stringify(existing), 'utf-8');
 
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
 
       const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
       expect(content.mcpServers['my-server']).toBeDefined();
@@ -93,7 +162,7 @@ describe('MCP Injection', () => {
       };
       await fsp.writeFile(path.join(tmpDir, '.mcp.json'), JSON.stringify(existing), 'utf-8');
 
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
 
       const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
       expect(content.mcpServers.clubhouse.command).toBe('node');
@@ -101,7 +170,7 @@ describe('MCP Injection', () => {
 
     it('uses custom conventions for config file path', async () => {
       mockIsMcpEnabled.mockReturnValue(true);
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, {
         mcpConfigFile: 'custom-mcp.json',
       });
 
@@ -113,7 +182,7 @@ describe('MCP Injection', () => {
       mockIsMcpEnabled.mockReturnValue(true);
       await fsp.writeFile(path.join(tmpDir, '.mcp.json'), 'not valid json!!!', 'utf-8');
 
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
 
       const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
       expect(content.mcpServers.clubhouse).toBeDefined();
@@ -124,9 +193,9 @@ describe('MCP Injection', () => {
 
       // Run 3 injections concurrently
       await Promise.all([
-        injectClubhouseMcp(tmpDir, 'agent-A', 10001, 'nonce-a'),
-        injectClubhouseMcp(tmpDir, 'agent-B', 10002, 'nonce-b'),
-        injectClubhouseMcp(tmpDir, 'agent-C', 10003, 'nonce-c'),
+        injectClubhouseMcp(tmpDir, 'agent-A', 10001),
+        injectClubhouseMcp(tmpDir, 'agent-B', 10002),
+        injectClubhouseMcp(tmpDir, 'agent-C', 10003),
       ]);
 
       const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
@@ -144,9 +213,9 @@ describe('MCP Injection', () => {
       // Fire both injectClubhouseMcp and injectTemplateMcpServers concurrently.
       // Without a proper mutex, file corruption can occur.
       await Promise.all([
-        injectClubhouseMcp(tmpDir, 'agent-A', 10001, 'nonce-a'),
+        injectClubhouseMcp(tmpDir, 'agent-A', 10001),
         injectTemplateMcpServers(tmpDir, { 'plugin-server': { command: 'python', args: ['serve.py'] } }),
-        injectClubhouseMcp(tmpDir, 'agent-B', 10002, 'nonce-b'),
+        injectClubhouseMcp(tmpDir, 'agent-B', 10002),
       ]);
 
       const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
@@ -162,7 +231,7 @@ describe('MCP Injection', () => {
       mockIsMcpEnabled.mockReturnValue(true);
       const nestedDir = path.join(tmpDir, 'nested', 'deep');
 
-      await injectClubhouseMcp(nestedDir, 'agent-1', 12345, 'nonce-1', {
+      await injectClubhouseMcp(nestedDir, 'agent-1', 12345, {
         mcpConfigFile: '.mcp.json',
       });
 
@@ -176,7 +245,7 @@ describe('MCP Injection', () => {
       const codexDir = path.join(tmpDir, '.codex');
       await fsp.mkdir(codexDir, { recursive: true });
 
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, {
         configDir: '.codex',
         mcpConfigFile: '.codex/config.toml',
         settingsFormat: 'toml',
@@ -187,7 +256,7 @@ describe('MCP Injection', () => {
       expect(content).toContain('command = "node"');
       expect(content).toContain('CLUBHOUSE_MCP_PORT = "12345"');
       expect(content).toContain('CLUBHOUSE_AGENT_ID = "agent-1"');
-      expect(content).toContain('CLUBHOUSE_HOOK_NONCE = "nonce-1"');
+      expect(content).not.toContain('CLUBHOUSE_HOOK_NONCE =');
     });
 
     it('preserves existing TOML content when injecting', async () => {
@@ -200,7 +269,7 @@ describe('MCP Injection', () => {
         'utf-8',
       );
 
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, {
         configDir: '.codex',
         mcpConfigFile: '.codex/config.toml',
         settingsFormat: 'toml',
@@ -221,7 +290,7 @@ describe('MCP Injection', () => {
         'utf-8',
       );
 
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, {
         configDir: '.codex',
         mcpConfigFile: '.codex/config.toml',
         settingsFormat: 'toml',
@@ -234,7 +303,7 @@ describe('MCP Injection', () => {
 
     it('still injects for JSON config format', async () => {
       mockIsMcpEnabled.mockReturnValue(true);
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, {
         configDir: '.claude',
         mcpConfigFile: '.mcp.json',
         settingsFormat: 'json',
@@ -246,7 +315,7 @@ describe('MCP Injection', () => {
 
     it('no temp files left behind after injection', async () => {
       mockIsMcpEnabled.mockReturnValue(true);
-      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345);
 
       const files = await fsp.readdir(tmpDir);
       const tmpFiles = files.filter(f => f.includes('.tmp.'));
@@ -341,7 +410,7 @@ describe('MCP Injection', () => {
 
   describe('buildClubhouseMcpDef', () => {
     it('returns a valid MCP server definition with type stdio', () => {
-      const def = buildClubhouseMcpDef(12345, 'agent-1', 'nonce-1');
+      const def = buildClubhouseMcpDef(12345, 'agent-1');
       expect(def.type).toBe('stdio');
       expect(def.command).toBe('node');
       expect(def.args).toBeDefined();
@@ -350,8 +419,38 @@ describe('MCP Injection', () => {
       expect(def.env).toEqual({
         CLUBHOUSE_MCP_PORT: '12345',
         CLUBHOUSE_AGENT_ID: 'agent-1',
-        CLUBHOUSE_HOOK_NONCE: 'nonce-1',
       });
+      // No nonce in the definition, so none in argv or the spawn log (#2222).
+      expect(def.env_vars).toEqual(['CLUBHOUSE_HOOK_NONCE']);
+    });
+  });
+
+  describe('scrubClubhouseNonce', () => {
+    it('drops the nonce from every server env in both key styles', () => {
+      const cfg = {
+        mcpServers: { a: { command: 'x', env: { CLUBHOUSE_HOOK_NONCE: 'n', K: 'v' } }, b: { url: 'http://h' } },
+        mcp_servers: { c: { command: 'y', env: { CLUBHOUSE_HOOK_NONCE: 'n' } } },
+      };
+      expect(scrubClubhouseNonce(cfg)).toEqual({
+        mcpServers: { a: { command: 'x', env: { K: 'v' } }, b: { url: 'http://h' } },
+        mcp_servers: { c: { command: 'y', env: {} } },
+      });
+    });
+
+    it('drops nonce lines from TOML in table and dotted form', () => {
+      const toml = [
+        '[mcp_servers.clubhouse.env]',
+        'CLUBHOUSE_HOOK_NONCE = "n1"',
+        'KEEP = "1"',
+        '[mcp_servers.x]',
+        'env.CLUBHOUSE_HOOK_NONCE = "n2"',
+        'mcp_servers.y.env.CLUBHOUSE_HOOK_NONCE = "n3"',
+        'env_vars = ["CLUBHOUSE_HOOK_NONCE"]',
+      ].join('\n');
+      const out = scrubClubhouseNonceToml(toml);
+      expect(out).not.toMatch(/n1|n2|n3/);
+      expect(out).toContain('KEEP = "1"');
+      expect(out).toContain('env_vars = ["CLUBHOUSE_HOOK_NONCE"]');
     });
   });
 

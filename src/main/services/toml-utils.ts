@@ -56,6 +56,9 @@ export function mcpServerToToml(name: string, def: McpServerDef): string {
   if (def.url) {
     lines.push(`url = ${tomlString(def.url)}`);
   }
+  if (def.env_vars && def.env_vars.length > 0) {
+    lines.push(`env_vars = ${tomlStringArray(def.env_vars)}`);
+  }
 
   if (def.env && Object.keys(def.env).length > 0) {
     lines.push('');

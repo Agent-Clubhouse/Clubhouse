@@ -202,6 +202,22 @@ describe('CodexChatDriver', () => {
     await session.close();
   });
 
+  it('forwards the bridge nonce by name: in the app-server env, never in thread/start (#2222)', async () => {
+    const nonce = 'nonce-only-in-env';
+    const { session } = await startSession({
+      env: { PATH: '/bin', CLUBHOUSE_HOOK_NONCE: nonce },
+      mcpServers: {
+        clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' }, env_vars: ['CLUBHOUSE_HOOK_NONCE'] },
+      },
+    });
+    expect(mockSpawn.mock.calls[0][2].env).toMatchObject({ CLUBHOUSE_HOOK_NONCE: nonce });
+    expect(server.requests('thread/start')[0].params).toMatchObject({
+      config: { mcp_servers: { clubhouse: { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1' }, env_vars: ['CLUBHOUSE_HOOK_NONCE'] } } },
+    });
+    expect(JSON.stringify(server.received)).not.toContain(nonce);
+    await session.close();
+  });
+
   it('sends no MCP config when there are no servers', async () => {
     await startSession();
     expect(server.requests('thread/start')[0].params).not.toHaveProperty('config');

@@ -5,7 +5,7 @@ vi.mock('child_process', () => ({
   execFile: vi.fn(),
 }));
 
-import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, buildCliSpawnEnv, summarizeSpawnEnv, winQuoteArg, HOST_SESSION_ENV_VARS, isHostSessionEnvVar } from './shell';
+import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, buildCliSpawnEnv, summarizeSpawnEnv, winQuoteArg, HOST_SESSION_ENV_VARS, isHostSessionEnvVar, cleanInheritedEnv, INHERITED_AGENT_ENV_VARS } from './shell';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from './__fixtures__/host-session-env';
 import { execSync, execFile } from 'child_process';
 
@@ -219,6 +219,51 @@ describe('cleanSpawnEnv', () => {
     const result = cleanSpawnEnv(env);
     expect(result).toBe(env);
     expect(result.PATH).toBe('/usr/bin');
+  });
+});
+
+describe('inherited agent identity and nonce (#2222)', () => {
+  const originalPlatform = process.platform;
+  const PARENT = { CLUBHOUSE_AGENT_ID: 'parent-agent', CLUBHOUSE_HOOK_NONCE: 'parent-nonce', CLUBHOUSE_MCP_PORT: '1111', CLUBHOUSE_HOOK_PORT: '2222' };
+  let saved: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    saved = {};
+    for (const [k, v] of Object.entries(PARENT)) {
+      saved[k] = process.env[k];
+      process.env[k] = v;
+    }
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    invalidateShellEnvironmentCache();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    invalidateShellEnvironmentCache();
+  });
+
+  it('never reaches an unrelated child: stripped from process.env and the login shell', () => {
+    vi.mocked(execSync).mockImplementation(() => 'CLUBHOUSE_HOOK_NONCE=parent-nonce\nHOME=/home/user\n');
+    const env = getShellEnvironment();
+    for (const key of INHERITED_AGENT_ENV_VARS) expect(env).not.toHaveProperty(key);
+    expect(env.HOME).toBe('/home/user');
+  });
+
+  it('survives for its own agent: overrides keep it through cleanSpawnEnv and buildCliSpawnEnv', () => {
+    vi.mocked(execSync).mockImplementation(() => 'HOME=/home/user\n');
+    const own = { CLUBHOUSE_AGENT_ID: 'own', CLUBHOUSE_HOOK_NONCE: 'own-nonce' };
+    expect(buildCliSpawnEnv(own)).toMatchObject(own);
+    expect(cleanSpawnEnv({ ...getShellEnvironment(), ...own })).toMatchObject(own);
+    for (const key of INHERITED_AGENT_ENV_VARS) expect(isHostSessionEnvVar(key)).toBe(false);
+  });
+
+  it('cleanInheritedEnv also removes host-session vars, case-insensitively', () => {
+    expect(cleanInheritedEnv({ clubhouse_hook_nonce: 'x', CLAUDECODE: '1', KEEP: 'y' })).toEqual({ KEEP: 'y' });
   });
 });
 
