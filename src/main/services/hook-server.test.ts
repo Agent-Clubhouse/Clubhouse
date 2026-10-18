@@ -32,7 +32,13 @@ vi.mock('./agent-registry', () => ({
   getAgentOrchestrator: (id: string) => mockGetAgentOrchestrator(id),
   getAgentNonce: (id: string) => mockGetAgentNonce(id),
   resolveOrchestrator: (...args: unknown[]) => mockResolveOrchestrator(...args),
+  agentRegistry: {
+    get: (id: string) => mockRegistryGet(id),
+    setLaunchAccess: (...args: unknown[]) => mockSetLaunchAccess(...args),
+  },
 }));
+const mockRegistryGet = vi.fn((_id: string): { runtime: string } | undefined => ({ runtime: 'pty' }));
+const mockSetLaunchAccess = vi.fn();
 
 vi.mock('../orchestrators', () => ({
   isHookCapable: vi.fn((provider: any) => typeof provider.parseHookEvent === 'function'),
@@ -231,6 +237,35 @@ describe('hook-server', () => {
           timestamp: expect.any(Number),
         })
       );
+    });
+
+    it('records a terminal agent\'s reported permission level for the helper ceiling (#2228)', async () => {
+      mockResolveOrchestrator.mockResolvedValue({
+        parseHookEvent: vi.fn(() => ({ ...mockNormalized, permissionLevel: 'full_access' })),
+        toolVerb: vi.fn(),
+      });
+      await postToServer(port, '/hook/agent-1', { hook_event_name: 'PreToolUse', permission_mode: 'bypassPermissions' }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      await vi.waitFor(() => expect(mockSetLaunchAccess).toHaveBeenCalledWith('agent-1', { freeAgentMode: true, permissionMode: 'skip-all' }));
+
+      mockSetLaunchAccess.mockClear();
+      mockResolveOrchestrator.mockResolvedValue({
+        parseHookEvent: vi.fn(() => ({ ...mockNormalized, permissionLevel: 'plan' })),
+        toolVerb: vi.fn(),
+      });
+      await postToServer(port, '/hook/agent-1', { hook_event_name: 'PreToolUse', permission_mode: 'plan' }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      await vi.waitFor(() => expect(mockSetLaunchAccess).toHaveBeenCalledWith('agent-1', { freeAgentMode: false, permissionMode: 'auto' }));
+    });
+
+    it('leaves a chat agent\'s level to its driver events', async () => {
+      mockRegistryGet.mockReturnValueOnce({ runtime: 'chat' });
+      mockResolveOrchestrator.mockResolvedValue({
+        parseHookEvent: vi.fn(() => ({ ...mockNormalized, permissionLevel: 'full_access' })),
+        toolVerb: vi.fn(),
+      });
+      mockSetLaunchAccess.mockClear();
+      await postToServer(port, '/hook/agent-1', { hook_event_name: 'PreToolUse' }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(mockSetLaunchAccess).not.toHaveBeenCalled();
     });
 
     it('decodes multi-byte UTF-8 characters split across request chunks', async () => {

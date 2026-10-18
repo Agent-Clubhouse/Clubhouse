@@ -87,7 +87,7 @@ import {
   turnOffOrchestration,
 } from './orchestration-policy';
 import { isOrchestrationEnabled, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './clubhouse-mcp/orchestration-gate';
-import { notifyPersonaChanged } from './persona-change-hook';
+import { notifyPersonaChanged, notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import * as agentConfig from './agent-config';
 
 function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
@@ -324,6 +324,37 @@ describe('persona change re-sync', () => {
     expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.orchestrate).toBe(true);
   });
 
+  it('handles an agent that had no persona of its own, via the project default', async () => {
+    state.projectDefaults = { persona: 'orchestrator' };
+    setAgents(PROJECT, [agent('orch', { persona: 'developer' })]);
+    live('orch');
+    setOrchestrationEnabled('orch', true);
+    // It used the project default (orchestrator) before choosing developer.
+    await notifyPersonaChanged(PROJECT, 'orch', undefined);
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+
+  it('re-checks agents on the project default persona when it changes', async () => {
+    state.projectDefaults = { persona: 'developer' };
+    setAgents(PROJECT, [
+      agent('follower'),
+      agent('keeper'),
+      agent('h1', { parentAgentId: 'keeper' }),
+      agent('own', { persona: 'orchestrator' }),
+    ]);
+    for (const id of ['follower', 'keeper', 'own']) {
+      live(id);
+      setOrchestrationEnabled(id, true);
+    }
+    await notifyProjectDefaultPersonaChanged(PROJECT, 'orchestrator');
+    expect(isOrchestrationEnabled('follower')).toBe(false);
+    // Has helpers: kept on, pinned.
+    expect(isOrchestrationEnabled('keeper')).toBe(true);
+    expect(find('keeper').orchestration).toEqual({ orchestrate: true });
+    // Has its own persona: not affected.
+    expect(isOrchestrationEnabled('own')).toBe(true);
+  });
+
   it('never opens the gate when the new persona turns orchestration on', async () => {
     setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' })]);
     live('orch');
@@ -432,6 +463,31 @@ describe('turnOffOrchestration', () => {
     await expect(turnOffOrchestration(PROJECT, 'orch', 'keep')).rejects.toThrow('disk gone');
     expect(isOrchestrationEnabled('orch')).toBe(true);
     expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+  });
+
+  it('a spawn sync during the cascade can\'t reopen the gate', async () => {
+    let syncDone: Promise<void> | undefined;
+    mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string) => {
+      // The orchestrator respawns mid-turn-off.
+      syncDone = syncOrchestrationGate(PROJECT, 'orch');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(isOrchestrationEnabled('orch')).toBe(false);
+      releaseHelpers(projectPath, agentId);
+      return { ok: true, message: 'Kept', helperIds: ['h1', 'h2'] };
+    });
+    await turnOffOrchestration(PROJECT, 'orch', 'keep');
+    await syncDone;
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+    expect(find('orch').orchestration?.orchestrate).toBe(false);
+  });
+
+  it('does not reopen the gate after a failure when the agent is no longer running here', async () => {
+    mocks.resolveHelpersForDelete.mockImplementation(async () => {
+      registry.delete('orch');
+      return { ok: false, message: 'blocked', blocked: [] };
+    });
+    await turnOffOrchestration(PROJECT, 'orch', 'dispose');
+    expect(isOrchestrationEnabled('orch')).toBe(false);
   });
 
   it('settles a helper that appeared during the cascade with the same choice', async () => {

@@ -201,8 +201,12 @@ export class ChatAgentRuntime implements AgentRuntime {
     // A new driver session never echoes answers given in the old one.
     this.answeredHere.clear();
     await this.setState('starting');
+    // A new session (start, /clear) runs at the spawn level, whatever the
+    // old one was set to: record it for the helper ceiling (#2228).
+    this.recordLevel(this.opts.level, true);
     const session = await this.startDriverSession(resumeNativeSessionId);
     this.session = session;
+    this.recordLevel(this.opts.level, false);
     this.capabilities = session.capabilities;
     this.noteNativeSessionId(session.nativeSessionId ?? resumeNativeSessionId);
     appLog('core:chat', 'info', 'Chat session open', {
@@ -345,7 +349,7 @@ export class ChatAgentRuntime implements AgentRuntime {
         break;
       case 'mode_changed':
         // The ceiling for this agent's helpers follows its live level (#2228).
-        agentRegistry.setLaunchAccess(this.agentId, launchAccessForChatLevel(draft.data.level));
+        this.recordLevel(draft.data.level, false);
         break;
       case 'session_info':
         if (draft.data.capabilities && this.capabilities) {
@@ -634,12 +638,21 @@ export class ChatAgentRuntime implements AgentRuntime {
     const session = this.requireSession();
     // Helpers' ceiling (#2228): take a lowering at once, a raise only once
     // the driver accepted it, so the record never runs above the agent.
-    const before = agentRegistry.get(this.agentId)?.launchAccess;
-    const next = launchAccessForChatLevel(level);
-    if (ACCESS_LEVELS.indexOf(accessLevelOf(next)) < ACCESS_LEVELS.indexOf(accessLevelOf(before))) {
-      agentRegistry.setLaunchAccess(this.agentId, next);
-    }
+    this.recordLevel(level, true);
     await session.setLevel(level);
+    this.recordLevel(level, false);
+  }
+
+  /**
+   * Record the agent's live level on its registry entry, the ceiling for its
+   * helpers (#2228). With `lowerOnly` it only ever lowers the record.
+   */
+  private recordLevel(level: PermissionLevel, lowerOnly: boolean): void {
+    const next = launchAccessForChatLevel(level);
+    if (lowerOnly) {
+      const before = agentRegistry.get(this.agentId)?.launchAccess;
+      if (ACCESS_LEVELS.indexOf(accessLevelOf(next)) >= ACCESS_LEVELS.indexOf(accessLevelOf(before))) return;
+    }
     agentRegistry.setLaunchAccess(this.agentId, next);
   }
 

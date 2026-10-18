@@ -46,7 +46,7 @@ import { readProjectAgentDefaults } from './agent-settings-service';
 import { readLayeredPersonaRaw, resolvePersonaId } from './materialization-service';
 import { isOrchestrationEnabled, setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
 import { appLog } from './log-service';
-import { setPersonaChangeHook } from './persona-change-hook';
+import { setPersonaChangeHook, type PersonaChange } from './persona-change-hook';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import { readFrontMatterValue } from '../../shared/persona-pattern';
 import type { DurableAgentConfig } from '../../shared/types';
@@ -74,12 +74,14 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** A project path as a comparison key: resolved, and case-folded on Windows. */
+function pathKey(p: string): string {
+  const resolved = path.resolve(p);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
 function samePath(a: string, b: string): boolean {
-  const norm = (p: string) => {
-    const resolved = path.resolve(p);
-    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-  };
-  return norm(a) === norm(b);
+  return pathKey(a) === pathKey(b);
 }
 
 /** Whether the agent is running (in the registry) for this project. */
@@ -94,7 +96,7 @@ const locks = new Map<string, Promise<unknown>>();
 
 /** Run `fn` after every earlier locked call for this agent has settled. */
 async function withAgentLock<T>(projectPath: string, agentId: string, fn: () => Promise<T>): Promise<T> {
-  const key = `${path.resolve(projectPath)}\0${agentId}`;
+  const key = `${pathKey(projectPath)}\0${agentId}`;
   const previous = locks.get(key) ?? Promise.resolve();
   const run = previous.catch((): undefined => undefined).then(fn);
   const settled = run.catch((): undefined => undefined);
@@ -129,13 +131,20 @@ export async function readPersonaOrchestrationDefaults(
   projectPath: string,
   agent: DurableAgentConfig,
 ): Promise<OrchestrationPolicyConfig | undefined> {
-  let personaId: string | undefined;
+  return personaDefaultsFor(projectPath, await effectivePersonaId(projectPath, agent));
+}
+
+/** The persona an agent resolves to: its own, else the project default. */
+async function effectivePersonaId(projectPath: string, agent: DurableAgentConfig): Promise<string | undefined> {
   try {
-    personaId = resolvePersonaId(agent, await readProjectAgentDefaults(projectPath));
+    return resolvePersonaId(agent, await readProjectAgentDefaults(projectPath));
   } catch {
     // telemetry-exempt: unreadable project defaults mean the agent's own persona only
-    personaId = agent.persona;
+    return agent.persona;
   }
+}
+
+async function personaDefaultsFor(projectPath: string, personaId: string | undefined): Promise<OrchestrationPolicyConfig | undefined> {
   const own = personaId ? await readPersonaPolicy(projectPath, personaId) : undefined;
   if (personaId === ORCHESTRATOR_PERSONA_ID) return own;
   const project = await readPersonaPolicy(projectPath, ORCHESTRATOR_PERSONA_ID);
@@ -150,6 +159,15 @@ async function resolveFor(
   stored: OrchestrationPolicyConfig | undefined,
 ): Promise<ResolvedOrchestrationPolicy> {
   return resolveOrchestrationPolicy(stored, await readPersonaOrchestrationDefaults(projectPath, agent));
+}
+
+/** Resolve as if the agent's effective persona were `personaId`. */
+async function resolveWithPersona(
+  projectPath: string,
+  personaId: string | undefined,
+  stored: OrchestrationPolicyConfig | undefined,
+): Promise<ResolvedOrchestrationPolicy> {
+  return resolveOrchestrationPolicy(stored, await personaDefaultsFor(projectPath, personaId));
 }
 
 /** Open or close the gate from a policy. Only spawn and setOrchestrationPolicy call this. */
@@ -184,12 +202,15 @@ export async function getOrchestrationPolicy(projectPath: string, agentId: strin
  */
 export async function syncOrchestrationGate(projectPath: string, agentId: string): Promise<void> {
   try {
-    const agent = await agentConfig.getDurableConfig(projectPath, agentId);
-    if (!agent) {
-      setOrchestrationEnabled(agentId, false);
-      return;
-    }
-    applyGate(projectPath, agent, await resolveFor(projectPath, agent, agent.orchestration));
+    // Under the lock, so a spawn can't reopen the gate in the middle of a turn-off.
+    await withAgentLock(projectPath, agentId, async () => {
+      const agent = await agentConfig.getDurableConfig(projectPath, agentId);
+      if (!agent) {
+        setOrchestrationEnabled(agentId, false);
+        return;
+      }
+      applyGate(projectPath, agent, await resolveFor(projectPath, agent, agent.orchestration));
+    });
   } catch (err) {
     // telemetry-exempt: the gate fails closed and the spawn goes on
     setOrchestrationEnabled(agentId, false);
@@ -304,11 +325,11 @@ export async function turnOffOrchestration(
     try {
       cascade = await settleHelpers(projectPath, agentId, choice, options.force);
     } catch (err) {
-      if (wasOpen) setOrchestrationEnabled(agentId, true);
+      if (wasOpen) applyGate(projectPath, agent, current);
       throw err;
     }
     if (!cascade.ok) {
-      if (wasOpen) setOrchestrationEnabled(agentId, true);
+      if (wasOpen) applyGate(projectPath, agent, current);
       return { ...cascade, policy: current };
     }
 
@@ -319,6 +340,8 @@ export async function turnOffOrchestration(
       stored = applyOrchestrationPatch(fresh.orchestration, { orchestrate: false });
       await agentConfig.setOrchestrationConfig(projectPath, agentId, stored);
     }
+    // Closed again after the write, whatever happened to the gate meanwhile.
+    setOrchestrationEnabled(agentId, false);
     const policy = await resolveFor(projectPath, fresh, stored);
 
     const late = await agentConfig.listHelpers(projectPath, agentId);
@@ -341,10 +364,11 @@ export async function turnOffOrchestration(
 }
 
 /**
- * After a persona change (through updateDurableConfig): if the resolved
- * `orchestrate` went from on to off, close the gate, or, while the agent has
- * helpers, pin `orchestrate: true` on it until the user turns it off with a
- * helper choice. Never opens the gate.
+ * After a persona change: if the resolved `orchestrate` went from on to off,
+ * close the gate, or, while the agent has helpers, pin `orchestrate: true`
+ * on it until the user turns it off with a helper choice. Never opens the
+ * gate. `previousPersona` is the effective persona the agent had before (its
+ * own, or the project default it used).
  */
 export async function reconcileAfterPersonaChange(
   projectPath: string,
@@ -354,7 +378,7 @@ export async function reconcileAfterPersonaChange(
   await withAgentLock(projectPath, agentId, async () => {
     const agent = await agentConfig.getDurableConfig(projectPath, agentId);
     if (!agent) return;
-    const before = await resolveFor(projectPath, { ...agent, persona: previousPersona }, agent.orchestration);
+    const before = await resolveWithPersona(projectPath, previousPersona, agent.orchestration);
     const after = await resolveFor(projectPath, agent, agent.orchestration);
     if (!before.orchestrate || after.orchestrate) return;
 
@@ -370,12 +394,34 @@ export async function reconcileAfterPersonaChange(
   });
 }
 
+/** Route a persona change to the agents it affects. */
+async function onPersonaChange(change: PersonaChange): Promise<void> {
+  if (change.kind === 'agent') {
+    const agent = await agentConfig.getDurableConfig(change.projectPath, change.agentId);
+    if (!agent) return;
+    // The persona it resolved to before: its old own one, else the (unchanged) project default.
+    const previous = change.previousPersona
+      ?? (await effectivePersonaId(change.projectPath, { ...agent, persona: undefined }));
+    await reconcileAfterPersonaChange(change.projectPath, change.agentId, previous);
+    return;
+  }
+  // The project default changed: only agents without their own persona follow it.
+  for (const agent of await agentConfig.listDurable(change.projectPath)) {
+    if (agent.persona || isDisposedAgent(agent)) continue;
+    await reconcileAfterPersonaChange(change.projectPath, agent.id, change.previousDefault);
+  }
+}
+
 // ── Access and limits ────────────────────────────────────────────────────
 
 /**
  * A helper's launch access for an orchestrator, for #2227 to pass to
  * spawnAgent. The ceiling is what the orchestrator runs with now, recorded
- * on its registry entry at spawn and on chat level changes; an orchestrator
+ * on its registry entry: at spawn, on chat level changes (driver mode
+ * events, setLevel, a new session after /clear), and for a terminal Claude
+ * agent from the `permission_mode` its hooks report (Shift+Tab, raising or
+ * lowering). Terminal Codex and Copilot report no mode, so for them the
+ * ceiling stays the level they were launched with. An orchestrator
  * that isn't running in this project, or whose mode is unknown, counts as
  * standard. The level is ranked for `helperProvider` (default: the
  * orchestrator's own provider), so its real flags never exceed the ceiling.
@@ -451,4 +497,4 @@ export async function checkHelperLimitFor(
 
 // Persona changes may turn the resolved policy off. (An agent leaving the
 // registry closes its gate in agent-registry's untrack.)
-setPersonaChangeHook(reconcileAfterPersonaChange);
+setPersonaChangeHook(onPersonaChange);

@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { MINIMAL_CHAT_CAPABILITIES, PERMISSION_LEVEL_LABELS, type ChatCapabilities, type ChatDriverId, type PermissionLevel } from '../../../shared/chat/capabilities';
+import { levelFromClaudeMode } from './permission-mode';
 import type {
   ChatErrorCode,
   ChatEventDraft,
@@ -47,16 +48,7 @@ const LEVEL_TO_MODE: Record<PermissionLevel, ClaudePermissionMode> = {
   full_access: 'bypassPermissions',
 };
 
-/** Native mode → level. `dontAsk` (deny anything not pre-approved) and the CLI's `manual` alias sit on "ask". */
-export function levelFromClaudeMode(mode: string): PermissionLevel {
-  switch (mode) {
-    case 'plan': return 'plan';
-    case 'acceptEdits': return 'auto_edit';
-    case 'auto': return 'auto';
-    case 'bypassPermissions': return 'full_access';
-    default: return 'ask';
-  }
-}
+export { levelFromClaudeMode };
 
 export function claudeModeFromLevel(level: PermissionLevel): ClaudePermissionMode {
   return LEVEL_TO_MODE[level];

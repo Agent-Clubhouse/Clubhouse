@@ -22,6 +22,7 @@ vi.mock('./log-service', () => ({
 import * as fsp from 'fs/promises';
 import { pathExists } from './fs-utils';
 import { appLog } from './log-service';
+import { setPersonaChangeHook } from './persona-change-hook';
 import {
   readClaudeMd, writeClaudeMd, readPermissions, writePermissions,
   readSkillContent, writeSkillContent, deleteSkill,
@@ -649,6 +650,22 @@ describe('writeProjectAgentDefaults', () => {
     const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
     expect(written.agentDefaults.instructions).toBe('# Template');
     expect(written.agentDefaults.permissions.allow).toEqual(['Read']);
+  });
+
+  it('tells the persona hook when the default persona changes (#2228)', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ defaults: {}, quickOverrides: {}, agentDefaults: { persona: 'orchestrator' } }));
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    const hook = vi.fn(async () => undefined);
+    setPersonaChangeHook(hook);
+    try {
+      await writeProjectAgentDefaults(PROJECT, { persona: 'orchestrator', instructions: 'x' });
+      expect(hook).not.toHaveBeenCalled();
+      await writeProjectAgentDefaults(PROJECT, { persona: 'developer' });
+      expect(hook).toHaveBeenCalledWith({ kind: 'project-default', projectPath: PROJECT, previousDefault: 'orchestrator' });
+    } finally {
+      setPersonaChangeHook(null);
+    }
   });
 });
 

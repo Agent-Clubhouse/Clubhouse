@@ -28,7 +28,7 @@ vi.mock('./chat-transcript', () => ({
   appendChatEvent: vi.fn(async () => {}),
 }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
-const registry = vi.hoisted(() => ({ setNonce: vi.fn(), setRuntime: vi.fn(), get: vi.fn() }));
+const registry = vi.hoisted(() => ({ setNonce: vi.fn(), setRuntime: vi.fn(), get: vi.fn(), setLaunchAccess: vi.fn() }));
 vi.mock('../agent-registry', () => ({ agentRegistry: registry, untrackAgent: vi.fn() }));
 vi.mock('../config-pipeline', () => ({ snapshotFile: vi.fn(), restoreForAgent: vi.fn() }));
 vi.mock('../clubhouse-mcp/bridge-server', () => ({

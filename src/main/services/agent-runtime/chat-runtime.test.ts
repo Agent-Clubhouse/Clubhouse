@@ -872,6 +872,19 @@ describe('ChatAgentRuntime stop during start (#2087)', () => {
       expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
     });
 
+    it('records the spawn level when a session opens, and again after /clear', async () => {
+      const driver = new FakeChatDriver();
+      const { runtime } = makeRuntime(driver);
+      // Registered from spawn as bypass, but this runtime opens at ask.
+      await runtime.start();
+      expect(agentRegistry.get('agent-1')?.launchAccess?.freeAgentMode).toBe(false);
+      await runtime.setLevel('full_access');
+      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
+      // The new session starts at the spawn level (ask), not full access.
+      await runtime.clearContext();
+      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+    });
+
     it('keeps the old level when a raise fails', async () => {
       const driver = new FakeChatDriver();
       const { runtime } = makeRuntime(driver);

@@ -408,7 +408,7 @@ describe('orchestration config (#2228)', () => {
       await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { model: 'opus' });
       expect(hook).not.toHaveBeenCalled();
       await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'developer' });
-      expect(hook).toHaveBeenCalledWith(PROJECT_PATH, 'durable_1_orch', 'orchestrator');
+      expect(hook).toHaveBeenCalledWith({ kind: 'agent', projectPath: PROJECT_PATH, agentId: 'durable_1_orch', previousPersona: 'orchestrator' });
       // A failing hook doesn't fail the update.
       hook.mockRejectedValueOnce(new Error('boom'));
       await expect(updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'qa' })).resolves.toBeUndefined();
