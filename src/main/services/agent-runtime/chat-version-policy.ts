@@ -55,11 +55,13 @@ export interface CliDenylistEntry {
  * protocol feature that older CLIs lack.
  */
 export const TESTED_CLI_VERSIONS: Readonly<Partial<Record<ChatDriverId, CliVersionRange>>> = {
-  // Agent SDK 0.3.301 ships with (and is tested against) Claude Code 2.1.301.
-  claude_agent_sdk: { testedMax: '2.1.301' },
-  claude_stream_json: { testedMax: '2.1.301' },
-  // Generated bindings are pinned at 0.153.4; the research probed 0.159.3.
-  codex_app_server: { testedMax: '0.159.3' },
+  // Agent SDK 0.3.301 ships with Claude Code 2.1.301; chat was live-tested
+  // on Claude Code 2.1.302 through that SDK on 2026-10-18 (chat-itest-2026-10-18).
+  claude_agent_sdk: { testedMax: '2.1.302' },
+  claude_stream_json: { testedMax: '2.1.302' },
+  // Generated bindings are pinned at 0.153.4; chat was live-tested on
+  // codex-cli 0.163.0 on 2026-10-18 (resume, approvals, compaction, token usage).
+  codex_app_server: { testedMax: '0.163.0' },
   // Fixtures exist from 1.0.82, 1.0.92 and 1.0.98. The probe launches exactly
   // like a session (no --no-auto-update, #2154), so probe.cliVersion is the
   // version that actually runs: the user's installed Copilot, the same one
