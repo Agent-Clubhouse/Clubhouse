@@ -223,6 +223,15 @@ export function appendChatEvent(event: ChatEvent): Promise<void> {
   });
 }
 
+/**
+ * Resolves when every agent's queued transcript work is done: appends, index
+ * writes and migrations, which share the lock, including work queued while
+ * waiting. Entries leave the map once settled. For shutdown (#2053).
+ */
+export async function flushAllTranscripts(): Promise<void> {
+  while (chains.size) await Promise.allSettled([...chains.values()]);
+}
+
 export interface ReadTranscriptOptions {
   /** Omitted means the most recently started or resumed session. */
   sessionId?: string;

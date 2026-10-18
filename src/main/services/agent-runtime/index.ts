@@ -34,6 +34,11 @@ export function getAgentRuntime(agentId: string): AgentRuntime | undefined {
   return undefined;
 }
 
+/** Every registered chat runtime, for shutdown. */
+export function listChatRuntimes(): AgentRuntime[] {
+  return [...chatRuntimes.values()];
+}
+
 export function isChatAgent(agentId: string): boolean {
   const runtime = chatRuntimes.get(agentId);
   return !!runtime && runtime.isRunning();

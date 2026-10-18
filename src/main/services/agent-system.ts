@@ -30,6 +30,8 @@ import { cancelChatStart, tryStartChatAgent, type ChatStartResult } from './agen
 import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
 import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
+import { sessionCaptureFor, trackSessionCapture } from './session-capture-barrier';
+import { assertLaunchesOpen } from './launch-gate';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { agentKillRequested, clearSpawnKind, noteSpawnKind } from '../telemetry/agent-telemetry';
@@ -98,6 +100,8 @@ export function getRunningAgentIds(agentIds: string[]): string[] {
 }
 
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
+  // Quit and update close this before stopping runtimes (#2053).
+  assertLaunchesOpen();
   const facts: SpawnFacts = { model: params.model };
   const startMs = Date.now();
   await tel.flow(
@@ -553,7 +557,7 @@ async function spawnPtyAgent(
       const capture = captureSessionOnExit(params, provider, exitAgentId, {
         exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt, profileEnv, assignedId: spawnCmd.sessionId,
       });
-      if (capture) pendingSessionCaptures.set(exitAgentId, capture);
+      if (capture) trackSessionCapture(exitAgentId, capture);
     }
   }, commandPrefix)));
 }
@@ -679,12 +683,6 @@ async function clearResume(projectPath: string, agentId: string, sessionId: stri
   }
 }
 
-/**
- * Session-entry writes started by a PTY exit, per agent. A restart that
- * resumes must wait for this, or it reads the previous lastSessionId.
- */
-const pendingSessionCaptures = new Map<string, Promise<void>>();
-
 /** Past gracefulKill's SIGKILL step (9s), so a timeout means the exit was lost. */
 const KILL_WAIT_TIMEOUT_MS = 12_000;
 
@@ -753,11 +751,9 @@ async function settleKill(agentId: string, exited: Promise<boolean>): Promise<vo
   const didExit = await exited;
   // The exit callback runs in the same tick as the exit broadcast (before it
   // on a normal exit, after it on SIGKILL), so the capture is registered by now.
-  const capture = pendingSessionCaptures.get(agentId);
-  if (capture) {
-    await capture;
-    pendingSessionCaptures.delete(agentId);
-  }
+  // A restart that resumes must wait for it, or it reads the previous lastSessionId.
+  const capture = sessionCaptureFor(agentId);
+  if (capture) await capture;
   appLog('core:agent', didExit ? 'info' : 'warn', didExit ? 'Agent exited after kill' : 'Timed out waiting for agent exit after kill', {
     meta: { agentId, waitedMs: Date.now() - startedAt, sessionCaptured: capture !== undefined },
   });

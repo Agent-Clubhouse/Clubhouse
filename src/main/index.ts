@@ -4,10 +4,9 @@ import { app, BrowserWindow, ipcMain, powerMonitor, session, net, protocol } fro
 import { cleanupTranscriptStaging } from './services/agent-runtime/chat-transcript';
 import { registerAllHandlers } from './ipc';
 import { configurePluginMcpHost } from './ipc/plugin-mcp-handlers';
-import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
+import { startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, getActiveWatchCount, stopAllWatches } from './services/file-watch-service';
 import { startStaleSweep as startHeadlessStaleSweep, stopStaleSweep as stopHeadlessStaleSweep } from './services/headless-manager';
-import { restoreAll } from './services/config-pipeline';
 import { buildMenu } from './menu';
 import { getSettings as getThemeSettings } from './services/theme-service';
 import { getThemeColorsForTitleBar } from './title-bar-colors';
@@ -18,15 +17,13 @@ import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from 
 import * as annexServer from './services/annex-server';
 import { bridgeServer as mcpBridgeServer } from './services/clubhouse-mcp';
 import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast';
-import { flushAllAgentConfigs } from './services/agent-config';
-import { groupProjectRegistry } from './services/group-project-registry';
-import { flushAllBulletinBoards } from './services/group-project-bulletin';
 import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
 import { applyWindowSecurityGuards } from './window-security-guards';
 import { generateCspNonce, getCspNonce, buildProductionCsp } from './csp-nonce';
 import { createBeforeQuitHandler } from './shutdown-guard';
+import { runAppShutdown, setShutdownBegin } from './services/app-shutdown';
 import { initProtocolHandler } from './services/protocol-service';
 import { resolvePluginModulePath, pluginModuleResponseHeaders } from './plugin-protocol';
 import { PLUGIN_PROTOCOL_SCHEME } from '../shared/plugin-protocol-url';
@@ -43,9 +40,6 @@ import {
   completeStartup,
   installLifecycleTelemetry,
   markStartup,
-  shutdownCompleted,
-  shutdownStarted,
-  shutdownStep,
 } from './telemetry/lifecycle';
 import { onRendererReady } from './telemetry/renderer-bridge';
 import { registerTelemetryRendererHandlers } from './ipc/telemetry-renderer-handlers';
@@ -432,20 +426,9 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', createBeforeQuitHandler({
-  killAll,
-  flushAllAgentConfigs,
-  flushAllGroupProjects: () => groupProjectRegistry.flush(),
-  flushAllBulletinBoards,
-  flushTelemetry: () => flushBeforeExit(),
-  telemetry: { started: () => shutdownStarted(), step: shutdownStep, completed: () => shutdownCompleted() },
-  applyUpdateOnQuit,
-  appQuit: () => app.quit(),
-  onCleanupError: (operation, error) => {
-    appLog('core:shutdown', 'error', `Failed to ${operation}: ${error instanceof Error ? error.message : String(error)}`);
-  },
-  beforeCleanup: () => {
-  appLog('core:shutdown', 'info', 'App shutting down, restoring configs and killing all PTY sessions');
+// Quit, the update restart and the app restart share one shutdown (#2053);
+// this is what it stops first, before the agents.
+setShutdownBegin(() => {
   stopUpdateChecks();
   stopPeriodicPluginUpdateChecks();
 
@@ -456,9 +439,17 @@ app.on('before-quit', createBeforeQuitHandler({
   stopHeadlessStaleSweep();
   annexServer.stop();
   mcpBridgeServer.stop();
-  restoreAll();
   stopAllWatches();
   // Bounded; queued feedback stays on disk for the next run.
   void shutdownFeedback();
+});
+
+app.on('before-quit', createBeforeQuitHandler({
+  shutdown: (after) => runAppShutdown('quit', after),
+  flushTelemetry: () => flushBeforeExit(),
+  applyUpdateOnQuit,
+  appQuit: () => app.quit(),
+  onCleanupError: (operation, error) => {
+    appLog('core:shutdown', 'error', `Failed to ${operation}: ${error instanceof Error ? error.message : String(error)}`);
   },
 }));

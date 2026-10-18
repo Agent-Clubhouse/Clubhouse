@@ -31,7 +31,8 @@ import { listChatDrivers, resolveChatDriver } from './chat-drivers';
 import { driverHealthKey, driverPausedReason, probeDriver, recordDriverFailure, recordDriverSuccess } from './chat-driver-health';
 import { cliLabel, evaluateCliVersion } from './chat-version-policy';
 import { ChatAgentRuntime, ChatStartCancelledError } from './chat-runtime';
-import { registerChatRuntime, unregisterChatRuntime } from './index';
+import { listChatRuntimes, registerChatRuntime, unregisterChatRuntime } from './index';
+import { trackSessionCapture } from '../session-capture-barrier';
 import { listChatSessions } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
 import { noteChatStartFailure } from './stale-session';
@@ -190,6 +191,19 @@ export async function cancelChatStart(agentId: string): Promise<boolean> {
     broadcastAgentExit(agentId, 0);
   }
   return true;
+}
+
+/**
+ * Stop every chat agent for quit or update (#2053): cancel the starts in
+ * progress, then stop each running session. Each driver closes its CLI its
+ * own way (the Agent SDK query, the Codex app-server, the ACP process), and
+ * each session ends the usual way: its native session id is saved, its MCP
+ * config restored and its exit broadcast. Settles when every stop has, even
+ * ones that fail.
+ */
+export async function stopAllChatAgents(): Promise<void> {
+  await Promise.allSettled([...inflightStarts.keys()].map((agentId) => cancelChatStart(agentId)));
+  await Promise.allSettled(listChatRuntimes().map((runtime) => runtime.stop()));
 }
 
 /** For tests. */
@@ -426,11 +440,12 @@ async function runChatStart(
   ): Promise<{ ok: true } | { ok: false; error: string; sessionStarted: boolean }> {
     let sessionStarted = false;
     const recordChatSession = (id: string) => {
-      void touchSessionEntry(params.projectPath, params.agentId, id).catch((err) => {
+      // Tracked so quit and update wait for it before the final config flush (#2053).
+      trackSessionCapture(params.agentId, touchSessionEntry(params.projectPath, params.agentId, id).catch((err) => {
         appLog('core:chat', 'warn', 'Failed to persist native session id', {
           meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
         });
-      });
+      }));
     };
     const cleanup = (reason: SessionEndReason, exitCode: number) => {
       // The session's last activity is when it ended.
