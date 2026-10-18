@@ -200,6 +200,35 @@ function toolPaths(locs: ToolCall['locations'] | null | undefined, content: Tool
   ];
 }
 
+/**
+ * Files an apply_patch-style raw input touches. Copilot's apply_patch sends
+ * only a string, `*** Begin Patch\n*** Add File: /abs/path\n+line…`; the diff
+ * comes later on the tool_call_update. For an added file, `added` is its text.
+ */
+export function patchFiles(rawInput: unknown): Array<{ path: string; added?: string }> {
+  if (typeof rawInput !== 'string' || !rawInput.includes('*** ')) return [];
+  const files: Array<{ path: string; added?: string }> = [];
+  let adding: { path: string; lines: string[] } | undefined;
+  const flush = () => {
+    if (adding) files.push({ path: adding.path, added: adding.lines.join('\n') + (adding.lines.length ? '\n' : '') });
+    adding = undefined;
+  };
+  for (const line of rawInput.split(/\r?\n/)) {
+    const header = /^\*\*\* (Add|Update|Delete) File: (.+?)\s*$/.exec(line);
+    if (header) {
+      flush();
+      if (header[1] === 'Add') adding = { path: header[2], lines: [] };
+      else if (header[1] === 'Update') files.push({ path: header[2] });
+    } else if (line.startsWith('*** ')) {
+      flush();
+    } else if (adding) {
+      adding.lines.push(line.startsWith('+') ? line.slice(1) : line);
+    }
+  }
+  flush();
+  return files;
+}
+
 /** The new text of the diff for `path`, when the tool call has one. */
 function diffNewText(content: ToolCallContent[] | null | undefined, path: string): string | undefined {
   const diff = Array.isArray(content) ? content.find((c) => c.type === 'diff' && c.path === path) : undefined;
@@ -216,9 +245,14 @@ function readSmallFile(file: string): string | undefined {
   }
 }
 
+/** Whether a title has any letter or digit (Copilot sometimes sends "."). */
+function readable(title: string | null | undefined): title is string {
+  return !!title && /[\p{L}\p{N}]/u.test(title);
+}
+
 /** A readable tool card title: Copilot sometimes sends "." (#2177). */
-function toolTitle(title: string, name: string | null | undefined, kind: ToolCall['kind']): string {
-  if (/[\p{L}\p{N}]/u.test(title)) return title;
+function toolTitle(title: string | null | undefined, name: string | null | undefined, kind: ToolCall['kind']): string {
+  if (readable(title)) return title;
   if (name && /[\p{L}\p{N}]/u.test(name)) return name;
   const kindTitles: Partial<Record<NonNullable<ToolCall['kind']>, string>> = {
     read: 'Read', edit: 'Edit', delete: 'Delete', move: 'Move', search: 'Search', execute: 'Run command', think: 'Think', fetch: 'Fetch', switch_mode: 'Switch mode',
@@ -302,7 +336,14 @@ function selectValue(options: SessionConfigOption[], match: (o: SessionConfigOpt
 export class AcpChatEventMapper {
   /** Distinguishes this driver session's ids from earlier ones in the same (resumed) chat session. */
   /** Path and content of each tool call seen, for the permission request that follows it. */
-  private readonly toolCalls = new Map<string, { locations?: ReturnType<typeof locations>; content?: ChatToolCallContent[] }>();
+  private readonly toolCalls = new Map<string, {
+    locations?: ReturnType<typeof locations>;
+    content?: ChatToolCallContent[];
+    /** The card title shown, when the call got a tool card (not a plan write). */
+    title?: string;
+    name?: string | null;
+    kind?: ToolCall['kind'];
+  }>();
   private readonly idPrefix = randomUUID().slice(0, 8);
   private turn = 0;
   private turnId: string | undefined;
@@ -325,6 +366,7 @@ export class AcpChatEventMapper {
   private readonly levels?: AcpPermissionLevels;
   private readonly modelCostHint?: AcpAgentProfile['modelCostHint'];
   private readonly profile?: Pick<AcpAgentProfile, 'planFilePath' | 'tasksAfterToolCall' | 'contextWindow'>;
+  private readonly env: Record<string, string | undefined>;
   private readonly now: () => number;
   /** Tool calls that write the agent's plan file, by id → the file. */
   private readonly planWrites = new Map<string, string>();
@@ -337,6 +379,8 @@ export class AcpChatEventMapper {
     private readonly driver: ChatDriverId,
     opts: {
       profile?: Pick<AcpAgentProfile, 'permissionLevels' | 'modelCostHint' | 'planFilePath' | 'tasksAfterToolCall' | 'contextWindow'>;
+      /** The agent's environment, for locating its plan file. */
+      env?: Record<string, string | undefined>;
       now?: () => number;
       /** The session was started with a chosen effort, so it isn't the agent's default. */
       effortPinned?: boolean;
@@ -346,6 +390,7 @@ export class AcpChatEventMapper {
     this.levels = opts.profile?.permissionLevels;
     this.modelCostHint = opts.profile?.modelCostHint;
     this.profile = opts.profile;
+    this.env = opts.env ?? process.env;
     this.now = opts.now ?? Date.now;
   }
 
@@ -381,6 +426,12 @@ export class AcpChatEventMapper {
         ...(this.levels?.names && { levelNames: this.levels.names }),
       },
     };
+  }
+
+  /** The agent's plan file for this session among `paths`, if any. */
+  private planFileAmong(paths: string[], state: Readonly<AcpSessionState>): string | undefined {
+    if (!paths.length || !this.profile?.planFilePath) return undefined;
+    return this.profile.planFilePath(paths, { sessionId: state.sessionId, env: this.env });
   }
 
   map(event: AcpSessionEvent, state: Readonly<AcpSessionState>): ChatEventDraft[] {
@@ -487,22 +538,25 @@ export class AcpChatEventMapper {
         if (replay) return [];
         this.lastKind = 'other';
         const content = u.content ? toolContent(u.content, u.rawOutput) : undefined;
-        this.toolCalls.set(u.toolCallId, { locations: locations(u.locations), content });
         if (u.rawInput !== undefined) this.toolInputs.set(u.toolCallId, u.rawInput);
-        const planFile = this.profile?.planFilePath?.(toolPaths(u.locations, u.content));
+        const patched = patchFiles(u.rawInput);
+        const planFile = this.planFileAmong([...toolPaths(u.locations, u.content), ...patched.map((f) => f.path)], state);
         if (planFile) {
           // A write to the agent's plan file is the plan, not a workspace edit (#2176).
+          this.toolCalls.set(u.toolCallId, { locations: locations(u.locations), content });
           this.planWrites.set(u.toolCallId, planFile);
-          const markdown = diffNewText(u.content, planFile) ?? this.planMarkdown;
+          const markdown = diffNewText(u.content, planFile) ?? patched.find((f) => f.path === planFile)?.added ?? this.planMarkdown;
           this.planMarkdown = markdown;
           return [this.scoped({ type: 'plan_document', data: { planId: planFile, markdown, status: 'streaming', toolCallId: u.toolCallId } })];
         }
+        const title = toolTitle(u.title, u.name, u.kind);
+        this.toolCalls.set(u.toolCallId, { locations: locations(u.locations), content, title, name: u.name, kind: u.kind });
         return [this.scoped({
           type: 'tool_call',
           data: {
             toolCallId: u.toolCallId,
             kind: u.kind ?? 'other',
-            title: toolTitle(u.title, u.name, u.kind),
+            title,
             status: u.status ?? 'pending',
             ...(u.name && { toolName: u.name }),
             ...(u.rawInput !== undefined && { rawInput: u.rawInput }),
@@ -515,15 +569,38 @@ export class AcpChatEventMapper {
         if (replay) return [];
         this.lastKind = 'other';
         const tu = u as ToolCallUpdate;
-        const planFile = this.planWrites.get(tu.toolCallId);
-        if (planFile) {
-          if (tu.status !== 'completed') return [];
-          this.planWrites.delete(tu.toolCallId);
-          // The file on disk is the whole plan, edits included; the diff is a fallback.
-          const markdown = readSmallFile(planFile) ?? diffNewText(tu.content ?? undefined, planFile) ?? this.planMarkdown;
-          this.planMarkdown = markdown;
-          return [this.scoped({ type: 'plan_document', data: { planId: planFile, markdown, status: 'ready', toolCallId: tu.toolCallId } })];
+        const known = this.toolCalls.get(tu.toolCallId);
+        let planFile = this.planWrites.get(tu.toolCallId);
+        // The tool_call may not have named the plan file; its update's diff can (#2176).
+        const lateCard = !planFile && known?.title !== undefined;
+        if (!planFile) {
+          planFile = this.planFileAmong([...toolPaths(tu.locations, tu.content), ...patchFiles(tu.rawInput).map((f) => f.path)], state);
+          if (planFile) this.planWrites.set(tu.toolCallId, planFile);
         }
+        if (planFile) {
+          const out: ChatEventDraft[] = [];
+          const diffText = diffNewText(tu.content ?? undefined, planFile);
+          if (tu.status === 'completed' || tu.status === 'failed') {
+            this.planWrites.delete(tu.toolCallId);
+            this.toolInputs.delete(tu.toolCallId);
+          }
+          if (tu.status === 'completed') {
+            // The file on disk is the whole plan, edits included; the diff is a fallback.
+            const markdown = readSmallFile(planFile) ?? diffText ?? this.planMarkdown;
+            this.planMarkdown = markdown;
+            out.push(this.scoped({ type: 'plan_document', data: { planId: planFile, markdown, status: 'ready', toolCallId: tu.toolCallId } }));
+          } else if (diffText !== undefined) {
+            this.planMarkdown = diffText;
+            out.push(this.scoped({ type: 'plan_document', data: { planId: planFile, markdown: diffText, status: 'streaming', toolCallId: tu.toolCallId } }));
+          }
+          // A card already shown for the call still needs to settle.
+          if (lateCard && tu.status) out.push(this.scoped({ type: 'tool_call_update', data: { toolCallId: tu.toolCallId, status: tu.status } }));
+          return out;
+        }
+        // A punctuation-only title never replaces a readable one (#2177).
+        const title = !tu.title ? undefined
+          : readable(tu.title) ? tu.title
+          : known?.title ?? toolTitle(tu.title, tu.name ?? known?.name, tu.kind ?? known?.kind);
         const content = toolContent(tu.content, tu.rawOutput);
         const out: ChatEventDraft[] = [];
         if (tu.status === 'completed' && this.profile?.tasksAfterToolCall) {
@@ -539,7 +616,7 @@ export class AcpChatEventMapper {
           data: {
             toolCallId: tu.toolCallId,
             ...(tu.status && { status: tu.status }),
-            ...(tu.title && { title: tu.title }),
+            ...(title && { title }),
             ...(content && { content, contentMode: 'replace' as const }),
             ...(tu.rawOutput !== undefined && { rawOutput: tu.rawOutput }),
           },

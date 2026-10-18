@@ -674,25 +674,73 @@ describe('Copilot plan card, tasks, titles and context (#2176, #2177, #2178)', (
   });
   const upd = (update: Record<string, unknown>) => ({ type: 'update' as const, sessionId: 's1', replay: false, update: update as never });
 
-  it('shows a write to the session-state plan.md as the plan, reading the final file', () => {
+  // Copilot 1.0.82's plan write, from a real chat transcript (seq 95 and 96), with
+  // its home directory swapped for a temp one. The tool_call has only a string
+  // rawInput; the path and diff arrive on the tool_call_update.
+  const sid = 'd71aeae6-cc77-49f5-b5a3-12c313ea0959';
+  const planText = "# Fictional Fix Changelog Plan\n\n## Problem and approach\n\nAdd a fictional, user-visible bug fix to the repository's established release-note flow. Because this project does not maintain a standalone changelog, the entry should be represented in the version-bump pull request under `# Bug Fixes`, using the concise, past-tense style consumed by the release pipeline.\n\n## Steps\n\n1. Define a short, user-facing description of the fictional fix in past tense, describing the corrected behavior without implementation details.\n2. Add the description as one bullet under `# Bug Fixes` in the next version-bump pull request body, preserving the required `Release: <title>` first line and omitting unrelated sections.\n3. Preview the rendered pull request body and confirm that the release parser will classify and display the entry in the What's New release notes.\n\n## Notes\n\n- Do not add or modify a repository-level `CHANGELOG` file; none exists and the documented release workflow uses pull request metadata.\n- Keep the entry fictional and clearly scoped if it is used for a test or demonstration, so it cannot be mistaken for a shipped fix.\n";
+  const realPlanWrite = (planFile: string) => ({
+    call: {
+      sessionUpdate: 'tool_call', toolCallId: 'custom_call_Tfkd56Uq6eVMcvUuVIQksTN6', kind: 'edit', title: 'apply_patch', status: 'pending',
+      rawInput: `*** Begin Patch\n*** Add File: ${planFile}\n${planText.replace(/\n$/, '').split('\n').map((l) => `+${l}`).join('\n')}\n*** End Patch\n`,
+    },
+    update: {
+      sessionUpdate: 'tool_call_update', toolCallId: 'custom_call_Tfkd56Uq6eVMcvUuVIQksTN6', status: 'completed',
+      content: [{ type: 'diff', path: planFile, newText: planText }],
+      rawOutput: { content: `Added 1 file(s): ${planFile}` },
+    },
+  });
+  const copilotMapper = (home: string) => new AcpChatEventMapper('copilot_acp', { profile: COPILOT_ACP_PROFILE, env: { COPILOT_HOME: home } });
+  const inSession = (): AcpSessionState => ({ ...state(), sessionId: sid });
+
+  it("shows Copilot's real apply_patch plan write as the plan, never a workspace edit", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
-    const planFile = path.join(home, 'session-state', 'd71aeae6', 'plan.md');
+    const planFile = path.join(home, 'session-state', sid, 'plan.md');
+    const { call, update } = realPlanWrite(planFile);
+    const mapper = copilotMapper(home);
+    mapper.map({ type: 'turn_started', sessionId: sid }, inSession());
+
+    const started = mapper.map(upd(call), inSession());
+    expect(started).toEqual([expect.objectContaining({ type: 'plan_document', data: { planId: planFile, markdown: planText, status: 'streaming', toolCallId: call.toolCallId } })]);
+    // No file on disk: the update's diff is the plan.
+    const done = mapper.map(upd(update), inSession());
+    expect(done).toEqual([expect.objectContaining({ type: 'plan_document', data: { planId: planFile, markdown: planText, status: 'ready', toolCallId: call.toolCallId } })]);
+  });
+
+  it('reads the plan file from disk when the write completes', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
+    const planFile = path.join(home, 'session-state', sid, 'plan.md');
     fs.mkdirSync(path.dirname(planFile), { recursive: true });
-    const mapper = new AcpChatEventMapper('copilot_acp', { profile: COPILOT_ACP_PROFILE });
-    mapper.map({ type: 'turn_started', sessionId: 's1' }, state());
+    fs.writeFileSync(planFile, `${planText}\n## Edited later\n`);
+    const { call, update } = realPlanWrite(planFile);
+    const mapper = copilotMapper(home);
+    mapper.map(upd(call), inSession());
+    expect(mapper.map(upd(update), inSession())).toEqual([expect.objectContaining({ type: 'plan_document', data: expect.objectContaining({ markdown: `${planText}\n## Edited later\n`, status: 'ready' }) })]);
+  });
 
-    const started = mapper.map(upd({
-      sessionUpdate: 'tool_call', toolCallId: 'call_plan', title: 'Creating plan.md', kind: 'edit', status: 'pending',
-      locations: [{ path: planFile }], content: [{ type: 'diff', path: planFile, oldText: '', newText: '# Plan\n\n1. Draft' }],
-    }), state());
-    expect(started).toEqual([expect.objectContaining({ type: 'plan_document', data: { planId: planFile, markdown: '# Plan\n\n1. Draft', status: 'streaming', toolCallId: 'call_plan' } })]);
+  it('spots the plan file on the tool_call_update when the tool_call did not name it', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
+    const planFile = path.join(home, 'session-state', sid, 'plan.md');
+    const { call, update } = realPlanWrite(planFile);
+    const mapper = copilotMapper(home);
+    const [card] = mapper.map(upd({ ...call, rawInput: undefined }), inSession());
+    expect(card).toMatchObject({ type: 'tool_call', data: { title: 'apply_patch' } });
+    const done = mapper.map(upd(update), inSession());
+    expect(done).toEqual([
+      expect.objectContaining({ type: 'plan_document', data: { planId: planFile, markdown: planText, status: 'ready', toolCallId: call.toolCallId } }),
+      // The card already shown settles instead of hanging as pending.
+      expect.objectContaining({ type: 'tool_call_update', data: { toolCallId: call.toolCallId, status: 'completed' } }),
+    ]);
+  });
 
-    fs.writeFileSync(planFile, '# Plan\n\n1. Draft\n2. Review\n');
-    expect(mapper.map(upd({ sessionUpdate: 'tool_call_update', toolCallId: 'call_plan', status: 'in_progress' }), state())).toEqual([]);
-    const done = mapper.map(upd({ sessionUpdate: 'tool_call_update', toolCallId: 'call_plan', status: 'completed' }), state());
-    expect(done).toEqual([expect.objectContaining({ type: 'plan_document', data: { planId: planFile, markdown: '# Plan\n\n1. Draft\n2. Review\n', status: 'ready', toolCallId: 'call_plan' } })]);
-    // Never a workspace edit card.
-    expect([...started, ...done].some((d) => d.type === 'tool_call' || d.type === 'tool_call_update')).toBe(false);
+  it("keeps a workspace plan.md and another session's plan as ordinary edits", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
+    for (const file of [path.join(home, 'project', 'plan.md'), path.join(home, 'session-state', '90936e2a-b030-43d9-9924-44a66e171a4a', 'plan.md')]) {
+      const { call, update } = realPlanWrite(file);
+      const mapper = copilotMapper(home);
+      expect(mapper.map(upd(call), inSession()).map((d) => d.type)).toEqual(['tool_call']);
+      expect(mapper.map(upd(update), inSession()).map((d) => d.type)).toEqual(['tool_call_update']);
+    }
   });
 
   it('feeds the todos sql call into the task list when it completes', () => {
@@ -716,6 +764,20 @@ describe('Copilot plan card, tasks, titles and context (#2176, #2177, #2178)', (
     expect(title({ title: ' ', name: 'view', kind: 'read' })).toBe('view');
     expect(title({ title: '…' })).toBe('Tool');
     expect(title({ title: 'Viewing a.ts', kind: 'read' })).toBe('Viewing a.ts');
+  });
+
+  it('never lets a punctuation-only update title replace a readable one', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    mapper.map(upd({ sessionUpdate: 'tool_call', toolCallId: 'a', title: 'Viewing a.ts', kind: 'read', status: 'pending' }), state());
+    mapper.map(upd({ sessionUpdate: 'tool_call', toolCallId: 'b', title: '.', kind: 'execute', status: 'pending' }), state());
+    const title = (toolCallId: string, t: string) => {
+      const [d] = mapper.map(upd({ sessionUpdate: 'tool_call_update', toolCallId, title: t, status: 'in_progress' }), state());
+      return d.type === 'tool_call_update' ? d.data.title : undefined;
+    };
+    expect(title('a', '.')).toBe('Viewing a.ts');
+    expect(title('b', '.')).toBe('Run command');
+    expect(title('unseen', '.')).toBe('Tool');
+    expect(title('a', 'Viewed a.ts')).toBe('Viewed a.ts');
   });
 
   it("marks Copilot's context size as the input window, and leaves other agents' alone", () => {

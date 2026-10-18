@@ -113,10 +113,10 @@ export interface AcpAgentProfile {
    */
   nativeSessionExists?(sessionId: string, env: Record<string, string | undefined>): Promise<boolean | undefined>;
   /**
-   * The agent's plan file among a tool call's paths, if any. Writes to it are
-   * shown as a Plan card, not a workspace edit (#2176).
+   * The agent's plan file for this session among a tool call's paths, if any.
+   * Writes to it are shown as a Plan card, not a workspace edit (#2176).
    */
-  planFilePath?(paths: readonly string[]): string | undefined;
+  planFilePath?(paths: readonly string[], ctx: { sessionId: string | null; env: Record<string, string | undefined> }): string | undefined;
   /**
    * The task list after a completed tool call, when that call changed it
    * (Copilot keeps todos in a SQL table, #2176). `undefined`: no change.
