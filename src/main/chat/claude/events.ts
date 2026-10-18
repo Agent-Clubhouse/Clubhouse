@@ -44,6 +44,8 @@ export type ClaudeChatEventBody =
       slashCommands: string[];
       apiKeySource?: string;
       capabilities?: unknown;
+      /** MCP servers from init's `mcp_servers`; absent when the CLI didn't send the field. */
+      mcpServers?: Array<{ name: string; status: string }>;
     }
   | {
       /** Result of the `initialize` control handshake: commands, models, agents, account. */

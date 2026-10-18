@@ -133,6 +133,12 @@ export class ClaudeNormalizer {
         slashCommands: arr(msg.slash_commands).filter((t): t is string => typeof t === 'string'),
         apiKeySource: str(msg.apiKeySource),
         capabilities: msg.capabilities,
+        ...(Array.isArray(msg.mcp_servers) && {
+          mcpServers: msg.mcp_servers.filter(isObj).flatMap((s) => {
+            const name = str(s.name);
+            return name ? [{ name, status: str(s.status) ?? '' }] : [];
+          }),
+        }),
       }];
     }
     if (subtype === 'compact_boundary') {

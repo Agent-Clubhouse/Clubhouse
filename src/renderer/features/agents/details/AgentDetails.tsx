@@ -5,8 +5,10 @@
  * resize; the chat column moves left so no card covers a message.
  *
  * Six cards, each collapsed to a one-line answer until clicked: Changes,
- * Subagents, Canvases, Context window, MCP servers and Session. Cards a
- * runtime can't fill (the terminal reports no subagents or context) say so.
+ * Subagents, Canvases, Context window, MCP servers and Session. Cards the
+ * runtime can't fill are left out (#2094): Subagents when the agent doesn't
+ * report them (the terminal, or a driver without subagents) and Context window
+ * until the agent reports how full it is.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -27,6 +29,7 @@ import { SubagentList, subagentSummary } from '../chat/AgentMapPanel';
 import { buildAgentMap, formatCost, formatDuration, formatTokens, LEVEL_LABELS } from '../chat/view-model';
 import { ChangesCard, type ChangesScope } from './ChangesCard';
 import { CardNote, CardRow, DetailsCard, UsageBar } from './DetailsCard';
+import { McpCard } from './McpCard';
 import { useAgentDetailsStore } from './detailsStore';
 
 export type CardId = 'changes' | 'subagents' | 'canvases' | 'context' | 'mcp' | 'session';
@@ -224,16 +227,12 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const providerId = chat?.provider ?? agent.orchestrator ?? 'claude-code';
   const provider = getOrchestratorLabel(providerId, orchestrators);
 
-  // Subagents
-  const subsSummary = !chat ? 'not reported in the terminal'
-    : !map || map.mode === 'none' ? 'not reported by this agent' : subagentSummary(map);
+  // Subagents: only when the agent reports them.
+  const showSubagents = !!map && map.mode !== 'none';
 
-  // Context window
+  // Context window: only once the agent has reported how full it is.
   const ctx = chat && chat.capabilities && chat.capabilities.usage !== 'none' ? chat.usage.context : null;
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round((ctx.used / ctx.size) * 100)) : null;
-
-  // MCP servers
-  const mcp = agent.mcpIds ?? [];
 
   // Session
   const model = chat?.model ?? agent.model;
@@ -288,12 +287,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         onReviewAll={onReviewAll}
       />
 
-      <DetailsCard id="subagents" title="Subagents" summary={subsSummary} open={open('subagents')} onToggle={() => toggleCard('subagents')}>
-        {!chat ? (
-          <CardNote>The terminal doesn&apos;t report subagents. Switch to Chat to follow them here.</CardNote>
-        ) : !map || map.mode === 'none' ? (
-          <CardNote>This agent doesn&apos;t report its subagents.</CardNote>
-        ) : (
+      {showSubagents && chat && map && (
+        <DetailsCard id="subagents" title="Subagents" summary={subagentSummary(map)} open={open('subagents')} onToggle={() => toggleCard('subagents')}>
           <SubagentList
             agent={agent}
             state={chat}
@@ -303,8 +298,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
             onShowInStream={(id) => onShowInStream?.(id)}
             missedSubagentId={missedSubagentId}
           />
-        )}
-      </DetailsCard>
+        </DetailsCard>
+      )}
 
       <DetailsCard
         id="canvases"
@@ -335,47 +330,31 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         )}
       </DetailsCard>
 
-      <DetailsCard
-        id="context"
-        title="Context window"
-        summary={ctx && ctxPct !== null ? `${ctxPct}% of ${formatTokens(ctx.size)}` : 'not reported'}
-        right={ctxPct !== null ? <UsageBar pct={ctxPct} className="w-14 h-[5px]" /> : undefined}
-        open={open('context')}
-        onToggle={() => toggleCard('context')}
-      >
-        {ctx && ctxPct !== null ? (
+      {ctx && ctxPct !== null && (
+        <DetailsCard
+          id="context"
+          title="Context window"
+          summary={`${ctxPct}% of ${formatTokens(ctx.size)}`}
+          right={<UsageBar pct={ctxPct} className="w-14 h-[5px]" />}
+          open={open('context')}
+          onToggle={() => toggleCard('context')}
+        >
           <div className="pr-3.5 pl-[33px] pt-1 pb-1.5 flex flex-col gap-2 text-xs">
             <UsageBar pct={ctxPct} />
             <span className="text-ctp-text">{formatTokens(ctx.used)} of {formatTokens(ctx.size)} tokens</span>
             <span className="text-ctp-overlay1">{provider} compacts the conversation on its own near the limit.</span>
           </div>
-        ) : !chat ? (
-          <CardNote>The terminal doesn&apos;t report how full the context is. Switch to Chat to see it here.</CardNote>
-        ) : (
-          <CardNote>{provider} doesn&apos;t report how full its context is yet.</CardNote>
-        )}
-      </DetailsCard>
+        </DetailsCard>
+      )}
 
-      <DetailsCard
-        id="mcp"
-        title="MCP servers"
-        summary={mcp.length ? `${mcp.length} configured` : 'none configured'}
+      <McpCard
+        agent={agent}
+        live={chat?.mcpServers ?? null}
+        spawnedAt={spawnedAt}
+        refreshKey={refreshKey}
         open={open('mcp')}
         onToggle={() => toggleCard('mcp')}
-      >
-        {mcp.length > 0 && (
-          <ul className="flex flex-col">
-            {mcp.map((id) => (
-              <li key={id} className="h-7 flex items-center gap-2 pl-[33px] pr-3.5 text-[12.5px] text-ctp-text">
-                <span className="w-2 h-2 rounded-full border border-ctp-overlay0 flex-shrink-0" aria-hidden="true" />
-                <span className="truncate font-medium">{id}</span>
-                <span className="text-xs text-ctp-overlay1">Configured</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <CardNote>{mcp.length ? 'Live connection status isn’t reported yet.' : 'This agent has no MCP servers set in Clubhouse.'}</CardNote>
-      </DetailsCard>
+      />
 
       <DetailsCard id="session" title="Session" summary={sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>
         <CardRow label="Runs on">

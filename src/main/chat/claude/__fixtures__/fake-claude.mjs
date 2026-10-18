@@ -91,7 +91,7 @@ function ensureInit() {
     claude_code_version: '2.1.300-fake',
     cwd: process.cwd(),
     tools: ['Bash', 'Read', 'Edit'],
-    mcp_servers: [],
+    mcp_servers: [{ name: 'clubhouse', status: 'connected' }, { name: 'github', status: 'needs-auth' }],
     model,
     permissionMode,
     slash_commands: ['compact', 'review'],

@@ -6,6 +6,7 @@ import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type ChatDriverId, ty
 import type {
   ChatErrorCode,
   ChatEventDraft,
+  ChatMcpServerStatus,
   ChatQuestion,
   ChatQuestionAnswers,
   ContentBlock,
@@ -103,6 +104,18 @@ const TOOL_KINDS: Record<string, ToolKind> = {
   EnterPlanMode: 'switch_mode', ExitPlanMode: 'switch_mode',
   TodoWrite: 'think', TaskCreate: 'think', TaskUpdate: 'think',
 };
+
+/** Claude's MCP status words (`needs-auth`, ...) in the shared vocabulary. */
+export function claudeMcpStatus(status: string): ChatMcpServerStatus {
+  switch (status) {
+    case 'connected': return 'connected';
+    case 'pending': return 'pending';
+    case 'needs-auth': case 'needs_auth': return 'needs_auth';
+    case 'failed': return 'failed';
+    case 'disabled': return 'disabled';
+    default: return 'unknown';
+  }
+}
 
 export function claudeToolKind(name: string): ToolKind {
   return TOOL_KINDS[name] ?? 'other';
@@ -533,7 +546,12 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.costIsEstimate = ev.apiKeySource === undefined || ev.apiKeySource === 'none';
         this.push({
           type: 'session_info',
-          data: { nativeSessionId: ev.sessionId || undefined, cliVersion: ev.cliVersion || undefined, model: ev.model || undefined },
+          data: {
+            nativeSessionId: ev.sessionId || undefined,
+            cliVersion: ev.cliVersion || undefined,
+            model: ev.model || undefined,
+            ...(ev.mcpServers && { mcpServers: ev.mcpServers.map((s) => ({ name: s.name, status: claudeMcpStatus(s.status) })) }),
+          },
         });
         if (ev.model && ev.model !== this.model) {
           this.model = ev.model;

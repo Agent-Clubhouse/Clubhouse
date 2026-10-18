@@ -456,6 +456,8 @@ export const IPC = {
     UNREGISTER_WEBVIEW: 'mcp-binding:unregister-webview',
     SET_INSTRUCTIONS: 'mcp-binding:set-instructions',
     SET_DISABLED_TOOLS: 'mcp-binding:set-disabled-tools',
+    /** Renderer→main: the agent's Clubhouse MCP connection (AgentMcpConnection | null). */
+    GET_AGENT_CONNECTION: 'mcp-binding:get-agent-connection',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },

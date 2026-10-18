@@ -18,6 +18,7 @@ import type {
   AvailableCommand,
   ChatCapabilities,
   ChatModelOption,
+  ChatMcpServer,
   ChatDriverId,
   ChatEvent,
   ChatEventDataMap,
@@ -210,6 +211,8 @@ export interface ChatViewState {
   efforts: string[];
   /** The provider's own name for each live level. */
   levelNames: Partial<Record<PermissionLevel, string>>;
+  /** MCP servers the CLI reported at session start; null when it doesn't report them. */
+  mcpServers: ChatMcpServer[] | null;
   queued: QueuedMessage[];
   /** Native messages the driver didn't recognize (protocol drift), by name. */
   protocolUnknown: Record<string, number>;
@@ -247,6 +250,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     models: [],
     efforts: [],
     levelNames: {},
+    mcpServers: null,
     queued: [],
     protocolUnknown: {},
     untestedCliNote: null,
@@ -395,6 +399,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         models: [],
         efforts: [],
         levelNames: {},
+        mcpServers: null,
         state: 'idle',
       };
     }
@@ -410,6 +415,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         models: d.models ?? state.models,
         efforts: d.efforts ?? state.efforts,
         levelNames: d.levelNames ?? state.levelNames,
+        mcpServers: d.mcpServers ?? state.mcpServers,
         capabilities: d.capabilities
           ? { ...(state.capabilities ?? MINIMAL_CHAT_CAPABILITIES), ...d.capabilities }
           : state.capabilities,

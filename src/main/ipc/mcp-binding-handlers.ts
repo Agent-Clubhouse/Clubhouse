@@ -152,6 +152,14 @@ export function registerMcpBindingHandlers(): void {
     },
   ));
 
+  ipcMain.handle(IPC.MCP_BINDING.GET_AGENT_CONNECTION, withValidatedArgs(
+    [stringArg()],
+    (event, agentId) => {
+      assertCallerIsAppWindow(event);
+      return bridgeServer.getAgentConnection(agentId as string);
+    },
+  ));
+
   ipcMain.handle(IPC.MCP_BINDING.REGISTER_WEBVIEW, withValidatedArgs(
     [stringArg(), stringArg()],
     (_event, widgetId, webContentsId) => {

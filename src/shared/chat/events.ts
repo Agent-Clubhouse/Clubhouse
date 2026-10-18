@@ -213,6 +213,18 @@ export interface ChatModelOption {
   costHint?: string;
 }
 
+/**
+ * An MCP server as the CLI reports it at session start (Claude's init
+ * `mcp_servers`). `needs_auth` is waiting for a sign-in; `pending` was still
+ * connecting when the session started.
+ */
+export type ChatMcpServerStatus = 'connected' | 'pending' | 'needs_auth' | 'failed' | 'disabled' | 'unknown';
+
+export interface ChatMcpServer {
+  name: string;
+  status: ChatMcpServerStatus;
+}
+
 export interface AvailableCommand {
   name: string;
   description?: string;
@@ -280,6 +292,8 @@ export interface ChatEventDataMap {
     efforts?: string[];
     /** The provider's own name for each live level, shown under Clubhouse's level name. */
     levelNames?: Partial<Record<PermissionLevel, string>>;
+    /** MCP servers the CLI loaded, with their status. Replaces any earlier list; absent leaves it unchanged. */
+    mcpServers?: ChatMcpServer[];
   };
   session_state: { state: ChatSessionState };
   session_ended: { reason: SessionEndReason; exitCode?: number; message?: string };
