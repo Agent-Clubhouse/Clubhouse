@@ -84,6 +84,38 @@ function postSplitBody(port: number, path: string, data: Buffer, splitAt: number
   });
 }
 
+/** A raw request returning status, headers and body. */
+function rawRequest(port: number, method: string, path: string, headers: Record<string, string>, body?: unknown): Promise<{ statusCode: number; headers: http.IncomingHttpHeaders; body: string }> {
+  return new Promise((resolve, reject) => {
+    const data = body === undefined ? undefined : JSON.stringify(body);
+    const req = http.request({
+      hostname: '127.0.0.1', port, path, method,
+      headers: { ...headers, ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}) },
+    }, (res) => {
+      let text = '';
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => resolve({ statusCode: res.statusCode || 0, headers: res.headers, body: text }));
+    });
+    req.on('error', reject);
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
+/** Open a GET stream; resolves once headers arrive, collecting chunks into `chunks`. */
+function openStream(port: number, path: string, headers: Record<string, string>): Promise<{ statusCode: number; chunks: string[]; ended: Promise<void>; close(): void }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ hostname: '127.0.0.1', port, path, method: 'GET', headers }, (res) => {
+      const chunks: string[] = [];
+      const ended = new Promise<void>((done) => { res.on('end', () => done()); res.on('close', () => done()); });
+      res.on('data', (c) => chunks.push(c.toString()));
+      resolve({ statusCode: res.statusCode || 0, chunks, ended, close: () => res.destroy() });
+    });
+    req.on('error', (err) => { if ((err as NodeJS.ErrnoException).code !== 'ECONNRESET') reject(err); });
+    req.end();
+  });
+}
+
 describe('BridgeServer', () => {
   let port: number;
 
@@ -276,9 +308,9 @@ describe('BridgeServer', () => {
     expect(statusCode).toBe(405);
   });
 
-  it('returns 405 for DELETE requests', async () => {
+  it('returns 400 for DELETE without a session id', async () => {
     const { statusCode } = await makeRequest(port, 'DELETE', '/mcp/agent-1', {}, 'test-nonce');
-    expect(statusCode).toBe(405);
+    expect(statusCode).toBe(400);
   });
 
   it('handles notifications/initialized without error', async () => {
@@ -286,7 +318,8 @@ describe('BridgeServer', () => {
       jsonrpc: '2.0',
       method: 'notifications/initialized',
     }, 'test-nonce');
-    expect(statusCode).toBe(200);
+    // Streamable HTTP: a notification gets 202 Accepted, no body (#2240).
+    expect(statusCode).toBe(202);
   });
 
   it('records when an agent finishes the handshake and how many tools it was given', async () => {
@@ -469,6 +502,85 @@ describe('BridgeServer', () => {
         direction: 'reverse',
         toolSuffix: 'read_output',
       });
+    });
+  });
+
+  describe('Streamable HTTP sessions (#2240)', () => {
+    const NONCE = { 'X-Clubhouse-Nonce': 'test-nonce' };
+    const SSE = { ...NONCE, Accept: 'text/event-stream' };
+    const init = { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} };
+
+    async function initialize(agent = 'agent-1'): Promise<string> {
+      const res = await rawRequest(port, 'POST', `/mcp/${agent}`, NONCE, init);
+      expect(res.statusCode).toBe(200);
+      const sid = res.headers['mcp-session-id'];
+      expect(typeof sid).toBe('string');
+      return sid as string;
+    }
+
+    it('issues a session id on initialize and accepts it on later requests', async () => {
+      const sid = await initialize();
+      const list = await rawRequest(port, 'POST', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid }, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
+      expect(list.statusCode).toBe(200);
+      expect(JSON.parse(list.body).result.tools).toEqual([]);
+      // Requests without one still work (the stdio bridge script never sends it).
+      expect((await rawRequest(port, 'POST', '/mcp/agent-1', NONCE, { jsonrpc: '2.0', id: 3, method: 'tools/list' })).statusCode).toBe(200);
+    });
+
+    it('rejects an unknown session id, or one issued to another agent, with 404', async () => {
+      const sid = await initialize('agent-2');
+      expect((await rawRequest(port, 'POST', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': 'nope' }, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).statusCode).toBe(404);
+      expect((await rawRequest(port, 'POST', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid }, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).statusCode).toBe(404);
+    });
+
+    it('never lets a session id stand in for the nonce', async () => {
+      const sid = await initialize();
+      expect((await rawRequest(port, 'POST', '/mcp/agent-1', { 'Mcp-Session-Id': sid }, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).statusCode).toBe(403);
+      expect((await rawRequest(port, 'GET', '/mcp/agent-1', { 'Mcp-Session-Id': sid, Accept: 'text/event-stream' })).statusCode).toBe(403);
+      expect((await rawRequest(port, 'DELETE', '/mcp/agent-1', { 'X-Clubhouse-Nonce': 'wrong', 'Mcp-Session-Id': sid })).statusCode).toBe(403);
+    });
+
+    it('requires a session id for the GET stream', async () => {
+      expect((await rawRequest(port, 'GET', '/mcp/agent-1', SSE)).statusCode).toBe(400);
+      const sid = await initialize();
+      expect((await rawRequest(port, 'GET', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid, Accept: 'application/json' })).statusCode).toBe(406);
+    });
+
+    it('sends tools/list_changed on the session GET stream after a binding change', async () => {
+      const sid = await initialize();
+      const stream = await openStream(port, '/mcp/agent-1', { ...SSE, 'Mcp-Session-Id': sid });
+      expect(stream.statusCode).toBe(200);
+      await new Promise((r) => setTimeout(r, 30));
+      bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'A2' });
+      await vi.waitFor(() => expect(stream.chunks.join('')).toContain('notifications/tools/list_changed'), { timeout: 2000 });
+      // Every data line is a JSON-RPC message (the ping is a comment).
+      const dataLines = stream.chunks.join('').split('\n').filter((l) => l.startsWith('data: '));
+      expect(dataLines.map((l) => JSON.parse(l.slice(6)).method)).toEqual(['notifications/tools/list_changed']);
+      stream.close();
+    });
+
+    it('DELETE ends the session and closes its stream', async () => {
+      const sid = await initialize();
+      const stream = await openStream(port, '/mcp/agent-1', { ...SSE, 'Mcp-Session-Id': sid });
+      const del = await rawRequest(port, 'DELETE', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid });
+      expect(del.statusCode).toBe(200);
+      await stream.ended;
+      // The session is gone: it is now unknown.
+      expect((await rawRequest(port, 'POST', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid }, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).statusCode).toBe(404);
+      expect((await rawRequest(port, 'DELETE', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid })).statusCode).toBe(404);
+    });
+
+    it('keeps /events working for the stdio bridge, with its ping event', async () => {
+      const stream = await openStream(port, '/mcp/agent-1/events', NONCE);
+      expect(stream.statusCode).toBe(200);
+      await vi.waitFor(() => expect(stream.chunks.join('')).toContain('event: ping'));
+      stream.close();
+    });
+
+    it('rejects a nonce of a different length or content', async () => {
+      for (const nonce of ['test-nonc', 'test-nonce-x', 'TEST-NONCE']) {
+        expect((await rawRequest(port, 'POST', '/mcp/agent-1', { 'X-Clubhouse-Nonce': nonce }, init)).statusCode).toBe(403);
+      }
     });
   });
 

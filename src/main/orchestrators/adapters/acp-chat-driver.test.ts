@@ -444,7 +444,6 @@ describe('ACP → chat contract mapping', () => {
 
 // ── Inline scripts ───────────────────────────────────────────────────────────
 
-
 const rec = (dir: 'in' | 'out', msg: Record<string, unknown>): AcpFixtureRecord => ({ dir, msg: { jsonrpc: '2.0', ...msg } });
 const genericStart: AcpFixtureRecord[] = [
   rec('out', { id: 1, method: 'initialize' }),
@@ -479,6 +478,14 @@ describe('Clubhouse MCP over HTTP for ACP agents (#2240)', () => {
     expect(out.unsupported).toEqual([]);
   });
 
+  it('Copilot (stdio: false) without the nonce: keeps the stdio bridge and names it unsupported', () => {
+    const out = toAcpMcpServers({ clubhouse: bridge }, {}, { transports: { stdio: false, http: true, sse: true }, httpEndpoints: endpoints });
+    expect(out.servers).toEqual([{ name: 'clubhouse', command: 'node', args: ['bridge.js'], env: [{ name: 'CLUBHOUSE_MCP_FALLBACK_PORT', value: '4321' }] }]);
+    // No nonce means no header: never send an http entry the bridge would refuse.
+    expect(out.servers.some((s) => 'type' in s)).toBe(false);
+    expect(out.unsupported).toEqual(['clubhouse']);
+  });
+
   it('keeps stdio when the header value is missing from the CLI env', () => {
     const out = toAcpMcpServers({ clubhouse: bridge }, {}, { transports: { stdio: true, http: true, sse: true }, httpEndpoints: endpoints });
     expect(out.servers[0]).toMatchObject({ name: 'clubhouse', command: 'node' });
@@ -504,7 +511,7 @@ describe('Clubhouse MCP over HTTP for ACP agents (#2240)', () => {
     for await (const d of session.events) drafts.push(d);
     expect(drafts.find((d) => d.type === 'notice')).toMatchObject({
       type: 'notice',
-      data: { level: 'warn', code: 'mcp_servers_unsupported', message: expect.stringContaining('local') },
+      data: { level: 'warn', code: 'mcp_servers_unsupported', message: "Copilot chat can't load stdio MCP servers, so these are off: local. Run them in Terminal mode, or set them up as HTTP servers." },
     });
     expect(replayer.errors).toEqual([]);
   });

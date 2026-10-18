@@ -4,6 +4,7 @@
  */
 
 import * as http from 'http';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import { appLog } from '../log-service';
 import { getAgentNonce } from '../agent-registry';
 import { getScopedToolList, callTool, parseToolName, buildToolKey, isGlobalTool } from './tool-registry';
@@ -25,6 +26,17 @@ let readyPromise: Promise<number> | null = null;
 
 /** Active SSE connections keyed by agentId. */
 const sseConnections = new Map<string, Set<http.ServerResponse>>();
+
+/**
+ * Streamable HTTP sessions (#2240): `Mcp-Session-Id` → its agent and open
+ * GET streams. Issued on initialize. A client that gets one (Copilot's rmcp)
+ * echoes it, opens `GET /mcp/:agentId` for server notifications and DELETEs
+ * it when done. The stdio bridge script ignores it and uses /events. The
+ * session id is never a credential: every request still needs the nonce.
+ */
+const mcpSessions = new Map<string, { agentId: string; streams: Set<http.ServerResponse> }>();
+
+const SESSION_HEADER = 'mcp-session-id';
 
 /**
  * When each agent last finished the MCP handshake, and how many tools it was
@@ -103,10 +115,18 @@ function parseRoute(url: string): { agentId: string; action: string } | null {
   return { agentId: parts[0], action: parts.length > 1 ? parts.slice(1).join('/') : '' };
 }
 
+/** Constant-time string comparison; a length mismatch fails before comparing. */
+function nonceMatches(received: string | undefined, expected: string): boolean {
+  if (typeof received !== 'string') return false;
+  const a = Buffer.from(received, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 function validateNonce(agentId: string, req: http.IncomingMessage): boolean {
   const expectedNonce = getAgentNonce(agentId);
   const receivedNonce = req.headers[NONCE_HEADER.toLowerCase()] as string | undefined;
-  if (!expectedNonce || receivedNonce !== expectedNonce) {
+  if (!expectedNonce || !nonceMatches(receivedNonce, expectedNonce)) {
     if (!expectedNonce) {
       appLog('core:mcp', 'warn', 'Rejected MCP request — no nonce registered for agent', { meta: { agentId } });
     } else {
@@ -227,16 +247,23 @@ async function handleToolsCall(
   }
 }
 
-/** Handle SSE connection for tool list change notifications. */
-function handleSSE(agentId: string, res: http.ServerResponse): void {
+/**
+ * Handle SSE connection for tool list change notifications. The stdio
+ * bridge's /events stream starts with a `ping` event; a Streamable HTTP
+ * session's stream (`sessionId`) starts with an SSE comment instead, since
+ * its client reads every event's data as a JSON-RPC message.
+ */
+function handleSSE(agentId: string, res: http.ServerResponse, sessionId?: string): void {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
+    ...(sessionId && { 'Mcp-Session-Id': sessionId }),
   });
 
-  // Send initial ping
-  res.write('event: ping\ndata: {}\n\n');
+  res.write(sessionId ? ': ping\n\n' : 'event: ping\ndata: {}\n\n');
+  const session = sessionId ? mcpSessions.get(sessionId) : undefined;
+  session?.streams.add(res);
 
   let connections = sseConnections.get(agentId);
   if (!connections) {
@@ -246,6 +273,7 @@ function handleSSE(agentId: string, res: http.ServerResponse): void {
   connections.add(res);
 
   res.on('close', () => {
+    session?.streams.delete(res);
     const conns = sseConnections.get(agentId);
     if (conns) {
       conns.delete(res);
@@ -289,9 +317,49 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // SSE endpoint
+  // SSE endpoint for the stdio bridge script.
   if (req.method === 'GET' && action === 'events') {
     handleSSE(agentId, res);
+    return;
+  }
+  if (action !== '' && req.method !== 'POST') {
+    res.writeHead(405);
+    res.end();
+    return;
+  }
+
+  // Streamable HTTP session: a request that names one must name a live
+  // session of this agent (404 tells the client to initialize again).
+  const sessionHeader = req.headers[SESSION_HEADER];
+  const sessionId = typeof sessionHeader === 'string' ? sessionHeader : undefined;
+  const session = sessionId ? mcpSessions.get(sessionId) : undefined;
+  if (sessionId && session?.agentId !== agentId) {
+    res.writeHead(404);
+    res.end();
+    return;
+  }
+
+  // Server-to-client stream (tools/list_changed) for a session.
+  if (req.method === 'GET') {
+    if (!sessionId || !String(req.headers.accept ?? '').includes('text/event-stream')) {
+      res.writeHead(sessionId ? 406 : 400);
+      res.end();
+      return;
+    }
+    handleSSE(agentId, res, sessionId);
+    return;
+  }
+
+  // The client ends its session.
+  if (req.method === 'DELETE') {
+    if (!sessionId || !session) {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
+    endSession(sessionId);
+    res.writeHead(200);
+    res.end();
     return;
   }
 
@@ -314,31 +382,49 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const { method, id, params } = rpcRequest;
 
-  let response: JsonRpcResponse;
-
-  switch (method) {
-    case 'initialize':
-      response = handleInitialize(id ?? null);
-      break;
-    case 'notifications/initialized':
-      // Client ack — no response needed
+  // Notifications and client responses carry no id: 202, no body.
+  if (id === undefined || id === null || typeof method !== 'string') {
+    if (method === 'notifications/initialized') {
       appLog('core:mcp', 'info', 'Agent MCP connection initialized', { meta: { agentId } });
       setAgentConnection(agentId, { connectedAt: Date.now(), toolCount: null });
       emitAgentMcpConnected(agentId);
-      res.writeHead(200);
-      res.end();
-      return;
+    }
+    res.writeHead(202);
+    res.end();
+    return;
+  }
+
+  let response: JsonRpcResponse;
+
+  switch (method) {
+    case 'initialize': {
+      const newSessionId = randomUUID();
+      mcpSessions.set(newSessionId, { agentId, streams: new Set() });
+      res.setHeader('Mcp-Session-Id', newSessionId);
+      response = handleInitialize(id);
+      break;
+    }
     case 'tools/list':
-      response = handleToolsList(agentId, id ?? null);
+      response = handleToolsList(agentId, id);
       break;
     case 'tools/call':
-      response = await handleToolsCall(agentId, id ?? null, (params || {}) as Record<string, unknown>);
+      response = await handleToolsCall(agentId, id, (params || {}) as Record<string, unknown>);
       break;
     default:
-      response = jsonRpcError(id ?? null, -32601, `Method not found: ${method}`);
+      response = jsonRpcError(id, -32601, `Method not found: ${method}`);
   }
 
   jsonResponse(res, 200, response);
+}
+
+/** Forget a session and close its streams. */
+function endSession(sessionId: string): void {
+  const session = mcpSessions.get(sessionId);
+  if (!session) return;
+  mcpSessions.delete(sessionId);
+  for (const stream of session.streams) {
+    try { stream.end(); } catch { /* telemetry-exempt: the stream is already gone */ }
+  }
 }
 
 let unsubscribeBindingChanges: (() => void) | null = null;
@@ -391,6 +477,7 @@ export function stop(): void {
     }
   }
   sseConnections.clear();
+  mcpSessions.clear();
   const connectedAgents = [...agentConnections.keys()];
   agentConnections.clear();
   for (const agentId of connectedAgents) {
