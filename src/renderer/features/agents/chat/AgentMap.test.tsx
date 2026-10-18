@@ -146,18 +146,21 @@ describe('Subagents card', () => {
     expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('2 threads');
   });
 
-  it.each(['none'] as const)('hides the jump links and says the card has nothing when subagents are %s', (mode) => {
+  it.each(['none'] as const)('hides the jump links and the Subagents card when subagents are %s', (mode) => {
     renderState(stateFor('claude', mode));
     expect(screen.queryByTestId('chat-subagent-jump')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-subagent-open-map')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('agent-details-toggle'));
-    expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('not reported by this agent');
+    // A card the driver can't fill is left out (#2094).
+    expect(screen.getByTestId('agent-details')).toBeInTheDocument();
+    expect(screen.queryByTestId('details-card-subagents')).not.toBeInTheDocument();
   });
 
-  it('says the Copilot driver reports no subagents', () => {
+  it('leaves out the Subagents card for the Copilot driver, which reports none', () => {
     renderState(fold(chatFixture('copilot', 'agent_map')));
     fireEvent.click(screen.getByTestId('agent-details-toggle'));
-    expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('not reported by this agent');
+    expect(screen.getByTestId('agent-details')).toBeInTheDocument();
+    expect(screen.queryByTestId('details-card-subagents')).not.toBeInTheDocument();
   });
 
   it('says none yet before there is a subagent', () => {

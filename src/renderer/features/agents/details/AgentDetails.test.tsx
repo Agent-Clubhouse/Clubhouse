@@ -26,14 +26,13 @@ afterEach(() => {
 });
 
 describe('AgentDetails in the terminal', () => {
-  it('fills the cards it can and says plainly what the terminal can\'t report', async () => {
+  it('fills the cards it can and leaves out the ones the terminal can\'t fill', async () => {
     render(<AgentDetails agent={agent} />);
     expect(await screen.findByText('1 file')).toBeInTheDocument();
-    expect(screen.getByTestId('details-card-subagents-summary')).toHaveTextContent('not reported in the terminal');
-    expect(screen.getByTestId('details-card-context-summary')).toHaveTextContent('not reported');
+    // #2094: no Subagents or Context window card the terminal can only call "not reported".
+    expect(screen.queryByTestId('details-card-subagents')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('details-card-context')).not.toBeInTheDocument();
     expect(screen.getByTestId('details-card-mcp-summary')).toHaveTextContent('2 configured');
-    fireEvent.click(screen.getByTestId('details-card-subagents-toggle'));
-    expect(screen.getByText(/The terminal doesn.t report subagents/)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('details-card-session-toggle'));
     const session = screen.getByTestId('details-card-session');
     expect(session).toHaveTextContent('Claude Code · terminal');
@@ -60,9 +59,9 @@ describe('AgentDetails in the terminal', () => {
 
   it('opens a card asked for from elsewhere', () => {
     render(<AgentDetails agent={agent} />);
-    expect(screen.getByTestId('details-card-subagents')).not.toHaveAttribute('data-open');
-    act(() => { useAgentDetailsStore.getState().reveal({ agentId: 'a1', card: 'subagents' }); });
-    expect(screen.getByTestId('details-card-subagents')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('details-card-mcp')).not.toHaveAttribute('data-open');
+    act(() => { useAgentDetailsStore.getState().reveal({ agentId: 'a1', card: 'mcp' }); });
+    expect(screen.getByTestId('details-card-mcp')).toHaveAttribute('data-open', 'true');
   });
 });
 
