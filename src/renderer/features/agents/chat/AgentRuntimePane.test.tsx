@@ -121,6 +121,7 @@ describe('AgentRuntimePane', () => {
       setRuntime(false, true);
       render(<AgentRuntimePane agent={waking} terminal={terminal} />);
       await screen.findByTestId('fake-terminal');
+      // The first terminal shown already has the switch: no plain terminal from before the flag loaded.
       expect(screen.getByTestId('terminal-runtime-bar')).toBeInTheDocument();
       expect(screen.queryByTestId('agent-runtime-pending')).not.toBeInTheDocument();
     });

@@ -102,18 +102,20 @@ function cachedInfo(agentId: string, starting: boolean): ChatAgentRuntimeInfo | 
  */
 export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRuntimeInfo | null {
   const starting = isAgentStarting(agent);
-  // Tagged with the agent id, so a result for a different agent is never shown.
-  const [entry, setEntry] = useState<{ agentId: string; info: ChatAgentRuntimeInfo | null }>(() => ({ agentId: agent.id, info: cachedInfo(agent.id, starting) }));
+  // Tagged with the agent id, so a result for a different agent is never shown,
+  // and with whether it was set for an eligible agent, so the NO_CHAT set
+  // before the flag loaded is never returned once it has (#2206).
+  const [entry, setEntry] = useState<{ agentId: string; eligible: boolean; info: ChatAgentRuntimeInfo | null }>(() => ({ agentId: agent.id, eligible: true, info: cachedInfo(agent.id, starting) }));
   const chatSession = useChatStore((s) => s.agents[agent.id]?.sessionId ?? null);
   const projectPath = useProjectStore((s) => s.projects.find((p) => p.id === agent.projectId)?.path);
   const remote = isRemoteProjectId(agent.projectId);
   const eligible = enabled && !remote && agent.kind === 'durable';
   useEffect(() => {
-    if (!eligible) { setEntry({ agentId: agent.id, info: NO_CHAT }); return; }
+    if (!eligible) { setEntry({ agentId: agent.id, eligible: false, info: NO_CHAT }); return; }
     // Drop a NO_CHAT left from before the flag loaded: until the answer comes, it's the last known runtime or unknown.
     setEntry((prev) => {
       const info = cachedInfo(agent.id, starting);
-      return prev.agentId === agent.id && prev.info === info ? prev : { agentId: agent.id, info };
+      return prev.agentId === agent.id && prev.eligible && prev.info === info ? prev : { agentId: agent.id, eligible: true, info };
     });
     let cancelled = false;
     const apply = (info: ChatAgentRuntimeInfo) => {
@@ -122,7 +124,7 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
       // Status surfaces overlay chat state only while chat runs the agent (#2208),
       // not while it is only starting into chat.
       useChatStore.getState().setRuntimeLive(agent.id, isChatLive(info));
-      setEntry({ agentId: agent.id, info });
+      setEntry({ agentId: agent.id, eligible: true, info });
     };
     window.clubhouse.chat.getAgentRuntime(agent.id, agent.orchestrator, { projectPath, starting })
       .then((r) => apply(r ?? NO_CHAT))
@@ -130,7 +132,7 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
     return () => { cancelled = true; };
   }, [eligible, agent.id, agent.orchestrator, agent.status, chatSession, projectPath, starting]);
   if (!eligible) return NO_CHAT;
-  if (entry.agentId !== agent.id) return cachedInfo(agent.id, starting);
+  if (entry.agentId !== agent.id || !entry.eligible) return cachedInfo(agent.id, starting);
   return entry.info;
 }
 
