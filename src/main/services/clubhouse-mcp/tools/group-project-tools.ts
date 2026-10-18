@@ -685,7 +685,7 @@ export function registerGroupProjectTools(): void {
       description:
         'Turn the project-wide polling setting on or off.\n\n' +
         'This is the real admin control over `pollingEnabled` — the same setting the ' +
-        'UI "Poll: On/Off" toggle drives and the one agents auto-start from on join. ' +
+        'UI Polling switch drives and the one agents auto-start from on join. ' +
         'It persists the setting AND injects the orchestrator-aware start/stop ' +
         'instruction into every connected member\'s terminal, exactly like the UI toggle.\n\n' +
         'Pass `enabled` to set an explicit state; omit it to flip the current value. ' +

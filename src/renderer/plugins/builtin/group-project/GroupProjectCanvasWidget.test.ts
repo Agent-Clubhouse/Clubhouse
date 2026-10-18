@@ -4,70 +4,51 @@ import { join } from 'path';
 
 const source = readFileSync(join(__dirname, 'GroupProjectCanvasWidget.tsx'), 'utf-8');
 
-// ── Polling icon ────────────────────────────────────────────────────
+// ── Chrome style (#2186) ────────────────────────────────────────────
 
-describe('GroupProjectCanvasWidget — PollingIcon', () => {
-  it('uses an activity/heartbeat SVG instead of circular sync arrows', () => {
-    // The old icon used circular arrow paths (M21.5 2v6h-6 / M2.5 22v-6h6)
-    // which looked like a refresh/sync icon. Verify those are gone.
-    expect(source).not.toContain('M21.5 2v6h-6');
-    expect(source).not.toContain('M2.5 22v-6h6');
+describe('GroupProjectCanvasWidget — chrome style', () => {
+  it('uses no uppercase labels, sub-12px text, native tooltips, accent bars, glows or tinted fills', () => {
+    expect(source).not.toMatch(/\buppercase\b|tracking-wide/);
+    expect(source).not.toMatch(/text-\[(8|9|10|11)px\]/);
+    // Native tooltips; the Modal's title prop is the dialog heading, not a tooltip.
+    expect(source).not.toMatch(/\stitle="(?!Broadcast message")/);
+    expect(source).not.toMatch(/border-l-2|border-b-2/);
+    expect(source).not.toMatch(/shadow-md|animate-pulse/);
+    expect(source).not.toMatch(/bg-ctp-[a-z]+\/\d+/);
+    expect(source).not.toContain('rounded-full px');
   });
 
-  it('renders a heartbeat polyline when active', () => {
-    // Active state should show an activity/heartbeat wave
-    expect(source).toContain('polyline points="22 12 18 12 15 21 9 3 6 12 2 12"');
+  it('builds controls from the shared Button, Toggle, Modal and Tooltip', () => {
+    for (const c of ['Button', 'Toggle', 'Modal', 'Tooltip']) {
+      expect(source).toContain(`from '../../../components/${c}'`);
+    }
   });
 
-  it('renders a flat line when inactive', () => {
-    // Inactive state should show a straight horizontal line
-    expect(source).toMatch(/x1="2".*y1="12".*x2="22".*y2="12"/);
-  });
-});
-
-// ── Polling toggle label ────────────────────────────────────────────
-
-describe('GroupProjectCanvasWidget — polling toggle has label', () => {
-  it('renders "Poll: On" and "Poll: Off" labels to indicate state', () => {
-    expect(source).toContain("'Poll: On'");
-    expect(source).toContain("'Poll: Off'");
-    // The label is inside a span sibling to PollingIcon
-    expect(source).toMatch(/PollingIcon[\s\S]*?font-medium[\s\S]*?Poll: On/);
-  });
-
-  it('uses muted styling when polling is off (default)', () => {
-    // Off state should use overlay0 + bg-surface-0 to look clearly disabled
-    expect(source).toContain("'text-ctp-overlay0 bg-surface-0'");
+  it('shows member status as the shared dot and word with an 18px avatar', () => {
+    expect(source).toContain('<StatusDot dot={dot} />');
+    expect(source).toContain('DOT_LABEL[dot]');
+    expect(source).toContain('size="2xs"');
   });
 });
 
-// ── Activity dot ────────────────────────────────────────────────────
-
-describe('GroupProjectCanvasWidget — activity dot', () => {
-  it('does not use animate-pulse which looks like sync', () => {
-    // The activity dot should NOT use animate-pulse as it was confusing
-    expect(source).not.toContain('animate-pulse');
-  });
-
-  it('still uses green color for active status', () => {
-    expect(source).toContain('bg-ctp-green');
+describe('GroupProjectCanvasWidget — polling switch', () => {
+  it('is the shared Toggle, labelled Polling', () => {
+    expect(source).toContain('function PollingSwitch');
+    expect(source).toMatch(/<Toggle checked=\{on\} onChange=\{onToggle\} aria-labelledby=\{labelId\} \/>/);
+    expect(source).toContain('>Polling</span>');
+    expect(source).not.toContain('Poll: On');
   });
 });
-
-// ── Activity summary in compact card ────────────────────────────────
 
 describe('GroupProjectCanvasWidget — activity summary', () => {
   it('shows topic and message counts in compact card', () => {
-    // The compact ProjectCard should display topic count and message count
-    expect(source).toMatch(/topics\.length.*topic/);
-    expect(source).toMatch(/totalMessages.*msg/);
+    expect(source).toMatch(/topics\.length === 1 \? 'topic' : 'topics'/);
+    expect(source).toMatch(/totalMessages === 1 \? 'message' : 'messages'/);
   });
 
-  it('highlights new messages when present', () => {
-    // Should show a +N new indicator in green when there are new messages
+  it('adds how many are new when there are new messages', () => {
     expect(source).toContain('totalNew > 0');
-    expect(source).toContain('text-ctp-green');
-    expect(source).toMatch(/\+.*new/);
+    expect(source).toContain('`${totalNew} new`');
   });
 
   it('polls bulletin digest on the compact card via context hook', () => {
@@ -132,26 +113,28 @@ describe('GroupProjectCanvasWidget — broadcast modal', () => {
 
 // ── Include project instructions checkbox ───────────────────────────
 
-describe('GroupProjectCanvasWidget — include instructions checkbox', () => {
-  it('ShoulderTapModal accepts projectInstructions prop', () => {
+describe('GroupProjectCanvasWidget — include instructions switch', () => {
+  it('BroadcastModal accepts projectInstructions prop', () => {
+    expect(source).toContain('function BroadcastModal');
     expect(source).toContain('projectInstructions');
   });
 
-  it('has an includeInstructions checkbox state', () => {
+  it('uses the shared Toggle for including instructions', () => {
     expect(source).toContain('includeInstructions');
-    expect(source).toContain("useState(false)");
-    expect(source).toContain("type=\"checkbox\"");
+    expect(source).toContain('checked={includeInstructions}');
+    expect(source).not.toContain('type="checkbox"');
   });
 
   it('renders "Include project instructions" label', () => {
     expect(source).toContain('Include project instructions');
   });
 
-  it('disables checkbox when projectInstructions is empty', () => {
-    expect(source).toContain("disabled={!projectInstructions.trim()}");
+  it('disables the switch when projectInstructions is empty', () => {
+    expect(source).toContain('const hasInstructions = !!projectInstructions.trim();');
+    expect(source).toContain('disabled={!hasInstructions}');
   });
 
-  it('prepends instructions to message when checkbox is checked', () => {
+  it('prepends instructions to message when the switch is on', () => {
     expect(source).toContain('Project Instructions:');
     expect(source).toContain('projectInstructions.trim()');
   });
@@ -161,8 +144,13 @@ describe('GroupProjectCanvasWidget — include instructions checkbox', () => {
     expect(source).toContain('(!message.trim() && !includeInstructions) || sending');
   });
 
-  it('passes projectInstructions from ProjectCard to ShoulderTapModal', () => {
+  it('passes projectInstructions from ProjectCard to BroadcastModal', () => {
     expect(source).toContain("projectInstructions={project?.instructions || ''}");
+  });
+
+  it('is the shared Modal', () => {
+    expect(source).toMatch(/<Modal\s+open=\{open\}/);
+    expect(source).toContain('title="Broadcast message"');
   });
 });
 
@@ -271,16 +259,16 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
     expect(source).not.toContain("title=\"Settings\"");
   });
 
-  it('has inline textarea for description with label', () => {
-    expect(source).toContain('>Description</label>');
+  it('has inline textarea for description with a sentence-case label', () => {
+    expect(source).toContain('>Description</FieldLabel>');
     expect(source).toMatch(/editDesc/);
-    expect(source).toContain('Purpose of this group project...');
+    expect(source).toContain('What this group project is for');
   });
 
-  it('has inline textarea for instructions with label', () => {
-    expect(source).toContain('>Instructions</label>');
+  it('has inline textarea for instructions with a sentence-case label', () => {
+    expect(source).toContain('>Instructions</FieldLabel>');
     expect(source).toMatch(/editInstr/);
-    expect(source).toContain('Rules agents must follow...');
+    expect(source).toContain('Rules every agent here follows');
   });
 
   it('uses 5-row textareas for both fields', () => {
@@ -294,11 +282,8 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
     expect(source).toContain('disabled={!hasUnsavedChanges || saving}');
   });
 
-  it('lights up the save button with blue styling when there are unsaved changes', () => {
-    // Active state: blue bg with shadow
-    expect(source).toContain("'bg-ctp-accent text-white shadow-md hover:opacity-90'");
-    // Inactive state: muted
-    expect(source).toContain("'bg-surface-0 text-ctp-overlay0 cursor-default'");
+  it('makes Save the primary button only when there are unsaved changes', () => {
+    expect(source).toContain("kind={hasUnsavedChanges ? 'primary' : 'ghost'}");
   });
 
   it('syncs local state when project data changes externally', () => {
@@ -341,9 +326,9 @@ describe('GroupProjectCanvasWidget — inline description/instructions editor', 
   // Wave 10 #7: Clear All sits on its own row inside the action column so it
   // isn't clipped at the column's fixed width when the canvas widget is in
   // the maximize/expanded view.
-  it('renders Clear All on its own row to avoid clipping', () => {
+  it('renders Clear all on its own row, confirmed through the shared dialog', () => {
     expect(source).toContain('group-project-clear-all');
-    expect(source).toContain('group-project-confirm-clear-all');
+    expect(source).toContain("showConfirmDialog('Clear every message?");
   });
 });
 
@@ -599,9 +584,10 @@ describe('GroupProjectCanvasWidget — snapshot data richness', () => {
 // ── Admin (project lead) role in the agent list ─────────────────────
 
 describe('GroupProjectCanvasWidget — admin star + toggle', () => {
-  it('renders a StarIcon for members who are project admins', () => {
+  it('marks project leads with the word Lead and a pressed star button', () => {
     expect(source).toContain('function StarIcon');
-    expect(source).toMatch(/admin && <StarIcon/);
+    expect(source).toContain('<StarIcon filled={lead} />');
+    expect(source).toContain('{lead && <span className="text-xs text-ctp-overlay1 flex-shrink-0">Lead</span>}');
   });
 
   it('toggles admin membership via the project metadata.admins list', () => {

@@ -2,7 +2,7 @@
  * Group Project polling — the single source of truth for the project-level
  * `metadata.pollingEnabled` setting and its member-wide side effects.
  *
- * Both the UI "Poll: On/Off" toggle (via IPC) and the `toggle_polling` admin MCP
+ * Both the UI Polling switch (via IPC) and the `toggle_polling` admin MCP
  * command call {@link setProjectPolling}, so the persisted setting and the
  * injected start/stop instructions can never diverge. This mirrors what the UI
  * toggle historically did inline: persist `pollingEnabled` **and** inject the
@@ -66,8 +66,8 @@ export async function getProjectPollingState(projectId: string): Promise<Polling
  *
  * Persists `metadata.pollingEnabled`, then injects the orchestrator-aware
  * start/stop instruction into every *connected* member's PTY. Persisting through
- * the registry triggers the change broadcast that refreshes the UI "Poll: On/Off"
- * label, and emits an annex event so any controller observing this satellite sees
+ * the registry triggers the change broadcast that refreshes the UI Polling
+ * switch, and emits an annex event so any controller observing this satellite sees
  * the update. Returns the resulting state, or null if the project is unknown.
  */
 export async function setProjectPolling(projectId: string, enabled: boolean): Promise<PollingState | null> {

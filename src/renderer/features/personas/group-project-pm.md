@@ -56,7 +56,7 @@ group-project binding in the Clubhouse UI, and operate with the core tools only
 **Polling** — keep agents synchronized without babysitting.
 - `query_polling` to check the current project-wide polling setting and member status
 - `toggle_polling` (optional `enabled`; omit to flip) is the real control over the
-  project's `pollingEnabled` setting — the same one the UI "Poll: On/Off" toggle drives
+  project's `pollingEnabled` setting — the same one the UI Polling switch drives
   and the one agents auto-start from on join. Turning it on persists the setting AND
   tells every connected member to begin polling (Claude Code agents automate this as a
   `/loop` over `read_bulletin`); turning it off tells them to stop.
