@@ -910,7 +910,9 @@ describe('ChatView permission extras', () => {
     fireEvent.change(editor, { target: { value: '1. Only the row layout.' } });
     expect(screen.getByText('Approving sends your edited plan.')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Allow'));
-    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow', { updatedInput: { plan: '1. Only the row layout.' } });
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow', {
+      updatedInput: { plan: '1. Only the row layout.', permissionMode: 'acceptEdits' },
+    });
   });
 
   it('approves an unedited plan without extras', () => {

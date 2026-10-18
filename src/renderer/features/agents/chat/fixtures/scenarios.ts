@@ -118,14 +118,14 @@ function plan(p: FixtureProvider, agentId?: string): ChatEvent[] {
     '4. **Verify.** Update 6 snapshot tests, then run typecheck and unit tests.',
   ].join('\n');
   if (p === 'claude') {
-    f.emit('tool_call', { toolCallId: 'exit-plan', kind: 'switch_mode', title: 'Ready to code?', status: 'pending', toolName: 'ExitPlanMode', rawInput: { plan: markdown } }, { turnId: t });
+    f.emit('tool_call', { toolCallId: 'exit-plan', kind: 'switch_mode', title: 'Ready to code?', status: 'pending', toolName: 'ExitPlanMode', rawInput: { plan: markdown, permissionMode: 'acceptEdits' } }, { turnId: t });
     f.emit('plan_document', { planId: 'plan-1', markdown, status: 'ready', toolCallId: 'exit-plan' }, { turnId: t });
     f.emit('permission_request', {
       requestId: 'perm-plan',
       title: 'Plan ready for review',
       toolCallId: 'exit-plan',
       toolName: 'ExitPlanMode',
-      rawInput: { plan: markdown },
+      rawInput: { plan: markdown, permissionMode: 'acceptEdits' },
       options: [
         // ClaudeChatDriver's options; the CLI's setMode suggestion becomes the "always" scope.
         { optionId: 'allow', kind: 'allow_once', label: 'Allow' },
