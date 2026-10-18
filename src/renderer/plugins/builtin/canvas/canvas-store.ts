@@ -515,14 +515,18 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           await get().loadCanvas(storage);
           return;
         }
+        // The guard may have closed while we read (hydrateFromRemote); keep it closed.
+        if (_canvasPersist !== 'verify-empty') return;
         _canvasPersist = 'ok';
       }
       if (_canvasPersist === 'snapshot-first') {
         // If this write fails we stay in 'snapshot-first' and retry next save.
         await storage.write(`${STORAGE_KEY_INSTANCES_RECOVERY_PREFIX}${Date.now()}`, _recoverySnapshot);
+        if (_canvasPersist !== 'snapshot-first') return;
         _recoverySnapshot = undefined;
         _canvasPersist = 'ok';
       }
+      if (_canvasPersist !== 'ok') return;
 
       const { canvases, activeCanvasId } = get();
       const data: CanvasInstanceData[] = canvases.map((c) => ({
@@ -722,6 +726,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
     hydrateFromRemote: (canvasData, activeId, remoteWireDefinitions?, remoteZoneWireDefinitions?) => {
       if (!canvasData || !Array.isArray(canvasData) || canvasData.length === 0) return;
+      // From here the store holds a satellite's canvas, which must never be
+      // written to this machine's storage (the app canvas store is shared by
+      // the local and remote views). The next loadCanvas/loadWires from local
+      // storage re-opens the guards.
+      _canvasPersist = 'blocked';
+      _wiresPersistBlocked = true;
+      _zoneWiresPersistBlocked = true;
       const existingState = get();
       const existingCanvasMap = new Map(existingState.canvases.map((c) => [c.id, c]));
 

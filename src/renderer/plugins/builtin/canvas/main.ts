@@ -194,6 +194,16 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const isRemote = projectId ? isRemoteProjectId(projectId) : false;
   const activeHostId = useUIStore((s) => s.activeHostId);
   const isRemoteApp = isAppMode && !!activeHostId;
+  // The debounced local save, if one is waiting (see the auto-save below).
+  const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; owner: object; run: () => void } | null>(null);
+  /** Cancel a waiting local save without running it. */
+  const dropPendingSave = useCallback(() => {
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingSaveRef.current = null;
+  }, []);
+
   // Whether this mount has loaded the canvas. The store outlives the panel,
   // but a remount reloads it, so queued agent cards wait for this.
   const [hydrated, setHydrated] = useState(false);
@@ -204,6 +214,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     if (isRemoteApp && activeHostId) {
       const remoteState = useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId];
       if (remoteState) {
+        // A local save still waiting would write the satellite's canvas into
+        // this machine's storage once the store holds it. Drop it, don't flush.
+        dropPendingSave();
         store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
         setHydrated(true);
         return;
@@ -212,6 +225,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     if (isRemote && projectId) {
       const remoteState = useRemoteProjectStore.getState().remoteCanvasState[projectId];
       if (remoteState) {
+        dropPendingSave();
         store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
         setHydrated(true);
         return;
@@ -227,7 +241,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       if (!cancelled) setHydrated(true);
     })();
     return () => { cancelled = true; };
-  }, [store, storage, isRemote, projectId, isRemoteApp, activeHostId]);
+  }, [store, storage, isRemote, projectId, isRemoteApp, activeHostId, dropPendingSave]);
 
   // Subscribe to live remote canvas state updates (project-level)
   useEffect(() => {
@@ -267,7 +281,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // the New agent page replacing the pane) or when the panel moves to another
   // store is flushed, not dropped: the next mount reloads from disk, so an
   // unsaved move, resize or new card would be lost.
-  const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; owner: object; run: () => void } | null>(null);
   const flushSave = useCallback(() => {
     const pending = pendingSaveRef.current;
     if (!pending) return;
@@ -276,7 +289,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     pending.run();
   }, []);
   const scheduleSave = useCallback(() => {
-    if (isRemote || isRemoteApp) return;
+    // Remote state is owned by the satellite: never save it here, and drop a
+    // local save left over from before the switch.
+    if (isRemote || isRemoteApp) {
+      dropPendingSave();
+      return;
+    }
     const run = (): void => {
       const saving = Promise.all([store.getState().saveCanvas(storage), store.getState().saveWires(storage)]);
       inflightSaves.set(store, saving.catch((): undefined => undefined));
@@ -291,7 +309,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       run();
     }, 500);
     pendingSaveRef.current = { timer, owner: store, run };
-  }, [store, storage, isRemote, isRemoteApp]);
+  }, [store, storage, isRemote, isRemoteApp, dropPendingSave]);
 
   useEffect(() => {
     if (!loaded || !wiresLoaded) return;
