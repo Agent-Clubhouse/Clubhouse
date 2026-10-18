@@ -307,7 +307,8 @@ describe('ChatView composer', () => {
 
   it('shows the model, effort and level', () => {
     renderFixture('claude', 'conversation');
-    expect(screen.getByTestId('chat-model-pill')).toHaveTextContent('claude-opus-5-5· high');
+    expect(screen.getByTestId('chat-model-pill')).toHaveTextContent('claude-opus-5-5');
+    expect(screen.getByTestId('chat-effort-pill')).toHaveTextContent('High effort');
     expect(screen.getByTestId('chat-level-pill')).toHaveTextContent('Ask first');
   });
 

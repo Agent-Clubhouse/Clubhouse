@@ -15,6 +15,7 @@
 //   limit  rate_limit_event before the result
 //   novel  an unknown system subtype (drift) before the result
 //   crash  exit 3 mid-turn
+//   /model <m>, /effort <e>  change the applied model or effort, as the local commands do (no model call)
 //   quit   a large final assistant message and result, then exit 0 at once
 //   other  result.result = "echo:<text>|priority:<p>|shouldQuery:<b>"
 //
@@ -39,6 +40,7 @@ function argValue(name) {
 
 let permissionMode = argValue('--permission-mode') ?? 'default';
 let model = argValue('--model') ?? 'claude-fake-1';
+let effort = argValue('--effort') ?? 'medium';
 const sessionId = argValue('--resume') && !argv.includes('--fork-session') ? argValue('--resume') : 'fake-session-1';
 let initSent = false;
 let msgCounter = 0;
@@ -114,6 +116,14 @@ async function runTurn(msg) {
     ? content
     : (content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('');
   ensureInit();
+
+  const local = /^\/(model|effort)\s+(\S+)/.exec(text);
+  if (local) {
+    if (local[1] === 'model') model = local[2] === 'haiku' ? 'claude-haiku-fake' : local[2];
+    else effort = local[2];
+    result('');
+    return;
+  }
 
   if (text === 'hello') {
     out({ type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_hello' } }, parent_tool_use_id: null, ...base() });
@@ -209,7 +219,11 @@ function onControlRequest(msg) {
     case 'initialize':
       respond(id, {
         commands: [{ name: 'review', description: 'Review a PR', argumentHint: '<pr>' }],
-        models: [{ value: 'default', displayName: 'Default' }, { value: 'haiku', displayName: 'Haiku' }],
+        models: [
+          { value: 'default', displayName: 'Default', resolvedModel: 'claude-fake-1', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] },
+          { value: 'fake', displayName: 'Fake 1', resolvedModel: 'claude-fake-1', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] },
+          { value: 'haiku', displayName: 'Haiku', resolvedModel: 'claude-haiku-fake' },
+        ],
         agents: [],
         claude_code_version: '2.1.300-fake',
         current_permission_mode: permissionMode,
@@ -222,8 +236,16 @@ function onControlRequest(msg) {
       out({ type: 'system', subtype: 'status', status: null, permissionMode, ...base() });
       return;
     case 'set_model':
-      model = request.model ?? 'claude-fake-1';
+      model = request.model === 'haiku' ? 'claude-haiku-fake' : request.model ?? 'claude-fake-1';
       respond(id, {});
+      return;
+    case 'apply_flag_settings':
+      if (request.settings?.effortLevel) effort = request.settings.effortLevel;
+      respond(id, {});
+      return;
+    case 'get_settings':
+      // Models without effort levels report null, as the CLI does.
+      respond(id, { applied: { model, effort: model === 'claude-haiku-fake' ? null : effort } });
       return;
     case 'interrupt':
       respond(id, {});

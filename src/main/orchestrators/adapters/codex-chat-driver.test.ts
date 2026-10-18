@@ -20,6 +20,7 @@ import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat/capabilities';
 import type { ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import * as fx from './codex-protocol/__fixtures__/app-server-session';
+import { CodexAppServerClient } from './codex-app-server-client';
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -139,7 +140,7 @@ describe('CodexChatDriver', () => {
     });
 
     expect(mockSpawn).toHaveBeenCalledWith('codex', ['app-server'], expect.objectContaining({ cwd: 'workspace' }));
-    expect(server.received.map((m) => m.method)).toEqual(['initialize', 'initialized', 'thread/start']);
+    expect(server.received.map((m) => m.method)).toEqual(['initialize', 'initialized', 'thread/start', 'model/list']);
     expect(server.requests('thread/start')[0].params).toEqual({
       cwd: 'workspace',
       model: 'gpt-5-codex',
@@ -535,6 +536,97 @@ describe('CodexChatDriver', () => {
 
     await session.send([{ type: 'text', text: 'go' }], 'prompt');
     expect(server.requests('turn/start')[0].params).toMatchObject({ model: 'gpt-5', effort: 'low' });
+  });
+
+  describe('model and effort menus (#2091)', () => {
+    const model = (id: string, efforts: string[], extra: Record<string, unknown> = {}) => ({
+      id, model: id, displayName: id.toUpperCase(), description: `${id} model`, hidden: false,
+      supportedReasoningEfforts: efforts.map((reasoningEffort) => ({ reasoningEffort, description: '' })),
+      defaultReasoningEffort: 'medium', ...extra,
+    });
+    const catalog = [
+      model('gpt-5-codex', ['low', 'medium', 'high']),
+      model('gpt-5', ['minimal', 'low', 'medium', 'high', 'xhigh']),
+      model('gpt-secret', ['low'], { hidden: true }),
+    ];
+
+    it('offers the visible models, the current model\'s efforts and its effort', async () => {
+      useServer({ 'model/list': () => ({ result: { data: catalog, nextCursor: null } }) });
+      const { take } = await startSession({ effort: 'high' });
+      const [, , info, changed] = await take(4);
+      expect(info).toEqual({
+        type: 'session_info',
+        data: {
+          models: [
+            { id: 'gpt-5-codex', label: 'GPT-5-CODEX', description: 'gpt-5-codex model' },
+            { id: 'gpt-5', label: 'GPT-5', description: 'gpt-5 model' },
+          ],
+          efforts: ['low', 'medium', 'high'],
+        },
+      });
+      expect(changed).toEqual({ type: 'model_changed', data: { modelId: 'gpt-5-codex', effort: 'high' } });
+    });
+
+    it('falls back to the model\'s default effort, and re-sends efforts when the model changes', async () => {
+      useServer({ 'model/list': () => ({ result: { data: catalog, nextCursor: null } }) });
+      const { session, take } = await startSession();
+      const opening = await take(4);
+      expect(opening[3]).toEqual({ type: 'model_changed', data: { modelId: 'gpt-5-codex', effort: 'medium' } });
+      await session.setModel('gpt-5', 'xhigh');
+      expect(await take(2)).toEqual([
+        { type: 'model_changed', data: { modelId: 'gpt-5', effort: 'xhigh' } },
+        { type: 'session_info', data: { efforts: ['minimal', 'low', 'medium', 'high', 'xhigh'] } },
+      ]);
+    });
+
+    it('drops the effort for a model without levels, and offers none for a model the catalog lacks', async () => {
+      useServer({ 'model/list': () => ({ result: { data: [...catalog, model('gpt-mini', [])], nextCursor: null } }) });
+      const { session, take } = await startSession({ effort: 'high' });
+      await take(4);
+      await session.setModel('gpt-mini', 'high');
+      expect(await take(2)).toEqual([
+        { type: 'model_changed', data: { modelId: 'gpt-mini' } },
+        { type: 'session_info', data: { efforts: [] } },
+      ]);
+      await session.setModel('gpt-5-codex', 'low');
+      await take(2);
+      await session.setModel('gpt-unlisted', 'low');
+      expect(await take(2)).toEqual([
+        { type: 'model_changed', data: { modelId: 'gpt-unlisted', effort: 'low' } },
+        { type: 'session_info', data: { efforts: [] } },
+      ]);
+    });
+
+    it('clears an effort already queued when switching to a model without levels', async () => {
+      useServer({ 'model/list': () => ({ result: { data: [...catalog, model('gpt-mini', [])], nextCursor: null } }) });
+      const { session, take } = await startSession();
+      await take(4);
+      await session.setModel('gpt-5', 'high');
+      await take(2);
+      await session.setModel('gpt-mini');
+      await take(2);
+      await session.send([{ type: 'text', text: 'go' }], 'prompt');
+      expect(server.requests('turn/start')[0].params).toMatchObject({ model: 'gpt-mini', effort: null });
+    });
+
+    it('asks for model/list with a short timeout', async () => {
+      useServer({ 'model/list': () => ({ result: { data: catalog, nextCursor: null } }) });
+      const request = vi.spyOn(CodexAppServerClient.prototype, 'request');
+      try {
+        await startSession();
+        expect(request).toHaveBeenCalledWith('model/list', {}, { timeoutMs: 5_000 });
+      } finally {
+        request.mockRestore();
+      }
+    });
+
+    it('starts without menus when model/list fails', async () => {
+      useServer({ 'model/list': () => ({ error: { code: -32601, message: 'unknown method' } }) });
+      const { session, take } = await startSession();
+      await skipStart(take);
+      await session.setModel('gpt-5', 'low');
+      expect(await take(1)).toEqual([{ type: 'model_changed', data: { modelId: 'gpt-5', effort: 'low' } }]);
+    });
   });
 
   it('keeps pending overrides when turn/start fails', async () => {

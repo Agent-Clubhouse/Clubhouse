@@ -321,6 +321,8 @@ export function initializedFromWire(raw: Obj): ClaudeChatEventBody {
     value: str(m.value) ?? '',
     displayName: str(m.displayName),
     description: str(m.description),
+    resolvedModel: str(m.resolvedModel),
+    efforts: arr(m.supportedEffortLevels).filter((e): e is string => typeof e === 'string'),
   }));
   return { kind: 'initialized', commands, models, raw };
 }

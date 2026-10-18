@@ -13,8 +13,11 @@ import { loadClaudeAgentSdk } from './sdk-loader';
 import { killStructuredChild } from '../../orchestrators/adapters/structured-spawn';
 import { buildClaudeEnv, spawnClaude } from './spawn';
 import {
+  appliedSettingsFromWire,
   ClaudeTransportBase,
   toWireUserMessage,
+  type ClaudeAppliedSettings,
+  type ClaudeEffort,
   type ClaudeTransportLog,
   type ClaudeTransportOptions,
   type ClaudeUserInput,
@@ -150,6 +153,17 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
 
   async setModel(model?: string): Promise<void> {
     await this.requireQuery().setModel(model);
+  }
+
+  async setEffort(effort: ClaudeEffort): Promise<void> {
+    await this.requireQuery().applyFlagSettings({ effortLevel: effort });
+  }
+
+  async appliedSettings(): Promise<ClaudeAppliedSettings> {
+    // getSettings is on the SDK's Query at runtime but not in its published types.
+    const query = this.requireQuery() as Query & { getSettings?: () => Promise<unknown> };
+    if (!query.getSettings) return {};
+    return appliedSettingsFromWire(await query.getSettings());
   }
 
   async close(): Promise<void> {

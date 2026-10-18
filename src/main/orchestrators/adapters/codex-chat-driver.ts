@@ -19,6 +19,7 @@ import {
   CODEX_APP_SERVER_SCHEMA_VERSION,
   type AskForApproval,
   type JsonValue,
+  type Model,
   type SandboxMode,
   type ReviewTarget,
   type SandboxPolicy,
@@ -177,6 +178,14 @@ export function parseCodexVersion(userAgent: string | undefined): string | undef
   return userAgent ? /\/(\d+\.\d+\.\d+[^\s;)]*)/.exec(userAgent)?.[1] : undefined;
 }
 
+/** How long start waits for model/list before going on without menus. */
+const MODEL_LIST_TIMEOUT_MS = 5_000;
+
+/** A model's reasoning-effort levels, in Codex's order. */
+export function codexEfforts(model: Pick<Model, 'supportedReasoningEfforts'>): string[] {
+  return model.supportedReasoningEfforts.map((e) => e.reasoningEffort);
+}
+
 export class CodexChatDriver implements ChatDriver {
   readonly id = 'codex_app_server' as const;
   readonly provider = 'codex-cli';
@@ -248,6 +257,10 @@ class CodexChatSession implements ChatDriverSession {
   private lastEndedTurnId: string | undefined;
   /** The sandbox policy Codex resolved for the thread, used as the base for level changes. */
   private threadSandbox: SandboxPolicy | undefined;
+  /** model/list, for the model and effort menus (#2091); empty if Codex didn't answer. */
+  private catalog: Model[] = [];
+  /** Effort levels last reported, for the current model. */
+  private efforts: string[] | undefined;
 
   constructor(private readonly opts: ChatDriverStartOptions, private readonly log?: LogFn) {
     const { args, dropped } = appServerArgs(opts.extraArgs ?? []);
@@ -351,6 +364,7 @@ class CodexChatSession implements ChatDriverSession {
     this.threadId = result.thread.id;
     this.threadSandbox = result.sandbox;
     if (opts.effort) this.nextTurn.effort = opts.effort as TurnStartParams['effort'];
+    this.catalog = await this.listModels();
 
     this.queue.push({
       type: 'session_started',
@@ -367,6 +381,19 @@ class CodexChatSession implements ChatDriverSession {
       },
     });
     this.queue.push({ type: 'commands_available', data: { commands: [...CODEX_SLASH_COMMANDS] } });
+    const row = this.catalogRow(result.model);
+    if (this.catalog.length) {
+      this.efforts = row ? codexEfforts(row) : [];
+      this.queue.push({
+        type: 'session_info',
+        data: {
+          models: this.catalog.map((m) => ({ id: m.model, label: m.displayName || m.model, description: m.description || undefined })),
+          efforts: this.efforts,
+        },
+      });
+      const effort = opts.effort ?? result.reasoningEffort ?? row?.defaultReasoningEffort ?? undefined;
+      this.queue.push({ type: 'model_changed', data: { modelId: result.model, ...(effort && { effort }) } });
+    }
     if (mcp.skipped.length > 0) {
       this.log?.('warn', 'MCP servers Codex cannot run were left out', { skipped: mcp.skipped });
       this.queue.push({
@@ -486,9 +513,37 @@ class CodexChatSession implements ChatDriverSession {
   }
 
   async setModel(modelId: string, effort?: string): Promise<void> {
+    const row = this.catalogRow(modelId);
+    const efforts = row ? codexEfforts(row) : undefined;
+    // A model the catalog lists without effort levels takes none: drop it rather than show a stale one.
+    const kept = efforts && !efforts.length ? undefined : effort;
     this.nextTurn.model = modelId;
-    if (effort) this.nextTurn.effort = effort as TurnStartParams['effort'];
-    this.emit({ type: 'model_changed', data: { modelId, ...(effort && { effort }) } });
+    // A model without levels also clears an effort already queued (null resets it), so none goes out.
+    if (efforts && !efforts.length) this.nextTurn.effort = null;
+    else if (kept) this.nextTurn.effort = kept as TurnStartParams['effort'];
+    this.emit({ type: 'model_changed', data: { modelId, ...(kept && { effort: kept }) } });
+    // Without the catalog there are no menus to update.
+    if (!this.catalog.length) return;
+    const levels = efforts ?? [];
+    if (this.efforts && levels.join() === this.efforts.join()) return;
+    this.efforts = levels;
+    this.emit({ type: 'session_info', data: { efforts: levels } });
+  }
+
+  /** Codex's model picker, without the models it hides. Best-effort: the menus are just not offered without it. */
+  private async listModels(): Promise<Model[]> {
+    try {
+      // Best-effort and on the start path: don't wait the default RPC timeout for it.
+      const res = await this.client.request('model/list', {}, { timeoutMs: MODEL_LIST_TIMEOUT_MS });
+      return (res?.data ?? []).filter((m) => !m.hidden);
+    } catch (err) {
+      this.log?.('warn', 'Codex model/list failed; no model menu', { error: err instanceof Error ? err.message : String(err) });
+      return [];
+    }
+  }
+
+  private catalogRow(model: string): Model | undefined {
+    return this.catalog.find((m) => m.model === model || m.id === model);
   }
 
   async compact(): Promise<void> {

@@ -205,14 +205,39 @@ describe('fake-cli', () => {
     const fixture = await echo();
     const report = path.join(tmp, 'report.json');
     const out = await run([FAKE_CLI, '--fake-fixture', fixture, '--fake-report', report, '--fake-lenient'], [
-      { id: 1, method: 'model/list' },
+      { id: 1, method: 'thread/list' },
       { id: 2, method: 'initialize' },
       { method: 'initialized' },
     ]);
     expect(out.code).toBe(0);
     const r = JSON.parse(await fs.promises.readFile(report, 'utf8'));
     expect(r.complete).toBe(true);
-    expect(r.unexpected).toEqual([{ id: 1, method: 'model/list' }]);
+    expect(r.unexpected).toEqual([{ id: 1, method: 'thread/list' }]);
+  });
+
+  it('answers standing queries the fixture never recorded, at any point', async () => {
+    const fixture = await echo();
+    const report = path.join(tmp, 'report.json');
+    const out = await run([FAKE_CLI, '--fake-fixture', fixture, '--fake-report', report], [
+      { id: 7, method: 'model/list', params: {} },
+      { id: 8, method: 'initialize', params: {} },
+      { method: 'initialized' },
+    ]);
+    expect(out.code).toBe(0);
+    expect(parseLines(out.stdout)).toContainEqual({ id: 7, result: { data: [], nextCursor: null } });
+    expect(parseLines(out.stdout)).toContainEqual({ id: 8, result: { ok: true } });
+    const r = JSON.parse(await fs.promises.readFile(report, 'utf8'));
+    expect(r).toMatchObject({ complete: true, mismatch: null, unexpected: [] });
+  });
+
+  it('matches a standing query like any other message when the fixture records it', async () => {
+    const fixture = await writeFixture('listed.jsonl', [
+      header('codex-app-server'),
+      { from: 'client', msg: { id: 1, method: 'model/list', params: {} } },
+      { from: 'cli', msg: { id: 1, result: { data: [{ id: 'm' }], nextCursor: null } } },
+    ]);
+    const out = await run([FAKE_CLI, '--fake-fixture', fixture], [{ id: 4, method: 'model/list', params: {} }]);
+    expect(parseLines(out.stdout)).toEqual([{ id: 4, result: { data: [{ id: 'm' }], nextCursor: null } }]);
   });
 
   it('honours exit entries and answers --version from the header', async () => {

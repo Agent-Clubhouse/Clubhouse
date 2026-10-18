@@ -4,8 +4,11 @@ import { initializedFromWire, permissionRequestFromWire, type ClaudeWireMessage 
 import { killStructuredChild } from '../../orchestrators/adapters/structured-spawn';
 import { buildClaudeEnv, spawnClaude } from './spawn';
 import {
+  appliedSettingsFromWire,
   ClaudeTransportBase,
   toWireUserMessage,
+  type ClaudeAppliedSettings,
+  type ClaudeEffort,
   type ClaudeTransportOptions,
   type ClaudeUserInput,
 } from './transport';
@@ -136,6 +139,15 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
 
   async setModel(model?: string): Promise<void> {
     await this.control({ subtype: 'set_model', ...(model ? { model } : {}) });
+  }
+
+  async setEffort(effort: ClaudeEffort): Promise<void> {
+    await this.control({ subtype: 'apply_flag_settings', settings: { effortLevel: effort } });
+  }
+
+  async appliedSettings(): Promise<ClaudeAppliedSettings> {
+    // Short: start() waits on the first read, and a CLI without get_settings mustn't hold it up.
+    return appliedSettingsFromWire(await this.control({ subtype: 'get_settings' }, 5_000));
   }
 
   async close(): Promise<void> {
