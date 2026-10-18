@@ -176,6 +176,20 @@ describe('SleepingAgent', () => {
       expect(screen.getByTestId('sleeping-toolbar')).toHaveTextContent('last active 3h ago');
     });
 
+    it('renders the summary as markdown (#2092)', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'agent-1', name: 'bold-falcon', lastSessionId: 'sess-1' }]);
+      window.clubhouse.agent.getSessionSummary = vi.fn().mockResolvedValue({
+        summary: '**Triaged** the audit in `docs/a.md`.',
+        filesModified: [],
+        totalDurationMs: 0,
+        totalCostUsd: 0,
+      });
+      renderComponent();
+      const section = await screen.findByTestId('last-session');
+      expect(section.querySelector('strong')).toHaveTextContent('Triaged');
+      expect(section.querySelector('code')).toHaveTextContent('docs/a.md');
+    });
+
     it('is omitted when there is no history and no branch', async () => {
       renderComponent();
       await waitFor(() => expect(window.clubhouse.agent.listDurable).toHaveBeenCalled());

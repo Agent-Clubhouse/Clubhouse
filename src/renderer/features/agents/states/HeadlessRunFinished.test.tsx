@@ -73,6 +73,20 @@ describe('HeadlessRunFinished', () => {
     expect(screen.queryByText('Headless')).toBeNull();
   });
 
+  it('renders the summary and timeline text as markdown (#2092)', async () => {
+    transcript.page = vi.fn().mockResolvedValue({
+      events: [{ type: 'assistant', _ts: T0 + 1_000, message: { content: [{ type: 'text', text: 'Checking **tokens** in `src/a.ts`' }] } }],
+      totalEvents: 1,
+    });
+    render(<HeadlessRunFinished completed={{ ...done, summary: '**Updated**\n\n- `src/a.ts`' }} onDismiss={vi.fn()} />);
+    const summary = screen.getByTestId('run-summary-text');
+    expect(summary.querySelector('strong')).toHaveTextContent('Updated');
+    expect(summary.querySelector('li code')).toHaveTextContent('src/a.ts');
+    const text = await screen.findByTestId('timeline-text');
+    expect(text.querySelector('strong')).toHaveTextContent('tokens');
+    expect(text.textContent).not.toContain('**');
+  });
+
   it('Review changes opens the first file diff', async () => {
     render(<HeadlessRunFinished completed={done} onDismiss={vi.fn()} />);
     fireEvent.click(screen.getByTestId('run-review-button'));

@@ -75,6 +75,15 @@ describe('QuickAgentGhost', () => {
     expect(window.clubhouse.git.diff).toHaveBeenCalledWith('/wt', 'src/auth.ts', false, 'abc');
   });
 
+  it('renders the summary as markdown (#2092)', () => {
+    render(<QuickAgentGhost completed={makeCompleted({ summary: '**Updated** the token check.\n\n- **Root** (`src/auth.ts`)\n- Tests' })} onDismiss={vi.fn()} />);
+    const summary = screen.getByTestId('quick-summary');
+    expect(summary.querySelector('strong')).toHaveTextContent('Updated');
+    expect(summary.querySelectorAll('li')).toHaveLength(2);
+    expect(summary.querySelector('code')).toHaveTextContent('src/auth.ts');
+    expect(summary.textContent).not.toContain('**');
+  });
+
   it('says it ended without a summary', () => {
     render(<QuickAgentGhost completed={makeCompleted({ summary: null, exitCode: 1 })} onDismiss={vi.fn()} />);
     expect(screen.getByTestId('state-word')).toHaveTextContent('Error');
@@ -131,6 +140,11 @@ describe('QuickAgentGhostCompact', () => {
   it('renders without crash', () => {
     render(<QuickAgentGhostCompact {...defaultProps} />);
     expect(screen.getByText('Fix the bug in auth module')).toBeInTheDocument();
+  });
+
+  it('shows a markdown summary as plain text in the row (#2092)', () => {
+    render(<QuickAgentGhostCompact {...defaultProps} completed={makeCompleted({ summary: '**Updated** the token check.\n\n- **Root** (`src/auth.ts`)\n- Tests' })} />);
+    expect(screen.getByText(/Updated the token check\. Root \(src\/auth\.ts\) Tests/)).toBeInTheDocument();
   });
 
   it('shows the provider as plain text', () => {

@@ -323,6 +323,18 @@ describe('MainPanel', () => {
     expect(screen.getByTestId('review-empty').textContent).not.toContain('Sleeping');
   });
 
+  it('shows the last session\'s markdown as text and formatting on the sleeping card (#2092)', async () => {
+    const { api } = makeApi([makeAgent({ id: 'a1', name: 'dozy', status: 'sleeping' })], {
+      sessions: [{ sessionId: 's1', startedAt: '2026-10-17T00:00:00Z', lastActiveAt: '2026-10-17T01:00:00Z' }],
+    });
+    api.agents.getSessionSummary = async () => ({ summary: '**Triaged** the `audit`\n\n- one', filesModified: [], totalDurationMs: 0 }) as never;
+    render(<MainPanel api={api} />);
+    const card = screen.getByTestId('review-sleeping-card');
+    await waitFor(() => expect(card.textContent).toContain('Triaged the audit'));
+    expect(card.textContent).not.toContain('**');
+    expect(card.querySelector('strong')).toHaveTextContent('Triaged');
+  });
+
   it('shows the sleeping card with Wake in the toolbar, Skip and a wake prompt', async () => {
     const agents = [makeAgent({ id: 'a1', name: 'dozy', status: 'sleeping' }), makeAgent({ id: 'a2', name: 'two' })];
     const { api } = makeApi(agents);

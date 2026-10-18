@@ -183,3 +183,17 @@ describe('ProjectTree menus', () => {
     expect(screen.getByTestId('project-menu-pin')).toBeTruthy();
   });
 });
+
+describe('ProjectTree finished quick agents', () => {
+  it('shows a markdown summary as plain text in the row (#2092)', () => {
+    useChromeStore.setState({ expandedFolds: ['a:finished'] });
+    setup({
+      completedByProject: {
+        a: [{ id: 'q1', projectId: 'a', name: 'fix', mission: 'Fix it', summary: '**Updated** `src/a.ts`', filesModified: [], exitCode: 0, completedAt: Date.now() } as never],
+      },
+    });
+    const row = screen.getByTestId('finished-quick-row-q1');
+    expect(row.textContent).toContain('Updated src/a.ts');
+    expect(row.textContent).not.toContain('**');
+  });
+});
