@@ -766,14 +766,25 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     loadTranscript: async (agentId, tail) => {
       pendingLive.set(agentId, []);
       set((s) => ({ loading: { ...s.loading, [agentId]: true } }));
-      let events: ChatEvent[] = [];
+      let events: ChatEvent[] | null = null;
       try {
         events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
       } catch {
-        // Treat an unreadable transcript as empty; live events still apply.
+        // Unreadable right now: handled below by keeping what this window has.
       }
       const buffered = pendingLive.get(agentId) ?? [];
       pendingLive.delete(agentId);
+      if (events === null) {
+        // Keep the state this window already had, with the live events that
+        // arrived meanwhile, and leave it marked not loaded so the next view
+        // that mounts tries again (#2150 review).
+        set((s) => {
+          const loading = { ...s.loading };
+          delete loading[agentId];
+          return { agents: { ...s.agents, [agentId]: foldChatEvents(s.agents[agentId], agentId, buffered) }, loading };
+        });
+        return;
+      }
       // The transcript is authoritative, so rebuild from it rather than merging
       // into whatever live state existed before the load started. That state
       // came from events main had already written to the transcript (it

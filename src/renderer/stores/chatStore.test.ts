@@ -526,10 +526,28 @@ describe('useChatStore', () => {
     expect(useChatStore.getState().loaded[AGENT]).toBeUndefined();
   });
 
-  it('loadTranscript treats a failed read as empty', async () => {
+  it('on a failed read keeps the live state, applies what arrived meanwhile, and leaves it unloaded so a later view retries', async () => {
+    useChatStore.getState().applyEvent(sessionStarted(ev));
+    useChatStore.getState().applyEvent(ev('agent_message', { messageId: 'm1', text: 'Seen live.' }));
+    let fail!: (err: Error) => void;
+    window.clubhouse.chat.readTranscript = vi.fn(() => new Promise<ChatEvent[]>((_resolve, reject) => { fail = reject; }));
+    const loading = useChatStore.getState().loadTranscript(AGENT);
+    useChatStore.getState().applyEvent(ev('agent_message', { messageId: 'm2', text: 'Arrived mid-load.' }));
+    fail(new Error('EBUSY'));
+    await loading;
+
+    const s = useChatStore.getState();
+    expect(s.agents[AGENT].items.map((i) => (i as AgentMessageItem).text)).toEqual(['Seen live.', 'Arrived mid-load.']);
+    expect(s.loaded[AGENT]).toBeUndefined();
+    expect(s.loading[AGENT]).toBeUndefined();
+    expect(s.partial[AGENT]).toBeUndefined();
+  });
+
+  it('a failed read with no state yet leaves an empty, unloaded view', async () => {
     window.clubhouse.chat.readTranscript = vi.fn().mockRejectedValue(new Error('nope'));
     await useChatStore.getState().loadTranscript(AGENT);
     expect(useChatStore.getState().agents[AGENT].items).toEqual([]);
+    expect(useChatStore.getState().loaded[AGENT]).toBeUndefined();
   });
 
   it('reset drops an agent', () => {

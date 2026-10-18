@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useChatStore } from '../../../stores/chatStore';
 import { useToastStore } from '../../../stores/toastStore';
-import { useChatActions } from './useChatSession';
+import { useChatActions, useEarlierHistory } from './useChatSession';
 
 describe('useChatActions results (#2057)', () => {
   beforeEach(() => {
@@ -29,5 +29,19 @@ describe('useChatActions results (#2057)', () => {
     const { result } = renderHook(() => useChatActions('agent-1'));
     await expect(result.current.setLevel('auto')).resolves.toBe(false);
     expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual(["Couldn't change the permission level: not live"]);
+  });
+});
+
+describe('useEarlierHistory (#2150 review)', () => {
+  it('does not start a second load while one is in flight, so the held live events stay with it', () => {
+    const loadTranscript = vi.fn(async () => {});
+    useChatStore.setState({ loading: { 'agent-1': true }, partial: { 'agent-1': true }, loadTranscript });
+    const { result } = renderHook(() => useEarlierHistory('agent-1'));
+    result.current.loadAll();
+    expect(loadTranscript).not.toHaveBeenCalled();
+
+    useChatStore.setState({ loading: {} });
+    result.current.loadAll();
+    expect(loadTranscript).toHaveBeenCalledWith('agent-1');
   });
 });
