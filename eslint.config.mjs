@@ -26,6 +26,7 @@ const builtinHostImportAllowlist = new Set([
   'src/renderer/plugins/builtin/canvas/WireInstructionsDialog.tsx',
   'src/renderer/plugins/builtin/canvas/WidgetPicker.tsx',
   'src/renderer/plugins/builtin/canvas/ZoneDeleteDialog.tsx',
+  'src/renderer/plugins/builtin/canvas/ZoneCard.tsx',
   'src/renderer/plugins/builtin/canvas/canvas-card-status.ts',
   'src/renderer/plugins/builtin/canvas/canvas-store.ts',
   'src/renderer/plugins/builtin/canvas/canvas-sync.ts',
