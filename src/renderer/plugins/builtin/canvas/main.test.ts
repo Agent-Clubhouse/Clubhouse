@@ -751,6 +751,21 @@ describe('canvas main', () => {
       env.nothingRemoteSaved();
     });
 
+    it('keeps a local edit made just before switching to a host whose canvas has not loaded yet', async () => {
+      const env = appSetup();
+      const view = await mountLocal(env);
+      let editId = '';
+      act(() => { editId = env.store.getState().addView('agent', { x: 900, y: 0 }); });
+      // A host with no canvas state yet: the load effect has nothing to hydrate.
+      act(() => { useUIStore.setState({ activeHostId: 'sat-not-loaded' }); });
+      await sleep(650);
+      view.unmount();
+      await sleep(20);
+
+      expect(JSON.stringify(env.files.get('canvas-instances'))).toContain(editId);
+      env.nothingRemoteSaved();
+    });
+
     it('writes nothing remote while a slow local load runs on the switch back', async () => {
       const env = appSetup();
       const view = await mountLocal(env);

@@ -204,13 +204,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     pendingSaveRef.current = null;
     pending.run();
   }, []);
-  /** Cancel a waiting local save without running it. */
-  const dropPendingSave = useCallback(() => {
-    const pending = pendingSaveRef.current;
-    if (!pending) return;
-    clearTimeout(pending.timer);
-    pendingSaveRef.current = null;
-  }, []);
 
   // Whether this mount has loaded the canvas. The store outlives the panel,
   // but a remount reloads it, so queued agent cards wait for this.
@@ -292,10 +285,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // store is flushed, not dropped: the next mount reloads from disk, so an
   // unsaved move, resize or new card would be lost.
   const scheduleSave = useCallback(() => {
-    // Remote state is owned by the satellite: never save it here, and drop a
-    // local save left over from before the switch.
+    // Never save remote state. A local save still waiting was scheduled while
+    // local, so run it (guards stop it writing a satellite's canvas).
     if (isRemote || isRemoteApp) {
-      dropPendingSave();
+      flushSave();
       return;
     }
     const run = (): void => {
@@ -312,7 +305,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       run();
     }, 500);
     pendingSaveRef.current = { timer, owner: store, run };
-  }, [store, storage, isRemote, isRemoteApp, dropPendingSave]);
+  }, [store, storage, isRemote, isRemoteApp, flushSave]);
 
   useEffect(() => {
     if (!loaded || !wiresLoaded) return;

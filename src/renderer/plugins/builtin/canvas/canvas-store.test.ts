@@ -1386,4 +1386,60 @@ describe('canvas store: remote then local', () => {
     await store.getState().saveWires(storage);
     expect(saved()).not.toMatch(/REMOTE-/);
   });
+
+  it('keeps wire saves closed while the switch back re-binds local wires', async () => {
+    const { storage, files, saved } = memory();
+    const store = await localThenRemote(storage);
+    files.set('canvas-wires', [{ agentId: 'local-agent', targetId: 'local-target', targetKind: 'agent', label: 'Local wire' }]);
+
+    // A re-bind that hangs, like a slow MCP call.
+    let finishBind!: () => void;
+    const bindOpen = new Promise<void>((r) => { finishBind = r; });
+    const previous = (globalThis as any).window?.clubhouse;
+    (globalThis as any).window = {
+      ...(globalThis as any).window,
+      clubhouse: { ...(previous || {}), mcpBinding: { bind: vi.fn(() => bindOpen), setInstructions: vi.fn(), setDisabledTools: vi.fn() } },
+    };
+    try {
+      const loading = store.getState().loadWires(storage);
+      await new Promise((r) => setTimeout(r, 10));
+      // The autosave lands mid-rebind: the store still holds the satellite's wires.
+      expect(store.getState().wireDefinitions.some((w) => w.agentId === 'REMOTE-AGENT')).toBe(true);
+      await store.getState().saveWires(storage);
+      expect(saved()).not.toMatch(/REMOTE-/);
+
+      finishBind();
+      await loading;
+      expect(store.getState().wireDefinitions.map((w) => w.agentId)).toEqual(['local-agent']);
+    } finally {
+      (globalThis as any).window.clubhouse = previous;
+    }
+  });
+
+  it('saves the local zone wires a save captured before the store went remote', async () => {
+    let releaseBackup!: () => void;
+    const backupWrite = new Promise<void>((r) => { releaseBackup = r; });
+    const { storage, files } = memory();
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    await store.getState().saveCanvas(storage); // first save opens the guard
+    const local = store.getState().addZoneWireDefinition({ sourceZoneId: 'zone-1', targetId: 'agent-1', targetType: 'agent' });
+
+    const write = (storage.write as ReturnType<typeof vi.fn>).getMockImplementation()!;
+    (storage.write as ReturnType<typeof vi.fn>).mockImplementation(async (key: string, value: unknown) => {
+      if (key === 'canvas-instances-backup') await backupWrite;
+      return write(key, value);
+    });
+    const saving = store.getState().saveCanvas(storage);
+    // The store goes remote while the save is writing.
+    store.getState().hydrateFromRemote([REMOTE_CANVAS], 'REMOTE-CANVAS', [REMOTE_WIRE], [REMOTE_ZONE_WIRE]);
+    releaseBackup();
+    await saving;
+
+    const zoneWires = JSON.stringify(files.get('canvas-zone-wires'));
+    expect(zoneWires).toContain(local.id);
+    expect(zoneWires).not.toContain('REMOTE-ZONE-WIRE');
+    expect(JSON.stringify(files.get('canvas-instances'))).not.toContain('REMOTE-CANVAS');
+  });
 });
