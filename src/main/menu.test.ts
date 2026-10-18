@@ -27,7 +27,12 @@ vi.mock('electron', () => {
   };
 });
 
-import { buildMenu } from './menu';
+const captureFromShortcut = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('./ipc/feedback-handlers', () => ({ captureFromShortcut }));
+vi.mock('./services/framebriar', () => ({ FEEDBACK_CAPTURE_MENU_ID: 'feedback-capture' }));
+vi.mock('./services/log-service', () => ({ appLog: vi.fn() }));
+
+import { buildMenu, FEEDBACK_CAPTURE_ACCELERATOR } from './menu';
 import { Menu } from 'electron';
 
 describe('buildMenu', () => {
@@ -56,5 +61,14 @@ describe('buildMenu', () => {
     const labels = submenu.filter((item) => item.label).map((item) => item.label);
     expect(labels).toContain('About Clubhouse');
     expect(labels).toContain('Preferences…');
+  });
+
+  it('offers Capture Feedback Screenshot in Help, off until feedback can capture (#2101)', () => {
+    const help = capturedTemplate.find((m) => m.role === 'help');
+    const item = (help?.submenu as MenuItemConstructorOptions[] | undefined)?.find((i) => i.id === 'feedback-capture');
+    expect(item).toMatchObject({ label: 'Capture Feedback Screenshot', accelerator: 'CmdOrCtrl+Shift+2', enabled: false });
+    expect(FEEDBACK_CAPTURE_ACCELERATOR).toBe('CmdOrCtrl+Shift+2');
+    (item!.click as () => void)();
+    expect(captureFromShortcut).toHaveBeenCalledTimes(1);
   });
 });

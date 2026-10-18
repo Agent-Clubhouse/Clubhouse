@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetFeedbackStore, useFeedbackStore } from '../../stores/feedbackStore';
 import { useToastStore } from '../../stores/toastStore';
 import { FeedbackButton } from './FeedbackButton';
+import { FeedbackDialogHost } from './FeedbackDialogHost';
 import { feedbackStatus, setFeedback } from './feedback-test-utils';
 
 const PREVIEW = 'data:image/png;base64,iVBORw0KGgo=';
 
 beforeEach(() => {
-  window.clubhouse.feedback.capture = vi.fn(async () => ({ draftId: '0b5c6a2e-1f3d-4c8e-9a7b-2d4e6f8a0c1e', preview: PREVIEW }));
+  window.clubhouse.feedback.capture = vi.fn(async () => ({ draftId: '0b5c6a2e-1f3d-4c8e-9a7b-2d4e6f8a0c1e', preview: PREVIEW, shots: [] }));
   window.clubhouse.feedback.send = vi.fn(async () => ({ id: 'rep-1', status: 'saved-local' as const }));
   window.clubhouse.feedback.cancel = vi.fn(async () => {});
   useToastStore.setState({ toasts: [] });
@@ -39,7 +40,7 @@ describe('FeedbackButton', () => {
 
   it('captures first, then opens the review dialog with the preview', async () => {
     setFeedback(true);
-    render(<FeedbackButton variant="sidebar" />);
+    render(<><FeedbackButton variant="sidebar" /><FeedbackDialogHost /></>);
     fireEvent.click(screen.getByTestId('nav-feedback'));
     expect(await screen.findByTestId('feedback-review')).toBeTruthy();
     expect(window.clubhouse.feedback.capture).toHaveBeenCalledTimes(1);
@@ -48,7 +49,7 @@ describe('FeedbackButton', () => {
 
   it('keeps an open review when capture eligibility flips mid-review', async () => {
     setFeedback(true);
-    render(<FeedbackButton variant="sidebar" />);
+    render(<><FeedbackButton variant="sidebar" /><FeedbackDialogHost /></>);
     fireEvent.click(screen.getByTestId('nav-feedback'));
     await screen.findByTestId('feedback-review');
     act(() => { useFeedbackStore.setState({ status: feedbackStatus({ canCapture: false, notice: 'expired' }) }); });
@@ -62,9 +63,18 @@ describe('FeedbackButton', () => {
   it('tells the user when capture fails', async () => {
     setFeedback(true);
     window.clubhouse.feedback.capture = vi.fn(async () => { throw new Error('Feedback needs an enrollment'); });
-    render(<FeedbackButton variant="sidebar" />);
+    render(<><FeedbackButton variant="sidebar" /><FeedbackDialogHost /></>);
     await act(async () => { fireEvent.click(screen.getByTestId('nav-feedback')); });
     await waitFor(() => expect(useToastStore.getState().toasts.map((t) => t.message)).toContain("Couldn't capture feedback: Feedback needs an enrollment"));
     expect(screen.queryByTestId('feedback-review')).toBeNull();
+  });
+
+  it('cancels a review that is replaced by a new capture', () => {
+    setFeedback(true);
+    render(<FeedbackDialogHost />);
+    act(() => useFeedbackStore.getState().openDraft({ draftId: '0b5c6a2e-1f3d-4c8e-9a7b-2d4e6f8a0c1e', preview: PREVIEW, shots: [] }));
+    act(() => useFeedbackStore.getState().openDraft({ draftId: '1c6d7b3f-2a4e-4d9f-8b8c-3e5f7a9b1d2f', preview: PREVIEW, shots: [] }));
+    expect(window.clubhouse.feedback.cancel).toHaveBeenCalledWith('0b5c6a2e-1f3d-4c8e-9a7b-2d4e6f8a0c1e');
+    expect(screen.getAllByTestId('feedback-review')).toHaveLength(1);
   });
 });

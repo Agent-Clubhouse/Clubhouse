@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { FeedbackCaptureResult } from '../../../shared/feedback-types';
 import { FEEDBACK_NOTICE_TEXT, useFeedbackStore } from '../../stores/feedbackStore';
 import { useToastStore } from '../../stores/toastStore';
-import { FeedbackReviewDialog } from './FeedbackReviewDialog';
 
 interface Props {
   /** 'rail': classic project rail footer row. 'sidebar': new layout sidebar footer icon. */
@@ -30,22 +28,20 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
   const notice = useFeedbackStore((s) => s.status?.notice ?? null);
   const pending = useFeedbackStore((s) => s.status?.outbox.pending ?? 0);
   const init = useFeedbackStore((s) => s.init);
-  const [draft, setDraft] = useState<FeedbackCaptureResult | null>(null);
+  const openDraft = useFeedbackStore((s) => s.openDraft);
   const [capturing, setCapturing] = useState(false);
 
   useEffect(() => { void init(); }, [init]);
 
-  // A review in progress stays open even if capture eligibility flips mid-Send
-  // (e.g. access expires), so the draft isn't orphaned.
-  const dialog = draft ? <FeedbackReviewDialog draft={draft} onClose={() => setDraft(null)} /> : null;
-  if (!canCapture) return dialog;
+  // The review dialog itself lives in FeedbackDialogHost, at app level.
+  if (!canCapture) return null;
 
   const open = async () => {
     if (capturing) return;
     setCapturing(true);
     try {
       // Captured before the dialog draws, so the screenshot shows what the user saw.
-      setDraft(await window.clubhouse.feedback.capture());
+      openDraft(await window.clubhouse.feedback.capture());
     } catch (err) {
       // telemetry-exempt: shown to the user
       useToastStore.getState().addToast(`Couldn't capture feedback: ${err instanceof Error ? err.message : String(err)}`, 'error');
@@ -99,10 +95,5 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
     </button>
   );
 
-  return (
-    <>
-      {button}
-      {dialog}
-    </>
-  );
+  return button;
 }

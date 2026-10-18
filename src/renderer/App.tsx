@@ -20,6 +20,7 @@ import { ResumeBanner, ResumeBannerSession } from './features/app/ResumeBanner';
 import { WhatsNewDialog } from './features/app/WhatsNewDialog';
 import { OnboardingModal } from './features/onboarding/OnboardingModal';
 import { CommandPalette } from './features/command-palette/CommandPalette';
+import { FeedbackDialogHost } from './features/feedback/FeedbackDialogHost';
 import { QuickAgentDialog } from './features/agents/QuickAgentDialog';
 import { BlueprintGallery } from './features/blueprints/BlueprintGallery';
 import { PluginUpdateBanner } from './features/plugins/PluginUpdateBanner';
@@ -294,6 +295,7 @@ export function App() {
         <WhatsNewDialog />
         <OnboardingModal />
         <ConfigChangesDialog />
+        <FeedbackDialogHost />
         <ToastContainer />
       </div>
     );
@@ -327,6 +329,7 @@ export function App() {
         <WhatsNewDialog />
         <OnboardingModal />
         <ConfigChangesDialog />
+        <FeedbackDialogHost />
         <ToastContainer />
       </div>
     );
@@ -379,6 +382,7 @@ export function App() {
         <WhatsNewDialog />
         <OnboardingModal />
         <ConfigChangesDialog />
+        <FeedbackDialogHost />
         <ToastContainer />
       </div>
     );
@@ -410,6 +414,7 @@ export function App() {
         <WhatsNewDialog />
         <OnboardingModal />
         <ConfigChangesDialog />
+        <FeedbackDialogHost />
         <ToastContainer />
       </div>
     );
@@ -441,6 +446,7 @@ export function App() {
       <WhatsNewDialog />
       <OnboardingModal />
       <ConfigChangesDialog />
+      <FeedbackDialogHost />
       <ToastContainer />
     </div>
   );

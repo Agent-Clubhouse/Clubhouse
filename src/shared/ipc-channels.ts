@@ -525,6 +525,8 @@ export const IPC = {
     CANCEL: 'feedback:cancel',
     /** Main → renderer broadcast: FeedbackStatus after any access, outbox or receipt change. */
     STATUS_CHANGED: 'feedback:status-changed',
+    /** Main → main window: a draft captured from the keyboard shortcut, to review (#2101). */
+    CAPTURED: 'feedback:captured',
   },
   GOOBERS: {
     GET_STATE: 'goobers:get-state',

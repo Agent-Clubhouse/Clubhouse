@@ -82,7 +82,14 @@ function getThemeColors(): { bg: string; mantle: string; text: string } {
   }
 }
 
-function findMainWindow(): BrowserWindow | undefined {
+/** Open pop-out windows with a label for each, in the order they opened. */
+export function listPopoutWindows(): Array<{ window: BrowserWindow; label: string }> {
+  return [...popoutWindows.values()]
+    .filter((e) => !e.window.isDestroyed())
+    .map((e) => ({ window: e.window, label: e.params.title || (e.params.type === 'canvas' ? 'Canvas window' : 'Agent window') }));
+}
+
+export function findMainWindow(): BrowserWindow | undefined {
   return BrowserWindow.getAllWindows().find(
     (w) => !popoutWindows.has(w.id) && !w.isDestroyed(),
   );

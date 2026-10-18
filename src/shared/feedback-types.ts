@@ -34,10 +34,21 @@ export interface FeedbackStatus {
   received: string[];
 }
 
+/** One Clubhouse window's screenshot in a draft (#2100). */
+export interface FeedbackShot {
+  shotId: string;
+  /** The window, e.g. "Main window" or a pop-out's title. */
+  label: string;
+  /** data:image/png;base64 preview. */
+  preview: string;
+}
+
 export interface FeedbackCaptureResult {
   draftId: string;
-  /** data:image/png;base64 preview, or null when no screenshot could be taken. */
+  /** data:image/png;base64 preview of the first shot, or null when no screenshot could be taken. */
   preview: string | null;
+  /** Every window captured; the first is the window feedback started from. */
+  shots: FeedbackShot[];
 }
 
 export interface FeedbackSendInput {
@@ -53,7 +64,12 @@ export interface FeedbackSendInput {
    * prefix). Only used with includeScreenshot; it must match the capture's dimensions.
    */
   annotatedPng?: string;
+  /** Which window's screenshot to send (FeedbackShot.shotId); the first when omitted. */
+  shotId?: string;
 }
+
+/** The feedback capture shortcut's key label per platform (main's menu accelerator is CmdOrCtrl+Shift+2). */
+export const FEEDBACK_CAPTURE_SHORTCUT_LABEL = { mac: '⌘⇧2', other: 'Ctrl+Shift+2' } as const;
 
 /** Largest screenshot PNG feedback will send, decoded. */
 export const FEEDBACK_MAX_PNG_BYTES = 8 * 1024 * 1024;

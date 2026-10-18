@@ -140,9 +140,24 @@ export function sdkVersion(version: string): string | undefined {
   return /^[A-Za-z0-9._+-]{1,40}$/.test(version) ? version : undefined;
 }
 
+/** One window's screenshot in a draft (#2100). */
+interface Shot {
+  shotId: string;
+  label: string;
+  png: Buffer;
+}
+
 interface Draft {
+  /** snapshot.png is the first shot: the window feedback was started from. */
   snapshot: FramebriarSnapshot;
+  shots: Shot[];
   createdAt: number;
+}
+
+/** A window to screenshot. The first one is the window feedback was started from. */
+export interface CaptureSource {
+  label: string;
+  grab: () => Promise<Buffer | null>;
 }
 
 export class FeedbackService {
@@ -253,13 +268,16 @@ export class FeedbackService {
   }
 
   /**
-   * Snapshot now, before any review UI is drawn, and return a draft id plus a data: URL
-   * preview. `grab` must capture only Clubhouse's own window contents.
+   * Snapshot now, before any review UI is drawn, and return a draft id plus data: URL
+   * previews. Each source must capture only one of Clubhouse's own windows. The first
+   * source is the window feedback started from: if it fails, capture fails. Other
+   * windows that fail or are unusable are left out (#2100).
    */
-  async captureDraft(grab: () => Promise<Buffer | null>): Promise<FeedbackCaptureResult> {
+  async captureDraft(sources: CaptureSource[] | (() => Promise<Buffer | null>)): Promise<FeedbackCaptureResult> {
+    const list = typeof sources === 'function' ? [{ label: 'This window', grab: sources }] : sources;
     try {
-      const result = await this.captureDraftInner(grab);
-      this.log('info', 'Feedback screenshot captured', { draftId: result.draftId, hasScreenshot: result.preview !== null, drafts: this.drafts.size });
+      const result = await this.captureDraftInner(list);
+      this.log('info', 'Feedback screenshot captured', { draftId: result.draftId, hasScreenshot: result.preview !== null, shots: result.shots.length, windows: list.length, drafts: this.drafts.size });
       return result;
     } catch (err) {
       this.log('warn', 'Feedback capture failed', errorMeta(err));
@@ -267,33 +285,51 @@ export class FeedbackService {
     }
   }
 
-  private async captureDraftInner(grab: () => Promise<Buffer | null>): Promise<FeedbackCaptureResult> {
+  /** Why a grabbed image can't be sent, or null when it can. */
+  private invalidShot(png: Buffer): Error | null {
+    if (png.length > MAX_PNG_BYTES) {
+      this.log('debug', 'Feedback screenshot too large', { bytes: png.length, maxBytes: MAX_PNG_BYTES });
+      return Object.assign(new Error('The screenshot is too large to send (8 MiB at most)'), { code: 'invalid-media' });
+    }
+    if (png.length <= PNG_SIGNATURE.length || !png.subarray(0, 8).equals(PNG_SIGNATURE)) {
+      return Object.assign(new Error('The screenshot is not a PNG image'), { code: 'invalid-media' });
+    }
+    return null;
+  }
+
+  private async captureDraftInner(sources: CaptureSource[]): Promise<FeedbackCaptureResult> {
     await this.start();
     this.pruneDrafts();
     // open() checks eligibility and records the moment (and trace) feedback opened.
     const opened = await this.sdk().feedback.open();
-    let png: Buffer | null;
-    try {
-      png = await grab();
-    } catch {
-      // telemetry-exempt: surfaced to the user as a capture failure
-      throw Object.assign(new Error('Screenshot capture failed'), { code: 'capture-failed' });
+    const shots: Shot[] = [];
+    for (const [i, source] of sources.entries()) {
+      let png: Buffer | null;
+      try {
+        png = await source.grab();
+      } catch {
+        // telemetry-exempt: surfaced to the user as a capture failure (first window), else skipped
+        if (i === 0) throw Object.assign(new Error('Screenshot capture failed'), { code: 'capture-failed' });
+        this.log('debug', 'Feedback skipped a window that could not be captured', { index: i });
+        continue;
+      }
+      if (!png) {
+        if (i === 0) break; // No screenshot of the starting window: text-only, as before.
+        continue;
+      }
+      const invalid = this.invalidShot(png);
+      if (invalid) {
+        if (i === 0) throw invalid;
+        continue;
+      }
+      shots.push({ shotId: `s${i}`, label: source.label, png });
     }
-    if (png && png.length > MAX_PNG_BYTES) {
-      this.log('debug', 'Feedback screenshot too large', { bytes: png.length, maxBytes: MAX_PNG_BYTES });
-      throw Object.assign(new Error('The screenshot is too large to send (8 MiB at most)'), { code: 'invalid-media' });
-    }
-    if (png && (png.length <= PNG_SIGNATURE.length || !png.subarray(0, 8).equals(PNG_SIGNATURE))) {
-      throw Object.assign(new Error('The screenshot is not a PNG image'), { code: 'invalid-media' });
-    }
-    const snapshot: FramebriarSnapshot = { ...opened, png: png ?? null };
+    const snapshot: FramebriarSnapshot = { ...opened, png: shots[0]?.png ?? null };
     const draftId = randomUUID();
-    this.drafts.set(draftId, { snapshot, createdAt: this.now() });
+    this.drafts.set(draftId, { snapshot, shots, createdAt: this.now() });
     while (this.drafts.size > MAX_DRAFTS) this.drafts.delete(this.drafts.keys().next().value as string);
-    return {
-      draftId,
-      preview: snapshot.png ? `data:image/png;base64,${snapshot.png.toString('base64')}` : null,
-    };
+    const previews = shots.map((shot) => ({ shotId: shot.shotId, label: shot.label, preview: `data:image/png;base64,${shot.png.toString('base64')}` }));
+    return { draftId, preview: previews[0]?.preview ?? null, shots: previews };
   }
 
   /**
@@ -303,7 +339,7 @@ export class FeedbackService {
    */
   async send(input: FeedbackSendInput): Promise<FeedbackSendResult> {
     // Never the image itself: only whether a drawing came along.
-    const meta = { draftId: input.draftId ?? null, includeScreenshot: input.includeScreenshot, notesLength: input.notes?.length ?? 0, annotated: input.annotatedPng !== undefined };
+    const meta = { draftId: input.draftId ?? null, includeScreenshot: input.includeScreenshot, notesLength: input.notes?.length ?? 0, annotated: input.annotatedPng !== undefined, shotId: input.shotId ?? null };
     try {
       const result = await this.sendInner(input);
       this.log('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state: this.fb?.access.status().state });
@@ -322,7 +358,7 @@ export class FeedbackService {
     const notes = input.notes ?? '';
     if (!input.includeScreenshot && notes.trim() === '') throw new Error('Add a note to send feedback without a screenshot.');
     const scene = input.scene && SCENE.test(input.scene) ? input.scene : 'app';
-    const png = input.includeScreenshot && draft ? this.annotatedOrCaptured(draft.snapshot.png!, input.annotatedPng) : null;
+    const png = input.includeScreenshot && draft ? this.annotatedOrCaptured(this.chosenShot(draft, input.shotId), input.annotatedPng) : null;
     const breadcrumbs = (this.deps.breadcrumbs?.() ?? []).slice(0, MAX_REPORT_BREADCRUMBS);
     const prepared = await fb.feedback.prepare({
       notes,
@@ -337,6 +373,14 @@ export class FeedbackService {
     if (input.draftId) this.drafts.delete(input.draftId);
     this.emit();
     return { id: ack.id, status: ack.status };
+  }
+
+  /** The screenshot the user picked (#2100); the starting window's when none was picked. */
+  private chosenShot(draft: Draft, shotId: string | undefined): Buffer {
+    if (shotId === undefined) return draft.snapshot.png!;
+    const shot = draft.shots.find((s) => s.shotId === shotId);
+    if (!shot) throw new Error('That screenshot is no longer available. Capture it again.');
+    return shot.png;
   }
 
   /**

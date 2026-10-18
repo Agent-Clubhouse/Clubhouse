@@ -36,4 +36,16 @@ describe('feedbackStore', () => {
     push!(feedbackStatus({ notice: 'access-required' }));
     expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual([FEEDBACK_NOTICE_TEXT['access-required']]);
   });
+
+  it('opens a draft captured with the keyboard shortcut (#2101), subscribing once', async () => {
+    let deliver: ((d: { draftId: string; preview: string | null; shots: [] }) => void) | null = null;
+    window.clubhouse.feedback.onCaptured = vi.fn((cb) => { deliver = cb as typeof deliver; return () => { deliver = null; }; });
+    await useFeedbackStore.getState().init();
+    await useFeedbackStore.getState().init();
+    expect(window.clubhouse.feedback.onCaptured).toHaveBeenCalledTimes(1);
+    deliver!({ draftId: 'd-1', preview: null, shots: [] });
+    expect(useFeedbackStore.getState().draft?.draftId).toBe('d-1');
+    useFeedbackStore.getState().closeDraft();
+    expect(useFeedbackStore.getState().draft).toBeNull();
+  });
 });

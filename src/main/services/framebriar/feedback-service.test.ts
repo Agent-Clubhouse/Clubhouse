@@ -205,6 +205,57 @@ describe('FeedbackService (fake SDK)', () => {
     expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null }));
   });
 
+  describe('several windows (#2100)', () => {
+    const main = pngOf(2880, 1800, 'main');
+    const popout = pngOf(1600, 1000, 'popout');
+
+    it('captures each window with its label, the starting window first', async () => {
+      const { create } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft([
+        { label: 'Agent: faithful-urchin', grab: async () => popout },
+        { label: 'Main window', grab: async () => main },
+      ]);
+      expect(draft.shots.map((x) => [x.shotId, x.label])).toEqual([['s0', 'Agent: faithful-urchin'], ['s1', 'Main window']]);
+      expect(draft.preview).toBe(draft.shots[0].preview);
+      expect(draft.shots[1].preview).toBe(`data:image/png;base64,${main.toString('base64')}`);
+    });
+
+    it('leaves out other windows that fail or are not PNGs, but fails when the starting window does', async () => {
+      const { create } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft([
+        { label: 'Main window', grab: async () => main },
+        { label: 'Broken', grab: async () => { throw new Error('gone'); } },
+        { label: 'Not a PNG', grab: async () => Buffer.from('nope') },
+        { label: 'Blank', grab: async () => null },
+        { label: 'Pop-out', grab: async () => popout },
+      ]);
+      expect(draft.shots.map((x) => x.label)).toEqual(['Main window', 'Pop-out']);
+      expect(draft.shots.map((x) => x.shotId)).toEqual(['s0', 's4']);
+      await expect(s.captureDraft([{ label: 'Main window', grab: async () => { throw new Error('gone'); } }, { label: 'Pop-out', grab: async () => popout }])).rejects.toThrow(/capture failed/);
+    });
+
+    it('sends the chosen window, and the annotated check uses that window', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft([{ label: 'Main window', grab: async () => main }, { label: 'Pop-out', grab: async () => popout }]);
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, shotId: 's1', annotatedPng: pngOf(2880, 1800).toString('base64') })).rejects.toThrow(/doesn't match/);
+      const drawn = pngOf(1600, 1000, 'popout-ink');
+      await s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, shotId: 's1', annotatedPng: drawn.toString('base64') });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: drawn }));
+    });
+
+    it('sends the starting window without a shotId, and refuses an unknown one', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft([{ label: 'Main window', grab: async () => main }, { label: 'Pop-out', grab: async () => popout }]);
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, shotId: 's9' })).rejects.toThrow(/no longer available/);
+      await s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: main }));
+    });
+  });
+
   describe('a screenshot with the user\'s drawing (#2099)', () => {
     const captured = pngOf(2880, 1800, 'captured');
     const drawn = pngOf(2880, 1800, 'captured-with-ink');
@@ -378,13 +429,13 @@ describe('FeedbackService (fake SDK)', () => {
       const { create, fb } = fakeSdk();
       const { s, entries, find } = logged(create);
       const draft = await s.captureDraft(async () => PNG);
-      expect(find('Feedback screenshot captured')).toEqual(['info', 'Feedback screenshot captured', { draftId: draft.draftId, hasScreenshot: true, drafts: 1 }]);
+      expect(find('Feedback screenshot captured')).toEqual(['info', 'Feedback screenshot captured', { draftId: draft.draftId, hasScreenshot: true, shots: 1, windows: 1, drafts: 1 }]);
       await expect(s.captureDraft(async () => { throw new Error('gpu'); })).rejects.toThrow();
       expect(find('Feedback capture failed')).toEqual(['warn', 'Feedback capture failed', { error: 'Screenshot capture failed', code: 'capture-failed' }]);
 
       await s.send({ draftId: draft.draftId, notes: 'secret words', includeScreenshot: true });
       expect(find('Feedback saved for delivery')?.[2]).toEqual({
-        draftId: draft.draftId, includeScreenshot: true, notesLength: 12, annotated: false, id: 'rep-1', status: 'saved-local', state: 'connected',
+        draftId: draft.draftId, includeScreenshot: true, notesLength: 12, annotated: false, shotId: null, id: 'rep-1', status: 'saved-local', state: 'connected',
       });
       fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
       await expect(s.send({ notes: 'more secret words', includeScreenshot: false })).rejects.toThrow();
