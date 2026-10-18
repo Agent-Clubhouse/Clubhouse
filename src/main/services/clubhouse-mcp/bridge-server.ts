@@ -8,6 +8,7 @@ import { appLog } from '../log-service';
 import { getAgentNonce } from '../agent-registry';
 import { getScopedToolList, callTool, parseToolName, buildToolKey, isGlobalTool } from './tool-registry';
 import { bindingManager } from './binding-manager';
+import { emitAgentMcpConnected } from './connection-events';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import type { JsonRpcRequest, JsonRpcResponse } from './types';
@@ -311,6 +312,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       // Client ack — no response needed
       appLog('core:mcp', 'info', 'Agent MCP connection initialized', { meta: { agentId } });
       setAgentConnection(agentId, { connectedAt: Date.now(), toolCount: null });
+      emitAgentMcpConnected(agentId);
       res.writeHead(200);
       res.end();
       return;

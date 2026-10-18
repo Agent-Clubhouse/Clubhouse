@@ -18,11 +18,9 @@ import type { ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useOrchestratorStore } from '../../../stores/orchestratorStore';
 import { useProjectStore } from '../../../stores/projectStore';
-import { useUIStore } from '../../../stores/uiStore';
 import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { Tooltip } from '../../../components/Tooltip';
-import { getProjectCanvasStore, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
-import type { CanvasInstance } from '../../../plugins/builtin/canvas/canvas-types';
+import { jumpToCanvas, useAgentCanvases } from './agent-canvases';
 import { getOrchestratorLabel } from '../orchestrator-colors';
 import { DRIVER_LABELS, limitLabel, limitName } from '../chat/ChatHeader';
 import { SubagentList, subagentSummary } from '../chat/AgentMapPanel';
@@ -123,54 +121,6 @@ export function useBranchChanges(cwd: string | undefined, refreshKey: unknown): 
     };
   }, [cwd, refreshKey]);
   return changes;
-}
-
-const CANVAS_TAB = 'plugin:canvas';
-
-interface CanvasHit {
-  scope: 'project' | 'app';
-  canvasId: string;
-  name: string;
-  viewId: string;
-}
-
-function hitsIn(canvases: CanvasInstance[], agentId: string, scope: CanvasHit['scope']): CanvasHit[] {
-  const out: CanvasHit[] = [];
-  for (const c of canvases) {
-    const view = c.views.find((v) => v.type === 'agent' && 'agentId' in v && v.agentId === agentId);
-    if (view) out.push({ scope, canvasId: c.id, name: c.name, viewId: view.id });
-  }
-  return out;
-}
-
-/** The canvases that hold a card for this agent, in its project and on Home. */
-function useAgentCanvases(agent: Agent): CanvasHit[] {
-  const projectStore = useMemo(() => getProjectCanvasStore(agent.projectId ?? null), [agent.projectId]);
-  const projectCanvases = projectStore((s) => s.canvases);
-  const appCanvases = useAppCanvasStore((s) => s.canvases);
-  return useMemo(
-    () => [...hitsIn(projectCanvases, agent.id, 'project'), ...hitsIn(appCanvases, agent.id, 'app')],
-    [projectCanvases, appCanvases, agent.id],
-  );
-}
-
-function jumpToCanvas(agent: Agent, hit: CanvasHit): void {
-  const ui = useUIStore.getState();
-  if (hit.scope === 'project' && agent.projectId) {
-    useProjectStore.getState().setActiveProject(agent.projectId);
-    ui.setExplorerTab(CANVAS_TAB, agent.projectId);
-    const store = getProjectCanvasStore(agent.projectId).getState();
-    store.setActiveCanvas(hit.canvasId);
-    store.focusView(hit.viewId);
-    store.selectView(hit.viewId);
-  } else {
-    useProjectStore.getState().setActiveProject(null);
-    ui.setExplorerTab(CANVAS_TAB);
-    const store = useAppCanvasStore.getState();
-    store.setActiveCanvas(hit.canvasId);
-    store.focusView(hit.viewId);
-    store.selectView(hit.viewId);
-  }
 }
 
 function useNow(active: boolean, everyMs = 30_000): number {
@@ -332,7 +282,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         onToggle={() => toggleCard('canvases')}
       >
         {canvases.length === 0 ? (
-          <CardNote>No canvas has a card for this agent. Canvases you haven&apos;t opened this session aren&apos;t searched.</CardNote>
+          <CardNote>No canvas has a card for this agent.</CardNote>
         ) : (
           <ul className="flex flex-col">
             {canvases.map((c) => (

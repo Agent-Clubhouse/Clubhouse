@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { CanvasMembership } from '../shared/canvas-index-types';
 
 export const canvas = {
   canvas: {
@@ -13,5 +14,8 @@ export const canvas = {
     nodes: Array<{ id: string; x: number; y: number }>;
     edges: Array<{ id: string; path: string }>;
   }>,
+  /** The canvases holding an agent's card, read from the persisted stores (Home and the agent's project). */
+  getAgentCanvases: (agentId: string, projectId?: string | null) =>
+    ipcRenderer.invoke(IPC.CANVAS_CMD.GET_AGENT_CANVASES, agentId, projectId ?? undefined) as Promise<CanvasMembership[]>,
   },
 };

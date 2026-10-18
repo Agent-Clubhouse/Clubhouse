@@ -14,6 +14,8 @@ import { registerNotifyTools } from '../services/clubhouse-mcp/tools/notify-tool
 import { agentRegistry } from '../services/agent-registry';
 import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
 import { appLog } from '../services/log-service';
+import { registerPersistedBindingSource, rebuildPersistedBindings } from '../services/persisted-bindings';
+import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
@@ -98,7 +100,7 @@ export function registerMcpBindingHandlers(): void {
         // binding and stop retrying.
         broadcastBindingsChanged();
       }
-      appLog('core:mcp', 'info', 'Binding created', {
+      appLog('core:mcp', isNew ? 'info' : 'debug', isNew ? 'Binding created' : 'Binding already present', {
         meta: {
           agentId,
           agentName: target.agentName,
@@ -205,10 +207,34 @@ export function onMcpSettingsChanged(): void {
   if (!isMcpEnabledForAny()) return;
   registerMcpBindingHandlers();
   maybeStartMcpBridge();
+  restorePersistedBindings();
+}
+
+let persistedSourcesRegistered = false;
+
+/**
+ * Rebuild bindings from every persisted wire store (canvas wires today) so
+ * tools and group-project membership don't wait for a canvas to be opened
+ * (#1544). Runs only once MCP is on. Idempotent: bindings that already exist
+ * are left alone, so calling it again (or the canvas binding the same wires
+ * later) creates nothing twice.
+ */
+export function restorePersistedBindings(): void {
+  if (!handlersRegistered) return;
+  if (!persistedSourcesRegistered) {
+    persistedSourcesRegistered = true;
+    registerPersistedBindingSource(canvasWireBindingSource);
+  }
+  rebuildPersistedBindings().catch((err) => {
+    appLog('core:mcp', 'error', 'Persisted binding rebuild failed', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
 }
 
 /** For testing only: reset the registration guard so handlers can be re-registered. */
 export function _resetHandlersForTesting(): void {
   handlersRegistered = false;
+  persistedSourcesRegistered = false;
   bridgeState = 'idle';
 }

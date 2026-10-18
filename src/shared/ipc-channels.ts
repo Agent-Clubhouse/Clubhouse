@@ -469,6 +469,8 @@ export const IPC = {
   CANVAS_CMD: {
     /** Renderer→main: run ELK layout algorithm (async). */
     ELK_LAYOUT: 'canvas-cmd:elk-layout',
+    /** Renderer→main: the canvases holding an agent's card, read from disk (CanvasMembership[]). */
+    GET_AGENT_CANVASES: 'canvas-cmd:get-agent-canvases',
   },
   PLUGIN_MCP: {
     /** Plugin host only, once per page load: the secret that issues tokens. */

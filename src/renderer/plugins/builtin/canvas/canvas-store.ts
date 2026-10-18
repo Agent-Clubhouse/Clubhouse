@@ -35,6 +35,7 @@ import {
 } from './canvas-operations';
 import { bindWireDefinition } from './wire-binding';
 import { pruneDeferredWires, resolveDeferredWires } from '../../../features/blueprints/blueprint-wire-plan';
+import { reconcilePersistedWires, REMOVED_CANVAS_VIEW_TYPES } from '../../../../shared/canvas-persistence';
 
 // ── Store state ──────────────────────────────────────────────────────
 
@@ -201,7 +202,7 @@ async function readInstancesCopy(storage: ScopedStorage, key: string): Promise<I
   return { status: issues.length > 0 ? 'degraded' : 'ok', raw, canvases, issues };
 }
 
-const REMOVED_TYPES = new Set(['browser', 'file', 'legacy-file', 'terminal', 'legacy-terminal', 'git-diff', 'legacy-git-diff']);
+const REMOVED_TYPES = REMOVED_CANVAS_VIEW_TYPES;
 
 function createCanvasInstance(): CanvasInstance {
   return {
@@ -662,30 +663,15 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           return;
         }
 
-        // Build a set of valid IDs from all canvas views for reconciliation.
-        // Bindings reference agentIds (durable_*/quick_*), groupProjectIds,
-        // or browser widget view IDs — collect them all.
-        const allViews = get().canvases.flatMap((c) => c.views);
-        const validIds = new Set<string>();
-        for (const v of allViews) {
-          validIds.add(v.id);
-          if (v.type === 'agent' && (v as AgentCanvasView).agentId) {
-            validIds.add((v as AgentCanvasView).agentId!);
-          }
-          const gpId = v.metadata?.groupProjectId as string | undefined;
-          if (gpId) validIds.add(gpId);
-        }
-        // Only reconcile if there are views to compare against — if the canvas
-        // is empty, agents may not have been added yet (fresh session).
-        const shouldReconcile = validIds.size > 0;
-
-        // Restore each binding, skipping stale ones whose source/target no longer exist.
+        // Restore each binding, skipping stale ones whose source/target no
+        // longer exist. Bindings reference agentIds (durable_*/quick_*),
+        // groupProjectIds, or browser widget view IDs. The same rules run in
+        // the main process when it rebuilds bindings at startup (#1544).
         // Wire definitions are stored in the canvas store so they survive agent
         // sleep/wake cycles independently of the MCP binding runtime.
+        const allViews = get().canvases.flatMap((c) => c.views);
         const restoredDefinitions: McpBindingEntry[] = [];
-        for (const entry of saved) {
-          if (!entry.agentId || !entry.targetId || !entry.label || !entry.targetKind) continue;
-          if (shouldReconcile && (!validIds.has(entry.agentId) || !validIds.has(entry.targetId))) continue;
+        for (const entry of reconcilePersistedWires(saved, allViews)) {
           // Refresh projectName from the registry on cold start to catch renames.
           if (entry.targetKind === 'group-project') {
             try {

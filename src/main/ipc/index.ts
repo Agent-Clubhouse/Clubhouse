@@ -11,7 +11,8 @@ import { registerPluginMcpHandlers } from './plugin-mcp-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
-import { registerMcpBindingHandlers, maybeStartMcpBridge } from './mcp-binding-handlers';
+import { registerMcpBindingHandlers, maybeStartMcpBridge, restorePersistedBindings } from './mcp-binding-handlers';
+import { registerCanvasIndexHandlers } from './canvas-index-handlers';
 import { registerGroupProjectHandlers } from './group-project-handlers';
 import { registerAnnexClientHandlers } from './annex-client-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
@@ -70,6 +71,10 @@ export function registerAllHandlers(): void {
   registerSettingsHandlers();
   registerMcpBindingHandlers();
   registerGroupProjectHandlers();
+  registerCanvasIndexHandlers();
+  // After the group-project lifecycle listener is attached, so restored
+  // group-project wires post their joins and start polling.
+  restorePersistedBindings();
   registerBlueprintHandlers();
   registerGoobersHandlers();
   registerTelemetrySettingsHandlers();

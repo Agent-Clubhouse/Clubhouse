@@ -4,7 +4,8 @@
  */
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
-import { getBulletinBoard, ensureInboxChannel, ensureProjectChannels } from './group-project-bulletin';
+import { onAgentMcpConnected } from './clubhouse-mcp/connection-events';
+import { getBulletinBoard, ensureInboxChannel, ensureProjectChannels, inboxChannelName } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
 import * as ptyManager from './pty-manager';
 import { agentRegistry } from './agent-registry';
@@ -17,6 +18,12 @@ import { pollingStartMsg } from '../../shared/polling-messages';
 
 /** Debounce window (ms) — suppress rejoins within this period after a leave unless agent is verified running. */
 const REJOIN_DEBOUNCE_MS = 30_000;
+
+/**
+ * Delay (ms) between a sleeping member's MCP handshake and its deferred
+ * polling-start message, so the CLI has finished starting up.
+ */
+const DEFERRED_POLLING_DELAY_MS = 3_000;
 
 /** Default delay (ms) before sending Enter after bracketed paste. */
 const DEFAULT_PASTE_DELAY_MS = 400;
@@ -63,8 +70,17 @@ const agentNames = new Map<string, string>();
 /** Tracks recent leave timestamps: `${agentId}:${projectId}` → timestamp */
 const recentLeaves = new Map<string, number>();
 
+/**
+ * Members that joined a polling project while asleep: agentId → projectIds.
+ * Bindings are rebuilt at startup before any agent runs (#1544), so the
+ * polling-start message waits for the agent's first MCP handshake instead of
+ * being written to a terminal that isn't there.
+ */
+const pendingPollingStarts = new Map<string, Set<string>>();
+
 let initialized = false;
 let unsubscribe: (() => void) | null = null;
+let unsubscribeConnected: (() => void) | null = null;
 
 /** Initialize lifecycle tracking. Call once at startup. */
 export function initGroupProjectLifecycle(): void {
@@ -73,6 +89,9 @@ export function initGroupProjectLifecycle(): void {
 
   unsubscribe = bindingManager.onChange((agentId: string) => {
     void syncMemberships(agentId);
+  });
+  unsubscribeConnected = onAgentMcpConnected((agentId: string) => {
+    void flushPendingPollingStarts(agentId);
   });
 
   appLog('core:group-project', 'info', 'Group project lifecycle initialized');
@@ -191,11 +210,54 @@ async function syncMemberships(agentId: string): Promise<void> {
 
       // Auto-send polling instruction if polling is enabled
       if (project?.metadata?.pollingEnabled) {
-        const orchestrator = getAgentOrchestrator(agentId);
-        // Small delay so the welcome message is processed first
-        setTimeout(() => injectPtyMessage(agentId, pollingStartMsg(projectName, orchestrator, inboxName)), 500);
+        if (isAgentAlive(agentId)) {
+          const orchestrator = getAgentOrchestrator(agentId);
+          // Small delay so the welcome message is processed first
+          setTimeout(() => injectPtyMessage(agentId, pollingStartMsg(projectName, orchestrator, inboxName)), 500);
+        } else {
+          let pending = pendingPollingStarts.get(agentId);
+          if (!pending) {
+            pending = new Set();
+            pendingPollingStarts.set(agentId, pending);
+          }
+          pending.add(projectId);
+        }
       }
     }
+  }
+}
+
+/**
+ * Send the polling-start message a sleeping member missed when it joined, now
+ * that it has connected. Skipped for projects it has since left or that have
+ * turned polling off.
+ */
+async function flushPendingPollingStarts(agentId: string): Promise<void> {
+  const pending = pendingPollingStarts.get(agentId);
+  if (!pending) return;
+  pendingPollingStarts.delete(agentId);
+  const boundProjects = new Set(
+    bindingManager.getBindingsForAgent(agentId)
+      .filter((b) => b.targetKind === ('group-project' as BindingTargetKind))
+      .map((b) => b.targetId),
+  );
+  for (const projectId of pending) {
+    if (!boundProjects.has(projectId)) continue;
+    let project: Awaited<ReturnType<typeof groupProjectRegistry.get>> | undefined;
+    try {
+      project = await groupProjectRegistry.get(projectId);
+    } catch {
+      // telemetry-exempt: the registry logs its own read failures; skip this project
+      continue;
+    }
+    if (!project?.metadata?.pollingEnabled) continue;
+    const projectName = project.name || projectId;
+    const agentName = agentNames.get(agentId) || resolveAgentName(agentId);
+    const orchestrator = getAgentOrchestrator(agentId);
+    appLog('core:group-project', 'info', 'Sending deferred polling start to member that joined while asleep', {
+      meta: { agentId, projectId },
+    });
+    setTimeout(() => injectPtyMessage(agentId, pollingStartMsg(projectName, orchestrator, inboxChannelName(agentName))), DEFERRED_POLLING_DELAY_MS);
   }
 }
 
@@ -212,7 +274,12 @@ export function _resetLifecycleForTesting(): void {
     unsubscribe();
     unsubscribe = null;
   }
+  if (unsubscribeConnected) {
+    unsubscribeConnected();
+    unsubscribeConnected = null;
+  }
   memberships.clear();
+  pendingPollingStarts.clear();
   agentNames.clear();
   recentLeaves.clear();
   initialized = false;
@@ -221,3 +288,5 @@ export function _resetLifecycleForTesting(): void {
 /** Exported for testing. */
 export { REJOIN_DEBOUNCE_MS as _REJOIN_DEBOUNCE_MS_FOR_TESTING };
 export { recentLeaves as _recentLeavesForTesting };
+export { pendingPollingStarts as _pendingPollingStartsForTesting };
+export { DEFERRED_POLLING_DELAY_MS as _DEFERRED_POLLING_DELAY_MS_FOR_TESTING };
