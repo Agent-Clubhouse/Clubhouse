@@ -35,6 +35,22 @@ import type { PermissionLevel } from '../../../shared/chat/capabilities';
 /** How long close() waits for an agent to answer `session/close` before killing it. */
 export const SESSION_CLOSE_TIMEOUT_MS = 2_000;
 
+/**
+ * How long `session/load` (or `session/resume`) may go without answering or
+ * replaying anything before it counts as stalled. Each replayed update resets
+ * the clock, so a long history still loads; a load that hangs gives up here
+ * instead of at the 30s RPC timeout.
+ */
+export const RESUME_STALL_TIMEOUT_MS = 10_000;
+
+/** `session/load` or `session/resume` went quiet for the stall timeout. */
+export class AcpResumeStalledError extends Error {
+  constructor(readonly method: string, readonly sessionId: string, readonly timeoutMs: number) {
+    super(`ACP ${method} for session ${sessionId} got no reply or replay for ${timeoutMs}ms`);
+    this.name = 'AcpResumeStalledError';
+  }
+}
+
 /** How an agent's native modes and options map onto Clubhouse's permission ladder. */
 export interface AcpPermissionLevels {
   /** Levels `apply` can switch to inside a live session. */
@@ -114,6 +130,8 @@ export interface AcpSessionState {
 
 export interface AcpSessionOpts extends Pick<AcpClientOpts, 'binary' | 'args' | 'cwd' | 'env' | 'windowsVerbatimArguments' | 'rpcTimeoutMs' | 'onLog'> {
   clientInfo?: Implementation;
+  /** Stall timeout for `session/load` and `session/resume`; default RESUME_STALL_TIMEOUT_MS. */
+  resumeStallTimeoutMs?: number;
   /**
    * Profile to apply. Pass a fixed one, or a function that picks it from the
    * handshake (copilot-acp.ts exports `selectAcpProfile`). Defaults to generic.
@@ -163,6 +181,8 @@ export class AcpSession {
   private caps: AcpDriverCapabilities | null = null;
   private replaying = false;
   private loadRequestId: number | null = null;
+  /** Resets the resume stall timer; set while `session/load` or `session/resume` is pending. */
+  private resumeActivity: (() => void) | null = null;
   /** Pending while a prompt turn runs; `exit` waits for it so `turn_ended` comes first. */
   private turnSettled: Promise<void> | null = null;
   /** Agents may announce a new session's updates before answering session/new. */
@@ -293,10 +313,10 @@ export class AcpSession {
     if (caps.resume === 'resume') {
       this.state.sessionId = sessionId;
       try {
-        const res = (await this.client.request(ACP_AGENT_METHODS.sessionResume, {
+        const res = (await this.withStallTimeout(ACP_AGENT_METHODS.sessionResume, sessionId, this.client.request(ACP_AGENT_METHODS.sessionResume, {
           sessionId,
           ...this.sessionParams(setup),
-        })) as LoadSessionResponse;
+        }, { timeoutMs: null }))) as LoadSessionResponse;
         this.applySessionSetup(res ?? {});
       } catch (err) {
         this.resetSessionState();
@@ -319,9 +339,9 @@ export class AcpSession {
       const pending = this.client.request(ACP_AGENT_METHODS.sessionLoad, {
         sessionId,
         ...this.sessionParams(setup),
-      });
+      }, { timeoutMs: null });
       this.loadRequestId = this.client.lastRequestId;
-      const res = (await pending) as LoadSessionResponse;
+      const res = (await this.withStallTimeout(ACP_AGENT_METHODS.sessionLoad, sessionId, pending)) as LoadSessionResponse;
       this.applySessionSetup(res ?? {});
     } catch (err) {
       // A load can replay part of the history and still fail. Leave nothing of
@@ -335,6 +355,36 @@ export class AcpSession {
       this.openToolCalls.clear();
     }
     return this.state;
+  }
+
+  /**
+   * Reject with AcpResumeStalledError once `pending` has gone the stall
+   * timeout without an answer or a session update. The request itself is left
+   * to the process: callers kill it, which settles it.
+   */
+  private withStallTimeout<T>(method: string, sessionId: string, pending: Promise<T>): Promise<T> {
+    const timeoutMs = this.opts.resumeStallTimeoutMs ?? RESUME_STALL_TIMEOUT_MS;
+    return new Promise<T>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout>;
+      const arm = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          this.resumeActivity = null;
+          this.log('warn', `ACP ${method} stalled`, { sessionId, timeoutMs });
+          reject(new AcpResumeStalledError(method, sessionId, timeoutMs));
+        }, timeoutMs);
+      };
+      const settle = () => {
+        clearTimeout(timer);
+        if (this.resumeActivity === arm) this.resumeActivity = null;
+      };
+      this.resumeActivity = arm;
+      arm();
+      pending.then(
+        (value) => { settle(); resolve(value); },
+        (err: unknown) => { settle(); reject(err); },
+      );
+    });
   }
 
   async listSessions(opts: { cwd?: string; cursor?: string } = {}): Promise<ListSessionsResponse> {
@@ -507,6 +557,7 @@ export class AcpSession {
   // ── Inbound ──────────────────────────────────────────────────────────────
 
   private handleNotification(method: string, params: unknown): void {
+    this.resumeActivity?.();
     if (method !== ACP_CLIENT_METHODS.sessionUpdate) {
       this.log('info', 'Ignoring ACP notification', { method });
       if (!KNOWN_CLIENT_METHODS.has(method)) this.emit({ type: 'unknown_method', kind: 'notification', method });
