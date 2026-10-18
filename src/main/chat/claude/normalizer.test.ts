@@ -201,6 +201,108 @@ describe('ClaudeNormalizer', () => {
     });
   });
 
+  // Shapes from Agent SDK 0.3.301's sdk.d.ts: the system subtypes the normalizer used to report as unmapped.
+  describe('system subtypes from Agent SDK 0.3.301', () => {
+    const base = { type: 'system', uuid: 'u1', session_id: 's1' };
+    const sys = (subtype: string, fields: Record<string, unknown> = {}) => ({ ...base, subtype, ...fields });
+
+    /** One sample per SDK system message type the normalizer didn't map before. */
+    const samples: Record<string, ReturnType<typeof sys>> = {
+      api_retry: sys('api_retry', { attempt: 2, max_retries: 10, retry_delay_ms: 4000, error_status: 529, error: 'overloaded' }),
+      commands_changed: sys('commands_changed', { commands: [{ name: 'mission', description: 'Do a task', argumentHint: '<task>' }] }),
+      control_request_progress: sys('control_request_progress', { request_id: 'r1', status: 'api_retry', attempt: 1, max_retries: 3 }),
+      elicitation_complete: sys('elicitation_complete', { mcp_server_name: 'm', elicitation_id: 'e1' }),
+      files_persisted: sys('files_persisted', { files: [{ filename: 'a.txt', file_id: 'f1' }], failed: [], processed_at: '2026-10-18T00:00:00Z' }),
+      hook_started: sys('hook_started', { hook_id: 'h1', hook_name: 'lint', hook_event: 'PostToolUse' }),
+      hook_progress: sys('hook_progress', { hook_id: 'h1', hook_name: 'lint', hook_event: 'PostToolUse', stdout: 'ok', stderr: '', output: 'ok' }),
+      hook_response: sys('hook_response', { hook_id: 'h1', hook_name: 'lint', hook_event: 'PostToolUse', output: '', stdout: '', stderr: 'bad', exit_code: 2, outcome: 'error' }),
+      informational: sys('informational', { content: 'Stop hook prevented continuation', level: 'warning', prevent_continuation: true }),
+      local_command_output: sys('local_command_output', { content: 'Total cost: $0.12' }),
+      memory_recall: sys('memory_recall', { mode: 'select', memories: [{ path: '/m/a.md', scope: 'personal' }] }),
+      mirror_error: sys('mirror_error', { error: 'boom', key: { projectKey: 'p', sessionId: 's1' } }),
+      model_refusal_fallback: sys('model_refusal_fallback', {
+        trigger: 'refusal', direction: 'retry', scope: 'session', original_model: 'claude-opus-5-5', fallback_model: 'claude-sonnet-5', request_id: 'req1',
+        content: 'Opus declined; switched to Sonnet.',
+      }),
+      model_refusal_no_fallback: sys('model_refusal_no_fallback', { original_model: 'claude-opus-5-5', request_id: null, content: 'The model declined this request.' }),
+      notification: sys('notification', { key: 'mcp-auth', text: 'MCP server github needs authentication', priority: 'high' }),
+      plugin_install: sys('plugin_install', { status: 'failed', name: 'acme', error: 'not found' }),
+      session_state_changed: sys('session_state_changed', { state: 'running' }),
+      worker_shutting_down: sys('worker_shutting_down', { reason: 'host_exit' }),
+    };
+
+    it('reports none of them as unmapped', () => {
+      for (const [subtype, frame] of Object.entries(samples)) {
+        const evs = new ClaudeNormalizer().normalize(frame);
+        expect(evs.filter((e) => e.kind === 'unmapped'), subtype).toEqual([]);
+      }
+    });
+
+    it('maps api_retry to a retry with its attempt and cause', () => {
+      expect(new ClaudeNormalizer().normalize(samples.api_retry)).toMatchObject([{
+        kind: 'api_retry', attempt: 2, maxRetries: 10, retryDelayMs: 4000, errorStatus: 529, error: 'overloaded', noResponse: false,
+      }]);
+      const [noResponse] = new ClaudeNormalizer().normalize(sys('api_retry', {
+        attempt: 1, max_retries: 1, retry_delay_ms: 0, error_status: null, error: 'unknown', no_response: { waited_ms: 30_000, retry_wait_ms: 60_000 },
+      }));
+      expect(noResponse).toMatchObject({ kind: 'api_retry', noResponse: true });
+      expect(noResponse).not.toHaveProperty('errorStatus', expect.anything());
+    });
+
+    it('maps commands_changed to the new command list', () => {
+      expect(new ClaudeNormalizer().normalize(sys('commands_changed', {
+        commands: [{ name: 'mission', description: 'Do a task', argumentHint: '<task>' }, { name: 'cost', description: 'Cost', argumentHint: '', builtin: true }],
+      }))).toMatchObject([{
+        kind: 'commands_changed',
+        commands: [{ name: 'mission', description: 'Do a task', argumentHint: '<task>' }, { name: 'cost', builtin: true }],
+      }]);
+    });
+
+    it('maps local_command_output to an agent message, and drops an empty one', () => {
+      expect(new ClaudeNormalizer().normalize(samples.local_command_output)).toMatchObject([{ kind: 'message', messageId: 'u1', text: 'Total cost: $0.12' }]);
+      expect(new ClaudeNormalizer().normalize(sys('local_command_output', { content: '' }))).toEqual([]);
+    });
+
+    it('maps informational by level: warning warns, notice and suggestion inform, info stays transcript-only', () => {
+      const n = new ClaudeNormalizer();
+      expect(n.normalize(samples.informational)).toMatchObject([{ kind: 'notice', level: 'warn', code: 'claude_informational', message: 'Stop hook prevented continuation' }]);
+      expect(n.normalize(sys('informational', { content: 'Try /compact', level: 'suggestion' }))).toMatchObject([{ kind: 'notice', level: 'info' }]);
+      expect(n.normalize(sys('informational', { content: 'Hook ran', level: 'notice' }))).toMatchObject([{ kind: 'notice', level: 'info' }]);
+      expect(n.normalize(sys('informational', { content: 'progress detail', level: 'info' }))).toEqual([]);
+    });
+
+    it('maps notification to a notice, warning for high priority', () => {
+      const n = new ClaudeNormalizer();
+      expect(n.normalize(samples.notification)).toMatchObject([{ kind: 'notice', level: 'warn', code: 'claude_notification', message: 'MCP server github needs authentication' }]);
+      expect(n.normalize(sys('notification', { key: 'k', text: 'Update available', priority: 'low' }))).toMatchObject([{ kind: 'notice', level: 'info' }]);
+    });
+
+    it('maps model refusals to notices, with a fallback message when content is missing', () => {
+      const n = new ClaudeNormalizer();
+      expect(n.normalize(samples.model_refusal_fallback)).toMatchObject([{ kind: 'notice', level: 'info', code: 'model_refusal_fallback', message: 'Opus declined; switched to Sonnet.' }]);
+      expect(n.normalize(sys('model_refusal_fallback', { original_model: 'claude-opus-5-5', fallback_model: 'claude-sonnet-5', content: '' }))).toMatchObject([{
+        message: 'claude-opus-5-5 declined to answer; claude-sonnet-5 answered instead.',
+      }]);
+      expect(n.normalize(samples.model_refusal_no_fallback)).toMatchObject([{ kind: 'notice', level: 'warn', code: 'model_refusal', message: 'The model declined this request.' }]);
+      expect(n.normalize(sys('model_refusal_no_fallback', { original_model: 'claude-opus-5-5', content: '', api_refusal_explanation: 'Policy' }))).toMatchObject([{ message: 'Policy' }]);
+    });
+
+    it('reports a failed plugin install and drops the other install states', () => {
+      const n = new ClaudeNormalizer();
+      expect(n.normalize(samples.plugin_install)).toMatchObject([{ kind: 'notice', level: 'warn', code: 'plugin_install_failed', message: 'Plugin acme failed to install: not found' }]);
+      for (const status of ['started', 'installed', 'completed']) expect(n.normalize(sys('plugin_install', { status, name: 'acme' }))).toEqual([]);
+    });
+
+    it.each([
+      'control_request_progress', 'elicitation_complete', 'files_persisted', 'hook_started', 'hook_progress', 'hook_response',
+      'memory_recall', 'mirror_error', 'session_state_changed', 'worker_shutting_down',
+    ])('knowingly drops %s without advancing seq', (subtype) => {
+      const n = new ClaudeNormalizer();
+      expect(n.normalize(samples[subtype])).toEqual([]);
+      expect(n.normalize({ type: 'system', subtype: 'permission_denied', tool_name: 'Bash' })).toMatchObject([{ seq: 1 }]);
+    });
+  });
+
   it('reports an assistant API error without dropping its content', () => {
     const n = new ClaudeNormalizer();
     const evs = n.normalize({ type: 'assistant', message: { id: 'm', content: [{ type: 'text', text: 'partial' }] }, error: 'rate_limit' });

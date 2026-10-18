@@ -50,8 +50,7 @@ export type ClaudeChatEventBody =
   | {
       /** Result of the `initialize` control handshake: commands, models, agents, account. */
       kind: 'initialized';
-      /** `builtin`: Claude Code's own command, which only runs at the start of a message. */
-      commands: Array<{ name: string; description?: string; argumentHint?: string; builtin?: boolean }>;
+      commands: ClaudeCommand[];
       /** `efforts`: the model's effort levels, empty when it has none. */
       models: Array<{ value: string; displayName?: string; description?: string; resolvedModel?: string; efforts: string[] }>;
       raw: Record<string, unknown>;
@@ -170,7 +169,35 @@ export type ClaudeChatEventBody =
   /** `system/background_tasks_changed`: every live background task (replace semantics). */
   | { kind: 'background_tasks'; tasks: ClaudeBackgroundTask[] }
   /** `system/vcs_state_changed`: a commit, push, merge or rebase happened; the workspace's git state is stale. */
-  | { kind: 'vcs_changed'; vcsKind: string; branch?: string; cwd?: string };
+  | { kind: 'vcs_changed'; vcsKind: string; branch?: string; cwd?: string }
+  /** `system/api_retry`: the main loop's API call failed and the CLI is retrying it. */
+  | {
+      kind: 'api_retry';
+      attempt: number;
+      maxRetries: number;
+      retryDelayMs?: number;
+      errorStatus?: number;
+      /** The assistant error kind (`rate_limit`, `server_error`, …). */
+      error?: string;
+      /** No response headers arrived in time, rather than an error response. */
+      noResponse: boolean;
+    }
+  /** `system/commands_changed`: the full slash-command list after skills, plugins or MCP servers changed (replace semantics). */
+  | { kind: 'commands_changed'; commands: ClaudeCommand[] }
+  /**
+   * A user-facing line the CLI shows as-is: `informational`, `notification`,
+   * a model refusal, a failed plugin install. `code` is the contract notice code.
+   */
+  | { kind: 'notice'; level: 'info' | 'warn'; code: string; message: string };
+
+/** A slash command as `initialize` and `system/commands_changed` list it. */
+export interface ClaudeCommand {
+  name: string;
+  description?: string;
+  argumentHint?: string;
+  /** Claude Code's own command, which only runs at the start of a message. */
+  builtin?: boolean;
+}
 
 export interface ClaudeBackgroundTask {
   taskId: string;

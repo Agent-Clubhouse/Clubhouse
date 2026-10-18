@@ -28,7 +28,7 @@ import type {
   PermissionResponseExtras,
 } from '../../../shared/chat/runtime';
 import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
-import type { ClaudeChatEvent, ClaudePermissionMode, ClaudePermissionUpdate, ClaudeUsage } from './events';
+import type { ClaudeChatEvent, ClaudeCommand, ClaudePermissionMode, ClaudePermissionUpdate, ClaudeUsage } from './events';
 import { ClaudeSdkTransport } from './sdk-transport';
 import { ClaudeStreamTransport } from './stream-transport';
 import { CLAUDE_EFFORTS, type ClaudeEffort, type ClaudeImageInput, type ClaudeTransport, type ClaudeTransportLog, type ClaudeTransportOptions } from './transport';
@@ -869,20 +869,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
             capabilities: this.capabilities,
           },
         });
-        if (ev.commands.length) {
-          this.push({
-            type: 'commands_available',
-            data: {
-              commands: ev.commands.map((c) => ({
-                name: c.name,
-                description: c.description,
-                inputHint: c.argumentHint || undefined,
-                // Claude Code's own commands run only at the start of a message; skills and custom commands the model can use anywhere.
-                ...(c.builtin && { startOnly: true }),
-              })),
-            },
-          });
-        }
+        if (ev.commands.length) this.pushCommands(ev.commands);
         this.modelRows = ev.models.filter((m) => m.value);
         if (this.modelRows.length) this.pushModels();
         this.started = true;
@@ -1116,6 +1103,22 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       case 'vcs_changed':
         this.push({ type: 'workspace_changed', data: { reason: 'vcs', vcsKind: ev.vcsKind, ...(ev.branch ? { branch: ev.branch } : {}) } });
         return;
+      case 'commands_changed':
+        // Skills, plugins or MCP servers changed: the list replaces the one from initialize.
+        this.pushCommands(ev.commands);
+        return;
+      case 'api_retry': {
+        // A retry isn't a failure yet: a notice, like a subagent's retry. If retries run out, the turn's error reports it.
+        const cause = ev.noResponse ? 'the API did not respond' : ev.errorStatus ? `a ${ev.errorStatus} error` : 'an API error';
+        this.push({
+          type: 'notice',
+          data: { level: 'info', code: 'api_retry', message: `Retrying after ${cause} (attempt ${ev.attempt} of ${ev.maxRetries}).` },
+        }, true);
+        return;
+      }
+      case 'notice':
+        this.push({ type: 'notice', data: { level: ev.level, code: ev.code, message: ev.message } }, true);
+        return;
       case 'unmapped':
         this.push({ type: 'protocol_unknown', data: { driver: this.driverId, kind: 'field', name: ev.subtype ? `${ev.type}/${ev.subtype}` : ev.type } });
         return;
@@ -1143,6 +1146,21 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         });
         return;
     }
+  }
+
+  private pushCommands(commands: ClaudeCommand[]): void {
+    this.push({
+      type: 'commands_available',
+      data: {
+        commands: commands.map((c) => ({
+          name: c.name,
+          description: c.description,
+          inputHint: c.argumentHint || undefined,
+          // Claude Code's own commands run only at the start of a message; skills and custom commands the model can use anywhere.
+          ...(c.builtin && { startOnly: true }),
+        })),
+      },
+    });
   }
 
   /** The subagent (its Task tool call id) a tool call ran in, if any. */
