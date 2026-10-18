@@ -169,6 +169,20 @@ describe('agent-handlers', () => {
     expect(result).toEqual({ id: 'agent-1', name: 'Test' });
   });
 
+  it('CREATE_DURABLE refuses a worktree agent name that is not a safe folder/branch name (#2221)', async () => {
+    vi.mocked(agentConfig.createDurable).mockClear();
+    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
+    await expect(handler({}, '/project', 'x;rm -rf ~', '#ff0000', undefined, true)).rejects.toThrow(/^Invalid agent name/);
+    await expect(handler({}, '/project', '-x', '#ff0000')).rejects.toThrow(/^Invalid agent name/);
+    expect(agentConfig.createDurable).not.toHaveBeenCalled();
+  });
+
+  it('CREATE_DURABLE lets a non-worktree agent keep a free-form display name', async () => {
+    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
+    await handler({}, '/project', 'My Bot', '#ff0000', undefined, false);
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'My Bot', '#ff0000', undefined, false, undefined, undefined, undefined, undefined, undefined);
+  });
+
   it('DELETE_DURABLE delegates to agentConfig.deleteDurable', async () => {
     const handler = handlers.get(IPC.AGENT.DELETE_DURABLE)!;
     await handler({}, '/project', 'agent-1');

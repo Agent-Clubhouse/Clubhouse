@@ -1,4 +1,4 @@
-import { exec, execFile } from 'child_process';
+import { execFile } from 'child_process';
 import { watch, type FSWatcher } from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -15,17 +15,13 @@ import { stepUnderFlow } from '../telemetry/workspace';
 import { persist } from '../telemetry/persist';
 import { normalizeIdleSleep } from '../../shared/idle-sleep';
 import { setAgentIdleSleep } from './chat-idle-settings';
+import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-name';
 
-/** Non-blocking git command execution. Prevents UI freezes in large repos. */
-function execGitAsync(cmd: string, cwd: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    exec(cmd, { cwd, encoding: 'utf-8' }, (error, stdout) => {
-      if (error) reject(error);
-      else resolve(stdout);
-    });
-  });
-}
-
+/**
+ * Non-blocking git command execution. Prevents UI freezes in large repos.
+ * Always an argument list, never a shell string: names that reach git here
+ * can come from another agent (#2221).
+ */
 function execGitFileAsync(args: string[], cwd: string, maxBuffer?: number): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile('git', args, { cwd, encoding: 'utf-8', maxBuffer }, (error, stdout) => {
@@ -41,6 +37,27 @@ async function ensureDir(dir: string): Promise<void> {
 
 function clubhouseDir(projectPath: string): string {
   return path.join(projectPath, '.clubhouse');
+}
+
+/** The folder every agent worktree lives in. */
+function agentsDir(projectPath: string): string {
+  return path.join(clubhouseDir(projectPath), 'agents');
+}
+
+/**
+ * The worktree folder for an agent named `name`: `<project>/.clubhouse/agents/<name>`.
+ * Throws when the name is not a valid agent folder name, or when the path
+ * would land anywhere but directly inside `.clubhouse/agents/` (#2221).
+ */
+export function resolveAgentWorktreePath(projectPath: string, name: string): string {
+  assertAgentGitName(name, 'folder');
+  const root = path.resolve(agentsDir(projectPath));
+  const target = path.resolve(root, name);
+  const rel = path.relative(root, target);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || rel !== name) {
+    throw new Error(`Invalid agent name: worktree path must stay inside ${root}`);
+  }
+  return path.join(agentsDir(projectPath), name);
 }
 
 function agentsConfigPath(projectPath: string): string {
@@ -1181,6 +1198,16 @@ export async function createDurable(
   mcpConfigs?: Record<string, Record<string, string>>,
   persona?: string,
 ): Promise<DurableAgentConfig> {
+  // The name becomes a folder and a branch only with a worktree; refuse a
+  // bad one before anything touches disk.
+  if (useWorktree) {
+    try {
+      resolveAgentWorktreePath(projectPath, name);
+    } catch (err) {
+      throw tagError(err, 'validation');
+    }
+  }
+
   await ensureDir(clubhouseDir(projectPath));
   await ensureGitignore(projectPath);
 
@@ -1191,15 +1218,18 @@ export async function createDurable(
   let worktreePath: string | undefined;
 
   if (useWorktree) {
-    branch = `${name}/standby`;
-    worktreePath = path.join(clubhouseDir(projectPath), 'agents', name);
+    const wtPath = resolveAgentWorktreePath(projectPath, name);
+    const standby = `${name}/standby`;
+    assertAgentGitName(standby, 'branch');
+    worktreePath = wtPath;
+    branch = standby;
 
     // Create the branch (from current HEAD)
     const hasGit = await isInsideGitRepo(projectPath);
     if (hasGit) {
       // Ensure repo has at least one commit (required for branching/worktrees)
       try {
-        await execGitAsync('git rev-parse HEAD', projectPath);
+        await execGitFileAsync(['rev-parse', 'HEAD'], projectPath);
       } catch {
         // Empty repo with no commits — bootstrap with an initial commit
         // Include .gitignore which ensureGitignore() has already created/updated
@@ -1209,9 +1239,9 @@ export async function createDurable(
         try {
           const gitignorePath = path.join(projectPath, '.gitignore');
           if (await pathExists(gitignorePath)) {
-            await execGitAsync('git add .gitignore', projectPath);
+            await execGitFileAsync(['add', '--', '.gitignore'], projectPath);
           }
-          await execGitAsync('git commit --allow-empty -m "Clubhouse - Initial Commit"', projectPath);
+          await execGitFileAsync(['commit', '--allow-empty', '-m', 'Clubhouse - Initial Commit'], projectPath);
         } catch (commitErr) {
           appLog('core:agent-config', 'warn', 'Failed to create initial commit in empty repository', {
             meta: {
@@ -1224,15 +1254,15 @@ export async function createDurable(
       }
 
       try {
-        await execGitAsync(`git branch "${branch}"`, projectPath);
+        await execGitFileAsync(['branch', '--', standby], projectPath);
       } catch {
         // Branch may already exist
       }
 
       try {
-        await ensureDir(path.dirname(worktreePath));
+        await ensureDir(path.dirname(wtPath));
         // Only spanned under an active agent create flow (Phase 4), never orphaned.
-        await stepUnderFlow('clubhouse.git.worktree_add', () => execGitAsync(`git worktree add "${worktreePath}" "${branch}"`, projectPath));
+        await stepUnderFlow('clubhouse.git.worktree_add', () => execGitFileAsync(['worktree', 'add', '--', wtPath, standby], projectPath));
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         appLog('core:agent-config', 'error', 'Git worktree creation failed', {
@@ -1240,7 +1270,7 @@ export async function createDurable(
         });
         // Clean up any partial state: remove the directory git may have created
         // before failing, so a retry with the same name starts from a clean slate.
-        try { await fsp.rm(worktreePath, { recursive: true, force: true }); } catch { /* best-effort */ }
+        try { await fsp.rm(wtPath, { recursive: true, force: true }); } catch { /* best-effort */ }
         throw tagError(new Error(
           `Failed to create git worktree for "${name}": ${errMsg}. ` +
           `The branch "${branch}" may already be checked out elsewhere, or the path may conflict with an existing worktree. ` +
@@ -1248,7 +1278,7 @@ export async function createDurable(
         ), 'worktree_failed');
       }
     } else {
-      await ensureDir(worktreePath);
+      await ensureDir(wtPath);
     }
   }
 
@@ -1370,7 +1400,7 @@ export async function deleteDurable(projectPath: string, agentId: string): Promi
   const hasGit = await isInsideGitRepo(projectPath);
   if (hasGit) {
     try {
-      await stepUnderFlow('clubhouse.git.worktree_remove', () => execGitFileAsync(['worktree', 'remove', agent.worktreePath, '--force'], projectPath));
+      await stepUnderFlow('clubhouse.git.worktree_remove', () => execGitFileAsync(['worktree', 'remove', '--force', '--', agent.worktreePath], projectPath));
     } catch (err) {
       appLog('core:agent-config', 'warn', 'Git worktree removal failed, will clean up manually', {
         meta: {
@@ -1383,7 +1413,7 @@ export async function deleteDurable(projectPath: string, agentId: string): Promi
     // Optionally delete branch
     if (agent.branch) {
       try {
-        await execGitFileAsync(['branch', '-D', agent.branch], projectPath);
+        await execGitFileAsync(['branch', '-D', '--', agent.branch], projectPath);
       } catch (err) {
         appLog('core:agent-config', 'warn', 'Git branch deletion failed', {
           meta: { agentId, branch: agent.branch, error: err instanceof Error ? err.message : String(err) },
@@ -1507,8 +1537,10 @@ async function saveWorktreeBeforeDelete(
   try {
     const remoteOut = await execGitFileAsync(['remote'], wt);
     const branch = options.branch ?? agent.branch;
-    if (remoteOut.trim() && branch) {
-      await execGitFileAsync(['push', '-u', 'origin', branch], wt);
+    // A branch read back from agents.json predates strict names; never let
+    // one be read as an option or a src:dst refspec.
+    if (remoteOut.trim() && branch && !branch.startsWith('-') && !branch.includes(':')) {
+      await execGitFileAsync(['push', '-u', '--', 'origin', branch], wt);
     }
   } catch (pushErr) {
     const branch = options.branch ?? agent.branch;
@@ -1552,6 +1584,21 @@ export async function deleteCommitAndPush(projectPath: string, agentId: string):
   return { ok: true, message: 'Committed, pushed, and deleted' };
 }
 
+/**
+ * The branch an agent's work is saved to before deletion: `<name>/cleanup`.
+ * Names can be renamed freely after creation, so when that is not a valid
+ * branch name this falls back to the standby branch's prefix, then the id.
+ */
+export function cleanupBranchFor(agent: Pick<DurableAgentConfig, 'id' | 'name' | 'branch'>): string {
+  const standbyPrefix = agent.branch?.endsWith('/standby') ? agent.branch.slice(0, -'/standby'.length) : undefined;
+  for (const prefix of [agent.name, standbyPrefix, agent.id]) {
+    if (!prefix) continue;
+    const candidate = `${prefix}/cleanup`;
+    if (!validateAgentGitName(candidate, 'branch')) return candidate;
+  }
+  return 'clubhouse-agent/cleanup';
+}
+
 export async function deleteWithCleanupBranch(projectPath: string, agentId: string): Promise<DeleteResult> {
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
@@ -1563,7 +1610,7 @@ export async function deleteWithCleanupBranch(projectPath: string, agentId: stri
     return { ok: true, message: 'Deleted (no worktree)' };
   }
 
-  const cleanupBranch = `${agent.name}/cleanup`;
+  const cleanupBranch = cleanupBranchFor(agent);
 
   try {
     // Create and checkout cleanup branch

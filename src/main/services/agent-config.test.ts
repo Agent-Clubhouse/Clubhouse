@@ -70,7 +70,7 @@ vi.mock('./chat-idle-settings', () => ({
 import * as fsp from 'fs/promises';
 import { watch } from 'fs';
 import { setAgentIdleSleep } from './chat-idle-settings';
-import { exec, execFile } from 'child_process';
+import { execFile } from 'child_process';
 import { pathExists } from './fs-utils';
 import { isInsideGitRepo } from './git-service';
 import {
@@ -99,9 +99,29 @@ import {
   stripLegacyStructuredMode,
   getBackupInfo,
   restoreFromBackup,
+  resolveAgentWorktreePath,
+  cleanupBranchFor,
 } from './agent-config';
 
 const PROJECT_PATH = '/test/project';
+
+/** Route git calls (now always execFile with an argument list) through a handler that sees `git <args...>`. */
+function mockGitCmd(impl: (cmd: string, cb: (...args: unknown[]) => void) => unknown): void {
+  vi.mocked(execFile).mockImplementation(((_file: string, args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+    impl(['git', ...args].join(' '), cb);
+    return {} as any;
+  }) as any);
+}
+
+/** Every git invocation so far, each as `git <args joined by spaces>`. */
+function gitCalls(): string[] {
+  return vi.mocked(execFile).mock.calls.map((c) => ['git', ...(c[1] as unknown as string[])].join(' '));
+}
+
+/** Every git invocation so far as its exact argument list. */
+function gitArgv(): string[][] {
+  return vi.mocked(execFile).mock.calls.map((c) => [...(c[1] as unknown as string[])]);
+}
 
 // Clear the write-back cache before every test to prevent cross-test contamination.
 // Also set up default mocks for atomic-write helpers (rename, copyFile) so that
@@ -289,7 +309,7 @@ describe('createDurable', () => {
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
     vi.mocked(fsp.appendFile).mockResolvedValue(undefined);
     // Default: async exec succeeds for all commands
-    vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => {
+    mockGitCmd((_cmd: any, cb: any) => {
       cb(null, '', '');
       return {} as any;
     });
@@ -312,7 +332,7 @@ describe('createDurable', () => {
 
   it('calls git branch + git worktree add when .git exists', async () => {
     await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
-    const calls = vi.mocked(exec).mock.calls.map((c) => String(c[0]));
+    const calls = gitCalls();
     expect(calls.some((c) => c.includes('git branch'))).toBe(true);
     expect(calls.some((c) => c.includes('git worktree add'))).toBe(true);
   });
@@ -331,7 +351,7 @@ describe('createDurable', () => {
     const config = await createDurable(PROJECT_PATH, 'no-git-agent', 'indigo');
     expect(config.id).toMatch(/^durable_/);
     // async git commands should not have been called
-    expect(vi.mocked(exec)).not.toHaveBeenCalled();
+    expect(vi.mocked(execFile)).not.toHaveBeenCalled();
     // mkdir should have been called for the worktree path
     expect(vi.mocked(fsp.mkdir)).toHaveBeenCalled();
   });
@@ -340,7 +360,7 @@ describe('createDurable', () => {
     // Regression: createDurable used to silently fall back to a plain mkdir
     // when `git worktree add` failed, leaving the user with a folder that
     // looked like a worktree in the UI but was not a real git worktree.
-    vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
+    mockGitCmd((cmd: any, cb: any) => {
       if (String(cmd).includes('git worktree add')) cb(new Error('fatal: \'foo/standby\' is already used by worktree'), '', '');
       else cb(null, '', '');
       return {} as any;
@@ -351,7 +371,7 @@ describe('createDurable', () => {
   });
 
   it('cleans up the partial worktree directory after a failed worktree add', async () => {
-    vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
+    mockGitCmd((cmd: any, cb: any) => {
       if (String(cmd).includes('git worktree add')) cb(new Error('worktree fail'), '', '');
       else cb(null, '', '');
       return {} as any;
@@ -387,7 +407,7 @@ describe('createDurable', () => {
       writtenData[String(dest)] = writtenData[String(src)] || '';
       delete writtenData[String(src)];
     });
-    vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
+    mockGitCmd((cmd: any, cb: any) => {
       const c = String(cmd);
       // Simulate empty repo: rev-parse HEAD fails
       if (c.includes('git rev-parse HEAD')) cb(new Error('fatal: bad default revision \'HEAD\''), '', '');
@@ -395,13 +415,13 @@ describe('createDurable', () => {
       return {} as any;
     });
     await createDurable(PROJECT_PATH, 'empty-repo-agent', 'indigo');
-    const calls = vi.mocked(exec).mock.calls.map((c) => String(c[0]));
+    const calls = gitCalls();
     // Should check for HEAD validity
     expect(calls.some((c) => c.includes('git rev-parse HEAD'))).toBe(true);
     // Should stage .gitignore
-    expect(calls.some((c) => c.includes('git add .gitignore'))).toBe(true);
+    expect(gitArgv()).toContainEqual(['add', '--', '.gitignore']);
     // Should create initial commit with Clubhouse branding
-    expect(calls.some((c) => c.includes('git commit --allow-empty -m "Clubhouse - Initial Commit"'))).toBe(true);
+    expect(gitArgv()).toContainEqual(['commit', '--allow-empty', '-m', 'Clubhouse - Initial Commit']);
     // Should still create branch and worktree
     expect(calls.some((c) => c.includes('git branch'))).toBe(true);
     expect(calls.some((c) => c.includes('git worktree add'))).toBe(true);
@@ -410,7 +430,7 @@ describe('createDurable', () => {
   it('skips initial commit when repo already has commits', async () => {
     // Default mock succeeds for all commands (including rev-parse HEAD)
     await createDurable(PROJECT_PATH, 'normal-repo-agent', 'indigo');
-    const calls = vi.mocked(exec).mock.calls.map((c) => String(c[0]));
+    const calls = gitCalls();
     // Should check for HEAD validity
     expect(calls.some((c) => c.includes('git rev-parse HEAD'))).toBe(true);
     // Should NOT create initial commit
@@ -421,7 +441,7 @@ describe('createDurable', () => {
   });
 
   it('throws when initial commit and worktree add both fail', async () => {
-    vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
+    mockGitCmd((cmd: any, cb: any) => {
       const c = String(cmd);
       if (c.includes('git rev-parse HEAD')) cb(new Error('fatal: bad default revision'), '', '');
       else if (c.includes('git commit --allow-empty')) cb(new Error('commit failed'), '', '');
@@ -482,7 +502,7 @@ describe('createDurable', () => {
     expect(config.worktreePath).toBeUndefined();
     expect(config.branch).toBeUndefined();
     // No git commands should be called (neither sync nor async)
-    expect(vi.mocked(exec)).not.toHaveBeenCalled();
+    expect(vi.mocked(execFile)).not.toHaveBeenCalled();
     // mkdir should have been called for the worktree path
     expect(vi.mocked(fsp.mkdir)).toHaveBeenCalled();
   });
@@ -564,7 +584,83 @@ describe('createDurable', () => {
   it('uses async exec (non-blocking) for git operations', async () => {
     await createDurable(PROJECT_PATH, 'async-test', 'indigo');
     // Verify async exec was used for git operations
-    expect(vi.mocked(exec)).toHaveBeenCalled();
+    expect(vi.mocked(execFile)).toHaveBeenCalled();
+  });
+
+  // ── Hostile names (#2221) ────────────────────────────────────────────────
+
+  it('passes a valid name to git as separate arguments, never a shell string', async () => {
+    const config = await createDurable(PROJECT_PATH, 'swift-otter_2', 'indigo');
+    const expectedPath = path.join(PROJECT_PATH, '.clubhouse', 'agents', 'swift-otter_2');
+    expect(config.worktreePath).toBe(expectedPath);
+    expect(config.branch).toBe('swift-otter_2/standby');
+    expect(gitArgv()).toContainEqual(['branch', '--', 'swift-otter_2/standby']);
+    expect(gitArgv()).toContainEqual(['worktree', 'add', '--', expectedPath, 'swift-otter_2/standby']);
+    for (const call of vi.mocked(execFile).mock.calls) expect(call[0]).toBe('git');
+  });
+
+  const HOSTILE_NAMES: Array<[string, string]> = [
+    ['command substitution', '$(touch pwned)'],
+    ['backticks', '`touch pwned`'],
+    ['semicolon', 'a;touch pwned'],
+    ['pipe', 'a|touch pwned'],
+    ['ampersand', 'a&&touch pwned'],
+    ['double quote breakout', 'a" && touch pwned "'],
+    ['parent traversal', '../escape'],
+    ['nested traversal', 'a/../../escape'],
+    ['bare dot-dot', '..'],
+    ['leading dash', '-rf'],
+    ['option lookalike', '--upload-pack=touch'],
+    ['leading dot', '.hidden'],
+    ['newline', 'a\ntouch pwned'],
+    ['space', 'my agent'],
+    ['backslash', 'a\\b'],
+    ['slash', 'a/b'],
+    ['colon refspec', 'a:b'],
+    ['cyrillic lookalike', 'p\u0430ypal'],
+    ['fullwidth lookalike', '\uff41gent'],
+    ['zero-width joiner', 'a\u200db'],
+    ['empty', ''],
+    ['too long', 'a'.repeat(65)],
+    ['windows reserved', 'CON'],
+  ];
+
+  it.each(HOSTILE_NAMES)('rejects a worktree agent named with %s before touching git or disk', async (_label, name) => {
+    await expect(createDurable(PROJECT_PATH, name, 'indigo')).rejects.toThrow(/^Invalid agent name/);
+    expect(vi.mocked(execFile)).not.toHaveBeenCalled();
+    expect(vi.mocked(fsp.mkdir)).not.toHaveBeenCalled();
+  });
+
+  it('still allows any display name when the agent has no worktree', async () => {
+    const config = await createDurable(PROJECT_PATH, 'My Agent (docs)', 'indigo', 'default', false);
+    expect(config.name).toBe('My Agent (docs)');
+    expect(config.worktreePath).toBeUndefined();
+    expect(vi.mocked(execFile)).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveAgentWorktreePath (#2221)', () => {
+  it('returns <project>/.clubhouse/agents/<name> for a valid name', () => {
+    expect(resolveAgentWorktreePath(PROJECT_PATH, 'bold-falcon'))
+      .toBe(path.join(PROJECT_PATH, '.clubhouse', 'agents', 'bold-falcon'));
+  });
+
+  it.each(['../x', '..', 'a/b', 'a\\b', '/abs', 'C:\\abs', ''])('refuses %j', (name) => {
+    expect(() => resolveAgentWorktreePath(PROJECT_PATH, name)).toThrow(/^Invalid agent name/);
+  });
+});
+
+describe('cleanupBranchFor (#2221)', () => {
+  it('uses <name>/cleanup for a valid name', () => {
+    expect(cleanupBranchFor({ id: 'durable_1_a', name: 'bold-falcon', branch: 'bold-falcon/standby' })).toBe('bold-falcon/cleanup');
+  });
+
+  it('falls back to the standby prefix when the name was renamed to something git cannot take', () => {
+    expect(cleanupBranchFor({ id: 'durable_1_a', name: 'My Agent', branch: 'bold-falcon/standby' })).toBe('bold-falcon/cleanup');
+  });
+
+  it('falls back to the id when neither name nor branch is usable', () => {
+    expect(cleanupBranchFor({ id: 'durable_1_a', name: '-rf $(x)', branch: '--force' })).toBe('durable_1_a/cleanup');
   });
 });
 
@@ -1788,7 +1884,7 @@ describe('ensureGitignore edge cases', () => {
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
     vi.mocked(fsp.appendFile).mockResolvedValue(undefined);
     // Default async exec mock for createDurable
-    vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => {
+    mockGitCmd((_cmd: any, cb: any) => {
       cb(null, '', '');
       return {} as any;
     });
@@ -2240,7 +2336,7 @@ describe('backup and recovery', () => {
       });
       vi.mocked(fsp.readFile).mockResolvedValue('[]');
       vi.mocked(isInsideGitRepo).mockResolvedValue(true);
-      vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => {
+      mockGitCmd((_cmd: any, cb: any) => {
         cb(null, '', '');
         return {} as any;
       });

@@ -1616,6 +1616,20 @@ describe('annex-server', () => {
       );
     }, 10_000);
 
+    it('POST /agents/durable refuses a worktree agent name that is not a safe folder/branch name (#2221)', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'Test Project', path: '/test/path', icon: '' } as any,
+      ]);
+      vi.mocked(agentConfigModule.createDurable).mockClear();
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/projects/proj_1/agents/durable', {
+        name: '../$(touch pwned)', color: 'emerald',
+      }, authHeaders(token));
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body).error).toBe('invalid_name');
+      expect(agentConfigModule.createDurable).not.toHaveBeenCalled();
+    }, 10_000);
+
     it('POST /agents/durable returns 404 for unknown project', async () => {
       vi.mocked(projectStore.list).mockReturnValue([]);
       const { port, token } = await startAndPair();

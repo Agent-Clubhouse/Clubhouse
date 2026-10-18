@@ -69,6 +69,7 @@ import {
   wsTraceparent,
 } from '../telemetry/annex-telemetry';
 import { noteKillRequest } from './agent-runtime/sleep-reason';
+import { validateAgentGitName } from '../../shared/agent-name';
 import type {
   AnnexStatus,
   AgentHookEvent,
@@ -1738,6 +1739,12 @@ async function handleDurableCreationRoute(ctx: AnnexRouteContext, match: RegExpM
     const color = body.color as string;
     if (!name || !color) {
       sendJson(ctx.res, 400, { error: 'name and color are required' });
+      return;
+    }
+    // The name becomes a folder and a git branch on this machine (#2221).
+    const nameProblem = body.useWorktree !== false ? validateAgentGitName(name, 'folder') : null;
+    if (nameProblem) {
+      sendJson(ctx.res, 400, { error: 'invalid_name', message: nameProblem });
       return;
     }
     try {
