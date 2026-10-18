@@ -4217,6 +4217,73 @@ describe('plugin-api-factory', () => {
       expect(original).toHaveBeenCalledWith(`token-${ctx.pluginId}-1`, [tool]);
     });
 
+    it('is not seen by Promise.prototype.then or Map.prototype.get patched after the host loaded', async () => {
+      const seen: unknown[] = [];
+      // Plain stubs: vi.fn itself calls .then on returned promises to record results.
+      const issuedFor: string[] = [];
+      pluginMcp.claimIssuer = (() => Promise.resolve('issuer-secret')) as never;
+      pluginMcp.issueToken = ((secret: string, pluginId: string) => {
+        issuedFor.push(`${secret}:${pluginId}`);
+        return Promise.resolve(`token-${pluginId}-1`);
+      }) as never;
+      const revoked: string[] = [];
+      pluginMcp.revokeToken = ((token: string) => { revoked.push(token); return Promise.resolve(); }) as never;
+      const realThen = Promise.prototype.then;
+      const realGet = Map.prototype.get;
+      // eslint-disable-next-line no-extend-native
+      Promise.prototype.then = function (this: Promise<unknown>, onValue?: unknown, onError?: unknown) {
+        const wrap = typeof onValue === 'function'
+          ? (v: unknown) => { seen.push(v); return (onValue as (v: unknown) => unknown)(v); }
+          : onValue;
+        return realThen.call(this, wrap as never, onError as never);
+      } as typeof Promise.prototype.then;
+      // eslint-disable-next-line no-extend-native
+      Map.prototype.get = function (this: Map<unknown, unknown>, key: unknown) {
+        const v = realGet.call(this, key);
+        seen.push(v);
+        return v;
+      };
+      try {
+        const ctx = makeCtx();
+        const api = createPluginAPI(ctx, undefined, mcpManifest());
+        api.mcp.onToolCall(async () => ({ content: [{ type: 'text', text: 'ok' }] }));
+        await settle();
+        await api.mcp.contributeTools([tool]);
+        await api.mcp.listContributedTools();
+        await deliver({ callId: 'c1', pluginId: ctx.pluginId, toolName: 't', args: {} });
+        await settle();
+        dispose(ctx);
+        await settle();
+
+        // The host really did use the secret and the token...
+        expect(issuedFor).toEqual([`issuer-secret:${ctx.pluginId}`]);
+        expect(revoked).toEqual([`token-${ctx.pluginId}-1`]);
+        // ...but neither passed through a patched built-in.
+        const leaked = JSON.stringify(seen, (_k, v) => (v instanceof Map || v instanceof Set ? [...v] : v));
+        expect(leaked).not.toContain('issuer-secret');
+        expect(leaked).not.toContain(`token-${ctx.pluginId}-1`);
+      } finally {
+        Promise.prototype.then = realThen;
+        Map.prototype.get = realGet;
+      }
+    });
+
+    it("lets a plugin's deactivate() call removeTools after its token is gone, and gives the old context no new token", async () => {
+      const ctx = makeCtx();
+      const api = createPluginAPI(ctx, undefined, mcpManifest());
+      await settle();
+      dispose(ctx);
+
+      await expect(api.mcp.removeTools()).resolves.toBeUndefined();
+      expect(pluginMcp.removeTools).not.toHaveBeenCalled();
+
+      // A panel re-rendering with the stale context doesn't revive the token.
+      const again = createPluginAPI(ctx, undefined, mcpManifest());
+      await settle();
+      await expect(again.mcp.contributeTools([tool])).rejects.toThrow(/deactivated/);
+      expect(pluginMcp.issueToken).toHaveBeenCalledTimes(1);
+    });
+
     it('is issued for no plugin without mcp.tools', async () => {
       createPluginAPI(makeCtx(), undefined, makeAllPermsManifest({ permissions: ['files'] as PluginManifest['permissions'] }));
       await settle();

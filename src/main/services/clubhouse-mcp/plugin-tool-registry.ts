@@ -40,8 +40,14 @@ const pendingCalls = new Map<string, {
 /** Default timeout for plugin tool calls (30 seconds). */
 const TOOL_CALL_TIMEOUT_MS = 30_000;
 
-/** Tool names a plugin may use: what MCP clients accept in a tool name. */
-const TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+/**
+ * Tool names a plugin may use: what MCP clients accept in a tool name, less
+ * a leading '_' and any '__'. Tools are named plugin__<id>__<tool>, and the
+ * id is sanitized ('-' becomes '_'), so without those rules 'acme-' + 'x'
+ * and 'acme' + '_x' would build the same name, as would 'acme--notes' +
+ * 'search' and 'acme' + 'notes__search'.
+ */
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9-](?:[A-Za-z0-9-]|_(?!_)){0,63}$/;
 
 /**
  * Register tools contributed by a plugin, replacing its previous set.

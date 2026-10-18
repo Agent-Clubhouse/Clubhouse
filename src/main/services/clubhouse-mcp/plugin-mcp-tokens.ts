@@ -6,16 +6,22 @@
  * so a pluginId passed as an argument proves nothing. Instead:
  *
  * 1. Once per page load, the renderer's plugin host claims an issuer secret
- *    (plugin-loader does this before any plugin code is loaded). A second
- *    claim from the same page is refused, so plugin code can't get one.
+ *    (plugin-loader does this before any plugin code is loaded). Only the
+ *    main window's app page can claim it (plugin-mcp-handlers checks), and a
+ *    second claim from that page is refused.
  * 2. With that secret the host gets one token per plugin it activates, and
- *    keeps it in a closure: plugins never see it, on window.clubhouse or
- *    anywhere else.
+ *    keeps it out of window.clubhouse and the plugin API.
  * 3. Main resolves the pluginId from the token on every plugin-mcp call and
  *    never trusts a pluginId from the arguments.
  *
+ * This stops one plugin acting as another by accident or by casual spoofing.
+ * It does not isolate a malicious plugin: plugins share one JS realm with
+ * the host, and code that patches built-ins can still reach what the host
+ * handles (see plugin-mcp-host in the renderer). Real isolation needs
+ * plugins out of the host's realm.
+ *
  * Tokens are revoked when the host deactivates the plugin, on uninstall, and
- * when the page that holds them navigates or is destroyed.
+ * when the page that holds them commits a navigation or is destroyed.
  */
 
 import { randomUUID } from 'crypto';
@@ -26,8 +32,11 @@ export interface PluginTokenOwner {
   webContentsId: number;
 }
 
-/** Issuer secret per renderer page, keyed by webContents id. */
-const issuers = new Map<number, string>();
+/**
+ * The one page that may issue tokens, and its secret. There is a single
+ * plugin host (the main window's app page), so there is a single issuer.
+ */
+let issuer: { webContentsId: number; secret: string } | null = null;
 /** token -> owner */
 const tokens = new Map<string, PluginTokenOwner>();
 
@@ -61,13 +70,15 @@ export function hasMcpToolsPermission(pluginId: string): boolean {
   return !!getManifest(pluginId)?.permissions?.includes('mcp.tools');
 }
 
-/** Claim the issuer secret for a page. Throws if that page already claimed it. */
+/**
+ * Claim the issuer secret for a page. Throws if the issuer is already
+ * claimed, by that page or another: it is freed only when its page commits a
+ * navigation or is destroyed.
+ */
 export function claimIssuer(webContentsId: number): string {
-  if (issuers.has(webContentsId)) {
-    throw new Error('Plugin MCP issuer already claimed for this window');
-  }
+  if (issuer) throw new Error('Plugin MCP issuer already claimed');
   const secret = randomUUID();
-  issuers.set(webContentsId, secret);
+  issuer = { webContentsId, secret };
   return secret;
 }
 
@@ -76,8 +87,7 @@ export function claimIssuer(webContentsId: number): string {
  * manifest for the plugin, and the `mcp.tools` permission in it.
  */
 export function issueToken(webContentsId: number, issuerSecret: string, pluginId: string): string {
-  const expected = issuers.get(webContentsId);
-  if (!expected || expected !== issuerSecret) {
+  if (!issuer || issuer.webContentsId !== webContentsId || issuer.secret !== issuerSecret) {
     throw new Error('Plugin MCP token request rejected: not the plugin host');
   }
   if (!hasMcpToolsPermission(pluginId)) {
@@ -131,11 +141,11 @@ export function revokePluginTokens(pluginId: string): void {
 
 /**
  * Forget a page: its issuer and every token it holds. Called when the page
- * navigates or its webContents is destroyed, so a reloaded page can claim a
- * fresh issuer.
+ * commits a navigation or its webContents is destroyed, so a reloaded page
+ * can claim a fresh issuer.
  */
 export function revokeWebContents(webContentsId: number): void {
-  issuers.delete(webContentsId);
+  if (issuer?.webContentsId === webContentsId) issuer = null;
   const affected: string[] = [];
   for (const [token, owner] of tokens) {
     if (owner.webContentsId === webContentsId) {
@@ -146,16 +156,21 @@ export function revokeWebContents(webContentsId: number): void {
   notifyRevoked(affected);
 }
 
-/** The page holding the newest live token for a plugin, if any. */
+/**
+ * The page to send a plugin's tool calls to: the issuer's page, if it holds
+ * a live token for the plugin. Never just the newest token's page.
+ */
 export function webContentsIdForPlugin(pluginId: string): number | undefined {
-  let found: number | undefined;
-  for (const owner of tokens.values()) if (owner.pluginId === pluginId) found = owner.webContentsId;
-  return found;
+  if (!issuer) return undefined;
+  for (const owner of tokens.values()) {
+    if (owner.pluginId === pluginId && owner.webContentsId === issuer.webContentsId) return owner.webContentsId;
+  }
+  return undefined;
 }
 
 /** For testing. */
 export function _resetForTesting(): void {
-  issuers.clear();
+  issuer = null;
   tokens.clear();
   revokeListeners.clear();
 }

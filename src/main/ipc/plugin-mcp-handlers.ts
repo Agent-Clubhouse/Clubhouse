@@ -85,26 +85,66 @@ function onToolResult(event: Electron.IpcMainEvent, data: unknown): void {
   }
 }
 
+/** Where the plugin host runs: the main window, showing the app's own page. */
+export interface PluginMcpHost {
+  getMainWebContentsId: () => number | undefined;
+  /** The URL the main window loads (MAIN_WINDOW_WEBPACK_ENTRY). */
+  entryUrl: string;
+}
+
+let host: PluginMcpHost | null = null;
+
+/** Tell the handlers which page is the plugin host. Until then, no issuer can be claimed. */
+export function configurePluginMcpHost(next: PluginMcpHost): void {
+  host = next;
+}
+
+/** A URL without its query and hash, or '' if it doesn't parse. */
+function documentUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    return '';
+  }
+}
+
 /**
- * Only an application window's page can claim the issuer, not a webview or
- * a detached WebContents.
+ * Only the plugin host can claim the issuer: the main window's top frame,
+ * showing the app's entry page. Not a pop-out, not a window.open child (it
+ * inherits the preload), not a webview or a subframe, and not the main
+ * window after it navigated somewhere else.
  */
-function assertCallerIsAppWindow(event: Electron.IpcMainInvokeEvent): void {
-  if (!BrowserWindow.fromWebContents(event.sender)) {
-    throw new Error('Plugin MCP issuer rejected: caller is not an application window');
+function assertCallerIsPluginHost(event: Electron.IpcMainInvokeEvent): void {
+  const mainId = host?.getMainWebContentsId();
+  const frame = event.senderFrame;
+  const ok = !!host && mainId !== undefined && event.sender.id === mainId
+    && !!BrowserWindow.fromWebContents(event.sender)
+    && !!frame && frame === event.sender.mainFrame
+    && documentUrl(frame.url) !== '' && documentUrl(frame.url) === documentUrl(host.entryUrl);
+  if (!ok) {
+    appLog('core:mcp', 'warn', 'Rejected plugin MCP issuer claim: caller is not the plugin host', {
+      meta: { webContentsId: event.sender.id, url: frame?.url?.slice(0, 200) },
+    });
+    throw new Error('Plugin MCP issuer rejected: caller is not the plugin host');
   }
 }
 
 /** Pages whose navigation and teardown already revoke their tokens. */
 const trackedPages = new Set<number>();
 
+/**
+ * Revoke a page's issuer and tokens when its document is replaced: on a
+ * committed main-frame navigation (did-navigate fires for the main frame
+ * only, and not for in-page navigations), not when one starts, since a
+ * navigation that never commits leaves the old page and its plugins
+ * running. And when the page is destroyed.
+ */
 function revokeOnPageChange(sender: Electron.WebContents): void {
   const id = sender.id;
   if (trackedPages.has(id)) return;
   trackedPages.add(id);
-  sender.on('did-start-navigation', (details) => {
-    if (details.isMainFrame && !details.isSameDocument) revokeWebContents(id);
-  });
+  sender.on('did-navigate', () => revokeWebContents(id));
   sender.once('destroyed', () => {
     trackedPages.delete(id);
     revokeWebContents(id);
@@ -143,7 +183,7 @@ export function registerPluginMcpHandlers(): void {
   });
 
   ipcMain.handle(IPC.PLUGIN_MCP.CLAIM_ISSUER, (event) => {
-    assertCallerIsAppWindow(event);
+    assertCallerIsPluginHost(event);
     const secret = claimIssuer(event.sender.id);
     revokeOnPageChange(event.sender);
     return secret;
@@ -185,6 +225,7 @@ export function registerPluginMcpHandlers(): void {
 
 /** For testing. */
 export function _resetForTesting(): void {
+  host = null;
   trackedPages.clear();
   stopRemovingOnRevoke?.();
   stopRemovingOnRevoke = null;

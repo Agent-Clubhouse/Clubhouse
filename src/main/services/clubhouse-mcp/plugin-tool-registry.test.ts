@@ -18,7 +18,7 @@ import {
 } from './plugin-tool-registry';
 import { _resetForTesting as resetToolRegistry, callTool, getScopedToolList } from './tool-registry';
 import { bindingManager } from './binding-manager';
-import { _resetForTesting as resetTokens, claimIssuer, issueToken } from './plugin-mcp-tokens';
+import { _resetForTesting as resetTokens, claimIssuer, issueToken, revokeWebContents } from './plugin-mcp-tokens';
 
 const PAGE = 7;
 
@@ -129,6 +129,47 @@ describe('plugin-tool-registry', () => {
     });
   });
 
+  describe('names built from a sanitized plugin id', () => {
+    it.each(['_x', 'notes__search', 'a__'])('rejects tool name %s, which could collide with another plugin id', (name) => {
+      trust('acme');
+      expect(() => registerPluginTools('acme', [tool(name)])).toThrow(/tool name/);
+    });
+
+    it('accepts single underscores and hyphens', () => {
+      trust('acme');
+      expect(() => registerPluginTools('acme', [tool('find_notes'), tool('find-notes2')])).not.toThrow();
+    });
+
+    it('plugin ids that sanitize alike list the name once, and calls go to the first binding', async () => {
+      trust('acme-x');
+      trust('acme_x');
+      issueToken(PAGE, secret, 'acme-x');
+      registerPluginTools('acme-x', [tool('lookup')]);
+      registerPluginTools('acme_x', [tool('lookup')]);
+      bindingManager.bind('agent-1', { targetId: 'acme-x', targetKind: 'plugin', label: 'one' });
+      bindingManager.bind('agent-1', { targetId: 'acme_x', targetKind: 'plugin', label: 'two' });
+
+      expect(toolsSeenBy('agent-1')).toEqual(['plugin__acme_x__lookup']);
+      void callTool('agent-1', 'plugin__acme_x__lookup', {});
+      await vi.waitFor(() => expect(send).toHaveBeenCalled());
+      expect(send.mock.calls[0][1]).toMatchObject({ pluginId: 'acme-x' });
+    });
+
+    it("a name under one plugin's prefix reaches the plugin that has the tool ('acme' vs 'acme--notes')", async () => {
+      trust('acme');
+      trust('acme--notes');
+      issueToken(PAGE, secret, 'acme--notes');
+      registerPluginTools('acme', [tool('lookup')]);
+      registerPluginTools('acme--notes', [tool('search')]);
+      bindingManager.bind('agent-1', { targetId: 'acme', targetKind: 'plugin', label: 'acme' });
+      bindingManager.bind('agent-1', { targetId: 'acme--notes', targetKind: 'plugin', label: 'notes' });
+
+      void callTool('agent-1', 'plugin__acme__notes__search', {});
+      await vi.waitFor(() => expect(send).toHaveBeenCalled());
+      expect(send.mock.calls[0][1]).toMatchObject({ pluginId: 'acme--notes', toolName: 'search' });
+    });
+  });
+
   describe('per-plugin exposure (#2065 point 3)', () => {
     beforeEach(() => {
       trust('plugin-a');
@@ -160,6 +201,14 @@ describe('plugin-tool-registry', () => {
 
       await expect(callTool('agent-1', 'plugin__plugin_b__search', {})).resolves.toMatchObject({ isError: true });
       expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it("calls go only to the issuer's page: once that page is gone, they fail at once", async () => {
+      issueToken(PAGE, secret, 'plugin-a');
+      bindingManager.bind('agent-1', { targetId: 'plugin-a', targetKind: 'plugin', label: 'A' });
+      revokeWebContents(PAGE);
+      await expect(callTool('agent-1', 'plugin__plugin_a__lookup', {})).resolves.toMatchObject({ isError: true });
+      expect(send).not.toHaveBeenCalled();
     });
 
     it('a call to a plugin no window holds a token for fails at once', async () => {

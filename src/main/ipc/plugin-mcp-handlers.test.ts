@@ -25,17 +25,21 @@ import {
 import { _resetForTesting as resetTokens, resolveToken } from '../services/clubhouse-mcp/plugin-mcp-tokens';
 import { clear as clearManifests, registerTrustedManifest } from '../services/plugin-manifest-registry';
 import { IPC } from '../../shared/ipc-channels';
-import { _resetForTesting as resetHandlers, registerPluginMcpHandlers } from './plugin-mcp-handlers';
+import { _resetForTesting as resetHandlers, configurePluginMcpHost, registerPluginMcpHandlers } from './plugin-mcp-handlers';
 
 type Listener = (...args: unknown[]) => void;
 
-/** A fake renderer page: its webContents id and the listeners main put on it. */
-function makePage(id: number) {
+const ENTRY = 'http://localhost:3000/main_window/index.html';
+const MAIN = 1;
+
+/** A fake renderer page: its webContents id, top frame URL, and the listeners main put on it. */
+function makePage(id: number, url = ENTRY) {
   const listeners = new Map<string, Listener[]>();
   const add = (name: string, fn: Listener) => listeners.set(name, [...(listeners.get(name) ?? []), fn]);
-  const sender = { id, on: vi.fn(add), once: vi.fn(add) };
+  const mainFrame = { url };
+  const sender = { id, on: vi.fn(add), once: vi.fn(add), mainFrame };
   return {
-    event: { sender },
+    event: { sender, senderFrame: mainFrame as { url: string } },
     emit: (name: string, ...args: unknown[]) => { for (const fn of listeners.get(name) ?? []) fn(...args); },
   };
 }
@@ -77,7 +81,8 @@ describe('plugin-mcp-handlers', () => {
     registerTrustedManifest('plugin-b', manifest('plugin-b', ['mcp.tools']));
     registerTrustedManifest('no-mcp', manifest('no-mcp', ['files']));
     registerPluginMcpHandlers();
-    page = makePage(1);
+    configurePluginMcpHost({ getMainWebContentsId: () => MAIN, entryUrl: ENTRY });
+    page = makePage(MAIN);
     secret = handler(IPC.PLUGIN_MCP.CLAIM_ISSUER)(page.event) as string;
   });
 
@@ -92,15 +97,49 @@ describe('plugin-mcp-handlers', () => {
       expect(() => handler(IPC.PLUGIN_MCP.CLAIM_ISSUER)(page.event)).toThrow(/already claimed/);
     });
 
-    it('refuses a claim from something that is not an application window', () => {
-      vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(null);
-      expect(() => handler(IPC.PLUGIN_MCP.CLAIM_ISSUER)(makePage(2).event)).toThrow(/not an application window/);
+    describe('only the plugin host can claim it', () => {
+      const claim = (event: unknown) => {
+        resetTokens(); // free the issuer the main page claimed in beforeEach
+        return () => handler(IPC.PLUGIN_MCP.CLAIM_ISSUER)(event);
+      };
+
+      it('refuses a window.open child or pop-out, which inherit the preload and are app windows', () => {
+        // Even showing an app URL: it is not the main window.
+        expect(claim(makePage(2).event)).toThrow(/not the plugin host/);
+        expect(claim(makePage(2, 'file:///plugins/evil/claim.html').event)).toThrow(/not the plugin host/);
+      });
+
+      it('refuses the main window once it shows anything but the app entry page', () => {
+        expect(claim(makePage(MAIN, 'file:///plugins/evil/claim.html').event)).toThrow(/not the plugin host/);
+        expect(claim(makePage(MAIN, 'http://localhost:3000/other/index.html').event)).toThrow(/not the plugin host/);
+      });
+
+      it('refuses a subframe of the main window', () => {
+        const p = makePage(MAIN);
+        expect(claim({ ...p.event, senderFrame: { url: ENTRY } })).toThrow(/not the plugin host/);
+      });
+
+      it('refuses a webview, and refuses everyone before the host is configured', () => {
+        vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(null);
+        expect(claim(makePage(MAIN).event)).toThrow(/not the plugin host/);
+        vi.mocked(BrowserWindow.fromWebContents).mockReturnValue({} as never);
+        resetHandlers();
+        expect(claim(makePage(MAIN).event)).toThrow(/not the plugin host/);
+      });
+
+      it('accepts the main window on the entry page, whatever its query or hash', () => {
+        expect(claim(makePage(MAIN, `${ENTRY}?popout=0#/projects`).event)()).toMatch(UUID);
+      });
     });
 
     it('refuses a token without the issuer secret, or for a plugin without mcp.tools', async () => {
       await expect(tokenFor('plugin-a', page, 'guessed')).rejects.toThrow(/not the plugin host/);
       await expect(tokenFor('no-mcp')).rejects.toThrow(/requires 'mcp.tools'/);
       await expect(tokenFor('not-installed')).rejects.toThrow(/requires 'mcp.tools'/);
+    });
+
+    it("refuses a second issuer while one is held, from any page", () => {
+      expect(() => handler(IPC.PLUGIN_MCP.CLAIM_ISSUER)(makePage(MAIN).event)).toThrow(/already claimed/);
     });
 
     it("refuses one page's secret on another page", async () => {
@@ -189,20 +228,22 @@ describe('plugin-mcp-handlers', () => {
       expect(resolveToken(token)).toBeDefined();
     });
 
-    it("reloading the page revokes its tokens and frees the issuer for the new page", async () => {
+    it('a committed reload revokes the tokens and frees the issuer for the new page', async () => {
       const token = await tokenFor('plugin-a');
-      page.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+      page.emit('did-navigate', {}, ENTRY);
 
       expect(resolveToken(token)).toBeUndefined();
       expect(removePluginTools).toHaveBeenCalledWith('plugin-a');
       expect(handler(IPC.PLUGIN_MCP.CLAIM_ISSUER)(page.event)).toMatch(UUID);
     });
 
-    it('in-page and subframe navigations keep the tokens', async () => {
+    it('a navigation that starts but never commits (a download, window.stop) keeps the tokens and the issuer', async () => {
       const token = await tokenFor('plugin-a');
-      page.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true });
-      page.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false });
+      page.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+
       expect(resolveToken(token)).toBeDefined();
+      expect(removePluginTools).not.toHaveBeenCalled();
+      expect(() => handler(IPC.PLUGIN_MCP.CLAIM_ISSUER)(makePage(MAIN).event)).toThrow(/already claimed/);
     });
 
     it('destroying the page revokes its tokens', async () => {

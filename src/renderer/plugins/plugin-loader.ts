@@ -240,7 +240,7 @@ export async function initializePluginSystem(): Promise<void> {
 
   // Before any plugin code loads: the issuer can be claimed once per page,
   // and whoever claims it can mint every plugin's MCP token.
-  claimPluginMcpIssuer().catch((): undefined => undefined);
+  claimPluginMcpIssuer();
 
   // Main decides safe mode at startup (crash-loop dialog or --safe-mode).
   if (await window.clubhouse.plugin.isSafeModeActive()) {

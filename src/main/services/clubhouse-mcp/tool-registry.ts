@@ -248,6 +248,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   }
   const bindings = bindingManager.getBindingsForAgent(agentId);
   const tools: McpToolDefinition[] = [];
+  const seenNames = new Set<string>();
 
   for (const binding of bindings) {
     const templates = templatesFor(binding);
@@ -290,10 +291,15 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
         }
       }
 
+      // Two targets can build the same name (plugin ids 'a-b' and 'a_b'
+      // sanitize alike): the first binding keeps it, as callTool resolves it.
+      const name = buildToolName(binding, template.nameSuffix);
+      if (seenNames.has(name)) continue;
+      seenNames.add(name);
       tools.push({
         ...template.definition,
         description,
-        name: buildToolName(binding, template.nameSuffix),
+        name,
       });
     }
   }
@@ -448,8 +454,11 @@ function matchScopedToolName(
     if (!targetTemplates.has(b.targetKind)) continue;
     const toolKey = buildToolKey(b);
     const prefix = `${b.targetKind}__${toolKey}__`;
-    if (toolName.startsWith(prefix) && toolName.length > prefix.length) {
-      return { binding: b, parsed: { prefix: b.targetKind, toolKey, suffix: toolName.slice(prefix.length) } };
+    // The target must have this tool: a prefix alone is ambiguous when one
+    // target's key ends where another's begins ('acme' and 'acme__notes').
+    const suffix = toolName.slice(prefix.length);
+    if (toolName.startsWith(prefix) && templatesFor(b)?.some(t => t.nameSuffix === suffix)) {
+      return { binding: b, parsed: { prefix: b.targetKind, toolKey, suffix } };
     }
   }
   return null;
