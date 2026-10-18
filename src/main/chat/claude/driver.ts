@@ -83,6 +83,8 @@ export function claudeCapabilities(startLevel: PermissionLevel): ChatCapabilitie
     modelSwitch: 'live',
     // apply_flag_settings changes it mid-session, as /effort does.
     effortSwitch: 'live',
+    // apply_flag_settings { effortLevel: null } drops back to the model's default.
+    effortDefault: true,
     liveLevels: startLevel === 'full_access'
       ? ['plan', 'ask', 'auto_edit', 'auto', 'full_access']
       : ['plan', 'ask', 'auto_edit', 'auto'],
@@ -502,7 +504,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     this.changeLevel(level, claudeModeFromLevel(level));
   }
 
-  async setModel(modelId: string, effort?: string): Promise<void> {
+  async setModel(modelId: string, effort?: string | null): Promise<void> {
     if (effort && !isClaudeEffort(effort)) throw new Error(`Claude has no effort level "${effort}"`);
     let modelSet = modelId === this.model;
     let failure: unknown;
@@ -511,7 +513,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         await this.transport.setModel(modelId === 'default' ? undefined : modelId);
         modelSet = true;
       }
-      if (effort && effort !== this.effort) await this.transport.setEffort(effort as ClaudeEffort);
+      if (effort === null) await this.transport.setEffort(null);
+      else if (effort && effort !== this.effort) await this.transport.setEffort(effort as ClaudeEffort);
     } catch (err) {
       failure = err;
     }
@@ -519,7 +522,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     if (!(await this.refreshApplied()) && modelSet) {
       // No get_settings: keep the effort only if the model offers it.
       const levels = claudeModelRow(this.modelRows, modelId)?.efforts ?? [];
-      const kept = failure ? this.effort : effort ?? this.effort;
+      const kept = failure ? this.effort : effort === null ? undefined : effort ?? this.effort;
       this.noteModel(modelId, kept && levels.includes(kept) ? kept : undefined);
     }
     if (failure) throw failure;

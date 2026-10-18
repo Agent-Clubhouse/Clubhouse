@@ -141,7 +141,7 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
     await this.control({ subtype: 'set_model', ...(model ? { model } : {}) });
   }
 
-  async setEffort(effort: ClaudeEffort): Promise<void> {
+  async setEffort(effort: ClaudeEffort | null): Promise<void> {
     await this.control({ subtype: 'apply_flag_settings', settings: { effortLevel: effort } });
   }
 

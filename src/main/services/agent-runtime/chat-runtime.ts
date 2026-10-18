@@ -538,7 +538,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     await this.requireSession().setLevel(level);
   }
 
-  async setModel(modelId: string, effort?: string): Promise<void> {
+  async setModel(modelId: string, effort?: string | null): Promise<void> {
     await this.requireSession().setModel(modelId, effort);
   }
 

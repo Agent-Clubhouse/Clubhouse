@@ -48,6 +48,8 @@ const codexCapabilities: ChatCapabilities = {
   // of these apply from the next turn without restarting the process.
   modelSwitch: 'per_turn',
   effortSwitch: 'per_turn',
+  // turn/start's effort: null drops back to the model's default.
+  effortDefault: true,
   liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
   login: 'terminal',
   // thread/start takes developerInstructions.
@@ -514,14 +516,14 @@ class CodexChatSession implements ChatDriverSession {
     this.emit({ type: 'mode_changed', data: { level, nativeMode: `${approvalPolicy}/${sandbox}` } });
   }
 
-  async setModel(modelId: string, effort?: string): Promise<void> {
+  async setModel(modelId: string, effort?: string | null): Promise<void> {
     const row = this.catalogRow(modelId);
     const efforts = row ? codexEfforts(row) : undefined;
     // A model the catalog lists without effort levels takes none: drop it rather than show a stale one.
-    const kept = efforts && !efforts.length ? undefined : effort;
+    const kept = (efforts && !efforts.length) || effort === null ? undefined : effort;
     this.nextTurn.model = modelId;
-    // A model without levels also clears an effort already queued (null resets it), so none goes out.
-    if (efforts && !efforts.length) this.nextTurn.effort = null;
+    // null (and a model without levels) resets any effort already queued, so the model's default applies.
+    if ((efforts && !efforts.length) || effort === null) this.nextTurn.effort = null;
     else if (kept) this.nextTurn.effort = kept as TurnStartParams['effort'];
     this.emit({ type: 'model_changed', data: { modelId, ...(kept && { effort: kept }) } });
     // Without the catalog there are no menus to update.

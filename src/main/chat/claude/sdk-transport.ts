@@ -155,7 +155,7 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
     await this.requireQuery().setModel(model);
   }
 
-  async setEffort(effort: ClaudeEffort): Promise<void> {
+  async setEffort(effort: ClaudeEffort | null): Promise<void> {
     await this.requireQuery().applyFlagSettings({ effortLevel: effort });
   }
 

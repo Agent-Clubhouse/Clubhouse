@@ -13,7 +13,10 @@ import { handleChatEventForCheckpoints, listTurns, getChanges, revertTurn, undoR
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
 import * as annexEventBus from '../services/annex-event-bus';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg } from './validation';
+import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg, type ArgValidator } from './validation';
+
+/** An effort: a level, omitted to keep the current one, or null for the provider's default. */
+const effortArg: ArgValidator<string | null | undefined> = (value, argName) => (value === null ? null : stringArg({ optional: true })(value, argName));
 import { resolveAttachments, stageAttachmentData, stageAttachmentPath } from '../services/agent-runtime/chat-attachments';
 
 function requireChatRuntime(agentId: string) {
@@ -133,7 +136,7 @@ export function registerChatHandlers(): void {
   ));
 
   ipcMain.handle(IPC.CHAT.SET_MODEL, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg({ optional: true })],
+    [stringArg(), stringArg(), effortArg],
     async (_event, agentId, modelId, effort) => {
       const runtime = requireChatRuntime(agentId);
       if (!runtime.setModel) throw new Error('This agent cannot change model');

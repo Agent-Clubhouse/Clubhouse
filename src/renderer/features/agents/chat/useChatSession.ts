@@ -21,7 +21,8 @@ export interface ChatActions {
   answerQuestion: (requestId: string, answers: ChatQuestionAnswers) => Promise<boolean>;
   /** Resolves false when the level didn't change (a toast says why). */
   setLevel: (level: PermissionLevel) => Promise<boolean>;
-  setModel?: (modelId: string, effort?: string) => Promise<void>;
+  /** Omitted effort keeps the current one; null returns it to the provider's default. */
+  setModel?: (modelId: string, effort?: string | null) => Promise<void>;
 }
 
 /**

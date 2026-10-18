@@ -87,8 +87,8 @@ export interface ClaudeTransport {
   setPermissionMode(mode: ClaudePermissionMode): Promise<void>;
   /** Omit to restore the default model. */
   setModel(model?: string): Promise<void>;
-  /** Change reasoning effort live (the flag-settings layer, as `--effort` sets it). */
-  setEffort(effort: ClaudeEffort): Promise<void>;
+  /** Change reasoning effort live (the flag-settings layer, as `--effort` sets it); null returns to the model's default. */
+  setEffort(effort: ClaudeEffort | null): Promise<void>;
   /** The model and effort in effect (`get_settings` → `applied`). */
   appliedSettings(): Promise<ClaudeAppliedSettings>;
   /** End the session: closes stdin and lets the CLI exit, killing it if it doesn't. */
@@ -165,7 +165,7 @@ export abstract class ClaudeTransportBase implements ClaudeTransport {
   abstract interrupt(): Promise<void>;
   abstract setPermissionMode(mode: ClaudePermissionMode): Promise<void>;
   abstract setModel(model?: string): Promise<void>;
-  abstract setEffort(effort: ClaudeEffort): Promise<void>;
+  abstract setEffort(effort: ClaudeEffort | null): Promise<void>;
   abstract appliedSettings(): Promise<ClaudeAppliedSettings>;
   abstract close(): Promise<void>;
 

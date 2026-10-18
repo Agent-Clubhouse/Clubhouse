@@ -189,7 +189,7 @@ function ModelPill({ models, efforts, model, effort, capabilities, onChange }: {
   model: string | null;
   effort: string | null;
   capabilities: ChatCapabilities | null;
-  onChange: (modelId: string, effort?: string) => void;
+  onChange: (modelId: string, effort?: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
@@ -260,7 +260,8 @@ function EffortPill({ efforts, model, effort, capabilities, onChange }: {
   model: string | null;
   effort: string | null;
   capabilities: ChatCapabilities | null;
-  onChange: (modelId: string, effort: string) => void;
+  /** null returns the effort to the provider's default. */
+  onChange: (modelId: string, effort: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
@@ -289,6 +290,22 @@ function EffortPill({ efforts, model, effort, capabilities, onChange }: {
       {open && model && (
         <div role="menu" className={`${menuClass} w-[220px]`} onMouseDown={(e) => e.stopPropagation()} data-testid="chat-effort-menu">
           <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Effort</div>
+          {capabilities?.effortDefault && (
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={effort === null}
+              onClick={() => { setOpen(false); if (effort !== null) onChange(model, null); }}
+              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${effort === null ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
+              data-testid="chat-effort-default"
+            >
+              <Radio on={effort === null} />
+              <span className="flex flex-col">
+                <span>Default</span>
+                <span className="text-[11px] text-ctp-overlay1">The model&apos;s own default</span>
+              </span>
+            </button>
+          )}
           {efforts.map((e) => (
             <button
               key={e}
@@ -358,7 +375,8 @@ export interface ComposerProps {
   onSend: (text: string, action: SendAction, attachmentIds?: string[]) => void;
   onStop: () => void;
   onLevelChange: (level: PermissionLevel) => void;
-  onModelChange?: (modelId: string, effort?: string) => void;
+  /** Omitted effort keeps the current one; null returns it to the provider's default (capabilities.effortDefault). */
+  onModelChange?: (modelId: string, effort?: string | null) => void;
   /**
    * How much room there is (#2018): 'narrow' folds the permission pill to its
    * shield, 'line' (a popout near its minimum height) is one row with attach,

@@ -28,7 +28,7 @@ export class FakeChatDriverSession implements ChatDriverSession {
   readonly responses: Array<{ requestId: string; optionId: string; extras?: PermissionResponseExtras }> = [];
   readonly answers: Array<{ requestId: string; answers: ChatQuestionAnswers }> = [];
   levels: PermissionLevel[] = [];
-  models: Array<{ modelId: string; effort?: string }> = [];
+  models: Array<{ modelId: string; effort?: string | null }> = [];
   interrupts = 0;
   compactions = 0;
   closed = false;
@@ -59,7 +59,7 @@ export class FakeChatDriverSession implements ChatDriverSession {
   }
   async answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void> { this.answers.push({ requestId, answers }); }
   async setLevel(level: PermissionLevel): Promise<void> { this.levels.push(level); }
-  async setModel(modelId: string, effort?: string): Promise<void> { this.models.push({ modelId, effort }); }
+  async setModel(modelId: string, effort?: string | null): Promise<void> { this.models.push({ modelId, effort }); }
   async compact(): Promise<void> { this.compactions++; }
 
   async close(): Promise<void> {

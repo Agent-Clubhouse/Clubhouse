@@ -609,6 +609,17 @@ describe('CodexChatDriver', () => {
       expect(server.requests('turn/start')[0].params).toMatchObject({ model: 'gpt-mini', effort: null });
     });
 
+    it('null returns the effort to the model default on the next turn (#2136)', async () => {
+      useServer({ 'model/list': () => ({ result: { data: catalog, nextCursor: null } }) });
+      const { session, take } = await startSession({ effort: 'high' });
+      await take(4);
+      expect(CODEX_CHAT_CAPABILITIES.effortDefault).toBe(true);
+      await session.setModel('gpt-5-codex', null);
+      expect(await take(1)).toEqual([{ type: 'model_changed', data: { modelId: 'gpt-5-codex' } }]);
+      await session.send([{ type: 'text', text: 'go' }], 'prompt');
+      expect(server.requests('turn/start')[0].params).toMatchObject({ model: 'gpt-5-codex', effort: null });
+    });
+
     it('asks for model/list with a short timeout', async () => {
       useServer({ 'model/list': () => ({ result: { data: catalog, nextCursor: null } }) });
       const request = vi.spyOn(CodexAppServerClient.prototype, 'request');
@@ -997,6 +1008,7 @@ describe('codex driver helpers', () => {
       images: true,
       modelSwitch: 'per_turn',
       effortSwitch: 'per_turn',
+      effortDefault: true,
       liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
       login: 'terminal',
       systemPrompt: true,

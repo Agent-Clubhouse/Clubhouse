@@ -77,6 +77,9 @@ describe('Copilot ACP chat driver', () => {
       steer: false, queue: 'client', interrupt: true, resume: 'replay', usage: 'tokens',
       images: true, slashCommands: true, modelSwitch: 'live', effortSwitch: 'live', liveLevels: ['plan', 'ask', 'full_access'], login: 'terminal',
     });
+    // ACP config options have no "unset": no Default effort row, and a reset is refused before any request (#2136).
+    expect(session.capabilities.effortDefault).toBeUndefined();
+    await expect(session.setModel('gpt-5-mini', null)).rejects.toThrow(/can't return effort to its default/);
 
     expect(await session.send([{ type: 'text', text: PROMPT }], 'prompt')).toBe('prompt');
     const drafts = await collect(session, (d) => d.type === 'turn_ended');

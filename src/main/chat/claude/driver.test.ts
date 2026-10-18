@@ -465,6 +465,20 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     expect(drafts.of('model_changed').at(-1)?.data).toEqual({ modelId: 'opus', effort: 'medium' });
   });
 
+  it('returns the effort to the model default with null, then reports what applies (#2136)', async () => {
+    const { session, transport, drafts } = await scripted({}, (t) => {
+      t.models = menuRows;
+      t.applied = { model: 'claude-opus-5-5', effort: 'low' };
+    });
+    await settle();
+    expect(claudeCapabilities('ask').effortDefault).toBe(true);
+    transport.applied = { model: 'claude-opus-5-5', effort: 'high' };
+    await session.setModel('opus', null);
+    await settle();
+    expect(transport.calls).toEqual(['effort:null']);
+    expect(drafts.of('model_changed').at(-1)?.data).toEqual({ modelId: 'opus', effort: 'high' });
+  });
+
   it('refuses an effort level Claude does not have, without touching the session', async () => {
     const { session, transport } = await scripted();
     await expect(session.setModel('opus', 'ultra')).rejects.toThrow(/no effort level "ultra"/);

@@ -714,7 +714,7 @@ interface ChatStoreState {
   respondPermission: (agentId: string, requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<void>;
   answerQuestion: (agentId: string, requestId: string, answers: ChatQuestionAnswers) => Promise<void>;
   setLevel: (agentId: string, level: PermissionLevel) => Promise<void>;
-  setModel: (agentId: string, modelId: string, effort?: string) => Promise<void>;
+  setModel: (agentId: string, modelId: string, effort?: string | null) => Promise<void>;
 }
 
 /**

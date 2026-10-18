@@ -35,7 +35,7 @@ export const chat = {
       ipcRenderer.invoke(IPC.CHAT.ANSWER_QUESTION, agentId, requestId, answers),
     setLevel: (agentId: string, level: PermissionLevel): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.SET_LEVEL, agentId, level),
-    setModel: (agentId: string, modelId: string, effort?: string): Promise<void> =>
+    setModel: (agentId: string, modelId: string, effort?: string | null): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.SET_MODEL, agentId, modelId, effort),
     getRuntimeSettings: (): Promise<ChatRuntimeSettings> =>
       ipcRenderer.invoke(IPC.CHAT.GET_RUNTIME_SETTINGS),
