@@ -464,6 +464,10 @@ export const IPC = {
     ELK_LAYOUT: 'canvas-cmd:elk-layout',
   },
   PLUGIN_MCP: {
+    /** Plugin host only, once per page load: the secret that issues tokens. */
+    CLAIM_ISSUER: 'plugin-mcp:claim-issuer',
+    ISSUE_TOKEN: 'plugin-mcp:issue-token',
+    REVOKE_TOKEN: 'plugin-mcp:revoke-token',
     CONTRIBUTE_TOOLS: 'plugin-mcp:contribute-tools',
     REMOVE_TOOLS: 'plugin-mcp:remove-tools',
     LIST_TOOLS: 'plugin-mcp:list-tools',

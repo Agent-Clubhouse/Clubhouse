@@ -17,15 +17,59 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
   return typeof value === schemaType;
 }
 
+export interface ToolTemplate {
+  nameSuffix: string;
+  definition: Omit<McpToolDefinition, 'name'>;
+  handler: (targetId: string, agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
+}
+
 /**
  * Tool templates keyed by targetKind.
  * Each template generates tools for a specific bound target.
  */
-const toolTemplates = new Map<BindingTargetKind, Array<{
-  nameSuffix: string;
-  definition: Omit<McpToolDefinition, 'name'>;
-  handler: (targetId: string, agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
-}>>();
+const toolTemplates = new Map<BindingTargetKind, ToolTemplate[]>();
+
+/**
+ * Templates that belong to one target rather than to every target of a kind
+ * (plugin tools: a binding to plugin X exposes only X's tools). Keyed by
+ * targetKind, then targetId.
+ */
+const targetTemplates = new Map<BindingTargetKind, Map<string, ToolTemplate[]>>();
+
+/** The templates a binding exposes: its target's own set if it has one, else its kind's. */
+function templatesFor(binding: McpBinding): ToolTemplate[] | undefined {
+  const scoped = targetTemplates.get(binding.targetKind);
+  if (scoped) return scoped.get(binding.targetId);
+  return toolTemplates.get(binding.targetKind);
+}
+
+/**
+ * Replace the whole template set of one target. The swap is a single step,
+ * so a caller that validates first never leaves a partial set behind.
+ */
+export function setTargetToolTemplates(targetKind: BindingTargetKind, targetId: string, templates: ToolTemplate[]): void {
+  const seen = new Set<string>();
+  for (const t of templates) {
+    if (seen.has(t.nameSuffix)) {
+      throw new Error(`Duplicate tool template nameSuffix "${t.nameSuffix}" for ${targetKind} "${targetId}"`);
+    }
+    seen.add(t.nameSuffix);
+  }
+  let byTarget = targetTemplates.get(targetKind);
+  if (!byTarget) {
+    byTarget = new Map();
+    targetTemplates.set(targetKind, byTarget);
+  }
+  byTarget.set(targetId, [...templates]);
+  invalidateToolListCache();
+}
+
+/** Remove one target's template set. */
+export function clearTargetToolTemplates(targetKind: BindingTargetKind, targetId: string): void {
+  const byTarget = targetTemplates.get(targetKind);
+  if (!byTarget?.delete(targetId)) return;
+  invalidateToolListCache();
+}
 
 /**
  * Global tools — available to ALL agents regardless of bindings.
@@ -206,7 +250,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
   const tools: McpToolDefinition[] = [];
 
   for (const binding of bindings) {
-    const templates = toolTemplates.get(binding.targetKind);
+    const templates = templatesFor(binding);
     if (!templates) continue;
 
     // When target agent is sleeping (not in registry), only expose status tools.
@@ -295,7 +339,14 @@ export async function callTool(
     return globalTool.handler(agentId, args);
   }
 
-  const parsed = parseToolName(toolName);
+  const bindings = bindingManager.getBindingsForAgent(agentId);
+
+  // A target with its own tool set (a plugin) names its tools
+  // `<kind>__<key>__<tool>`, where the plugin picks <tool>: match the
+  // binding's prefix rather than parsing, since <tool> may hold digits,
+  // hyphens or '__'.
+  const scopedMatch = matchScopedToolName(bindings, toolName);
+  const parsed = scopedMatch?.parsed ?? parseToolName(toolName);
   if (!parsed) {
     appLog('core:mcp', 'warn', 'Tool call: failed to parse tool name', {
       meta: { agentId, toolName },
@@ -307,8 +358,8 @@ export async function callTool(
   }
 
   // Verify the agent has this binding
-  const bindings = bindingManager.getBindingsForAgent(agentId);
-  const binding = bindings.find(b => {
+  const binding = scopedMatch?.binding ?? bindings.find(b => {
+    if (targetTemplates.has(b.targetKind)) return false;
     const expectedPrefix = b.targetKind === 'agent' ? 'clubhouse'
       : b.targetKind === 'group-project' ? 'group'
       : b.targetKind;
@@ -328,7 +379,7 @@ export async function callTool(
     };
   }
 
-  const templates = toolTemplates.get(binding.targetKind);
+  const templates = templatesFor(binding);
   if (!templates) {
     return {
       content: [{ type: 'text', text: `No tools registered for kind: ${binding.targetKind}` }],
@@ -389,6 +440,21 @@ export async function callTool(
   return template.handler(binding.targetId, agentId, args);
 }
 
+function matchScopedToolName(
+  bindings: McpBinding[],
+  toolName: string,
+): { binding: McpBinding; parsed: { prefix: string; toolKey: string; suffix: string } } | null {
+  for (const b of bindings) {
+    if (!targetTemplates.has(b.targetKind)) continue;
+    const toolKey = buildToolKey(b);
+    const prefix = `${b.targetKind}__${toolKey}__`;
+    if (toolName.startsWith(prefix) && toolName.length > prefix.length) {
+      return { binding: b, parsed: { prefix: b.targetKind, toolKey, suffix: toolName.slice(prefix.length) } };
+    }
+  }
+  return null;
+}
+
 // Admin membership lives in group-project metadata (not in bindingManager, so
 // its version counter doesn't change). Refresh scoped tool lists whenever a
 // group project changes so role-based gating takes effect immediately.
@@ -397,6 +463,7 @@ groupProjectRegistry.onChange(() => invalidateToolListCache());
 /** For testing: clear all registered templates and global tools. */
 export function _resetForTesting(): void {
   toolTemplates.clear();
+  targetTemplates.clear();
   globalTools.clear();
   toolListCache.clear();
 }
