@@ -227,6 +227,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           level={state.level}
           model={state.model}
           effort={state.effort}
+          effortIsDefault={state.effortIsDefault}
           models={state.models}
           efforts={state.efforts}
           levelNames={state.levelNames}

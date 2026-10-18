@@ -401,7 +401,15 @@ export interface ChatEventDataMap {
     limits?: UsageLimit[];
   };
   mode_changed: { level: PermissionLevel; nativeMode?: string };
-  model_changed: { modelId: string; effort?: string };
+  model_changed: {
+    modelId: string;
+    effort?: string;
+    /**
+     * `effort` is the level the provider picked by default, not one chosen in
+     * the session: the effort menu checks Default, and choosing that level pins it.
+     */
+    effortIsDefault?: boolean;
+  };
   commands_available: { commands: AvailableCommand[] };
 
   /**

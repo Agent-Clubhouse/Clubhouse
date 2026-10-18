@@ -571,7 +571,7 @@ describe('CodexChatDriver', () => {
       useServer({ 'model/list': () => ({ result: { data: catalog, nextCursor: null } }) });
       const { session, take } = await startSession();
       const opening = await take(4);
-      expect(opening[3]).toEqual({ type: 'model_changed', data: { modelId: 'gpt-5-codex', effort: 'medium' } });
+      expect(opening[3]).toEqual({ type: 'model_changed', data: { modelId: 'gpt-5-codex', effort: 'medium', effortIsDefault: true } });
       await session.setModel('gpt-5', 'xhigh');
       expect(await take(2)).toEqual([
         { type: 'model_changed', data: { modelId: 'gpt-5', effort: 'xhigh' } },
@@ -597,7 +597,7 @@ describe('CodexChatDriver', () => {
       ]);
     });
 
-    it('clears an effort already queued when switching to a model without levels', async () => {
+    it('sends no effort for a model without levels, dropping one queued earlier', async () => {
       useServer({ 'model/list': () => ({ result: { data: [...catalog, model('gpt-mini', [])], nextCursor: null } }) });
       const { session, take } = await startSession();
       await take(4);
@@ -606,7 +606,38 @@ describe('CodexChatDriver', () => {
       await session.setModel('gpt-mini');
       await take(2);
       await session.send([{ type: 'text', text: 'go' }], 'prompt');
-      expect(server.requests('turn/start')[0].params).toMatchObject({ model: 'gpt-mini', effort: null });
+      expect(server.requests('turn/start')[0].params).toMatchObject({ model: 'gpt-mini' });
+      expect(server.requests('turn/start')[0].params).not.toHaveProperty('effort');
+    });
+
+    it('Default sends the model\'s own default level, since effort: null would keep the old one (#2136)', async () => {
+      useServer({ 'model/list': () => ({ result: { data: catalog, nextCursor: null } }) });
+      const { session, take } = await startSession({ effort: 'high' });
+      await take(4);
+      expect(CODEX_CHAT_CAPABILITIES.effortDefault).toBe(true);
+      await session.setModel('gpt-5-codex', null);
+      expect(await take(1)).toEqual([{ type: 'model_changed', data: { modelId: 'gpt-5-codex', effort: 'medium', effortIsDefault: true } }]);
+      await session.send([{ type: 'text', text: 'go' }], 'prompt');
+      expect(server.requests('turn/start')[0].params).toMatchObject({ model: 'gpt-5-codex', effort: 'medium' });
+    });
+
+    it('on the default, a model switch takes the new model\'s default; a chosen effort is kept if offered', async () => {
+      useServer({ 'model/list': () => ({ result: { data: [...catalog, model('gpt-lo', ['low', 'medium'], { defaultReasoningEffort: 'low' })], nextCursor: null } }) });
+      const { session, take } = await startSession();
+      await take(4);
+      await session.setModel('gpt-lo');
+      expect((await take(2))[0]).toEqual({ type: 'model_changed', data: { modelId: 'gpt-lo', effort: 'low', effortIsDefault: true } });
+      await session.setModel('gpt-5', 'high');
+      await take(2);
+      await session.setModel('gpt-5-codex');
+      expect((await take(2))[0]).toEqual({ type: 'model_changed', data: { modelId: 'gpt-5-codex', effort: 'high' } });
+    });
+
+    it('refuses Default without the catalog, since the model\'s default is unknown', async () => {
+      useServer({ 'model/list': () => ({ error: { code: -32601, message: 'unknown method' } }) });
+      const { session, take } = await startSession();
+      await skipStart(take);
+      await expect(session.setModel('gpt-5', null)).rejects.toThrow(/default effort/);
     });
 
     it('asks for model/list with a short timeout', async () => {
@@ -997,6 +1028,7 @@ describe('codex driver helpers', () => {
       images: true,
       modelSwitch: 'per_turn',
       effortSwitch: 'per_turn',
+      effortDefault: true,
       liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
       login: 'terminal',
       systemPrompt: true,

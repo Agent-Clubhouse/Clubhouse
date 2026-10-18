@@ -85,6 +85,46 @@ describe('Composer model and effort chips (#2091)', () => {
     expect(effortWord('max')).toBe('Max');
   });
 
+  it('offers a Default row that returns the effort to the provider default (#2136)', () => {
+    const { onModelChange } = renderComposer({}, { effortDefault: true });
+    fireEvent.click(screen.getByTestId('chat-effort-pill'));
+    const row = screen.getByTestId('chat-effort-default');
+    expect(row).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(row);
+    expect(onModelChange).toHaveBeenCalledWith('opus', null);
+  });
+
+  it('checks Default when no effort is set', () => {
+    renderComposer({ effort: null }, { effortDefault: true });
+    fireEvent.click(screen.getByTestId('chat-effort-pill'));
+    expect(screen.getByTestId('chat-effort-default')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('on the provider default: shows the level as the default, checks Default, and choosing that level pins it', () => {
+    const { onModelChange } = renderComposer({ effort: 'high', effortIsDefault: true }, { effortDefault: true });
+    const pill = screen.getByTestId('chat-effort-pill');
+    expect(pill).toHaveTextContent('High effort (default)');
+    fireEvent.click(pill);
+    expect(screen.getByTestId('chat-effort-default')).toHaveAttribute('aria-checked', 'true');
+    const high = screen.getAllByRole('menuitemradio').find((i) => i.textContent === 'high')!;
+    expect(high).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(high);
+    expect(onModelChange).toHaveBeenCalledWith('opus', 'high');
+  });
+
+  it('on the provider default, a model switch leaves the effort to the new model', () => {
+    const { onModelChange } = renderComposer({ effort: 'high', effortIsDefault: true });
+    fireEvent.click(screen.getByTestId('chat-model-pill'));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Sonnet 5.5/ }));
+    expect(onModelChange).toHaveBeenCalledWith('sonnet', undefined);
+  });
+
+  it('has no Default row without effortDefault', () => {
+    renderComposer();
+    fireEvent.click(screen.getByTestId('chat-effort-pill'));
+    expect(screen.queryByTestId('chat-effort-default')).toBeNull();
+  });
+
   it('says Default effort before the provider reports one', () => {
     renderComposer({ effort: null });
     expect(screen.getByTestId('chat-effort-pill')).toHaveTextContent('Default effort');

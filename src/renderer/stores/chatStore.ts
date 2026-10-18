@@ -191,6 +191,8 @@ export interface ChatViewState {
   level: PermissionLevel | null;
   model: string | null;
   effort: string | null;
+  /** The effort is the provider's default rather than one chosen in the session (model_changed). */
+  effortIsDefault: boolean;
   nativeSessionId: string | null;
   /** Last applied seq, per session id. Used to drop duplicates. */
   lastSeq: Record<string, number>;
@@ -238,6 +240,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     level: null,
     model: null,
     effort: null,
+    effortIsDefault: false,
     nativeSessionId: null,
     lastSeq: {},
     turnId: null,
@@ -650,7 +653,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
     case 'mode_changed':
       return { ...state, level: event.data.level };
     case 'model_changed':
-      return { ...state, model: event.data.modelId, effort: event.data.effort ?? null };
+      return { ...state, model: event.data.modelId, effort: event.data.effort ?? null, effortIsDefault: event.data.effortIsDefault === true };
     case 'commands_available':
       return { ...state, commands: event.data.commands };
 
@@ -714,7 +717,7 @@ interface ChatStoreState {
   respondPermission: (agentId: string, requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<void>;
   answerQuestion: (agentId: string, requestId: string, answers: ChatQuestionAnswers) => Promise<void>;
   setLevel: (agentId: string, level: PermissionLevel) => Promise<void>;
-  setModel: (agentId: string, modelId: string, effort?: string) => Promise<void>;
+  setModel: (agentId: string, modelId: string, effort?: string | null) => Promise<void>;
 }
 
 /**

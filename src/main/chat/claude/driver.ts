@@ -83,6 +83,8 @@ export function claudeCapabilities(startLevel: PermissionLevel): ChatCapabilitie
     modelSwitch: 'live',
     // apply_flag_settings changes it mid-session, as /effort does.
     effortSwitch: 'live',
+    // apply_flag_settings { effortLevel: null } drops back to the model's default.
+    effortDefault: true,
     liveLevels: startLevel === 'full_access'
       ? ['plan', 'ask', 'auto_edit', 'auto', 'full_access']
       : ['plan', 'ask', 'auto_edit', 'auto'],
@@ -387,6 +389,19 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private level: PermissionLevel;
   private model: string | undefined;
   private effort: string | undefined;
+  /**
+   * The effort was chosen (at launch, from the chip or with /effort) rather
+   * than left to Claude's default. get_settings reports the level either way,
+   * so this is what tells the composer which one it is (#2136).
+   */
+  private effortPinned: boolean;
+  /** effortPinned as last reported, so a change in it alone is reported too. */
+  private reportedDefault = false;
+  /**
+   * What an `/effort <arg>` that opened this turn's message did, applied when
+   * the turn ends: a level pins it, `auto` goes back to Claude's default.
+   */
+  private effortCommandThisTurn: 'pin' | 'default' | undefined;
   /** The model menu from `initialize`. */
   private modelRows: ClaudeModelRow[] = [];
   /** Effort levels last reported for the current model. */
@@ -418,6 +433,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     this.level = opts.level;
     this.model = opts.model;
     this.effort = opts.effort;
+    this.effortPinned = !!opts.effort;
     this.capabilities = claudeCapabilities(opts.level);
   }
 
@@ -448,6 +464,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     const actual: MessageDelivery = this.turnRunning ? delivery : 'prompt';
     if (!this.turnRunning) this.beginTurn('prompt');
     if (/(^|\s)\/(model|effort)\b/.test(text)) this.slashThisTurn = true;
+    // Built-ins only run at the start of a message (#2135), and only a known argument changes anything.
+    const effortArg = /^\s*\/effort\s+(\S+)/.exec(text)?.[1]?.toLowerCase();
+    if (effortArg && isClaudeEffort(effortArg)) this.effortCommandThisTurn = 'pin';
+    else if (effortArg === 'auto') this.effortCommandThisTurn = 'default';
     this.transport.send({
       text,
       images: images.length ? images : undefined,
@@ -502,7 +522,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     this.changeLevel(level, claudeModeFromLevel(level));
   }
 
-  async setModel(modelId: string, effort?: string): Promise<void> {
+  async setModel(modelId: string, effort?: string | null): Promise<void> {
     if (effort && !isClaudeEffort(effort)) throw new Error(`Claude has no effort level "${effort}"`);
     let modelSet = modelId === this.model;
     let failure: unknown;
@@ -511,7 +531,14 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         await this.transport.setModel(modelId === 'default' ? undefined : modelId);
         modelSet = true;
       }
-      if (effort && effort !== this.effort) await this.transport.setEffort(effort as ClaudeEffort);
+      if (effort === null) {
+        await this.transport.setEffort(null);
+        this.effortPinned = false;
+      } else if (effort && (effort !== this.effort || !this.effortPinned)) {
+        // The same level as the default still gets sent: it pins it, so a later model switch keeps it.
+        await this.transport.setEffort(effort as ClaudeEffort);
+        this.effortPinned = true;
+      }
     } catch (err) {
       failure = err;
     }
@@ -519,7 +546,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     if (!(await this.refreshApplied()) && modelSet) {
       // No get_settings: keep the effort only if the model offers it.
       const levels = claudeModelRow(this.modelRows, modelId)?.efforts ?? [];
-      const kept = failure ? this.effort : effort ?? this.effort;
+      const kept = failure ? this.effort : effort === null ? undefined : effort ?? this.effort;
       this.noteModel(modelId, kept && levels.includes(kept) ? kept : undefined);
     }
     if (failure) throw failure;
@@ -589,10 +616,12 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   /** Report a model or effort change, and the effort levels the model offers when they differ. */
   private noteModel(model: string, effort: string | undefined): void {
     if (this.closing) return;
-    if (model !== this.model || effort !== this.effort) {
+    const isDefault = !!effort && !this.effortPinned;
+    if (model !== this.model || effort !== this.effort || isDefault !== this.reportedDefault) {
       this.model = model;
       this.effort = effort;
-      this.push({ type: 'model_changed', data: { modelId: model, ...(effort && { effort }) } });
+      this.reportedDefault = isDefault;
+      this.push({ type: 'model_changed', data: { modelId: model, ...(effort && { effort }), ...(isDefault && { effortIsDefault: true }) } });
     }
     // A model the menu doesn't list has no known levels: don't leave the previous model's on offer.
     const levels = claudeModelRow(this.modelRows, model)?.efforts ?? [];
@@ -812,6 +841,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.turnRunning = false;
         this.interrupting = false;
         this.turnApiError = undefined;
+        if (this.effortCommandThisTurn) {
+          this.effortPinned = this.effortCommandThisTurn === 'pin';
+          this.effortCommandThisTurn = undefined;
+        }
         if (this.slashThisTurn) {
           this.slashThisTurn = false;
           void this.refreshApplied();

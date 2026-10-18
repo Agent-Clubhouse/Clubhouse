@@ -81,7 +81,9 @@ class AcpChatDriverSession implements ChatDriverSession {
     await levels.apply(this.session, level);
   }
 
-  async setModel(modelId: string, effort?: string): Promise<void> {
+  async setModel(modelId: string, effort?: string | null): Promise<void> {
+    // ACP config options have no "unset", so there's no default to return to (no effortDefault).
+    if (effort === null) throw new Error("This agent can't return effort to its default");
     await this.session.setModel(modelId);
     if (effort) await this.setEffort(effort);
   }

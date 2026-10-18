@@ -9,6 +9,7 @@ const runtime = vi.hoisted(() => ({
   kind: 'chat' as const,
   caps: undefined as unknown,
   sendMessage: vi.fn(async () => ({ delivery: 'prompt', messageId: 'm1' })),
+  setModel: vi.fn(async () => {}),
   getCapabilities: () => runtime.caps,
 }));
 
@@ -119,5 +120,20 @@ describe('chat handlers: attachments', () => {
     await expect(call(IPC.CHAT.STAGE_ATTACHMENT, 'agent-1', { name: 'x' })).rejects.toThrow(/file path or image data/);
     await expect(call(IPC.CHAT.STAGE_ATTACHMENT, 'agent-1', { data: new Uint8Array(Buffer.from('#!/bin/sh')) })).rejects.toThrow(/PNG, JPEG, GIF or WebP/);
     await expect(call(IPC.CHAT.STAGE_ATTACHMENT, 'agent-1', { path: dir })).rejects.toThrow(/only files/);
+  });
+});
+
+describe('chat handlers: set model (#2136)', () => {
+  it('passes a level, an omitted effort (keep) and null (default) through as they are', async () => {
+    await call(IPC.CHAT.SET_MODEL, 'agent-1', 'opus', 'high');
+    await call(IPC.CHAT.SET_MODEL, 'agent-1', 'opus');
+    await call(IPC.CHAT.SET_MODEL, 'agent-1', 'opus', null);
+    expect(runtime.setModel.mock.calls).toEqual([['opus', 'high'], ['opus', undefined], ['opus', null]]);
+  });
+
+  it('rejects an effort that is not a string or null', async () => {
+    await expect(call(IPC.CHAT.SET_MODEL, 'agent-1', 'opus', 3)).rejects.toThrow();
+    await expect(call(IPC.CHAT.SET_MODEL, 'agent-1', 'opus', '')).rejects.toThrow();
+    expect(runtime.setModel).not.toHaveBeenCalled();
   });
 });
