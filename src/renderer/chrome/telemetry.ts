@@ -28,7 +28,7 @@ function setTelemetryView(view: TelemetryView): void {
   try {
     rendererLog('ui:nav', 'debug', 'View changed', { meta: { view, breadcrumb: { kind: 'event', code: `view.${view}` } } });
   } catch {
-    // No log bridge (tests, early startup): the breadcrumb is optional.
+    // telemetry-exempt: no log bridge (tests, early startup); the breadcrumb is optional.
   }
 }
 
