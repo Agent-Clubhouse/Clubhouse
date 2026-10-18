@@ -265,6 +265,15 @@ describe('agentStore', () => {
       expect(getState().agents['a_pm'].status).toBe('sleeping');
     });
 
+    it('forgets the last sleep reason once the agent is awake again (#2104)', () => {
+      seedAgent({ id: 'a_wake', kind: 'durable', status: 'sleeping', lastSleep: { reason: 'agent', at: '2026-10-17T00:00:00.000Z', by: 'PM' } });
+      getState().updateAgentStatus('a_wake', 'waking');
+      expect(getState().agents['a_wake'].lastSleep).toBeUndefined();
+      seedAgent({ id: 'a_run', kind: 'durable', status: 'sleeping', lastSleep: { reason: 'user', at: '2026-10-17T00:00:00.000Z' } });
+      getState().updateAgentStatus('a_run', 'running');
+      expect(getState().agents['a_run'].lastSleep).toBeUndefined();
+    });
+
     it('an early crash is still a launch failure, even after an earlier Stop (#2127)', () => {
       vi.useFakeTimers();
       const now = Date.now();

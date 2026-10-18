@@ -257,6 +257,35 @@ describe('ChatAgentRuntime', () => {
     expect(onEnded).toHaveBeenCalledWith('idle_timeout', 0);
   });
 
+  it('a Never or a longer timeout chosen while the timer runs applies to that idle period (#2104)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let timeout = 30 * 60_000;
+    const driver = new FakeChatDriver();
+    const { runtime, onEnded } = makeRuntime(driver, { idleTimeoutMs: () => timeout });
+    await runtime.start();
+    // Five minutes in, the user picks 1 h: no sleep at 30 min, sleep at 60.
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    timeout = 60 * 60_000;
+    await vi.advanceTimersByTimeAsync(25 * 60_000);
+    await flush();
+    expect(onEnded).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    await flush();
+    expect(onEnded).toHaveBeenCalledWith('idle_timeout', 0);
+    expect(runtime.idleSleptAfterMs).toBe(60 * 60_000);
+
+    const second = new FakeChatDriver();
+    const { runtime: other, onEnded: otherEnded } = makeRuntime(second, { idleTimeoutMs: () => timeout });
+    timeout = 30 * 60_000;
+    await other.start();
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    timeout = 0; // Never
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+    await flush();
+    expect(otherEnded).not.toHaveBeenCalled();
+    expect(second.last.closed).toBe(false);
+  });
+
   it('stays awake when shouldIdleSleep says no, and checks again next period (#2104)', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     let polling = true;

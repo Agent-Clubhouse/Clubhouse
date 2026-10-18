@@ -616,12 +616,18 @@ export class ChatAgentRuntime implements AgentRuntime {
     return next;
   }
 
-  private armIdleTimer(): void {
-    this.clearIdleTimer();
+  private idleTimeout(): number {
     const configured = this.opts.idleTimeoutMs;
-    const ms = typeof configured === 'function' ? configured() : configured ?? DEFAULT_CHAT_IDLE_TIMEOUT_MS;
+    return typeof configured === 'function' ? configured() : configured ?? DEFAULT_CHAT_IDLE_TIMEOUT_MS;
+  }
+
+  /** Arm for the configured timeout, less `idleSoFar` ms already spent idle in this period. */
+  private armIdleTimer(idleSoFar = 0): void {
+    this.clearIdleTimer();
+    const ms = this.idleTimeout();
     if (!(ms > 0)) return;
-    this.idleTimer = setTimeout(() => { void this.sleepForIdle(ms); }, ms);
+    const wait = Math.max(0, ms - idleSoFar);
+    this.idleTimer = setTimeout(() => { void this.sleepForIdle(idleSoFar + wait); }, wait);
     this.idleTimer.unref?.();
   }
 
@@ -635,17 +641,27 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.idleTimer = undefined;
   }
 
-  private async sleepForIdle(afterMs: number): Promise<void> {
+  private async sleepForIdle(idleFor: number): Promise<void> {
     if (this.state !== 'idle' || this.ended) return;
+    // Read the setting again: Never, or a longer timeout, chosen since the
+    // timer armed applies to this idle period too.
+    const ms = this.idleTimeout();
+    if (!(ms > 0)) return;
+    if (idleFor < ms) {
+      this.armIdleTimer(idleFor);
+      return;
+    }
     if (this.opts.shouldIdleSleep && !this.opts.shouldIdleSleep()) {
       appLog('core:chat', 'info', 'Idle timeout reached; staying awake', { meta: { agentId: this.agentId } });
       this.armIdleTimer();
       return;
     }
-    this.sleptAfterMs = afterMs;
-    await this.emit({ type: 'notice', data: { level: 'info', code: 'idle_sleep', message: `Slept after ${formatIdle(afterMs)} idle.` } });
+    // Take the session before anything awaits, so a prompt arriving now finds
+    // the agent asleep rather than starting a turn that is then closed.
     const session = this.session;
     this.session = undefined;
+    this.sleptAfterMs = ms;
+    await this.emit({ type: 'notice', data: { level: 'info', code: 'idle_sleep', message: `Slept after ${formatIdle(ms)} idle.` } });
     if (session) await session.close().catch((): void => undefined);
     await this.end('idle_timeout', 0);
   }

@@ -1073,6 +1073,15 @@ describe('agent-system', () => {
   });
 
   describe('sleep reason on PTY exit (#2104)', () => {
+    it("drops the last sleep's reason when the agent wakes again", async () => {
+      mockGetDurableConfig.mockResolvedValueOnce({ id: 'agent-1', lastSleep: { reason: 'agent', at: '2026-10-17T00:00:00.000Z', by: 'PM' } } as never);
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockUpdateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { lastSleep: null });
+      mockUpdateDurableConfig.mockClear();
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockUpdateDurableConfig).not.toHaveBeenCalled();
+    });
+
     async function spawnDurable(): Promise<(id: string, code: number, buffer?: string, killed?: boolean) => void> {
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
       return mockPtySpawn.mock.calls.at(-1)![5];

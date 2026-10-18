@@ -91,9 +91,19 @@ function useChatRuntimeSettings() {
   return { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode };
 }
 
+/** The offered choices, plus a hand-edited value that isn't one of them, so the select shows it. */
+function idleChoices(current: number): number[] {
+  const choices: number[] = [...CHAT_IDLE_TIMEOUT_CHOICES];
+  if (Number.isFinite(current) && current > 0 && !choices.includes(current)) {
+    choices.splice(choices.findIndex((m) => m === 0 || m > current), 0, current);
+  }
+  return choices;
+}
+
 function idleChoiceLabel(minutes: number): string {
   if (minutes <= 0) return 'Never';
-  return minutes >= 60 ? `${minutes / 60} ${minutes === 60 ? 'hour' : 'hours'}` : `${minutes} minutes`;
+  if (minutes >= 60 && minutes % 60 === 0) return `${minutes / 60} ${minutes === 60 ? 'hour' : 'hours'}`;
+  return `${minutes} minutes`;
 }
 
 function RuntimeModeControl({ value, onChange }: { value: AgentRuntimeMode; onChange: (mode: AgentRuntimeMode) => void }) {
@@ -302,7 +312,7 @@ function AppAgentSettings() {
               className={SELECT_CLASS}
               data-testid="chat-idle-timeout"
             >
-              {CHAT_IDLE_TIMEOUT_CHOICES.map((m) => (
+              {idleChoices(idleMinutes).map((m) => (
                 <option key={m} value={m}>{idleChoiceLabel(m)}</option>
               ))}
             </select>

@@ -69,7 +69,8 @@ export function chatSleepInfo(
     return { reason: 'idle', at: at.toISOString(), ...(idleMs ? { idleMinutes: Math.round(idleMs / 60_000) } : {}) };
   }
   if (reason === 'fallback') return undefined;
-  // A stop without a request is Clubhouse's own (e.g. quitting): the user's.
-  if (reason === 'stopped') return sleepInfoForExit(kill ?? { trigger: 'user' }, exitCode, at);
+  // A stop nobody asked for is Clubhouse's own (quitting, an interrupt that
+  // fell back to stopping): no reason, as for the terminal.
+  if (reason === 'stopped') return kill ? sleepInfoForExit(kill, exitCode, at) : undefined;
   return sleepInfoForExit(undefined, reason === 'error' && exitCode === 0 ? 1 : exitCode, at);
 }

@@ -94,6 +94,8 @@ export function createStatusSlice(set: SetAgentState, get: GetAgentState): Agent
               status: finalStatus,
               exitCode,
               errorMessage: finalStatus === 'error' ? resolvedErrorMessage : undefined,
+              // Awake again: the last sleep's reason is about the previous run.
+              lastSleep: finalStatus === 'running' || finalStatus === 'waking' ? undefined : agent.lastSleep,
             },
           },
           agentTerminalAt,

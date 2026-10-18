@@ -35,7 +35,8 @@ describe('sleep reasons (#2104)', () => {
   it('maps chat session end reasons', () => {
     expect(chatSleepInfo('idle_timeout', 0, undefined, 30 * 60_000, AT)).toEqual({ reason: 'idle', at: AT.toISOString(), idleMinutes: 30 });
     expect(chatSleepInfo('stopped', 0, { trigger: 'agent_tool', by: 'PM' }, undefined, AT)).toMatchObject({ reason: 'agent', by: 'PM' });
-    expect(chatSleepInfo('stopped', 0, undefined, undefined, AT)).toMatchObject({ reason: 'user' });
+    // A stop nobody asked for (quitting, an interrupt falling back to stop) records nothing, as for the terminal.
+    expect(chatSleepInfo('stopped', 0, undefined, undefined, AT)).toBeUndefined();
     expect(chatSleepInfo('process_exit', 0, undefined, undefined, AT)).toMatchObject({ reason: 'exited' });
     expect(chatSleepInfo('process_exit', 1, undefined, undefined, AT)).toMatchObject({ reason: 'crashed', exitCode: 1 });
     expect(chatSleepInfo('fallback', 0, undefined, undefined, AT)).toBeUndefined();

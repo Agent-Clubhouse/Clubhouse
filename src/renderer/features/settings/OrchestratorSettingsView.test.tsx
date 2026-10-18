@@ -338,6 +338,16 @@ describe('OrchestratorSettingsView', () => {
       await waitFor(() => expect(save).toHaveBeenCalledWith('chat_idle', { idleTimeoutMinutes: 0 }));
     });
 
+    it('shows a hand-edited idle timeout that is not one of the choices (#2104)', async () => {
+      setChatFlag(true);
+      window.clubhouse.settings.get = vi.fn().mockImplementation(async (key: string) => (key === 'chat_idle' ? { idleTimeoutMinutes: 45 } : null));
+      window.clubhouse.settings.save = vi.fn().mockResolvedValue(undefined);
+      render(<OrchestratorSettingsView />);
+      const select = await screen.findByTestId('chat-idle-timeout');
+      await waitFor(() => expect(select).toHaveValue('45'));
+      expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['15 minutes', '30 minutes', '45 minutes', '1 hour', '4 hours', 'Never']);
+    });
+
     it('hides the chat idle timeout when chat is off (#2104)', async () => {
       setChatFlag(false);
       render(<OrchestratorSettingsView />);
