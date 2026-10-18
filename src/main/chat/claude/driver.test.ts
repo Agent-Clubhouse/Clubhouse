@@ -28,6 +28,7 @@ import {
 } from './driver';
 import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import type { ClaudeChatEvent, ClaudeChatEventBody } from './events';
+import { ClaudeNormalizer } from './normalizer';
 import { ClaudeSdkTransport } from './sdk-transport';
 import { spawnClaude } from './spawn';
 import { ClaudeStreamTransport } from './stream-transport';
@@ -730,6 +731,83 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     expect(drafts.of('notice').map((d) => d.data)).toContainEqual({
       level: 'info', code: 'subagent_retry', message: 'Explore is retrying its request after a 529 error (attempt 2 of 10).',
     });
+  });
+
+  it('turns a main-loop API retry into a notice, inside the turn', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'go' }], 'prompt');
+    transport.emit({ kind: 'api_retry', attempt: 2, maxRetries: 10, retryDelayMs: 4000, errorStatus: 529, error: 'overloaded', noResponse: false });
+    transport.emit({ kind: 'api_retry', attempt: 3, maxRetries: 10, error: 'server_error', noResponse: false });
+    transport.emit({ kind: 'api_retry', attempt: 1, maxRetries: 1, noResponse: true });
+    transport.emit(result());
+    await drafts.waitFor('turn_ended');
+    expect(drafts.of('notice').map((d) => [d.turnId, d.data])).toEqual([
+      ['turn-1', { level: 'info', code: 'api_retry', message: 'Retrying after a 529 error (attempt 2 of 10).' }],
+      ['turn-1', { level: 'info', code: 'api_retry', message: 'Retrying after an API error (attempt 3 of 10).' }],
+      ['turn-1', { level: 'info', code: 'api_retry', message: 'Retrying after the API did not respond (attempt 1 of 1).' }],
+    ]);
+    // A retry is not a failure: the turn still ends without an error.
+    expect(drafts.of('error')).toHaveLength(0);
+  });
+
+  it('replaces the command list on commands_changed', async () => {
+    const { transport, drafts } = await scripted();
+    transport.emit({ kind: 'commands_changed', commands: [{ name: 'mission', description: 'Do a task', argumentHint: '<task>' }, { name: 'cost', builtin: true }] });
+    await settle();
+    expect(drafts.of('commands_available').at(-1)?.data.commands).toEqual([
+      { name: 'mission', description: 'Do a task', inputHint: '<task>' },
+      { name: 'cost', description: undefined, inputHint: undefined, startOnly: true },
+    ]);
+    expect(drafts.of('turn_started')).toHaveLength(0);
+  });
+
+  it('shows local slash-command output as the command\'s reply', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: '/cost' }], 'prompt');
+    transport.emit({ kind: 'message', messageId: 'u1', text: 'Total cost: $0.12' });
+    transport.emit(result());
+    await drafts.waitFor('turn_ended');
+    expect(drafts.of('agent_message').map((d) => [d.turnId, d.data])).toEqual([['turn-1', { messageId: 'u1', text: 'Total cost: $0.12' }]]);
+  });
+
+  it('passes CLI notices through (informational, notification, refusals, plugin installs)', async () => {
+    const { transport, drafts } = await scripted();
+    transport.emit({ kind: 'notice', level: 'warn', code: 'model_refusal', message: 'The model declined this request.' });
+    transport.emit({ kind: 'notice', level: 'info', code: 'claude_informational', message: 'Try /compact' });
+    await settle();
+    expect(drafts.of('notice').map((d) => d.data)).toEqual([
+      { level: 'warn', code: 'model_refusal', message: 'The model declined this request.' },
+      { level: 'info', code: 'claude_informational', message: 'Try /compact' },
+    ]);
+    expect(drafts.of('turn_started')).toHaveLength(0);
+  });
+
+  it('reports no protocol_unknown for any SDK 0.3.301 system subtype', async () => {
+    const { transport, drafts } = await scripted();
+    const frames: Array<Record<string, unknown>> = [
+      { subtype: 'api_retry', attempt: 1, max_retries: 3, retry_delay_ms: 500, error_status: 500, error: 'server_error' },
+      { subtype: 'commands_changed', commands: [] },
+      { subtype: 'control_request_progress', request_id: 'r', status: 'started' },
+      { subtype: 'elicitation_complete', mcp_server_name: 'm', elicitation_id: 'e' },
+      { subtype: 'files_persisted', files: [], failed: [], processed_at: 'now' },
+      { subtype: 'hook_started', hook_id: 'h', hook_name: 'n', hook_event: 'Stop' },
+      { subtype: 'hook_progress', hook_id: 'h', hook_name: 'n', hook_event: 'Stop', stdout: '', stderr: '', output: '' },
+      { subtype: 'hook_response', hook_id: 'h', hook_name: 'n', hook_event: 'Stop', stdout: '', stderr: '', output: '', outcome: 'success' },
+      { subtype: 'informational', content: 'hi', level: 'notice' },
+      { subtype: 'local_command_output', content: 'out' },
+      { subtype: 'memory_recall', mode: 'select', memories: [] },
+      { subtype: 'mirror_error', error: 'e', key: { projectKey: 'p', sessionId: 's' } },
+      { subtype: 'model_refusal_fallback', original_model: 'a', fallback_model: 'b', content: 'fell back' },
+      { subtype: 'model_refusal_no_fallback', original_model: 'a', content: 'refused' },
+      { subtype: 'notification', key: 'k', text: 't', priority: 'low' },
+      { subtype: 'plugin_install', status: 'completed' },
+      { subtype: 'session_state_changed', state: 'idle' },
+      { subtype: 'worker_shutting_down', reason: 'host_exit' },
+    ];
+    const n = new ClaudeNormalizer();
+    for (const f of frames) for (const ev of n.normalize({ type: 'system', session_id: 's', uuid: 'u', ...f })) transport.emit(ev);
+    await settle();
+    expect(drafts.of('protocol_unknown')).toEqual([]);
   });
 
   it('maps VCS changes to workspace_changed and treats background tasks as known (#2109)', async () => {

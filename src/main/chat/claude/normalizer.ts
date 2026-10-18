@@ -1,4 +1,4 @@
-import type { ClaudeBackgroundTask, ClaudeChatEvent, ClaudeChatEventBody, ClaudePermissionUpdate, ClaudeUsage } from './events';
+import type { ClaudeBackgroundTask, ClaudeChatEvent, ClaudeChatEventBody, ClaudeCommand, ClaudePermissionUpdate, ClaudeUsage } from './events';
 
 /**
  * One stream-json wire message as `claude -p --output-format stream-json`
@@ -192,6 +192,76 @@ export class ClaudeNormalizer {
     }
     // A PR or MR was published or linked (github, gitlab, …). Nothing in chat shows PRs yet.
     if (subtype === 'code_change_published') return [];
+    if (subtype === 'api_retry') {
+      return [{
+        kind: 'api_retry',
+        attempt: num(msg.attempt) ?? 0,
+        maxRetries: num(msg.max_retries) ?? 0,
+        retryDelayMs: num(msg.retry_delay_ms),
+        errorStatus: num(msg.error_status),
+        error: str(msg.error),
+        noResponse: isObj(msg.no_response),
+      }];
+    }
+    if (subtype === 'commands_changed') return [{ kind: 'commands_changed', commands: commandsFromWire(msg.commands) }];
+    // Output of a local slash command (/cost, /context, …): the command's reply, shown like one.
+    if (subtype === 'local_command_output') {
+      const text = str(msg.content);
+      return text ? [{ kind: 'message', messageId: str(msg.uuid) ?? '', text }] : [];
+    }
+    if (subtype === 'informational') {
+      const text = str(msg.content);
+      // Level `info` is transcript-only detail in Claude Code; `notice`, `suggestion` and `warning` are shown.
+      if (!text || msg.level === 'info') return [];
+      return [{ kind: 'notice', level: msg.level === 'warning' ? 'warn' : 'info', code: 'claude_informational', message: text }];
+    }
+    if (subtype === 'notification') {
+      const text = str(msg.text);
+      if (!text) return [];
+      const urgent = msg.priority === 'high' || msg.priority === 'immediate';
+      return [{ kind: 'notice', level: urgent ? 'warn' : 'info', code: 'claude_notification', message: text }];
+    }
+    if (subtype === 'model_refusal_fallback') {
+      const from = str(msg.original_model) ?? 'The model';
+      const to = str(msg.fallback_model);
+      return [{
+        kind: 'notice',
+        level: 'info',
+        code: 'model_refusal_fallback',
+        message: str(msg.content) || (to ? `${from} declined to answer; ${to} answered instead.` : `${from} declined to answer.`),
+      }];
+    }
+    if (subtype === 'model_refusal_no_fallback') {
+      return [{
+        kind: 'notice',
+        level: 'warn',
+        code: 'model_refusal',
+        message: str(msg.content) || str(msg.api_refusal_explanation) || `${str(msg.original_model) ?? 'The model'} declined to answer.`,
+      }];
+    }
+    // Plugin installs at startup: only a failure needs a word.
+    if (subtype === 'plugin_install') {
+      if (msg.status !== 'failed') return [];
+      const name = str(msg.name);
+      const error = str(msg.error);
+      return [{ kind: 'notice', level: 'warn', code: 'plugin_install_failed', message: `${name ? `Plugin ${name}` : 'A plugin'} failed to install${error ? `: ${error}` : ''}` }];
+    }
+    // Hook lifecycle and output (hook_started / hook_progress / hook_response). Chat has no hook view.
+    if (subtype === 'hook_started' || subtype === 'hook_progress' || subtype === 'hook_response') return [];
+    // Busy / idle / requires_action. Turn state already comes from the prompt and its result.
+    if (subtype === 'session_state_changed') return [];
+    // Progress on one of the CLI's own control requests; Clubhouse's requests have their own timeouts.
+    if (subtype === 'control_request_progress') return [];
+    // Files uploaded to the Files API for a remote session. Clubhouse sessions are local.
+    if (subtype === 'files_persisted') return [];
+    // Memories surfaced into the model's context. Nothing in chat shows memory.
+    if (subtype === 'memory_recall') return [];
+    // Transcript mirroring to a remote store failed. Clubhouse doesn't mirror sessions.
+    if (subtype === 'mirror_error') return [];
+    // An MCP server's URL elicitation finished. Clubhouse doesn't run elicitations.
+    if (subtype === 'elicitation_complete') return [];
+    // The CLI is about to exit (host_exit, …); the process exit reports the session's end.
+    if (subtype === 'worker_shutting_down') return [];
     if (subtype && SUBAGENT_PHASES[subtype]) {
       return [{ kind: 'subagent', phase: SUBAGENT_PHASES[subtype], taskId: str(msg.task_id) ?? '', raw: msg }];
     }
@@ -330,14 +400,19 @@ export function permissionRequestFromWire(requestId: string, req: Obj): ClaudeCh
   };
 }
 
-/** Map an `initialize` control response payload to an initialized body. */
-export function initializedFromWire(raw: Obj): ClaudeChatEventBody {
-  const commands = arr(raw.commands).filter(isObj).map((c) => ({
+/** Slash commands as `initialize` and `system/commands_changed` send them. */
+function commandsFromWire(v: unknown): ClaudeCommand[] {
+  return arr(v).filter(isObj).map((c) => ({
     name: str(c.name) ?? '',
     description: str(c.description),
     argumentHint: str(c.argumentHint),
     ...(c.builtin === true && { builtin: true }),
   }));
+}
+
+/** Map an `initialize` control response payload to an initialized body. */
+export function initializedFromWire(raw: Obj): ClaudeChatEventBody {
+  const commands = commandsFromWire(raw.commands);
   const models = arr(raw.models).filter(isObj).map((m) => ({
     value: str(m.value) ?? '',
     displayName: str(m.displayName),
