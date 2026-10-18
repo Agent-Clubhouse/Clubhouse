@@ -818,4 +818,51 @@ describe('AcpSession agent-initiated turns, edge cases', () => {
     await until(() => !session.getState().agentTurnInFlight);
     expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn', 'started:agent', 'ended:end_turn']);
   });
+
+  it('a compaction with no prompt in flight opens an agent turn and holds it until it finishes (#2194)', async () => {
+    const { session, events, replayer } = setup([
+      ...genericStart(), ...genericNew(),
+      out(3, 'session/prompt'),
+      inMsg({ id: 3, result: { stopReason: 'end_turn' } }),
+      { dir: 'gate', msg: {} },
+      update({ sessionUpdate: 'compaction_update', compactionId: 'c1', status: 'in_progress' }),
+      { dir: 'gate', msg: {} },
+      update({ sessionUpdate: 'compaction_update', compactionId: 'c1', status: 'completed' }),
+    ], { agentTurnIdleMs: 20, agentTurnToolIdleMs: 2_000 });
+    await session.start();
+    await session.newSession({ cwd: CWD });
+    await session.prompt('hi');
+    replayer.openGate();
+    await until(() => session.getState().agentTurnInFlight);
+    // Well past the plain quiet time: a running compaction sends nothing until it ends.
+    await wait(100);
+    expect(session.getState().agentTurnInFlight).toBe(true);
+    replayer.openGate();
+    await until(() => !session.getState().agentTurnInFlight, 500);
+    // The start and the result both land inside the agent turn, so the chat row opens and settles there.
+    const order = events.flatMap((e) => {
+      if (e.type === 'turn_started') return [`started:${e.trigger}`];
+      if (e.type === 'turn_ended') return [`ended:${e.stopReason}`];
+      if (e.type === 'update' && e.update.sessionUpdate === 'compaction_update') return [`compaction:${e.update.status}`];
+      return [];
+    });
+    expect(order).toEqual(['started:prompt', 'ended:end_turn', 'started:agent', 'compaction:in_progress', 'compaction:completed', 'ended:end_turn']);
+  });
+
+  it('a compaction result alone, after the turn ended, opens no turn', async () => {
+    const { session, events, replayer } = setup([
+      ...genericStart(), ...genericNew(),
+      out(3, 'session/prompt'),
+      inMsg({ id: 3, result: { stopReason: 'end_turn' } }),
+      { dir: 'gate', msg: {} },
+      update({ sessionUpdate: 'compaction_update', compactionId: 'c1', status: 'completed' }),
+    ], FAST);
+    await session.start();
+    await session.newSession({ cwd: CWD });
+    await session.prompt('hi');
+    replayer.openGate();
+    await wait(FAST.agentTurnIdleMs * 2);
+    expect(updates(events, 'compaction_update')).toHaveLength(1);
+    expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn']);
+  });
 });

@@ -370,6 +370,22 @@ describe('ACP → chat contract mapping', () => {
     expect(COMPACTION_SETTLED).toEqual(expect.arrayContaining(['compaction_completed', 'compaction_failed', 'compaction_cancelled']));
   });
 
+  it('maps a compaction in an agent-initiated turn between that turn\'s start and end', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    const compaction = (status: string) => ({ type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'compaction_update' as const, compactionId: 'c1', status } });
+    const drafts = [
+      ...mapper.map({ type: 'turn_started', sessionId: 's1', trigger: 'agent' }, state()),
+      ...mapper.map(compaction('in_progress'), state()),
+      ...mapper.map(compaction('completed'), state()),
+      ...mapper.map({ type: 'turn_ended', sessionId: 's1', stopReason: 'end_turn' }, state()),
+    ];
+    expect(drafts.map((d) => (d.type === 'notice' ? d.data.code : d.type === 'turn_started' ? `turn_started:${d.data.trigger}` : d.type)))
+      .toEqual(['turn_started:system', COMPACTION_STARTED, 'compaction_completed', 'turn_ended']);
+    // Notices are session-scoped (as for Codex); the chat shows the row between the turn's bounds.
+    expect(drafts[0].turnId).toBeDefined();
+    expect(drafts[3].turnId).toBe(drafts[0].turnId);
+  });
+
   it('gives each driver session its own turn and message ids', () => {
     const turnOf = (m: AcpChatEventMapper) => m.map({ type: 'turn_started', sessionId: 's1' }, state())[0].turnId;
     expect(turnOf(new AcpChatEventMapper('copilot_acp'))).not.toBe(turnOf(new AcpChatEventMapper('copilot_acp')));
