@@ -283,7 +283,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     }
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.
-    agentRegistry.setLaunchAccess(params.agentId, { freeAgentMode: params.freeAgentMode === true, permissionMode });
+    agentRegistry.setLaunchCap(params.agentId, { freeAgentMode: params.freeAgentMode === true, permissionMode });
     // The orchestration tools are listed from this gate (#2228); set it before the MCP connects.
     if (params.kind === 'durable') await syncOrchestrationGate(params.projectPath, params.agentId);
     facts.model = params.model;

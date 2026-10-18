@@ -538,6 +538,18 @@ describe('turnOffOrchestration', () => {
     expect(find('orch').orchestration).toEqual({ orchestrate: false, maxHelpers: 3, control: 'ask-everything' });
   });
 
+  it('a forced turn-off stops at a helper that couldn\'t be checked', async () => {
+    state.running.add('h1');
+    const unchecked = { ok: false, message: "h1 couldn't be checked (couldn't check, EIO), so it can't be disposed, even with force", blocked: [{ agentId: 'h1', name: 'h1', checks: { dirty: 0, unpushed: 0, unmerged: null, error: "couldn't check, EIO" } }] };
+    mocks.resolveHelpersForDelete.mockResolvedValue(unchecked);
+    const result = await turnOffOrchestration(PROJECT, 'orch', 'dispose', { force: true });
+    expect(result).toMatchObject({ ok: false, blocked: unchecked.blocked });
+    expect(mocks.resolveHelpersForDelete).toHaveBeenCalledWith(PROJECT, 'orch', 'dispose', { dryRun: true, force: true });
+    expect(mocks.killAgent).not.toHaveBeenCalled();
+    expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+  });
+
   it('passes force through', async () => {
     mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string) => {
       releaseHelpers(projectPath, agentId);

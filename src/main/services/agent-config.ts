@@ -2819,7 +2819,8 @@ function liveDescendants(agents: DurableAgentConfig[], agentId: string): Durable
  * - 'dispose' disposes every live helper below it, helpers of helpers too.
  *   It runs the delete status checks first; if any helper has uncommitted,
  *   unpushed or unmerged work it changes nothing and returns `blocked`,
- *   unless `force` is set.
+ *   unless `force` is set. `force` never overrides a check that couldn't
+ *   run or a helper still being created: those always block.
  * - 'keep' makes its direct helpers ordinary durable agents. Their own
  *   helpers stay attached to them.
  * `dryRun` runs the checks and reports what would happen without changing
@@ -2870,6 +2871,18 @@ export async function resolveHelpersForDelete(
   const blocked: HelperDisposeBlock[] = checked
     .filter(({ checks }) => hasWorkAtRisk(checks))
     .map(({ helper, checks }) => ({ agentId: helper.id, name: helper.name, checks }));
+  // `force` overrides work at risk only. A check that couldn't run, or a
+  // creation still in flight, blocks even a forced dispose (#2228).
+  const unchecked = blocked.filter(({ checks }) => !!checks.error);
+  if (unchecked.length > 0 && options.force) {
+    return {
+      ok: false,
+      message: unchecked.length === 1
+        ? `${unchecked[0].name} couldn't be checked (${unchecked[0].checks.error}), so it can't be disposed, even with force`
+        : `${unchecked.length} helpers couldn't be checked, so they can't be disposed, even with force`,
+      blocked: unchecked,
+    };
+  }
   if (blocked.length > 0 && !options.force) {
     return {
       ok: false,

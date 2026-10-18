@@ -202,11 +202,13 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.answeredHere.clear();
     await this.setState('starting');
     // A new session (start, /clear) runs at the spawn level, whatever the
-    // old one was set to: record it for the helper ceiling (#2228).
-    this.recordLevel(this.opts.level, true);
+    // old one was set to: record it for the helper ceiling (#2228), and drop
+    // the user's level from the old session.
+    this.recordLevel(this.opts.level, 'lower');
     const session = await this.startDriverSession(resumeNativeSessionId);
     this.session = session;
-    this.recordLevel(this.opts.level, false);
+    agentRegistry.setUserLaunchAccess(this.agentId, undefined);
+    this.recordLevel(this.opts.level, 'report');
     this.capabilities = session.capabilities;
     this.noteNativeSessionId(session.nativeSessionId ?? resumeNativeSessionId);
     appLog('core:chat', 'info', 'Chat session open', {
@@ -349,7 +351,7 @@ export class ChatAgentRuntime implements AgentRuntime {
         break;
       case 'mode_changed':
         // The ceiling for this agent's helpers follows its live level (#2228).
-        this.recordLevel(draft.data.level, false);
+        this.recordLevel(draft.data.level, 'report');
         break;
       case 'session_info':
         if (draft.data.capabilities && this.capabilities) {
@@ -638,22 +640,34 @@ export class ChatAgentRuntime implements AgentRuntime {
     const session = this.requireSession();
     // Helpers' ceiling (#2228): take a lowering at once, a raise only once
     // the driver accepted it, so the record never runs above the agent.
-    this.recordLevel(level, true);
+    // setLevel is the user's choice (chat level menu, Annex), the only thing
+    // allowed to lift the record above the spawn cap.
+    this.recordLevel(level, 'lower');
     await session.setLevel(level);
-    this.recordLevel(level, false);
+    this.recordLevel(level, 'user');
   }
 
   /**
    * Record the agent's live level on its registry entry, the ceiling for its
-   * helpers (#2228). With `lowerOnly` it only ever lowers the record.
+   * helpers (#2228):
+   * - `lower`: only if it lowers the record (before a change takes effect);
+   * - `user`: a level the user chose, recorded as is;
+   * - `report`: a level the driver reports (mode_changed, a session
+   *   opening), clamped to max(spawn cap, the user's last level). So a
+   *   change the agent makes itself (ExitPlanMode, a native mode switch)
+   *   never lifts it above what the user allowed.
    */
-  private recordLevel(level: PermissionLevel, lowerOnly: boolean): void {
+  private recordLevel(level: PermissionLevel, how: 'lower' | 'user' | 'report'): void {
     const next = launchAccessForChatLevel(level);
-    if (lowerOnly) {
+    if (how === 'user') {
+      agentRegistry.setUserLaunchAccess(this.agentId, next);
+      return;
+    }
+    if (how === 'lower') {
       const before = agentRegistry.get(this.agentId)?.launchAccess;
       if (ACCESS_LEVELS.indexOf(accessLevelOf(next)) >= ACCESS_LEVELS.indexOf(accessLevelOf(before))) return;
     }
-    agentRegistry.setLaunchAccess(this.agentId, next);
+    agentRegistry.reportLaunchAccess(this.agentId, next);
   }
 
   async setModel(modelId: string, effort?: string | null): Promise<void> {

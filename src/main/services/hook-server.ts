@@ -343,10 +343,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     });
 
     recordHookEvent(provider.id, normalized.kind, normalized.toolName, agentId);
-    // A terminal agent's live level, for its helpers' ceiling (#2228). Chat
-    // agents track theirs from the driver's mode events.
+    // A terminal agent's live level, for its helpers' ceiling (#2228). The
+    // agent's own shell holds this endpoint's id and nonce, so a report is
+    // only trusted up to the spawn cap: it can lower the record or restore
+    // it, never raise it. Chat agents track theirs from the driver.
     if (normalized.permissionLevel && agentRegistry.get(agentId)?.runtime !== 'chat') {
-      agentRegistry.setLaunchAccess(agentId, launchAccessForChatLevel(normalized.permissionLevel));
+      agentRegistry.reportLaunchAccess(agentId, launchAccessForChatLevel(normalized.permissionLevel));
     }
 
     const hookEvent = buildHookEvent(provider, normalized);

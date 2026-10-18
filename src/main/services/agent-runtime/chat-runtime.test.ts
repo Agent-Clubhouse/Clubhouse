@@ -22,6 +22,7 @@ import { registerChatRuntime, clearChatRuntimes, isChatAgent } from './index';
 import { onChatEvent, removeAllChatEventListeners } from './chat-event-bus';
 import * as permissionQueue from '../annex-permission-queue';
 import { agentRegistry } from '../agent-registry';
+import { accessLevelOf } from '../../../shared/orchestration-policy';
 
 /** Let queued microtasks and the runtime's emit chain settle. */
 async function flush(times = 10): Promise<void> {
@@ -837,10 +838,8 @@ describe('ChatAgentRuntime stop during start (#2087)', () => {
 
   describe('live launch access for the helper ceiling (#2228)', () => {
     beforeEach(() => {
-      agentRegistry.register('agent-1', {
-        projectPath: '/repo', orchestrator: 'claude-code', runtime: 'chat',
-        launchAccess: { freeAgentMode: true, permissionMode: 'skip-all' },
-      });
+      agentRegistry.register('agent-1', { projectPath: '/repo', orchestrator: 'claude-code', runtime: 'chat' });
+      agentRegistry.setLaunchCap('agent-1', { freeAgentMode: true, permissionMode: 'skip-all' });
     });
     afterEach(() => agentRegistry.untrack('agent-1'));
 
@@ -883,6 +882,38 @@ describe('ChatAgentRuntime stop during start (#2087)', () => {
       // The new session starts at the spawn level (ask), not full access.
       await runtime.clearContext();
       expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+    });
+
+    it('clamps a driver mode_changed above the user-set level', async () => {
+      // Spawned at ask (standard).
+      agentRegistry.register('agent-1', { projectPath: '/repo', orchestrator: 'claude-code', runtime: 'chat' });
+      agentRegistry.setLaunchCap('agent-1', { freeAgentMode: false, permissionMode: 'auto' });
+      const driver = new FakeChatDriver();
+      const { runtime } = makeRuntime(driver);
+      await runtime.start();
+      const level = () => accessLevelOf(agentRegistry.get('agent-1')?.launchAccess);
+
+      // The agent switches its own mode (ExitPlanMode, a native switch): no raise.
+      driver.last.emit({ type: 'mode_changed', data: { level: 'full_access' } });
+      await flush();
+      expect(level()).toBe('standard');
+
+      // The user raises to auto; a reported full access is held to auto.
+      await runtime.setLevel('auto');
+      expect(level()).toBe('auto');
+      driver.last.emit({ type: 'mode_changed', data: { level: 'full_access' } });
+      await flush();
+      expect(level()).toBe('auto');
+
+      // Only the user may go higher.
+      await runtime.setLevel('full_access');
+      expect(level()).toBe('bypass');
+
+      // /clear forgets the user's level: back to the spawn cap.
+      await runtime.clearContext();
+      driver.last.emit({ type: 'mode_changed', data: { level: 'auto' } });
+      await flush();
+      expect(level()).toBe('standard');
     });
 
     it('keeps the old level when a raise fails', async () => {

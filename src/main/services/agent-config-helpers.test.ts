@@ -575,6 +575,24 @@ describe('delete cascade', () => {
     expect(branchDeletions()).toEqual([]);
   });
 
+  it('force overrides work at risk but never a check that couldn\'t run (#2228)', async () => {
+    seedFamily({ durable_2_dirty: { dirty: 1 }, durable_3_broken: { failOn: 'status' } });
+
+    for (const dryRun of [true, false]) {
+      const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose', { force: true, dryRun });
+      expect(result.ok).toBe(false);
+      expect(result.message).toMatch(/even with force/);
+      expect(result.blocked?.map((b) => b.agentId)).toEqual(['durable_3_broken']);
+    }
+    expect(worktreeRemovals()).toEqual([]);
+    expect(branchDeletions()).toEqual([]);
+
+    // With every check able to run, force does dispose work at risk.
+    seedFamily({ durable_2_dirty: { dirty: 1 } });
+    clearAgentConfigCache();
+    expect(await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose', { force: true })).toMatchObject({ ok: true });
+  });
+
   it('B3: a branch lookup that fails (not a missing branch) blocks', async () => {
     seedFamily({ durable_2_h: {} });
     showRefBroken = true;
@@ -598,6 +616,10 @@ describe('delete cascade', () => {
     expect(result.blocked?.[0].checks.error).toMatch(/being created/);
 
     expect(await disposeHelper(PROJECT_PATH, 'durable_2_new', { force: true })).toMatchObject({ ok: false });
+    // Nor through the cascade (orchestrate turn-off with force, #2228).
+    const forced = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose', { force: true });
+    expect(forced.ok).toBe(false);
+    expect(forced.blocked?.[0].checks.error).toMatch(/being created/);
     expect(worktreeRemovals()).toEqual([]);
     expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_new')?.disposedAt).toBeUndefined();
   });
