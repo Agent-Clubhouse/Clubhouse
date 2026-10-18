@@ -389,6 +389,16 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private level: PermissionLevel;
   private model: string | undefined;
   private effort: string | undefined;
+  /**
+   * The effort was chosen (at launch, from the chip or with /effort) rather
+   * than left to Claude's default. get_settings reports the level either way,
+   * so this is what tells the composer which one it is (#2136).
+   */
+  private effortPinned: boolean;
+  /** effortPinned as last reported, so a change in it alone is reported too. */
+  private reportedDefault = false;
+  /** /effort ran this turn: the effort is pinned once it ends. */
+  private effortCommandThisTurn = false;
   /** The model menu from `initialize`. */
   private modelRows: ClaudeModelRow[] = [];
   /** Effort levels last reported for the current model. */
@@ -420,6 +430,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     this.level = opts.level;
     this.model = opts.model;
     this.effort = opts.effort;
+    this.effortPinned = !!opts.effort;
     this.capabilities = claudeCapabilities(opts.level);
   }
 
@@ -450,6 +461,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     const actual: MessageDelivery = this.turnRunning ? delivery : 'prompt';
     if (!this.turnRunning) this.beginTurn('prompt');
     if (/(^|\s)\/(model|effort)\b/.test(text)) this.slashThisTurn = true;
+    if (/(^|\s)\/effort\b/.test(text)) this.effortCommandThisTurn = true;
     this.transport.send({
       text,
       images: images.length ? images : undefined,
@@ -513,8 +525,14 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         await this.transport.setModel(modelId === 'default' ? undefined : modelId);
         modelSet = true;
       }
-      if (effort === null) await this.transport.setEffort(null);
-      else if (effort && effort !== this.effort) await this.transport.setEffort(effort as ClaudeEffort);
+      if (effort === null) {
+        await this.transport.setEffort(null);
+        this.effortPinned = false;
+      } else if (effort && (effort !== this.effort || !this.effortPinned)) {
+        // The same level as the default still gets sent: it pins it, so a later model switch keeps it.
+        await this.transport.setEffort(effort as ClaudeEffort);
+        this.effortPinned = true;
+      }
     } catch (err) {
       failure = err;
     }
@@ -592,10 +610,12 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   /** Report a model or effort change, and the effort levels the model offers when they differ. */
   private noteModel(model: string, effort: string | undefined): void {
     if (this.closing) return;
-    if (model !== this.model || effort !== this.effort) {
+    const isDefault = !!effort && !this.effortPinned;
+    if (model !== this.model || effort !== this.effort || isDefault !== this.reportedDefault) {
       this.model = model;
       this.effort = effort;
-      this.push({ type: 'model_changed', data: { modelId: model, ...(effort && { effort }) } });
+      this.reportedDefault = isDefault;
+      this.push({ type: 'model_changed', data: { modelId: model, ...(effort && { effort }), ...(isDefault && { effortIsDefault: true }) } });
     }
     // A model the menu doesn't list has no known levels: don't leave the previous model's on offer.
     const levels = claudeModelRow(this.modelRows, model)?.efforts ?? [];
@@ -815,6 +835,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.turnRunning = false;
         this.interrupting = false;
         this.turnApiError = undefined;
+        if (this.effortCommandThisTurn) {
+          this.effortCommandThisTurn = false;
+          this.effortPinned = true;
+        }
         if (this.slashThisTurn) {
           this.slashThisTurn = false;
           void this.refreshApplied();

@@ -265,6 +265,10 @@ class CodexChatSession implements ChatDriverSession {
   private catalog: Model[] = [];
   /** Effort levels last reported, for the current model. */
   private efforts: string[] | undefined;
+  /** The effort the next turn runs at, as far as Clubhouse knows. */
+  private effort: string | undefined;
+  /** `effort` is the model's default, not one chosen in the session (#2136). */
+  private effortIsDefault = false;
 
   constructor(private readonly opts: ChatDriverStartOptions, private readonly log?: LogFn) {
     const { args, dropped } = appServerArgs(opts.extraArgs ?? []);
@@ -396,7 +400,12 @@ class CodexChatSession implements ChatDriverSession {
         },
       });
       const effort = opts.effort ?? result.reasoningEffort ?? row?.defaultReasoningEffort ?? undefined;
-      this.queue.push({ type: 'model_changed', data: { modelId: result.model, ...(effort && { effort }) } });
+      this.effort = effort;
+      this.effortIsDefault = !!effort && !opts.effort && !result.reasoningEffort;
+      this.queue.push({
+        type: 'model_changed',
+        data: { modelId: result.model, ...(effort && { effort }), ...(this.effortIsDefault && { effortIsDefault: true }) },
+      });
     }
     if (mcp.skipped.length > 0) {
       this.log?.('warn', 'MCP servers Codex cannot run were left out', { skipped: mcp.skipped });
@@ -516,16 +525,39 @@ class CodexChatSession implements ChatDriverSession {
     this.emit({ type: 'mode_changed', data: { level, nativeMode: `${approvalPolicy}/${sandbox}` } });
   }
 
+  /**
+   * Model and effort for the next turn. turn/start's `effort: null` means "no
+   * override" and an effort sent earlier sticks to the thread, so going back
+   * to the default (null, #2136) sends the model's own default level instead.
+   */
   async setModel(modelId: string, effort?: string | null): Promise<void> {
     const row = this.catalogRow(modelId);
     const efforts = row ? codexEfforts(row) : undefined;
-    // A model the catalog lists without effort levels takes none: drop it rather than show a stale one.
-    const kept = (efforts && !efforts.length) || effort === null ? undefined : effort;
+    const modelDefault = row?.defaultReasoningEffort ?? undefined;
+    if (effort === null && !modelDefault) throw new Error("Codex didn't report this model's default effort");
+    let next: string | undefined;
+    let isDefault = false;
+    if (efforts && !efforts.length) {
+      // A model without effort levels takes none (the thread's last one doesn't apply to it).
+      next = undefined;
+    } else if (effort === null || (effort === undefined && this.effortIsDefault && modelDefault)) {
+      // Back to the default, or still on it: the new model's own default.
+      next = modelDefault;
+      isDefault = true;
+    } else if (effort) {
+      next = effort;
+    } else {
+      // Keep the chosen effort if the new model offers it, else its default.
+      const keep = this.effort && (!efforts || efforts.includes(this.effort)) ? this.effort : undefined;
+      next = keep ?? modelDefault;
+      isDefault = !keep && !!modelDefault;
+    }
     this.nextTurn.model = modelId;
-    // null (and a model without levels) resets any effort already queued, so the model's default applies.
-    if ((efforts && !efforts.length) || effort === null) this.nextTurn.effort = null;
-    else if (kept) this.nextTurn.effort = kept as TurnStartParams['effort'];
-    this.emit({ type: 'model_changed', data: { modelId, ...(kept && { effort: kept }) } });
+    if (next) this.nextTurn.effort = next as TurnStartParams['effort'];
+    else delete this.nextTurn.effort;
+    this.effort = next;
+    this.effortIsDefault = isDefault;
+    this.emit({ type: 'model_changed', data: { modelId, ...(next && { effort: next }), ...(isDefault && { effortIsDefault: true }) } });
     // Without the catalog there are no menus to update.
     if (!this.catalog.length) return;
     const levels = efforts ?? [];

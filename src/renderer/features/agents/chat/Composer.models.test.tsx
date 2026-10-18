@@ -100,6 +100,25 @@ describe('Composer model and effort chips (#2091)', () => {
     expect(screen.getByTestId('chat-effort-default')).toHaveAttribute('aria-checked', 'true');
   });
 
+  it('on the provider default: shows the level as the default, checks Default, and choosing that level pins it', () => {
+    const { onModelChange } = renderComposer({ effort: 'high', effortIsDefault: true }, { effortDefault: true });
+    const pill = screen.getByTestId('chat-effort-pill');
+    expect(pill).toHaveTextContent('High effort (default)');
+    fireEvent.click(pill);
+    expect(screen.getByTestId('chat-effort-default')).toHaveAttribute('aria-checked', 'true');
+    const high = screen.getAllByRole('menuitemradio').find((i) => i.textContent === 'high')!;
+    expect(high).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(high);
+    expect(onModelChange).toHaveBeenCalledWith('opus', 'high');
+  });
+
+  it('on the provider default, a model switch leaves the effort to the new model', () => {
+    const { onModelChange } = renderComposer({ effort: 'high', effortIsDefault: true });
+    fireEvent.click(screen.getByTestId('chat-model-pill'));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Sonnet 5.5/ }));
+    expect(onModelChange).toHaveBeenCalledWith('sonnet', undefined);
+  });
+
   it('has no Default row without effortDefault', () => {
     renderComposer();
     fireEvent.click(screen.getByTestId('chat-effort-pill'));

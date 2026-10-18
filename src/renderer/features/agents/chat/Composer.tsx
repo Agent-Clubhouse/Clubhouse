@@ -183,11 +183,12 @@ function Radio({ on }: { on: boolean }) {
   return <span className={`w-3 h-3 rounded-full flex-shrink-0 ${on ? 'border-[3.5px] border-ctp-accent' : 'border-[1.5px] border-surface-2'}`} />;
 }
 
-function ModelPill({ models, efforts, model, effort, capabilities, onChange }: {
+function ModelPill({ models, efforts, model, effort, effortIsDefault, capabilities, onChange }: {
   models: ChatModelOption[];
   efforts: string[];
   model: string | null;
   effort: string | null;
+  effortIsDefault?: boolean;
   capabilities: ChatCapabilities | null;
   onChange: (modelId: string, effort?: string | null) => void;
 }) {
@@ -199,8 +200,8 @@ function ModelPill({ models, efforts, model, effort, capabilities, onChange }: {
   const current = models.find((m) => m.id === model);
   const label = current?.label ?? model;
   if (!label) return null;
-  // Keep the effort across a model switch only if it's still on offer.
-  const keptEffort = effort && efforts.includes(effort) ? effort : undefined;
+  // Keep a chosen effort across a model switch if it's still on offer; a default one follows the new model's default.
+  const keptEffort = effort && !effortIsDefault && efforts.includes(effort) ? effort : undefined;
   const note = switchNote(modelSwitch, 'none');
 
   return (
@@ -255,10 +256,12 @@ export function effortWord(effort: string): string {
 }
 
 /** Reasoning effort for the current model (#2091); absent when the model has none. */
-function EffortPill({ efforts, model, effort, capabilities, onChange }: {
+function EffortPill({ efforts, model, effort, effortIsDefault, capabilities, onChange }: {
   efforts: string[];
   model: string | null;
   effort: string | null;
+  /** `effort` is the provider's default level, not one chosen in the session. */
+  effortIsDefault?: boolean;
   capabilities: ChatCapabilities | null;
   /** null returns the effort to the provider's default. */
   onChange: (modelId: string, effort: string | null) => void;
@@ -270,7 +273,10 @@ function EffortPill({ efforts, model, effort, capabilities, onChange }: {
   if (!efforts.length && !effort) return null;
   const canChange = !!model && efforts.length > 0 && effortSwitch !== 'none';
   const note = switchNote('none', effortSwitch);
-  const label = effort ? `${effortWord(effort)} effort` : 'Default effort';
+  // On the default the level still shows, since that's what applies.
+  const onDefault = effort === null || !!effortIsDefault;
+  const chosen = onDefault ? null : effort;
+  const label = effort ? `${effortWord(effort)} effort${effortIsDefault ? ' (default)' : ''}` : 'Default effort';
 
   return (
     <div className="relative min-w-0">
@@ -294,12 +300,12 @@ function EffortPill({ efforts, model, effort, capabilities, onChange }: {
             <button
               type="button"
               role="menuitemradio"
-              aria-checked={effort === null}
-              onClick={() => { setOpen(false); if (effort !== null) onChange(model, null); }}
-              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${effort === null ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
+              aria-checked={onDefault}
+              onClick={() => { setOpen(false); if (!onDefault) onChange(model, null); }}
+              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${onDefault ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
               data-testid="chat-effort-default"
             >
-              <Radio on={effort === null} />
+              <Radio on={onDefault} />
               <span className="flex flex-col">
                 <span>Default</span>
                 <span className="text-[11px] text-ctp-overlay1">The model&apos;s own default</span>
@@ -311,11 +317,12 @@ function EffortPill({ efforts, model, effort, capabilities, onChange }: {
               key={e}
               type="button"
               role="menuitemradio"
-              aria-checked={e === effort}
-              onClick={() => { setOpen(false); if (e !== effort) onChange(model, e); }}
-              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${e === effort ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
+              aria-checked={e === chosen}
+              // Choosing the level the default resolved to pins it, so it isn't a no-op.
+              onClick={() => { setOpen(false); if (e !== chosen) onChange(model, e); }}
+              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${e === chosen ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
             >
-              <Radio on={e === effort} />
+              <Radio on={e === chosen} />
               {e}
             </button>
           ))}
@@ -356,6 +363,8 @@ export interface ComposerProps {
   level: PermissionLevel | null;
   model: string | null;
   effort: string | null;
+  /** `effort` is the provider's default level rather than one chosen in the session. */
+  effortIsDefault?: boolean;
   /** Model choices from the driver; empty means the menu isn't offered. */
   models?: ChatModelOption[];
   /** Effort choices for the current model. */
@@ -631,6 +640,7 @@ export function Composer(props: ComposerProps) {
         efforts={props.efforts ?? []}
         model={props.model}
         effort={props.effort}
+        effortIsDefault={props.effortIsDefault}
         capabilities={capabilities}
         onChange={(m, e) => props.onModelChange?.(m, e)}
       />
@@ -638,6 +648,7 @@ export function Composer(props: ComposerProps) {
         efforts={props.onModelChange ? props.efforts ?? [] : []}
         model={props.model}
         effort={props.effort}
+        effortIsDefault={props.effortIsDefault}
         capabilities={capabilities}
         onChange={(m, e) => props.onModelChange?.(m, e)}
       />
