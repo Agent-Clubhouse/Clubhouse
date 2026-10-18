@@ -1,4 +1,5 @@
 import { AgentDetailedStatus } from '../../../shared/types';
+import { terminalTailSummary } from '../../../shared/terminal-text';
 import { AgentState, AgentStatusSlice, GetAgentState, SetAgentState } from './types';
 import {
   omitRecordKey,
@@ -30,6 +31,11 @@ export function createStatusSlice(set: SetAgentState, get: GetAgentState): Agent
     agentSpawnedAt: {},
     agentTerminalAt: {},
     agentDetailedStatus: {},
+    agentLaunchFailure: {},
+
+    noteLaunchFailure: (id, reason) => {
+      set((s) => ({ agentLaunchFailure: { ...s.agentLaunchFailure, [id]: reason } }));
+    },
 
     updateAgentStatus: (id, status, exitCode, errorMessage, lastOutput?) => {
       set((s) => {
@@ -44,24 +50,14 @@ export function createStatusSlice(set: SetAgentState, get: GetAgentState): Agent
           if (spawnedAt && Date.now() - spawnedAt < 3000) {
             finalStatus = 'error';
             if (!resolvedErrorMessage) {
-              // Extract meaningful diagnostic from PTY output (strip ANSI codes)
-              const cleanOutput = lastOutput
-                // eslint-disable-next-line no-control-regex
-                ?.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
-                .trim()
-                .split('\n')
-                .filter((l) => l.trim().length > 0)
-                .slice(-3)
-                .join(' | ');
-
-              if (cleanOutput) {
-                resolvedErrorMessage = cleanOutput.slice(0, 200);
-              } else {
-                resolvedErrorMessage =
-                  exitCode != null && exitCode !== 0
-                    ? `Agent process exited immediately (code ${exitCode})`
-                    : 'Agent process exited immediately after launch';
-              }
+              // Prefer the known reason (e.g. why chat fell back to the
+              // terminal) over the terminal's last output (#2088).
+              const cleanOutput = lastOutput ? terminalTailSummary(lastOutput) : '';
+              resolvedErrorMessage = s.agentLaunchFailure[id]
+                || cleanOutput
+                || (exitCode != null && exitCode !== 0
+                  ? `Agent process exited immediately (code ${exitCode})`
+                  : 'Agent process exited immediately after launch');
             }
           }
         }
@@ -90,6 +86,10 @@ export function createStatusSlice(set: SetAgentState, get: GetAgentState): Agent
           },
           agentTerminalAt,
           agentDetailedStatus: finalStatus !== 'running' ? restStatus : s.agentDetailedStatus,
+          // A new wake starts without the last one's failure reason.
+          ...(status === 'waking' && id in s.agentLaunchFailure
+            ? { agentLaunchFailure: omitRecordKey(s.agentLaunchFailure, id) }
+            : {}),
         };
       });
     },

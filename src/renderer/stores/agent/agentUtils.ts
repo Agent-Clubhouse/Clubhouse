@@ -62,6 +62,7 @@ export function removeAgentsFromState(
   const agentSpawnedAt = omitRecordKeys(state.agentSpawnedAt, ids);
   const agentTerminalAt = omitRecordKeys(state.agentTerminalAt, ids);
   const agentDetailedStatus = omitRecordKeys(state.agentDetailedStatus, ids);
+  const agentLaunchFailure = omitRecordKeys(state.agentLaunchFailure, ids);
   const cancelledAgentIds = omitRecordKeys(state.cancelledAgentIds, ids);
   const agentIcons = omitRecordKeys(state.agentIcons, ids);
 
@@ -97,6 +98,7 @@ export function removeAgentsFromState(
     agentSpawnedAt,
     agentTerminalAt,
     agentDetailedStatus,
+    agentLaunchFailure,
     cancelledAgentIds,
     projectActiveAgent,
     agentIcons,

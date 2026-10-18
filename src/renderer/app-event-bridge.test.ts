@@ -138,6 +138,7 @@ function createAgent(id: string, projectId: string) {
   };
 }
 
+const mockNoteLaunchFailure = vi.fn();
 vi.mock('./stores/agentStore', () => ({
   useAgentStore: Object.assign(
     vi.fn(),
@@ -155,6 +156,7 @@ vi.mock('./stores/agentStore', () => ({
         restoreProjectAgent: vi.fn(),
         openConfigChangesDialog: vi.fn(),
         setSessionNamePrompt: vi.fn(),
+        noteLaunchFailure: mockNoteLaunchFailure,
       })),
       setState: vi.fn(),
       subscribe: vi.fn((cb: StoreSubscriber) => {
@@ -509,6 +511,16 @@ describe('initAppEventBridge', () => {
     const onRuntimeNotice = vi.mocked(window.clubhouse.chat.onRuntimeNotice).mock.calls[0][0];
     onRuntimeNotice('agent-unknown', { level: 'warn', code: 'fallback', message: 'Opened in the terminal: Claude Code (Agent SDK) handshake failed: boom' });
     expect(mockAddToast).toHaveBeenCalledWith('agent-unknown: Opened in the terminal: Claude Code (Agent SDK) handshake failed: boom', 'info');
+  });
+
+  it('keeps the chat fallback reason for the launch error card (#2088)', () => {
+    const onRuntimeNotice = vi.mocked(window.clubhouse.chat.onRuntimeNotice).mock.calls[0][0];
+    onRuntimeNotice('agent-1', { level: 'warn', code: 'fallback', message: 'Opened in the terminal: Codex (app-server) failed to start: no rollout found for thread id 562a' });
+    expect(mockNoteLaunchFailure).toHaveBeenCalledWith('agent-1', 'Codex (app-server) failed to start: no rollout found for thread id 562a');
+
+    mockNoteLaunchFailure.mockClear();
+    onRuntimeNotice('agent-1', { level: 'info', code: 'untested_cli_version', message: 'Codex 0.200 is untested' });
+    expect(mockNoteLaunchFailure).not.toHaveBeenCalled();
   });
 
   it('should register keyboard event listener', () => {

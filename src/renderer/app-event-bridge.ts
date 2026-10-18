@@ -326,11 +326,26 @@ function initAgentWakingListener(): () => void {
   };
 }
 
-/** Toast when an agent falls back from chat (to another driver or the terminal), with the reason. */
+/** Notices that explain a start that didn't go as asked; a launch error card shows them. */
+const LAUNCH_FAILURE_CODES = new Set(['fallback', 'login_required']);
+const TERMINAL_FALLBACK_PREFIX = 'Opened in the terminal: ';
+
+/** The reason inside a chat fallback notice, without the "Opened in the terminal" lead-in. */
+export function launchFailureReason(message: string): string {
+  return message.startsWith(TERMINAL_FALLBACK_PREFIX) ? message.slice(TERMINAL_FALLBACK_PREFIX.length) : message;
+}
+
+/**
+ * Toast when an agent falls back from chat (to another driver or the
+ * terminal), with the reason, and keep the reason for the launch error card
+ * in case the terminal then exits right away (#2088).
+ */
 function initChatRuntimeNoticeListener(): () => void {
   return window.clubhouse.chat.onRuntimeNotice((agentId, notice) => {
-    const name = useAgentStore.getState().agents[agentId]?.name ?? agentId;
+    const store = useAgentStore.getState();
+    const name = store.agents[agentId]?.name ?? agentId;
     useToastStore.getState().addToast(`${name}: ${notice.message}`, 'info');
+    if (LAUNCH_FAILURE_CODES.has(notice.code)) store.noteLaunchFailure(agentId, launchFailureReason(notice.message));
   });
 }
 
