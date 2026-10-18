@@ -720,6 +720,21 @@ describe('per-turn token usage (#2161)', () => {
     expect(turnEndedUsage(second)).toEqual({ input: 3200, cachedInput: 2500, cacheWrite: 0, output: 160, reasoning: 0, total: 3360 });
   });
 
+  it("a subagent thread's update doesn't move the parent's baseline", () => {
+    const mapper = new CodexChatEventMapper();
+    mapAll(mapper, [
+      tokenUpdate('t1', breakdown(50_000, 0, 1000), breakdown(50_000, 0, 1000)),
+      turnCompleted('t1'),
+      // A subagent thread reports its own, much smaller running total.
+      { method: 'thread/tokenUsage/updated', params: { threadId: 'sub-thread', turnId: 's1', tokenUsage: { total: breakdown(2000, 0, 100), last: breakdown(2000, 0, 100), modelContextWindow: 272_000 } } },
+    ]);
+    const second = mapAll(mapper, [
+      tokenUpdate('t2', breakdown(60_000, 0, 1200), breakdown(10_000, 0, 200)),
+      turnCompleted('t2'),
+    ]);
+    expect(turnEndedUsage(second)).toEqual({ input: 10_000, cachedInput: 0, cacheWrite: 0, output: 200, reasoning: 0, total: 10_200 });
+  });
+
   it('a turn with no token updates ends without usage', () => {
     expect(turnEndedUsage(mapAll(new CodexChatEventMapper(), [turnCompleted('t9')]))).toBeUndefined();
   });

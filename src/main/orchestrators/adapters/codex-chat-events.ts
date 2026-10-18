@@ -81,8 +81,8 @@ export class CodexChatEventMapper {
   private readonly openQuestions = new Map<string, RequestId>();
   /** Turns whose terminal error already went out via an `error` notification. */
   private readonly erroredTurns = new Set<string>();
-  /** The thread's cumulative token usage, as of the last update. */
-  private lastTotal: TokenUsageBreakdown | undefined;
+  /** Each thread's cumulative token usage, as of its last update (subagent threads report their own). */
+  private readonly lastTotals = new Map<string, TokenUsageBreakdown>();
   /** Per running turn: the thread total before it, and the latest total during it. */
   private readonly turnTokens = new Map<string, { before: TokenUsageBreakdown; latest: TokenUsageBreakdown }>();
 
@@ -161,9 +161,9 @@ export class CodexChatEventMapper {
         }];
       }
       case 'thread/tokenUsage/updated': {
-        const { tokenUsage, turnId } = notification.params;
+        const { tokenUsage, turnId, threadId } = notification.params;
         const { total, last, modelContextWindow } = tokenUsage;
-        this.noteTurnTokens(turnId, total, last);
+        this.noteTurnTokens(threadId, turnId, total, last);
         return [{
           type: 'usage',
           data: {
@@ -423,11 +423,11 @@ export class CodexChatEventMapper {
    * update falls back to total - last for what came before, when this
    * mapper hasn't seen an earlier total (a resumed thread).
    */
-  private noteTurnTokens(turnId: string, total: TokenUsageBreakdown, last: TokenUsageBreakdown): void {
+  private noteTurnTokens(threadId: string, turnId: string, total: TokenUsageBreakdown, last: TokenUsageBreakdown): void {
     const entry = this.turnTokens.get(turnId);
     if (entry) entry.latest = total;
-    else this.turnTokens.set(turnId, { before: this.lastTotal ?? subtractTokens(total, last), latest: total });
-    this.lastTotal = total;
+    else this.turnTokens.set(turnId, { before: this.lastTotals.get(threadId) ?? subtractTokens(total, last), latest: total });
+    this.lastTotals.set(threadId, total);
   }
 
   /** The finished turn's tokens, for its turn_ended; undefined if Codex reported none. */
