@@ -50,6 +50,35 @@ export const RESUME_FIRST_REPLY_TIMEOUT_MS = 20_000;
 export const RESUME_STALL_TIMEOUT_MS = 10_000;
 export const RESUME_MAX_MS = 60_000;
 
+/**
+ * Agent-initiated turns (#2191). An agent can start work with no prompt in
+ * flight: Copilot 1.0.82 answers `session/prompt` while a background subagent
+ * is still running, then starts a new turn on its own when the subagent's
+ * completion notice arrives. ACP has no turn around that work and Copilot
+ * sends no end signal, so the session opens a turn when the activity starts
+ * and closes it once the agent goes quiet:
+ *
+ * - AGENT_TURN_IDLE_MS: quiet time that ends it, with no tool call open and
+ *   no permission request pending.
+ * - AGENT_TURN_TOOL_IDLE_MS: quiet time that ends it while a tool call is
+ *   still open (a long test run sends nothing until it finishes).
+ * - AGENT_TURN_CANCEL_SETTLE_MS: after session/cancel, quiet time that ends it as cancelled.
+ *
+ * A pending permission request keeps it open until answered.
+ */
+export const AGENT_TURN_IDLE_MS = 15_000;
+export const AGENT_TURN_TOOL_IDLE_MS = 10 * 60_000;
+export const AGENT_TURN_CANCEL_SETTLE_MS = 2_000;
+
+/** Updates that mean the agent is working, as opposed to session state it reports. */
+const AGENT_ACTIVITY_UPDATES: ReadonlySet<string> = new Set([
+  'agent_message_chunk',
+  'agent_thought_chunk',
+  'tool_call',
+  'tool_call_update',
+  'plan',
+]);
+
 /** `session/load` or `session/resume` didn't finish within the resume timeouts. */
 export class AcpResumeStalledError extends Error {
   constructor(
@@ -147,7 +176,11 @@ export type AcpSessionEvent =
   | { type: 'unknown_update'; sessionId: string; replay: boolean; kind: string; reason: string; raw: unknown }
   | { type: 'permission_request'; sessionId: string; requestId: string; toolCall: ToolCallUpdate; options: PermissionOption[] }
   | { type: 'permission_resolved'; sessionId: string; requestId: string; outcome: RequestPermissionOutcome }
-  | { type: 'turn_started'; sessionId: string }
+  /**
+   * `trigger: 'agent'` is a turn the agent started on its own, with no
+   * prompt in flight; it ends with `turn_ended` after the agent goes quiet.
+   */
+  | { type: 'turn_started'; sessionId: string; trigger: 'prompt' | 'agent' }
   | {
       type: 'turn_ended';
       sessionId: string;
@@ -176,6 +209,8 @@ export interface AcpSessionState {
   title: string | null;
   context: { used: number; size: number; cost?: { amount: number; currency: string } | null } | null;
   turnInFlight: boolean;
+  /** The agent is working on its own, outside any prompt (see AGENT_TURN_IDLE_MS). */
+  agentTurnInFlight: boolean;
 }
 
 export interface AcpSessionOpts extends Pick<AcpClientOpts, 'binary' | 'args' | 'cwd' | 'env' | 'windowsVerbatimArguments' | 'rpcTimeoutMs' | 'onLog'> {
@@ -184,6 +219,10 @@ export interface AcpSessionOpts extends Pick<AcpClientOpts, 'binary' | 'args' | 
   resumeFirstReplyTimeoutMs?: number;
   resumeStallTimeoutMs?: number;
   resumeMaxMs?: number;
+  /** Agent-initiated turn timeouts; defaults AGENT_TURN_IDLE_MS and friends. */
+  agentTurnIdleMs?: number;
+  agentTurnToolIdleMs?: number;
+  agentTurnCancelSettleMs?: number;
   /**
    * Profile to apply. Pass a fixed one, or a function that picks it from the
    * handshake (copilot-acp.ts exports `selectAcpProfile`). Defaults to generic.
@@ -242,6 +281,10 @@ export class AcpSession {
   /** Agents may announce a new session's updates before answering session/new. */
   private creatingSession = false;
   private earlyUpdates: unknown[] = [];
+  /** Set by the first prompt: a process has nothing of its own to work on before that. */
+  private prompted = false;
+  /** The agent-initiated turn in progress, if any. */
+  private agentTurn: { timer: ReturnType<typeof setTimeout> | null; cancelled: boolean } | null = null;
   private readonly openToolCalls = new Set<string>();
   private readonly pendingPermissions = new Map<string, { rpcId: number | string; options: PermissionOption[] }>();
   private readonly loggedUnknownKinds = new Set<string>();
@@ -254,6 +297,7 @@ export class AcpSession {
     title: null,
     context: null,
     turnInFlight: false,
+    agentTurnInFlight: false,
   };
 
   constructor(opts: AcpSessionOpts) {
@@ -484,6 +528,7 @@ export class AcpSession {
 
   kill(): void {
     this.answerPendingPermissionsCancelled();
+    this.endAgentTurn('cancelled');
     this.client.kill();
   }
 
@@ -499,11 +544,16 @@ export class AcpSession {
     if (this.state.turnInFlight) throw new Error('A prompt turn is already in flight; cancel it or wait');
     const blocks: ContentBlock[] = typeof prompt === 'string' ? [{ type: 'text', text: prompt }] : prompt;
 
+    // A prompt during an agent-initiated turn closes it: what follows belongs to
+    // the prompt. Callers normally queue until it ends (the chat runtime does).
+    // One the user already stopped still reads as stopped (#2158).
+    this.endAgentTurn(this.agentTurn?.cancelled ? 'cancelled' : 'end_turn');
+    this.prompted = true;
     this.state.turnInFlight = true;
     this.cancelRequested = false;
     let settle: () => void = () => undefined;
     this.turnSettled = new Promise<void>((resolve) => { settle = resolve; });
-    this.emit({ type: 'turn_started', sessionId });
+    this.emit({ type: 'turn_started', sessionId, trigger: 'prompt' });
     try {
       const res = (await this.client.request(
         ACP_AGENT_METHODS.sessionPrompt,
@@ -553,7 +603,9 @@ export class AcpSession {
   /**
    * Cancel the running turn. The agent answers the pending `session/prompt`
    * with `stopReason: "cancelled"`. Per spec, every pending permission request
-   * is answered `cancelled` first.
+   * is answered `cancelled` first. An agent-initiated turn has no prompt to
+   * answer, so it ends as cancelled once the agent has been quiet for
+   * AGENT_TURN_CANCEL_SETTLE_MS.
    */
   cancel(): void {
     const sessionId = this.state.sessionId;
@@ -561,6 +613,10 @@ export class AcpSession {
     if (this.state.turnInFlight) this.cancelRequested = true;
     this.answerPendingPermissionsCancelled();
     this.client.notify(ACP_AGENT_METHODS.sessionCancel, { sessionId });
+    if (this.agentTurn) {
+      this.agentTurn.cancelled = true;
+      this.armAgentTurnTimer();
+    }
   }
 
   // ── Modes and config options ─────────────────────────────────────────────
@@ -624,6 +680,7 @@ export class AcpSession {
     this.pendingPermissions.delete(requestId);
     this.client.respond(pending.rpcId, { outcome });
     this.emit({ type: 'permission_resolved', sessionId: this.state.sessionId ?? '', requestId, outcome });
+    if (this.agentTurn) this.armAgentTurnTimer();
   }
 
   get pendingPermissionIds(): string[] {
@@ -665,8 +722,11 @@ export class AcpSession {
       : parsed.update;
     if (!update) return;
 
+    if (!this.replaying && AGENT_ACTIVITY_UPDATES.has(update.sessionUpdate)) this.noteAgentActivity();
     this.applyUpdate(update);
     this.emit({ type: 'update', sessionId, replay: this.replaying, update });
+    // A tool call that just finished may have been the last thing holding the turn open.
+    if (this.agentTurn && (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update')) this.armAgentTurnTimer();
   }
 
   private applyUpdate(update: SessionUpdate): void {
@@ -707,10 +767,13 @@ export class AcpSession {
         return;
       }
       if (this.state.turnInFlight === false && !this.replaying) {
-        this.log('warn', 'Permission request outside a prompt turn', { id });
+        this.noteAgentActivity();
+        if (!this.agentTurn) this.log('warn', 'Permission request outside a prompt turn', { id });
       }
       const requestId = String(id);
       this.pendingPermissions.set(requestId, { rpcId: id, options: req.options });
+      // Waiting on the user, not on the agent: don't let the quiet timer end the turn.
+      if (this.agentTurn) this.armAgentTurnTimer();
       this.emit({ type: 'permission_request', sessionId, requestId, toolCall: req.toolCall, options: req.options });
       return;
     }
@@ -723,6 +786,9 @@ export class AcpSession {
 
   private handleExit(code: number | null, signal: string | null): void {
     this.pendingPermissions.clear();
+    if (this.agentTurn) {
+      this.endAgentTurn('error', { error: `ACP agent exited (code ${code ?? 'null'}, signal ${signal ?? 'null'})`, errorKind: 'process_exited' });
+    }
     // Pending requests were rejected just before this, but prompt()'s catch runs
     // on a later microtask. Let its turn_ended go out before exit.
     const emitExit = () => this.emit({ type: 'exit', code, signal });
@@ -731,6 +797,59 @@ export class AcpSession {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
+
+  // ── Agent-initiated turns ────────────────────────────────────────────────
+
+  /**
+   * The agent is working. Outside a prompt turn, that opens an agent-initiated
+   * turn (or keeps the open one going). Before the first prompt, a process
+   * has no work of its own, so anything then is a resume's replay tail.
+   */
+  private noteAgentActivity(): void {
+    if (this.state.turnInFlight || !this.prompted || !this.state.sessionId) return;
+    if (!this.agentTurn) {
+      this.agentTurn = { timer: null, cancelled: false };
+      this.state.agentTurnInFlight = true;
+      this.log('info', 'Agent started work with no prompt in flight; opening an agent-initiated turn');
+      this.emit({ type: 'turn_started', sessionId: this.state.sessionId, trigger: 'agent' });
+    }
+    this.armAgentTurnTimer();
+  }
+
+  /** (Re)start the quiet timer that ends the agent-initiated turn. */
+  private armAgentTurnTimer(): void {
+    const turn = this.agentTurn;
+    if (!turn) return;
+    if (turn.timer) clearTimeout(turn.timer);
+    turn.timer = null;
+    let ms: number;
+    if (turn.cancelled) {
+      ms = this.opts.agentTurnCancelSettleMs ?? AGENT_TURN_CANCEL_SETTLE_MS;
+    } else if (this.pendingPermissions.size > 0) {
+      return;
+    } else if (this.openToolCalls.size > 0) {
+      ms = this.opts.agentTurnToolIdleMs ?? AGENT_TURN_TOOL_IDLE_MS;
+    } else {
+      ms = this.opts.agentTurnIdleMs ?? AGENT_TURN_IDLE_MS;
+    }
+    turn.timer = setTimeout(() => {
+      if (this.agentTurn !== turn) return;
+      this.endAgentTurn(turn.cancelled ? 'cancelled' : 'end_turn');
+    }, ms);
+  }
+
+  private endAgentTurn(
+    stopReason: TurnStopReason,
+    failure?: { error: string; errorKind: 'process_exited' | 'other' },
+  ): void {
+    const turn = this.agentTurn;
+    if (!turn) return;
+    if (turn.timer) clearTimeout(turn.timer);
+    this.agentTurn = null;
+    this.state.agentTurnInFlight = false;
+    this.openToolCalls.clear();
+    this.emit({ type: 'turn_ended', sessionId: this.state.sessionId ?? '', stopReason, ...failure });
+  }
 
   private resetSessionState(): void {
     Object.assign(this.state, {

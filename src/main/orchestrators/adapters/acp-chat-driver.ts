@@ -61,10 +61,13 @@ class AcpChatDriverSession implements ChatDriverSession {
       // ACP v1 can't steer or queue; the chat runtime queues (capabilities.queue === 'client').
       throw new Error(`Cannot ${delivery} into a running ACP turn; queue it until the turn ends`);
     }
+    // During an agent-initiated turn the runtime queues too (the session reads
+    // running). A prompt that gets here anyway closes that turn and starts its own.
     this.runTurn(toAcpPrompt(content));
     return 'prompt';
   }
 
+  /** Also stops an agent-initiated turn: session/cancel goes out either way. */
   async interrupt(): Promise<void> {
     this.session.cancel();
   }
@@ -129,7 +132,7 @@ export class AcpChatDriver implements ChatDriver {
   readonly provider: string;
 
   /** Session options tests override, e.g. a short stall timeout. */
-  sessionOverrides: Pick<AcpSessionOpts, 'resumeFirstReplyTimeoutMs' | 'resumeStallTimeoutMs' | 'resumeMaxMs' | 'rpcTimeoutMs'> = {};
+  sessionOverrides: Pick<AcpSessionOpts, 'resumeFirstReplyTimeoutMs' | 'resumeStallTimeoutMs' | 'resumeMaxMs' | 'rpcTimeoutMs' | 'agentTurnIdleMs' | 'agentTurnToolIdleMs' | 'agentTurnCancelSettleMs'> = {};
 
   constructor(private readonly spec: AcpLaunchSpec, private readonly log: Log = () => undefined) {
     this.id = spec.id;

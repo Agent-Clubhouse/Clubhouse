@@ -12,6 +12,7 @@ import { selectAcpProfile } from './copilot-acp';
 import {
   AcpFixtureReplayer,
   loadAcpFixture,
+  promptAnsweredEarly,
   withoutRequest,
   type AcpFixtureRecord,
   type OutMatcher,
@@ -549,5 +550,272 @@ describe('AcpSession cancelled turns (#2158)', () => {
     session.cancel();
     await first;
     expect(await session.prompt('two')).toMatchObject({ stopReason: 'end_turn' });
+  });
+});
+
+// ── Agent-initiated turns (#2191) ────────────────────────────────────────────
+
+const MODE = 'https://agentclientprotocol.com/protocol/session-modes#';
+const turnEvents = (events: AcpSessionEvent[]) => events.flatMap((e) => {
+  if (e.type === 'turn_started') return [`started:${e.trigger}`];
+  if (e.type === 'turn_ended') return [`ended:${e.stopReason}`];
+  return [];
+});
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function until(check: () => boolean, ms = 2_000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error('condition not reached');
+    await wait(5);
+  }
+}
+const isText = (text: string) => (r: AcpFixtureRecord) =>
+  r.dir === 'in' && (r.msg.params as { update?: { content?: { text?: string } } } | undefined)?.update?.content?.text === text;
+/** Answer every permission request with its allow_once option. */
+const allowAll = (ref: { session?: AcpSession }) => (e: AcpSessionEvent) => {
+  if (e.type === 'permission_request') {
+    queueMicrotask(() => ref.session!.respondToPermission(e.requestId, { optionId: e.options.find((o) => o.kind === 'allow_once')!.optionId }));
+  }
+};
+const BACKGROUND_PROMPT = 'Start a background agent, end the turn, report when notified.';
+const FAST = { agentTurnIdleMs: 40, agentTurnToolIdleMs: 400, agentTurnCancelSettleMs: 20 };
+
+async function startRecordedSession(session: AcpSession, mode: 'agent' | 'autopilot') {
+  await session.start();
+  await session.newSession({ cwd: CWD });
+  await session.setConfigOption('model', 'claude-haiku-4.5');
+  await session.setMode(MODE + mode);
+}
+
+describe('AcpSession agent-initiated turns, Copilot 1.0.98 recordings', () => {
+  it('autopilot does its whole loop inside the prompt and ends with task_complete: no agent turn', async () => {
+    const ref: { session?: AcpSession } = {};
+    const { replayer, events, session } = setup(loadAcpFixture(COPILOT, 'autopilot-task-complete.jsonl'), { ...FAST, onEvent: allowAll(ref) });
+    ref.session = session;
+    await startRecordedSession(session, 'autopilot');
+    expect(session.getState().modes?.currentModeId).toBe(MODE + 'autopilot');
+
+    const result = await session.prompt('Create a.txt, b.txt and c.txt, one tool call each, then say DONE.');
+    expect(result.stopReason).toBe('end_turn');
+    await wait(FAST.agentTurnIdleMs * 3);
+
+    expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn']);
+    const titles = updates(events, 'tool_call').map((e) => (e.update as { title?: string }).title);
+    expect(titles.at(-1)).toBe('task_complete');
+    expect(replayer.errors).toEqual([]);
+    expect(replayer.done).toBe(true);
+  });
+
+  it('a background agent that outlives the turn: 1.0.98 holds the prompt open until its follow-up is done', async () => {
+    const ref: { session?: AcpSession } = {};
+    const { replayer, events, session } = setup(loadAcpFixture(COPILOT, 'background-agent.jsonl'), { ...FAST, onEvent: allowAll(ref) });
+    ref.session = session;
+    await startRecordedSession(session, 'agent');
+
+    expect((await session.prompt(BACKGROUND_PROMPT)).stopReason).toBe('end_turn');
+    await wait(FAST.agentTurnIdleMs * 3);
+
+    expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn']);
+    expect(replayer.errors).toEqual([]);
+    expect(replayer.done).toBe(true);
+  });
+});
+
+describe('AcpSession agent-initiated turns, prompt answered before background work (1.0.82 ordering)', () => {
+  // The 1.0.98 recording with the prompt's answer moved to right after
+  // "STARTED", where 1.0.82 sent it (lucky-mantis, #2191). Everything after
+  // it is Copilot working on its own once the background agent finishes.
+  const early = () => promptAnsweredEarly(loadAcpFixture(COPILOT, 'background-agent.jsonl'), isText('STARTED'));
+
+  it('opens an agent turn for the work, and closes it once the agent goes quiet', async () => {
+    const ref: { session?: AcpSession } = {};
+    const { replayer, events, logs, session } = setup(early(), { ...FAST, onEvent: allowAll(ref) });
+    ref.session = session;
+    await startRecordedSession(session, 'agent');
+
+    expect((await session.prompt(BACKGROUND_PROMPT)).stopReason).toBe('end_turn');
+    await wait(FAST.agentTurnIdleMs * 2);
+    expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn']);
+    expect(session.getState().agentTurnInFlight).toBe(false);
+
+    const before = events.length;
+    replayer.openGate();
+    await until(() => session.getState().agentTurnInFlight);
+    expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn', 'started:agent']);
+    // The turn opens before the update that started it.
+    expect(events[before]).toMatchObject({ type: 'turn_started', trigger: 'agent' });
+    expect(events[before + 1]).toMatchObject({ type: 'update', replay: false });
+
+    await until(() => !session.getState().agentTurnInFlight);
+    expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn', 'started:agent', 'ended:end_turn']);
+    const agentTurn = events.slice(events.findIndex((e) => e.type === 'turn_started' && e.trigger === 'agent'));
+    expect(agentTurn.some((e) => e.type === 'permission_request')).toBe(true);
+    expect(updates(agentTurn, 'tool_call').map((e) => (e.update as { title?: string }).title))
+      .toEqual(['Sleep for 30 seconds then list files', 'read_agent', expect.stringContaining('found.txt')]);
+    expect(logs.some((l) => l.message === 'Permission request outside a prompt turn')).toBe(false);
+    expect(replayer.errors).toEqual([]);
+    expect(replayer.done).toBe(true);
+  });
+
+  it('keeps the turn open while a permission request waits for the user', async () => {
+    const { replayer, events, session } = setup(early(), FAST);
+    await startRecordedSession(session, 'agent');
+    await session.prompt(BACKGROUND_PROMPT);
+    replayer.openGate();
+    await until(() => events.some((e) => e.type === 'permission_request'));
+
+    await wait(FAST.agentTurnToolIdleMs + 100);
+    expect(session.getState().agentTurnInFlight).toBe(true);
+
+    const request = events.find((e) => e.type === 'permission_request')!;
+    session.respondToPermission((request as { requestId: string }).requestId, { optionId: 'allow_once' });
+    // The rest streams in, and the second permission request waits for us again.
+    await until(() => events.filter((e) => e.type === 'permission_request').length === 2);
+    const second = events.filter((e) => e.type === 'permission_request')[1] as { requestId: string };
+    session.respondToPermission(second.requestId, { optionId: 'allow_once' });
+    await until(() => !session.getState().agentTurnInFlight);
+    expect(turnEvents(events).slice(-1)).toEqual(['ended:end_turn']);
+    expect(replayer.errors).toEqual([]);
+  });
+
+  it('cancel sends session/cancel, answers the pending permission, and ends the agent turn as cancelled', async () => {
+    const records = early();
+    // Stop at the first permission request of the agent's own work: the user hits Stop there.
+    const firstAsk = records.findIndex((r) => r.dir === 'in' && r.msg.method === 'session/request_permission');
+    const { replayer, events, session } = setup([
+      ...records.slice(0, firstAsk + 1),
+      { dir: 'out', msg: { jsonrpc: '2.0', id: records[firstAsk].msg.id, result: { outcome: { outcome: 'cancelled' } } } },
+      { dir: 'out', msg: { jsonrpc: '2.0', method: 'session/cancel' } },
+    ], FAST);
+    await startRecordedSession(session, 'agent');
+    await session.prompt(BACKGROUND_PROMPT);
+    replayer.openGate();
+    await until(() => events.some((e) => e.type === 'permission_request'));
+    expect(session.getState().agentTurnInFlight).toBe(true);
+
+    session.cancel();
+    expect(replayer.written.at(-1)).toMatchObject({ method: 'session/cancel' });
+    await until(() => !session.getState().agentTurnInFlight);
+    expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn', 'started:agent', 'ended:cancelled']);
+    expect(events.find((e) => e.type === 'permission_resolved')).toMatchObject({ outcome: { outcome: 'cancelled' } });
+    expect(replayer.errors).toEqual([]);
+    expect(replayer.done).toBe(true);
+  });
+
+  it('a prompt during the agent turn closes it and runs as its own turn', async () => {
+    const records = early();
+    const firstAsk = records.findIndex((r) => r.dir === 'in' && r.msg.method === 'session/request_permission');
+    // The agent's first tool call arrives, then the user sends a prompt; the agent answers it.
+    const { replayer, events, session } = setup([
+      ...records.slice(0, firstAsk),
+      { dir: 'out', msg: { jsonrpc: '2.0', id: 6, method: 'session/prompt' } },
+      { dir: 'in', msg: { jsonrpc: '2.0', id: 6, result: { stopReason: 'end_turn' } } },
+    ], { ...FAST, agentTurnToolIdleMs: 60_000 });
+    await startRecordedSession(session, 'agent');
+    await session.prompt(BACKGROUND_PROMPT);
+    replayer.openGate();
+    await until(() => session.getState().agentTurnInFlight);
+
+    expect((await session.prompt('What did it find?')).stopReason).toBe('end_turn');
+    expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn', 'started:agent', 'ended:end_turn', 'started:prompt', 'ended:end_turn']);
+    expect(session.getState().agentTurnInFlight).toBe(false);
+    expect(replayer.errors).toEqual([]);
+  });
+
+  it('a prompt right after Stop still ends the agent turn as cancelled (#2158)', async () => {
+    const records = early();
+    const firstAsk = records.findIndex((r) => r.dir === 'in' && r.msg.method === 'session/request_permission');
+    const { replayer, events, session } = setup([
+      ...records.slice(0, firstAsk),
+      { dir: 'out', msg: { jsonrpc: '2.0', method: 'session/cancel' } },
+      { dir: 'out', msg: { jsonrpc: '2.0', id: 6, method: 'session/prompt' } },
+      { dir: 'in', msg: { jsonrpc: '2.0', id: 6, result: { stopReason: 'end_turn' } } },
+    ], { ...FAST, agentTurnToolIdleMs: 60_000, agentTurnCancelSettleMs: 60_000 });
+    await startRecordedSession(session, 'agent');
+    await session.prompt(BACKGROUND_PROMPT);
+    replayer.openGate();
+    await until(() => session.getState().agentTurnInFlight);
+
+    session.cancel();
+    expect((await session.prompt('Never mind, do this instead')).stopReason).toBe('end_turn');
+    expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn', 'started:agent', 'ended:cancelled', 'started:prompt', 'ended:end_turn']);
+    expect(replayer.errors).toEqual([]);
+  });
+
+  it('ends the agent turn with an error, before exit, when the agent dies mid-work', async () => {
+    const { replayer, events, session, proc } = setup(early(), FAST);
+    await startRecordedSession(session, 'agent');
+    await session.prompt(BACKGROUND_PROMPT);
+    replayer.openGate();
+    await until(() => session.getState().agentTurnInFlight);
+
+    proc.emit('exit', 1, null);
+    await tick();
+    expect(events.slice(-2).map((e) => e.type)).toEqual(['turn_ended', 'exit']);
+    expect(events.at(-2)).toMatchObject({ type: 'turn_ended', stopReason: 'error', errorKind: 'process_exited' });
+    expect(session.getState().agentTurnInFlight).toBe(false);
+  });
+
+  it('kill() ends an agent turn as cancelled', async () => {
+    const { replayer, events, session } = setup(early(), FAST);
+    await startRecordedSession(session, 'agent');
+    await session.prompt(BACKGROUND_PROMPT);
+    replayer.openGate();
+    await until(() => session.getState().agentTurnInFlight);
+
+    session.kill();
+    expect(turnEvents(events).slice(-1)).toEqual(['ended:cancelled']);
+    expect(session.getState().agentTurnInFlight).toBe(false);
+  });
+});
+
+describe('AcpSession agent-initiated turns, edge cases', () => {
+  it('activity before the first prompt (a resume replay tail) opens no turn', async () => {
+    const { session, events } = setup([
+      ...genericStart(), ...genericNew(),
+      update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'old reply' } }),
+    ], FAST);
+    await session.start();
+    await session.newSession({ cwd: CWD });
+    await wait(FAST.agentTurnIdleMs * 2);
+    expect(updates(events, 'agent_message_chunk')).toHaveLength(1);
+    expect(turnEvents(events)).toEqual([]);
+  });
+
+  it('session state updates after a prompt (usage, commands) open no turn', async () => {
+    const { session, events, replayer } = setup([
+      ...genericStart(), ...genericNew(),
+      out(3, 'session/prompt'),
+      inMsg({ id: 3, result: { stopReason: 'end_turn' } }),
+      { dir: 'gate', msg: {} },
+      update({ sessionUpdate: 'usage_update', used: 10, size: 100 }),
+      update({ sessionUpdate: 'available_commands_update', availableCommands: [] }),
+    ], FAST);
+    await session.start();
+    await session.newSession({ cwd: CWD });
+    await session.prompt('hi');
+    replayer.openGate();
+    await wait(FAST.agentTurnIdleMs * 2);
+    expect(updates(events, 'usage_update')).toHaveLength(1);
+    expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn']);
+  });
+
+  it('an open tool call holds the turn for the longer tool idle time', async () => {
+    const { session, events, replayer } = setup([
+      ...genericStart(), ...genericNew(),
+      out(3, 'session/prompt'),
+      inMsg({ id: 3, result: { stopReason: 'end_turn' } }),
+      { dir: 'gate', msg: {} },
+      update({ sessionUpdate: 'tool_call', toolCallId: 't1', title: 'npm test', kind: 'execute', status: 'in_progress' }),
+    ], { agentTurnIdleMs: 20, agentTurnToolIdleMs: 150 });
+    await session.start();
+    await session.newSession({ cwd: CWD });
+    await session.prompt('hi');
+    replayer.openGate();
+    await until(() => session.getState().agentTurnInFlight);
+    await wait(80);
+    expect(session.getState().agentTurnInFlight).toBe(true);
+    await until(() => !session.getState().agentTurnInFlight);
+    expect(turnEvents(events)).toEqual(['started:prompt', 'ended:end_turn', 'started:agent', 'ended:end_turn']);
   });
 });

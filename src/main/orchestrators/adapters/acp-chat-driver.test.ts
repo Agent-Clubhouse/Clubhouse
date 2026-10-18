@@ -13,7 +13,7 @@ import { spawn } from 'child_process';
 import { createCopilotAcpChatDriver, createGenericAcpChatDriver } from './acp-chat-driver';
 import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
 import { copilotAcpCapabilities, COPILOT_ACP_PROFILE, COPILOT_PERMISSION_LEVELS } from './copilot-acp';
-import { AcpFixtureReplayer, loadAcpFixture, withoutRequest, type AcpFixtureRecord } from './__fixtures__/acp/acp-replay';
+import { AcpFixtureReplayer, loadAcpFixture, promptAnsweredEarly, withoutRequest, type AcpFixtureRecord } from './__fixtures__/acp/acp-replay';
 import { CHAT_EVENT_TYPES, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import type { InitializeResponse } from './acp-schema';
@@ -786,5 +786,85 @@ describe('Copilot plan card, tasks, titles and context (#2176, #2177, #2178)', (
       .toEqual([{ type: 'usage', data: { scope: 'session', context: { used: 17_000, size: 272_000, window: 'input' } } }]);
     expect(new AcpChatEventMapper('acp').map(upd(usage), state()))
       .toEqual([{ type: 'usage', data: { scope: 'session', context: { used: 17_000, size: 272_000 } } }]);
+  });
+});
+
+describe('Copilot ACP chat driver: work Copilot starts after the prompt ended (#2191)', () => {
+  // The recorded 1.0.98 background-agent session, with the prompt answered
+  // right after "STARTED" as 1.0.82 did. The driver doesn't choose agent mode
+  // (it is already the default), so the recording's set_mode is dropped.
+  function earlyAnswer() {
+    const records = promptAnsweredEarly(
+      withoutRequest(loadAcpFixture(COPILOT, 'background-agent.jsonl'), 'session/set_mode'),
+      (r) => r.dir === 'in' && (r.msg.params as { update?: { content?: { text?: string } } } | undefined)?.update?.content?.text === 'STARTED',
+    );
+    const { driver, replayer } = setup(records);
+    driver.sessionOverrides = { agentTurnIdleMs: 30, agentTurnToolIdleMs: 2_000, agentTurnCancelSettleMs: 20 };
+    return { driver, replayer };
+  }
+  const turnDrafts = (drafts: ChatEventDraft[]) => drafts.flatMap((d) => {
+    if (d.type === 'turn_started') return [`started:${d.data.trigger}`];
+    if (d.type === 'turn_ended') return [`ended:${d.data.stopReason}`];
+    return [];
+  });
+
+  it('reports the work as its own running turn (trigger system), not as orphaned events after Done', async () => {
+    const { driver, replayer } = earlyAnswer();
+    const session = await driver.start(startOpts({ model: 'claude-haiku-4.5' }));
+    await session.send([{ type: 'text', text: 'Start a background agent, then report when notified.' }], 'prompt');
+    const first = await collect(session, (d) => d.type === 'turn_ended');
+    expect(turnDrafts(first)).toEqual(['started:prompt', 'ended:end_turn']);
+
+    replayer.openGate();
+    const second = await collect(session, (d) => d.type === 'turn_ended');
+    expect(turnDrafts(second)).toEqual(['started:system', 'ended:end_turn']);
+    // Everything the agent did lands inside that turn, under its id.
+    const turnId = second[0].turnId;
+    expect(turnId).toBeDefined();
+    expect(turnId).not.toBe(first[0].turnId);
+    const work = second.filter((d) => d.type === 'tool_call' || d.type === 'agent_message_chunk' || d.type === 'permission_request');
+    expect(work.length).toBeGreaterThan(5);
+    expect(work.every((d) => d.turnId === turnId)).toBe(true);
+    expect(second.filter((d) => d.type === 'tool_call').map((d) => (d.data as { title: string }).title))
+      .toEqual(['Sleep for 30 seconds then list files', 'read_agent', expect.stringContaining('found.txt')]);
+    expect(replayer.errors).toEqual([]);
+    expect(replayer.done).toBe(true);
+  });
+
+  it('interrupt during that turn sends session/cancel and ends it as cancelled', async () => {
+    // Stop while the agent waits on the first permission request of its own work.
+    const records = promptAnsweredEarly(
+      withoutRequest(loadAcpFixture(COPILOT, 'background-agent.jsonl'), 'session/set_mode'),
+      (r) => r.dir === 'in' && (r.msg.params as { update?: { content?: { text?: string } } } | undefined)?.update?.content?.text === 'STARTED',
+    );
+    const ask = records.findIndex((r) => r.dir === 'in' && r.msg.method === 'session/request_permission');
+    const { driver, replayer } = setup([
+      ...records.slice(0, ask + 1),
+      { dir: 'out', msg: { jsonrpc: '2.0', id: records[ask].msg.id, result: { outcome: { outcome: 'cancelled' } } } },
+      { dir: 'out', msg: { jsonrpc: '2.0', method: 'session/cancel' } },
+    ]);
+    driver.sessionOverrides = { agentTurnIdleMs: 30, agentTurnToolIdleMs: 2_000, agentTurnCancelSettleMs: 20 };
+    const session = await driver.start(startOpts({ model: 'claude-haiku-4.5' }));
+    const drafts: ChatEventDraft[] = [];
+    void (async () => {
+      for await (const d of session.events) drafts.push(d);
+    })();
+    const waitFor = async (check: () => boolean) => {
+      for (let i = 0; i < 400 && !check(); i++) await new Promise((r) => setTimeout(r, 5));
+      expect(check()).toBe(true);
+    };
+    await session.send([{ type: 'text', text: 'Start a background agent, then report when notified.' }], 'prompt');
+    await waitFor(() => drafts.some((d) => d.type === 'turn_ended'));
+
+    replayer.openGate();
+    await waitFor(() => drafts.some((d) => d.type === 'permission_request'));
+    expect(turnDrafts(drafts)).toEqual(['started:prompt', 'ended:end_turn', 'started:system']);
+    await session.interrupt();
+    expect(replayer.written.at(-1)).toMatchObject({ method: 'session/cancel' });
+    await waitFor(() => turnDrafts(drafts).length === 4);
+    expect(turnDrafts(drafts)).toEqual(['started:prompt', 'ended:end_turn', 'started:system', 'ended:cancelled']);
+    expect(drafts.find((d) => d.type === 'permission_resolved')).toMatchObject({ data: { decision: 'cancelled' } });
+    expect(replayer.errors).toEqual([]);
+    expect(replayer.done).toBe(true);
   });
 });
