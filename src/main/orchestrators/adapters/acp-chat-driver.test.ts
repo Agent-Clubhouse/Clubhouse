@@ -12,7 +12,7 @@ vi.mock('child_process', () => ({
 import { spawn } from 'child_process';
 import { createCopilotAcpChatDriver, createGenericAcpChatDriver } from './acp-chat-driver';
 import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
-import { copilotAcpCapabilities, COPILOT_PERMISSION_LEVELS } from './copilot-acp';
+import { copilotAcpCapabilities, COPILOT_ACP_PROFILE, COPILOT_PERMISSION_LEVELS } from './copilot-acp';
 import { AcpFixtureReplayer, loadAcpFixture, withoutRequest, type AcpFixtureRecord } from './__fixtures__/acp/acp-replay';
 import { CHAT_EVENT_TYPES, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
@@ -665,5 +665,64 @@ describe('ACP permission card content (#2159)', () => {
     }, options }, state());
     expect(draft).toMatchObject({ data: { description: 'a.ts:3, b.ts' } });
     expect((draft as { data: { content?: unknown } }).data.content).toBeUndefined();
+  });
+});
+
+describe('Copilot plan card, tasks, titles and context (#2176, #2177, #2178)', () => {
+  const state = (): AcpSessionState => ({
+    sessionId: 's1', modes: null, configOptions: [], legacyModels: null, availableCommands: [], title: null, context: null, turnInFlight: false,
+  });
+  const upd = (update: Record<string, unknown>) => ({ type: 'update' as const, sessionId: 's1', replay: false, update: update as never });
+
+  it('shows a write to the session-state plan.md as the plan, reading the final file', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
+    const planFile = path.join(home, 'session-state', 'd71aeae6', 'plan.md');
+    fs.mkdirSync(path.dirname(planFile), { recursive: true });
+    const mapper = new AcpChatEventMapper('copilot_acp', { profile: COPILOT_ACP_PROFILE });
+    mapper.map({ type: 'turn_started', sessionId: 's1' }, state());
+
+    const started = mapper.map(upd({
+      sessionUpdate: 'tool_call', toolCallId: 'call_plan', title: 'Creating plan.md', kind: 'edit', status: 'pending',
+      locations: [{ path: planFile }], content: [{ type: 'diff', path: planFile, oldText: '', newText: '# Plan\n\n1. Draft' }],
+    }), state());
+    expect(started).toEqual([expect.objectContaining({ type: 'plan_document', data: { planId: planFile, markdown: '# Plan\n\n1. Draft', status: 'streaming', toolCallId: 'call_plan' } })]);
+
+    fs.writeFileSync(planFile, '# Plan\n\n1. Draft\n2. Review\n');
+    expect(mapper.map(upd({ sessionUpdate: 'tool_call_update', toolCallId: 'call_plan', status: 'in_progress' }), state())).toEqual([]);
+    const done = mapper.map(upd({ sessionUpdate: 'tool_call_update', toolCallId: 'call_plan', status: 'completed' }), state());
+    expect(done).toEqual([expect.objectContaining({ type: 'plan_document', data: { planId: planFile, markdown: '# Plan\n\n1. Draft\n2. Review\n', status: 'ready', toolCallId: 'call_plan' } })]);
+    // Never a workspace edit card.
+    expect([...started, ...done].some((d) => d.type === 'tool_call' || d.type === 'tool_call_update')).toBe(false);
+  });
+
+  it('feeds the todos sql call into the task list when it completes', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp', { profile: COPILOT_ACP_PROFILE });
+    mapper.map(upd({
+      sessionUpdate: 'tool_call', toolCallId: 'call_sql', title: 'Store changelog plan todos', kind: 'other', status: 'pending',
+      rawInput: { description: 'Store changelog plan todos', query: "INSERT INTO todos (id, title, status) VALUES ('a', 'Draft entry', 'pending'), ('b', 'Place entry', 'pending')" },
+    }), state());
+    const drafts = mapper.map(upd({ sessionUpdate: 'tool_call_update', toolCallId: 'call_sql', status: 'completed' }), state());
+    expect(drafts[0]).toEqual({ type: 'plan', data: { entries: [{ id: 'a', content: 'Draft entry', status: 'pending' }, { id: 'b', content: 'Place entry', status: 'pending' }] } });
+    expect(drafts[1]).toMatchObject({ type: 'tool_call_update', data: { toolCallId: 'call_sql', status: 'completed' } });
+  });
+
+  it('gives a punctuation-only title a readable fallback', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    const title = (update: Record<string, unknown>) => {
+      const [d] = mapper.map(upd({ sessionUpdate: 'tool_call', toolCallId: String(Math.random()), status: 'pending', ...update }), state());
+      return d.type === 'tool_call' ? d.data.title : '';
+    };
+    expect(title({ title: '.', kind: 'execute' })).toBe('Run command');
+    expect(title({ title: ' ', name: 'view', kind: 'read' })).toBe('view');
+    expect(title({ title: '…' })).toBe('Tool');
+    expect(title({ title: 'Viewing a.ts', kind: 'read' })).toBe('Viewing a.ts');
+  });
+
+  it("marks Copilot's context size as the input window, and leaves other agents' alone", () => {
+    const usage = { sessionUpdate: 'usage_update', used: 17_000, size: 272_000 };
+    expect(new AcpChatEventMapper('copilot_acp', { profile: COPILOT_ACP_PROFILE }).map(upd(usage), state()))
+      .toEqual([{ type: 'usage', data: { scope: 'session', context: { used: 17_000, size: 272_000, window: 'input' } } }]);
+    expect(new AcpChatEventMapper('acp').map(upd(usage), state()))
+      .toEqual([{ type: 'usage', data: { scope: 'session', context: { used: 17_000, size: 272_000 } } }]);
   });
 });

@@ -6,6 +6,8 @@ import {
   COPILOT_ACP_ARGS,
   COPILOT_PERMISSION_LEVELS,
   copilotNativeSessionExists,
+  copilotPlanFilePath,
+  copilotTasksAfterToolCall,
   copilotSessionStateDir,
   COPILOT_ACP_PROFILE,
   copilotAcpCapabilities,
@@ -191,5 +193,41 @@ describe('Copilot level re-send', () => {
     const { session, calls } = fakeSession('on', 'agent');
     await COPILOT_PERMISSION_LEVELS.apply(session, 'full_access', { force: true });
     expect(calls).toEqual(['allow_all=on', 'mode=agent']);
+  });
+});
+
+describe('Copilot plan mode (#2176)', () => {
+  it('recognises the session-state plan file, POSIX or Windows', () => {
+    expect(copilotPlanFilePath(['/workspace/project/src/a.ts', '/Users/me/.copilot/session-state/d71aeae6-cc77/plan.md'])).toBe('/Users/me/.copilot/session-state/d71aeae6-cc77/plan.md');
+    expect(copilotPlanFilePath(['C:\\Users\\me\\.copilot\\session-state\\abc\\plan.md'])).toBe('C:\\Users\\me\\.copilot\\session-state\\abc\\plan.md');
+    expect(copilotPlanFilePath(['/workspace/project/plan.md', '/workspace/project/docs/session-state/plan.md'])).toBeUndefined();
+  });
+
+  // The statement Copilot 1.0.98 ran in the live test ("Store changelog plan todos").
+  const insert = {
+    description: 'Store changelog plan todos',
+    query: "INSERT OR REPLACE INTO todos (id, title, description, status) VALUES\n  ('draft-fictional-fix-entry', 'Drafting fictional fix entry', 'Write a concise, user-facing description; don''t mention internals.', 'pending'),\n  ('place-release-note-entry', 'Placing release note entry', 'Add it (in order).', 'pending');",
+  };
+
+  it('turns the todos insert into tasks', () => {
+    expect(copilotTasksAfterToolCall(insert, [])).toEqual([
+      { id: 'draft-fictional-fix-entry', content: 'Drafting fictional fix entry', status: 'pending' },
+      { id: 'place-release-note-entry', content: 'Placing release note entry', status: 'pending' },
+    ]);
+  });
+
+  it('applies status updates, by id or IN list, and deletes', () => {
+    const tasks = copilotTasksAfterToolCall(insert, [])!;
+    const started = copilotTasksAfterToolCall({ query: "UPDATE todos SET status = 'in_progress' WHERE id = 'draft-fictional-fix-entry'" }, tasks)!;
+    expect(started.map((t) => t.status)).toEqual(['in_progress', 'pending']);
+    const done = copilotTasksAfterToolCall({ query: "UPDATE todos SET status = 'done' WHERE id IN ('draft-fictional-fix-entry', 'place-release-note-entry');" }, started)!;
+    expect(done.map((t) => t.status)).toEqual(['completed', 'completed']);
+    expect(copilotTasksAfterToolCall({ query: "DELETE FROM todos WHERE id = 'place-release-note-entry'" }, done)!.map((t) => t.id)).toEqual(['draft-fictional-fix-entry']);
+  });
+
+  it('ignores queries that do not change todos', () => {
+    expect(copilotTasksAfterToolCall({ query: 'SELECT * FROM todos' }, [])).toBeUndefined();
+    expect(copilotTasksAfterToolCall({ query: "INSERT INTO notes (id) VALUES ('x')" }, [])).toBeUndefined();
+    expect(copilotTasksAfterToolCall({ command: 'ls' }, [])).toBeUndefined();
   });
 });

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { deriveAcpCapabilities, type AcpDriverCapabilities } from './acp-capabilities';
-import { GENERIC_ACP_PROFILE, type AcpAgentProfile, type AcpPermissionLevels } from './acp-session';
+import { GENERIC_ACP_PROFILE, type AcpAgentProfile, type AcpPermissionLevels, type AcpTask } from './acp-session';
 import type { PermissionLevel } from '../../../shared/chat/capabilities';
 import type {
   InitializeResponse,
@@ -268,8 +268,105 @@ export async function copilotNativeSessionExists(sessionId: string, env: Record<
   }
 }
 
+// ── Plan mode (#2176) ────────────────────────────────────────────────────────
+
+/** In plan mode Copilot writes its plan to `<config>/session-state/<sessionId>/plan.md`. */
+const COPILOT_PLAN_FILE_RE = /[\\/]session-state[\\/][A-Za-z0-9_-]+[\\/]plan\.md$/;
+
+export function copilotPlanFilePath(paths: readonly string[]): string | undefined {
+  return paths.find((p) => COPILOT_PLAN_FILE_RE.test(p));
+}
+
+/** Copilot's todo statuses → task statuses. */
+function taskStatus(raw: string | undefined): AcpTask['status'] {
+  const s = (raw ?? '').toLowerCase();
+  if (s === 'done' || s === 'completed' || s === 'complete') return 'completed';
+  if (s === 'in_progress' || s === 'in-progress' || s === 'active') return 'in_progress';
+  return 'pending';
+}
+
+/** SQL values from one `( … )` tuple: quoted strings ('' escapes), numbers, NULL. */
+function sqlValues(tuple: string): Array<string | null> {
+  const out: Array<string | null> = [];
+  const re = /'((?:[^']|'')*)'|(-?\d+(?:\.\d+)?)|(NULL)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(tuple))) out.push(m[1] !== undefined ? m[1].replace(/''/g, "'") : m[2] ?? null);
+  return out;
+}
+
+/** The `( … )` groups after VALUES, respecting quotes. */
+function sqlTuples(values: string): string[] {
+  const tuples: string[] = [];
+  let depth = 0;
+  let quoted = false;
+  let start = -1;
+  for (let i = 0; i < values.length; i++) {
+    const c = values[i];
+    if (c === "'") quoted = !quoted;
+    if (quoted) continue;
+    if (c === '(' && depth++ === 0) start = i + 1;
+    else if (c === ')' && --depth === 0 && start >= 0) tuples.push(values.slice(start, i));
+  }
+  return tuples;
+}
+
+/**
+ * Copilot stores plan todos with its `sql` tool, e.g.
+ * `INSERT OR REPLACE INTO todos (id, title, description, status) VALUES (…), …`
+ * and `UPDATE todos SET status = 'done' WHERE id = '…'`. Applies the
+ * statements that touch `todos` to the current list; anything else (other
+ * tables, SELECTs) is no change.
+ */
+export function copilotTasksAfterToolCall(rawInput: unknown, current: readonly AcpTask[]): AcpTask[] | undefined {
+  const query = rawInput && typeof rawInput === 'object' ? (rawInput as { query?: unknown }).query : undefined;
+  if (typeof query !== 'string' || !/\btodos\b/i.test(query)) return undefined;
+  const tasks = new Map(current.map((t) => [t.id, { ...t }]));
+  let changed = false;
+  for (const statement of query.split(/;\s*(?=(?:[^']*'[^']*')*[^']*$)/)) {
+    const insert = /^\s*(?:INSERT|REPLACE)\b[^(]*?\binto\s+todos\s*\(([^)]*)\)\s*VALUES\s*([\s\S]*)$/i.exec(statement);
+    if (insert) {
+      const cols = insert[1].split(',').map((c) => c.trim().replace(/["`]/g, '').toLowerCase());
+      for (const tuple of sqlTuples(insert[2])) {
+        const row = Object.fromEntries(cols.map((c, i) => [c, sqlValues(tuple)[i]]));
+        const id = row.id ?? row.title;
+        if (!id) continue;
+        tasks.set(id, { id, content: row.title ?? row.description ?? id, status: taskStatus(row.status ?? undefined) });
+        changed = true;
+      }
+      continue;
+    }
+    const update = /^\s*UPDATE\s+todos\s+SET\s+([\s\S]*?)\s+WHERE\s+([\s\S]*)$/i.exec(statement);
+    if (update) {
+      const status = /\bstatus\s*=\s*'([^']*)'/i.exec(update[1])?.[1];
+      const title = /\btitle\s*=\s*'((?:[^']|'')*)'/i.exec(update[1])?.[1]?.replace(/''/g, "'");
+      const ids = /\bid\s+IN\s*\(([^)]*)\)/i.exec(update[2])
+        ? sqlValues(/\bid\s+IN\s*\(([^)]*)\)/i.exec(update[2])![1]).filter((v): v is string => !!v)
+        : [/\bid\s*=\s*'([^']*)'/i.exec(update[2])?.[1]].filter((v): v is string => !!v);
+      for (const id of ids) {
+        const task = tasks.get(id);
+        if (!task) continue;
+        if (status !== undefined) task.status = taskStatus(status);
+        if (title !== undefined) task.content = title;
+        changed = true;
+      }
+      continue;
+    }
+    const del = /^\s*DELETE\s+FROM\s+todos\b(?:\s+WHERE\s+([\s\S]*))?$/i.exec(statement);
+    if (del) {
+      if (!del[1]) tasks.clear();
+      else for (const id of sqlValues(del[1]).filter((v): v is string => !!v)) tasks.delete(id);
+      changed = true;
+    }
+  }
+  return changed ? [...tasks.values()] : undefined;
+}
+
 export const COPILOT_ACP_PROFILE: AcpAgentProfile = {
   id: 'copilot',
+  planFilePath: copilotPlanFilePath,
+  tasksAfterToolCall: copilotTasksAfterToolCall,
+  // usage_update.size is Copilot's input budget (e.g. 272k of a 400k window, #2178).
+  contextWindow: 'input',
   nativeSessionExists: copilotNativeSessionExists,
   modelCostHint: copilotModelCostHint,
   capabilities: copilotAcpCapabilities,

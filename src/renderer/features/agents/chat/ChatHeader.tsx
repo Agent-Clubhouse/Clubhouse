@@ -111,7 +111,7 @@ export function chatUsage(state: ChatViewState): PaneUsage | null {
   const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round((ctx.used / ctx.size) * 100)) : null;
   if (ctxPct === null && limits.length === 0) return null;
   const lines: string[] = [];
-  if (ctxPct !== null && ctx) lines.push(`Context ${ctxPct}%: ${formatTokens(ctx.used)} of ${formatTokens(ctx.size)} tokens`);
+  if (ctxPct !== null && ctx) lines.push(`Context ${ctxPct}%: ${formatTokens(ctx.used)} of ${formatTokens(ctx.size)} ${ctx.window === 'input' ? 'input ' : ''}tokens`);
   for (const l of limits) {
     const reset = l.resetsAt ? `, resets ${new Date(l.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
     lines.push(`${limitName(l.window)} limit: ${limitLabel(l)}${reset}`);

@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
 import { pathToFileURL } from 'url';
 import * as path from 'path';
 import type { ChatCapabilities, ChatDriverId, PermissionLevel } from '../../../shared/chat/capabilities';
@@ -14,7 +15,7 @@ import type {
   TurnStopReason as ChatStopReason,
 } from '../../../shared/chat/events';
 import type { AcpDriverCapabilities } from './acp-capabilities';
-import type { AcpAgentProfile, AcpPermissionLevels, AcpSessionEvent, AcpSessionState } from './acp-session';
+import type { AcpAgentProfile, AcpPermissionLevels, AcpSessionEvent, AcpSessionState, AcpTask } from './acp-session';
 import type {
   ContentBlock,
   McpServer,
@@ -191,6 +192,40 @@ function blockText(block: ContentBlock): string | undefined {
   }
 }
 
+/** Paths a tool call touches: its locations and its diffs. */
+function toolPaths(locs: ToolCall['locations'] | null | undefined, content: ToolCallContent[] | null | undefined): string[] {
+  return [
+    ...(Array.isArray(locs) ? locs.map((l) => l.path) : []),
+    ...(Array.isArray(content) ? content.flatMap((c) => (c.type === 'diff' ? [c.path] : [])) : []),
+  ];
+}
+
+/** The new text of the diff for `path`, when the tool call has one. */
+function diffNewText(content: ToolCallContent[] | null | undefined, path: string): string | undefined {
+  const diff = Array.isArray(content) ? content.find((c) => c.type === 'diff' && c.path === path) : undefined;
+  return diff && diff.type === 'diff' ? diff.newText : undefined;
+}
+
+/** A plan file's text, if it can be read and is a sensible size. */
+function readSmallFile(file: string): string | undefined {
+  try {
+    if (fs.statSync(file).size > 512 * 1024) return undefined;
+    return fs.readFileSync(file, 'utf8');
+  } catch { // telemetry-exempt: a plan file that can't be read falls back to the diff
+    return undefined;
+  }
+}
+
+/** A readable tool card title: Copilot sometimes sends "." (#2177). */
+function toolTitle(title: string, name: string | null | undefined, kind: ToolCall['kind']): string {
+  if (/[\p{L}\p{N}]/u.test(title)) return title;
+  if (name && /[\p{L}\p{N}]/u.test(name)) return name;
+  const kindTitles: Partial<Record<NonNullable<ToolCall['kind']>, string>> = {
+    read: 'Read', edit: 'Edit', delete: 'Delete', move: 'Move', search: 'Search', execute: 'Run command', think: 'Think', fetch: 'Fetch', switch_mode: 'Switch mode',
+  };
+  return (kind && kindTitles[kind]) ?? 'Tool';
+}
+
 /** A file path in a permission request's raw input (Copilot: `fileName`; others: `path`). */
 function rawInputPath(rawInput: unknown): string | undefined {
   if (!rawInput || typeof rawInput !== 'object') return undefined;
@@ -289,12 +324,19 @@ export class AcpChatEventMapper {
   private commandsKey = '';
   private readonly levels?: AcpPermissionLevels;
   private readonly modelCostHint?: AcpAgentProfile['modelCostHint'];
+  private readonly profile?: Pick<AcpAgentProfile, 'planFilePath' | 'tasksAfterToolCall' | 'contextWindow'>;
   private readonly now: () => number;
+  /** Tool calls that write the agent's plan file, by id → the file. */
+  private readonly planWrites = new Map<string, string>();
+  /** Raw input of each tool call, for tasksAfterToolCall when it completes. */
+  private readonly toolInputs = new Map<string, unknown>();
+  private tasks: AcpTask[] = [];
+  private planMarkdown = '';
 
   constructor(
     private readonly driver: ChatDriverId,
     opts: {
-      profile?: Pick<AcpAgentProfile, 'permissionLevels' | 'modelCostHint'>;
+      profile?: Pick<AcpAgentProfile, 'permissionLevels' | 'modelCostHint' | 'planFilePath' | 'tasksAfterToolCall' | 'contextWindow'>;
       now?: () => number;
       /** The session was started with a chosen effort, so it isn't the agent's default. */
       effortPinned?: boolean;
@@ -303,6 +345,7 @@ export class AcpChatEventMapper {
     this.effortPinned = opts.effortPinned ?? false;
     this.levels = opts.profile?.permissionLevels;
     this.modelCostHint = opts.profile?.modelCostHint;
+    this.profile = opts.profile;
     this.now = opts.now ?? Date.now;
   }
 
@@ -443,16 +486,23 @@ export class AcpChatEventMapper {
       case 'tool_call': {
         if (replay) return [];
         this.lastKind = 'other';
-        this.toolCalls.set(u.toolCallId, {
-          locations: locations(u.locations),
-          content: u.content ? toolContent(u.content, u.rawOutput) : undefined,
-        });
+        const content = u.content ? toolContent(u.content, u.rawOutput) : undefined;
+        this.toolCalls.set(u.toolCallId, { locations: locations(u.locations), content });
+        if (u.rawInput !== undefined) this.toolInputs.set(u.toolCallId, u.rawInput);
+        const planFile = this.profile?.planFilePath?.(toolPaths(u.locations, u.content));
+        if (planFile) {
+          // A write to the agent's plan file is the plan, not a workspace edit (#2176).
+          this.planWrites.set(u.toolCallId, planFile);
+          const markdown = diffNewText(u.content, planFile) ?? this.planMarkdown;
+          this.planMarkdown = markdown;
+          return [this.scoped({ type: 'plan_document', data: { planId: planFile, markdown, status: 'streaming', toolCallId: u.toolCallId } })];
+        }
         return [this.scoped({
           type: 'tool_call',
           data: {
             toolCallId: u.toolCallId,
             kind: u.kind ?? 'other',
-            title: u.title,
+            title: toolTitle(u.title, u.name, u.kind),
             status: u.status ?? 'pending',
             ...(u.name && { toolName: u.name }),
             ...(u.rawInput !== undefined && { rawInput: u.rawInput }),
@@ -465,8 +515,26 @@ export class AcpChatEventMapper {
         if (replay) return [];
         this.lastKind = 'other';
         const tu = u as ToolCallUpdate;
+        const planFile = this.planWrites.get(tu.toolCallId);
+        if (planFile) {
+          if (tu.status !== 'completed') return [];
+          this.planWrites.delete(tu.toolCallId);
+          // The file on disk is the whole plan, edits included; the diff is a fallback.
+          const markdown = readSmallFile(planFile) ?? diffNewText(tu.content ?? undefined, planFile) ?? this.planMarkdown;
+          this.planMarkdown = markdown;
+          return [this.scoped({ type: 'plan_document', data: { planId: planFile, markdown, status: 'ready', toolCallId: tu.toolCallId } })];
+        }
         const content = toolContent(tu.content, tu.rawOutput);
-        return [this.scoped({
+        const out: ChatEventDraft[] = [];
+        if (tu.status === 'completed' && this.profile?.tasksAfterToolCall) {
+          const tasks = this.profile.tasksAfterToolCall(this.toolInputs.get(tu.toolCallId) ?? tu.rawInput, this.tasks);
+          if (tasks) {
+            this.tasks = tasks;
+            out.push(this.scoped({ type: 'plan', data: { entries: tasks.map((t) => ({ id: t.id, content: t.content, status: t.status })) } }));
+          }
+        }
+        if (tu.status === 'completed' || tu.status === 'failed') this.toolInputs.delete(tu.toolCallId);
+        return [...out, this.scoped({
           type: 'tool_call_update',
           data: {
             toolCallId: tu.toolCallId,
@@ -479,6 +547,7 @@ export class AcpChatEventMapper {
       }
       case 'plan':
         if (replay) return [];
+        this.tasks = u.entries.map((e, i) => ({ id: String(i), content: e.content, status: e.status }));
         return [this.scoped({
           type: 'plan',
           data: { entries: u.entries.map((e) => ({ content: e.content, status: e.status, priority: e.priority })) },
@@ -503,7 +572,7 @@ export class AcpChatEventMapper {
           type: 'usage',
           data: {
             scope: 'session',
-            context: { used: u.used, size: u.size },
+            context: { used: u.used, size: u.size, ...(this.profile?.contextWindow === 'input' && { window: 'input' as const }) },
             ...(u.cost && u.cost.currency.toUpperCase() === 'USD' && { costUsd: u.cost.amount }),
           },
         }];

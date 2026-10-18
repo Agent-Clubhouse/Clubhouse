@@ -400,7 +400,12 @@ export interface ChatEventDataMap {
     costUsd?: number;
     /** True when the cost is an API-price estimate (e.g. Claude on a subscription). */
     costIsEstimate?: boolean;
-    context?: { used: number; size: number };
+    /**
+     * Context fill. `window` says what `size` measures: the whole context
+     * window ('total', the default) or only the part left for input after
+     * the output reserve ('input'; Copilot reports this, e.g. 272k of 400k).
+     */
+    context?: { used: number; size: number; window?: 'input' | 'total' };
     limits?: UsageLimit[];
   };
   mode_changed: { level: PermissionLevel; nativeMode?: string };
