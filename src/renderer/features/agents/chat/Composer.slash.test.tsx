@@ -170,4 +170,23 @@ describe('Composer slash menu (#2090)', () => {
     fireEvent.keyDown(box(), { key: 'Enter', isComposing: true });
     expect(box()).toHaveValue('hi /co');
   });
+
+  it('a failed send restoring the same draft opens no menu on its own', () => {
+    const onSend = vi.fn();
+    render(<Harness onSend={onSend} />);
+    type('see /compact');
+    fireEvent.keyDown(box(), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledWith('see /compact', 'send');
+    act(() => setDraftFromOutside('see /compact'));
+    expect(menu()).toBeNull();
+  });
+
+  it('an IME-composing Esc with the menu open does not stop the turn', () => {
+    const onStop = vi.fn();
+    render(<Harness running onStop={onStop} capabilities={{ ...MINIMAL_CHAT_CAPABILITIES, slashCommands: true, interrupt: true }} />);
+    type('hi /co');
+    fireEvent.keyDown(box(), { key: 'Escape', isComposing: true });
+    expect(onStop).not.toHaveBeenCalled();
+    expect(menu()).not.toBeNull();
+  });
 });

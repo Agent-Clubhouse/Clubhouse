@@ -463,6 +463,8 @@ export function Composer(props: ComposerProps) {
     if (attachments.length) props.onSend(trimmed, action, attachments.map((a) => a.id));
     else props.onSend(trimmed, action);
     setText('');
+    // A failed send restores this same text from outside; the caret read from it no longer counts.
+    setCaretAt(null);
     if (attachments.length) props.onAttachmentsChange?.([]);
     setAttachError(null);
   };
@@ -488,8 +490,9 @@ export function Composer(props: ComposerProps) {
   const trackCaret = (el: HTMLTextAreaElement) => setCaretAt({ text: el.value, at: el.selectionStart ?? el.value.length });
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // An Enter that commits an IME composition never picks or sends.
-    if (slashMatches.length > 0 && !e.nativeEvent.isComposing) {
+    // While an IME is composing, its keys are its own: Enter commits, Esc cancels. None picks, sends or stops.
+    if (e.nativeEvent.isComposing) return;
+    if (slashMatches.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex((i) => (i + 1) % slashMatches.length); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length); return; }
       // Enter picks only once a name is started: "yes and /" sends as typed. Tab always picks.
@@ -511,7 +514,7 @@ export function Composer(props: ComposerProps) {
       props.onStop();
       return;
     }
-    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+    if (e.key !== 'Enter') return;
     if (e.shiftKey) {
       // Shift+Enter queues during a turn; otherwise it's a newline.
       if (!modes.secondary) return;
