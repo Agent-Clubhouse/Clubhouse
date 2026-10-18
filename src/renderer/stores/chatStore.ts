@@ -13,7 +13,7 @@
  */
 
 import { create } from 'zustand';
-import { MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
+import { COMPACTION_SETTLED, COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
 import type {
   AvailableCommand,
   ChatCapabilities,
@@ -102,6 +102,8 @@ export interface NoticeItem extends ChatItemBase {
   level: 'info' | 'warn';
   code: string;
   message: string;
+  /** Still in progress (a context compaction that hasn't finished). */
+  running?: boolean;
 }
 
 export interface ErrorItem extends ChatItemBase {
@@ -222,6 +224,8 @@ export interface ChatViewState {
   protocolUnknown: Record<string, number>;
   /** Bumped when the agent changes the workspace's git state (commit, push, …): views of its changes re-read. */
   workspaceRevision: number;
+  /** Item id of the running "Compacting context…" notice, while a compaction runs. */
+  compactionItemId: string | null;
   /**
    * "Newer than tested" CLI note. CLIs release faster than chat is retested,
    * so this isn't a transcript item; the view shows it only next to a real
@@ -261,6 +265,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     queued: [],
     protocolUnknown: {},
     workspaceRevision: 0,
+    compactionItemId: null,
     untestedCliNote: null,
   };
 }
@@ -302,8 +307,27 @@ function upsertItem<T extends ChatItem>(
   return next;
 }
 
+/**
+ * Settle a running compaction: swap its row for the notice that finished it,
+ * or drop the row when the turn or session ended without one.
+ */
+function settleCompaction(state: ChatViewState, replacement?: NoticeItem): ChatViewState {
+  if (state.compactionItemId === null) return state;
+  const idx = findItemIndex(state.items, state.compactionItemId);
+  const items = state.items.slice();
+  if (idx !== -1) {
+    // In place, so the result reads where compaction began.
+    if (replacement) items[idx] = { ...replacement, id: state.items[idx].id };
+    else items.splice(idx, 1);
+  } else if (replacement) {
+    items.push(replacement);
+  }
+  return { ...state, items, compactionItemId: null };
+}
+
 /** Fields reset when a new chat session begins. History (`items`) is kept. */
-function startSession(state: ChatViewState, event: ChatEvent): ChatViewState {
+function startSession(prev: ChatViewState, event: ChatEvent): ChatViewState {
+  const state = settleCompaction(prev);
   const previous = state.sessionId;
   const next: ChatViewState = {
     ...state,
@@ -451,6 +475,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
     case 'session_state':
       return { ...state, state: event.data.state };
     case 'session_ended':
+      state = settleCompaction(state);
       return {
         ...state,
         state: event.data.reason === 'error' ? 'error' : 'sleeping',
@@ -475,6 +500,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       };
     }
     case 'turn_ended': {
+      // A compaction the turn didn't see finish (cancelled, failed) is over too.
+      state = settleCompaction(state);
       const d = event.data;
       const hasUsage = d.usage !== undefined || d.costUsd !== undefined;
       const durationMs = d.durationMs ?? (state.turnStartedAt !== null ? event.ts - state.turnStartedAt : undefined);
@@ -687,6 +714,12 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const d = event.data;
       if (d.code === 'untested_cli_version') return { ...state, untestedCliNote: d.message };
       const item: NoticeItem = { ...itemBase(event, `notice:${sid}:${event.seq}`), kind: 'notice', level: d.level, code: d.code, message: d.message };
+      if (d.code === COMPACTION_STARTED) {
+        // One running row per compaction, however often the provider repeats it.
+        if (state.compactionItemId !== null) return state;
+        return { ...state, items: [...state.items, { ...item, running: true }], compactionItemId: item.id };
+      }
+      if (COMPACTION_SETTLED.includes(d.code) && state.compactionItemId !== null) return settleCompaction(state, item);
       return { ...state, items: [...state.items, item] };
     }
     case 'error': {
@@ -694,6 +727,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const item: ErrorItem = { ...itemBase(event, `error:${sid}:${event.seq}`), kind: 'error', code: d.code, message: d.message, fatal: d.fatal };
       if (d.willRetry !== undefined) item.willRetry = d.willRetry;
       if (d.toolCallId !== undefined) item.toolCallId = d.toolCallId;
+      // A fatal error ends whatever was running, compaction included.
+      if (d.fatal) state = settleCompaction(state);
       return { ...state, items: [...state.items, item] };
     }
 

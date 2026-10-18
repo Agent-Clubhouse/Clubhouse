@@ -132,6 +132,14 @@ export type ClaudeChatEventBody =
       usage: ClaudeUsage;
     }
   | { kind: 'compacted'; trigger?: string; preTokens?: number }
+  /**
+   * `system/status` around a compaction: `started` when the status turns
+   * `compacting`; `failed` when it leaves with `compact_result: 'failed'`.
+   * Success is the `compact_boundary` (`compacted`).
+   */
+  | { kind: 'compaction'; phase: 'started' | 'failed'; error?: string }
+  /** `conversation_reset`: /clear (or a plan-mode exit with clear) discarded the CLI's conversation. */
+  | { kind: 'conversation_reset'; trigger?: string }
   | { kind: 'subagent'; phase: 'started' | 'progress' | 'notification' | 'updated'; taskId: string; raw: Record<string, unknown> }
   | { kind: 'mode_changed'; permissionMode: string }
   | { kind: 'permission_denied'; toolName?: string; raw: Record<string, unknown> }

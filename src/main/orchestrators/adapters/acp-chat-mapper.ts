@@ -130,6 +130,12 @@ function pairs(v: unknown): Array<{ name: string; value: string }> {
 /** ACP's "authentication required" JSON-RPC error. */
 const ACP_AUTH_REQUIRED = -32000;
 
+/** Chat's wording for the compaction states every provider shares. */
+const COMPACTION_MESSAGES: Partial<Record<string, string>> = {
+  in_progress: 'Compacting context…',
+  completed: 'Context compacted',
+};
+
 function turnErrorCode(errorKind: string | undefined, rpcCode: number | undefined): ChatErrorCode {
   if (errorKind === 'process_exited') return 'process_exited';
   if (errorKind === 'rpc') return rpcCode === ACP_AUTH_REQUIRED ? 'auth_required' : 'protocol_error';
@@ -668,8 +674,10 @@ export class AcpChatEventMapper {
           type: 'notice',
           data: {
             level: u.status === 'failed' ? 'warn' : 'info',
+            // compaction_in_progress opens the chat's running row; completed,
+            // failed or cancelled settles it (see COMPACTION_SETTLED).
             code: `compaction_${u.status}`,
-            message: u.error ?? `Context compaction ${String(u.status).replace('_', ' ')}`,
+            message: u.error ?? COMPACTION_MESSAGES[u.status] ?? `Context compaction ${String(u.status).replace('_', ' ')}`,
           },
         }];
       case 'session_info_update':

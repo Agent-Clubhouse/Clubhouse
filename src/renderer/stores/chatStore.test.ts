@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChatEvent, ChatEventDataMap, ChatEventType } from '../../shared/chat';
-import { MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
+import { COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
 import {
   createChatViewState,
   foldChatEvents,
@@ -741,5 +741,81 @@ describe('MCP servers on session_info', () => {
     expect(state.mcpServers).toEqual([{ name: 'clubhouse', status: 'connected' }]);
     state = fold([sessionStarted(ev)], state);
     expect(state.mcpServers).toBeNull();
+  });
+});
+
+describe('reduceChatEvent: context compaction', () => {
+  let ev: ReturnType<typeof makeEmitter>;
+  beforeEach(() => { ev = makeEmitter(); });
+  const started = () => ev('notice', { level: 'info', code: COMPACTION_STARTED, message: 'Compacting context…' }, { turnId: 't1' });
+  const notices = (s: ChatViewState) => s.items.flatMap((i) => (i.kind === 'notice' ? [[i.code, i.message, i.running ?? false]] : []));
+
+  it('shows one running row while compaction runs, then settles it in place', () => {
+    const running = fold([
+      sessionStarted(ev),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+      started(),
+      // Providers can repeat the start (ACP compaction_update, a repeated status frame).
+      started(),
+    ]);
+    expect(notices(running)).toEqual([[COMPACTION_STARTED, 'Compacting context…', true]]);
+    expect(running.compactionItemId).toBe(running.items[0].id);
+
+    const done = fold([
+      ev('agent_message', { messageId: 'm1', text: 'later' }, { turnId: 't1' }),
+      // Codex sends its completed notice without a turn id.
+      ev('notice', { level: 'info', code: 'context_compacted', message: 'Context compacted' }),
+    ], running);
+    expect(notices(done)).toEqual([['context_compacted', 'Context compacted', false]]);
+    // Same row, same place: before the message that came while it ran.
+    expect(done.items.map((i) => i.kind)).toEqual(['notice', 'agent_message']);
+    expect(done.items[0].id).toBe(running.items[0].id);
+    expect(done.compactionItemId).toBeNull();
+  });
+
+  it('settles into whichever code finished it (Claude, ACP, failures)', () => {
+    for (const code of ['compacted', 'compaction_completed', 'compaction_failed', 'compaction_cancelled']) {
+      ev = makeEmitter();
+      const s = fold([sessionStarted(ev), started(), ev('notice', { level: 'warn', code, message: code })]);
+      expect(notices(s)).toEqual([[code, code, false]]);
+    }
+  });
+
+  it('appends a completed notice as before when no start was seen', () => {
+    const s = fold([sessionStarted(ev), ev('notice', { level: 'info', code: 'context_compacted', message: 'Context compacted' })]);
+    expect(notices(s)).toEqual([['context_compacted', 'Context compacted', false]]);
+  });
+
+  it('drops the running row when the turn ends, is cancelled or the session ends without a result', () => {
+    const turnEnd = fold([
+      sessionStarted(ev),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+      started(),
+      ev('turn_ended', { stopReason: 'cancelled' }, { turnId: 't1' }),
+    ]);
+    expect(notices(turnEnd)).toEqual([]);
+    expect(turnEnd.compactionItemId).toBeNull();
+    // A later completed notice is an ordinary row again.
+    const after = fold([ev('notice', { level: 'info', code: 'compacted', message: 'Context compacted' })], turnEnd);
+    expect(notices(after)).toEqual([['compacted', 'Context compacted', false]]);
+
+    ev = makeEmitter();
+    const ended = fold([sessionStarted(ev), started(), ev('session_ended', { reason: 'process_exit' })]);
+    expect(notices(ended)).toEqual([]);
+
+    ev = makeEmitter();
+    const failed = fold([sessionStarted(ev), started(), ev('error', { code: 'process_exited', message: 'gone', fatal: true })]);
+    expect(notices(failed)).toEqual([]);
+    expect(failed.compactionItemId).toBeNull();
+
+    ev = makeEmitter();
+    const retrying = fold([sessionStarted(ev), started(), ev('error', { code: 'rate_limited', message: 'slow down', fatal: false, willRetry: true })]);
+    expect(notices(retrying)).toEqual([[COMPACTION_STARTED, 'Compacting context…', true]]);
+  });
+
+  it('drops a running row when a new session starts', () => {
+    const s = fold([sessionStarted(ev, 's1'), started(), sessionStarted(ev, 's2')]);
+    expect(notices(s)).toEqual([]);
+    expect(s.compactionItemId).toBeNull();
   });
 });

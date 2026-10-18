@@ -19,6 +19,7 @@ import type {
   TurnStopReason,
   UsageLimit,
 } from '../../../shared/chat/events';
+import { COMPACTION_STARTED } from '../../../shared/chat/events';
 import type {
   ChatDriver,
   ChatDriverProbe,
@@ -505,6 +506,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private pump: Promise<void> | null = null;
   /** The last main-loop call's context fill this turn: input + cache read + cache write. */
   private lastContext: { used: number; model?: string } | undefined;
+  /** A compaction-started notice went out and nothing has settled it yet. */
+  private compacting = false;
   /** Status per window from rate_limit_event, kept on get_usage's windows (which have none). */
   private limitStatus = new Map<string, UsageLimit['status']>();
   private planUsageAt = 0;
@@ -970,6 +973,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         }
         this.push({ type: 'turn_ended', data: { stopReason, durationMs: ev.durationMs, usage: t, costUsd: turnCost } }, true);
         this.turnRunning = false;
+        // turn_ended settles a compaction row; a later status frame starts a new one.
+        this.compacting = false;
         this.interrupting = false;
         this.turnApiError = undefined;
         void this.refreshPlanUsage();
@@ -1012,10 +1017,27 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         }
         return;
       }
+      case 'compaction':
+        // Auto compaction or /compact can take a minute or more: say so when it starts.
+        if (ev.phase === 'started' && !this.compacting) {
+          this.compacting = true;
+          this.push({ type: 'notice', data: { level: 'info', code: COMPACTION_STARTED, message: 'Compacting context…' } }, true);
+        } else if (ev.phase === 'failed' && this.compacting) {
+          this.compacting = false;
+          this.push({ type: 'notice', data: { level: 'warn', code: 'compaction_failed', message: ev.error ? `Context compaction failed: ${ev.error}` : 'Context compaction failed' } }, true);
+        }
+        return;
       case 'compacted':
         // The context the meter showed is gone; the next call reports the new fill.
         this.lastContext = undefined;
+        this.compacting = false;
         this.push({ type: 'notice', data: { level: 'info', code: 'compacted', message: 'Context compacted' } }, true);
+        return;
+      case 'conversation_reset':
+        // /clear typed in chat (or a plan-mode exit that clears): the CLI starts over.
+        this.lastContext = undefined;
+        this.compacting = false;
+        this.push({ type: 'notice', data: { level: 'info', code: 'conversation_reset', message: 'Context cleared' } }, true);
         return;
       case 'subagent':
         this.mapSubagent(ev);
@@ -1050,6 +1072,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.push({ type: 'protocol_unknown', data: { driver: this.driverId, kind: 'field', name: ev.subtype ? `${ev.type}/${ev.subtype}` : ev.type } });
         return;
       case 'session_ended':
+        this.compacting = false;
         if (this.turnRunning) {
           this.push({ type: 'turn_ended', data: { stopReason: this.closing || this.interrupting ? 'cancelled' : 'error' } }, true);
           this.turnRunning = false;

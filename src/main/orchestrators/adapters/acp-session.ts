@@ -286,6 +286,8 @@ export class AcpSession {
   /** The agent-initiated turn in progress, if any. */
   private agentTurn: { timer: ReturnType<typeof setTimeout> | null; cancelled: boolean } | null = null;
   private readonly openToolCalls = new Set<string>();
+  /** Compactions reported in progress and not yet finished (compaction_update). */
+  private readonly openCompactions = new Set<string>();
   private readonly pendingPermissions = new Map<string, { rpcId: number | string; options: PermissionOption[] }>();
   private readonly loggedUnknownKinds = new Set<string>();
   private readonly state: AcpSessionState = {
@@ -451,6 +453,7 @@ export class AcpSession {
       this.loadRequestId = null;
       // Replayed tool calls are history, not work in progress.
       this.openToolCalls.clear();
+      this.openCompactions.clear();
     }
     return this.state;
   }
@@ -595,6 +598,7 @@ export class AcpSession {
       this.state.turnInFlight = false;
       this.cancelRequested = false;
       this.openToolCalls.clear();
+      this.openCompactions.clear();
       this.turnSettled = null;
       settle();
     }
@@ -722,11 +726,16 @@ export class AcpSession {
       : parsed.update;
     if (!update) return;
 
-    if (!this.replaying && AGENT_ACTIVITY_UPDATES.has(update.sessionUpdate)) this.noteAgentActivity();
+    // A compaction starting is work (auto compaction can follow an agent-initiated
+    // turn's tools); its later statuses only settle it and never open a turn.
+    const compactionStarted = update.sessionUpdate === 'compaction_update' && update.status === 'in_progress';
+    if (!this.replaying && (AGENT_ACTIVITY_UPDATES.has(update.sessionUpdate) || compactionStarted)) this.noteAgentActivity();
     this.applyUpdate(update);
     this.emit({ type: 'update', sessionId, replay: this.replaying, update });
-    // A tool call that just finished may have been the last thing holding the turn open.
-    if (this.agentTurn && (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update')) this.armAgentTurnTimer();
+    // A tool call or compaction that just finished may have been the last thing holding the turn open.
+    if (this.agentTurn && (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update' || update.sessionUpdate === 'compaction_update')) {
+      this.armAgentTurnTimer();
+    }
   }
 
   private applyUpdate(update: SessionUpdate): void {
@@ -752,6 +761,11 @@ export class AcpSession {
         break;
       case 'usage_update':
         this.state.context = { used: update.used, size: update.size, ...(update.cost !== undefined && { cost: update.cost }) };
+        break;
+      case 'compaction_update':
+        if (this.replaying) break;
+        if (update.status === 'in_progress') this.openCompactions.add(update.compactionId);
+        else this.openCompactions.delete(update.compactionId);
         break;
       default:
         break;
@@ -827,7 +841,8 @@ export class AcpSession {
       ms = this.opts.agentTurnCancelSettleMs ?? AGENT_TURN_CANCEL_SETTLE_MS;
     } else if (this.pendingPermissions.size > 0) {
       return;
-    } else if (this.openToolCalls.size > 0) {
+    } else if (this.openToolCalls.size > 0 || this.openCompactions.size > 0) {
+      // A long test run or a compaction sends nothing until it finishes.
       ms = this.opts.agentTurnToolIdleMs ?? AGENT_TURN_TOOL_IDLE_MS;
     } else {
       ms = this.opts.agentTurnIdleMs ?? AGENT_TURN_IDLE_MS;
@@ -848,6 +863,7 @@ export class AcpSession {
     this.agentTurn = null;
     this.state.agentTurnInFlight = false;
     this.openToolCalls.clear();
+    this.openCompactions.clear();
     this.emit({ type: 'turn_ended', sessionId: this.state.sessionId ?? '', stopReason, ...failure });
   }
 
@@ -862,6 +878,7 @@ export class AcpSession {
       context: null,
     });
     this.openToolCalls.clear();
+    this.openCompactions.clear();
   }
 
   private applySessionSetup(res: LoadSessionResponse): void {

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CHAT_CONTRACT_VERSION, isChatEvent, type ChatEventDraft } from '../../../shared/chat/events';
+import { CHAT_CONTRACT_VERSION, COMPACTION_STARTED, isChatEvent, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import {
   ClaudeChatDriver,
@@ -741,6 +741,38 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     await settle();
     expect(drafts.of('mode_changed').map((d) => d.data)).toEqual([{ level: 'auto_edit', nativeMode: 'acceptEdits' }]);
     expect(drafts.of('mode_changed')[0].turnId).toBeUndefined();
+  });
+
+  it('shows a running compaction notice for /compact and settles it on compact_boundary', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: '/compact' }], 'prompt');
+    transport.emit({ kind: 'compaction', phase: 'started' });
+    // The CLI can repeat the status; one start notice goes out.
+    transport.emit({ kind: 'compaction', phase: 'started' });
+    transport.emit({ kind: 'compacted', trigger: 'manual', preTokens: 180_000 });
+    transport.emit(result());
+    await drafts.waitFor('turn_ended');
+    expect(drafts.of('notice').map((d) => [d.turnId, d.data.code, d.data.message])).toEqual([
+      ['turn-1', COMPACTION_STARTED, 'Compacting context…'],
+      ['turn-1', 'compacted', 'Context compacted'],
+    ]);
+  });
+
+  it('reports a failed compaction, then starts a new one on the next status', async () => {
+    const { transport, drafts } = await scripted();
+    transport.emit({ kind: 'compaction', phase: 'failed', error: 'ignored: nothing running' });
+    transport.emit({ kind: 'compaction', phase: 'started' });
+    transport.emit({ kind: 'compaction', phase: 'failed', error: 'summary too long' });
+    transport.emit({ kind: 'compaction', phase: 'started' });
+    transport.emit({ kind: 'conversation_reset', trigger: 'clear' });
+    await drafts.waitFor('notice', (d) => d.data.code === 'conversation_reset');
+    expect(drafts.of('notice').map((d) => [d.data.level, d.data.code, d.data.message])).toEqual([
+      ['info', COMPACTION_STARTED, 'Compacting context…'],
+      ['warn', 'compaction_failed', 'Context compaction failed: summary too long'],
+      ['info', COMPACTION_STARTED, 'Compacting context…'],
+      ['info', 'conversation_reset', 'Context cleared'],
+    ]);
+    expect(drafts.of('protocol_unknown')).toHaveLength(0);
   });
 
   it('does not open a turn for an idle crash or session-level events', async () => {

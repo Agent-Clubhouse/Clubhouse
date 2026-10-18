@@ -144,6 +144,15 @@ export function PlanDocumentCard({ item }: { item: PlanDocumentItem }) {
 }
 
 export function NoticeRow({ item }: { item: NoticeItem }) {
+  if (item.running) {
+    // In progress (a context compaction): the tool rows' spinner, then the notice it settles into.
+    return (
+      <div className="flex items-center gap-2 text-[12px] text-ctp-overlay1" role="status" data-testid="chat-notice" data-code={item.code} data-running="true">
+        <span className="inline-block w-2.5 h-2.5 mx-px rounded-full border-[1.5px] border-surface-1 border-t-ctp-success animate-spin" aria-hidden="true" />
+        <span>{item.message}</span>
+      </div>
+    );
+  }
   return (
     <div
       className={`flex items-center gap-2 text-[12px] ${item.level === 'warn' ? 'text-ctp-warning' : 'text-ctp-overlay1'}`}

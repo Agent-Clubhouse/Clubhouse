@@ -14,7 +14,7 @@ import { createCopilotAcpChatDriver, createGenericAcpChatDriver } from './acp-ch
 import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
 import { copilotAcpCapabilities, COPILOT_ACP_PROFILE, COPILOT_PERMISSION_LEVELS } from './copilot-acp';
 import { AcpFixtureReplayer, loadAcpFixture, promptAnsweredEarly, withoutRequest, type AcpFixtureRecord } from './__fixtures__/acp/acp-replay';
-import { CHAT_EVENT_TYPES, type ChatEventDraft } from '../../../shared/chat/events';
+import { CHAT_EVENT_TYPES, COMPACTION_SETTLED, COMPACTION_STARTED, type ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverSession, ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import type { InitializeResponse } from './acp-schema';
 import type { AcpSessionState } from './acp-session';
@@ -356,6 +356,34 @@ describe('ACP → chat contract mapping', () => {
     const cmds = { type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'available_commands_update' as const, availableCommands: [{ name: 'compact', description: 'Compact' }] } };
     expect(mapper.map(cmds, state())).toHaveLength(1);
     expect(mapper.map(cmds, state())).toEqual([]);
+  });
+
+  it('maps compaction updates onto the shared compaction notice codes', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    const compaction = (status: string, error?: string) => mapper.map(
+      { type: 'update', sessionId: 's1', replay: false, update: { sessionUpdate: 'compaction_update', compactionId: 'c1', status, ...(error && { error }) } },
+      state(),
+    ).map((d) => d.type === 'notice' && [d.data.level, d.data.code, d.data.message]);
+    expect(compaction('in_progress')).toEqual([['info', COMPACTION_STARTED, 'Compacting context…']]);
+    expect(compaction('completed')).toEqual([['info', 'compaction_completed', 'Context compacted']]);
+    expect(compaction('failed', 'no room')).toEqual([['warn', 'compaction_failed', 'no room']]);
+    expect(COMPACTION_SETTLED).toEqual(expect.arrayContaining(['compaction_completed', 'compaction_failed', 'compaction_cancelled']));
+  });
+
+  it('maps a compaction in an agent-initiated turn between that turn\'s start and end', () => {
+    const mapper = new AcpChatEventMapper('copilot_acp');
+    const compaction = (status: string) => ({ type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'compaction_update' as const, compactionId: 'c1', status } });
+    const drafts = [
+      ...mapper.map({ type: 'turn_started', sessionId: 's1', trigger: 'agent' }, state()),
+      ...mapper.map(compaction('in_progress'), state()),
+      ...mapper.map(compaction('completed'), state()),
+      ...mapper.map({ type: 'turn_ended', sessionId: 's1', stopReason: 'end_turn' }, state()),
+    ];
+    expect(drafts.map((d) => (d.type === 'notice' ? d.data.code : d.type === 'turn_started' ? `turn_started:${d.data.trigger}` : d.type)))
+      .toEqual(['turn_started:system', COMPACTION_STARTED, 'compaction_completed', 'turn_ended']);
+    // Notices are session-scoped (as for Codex); the chat shows the row between the turn's bounds.
+    expect(drafts[0].turnId).toBeDefined();
+    expect(drafts[3].turnId).toBe(drafts[0].turnId);
   });
 
   it('gives each driver session its own turn and message ids', () => {
