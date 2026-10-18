@@ -1,26 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { manifest } from './manifest';
+import { statusInfo } from './GitCanvasWidget';
 
 // ── Status code mapping ─────────────────────────────────────────────
-//
-// Mirrors the statusInfo() logic inside GitCanvasWidget.tsx.
-
-interface StatusInfo {
-  label: string;
-  color: string;
-  short: string;
-}
-
-function statusInfo(code: string): StatusInfo {
-  const c = code.trim();
-  if (c === '??' || c === '?') return { label: 'Untracked', color: 'text-ctp-accent', short: 'U' };
-  if (c.startsWith('A') || c === 'A') return { label: 'Added', color: 'text-ctp-green', short: 'A' };
-  if (c.startsWith('D') || c === 'D') return { label: 'Deleted', color: 'text-ctp-red', short: 'D' };
-  if (c.startsWith('M') || c === 'M') return { label: 'Modified', color: 'text-ctp-yellow', short: 'M' };
-  if (c.startsWith('R')) return { label: 'Renamed', color: 'text-ctp-mauve', short: 'R' };
-  if (c.startsWith('C')) return { label: 'Copied', color: 'text-ctp-info', short: 'C' };
-  return { label: 'Changed', color: 'text-ctp-overlay0', short: '~' };
-}
 
 describe('GitCanvasWidget — statusInfo mapping', () => {
   it('maps ?? to Untracked (blue, U)', () => {
@@ -34,17 +16,17 @@ describe('GitCanvasWidget — statusInfo mapping', () => {
 
   it('maps A to Added (green, A)', () => {
     const info = statusInfo('A');
-    expect(info).toEqual({ label: 'Added', color: 'text-ctp-green', short: 'A' });
+    expect(info).toEqual({ label: 'Added', color: 'text-ctp-success', short: 'A' });
   });
 
   it('maps D to Deleted (red, D)', () => {
     expect(statusInfo('D').short).toBe('D');
-    expect(statusInfo('D').color).toBe('text-ctp-red');
+    expect(statusInfo('D').color).toBe('text-ctp-error');
   });
 
   it('maps M to Modified (yellow, M)', () => {
     expect(statusInfo('M').short).toBe('M');
-    expect(statusInfo('M').color).toBe('text-ctp-yellow');
+    expect(statusInfo('M').color).toBe('text-ctp-warning');
   });
 
   it('maps R to Renamed (mauve, R)', () => {
@@ -239,7 +221,8 @@ describe('GitCanvasWidget — read-only contract', () => {
     // Import the module and verify no write operations are exposed
     const widgetModule = await import('./GitCanvasWidget');
     const exported = Object.keys(widgetModule);
-    expect(exported).toEqual(['GitCanvasWidget']);
+    // The component, plus the pure status-letter helper the tests use.
+    expect(exported.sort()).toEqual(['GitCanvasWidget', 'statusInfo']);
     // The component function itself should not have stage/commit/push as named exports
     expect(exported).not.toContain('handleStageAll');
     expect(exported).not.toContain('handleCommit');

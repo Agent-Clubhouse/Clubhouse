@@ -178,6 +178,19 @@ describe('GroupProjectPanelSidebar', () => {
     expect(overlay.style.width).toBe('200px');
   });
 
+  it('shows no Expand panel tooltip over the slide-out overlay', () => {
+    const { getByTestId, queryByText, queryByRole } = render(
+      <GroupProjectPanelSidebar width={200} collapsed={true} onResize={vi.fn()} onToggleCollapse={vi.fn()}>
+        <div>Overlay content</div>
+      </GroupProjectPanelSidebar>,
+    );
+    fireEvent.mouseEnter(getByTestId('panel-rail-toggle'));
+    act(() => { vi.advanceTimersByTime(2_000); });
+    expect(getByTestId('panel-rail-overlay')).toBeInTheDocument();
+    expect(queryByRole('tooltip')).toBeNull();
+    expect(queryByText('Expand panel')).toBeNull();
+  });
+
   it('renders children inside the overlay', () => {
     const { getByTestId, getByText } = render(
       <GroupProjectPanelSidebar

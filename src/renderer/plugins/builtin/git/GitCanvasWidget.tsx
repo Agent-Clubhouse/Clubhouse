@@ -21,12 +21,12 @@ interface StatusInfo {
   short: string;
 }
 
-function statusInfo(code: string): StatusInfo {
+export function statusInfo(code: string): StatusInfo {
   const c = code.trim();
   if (c === '??' || c === '?') return { label: 'Untracked', color: 'text-ctp-accent', short: 'U' };
-  if (c.startsWith('A') || c === 'A') return { label: 'Added', color: 'text-ctp-green', short: 'A' };
-  if (c.startsWith('D') || c === 'D') return { label: 'Deleted', color: 'text-ctp-red', short: 'D' };
-  if (c.startsWith('M') || c === 'M') return { label: 'Modified', color: 'text-ctp-yellow', short: 'M' };
+  if (c.startsWith('A') || c === 'A') return { label: 'Added', color: 'text-ctp-success', short: 'A' };
+  if (c.startsWith('D') || c === 'D') return { label: 'Deleted', color: 'text-ctp-error', short: 'D' };
+  if (c.startsWith('M') || c === 'M') return { label: 'Modified', color: 'text-ctp-warning', short: 'M' };
   if (c.startsWith('R')) return { label: 'Renamed', color: 'text-ctp-mauve', short: 'R' };
   if (c.startsWith('C')) return { label: 'Copied', color: 'text-ctp-info', short: 'C' };
   return { label: 'Changed', color: 'text-ctp-overlay0', short: '~' };
@@ -293,7 +293,8 @@ function FileSection({ title, sectionKey, files, collapsed, selectedFile, onSele
                   aria-current={selectedFile === file.path || undefined}
                   data-testid={`file-${file.path}`}
                 >
-                  <span className={`w-3 text-center text-xs font-mono flex-shrink-0 ${info.color}`} aria-label={info.label}>{info.short}</span>
+                  <span className={`w-3 text-center text-xs font-mono flex-shrink-0 ${info.color}`} aria-hidden="true">{info.short}</span>
+                  <span className="sr-only">{info.label}</span>
                   <span className="text-[13px] text-ctp-text truncate min-w-0">{name}</span>
                   {dir && <span className="text-xs text-ctp-overlay1 truncate min-w-0">{dir}</span>}
                 </button>

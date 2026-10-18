@@ -353,16 +353,21 @@ function ProjectCard({
 
 /* ---------- Shared pieces ---------- */
 
-/** A 28px icon button with a tooltip and an accessible name. */
-function IconButton({ label, onClick, pressed, testId, children }: {
+/**
+ * A 28px icon button with a tooltip and an accessible name. A toggle passes
+ * `pressed` and keeps one fixed `label`; the pressed state says whether it's on.
+ */
+function IconButton({ label, tooltip, onClick, pressed, testId, children }: {
   label: string;
+  /** Tooltip text when it should say more than the label. */
+  tooltip?: string;
   onClick: (e: React.MouseEvent) => void;
   pressed?: boolean;
   testId?: string;
   children: React.ReactNode;
 }) {
   return (
-    <Tooltip content={label}>
+    <Tooltip content={tooltip ?? label}>
       <Button
         kind="quiet"
         icon={children}
@@ -376,13 +381,17 @@ function IconButton({ label, onClick, pressed, testId, children }: {
   );
 }
 
-/** Polling on or off: when on, member agents check the board for new messages on their own. */
+export const POLLING_HINT = 'When on, member agents check the board for new messages on their own. When off, they only act when someone messages them.';
+
+/** Polling on or off. The word is the switch's label, so clicking it toggles too. */
 function PollingSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  const labelId = useId();
+  const switchId = useId();
   return (
     <span className="flex items-center gap-2 pl-1.5 pr-1.5 h-7 flex-shrink-0" data-testid="group-project-polling">
-      <span id={labelId} className="text-xs text-ctp-subtext1">Polling</span>
-      <Toggle checked={on} onChange={onToggle} aria-labelledby={labelId} />
+      <Tooltip content={POLLING_HINT}>
+        <label htmlFor={switchId} className="text-xs text-ctp-subtext1 cursor-pointer">Polling</label>
+      </Tooltip>
+      <Toggle id={switchId} checked={on} onChange={onToggle} />
     </span>
   );
 }
@@ -401,11 +410,17 @@ function MemberRow({ member, lead, onToggleLead }: { member: GroupProjectMember;
       <span className="flex-1" />
       {dot && (
         <span className="flex items-center gap-1.5 text-xs text-ctp-overlay1 flex-shrink-0">
-          <StatusDot dot={dot} />
+          {/* The word says the status; the dot is decoration, so it isn't read out twice. */}
+          <span aria-hidden="true" className="flex"><StatusDot dot={dot} /></span>
           {DOT_LABEL[dot]}
         </span>
       )}
-      <IconButton label={lead ? `Remove ${name} as project lead` : `Make ${name} a project lead`} pressed={lead} onClick={(e) => { e.stopPropagation(); onToggleLead(); }}>
+      <IconButton
+        label="Project lead"
+        tooltip="Project lead: gets the privileged group project tools"
+        pressed={lead}
+        onClick={(e) => { e.stopPropagation(); onToggleLead(); }}
+      >
         <StarIcon filled={lead} />
       </IconButton>
     </li>
@@ -946,7 +961,12 @@ function TopicRow({ topic: t, selected, onSelect, onToggleProtection, onDelete }
         )}
       </button>
       <span className="absolute inset-y-0 right-0.5 hidden group-hover/topic:flex group-focus-within/topic:flex items-center">
-        <IconButton label={t.isProtected ? 'Stop protecting this topic' : 'Protect this topic from pruning'} pressed={!!t.isProtected} onClick={(e) => { e.stopPropagation(); onToggleProtection(); }}>
+        <IconButton
+          label="Protect topic"
+          tooltip="Protect topic: retention never removes its messages"
+          pressed={!!t.isProtected}
+          onClick={(e) => { e.stopPropagation(); onToggleProtection(); }}
+        >
           <ShieldIcon />
         </IconButton>
         <IconButton label="Delete topic" onClick={(e) => { e.stopPropagation(); onDelete(); }}>

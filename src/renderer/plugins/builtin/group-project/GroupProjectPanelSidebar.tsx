@@ -158,7 +158,8 @@ export function GroupProjectPanelSidebar({
         data-testid="group-project-panel-rail"
       >
         {/* Collapsed rail strip */}
-        <Tooltip content="Expand panel" side="right">
+        {/* No tooltip while the slide-out shows: it would sit on top of the panel. */}
+        <Tooltip content="Expand panel" side="right" disabled={hovered}>
           <button
             type="button"
             className="h-full w-full border-r border-surface-0 bg-ctp-mantle flex items-center justify-center text-ctp-overlay1 hover:bg-surface-0 hover:text-ctp-text focus-ring"
