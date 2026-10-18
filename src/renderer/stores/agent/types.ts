@@ -24,6 +24,12 @@ export interface AgentUISlice {
   /** Agent ID that should be prompted for a session name (set on quit if setting enabled) */
   sessionNamePromptFor: string | null;
   projectActiveAgent: Record<string, string | null>;
+  /**
+   * Bumped each time an agent is chosen (setActiveAgent, openAgentSettings),
+   * not when a project switch restores its last agent. The sidebar reveals a
+   * helper folded under its parent only on a bump (#2231).
+   */
+  agentSelectionSeq: number;
   setActiveAgent: (id: string | null, projectId?: string) => void;
   restoreProjectAgent: (projectId: string) => void;
   openAgentSettings: (agentId: string) => void;

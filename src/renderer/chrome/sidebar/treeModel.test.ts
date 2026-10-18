@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
-import { agentDot, filterTree, groupProjectAgents, moveProject, moveWithinGroup, orderProjects, sortByRecent, holdOrder, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
+import { agentDot, buildProjectTree, descendants, filterTree, groupProjectAgents, helperRollup, siblingGroups, moveProject, moveWithinGroup, orderProjects, sortByRecent, holdOrder, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
 
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   id, projectId: 'p1', name: id, kind: 'durable', status: 'running', color: 'blue', ...over,
@@ -185,5 +185,62 @@ describe('sortByRecent and holdOrder (#2116)', () => {
   it('holds a previous order and appends new items in their own order', () => {
     expect(holdOrder(items, ['c', 'a']).map((i) => i.id)).toEqual(['c', 'a', 'b', 'd']);
     expect(holdOrder(items.slice(1), ['a', 'd', 'b']).map((i) => i.id)).toEqual(['d', 'b', 'c']);
+  });
+});
+
+describe('buildProjectTree (#2231)', () => {
+  const ids = (nodes: { agent: { id: string }; children: unknown[] }[]): unknown =>
+    nodes.map((n) => (n.children.length ? { [n.agent.id]: ids(n.children as never) } : n.agent.id));
+
+  it('nests helpers under their parent at any depth, keeping sibling order', () => {
+    const tree = buildProjectTree([
+      agent('lead'), agent('h1', { parentAgentId: 'lead' }), agent('other'),
+      agent('h2', { parentAgentId: 'lead' }), agent('h2a', { parentAgentId: 'h2' }),
+      agent('q', { kind: 'quick', parentAgentId: 'lead' }),
+    ]);
+    expect(ids(tree.awake)).toEqual([{ lead: ['h1', { h2: ['h2a'] }] }, 'other']);
+    // Quick agents keep their own place and never nest.
+    expect(tree.quick.map((a) => a.id)).toEqual(['q']);
+  });
+
+  it('shows a helper whose parent is missing, or whose links loop, at the top level', () => {
+    const tree = buildProjectTree([
+      agent('orphan', { parentAgentId: 'gone' }),
+      agent('x', { parentAgentId: 'y' }), agent('y', { parentAgentId: 'x' }),
+      agent('z', { parentAgentId: 'x' }),
+      agent('self', { parentAgentId: 'self' }),
+    ]);
+    // x and y loop, so both show at the top; z still nests under x.
+    expect(ids(tree.awake)).toEqual(['orphan', { x: ['z'] }, 'y', 'self']);
+  });
+
+  it('keeps a sleeping helper under its parent, and folds a parent only when its whole subtree sleeps', () => {
+    const tree = buildProjectTree([
+      agent('lead', { status: 'sleeping' }), agent('h1', { parentAgentId: 'lead' }),
+      agent('nap', { status: 'sleeping' }), agent('nap-h', { status: 'sleeping', parentAgentId: 'nap' }),
+      agent('awake'), agent('awake-h', { status: 'sleeping', parentAgentId: 'awake' }),
+    ]);
+    expect(ids(tree.awake)).toEqual([{ lead: ['h1'] }, { awake: ['awake-h'] }]);
+    expect(ids(tree.sleeping)).toEqual([{ nap: ['nap-h'] }]);
+  });
+
+  it('reorders within the awake roots, the sleeping roots, or one parent\'s helpers', () => {
+    const tree = buildProjectTree([
+      agent('a'), agent('a1', { parentAgentId: 'a' }), agent('a2', { parentAgentId: 'a' }),
+      agent('b'), agent('s', { status: 'sleeping' }),
+    ]);
+    expect(siblingGroups(tree)).toEqual([['a', 'b'], ['a1', 'a2'], ['s']]);
+    expect(descendants(tree.awake[0]).map((a) => a.id)).toEqual(['a1', 'a2']);
+  });
+});
+
+describe('helperRollup (#2231)', () => {
+  it('counts every helper below, and those that need you or are working', () => {
+    const tree = buildProjectTree([
+      agent('lead'), agent('h1', { parentAgentId: 'lead' }), agent('h2', { parentAgentId: 'lead' }),
+      agent('h2a', { parentAgentId: 'h2' }), agent('h3', { parentAgentId: 'lead', status: 'error' }),
+    ]);
+    const detailed = { h1: detail('working'), h2a: detail('needs_permission'), lead: detail('needs_permission') };
+    expect(helperRollup(tree.awake[0], detailed)).toEqual({ count: 4, needs: 2, working: 1 });
   });
 });

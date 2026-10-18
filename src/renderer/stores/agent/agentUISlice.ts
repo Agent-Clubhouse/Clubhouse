@@ -11,9 +11,10 @@ export function createUISlice(set: SetAgentState, get: GetAgentState): AgentUISl
     configChangesProjectPath: null,
     sessionNamePromptFor: null,
     projectActiveAgent: {},
+    agentSelectionSeq: 0,
 
     setActiveAgent: (id, projectId?) => {
-      set({ activeAgentId: id, agentSettingsOpenFor: null });
+      set((s) => ({ activeAgentId: id, agentSettingsOpenFor: null, agentSelectionSeq: id ? s.agentSelectionSeq + 1 : s.agentSelectionSeq }));
       if (projectId) {
         set((s) => ({ projectActiveAgent: { ...s.projectActiveAgent, [projectId]: id } }));
       }
@@ -33,7 +34,7 @@ export function createUISlice(set: SetAgentState, get: GetAgentState): AgentUISl
 
     openAgentSettings: (agentId) => {
       const agent = get().agents[agentId];
-      set({ agentSettingsOpenFor: agentId, activeAgentId: agentId });
+      set((s) => ({ agentSettingsOpenFor: agentId, activeAgentId: agentId, agentSelectionSeq: s.agentSelectionSeq + 1 }));
       if (agent) {
         set((s) => ({ projectActiveAgent: { ...s.projectActiveAgent, [agent.projectId]: agentId } }));
       }

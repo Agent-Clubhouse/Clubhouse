@@ -89,7 +89,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
         <StatusDot dot={dot} />
         <span className="text-[13px] font-medium text-ctp-text truncate">{agent.name}</span>
         <span className="ml-auto flex-shrink-0 text-ctp-overlay1">
-          {DOT_LABEL[dot]}{running && dot !== 'idle' ? ` for ${formatDuration(Date.now() - since)}` : ''}
+          {agent.creationFailed && agent.status === 'error' ? "Couldn't start" : DOT_LABEL[dot]}{running && dot !== 'idle' ? ` for ${formatDuration(Date.now() - since)}` : ''}
         </span>
       </div>
       {!message && !agent.errorMessage && agent.status === 'sleeping' && agent.lastSleep && (

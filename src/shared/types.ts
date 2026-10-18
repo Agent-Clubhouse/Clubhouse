@@ -88,7 +88,13 @@ export interface Agent {
   lastSleep?: AgentSleepInfo;
   mission?: string;
   model?: string;
+  /**
+   * Quick agents: the durable agent that spawned the run. Durable helpers
+   * (#2224): their orchestrator, which the sidebar nests them under (#2231).
+   */
   parentAgentId?: string;
+  /** Durable agents: creating the agent failed (#2226); `errorMessage` says why. */
+  creationFailed?: boolean;
   orchestrator?: OrchestratorId;
   headless?: boolean;
   /** Execution mode: 'pty' (terminal) or 'headless' (feed) */

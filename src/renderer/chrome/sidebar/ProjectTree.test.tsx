@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
+import { useAgentStore } from '../../stores/agentStore';
 import { ProjectTree, type ProjectTreeProps } from './ProjectTree';
 import { useChromeStore } from '../chromeStore';
 import type { Agent, Project } from '../../../shared/types';
@@ -10,8 +11,8 @@ const project = (id: string): Project => ({ id, name: id.toUpperCase(), path: `/
 const agent = (id: string, projectId: string, over: Partial<Agent> = {}): Agent =>
   ({ id, projectId, name: id, kind: 'durable', status: 'running', color: 'blue', ...over }) as Agent;
 
-function setup(over: Partial<ProjectTreeProps> = {}) {
-  const props: ProjectTreeProps = {
+function baseProps(): ProjectTreeProps {
+  return {
     projects: [project('a'), project('b'), project('c'), project('old')],
     projectIcons: {},
     agentsByProject: { a: [agent('a1', 'a'), agent('a2', 'a', { status: 'sleeping' }), agent('a3', 'a')] },
@@ -30,8 +31,11 @@ function setup(over: Partial<ProjectTreeProps> = {}) {
     onClearCompleted: vi.fn(),
     onOpenSettings: vi.fn(),
     onReorderAgents: vi.fn(),
-    ...over,
   };
+}
+
+function setup(over: Partial<ProjectTreeProps> = {}) {
+  const props: ProjectTreeProps = { ...baseProps(), ...over };
   render(<ProjectTree {...props} />);
   return props;
 }
@@ -448,5 +452,188 @@ describe('ProjectTree sort modes and inactive projects (#2116)', () => {
     setup({ onReorder: undefined, onOpenSettings: undefined, onReorderAgents: undefined, onNewAgent: undefined });
     fireEvent.contextMenu(key('project:a'));
     expect(screen.queryByText('Mark inactive')).toBeNull();
+  });
+});
+
+describe('ProjectTree helpers nested under their parent (#2231)', () => {
+  const row = (id: string) => screen.getByTestId(`agent-item-${id}`);
+  const team = (over: Record<string, Partial<Agent>> = {}) => ({
+    a: [
+      agent('lead', 'a', over.lead),
+      agent('h1', 'a', { parentAgentId: 'lead', ...over.h1 }),
+      agent('other', 'a', over.other),
+      agent('h2', 'a', { parentAgentId: 'lead', ...over.h2 }),
+      agent('h2a', 'a', { parentAgentId: 'h2', ...over.h2a }),
+    ],
+  });
+  const order = () => [...document.querySelectorAll('[data-agent-id]')].map((el) => el.getAttribute('data-agent-id'));
+  const dataTransfer = () => ({ setData: vi.fn(), getData: vi.fn(), effectAllowed: '', dropEffect: '' });
+
+  beforeEach(() => useChromeStore.setState({ collapsedAgentIds: [] }));
+
+  it('shows helpers under their parent on a guide line, a level deeper each time', () => {
+    setup({ agentsByProject: team() });
+    expect(order()).toEqual(['lead', 'h1', 'h2', 'h2a', 'other']);
+    expect(key('agent:lead').getAttribute('aria-expanded')).toBe('true');
+    expect(key('agent:other').hasAttribute('aria-expanded')).toBe(false);
+    expect(key('agent:h1').dataset.treeParent).toBe('agent:lead');
+    expect(key('agent:h1').getAttribute('aria-level')).toBe('3');
+    expect(key('agent:h2a').dataset.treeParent).toBe('agent:h2');
+    expect(key('agent:h2a').getAttribute('aria-level')).toBe('4');
+    // Each level sits further in, and every helper hangs off a guide line.
+    const pad = (id: string) => parseInt(key(`agent:${id}`).style.paddingLeft, 10);
+    expect(pad('h1')).toBeGreaterThan(pad('lead'));
+    expect(pad('h2a')).toBeGreaterThan(pad('h2'));
+    expect(screen.getAllByTestId('helper-guide-line')).toHaveLength(3);
+    // An expanded parent shows its helpers rather than a roll-up.
+    expect(screen.queryByTestId('helper-rollup')).toBeNull();
+  });
+
+  it('folds and unfolds helpers with the caret, remembered per agent, without selecting the parent', () => {
+    const props = setup({ agentsByProject: team() });
+    fireEvent.click(screen.getByTestId('helpers-toggle-lead'));
+    expect(props.onSelectAgent).not.toHaveBeenCalled();
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['lead']);
+    expect(order()).toEqual(['lead', 'other']);
+    expect(key('agent:lead').getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(screen.getByTestId('helpers-toggle-lead'));
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual([]);
+    expect(order()).toEqual(['lead', 'h1', 'h2', 'h2a', 'other']);
+  });
+
+  it('starts folded for an agent folded before, and folds a nested parent on its own', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['h2'] });
+    setup({ agentsByProject: team() });
+    expect(order()).toEqual(['lead', 'h1', 'h2', 'other']);
+    expect(key('agent:lead').getAttribute('aria-expanded')).toBe('true');
+    expect(key('agent:h2').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('rolls up a folded parent: the helper count, with a dot when one needs you or is working', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead'] });
+    setup({ agentsByProject: team(), detailed: { h2a: { state: 'needs_permission', message: '', timestamp: 1 }, h1: { state: 'working', message: '', timestamp: 1 } } });
+    const rollup = within(row('lead')).getByTestId('helper-rollup');
+    expect(rollup).toHaveTextContent('3 helpers');
+    expect(rollup).toHaveTextContent('1 needs you');
+    expect(within(rollup).getByTestId('helper-rollup-dot')).toHaveClass('bg-ctp-warning');
+  });
+
+  it('shows a working dot when no helper needs you, and no dot when none is busy', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead'] });
+    setup({ agentsByProject: team(), detailed: { h1: { state: 'working', message: '', timestamp: 1 } } });
+    expect(within(row('lead')).getByTestId('helper-rollup-dot')).toHaveClass('bg-ctp-success');
+  });
+
+  it('shows no roll-up dot when every helper is quiet', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead'] });
+    setup({ agentsByProject: team({ h1: { status: 'sleeping' }, h2: { status: 'sleeping' }, h2a: { status: 'sleeping' } }) });
+    expect(within(row('lead')).getByTestId('helper-rollup')).toHaveTextContent('3 helpers');
+    expect(within(row('lead')).queryByTestId('helper-rollup-dot')).toBeNull();
+  });
+
+  /** Renders the tree, then lets a test change its props the way ChromeSidebar would. */
+  function mount(over: Partial<ProjectTreeProps>) {
+    const props = { ...baseProps(), ...over };
+    const view = render(<ProjectTree {...props} />);
+    return { props, update: (next: Partial<ProjectTreeProps>) => view.rerender(<ProjectTree {...props} {...next} />) };
+  }
+  const choose = (id: string) => act(() => useAgentStore.getState().setActiveAgent(id, 'a'));
+
+  it('keeps folds at startup and on a project switch back, even with a folded helper selected', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead', 'h2', 'other'] });
+    const { update } = mount({ agentsByProject: team(), activeAgentId: 'h2a' });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['lead', 'h2', 'other']);
+    // Switching away and back restores the project's agent without a fresh choice.
+    act(() => useAgentStore.getState().restoreProjectAgent('a'));
+    update({ activeAgentId: null, activeProjectId: 'b' });
+    update({ activeAgentId: 'h2a', activeProjectId: 'a' });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['lead', 'h2', 'other']);
+  });
+
+  it('unfolds the parents of a helper chosen from elsewhere', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead', 'h2', 'other'] });
+    const { update } = mount({ agentsByProject: team(), activeAgentId: 'other' });
+    choose('h2a');
+    update({ activeAgentId: 'h2a' });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['other']);
+    expect(order()).toContain('h2a');
+  });
+
+  it('waits for the agents to load before unfolding', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead'] });
+    const { update } = mount({ agentsByProject: {}, activeAgentId: null });
+    choose('h1');
+    update({ activeAgentId: 'h1' });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['lead']);
+    update({ activeAgentId: 'h1', agentsByProject: team() });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual([]);
+    expect(order()).toContain('h1');
+  });
+
+  it('opens the sleeping fold when the chosen helper is inside it', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead'], expandedFolds: [] });
+    const asleep = { status: 'sleeping' as const };
+    const { update } = mount({ agentsByProject: team({ lead: asleep, h1: asleep, h2: asleep, h2a: asleep }), activeAgentId: 'other' });
+    expect(order()).toEqual(['other']);
+    choose('h1');
+    update({ activeAgentId: 'h1' });
+    expect(useChromeStore.getState().expandedFolds).toContain('a:sleeping');
+    expect(order()).toEqual(['other', 'lead', 'h1', 'h2', 'h2a']);
+  });
+
+  it('leaves focus on the row when the caret is clicked', () => {
+    setup({ agentsByProject: team() });
+    const caret = screen.getByTestId('helpers-toggle-lead');
+    // mousedown is cancelled, so the button never takes focus.
+    expect(fireEvent.mouseDown(caret)).toBe(false);
+    fireEvent.click(caret);
+    expect(document.activeElement).toBe(key('agent:lead'));
+  });
+
+  it('announces a folded parent\'s roll-up as the row\'s description', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead'] });
+    setup({ agentsByProject: team(), detailed: { h2a: { state: 'needs_permission', message: '', timestamp: 1 } } });
+    const lead = screen.getByRole('treeitem', { name: 'lead' });
+    expect(lead).toHaveAccessibleDescription('3 helpers, 1 needs you');
+  });
+
+  it('folds with Left and unfolds with Right, then steps into the first helper', () => {
+    setup({ agentsByProject: team() });
+    key('agent:lead').focus();
+    fireEvent.keyDown(key('agent:lead'), { key: 'ArrowLeft' });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['lead']);
+    fireEvent.keyDown(key('agent:lead'), { key: 'ArrowRight' });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual([]);
+    fireEvent.keyDown(key('agent:lead'), { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(key('agent:h1'));
+    fireEvent.keyDown(key('agent:h1'), { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(key('agent:lead'));
+  });
+
+  it('reorders helpers among their siblings only', () => {
+    const props = setup({ agentsByProject: team() });
+    fireEvent.keyDown(key('agent:h1'), { key: 'ArrowDown', altKey: true });
+    expect(props.onReorderAgents).toHaveBeenLastCalledWith('a', ['lead', 'h2', 'other', 'h1', 'h2a']);
+    // A helper can't be dragged out to the top level or under another parent.
+    const dt = dataTransfer();
+    fireEvent.dragStart(row('h1'), { dataTransfer: dt });
+    fireEvent.dragOver(row('other'), { dataTransfer: dt });
+    fireEvent.drop(row('other'), { dataTransfer: dt });
+    fireEvent.dragStart(row('h2a'), { dataTransfer: dt });
+    fireEvent.drop(row('h1'), { dataTransfer: dt });
+    expect(props.onReorderAgents).toHaveBeenCalledTimes(1);
+    // Top-level agents still reorder among themselves, helpers travelling with their parent.
+    fireEvent.dragStart(row('other'), { dataTransfer: dt });
+    fireEvent.dragOver(row('lead'), { dataTransfer: dt });
+    fireEvent.drop(row('lead'), { dataTransfer: dt });
+    expect(props.onReorderAgents).toHaveBeenLastCalledWith('a', ['other', 'h1', 'lead', 'h2', 'h2a']);
+  });
+
+  it('shows a helper being created as starting, and one that failed as couldn\'t start', () => {
+    setup({ agentsByProject: team({ h1: { status: 'creating' }, h2: { status: 'error', creationFailed: true, errorMessage: 'The branch already exists' } }) });
+    expect(within(row('h1')).getByTestId('agent-row-note')).toHaveTextContent('starting');
+    expect(within(row('h1')).getByRole('img', { name: 'Starting' })).toBeTruthy();
+    expect(within(row('h2')).getByTestId('agent-row-note')).toHaveTextContent("couldn't start");
+    expect(within(row('h2')).getByTestId('agent-row-note')).toHaveClass('text-ctp-error');
   });
 });

@@ -188,6 +188,10 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         freeAgentMode: config.freeAgentMode || undefined,
         mcpIds: config.mcpIds,
         resuming: resume || undefined,
+        // Also config-only, and replaced with the rest: a helper keeps its
+        // parent (#2224) so the sidebar keeps it nested after a wake (#2231).
+        parentAgentId: config.parentAgentId,
+        creationFailed: config.creation?.state === 'failed' || undefined,
       };
 
       set((s) => ({

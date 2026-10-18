@@ -169,6 +169,115 @@ export function groupProjectAgents(agents: Agent[]): ProjectAgentGroups {
   return { durable, sleeping, quick };
 }
 
+type NestableAgent = Pick<Agent, 'id' | 'kind' | 'status' | 'parentAgentId'>;
+
+/** A durable agent and the helpers nested under it (#2231). */
+export interface AgentNode<A extends NestableAgent = Agent> {
+  agent: A;
+  children: AgentNode<A>[];
+}
+
+export interface ProjectAgentTree<A extends NestableAgent = Agent> {
+  /** Top-level durable agents with something awake in their subtree, in saved order. */
+  awake: AgentNode<A>[];
+  /** Top-level durable agents whose whole subtree is asleep; folded into one row. */
+  sleeping: AgentNode<A>[];
+  /** Running quick agents, not nested. */
+  quick: A[];
+}
+
+/**
+ * A project's agents as the sidebar tree shows them (#2231). Durable helpers
+ * nest under their parent, at any depth, keeping the given order among
+ * siblings. A helper stays under its parent whether it is awake or asleep;
+ * a top-level agent goes in the sleeping fold only when it and every helper
+ * under it are asleep, so nothing working hides in the fold. A helper whose
+ * parent isn't in the list (or a parent link that loops) shows at the top level.
+ */
+export function buildProjectTree<A extends NestableAgent>(agents: readonly A[]): ProjectAgentTree<A> {
+  const durable = agents.filter((a) => a.kind === 'durable');
+  const byId = new Map(durable.map((a) => [a.id, a]));
+  // The parent each agent nests under, or undefined at the top level.
+  const parentOf = new Map<string, string | undefined>();
+  for (const agent of durable) {
+    // Walk up the links; an agent the walk comes back to is in a loop, and shows at the top.
+    const seen = new Set<string>();
+    let parent = agent.parentAgentId;
+    while (parent && byId.has(parent) && !seen.has(parent) && parent !== agent.id) {
+      seen.add(parent);
+      parent = byId.get(parent)!.parentAgentId;
+    }
+    const inLoop = parent === agent.id;
+    parentOf.set(agent.id, !inLoop && agent.parentAgentId && byId.has(agent.parentAgentId) ? agent.parentAgentId : undefined);
+  }
+  const childrenOf = new Map<string | undefined, A[]>();
+  for (const agent of durable) {
+    const parent = parentOf.get(agent.id);
+    const siblings = childrenOf.get(parent);
+    if (siblings) siblings.push(agent);
+    else childrenOf.set(parent, [agent]);
+  }
+  const node = (agent: A): AgentNode<A> => ({ agent, children: (childrenOf.get(agent.id) ?? []).map(node) });
+  const roots = (childrenOf.get(undefined) ?? []).map(node);
+  const allAsleep = (n: AgentNode<A>): boolean => n.agent.status === 'sleeping' && n.children.every(allAsleep);
+  return {
+    awake: roots.filter((n) => !allAsleep(n)),
+    sleeping: roots.filter(allAsleep),
+    quick: agents.filter((a) => a.kind === 'quick'),
+  };
+}
+
+/** Every agent under `node`, depth first, not counting the node itself. */
+export function descendants<A extends NestableAgent>(node: AgentNode<A>, into: A[] = []): A[] {
+  for (const child of node.children) {
+    into.push(child.agent);
+    descendants(child, into);
+  }
+  return into;
+}
+
+/** How many agents are under `node`, at any depth. */
+export function countDescendants(node: AgentNode<NestableAgent>): number {
+  let n = 0;
+  for (const child of node.children) n += 1 + countDescendants(child);
+  return n;
+}
+
+/**
+ * The groups an agent can be reordered within (#2231): the awake top-level
+ * agents, the sleeping top-level agents, and each agent's own helpers. A drag
+ * or Move up / Move down never moves a helper to another parent.
+ */
+export function siblingGroups<A extends NestableAgent>(tree: ProjectAgentTree<A>): string[][] {
+  const groups: string[][] = [];
+  const walk = (nodes: AgentNode<A>[]) => {
+    if (nodes.length > 0) groups.push(nodes.map((n) => n.agent.id));
+    nodes.forEach((n) => walk(n.children));
+  };
+  walk(tree.awake);
+  walk(tree.sleeping);
+  return groups;
+}
+
+/** What a folded parent shows for its helpers (#2231): how many, and whether any wants you or is working. */
+export interface HelperRollup {
+  count: number;
+  needs: number;
+  working: number;
+}
+
+export function helperRollup(node: AgentNode, detailed: Record<string, AgentDetailedStatus>): HelperRollup {
+  const all = descendants(node);
+  let needs = 0;
+  let working = 0;
+  for (const agent of all) {
+    const dot = agentDot(agent, detailed[agent.id]);
+    if (dot === 'needs' || dot === 'error') needs++;
+    else if (dot === 'working') working++;
+  }
+  return { count: all.length, needs, working };
+}
+
 export interface ProjectRollup { working: number; waiting: number }
 
 export function projectRollup(agents: Agent[], detailed: Record<string, AgentDetailedStatus>): ProjectRollup {

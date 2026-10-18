@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { AgentRow } from './AgentRow';
-import { agentDot, groupProjectAgents, moveWithinGroup, projectRollup } from './treeModel';
+import { agentDot, buildProjectTree, countDescendants, helperRollup, moveWithinGroup, projectRollup, siblingGroups, type AgentNode } from './treeModel';
 import type { ProjectFold } from '../chromeStore';
 import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
 import { reportChromeFeature } from '../telemetry';
@@ -20,6 +20,11 @@ import { markdownToPlainText } from '../../utils/safe-markdown';
  *
  * Tree semantics (§4.8): the header, rows and folds are treeitems with a
  * data-tree-key; ProjectTree owns focus (roving tabindex) and the arrow keys.
+ *
+ * Helpers (#2231) nest under their parent agent at any depth, hanging off a
+ * thin guide line from under the parent's status dot. The parent's caret
+ * folds them away (remembered per agent), and a folded parent shows how many
+ * helpers it has and whether any needs you or is working.
  */
 
 const Chevron = ({ open }: { open: boolean }) => (
@@ -111,6 +116,9 @@ export interface ProjectGroupProps {
   onAgentReorderHint?: () => void;
   /** Tree depth of the header: 1, or 2 inside the idle row. */
   level?: number;
+  /** Agents whose helpers are folded away (#2231). */
+  collapsedAgentIds?: ReadonlySet<string>;
+  onToggleAgentCollapsed?: (agentId: string) => void;
   /** The header's tree parent: the idle row, when it is inside it. */
   parentKey?: string;
 }
@@ -119,6 +127,33 @@ const HEADER_INDENT = 6;
 /** Drag data type for agent rows, so a project drop never mistakes one for a project. */
 const AGENT_DRAG_TYPE = 'application/x-clubhouse-agent';
 const ROW_INDENT = 26;
+/** How much further in each level of helpers sits (#2231). */
+const HELPER_INDENT = 18;
+/** Half a row: where the guide line's tick meets a helper row. */
+const ROW_MID = 15;
+const NO_COLLAPSED: ReadonlySet<string> = new Set();
+
+/**
+ * The guide line beside one helper (#2231): a vertical stroke under the
+ * parent's status dot, down to this helper's middle if it is the last one and
+ * on past it otherwise, with a short tick into the row. A helper with its own
+ * caret gets no tick; the caret sits where the tick would end.
+ */
+function GuideLine({ x, first, last, tick }: { x: number; first: boolean; last: boolean; tick: boolean }) {
+  // The first stroke reaches up into the parent row, to just under its dot.
+  const top = first ? -(ROW_MID - 4) : -1;
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        data-testid="helper-guide-line"
+        className="absolute w-px bg-surface-2 pointer-events-none"
+        style={{ left: x, top, ...(last ? { height: ROW_MID - top } : { bottom: 0 }) }}
+      />
+      {tick && <span aria-hidden="true" className="absolute h-px w-2.5 bg-surface-2 pointer-events-none" style={{ left: x, top: ROW_MID }} />}
+    </>
+  );
+}
 
 export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroupProps) {
   const {
@@ -133,26 +168,30 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   const armRefocus = useRefocusAfterMove();
   const projectKey = `project:${project.id}`;
   const label = project.displayName || project.name;
-  const groups = groupProjectAgents(agents);
+  const tree = useMemo(() => buildProjectTree(agents), [agents]);
+  const collapsedAgents = props.collapsedAgentIds ?? NO_COLLAPSED;
+  const { onToggleAgentCollapsed } = props;
   const rollup = projectRollup(agents, detailed);
   const isActiveProject = project.id === activeProjectId;
+  /** Everyone in the sleeping fold, helpers included. */
+  const sleepingCount = tree.sleeping.reduce((n, node) => n + 1 + countDescendants(node), 0);
   const expanded = !collapsed;
 
   // Reordering durable agents (§4.8): by drag, by Move up / Move down in the
   // row menu, or by Alt+Up / Alt+Down on the row. A move stays inside the
-  // agent's group (awake, or inside the sleeping fold); the group's new order
-  // goes back into the saved order at the same places (moveWithinGroup).
-  // Memoized on the order and grouping, so memoized rows don't re-render on
-  // every status change.
-  const durableKey = agents.filter((a) => a.kind === 'durable').map((a) => `${a.id}${a.status === 'sleeping' ? ' s' : ''}`).join('\n');
+  // agent's group: the awake top-level agents, the sleeping ones, or one
+  // parent's helpers (#2231), so a helper never changes parent by a drag. The
+  // group's new order goes back into the saved order at the same places
+  // (moveWithinGroup). Memoized on the order, sleep and parent links, so
+  // memoized rows don't re-render on every status change.
+  const durableKey = JSON.stringify(agents.filter((a) => a.kind === 'durable').map((a) => [a.id, a.status === 'sleeping', a.parentAgentId ?? null]));
   const reorder = useMemo(() => {
-    const entries = durableKey ? durableKey.split('\n').map((e) => ({ id: e.replace(/ s$/, ''), sleeping: e.endsWith(' s') })) : [];
+    const entries = (JSON.parse(durableKey) as [string, boolean, string | null][]).map(([id, sleeping, parent]) => ({
+      id, kind: 'durable' as const, status: sleeping ? 'sleeping' as const : 'running' as const, parentAgentId: parent ?? undefined,
+    }));
     const order = entries.map((e) => e.id);
     const groupOf = new Map<string, string[]>();
-    for (const sleeping of [false, true]) {
-      const group = entries.filter((e) => e.sleeping === sleeping).map((e) => e.id);
-      group.forEach((id) => groupOf.set(id, group));
-    }
+    for (const group of siblingGroups(buildProjectTree(entries))) group.forEach((id) => groupOf.set(id, group));
     const move = (draggedId: string, targetId: string): boolean => {
       const group = groupOf.get(draggedId);
       if (!onReorderAgents || !group || groupOf.get(targetId) !== group) return false;
@@ -222,25 +261,54 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     return group.indexOf(agentDrag.id) < group.indexOf(agentId) ? 'bottom' : 'top';
   }, [agentDrag, reorder]);
 
-  const renderAgent = (agent: Agent, indent = ROW_INDENT, parentKey = projectKey, depth = 1) => (
-    <AgentRow
-      key={agent.id}
-      agent={agent}
-      dot={agentDot(agent, detailed[agent.id])}
-      detailed={detailed[agent.id]}
-      projectPath={project.path}
-      onOpenTerminal={onOpenTerminal}
-      active={agent.id === activeAgentId && isActiveProject}
-      indent={indent}
-      level={level + depth}
-      parentKey={parentKey}
-      extraActions={moveActions(agent)}
-      onSelect={onSelectAgent}
-      drag={reorder.actions.has(agent.id) && reorder.groupOf.get(agent.id)!.length > 1 ? agentDragHandlers
-        : agent.kind === 'durable' ? hintDragHandlers : undefined}
-      dropEdge={dropEdge(agent.id)}
-    />
-  );
+  const renderAgent = (agent: Agent, indent = ROW_INDENT, parentKey = projectKey, depth = 1, node?: AgentNode) => {
+    const hasHelpers = !!node && node.children.length > 0;
+    const folded = hasHelpers && collapsedAgents.has(agent.id);
+    // Only a folded parent shows the roll-up, so only it walks its helpers.
+    const rolled = folded ? helperRollup(node!, detailed) : undefined;
+    return (
+      <AgentRow
+        key={agent.id}
+        agent={agent}
+        helperCount={rolled ? rolled.count : hasHelpers ? node!.children.length : undefined}
+        helpersExpanded={hasHelpers ? !folded : undefined}
+        helperNeeds={rolled?.needs}
+        helperWorking={rolled?.working}
+        onToggleHelpers={hasHelpers ? onToggleAgentCollapsed : undefined}
+        dot={agentDot(agent, detailed[agent.id])}
+        detailed={detailed[agent.id]}
+        projectPath={project.path}
+        onOpenTerminal={onOpenTerminal}
+        active={agent.id === activeAgentId && isActiveProject}
+        indent={indent}
+        level={level + depth}
+        parentKey={parentKey}
+        extraActions={moveActions(agent)}
+        onSelect={onSelectAgent}
+        drag={reorder.actions.has(agent.id) && reorder.groupOf.get(agent.id)!.length > 1 ? agentDragHandlers
+          : agent.kind === 'durable' ? hintDragHandlers : undefined}
+        dropEdge={dropEdge(agent.id)}
+      />
+    );
+  };
+
+  /** An agent and, unless folded, its helpers on a guide line, each a level deeper. */
+  const renderNode = (node: AgentNode, indent: number, parentKey: string, depth: number): React.ReactNode => {
+    const { agent, children } = node;
+    const open = children.length > 0 && !collapsedAgents.has(agent.id);
+    return (
+      <React.Fragment key={agent.id}>
+        {renderAgent(agent, indent, parentKey, depth, node)}
+        {open && children.map((child, i) => (
+          <div key={child.agent.id} data-testid={`helper-of-${agent.id}`} className="relative flex flex-col gap-px">
+            {/* The line sits under the middle of the parent's 8px status dot. */}
+            <GuideLine x={indent + 4} first={i === 0} last={i === children.length - 1} tick={child.children.length === 0} />
+            {renderNode(child, indent + HELPER_INDENT, `agent:${agent.id}`, depth + 1)}
+          </div>
+        ))}
+      </React.Fragment>
+    );
+  };
 
   const menuItems: MenuItem[] = [
     ...(onMoveProject ? [
@@ -377,10 +445,10 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
 
       {expanded && (
         <div className="flex flex-col gap-px px-1.5">
-          {groups.durable.map((a) => renderAgent(a))}
-          {groups.quick.map((a) => renderAgent(a))}
+          {tree.awake.map((n) => renderNode(n, ROW_INDENT, projectKey, 1))}
+          {tree.quick.map((a) => renderAgent(a))}
 
-          {groups.sleeping.length > 0 && (
+          {tree.sleeping.length > 0 && (
             <>
               <button
                 type="button"
@@ -396,9 +464,9 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
                 style={{ paddingLeft: ROW_INDENT - 2 }}
               >
                 <Chevron open={sleepingOpen} />
-                <span>{groups.sleeping.length} sleeping</span>
+                <span>{sleepingCount} sleeping</span>
               </button>
-              {sleepingOpen && groups.sleeping.map((a) => renderAgent(a, ROW_INDENT + 12, `fold:${project.id}:sleeping`, 2))}
+              {sleepingOpen && tree.sleeping.map((n) => renderNode(n, ROW_INDENT + 12, `fold:${project.id}:sleeping`, 2))}
             </>
           )}
 
