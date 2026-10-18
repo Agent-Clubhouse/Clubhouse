@@ -1231,6 +1231,23 @@ describe('agentStore', () => {
       expect(getState().agents['durable_m1'].model).toBe('opus');
     });
 
+    it('loads the last sleep reason, and a live update replaces it (#2104)', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      const lastSleep = { reason: 'idle', at: '2026-10-18T03:01:06.000Z', idleMinutes: 30 };
+      mockAgent.listDurable.mockResolvedValue([
+        { id: 'durable_s1', name: 'sleepy', color: 'indigo', createdAt: '2024-01-01', lastSleep },
+      ]);
+      await getState().loadDurableAgents('proj_1', '/project');
+      expect(getState().agents['durable_s1'].lastSleep).toEqual(lastSleep);
+
+      const stopped = { reason: 'user' as const, at: '2026-10-18T04:00:00.000Z' };
+      getState().noteAgentSleep('durable_s1', stopped);
+      expect(getState().agents['durable_s1'].lastSleep).toEqual(stopped);
+      // A reload keeps the newer live value over the file's.
+      await getState().loadDurableAgents('proj_1', '/project');
+      expect(getState().agents['durable_s1'].lastSleep).toEqual(stopped);
+    });
+
     it('loads agent without model (undefined)', async () => {
       const mockAgent = window.clubhouse.agent as any;
       mockAgent.listDurable.mockResolvedValue([

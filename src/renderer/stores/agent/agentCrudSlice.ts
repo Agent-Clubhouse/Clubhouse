@@ -78,6 +78,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
             orchestrator: config.orchestrator,
             freeAgentMode: config.freeAgentMode,
             mcpIds: config.mcpIds,
+            lastSleep: config.lastSleep,
           };
         } else {
           // Always update projectId — the same agents.json may be loaded
@@ -88,7 +89,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
           // Re-hydrate `model` too: agents.json is the source of truth for it,
           // and a store entry that lost the value (e.g. rebuilt on spawn) would
           // otherwise stay stale for the lifetime of the window.
-          agents[config.id] = { ...agents[config.id], projectId, model: config.model };
+          agents[config.id] = { ...agents[config.id], projectId, model: config.model, lastSleep: agents[config.id].lastSleep ?? config.lastSleep };
         }
       }
 

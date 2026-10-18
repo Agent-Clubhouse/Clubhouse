@@ -35,6 +35,9 @@ import { registerChatRuntime, unregisterChatRuntime } from './index';
 import { readChatTranscript } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
 import { noteChatStartFailure } from './stale-session';
+import { chatSleepInfo, recordSleep, takeKillRequest } from './sleep-reason';
+import { waitsOnPollingGroupProject } from './idle-policy';
+import { chatIdleTimeoutMs } from '../chat-idle-settings';
 import { cleanSpawnEnv, getShellEnvironment, summarizeSpawnEnv } from '../../util/shell';
 
 export interface ChatSpawnParams {
@@ -426,6 +429,8 @@ async function runChatStart(
       unregisterChatRuntime(params.agentId, runtime);
       untrackAgent(params.agentId);
       appLog('core:chat', 'info', 'Chat session ended', { meta: { agentId: params.agentId, reason, exitCode } });
+      const sleep = chatSleepInfo(reason, exitCode, takeKillRequest(params.agentId), runtime.idleSleptAfterMs);
+      if (sleep) void recordSleep(params.projectPath, params.agentId, sleep);
       broadcastAgentExit(params.agentId, exitCode);
     };
 
@@ -441,6 +446,8 @@ async function runChatStart(
       sessionId: continued?.sessionId,
       lastSeq: continued?.lastSeq,
       startNotices,
+      idleTimeoutMs: chatIdleTimeoutMs,
+      shouldIdleSleep: () => !waitsOnPollingGroupProject(params.agentId),
       startSession: async (resumeId, startSignal) => {
         const session = await driver.start({
         agentId: params.agentId,
@@ -509,3 +516,4 @@ async function runChatStart(
     }
   }
 }
+

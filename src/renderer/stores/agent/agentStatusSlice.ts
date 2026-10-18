@@ -33,6 +33,14 @@ export function createStatusSlice(set: SetAgentState, get: GetAgentState): Agent
     agentDetailedStatus: {},
     agentLaunchFailure: {},
 
+    noteAgentSleep: (id, info) => {
+      set((s) => {
+        const agent = s.agents[id];
+        if (!agent) return s;
+        return { agents: { ...s.agents, [id]: { ...agent, lastSleep: info } } };
+      });
+    },
+
     noteLaunchFailure: (id, reason) => {
       set((s) => ({ agentLaunchFailure: { ...s.agentLaunchFailure, [id]: reason } }));
     },

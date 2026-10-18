@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentHookEvent, DurableConfigUpdates } from '../shared/types';
+import type { AgentHookEvent, AgentSleepInfo, DurableConfigUpdates } from '../shared/types';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
 export const agent = {
@@ -159,6 +159,13 @@ export const agent = {
       callback(agentId, errorMessage);
     ipcRenderer.on(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, listener);
     return () => { ipcRenderer.removeListener(IPC.AGENT.AGENT_MATERIALIZATION_FAILED, listener); };
+  },
+
+  onAgentSleepReason: (callback: (agentId: string, info: AgentSleepInfo) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, agentId: string, info: AgentSleepInfo) =>
+      callback(agentId, info);
+    ipcRenderer.on(IPC.AGENT.AGENT_SLEEP_REASON, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.AGENT_SLEEP_REASON, listener); };
   },
 
   onAgentSleeping: (callback: (agentId: string) => void) => {
