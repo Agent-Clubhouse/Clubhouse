@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-syntax -- reads index.css and component sources: the gradient rule is plain CSS that jsdom never applies, so the test checks its selector directly */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
