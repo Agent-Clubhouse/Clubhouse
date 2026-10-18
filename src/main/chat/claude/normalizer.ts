@@ -111,6 +111,9 @@ export class ClaudeNormalizer {
           resetsAt: num(info.resetsAt),
           utilization: num(info.utilization),
           isUsingOverage: typeof info.isUsingOverage === 'boolean' ? info.isUsingOverage : undefined,
+          overageStatus: str(info.overageStatus),
+          overageResetsAt: num(info.overageResetsAt),
+          overageDisabledReason: str(info.overageDisabledReason),
         }];
       }
       case 'keep_alive':
@@ -246,6 +249,9 @@ export class ClaudeNormalizer {
       const apiError = typeof msg.error === 'string' ? msg.error : undefined;
       out.push({ kind: 'error', message: apiError ?? JSON.stringify(msg.error), fatal: false, apiError });
     }
+    // Subagents run in their own context; only the main loop's fill is the session's.
+    const usage = toUsage(message.usage);
+    if (usage && !parentToolCallId) out.push({ kind: 'assistant_usage', messageId, model: str(message.model), usage });
     return out;
   }
 

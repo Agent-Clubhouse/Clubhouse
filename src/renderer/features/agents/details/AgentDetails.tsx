@@ -24,7 +24,7 @@ import { Tooltip } from '../../../components/Tooltip';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../../plugins/builtin/canvas/main';
 import type { CanvasInstance } from '../../../plugins/builtin/canvas/canvas-types';
 import { getOrchestratorLabel } from '../orchestrator-colors';
-import { DRIVER_LABELS, limitLabel } from '../chat/ChatHeader';
+import { DRIVER_LABELS, limitLabel, limitName } from '../chat/ChatHeader';
 import { SubagentList, subagentSummary } from '../chat/AgentMapPanel';
 import { buildAgentMap, formatCost, formatDuration, formatTokens, LEVEL_LABELS } from '../chat/view-model';
 import { ChangesCard, type ChangesScope } from './ChangesCard';
@@ -240,7 +240,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const shownModel = model && model !== 'default' ? model : null;
   const session = chat?.usage.session;
   const cost = session?.costUsd !== undefined ? formatCost(session.costUsd, session.costIsEstimate) : null;
-  const tokens = tokensOf(session?.tokens);
+  // Drivers without a session total (ACP) report per turn: sum those.
+  const tokens = tokensOf(session?.tokens ?? chat?.usage.turnTotal ?? undefined);
   const runningFor = running && spawnedAt ? formatDuration(now - spawnedAt) : null;
   const sessionSummary = [shownModel, runningFor, cost].filter(Boolean).join(' · ');
   const limits = chat?.capabilities?.limits ? chat.usage.limits : [];
@@ -373,7 +374,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
             <span className="flex flex-col gap-1">
               {limits.map((l) => (
                 <span key={l.window} className="flex items-center gap-1.5">
-                  <span className="text-ctp-overlay1">{l.window}</span>
+                  <span className="text-ctp-overlay1">{limitName(l.window)}</span>
                   {l.utilization !== undefined && <UsageBar pct={Math.round(l.utilization * 100)} className="w-9 h-[5px]" />}
                   <span>{limitLabel(l)}</span>
                   {l.resetsAt && <span className="text-ctp-overlay1">resets {new Date(l.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>}

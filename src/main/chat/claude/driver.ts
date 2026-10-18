@@ -17,6 +17,7 @@ import type {
   ToolCallLocation,
   ToolKind,
   TurnStopReason,
+  UsageLimit,
 } from '../../../shared/chat/events';
 import type {
   ChatDriver,
@@ -125,6 +126,7 @@ export function claudeToolKind(name: string): ToolKind {
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
+const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
 function inputPath(input: Obj): string | undefined {
@@ -324,12 +326,90 @@ function sessionTokens(modelUsage: Record<string, unknown> | undefined) {
   return { input, output, cachedInput, cacheWrite, total: input + output + cachedInput + cacheWrite };
 }
 
-const LIMIT_WINDOWS: Record<string, string> = {
+/** Every plan window the CLI reports (rate_limit_event's rateLimitType, get_usage's rate_limits keys). */
+export const LIMIT_WINDOWS: Record<string, string> = {
   five_hour: '5h',
   seven_day: 'week',
   seven_day_opus: 'week_opus',
   seven_day_sonnet: 'week_sonnet',
+  seven_day_oauth_apps: 'week_oauth_apps',
+  seven_day_overage_included: 'week_overage_included',
+  overage: 'overage',
 };
+
+/** A fraction 0..1 from a fraction (rate_limit_event's utilization). */
+function fraction(v: number | undefined | null): number | undefined {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+  return Math.min(1, Math.max(0, v));
+}
+
+/** A fraction 0..1 from a 0-100 percentage (get_usage always reports percent, so 1 means 1%). */
+function fromPercent(v: number | undefined | null): number | undefined {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+  return Math.min(1, Math.max(0, v / 100));
+}
+
+/** Epoch ms from epoch seconds, epoch ms or an ISO string. */
+function epochMs(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v)) return v < 1e12 ? v * 1000 : v;
+  if (typeof v === 'string') {
+    const t = Date.parse(v);
+    return Number.isFinite(t) ? t : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * The plan windows in a `get_usage` reply (the data behind /usage): 5-hour,
+ * weekly, per-model weekly and extra usage. Null when plan limits don't apply
+ * (API key, Bedrock, Vertex) or the reply has none.
+ */
+export function planLimitsFromWire(response: unknown): UsageLimit[] | null {
+  if (!isObj(response) || response.rate_limits_available === false || !isObj(response.rate_limits)) return null;
+  const rl = response.rate_limits;
+  const out: UsageLimit[] = [];
+  for (const [key, window] of Object.entries(LIMIT_WINDOWS)) {
+    const w = rl[key];
+    if (!isObj(w)) continue;
+    const utilization = fromPercent(w.utilization as number | null);
+    if (utilization === undefined && w.resets_at == null) continue;
+    out.push({ window, ...(utilization !== undefined && { utilization }), ...(epochMs(w.resets_at) !== undefined && { resetsAt: epochMs(w.resets_at) }) });
+  }
+  for (const m of arr(rl.model_scoped)) {
+    if (!isObj(m) || typeof m.display_name !== 'string') continue;
+    const utilization = fromPercent(m.utilization as number | null);
+    if (utilization === undefined) continue;
+    out.push({ window: `week:${m.display_name}`, utilization, ...(epochMs(m.resets_at) !== undefined && { resetsAt: epochMs(m.resets_at) }) });
+  }
+  const extra = rl.extra_usage;
+  if (isObj(extra) && extra.is_enabled === true) {
+    const utilization = fromPercent(extra.utilization as number | null);
+    if (utilization !== undefined) out.push({ window: 'overage', utilization });
+  }
+  return out.length ? out : null;
+}
+
+/**
+ * The context window of the model that served the last call. The result's
+ * modelUsage reports it (keyed by the selected id, e.g. `claude-opus-5-5[1m]`);
+ * otherwise a `[1m]` id means 1M tokens and anything else the standard 200K.
+ */
+export function claudeContextWindow(model: string | undefined, modelUsage: Record<string, unknown> | undefined, selected?: string): number | undefined {
+  const windows = Object.entries(modelUsage ?? {}).flatMap(([id, u]) =>
+    (isObj(u) && typeof u.contextWindow === 'number' && u.contextWindow > 0 ? [[id, u.contextWindow] as const] : []));
+  const byId = (id: string | undefined) => (id ? windows.find(([k]) => k === id)?.[1] : undefined);
+  // The model that served the call wins; its id may lack the selected id's suffix (`[1m]`).
+  const known = byId(model) ?? (model ? windows.find(([k]) => k.startsWith(model))?.[1] : undefined) ?? byId(selected);
+  if (known) return known;
+  if (/\[1m\]/i.test(selected ?? '') || /\[1m\]/i.test(model ?? '')) return 1_000_000;
+  if (windows.length === 1) return windows[0][1];
+  return model || selected ? 200_000 : undefined;
+}
+
+/** How long a get_usage read may take; it's best-effort and never holds a turn up. */
+const PLAN_USAGE_TIMEOUT_MS = 5_000;
+/** At most one get_usage read per this long (it calls the claude.ai usage endpoint). */
+const PLAN_USAGE_MIN_INTERVAL_MS = 30_000;
 
 // ── Models ──────────────────────────────────────────────────────────────────
 
@@ -423,6 +503,15 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   /** An assistant API error seen in this turn, reported once when the turn ends. */
   private turnApiError: string | undefined;
   private pump: Promise<void> | null = null;
+  /** The last main-loop call's context fill this turn: input + cache read + cache write. */
+  private lastContext: { used: number; model?: string } | undefined;
+  /** Status per window from rate_limit_event, kept on get_usage's windows (which have none). */
+  private limitStatus = new Map<string, UsageLimit['status']>();
+  private planUsageAt = 0;
+  private planUsageInFlight = false;
+  /** False once get_usage said plan limits don't apply, or the CLI doesn't answer it. */
+  private planUsageAvailable = true;
+  private planUsageFailures = 0;
 
   constructor(
     readonly driverId: ClaudeChatDriverId,
@@ -450,6 +539,42 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     await this.transport.start();
     // Before the first prompt, so the request order on the wire is fixed.
     await this.refreshApplied();
+    void this.refreshPlanUsage();
+  }
+
+  /** Read every plan window (5-hour, weekly, per-model) from get_usage; best-effort. */
+  private async refreshPlanUsage(): Promise<void> {
+    if (!this.planUsageAvailable || this.planUsageInFlight || !this.transport.planUsage || this.closing) return;
+    if (Date.now() - this.planUsageAt < PLAN_USAGE_MIN_INTERVAL_MS) return;
+    this.planUsageInFlight = true;
+    this.planUsageAt = Date.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const response = await Promise.race([
+        this.transport.planUsage(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`get_usage timed out after ${PLAN_USAGE_TIMEOUT_MS}ms`)), PLAN_USAGE_TIMEOUT_MS);
+        }),
+      ]);
+      this.planUsageFailures = 0;
+      const limits = planLimitsFromWire(response);
+      if (!limits) {
+        if (isObj(response) && response.rate_limits_available === false) this.planUsageAvailable = false;
+        return;
+      }
+      this.push({
+        type: 'usage',
+        data: { scope: 'session', limits: limits.map((l) => (this.limitStatus.has(l.window) ? { ...l, status: this.limitStatus.get(l.window) } : l)) },
+      });
+    } catch (err) {
+      // telemetry-exempt: optional data; the rate_limit_event windows still arrive.
+      // A CLI that doesn't answer get_usage isn't asked again after a few tries.
+      if (++this.planUsageFailures >= 3) this.planUsageAvailable = false;
+      this.log?.('warn', '[claude-chat] Could not read plan usage', { error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      clearTimeout(timer);
+      this.planUsageInFlight = false;
+    }
   }
 
   async send(content: ContentBlock[], delivery: MessageDelivery): Promise<MessageDelivery> {
@@ -833,7 +958,13 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         const t = tokens(ev.usage);
         const turnCost = this.turnCost(ev.totalCostUsd);
         const costIsEstimate = ev.totalCostUsd !== undefined ? this.costIsEstimate : undefined;
-        this.push({ type: 'usage', data: { scope: 'turn', tokens: t, costUsd: turnCost, costIsEstimate: turnCost !== undefined ? costIsEstimate : undefined } }, true);
+        // Context fill is the last main-loop call's prompt, against that model's window.
+        const size = this.lastContext ? claudeContextWindow(this.lastContext.model, ev.modelUsage, this.applied?.model ?? this.model) : undefined;
+        const context = this.lastContext && size ? { used: this.lastContext.used, size } : undefined;
+        this.push({
+          type: 'usage',
+          data: { scope: 'turn', tokens: t, costUsd: turnCost, costIsEstimate: turnCost !== undefined ? costIsEstimate : undefined, ...(context && { context }) },
+        }, true);
         if (ev.totalCostUsd !== undefined || ev.modelUsage) {
           this.push({ type: 'usage', data: { scope: 'session', tokens: sessionTokens(ev.modelUsage), costUsd: ev.totalCostUsd, costIsEstimate } }, true);
         }
@@ -841,6 +972,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.turnRunning = false;
         this.interrupting = false;
         this.turnApiError = undefined;
+        void this.refreshPlanUsage();
         if (this.effortCommandThisTurn) {
           this.effortPinned = this.effortCommandThisTurn === 'pin';
           this.effortCommandThisTurn = undefined;
@@ -851,20 +983,38 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         }
         return;
       }
+      case 'assistant_usage': {
+        const u = ev.usage;
+        this.lastContext = { used: u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens, model: ev.model };
+        return;
+      }
       case 'rate_limit': {
         const window = (ev.rateLimitType && LIMIT_WINDOWS[ev.rateLimitType]) ?? ev.rateLimitType ?? 'limit';
-        // The CLI reports resetsAt in epoch seconds; the contract uses epoch ms like ts.
-        const resetsAt = ev.resetsAt !== undefined && ev.resetsAt < 1e12 ? ev.resetsAt * 1000 : ev.resetsAt;
-        this.push({
-          type: 'usage',
-          data: { scope: 'session', limits: [{ window, utilization: ev.utilization, status: LIMIT_STATUS[ev.status], resetsAt }] },
-        });
+        const status = LIMIT_STATUS[ev.status];
+        const limits: UsageLimit[] = [{
+          window,
+          ...(fraction(ev.utilization) !== undefined && { utilization: fraction(ev.utilization) }),
+          ...(status && { status }),
+          // The CLI reports resetsAt in epoch seconds; the contract uses epoch ms like ts.
+          ...(epochMs(ev.resetsAt) !== undefined && { resetsAt: epochMs(ev.resetsAt) }),
+        }];
+        // Extra usage rides on the same event as its own window, but only when the
+        // account has it: with extra usage off, overageStatus is "rejected" and a
+        // disabled reason is given, which isn't a reached limit.
+        const overage = ev.overageStatus && !ev.overageDisabledReason ? LIMIT_STATUS[ev.overageStatus] : undefined;
+        if (overage && window !== 'overage') {
+          limits.push({ window: 'overage', status: overage, ...(epochMs(ev.overageResetsAt) !== undefined && { resetsAt: epochMs(ev.overageResetsAt) }) });
+        }
+        for (const l of limits) if (l.status) this.limitStatus.set(l.window, l.status);
+        this.push({ type: 'usage', data: { scope: 'session', limits } });
         if (ev.status === 'rejected') {
           this.push({ type: 'notice', data: { level: 'warn', code: 'rate_limited', message: 'Plan usage limit reached' } });
         }
         return;
       }
       case 'compacted':
+        // The context the meter showed is gone; the next call reports the new fill.
+        this.lastContext = undefined;
         this.push({ type: 'notice', data: { level: 'info', code: 'compacted', message: 'Context compacted' } }, true);
         return;
       case 'subagent':

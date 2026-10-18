@@ -55,6 +55,9 @@ let steered = [];
 const out = (obj) => process.stdout.write(JSON.stringify(obj) + '\n');
 const base = () => ({ session_id: sessionId, uuid: `uuid-${++msgCounter}` });
 
+/** One main-loop call's usage: 40,000 tokens in context (2,000 + 30,000 cache read + 8,000 cache write). */
+const ASSISTANT_USAGE = { input_tokens: 2000, output_tokens: 50, cache_read_input_tokens: 30000, cache_creation_input_tokens: 8000 };
+
 function result(text, extra = {}) {
   out({
     type: 'result',
@@ -66,7 +69,7 @@ function result(text, extra = {}) {
     result: text,
     total_cost_usd: 0.0012,
     usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 },
-    modelUsage: { [model]: { inputTokens: 10, outputTokens: 5 } },
+    modelUsage: { [model]: { inputTokens: 10, outputTokens: 5, contextWindow: model.endsWith('[1m]') ? 1000000 : 200000 } },
     queued_turn_count: 0,
     ...base(),
     ...extra,
@@ -79,7 +82,7 @@ function say(text) {
     text += `|steered:${steered.join(',')}`;
     steered = [];
   }
-  out({ type: 'assistant', message: { id: `msg_say_${msgCounter}`, role: 'assistant', content: [{ type: 'text', text }] }, parent_tool_use_id: null, ...base() });
+  out({ type: 'assistant', message: { id: `msg_say_${msgCounter}`, role: 'assistant', model, content: [{ type: 'text', text }], usage: ASSISTANT_USAGE }, parent_tool_use_id: null, ...base() });
   result(text);
 }
 
@@ -130,7 +133,7 @@ async function runTurn(msg) {
     for (const t of ['Hel', 'lo']) {
       out({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: t } }, parent_tool_use_id: null, ...base() });
     }
-    out({ type: 'assistant', message: { id: 'msg_hello', role: 'assistant', content: [{ type: 'text', text: 'Hello' }] }, parent_tool_use_id: null, ...base() });
+    out({ type: 'assistant', message: { id: 'msg_hello', role: 'assistant', model, content: [{ type: 'text', text: 'Hello' }], usage: ASSISTANT_USAGE }, parent_tool_use_id: null, ...base() });
     result('Hello');
     return;
   }
@@ -246,6 +249,23 @@ function onControlRequest(msg) {
     case 'get_settings':
       // Models without effort levels report null, as the CLI does.
       respond(id, { applied: { model, effort: model === 'claude-haiku-fake' ? null : effort } });
+      return;
+    case 'get_usage':
+      // The /usage data: plan windows in percent with ISO reset times, as the CLI sends them.
+      respond(id, {
+        session: { total_cost_usd: 0.0012, total_api_duration_ms: 10, total_duration_ms: 12, total_lines_added: 0, total_lines_removed: 0, model_usage: {} },
+        subscription_type: 'max',
+        rate_limits_available: true,
+        rate_limits: {
+          five_hour: { utilization: 42, resets_at: '2026-10-18T15:00:00.000Z' },
+          seven_day: { utilization: 71, resets_at: '2026-10-21T09:00:00.000Z' },
+          seven_day_opus: null,
+          seven_day_sonnet: { utilization: 12, resets_at: '2026-10-21T09:00:00.000Z' },
+          model_scoped: [{ display_name: 'Fable', utilization: 5, resets_at: '2026-10-21T09:00:00.000Z' }],
+          extra_usage: { is_enabled: false, monthly_limit: null, used_credits: null, utilization: null },
+        },
+        behaviors: null,
+      });
       return;
     case 'interrupt':
       respond(id, {});
