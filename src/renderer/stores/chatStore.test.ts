@@ -393,7 +393,6 @@ describe('reduceChatEvent', () => {
     expect(s.pendingPermissions).toEqual([]);
     expect(s.lastSeq).toEqual({ s1: 4, s2: 2 });
     // Old messages stay in their own session transcript.
-    expect(s.items.filter((i) => i.kind === 'session_divider')).toHaveLength(0);
   });
 
   it('ignores late events from an older session but allows a later explicit resume', () => {
@@ -421,7 +420,7 @@ describe('reduceChatEvent', () => {
       ev('session_ended', { reason: 'idle_timeout' }),
       sessionStarted(ev, 's1', { resumed: true }),
     ]);
-    expect(s.items.filter((i) => i.kind === 'session_divider')).toHaveLength(0);
+    expect(s.items.map((i) => i.kind)).not.toContain('session_divider');
     expect(s.state).toBe('idle');
   });
 

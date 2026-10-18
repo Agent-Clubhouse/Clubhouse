@@ -7,7 +7,6 @@ import type {
   NoticeItem,
   PlanDocumentItem,
   QuestionItem,
-  SessionDividerItem,
   ThoughtItem,
   TurnEndItem,
   UserMessageItem,
@@ -229,16 +228,6 @@ export function TurnFooter({ item, turnNumber, capabilities }: { item: TurnEndIt
     >
       {stop && <span className={failed ? 'text-ctp-error' : 'text-ctp-subtext0'}>{stop}</span>}
       {parts.map((p) => <span key={p}>{p}</span>)}
-    </div>
-  );
-}
-
-export function SessionDivider({ item }: { item: SessionDividerItem }) {
-  return (
-    <div className="flex items-center gap-3 text-[11.5px] text-ctp-overlay0 py-1" data-testid="chat-session-divider">
-      <span className="flex-1 border-t border-surface-0" />
-      <span>{item.resumed ? 'Session resumed' : 'New session'}</span>
-      <span className="flex-1 border-t border-surface-0" />
     </div>
   );
 }
