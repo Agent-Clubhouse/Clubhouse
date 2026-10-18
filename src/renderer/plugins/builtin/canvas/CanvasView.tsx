@@ -17,6 +17,7 @@ import { sanitizeSvg } from '../../../utils/sanitize-svg';
 import { AGENT_ICON } from './canvas-icons';
 import { cardDot } from './canvas-card-status';
 import { Tooltip } from '../../../components/Tooltip';
+import { containScrollableWheel, stopPlainWheelPropagation } from '../../../hooks/useWheelContainment';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -918,15 +919,18 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
           without requiring a separate click to select the widget first.
           Keyboard isolation is handled by the workspace's focus management
           (auto-focus on mount, reclaim on deselect via Escape / empty click).
-          Only stop wheel propagation when this view is selected, so
-          unselected views let scroll events pan the canvas.
+          Wheel: a selected view contains every plain wheel. An unselected
+          view contains a wheel over a region that scrolls (a chat
+          transcript, a terminal's scrollback), even at its scroll end, and
+          lets the rest pan the canvas. Ctrl/Cmd+wheel always reaches the
+          canvas to zoom. The header is outside this area, so it pans.
           When the view is zoomed, the overlay renders a full-size copy of the
           content, so skip rendering here to prevent duplicate terminals from
           racing on PTY resize. */}
       <div
         ref={contentRef}
         className="relative flex-1 min-h-0 overflow-hidden rounded-b-lg"
-        onWheel={isSelected ? (e) => e.stopPropagation() : undefined}
+        onWheel={isSelected ? stopPlainWheelPropagation : (e) => containScrollableWheel(e, e.currentTarget)}
       >
         {!isZoomed && renderContent()}
       </div>
