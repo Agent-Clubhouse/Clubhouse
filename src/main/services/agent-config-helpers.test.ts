@@ -25,6 +25,8 @@ const rmFailures = new Set<string>();
 let remoteConfigured = true;
 let baseBranch: string | null = 'main';
 let showRefBroken = false;
+let remoteFetched = true;
+let probeError: string | null = null;
 const gitCalls: Array<{ args: string[]; cwd: string }> = [];
 
 function exitError(code: number, message: string): Error {
@@ -67,6 +69,11 @@ function gitOutput(args: string[], cwd: string): string {
     return '';
   }
   if (cmd === 'remote') return remoteConfigured ? 'origin\n' : '';
+  if (cmd.startsWith('for-each-ref')) return remoteFetched ? 'refs/remotes/origin/main\n' : '';
+  if (cmd === 'rev-parse --is-inside-work-tree') {
+    if (probeError) throw exitError(128, probeError);
+    return 'true\n';
+  }
   if (cmd === 'symbolic-ref --quiet HEAD') {
     if (!repo) throw exitError(1, '');
     return `refs/heads/${repo.branch}\n`;
@@ -214,6 +221,8 @@ beforeEach(() => {
   remoteConfigured = true;
   baseBranch = 'main';
   showRefBroken = false;
+  remoteFetched = true;
+  probeError = null;
   gitCalls.length = 0;
 });
 
@@ -432,6 +441,28 @@ describe('delete cascade', () => {
 
     expect(await getDisposeChecks(PROJECT_PATH, 'durable_2_h')).toEqual({ dirty: 0, unpushed: 0, unmerged: 0 });
     expect(await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose')).toMatchObject({ ok: true });
+  });
+
+  it('a project git says is not a repository has nothing to lose', async () => {
+    seedFamily({ durable_2_h: {} });
+    dirs.delete(worktree('durable_2_h'));
+    probeError = 'fatal: not a git repository (or any of the parent directories): .git';
+    expect(await getDisposeChecks(PROJECT_PATH, 'durable_2_h')).toEqual({ dirty: 0, unpushed: 0, unmerged: 0 });
+  });
+
+  it('any other failure of the repository probe blocks', async () => {
+    seedFamily({ durable_2_h: {} });
+    dirs.delete(worktree('durable_2_h'));
+    probeError = 'fatal: detected dubious ownership in repository';
+    const checks = await getDisposeChecks(PROJECT_PATH, 'durable_2_h');
+    expect(checks.error).toMatch(/couldn't check, fatal: detected dubious ownership/);
+    expect((await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose')).ok).toBe(false);
+  });
+
+  it('blocks when the remote was never fetched', async () => {
+    remoteFetched = false;
+    seedFamily({ durable_2_h: { unpushed: 4210 } });
+    expect((await getDisposeChecks(PROJECT_PATH, 'durable_2_h')).error).toMatch(/never been fetched/);
   });
 
   it('blocks a worktree folder that is not a git worktree', async () => {

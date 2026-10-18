@@ -335,7 +335,9 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           if (helperChoice === 'dispose') {
             for (const helper of helpers) {
               if (get().agents[helper.id]?.status === 'running') {
-                await window.clubhouse.agent.killAgent(helper.id, projectPath);
+                // Wait for the process to exit so it no longer holds the
+                // worktree folder open (EBUSY on Windows).
+                await window.clubhouse.agent.killAgent(helper.id, projectPath, true);
               }
             }
           }
@@ -406,11 +408,15 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/** Past this, an exact count says nothing more (a branch with its whole history unpushed). */
+const MAX_LISTED_COMMITS = 99;
+
 function describeBlock(block: HelperDisposeBlock): string {
   const parts: string[] = [];
   if (block.checks.error) parts.push(block.checks.error);
   if (block.checks.dirty > 0) parts.push(plural(block.checks.dirty, 'uncommitted file', 'uncommitted files'));
-  if (block.checks.unpushed > 0) parts.push(plural(block.checks.unpushed, 'unpushed commit', 'unpushed commits'));
+  if (block.checks.unpushed > MAX_LISTED_COMMITS) parts.push(`more than ${MAX_LISTED_COMMITS} unpushed commits`);
+  else if (block.checks.unpushed > 0) parts.push(plural(block.checks.unpushed, 'unpushed commit', 'unpushed commits'));
   return `${block.name} (${parts.join(', ')})`;
 }
 

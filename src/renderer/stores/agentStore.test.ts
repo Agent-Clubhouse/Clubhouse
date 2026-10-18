@@ -1581,8 +1581,8 @@ describe('agentStore', () => {
           [projectPath, 'target', 'dispose', true],
           [projectPath, 'target', 'dispose'],
         ]);
-        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('helper_1', projectPath);
-        expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalledWith('helper_2', projectPath);
+        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('helper_1', projectPath, true);
+        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledTimes(1);
         expect(getState().agents['helper_1']).toBeUndefined();
         expect(getState().agents['helper_2']).toBeUndefined();
         expect(window.clubhouse.agent.deleteForce).toHaveBeenCalledWith(projectPath, 'target');
@@ -1595,6 +1595,7 @@ describe('agentStore', () => {
           blocked: [
             { agentId: 'helper_1', name: 'scout', checks: { dirty: 2, unpushed: 0, unmerged: 0 } },
             { agentId: 'helper_2', name: 'fixer', checks: { dirty: 0, unpushed: 1, unmerged: 4 } },
+            { agentId: 'helper_4', name: 'mover', checks: { dirty: 0, unpushed: 4210, unmerged: 4210 } },
             { agentId: 'helper_3', name: 'mapper', checks: { dirty: 0, unpushed: 0, unmerged: null, error: "couldn't check, fatal: bad object" } },
           ],
         });
@@ -1603,7 +1604,7 @@ describe('agentStore', () => {
 
         expect(result.ok).toBe(false);
         expect(result.message).toBe(
-          "Nothing was deleted. Disposing would lose work in scout (2 uncommitted files), fixer (1 unpushed commit) and mapper (couldn't check, fatal: bad object). Keep the helpers, or commit and push their work first.",
+          "Nothing was deleted. Disposing would lose work in scout (2 uncommitted files), fixer (1 unpushed commit), mover (more than 99 unpushed commits) and mapper (couldn't check, fatal: bad object). Keep the helpers, or commit and push their work first.",
         );
         expect(window.clubhouse.agent.resolveHelpersForDelete).toHaveBeenCalledTimes(1);
         expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();

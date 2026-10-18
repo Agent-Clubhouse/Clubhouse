@@ -1917,7 +1917,11 @@ function errorText(err: unknown): string {
  * not merged into the base branch. Fails closed: if any check can't run, the
  * result carries `error` and disposal is blocked.
  */
-export async function getDisposeChecks(projectPath: string, agentId: string): Promise<HelperDisposeChecks> {
+export async function getDisposeChecks(
+  projectPath: string,
+  agentId: string,
+  options: { alsoDisposed?: string[] } = {},
+): Promise<HelperDisposeChecks> {
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return { dirty: 0, unpushed: 0, unmerged: null, error: 'agent not found' };
@@ -1925,24 +1929,63 @@ export async function getDisposeChecks(projectPath: string, agentId: string): Pr
   if (creating) return { dirty: 0, unpushed: 0, unmerged: null, error: creating };
   if (isDisposedAgent(agent)) return { dirty: 0, unpushed: 0, unmerged: 0 };
   try {
-    return await runDisposeChecks(projectPath, agent, agentsById);
+    return await runDisposeChecks(projectPath, agent, agentsById, options.alsoDisposed ?? []);
   } catch (err) {
     // telemetry-exempt: the failure blocks disposal and reaches the user in the result
     return { dirty: 0, unpushed: 0, unmerged: null, error: `couldn't check, ${errorText(err)}` };
   }
 }
 
+/**
+ * Whether `dir` is inside a git work tree. Only git's own "not a git
+ * repository" answer means no; any other failure throws, so a check that
+ * can't run never reads as "no repository, nothing to lose".
+ */
+async function probeGitWorkTree(dir: string): Promise<boolean> {
+  try {
+    return (await execGitFileAsync(['rev-parse', '--is-inside-work-tree'], dir)).trim() === 'true';
+  } catch (err) {
+    if (/not a git repository/i.test(errorText(err))) return false;
+    throw err;
+  }
+}
+
+/**
+ * The local branches disposing an agent deletes or leaves without a
+ * worktree: its recorded branch and the branch its worktree has checked out.
+ * Throws when git can't answer.
+ */
+async function branchesDisposedWith(agent: DurableAgentConfig): Promise<string[]> {
+  const names = agent.branch ? [agent.branch] : [];
+  const wt = agent.worktreePath;
+  if (wt && await pathExists(path.join(wt, '.git'))) {
+    try {
+      const head = (await execGitFileAsync(['symbolic-ref', '--quiet', 'HEAD'], wt)).trim();
+      if (head.startsWith('refs/heads/')) names.push(head.slice('refs/heads/'.length));
+    } catch (err) {
+      // symbolic-ref exits 1 on a detached HEAD; anything else is a failure.
+      if ((err as { code?: unknown } | null)?.code !== 1) throw err;
+    }
+  }
+  return names;
+}
+
+/**
+ * `alsoDisposed` names the branches of every other helper disposed in the
+ * same cascade. Work that survives only on one of those branches is not safe.
+ */
 async function runDisposeChecks(
   projectPath: string,
   agent: DurableAgentConfig,
   agentsById: Map<string, DurableAgentConfig>,
+  alsoDisposed: string[],
 ): Promise<HelperDisposeChecks> {
   const wt = agent.worktreePath;
   const wtExists = !!wt && await pathExists(wt);
   if (wtExists && !(await pathExists(path.join(wt, '.git')))) {
     throw new Error(`${wt} is not a git worktree`);
   }
-  if (!wtExists && !(await isInsideGitRepo(projectPath))) {
+  if (!wtExists && !(await probeGitWorkTree(projectPath))) {
     // No worktree and no repository: nothing on disk to lose.
     return { dirty: 0, unpushed: 0, unmerged: 0 };
   }
@@ -1975,11 +2018,19 @@ async function runDisposeChecks(
   }
 
   const remotes = (await execGitFileAsync(['remote'], cwd)).trim();
+  if (remotes) {
+    // A remote with no remote-tracking refs was never fetched; every commit
+    // would read as unpushed, which says nothing useful.
+    const tracking = (await execGitFileAsync(['for-each-ref', '--count=1', '--format=%(refname)', 'refs/remotes'], cwd)).trim();
+    if (!tracking) throw new Error('its remote has never been fetched');
+  }
   // With a remote, pushed work survives disposal. Without one, work survives
-  // only on another local branch (the orchestrator's, main, ...).
+  // only on a local branch that stays: not this agent's, and not one of the
+  // other helpers disposed with it.
+  const excluded = [...new Set([...own, ...alsoDisposed])];
   const unpushed = remotes
     ? await gitCount(['rev-list', '--count', ...refs, '--not', '--remotes'], cwd)
-    : await gitCount(['rev-list', '--count', ...refs, '--not', ...[...new Set(own)].map((r) => `--exclude=${r}`), '--branches'], cwd);
+    : await gitCount(['rev-list', '--count', ...refs, '--not', ...excluded.map((r) => `--exclude=${r}`), '--branches'], cwd);
 
   // Information only: merged into main/master, else into the parent's branch.
   const parentBranch = agent.parentAgentId ? agentsById.get(agent.parentAgentId)?.branch : undefined;
@@ -2092,9 +2143,27 @@ export async function resolveHelpersForDelete(
   const helpers = liveDescendants(agents, agentId);
   if (helpers.length === 0) return { ok: true, message: 'No helpers', helperIds: [] };
 
-  const checked = await Promise.all(helpers.map(async (helper) => ({
-    helper, checks: await getDisposeChecks(projectPath, helper.id),
-  })));
+  // Every branch this cascade removes, so one helper's work kept only on a
+  // sibling's branch is not counted as safe.
+  const disposedBranches = new Set<string>();
+  const branchErrors = new Map<string, string>();
+  for (const helper of helpers) {
+    try {
+      for (const name of await branchesDisposedWith(helper)) disposedBranches.add(name);
+    } catch (err) {
+      // telemetry-exempt: blocks this helper below and reaches the user in the result
+      branchErrors.set(helper.id, `couldn't check, ${errorText(err)}`);
+    }
+  }
+  const checked = await Promise.all(helpers.map(async (helper) => {
+    const branchError = branchErrors.get(helper.id);
+    return {
+      helper,
+      checks: branchError
+        ? { dirty: 0, unpushed: 0, unmerged: null, error: branchError }
+        : await getDisposeChecks(projectPath, helper.id, { alsoDisposed: [...disposedBranches] }),
+    };
+  }));
   const blocked: HelperDisposeBlock[] = checked
     .filter(({ checks }) => hasWorkAtRisk(checks))
     .map(({ helper, checks }) => ({ agentId: helper.id, name: helper.name, checks }));
