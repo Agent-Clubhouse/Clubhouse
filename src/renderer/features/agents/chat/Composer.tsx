@@ -4,7 +4,7 @@
  * queues. Stop (Esc) interrupts the turn and keeps the session.
  */
 
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
@@ -262,6 +262,25 @@ function ModelPill({ models, efforts, model, effort, capabilities, onChange }: {
 
 // ── Composer ────────────────────────────────────────────────────────────────
 
+/** A `/word` being typed: starts the draft or follows whitespace, and runs up to the caret. */
+export interface SlashToken {
+  start: number;
+  end: number;
+  query: string;
+}
+
+/**
+ * The slash command under the caret (#2090), anywhere in the draft. Paths and
+ * URLs don't count: the slash has to open a word and the word has only the one.
+ */
+export function slashTokenAt(text: string, caret: number): SlashToken | null {
+  const m = /(^|\s)\/([^\s/]*)$/.exec(text.slice(0, caret));
+  if (!m) return null;
+  const rest = /^[^\s]*/.exec(text.slice(caret))![0];
+  if (rest.includes('/')) return null;
+  return { start: m.index + m[1].length, end: caret + rest.length, query: m[2] };
+}
+
 export interface ComposerProps {
   agentName: string;
   capabilities: ChatCapabilities | null;
@@ -334,6 +353,15 @@ export function Composer(props: ComposerProps) {
   const agentId = props.attachmentAgentId;
   const canAttach = !!props.onAttachmentsChange && !!agentId;
   const [cmdIndex, setCmdIndex] = useState(0);
+  // The caret, tagged with the draft it was read from. The draft is owned by the
+  // caller: when it changes from outside (a restored draft after a failed send,
+  // another agent's draft), the caret is unknown until the user types or moves it,
+  // so no menu opens on its own.
+  const [caretAt, setCaretAt] = useState<{ text: string; at: number } | null>(null);
+  const caret = caretAt?.text === text ? Math.min(caretAt.at, text.length) : null;
+  // Where the slash was when Esc closed the menu; it stays closed for that word.
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const pendingCaret = useRef<number | null>(null);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -355,11 +383,26 @@ export function Composer(props: ComposerProps) {
     el.style.height = `${Math.min(el.scrollHeight, line ? 72 : 200)}px`;
   }, [text, line]);
 
+  const slash = useMemo(
+    () => (capabilities?.slashCommands && caret !== null ? slashTokenAt(text, caret) : null),
+    [capabilities?.slashCommands, text, caret],
+  );
   const slashMatches = useMemo(() => {
-    if (!capabilities?.slashCommands || !text.startsWith('/') || /\s/.test(text)) return [];
-    const q = text.slice(1).toLowerCase();
+    if (!slash || slash.start === dismissedAt) return [];
+    const q = slash.query.toLowerCase();
     return props.commands.filter((c) => c.name.toLowerCase().startsWith(q)).slice(0, 8);
-  }, [capabilities?.slashCommands, text, props.commands]);
+  }, [slash, dismissedAt, props.commands]);
+
+  useEffect(() => {
+    if (dismissedAt !== null && slash?.start !== dismissedAt) setDismissedAt(null);
+  }, [slash, dismissedAt]);
+
+  useLayoutEffect(() => {
+    const at = pendingCaret.current;
+    if (at === null || !area.current) return;
+    pendingCaret.current = null;
+    area.current.setSelectionRange(at, at);
+  }, [text]);
 
   useEffect(() => { setCmdIndex(0); }, [slashMatches.length]);
 
@@ -420,22 +463,49 @@ export function Composer(props: ComposerProps) {
     if (attachments.length) props.onSend(trimmed, action, attachments.map((a) => a.id));
     else props.onSend(trimmed, action);
     setText('');
+    // A failed send restores this same text from outside; the caret read from it no longer counts.
+    setCaretAt(null);
     if (attachments.length) props.onAttachmentsChange?.([]);
     setAttachError(null);
   };
 
   const pickCommand = (c: AvailableCommand) => {
-    setText(`/${c.name} `);
+    if (!slash) return;
+    // Replace only the word being typed; keep one space after it.
+    const after = text.slice(slash.end).replace(/^ /, '');
+    const inserted = `/${c.name} `;
+    const at = slash.start + inserted.length;
+    const next = text.slice(0, slash.start) + inserted + after;
+    setCaretAt({ text: next, at });
     area.current?.focus();
+    if (next === text) {
+      // Nothing re-renders the textarea, so place the caret now rather than after the next edit.
+      area.current?.setSelectionRange(at, at);
+      return;
+    }
+    pendingCaret.current = at;
+    setText(next);
   };
 
+  const trackCaret = (el: HTMLTextAreaElement) => setCaretAt({ text: el.value, at: el.selectionStart ?? el.value.length });
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // While an IME is composing, its keys are its own: Enter commits, Esc cancels. None picks, sends or stops.
+    if (e.nativeEvent.isComposing) return;
     if (slashMatches.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex((i) => (i + 1) % slashMatches.length); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length); return; }
-      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && text.slice(1) !== slashMatches[cmdIndex].name)) {
+      // Enter picks only once a name is started: "yes and /" sends as typed. Tab always picks.
+      const enterPicks = e.key === 'Enter' && !e.shiftKey && !!slash?.query && slash.query !== slashMatches[cmdIndex].name;
+      if (e.key === 'Tab' || enterPicks) {
         e.preventDefault();
         pickCommand(slashMatches[cmdIndex]);
+        return;
+      }
+      // Esc closes the menu and leaves the text as typed; it doesn't stop the turn.
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDismissedAt(slash?.start ?? null);
         return;
       }
     }
@@ -444,7 +514,7 @@ export function Composer(props: ComposerProps) {
       props.onStop();
       return;
     }
-    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+    if (e.key !== 'Enter') return;
     if (e.shiftKey) {
       // Shift+Enter queues during a turn; otherwise it's a newline.
       if (!modes.secondary) return;
@@ -556,7 +626,8 @@ export function Composer(props: ComposerProps) {
       rows={1}
       value={text}
       disabled={disabled}
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => { trackCaret(e.target); setText(e.target.value); }}
+      onSelect={(e) => trackCaret(e.currentTarget)}
       onKeyDown={onKeyDown}
       onPaste={onPaste}
       placeholder={placeholder}
