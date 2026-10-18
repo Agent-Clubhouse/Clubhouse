@@ -3,6 +3,7 @@ import type { ToolCallContent, ToolKind } from '../../../../shared/chat';
 import type { ToolCallItem } from '../../../stores/chatStore';
 import type { SubagentBlock } from './view-model';
 import {
+  argSummary,
   commandOf,
   diffContent,
   diffLines,
@@ -10,7 +11,11 @@ import {
   exploreLabel,
   formatDuration,
   formatTokens,
+  mcpTool,
   terminalContent,
+  toolArgs,
+  toolOpenByDefault,
+  toolResultText,
   toolTarget,
   type DiffLine,
 } from './view-model';
@@ -96,6 +101,30 @@ export function ExploreGroup({ tools }: { tools: ToolCallItem[] }) {
   );
 }
 
+/** Open state for a tool card: follows the status until the user toggles it (see toolOpenByDefault). */
+function useToolOpen(status: ToolCallItem['status'] | undefined): [boolean, () => void] {
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const open = userOpen ?? (status !== undefined && toolOpenByDefault(status));
+  return [open, () => setUserOpen(!open)];
+}
+
+const CARD_HEADER = 'flex items-center gap-2 h-[34px] px-3 text-[12.5px] text-ctp-overlay1 min-w-0';
+
+/**
+ * A card header that toggles the body when `onToggle` is given, and is static
+ * otherwise. `indent` keeps a static row aligned with its collapsible neighbours.
+ */
+function CardHeader({ open, onToggle, label, indent, children }: { open: boolean; onToggle?: () => void; label: string; indent?: boolean; children: ReactNode }) {
+  const border = open ? 'border-b border-surface-0' : '';
+  if (!onToggle) return <div className={`${CARD_HEADER} ${border}`}>{indent && <span className="w-3.5 flex-shrink-0" aria-hidden="true" />}{children}</div>;
+  return (
+    <button type="button" className={`${CARD_HEADER} ${border} w-full text-left hover:text-ctp-subtext0`} onClick={onToggle} aria-expanded={open} aria-label={label}>
+      {open ? <ChevronDown className="text-ctp-overlay0 flex-shrink-0" /> : <ChevronRight className="text-ctp-overlay0 flex-shrink-0" />}
+      {children}
+    </button>
+  );
+}
+
 function DiffBody({ lines }: { lines: DiffLine[] }) {
   return (
     <div className="font-mono text-[11.5px] leading-[1.65] py-1 overflow-x-auto">
@@ -121,7 +150,17 @@ function DiffBody({ lines }: { lines: DiffLine[] }) {
 /** Lines shown before "Show all" on a long diff. */
 const DIFF_PREVIEW_LINES = 40;
 
-export function DiffCard({ diff, line, status }: { diff: Extract<ToolCallContent, { type: 'diff' }>; line?: number; status?: ToolCallItem['status'] }) {
+/**
+ * A file edit. In the transcript it collapses to its header (pass `open` and
+ * `onToggle`); elsewhere (Changes, review, run insets) it is always open.
+ */
+export function DiffCard({ diff, line, status, open = true, onToggle }: {
+  diff: Extract<ToolCallContent, { type: 'diff' }>;
+  line?: number;
+  status?: ToolCallItem['status'];
+  open?: boolean;
+  onToggle?: () => void;
+}) {
   const lines = useMemo(() => diffLines(diff, line), [diff, line]);
   const { added, removed } = useMemo(() => diffStats(lines), [lines]);
   const [expanded, setExpanded] = useState(false);
@@ -129,8 +168,8 @@ export function DiffCard({ diff, line, status }: { diff: Extract<ToolCallContent
   const deleted = diff.newText === undefined && !diff.unifiedDiff && diff.oldText !== undefined;
   const shown = expanded ? lines : lines.slice(0, DIFF_PREVIEW_LINES);
   return (
-    <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-diff-card">
-      <div className="flex items-center gap-2 h-[34px] px-3 border-b border-surface-0 text-[12.5px] text-ctp-overlay1 min-w-0">
+    <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-diff-card" data-open={open}>
+      <CardHeader open={open} onToggle={onToggle} label={`${open ? 'Collapse' : 'Expand'} edit of ${diff.path}`}>
         <EditIcon />
         {(created || deleted) && <span className="text-ctp-subtext0">{created ? 'Created' : 'Deleted'}</span>}
         <span className="font-mono text-[11.5px] text-ctp-text truncate min-w-0" title={diff.path}>{diff.path}</span>
@@ -138,15 +177,21 @@ export function DiffCard({ diff, line, status }: { diff: Extract<ToolCallContent
         <span className="font-mono text-[11.5px] text-ctp-error">−{removed}</span>
         {status === 'pending' && <span className="ml-auto text-[11.5px] text-ctp-warning">waiting for approval</span>}
         {status === 'failed' && <span className="ml-auto text-[11.5px] text-ctp-error">failed</span>}
-      </div>
-      <DiffBody lines={shown} />
-      {lines.length > DIFF_PREVIEW_LINES && (
+      </CardHeader>
+      {open && <DiffBody lines={shown} />}
+      {open && lines.length > DIFF_PREVIEW_LINES && (
         <button type="button" className="w-full text-[11.5px] text-ctp-overlay1 hover:text-ctp-text py-1 border-t border-surface-0" onClick={() => setExpanded((e) => !e)}>
           {expanded ? 'Show less' : `Show all ${lines.length} lines`}
         </button>
       )}
     </div>
   );
+}
+
+/** A diff card in the transcript: collapsed to its header until opened. */
+function TranscriptDiffCard({ diff, line, status }: { diff: Extract<ToolCallContent, { type: 'diff' }>; line?: number; status: ToolCallItem['status'] }) {
+  const [open, toggle] = useToolOpen(status);
+  return <DiffCard diff={diff} line={line} status={status} open={open} onToggle={toggle} />;
 }
 
 /** Output lines kept visible; older lines scroll inside the card. */
@@ -156,11 +201,12 @@ export function CommandCard({ tool }: { tool: ToolCallItem }) {
   // Output arrives in many appended chunks; join them only when they change.
   const term = useMemo(() => terminalContent(tool), [tool]);
   const command = useMemo(() => commandOf(tool), [tool]);
+  const [open, toggle] = useToolOpen(tool.status);
   const running = tool.status === 'in_progress';
   const exit = term?.exitCode;
   return (
-    <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-command-card" data-status={tool.status}>
-      <div className="flex items-center gap-2 h-[34px] px-3 border-b border-surface-0 text-[12.5px] text-ctp-overlay1 min-w-0">
+    <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-command-card" data-status={tool.status} data-open={open}>
+      <CardHeader open={open} onToggle={toggle} label={`${open ? 'Collapse' : 'Expand'} command ${command}`}>
         <TerminalIcon />
         <span className="font-mono text-[11.5px] text-ctp-text truncate min-w-0" title={command}>$ {command}</span>
         <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap">
@@ -169,38 +215,75 @@ export function CommandCard({ tool }: { tool: ToolCallItem }) {
               : exit !== undefined ? <><span className={exit === 0 ? 'text-ctp-success font-mono' : 'text-ctp-error font-mono'}>exit {exit}</span>{tool.durationMs !== undefined && <span>· {formatDuration(tool.durationMs)}</span>}</>
                 : <StatusMeta tool={tool} />}
         </span>
-      </div>
-      {term && term.output && (
+      </CardHeader>
+      {open && term && term.output && (
         <pre className={`font-mono text-[11.5px] leading-[1.65] text-ctp-subtext0 px-3 py-2 bg-ctp-crust whitespace-pre-wrap break-words overflow-y-auto ${OUTPUT_MAX_HEIGHT} m-0`}>
           {term.output.replace(/\n$/, '')}
         </pre>
       )}
-      {tool.error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0">{tool.error}</div>}
+      {open && tool.error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0">{tool.error}</div>}
     </div>
   );
 }
 
-/** One tool call: a diff card per file edit, a command card for commands, a row otherwise. */
+/**
+ * Any other tool call, MCP included: one row with the tool and a short summary;
+ * open it for the arguments and what came back.
+ */
+export function ToolCard({ tool }: { tool: ToolCallItem }) {
+  const mcp = mcpTool(tool);
+  const args = useMemo(() => toolArgs(tool), [tool]);
+  const result = useMemo(() => toolResultText(tool), [tool]);
+  const [open, toggle] = useToolOpen(tool.status);
+  const Ico = KIND_ICONS[tool.toolKind] ?? ToolIcon;
+  const label = mcp ? `${mcp.server} · ${mcp.tool}` : KIND_VERBS[tool.toolKind];
+  const summary = mcp ? argSummary(tool) : toolTarget(tool);
+  // Built-in tools show their input only when it isn't already the summary (e.g. a path).
+  const showArgs = args !== null && (mcp !== null || tool.toolKind === 'other');
+  const expandable = showArgs || result !== '' || !!tool.error;
+  return (
+    <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-tool-card" data-status={tool.status} data-open={expandable && open} data-mcp={mcp ? 'true' : undefined}>
+      <CardHeader open={expandable && open} onToggle={expandable ? toggle : undefined} indent label={`${open ? 'Collapse' : 'Expand'} ${label}`}>
+        <Ico className="text-ctp-overlay1 flex-shrink-0" />
+        <span className="font-medium text-ctp-subtext1 flex-shrink-0">{label}</span>
+        {summary && <span className="font-mono text-[11.5px] text-ctp-subtext0 truncate min-w-0" title={summary}>{summary}</span>}
+        <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap"><StatusMeta tool={tool} /></span>
+      </CardHeader>
+      {expandable && open && (
+        <div className="flex flex-col">
+          {showArgs && (
+            <pre className={`font-mono text-[11.5px] leading-[1.65] text-ctp-subtext0 px-3 py-2 whitespace-pre-wrap break-words overflow-y-auto ${OUTPUT_MAX_HEIGHT} m-0`} data-testid="chat-tool-args">
+              {JSON.stringify(args, null, 2)}
+            </pre>
+          )}
+          {result && (
+            <pre className={`font-mono text-[11.5px] leading-[1.65] text-ctp-subtext0 px-3 py-2 bg-ctp-crust whitespace-pre-wrap break-words overflow-y-auto ${OUTPUT_MAX_HEIGHT} m-0 ${showArgs ? 'border-t border-surface-0' : ''}`} data-testid="chat-tool-result">
+              {result.replace(/\n$/, '')}
+            </pre>
+          )}
+          {tool.error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0">{tool.error}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One tool call in the transcript: a diff card per file edit, a command card for
+ * commands, a tool card otherwise. All start collapsed to one row (toolOpenByDefault).
+ */
 export function ToolCallView({ tool }: { tool: ToolCallItem }) {
   const diffs = diffContent(tool);
   if (diffs.length > 0) {
     return (
       <>
-        {diffs.map((d, i) => <DiffCard key={`${d.path}:${i}`} diff={d} line={tool.locations?.[0]?.line} status={tool.status} />)}
+        {diffs.map((d, i) => <TranscriptDiffCard key={`${d.path}:${i}`} diff={d} line={tool.locations?.[0]?.line} status={tool.status} />)}
         {tool.error && <div className="text-[12px] text-ctp-error">{tool.error}</div>}
       </>
     );
   }
   if (tool.toolKind === 'execute' || tool.content.some((c) => c.type === 'terminal')) return <CommandCard tool={tool} />;
-  const text = tool.content.find((c): c is Extract<ToolCallContent, { type: 'text' }> => c.type === 'text');
-  return (
-    <>
-      <ToolRow tool={tool} />
-      {text && tool.toolKind !== 'read' && (
-        <div className="ml-6 text-[12px] text-ctp-subtext0 whitespace-pre-wrap break-words line-clamp-6">{text.text}</div>
-      )}
-    </>
-  );
+  return <ToolCard tool={tool} />;
 }
 
 const SUB_STATUS: Record<SubagentBlock['info']['status'], string> = {

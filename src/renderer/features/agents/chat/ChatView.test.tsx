@@ -66,6 +66,9 @@ describe('ChatView conversation', () => {
     const cmd = screen.getByTestId('chat-command-card');
     expect(cmd).toHaveTextContent('$ npm run typecheck');
     expect(cmd).toHaveTextContent('exit 0');
+    // Collapsed by default (#2110): output shows once the row is opened.
+    expect(cmd).not.toHaveTextContent('0 errors');
+    fireEvent.click(within(cmd).getByRole('button', { expanded: false }));
     expect(cmd).toHaveTextContent('0 errors');
     expect(screen.getAllByTestId('chat-agent-message')).toHaveLength(2);
     expect(screen.getByTestId('chat-turn-footer')).toHaveTextContent('Turn 1');
@@ -135,6 +138,9 @@ describe('ChatView conversation', () => {
     const card = screen.getByTestId('chat-command-card');
     expect(card).toHaveAttribute('data-status', 'in_progress');
     expect(card).toHaveTextContent('running');
+    // A running command stays one row; its live output is one click away.
+    expect(card).toHaveAttribute('data-open', 'false');
+    fireEvent.click(within(card).getByRole('button', { expanded: false }));
     expect(card).toHaveTextContent('tsc --noEmit');
   });
 });
