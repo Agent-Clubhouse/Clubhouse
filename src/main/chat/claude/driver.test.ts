@@ -11,6 +11,7 @@ import {
   claudeQuestionInput,
   claudeTurnErrorCode,
   claudeModeFromLevel,
+  claudeModelRow,
   claudePermissionOptions,
   claudeToolContent,
   claudeToolKind,
@@ -133,11 +134,12 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     expect(s.nativeSessionId).toBe('fake-session-1');
     // system/init arrives with the first prompt: native id and model via session_info.
     // ...and the MCP servers it loaded, in the shared status words (#2093).
-    expect(drafts.of('session_info').map((d) => d.data)).toEqual([{
+    expect(drafts.of('session_info').filter((d) => d.data.nativeSessionId).map((d) => d.data)).toEqual([{
       nativeSessionId: 'fake-session-1', cliVersion: '2.1.300-fake', model: 'claude-fake-1',
       mcpServers: [{ name: 'clubhouse', status: 'connected' }, { name: 'github', status: 'needs_auth' }],
     }]);
-    expect(drafts.of('model_changed').map((d) => d.data.modelId)).toEqual(['claude-fake-1']);
+    // The CLI's model id maps onto its menu row, so the chip names it.
+    expect(drafts.of('model_changed').map((d) => d.data.modelId)).toEqual(['fake']);
     // Every draft becomes a valid envelope once stamped.
     drafts.all.forEach((d, i) => {
       expect(isChatEvent({ ...d, v: CHAT_CONTRACT_VERSION, agentId: 'a1', sessionId: 's', seq: i + 1, ts: 1 })).toBe(true);
@@ -222,8 +224,40 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     await s.setLevel('plan');
     await s.setModel('haiku');
     expect(drafts.of('mode_changed').map((d) => d.data)).toEqual([{ level: 'plan', nativeMode: 'plan' }]);
-    expect(drafts.of('model_changed').map((d) => d.data.modelId)).toEqual(['haiku']);
+    expect(drafts.of('model_changed').at(-1)?.data).toEqual({ modelId: 'haiku' });
     await expect(s.setLevel('full_access')).rejects.toThrow(/restarting/);
+  });
+
+  it('offers the model menu with each model\'s effort levels, and reports the applied model and effort (#2091)', async () => {
+    await start();
+    const menu = await drafts.waitFor('session_info', (d) => !!d.data.models);
+    expect(menu.data.models).toEqual([
+      { id: 'default', label: 'Default' },
+      { id: 'fake', label: 'Fake 1' },
+      { id: 'haiku', label: 'Haiku' },
+    ]);
+    expect((await drafts.waitFor('model_changed')).data).toEqual({ modelId: 'fake', effort: 'medium' });
+    expect((await drafts.waitFor('session_info', (d) => !!d.data.efforts)).data.efforts).toEqual(['low', 'medium', 'high']);
+    expect(claudeCapabilities('ask').effortSwitch).toBe('live');
+  });
+
+  it('changes effort live, and drops it for a model without effort (#2091)', async () => {
+    const s = await start();
+    await drafts.waitFor('model_changed');
+    await s.setModel('fake', 'high');
+    expect(drafts.of('model_changed').at(-1)?.data).toEqual({ modelId: 'fake', effort: 'high' });
+    await s.setModel('haiku');
+    expect(drafts.of('model_changed').at(-1)?.data).toEqual({ modelId: 'haiku' });
+    expect(drafts.of('session_info').filter((d) => d.data.efforts).at(-1)?.data.efforts).toEqual([]);
+  });
+
+  it('follows /model and /effort typed as messages (#2091)', async () => {
+    const s = await start();
+    await drafts.waitFor('model_changed');
+    await s.send([{ type: 'text', text: '/effort low' }], 'prompt');
+    await drafts.waitFor('model_changed', (d) => d.data.effort === 'low');
+    await s.send([{ type: 'text', text: '/model haiku' }], 'prompt');
+    expect((await drafts.waitFor('model_changed', (d) => d.data.modelId === 'haiku')).data).toEqual({ modelId: 'haiku' });
   });
 
   it('steers into the running turn instead of cutting it', async () => {
@@ -349,6 +383,8 @@ class ScriptedTransport implements ClaudeTransport {
   async interrupt(): Promise<void> {}
   async setPermissionMode(): Promise<void> {}
   async setModel(): Promise<void> {}
+  async setEffort(): Promise<void> {}
+  async appliedSettings() { return {}; }
   async close(): Promise<void> { this.emit({ kind: 'session_ended', exitCode: 0, signal: null }); this.queue.finish(); }
   end(exitCode: number | null): void { this.emit({ kind: 'session_ended', exitCode, signal: null }); this.queue.finish(); }
 }
@@ -522,6 +558,21 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     await expect(claudeImageInput({ type: 'image', mimeType: 'image/png', uri: 'https://example.com/a.png' })).rejects.toThrow(/only inline data or local files/);
     await expect(claudeImageInput({ type: 'image', mimeType: 'image/tiff', data: 'AA' })).rejects.toThrow(/image\/tiff/);
     fs.rmSync(path.dirname(file), { recursive: true, force: true });
+  });
+});
+
+describe('claudeModelRow', () => {
+  const rows = [
+    { value: 'default', resolvedModel: 'claude-opus-5-5', efforts: ['high'] },
+    { value: 'opus', resolvedModel: 'claude-opus-5-5', efforts: ['high'] },
+    { value: 'claude-opus-4-6', resolvedModel: 'claude-opus-4-6', efforts: [] },
+  ];
+  it('matches by id, then by the resolved model with any [suffix] dropped, never via default', () => {
+    expect(claudeModelRow(rows, 'default')?.value).toBe('default');
+    expect(claudeModelRow(rows, 'claude-opus-5-5[1m]')?.value).toBe('opus');
+    expect(claudeModelRow(rows, 'claude-opus-4-6')?.value).toBe('claude-opus-4-6');
+    expect(claudeModelRow(rows, 'claude-unknown')).toBeUndefined();
+    expect(claudeModelRow(rows, undefined)).toBeUndefined();
   });
 });
 

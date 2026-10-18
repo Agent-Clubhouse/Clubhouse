@@ -4,6 +4,15 @@ import { ClaudeNormalizer, type ClaudeWireMessage } from './normalizer';
 
 export type ClaudeTransportKind = 'sdk' | 'stream-json';
 
+export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+/** What the session will use on its next request, after /model, /effort and any caps. */
+export interface ClaudeAppliedSettings {
+  model?: string;
+  /** null: no effort is sent (the model has none). */
+  effort?: string | null;
+}
+
 export type ClaudeTransportLog = (level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 
 export interface ClaudeTransportOptions {
@@ -13,7 +22,7 @@ export interface ClaudeTransportOptions {
   /** Required: `-p` may otherwise start in `auto`. */
   permissionMode: ClaudePermissionMode;
   model?: string;
-  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  effort?: ClaudeEffort;
   /** MCP servers by name, in Claude's `mcpServers` config shape (stdio / sse / http). */
   mcpServers?: Record<string, Record<string, unknown>>;
   /** Resume this native session id. */
@@ -77,6 +86,10 @@ export interface ClaudeTransport {
   setPermissionMode(mode: ClaudePermissionMode): Promise<void>;
   /** Omit to restore the default model. */
   setModel(model?: string): Promise<void>;
+  /** Change reasoning effort live (the flag-settings layer, as `--effort` sets it). */
+  setEffort(effort: ClaudeEffort): Promise<void>;
+  /** The model and effort in effect (`get_settings` → `applied`). */
+  appliedSettings(): Promise<ClaudeAppliedSettings>;
   /** End the session: closes stdin and lets the CLI exit, killing it if it doesn't. */
   close(): Promise<void>;
 }
@@ -151,6 +164,8 @@ export abstract class ClaudeTransportBase implements ClaudeTransport {
   abstract interrupt(): Promise<void>;
   abstract setPermissionMode(mode: ClaudePermissionMode): Promise<void>;
   abstract setModel(model?: string): Promise<void>;
+  abstract setEffort(effort: ClaudeEffort): Promise<void>;
+  abstract appliedSettings(): Promise<ClaudeAppliedSettings>;
   abstract close(): Promise<void>;
 
   respondToPermission(requestId: string, decision: ClaudePermissionDecision): void {
@@ -248,4 +263,15 @@ export function wireKeyShape(value: unknown, depth = 0): unknown {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value)) out[k] = wireKeyShape(v, depth + 1);
   return out;
+}
+
+/** The `applied` block of a `get_settings` response. */
+export function appliedSettingsFromWire(response: unknown): ClaudeAppliedSettings {
+  const applied = typeof response === 'object' && response !== null ? (response as Record<string, unknown>).applied : undefined;
+  if (typeof applied !== 'object' || applied === null) return {};
+  const { model, effort } = applied as Record<string, unknown>;
+  return {
+    ...(typeof model === 'string' && { model }),
+    ...((typeof effort === 'string' || effort === null) && { effort: effort as string | null }),
+  };
 }

@@ -29,7 +29,7 @@ import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import type { ClaudeChatEvent, ClaudePermissionMode, ClaudePermissionUpdate, ClaudeUsage } from './events';
 import { ClaudeSdkTransport } from './sdk-transport';
 import { ClaudeStreamTransport } from './stream-transport';
-import type { ClaudeImageInput, ClaudeTransport, ClaudeTransportLog, ClaudeTransportOptions } from './transport';
+import type { ClaudeEffort, ClaudeImageInput, ClaudeTransport, ClaudeTransportLog, ClaudeTransportOptions } from './transport';
 
 export type ClaudeChatDriverId = Extract<ChatDriverId, 'claude_agent_sdk' | 'claude_stream_json'>;
 
@@ -81,8 +81,8 @@ export function claudeCapabilities(startLevel: PermissionLevel): ChatCapabilitie
     images: true,
     slashCommands: true,
     modelSwitch: 'live',
-    // Claude takes --effort at launch only.
-    effortSwitch: 'restart',
+    // apply_flag_settings changes it mid-session, as /effort does.
+    effortSwitch: 'live',
     liveLevels: startLevel === 'full_access'
       ? ['plan', 'ask', 'auto_edit', 'auto', 'full_access']
       : ['plan', 'ask', 'auto_edit', 'auto'],
@@ -329,6 +329,23 @@ const LIMIT_WINDOWS: Record<string, string> = {
   seven_day_sonnet: 'week_sonnet',
 };
 
+// ── Models ──────────────────────────────────────────────────────────────────
+
+type ClaudeModelRow = Extract<ClaudeChatEvent, { kind: 'initialized' }>['models'][number];
+
+/**
+ * The model menu row for a model id the CLI reports (`claude-opus-5-5[1m]`):
+ * an exact match, else the alias row that resolves to it. `default` is only
+ * matched by name, so the chip names the model rather than "Default".
+ */
+export function claudeModelRow(rows: ClaudeModelRow[], model: string | undefined): ClaudeModelRow | undefined {
+  if (!model) return undefined;
+  const exact = rows.find((r) => r.value === model);
+  if (exact) return exact;
+  const bare = model.replace(/\[[^\]]*\]$/, '');
+  return rows.find((r) => r.value !== 'default' && (r.value === bare || r.resolvedModel === bare));
+}
+
 // ── Session ─────────────────────────────────────────────────────────────────
 
 export type ClaudeTransportFactory = (id: ClaudeChatDriverId, opts: ClaudeTransportOptions) => ClaudeTransport;
@@ -361,6 +378,13 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private closing = false;
   private level: PermissionLevel;
   private model: string | undefined;
+  private effort: string | undefined;
+  /** The model menu from `initialize`. */
+  private modelRows: ClaudeModelRow[] = [];
+  /** Effort levels last reported for the current model. */
+  private efforts: string[] | undefined;
+  /** A slash command (/model, /effort, …) ran this turn: re-read the applied settings when it ends. */
+  private slashThisTurn = false;
   /** apiKeySource 'none' means a claude.ai login: dollars are API-price estimates. */
   private costIsEstimate = true;
   /**
@@ -381,6 +405,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   ) {
     this.level = opts.level;
     this.model = opts.model;
+    this.effort = opts.effort;
     this.capabilities = claudeCapabilities(opts.level);
   }
 
@@ -408,6 +433,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     // Idle: whatever was asked, the message starts a turn.
     const actual: MessageDelivery = this.turnRunning ? delivery : 'prompt';
     if (!this.turnRunning) this.beginTurn('prompt');
+    if (/(^|\s)\/(model|effort)\b/.test(text)) this.slashThisTurn = true;
     this.transport.send({
       text,
       images: images.length ? images : undefined,
@@ -463,11 +489,45 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   }
 
   async setModel(modelId: string, effort?: string): Promise<void> {
-    await this.transport.setModel(modelId === 'default' ? undefined : modelId);
-    // effortSwitch is 'restart': the runtime passes the new effort at the next start.
-    if (effort) this.log?.('info', '[claude-chat] Effort applies from the next session start', { effort });
-    this.model = modelId;
-    this.push({ type: 'model_changed', data: { modelId } });
+    if (modelId !== this.model) await this.transport.setModel(modelId === 'default' ? undefined : modelId);
+    if (effort && effort !== this.effort) await this.transport.setEffort(effort as ClaudeEffort);
+    // The CLI may resolve or cap what was asked for; report what it applied.
+    if (await this.refreshApplied()) return;
+    this.noteModel(modelId, effort ?? this.effort);
+  }
+
+  /**
+   * Re-read the model and effort the CLI will use and report any change.
+   * False when the CLI can't say (an older CLI without get_settings).
+   */
+  private async refreshApplied(): Promise<boolean> {
+    let applied;
+    try {
+      applied = await this.transport.appliedSettings();
+    } catch (err) {
+      this.log?.('warn', '[claude-chat] Could not read the applied model and effort', { error: err instanceof Error ? err.message : String(err) });
+      return false;
+    }
+    if (!applied.model && applied.effort === undefined) return false;
+    const model = applied.model ? claudeModelRow(this.modelRows, applied.model)?.value ?? applied.model : this.model;
+    const effort = applied.effort === undefined ? this.effort : applied.effort ?? undefined;
+    if (model) this.noteModel(model, effort);
+    return true;
+  }
+
+  /** Report a model or effort change, and the effort levels the model offers when they differ. */
+  private noteModel(model: string, effort: string | undefined): void {
+    if (this.closing) return;
+    if (model !== this.model || effort !== this.effort) {
+      this.model = model;
+      this.effort = effort;
+      this.push({ type: 'model_changed', data: { modelId: model, ...(effort && { effort }) } });
+    }
+    const row = claudeModelRow(this.modelRows, model);
+    if (!row) return;
+    if (this.efforts && row.efforts.join() === this.efforts.join()) return;
+    this.efforts = row.efforts;
+    this.push({ type: 'session_info', data: { efforts: row.efforts } });
   }
 
   async compact(): Promise<void> {
@@ -542,6 +602,14 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
             data: { commands: ev.commands.map((c) => ({ name: c.name, description: c.description, inputHint: c.argumentHint || undefined })) },
           });
         }
+        this.modelRows = ev.models.filter((m) => m.value);
+        if (this.modelRows.length) {
+          this.push({
+            type: 'session_info',
+            data: { models: this.modelRows.map((m) => ({ id: m.value, label: m.displayName || m.value, description: m.description || undefined })) },
+          });
+        }
+        void this.refreshApplied();
         return;
       }
       case 'session_started':
@@ -556,10 +624,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
             ...(ev.mcpServers && { mcpServers: ev.mcpServers.map((s) => ({ name: s.name, status: claudeMcpStatus(s.status) })) }),
           },
         });
-        if (ev.model && ev.model !== this.model) {
-          this.model = ev.model;
-          this.push({ type: 'model_changed', data: { modelId: ev.model } });
-        }
+        // A per-turn init reports the model the turn started with, before any /model in it ran.
+        if (ev.model) this.noteModel(claudeModelRow(this.modelRows, ev.model)?.value ?? ev.model, this.effort);
         if (ev.permissionMode) this.changeLevel(levelFromClaudeMode(ev.permissionMode), ev.permissionMode);
         return;
       case 'user_message':
@@ -671,6 +737,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.turnRunning = false;
         this.interrupting = false;
         this.turnApiError = undefined;
+        if (this.slashThisTurn) {
+          this.slashThisTurn = false;
+          void this.refreshApplied();
+        }
         return;
       }
       case 'rate_limit': {

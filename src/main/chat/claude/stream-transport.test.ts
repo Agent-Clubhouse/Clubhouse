@@ -8,7 +8,7 @@ import type { ChildProcess } from 'child_process';
 import { describe, expect, it, vi } from 'vitest';
 import type { ClaudeChatEvent } from './events';
 import { ClaudeStreamTransport } from './stream-transport';
-import { ClaudeTransportBase } from './transport';
+import { appliedSettingsFromWire, ClaudeTransportBase } from './transport';
 
 vi.mock('../../util/shell', async (importActual) => {
   const actual = await importActual<typeof import('../../util/shell')>();
@@ -109,6 +109,8 @@ class PermissionProbe extends ClaudeTransportBase {
   async interrupt(): Promise<void> {}
   async setPermissionMode(): Promise<void> {}
   async setModel(): Promise<void> {}
+  async setEffort(): Promise<void> {}
+  async appliedSettings() { return {}; }
   async close(): Promise<void> {}
   ask(signal?: AbortSignal) {
     return this.awaitPermission({ kind: 'permission_request', requestId: 'r1', toolName: 'Bash', input: {}, suggestions: [] }, signal);
@@ -137,5 +139,14 @@ describe('ClaudeTransportBase permissions', () => {
     const answer = t.ask(controller.signal);
     controller.abort();
     await expect(answer).resolves.toBeNull();
+  });
+});
+
+describe('appliedSettingsFromWire', () => {
+  it('reads the applied model and effort, keeping a null effort', () => {
+    expect(appliedSettingsFromWire({ applied: { model: 'claude-sonnet-5-5', effort: 'low', advisor: null } })).toEqual({ model: 'claude-sonnet-5-5', effort: 'low' });
+    expect(appliedSettingsFromWire({ applied: { model: 'claude-haiku-4-5', effort: null } })).toEqual({ model: 'claude-haiku-4-5', effort: null });
+    expect(appliedSettingsFromWire({ effective: {} })).toEqual({});
+    expect(appliedSettingsFromWire(undefined)).toEqual({});
   });
 });

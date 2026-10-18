@@ -113,7 +113,8 @@ describe.each<Kind>(['sdk', 'stream-json'])('Claude %s transport (fake claude)',
     await start();
     const init = await collector.waitFor('initialized');
     expect(init.commands).toEqual([{ name: 'review', description: 'Review a PR', argumentHint: '<pr>' }]);
-    expect(init.models.map((m) => m.value)).toEqual(['default', 'haiku']);
+    expect(init.models.map((m) => m.value)).toEqual(['default', 'fake', 'haiku']);
+    expect(init.models.map((m) => m.efforts)).toEqual([['low', 'medium', 'high'], ['low', 'medium', 'high'], []]);
     expect(collector.of('session_started')).toHaveLength(0);
     expect(hasFlag('--input-format', 'stream-json')).toBe(true);
     expect(hasFlag('--output-format', 'stream-json')).toBe(true);
@@ -204,7 +205,10 @@ describe.each<Kind>(['sdk', 'stream-json'])('Claude %s transport (fake claude)',
     await t.setPermissionMode('plan');
     expect(await collector.waitFor('mode_changed')).toMatchObject({ permissionMode: 'plan' });
     await t.setModel('haiku');
+    expect(await t.appliedSettings()).toEqual({ model: 'claude-haiku-fake', effort: null });
     await t.setModel();
+    await t.setEffort('high');
+    expect(await t.appliedSettings()).toEqual({ model: 'claude-fake-1[1m]', effort: 'high' });
     t.send({ text: 'hello' });
     expect(await collector.waitFor('session_started')).toMatchObject({ model: 'claude-fake-1', permissionMode: 'plan' });
   });
