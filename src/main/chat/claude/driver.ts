@@ -337,10 +337,16 @@ export const LIMIT_WINDOWS: Record<string, string> = {
   overage: 'overage',
 };
 
-/** A fraction 0..1, from either a fraction or a 0-100 percentage. */
+/** A fraction 0..1 from a fraction (rate_limit_event's utilization). */
 function fraction(v: number | undefined | null): number | undefined {
   if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
-  return Math.min(1, Math.max(0, v > 1 ? v / 100 : v));
+  return Math.min(1, Math.max(0, v));
+}
+
+/** A fraction 0..1 from a 0-100 percentage (get_usage always reports percent, so 1 means 1%). */
+function fromPercent(v: number | undefined | null): number | undefined {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+  return Math.min(1, Math.max(0, v / 100));
 }
 
 /** Epoch ms from epoch seconds, epoch ms or an ISO string. */
@@ -365,19 +371,19 @@ export function planLimitsFromWire(response: unknown): UsageLimit[] | null {
   for (const [key, window] of Object.entries(LIMIT_WINDOWS)) {
     const w = rl[key];
     if (!isObj(w)) continue;
-    const utilization = fraction(w.utilization as number | null);
+    const utilization = fromPercent(w.utilization as number | null);
     if (utilization === undefined && w.resets_at == null) continue;
     out.push({ window, ...(utilization !== undefined && { utilization }), ...(epochMs(w.resets_at) !== undefined && { resetsAt: epochMs(w.resets_at) }) });
   }
   for (const m of arr(rl.model_scoped)) {
     if (!isObj(m) || typeof m.display_name !== 'string') continue;
-    const utilization = fraction(m.utilization as number | null);
+    const utilization = fromPercent(m.utilization as number | null);
     if (utilization === undefined) continue;
     out.push({ window: `week:${m.display_name}`, utilization, ...(epochMs(m.resets_at) !== undefined && { resetsAt: epochMs(m.resets_at) }) });
   }
   const extra = rl.extra_usage;
   if (isObj(extra) && extra.is_enabled === true) {
-    const utilization = fraction(extra.utilization as number | null);
+    const utilization = fromPercent(extra.utilization as number | null);
     if (utilization !== undefined) out.push({ window: 'overage', utilization });
   }
   return out.length ? out : null;
@@ -992,8 +998,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
           // The CLI reports resetsAt in epoch seconds; the contract uses epoch ms like ts.
           ...(epochMs(ev.resetsAt) !== undefined && { resetsAt: epochMs(ev.resetsAt) }),
         }];
-        // Extra usage rides on the same event as its own window.
-        const overage = ev.overageStatus ? LIMIT_STATUS[ev.overageStatus] : undefined;
+        // Extra usage rides on the same event as its own window, but only when the
+        // account has it: with extra usage off, overageStatus is "rejected" and a
+        // disabled reason is given, which isn't a reached limit.
+        const overage = ev.overageStatus && !ev.overageDisabledReason ? LIMIT_STATUS[ev.overageStatus] : undefined;
         if (overage && window !== 'overage') {
           limits.push({ window: 'overage', status: overage, ...(epochMs(ev.overageResetsAt) !== undefined && { resetsAt: epochMs(ev.overageResetsAt) }) });
         }
@@ -1005,6 +1013,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         return;
       }
       case 'compacted':
+        // The context the meter showed is gone; the next call reports the new fill.
+        this.lastContext = undefined;
         this.push({ type: 'notice', data: { level: 'info', code: 'compacted', message: 'Context compacted' } }, true);
         return;
       case 'subagent':

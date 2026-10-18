@@ -118,7 +118,8 @@ describe('AgentPaneToolbar', () => {
     const meter = screen.getByTestId('pane-usage');
     expect(meter).toHaveTextContent('34%');
     expect(meter).toHaveAttribute('tabindex', '0');
-    expect(meter.getAttribute('aria-label')).toBe(`Context 34%, ${lines.join(', ')}`);
+    // The label isn't repeated: the context line is dropped from the list.
+    expect(meter.getAttribute('aria-label')).toBe(`Context 34%, ${lines[1]}`);
     expect(meter).not.toHaveAttribute('data-hot');
     expect(screen.getByTestId('pane-usage-fill').getAttribute('class')).toContain('stroke-ctp-info');
     rerender(<AgentPaneToolbar agent={agent} dot="working" usage={{ fillPct: 71, text: '71% wk', label: 'Weekly limit 71%', tone: 'warn', lines }} />);
@@ -128,7 +129,7 @@ describe('AgentPaneToolbar', () => {
     rerender(<AgentPaneToolbar agent={agent} dot="working" usage={{ fillPct: 92, text: '92%', label: 'Context 92%', tone: 'hot', lines: [] }} />);
     expect(screen.getByTestId('pane-usage')).toHaveAttribute('data-hot', 'true');
     expect(screen.getByTestId('pane-usage').className).toContain('text-ctp-error');
-    rerender(<AgentPaneToolbar agent={agent} dot="working" usage={{ fillPct: null, text: null, label: 'Context null%', tone: 'normal', lines: [] }} />);
+    rerender(<AgentPaneToolbar agent={agent} dot="working" usage={{ fillPct: null, text: null, label: 'Usage limits', tone: 'normal', lines: [] }} />);
     expect(screen.queryByTestId('pane-usage-fill')).toBeNull();
   });
 });
@@ -157,14 +158,16 @@ describe('chatActivity', () => {
       expect(u).toMatchObject({ fillPct: 55, text: '55% wk', label: 'Weekly limit 55%', tone: 'normal' });
     });
 
-    it('turns amber and shows the limit when one is at warning, even with context to show', () => {
+    it('keeps showing context when a limit is at warning, tinted amber, with the limit in the tooltip', () => {
       const u = at({ used: 10, size: 100 }, [{ window: '5h', utilization: 0.3 }, { window: 'week', utilization: 0.71, status: 'warning', resetsAt: Date.parse('2026-10-21T09:00:00Z') }]);
-      expect(u).toMatchObject({ fillPct: 71, text: '71% wk', tone: 'warn' });
+      expect(u).toMatchObject({ fillPct: 10, text: '10%', tone: 'warn' });
       expect(u?.lines[0]).toBe('Context 10%: 10 of 100 tokens');
       expect(u?.lines[1]).toBe('Session (5-hour) limit: 30%');
       expect(u?.lines[2]).toMatch(/^Weekly limit: 71%, resets /);
       // 80% used counts as a warning when the provider reports only a fraction (Codex).
-      expect(at({ used: 10, size: 100 }, [{ window: '5h', utilization: 0.85 }])).toMatchObject({ text: '85% 5h', tone: 'warn' });
+      expect(at({ used: 10, size: 100 }, [{ window: '5h', utilization: 0.85 }])).toMatchObject({ text: '10%', tone: 'warn' });
+      // With no context to show, the warning limit takes the ring.
+      expect(at(null, [{ window: 'week', utilization: 0.71, status: 'warning' }])).toMatchObject({ fillPct: 71, text: '71% wk', tone: 'warn' });
     });
 
     it('turns red when a limit is reached, and names a status-only limit', () => {

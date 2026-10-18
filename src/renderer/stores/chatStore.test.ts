@@ -362,6 +362,9 @@ describe('reduceChatEvent', () => {
     expect(s.usage.session).toEqual({ tokens: { total: 100 }, costUsd: 0.5 });
     expect(s.usage.context).toEqual({ used: 2000, size: 200000 });
     expect(s.usage.limits).toEqual([{ window: '5h', utilization: 0.4 }, { window: 'week', status: 'warning' }]);
+    // A status-only update for a window keeps the utilization it already had.
+    s = fold([ev('usage', { scope: 'session', limits: [{ window: '5h', status: 'ok' }] })], s);
+    expect(s.usage.limits).toEqual([{ window: '5h', utilization: 0.4, status: 'ok' }, { window: 'week', status: 'warning' }]);
 
     s = fold([ev('turn_ended', { stopReason: 'end_turn', usage: { output: 42 }, costUsd: 0.02 })], s);
     expect(s.usage.turn).toEqual({ tokens: { output: 42 }, costUsd: 0.02 });

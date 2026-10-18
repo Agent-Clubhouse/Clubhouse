@@ -137,7 +137,7 @@ export function UsageMeter({ usage, compact }: { usage: PaneUsage; compact?: boo
       <span
         role="img"
         tabIndex={0}
-        aria-label={[usage.label, ...usage.lines].join(', ')}
+        aria-label={[usage.label, ...usage.lines.filter((l) => !l.startsWith(`${usage.label}:`))].join(', ')}
         data-testid="pane-usage"
         data-tone={usage.tone}
         data-hot={usage.tone === 'hot' || undefined}

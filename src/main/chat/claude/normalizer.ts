@@ -113,6 +113,7 @@ export class ClaudeNormalizer {
           isUsingOverage: typeof info.isUsingOverage === 'boolean' ? info.isUsingOverage : undefined,
           overageStatus: str(info.overageStatus),
           overageResetsAt: num(info.overageResetsAt),
+          overageDisabledReason: str(info.overageDisabledReason),
         }];
       }
       case 'keep_alive':

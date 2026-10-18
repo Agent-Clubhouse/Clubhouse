@@ -468,6 +468,12 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     ]);
   });
 
+  it('ignores overageStatus "rejected" when extra usage is turned off (not a reached limit)', async () => {
+    const { transport, drafts } = await scripted({});
+    transport.emit({ kind: 'rate_limit', status: 'allowed', rateLimitType: 'five_hour', overageStatus: 'rejected', overageDisabledReason: 'org_level_disabled' });
+    expect((await drafts.waitFor('usage', (d) => !!d.data.limits)).data.limits).toEqual([{ window: '5h', status: 'ok' }]);
+  });
+
   it('starts even when get_settings never answers (#2091)', async () => {
     vi.useFakeTimers();
     try {
@@ -798,6 +804,11 @@ describe('Claude usage helpers', () => {
     })).toEqual([
       { window: 'week_oauth_apps', utilization: 0.03, resetsAt: Date.parse('2026-10-21T09:00:00Z') },
       { window: 'overage', utilization: 0.2 },
+    ]);
+    // get_usage reports percent: 1 is 1%, not 100%; 0.5 is 0.5%.
+    expect(planLimitsFromWire({ rate_limits_available: true, rate_limits: { five_hour: { utilization: 1, resets_at: null }, seven_day: { utilization: 0.5, resets_at: null } } })).toEqual([
+      { window: '5h', utilization: 0.01 },
+      { window: 'week', utilization: 0.005 },
     ]);
   });
 

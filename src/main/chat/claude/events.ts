@@ -121,6 +121,8 @@ export type ClaudeChatEventBody =
       /** Extra usage (overage) beside the plan window, when the account has it. */
       overageStatus?: string;
       overageResetsAt?: number;
+      /** Why extra usage is off (e.g. "org_level_disabled"); overageStatus is then "rejected" and means nothing. */
+      overageDisabledReason?: string;
     }
   | {
       /** A main-loop assistant message's API usage: what the context held for that call. */

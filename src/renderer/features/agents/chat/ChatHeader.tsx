@@ -50,7 +50,7 @@ const LIMIT_NAMES: Record<string, { name: string; short: string }> = {
   week_opus: { name: 'Weekly Opus', short: 'wk Opus' },
   week_sonnet: { name: 'Weekly Sonnet', short: 'wk Sonnet' },
   week_oauth_apps: { name: 'Weekly apps', short: 'wk apps' },
-  week_overage_included: { name: 'Weekly with extra usage', short: 'wk' },
+  week_overage_included: { name: 'Weekly with extra usage', short: 'wk+' },
   overage: { name: 'Extra usage', short: 'extra' },
 };
 
@@ -117,7 +117,9 @@ export function chatUsage(state: ChatViewState): PaneUsage | null {
     lines.push(`${limitName(l.window)} limit: ${limitLabel(l)}${reset}`);
   }
   const worst = worstLimit(limits);
-  const limitShown = worst && (limitWarning(worst) || ctxPct === null) ? worst : undefined;
+  // Context keeps the ring while there is one; a limit takes over only once
+  // it's reached (or when there's no context). A warning tints the tone.
+  const limitShown = worst && (limitReached(worst) || ctxPct === null) ? worst : undefined;
   const ctxHot = ctxPct !== null && ctxPct >= 90;
   const tone = ctxHot || (worst && limitReached(worst)) ? 'hot' : worst && limitWarning(worst) ? 'warn' : 'normal';
   if (limitShown) {

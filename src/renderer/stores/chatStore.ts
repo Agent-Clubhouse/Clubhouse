@@ -345,7 +345,8 @@ function addTokens(a: TokenUsage | null, b: TokenUsage): TokenUsage {
 
 function mergeLimits(current: UsageLimit[], next: UsageLimit[]): UsageLimit[] {
   const byWindow = new Map(current.map((l) => [l.window, l]));
-  for (const l of next) byWindow.set(l.window, l);
+  // Field by field: a status-only event keeps the utilization get_usage supplied.
+  for (const l of next) byWindow.set(l.window, { ...byWindow.get(l.window), ...l });
   return [...byWindow.values()];
 }
 
