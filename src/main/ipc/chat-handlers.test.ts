@@ -29,6 +29,9 @@ vi.mock('../services/agent-runtime', () => ({
   onChatEvent: () => () => {},
   resolveChatDriver: vi.fn(),
 }));
+vi.mock('../services/agent-runtime/runtime-info', () => ({
+  getAgentRuntimeInfo: vi.fn(async () => ({ chat: true, live: false, chatAvailable: true })),
+}));
 vi.mock('../services/agent-runtime/chat-status-bridge', () => ({ createStatusBridge: () => ({ handle: vi.fn() }) }));
 vi.mock('../services/chat-runtime-settings', () => ({ loadSettings: vi.fn(), saveSettings: vi.fn(), resolveRuntimeMode: vi.fn() }));
 vi.mock('../services/annex-event-bus', () => ({ emitHookEvent: vi.fn() }));
@@ -39,6 +42,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { registerChatHandlers } from './chat-handlers';
 import { listChatSessions, readChatTranscript } from '../services/agent-runtime';
 import { clearStagedAttachments } from '../services/agent-runtime/chat-attachments';
+import { getAgentRuntimeInfo } from '../services/agent-runtime/runtime-info';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9]);
 type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
@@ -182,5 +186,28 @@ describe('chat session history IPC', () => {
   it('lists saved Clubhouse sessions', async () => {
     await call(IPC.CHAT.LIST_SESSIONS, 'agent-1');
     expect(listChatSessions).toHaveBeenCalledWith('agent-1');
+  });
+});
+
+describe('chat handlers: agent runtime (#2206)', () => {
+  it('passes the project path and starting flag through', async () => {
+    const info = await call(IPC.CHAT.GET_AGENT_RUNTIME, 'agent-1', 'github-copilot', { projectPath: '/work/proj', starting: true });
+    expect(info).toEqual({ chat: true, live: false, chatAvailable: true });
+    expect(getAgentRuntimeInfo).toHaveBeenCalledWith('agent-1', 'github-copilot', { projectPath: '/work/proj', starting: true });
+  });
+
+  it('still takes the older agent-id-only and agent-id-plus-provider calls', async () => {
+    await call(IPC.CHAT.GET_AGENT_RUNTIME, 'agent-1');
+    await call(IPC.CHAT.GET_AGENT_RUNTIME, 'agent-1', 'claude-code');
+    expect(getAgentRuntimeInfo).toHaveBeenNthCalledWith(1, 'agent-1', undefined, undefined);
+    expect(getAgentRuntimeInfo).toHaveBeenNthCalledWith(2, 'agent-1', 'claude-code', undefined);
+  });
+
+  it('refuses a malformed query', async () => {
+    await expect(call(IPC.CHAT.GET_AGENT_RUNTIME, 'agent-1', 'claude-code', 'nope')).rejects.toThrow();
+    await expect(call(IPC.CHAT.GET_AGENT_RUNTIME, 'agent-1', 'claude-code', { projectPath: 42 })).rejects.toThrow(/projectPath/);
+    await expect(call(IPC.CHAT.GET_AGENT_RUNTIME, 'agent-1', 'claude-code', { projectPath: 'x'.repeat(5000) })).rejects.toThrow(/projectPath/);
+    await expect(call(IPC.CHAT.GET_AGENT_RUNTIME, 'agent-1', 'claude-code', { starting: 'yes' })).rejects.toThrow(/starting/);
+    expect(getAgentRuntimeInfo).not.toHaveBeenCalled();
   });
 });

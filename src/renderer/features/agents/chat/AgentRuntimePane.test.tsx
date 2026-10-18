@@ -74,7 +74,70 @@ describe('AgentRuntimePane', () => {
     render(<AgentRuntimePane agent={agent} terminal={terminal} />);
     await screen.findByTestId('chat-view');
     expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
-    expect(api.chat.getAgentRuntime).toHaveBeenCalledWith(FIXTURE_AGENT_ID, 'codex-cli');
+    expect(api.chat.getAgentRuntime).toHaveBeenCalledWith(FIXTURE_AGENT_ID, 'codex-cli', { projectPath: '/work/clubhouse', starting: false });
+  });
+
+  describe('waking (#2206)', () => {
+    const waking: Agent = { ...agent, status: 'waking' };
+
+    it('shows the pending view, not the terminal, while a chat agent wakes', async () => {
+      setFlag(true);
+      // Main: it will use chat, but no chat runtime runs it yet.
+      api.chat.getAgentRuntime = vi.fn(async () => ({ chat: true, live: false, chatAvailable: true }));
+      render(<AgentRuntimePane agent={waking} terminal={terminal} />);
+      await waitFor(() => expect(api.chat.getAgentRuntime).toHaveBeenCalledWith(FIXTURE_AGENT_ID, 'codex-cli', { projectPath: '/work/clubhouse', starting: true }));
+      expect(await screen.findByText('Connecting to gallant-swift…')).toBeInTheDocument();
+      expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('terminal-runtime-bar')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('chat-view')).not.toBeInTheDocument();
+      // Starting into chat isn't running in chat: status surfaces don't overlay chat state yet.
+      expect(useChatStore.getState().live[FIXTURE_AGENT_ID]).toBe(false);
+    });
+
+    it('shows ChatView once the chat runtime runs, and the terminal when the chat start fell back', async () => {
+      setFlag(true);
+      api.chat.getAgentRuntime = vi.fn(async () => ({ chat: true, live: false, chatAvailable: true }));
+      api.chat.readTranscript = vi.fn(async () => chatFixture('codex', 'conversation'));
+      const { rerender } = render(<AgentRuntimePane agent={waking} terminal={terminal} />);
+      await screen.findByTestId('agent-runtime-pending');
+
+      api.chat.getAgentRuntime = vi.fn(async () => ({ chat: true, live: true, chatAvailable: true }));
+      rerender(<AgentRuntimePane agent={{ ...agent, status: 'running' }} terminal={terminal} />);
+      await screen.findByTestId('chat-view');
+      expect(useChatStore.getState().live[FIXTURE_AGENT_ID]).toBe(true);
+
+      // A driver failure falls back to the terminal: the status change refetches and the terminal shows.
+      api.chat.getAgentRuntime = vi.fn(async () => ({ chat: true, live: false, chatAvailable: true }));
+      rerender(<AgentRuntimePane agent={{ ...agent, status: 'spawning' }} terminal={terminal} />);
+      await screen.findByTestId('agent-runtime-pending');
+      api.chat.getAgentRuntime = vi.fn(async () => ({ chat: false, live: false, chatAvailable: true }));
+      rerender(<AgentRuntimePane agent={{ ...agent, status: 'running' }} terminal={terminal} />);
+      await screen.findByTestId('fake-terminal');
+      expect(screen.getByTestId('terminal-runtime-bar')).toBeInTheDocument();
+    });
+
+    it('shows the terminal while a terminal agent wakes', async () => {
+      setFlag(true);
+      setRuntime(false, true);
+      render(<AgentRuntimePane agent={waking} terminal={terminal} />);
+      await screen.findByTestId('fake-terminal');
+      // The first terminal shown already has the switch: no plain terminal from before the flag loaded.
+      expect(screen.getByTestId('terminal-runtime-bar')).toBeInTheDocument();
+      expect(screen.queryByTestId('agent-runtime-pending')).not.toBeInTheDocument();
+    });
+
+    it("doesn't show the terminal answer from before the wake while waking", async () => {
+      setFlag(true);
+      setRuntime(false, true);
+      const { unmount } = render(<AgentRuntimePane agent={{ ...agent, status: 'running' }} terminal={terminal} />);
+      await screen.findByTestId('fake-terminal');
+      unmount();
+
+      api.chat.getAgentRuntime = vi.fn(() => new Promise(() => {}));
+      render(<AgentRuntimePane agent={waking} terminal={terminal} />);
+      expect(screen.getByTestId('agent-runtime-pending')).toBeInTheDocument();
+      expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
+    });
   });
 
   it('offers the switch over the terminal only when the provider has a chat driver', async () => {

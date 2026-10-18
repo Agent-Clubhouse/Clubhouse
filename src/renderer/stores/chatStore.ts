@@ -891,7 +891,9 @@ const pendingLive = new Map<string, ChatEvent[]>();
 async function runtimeIsLive(agentId: string): Promise<boolean | undefined> {
   try {
     const info = await window.clubhouse.chat.getAgentRuntime?.(agentId);
-    return typeof info?.chat === 'boolean' ? info.chat : undefined;
+    // `chat` alone also covers an agent still starting into chat; `live` is "running now".
+    const live = info?.live ?? info?.chat;
+    return typeof live === 'boolean' ? live : undefined;
   } catch {
     return undefined;
   }

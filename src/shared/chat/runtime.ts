@@ -241,8 +241,16 @@ export interface ChatDriver {
 
 /** What the renderer needs to choose an agent's view. */
 export interface ChatAgentRuntimeInfo {
-  /** The agent is running in the chat runtime right now. */
+  /**
+   * The agent uses the chat runtime: chat runs it now, a chat start is in
+   * progress, or (when asked with `starting`) it is waking into chat (#2206).
+   */
   chat: boolean;
+  /**
+   * A chat runtime is running the agent right now. Absent from older answers,
+   * where `chat` meant the same thing.
+   */
+  live?: boolean;
   /** A chat driver is registered for the agent's provider, so it can switch to chat. */
   chatAvailable: boolean;
 }

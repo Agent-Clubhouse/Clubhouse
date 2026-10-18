@@ -7,7 +7,8 @@ import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
 import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS } from '../../shared/chat';
-import { getAgentRuntime, isChatAgent, readChatTranscript, listChatSessions, onChatEvent, resolveChatDriver } from '../services/agent-runtime';
+import { getAgentRuntime, readChatTranscript, listChatSessions, onChatEvent } from '../services/agent-runtime';
+import { getAgentRuntimeInfo, type AgentRuntimeQuery } from '../services/agent-runtime/runtime-info';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
 import { handleChatEventForCheckpoints, listTurns, getChanges, revertTurn, undoRevert, isRevertRunning, type ChangesScope } from '../services/agent-runtime/checkpoint-tracker';
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
@@ -45,6 +46,14 @@ function validateStageInput(input: StageInput, argName: string): void {
     if (input.data.byteLength > CHAT_IMAGE_MAX_BYTES) throw new Error('Images must be 3.75 MB or smaller');
   }
   if (input.imagesAllowed !== undefined && typeof input.imagesAllowed !== 'boolean') throw new Error(`${argName}.imagesAllowed must be a boolean`);
+}
+
+function validateRuntimeQuery(query: AgentRuntimeQuery, argName: string): void {
+  const { projectPath, starting } = query as { projectPath?: unknown; starting?: unknown };
+  if (projectPath !== undefined && (typeof projectPath !== 'string' || projectPath.length === 0 || projectPath.length > 4096)) {
+    throw new Error(`${argName}.projectPath must be a path`);
+  }
+  if (starting !== undefined && typeof starting !== 'boolean') throw new Error(`${argName}.starting must be a boolean`);
 }
 
 const DELIVERIES: ReadonlySet<string> = new Set(['auto', 'prompt', 'steer', 'queued']);
@@ -155,13 +164,12 @@ export function registerChatHandlers(): void {
   ));
 
   // Lets the agent pane pick ChatView or the terminal, and offer the
-  // Chat / Terminal switch only when the provider has a chat driver.
+  // Chat / Terminal switch only when the provider has a chat driver. With the
+  // project path and `starting`, a waking agent's answer is the runtime it is
+  // starting into, so the pane doesn't flash the terminal first (#2206).
   ipcMain.handle(IPC.CHAT.GET_AGENT_RUNTIME, withValidatedArgs(
-    [stringArg(), stringArg({ optional: true })],
-    async (_event, agentId, provider): Promise<ChatAgentRuntimeInfo> => ({
-      chat: isChatAgent(agentId),
-      chatAvailable: !!resolveChatDriver(provider || 'claude-code'),
-    }),
+    [stringArg(), stringArg({ optional: true }), objectArg<AgentRuntimeQuery>({ optional: true, validate: validateRuntimeQuery })],
+    async (_event, agentId, provider, query): Promise<ChatAgentRuntimeInfo> => getAgentRuntimeInfo(agentId, provider, query),
   ));
 
   ipcMain.handle(IPC.CHAT.GET_RUNTIME_SETTINGS, () => chatRuntimeSettings.getSettings());
