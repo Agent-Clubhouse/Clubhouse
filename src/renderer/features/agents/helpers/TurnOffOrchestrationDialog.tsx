@@ -88,7 +88,10 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
         policy: result.policy,
         message: names?.length
           ? `Orchestration is off, but ${names.join(', ')} couldn’t be settled and ${names.length === 1 ? 'stays as it was' : 'stay as they were'}.`
-          : `Orchestration is off, but some helpers couldn’t be settled. ${result.message}.`,
+          // Main's message already starts "Orchestration is off, but".
+          : /^Orchestration is off/.test(result.message)
+            ? `${result.message.replace(/\.$/, '')}.`
+            : `Orchestration is off, but some helpers couldn’t be settled (${result.message}).`,
       });
       return;
     }

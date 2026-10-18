@@ -22,6 +22,7 @@ import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanAr
 import { ATTR } from '../../shared/telemetry/attributes';
 import type { DeleteResult, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeResult } from '../../shared/types';
 import { getAgentRuntime } from '../services/agent-runtime';
+import { takeDisposeRequest } from '../services/helper-dispose-requests';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { orchestratorAttr } from '../telemetry/spawn-telemetry';
 import { assertAgentGitName } from '../../shared/agent-name';
@@ -98,24 +99,36 @@ export async function disposeHelperForUser(
 
 /**
  * Tell an orchestrator what the user decided about the dispose it asked for
- * (#2229 ask-everything), through its runtime as the helper tools do. Returns
- * false when the orchestrator isn't running, so nothing was delivered.
+ * (#2229 ask-everything), through its runtime as the helper tools do. Main
+ * picks the orchestrator (the helper's parent) and the text; the renderer
+ * only names the helper and the decision. Refused unless main sent that
+ * parent's request for this helper, and each request is answered once.
  */
-export async function reportDisposeDecision(orchestratorId: string, helperName: string, decision: HelperDisposeDecision): Promise<boolean> {
-  const runtime = getAgentRuntime(orchestratorId);
-  if (!runtime) return false;
+export async function reportDisposeDecision(
+  projectPath: string,
+  helperId: string,
+  decision: HelperDisposeDecision,
+): Promise<{ ok: boolean; delivered: boolean; message: string }> {
+  const config = await agentConfig.getDurableConfig(projectPath, helperId);
+  if (!config) return { ok: false, delivered: false, message: 'Agent not found' };
+  const parentId = config.parentAgentId;
+  if (!parentId) return { ok: false, delivered: false, message: `${config.name} isn't a helper` };
+  if (!takeDisposeRequest(projectPath, helperId, parentId)) {
+    return { ok: false, delivered: false, message: `No dispose request for ${config.name} is waiting on the user` };
+  }
+  const runtime = getAgentRuntime(parentId);
+  if (!runtime) return { ok: true, delivered: false, message: 'The orchestrator isn\'t running' };
   const text = decision === 'disposed'
-    ? `[Clubhouse] The user approved your request and disposed of ${helperName}.`
-    : `[Clubhouse] The user declined your request to dispose of ${helperName}. Nothing was changed.`;
+    ? `[Clubhouse] The user approved your request and disposed of ${config.name}.`
+    : `[Clubhouse] The user declined your request to dispose of ${config.name}. Nothing was changed.`;
   try {
     await runtime.sendMessage(text, { source: 'mcp', taskId: `dispose_${Date.now().toString(36)}` });
-    return true;
+    return { ok: true, delivered: true, message: 'Reported' };
   } catch (err) {
     // telemetry-exempt: logged; the user's decision already stands
-    appLog('core:orchestration', 'warn', 'Dispose decision not delivered', {
-      meta: { orchestratorId, error: err instanceof Error ? err.message : String(err) },
-    });
-    return false;
+    const message = err instanceof Error ? err.message : String(err);
+    appLog('core:orchestration', 'warn', 'Dispose decision not delivered', { meta: { orchestratorId: parentId, error: message } });
+    return { ok: true, delivered: false, message };
   }
 }
 
@@ -531,11 +544,12 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(IPC.AGENT.REPORT_DISPOSE_DECISION, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],
-    async (_event, orchestratorId, helperName, decision) => {
+    async (_event, projectPath, helperId, decision) => {
       if (decision !== 'disposed' && decision !== 'declined') throw new Error(`Unknown decision: ${decision}`);
-      return reportDisposeDecision(orchestratorId, helperName, decision);
+      return reportDisposeDecision(projectPath, helperId, decision);
     },
   ));
+
 
   ipcMain.handle(IPC.AGENT.REMOVE_DISPOSED, withValidatedArgs(
     [stringArg(), stringArg()],

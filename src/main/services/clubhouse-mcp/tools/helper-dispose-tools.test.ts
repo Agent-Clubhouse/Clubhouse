@@ -74,6 +74,7 @@ import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry'
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 import { agentRegistry } from '../../agent-registry';
 import { withAgentLock } from '../../orchestration-policy';
+import { _resetDisposeRequestsForTesting, takeDisposeRequest } from '../../helper-dispose-requests';
 
 function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
   return { id, name: id, color: 'blue', createdAt: '2026-10-18T00:00:00.000Z', ...extra };
@@ -93,6 +94,7 @@ async function call(tool: string, args: Record<string, unknown>, caller = 'orch'
 }
 
 beforeEach(() => {
+  _resetDisposeRequestsForTesting();
   vi.clearAllMocks();
   _resetForTesting();
   _resetOrchestrationGateForTesting();
@@ -256,6 +258,10 @@ describe('dispose_helper', () => {
       checks: { dirty: 1, unpushed: 0, unmerged: 2 },
       forceRequested: true,
     });
+    // Recorded, so the user's answer can be reported to this orchestrator once (#2232).
+    expect(takeDisposeRequest(PROJECT, 'helper', 'someone-else')).toBe(false);
+    expect(takeDisposeRequest(PROJECT, 'helper', 'orch')).toBe(true);
+    expect(takeDisposeRequest(PROJECT, 'helper', 'orch')).toBe(false);
   });
 
   it('under ask-everything a clean dispose also goes to the user', async () => {
@@ -272,6 +278,8 @@ describe('dispose_helper', () => {
     const { json } = await call('dispose_helper', { helper: 'helper' });
     expect(json).toMatchObject({ status: 'sent-to-user', delivered: false, message: expect.stringMatching(/ask the user directly/) });
     expect(mocks.disposeHelper).not.toHaveBeenCalled();
+    // Nothing was sent, so there is nothing to answer.
+    expect(takeDisposeRequest(PROJECT, 'helper', 'orch')).toBe(false);
   });
 
   it('accepts the helper by name', async () => {

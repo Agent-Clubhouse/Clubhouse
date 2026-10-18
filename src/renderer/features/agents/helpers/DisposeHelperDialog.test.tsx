@@ -24,7 +24,7 @@ beforeEach(() => {
   window.clubhouse.agent.getDisposeChecks = vi.fn(async () => checks);
   window.clubhouse.agent.killAgent = vi.fn(async () => { order.push('kill'); });
   window.clubhouse.agent.disposeHelper = vi.fn(async () => { order.push('dispose'); return { ok: true, message: 'Disposed' }; });
-  window.clubhouse.agent.reportDisposeDecision = vi.fn(async () => true);
+  window.clubhouse.agent.reportDisposeDecision = vi.fn(async () => ({ ok: true, delivered: true, message: 'Reported' }));
 });
 
 afterEach(() => {
@@ -177,7 +177,7 @@ describe('Dispose requests from Needs you (#2229)', () => {
     expect(useHelperDisposeRequestStore.getState().requests).toEqual({});
     expect(window.clubhouse.agent.disposeHelper).not.toHaveBeenCalled();
     // The orchestrator hears the answer.
-    await waitFor(() => expect(window.clubhouse.agent.reportDisposeDecision).toHaveBeenCalledWith('lead', 'impl-ipc', 'declined'));
+    await waitFor(() => expect(window.clubhouse.agent.reportDisposeDecision).toHaveBeenCalledWith(PROJECT, 'h1', 'declined'));
   });
 
   it('disposes on accept and clears the request', async () => {
@@ -193,6 +193,6 @@ describe('Dispose requests from Needs you (#2229)', () => {
     fireEvent.click(screen.getByTestId('dispose-confirm'));
     await waitFor(() => expect(window.clubhouse.agent.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h1', undefined, { dirty: 0, unpushed: 0, unmerged: 0 }));
     await waitFor(() => expect(useHelperDisposeRequestStore.getState().requests).toEqual({}));
-    await waitFor(() => expect(window.clubhouse.agent.reportDisposeDecision).toHaveBeenCalledWith('lead', 'impl-ipc', 'disposed'));
+    await waitFor(() => expect(window.clubhouse.agent.reportDisposeDecision).toHaveBeenCalledWith(PROJECT, 'h1', 'disposed'));
   });
 });

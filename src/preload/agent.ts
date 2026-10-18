@@ -73,9 +73,12 @@ export const agent = {
    */
   disposeHelper: (projectPath: string, agentId: string, force?: boolean, seen?: HelperDisposeChecks): Promise<HelperDisposeResult> =>
     ipcRenderer.invoke(IPC.AGENT.DISPOSE_HELPER, projectPath, agentId, force, seen),
-  /** Tell the orchestrator what the user decided about its dispose request. False when it isn't running. */
-  reportDisposeDecision: (orchestratorId: string, helperName: string, decision: HelperDisposeDecision): Promise<boolean> =>
-    ipcRenderer.invoke(IPC.AGENT.REPORT_DISPOSE_DECISION, orchestratorId, helperName, decision),
+  /**
+   * Tell a helper's orchestrator what the user decided about its dispose
+   * request. Main refuses unless that request is pending, and answers it once.
+   */
+  reportDisposeDecision: (projectPath: string, helperId: string, decision: HelperDisposeDecision): Promise<{ ok: boolean; delivered: boolean; message: string }> =>
+    ipcRenderer.invoke(IPC.AGENT.REPORT_DISPOSE_DECISION, projectPath, helperId, decision),
   /** Remove a disposed helper's row for good. Refuses an agent that isn't disposed. */
   removeDisposed: (projectPath: string, agentId: string): Promise<DeleteResult> =>
     ipcRenderer.invoke(IPC.AGENT.REMOVE_DISPOSED, projectPath, agentId),

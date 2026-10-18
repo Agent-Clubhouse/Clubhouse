@@ -12,8 +12,8 @@ import { useHelperDisposeRequestStore } from '../../../stores/helperDisposeReque
 import { DisposeHelperDialog } from './DisposeHelperDialog';
 import type { HelperDisposeDecision } from '../../../../shared/types';
 
-function report(orchestratorId: string, helperName: string, decision: HelperDisposeDecision): void {
-  void Promise.resolve().then(() => window.clubhouse.agent.reportDisposeDecision(orchestratorId, helperName, decision)).catch(() => {
+function report(projectPath: string, helperId: string, decision: HelperDisposeDecision): void {
+  void Promise.resolve().then(() => window.clubhouse.agent.reportDisposeDecision(projectPath, helperId, decision)).catch(() => {
     // telemetry-exempt: the decision stands; an orchestrator that missed it can list its helpers.
   });
 }
@@ -37,8 +37,8 @@ export function HelperDisposeRequestDialog() {
       projectPath={request.projectPath}
       requestedBy={orchestratorName}
       onClose={() => dismiss(request.helperId)}
-      onDisposed={() => report(request.orchestratorId, request.helperName, 'disposed')}
-      onDeclined={() => report(request.orchestratorId, request.helperName, 'declined')}
+      onDisposed={() => report(request.projectPath, request.helperId, 'disposed')}
+      onDeclined={() => report(request.projectPath, request.helperId, 'declined')}
     />
   );
 }

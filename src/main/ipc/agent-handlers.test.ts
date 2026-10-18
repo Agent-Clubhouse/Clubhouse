@@ -117,6 +117,7 @@ import { applyPersonaToAgent } from '../services/persona-application';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as orchestrationPolicy from '../services/orchestration-policy';
 import { getAgentRuntime } from '../services/agent-runtime';
+import { _resetDisposeRequestsForTesting, recordDisposeRequest } from '../services/helper-dispose-requests';
 import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { agentRegistry } from '../services/agent-registry';
 import * as permissionQueue from '../services/annex-permission-queue';
@@ -443,22 +444,60 @@ describe('agent-handlers', () => {
       expect(agentConfig.deleteUnregister).not.toHaveBeenCalled();
     });
 
-    it('reports the user\'s decision to a running orchestrator', async () => {
-      const sendMessage = vi.fn(async () => {});
-      vi.mocked(getAgentRuntime).mockReturnValue({ sendMessage } as never);
-      const delivered = await handlers.get(IPC.AGENT.REPORT_DISPOSE_DECISION)!({}, 'agent-1', 'impl-ipc', 'declined');
-      expect(delivered).toBe(true);
-      expect(getAgentRuntime).toHaveBeenCalledWith('agent-1');
-      expect(sendMessage).toHaveBeenCalledWith(
-        '[Clubhouse] The user declined your request to dispose of impl-ipc. Nothing was changed.',
-        expect.objectContaining({ source: 'mcp' }),
-      );
-    });
+    describe('reporting the user\'s dispose decision', () => {
+      const report = (...args: unknown[]) => handlers.get(IPC.AGENT.REPORT_DISPOSE_DECISION)!({}, ...args);
+      let sendMessage: ReturnType<typeof vi.fn>;
 
-    it('reports nothing to an orchestrator that isn\'t running, and rejects an unknown decision', async () => {
-      vi.mocked(getAgentRuntime).mockReturnValue(undefined);
-      expect(await handlers.get(IPC.AGENT.REPORT_DISPOSE_DECISION)!({}, 'agent-1', 'impl-ipc', 'disposed')).toBe(false);
-      await expect(handlers.get(IPC.AGENT.REPORT_DISPOSE_DECISION)!({}, 'agent-1', 'impl-ipc', 'maybe')).rejects.toThrow(/Unknown decision/);
+      beforeEach(() => {
+        _resetDisposeRequestsForTesting();
+        sendMessage = vi.fn(async () => {});
+        vi.mocked(getAgentRuntime).mockReturnValue({ sendMessage } as never);
+      });
+
+      it('reports once to the parent main sent the request for, using the stored name', async () => {
+        recordDisposeRequest('/project', 'h1', 'agent-1');
+        const first = await report('/project', 'h1', 'declined');
+        expect(first).toEqual({ ok: true, delivered: true, message: 'Reported' });
+        expect(getAgentRuntime).toHaveBeenCalledWith('agent-1');
+        expect(sendMessage).toHaveBeenCalledWith(
+          '[Clubhouse] The user declined your request to dispose of impl-ipc. Nothing was changed.',
+          expect.objectContaining({ source: 'mcp' }),
+        );
+        // Used up: a second report for the same request is refused.
+        const second = await report('/project', 'h1', 'disposed');
+        expect(second).toMatchObject({ ok: false, delivered: false });
+        expect(sendMessage).toHaveBeenCalledTimes(1);
+      });
+
+      it('refuses without a pending request', async () => {
+        const result = await report('/project', 'h1', 'disposed');
+        expect(result).toEqual({ ok: false, delivered: false, message: 'No dispose request for impl-ipc is waiting on the user' });
+        expect(sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('refuses a request recorded for another orchestrator', async () => {
+        recordDisposeRequest('/project', 'h1', 'someone-else');
+        expect(await report('/project', 'h1', 'declined')).toMatchObject({ ok: false });
+        expect(sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('refuses a non-helper', async () => {
+        vi.mocked(agentConfig.getDurableConfig).mockResolvedValue({ id: 'a1', name: 'lead' } as never);
+        recordDisposeRequest('/project', 'a1', 'agent-1');
+        expect(await report('/project', 'a1', 'declined')).toEqual({ ok: false, delivered: false, message: 'lead isn\'t a helper' });
+        expect(sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('uses up the request even when the orchestrator isn\'t running', async () => {
+        vi.mocked(getAgentRuntime).mockReturnValue(undefined);
+        recordDisposeRequest('/project', 'h1', 'agent-1');
+        expect(await report('/project', 'h1', 'disposed')).toMatchObject({ ok: true, delivered: false });
+        expect(await report('/project', 'h1', 'disposed')).toMatchObject({ ok: false });
+      });
+
+      it('rejects an unknown decision', async () => {
+        await expect(report('/project', 'h1', 'maybe')).rejects.toThrow(/Unknown decision/);
+      });
     });
   });
 

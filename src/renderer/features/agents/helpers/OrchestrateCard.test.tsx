@@ -316,6 +316,18 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     expect(screen.queryByTestId('turn-off-orchestration')).not.toBeInTheDocument();
     expect(useAgentStore.getState().agents.h2).toBeUndefined();
   });
+  it('doesn\'t repeat main\'s "Orchestration is off" when helpers started during turn-off were blocked', async () => {
+    window.clubhouse.agent.turnOffOrchestration = vi.fn(async () => ({
+      ok: false,
+      message: 'Orchestration is off, but late-helper has work that disposing would lose, or couldn\'t be checked',
+      blocked: [{ agentId: 'h3', name: 'late-helper', checks: { dirty: 1, unpushed: 0, unmerged: 0 } }],
+      policy: resolved({ ...stored, orchestrate: false }),
+    }));
+    await openDialog();
+    fireEvent.click(screen.getByTestId('turn-off-dispose'));
+    const partial = await screen.findByTestId('turn-off-partial');
+    expect(partial.textContent).toBe('Orchestration is off, but late-helper has work that disposing would lose, or couldn\'t be checked.');
+  });
 });
 
 describe('Orchestration cards in Agent details', () => {
