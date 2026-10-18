@@ -5,6 +5,7 @@ import { render, screen, act } from '@testing-library/react';
 vi.mock('./ChromeSidebar', () => ({ ChromeSidebar: () => <div data-testid="chrome-sidebar" /> }));
 vi.mock('../panels/MainContentView', () => ({ MainContentView: () => <div data-testid="main-content" /> }));
 vi.mock('./pages/ProjectStartPage', () => ({ ProjectStartPage: ({ project }: { project: { id: string } }) => <div data-testid="start-page">{project.id}</div> }));
+vi.mock('./sidebar/ChromeAgentDialogs', () => ({ ChromeAgentDialogs: () => <div data-testid="chrome-agent-dialogs" />, useChromeDialogStore: { getState: () => ({}) } }));
 vi.mock('./pages/FirstRun', () => ({ FirstRun: () => <div data-testid="first-run" /> }));
 vi.mock('./pages/SatelliteStartPage', () => ({ SatelliteStartPage: ({ activeHostId }: { activeHostId: string }) => <div data-testid="satellite-start-page">{activeHostId}</div> }));
 vi.mock('./pages/NewAgentPage', () => ({ NewAgentPage: ({ request }: { request: { kind: string } }) => <div data-testid="new-agent-page">{request.kind}</div> }));
@@ -89,6 +90,14 @@ describe('ChromeBody', () => {
     render(<ChromeBody />);
     expect(screen.getByTestId('satellite-start-page').textContent).toBe('s1');
     expect(screen.queryByTestId('satellite-dashboard')).toBeNull();
+  });
+
+  it('hosts the agent dialogs even with the sidebar hidden', () => {
+    useChromeStore.setState({ sidebarCollapsed: true });
+    render(<ChromeBody />);
+    expect(screen.getByTestId('chrome-agent-dialogs')).toBeTruthy();
+    expect(screen.queryByTestId('chrome-sidebar')).toBeNull();
+    useChromeStore.setState({ sidebarCollapsed: false });
   });
 
   it('shows the selected agent on the Agents tab', () => {

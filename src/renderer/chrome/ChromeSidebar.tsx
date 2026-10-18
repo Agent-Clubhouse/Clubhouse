@@ -24,7 +24,7 @@ import { HelpNav } from './sidebar/HelpNav';
 import { SidebarBreadcrumb } from './sidebar/SidebarBreadcrumb';
 import { useSidebarMode } from './listTabs';
 import { SCOPE_FOLLOWING_TABS } from './scope';
-import { ChromeAgentDialogs, useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
+import { useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
 import { selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './sidebar/treeModel';
 import { HostSwitcher, LOCAL_HOST } from './sidebar/HostSwitcher';
 import { useClickOutside } from './sidebar/useClickOutside';
@@ -740,7 +740,6 @@ export function ChromeSidebar() {
         </Tooltip>
       </div>
 
-      <ChromeAgentDialogs />
     </aside>
   );
 }

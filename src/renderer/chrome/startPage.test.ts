@@ -44,6 +44,14 @@ describe('openNewAgentFromShortcut (⌘⇧N)', () => {
 });
 
 describe('openNewAgentPage', () => {
+  it("returns false for a project that isn't a local one, so the caller falls back", () => {
+    useChromeFlagStore.setState({ enabled: true });
+    expect(openNewAgentPage('durable', 'remote||sat1||p9', { onCreated: () => {} })).toBe(false);
+    expect(openNewAgentPage('durable', 'gone')).toBe(false);
+    expect(useChromeStore.getState().newAgent).toBeNull();
+    expect(openNewAgentPage('durable', 'p2')).toBe(true);
+  });
+
   it('opens with the kind and project asked for, fresh on every open', () => {
     useChromeFlagStore.setState({ enabled: true });
     openNewAgentPage('quick', 'p1');
