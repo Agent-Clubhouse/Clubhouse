@@ -23,6 +23,8 @@ const repoByWorktree = new Map<string, FakeRepo>();
 const repoByBranch = new Map<string, FakeRepo>();
 const branches = new Set<string>();
 const rmFailures = new Set<string>();
+/** Runs before a `git branch -d/-D` answers: after the worktree went, before disposeAgent re-reads. */
+const hooks = { beforeBranchDelete: null as null | (() => Promise<void>) };
 let remoteConfigured = true;
 let baseBranch: string | null = 'main';
 let showRefBroken = false;
@@ -102,6 +104,14 @@ vi.mock('child_process', () => ({
   exec: vi.fn((_cmd: string, _opts: unknown, cb: (...args: unknown[]) => void) => { cb(null, ''); return {}; }),
   execFile: vi.fn((_f: string, args: string[], opts: { cwd: string }, cb: (...args: unknown[]) => void) => {
     gitCalls.push({ args, cwd: opts.cwd });
+    const hook = args[0] === 'branch' ? hooks.beforeBranchDelete : null;
+    if (hook) {
+      hooks.beforeBranchDelete = null;
+      void hook().then(() => {
+        try { cb(null, gitOutput(args, opts.cwd)); } catch (err) { cb(err, ''); }
+      });
+      return {};
+    }
     let out: string;
     try {
       out = gitOutput(args, opts.cwd);
@@ -172,6 +182,7 @@ import {
   renameDurable,
   resolveHelpersForDelete,
   setOrchestrationConfig,
+  setHelperHandoff,
   setParentAgent,
   updateDurableConfig,
 } from './agent-config';
@@ -231,6 +242,7 @@ beforeEach(() => {
   repoByBranch.clear();
   branches.clear();
   rmFailures.clear();
+  hooks.beforeBranchDelete = null;
   movedBranches.clear();
   remoteConfigured = true;
   baseBranch = 'main';
@@ -269,6 +281,56 @@ describe('helper fields round-trip', () => {
     await renameDurable(PROJECT_PATH, 'durable_1_a', 'renamed');
     await flushAllAgentConfigs();
     expect(onDisk('durable_1_a')).toMatchObject({ name: 'renamed', futureField: 'kept' });
+  });
+});
+
+describe('helper handoff (#2229)', () => {
+  beforeEach(() => {
+    seed([
+      agent('durable_1_orch'),
+      agent('durable_2_help', { parentAgentId: 'durable_1_orch', disposable: true }),
+      agent('durable_3_other'),
+      agent('durable_4_gone', { parentAgentId: 'durable_1_orch', disposedAt: DISPOSED_AT }),
+    ]);
+  });
+
+  it('persists on the helper across a restart and other writes', async () => {
+    const record = await setHelperHandoff(PROJECT_PATH, 'durable_2_help', 'durable_1_orch', { how: 'merged', note: 'PR #12' });
+    expect(record).toMatchObject({ how: 'merged', note: 'PR #12' });
+    expect(Number.isNaN(Date.parse(record.at))).toBe(false);
+
+    await updateDurableConfig(PROJECT_PATH, 'durable_2_help', { model: 'opus' });
+    await flushAllAgentConfigs();
+    clearAgentConfigCache();
+    const reloaded = (await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help');
+    expect(reloaded).toMatchObject({ handoff: record, parentAgentId: 'durable_1_orch', model: 'opus' });
+    expect(reloaded?.disposedAt).toBeUndefined();
+    expect(onDisk('durable_2_help')?.handoff).toEqual(record);
+  });
+
+  it('only for a live helper of the caller', async () => {
+    await expect(setHelperHandoff(PROJECT_PATH, 'durable_3_other', 'durable_1_orch', { how: 'pushed', note: '' }))
+      .rejects.toThrow(/Not a helper/);
+    await expect(setHelperHandoff(PROJECT_PATH, 'durable_2_help', 'durable_3_other', { how: 'pushed', note: '' }))
+      .rejects.toThrow(/Not a helper/);
+    await expect(setHelperHandoff(PROJECT_PATH, 'durable_4_gone', 'durable_1_orch', { how: 'pushed', note: '' }))
+      .rejects.toThrow(/already disposed/);
+    await expect(setHelperHandoff(PROJECT_PATH, 'durable_2_help', 'durable_1_orch', { how: 'emailed' as 'pushed', note: '' }))
+      .rejects.toThrow(/Unknown handoff/);
+    expect(onDisk('durable_2_help')?.handoff).toBeUndefined();
+  });
+
+  it('is dropped when malformed and when the helper is released', async () => {
+    const rows = [
+      agent('durable_1_orch'),
+      agent('durable_2_help', { parentAgentId: 'durable_1_orch', handoff: { how: 'teleported', note: 1 } as unknown as DurableAgentConfig['handoff'] }),
+    ];
+    expect(normalizeHelperFields(rows)).toBe(1);
+    expect(rows[1]).not.toHaveProperty('handoff');
+
+    await setHelperHandoff(PROJECT_PATH, 'durable_2_help', 'durable_1_orch', { how: 'copied', note: '' });
+    await setParentAgent(PROJECT_PATH, 'durable_2_help', null);
+    expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help')).not.toHaveProperty('handoff');
   });
 });
 
@@ -783,6 +845,56 @@ describe('delete cascade', () => {
     expect(worktreeRemovals()).toEqual([]);
     expect(await disposeHelper(PROJECT_PATH, 'durable_2_dirty', { force: true })).toMatchObject({ ok: true });
     expect(worktreeRemovals()).toEqual([worktree('durable_2_dirty')]);
+  });
+
+  it('disposeHelper: force never overrides a check that could not run (#2229)', async () => {
+    seedFamily({ durable_2_broken: { dirty: 1, failOn: 'rev-list' } });
+    const result = await disposeHelper(PROJECT_PATH, 'durable_2_broken', { force: true });
+    expect(result).toMatchObject({ ok: false, checks: { error: expect.stringMatching(/couldn't check/) } });
+    expect(worktreeRemovals()).toEqual([]);
+    expect(branchDeletions()).toEqual([]);
+    await flushAllAgentConfigs();
+    expect(onDisk('durable_2_broken')?.disposedAt).toBeUndefined();
+  });
+
+  it('disposeHelper removes the worktree folder and local branch, never a remote branch (#2229)', async () => {
+    seedFamily({ durable_2_done: { unmerged: 2 } });
+    expect(await disposeHelper(PROJECT_PATH, 'durable_2_done')).toMatchObject({ ok: true, checks: { unmerged: 2 } });
+    expect(worktreeRemovals()).toEqual([worktree('durable_2_done')]);
+    expect(branchDeletions()).toEqual(['durable_2_done/standby']);
+    expect(gitCalls.some((c) => c.args[0] === 'push')).toBe(false);
+    await flushAllAgentConfigs();
+    expect(onDisk('durable_2_done')).toMatchObject({ parentAgentId: 'durable_1_orch', disposedAt: expect.any(String) });
+    expect(onDisk('durable_2_done')).not.toHaveProperty('worktreePath');
+  });
+
+  it('disposeHelper with expectedParentId refuses a helper released or moved meanwhile (#2229)', async () => {
+    seedFamily({ durable_2_h: {} });
+    await setParentAgent(PROJECT_PATH, 'durable_2_h', null);
+    expect(await disposeHelper(PROJECT_PATH, 'durable_2_h', { force: true, expectedParentId: 'durable_1_orch' }))
+      .toMatchObject({ ok: false, message: expect.stringMatching(/no longer a helper/) });
+    expect(worktreeRemovals()).toEqual([]);
+    expect(branchDeletions()).toEqual([]);
+    expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_h')?.disposedAt).toBeUndefined();
+
+    expect(await disposeHelper(PROJECT_PATH, 'durable_1_orch', { expectedParentId: 'durable_2_h' }))
+      .toMatchObject({ ok: false });
+    expect(worktreeRemovals()).toEqual([]);
+  });
+
+  it('a helper released while git ran is not marked disposed, and its worktreePath is cleared (#2229)', async () => {
+    seedFamily({ durable_2_h: {} });
+    hooks.beforeBranchDelete = () => setParentAgent(PROJECT_PATH, 'durable_2_h', null);
+
+    const result = await disposeHelper(PROJECT_PATH, 'durable_2_h', { expectedParentId: 'durable_1_orch' });
+
+    expect(result).toMatchObject({ ok: false, worktreeRemoved: true, message: expect.stringMatching(/worktree folder was already removed/) });
+    expect(worktreeRemovals()).toEqual([worktree('durable_2_h')]);
+    await flushAllAgentConfigs();
+    const row = onDisk('durable_2_h');
+    expect(row?.disposedAt).toBeUndefined();
+    expect(row).not.toHaveProperty('worktreePath');
+    expect(row).not.toHaveProperty('parentAgentId');
   });
 
   it('a failed folder removal keeps the branch on a plain delete too', async () => {

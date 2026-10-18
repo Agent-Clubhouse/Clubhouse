@@ -94,8 +94,12 @@ function isLiveIn(projectPath: string, agentId: string): boolean {
 
 const locks = new Map<string, Promise<unknown>>();
 
-/** Run `fn` after every earlier locked call for this agent has settled. */
-async function withAgentLock<T>(projectPath: string, agentId: string, fn: () => Promise<T>): Promise<T> {
+/**
+ * Run `fn` after every earlier locked call for this agent has settled. Policy
+ * writes and the helper dispose tools (#2229) share it, so a turn-off can't
+ * release a helper in the middle of its dispose. Not reentrant.
+ */
+export async function withAgentLock<T>(projectPath: string, agentId: string, fn: () => Promise<T>): Promise<T> {
   const key = `${pathKey(projectPath)}\0${agentId}`;
   const previous = locks.get(key) ?? Promise.resolve();
   const run = previous.catch((): undefined => undefined).then(fn);

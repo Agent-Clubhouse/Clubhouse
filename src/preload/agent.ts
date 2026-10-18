@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, HelperCascadeResult, HelperDeleteChoice, StartDurableCreationParams } from '../shared/types';
+import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, HelperCascadeResult, HelperDeleteChoice, HelperDisposeRequest, StartDurableCreationParams } from '../shared/types';
 import type { HelperAccessResolution, HelperLimitCheck, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
@@ -57,6 +57,12 @@ export const agent = {
   /** Dispose or keep an orchestrator's helpers before it is deleted (#2224). */
   resolveHelpersForDelete: (projectPath: string, agentId: string, choice: HelperDeleteChoice, dryRun?: boolean): Promise<HelperCascadeResult> =>
     ipcRenderer.invoke(IPC.AGENT.RESOLVE_HELPERS_FOR_DELETE, projectPath, agentId, choice, dryRun),
+  /** A helper dispose the user has to decide (#2229): the orchestrator's control level is "ask-everything". */
+  onHelperDisposeRequest: (callback: (request: HelperDisposeRequest) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, request: HelperDisposeRequest) => callback(request);
+    ipcRenderer.on(IPC.AGENT.HELPER_DISPOSE_REQUEST, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.HELPER_DISPOSE_REQUEST, listener); };
+  },
   /** An agent's resolved orchestration policy (#2228), or null for an unknown agent. */
   getOrchestrationPolicy: (projectPath: string, agentId: string): Promise<ResolvedOrchestrationPolicy | null> =>
     ipcRenderer.invoke(IPC.AGENT.GET_ORCHESTRATION_POLICY, projectPath, agentId),

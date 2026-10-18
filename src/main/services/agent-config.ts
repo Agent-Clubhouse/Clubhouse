@@ -4,7 +4,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { app } from 'electron';
-import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, HelperCascadeResult, HelperDeleteChoice, HelperDisposeBlock, HelperDisposeChecks } from '../../shared/types';
+import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, HelperCascadeResult, HelperDeleteChoice, HelperDisposeBlock, HelperDisposeChecks, HelperHandoff, HelperHandoffHow, HELPER_HANDOFF_HOWS } from '../../shared/types';
 import type { DurableAgentCreation, DurableCreationEvent, DurableCreationStage, DurableWorktreeOptions, StartDurableCreationParams } from '../../shared/types';
 import { isDisposedAgent, parentLinkError } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
@@ -532,6 +532,15 @@ export function stripLegacyStructuredMode(agents: DurableAgentConfig[]): number 
   return count;
 }
 
+/** A well-formed handoff record (#2229). */
+function isHelperHandoff(value: unknown): value is HelperHandoff {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return HELPER_HANDOFF_HOWS.includes(v.how as HelperHandoffHow)
+    && typeof v.note === 'string'
+    && typeof v.at === 'string' && !!v.at;
+}
+
 /**
  * Repair helper fields (#2224) in place: drop malformed values, self-parenting
  * and parent cycles, and release a live helper whose parent no longer exists
@@ -555,6 +564,10 @@ export function normalizeHelperFields(agents: DurableAgentConfig[]): number {
       delete record.disposedAt;
       changed.add(agent.id);
     }
+    if ('handoff' in record && !isHelperHandoff(record.handoff)) {
+      delete record.handoff;
+      changed.add(agent.id);
+    }
   }
   const ids = new Set(agents.map((a) => a.id));
   for (const agent of agents) {
@@ -566,6 +579,7 @@ export function normalizeHelperFields(agents: DurableAgentConfig[]): number {
       || (dangling && !isDisposedAgent(agent))) {
       delete agent.parentAgentId;
       delete agent.disposable;
+      delete agent.handoff;
       changed.add(agent.id);
     }
   }
@@ -2512,6 +2526,7 @@ function releaseHelpersOf(agents: DurableAgentConfig[], deletedId: string): Dura
     const copy = { ...agent };
     delete copy.parentAgentId;
     delete copy.disposable;
+    delete copy.handoff;
     return copy;
   });
   if (released.length > 0) {
@@ -2562,6 +2577,7 @@ export async function setParentAgent(
   if (parentAgentId === null) {
     delete agent.parentAgentId;
     delete agent.disposable;
+    delete agent.handoff;
   } else {
     const error = parentLinkError(agents, agentId, parentAgentId);
     if (error) throw new Error(error);
@@ -2573,6 +2589,27 @@ export async function setParentAgent(
     }
   }
   await writeAgents(projectPath, agents);
+}
+
+/**
+ * Record how a helper's parent took its work (#2229). Only a live helper of
+ * `parentAgentId` can be handed off. Returns the stored record. Never disposes.
+ */
+export async function setHelperHandoff(
+  projectPath: string,
+  helperId: string,
+  parentAgentId: string,
+  handoff: { how: HelperHandoffHow; note: string },
+): Promise<HelperHandoff> {
+  if (!HELPER_HANDOFF_HOWS.includes(handoff.how)) throw new Error(`Unknown handoff: ${String(handoff.how)}`);
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const helper = agentsById.get(helperId);
+  if (!helper || helper.parentAgentId !== parentAgentId) throw new Error('Not a helper of this agent');
+  if (isDisposedAgent(helper)) throw new Error(`${helper.name} was already disposed`);
+  const record: HelperHandoff = { how: handoff.how, note: handoff.note, at: new Date().toISOString() };
+  helper.handoff = record;
+  await writeAgents(projectPath, agents);
+  return record;
 }
 
 /**
@@ -2774,8 +2811,20 @@ function hasWorkAtRisk(checks: HelperDisposeChecks): boolean {
   return checks.dirty > 0 || checks.unpushed > 0 || !!checks.error;
 }
 
-/** Remove a helper's worktree and branch and mark it disposed, keeping its row. */
-async function disposeAgent(projectPath: string, agentId: string): Promise<void> {
+/**
+ * Remove a helper's worktree and branch and mark it disposed, keeping its row.
+ * With `expectedParentId` (#2229), the helper must still belong to that parent
+ * at both reads, otherwise this throws. At the first read nothing has been
+ * removed yet. At the re-read after git ran, a helper released meanwhile is
+ * not marked disposed: its `worktreePath` is cleared (the folder is gone), it
+ * stays an ordinary agent, and the error carries `worktreeRemoved: true`.
+ */
+async function disposeAgent(projectPath: string, agentId: string, options: { expectedParentId?: string } = {}): Promise<void> {
+  const checkParent = (row: DurableAgentConfig) => {
+    if (options.expectedParentId !== undefined && row.parentAgentId !== options.expectedParentId) {
+      throw new Error(`${row.name} is no longer a helper of this agent`);
+    }
+  };
   // A creation still running is cancelled and settled first (#2226): a
   // cancelled creation removes its partial worktree, owned branch and row, so
   // nothing is left to dispose. One that finished just before the cancel took
@@ -2784,6 +2833,7 @@ async function disposeAgent(projectPath: string, agentId: string): Promise<void>
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent || isDisposedAgent(agent)) return;
+  checkParent(agent);
   const creating = helperCreationBlock(agent);
   if (creating) throw new Error(`${agent.name} can't be disposed because ${creating}`);
   if (agent.worktreePath) await removeAgentWorktree(projectPath, agent);
@@ -2792,6 +2842,15 @@ async function disposeAgent(projectPath: string, agentId: string): Promise<void>
   const { agents, agentsById: current } = await readAgentsEntry(projectPath);
   const row = current.get(agentId);
   if (!row) return;
+  if (options.expectedParentId !== undefined && row.parentAgentId !== options.expectedParentId) {
+    // The folder is already gone; don't leave the row pointing at it.
+    delete row.worktreePath;
+    await writeAgents(projectPath, agents);
+    throw Object.assign(
+      new Error(`${row.name} stopped being a helper of this agent while it was disposed; its worktree folder was already removed`),
+      { worktreeRemoved: true },
+    );
+  }
   row.disposedAt = new Date().toISOString();
   delete row.worktreePath;
   await writeAgents(projectPath, agents);
@@ -2799,19 +2858,24 @@ async function disposeAgent(projectPath: string, agentId: string): Promise<void>
 
 /**
  * Dispose one helper after the delete status checks. With work at risk it
- * changes nothing and returns the checks, unless `force` is set.
+ * changes nothing and returns the checks, unless `force` is set. A check that
+ * couldn't run (or a creation owned by another window) blocks even a forced
+ * dispose (#2229): force overrides known work, never an unknown.
  */
 export async function disposeHelper(
   projectPath: string,
   agentId: string,
-  options: { force?: boolean } = {},
-): Promise<DeleteResult & { checks?: HelperDisposeChecks }> {
+  options: { force?: boolean; expectedParentId?: string } = {},
+): Promise<DeleteResult & { checks?: HelperDisposeChecks; worktreeRemoved?: boolean }> {
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
+  if (options.expectedParentId !== undefined && agent.parentAgentId !== options.expectedParentId) {
+    return { ok: false, message: `${agent.name} is no longer a helper of this agent` };
+  }
   if (isDisposedAgent(agent)) return { ok: true, message: 'Already disposed' };
   const checks = await getDisposeChecks(projectPath, agentId);
-  if (!options.force && hasWorkAtRisk(checks)) {
+  if (checks.error || (!options.force && hasWorkAtRisk(checks))) {
     return {
       ok: false,
       message: checks.error ? `${agent.name} wasn't disposed (${checks.error})` : `${agent.name} has work that disposing would lose`,
@@ -2819,10 +2883,11 @@ export async function disposeHelper(
     };
   }
   try {
-    await disposeAgent(projectPath, agentId);
+    await disposeAgent(projectPath, agentId, { expectedParentId: options.expectedParentId });
   } catch (err) {
     // telemetry-exempt: returned to the caller as a failed result
-    return { ok: false, message: errorText(err), checks };
+    const worktreeRemoved = (err as { worktreeRemoved?: unknown } | null)?.worktreeRemoved === true;
+    return { ok: false, message: errorText(err), checks, ...(worktreeRemoved ? { worktreeRemoved } : {}) };
   }
   return { ok: true, message: 'Disposed', checks };
 }

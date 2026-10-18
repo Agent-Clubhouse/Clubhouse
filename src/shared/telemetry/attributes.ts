@@ -439,6 +439,8 @@ export const ATTR = {
     'nudge_polling', 'clear_topic', 'delete_messages',
     // global
     'notify_user',
+    // orchestration: hand off and dispose (#2229)
+    'hand_off', 'dispose_helper',
     'other',
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),

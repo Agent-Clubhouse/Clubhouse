@@ -29,6 +29,7 @@ export function NeedsYou({ items, projectNames, activeAgentId, onSelect, onRevie
       <div className="flex flex-col gap-px px-1.5">
         {items.map(({ agent, reason, message, hostLabel }) => {
           const active = agent.id === activeAgentId;
+          const waiting = reason === 'permission' || reason === 'dispose_request';
           return (
             <button
               key={agent.id}
@@ -38,7 +39,7 @@ export function NeedsYou({ items, projectNames, activeAgentId, onSelect, onRevie
               onClick={() => onSelect(agent)}
               className={`w-full flex items-start gap-2 px-2 py-1.5 rounded-md text-left cursor-pointer ${active ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
             >
-              <span className="mt-1.5"><StatusDot dot={reason === 'permission' ? 'needs' : 'error'} /></span>
+              <span className="mt-1.5"><StatusDot dot={waiting ? 'needs' : 'error'} /></span>
               <span className="mt-0.5 flex-shrink-0"><AgentAvatar agent={agent} size="2xs" /></span>
               <span className="min-w-0 flex-1 flex flex-col">
                 <span className="flex items-baseline gap-1.5 min-w-0">
@@ -47,7 +48,7 @@ export function NeedsYou({ items, projectNames, activeAgentId, onSelect, onRevie
                     {projectNames[agent.projectId]}{hostLabel ? ` on ${hostLabel}` : ''}
                   </span>
                 </span>
-                <span className={`text-xs truncate ${reason === 'permission' ? 'text-ctp-warning' : 'text-ctp-error'}`}>{message}</span>
+                <span className={`text-xs truncate ${waiting ? 'text-ctp-warning' : 'text-ctp-error'}`}>{message}</span>
               </span>
             </button>
           );

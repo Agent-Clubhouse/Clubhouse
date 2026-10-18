@@ -11,6 +11,7 @@ import { registerAgentTools } from '../services/clubhouse-mcp/tools/agent-tools'
 import { registerBrowserTools, registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
 import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
 import { registerNotifyTools } from '../services/clubhouse-mcp/tools/notify-tools';
+import { registerHelperDisposeTools } from '../services/clubhouse-mcp/tools/helper-dispose-tools';
 import { agentRegistry } from '../services/agent-registry';
 import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
 import { appLog } from '../services/log-service';
@@ -70,6 +71,7 @@ export function registerMcpBindingHandlers(): void {
   registerBrowserTools();
   registerGroupProjectTools();
   registerNotifyTools();
+  registerHelperDisposeTools();
 
   appLog('core:mcp', 'info', 'MCP binding handlers registered');
 
