@@ -584,7 +584,12 @@ export async function clearOfflineQueue(): Promise<TelemetryActionResult> {
 /** Turns every destination off and removes the install id, salt and offline queue. */
 export async function deleteLocalData(): Promise<TelemetryActionResult> {
   await prepare();
-  await updateTelemetrySettings((s) => ({ ...s, destinations: s.destinations.map((d) => ({ ...d, enabled: false })) }));
+  // Off for good: the developer destination is derived, so it's also marked
+  // switched off, or Feedback reconnecting would turn it back on (#2097).
+  await updateTelemetrySettings((s) => ({
+    ...s,
+    destinations: s.destinations.map((d) => ({ ...d, enabled: false, ...(d.kind === 'framebriar' ? { framebriar: { userOff: true } } : {}) })),
+  }));
   await disableTelemetry({ deleteLocalData: true });
   return done();
 }

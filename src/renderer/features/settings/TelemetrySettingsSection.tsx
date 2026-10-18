@@ -106,14 +106,17 @@ function destinationSummary(on: boolean, configured: boolean, dest?: TelemetryDe
 }
 
 /** A destination panel whose body folds away; the header keeps its name and state. */
-function CollapsiblePanel({ id, title, summary, defaultOpen, children }: {
+function CollapsiblePanel({ id, title, summary, defaultOpen, forceOpen, children }: {
   id: string;
   title: string;
   summary: string;
   defaultOpen: boolean;
+  /** Opens the panel when it turns true (an error to show). */
+  forceOpen?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => { if (forceOpen) setOpen(true); }, [forceOpen]);
   const bodyId = `telemetry-panel-body-${id}`;
   return (
     <section className="mt-[22px]" aria-label={title} data-testid={`telemetry-panel-${id}`}>
@@ -130,7 +133,8 @@ function CollapsiblePanel({ id, title, summary, defaultOpen, children }: {
         <span className="text-[13px] font-semibold text-ctp-text">{title}</span>
         <span className="ml-auto text-xs text-ctp-overlay1" data-testid={`telemetry-panel-summary-${id}`}>{summary}</span>
       </button>
-      {open && <div id={bodyId} className="mt-3 space-y-3">{children}</div>}
+      {/* Kept mounted while closed: aria-controls needs its target, and typed drafts survive a fold. */}
+      <div id={bodyId} className="mt-3 space-y-3" hidden={!open}>{children}</div>
     </section>
   );
 }
@@ -274,6 +278,7 @@ export function TelemetrySettingsSection() {
         title="Azure Application Insights"
         summary={destinationSummary(azureOn, status.azure.configured, azure)}
         defaultOpen={azureOn || error?.panel === 'azure'}
+        forceOpen={error?.panel === 'azure'}
       >
         <SettingsField label="Send telemetry">
           <Toggle
@@ -344,6 +349,7 @@ export function TelemetrySettingsSection() {
         title="Other destinations"
         summary={destinationSummary(otlpOn, status.otlp.configured, otlp)}
         defaultOpen={otlpOn || error?.panel === 'otlp'}
+        forceOpen={error?.panel === 'otlp'}
       >
         <div className="text-xs text-ctp-overlay1">Send to an OpenTelemetry (OTLP) backend, on its own or alongside Application Insights.</div>
         <SettingsField label="Send to OTLP">

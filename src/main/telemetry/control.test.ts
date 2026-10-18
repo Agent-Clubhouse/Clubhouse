@@ -84,6 +84,7 @@ vi.mock('./offline', () => ({
 }));
 
 import * as control from './control';
+import { migrateTelemetrySettings } from './settings';
 import {
   currentFramebriarExport, notifyFramebriarConnectionChanged, setBoundFramebriarSession, setFramebriarTelemetrySource,
 } from './destinations/framebriar-source';
@@ -545,6 +546,30 @@ describe('Framebriar destination follows Feedback', () => {
     await control.syncFramebriarDestination();
     expect(fbEntry().enabled).toBe(false);
     expect(state.running).toBe(false);
+  });
+
+  it('stays off after an update for someone who shared alongside Azure and later turned Azure off (#2097)', async () => {
+    // The exact pre-#2097 state: confirmed through the Azure dialog, Azure since turned off,
+    // the developer destination derived off but never switched off by the user.
+    state.settings.consentVersion = 1;
+    setEntry('azure', { enabled: false, confirmedHost: HOST });
+    setEntry('framebriar', { enabled: false, confirmedHost: FB_HOST, framebriar: { userOff: false } });
+    state.settings = migrateTelemetrySettings({ ...state.settings, developerRule: undefined } as never);
+    connect();
+    await control.syncFramebriarDestination();
+    expect(fbEntry()).toMatchObject({ enabled: false, framebriar: { userOff: true } });
+    expect(state.calls).toEqual([]);
+  });
+
+  it('Delete local data keeps it off when Feedback reconnects (#2097)', async () => {
+    await shared();
+    await control.deleteLocalData();
+    disconnect();
+    await control.syncFramebriarDestination();
+    connect();
+    await control.syncFramebriarDestination();
+    expect(fbEntry()).toMatchObject({ enabled: false, framebriar: { userOff: true } });
+    expect(state.active).toEqual([]);
   });
 
   it('still needs consent: a confirmed host alone does not start it (#2097)', async () => {

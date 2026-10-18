@@ -336,13 +336,15 @@ describe('TelemetrySettingsSection', () => {
       const azure = await screen.findByRole('region', { name: 'Azure Application Insights' });
       const otlp = screen.getByRole('region', { name: 'Other destinations' });
       expect(within(azure).getByRole('button', { name: /Azure Application Insights/ })).toHaveAttribute('aria-expanded', 'false');
-      expect(within(azure).queryByLabelText('Send telemetry to Application Insights')).toBeNull();
+      // Folded, not unmounted: hidden, so aria-controls has its target.
+      expect(within(azure).getByLabelText('Send telemetry to Application Insights')).not.toBeVisible();
+      expect(document.getElementById(within(azure).getByRole('button', { name: /Azure Application Insights/ }).getAttribute('aria-controls')!)).not.toBeNull();
       expect(screen.getByTestId('telemetry-panel-summary-azure')).toHaveTextContent('Off');
       expect(within(otlp).getByRole('button', { name: /Other destinations/ })).toHaveAttribute('aria-expanded', 'true');
       expect(within(otlp).getByLabelText('Send telemetry to OTLP')).toBeInTheDocument();
       expect(screen.getByTestId('telemetry-panel-summary-otlp')).toHaveTextContent('On');
       fireEvent.click(within(azure).getByRole('button', { name: /Azure Application Insights/ }));
-      expect(within(azure).getByLabelText('Send telemetry to Application Insights')).toBeInTheDocument();
+      expect(within(azure).getByLabelText('Send telemetry to Application Insights')).toBeVisible();
     });
 
     it('says when an enabled destination is not sending, and opens it', async () => {
