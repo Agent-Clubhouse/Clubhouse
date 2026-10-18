@@ -241,6 +241,24 @@ export function commandOf(tool: ToolCallItem): string {
   return tool.title;
 }
 
+/** Longest accessible name built from content (a command, a path, a prompt), ellipsis included. */
+export const ACCESSIBLE_NAME_MAX = 80;
+
+/**
+ * A short name for content that can run to kilobytes (a heredoc command, a
+ * long prompt): its first line, cut to `max` characters with an ellipsis when
+ * anything is left out. Screen readers read a button's whole name, and role
+ * queries match against it, so content never goes into one in full.
+ */
+export function shortName(text: string, max = ACCESSIBLE_NAME_MAX): string {
+  const all = text.trim();
+  const first = all.split('\n', 1)[0].trimEnd();
+  // Count and cut by code points, so an emoji or other astral character is never split in half.
+  const chars = Array.from(first);
+  if (first.length === all.length && chars.length <= max) return first;
+  return `${chars.slice(0, max - 1).join('').trimEnd()}…`;
+}
+
 // ── Diffs ───────────────────────────────────────────────────────────────────
 
 export interface DiffLine {

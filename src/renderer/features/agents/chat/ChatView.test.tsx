@@ -161,6 +161,26 @@ describe('ChatView approvals', () => {
     expect(actions.respondPermission).toHaveBeenCalledWith('perm-1', PROFILES[p].installOptions[1].optionId);
   });
 
+  it('keeps the level pill reachable while a permission waits, outside the card (live test)', () => {
+    const { actions } = renderFixture('claude', 'approval');
+    const footer = screen.getByTestId('chat-permission-level');
+    const pill = within(footer).getByTestId('chat-level-pill');
+    expect(within(screen.getByTestId('chat-permission')).queryByTestId('chat-level-pill')).toBeNull();
+    fireEvent.click(pill);
+    const looser = screen.getAllByRole('menuitemradio').find((m) => m.getAttribute('aria-checked') === 'false')!;
+    fireEvent.click(looser);
+    expect(actions.setLevel).toHaveBeenCalledTimes(1);
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+  });
+
+  it('never answers the request from keys pressed on the level pill', () => {
+    const { actions } = renderFixture('claude', 'approval');
+    const pill = within(screen.getByTestId('chat-permission-level')).getByTestId('chat-level-pill');
+    fireEvent.keyDown(pill, { key: 'Escape' });
+    fireEvent.keyDown(pill, { key: '1' });
+    expect(actions.respondPermission).not.toHaveBeenCalled();
+  });
+
   it('shows what an always-allow option covers', () => {
     renderFixture('claude', 'approval');
     expect(screen.getByTestId('chat-permission')).toHaveTextContent('Bash(npm install:*)');

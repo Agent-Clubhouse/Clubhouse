@@ -12,6 +12,7 @@ import {
   formatDuration,
   formatTokens,
   mcpTool,
+  shortName,
   terminalContent,
   toolArgs,
   toolErrorText,
@@ -258,7 +259,7 @@ export function DiffCard({ diff, line, status, awaitingApproval = false, open = 
   const shown = expanded ? lines : lines.slice(0, previewLines);
   return (
     <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-diff-card" data-open={open}>
-      <CardHeader open={open} onToggle={onToggle} label={`${open ? 'Collapse' : 'Expand'} edit of ${diff.path}`}>
+      <CardHeader open={open} onToggle={onToggle} label={`${open ? 'Collapse' : 'Expand'} edit of ${shortName(diff.path)}`}>
         <EditIcon />
         {(created || deleted) && <span className="text-ctp-subtext0">{created ? 'Created' : 'Deleted'}</span>}
         <span className="font-mono text-[11.5px] text-ctp-text truncate min-w-0" title={diff.path}>{diff.path}</span>
@@ -313,11 +314,14 @@ export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expans
   const running = useUnfinished(tool) === 'running' && !awaiting;
   const exit = term?.exitCode;
   const error = toolErrorText(tool, term?.output);
+  // The header and its accessible name carry a short form; the full command shows when the card is open.
+  const shortCommand = useMemo(() => shortName(command), [command]);
+  const cut = shortCommand !== command.trim();
   return (
     <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-command-card" data-status={tool.status} data-open={open}>
-      <CardHeader open={open} onToggle={toggle} label={`${open ? 'Collapse' : 'Expand'} command ${command}`}>
+      <CardHeader open={open} onToggle={toggle} label={`${open ? 'Collapse' : 'Expand'} command ${shortCommand}`}>
         <TerminalIcon />
-        <span className="font-mono text-[11.5px] text-ctp-text truncate min-w-0" title={command}>$ {command}</span>
+        <span className="font-mono text-[11.5px] text-ctp-text truncate min-w-0" title={command}>$ {shortCommand}</span>
         <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap">
           {running ? <><Spin /> running</>
             : awaiting ? <span className="text-ctp-warning">waiting for approval</span>
@@ -325,6 +329,11 @@ export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expans
                 : <StatusMeta tool={tool} />}
         </span>
       </CardHeader>
+      {open && cut && (
+        <pre className={`font-mono text-[11.5px] leading-[1.65] text-ctp-text px-3 py-2 whitespace-pre-wrap break-words overflow-y-auto ${OUTPUT_MAX_HEIGHT} m-0 border-b border-surface-0`} data-testid="chat-command-full">
+          $ {command.trim()}
+        </pre>
+      )}
       {open && term && term.output && (
         <pre className={`font-mono text-[11.5px] leading-[1.65] text-ctp-subtext0 px-3 py-2 bg-ctp-crust whitespace-pre-wrap break-words overflow-y-auto ${OUTPUT_MAX_HEIGHT} m-0`}>
           {term.output.replace(/\n$/, '')}

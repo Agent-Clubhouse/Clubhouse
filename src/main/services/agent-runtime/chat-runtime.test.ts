@@ -198,6 +198,83 @@ describe('ChatAgentRuntime', () => {
     expect(resolved).toHaveLength(1);
   });
 
+  it('writes one permission_resolved per answer, in the turn, when the driver echoes its own (live test)', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    const session = driver.last;
+    // Like the Claude and Codex drivers: answering also reports the resolution from the driver side.
+    const respond = session.respondPermission.bind(session);
+    session.respondPermission = async (requestId, optionId, extras) => {
+      await respond(requestId, optionId, extras);
+      session.emit({ type: 'permission_resolved', data: { requestId, optionId, decision: 'allow', by: 'user' } });
+    };
+    const answer = session.answerQuestion.bind(session);
+    session.answerQuestion = async (requestId, answers) => {
+      await answer(requestId, answers);
+      session.emit({ type: 'question_resolved', data: { requestId, answers } });
+    };
+    session.emit({ type: 'turn_started', turnId: 'turn-1', data: { trigger: 'prompt' } });
+    session.emit({ type: 'permission_request', data: { requestId: 'dc7bd13e', title: 'Run ls', options: [{ optionId: 'allow', kind: 'allow_once', label: 'Allow' }] } });
+    session.emit({ type: 'question', data: { requestId: 'q1', questions: [{ id: 'a', prompt: 'Which?', multiSelect: false, allowFreeText: true }] } });
+    await flush();
+
+    await runtime.respondPermission('dc7bd13e', 'allow');
+    await runtime.answerQuestion('q1', { a: 'x' });
+    await flush();
+
+    const resolved = transcript.filter((e) => e.type === 'permission_resolved');
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].turnId).toBe('turn-1');
+    const answered = transcript.filter((e) => e.type === 'question_resolved');
+    expect(answered).toHaveLength(1);
+    expect(answered[0].turnId).toBe('turn-1');
+  });
+
+  it('writes one permission_resolved for Codex "Deny and stop the turn", which both sides call cancelled (#2202 review)', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    const session = driver.last;
+    const respond = session.respondPermission.bind(session);
+    // Codex maps cancel_turn to decision 'cancelled' and reports its own resolution.
+    session.respondPermission = async (requestId, optionId, extras) => {
+      await respond(requestId, optionId, extras);
+      session.emit({ type: 'permission_resolved', data: { requestId, optionId, decision: 'cancelled', by: 'user' } });
+    };
+    session.emit({ type: 'turn_started', turnId: 'turn-1', data: { trigger: 'prompt' } });
+    session.emit({
+      type: 'permission_request',
+      data: { requestId: 'cx1', title: 'Run rm', options: [{ optionId: 'allow', kind: 'allow_once', label: 'Allow' }, { optionId: 'stop', kind: 'cancel_turn', label: 'Deny and stop the turn' }] },
+    });
+    await flush();
+
+    await runtime.respondPermission('cx1', 'stop');
+    await flush();
+
+    const resolved = transcript.filter((e) => e.type === 'permission_resolved');
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].type === 'permission_resolved' && resolved[0].data).toMatchObject({ requestId: 'cx1', decision: 'cancelled' });
+    expect(resolved[0].turnId).toBe('turn-1');
+
+    // The key cleared with the echo: a later driver cancellation of the same id isn't swallowed.
+    session.emit({ type: 'permission_resolved', data: { requestId: 'cx1', decision: 'cancelled', by: 'agent' } });
+    await flush();
+    expect(transcript.filter((e) => e.type === 'permission_resolved')).toHaveLength(2);
+  });
+
+  it('still records a driver\'s own cancellation of a request', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'permission_request', data: { requestId: 'p9', title: 'Run ls', options: [{ optionId: 'allow', kind: 'allow_once', label: 'Allow' }] } });
+    await flush();
+    driver.last.emit({ type: 'permission_resolved', data: { requestId: 'p9', decision: 'cancelled', by: 'agent' } });
+    await flush();
+    const resolved = transcript.filter((e) => e.type === 'permission_resolved');
+    expect(resolved.map((e) => e.type === 'permission_resolved' && e.data.decision)).toEqual(['cancelled']);
+  });
+
   it('interrupts the turn when supported, and stops when not', async () => {
     const steering = new FakeChatDriver();
     const a = makeRuntime(steering);

@@ -214,6 +214,35 @@ describe('tool calls in the transcript (#2110)', () => {
     });
   });
 
+  it('names a long command by its first line, capped, and shows it in full when open (live test)', () => {
+    const heredoc = `cat <<'EOF' > notes.md\n${'This change allows the agent to retry. '.repeat(120)}\nEOF`;
+    render(<ToolCallView tool={command({ status: 'completed', content: [{ type: 'terminal', terminalId: 'term-1', command: heredoc, output: 'ok\n' }] })} />);
+    const toggle = within(screen.getByTestId('chat-command-card')).getByRole('button', { expanded: false });
+    expect(toggle.getAttribute('aria-label')).toBe("Expand command cat <<'EOF' > notes.md…");
+    expect(screen.queryByTestId('chat-command-full')).toBeNull();
+    fireEvent.click(toggle);
+    const name = toggle.getAttribute('aria-label')!;
+    expect(name).toBe("Collapse command cat <<'EOF' > notes.md…");
+    expect(name.length).toBeLessThan(100);
+    // Text in the command no longer leaks into button lookups.
+    expect(screen.queryByRole('button', { name: /allows/ })).toBeNull();
+    expect(screen.getByTestId('chat-command-full')).toHaveTextContent('This change allows the agent to retry.');
+  });
+
+  it('shows no separate full command when the header already holds all of it', () => {
+    render(<ToolCallView tool={command({ status: 'completed', content: [{ type: 'terminal', terminalId: 'term-1', command: 'npm test', output: 'ok\n' }] })} />);
+    expect(screen.queryByTestId('chat-command-full')).toBeNull();
+  });
+
+  it('caps an edit card\'s name built from a very long path', () => {
+    const path = `src/${'deeply/nested/'.repeat(20)}file.ts`;
+    render(<ToolCallView tool={tool({ toolKind: 'edit', status: 'completed', content: [{ type: 'diff', path, oldText: 'a\n', newText: 'b\n' }] })} />);
+    const toggle = screen.getAllByRole('button').find((b) => b.getAttribute('aria-label')?.includes(' edit of '))!;
+    const name = toggle.getAttribute('aria-label')!;
+    expect(name.endsWith('…')).toBe(true);
+    expect(name.length).toBeLessThanOrEqual('Collapse edit of '.length + 80);
+  });
+
   it('labels the toggle for keyboard and screen-reader use', () => {
     render(<ToolCallView tool={command()} />);
     expect(screen.getByRole('button', { name: 'Expand command npm run typecheck' })).toHaveAttribute('aria-expanded', 'false');
