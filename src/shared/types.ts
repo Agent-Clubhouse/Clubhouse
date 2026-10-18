@@ -67,6 +67,8 @@ export interface Agent {
   branch?: string;
   exitCode?: number;
   errorMessage?: string;
+  /** Remote (satellite) durable agents: the satellite has a CLI session to resume. */
+  hasSession?: boolean;
   mission?: string;
   model?: string;
   parentAgentId?: string;

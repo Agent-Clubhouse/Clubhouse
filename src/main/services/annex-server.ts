@@ -453,6 +453,8 @@ function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[
     status,
     detailedStatus: isRunning ? getDetailedStatus(agentId) : null,
     executionMode: isRunning ? getAgentExecutionMode(agentId) : null,
+    /** There's a CLI session to resume, so a controller's default Wake can ask for one. */
+    hasSession: !!d.lastSessionId,
   };
 }
 
@@ -956,7 +958,6 @@ async function handleWakeAgent(
   body: Record<string, unknown>,
 ): Promise<void> {
   const message = body.message as string | undefined;
-  const resume = !!body.resume;
 
   const agentInfo = await findAgentAcrossProjects(agentId);
   if (!agentInfo) {
@@ -980,6 +981,9 @@ async function handleWakeAgent(
   }
 
   const { config, project } = agentInfo;
+  // Resume only an agent with a session to resume: a never-run agent would
+  // get the CLI's resume-latest form and exit at once.
+  const resume = !!body.resume && !!config.lastSessionId;
   const model = (body.model as string | undefined) || config.model;
   const cwd = config.worktreePath || project.path;
 
@@ -2431,7 +2435,7 @@ async function handleWakeAgentWs(
       agentId: config.id, projectPath: project.path, cwd,
       kind: 'durable', model: agentModel, mission: options.mission,
       orchestrator: config.orchestrator, freeAgentMode: config.freeAgentMode,
-      resume: options.resume,
+      resume: !!options.resume && !!config.lastSessionId,
       sessionId: options.resume ? config.lastSessionId : undefined,
     });
 

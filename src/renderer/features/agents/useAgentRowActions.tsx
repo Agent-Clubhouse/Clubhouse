@@ -143,12 +143,14 @@ export function useAgentRowActions(agent: Agent, { onSpawnQuickChild }: { onSpaw
   const wake = useCallback(async (mode: WakeMode) => {
     if (agent.status === 'running') return;
     if (isRemote && remoteParts) {
-      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, mode === 'resume' ? { resume: true } : undefined);
+      // Only ask to resume what the satellite says it has; older satellites
+      // don't say, so their default Wake starts fresh as it used to.
+      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, mode === 'resume' && agent.hasSession === true ? { resume: true } : undefined);
       return;
     }
     if (!activeProject) return;
     await wakeDurableAgent(activeProject.id, activeProject.path, agent.id, mode);
-  }, [activeProject, agent.status, agent.id, isRemote, remoteParts, sendAgentWake]);
+  }, [activeProject, agent.status, agent.id, agent.hasSession, isRemote, remoteParts, sendAgentWake]);
   const handleWake = useCallback(() => { void wake('resume'); }, [wake]);
   const handleWakeNewSession = useCallback(() => { void wake('new'); }, [wake]);
 
