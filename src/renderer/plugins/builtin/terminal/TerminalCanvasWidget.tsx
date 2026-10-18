@@ -11,6 +11,8 @@ import { ShellTerminal } from '../../../features/terminal/ShellTerminal';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { satellitePtyDataBus, satellitePtyExitBus } from '../../../stores/annexClientStore';
 import { WidgetPicker, PickerBack, projectRows } from '../canvas/WidgetPicker';
+import { Button } from '../../../components/Button';
+import { Tooltip } from '../../../components/Tooltip';
 
 type TerminalStatus = 'starting' | 'running' | 'exited';
 
@@ -271,59 +273,65 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
   // Step 3: Terminal view
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-1 px-2 py-1 bg-surface-0/50 border-b border-surface-0 text-xs text-ctp-subtext0 flex-shrink-0">
-        <button
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1 transition-colors"
-          onClick={handleRestart}
-          title="Restart terminal"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="23 4 23 10 17 10" />
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-          </svg>
-        </button>
-        <span className="text-ctp-overlay0 mx-0.5">|</span>
+      <div className="h-[30px] flex items-center gap-1 pl-1 pr-1 border-b border-surface-0 flex-shrink-0">
         {isAppMode && (
+          <Tooltip content="Back to projects">
+            <Button kind="quiet" aria-label="Back to projects" icon={<ChevronLeftIcon />} onClick={handleBackToProjects} />
+          </Tooltip>
+        )}
+        <Tooltip content="Change directory">
           <button
-            className="hover:text-ctp-text transition-colors mr-1"
-            onClick={handleBackToProjects}
-            title="Back to projects"
+            className="h-7 px-1.5 rounded-md text-[13px] font-medium text-ctp-text hover:bg-surface-0 truncate min-w-0"
+            onClick={handleBackToWorktrees}
           >
-            &larr;
+            {activeProject?.name || 'Terminal'}
           </button>
-        )}
-        <button
-          className="truncate font-medium text-ctp-subtext1 hover:text-ctp-text transition-colors"
-          onClick={handleBackToWorktrees}
-          title="Change directory"
-        >
-          {activeProject?.name || 'Terminal'}
-        </button>
-        {remote.isRemote && (
-          <span className="text-[8px] text-ctp-peach bg-ctp-peach/10 px-1.5 py-0.5 rounded ml-1">
-            remote
-          </span>
-        )}
+        </Tooltip>
+        {remote.isRemote && <span className="text-xs text-ctp-overlay1 flex-shrink-0">Remote</span>}
         <span className="flex-1" />
-        <span className={`text-[9px] ${
-          status === 'running' ? 'text-ctp-green' :
-          status === 'exited' ? 'text-ctp-red' :
-          'text-ctp-subtext0'
-        }`}>
-          {status === 'running' ? 'Running' :
-           status === 'exited' ? `Exited${exitCode !== null ? ` (${exitCode})` : ''}` :
-           'Starting...'}
+        <span className="flex items-center gap-1.5 px-1.5 text-xs text-ctp-overlay1 flex-shrink-0" data-testid="canvas-terminal-status">
+          <span
+            className={`w-2 h-2 rounded-full flex-shrink-0 ${
+              status === 'running' ? 'bg-ctp-success'
+                : status === 'exited' ? (exitCode ? 'bg-ctp-error' : 'border border-ctp-overlay0')
+                : 'border border-ctp-info'
+            }`}
+            aria-hidden="true"
+          />
+          {status === 'running' ? 'Running'
+            : status === 'exited' ? `Exited${exitCode !== null ? ` (${exitCode})` : ''}`
+            : 'Starting'}
         </span>
+        <Tooltip content="Restart terminal">
+          <Button kind="quiet" aria-label="Restart terminal" icon={<RestartIcon />} onClick={handleRestart} />
+        </Tooltip>
       </div>
       <div className="flex-1 min-h-0">
         {status !== 'starting' ? (
           <ShellTerminal sessionId={sessionId} focused={true} io={remoteIO} />
         ) : (
-          <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs">
-            Starting terminal...
+          <div className="flex items-center justify-center h-full text-ctp-overlay1 text-xs">
+            Starting terminal
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+function ChevronLeftIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M15 6l-6 6 6 6" />
+    </svg>
+  );
+}
+
+function RestartIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="23 4 23 10 17 10" />
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+    </svg>
   );
 }

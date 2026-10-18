@@ -112,7 +112,7 @@ describe('BrowserCanvasWidget', () => {
       const wv = getWebviewElement(container);
       addWebviewMethods(wv);
       // Don't fire dom-ready — isDomReady is false
-      fireEvent.click(screen.getByTitle('Back'));
+      fireEvent.click(screen.getByRole('button', { name: 'Back' }));
       expect(wv.goBack).not.toHaveBeenCalled();
     });
 
@@ -120,7 +120,7 @@ describe('BrowserCanvasWidget', () => {
       const { container } = render(<BrowserCanvasWidget {...defaultProps} />);
       const wv = getWebviewElement(container);
       addWebviewMethods(wv);
-      fireEvent.click(screen.getByTitle('Forward'));
+      fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
       expect(wv.goForward).not.toHaveBeenCalled();
     });
 
@@ -128,7 +128,7 @@ describe('BrowserCanvasWidget', () => {
       const { container } = render(<BrowserCanvasWidget {...defaultProps} />);
       const wv = getWebviewElement(container);
       addWebviewMethods(wv);
-      fireEvent.click(screen.getByTitle('Reload'));
+      fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
       expect(wv.reload).not.toHaveBeenCalled();
     });
 
@@ -136,7 +136,7 @@ describe('BrowserCanvasWidget', () => {
       const { container } = render(<BrowserCanvasWidget {...defaultProps} />);
       const wv = getWebviewElement(container);
       addWebviewMethods(wv);
-      fireEvent.click(screen.getByTitle('Toggle DevTools'));
+      fireEvent.click(screen.getByRole('button', { name: 'Toggle DevTools' }));
       expect(wv.openDevTools).not.toHaveBeenCalled();
     });
   });
@@ -152,25 +152,25 @@ describe('BrowserCanvasWidget', () => {
 
     it('back button calls goBack after dom-ready', () => {
       const { wv } = renderAndReady();
-      fireEvent.click(screen.getByTitle('Back'));
+      fireEvent.click(screen.getByRole('button', { name: 'Back' }));
       expect(wv.goBack).toHaveBeenCalled();
     });
 
     it('forward button calls goForward after dom-ready', () => {
       const { wv } = renderAndReady();
-      fireEvent.click(screen.getByTitle('Forward'));
+      fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
       expect(wv.goForward).toHaveBeenCalled();
     });
 
     it('reload button calls reload after dom-ready', () => {
       const { wv } = renderAndReady();
-      fireEvent.click(screen.getByTitle('Reload'));
+      fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
       expect(wv.reload).toHaveBeenCalled();
     });
 
     it('devtools button calls openDevTools after dom-ready', () => {
       const { wv } = renderAndReady();
-      fireEvent.click(screen.getByTitle('Toggle DevTools'));
+      fireEvent.click(screen.getByRole('button', { name: 'Toggle DevTools' }));
       expect(wv.openDevTools).toHaveBeenCalled();
     });
   });

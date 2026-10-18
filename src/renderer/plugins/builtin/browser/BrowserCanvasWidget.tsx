@@ -10,6 +10,8 @@ import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { EmptyState } from '../../../components/EmptyState';
+import { Button } from '../../../components/Button';
+import { Tooltip } from '../../../components/Tooltip';
 import { WidgetPicker, projectRows } from '../canvas/WidgetPicker';
 
 export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata, size: _size }: CanvasWidgetComponentProps) {
@@ -164,61 +166,30 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
   return (
     <div className="flex flex-col h-full">
       {/* Header bar */}
-      <div className="flex items-center gap-1 px-1.5 py-1 bg-surface-0/50 border-b border-surface-0 text-xs text-ctp-subtext0 flex-shrink-0">
-        {isAppMode && (
-          <button
-            className="hover:text-ctp-text transition-colors mr-1"
-            onClick={handleBackToProjects}
-            title="Back to projects"
-          >
-            &larr;
-          </button>
-        )}
-        <button
-          className="w-5 h-5 flex items-center justify-center rounded text-xs text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text"
-          onClick={handleBack}
-          title="Back"
-        >
-          &larr;
-        </button>
-        <button
-          className="w-5 h-5 flex items-center justify-center rounded text-xs text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text"
-          onClick={handleForward}
-          title="Forward"
-        >
-          &rarr;
-        </button>
-        <button
-          className="w-5 h-5 flex items-center justify-center rounded text-xs text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text"
-          onClick={handleReload}
-          title="Reload"
-        >
-          &#8635;
-        </button>
+      <div className="h-[30px] flex items-center gap-1 px-1 border-b border-surface-0 flex-shrink-0">
+        {isAppMode && <ToolbarButton label="Back to projects" d="M15 6l-6 6 6 6M21 6v12" onClick={handleBackToProjects} />}
+        <ToolbarButton label="Back" d="M19 12H5M11 6l-6 6 6 6" onClick={handleBack} />
+        <ToolbarButton label="Forward" d="M5 12h14M13 6l6 6-6 6" onClick={handleForward} />
+        <ToolbarButton label="Reload" d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10" onClick={handleReload} />
         <input
           type="text"
           value={addressBar}
           onChange={(e) => setAddressBar(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1 min-w-0 px-2 py-0.5 rounded bg-surface-0 text-[11px] text-ctp-text border border-surface-1 focus-ring"
-          placeholder="Enter URL..."
+          aria-label="Address"
+          className="flex-1 min-w-0 h-7 px-2 rounded-md bg-ctp-base text-xs text-ctp-text border border-surface-1 placeholder:text-ctp-overlay1 focus-ring"
+          placeholder="Enter a URL"
           data-testid="canvas-browser-address"
         />
-        <button
-          className="w-5 h-5 flex items-center justify-center rounded text-xs text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text"
+        <ToolbarButton
+          label="Toggle DevTools"
+          d="M16 18l6-6-6-6M8 6l-6 6 6 6"
           onClick={handleDevTools}
-          title="Toggle DevTools"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        </button>
+        />
       </div>
 
-      {/* Error banner */}
       {error && (
-        <div className="px-2 py-1.5 bg-ctp-red/10 border-b border-ctp-red/20 text-xs text-ctp-red flex-shrink-0">
+        <div className="px-3 py-1.5 border-b border-surface-0 text-xs text-ctp-error flex-shrink-0" role="alert">
           {error}
         </div>
       )}
@@ -242,5 +213,23 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
         )}
       </div>
     </div>
+  );
+}
+
+/** A 28px icon button with a tooltip and an accessible name. */
+function ToolbarButton({ label, d, onClick }: { label: string; d: string; onClick: () => void }) {
+  return (
+    <Tooltip content={label}>
+      <Button
+        kind="quiet"
+        aria-label={label}
+        onClick={onClick}
+        icon={(
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d={d} />
+          </svg>
+        )}
+      />
+    </Tooltip>
   );
 }

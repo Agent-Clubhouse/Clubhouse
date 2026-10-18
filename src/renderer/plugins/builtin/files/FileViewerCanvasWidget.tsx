@@ -3,7 +3,7 @@
 // built-in canvas FileCanvasView, but delivered through the v0.8 widget API
 // so 1p widgets go through the same registration/validation path as 3p.
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useId } from 'react';
 import type { CanvasWidgetComponentProps, PluginAPI } from '../../../../shared/plugin-types';
 import type { GitWorktreeEntry, FileNode } from '../../../../shared/types';
 import { useEditorSettingsStore } from '../../../../renderer/stores/editorSettingsStore';
@@ -13,6 +13,9 @@ import { MarkdownPreview } from './MarkdownPreview';
 import { ResizableSidebar } from '../canvas/ResizableSidebar';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { EmptyState } from '../../../components/EmptyState';
+import { Button } from '../../../components/Button';
+import { Toggle } from '../../../components/Toggle';
+import { Tooltip } from '../../../components/Tooltip';
 import { WidgetPicker, projectRows } from '../canvas/WidgetPicker';
 
 function isMarkdownFile(path: string): boolean {
@@ -45,6 +48,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   const [loadedFile, setLoadedFile] = useState<{ key: string; content: string; error?: boolean } | null>(null);
   const [showHidden, setShowHidden] = useState(() => api.settings.get<boolean>('showHiddenFiles') ?? true);
   const [readOnly, setReadOnly] = useState(true);
+  const editLabelId = useId();
   const [previewMode, setPreviewMode] = useState<'preview' | 'source'>('preview');
   const [worktrees, setWorktrees] = useState<GitWorktreeEntry[]>([]);
 
@@ -186,109 +190,74 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   return (
     <div className="flex flex-col h-full">
       {/* Header bar */}
-      <div className="flex items-center gap-1 px-2 py-1 bg-surface-0/50 border-b border-surface-0 text-xs text-ctp-subtext0 flex-shrink-0">
+      <div className="h-[30px] flex items-center gap-1 pl-1 pr-1.5 border-b border-surface-0 flex-shrink-0 min-w-0">
         {isAppMode && (
-          <button
-            className="hover:text-ctp-text transition-colors mr-1"
-            onClick={handleBackToProjects}
-            title="Back to projects"
-          >
-            &larr;
-          </button>
+          <Tooltip content="Back to projects">
+            <Button kind="quiet" aria-label="Back to projects" icon={<ToolbarIcon d="M15 6l-6 6 6 6" />} onClick={handleBackToProjects} />
+          </Tooltip>
         )}
-        <span className="truncate font-medium text-ctp-subtext1">
+        <span className={`truncate text-[13px] font-medium text-ctp-text flex-shrink-0 max-w-[40%] ${isAppMode ? '' : 'pl-1.5'}`}>
           {activeProject?.name || 'Project'}
         </span>
-        {remote.isRemote && (
-          <span className="text-[8px] text-ctp-peach bg-ctp-peach/10 px-1.5 py-0.5 rounded ml-1">
-            remote
-          </span>
-        )}
+        {remote.isRemote && <span className="text-xs text-ctp-overlay1 flex-shrink-0">Remote</span>}
         {hasMultipleWorktrees && !remote.isRemote && (
-          <>
-            <span className="text-ctp-overlay0 mx-0.5">/</span>
-            <select
-              className="text-xs bg-surface-0 text-ctp-subtext1 border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none max-w-[120px]"
-              value={rootPath}
-              onChange={(e) => handleSelectWorktree(e.target.value)}
-              title="Switch worktree root"
-            >
-              {worktrees.map((wt) => (
-                <option key={wt.path} value={wt.path}>
-                  {wt.isBare ? '/ (main)' : wt.label}
-                  {wt.branch ? ` [${wt.branch}]` : ''}
-                </option>
-              ))}
-            </select>
-          </>
+          <select
+            className="h-7 max-w-[140px] px-1.5 text-xs bg-ctp-base text-ctp-subtext1 border border-surface-1 rounded-md cursor-pointer truncate focus-ring"
+            value={rootPath}
+            onChange={(e) => handleSelectWorktree(e.target.value)}
+            aria-label="Switch worktree root"
+          >
+            {worktrees.map((wt) => (
+              <option key={wt.path} value={wt.path}>
+                {wt.isBare ? '/ (main)' : wt.label}
+                {wt.branch ? ` [${wt.branch}]` : ''}
+              </option>
+            ))}
+          </select>
         )}
         {filePath && (
-          <>
-            <span className="text-ctp-overlay0 mx-0.5">/</span>
-            <span className="truncate">{filePath}</span>
-          </>
+          <Tooltip content={filePath} onlyWhenTruncated>
+            <span className="truncate text-xs text-ctp-overlay1 min-w-0 pl-1">{filePath}</span>
+          </Tooltip>
         )}
         <span className="flex-1" />
         {fullFilePath && !remote.isRemote && (
           <>
-            <button
-              className="hover:text-ctp-text transition-colors px-1"
-              onClick={handleShowInFolder}
-              title="Reveal in Finder"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-              </svg>
-            </button>
-            <button
-              className="hover:text-ctp-text transition-colors px-1"
-              onClick={handleOpenInEditor}
-              title={`Open in ${editorName}`}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-            </button>
+            <Tooltip content="Reveal in Finder">
+              <Button kind="quiet" aria-label="Reveal in Finder" icon={<ToolbarIcon d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />} onClick={handleShowInFolder} />
+            </Tooltip>
+            <Tooltip content={`Open in ${editorName}`}>
+              <Button kind="quiet" aria-label={`Open in ${editorName}`} icon={<ToolbarIcon d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />} onClick={handleOpenInEditor} />
+            </Tooltip>
           </>
         )}
         {filePath && isMarkdownFile(filePath) && fileContent !== null && (
-          <div className="flex items-center bg-surface-0 rounded text-xs ml-2">
-            <button
-              className={`px-2 py-0.5 rounded cursor-pointer ${previewMode === 'preview' ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0'}`}
-              onClick={() => setPreviewMode('preview')}
-            >
-              Preview
-            </button>
-            <button
-              className={`px-2 py-0.5 rounded cursor-pointer ${previewMode === 'source' ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0'}`}
-              onClick={() => setPreviewMode('source')}
-            >
-              Source
-            </button>
-          </div>
-        )}
-        <label
-          className="flex items-center gap-1 cursor-pointer select-none ml-2"
-          title={remote.isRemote ? 'Read-only (remote)' : readOnly ? 'Read-only mode' : 'Edit mode'}
-        >
-          <input
-            type="checkbox"
-            checked={remote.isRemote || readOnly}
-            onChange={(e) => { if (!remote.isRemote) setReadOnly(e.target.checked); }}
-            className="accent-ctp-accent w-3 h-3"
-            disabled={remote.isRemote}
-          />
-          <span className={remote.isRemote ? 'text-ctp-overlay0' : readOnly ? 'text-ctp-subtext0' : 'text-ctp-peach'}>
-            {remote.isRemote ? 'Read-only' : readOnly ? 'Read-only' : 'Editing'}
+          <span className="flex items-center gap-0.5 flex-shrink-0" role="group" aria-label="Markdown view">
+            {(['preview', 'source'] as const).map((mode) => (
+              <button
+                key={mode}
+                className={`h-7 px-2 rounded-md text-xs ${previewMode === mode ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0'}`}
+                aria-pressed={previewMode === mode}
+                onClick={() => setPreviewMode(mode)}
+              >
+                {mode === 'preview' ? 'Preview' : 'Source'}
+              </button>
+            ))}
           </span>
-        </label>
+        )}
+        {remote.isRemote ? (
+          <span className="text-xs text-ctp-overlay1 flex-shrink-0 pl-1.5">Read-only</span>
+        ) : (
+          <span className="flex items-center gap-2 flex-shrink-0 pl-1.5">
+            <span id={editLabelId} className="text-xs text-ctp-subtext1">Edit</span>
+            <Toggle checked={!readOnly} onChange={() => setReadOnly((v) => !v)} aria-labelledby={editLabelId} />
+          </span>
+        )}
       </div>
 
       {/* Split panel: tree + content */}
       <div className="flex flex-1 min-h-0">
-        <ResizableSidebar defaultWidth={180} minWidth={120} maxWidth={400} className="overflow-hidden flex flex-col bg-ctp-mantle/30">
+        <ResizableSidebar defaultWidth={180} minWidth={120} maxWidth={400} className="overflow-hidden flex flex-col border-r border-surface-0">
           <CanvasFileTree
             api={api}
             projectPath={rootPath}
@@ -324,5 +293,14 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
         </div>
       </div>
     </div>
+  );
+}
+
+/** A 14px stroke icon for the header buttons. */
+function ToolbarIcon({ d }: { d: string }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={d} />
+    </svg>
   );
 }
