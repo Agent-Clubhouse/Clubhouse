@@ -219,6 +219,12 @@ describe('control protocol mapping', () => {
     expect(body).toMatchObject({ kind: 'initialized', commands: [{ name: 'compact' }], models: [{ value: 'opus', displayName: 'Opus' }] });
   });
 
+  it('keeps the builtin marker on Claude Code\'s own commands (#2135)', () => {
+    const body = initializedFromWire({ commands: [{ name: 'compact', builtin: true }, { name: 'code-review' }] });
+    expect(body).toMatchObject({ commands: [{ name: 'compact', builtin: true }, { name: 'code-review' }] });
+    expect((body as { commands: Array<{ builtin?: boolean }> }).commands[1]).not.toHaveProperty('builtin');
+  });
+
   it('echoes the original input on allow and keeps deny messages', () => {
     expect(toWirePermissionResult({ behavior: 'allow' }, { a: 1 }, 't1')).toEqual({ behavior: 'allow', updatedInput: { a: 1 }, toolUseID: 't1' });
     expect(toWirePermissionResult({ behavior: 'deny', message: 'no', interrupt: true }, {})).toEqual({ behavior: 'deny', message: 'no', interrupt: true });

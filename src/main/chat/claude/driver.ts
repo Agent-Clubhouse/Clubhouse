@@ -670,7 +670,15 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         if (ev.commands.length) {
           this.push({
             type: 'commands_available',
-            data: { commands: ev.commands.map((c) => ({ name: c.name, description: c.description, inputHint: c.argumentHint || undefined })) },
+            data: {
+              commands: ev.commands.map((c) => ({
+                name: c.name,
+                description: c.description,
+                inputHint: c.argumentHint || undefined,
+                // Claude Code's own commands run only at the start of a message; skills and custom commands the model can use anywhere.
+                ...(c.builtin && { startOnly: true }),
+              })),
+            },
           });
         }
         this.modelRows = ev.models.filter((m) => m.value);

@@ -64,8 +64,10 @@ export const CODEX_SLASH_COMMANDS: readonly AvailableCommand[] = Object.freeze([
     name: 'review',
     description: 'Review your changes: uncommitted by default, or against a branch or commit',
     inputHint: '[branch <name> | commit <sha> | instructions]',
+    // send() handles these only when the message is the command (parseCodexSlashCommand).
+    startOnly: true,
   },
-  { name: 'compact', description: 'Summarize the conversation to free up context' },
+  { name: 'compact', description: 'Summarize the conversation to free up context', startOnly: true },
 ]);
 
 export type CodexSlashCommand =

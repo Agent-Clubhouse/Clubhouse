@@ -231,6 +231,13 @@ export interface AvailableCommand {
   name: string;
   description?: string;
   inputHint?: string;
+  /**
+   * Runs only when the message starts with it: the CLI's own commands
+   * (`/compact`, `/effort`, …). Mid-message the text goes to the model as is,
+   * so the composer doesn't offer these there (#2135). Absent when the
+   * provider doesn't say (skills and custom commands can work anywhere).
+   */
+  startOnly?: boolean;
 }
 
 // ── Event payloads ──────────────────────────────────────────────────────────
