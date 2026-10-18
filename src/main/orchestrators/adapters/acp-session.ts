@@ -69,6 +69,13 @@ export class AcpResumeStalledError extends Error {
   }
 }
 
+/** One entry of an agent's task list. */
+export interface AcpTask {
+  id: string;
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
 /** How an agent's native modes and options map onto Clubhouse's permission ladder. */
 export interface AcpPermissionLevels {
   /** Levels `apply` can switch to inside a live session. */
@@ -105,6 +112,21 @@ export interface AcpAgentProfile {
    * load that may hang (#2155). `undefined` means "can't tell": try the load.
    */
   nativeSessionExists?(sessionId: string, env: Record<string, string | undefined>): Promise<boolean | undefined>;
+  /**
+   * The agent's plan file for this session among a tool call's paths, if any.
+   * Writes to it are shown as a Plan card, not a workspace edit (#2176).
+   */
+  planFilePath?(paths: readonly string[], ctx: { sessionId: string | null; env: Record<string, string | undefined> }): string | undefined;
+  /**
+   * The task list after a completed tool call, when that call changed it
+   * (Copilot keeps todos in a SQL table, #2176). `undefined`: no change.
+   */
+  tasksAfterToolCall?(rawInput: unknown, current: readonly AcpTask[]): AcpTask[] | undefined;
+  /**
+   * What `usage_update.size` measures. ACP says the total window; Copilot
+   * sends its input budget (#2178). Default 'total'.
+   */
+  contextWindow?: 'input' | 'total';
   /** A cost hint for a model option, from the agent's private `_meta`. */
   modelCostHint?(meta: Meta | undefined): string | undefined;
 }

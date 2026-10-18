@@ -269,7 +269,7 @@ export class AcpChatDriver implements ChatDriver {
         this.log('warn', 'Permission level not available over ACP; keeping the agent default', { level: opts.level });
       }
 
-      mapper = new AcpChatEventMapper(this.id, { profile: session.agentProfile, effortPinned: !!opts.effort });
+      mapper = new AcpChatEventMapper(this.id, { profile: session.agentProfile, effortPinned: !!opts.effort, env: { ...process.env, ...opts.env } });
       const state = session.getState();
       queue.push(mapper.initialInfo(state, session.initializeResponse?.agentInfo?.version));
       // Session-scoped state that arrived during setup. Replayed copies count:

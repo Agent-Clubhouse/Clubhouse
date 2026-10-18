@@ -176,7 +176,7 @@ export interface ChatUsage {
   session: UsageSnapshot | null;
   /** Plan / rate-limit windows; account-wide, so kept across sessions. */
   limits: UsageLimit[];
-  context: { used: number; size: number } | null;
+  context: { used: number; size: number; window?: 'input' | 'total' } | null;
   /** Every completed turn's tokens summed, for drivers that send no session total (ACP). */
   turnTotal: TokenUsage | null;
 }

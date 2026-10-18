@@ -336,14 +336,17 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         <DetailsCard
           id="context"
           title="Context window"
-          summary={`${ctxPct}% of ${formatTokens(ctx.size)}`}
+          summary={`${ctxPct}% of ${formatTokens(ctx.size)}${ctx.window === 'input' ? ' input' : ''}`}
           right={<UsageBar pct={ctxPct} className="w-14 h-[5px]" />}
           open={open('context')}
           onToggle={() => toggleCard('context')}
         >
           <div className="pr-3.5 pl-[33px] pt-1 pb-1.5 flex flex-col gap-2 text-xs">
             <UsageBar pct={ctxPct} />
-            <span className="text-ctp-text">{formatTokens(ctx.used)} of {formatTokens(ctx.size)} tokens</span>
+            <span className="text-ctp-text">{formatTokens(ctx.used)} of {formatTokens(ctx.size)} {ctx.window === 'input' ? 'input ' : ''}tokens</span>
+            {ctx.window === 'input' && (
+              <span className="text-ctp-overlay1">{provider} reports the room left for input after its output reserve, so its own total can be larger.</span>
+            )}
             <span className="text-ctp-overlay1">{provider} compacts the conversation on its own near the limit.</span>
           </div>
         </DetailsCard>
