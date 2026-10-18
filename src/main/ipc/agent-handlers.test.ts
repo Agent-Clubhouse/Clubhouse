@@ -33,6 +33,8 @@ vi.mock('../services/agent-config', () => ({
   deleteSaveAsPatch: vi.fn(() => ({ ok: true, filePath: '/tmp/agent.patch' })),
   deleteForce: vi.fn(() => ({ ok: true })),
   deleteUnregister: vi.fn(() => ({ ok: true })),
+  getDisposeChecks: vi.fn(async () => ({ dirty: 0, unpushed: 0, unmerged: 0 })),
+  disposeHelper: vi.fn(async () => ({ ok: true, message: 'Disposed' })),
 }));
 
 vi.mock('../services/agent-creation', () => ({
@@ -321,6 +323,50 @@ describe('agent-handlers', () => {
     const handler = handlers.get(IPC.AGENT.UPDATE_DURABLE_CONFIG)!;
     await handler({}, '/project', 'agent-1', { model: 'opus' });
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { model: 'opus' });
+  });
+
+  describe('disposing helpers from the UI (#2232)', () => {
+    const helper = { id: 'h1', name: 'impl-ipc', parentAgentId: 'agent-1' };
+
+    it('returns the dispose checks', async () => {
+      const result = await handlers.get(IPC.AGENT.GET_DISPOSE_CHECKS)!({}, '/project', 'h1');
+      expect(agentConfig.getDisposeChecks).toHaveBeenCalledWith('/project', 'h1');
+      expect(result).toEqual({ dirty: 0, unpushed: 0, unmerged: 0 });
+    });
+
+    it('disposes a helper and refreshes Annex', async () => {
+      vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(helper as never);
+      const result = await handlers.get(IPC.AGENT.DISPOSE_HELPER)!({}, '/project', 'h1');
+      expect(agentConfig.disposeHelper).toHaveBeenCalledWith('/project', 'h1', { force: undefined, expectedParentId: 'agent-1' });
+      expect(result.ok).toBe(true);
+      expect(broadcastSnapshotRefresh).toHaveBeenCalled();
+    });
+
+    it('passes force through, for work at risk only', async () => {
+      vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(helper as never);
+      await handlers.get(IPC.AGENT.DISPOSE_HELPER)!({}, '/project', 'h1', true);
+      expect(agentConfig.disposeHelper).toHaveBeenCalledWith('/project', 'h1', { force: true, expectedParentId: 'agent-1' });
+    });
+
+    it('refuses an agent that isn\'t a helper', async () => {
+      vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ id: 'a1', name: 'lead' } as never);
+      const result = await handlers.get(IPC.AGENT.DISPOSE_HELPER)!({}, '/project', 'a1');
+      expect(result).toEqual({ ok: false, message: 'lead isn\'t a helper' });
+      expect(agentConfig.disposeHelper).not.toHaveBeenCalled();
+    });
+
+    it('removes a disposed row and refuses a live one', async () => {
+      vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ ...helper, disposedAt: '2026-10-18T10:00:00Z' } as never);
+      const removed = await handlers.get(IPC.AGENT.REMOVE_DISPOSED)!({}, '/project', 'h1');
+      expect(agentConfig.deleteUnregister).toHaveBeenCalledWith('/project', 'h1');
+      expect(removed.ok).toBe(true);
+
+      vi.mocked(agentConfig.deleteUnregister).mockClear();
+      vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce(helper as never);
+      const refused = await handlers.get(IPC.AGENT.REMOVE_DISPOSED)!({}, '/project', 'h1');
+      expect(refused).toEqual({ ok: false, message: 'impl-ipc isn\'t disposed' });
+      expect(agentConfig.deleteUnregister).not.toHaveBeenCalled();
+    });
   });
 
   describe('orchestration policy (#2228)', () => {

@@ -360,8 +360,8 @@ export interface HelperHandoff {
 
 /**
  * A dispose_helper call the user has to decide (#2229): the orchestrator's
- * control level is "ask-everything". Sent main → renderer, which opens the
- * helper's delete dialog. TODO(#2232): a dedicated dispose confirmation.
+ * control level is "ask-everything". Sent main → renderer, which lists it
+ * under Needs you; selecting it opens the dispose confirmation (#2232).
  */
 export interface HelperDisposeRequest {
   projectPath: string;
@@ -815,7 +815,7 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback';
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback' | 'helpers';
 
 // --- Chat idle settings ---
 

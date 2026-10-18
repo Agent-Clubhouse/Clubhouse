@@ -36,6 +36,7 @@ import {
   type SaveHandle,
 } from './agentSettingsPages';
 import { Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
+import { AgentHelpersSettings } from './helpers/AgentHelpersSettings';
 
 interface Props {
   agent: Agent;
@@ -1427,6 +1428,9 @@ export function AgentSettingsView({ agent }: Props) {
     </>
   );
 
+  // Orchestration (#2232): saved by its own controls, like the Orchestrate card.
+  const helpersSettings = <AgentHelpersSettings agent={agent} projectPath={projectPath} />;
+
   const managedNote = (
     <p data-testid="agent-settings-managed" className="mt-3 text-[13px] text-ctp-subtext1">
       Clubhouse Mode manages this from project defaults.{' '}
@@ -1448,6 +1452,7 @@ export function AgentSettingsView({ agent }: Props) {
       definitions: undefined,
       mcp: undefined,
       permissions: <span className="font-mono">{permissionsPathLabel}</span>,
+      helpers: `How ${agent.name} starts, runs and disposes of helper agents. The same switches are in its Orchestrate card beside the chat.`,
       quick: `Defaults for quick agents ${agent.name} starts`,
     };
     const content: Record<AgentSettingsPage, React.ReactNode> = {
@@ -1457,12 +1462,14 @@ export function AgentSettingsView({ agent }: Props) {
       definitions: definitionsSection,
       mcp: mcpSections,
       permissions: permissionsEditor,
+      helpers: helpersSettings,
       quick: quickDefaults,
     };
     // Every page stays mounted and only the selected one shows, so edits held
     // inside a page (an open skill editor, .mcp.json) survive a page switch.
     body = AGENT_SETTINGS_PAGES.map(({ page: p, label }) => {
-      const managed = isManagedByClubhouse && p !== 'general' && p !== 'quick';
+      // Clubhouse Mode manages files in the worktree; the orchestration policy isn't one.
+      const managed = isManagedByClubhouse && p !== 'general' && p !== 'quick' && p !== 'helpers';
       return (
         <div key={p} data-testid={`agent-settings-page-${p}`} hidden={p !== page}>
           <PageTitle title={label} sub={sub[p]} right={p === page ? reloadButton : undefined} />
@@ -1485,6 +1492,7 @@ export function AgentSettingsView({ agent }: Props) {
             {permissionsEditor}
           </>
         )}
+        {helpersSettings}
         <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
         {quickDefaults}
       </>

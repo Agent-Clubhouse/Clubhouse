@@ -61,6 +61,9 @@ export const IPC = {
     RESOLVE_HELPERS_FOR_DELETE: 'agent:resolve-helpers-for-delete',
     /** Main → renderer (#2229): a helper dispose the user has to decide (control "ask-everything"). */
     HELPER_DISPOSE_REQUEST: 'agent:helper-dispose-request',
+    GET_DISPOSE_CHECKS: 'agent:get-dispose-checks',
+    DISPOSE_HELPER: 'agent:dispose-helper',
+    REMOVE_DISPOSED: 'agent:remove-disposed',
     GET_ORCHESTRATION_POLICY: 'agent:get-orchestration-policy',
     SET_ORCHESTRATION_POLICY: 'agent:set-orchestration-policy',
     TURN_OFF_ORCHESTRATION: 'agent:turn-off-orchestration',

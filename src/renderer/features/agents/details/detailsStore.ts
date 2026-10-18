@@ -30,7 +30,7 @@ function writeOpen(open: boolean): void {
 /** A request to open one card from elsewhere, e.g. "Open in details" on a subagent card. */
 export interface DetailsFocus {
   agentId: string;
-  card: 'changes' | 'subagents';
+  card: 'changes' | 'subagents' | 'orchestrate' | 'helpers' | 'connections';
   /** The subagent to expand, for the Subagents card. */
   subagentId?: string;
   nonce: number;

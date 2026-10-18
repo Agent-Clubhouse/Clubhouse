@@ -341,9 +341,8 @@ function initCreationEventListener(): () => void {
  * An orchestrator asked to dispose a helper while its control level is
  * "ask-everything" (#2229). The helper shows under Needs you with the check
  * facts, and a desktop notification on the helper selects it when clicked.
- * Nothing is disposed or deleted from here; the delete dialog is not opened,
- * since it doesn't run the helper dispose checks.
- * TODO(#2232): a real dispose confirmation the user can accept or decline.
+ * Nothing is disposed or deleted from here. Selecting the Needs you entry
+ * opens the dispose confirmation (#2232), which runs the checks again.
  */
 export function handleHelperDisposeRequest(request: HelperDisposeRequest): void {
   const state = useAgentStore.getState();

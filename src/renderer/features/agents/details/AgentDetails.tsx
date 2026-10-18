@@ -4,11 +4,14 @@
  * replaces the old Agents and Changes side panels. There is no pane to pin or
  * resize; the chat column moves left so no card covers a message.
  *
- * Six cards, each collapsed to a one-line answer until clicked: Changes,
- * Subagents, Canvases, Context window, MCP servers and Session. Cards the
- * runtime can't fill are left out (#2094): Subagents when the agent doesn't
- * report them (the terminal, or a driver without subagents) and Context window
- * until the agent reports how full it is.
+ * The cards, each collapsed to a one-line answer until clicked: Changes,
+ * Subagents, Canvases, Orchestrate, Helpers, Connections, Context window, MCP
+ * servers and Session. Cards the runtime can't fill are left out (#2094):
+ * Subagents when the agent doesn't report them (the terminal, or a driver
+ * without subagents) and Context window until the agent reports how full it
+ * is. The orchestration cards (#2232) are for local durable agents:
+ * Orchestrate for any that isn't itself a helper, Helpers once it
+ * orchestrates or has helpers, Connections once it orchestrates or has wires.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,8 +33,14 @@ import { CardNote, CardRow, DetailsCard, UsageBar } from './DetailsCard';
 import { AutoSleepRow } from './AutoSleepRow';
 import { McpCard } from './McpCard';
 import { useAgentDetailsStore } from './detailsStore';
+import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { OrchestrateCard } from '../helpers/OrchestrateCard';
+import { HelpersCard } from '../helpers/HelpersCard';
+import { ConnectionsCard } from '../helpers/ConnectionsCard';
+import { splitHelpers } from '../helpers/helper-model';
+import { useOrchestration, useProjectAgentConfigs } from '../helpers/orchestration-hooks';
 
-export type CardId = 'changes' | 'subagents' | 'canvases' | 'context' | 'mcp' | 'session';
+export type CardId = 'changes' | 'subagents' | 'canvases' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'session';
 
 /** A worktree inside the project, as a path relative to it; null when it lives elsewhere. */
 export function relativeFolder(worktree: string | undefined, projectPath: string | undefined): string | null {
@@ -193,6 +202,20 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   );
   const canvases = useAgentCanvases(agent);
   const running = agent.status === 'running';
+
+  // Orchestration (#2232): local durable agents only; a satellite keeps its own config.
+  const orchestrationPath = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) ? projectPath : undefined;
+  const orch = useOrchestration(orchestrationPath, agent);
+  const { configs, reload: reloadConfigs } = useProjectAgentConfigs(orchestrationPath, agent.projectId);
+  const ownConfig = configs?.find((c) => c.id === agent.id);
+  const isHelper = !!ownConfig?.parentAgentId;
+  const helpers = useMemo(() => (configs ? splitHelpers(configs, agent.id) : { live: [], disposed: [] }), [configs, agent.id]);
+  const helperIds = useMemo(() => new Set(helpers.live.map((h) => h.id)), [helpers.live]);
+  const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === agent.id || (b.targetKind === 'agent' && b.targetId === agent.id)));
+  const orchestrating = !!orch.policy?.orchestrate;
+  const showOrchestrate = !!orchestrationPath && !!orch.policy && !!ownConfig && !isHelper;
+  const showHelpers = !!orchestrationPath && (orchestrating || helpers.live.length > 0 || helpers.disposed.length > 0);
+  const showConnections = !!orchestrationPath && (orchestrating || hasWires);
   const now = useNow(running && !!spawnedAt);
 
   const open = (id: CardId) => openCards.has(id);
@@ -302,6 +325,33 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           </ul>
         )}
       </DetailsCard>
+
+      {showOrchestrate && orchestrationPath && (
+        <OrchestrateCard agent={agent} projectPath={orchestrationPath} orch={orch} open={open('orchestrate')} onToggle={() => toggleCard('orchestrate')} />
+      )}
+
+      {showHelpers && orchestrationPath && configs && (
+        <HelpersCard
+          agent={agent}
+          projectPath={orchestrationPath}
+          configs={configs}
+          maxHelpers={orch.policy?.maxHelpers}
+          orchestrating={orchestrating}
+          open={open('helpers')}
+          onToggle={() => toggleCard('helpers')}
+          onRemoved={reloadConfigs}
+        />
+      )}
+
+      {showConnections && (
+        <ConnectionsCard
+          agent={agent}
+          helperIds={helperIds}
+          parentId={ownConfig?.parentAgentId}
+          open={open('connections')}
+          onToggle={() => toggleCard('connections')}
+        />
+      )}
 
       {ctx && ctxPct !== null && (
         <DetailsCard

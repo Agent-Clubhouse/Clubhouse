@@ -16,6 +16,7 @@ export type AgentSettingsPage =
   | 'definitions'
   | 'mcp'
   | 'permissions'
+  | 'helpers'
   | 'quick';
 
 export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; label: string }> = [
@@ -25,6 +26,7 @@ export const AGENT_SETTINGS_PAGES: ReadonlyArray<{ page: AgentSettingsPage; labe
   { page: 'definitions', label: 'Agent definitions' },
   { page: 'mcp', label: 'MCP servers' },
   { page: 'permissions', label: 'Permissions' },
+  { page: 'helpers', label: 'Helpers' },
   { page: 'quick', label: 'Quick agents' },
 ];
 

@@ -24,6 +24,7 @@ import type { DeleteResult } from '../../shared/types';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { orchestratorAttr } from '../telemetry/spawn-telemetry';
 import { assertAgentGitName } from '../../shared/agent-name';
+import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableWorktreeOptions, StartDurableCreationParams } from '../../shared/types';
 import { cancelDurableCreation, onDurableCreationEvent, startDurableCreation } from '../services/agent-creation';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -415,6 +416,38 @@ export function registerAgentHandlers(): void {
       }
       const result = await agentConfig.resolveHelpersForDelete(projectPath, agentId, choice, { dryRun });
       if (!dryRun && result.ok && (result.helperIds?.length ?? 0) > 0) broadcastSnapshotRefresh();
+      return result;
+    },
+  ));
+
+  // --- Disposing helpers from the UI (#2232) ---
+
+  ipcMain.handle(IPC.AGENT.GET_DISPOSE_CHECKS, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath, agentId) => agentConfig.getDisposeChecks(projectPath, agentId),
+  ));
+
+  ipcMain.handle(IPC.AGENT.DISPOSE_HELPER, withValidatedArgs(
+    [stringArg(), stringArg(), booleanArg({ optional: true })],
+    async (_event, projectPath, agentId, force) => {
+      const config = await agentConfig.getDurableConfig(projectPath, agentId);
+      if (!config) return { ok: false, message: 'Agent not found' };
+      if (!config.parentAgentId) return { ok: false, message: `${config.name} isn't a helper` };
+      // `force` overrides work at risk only; disposeHelper refuses a check that couldn't run.
+      const result = await agentConfig.disposeHelper(projectPath, agentId, { force, expectedParentId: config.parentAgentId });
+      if (result.ok) broadcastSnapshotRefresh();
+      return result;
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.REMOVE_DISPOSED, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath, agentId) => {
+      const config = await agentConfig.getDurableConfig(projectPath, agentId);
+      if (!config) return { ok: true, message: 'Already removed' };
+      if (!isDisposedAgent(config)) return { ok: false, message: `${config.name} isn't disposed` };
+      const result = await agentConfig.deleteUnregister(projectPath, agentId);
+      if (result.ok) broadcastSnapshotRefresh();
       return result;
     },
   ));

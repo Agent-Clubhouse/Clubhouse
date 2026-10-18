@@ -13,7 +13,7 @@ describe('AgentSettingsNav', () => {
     render(<AgentSettingsNav />);
     const labels = screen.getAllByRole('button').map((b) => b.textContent);
     expect(labels).toEqual([
-      'General', 'Instructions', 'Skills', 'Agent definitions', 'MCP servers', 'Permissions', 'Quick agents', 'Shell in worktree',
+      'General', 'Instructions', 'Skills', 'Agent definitions', 'MCP servers', 'Permissions', 'Helpers', 'Quick agents', 'Shell in worktree',
     ]);
     expect(screen.getByTestId('agent-settings-nav-general').getAttribute('aria-current')).toBe('page');
   });

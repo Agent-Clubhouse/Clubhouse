@@ -28,6 +28,7 @@ import { Composer, LevelPill, QueueList, TaskList, type ComposerLayout } from '.
 import { useNarrow, useShortWindow } from '../pane/useNarrow';
 import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions } from './useChatSession';
 import { buildAgentMap, commandForRequest, diffsForRequest, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
+import { HelperHeader } from '../helpers/HelperHeader';
 
 /** Where a ChatView is shown; several can show the same agent at once. */
 export type ChatViewContext = 'main' | 'popout' | 'canvas' | 'plugin';
@@ -283,6 +284,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
         </>}
         review={detailsAvailable ? review.view : undefined}
       />
+      {context === 'main' && <HelperHeader agent={agent} />}
       {reviewing && (permission || question) && (
         // The approval card lives in the chat dock; while reviewing, say it's waiting and offer the way back.
         <div className="h-9 flex-shrink-0 flex items-center gap-2 px-3.5 border-b border-surface-0 text-xs" role="status" data-testid="review-needs-you">

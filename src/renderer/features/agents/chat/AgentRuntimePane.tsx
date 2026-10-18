@@ -21,6 +21,7 @@ import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
 import { TerminalPaneToolbar } from '../pane/AgentPaneToolbar';
 import { AgentDetails } from '../details/AgentDetails';
+import { HelperHeader } from '../helpers/HelperHeader';
 import { DetailsToggle } from '../details/DetailsToggle';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { useNarrow } from '../pane/useNarrow';
@@ -310,6 +311,7 @@ function MainTerminal({ agent, terminal, runtime }: { agent: Agent; terminal: Re
           showName={!isNewChromeEnabled()}
         />
       </div>
+      <HelperHeader agent={agent} />
       {review.active && review.cwd && (
         <ChangesReview agentName={agent.name} cwd={review.cwd} branch={review.branch} onChanged={review.reload} />
       )}

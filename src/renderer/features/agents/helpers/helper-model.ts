@@ -1,0 +1,176 @@
+/**
+ * Words and pure helpers for the orchestration UI (#2232): the Orchestrate,
+ * Helpers and Connections cards, the turn-off and dispose dialogs, and the
+ * Helpers settings pages. Shared so every surface says the same thing.
+ */
+
+import type { Agent, DurableAgentConfig, HelperDisposeChecks } from '../../../../shared/types';
+import type { AgentAccessLevel, OrchestrationAccess, OrchestrationControl } from '../../../../shared/orchestration-policy';
+import { ACCESS_LEVELS } from '../../../../shared/orchestration-policy';
+import { isDisposedAgent } from '../../../../shared/agent-helpers';
+import { PERMISSION_LEVEL_LABELS } from '../../../../shared/chat/capabilities';
+import type { AgentDot } from '../agent-status';
+
+/** Access levels in the words the chat level menu uses. */
+export const ACCESS_LEVEL_LABELS: Readonly<Record<AgentAccessLevel, string>> = {
+  standard: PERMISSION_LEVEL_LABELS.ask,
+  auto: PERMISSION_LEVEL_LABELS.auto,
+  bypass: PERMISSION_LEVEL_LABELS.full_access,
+};
+
+export function accessLabel(access: OrchestrationAccess, orchestratorName: string): string {
+  return access === 'same' ? `Same as ${orchestratorName}` : ACCESS_LEVEL_LABELS[access];
+}
+
+export const CONTROL_LABELS: Readonly<Record<OrchestrationControl, string>> = {
+  'hands-off': 'Hands-off',
+  'ask-before-start': 'Ask before starting',
+  'ask-everything': 'Ask for everything',
+};
+
+export function controlHelp(control: OrchestrationControl, orchestratorName: string): string {
+  switch (control) {
+    case 'hands-off':
+      return `Helpers start and are disposed without asking you. ${orchestratorName} can still ask when it judges it should.`;
+    case 'ask-before-start':
+      return 'New helpers wait for your approval in Needs you.';
+    case 'ask-everything':
+      return 'Starting a helper and every dispose come to you.';
+  }
+}
+
+/** Whether `level` is above `ceiling`. */
+export function aboveCeiling(level: AgentAccessLevel, ceiling: AgentAccessLevel): boolean {
+  return ACCESS_LEVELS.indexOf(level) > ACCESS_LEVELS.indexOf(ceiling);
+}
+
+export function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+// ── Helper state ────────────────────────────────────────────────────────
+
+export type HelperState = 'starting' | 'failed' | 'awaiting-approval' | 'running' | 'sleeping' | 'handed-off';
+
+export const HELPER_STATE_LABEL: Readonly<Record<HelperState, string>> = {
+  starting: 'Starting',
+  failed: 'Couldn’t start',
+  'awaiting-approval': 'Waiting for approval',
+  running: 'Running',
+  sleeping: 'Sleeping',
+  'handed-off': 'Handed off',
+};
+
+/**
+ * A helper's state from its config and, when the rail has it, its live agent.
+ * An unfinished creation wins; then a held start (#2250's `needs_approval`),
+ * a hand-off (#2229), then running or asleep.
+ */
+export function helperState(config: DurableAgentConfig, agent?: Pick<Agent, 'status'>): HelperState {
+  const creation = config.creation?.state as string | undefined;
+  // TODO(#2250): `needs_approval` is a creation state once start approvals land.
+  if (creation === 'needs_approval') return 'awaiting-approval';
+  if (creation === 'creating' || agent?.status === 'creating') return 'starting';
+  if (creation === 'failed') return 'failed';
+  if (config.handoff) return 'handed-off';
+  const status = agent?.status;
+  if (status === 'running' || status === 'spawning' || status === 'waking') return 'running';
+  return 'sleeping';
+}
+
+/** The status dot for a helper row: the live dot while it runs, else one for its state. */
+export function helperDot(state: HelperState, liveDot: AgentDot | undefined): AgentDot {
+  switch (state) {
+    case 'starting':
+    case 'awaiting-approval':
+      return 'starting';
+    case 'failed':
+      return 'error';
+    case 'handed-off':
+      return 'idle';
+    case 'running':
+      return liveDot ?? 'idle';
+    case 'sleeping':
+      return 'sleeping';
+  }
+}
+
+/** Direct live helpers and disposed helpers of an agent, in sidebar order. */
+export function splitHelpers(configs: readonly DurableAgentConfig[], parentId: string): { live: DurableAgentConfig[]; disposed: DurableAgentConfig[] } {
+  const mine = configs.filter((c) => c.parentAgentId === parentId);
+  return {
+    live: mine.filter((c) => !isDisposedAgent(c)),
+    disposed: mine.filter((c) => isDisposedAgent(c)),
+  };
+}
+
+/**
+ * Disposed helpers nobody can reach from a Helpers card: their orchestrator is
+ * gone, or they were released before being disposed.
+ */
+export function orphanedDisposed(configs: readonly DurableAgentConfig[]): DurableAgentConfig[] {
+  const ids = new Set(configs.map((c) => c.id));
+  return configs.filter((c) => isDisposedAgent(c) && (!c.parentAgentId || !ids.has(c.parentAgentId)));
+}
+
+// ── Dispose checks ──────────────────────────────────────────────────────
+
+/** Past this an exact count says nothing more (a branch with its whole history unpushed). */
+const MAX_LISTED_COMMITS = 99;
+
+function commits(n: number, what: string): string {
+  return n > MAX_LISTED_COMMITS ? `More than ${MAX_LISTED_COMMITS} commits ${what}` : `${plural(n, 'commit', 'commits')} ${what}`;
+}
+
+/** Work disposing would lose. A check that couldn't run is not "at risk": it can never be forced. */
+export function hasWorkAtRisk(checks: HelperDisposeChecks): boolean {
+  return checks.dirty > 0 || checks.unpushed > 0;
+}
+
+/** True when disposing is blocked for good until the check can run. */
+export function checksFailed(checks: HelperDisposeChecks): boolean {
+  return !!checks.error;
+}
+
+/** A short line for a helper row: what its folder holds that isn't saved. */
+export function workSummary(checks: HelperDisposeChecks | undefined): string | null {
+  if (!checks) return null;
+  if (checks.error) return 'couldn’t check';
+  const parts: string[] = [];
+  if (checks.dirty > 0) parts.push(`${checks.dirty} uncommitted`);
+  if (checks.unpushed > 0) parts.push(`${checks.unpushed > MAX_LISTED_COMMITS ? `${MAX_LISTED_COMMITS}+` : checks.unpushed} unpushed`);
+  return parts.length > 0 ? parts.join(', ') : 'clean';
+}
+
+export interface CheckLine {
+  /** `ok`, `risk` (work would be lost), `info` (doesn't block) or `failed` (couldn't run). */
+  kind: 'ok' | 'risk' | 'info' | 'failed';
+  text: string;
+}
+
+/** The checks as lines for a dispose dialog, worst first. */
+export function checkLines(checks: HelperDisposeChecks): CheckLine[] {
+  if (checks.error) return [{ kind: 'failed', text: `Couldn’t be checked (${checks.error})` }];
+  const lines: CheckLine[] = [
+    checks.dirty > 0
+      ? { kind: 'risk', text: `${plural(checks.dirty, 'file', 'files')} not committed` }
+      : { kind: 'ok', text: 'No uncommitted files' },
+    checks.unpushed > 0
+      ? { kind: 'risk', text: commits(checks.unpushed, 'not pushed') }
+      : { kind: 'ok', text: 'Every commit is pushed or on another branch' },
+  ];
+  if (checks.unmerged !== null) {
+    lines.push(checks.unmerged > 0
+      ? { kind: 'info', text: commits(checks.unmerged, 'not merged into the base branch') }
+      : { kind: 'ok', text: 'Merged into the base branch' });
+  }
+  return lines.sort((a, b) => ORDER[a.kind] - ORDER[b.kind]);
+}
+
+const ORDER: Record<CheckLine['kind'], number> = { failed: 0, risk: 1, info: 2, ok: 3 };
+
+/** "a", "a and b", "a, b and c". */
+export function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}

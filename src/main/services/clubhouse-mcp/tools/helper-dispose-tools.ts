@@ -118,8 +118,8 @@ function workAtRisk(checks: HelperDisposeChecks): boolean {
 
 /**
  * Put the dispose in front of the user: the main window shows it under Needs
- * you with the check facts. Returns false when there is no main window.
- * TODO(#2232): a real dispose confirmation the user can accept or decline.
+ * you with the check facts, and selecting it opens the dispose confirmation
+ * (#2232). Returns false when there is no main window.
  */
 function requestUserDispose(request: HelperDisposeRequest): boolean {
   const main = findMainWindow();
