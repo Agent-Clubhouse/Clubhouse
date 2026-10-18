@@ -328,6 +328,8 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
           if (!helperChoice) {
             return { ok: false, message: `Choose what happens to ${agent.name}'s helpers` };
           }
+          // Run the checks right before stopping anything: a helper that
+          // would block the dispose keeps running.
           const preview: HelperCascadeResult = await window.clubhouse.agent.resolveHelpersForDelete(projectPath, agentId, helperChoice, true);
           if (!preview.ok) return { ok: false, message: describeHelperBlock(preview) };
           if (helperChoice === 'dispose') {
@@ -337,12 +339,15 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
               }
             }
           }
+          // Main checks again before it removes anything.
           const resolved: HelperCascadeResult = await window.clubhouse.agent.resolveHelpersForDelete(projectPath, agentId, helperChoice);
-          if (!resolved.ok) return { ok: false, message: describeHelperBlock(resolved) };
-          // A disposed helper keeps its config row but leaves the rail.
+          // A disposed helper keeps its config row but leaves the rail, even
+          // when another helper's disposal failed.
           if (helperChoice === 'dispose') {
             for (const helperId of resolved.helperIds ?? []) get().removeAgent(helperId);
           }
+          // The orchestrator stays unless every helper was settled.
+          if (!resolved.ok) return { ok: false, message: describeHelperBlock(resolved) };
         }
       }
 
@@ -403,27 +408,36 @@ function plural(n: number, one: string, many: string): string {
 
 function describeBlock(block: HelperDisposeBlock): string {
   const parts: string[] = [];
+  if (block.checks.error) parts.push(block.checks.error);
   if (block.checks.dirty > 0) parts.push(plural(block.checks.dirty, 'uncommitted file', 'uncommitted files'));
   if (block.checks.unpushed > 0) parts.push(plural(block.checks.unpushed, 'unpushed commit', 'unpushed commits'));
-  if (block.checks.unmerged > 0) parts.push(plural(block.checks.unmerged, 'unmerged commit', 'unmerged commits'));
   return `${block.name} (${parts.join(', ')})`;
 }
 
-/** The delete error for helpers that would lose work if disposed. */
+function joinNames(names: string[]): string {
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/** The delete error when helpers blocked the dispose, or some failed part way. */
 export function describeHelperBlock(result: HelperCascadeResult): string {
+  if (result.failed && result.failed.length > 0) {
+    const done = result.helperIds?.length ?? 0;
+    const failed = joinNames(result.failed.map((f) => `${f.name} (${f.reason})`));
+    return `Disposed ${plural(done, 'helper', 'helpers')}, but couldn't dispose ${failed}, so the orchestrator was not deleted.`;
+  }
   if (!result.blocked || result.blocked.length === 0) return result.message;
-  const names = result.blocked.map(describeBlock);
-  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-  return `Nothing was deleted. ${list} ${names.length === 1 ? 'has' : 'have'} unsaved work. Keep the helpers, or save their work first.`;
+  const list = joinNames(result.blocked.map(describeBlock));
+  return `Nothing was deleted. Disposing would lose work in ${list}. Keep the helpers, or commit and push their work first.`;
 }
 
 /**
- * Every live helper below a durable agent (#2224). A failed lookup reads as
- * none: main then keeps any helpers as ordinary agents when the parent goes.
+ * The live helpers of a durable agent (#2224): every one below it, or only
+ * its direct helpers with `recursive` false. A failed lookup reads as none:
+ * main then keeps any helpers as ordinary agents when the parent goes.
  */
-export async function listLiveHelpers(projectPath: string, agentId: string): Promise<DurableAgentConfig[]> {
+export async function listLiveHelpers(projectPath: string, agentId: string, recursive = true): Promise<DurableAgentConfig[]> {
   try {
-    const helpers = await window.clubhouse.agent.listHelpers(projectPath, agentId, true);
+    const helpers = await window.clubhouse.agent.listHelpers(projectPath, agentId, recursive);
     return Array.isArray(helpers) ? helpers : [];
   } catch {
     // telemetry-exempt: main keeps helpers as ordinary agents when this lookup fails

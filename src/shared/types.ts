@@ -294,14 +294,23 @@ export interface DurableAgentConfig {
 /** What to do with an orchestrator's helpers when it is deleted (#2224). */
 export type HelperDeleteChoice = 'dispose' | 'keep';
 
-/** Why a helper can't be disposed without losing work (#2224). */
+/**
+ * What disposing a helper would lose (#2224). It blocks on dirty files,
+ * unpushed commits or a check that couldn't run; `unmerged` is information
+ * only, since disposing never deletes a remote branch.
+ */
 export interface HelperDisposeChecks {
   /** Uncommitted or untracked files in the worktree. */
   dirty: number;
-  /** Commits not on the branch's upstream (all branch commits when it has none). */
+  /**
+   * Commits that deleting the branch would destroy: those on no remote, or,
+   * when the repository has no remote, those on no other local branch.
+   */
   unpushed: number;
-  /** Commits not merged into the project's base branch. */
-  unmerged: number;
+  /** Commits not merged into the base branch; null when no base could be found. */
+  unmerged: number | null;
+  /** Set when a check couldn't run, or the helper is still being created. Blocks disposal. */
+  error?: string;
 }
 
 export interface HelperDisposeBlock {
@@ -318,6 +327,8 @@ export interface HelperCascadeResult {
   blocked?: HelperDisposeBlock[];
   /** Helpers that were disposed or released. */
   helperIds?: string[];
+  /** Helpers whose disposal failed part way; the ones in `helperIds` were disposed. */
+  failed?: Array<{ agentId: string; name: string; reason: string }>;
 }
 
 /** Maps an orchestrator ID to its wrapper subcommand */

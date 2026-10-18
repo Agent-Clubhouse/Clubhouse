@@ -1588,13 +1588,14 @@ describe('agentStore', () => {
         expect(window.clubhouse.agent.deleteForce).toHaveBeenCalledWith(projectPath, 'target');
       });
 
-      it('dispose: dirty or unpushed helpers block the whole delete', async () => {
+      it('dispose: dirty, unpushed or unchecked helpers block the whole delete before anything stops', async () => {
         vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mockResolvedValueOnce({
           ok: false,
           message: 'blocked',
           blocked: [
             { agentId: 'helper_1', name: 'scout', checks: { dirty: 2, unpushed: 0, unmerged: 0 } },
-            { agentId: 'helper_2', name: 'fixer', checks: { dirty: 0, unpushed: 1, unmerged: 1 } },
+            { agentId: 'helper_2', name: 'fixer', checks: { dirty: 0, unpushed: 1, unmerged: 4 } },
+            { agentId: 'helper_3', name: 'mapper', checks: { dirty: 0, unpushed: 0, unmerged: null, error: "couldn't check, fatal: bad object" } },
           ],
         });
 
@@ -1602,13 +1603,35 @@ describe('agentStore', () => {
 
         expect(result.ok).toBe(false);
         expect(result.message).toBe(
-          'Nothing was deleted. scout (2 uncommitted files) and fixer (1 unpushed commit, 1 unmerged commit) have unsaved work. Keep the helpers, or save their work first.',
+          "Nothing was deleted. Disposing would lose work in scout (2 uncommitted files), fixer (1 unpushed commit) and mapper (couldn't check, fatal: bad object). Keep the helpers, or commit and push their work first.",
         );
         expect(window.clubhouse.agent.resolveHelpersForDelete).toHaveBeenCalledTimes(1);
         expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
         expect(window.clubhouse.agent.deleteForce).not.toHaveBeenCalled();
         expect(getState().agents['target']).toBeDefined();
         expect(getState().agents['helper_1']).toBeDefined();
+      });
+
+      it('dispose: a helper that fails part way keeps the orchestrator, and the disposed ones leave the rail', async () => {
+        vi.mocked(window.clubhouse.agent.resolveHelpersForDelete)
+          .mockResolvedValueOnce({ ok: true, message: '', helperIds: ['helper_1', 'helper_2'] })
+          .mockResolvedValueOnce({
+            ok: false,
+            message: 'Disposed 1 of 2 helpers',
+            helperIds: ['helper_2'],
+            failed: [{ agentId: 'helper_1', name: 'scout', reason: 'EBUSY: resource busy or locked' }],
+          });
+
+        const result = await getState().executeDelete('force', projectPath, 'dispose');
+
+        expect(result).toEqual({
+          ok: false,
+          message: 'Disposed 1 helper, but couldn\'t dispose scout (EBUSY: resource busy or locked), so the orchestrator was not deleted.',
+        });
+        expect(getState().agents['helper_2']).toBeUndefined();
+        expect(getState().agents['helper_1']).toBeDefined();
+        expect(getState().agents['target']).toBeDefined();
+        expect(window.clubhouse.agent.deleteForce).not.toHaveBeenCalled();
       });
 
       it('keep: releases helpers without stopping them, then deletes', async () => {

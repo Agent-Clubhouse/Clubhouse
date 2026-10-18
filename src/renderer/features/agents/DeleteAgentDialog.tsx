@@ -62,12 +62,12 @@ const HELPER_OPTIONS: Array<{ choice: HelperDeleteChoice; label: string; descrip
   {
     choice: 'dispose',
     label: 'Dispose helpers',
-    description: 'Remove their worktrees and branches. Stops if a helper has unsaved work.',
+    description: 'Remove their worktrees and branches, and those of their own helpers. Stops if any has uncommitted or unpushed work.',
   },
   {
     choice: 'keep',
     label: 'Keep helpers',
-    description: 'They stay as ordinary agents with their worktrees.',
+    description: 'They stay as ordinary agents with their worktrees. Their own helpers stay with them.',
   },
 ];
 
@@ -111,7 +111,8 @@ export function DeleteAgentDialog() {
       } else if (activeProject) {
         const [s, helpers] = await Promise.all([
           window.clubhouse.agent.getWorktreeStatus(activeProject.path, deleteDialogAgent),
-          listLiveHelpers(activeProject.path, deleteDialogAgent),
+          // Direct helpers: Keep releases these; their own helpers stay with them.
+          listLiveHelpers(activeProject.path, deleteDialogAgent, false),
         ]);
         setStatus(s);
         setHelperCount(helpers.length);

@@ -2,31 +2,82 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
 
 // In-memory filesystem plus a scriptable git, so the helper cascade (#2224)
-// can be exercised against dirty, unpushed and unmerged worktrees.
+// can be exercised against dirty, unpushed, unmerged and broken worktrees.
 const files = new Map<string, string>();
 const dirs = new Set<string>();
 
-interface FakeRepo { dirty: number; unpushed: number; unmerged: number; remote: boolean }
-const repos = new Map<string, FakeRepo>();
+interface FakeRepo {
+  branch: string;
+  dirty: number;
+  /** Commits on no remote. */
+  unpushed: number;
+  /** Commits on no other local branch; defaults to `unpushed`. */
+  localOnly?: number;
+  /** Commits not in the base branch. */
+  unmerged: number;
+  /** Git commands starting with this fail in this repo. */
+  failOn?: string;
+}
+const repoByWorktree = new Map<string, FakeRepo>();
+const repoByBranch = new Map<string, FakeRepo>();
+const branches = new Set<string>();
+const rmFailures = new Set<string>();
+let remoteConfigured = true;
+let baseBranch: string | null = 'main';
+let showRefBroken = false;
 const gitCalls: Array<{ args: string[]; cwd: string }> = [];
 
+function exitError(code: number, message: string): Error {
+  return Object.assign(new Error(message), { code });
+}
+
+function repoForRefs(args: string[]): FakeRepo | undefined {
+  for (const arg of args) {
+    if (arg.startsWith('refs/heads/')) {
+      const repo = repoByBranch.get(arg.slice('refs/heads/'.length));
+      if (repo) return repo;
+    }
+  }
+  return undefined;
+}
+
 function gitOutput(args: string[], cwd: string): string {
-  const repo = repos.get(cwd);
   const cmd = args.join(' ');
-  if (cmd === 'rev-parse --verify main') return 'abc\n';
-  if (cmd.startsWith('rev-parse --verify')) throw new Error('unknown revision');
+  const repo = repoByWorktree.get(cwd) ?? repoForRefs(args);
+  if (repo?.failOn && cmd.startsWith(repo.failOn)) throw exitError(128, `fatal: simulated failure of git ${repo.failOn}`);
+  if (cmd.startsWith('show-ref --verify --quiet refs/heads/')) {
+    if (showRefBroken) throw exitError(128, 'fatal: not a git repository');
+    const name = cmd.slice('show-ref --verify --quiet refs/heads/'.length);
+    if (name === baseBranch || branches.has(name)) return '';
+    throw exitError(1, '');
+  }
+  if (cmd.startsWith('rev-parse --verify')) {
+    if (args[2] === baseBranch) return 'abc\n';
+    throw exitError(128, 'unknown revision');
+  }
   if (cmd.startsWith('worktree remove')) {
     const wt = args[args.length - 1];
+    if (rmFailures.has(wt)) throw exitError(128, 'fatal: busy');
     dirs.delete(wt);
     dirs.delete(path.join(wt, '.git'));
     return '';
   }
-  if (cmd.startsWith('branch -D')) return '';
+  if (cmd.startsWith('branch -D')) {
+    branches.delete(args[args.length - 1]);
+    return '';
+  }
+  if (cmd === 'remote') return remoteConfigured ? 'origin\n' : '';
+  if (cmd === 'symbolic-ref --quiet HEAD') {
+    if (!repo) throw exitError(1, '');
+    return `refs/heads/${repo.branch}\n`;
+  }
   if (!repo) return '';
   if (cmd === 'status --porcelain') return Array.from({ length: repo.dirty }, (_, i) => ` M file${i}.ts`).join('\n');
-  if (cmd === 'remote') return repo.remote ? 'origin\n' : '';
-  if (cmd === 'rev-list --count main..HEAD') return `${repo.unmerged}\n`;
-  if (cmd === 'rev-list --count HEAD --not --remotes') return `${repo.unpushed}\n`;
+  if (args[0] === 'rev-list' && args[1] === '--count') {
+    if (args.includes('--remotes')) return `${repo.unpushed}\n`;
+    if (args.includes('--branches')) return `${repo.localOnly ?? repo.unpushed}\n`;
+    return `${repo.unmerged}\n`;
+  }
   return '';
 }
 
@@ -66,7 +117,10 @@ vi.mock('fs/promises', () => ({
   copyFile: vi.fn(async () => undefined),
   appendFile: vi.fn(async () => undefined),
   mkdir: vi.fn(async () => undefined),
-  rm: vi.fn(async (p: string) => { dirs.delete(String(p)); }),
+  rm: vi.fn(async (p: string) => {
+    if (rmFailures.has(String(p))) throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+    dirs.delete(String(p));
+  }),
   readdir: vi.fn(async () => []),
   unlink: vi.fn(async () => undefined),
 }));
@@ -93,6 +147,7 @@ import {
   getDisposeChecks,
   getParentAgent,
   getWorktreeStatus,
+  helperCreationBlock,
   listDurable,
   listHelpers,
   normalizeHelperFields,
@@ -117,13 +172,17 @@ function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgen
   return { id, name: id, color: 'blue', createdAt: '2026-10-18T00:00:00.000Z', ...extra };
 }
 
-/** An agent with a worktree whose git state is `repo`. */
+/** An agent with a worktree and branch whose git state is `repo`. */
 function withWorktree(id: string, repo: Partial<FakeRepo> = {}, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
   const wt = worktree(id);
+  const branch = `${id}/standby`;
   dirs.add(wt);
   dirs.add(path.join(wt, '.git'));
-  repos.set(wt, { dirty: 0, unpushed: 0, unmerged: 0, remote: true, ...repo });
-  return agent(id, { worktreePath: wt, branch: `${id}/standby`, ...extra });
+  branches.add(branch);
+  const fake: FakeRepo = { branch, dirty: 0, unpushed: 0, unmerged: 0, ...repo };
+  repoByWorktree.set(wt, fake);
+  repoByBranch.set(branch, fake);
+  return agent(id, { worktreePath: wt, branch, ...extra });
 }
 
 function seed(agents: DurableAgentConfig[], configPath = CONFIG_PATH): void {
@@ -148,7 +207,13 @@ beforeEach(() => {
   clearAgentConfigCache();
   files.clear();
   dirs.clear();
-  repos.clear();
+  repoByWorktree.clear();
+  repoByBranch.clear();
+  branches.clear();
+  rmFailures.clear();
+  remoteConfigured = true;
+  baseBranch = 'main';
+  showRefBroken = false;
   gitCalls.length = 0;
 });
 
@@ -301,14 +366,13 @@ describe('delete cascade', () => {
     ]);
   }
 
+  function branchDeletions(): string[] {
+    return gitCalls.filter((c) => c.args[0] === 'branch' && c.args[1] === '-D').map((c) => c.args[c.args.length - 1]);
+  }
+
   it('reports the dirty, unpushed and unmerged checks for a worktree', async () => {
     seedFamily({ durable_2_h: { dirty: 2, unpushed: 1, unmerged: 3 } });
     expect(await getDisposeChecks(PROJECT_PATH, 'durable_2_h')).toEqual({ dirty: 2, unpushed: 1, unmerged: 3 });
-  });
-
-  it('treats unmerged work as unpushed when the worktree has no remote', async () => {
-    seedFamily({ durable_2_h: { remote: false, unmerged: 2, unpushed: 0 } });
-    expect(await getDisposeChecks(PROJECT_PATH, 'durable_2_h')).toEqual({ dirty: 0, unpushed: 2, unmerged: 2 });
   });
 
   it('dispose: blocks on a dirty helper and changes nothing', async () => {
@@ -321,19 +385,152 @@ describe('delete cascade', () => {
       { agentId: 'durable_2_dirty', name: 'durable_2_dirty', checks: { dirty: 1, unpushed: 0, unmerged: 0 } },
     ]);
     expect(worktreeRemovals()).toEqual([]);
+    expect(branchDeletions()).toEqual([]);
     const helpers = await listHelpers(PROJECT_PATH, 'durable_1_orch');
     expect(helpers.map((a) => a.id)).toEqual(['durable_2_dirty', 'durable_3_clean']);
     expect(helpers.every((a) => !a.disposedAt && a.worktreePath)).toBe(true);
   });
 
-  it('dispose: blocks on unpushed and unmerged helpers', async () => {
-    seedFamily({ durable_2_unpushed: { unpushed: 2, unmerged: 2 }, durable_3_unmerged: { unmerged: 1 } });
+  it('dispose: blocks on an unpushed helper', async () => {
+    seedFamily({ durable_2_unpushed: { unpushed: 2, unmerged: 2 } });
+    const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
+    expect(result.ok).toBe(false);
+    expect(result.blocked?.map((b) => b.agentId)).toEqual(['durable_2_unpushed']);
+    expect(worktreeRemovals()).toEqual([]);
+  });
+
+  it('dispose: allows a pushed helper whose work is not merged, and reports the unmerged count', async () => {
+    seedFamily({ durable_2_pushed: { unpushed: 0, unmerged: 3 } });
+    expect(await getDisposeChecks(PROJECT_PATH, 'durable_2_pushed')).toEqual({ dirty: 0, unpushed: 0, unmerged: 3 });
+
+    const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
+
+    expect(result).toMatchObject({ ok: true, helperIds: ['durable_2_pushed'] });
+    expect(branchDeletions()).toEqual(['durable_2_pushed/standby']);
+  });
+
+  it('B1: a missing worktree folder still checks the branch, and blocks on its unpushed commits', async () => {
+    seedFamily({ durable_2_h: { unpushed: 2, unmerged: 2 } });
+    dirs.delete(worktree('durable_2_h'));
+    dirs.delete(path.join(worktree('durable_2_h'), '.git'));
+
+    expect(await getDisposeChecks(PROJECT_PATH, 'durable_2_h')).toEqual({ dirty: 0, unpushed: 2, unmerged: 2 });
+    const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
+
+    expect(result.ok).toBe(false);
+    expect(result.blocked?.map((b) => b.agentId)).toEqual(['durable_2_h']);
+    expect(branchDeletions()).toEqual([]);
+    // The branch was checked from the project, not the missing folder.
+    expect(gitCalls.some((c) => c.cwd === PROJECT_PATH && c.args.includes('refs/heads/durable_2_h/standby') && c.args[0] === 'rev-list')).toBe(true);
+  });
+
+  it('B1: a missing worktree folder and branch leave nothing to lose', async () => {
+    seedFamily({ durable_2_h: {} });
+    dirs.delete(worktree('durable_2_h'));
+    dirs.delete(path.join(worktree('durable_2_h'), '.git'));
+    branches.delete('durable_2_h/standby');
+
+    expect(await getDisposeChecks(PROJECT_PATH, 'durable_2_h')).toEqual({ dirty: 0, unpushed: 0, unmerged: 0 });
+    expect(await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose')).toMatchObject({ ok: true });
+  });
+
+  it('blocks a worktree folder that is not a git worktree', async () => {
+    seedFamily({ durable_2_h: {} });
+    dirs.delete(path.join(worktree('durable_2_h'), '.git'));
+    const checks = await getDisposeChecks(PROJECT_PATH, 'durable_2_h');
+    expect(checks.error).toMatch(/couldn't check.*not a git worktree/);
+    expect((await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose')).ok).toBe(false);
+  });
+
+  it('B2: with no remote and no main or master, blocks on commits found on no other branch', async () => {
+    remoteConfigured = false;
+    baseBranch = null;
+    seedFamily({ durable_2_h: { unpushed: 5, localOnly: 2, unmerged: 9 } });
+
+    const checks = await getDisposeChecks(PROJECT_PATH, 'durable_2_h');
+
+    // The unmerged count falls back to the orchestrator's branch.
+    expect(checks).toEqual({ dirty: 0, unpushed: 2, unmerged: 9 });
+    const revList = gitCalls.find((c) => c.args[0] === 'rev-list' && c.args.includes('--branches'));
+    expect(revList?.args).toEqual([
+      'rev-list', '--count', 'refs/heads/durable_2_h/standby', 'HEAD', '--not', '--exclude=durable_2_h/standby', '--branches',
+    ]);
+    expect((await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose')).ok).toBe(false);
+    expect(branchDeletions()).toEqual([]);
+  });
+
+  it('B2: with no remote, work saved on another branch can be disposed', async () => {
+    remoteConfigured = false;
+    baseBranch = null;
+    seedFamily({ durable_2_h: { unpushed: 5, localOnly: 0, unmerged: 0 } });
+    expect(await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose')).toMatchObject({ ok: true });
+  });
+
+  it('reports unmerged as unknown when no base branch can be found', async () => {
+    baseBranch = null;
+    seed([agent('durable_1_orch'), withWorktree('durable_2_h', {}, { parentAgentId: 'durable_1_orch' })]);
+    expect(await getDisposeChecks(PROJECT_PATH, 'durable_2_h')).toEqual({ dirty: 0, unpushed: 0, unmerged: null });
+  });
+
+  it.each([
+    ['git status', 'status'],
+    ['git remote', 'remote'],
+    ['git rev-list', 'rev-list'],
+  ])('B3: a failing %s blocks with the reason', async (_label, failOn) => {
+    seedFamily({ durable_2_h: { failOn } });
 
     const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
 
     expect(result.ok).toBe(false);
-    expect(result.blocked?.map((b) => b.agentId)).toEqual(['durable_2_unpushed', 'durable_3_unmerged']);
+    expect(result.blocked?.[0].checks.error).toMatch(new RegExp(`couldn't check, fatal: simulated failure of git ${failOn}`));
     expect(worktreeRemovals()).toEqual([]);
+    expect(branchDeletions()).toEqual([]);
+  });
+
+  it('B3: a branch lookup that fails (not a missing branch) blocks', async () => {
+    seedFamily({ durable_2_h: {} });
+    showRefBroken = true;
+    const checks = await getDisposeChecks(PROJECT_PATH, 'durable_2_h');
+    expect(checks.error).toMatch(/couldn't check, fatal: not a git repository/);
+  });
+
+  it('B4: a helper still being created is never disposed, even forced', async () => {
+    seed([
+      withWorktree('durable_1_orch'),
+      withWorktree('durable_2_new', {}, {
+        parentAgentId: 'durable_1_orch',
+        creation: { state: 'creating', startedAt: 'x' },
+      } as Partial<DurableAgentConfig>),
+    ]);
+    expect(helperCreationBlock((await listDurable(PROJECT_PATH))[1])).toMatch(/being created/);
+
+    const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
+    expect(result.ok).toBe(false);
+    expect(result.blocked?.[0].checks.error).toMatch(/being created/);
+
+    expect(await disposeHelper(PROJECT_PATH, 'durable_2_new', { force: true })).toMatchObject({ ok: false });
+    expect(worktreeRemovals()).toEqual([]);
+    expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_new')?.disposedAt).toBeUndefined();
+  });
+
+  it('reports exactly which helpers were disposed when one fails part way', async () => {
+    seedFamily({ durable_2_ok: {}, durable_3_busy: {}, durable_4_ok: {} });
+    rmFailures.add(worktree('durable_3_busy'));
+
+    const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
+    await flushAllAgentConfigs();
+
+    expect(result.ok).toBe(false);
+    expect(result.helperIds).toEqual(['durable_2_ok', 'durable_4_ok']);
+    expect(result.failed).toEqual([
+      { agentId: 'durable_3_busy', name: 'durable_3_busy', reason: expect.stringMatching(/EBUSY/) },
+    ]);
+    expect(onDisk('durable_2_ok')?.disposedAt).toEqual(expect.any(String));
+    expect(onDisk('durable_4_ok')?.disposedAt).toEqual(expect.any(String));
+    // The failed helper keeps its row, worktree path and branch.
+    expect(onDisk('durable_3_busy')).not.toHaveProperty('disposedAt');
+    expect(onDisk('durable_3_busy')?.worktreePath).toBe(worktree('durable_3_busy'));
+    expect(branchDeletions()).not.toContain('durable_3_busy/standby');
   });
 
   it('dispose: a dry run reports without changing anything', async () => {
@@ -425,6 +622,13 @@ describe('delete cascade', () => {
     expect(worktreeRemovals()).toEqual([]);
     expect(await disposeHelper(PROJECT_PATH, 'durable_2_dirty', { force: true })).toMatchObject({ ok: true });
     expect(worktreeRemovals()).toEqual([worktree('durable_2_dirty')]);
+  });
+
+  it('a failed folder removal keeps the branch on a plain delete too', async () => {
+    seed([withWorktree('durable_1_a')]);
+    rmFailures.add(worktree('durable_1_a'));
+    await expect(deleteDurable(PROJECT_PATH, 'durable_1_a')).rejects.toThrow(/EBUSY/);
+    expect(branchDeletions()).toEqual([]);
   });
 });
 

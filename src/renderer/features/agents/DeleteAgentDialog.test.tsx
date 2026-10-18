@@ -167,7 +167,8 @@ describe('DeleteAgentDialog', () => {
     it('asks what happens to the helpers before the usual confirmation', async () => {
       render(<DeleteAgentDialog />);
       await waitFor(() => screen.getByTestId('delete-agent-helpers-step'));
-      expect(window.clubhouse.agent.listHelpers).toHaveBeenCalledWith('/home/user/project', 'agent-1', true);
+      // The count is of direct helpers, the ones Keep releases.
+      expect(window.clubhouse.agent.listHelpers).toHaveBeenCalledWith('/home/user/project', 'agent-1', false);
       expect(screen.getByText(/bold-falcon has 2 helpers/)).toBeInTheDocument();
       expect(screen.queryByText(/No uncommitted changes detected/)).not.toBeInTheDocument();
     });

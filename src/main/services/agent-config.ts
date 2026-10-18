@@ -1468,22 +1468,22 @@ async function removeAgentWorktree(projectPath: string, agent: DurableAgentConfi
         },
       });
     }
-
-    // Optionally delete branch
-    if (agent.branch) {
-      try {
-        await execGitFileAsync(['branch', '-D', '--', agent.branch], projectPath);
-      } catch (err) {
-        appLog('core:agent-config', 'warn', 'Git branch deletion failed', {
-          meta: { agentId, branch: agent.branch, error: err instanceof Error ? err.message : String(err) },
-        });
-      }
-    }
   }
 
-  // Remove directory if still exists
+  // Remove the folder if it is still there. A failure (EBUSY on Windows)
+  // throws before the branch goes, so a half-removed agent keeps its branch.
   if (await pathExists(worktreePath)) {
     await fsp.rm(worktreePath, { recursive: true, force: true });
+  }
+
+  if (hasGit && agent.branch) {
+    try {
+      await execGitFileAsync(['branch', '-D', '--', agent.branch], projectPath);
+    } catch (err) {
+      appLog('core:agent-config', 'warn', 'Git branch deletion failed', {
+        meta: { agentId, branch: agent.branch, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
   }
 }
 
@@ -1867,44 +1867,132 @@ export async function setParentAgent(
   await writeAgents(projectPath, agents);
 }
 
+/** A `git rev-list --count` result. Any failure throws, so a check never reads as zero. */
 async function gitCount(args: string[], cwd: string): Promise<number> {
+  const out = await execGitFileAsync(args, cwd);
+  const n = Number.parseInt(out.trim(), 10);
+  if (!Number.isFinite(n)) throw new Error(`git ${args.join(' ')} returned "${out.trim()}"`);
+  return n;
+}
+
+/** Whether a local branch exists. Throws when git can't answer. */
+async function localBranchExists(branch: string, cwd: string): Promise<boolean> {
   try {
-    const out = await execGitFileAsync(args, cwd);
-    const n = Number.parseInt(out.trim(), 10);
-    return Number.isFinite(n) ? n : 0;
-  } catch {
-    // telemetry-exempt: a git query that fails counts as nothing at risk, like getWorktreeStatus
-    return 0;
+    await execGitFileAsync(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], cwd);
+    return true;
+  } catch (err) {
+    // show-ref exits 1 for a missing ref; anything else is a failure.
+    if ((err as { code?: unknown } | null)?.code === 1) return false;
+    throw err;
   }
 }
 
+/** The local base branch (main, then master), or null when neither exists. */
+async function findLocalBase(cwd: string): Promise<string | null> {
+  for (const candidate of ['main', 'master']) {
+    if (await localBranchExists(candidate, cwd)) return `refs/heads/${candidate}`;
+  }
+  return null;
+}
+
 /**
- * The delete status checks for an agent's worktree: uncommitted files,
- * commits on no remote, and commits not merged into the base branch. All
- * zero when the agent has no worktree left to lose.
+ * Hook for async creation (#2226, PR #2242): a helper whose creation is still
+ * running must not be disposed under it. Reads `creation.state` structurally
+ * until that field is typed on DurableAgentConfig; whichever of #2241 and
+ * #2242 lands second should switch this to the typed field (or cancel the
+ * creation first). Returns the reason to block, or null.
+ */
+export function helperCreationBlock(agent: DurableAgentConfig): string | null {
+  const creation = (agent as DurableAgentConfig & { creation?: { state?: unknown } }).creation;
+  return creation?.state === 'creating' ? 'it is still being created' : null;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * The delete status checks for an agent before its worktree and branch go:
+ * uncommitted files, commits deleting the branch would destroy, and commits
+ * not merged into the base branch. Fails closed: if any check can't run, the
+ * result carries `error` and disposal is blocked.
  */
 export async function getDisposeChecks(projectPath: string, agentId: string): Promise<HelperDisposeChecks> {
-  const none: HelperDisposeChecks = { dirty: 0, unpushed: 0, unmerged: 0 };
   const { agentsById } = await readAgentsEntry(projectPath);
-  const wt = agentsById.get(agentId)?.worktreePath;
-  if (!wt || !(await pathExists(wt)) || !(await pathExists(path.join(wt, '.git')))) return none;
+  const agent = agentsById.get(agentId);
+  if (!agent) return { dirty: 0, unpushed: 0, unmerged: null, error: 'agent not found' };
+  const creating = helperCreationBlock(agent);
+  if (creating) return { dirty: 0, unpushed: 0, unmerged: null, error: creating };
+  if (isDisposedAgent(agent)) return { dirty: 0, unpushed: 0, unmerged: 0 };
+  try {
+    return await runDisposeChecks(projectPath, agent, agentsById);
+  } catch (err) {
+    // telemetry-exempt: the failure blocks disposal and reaches the user in the result
+    return { dirty: 0, unpushed: 0, unmerged: null, error: `couldn't check, ${errorText(err)}` };
+  }
+}
 
-  const [statusOut, base, remotes] = await Promise.all([
-    execGitFileAsync(['status', '--porcelain'], wt).catch(() => ''),
-    detectBaseBranch(projectPath),
-    execGitFileAsync(['remote'], wt).catch(() => ''),
-  ]);
-  const dirty = statusOut.split('\n').filter((line) => line.trim()).length;
-  const unmerged = base === 'HEAD' ? 0 : await gitCount(['rev-list', '--count', `${base}..HEAD`], wt);
-  // With no remote there is nowhere to push, so unmerged work is the risk.
-  const unpushed = remotes.trim()
-    ? await gitCount(['rev-list', '--count', 'HEAD', '--not', '--remotes'], wt)
-    : unmerged;
+async function runDisposeChecks(
+  projectPath: string,
+  agent: DurableAgentConfig,
+  agentsById: Map<string, DurableAgentConfig>,
+): Promise<HelperDisposeChecks> {
+  const wt = agent.worktreePath;
+  const wtExists = !!wt && await pathExists(wt);
+  if (wtExists && !(await pathExists(path.join(wt, '.git')))) {
+    throw new Error(`${wt} is not a git worktree`);
+  }
+  if (!wtExists && !(await isInsideGitRepo(projectPath))) {
+    // No worktree and no repository: nothing on disk to lose.
+    return { dirty: 0, unpushed: 0, unmerged: 0 };
+  }
+  const cwd = wtExists ? wt : projectPath;
+
+  // The refs disposal would destroy: the worktree's HEAD and the agent's
+  // branch. `own` holds their short branch names, left out of --branches.
+  const refs: string[] = [];
+  const own: string[] = [];
+  if (agent.branch && await localBranchExists(agent.branch, cwd)) {
+    refs.push(`refs/heads/${agent.branch}`);
+    own.push(agent.branch);
+  }
+  let dirty = 0;
+  if (wtExists) {
+    refs.push('HEAD');
+    const status = await execGitFileAsync(['status', '--porcelain'], cwd);
+    dirty = status.split('\n').filter((line) => line.trim()).length;
+    try {
+      const head = (await execGitFileAsync(['symbolic-ref', '--quiet', 'HEAD'], cwd)).trim();
+      if (head.startsWith('refs/heads/')) own.push(head.slice('refs/heads/'.length));
+    } catch (err) {
+      // symbolic-ref exits 1 on a detached HEAD; anything else is a failure.
+      if ((err as { code?: unknown } | null)?.code !== 1) throw err;
+    }
+  }
+  if (refs.length === 0) {
+    // The worktree folder and the branch are both gone already.
+    return { dirty: 0, unpushed: 0, unmerged: 0 };
+  }
+
+  const remotes = (await execGitFileAsync(['remote'], cwd)).trim();
+  // With a remote, pushed work survives disposal. Without one, work survives
+  // only on another local branch (the orchestrator's, main, ...).
+  const unpushed = remotes
+    ? await gitCount(['rev-list', '--count', ...refs, '--not', '--remotes'], cwd)
+    : await gitCount(['rev-list', '--count', ...refs, '--not', ...[...new Set(own)].map((r) => `--exclude=${r}`), '--branches'], cwd);
+
+  // Information only: merged into main/master, else into the parent's branch.
+  const parentBranch = agent.parentAgentId ? agentsById.get(agent.parentAgentId)?.branch : undefined;
+  let base = await findLocalBase(cwd);
+  if (!base && parentBranch && await localBranchExists(parentBranch, cwd)) base = `refs/heads/${parentBranch}`;
+  const unmerged = base ? await gitCount(['rev-list', '--count', ...refs, '--not', base], cwd) : null;
+
   return { dirty, unpushed, unmerged };
 }
 
+/** Disposal loses nothing only when the worktree is clean, all work is saved and every check ran. */
 function hasWorkAtRisk(checks: HelperDisposeChecks): boolean {
-  return checks.dirty > 0 || checks.unpushed > 0 || checks.unmerged > 0;
+  return checks.dirty > 0 || checks.unpushed > 0 || !!checks.error;
 }
 
 /** Remove a helper's worktree and branch and mark it disposed, keeping its row. */
@@ -1912,6 +2000,8 @@ async function disposeAgent(projectPath: string, agentId: string): Promise<void>
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent || isDisposedAgent(agent)) return;
+  const creating = helperCreationBlock(agent);
+  if (creating) throw new Error(`${agent.name} can't be disposed because ${creating}`);
   if (agent.worktreePath) await removeAgentWorktree(projectPath, agent);
 
   // Re-read: the cache may have been replaced while git ran.
@@ -1938,9 +2028,18 @@ export async function disposeHelper(
   if (isDisposedAgent(agent)) return { ok: true, message: 'Already disposed' };
   const checks = await getDisposeChecks(projectPath, agentId);
   if (!options.force && hasWorkAtRisk(checks)) {
-    return { ok: false, message: `${agent.name} has work that is not saved`, checks };
+    return {
+      ok: false,
+      message: checks.error ? `${agent.name} wasn't disposed (${checks.error})` : `${agent.name} has work that disposing would lose`,
+      checks,
+    };
   }
-  await disposeAgent(projectPath, agentId);
+  try {
+    await disposeAgent(projectPath, agentId);
+  } catch (err) {
+    // telemetry-exempt: returned to the caller as a failed result
+    return { ok: false, message: errorText(err), checks };
+  }
   return { ok: true, message: 'Disposed', checks };
 }
 
@@ -2003,8 +2102,8 @@ export async function resolveHelpersForDelete(
     return {
       ok: false,
       message: blocked.length === 1
-        ? `${blocked[0].name} has work that is not saved`
-        : `${blocked.length} helpers have work that is not saved`,
+        ? `${blocked[0].name} has work that disposing would lose, or couldn't be checked`
+        : `${blocked.length} helpers have work that disposing would lose, or couldn't be checked`,
       blocked,
     };
   }
@@ -2012,10 +2111,29 @@ export async function resolveHelpersForDelete(
   if (options.dryRun) {
     return { ok: true, message: `Would dispose ${helpers.length} helper(s)`, helperIds: helpers.map((a) => a.id) };
   }
+  const disposed: string[] = [];
+  const failed: NonNullable<HelperCascadeResult['failed']> = [];
   for (const helper of helpers) {
-    await disposeAgent(projectPath, helper.id);
+    try {
+      await disposeAgent(projectPath, helper.id);
+      disposed.push(helper.id);
+    } catch (err) {
+      // telemetry-exempt: logged and returned in `failed`; the delete flow reports it
+      failed.push({ agentId: helper.id, name: helper.name, reason: errorText(err) });
+      appLog('core:agent-config', 'error', 'Failed to dispose a helper', {
+        meta: { agentId: helper.id, parentId: agentId, error: errorText(err) },
+      });
+    }
   }
-  return { ok: true, message: `Disposed ${helpers.length} helper(s)`, helperIds: helpers.map((a) => a.id) };
+  if (failed.length > 0) {
+    return {
+      ok: false,
+      message: `Disposed ${disposed.length} of ${helpers.length} helpers`,
+      helperIds: disposed,
+      failed,
+    };
+  }
+  return { ok: true, message: `Disposed ${helpers.length} helper(s)`, helperIds: disposed };
 }
 
 // --- Agent icon storage ---
