@@ -321,7 +321,7 @@ export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expans
     <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-command-card" data-status={tool.status} data-open={open}>
       <CardHeader open={open} onToggle={toggle} label={`${open ? 'Collapse' : 'Expand'} command ${shortCommand}`}>
         <TerminalIcon />
-        <span className="font-mono text-[11.5px] text-ctp-text truncate min-w-0" title={shortCommand}>$ {shortCommand}</span>
+        <span className="font-mono text-[11.5px] text-ctp-text truncate min-w-0" title={command}>$ {shortCommand}</span>
         <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap">
           {running ? <><Spin /> running</>
             : awaiting ? <span className="text-ctp-warning">waiting for approval</span>

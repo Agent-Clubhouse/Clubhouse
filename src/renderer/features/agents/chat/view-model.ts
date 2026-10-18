@@ -233,6 +233,14 @@ export function terminalContent(tool: ToolCallItem): { command?: string; output:
 }
 
 /** The command a tool ran, from its terminal content or its raw input. */
+export function commandOf(tool: ToolCallItem): string {
+  const term = terminalContent(tool);
+  if (term?.command) return term.command;
+  const input = tool.rawInput as { command?: unknown } | undefined;
+  if (input && typeof input.command === 'string') return input.command;
+  return tool.title;
+}
+
 /** Longest accessible name built from content (a command, a path, a prompt), ellipsis included. */
 export const ACCESSIBLE_NAME_MAX = 80;
 
@@ -245,16 +253,10 @@ export const ACCESSIBLE_NAME_MAX = 80;
 export function shortName(text: string, max = ACCESSIBLE_NAME_MAX): string {
   const all = text.trim();
   const first = all.split('\n', 1)[0].trimEnd();
-  if (first.length === all.length && first.length <= max) return first;
-  return `${first.slice(0, max - 1).trimEnd()}…`;
-}
-
-export function commandOf(tool: ToolCallItem): string {
-  const term = terminalContent(tool);
-  if (term?.command) return term.command;
-  const input = tool.rawInput as { command?: unknown } | undefined;
-  if (input && typeof input.command === 'string') return input.command;
-  return tool.title;
+  // Count and cut by code points, so an emoji or other astral character is never split in half.
+  const chars = Array.from(first);
+  if (first.length === all.length && chars.length <= max) return first;
+  return `${chars.slice(0, max - 1).join('').trimEnd()}…`;
 }
 
 // ── Diffs ───────────────────────────────────────────────────────────────────

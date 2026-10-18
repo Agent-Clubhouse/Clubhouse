@@ -231,6 +231,38 @@ describe('ChatAgentRuntime', () => {
     expect(answered[0].turnId).toBe('turn-1');
   });
 
+  it('writes one permission_resolved for Codex "Deny and stop the turn", which both sides call cancelled (#2202 review)', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    const session = driver.last;
+    const respond = session.respondPermission.bind(session);
+    // Codex maps cancel_turn to decision 'cancelled' and reports its own resolution.
+    session.respondPermission = async (requestId, optionId, extras) => {
+      await respond(requestId, optionId, extras);
+      session.emit({ type: 'permission_resolved', data: { requestId, optionId, decision: 'cancelled', by: 'user' } });
+    };
+    session.emit({ type: 'turn_started', turnId: 'turn-1', data: { trigger: 'prompt' } });
+    session.emit({
+      type: 'permission_request',
+      data: { requestId: 'cx1', title: 'Run rm', options: [{ optionId: 'allow', kind: 'allow_once', label: 'Allow' }, { optionId: 'stop', kind: 'cancel_turn', label: 'Deny and stop the turn' }] },
+    });
+    await flush();
+
+    await runtime.respondPermission('cx1', 'stop');
+    await flush();
+
+    const resolved = transcript.filter((e) => e.type === 'permission_resolved');
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].type === 'permission_resolved' && resolved[0].data).toMatchObject({ requestId: 'cx1', decision: 'cancelled' });
+    expect(resolved[0].turnId).toBe('turn-1');
+
+    // The key cleared with the echo: a later driver cancellation of the same id isn't swallowed.
+    session.emit({ type: 'permission_resolved', data: { requestId: 'cx1', decision: 'cancelled', by: 'agent' } });
+    await flush();
+    expect(transcript.filter((e) => e.type === 'permission_resolved')).toHaveLength(2);
+  });
+
   it('still records a driver\'s own cancellation of a request', async () => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);

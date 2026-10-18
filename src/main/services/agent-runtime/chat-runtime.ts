@@ -15,7 +15,8 @@
  * run. The runtime emits user_message, session_started, session_state,
  * session_ended, permission_resolved and question_resolved itself. A driver
  * that also reports an answer the runtime gave (Claude, Codex) has that echo
- * dropped; a driver's own cancellation of a request still goes through.
+ * dropped, whatever its decision; a driver's own cancellation of a request
+ * the runtime never answered still goes through.
  */
 
 import { randomUUID } from 'crypto';
@@ -297,16 +298,15 @@ export class ChatAgentRuntime implements AgentRuntime {
     }
   }
 
-  /** A driver's own report of an answer the runtime already recorded (a driver's cancellation still counts). */
+  /**
+   * A driver's own report of an answer the runtime already recorded. Any
+   * decision counts, 'cancelled' included (Codex "Deny and stop the turn"):
+   * the runtime wrote that answer. A driver's cancellation of a request the
+   * runtime never answered (an interrupt) isn't an echo and goes through.
+   */
   private isEchoedAnswer(draft: ChatEventDraft): boolean {
-    if (draft.type === 'permission_resolved') {
-      if (draft.data.decision === 'cancelled') return false;
-      return this.answeredHere.delete(`p:${draft.data.requestId}`);
-    }
-    if (draft.type === 'question_resolved') {
-      if (draft.data.cancelled) return false;
-      return this.answeredHere.delete(`q:${draft.data.requestId}`);
-    }
+    if (draft.type === 'permission_resolved') return this.answeredHere.delete(`p:${draft.data.requestId}`);
+    if (draft.type === 'question_resolved') return this.answeredHere.delete(`q:${draft.data.requestId}`);
     return false;
   }
 
@@ -379,6 +379,8 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.ended = true;
     this.clearIdleTimer();
     this.settleAllPermissions();
+    // Drivers that never echo (ACP) leave their keys behind; nothing can echo after the end.
+    this.answeredHere.clear();
     await this.emit({ type: 'session_ended', data: { reason, exitCode, ...(message ? { message } : {}) } });
     await this.setState('sleeping');
     await this.emitChain;

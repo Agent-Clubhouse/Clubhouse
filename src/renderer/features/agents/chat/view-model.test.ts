@@ -353,4 +353,13 @@ describe('shortName', () => {
     expect(shortName('y'.repeat(80))).toBe('y'.repeat(80));
     expect(shortName('z'.repeat(81))).toHaveLength(80);
   });
+
+  it('never cuts an emoji or other astral character in half', () => {
+    // 78 ASCII characters then emoji: a UTF-16 slice at 79 would land inside the first emoji's surrogate pair.
+    const name = shortName(`${'a'.repeat(78)}${'😀'.repeat(5)}`);
+    expect(Array.from(name)).toHaveLength(80);
+    expect(name).toBe(`${'a'.repeat(78)}😀…`);
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(name)).toBe(false);
+    expect(shortName('😀'.repeat(80))).toBe('😀'.repeat(80));
+  });
 });
