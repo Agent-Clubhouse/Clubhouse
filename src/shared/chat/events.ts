@@ -144,6 +144,12 @@ export interface PermissionOption {
   scope?: string;
 }
 
+/**
+ * Token counts with one convention for every driver: `input` is the total
+ * input, cache reads and cache writes included; `cachedInput` is the part of
+ * it served from cache and `cacheWrite` the part written to it. (Anthropic
+ * reports input excluding both, so the Claude driver adds them in.)
+ */
 export interface TokenUsage {
   input?: number;
   cachedInput?: number;

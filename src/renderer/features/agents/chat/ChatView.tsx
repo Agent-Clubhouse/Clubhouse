@@ -26,7 +26,7 @@ import { XIcon } from './icons';
 import { Composer, QueueList, TaskList, type ComposerLayout } from './Composer';
 import { useNarrow, useShortWindow } from '../pane/useNarrow';
 import { useChatActions, useChatAttachments, useChatDraft, useChatDraftStore, useChatLoading, useChatState, useChatTranscript, useEarlierHistory, type ChatActions } from './useChatSession';
-import { buildAgentMap, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
+import { buildAgentMap, commandForRequest, diffsForRequest, implementLevel, isRunningState, isSessionEnded, LEVEL_LABELS, needsManualPlanHandoff, planForRequest, type SendAction } from './view-model';
 
 /** Where a ChatView is shown; several can show the same agent at once. */
 export type ChatViewContext = 'main' | 'popout' | 'canvas' | 'plugin';
@@ -208,6 +208,8 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
         request={permission}
         busy={permissionBusy}
         plan={plan}
+        diffs={diffsForRequest(state.items, permission)}
+        command={commandForRequest(state.items, permission)}
         queueSize={state.pendingPermissions.length}
         onRespond={actions.respondPermission}
       />
@@ -228,6 +230,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           model={state.model}
           effort={state.effort}
           effortIsDefault={state.effortIsDefault}
+          effortReported={state.effortReported}
           models={state.models}
           efforts={state.efforts}
           levelNames={state.levelNames}

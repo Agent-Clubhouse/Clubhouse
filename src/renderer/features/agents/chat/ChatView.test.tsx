@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
 import type { ChatEvent } from '../../../../shared/chat';
@@ -573,8 +573,14 @@ describe('ChatView failures', () => {
 });
 
 describe('ChatView (store-bound)', () => {
+  const getAgentRuntime = window.clubhouse.chat.getAgentRuntime;
   beforeEach(() => {
     useChatStore.setState({ agents: {}, loading: {}, partial: {}, loaded: {}, answering: {} });
+    // The agent runs in the chat runtime, so what its transcript waits on is still open.
+    vi.mocked(window.clubhouse.chat).getAgentRuntime = vi.fn(async () => ({ chat: true, chatAvailable: true }));
+  });
+  afterEach(() => {
+    vi.mocked(window.clubhouse.chat).getAgentRuntime = getAgentRuntime;
   });
 
   it('reuses loaded state when a view remounts, as a canvas card does when zooming', async () => {

@@ -155,6 +155,16 @@ describe('Composer model and effort chips (#2091)', () => {
     expect(screen.getByTestId('chat-effort-pill')).toHaveTextContent('Default effort');
   });
 
+  it('waits for the session to report its effort instead of flashing Default effort (#2188 review)', () => {
+    const { rerender } = renderComposerWithRerender({ model: 'opus', effort: null, effortReported: false });
+    expect(screen.queryByTestId('chat-effort-pill')).toBeNull();
+    rerender({ model: 'opus', effort: 'medium', effortIsDefault: true, effortReported: true });
+    expect(screen.getByTestId('chat-effort-pill')).toHaveTextContent('Medium effort (default)');
+    // Reported, with no effort: the provider's default really applies.
+    rerender({ model: 'opus', effort: null, effortReported: true });
+    expect(screen.getByTestId('chat-effort-pill')).toHaveTextContent('Default effort');
+  });
+
   it('hides the effort chip when the model has no effort levels', () => {
     renderComposer({ effort: null, efforts: [] });
     expect(screen.queryByTestId('chat-effort-pill')).toBeNull();

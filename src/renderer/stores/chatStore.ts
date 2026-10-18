@@ -22,6 +22,7 @@ import type {
   ChatDriverId,
   ChatEvent,
   ChatEventDataMap,
+  ChatQuestion,
   ChatQuestionAnswers,
   ChatSessionState,
   ContentBlock,
@@ -121,6 +122,21 @@ export interface PlanDocumentItem extends ChatItemBase {
   markdown: string;
   status: 'streaming' | 'ready';
   toolCallId?: string;
+  /** Set when the permission request for this plan's tool call was answered. */
+  decision?: 'approved' | 'rejected';
+}
+
+/** A question the agent asked, kept in the transcript with its answer once given. */
+export interface QuestionItem extends ChatItemBase {
+  kind: 'question';
+  requestId: string;
+  questions: ChatQuestion[];
+  /** The tool call the question rides on (e.g. Claude's AskUserQuestion), shown as this row instead. */
+  toolCallId?: string;
+  answers?: ChatQuestionAnswers;
+  cancelled?: boolean;
+  /** Never answered: its turn or session ended first (e.g. the app quit while it waited). */
+  expired?: boolean;
 }
 
 /** Closes a turn: drives the turn footer (duration, usage) and turn-failure states. */
@@ -148,6 +164,7 @@ export type ChatItem =
   | NoticeItem
   | ErrorItem
   | PlanDocumentItem
+  | QuestionItem
   | TurnEndItem
   | SessionDividerItem;
 
@@ -197,6 +214,11 @@ export interface ChatViewState {
   effort: string | null;
   /** The effort is the provider's default rather than one chosen in the session (model_changed). */
   effortIsDefault: boolean;
+  /**
+   * The session has reported its model and effort (model_changed). Until then
+   * `effort` is unknown, not the default, so the effort chip waits.
+   */
+  effortReported: boolean;
   nativeSessionId: string | null;
   /** Last applied seq, per session id. Used to drop duplicates. */
   lastSeq: Record<string, number>;
@@ -247,6 +269,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     model: null,
     effort: null,
     effortIsDefault: false,
+    effortReported: false,
     nativeSessionId: null,
     lastSeq: {},
     turnId: null,
@@ -334,12 +357,14 @@ function startSession(prev: ChatViewState, event: ChatEvent): ChatViewState {
     sessionId: event.sessionId,
     turnId: null,
     turnStartedAt: null,
+    items: expireQuestions(state.items, (q) => q.sessionId === previous),
     pendingPermissions: [],
     pendingQuestions: [],
     plan: [],
     subagents: {},
     queued: [],
     nativeSessionId: null,
+    effortReported: false,
     usage: { ...state.usage, turn: null, session: null, context: null, turnTotal: null },
   };
   if (previous !== null) {
@@ -350,12 +375,13 @@ function startSession(prev: ChatViewState, event: ChatEvent): ChatViewState {
       resumed: event.type === 'session_started' ? event.data.resumed : false,
     };
     delete divider.turnId;
-    next.items = [...state.items, divider];
+    next.items = [...next.items, divider];
   }
   return next;
 }
 
-const totalOf = (t: TokenUsage): number => t.total ?? (t.input ?? 0) + (t.cachedInput ?? 0) + (t.cacheWrite ?? 0) + (t.output ?? 0);
+/** A usage's total: `input` already includes cache reads and writes (TokenUsage), so they aren't added again. */
+export const totalOf = (t: TokenUsage): number => t.total ?? (t.input ?? 0) + (t.output ?? 0);
 
 function addTokens(a: TokenUsage | null, b: TokenUsage): TokenUsage {
   const out: TokenUsage = { ...(a ?? {}) };
@@ -381,6 +407,37 @@ function usageSnapshot(data: { tokens?: TokenUsage; usage?: TokenUsage; costUsd?
   if (data.costUsd !== undefined) snap.costUsd = data.costUsd;
   if (data.costIsEstimate !== undefined) snap.costIsEstimate = data.costIsEstimate;
   return snap;
+}
+
+/** An item of turn `itemTurn` ends with turn `ended` (either unknown counts as the same turn). */
+function endsWithTurn(itemTurn: string | undefined, ended: string | undefined): boolean {
+  return itemTurn === undefined || ended === undefined || itemTurn === ended;
+}
+
+/**
+ * Mark unanswered questions matching `which` expired: their turn or session
+ * is over, so nobody is waiting for the answer any more.
+ */
+function expireQuestions(items: ChatItem[], which: (q: QuestionItem) => boolean): ChatItem[] {
+  let changed = false;
+  const next = items.map((item) => {
+    if (item.kind !== 'question' || item.answers || item.cancelled || item.expired || !which(item)) return item;
+    changed = true;
+    return { ...item, expired: true };
+  });
+  return changed ? next : items;
+}
+
+/**
+ * Settle a restored transcript whose session no longer runs (the app quit or
+ * crashed mid-turn): open questions expire and nothing is left awaiting an answer.
+ */
+export function settleDeadSession(state: ChatViewState): ChatViewState {
+  if (state.pendingQuestions.length === 0 && state.pendingPermissions.length === 0
+    && !state.items.some((i) => i.kind === 'question' && !i.answers && !i.cancelled && !i.expired)) {
+    return state;
+  }
+  return { ...state, items: expireQuestions(state.items, () => true), pendingQuestions: [], pendingPermissions: [] };
 }
 
 function stopStreaming(items: ChatItem[], turnId: string | undefined): ChatItem[] {
@@ -452,6 +509,15 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         levelNames: {},
         mcpServers: null,
         state: 'idle',
+        // A new run: whatever the last one left open (the app quit mid-turn,
+        // with no session_ended) is over. Nothing still streams or waits.
+        turnId: null,
+        turnStartedAt: null,
+        items: expireQuestions(stopStreaming(state.items, undefined), () => true),
+        pendingPermissions: [],
+        pendingQuestions: [],
+        // Unrecognized messages are counted per CLI run, not over the whole history.
+        protocolUnknown: {},
       };
     }
     case 'session_info': {
@@ -481,7 +547,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         state: event.data.reason === 'error' ? 'error' : 'sleeping',
         turnId: null,
         turnStartedAt: null,
-        items: stopStreaming(state.items, undefined),
+        items: expireQuestions(stopStreaming(state.items, undefined), (q) => q.sessionId === sid),
+        pendingQuestions: [],
       };
 
     case 'turn_started': {
@@ -519,7 +586,9 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         turnId: null,
         turnStartedAt: null,
         state: d.stopReason === 'error' ? 'error' : 'idle',
-        items: [...stopStreaming(state.items, event.turnId), end],
+        // A question still open when its turn ends will never be answered.
+        items: [...expireQuestions(stopStreaming(state.items, event.turnId), (q) => q.sessionId === sid && endsWithTurn(q.turnId, event.turnId)), end],
+        pendingQuestions: state.pendingQuestions.filter((q) => !endsWithTurn(q.turnId, event.turnId)),
         usage: {
           ...state.usage,
           ...(hasUsage && { turn: usageSnapshot(d) }),
@@ -653,22 +722,49 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const pendingPermissions = state.pendingPermissions.filter((p) => p.requestId !== req.requestId);
       return { ...state, pendingPermissions: [...pendingPermissions, req] };
     }
-    case 'permission_resolved':
-      return {
-        ...state,
-        pendingPermissions: state.pendingPermissions.filter((p) => p.requestId !== event.data.requestId),
-      };
+    case 'permission_resolved': {
+      const resolved = state.pendingPermissions.find((p) => p.requestId === event.data.requestId);
+      const pendingPermissions = state.pendingPermissions.filter((p) => p.requestId !== event.data.requestId);
+      // A plan approval (or denial) settles the plan card for that tool call.
+      const decision = event.data.decision === 'allow' ? 'approved' : event.data.decision === 'deny' ? 'rejected' : undefined;
+      const toolCallId = resolved?.toolCallId;
+      if (!decision || !toolCallId) return { ...state, pendingPermissions };
+      if (!state.items.some((item) => item.kind === 'plan_document' && item.toolCallId === toolCallId)) {
+        return { ...state, pendingPermissions };
+      }
+      const items = state.items.map((item): ChatItem =>
+        item.kind === 'plan_document' && item.toolCallId === toolCallId ? { ...item, decision } : item);
+      return { ...state, pendingPermissions, items };
+    }
     case 'question': {
       const q: PendingQuestion = { ...event.data, ts: event.ts };
       if (event.turnId) q.turnId = event.turnId;
       const pendingQuestions = state.pendingQuestions.filter((p) => p.requestId !== q.requestId);
-      return { ...state, pendingQuestions: [...pendingQuestions, q] };
+      const id = `question:${sid}:${event.data.requestId}`;
+      const items = upsertItem<QuestionItem>(
+        state.items,
+        id,
+        () => {
+          const item: QuestionItem = { ...itemBase(event, id), kind: 'question', requestId: event.data.requestId, questions: event.data.questions };
+          if (event.data.toolCallId !== undefined) item.toolCallId = event.data.toolCallId;
+          return item;
+        },
+        (existing) => ({ ...existing, questions: event.data.questions }),
+      );
+      return { ...state, items, pendingQuestions: [...pendingQuestions, q] };
     }
-    case 'question_resolved':
-      return {
-        ...state,
-        pendingQuestions: state.pendingQuestions.filter((p) => p.requestId !== event.data.requestId),
-      };
+    case 'question_resolved': {
+      const id = `question:${sid}:${event.data.requestId}`;
+      const idx = findItemIndex(state.items, id);
+      const pendingQuestions = state.pendingQuestions.filter((p) => p.requestId !== event.data.requestId);
+      if (idx === -1) return { ...state, pendingQuestions };
+      const items = state.items.slice();
+      const answered: QuestionItem = { ...(items[idx] as QuestionItem), answers: event.data.answers };
+      if (event.data.cancelled) answered.cancelled = true;
+      delete answered.expired;
+      items[idx] = answered;
+      return { ...state, items, pendingQuestions };
+    }
 
     case 'plan':
       return { ...state, plan: event.data.entries };
@@ -706,7 +802,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
     case 'mode_changed':
       return { ...state, level: event.data.level };
     case 'model_changed':
-      return { ...state, model: event.data.modelId, effort: event.data.effort ?? null, effortIsDefault: event.data.effortIsDefault === true };
+      return { ...state, model: event.data.modelId, effort: event.data.effort ?? null, effortIsDefault: event.data.effortIsDefault === true, effortReported: true };
     case 'commands_available':
       return { ...state, commands: event.data.commands };
 
@@ -793,6 +889,16 @@ interface ChatStoreState {
  */
 const pendingLive = new Map<string, ChatEvent[]>();
 
+/** True or false when main says whether a chat runtime runs the agent; undefined when it can't say. */
+async function runtimeIsLive(agentId: string): Promise<boolean | undefined> {
+  try {
+    const info = await window.clubhouse.chat.getAgentRuntime?.(agentId);
+    return typeof info?.chat === 'boolean' ? info.chat : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function answerKey(agentId: string, requestId: string): string {
   return `${agentId}:${requestId}`;
 }
@@ -828,11 +934,14 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       pendingLive.set(agentId, []);
       set((s) => ({ loading: { ...s.loading, [agentId]: true } }));
       let events: ChatEvent[] | null = null;
+      // Whether a chat runtime runs this agent now; asked alongside the read.
+      const live = runtimeIsLive(agentId);
       try {
         events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
       } catch {
         // Unreadable right now: handled below by keeping what this window has.
       }
+      const runtimeLive = await live;
       const buffered = pendingLive.get(agentId) ?? [];
       pendingLive.delete(agentId);
       if (events === null) {
@@ -851,10 +960,15 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       // came from events main had already written to the transcript (it
       // appends before it broadcasts), so nothing seen live is lost, and seq
       // dedupe drops the buffered events the transcript already holds.
-      const fromTranscript = foldChatEvents(undefined, agentId, events);
-      const next = foldChatEvents(fromTranscript, agentId, buffered);
+      let fromTranscript = foldChatEvents(undefined, agentId, events);
+      // Nothing runs the transcript's session any more (the app quit or
+      // crashed mid-turn): what it was waiting on can't be answered.
+      if (runtimeLive === false) fromTranscript = settleDeadSession(fromTranscript);
       // A tail that came back full may have cut earlier events off.
       const cut = tail !== undefined && events.length >= tail;
+      // ...including the model_changed that reported the effort: show what's known.
+      if (cut) fromTranscript = { ...fromTranscript, effortReported: true };
+      const next = foldChatEvents(fromTranscript, agentId, buffered);
       set((s) => {
         const loading = { ...s.loading };
         delete loading[agentId];

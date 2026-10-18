@@ -6,9 +6,12 @@ import {
   foldChatEvents,
   initChatEventListener,
   reduceChatEvent,
+  settleDeadSession,
+  totalOf,
   useChatStore,
   type AgentMessageItem,
   type ChatViewState,
+  type QuestionItem,
   type ThoughtItem,
   type ToolCallItem,
   type UserMessageItem,
@@ -260,6 +263,106 @@ describe('reduceChatEvent', () => {
     expect(s.pendingQuestions).toEqual([]);
   });
 
+  describe('questions nobody can answer any more (#2183 review)', () => {
+    const asked = (requestId: string, turnId: string, sessionId = 's1') => ev('question', {
+      requestId,
+      toolCallId: `tc-${requestId}`,
+      questions: [{ id: 'db', prompt: 'Which DB?', allowFreeText: true }],
+    }, { turnId, sessionId });
+    const questionItem = (s: ChatViewState, requestId: string) =>
+      s.items.find((i): i is QuestionItem => i.kind === 'question' && i.requestId === requestId);
+
+    it('expire when their turn ends unanswered', () => {
+      const s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        asked('q1', 't1'),
+        ev('turn_ended', { stopReason: 'cancelled' }, { turnId: 't1' }),
+      ]);
+      expect(questionItem(s, 'q1')?.expired).toBe(true);
+      expect(s.pendingQuestions).toEqual([]);
+    });
+
+    it('stay answered, and an answer arriving late still lands', () => {
+      let s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        asked('q1', 't1'),
+        ev('question_resolved', { requestId: 'q1', answers: { db: 'pg' } }, { turnId: 't1' }),
+        ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't1' }),
+      ]);
+      expect(questionItem(s, 'q1')?.expired).toBeUndefined();
+      s = fold([sessionStarted(ev), ev('turn_started', { trigger: 'prompt' }, { turnId: 't2' }), asked('q2', 't2'), ev('session_ended', { reason: 'stopped' })], createChatViewState(AGENT));
+      expect(questionItem(s, 'q2')?.expired).toBe(true);
+      s = fold([ev('question_resolved', { requestId: 'q2', answers: { db: 'pg' } })], s);
+      expect(questionItem(s, 'q2')).toMatchObject({ answers: { db: 'pg' } });
+      expect(questionItem(s, 'q2')?.expired).toBeUndefined();
+    });
+
+    it('expire when a new run starts after the app quit mid-turn (no session_ended)', () => {
+      const s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        asked('q1', 't1'),
+        sessionStarted(ev, 's2'),
+      ]);
+      expect(questionItem(s, 'q1')?.expired).toBe(true);
+      expect(s.pendingQuestions).toEqual([]);
+    });
+
+    it('settleDeadSession expires what a dead session left open', () => {
+      const s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        asked('q1', 't1'),
+        ev('permission_request', { requestId: 'p1', title: 'Run ls', options: [] }, { turnId: 't1' }),
+      ]);
+      expect(questionItem(s, 'q1')?.expired).toBeUndefined();
+      const settled = settleDeadSession(s);
+      expect(questionItem(settled, 'q1')?.expired).toBe(true);
+      expect(settled.pendingQuestions).toEqual([]);
+      expect(settled.pendingPermissions).toEqual([]);
+      expect(settleDeadSession(settled)).toBe(settled);
+    });
+  });
+
+  describe('a new run after the app quit mid-turn (#2183)', () => {
+    it('closes the dead turn: nothing streams, no turn runs', () => {
+      const s = fold([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        ev('agent_thought_chunk', { messageId: 'th1', text: 'Thinking' }, { turnId: 't1' }),
+        ev('agent_message_chunk', { messageId: 'm1', text: 'Hal' }, { turnId: 't1' }),
+        sessionStarted(ev, 's2'),
+      ]);
+      expect(s.turnId).toBeNull();
+      expect(s.turnStartedAt).toBeNull();
+      expect(s.state).toBe('idle');
+      expect(s.items.filter((i) => (i.kind === 'thought' || i.kind === 'agent_message') && i.streaming)).toEqual([]);
+    });
+
+    it('counts unrecognized messages per run, not over the whole history', () => {
+      let s = fold([
+        sessionStarted(ev),
+        ev('protocol_unknown', { driver: 'claude_agent_sdk', kind: 'message', name: 'system/thinking_tokens' }),
+      ]);
+      expect(s.protocolUnknown).toEqual({ 'message:system/thinking_tokens': 1 });
+      s = fold([sessionStarted(ev, 's2')], s);
+      expect(s.protocolUnknown).toEqual({});
+      s = fold([ev('protocol_unknown', { driver: 'claude_agent_sdk', kind: 'field', name: 'x' }, { sessionId: 's2' })], s);
+      expect(s.protocolUnknown).toEqual({ 'field:x': 1 });
+    });
+
+    it('waits for model_changed before treating the effort as known', () => {
+      let s = fold([sessionStarted(ev), ev('session_info', { efforts: ['low', 'high'] })]);
+      expect(s.effortReported).toBe(false);
+      s = fold([ev('model_changed', { modelId: 'opus', effort: 'high', effortIsDefault: true })], s);
+      expect(s.effortReported).toBe(true);
+      s = fold([sessionStarted(ev, 's2')], s);
+      expect(s.effortReported).toBe(false);
+    });
+  });
+
   it('ignores events with seq at or below the last seen seq for that session', () => {
     const e1 = sessionStarted(ev);
     const e2 = ev('agent_message_chunk', { messageId: 'm1', text: 'a' });
@@ -408,6 +511,18 @@ describe('reduceChatEvent', () => {
     expect(s.usage.turnTotal).toBeNull();
   });
 
+  it('totals a usage without a total as input + output: cache is already part of input (#2170)', () => {
+    expect(totalOf({ input: 110, cachedInput: 100, cacheWrite: 5, output: 5 })).toBe(115);
+    expect(totalOf({ input: 10, output: 5, total: 99 })).toBe(99);
+    expect(totalOf({})).toBe(0);
+    const s = fold([
+      sessionStarted(ev),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+      ev('turn_ended', { stopReason: 'end_turn', usage: { input: 110, cachedInput: 100, cacheWrite: 5, output: 5 } }, { turnId: 't1' }),
+    ]);
+    expect(s.usage.turnTotal).toEqual({ input: 110, cachedInput: 100, cacheWrite: 5, output: 5, total: 115 });
+  });
+
   it('tracks plan, plan documents, subagents, commands, level and model', () => {
     let s = fold([
       sessionStarted(ev),
@@ -491,6 +606,25 @@ describe('useChatStore', () => {
     const { agents } = useChatStore.getState();
     expect(agents[AGENT].items).toHaveLength(1);
     expect(agents['agent-2'].items).toHaveLength(0);
+  });
+
+  it.each([[false, true], [true, undefined]] as const)('loadTranscript settles a transcript nobody runs any more (runtime live: %s)', async (live, expired) => {
+    const getAgentRuntime = window.clubhouse.chat.getAgentRuntime;
+    window.clubhouse.chat.getAgentRuntime = vi.fn(async () => ({ chat: live, chatAvailable: true }));
+    try {
+      window.clubhouse.chat.readTranscript = vi.fn().mockResolvedValue([
+        sessionStarted(ev),
+        ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+        ev('question', { requestId: 'q1', questions: [{ id: 'a', prompt: 'A?', allowFreeText: true }] }, { turnId: 't1' }),
+      ]);
+      await useChatStore.getState().loadTranscript(AGENT);
+      const s = useChatStore.getState().agents[AGENT];
+      const q = s.items.find((i): i is QuestionItem => i.kind === 'question');
+      expect(q?.expired).toBe(expired);
+      expect(s.pendingQuestions).toHaveLength(live ? 1 : 0);
+    } finally {
+      window.clubhouse.chat.getAgentRuntime = getAgentRuntime;
+    }
   });
 
   it('loadTranscript folds the transcript and merges live events that arrive mid-load', async () => {
