@@ -316,6 +316,7 @@ export function initializedFromWire(raw: Obj): ClaudeChatEventBody {
     name: str(c.name) ?? '',
     description: str(c.description),
     argumentHint: str(c.argumentHint),
+    ...(c.builtin === true && { builtin: true }),
   }));
   const models = arr(raw.models).filter(isObj).map((m) => ({
     value: str(m.value) ?? '',

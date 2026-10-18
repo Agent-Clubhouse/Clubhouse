@@ -439,8 +439,10 @@ export function Composer(props: ComposerProps) {
   const slashMatches = useMemo(() => {
     if (!slash || slash.start === dismissedAt) return [];
     const q = slash.query.toLowerCase();
-    return props.commands.filter((c) => c.name.toLowerCase().startsWith(q)).slice(0, 8);
-  }, [slash, dismissedAt, props.commands]);
+    // The CLI's own commands only run when the message starts with them (#2135).
+    const atStart = text.slice(0, slash.start).trim() === '';
+    return props.commands.filter((c) => (atStart || !c.startOnly) && c.name.toLowerCase().startsWith(q)).slice(0, 8);
+  }, [slash, dismissedAt, props.commands, text]);
 
   useEffect(() => {
     if (dismissedAt !== null && slash?.start !== dismissedAt) setDismissedAt(null);

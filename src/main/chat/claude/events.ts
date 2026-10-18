@@ -50,7 +50,8 @@ export type ClaudeChatEventBody =
   | {
       /** Result of the `initialize` control handshake: commands, models, agents, account. */
       kind: 'initialized';
-      commands: Array<{ name: string; description?: string; argumentHint?: string }>;
+      /** `builtin`: Claude Code's own command, which only runs at the start of a message. */
+      commands: Array<{ name: string; description?: string; argumentHint?: string; builtin?: boolean }>;
       /** `efforts`: the model's effort levels, empty when it has none. */
       models: Array<{ value: string; displayName?: string; description?: string; resolvedModel?: string; efforts: string[] }>;
       raw: Record<string, unknown>;

@@ -492,6 +492,24 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     expect(drafts.of('session_info').filter((d) => d.data.models)).toHaveLength(2);
   });
 
+  it('marks Claude Code\'s own commands start-only, not skills (#2135)', async () => {
+    const transport = new ScriptedTransport();
+    transport.start = async () => transport.emit({
+      kind: 'initialized',
+      commands: [{ name: 'compact', description: 'Compact', builtin: true }, { name: 'code-review', argumentHint: '<pr>' }],
+      models: [],
+      raw: {},
+    });
+    const driver = new ClaudeChatDriver('claude_agent_sdk', { createTransport: () => transport });
+    const session = await driver.start({ agentId: 'a', provider: 'claude-code', cwd: os.tmpdir(), binaryPath: 'claude', level: 'ask' });
+    const drafts = new Drafts(session.events);
+    expect((await drafts.waitFor('commands_available')).data.commands).toEqual([
+      { name: 'compact', description: 'Compact', inputHint: undefined, startOnly: true },
+      { name: 'code-review', description: undefined, inputHint: '<pr>' },
+    ]);
+    await session.close();
+  });
+
   it('reports per-turn cost from the CLI running total, and the total as session usage', async () => {
     const { session, transport, drafts } = await scripted();
     for (const total of [0.01, 0.03, 0.005]) {

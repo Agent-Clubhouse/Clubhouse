@@ -10,6 +10,13 @@ const COMMANDS: AvailableCommand[] = [
   { name: 'review' },
 ];
 
+/** The CLI's own commands, which only run at the start of a message, beside a skill that works anywhere. */
+const MIXED: AvailableCommand[] = [
+  { name: 'compact', description: 'Compact the context', startOnly: true },
+  { name: 'code-review', description: 'Review the diff (skill)' },
+  { name: 'clear', startOnly: true },
+];
+
 let setDraftFromOutside: (text: string) => void = () => {};
 
 function Harness(props: Partial<ComposerProps>) {
@@ -188,5 +195,29 @@ describe('Composer slash menu (#2090)', () => {
     fireEvent.keyDown(box(), { key: 'Escape', isComposing: true });
     expect(onStop).not.toHaveBeenCalled();
     expect(menu()).not.toBeNull();
+  });
+
+  describe('start-only commands (#2135)', () => {
+    it('offers built-ins at the start of the message, after leading whitespace too', () => {
+      render(<Harness commands={MIXED} />);
+      type('/c');
+      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+        expect.stringContaining('/compact'), expect.stringContaining('/code-review'), expect.stringContaining('/clear'),
+      ]);
+      type('  \n/c');
+      expect(screen.getAllByRole('option')).toHaveLength(3);
+    });
+
+    it('offers only commands that work mid-message after other text', () => {
+      render(<Harness commands={MIXED} />);
+      type('please run /c');
+      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([expect.stringContaining('/code-review')]);
+    });
+
+    it('opens no menu mid-message when only built-ins match', () => {
+      render(<Harness commands={MIXED} />);
+      type('then /cl');
+      expect(menu()).toBeNull();
+    });
   });
 });
