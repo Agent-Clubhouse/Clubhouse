@@ -86,6 +86,11 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
   const eligible = enabled && !remote && agent.kind === 'durable';
   useEffect(() => {
     if (!eligible) { setEntry({ agentId: agent.id, info: NO_CHAT }); return; }
+    // Drop a NO_CHAT left from before the flag loaded: until the answer comes, it's the last known runtime or unknown.
+    setEntry((prev) => {
+      const info = runtimeCache.get(agent.id) ?? null;
+      return prev.agentId === agent.id && prev.info === info ? prev : { agentId: agent.id, info };
+    });
     let cancelled = false;
     const apply = (info: ChatAgentRuntimeInfo) => {
       if (cancelled) return;
@@ -140,9 +145,25 @@ interface Props {
   context?: ChatViewContext;
 }
 
-/** Shown instead of the terminal while it isn't known yet whether this agent runs in chat. */
-function RuntimePending() {
-  return <div className="h-full bg-ctp-base" data-testid="agent-runtime-pending" aria-busy="true" />;
+/** How long the pending view stays blank before saying it's connecting, so a fast answer doesn't flash text. */
+export const PENDING_NOTE_DELAY_MS = 400;
+
+/**
+ * Shown instead of the terminal while it isn't known yet whether this agent
+ * runs in chat, and while the chat view loads. Blank at first, then a quiet
+ * "Connecting" note if it takes a while (#2089).
+ */
+function RuntimePending({ agentName }: { agentName: string }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), PENDING_NOTE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div className="h-full bg-ctp-base flex items-center justify-center" data-testid="agent-runtime-pending" aria-busy="true">
+      {slow && <span className="text-xs text-ctp-overlay1" role="status">Connecting to {agentName}…</span>}
+    </div>
+  );
 }
 
 export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 'main' }: Props) {
@@ -174,7 +195,7 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
   const plainTerminal = canSwitch ? <MainTerminal agent={agent} terminal={terminal} /> : <>{terminal}</>;
   if (flag === false || !couldBeChat) return plainTerminal;
   // Flag or runtime still loading: a terminal here would flash before ChatView replaces it.
-  if (flag === null || info === null) return <RuntimePending />;
+  if (flag === null || info === null) return <RuntimePending agentName={agent.name} />;
 
   const requestSwitch = (mode: AgentRuntimeMode) => {
     const busy = mode === 'terminal' ? chatBusy : terminalBusy;
@@ -196,7 +217,7 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
   if (info.chat) {
     return (
       <>
-        <Suspense fallback={<div className="h-full bg-ctp-base" />}>
+        <Suspense fallback={<RuntimePending agentName={agent.name} />}>
           <ChatView agent={agent} context={context} switching={switching} onSwitchToTerminal={canSwitch ? () => requestSwitch('terminal') : undefined} />
         </Suspense>
         {confirmDialog}

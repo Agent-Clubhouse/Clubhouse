@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import type { OrchestratorConventions } from '../orchestrators';
 import { ATTR } from '../../shared/telemetry/attributes';
+import { IPC } from '../../shared/ipc-channels';
 import { setRuntime } from '../telemetry/facade';
 import type { TelemetryRuntime } from '../telemetry/types';
 
@@ -65,10 +66,20 @@ vi.mock('./mcp-settings', () => ({
 // Mock agent-config
 const mockGetDurableConfig = vi.fn(() => null);
 const mockAddSessionEntry = vi.fn();
+const mockUpdateSessionId = vi.fn(async () => {});
 vi.mock('./agent-config', () => ({
   getDurableConfig: (...args: unknown[]) => mockGetDurableConfig(...args),
   addSessionEntry: (...args: unknown[]) => mockAddSessionEntry(...args),
+  updateSessionId: (...args: unknown[]) => mockUpdateSessionId(...args),
 }));
+
+// Chat start runs for real unless a test stands in for it (to fail a chat resume).
+const { mockTryStartChatAgent } = vi.hoisted(() => ({ mockTryStartChatAgent: vi.fn() }));
+vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./agent-runtime/chat-spawn')>();
+  mockTryStartChatAgent.mockImplementation(actual.tryStartChatAgent);
+  return { ...actual, tryStartChatAgent: (...args: Parameters<typeof actual.tryStartChatAgent>) => mockTryStartChatAgent(...args) };
+});
 
 // Mock materialization-service
 const mockMaterializeAgent = vi.fn();
@@ -255,6 +266,19 @@ import {
 import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 
+/** Give a mock provider the SessionCapable surface, with the real CLIs' "resume <uuid>" pattern. */
+function sessionCapable(provider: Record<string, unknown>): void {
+  provider.listSessions = vi.fn(async () => []);
+  provider.readSessionTranscript = vi.fn(async () => null);
+  provider.extractSessionId = vi.fn((buffer: string) => buffer.match(/resume[:\s]+([0-9a-f-]{36})/i)?.[1] ?? null);
+}
+
+function notSessionCapable(provider: Record<string, unknown>): void {
+  delete provider.listSessions;
+  delete provider.readSessionTranscript;
+  delete provider.extractSessionId;
+}
+
 describe('agent-system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -268,6 +292,8 @@ describe('agent-system', () => {
   });
 
   afterEach(() => {
+    notSessionCapable(mockProvider);
+    notSessionCapable(mockCodexProvider);
     // Clean up tracked agents
     untrackAgent('test-agent');
     untrackAgent('agent-1');
@@ -716,8 +742,8 @@ describe('agent-system', () => {
 
     describe('waitForExit (restart with resume)', () => {
       async function spawnDurable() {
-        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
-        return mockPtySpawn.mock.calls[0][5] as (id: string, code: number, buffer?: string) => void;
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', resume: true, sessionId: 'sess-1' });
+        return mockPtySpawn.mock.calls[0][5] as (id: string, code: number, buffer?: string, killed?: boolean) => void;
       }
 
       it('resolves only after the PTY exited and its session id was persisted', async () => {
@@ -739,10 +765,11 @@ describe('agent-system', () => {
 
         persist();
         await killed;
-        expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: expect.any(String) }));
+        expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: 'sess-1' }));
       });
 
       it('also waits for the capture when the exit callback runs after the broadcast (SIGKILL path)', async () => {
+        sessionCapable(mockProvider);
         const onExit = await spawnDurable();
         let persist!: () => void;
         mockAddSessionEntry.mockReturnValueOnce(new Promise<void>((r) => { persist = r; }));
@@ -753,7 +780,7 @@ describe('agent-system', () => {
         await vi.waitFor(() => expect(mockPtyGracefulKill).toHaveBeenCalled());
 
         broadcastAgentExit('agent-1', 1, '');
-        onExit('agent-1', 1, '');
+        onExit('agent-1', 1, 'To continue this session, run claude --resume 11111111-2222-3333-4444-555555555555', true);
         await Promise.resolve();
         await Promise.resolve();
         expect(settled).toBe(false);
@@ -895,7 +922,8 @@ describe('agent-system', () => {
     });
 
     it('awaitPendingSessionCaptures waits for session ids written by PTY exits', async () => {
-      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      // A resumed run that exits cleanly records its session id (#2086).
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', resume: true, sessionId: 'sess-1' });
       const onExit = mockPtySpawn.mock.calls[0][5] as (id: string, code: number, buffer?: string) => void;
       let persist!: () => void;
       mockAddSessionEntry.mockReturnValueOnce(new Promise<void>((r) => { persist = r; }));
@@ -909,7 +937,173 @@ describe('agent-system', () => {
 
       persist();
       await drained;
-      expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: expect.any(String) }));
+      expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: 'sess-1' }));
+    });
+  });
+
+  describe('session capture on PTY exit (#2086)', () => {
+    const DEAD = 'dead0000-0000-4000-8000-000000000000';
+    const REAL = 'a1b2c3d4-0000-4000-8000-000000000001';
+    type OnExit = (id: string, code: number, buffer?: string, killed?: boolean) => void;
+
+    // What each CLI's terminal prints when told to resume a session it doesn't have.
+    const providers = [
+      { id: 'claude-code', provider: mockProvider, notFound: `No conversation found with session ID: ${DEAD}\r\n` },
+      { id: 'codex-cli', provider: mockCodexProvider, notFound: `\x1b[31mError:\x1b[0m No saved session found with ID ${DEAD}. Run \`codex resume\` without an ID.\r\n` },
+    ] as const;
+
+    let config: { lastSessionId?: string };
+    beforeEach(() => {
+      config = { lastSessionId: DEAD };
+      mockGetDurableConfig.mockImplementation(async () => ({ id: 'agent-1', runtimeMode: 'terminal', ...config }));
+      mockUpdateSessionId.mockImplementation(async (_p: string, _a: string, id: string | null) => {
+        if (id) config.lastSessionId = id; else delete config.lastSessionId;
+      });
+      mockAddSessionEntry.mockImplementation(async (_p: string, _a: string, entry: { sessionId: string }) => {
+        config.lastSessionId = entry.sessionId;
+      });
+    });
+    afterEach(() => {
+      mockGetDurableConfig.mockReset();
+      mockGetDurableConfig.mockReturnValue(null);
+      mockAddSessionEntry.mockReset();
+    });
+
+    /** Wake the agent the way the renderer does: resume when it has a last session id. */
+    async function wake(orchestrator: string): Promise<{ onExit: OnExit; resumedWith?: string }> {
+      const resumedWith = config.lastSessionId;
+      mockPtySpawn.mockClear();
+      await spawnAgent({
+        agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable',
+        orchestrator: orchestrator as 'claude-code',
+        resume: !!resumedWith, sessionId: resumedWith,
+      });
+      return { onExit: mockPtySpawn.mock.calls[0][5] as OnExit, resumedWith };
+    }
+
+    /** Let the exit handler's config writes finish. */
+    const settle = () => vi.waitFor(() => expect(mockAppLog).toHaveBeenCalledWith('core:agent', expect.any(String), expect.stringMatching(/Captured|Cleared|No session ID|Resume failed/), expect.anything()));
+
+    for (const { id, provider, notFound } of providers) {
+      describe(id, () => {
+        beforeEach(() => sessionCapable(provider));
+
+        it('a failed resume followed by a retry does not loop on made-up ids', async () => {
+          const first = await wake(id);
+          expect(first.resumedWith).toBe(DEAD);
+          first.onExit('agent-1', 1, notFound);
+          await vi.waitFor(() => expect(mockUpdateSessionId).toHaveBeenCalledWith('/project', 'agent-1', null));
+          expect(mockAddSessionEntry).not.toHaveBeenCalled();
+          expect(config.lastSessionId).toBeUndefined();
+          expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+            IPC.CHAT.RUNTIME_NOTICE, 'agent-1', expect.objectContaining({ code: 'resume_session_missing' }),
+          );
+
+          // The retry starts fresh and its real id is the one saved.
+          const second = await wake(id);
+          expect(second.resumedWith).toBeUndefined();
+          second.onExit('agent-1', 0, `To continue this session, run ${id === 'codex-cli' ? 'codex' : 'claude --'}resume ${REAL}\r\n`);
+          await vi.waitFor(() => expect(config.lastSessionId).toBe(REAL));
+          expect(mockAddSessionEntry).toHaveBeenCalledTimes(1);
+          expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL }));
+        });
+
+        it('a resume that exits non-zero at once without a message saves nothing and clears the id', async () => {
+          const { onExit } = await wake(id);
+          onExit('agent-1', 1, '\x1b[?25h\x1b[?2026l');
+          await vi.waitFor(() => expect(mockUpdateSessionId).toHaveBeenCalledWith('/project', 'agent-1', null));
+          expect(mockAddSessionEntry).not.toHaveBeenCalled();
+          expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+            IPC.CHAT.RUNTIME_NOTICE, 'agent-1', expect.objectContaining({ code: 'resume_failed' }),
+          );
+        });
+
+        it('a successful run saves the id the CLI printed', async () => {
+          config = {};
+          const { onExit } = await wake(id);
+          onExit('agent-1', 0, `resume ${REAL}`);
+          await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+          expect(mockUpdateSessionId).not.toHaveBeenCalled();
+        });
+      });
+    }
+
+    it('a resumed run that exits cleanly without printing an id keeps the resumed id', async () => {
+      const { onExit } = await wake('claude-code');
+      onExit('agent-1', 0, 'bye');
+      await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: DEAD })));
+      expect(mockUpdateSessionId).not.toHaveBeenCalled();
+    });
+
+    it('a killed resume keeps its id even when it exits non-zero right away', async () => {
+      const { onExit } = await wake('claude-code');
+      onExit('agent-1', 1, '', true);
+      await settle();
+      expect(mockUpdateSessionId).not.toHaveBeenCalled();
+      expect(mockAddSessionEntry).not.toHaveBeenCalled();
+      expect(config.lastSessionId).toBe(DEAD);
+    });
+
+    it('a resume that ran for a while before exiting non-zero keeps its id', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        const { onExit } = await wake('claude-code');
+        vi.setSystemTime(Date.now() + 60_000);
+        onExit('agent-1', 1, 'some crash');
+        await settle();
+        expect(mockUpdateSessionId).not.toHaveBeenCalled();
+        expect(config.lastSessionId).toBe(DEAD);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('ignores a "not found" message far back in a long session that exited cleanly', async () => {
+      sessionCapable(mockProvider);
+      const { onExit } = await wake('claude-code');
+      onExit('agent-1', 0, `No conversation found with session ID: x\n${'.'.repeat(5000)}\nresume ${REAL}`);
+      await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+      expect(mockUpdateSessionId).not.toHaveBeenCalled();
+    });
+
+    it('opens the terminal fresh when chat could not resume because the session is gone', async () => {
+      const { noteChatStartFailure } = await import('./agent-runtime/stale-session');
+      const realStart = mockTryStartChatAgent.getMockImplementation()!;
+      mockTryStartChatAgent.mockImplementationOnce(async (params: { agentId: string }) => {
+        noteChatStartFailure(params.agentId, `RPC error: no rollout found for thread id ${DEAD}`);
+        return false;
+      });
+      try {
+        await wake('codex-cli');
+        expect(mockUpdateSessionId).toHaveBeenCalledWith('/project', 'agent-1', null);
+        const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+        expect(spawnArgs.resume).toBe(false);
+        expect(spawnArgs.sessionId).toBeUndefined();
+      } finally {
+        mockTryStartChatAgent.mockImplementation(realStart);
+      }
+    });
+
+    it('keeps resuming in the terminal when chat failed for another reason', async () => {
+      const { noteChatStartFailure } = await import('./agent-runtime/stale-session');
+      mockTryStartChatAgent.mockImplementationOnce(async (params: { agentId: string }) => {
+        noteChatStartFailure(params.agentId, "RPC request 'session/new' timed out after 30000ms");
+        return false;
+      });
+      await wake('codex-cli');
+      expect(mockUpdateSessionId).not.toHaveBeenCalled();
+      const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+      expect(spawnArgs).toMatchObject({ resume: true, sessionId: DEAD });
+    });
+
+    it('does not clear an id that a newer run has replaced', async () => {
+      const { onExit } = await wake('claude-code');
+      config.lastSessionId = REAL;
+      onExit('agent-1', 1, `No conversation found with session ID: ${DEAD}`);
+      await settle();
+      await Promise.resolve();
+      expect(mockUpdateSessionId).not.toHaveBeenCalled();
+      expect(config.lastSessionId).toBe(REAL);
     });
   });
 
@@ -1048,7 +1242,7 @@ describe('agent-system', () => {
       expect(getAgentNonce('agent-1')).toBeUndefined();
     });
 
-    it('PTY onExit records session entry for durable agents even without SessionCapable (Bug 2 fix)', async () => {
+    it('PTY onExit never invents a session id when the CLI reported none (#2086)', async () => {
       await spawnAgent({
         agentId: 'agent-1',
         projectPath: '/project',
@@ -1058,20 +1252,10 @@ describe('agent-system', () => {
 
       const onExitCallback = mockPtySpawn.mock.calls[0][5];
       onExitCallback('agent-1', 0);
+      await Promise.resolve();
 
-      // addSessionEntry should be called even for non-session-capable providers
-      // with a generated UUID when extractSessionId isn't available
-      await vi.waitFor(() => {
-        expect(mockAddSessionEntry).toHaveBeenCalledWith(
-          '/project',
-          'agent-1',
-          expect.objectContaining({
-            sessionId: expect.any(String),
-            startedAt: expect.any(String),
-            lastActiveAt: expect.any(String),
-          }),
-        );
-      });
+      expect(mockAddSessionEntry).not.toHaveBeenCalled();
+      expect(mockUpdateSessionId).not.toHaveBeenCalled();
     });
 
     it('PTY onExit uses provider extractSessionId when available', async () => {

@@ -99,11 +99,28 @@ export function configurePluginMcpHost(next: PluginMcpHost): void {
   host = next;
 }
 
-/** A URL without its query and hash, or '' if it doesn't parse. */
-function documentUrl(url: string): string {
+/**
+ * A URL reduced to the document it names, for comparing the main frame's URL
+ * with the entry URL, or '' if it doesn't parse.
+ *
+ * Query and hash are dropped. The pathname is decoded, because Node (which
+ * parses the entry URL here) and Chromium (which reports the frame's URL)
+ * don't percent-encode the same characters ({ } ^ | among them). The host
+ * and a Windows drive letter (/C: vs /c:) compare case-insensitively. This
+ * only normalizes spelling: the webContents, main-frame and BrowserWindow
+ * checks are what carry the security.
+ */
+export function documentUrl(url: string): string {
   try {
     const u = new URL(url);
-    return `${u.protocol}//${u.host}${u.pathname}`;
+    let pathname = u.pathname;
+    try {
+      pathname = decodeURIComponent(pathname);
+    } catch {
+      // Malformed escapes: compare as spelled.
+    }
+    pathname = pathname.replace(/^\/([A-Za-z]):/, (_m, drive: string) => `/${drive.toLowerCase()}:`);
+    return `${u.protocol}//${u.host.toLowerCase()}${pathname}`;
   } catch {
     return '';
   }

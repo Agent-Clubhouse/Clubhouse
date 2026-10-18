@@ -663,9 +663,23 @@ describe('pty-manager', () => {
       vi.advanceTimersByTime(9000);
 
       // onExit should be called so agent-system can untrack from registry
-      expect(onExit).toHaveBeenCalledWith('agent_gk_onexit', 1, '');
+      expect(onExit).toHaveBeenCalledWith('agent_gk_onexit', 1, '', true);
       expect(isRunning('agent_gk_onexit')).toBe(false);
 
+      vi.useRealTimers();
+    });
+
+    it('tells onExit whether the exit followed a kill request (#2086)', async () => {
+      const onExit = vi.fn();
+      await spawn('agent_exit_self', '/test', '/usr/local/bin/claude', [], undefined, onExit);
+      mockProcess.onExit.mock.calls.at(-1)![0]({ exitCode: 1 });
+      expect(onExit).toHaveBeenLastCalledWith('agent_exit_self', 1, expect.any(String), false);
+
+      vi.useFakeTimers();
+      await spawn('agent_exit_killed', '/test', '/usr/local/bin/claude', [], undefined, onExit);
+      gracefulKill('agent_exit_killed');
+      mockProcess.onExit.mock.calls.at(-1)![0]({ exitCode: 1 });
+      expect(onExit).toHaveBeenLastCalledWith('agent_exit_killed', 1, expect.any(String), true);
       vi.useRealTimers();
     });
   });
@@ -1391,6 +1405,7 @@ describe('pty-manager', () => {
         'agent_exit_cb',
         0,
         expect.stringContaining('output line 1'),
+        false,
       );
     });
 

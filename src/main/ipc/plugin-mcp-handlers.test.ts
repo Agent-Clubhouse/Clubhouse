@@ -25,7 +25,7 @@ import {
 import { _resetForTesting as resetTokens, resolveToken } from '../services/clubhouse-mcp/plugin-mcp-tokens';
 import { clear as clearManifests, registerTrustedManifest } from '../services/plugin-manifest-registry';
 import { IPC } from '../../shared/ipc-channels';
-import { _resetForTesting as resetHandlers, configurePluginMcpHost, registerPluginMcpHandlers } from './plugin-mcp-handlers';
+import { _resetForTesting as resetHandlers, configurePluginMcpHost, documentUrl, registerPluginMcpHandlers } from './plugin-mcp-handlers';
 
 type Listener = (...args: unknown[]) => void;
 
@@ -129,6 +129,24 @@ describe('plugin-mcp-handlers', () => {
 
       it('accepts the main window on the entry page, whatever its query or hash', () => {
         expect(claim(makePage(MAIN, `${ENTRY}?popout=0#/projects`).event)()).toMatch(UUID);
+      });
+
+      // Packaged builds: Forge sets the entry to a raw file:// path, which Node
+      // parses here, while Chromium reports the frame's URL with its own escaping.
+      it.each([
+        ['characters Node and Chromium escape differently', 'file:///opt/Club{house}/a^b|c/index.html', 'file:///opt/Club%7Bhouse%7D/a%5Eb%7Cc/index.html'],
+        ['a space', 'file:///Applications/Club house.app/index.html', 'file:///Applications/Club%20house.app/index.html'],
+        ['a Windows drive letter in another case', 'file:///C:/Program Files/Clubhouse/index.html', 'file:///c:/Program%20Files/Clubhouse/index.html'],
+        ['a Windows path with backslashes', 'file:///C:\\Users\\me\\Clubhouse\\index.html', 'file:///c:/Users/me/Clubhouse/index.html'],
+      ])('accepts the packaged entry page when the URLs differ only by %s', (_label, entryUrl, frameUrl) => {
+        configurePluginMcpHost({ getMainWebContentsId: () => MAIN, entryUrl });
+        expect(claim(makePage(MAIN, frameUrl).event)()).toMatch(UUID);
+      });
+
+      it('still refuses another file in the packaged app, however it is spelled', () => {
+        configurePluginMcpHost({ getMainWebContentsId: () => MAIN, entryUrl: 'file:///C:/Clubhouse/index.html' });
+        expect(claim(makePage(MAIN, 'file:///c:/Clubhouse/other.html').event)).toThrow(/not the plugin host/);
+        expect(claim(makePage(MAIN, 'file:///d:/Clubhouse/index.html').event)).toThrow(/not the plugin host/);
       });
     });
 
@@ -287,6 +305,19 @@ describe('plugin-mcp-handlers', () => {
       expect(() => toolResultListener()(page.event, data)).not.toThrow();
       expect(resolvePluginToolCall).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('documentUrl', () => {
+  it.each([
+    ['drops query and hash', 'http://localhost:3000/main_window/index.html?x=1#/a', 'http://localhost:3000/main_window/index.html'],
+    ['decodes the pathname', 'file:///a/%7Bb%7D/c%20d', 'file:///a/{b}/c d'],
+    ['lowercases a drive letter', 'file:///C:/app/index.html', 'file:///c:/app/index.html'],
+    ['lowercases the host', 'http://LocalHost:3000/x', 'http://localhost:3000/x'],
+    ['keeps malformed escapes as spelled', 'file:///a/%E0%A4%A/b', 'file:///a/%E0%A4%A/b'],
+    ['returns empty for a non-URL', 'not a url', ''],
+  ])('%s', (_label, input, expected) => {
+    expect(documentUrl(input)).toBe(expected);
   });
 });
 

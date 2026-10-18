@@ -34,6 +34,7 @@ import { ChatAgentRuntime } from './chat-runtime';
 import { registerChatRuntime, unregisterChatRuntime } from './index';
 import { readChatTranscript } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
+import { noteChatStartFailure } from './stale-session';
 import { cleanSpawnEnv, getShellEnvironment, summarizeSpawnEnv } from '../../util/shell';
 
 export interface ChatSpawnParams {
@@ -256,6 +257,7 @@ export async function tryStartChatAgent(
     }
     // A stale resume id fails every driver alike; it says nothing about this one's health.
     if (!resumeNativeSessionId) recordDriverFailure(key, `session start failed: ${outcome.error}`);
+    noteChatStartFailure(params.agentId, outcome.error);
     skipped.push(`${driverLabel(driver)} failed to start: ${outcome.error}`);
   }
 
