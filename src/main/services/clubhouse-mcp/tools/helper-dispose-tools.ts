@@ -288,6 +288,14 @@ async function disposeLocked(projectPath: string, callerId: string, ref: string,
           message: `${result.message}.${wasRunning ? ` ${helper.name} was stopped but not disposed.` : ''}`,
         });
       }
+      if (result.worktreeRemoved) {
+        await refreshRenderer(projectPath);
+        return textResult(
+          `dispose_helper failed: ${helper.name} stopped being your helper while it was being disposed. `
+            + 'Its worktree folder was already removed, so it was not marked disposed and is now an ordinary agent without a worktree.',
+          true,
+        );
+      }
       return textResult(`dispose_helper failed: ${result.message}`, true);
     }
 

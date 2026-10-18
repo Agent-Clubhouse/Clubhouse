@@ -23,6 +23,8 @@ const repoByWorktree = new Map<string, FakeRepo>();
 const repoByBranch = new Map<string, FakeRepo>();
 const branches = new Set<string>();
 const rmFailures = new Set<string>();
+/** Runs before a `git branch -d/-D` answers: after the worktree went, before disposeAgent re-reads. */
+const hooks = { beforeBranchDelete: null as null | (() => Promise<void>) };
 let remoteConfigured = true;
 let baseBranch: string | null = 'main';
 let showRefBroken = false;
@@ -102,6 +104,14 @@ vi.mock('child_process', () => ({
   exec: vi.fn((_cmd: string, _opts: unknown, cb: (...args: unknown[]) => void) => { cb(null, ''); return {}; }),
   execFile: vi.fn((_f: string, args: string[], opts: { cwd: string }, cb: (...args: unknown[]) => void) => {
     gitCalls.push({ args, cwd: opts.cwd });
+    const hook = args[0] === 'branch' ? hooks.beforeBranchDelete : null;
+    if (hook) {
+      hooks.beforeBranchDelete = null;
+      void hook().then(() => {
+        try { cb(null, gitOutput(args, opts.cwd)); } catch (err) { cb(err, ''); }
+      });
+      return {};
+    }
     let out: string;
     try {
       out = gitOutput(args, opts.cwd);
@@ -232,6 +242,7 @@ beforeEach(() => {
   repoByBranch.clear();
   branches.clear();
   rmFailures.clear();
+  hooks.beforeBranchDelete = null;
   movedBranches.clear();
   remoteConfigured = true;
   baseBranch = 'main';
@@ -869,6 +880,21 @@ describe('delete cascade', () => {
     expect(await disposeHelper(PROJECT_PATH, 'durable_1_orch', { expectedParentId: 'durable_2_h' }))
       .toMatchObject({ ok: false });
     expect(worktreeRemovals()).toEqual([]);
+  });
+
+  it('a helper released while git ran is not marked disposed, and its worktreePath is cleared (#2229)', async () => {
+    seedFamily({ durable_2_h: {} });
+    hooks.beforeBranchDelete = () => setParentAgent(PROJECT_PATH, 'durable_2_h', null);
+
+    const result = await disposeHelper(PROJECT_PATH, 'durable_2_h', { expectedParentId: 'durable_1_orch' });
+
+    expect(result).toMatchObject({ ok: false, worktreeRemoved: true, message: expect.stringMatching(/worktree folder was already removed/) });
+    expect(worktreeRemovals()).toEqual([worktree('durable_2_h')]);
+    await flushAllAgentConfigs();
+    const row = onDisk('durable_2_h');
+    expect(row?.disposedAt).toBeUndefined();
+    expect(row).not.toHaveProperty('worktreePath');
+    expect(row).not.toHaveProperty('parentAgentId');
   });
 
   it('a failed folder removal keeps the branch on a plain delete too', async () => {

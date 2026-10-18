@@ -195,6 +195,15 @@ describe('dispose_helper', () => {
     expect(json).toMatchObject({ status: 'disposed', forced: true, uncommittedFiles: 3, unpushedCommits: 1 });
   });
 
+  it('says the worktree folder is gone when the helper was released while git ran', async () => {
+    mocks.disposeHelper.mockResolvedValueOnce({ ok: false, message: 'released', worktreeRemoved: true });
+    const { result, text } = await call('dispose_helper', { helper: 'helper' });
+    expect(result.isError).toBe(true);
+    expect(text).toMatch(/worktree folder was already removed/);
+    expect(text).toMatch(/not marked disposed/);
+    expect(mocks.broadcast).toHaveBeenCalledWith(IPC.WINDOW.REQUEST_DURABLE_RELOAD, 'proj_1');
+  });
+
   it('refuses when the helper was released before the dispose re-read', async () => {
     mocks.disposeHelper.mockResolvedValueOnce({ ok: false, message: 'helper is no longer a helper of this agent' });
     const { result, text } = await call('dispose_helper', { helper: 'helper' });
