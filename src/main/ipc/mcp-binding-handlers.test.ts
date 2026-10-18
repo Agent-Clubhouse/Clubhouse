@@ -39,6 +39,10 @@ vi.mock('../services/clubhouse-mcp/tools/group-project-tools', () => ({
   registerGroupProjectTools: vi.fn(),
 }));
 
+vi.mock('../services/clubhouse-mcp/tools/connection-tools', () => ({
+  registerConnectionTools: vi.fn(),
+}));
+
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -68,6 +72,11 @@ vi.mock('../services/helper-wire-source', () => ({
   watchHelperWires: vi.fn(() => () => undefined),
 }));
 
+vi.mock('../services/orchestrator-connections', () => ({
+  orchestratorConnectionSource: { id: 'orchestrator-connections', prune: true, collect: vi.fn(async () => []) },
+  watchOrchestratorConnections: vi.fn(() => () => undefined),
+}));
+
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
@@ -84,6 +93,8 @@ import {
 } from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
+import { orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
+import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import {
   registerMcpBindingHandlers,
   maybeStartMcpBridge,
@@ -470,12 +481,26 @@ describe('restorePersistedBindings (#1544)', () => {
     expect(rebuildPersistedBindings).not.toHaveBeenCalled();
   });
 
-  it('registers the canvas and helper wire sources once and rebuilds on every call', () => {
+  it('registers the canvas, helper wire and orchestrator connection sources once and rebuilds on every call', () => {
     restorePersistedBindings();
     restorePersistedBindings();
-    expect(registerPersistedBindingSource).toHaveBeenCalledTimes(2);
-    expect(registerPersistedBindingSource).toHaveBeenCalledWith(canvasWireBindingSource);
-    expect(registerPersistedBindingSource).toHaveBeenCalledWith(helperWireBindingSource);
+    expect(vi.mocked(registerPersistedBindingSource).mock.calls.map(([source]) => source)).toEqual([
+      canvasWireBindingSource,
+      helperWireBindingSource,
+      orchestratorConnectionSource,
+    ]);
+    expect(rebuildPersistedBindings).toHaveBeenCalledTimes(2);
+  });
+
+  it('registers the connection tools with the other tool templates (#2230)', () => {
+    expect(registerConnectionTools).toHaveBeenCalled();
+  });
+
+  it('rebuilds again when orchestrator connections drop a disposed helper (#2230)', () => {
+    restorePersistedBindings();
+    expect(watchOrchestratorConnections).toHaveBeenCalledTimes(1);
+    const onChanged = vi.mocked(watchOrchestratorConnections).mock.calls.at(-1)![0];
+    onChanged();
     expect(rebuildPersistedBindings).toHaveBeenCalledTimes(2);
   });
 

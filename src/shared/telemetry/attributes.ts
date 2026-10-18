@@ -443,6 +443,8 @@ export const ATTR = {
     'hand_off', 'dispose_helper',
     // helpers (#2227)
     'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent',
+    // orchestration: connection tools (#2230)
+    'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
     'other',
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
