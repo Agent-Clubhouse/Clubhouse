@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import type { ChatCapabilities } from '../../../../shared/chat';
+import type { ChatCapabilities, ChatMcpServer } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { buildStreamBlocks, type StreamBlock } from './view-model';
 import { scrollWithin } from './scroll';
@@ -22,6 +22,8 @@ interface BlockProps {
   block: StreamBlock;
   turnNumber: number;
   capabilities: ChatCapabilities | null;
+  /** The session's MCP servers, so a tool name splits on a known server first. */
+  mcpServers?: ChatMcpServer[] | null;
   /** Set on the first block of a run of inline subagent work (subagents not nested): its subagent id. */
   inlineSubagentId?: string;
   /** Open the agent map at a subagent; omitted hides the jump links. */
@@ -61,7 +63,7 @@ function sameItems<T>(a: readonly T[], b: readonly T[]): boolean {
  * re-renders only the message it extends.
  */
 function sameBlock(prev: BlockProps, next: BlockProps): boolean {
-  if (prev.turnNumber !== next.turnNumber || prev.capabilities !== next.capabilities) return false;
+  if (prev.turnNumber !== next.turnNumber || prev.capabilities !== next.capabilities || prev.mcpServers !== next.mcpServers) return false;
   if (prev.inlineSubagentId !== next.inlineSubagentId || prev.onOpenSubagent !== next.onOpenSubagent) return false;
   const a = prev.block;
   const b = next.block;
@@ -87,7 +89,7 @@ const Block = memo(function Block(props: BlockProps) {
   return <BlockBody {...props} />;
 }, sameBlock);
 
-function BlockBody({ block, turnNumber, capabilities }: BlockProps) {
+function BlockBody({ block, turnNumber, capabilities, mcpServers }: BlockProps) {
   if (block.type === 'explore') return <ExploreGroup tools={block.tools} />;
   if (block.type === 'subagent') return null;
   const item = block.item;
@@ -95,7 +97,7 @@ function BlockBody({ block, turnNumber, capabilities }: BlockProps) {
     case 'user_message': return <UserMessage item={item} />;
     case 'agent_message': return <AgentMessage item={item} />;
     case 'thought': return <ThoughtRow item={item} />;
-    case 'tool_call': return <ToolCallView tool={item} />;
+    case 'tool_call': return <ToolCallView tool={item} mcpServers={mcpServers} />;
     case 'plan_document': return <PlanDocumentCard item={item} />;
     case 'notice': return <NoticeRow item={item} />;
     case 'error': return <ErrorRow item={item} />;
@@ -217,6 +219,7 @@ export function ChatStream({ state, onOpenSubagent, jump, onJumpResult, announce
             block={b}
             turnNumber={b.type === 'item' ? turnNumbers.get(b.item.id) ?? 0 : 0}
             capabilities={capabilities}
+            mcpServers={state.mcpServers}
             inlineSubagentId={inlineJumps.get(b.key)}
             onOpenSubagent={onOpenSubagent}
           />

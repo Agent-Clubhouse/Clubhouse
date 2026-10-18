@@ -15,6 +15,7 @@ import type {
   PermissionOption,
   ToolCallContent,
   ToolCallStatus,
+  TokenUsage,
   ToolKind,
   TurnStopReason,
   UsageLimit,
@@ -34,6 +35,7 @@ import {
   type ThreadItem,
   type ThreadStatus,
   type TurnError,
+  type TokenUsageBreakdown,
   type TurnStatus,
   type UserInput,
 } from './codex-protocol';
@@ -79,6 +81,10 @@ export class CodexChatEventMapper {
   private readonly openQuestions = new Map<string, RequestId>();
   /** Turns whose terminal error already went out via an `error` notification. */
   private readonly erroredTurns = new Set<string>();
+  /** Each thread's cumulative token usage, as of its last update (subagent threads report their own). */
+  private readonly lastTotals = new Map<string, TokenUsageBreakdown>();
+  /** Per running turn: the thread total before it, and the latest total during it. */
+  private readonly turnTokens = new Map<string, { before: TokenUsageBreakdown; latest: TokenUsageBreakdown }>();
 
   /** Translate one notification. Known methods with no chat meaning map to nothing. */
   mapNotification(notification: ServerNotification): ChatEventDraft[] {
@@ -98,11 +104,13 @@ export class CodexChatEventMapper {
         if (turn.status === 'failed' && turn.error && !alreadyReported) {
           events.push({ type: 'error', data: { ...errorData(turn.error), fatal: false } });
         }
+        const usage = this.takeTurnUsage(turn.id);
         events.push({
           type: 'turn_ended',
           data: {
             stopReason: stopReason(turn.status, turn.error),
             ...(turn.durationMs != null && { durationMs: turn.durationMs }),
+            ...(usage && { usage }),
           },
         });
         return events;
@@ -153,8 +161,9 @@ export class CodexChatEventMapper {
         }];
       }
       case 'thread/tokenUsage/updated': {
-        const { tokenUsage } = notification.params;
+        const { tokenUsage, turnId, threadId } = notification.params;
         const { total, last, modelContextWindow } = tokenUsage;
+        this.noteTurnTokens(threadId, turnId, total, last);
         return [{
           type: 'usage',
           data: {
@@ -406,6 +415,37 @@ export class CodexChatEventMapper {
     return [{ type: 'protocol_unknown', data: { driver: 'codex_app_server', kind: message.kind, name: message.method } }];
   }
 
+  /**
+   * Track a turn's tokens. Codex reports the thread's running total (and the
+   * last model request's share) after each request; a turn's own usage is
+   * how far the total moved during it. Differencing totals, rather than
+   * summing `last`, can't double-count a repeated update. A turn's first
+   * update falls back to total - last for what came before, when this
+   * mapper hasn't seen an earlier total (a resumed thread).
+   */
+  private noteTurnTokens(threadId: string, turnId: string, total: TokenUsageBreakdown, last: TokenUsageBreakdown): void {
+    const entry = this.turnTokens.get(turnId);
+    if (entry) entry.latest = total;
+    else this.turnTokens.set(turnId, { before: this.lastTotals.get(threadId) ?? subtractTokens(total, last), latest: total });
+    this.lastTotals.set(threadId, total);
+  }
+
+  /** The finished turn's tokens, for its turn_ended; undefined if Codex reported none. */
+  private takeTurnUsage(turnId: string): TokenUsage | undefined {
+    const entry = this.turnTokens.get(turnId);
+    if (!entry) return undefined;
+    this.turnTokens.delete(turnId);
+    const d = subtractTokens(entry.latest, entry.before);
+    return {
+      input: d.inputTokens,
+      cachedInput: d.cachedInputTokens,
+      cacheWrite: d.cacheWriteInputTokens,
+      output: d.outputTokens,
+      reasoning: d.reasoningOutputTokens,
+      total: d.totalTokens,
+    };
+  }
+
   private mapItemStarted(item: ThreadItem): ChatEventDraft[] {
     switch (item.type) {
       case 'commandExecution':
@@ -535,6 +575,19 @@ export class CodexChatEventMapper {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/** a - b per field, never below zero. */
+function subtractTokens(a: TokenUsageBreakdown, b: TokenUsageBreakdown): TokenUsageBreakdown {
+  const sub = (x: number, y: number) => Math.max(0, x - y);
+  return {
+    totalTokens: sub(a.totalTokens, b.totalTokens),
+    inputTokens: sub(a.inputTokens, b.inputTokens),
+    cachedInputTokens: sub(a.cachedInputTokens, b.cachedInputTokens),
+    cacheWriteInputTokens: sub(a.cacheWriteInputTokens, b.cacheWriteInputTokens),
+    outputTokens: sub(a.outputTokens, b.outputTokens),
+    reasoningOutputTokens: sub(a.reasoningOutputTokens, b.reasoningOutputTokens),
+  };
+}
+
 function sessionState(status: ThreadStatus): ChatSessionState | undefined {
   switch (status.type) {
     case 'idle':
@@ -663,8 +716,18 @@ function commandToolCall(item: Item<'commandExecution'>, status: ToolCallStatus)
   };
 }
 
+/**
+ * Codex's `diff` depends on the change's kind: a unified diff for an update,
+ * but the whole file's content for an add or a delete. Content goes in as
+ * newText or oldText, so the card counts its lines and shows the file as
+ * created or deleted (a unified-diff parser finds no +/- lines in it).
+ */
 function diffContent(changes: Item<'fileChange'>['changes']): ToolCallContent[] {
-  return changes.map((change) => ({ type: 'diff', path: change.path, unifiedDiff: change.diff }));
+  return changes.map((change): ToolCallContent => {
+    if (change.kind.type === 'add') return { type: 'diff', path: change.path, newText: change.diff };
+    if (change.kind.type === 'delete') return { type: 'diff', path: change.path, oldText: change.diff };
+    return { type: 'diff', path: change.path, unifiedDiff: change.diff };
+  });
 }
 
 function fileChangeToolCall(item: Item<'fileChange'>, status: ToolCallStatus) {

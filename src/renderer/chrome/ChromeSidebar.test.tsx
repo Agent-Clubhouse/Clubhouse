@@ -355,6 +355,20 @@ describe('ChromeSidebar', () => {
       expect(reorder).toHaveBeenCalledWith(['p3', 'p2', 'p1']);
     });
 
+    it('drags an agent in the tree and persists the order through reorderAgents (#2115)', async () => {
+      const reorderDurable = vi.fn(async () => {});
+      (window.clubhouse.agent as unknown as { reorderDurable: typeof reorderDurable }).reorderDurable = reorderDurable;
+      useChromeStore.setState({ expandedFolds: ['p1:sleeping'] });
+      render(<ChromeSidebar />);
+      // Saved order a1, a2, a3; a2 and a3 sleep. Drop a3 on a2: it goes first among the sleeping.
+      fireEvent.dragStart(screen.getByTestId('agent-item-a3'), { dataTransfer });
+      fireEvent.dragOver(screen.getByTestId('agent-item-a2'), { dataTransfer });
+      fireEvent.drop(screen.getByTestId('agent-item-a2'), { dataTransfer });
+      expect(reorderDurable).toHaveBeenCalledWith('/tmp/ch', ['a1', 'a3', 'a2']);
+      await act(async () => {});
+      expect(Object.keys(useAgentStore.getState().agents).filter((id) => id.startsWith('a'))).toEqual(['a1', 'a3', 'a2']);
+    });
+
     it('ignores drops across the pinned and unpinned sections', () => {
       const reorder = vi.fn(async () => {});
       useProjectStore.setState({ reorderProjects: reorder } as never);
@@ -363,6 +377,32 @@ describe('ChromeSidebar', () => {
       drag('p1', 'p3');
       expect(reorder).not.toHaveBeenCalled();
     });
+  });
+
+  it('orders the tree and the filter results most recent first in Recent mode (#2116)', () => {
+    const now = Date.now();
+    useChromeStore.setState({
+      projectSort: 'recent', agentSort: 'recent',
+      projectActivity: { p1: now - 3_000, p2: now - 1_000, p3: now - 2_000 },
+      agentActivity: { a1: 1, a3: 5 },
+      expandedFolds: ['p1:sleeping'],
+    });
+    try {
+      render(<ChromeSidebar />);
+      const projectOrder = () => [...document.querySelectorAll<HTMLElement>('[data-testid^="project-group-"]')].map((el) => el.dataset.testid!.slice(14));
+      expect(projectOrder()).toEqual(['p2', 'p3', 'p1']);
+      // Sleeping a2, a3: a3 woke last.
+      const sleeping = [...document.querySelectorAll<HTMLElement>('[data-agent-id]')].map((el) => el.dataset.agentId).filter((id) => id === 'a2' || id === 'a3');
+      expect(sleeping).toEqual(['a3', 'a2']);
+
+      // The filter results use the same order.
+      fireEvent.change(screen.getByTestId('chrome-filter'), { target: { value: 'a' } });
+      const results = screen.getByTestId('filter-results');
+      const matched = [...results.querySelectorAll<HTMLElement>('[data-agent-id]')].map((el) => el.dataset.agentId);
+      expect(matched.indexOf('a3')).toBeLessThan(matched.indexOf('a2'));
+    } finally {
+      useChromeStore.setState({ projectSort: 'manual', agentSort: 'manual', projectActivity: {}, agentActivity: {} });
+    }
   });
 
   it('forgets pins, collapsed state and folds for a removed project', () => {

@@ -16,6 +16,7 @@ import {
 import { DiffStat, FileRow, SectionHead, StateDot, StateToolbar, type StateDotKind } from './parts';
 import { formatAgo, formatDuration, formatUsd, plural } from './format';
 import { formatTokens } from '../chat/view-model';
+import { Markdown } from '../chat/MessageBlocks';
 import { getOrchestratorLabel } from '../orchestrator-colors';
 import { matchStat } from './useDiffStats';
 
@@ -193,7 +194,7 @@ function TextRow({ step, start }: { step: TextStep; start: number }) {
   return (
     <div className="flex gap-2 pt-[5px] pb-[7px]" data-testid="timeline-text">
       <Time ts={step.ts} start={start} />
-      <p className="flex-1 min-w-0 text-[13px] leading-[1.55] text-ctp-subtext1 whitespace-pre-wrap break-words line-clamp-6">{step.text}</p>
+      <Markdown text={step.text} className="flex-1 min-w-0 text-[13px] leading-[1.55] text-ctp-subtext1 break-words line-clamp-6" />
     </div>
   );
 }
@@ -356,7 +357,9 @@ export function RunMonitor({ run, steps, totals, files, cwd, now, actions, stack
               <h1 className="text-[15px] leading-normal font-normal text-ctp-text break-words" data-testid="run-mission">{run.mission}</h1>
               <div className="text-xs text-ctp-overlay1">{meta}</div>
               {run.phase === 'done' && run.summary && (
-                <p className="mt-1 text-[13px] leading-[1.55] text-ctp-subtext1 whitespace-pre-wrap break-words" data-testid="run-summary-text">{run.summary}</p>
+                <div className="mt-1" data-testid="run-summary-text">
+                  <Markdown text={run.summary} className="text-[13px] leading-[1.55] text-ctp-subtext1 break-words" />
+                </div>
               )}
               {run.phase === 'fail' && run.error && (
                 <pre className="mt-1 px-2.5 py-2 rounded-md bg-ctp-crust font-mono text-xs leading-normal text-ctp-subtext1 whitespace-pre-wrap break-words max-h-32 overflow-y-auto" data-testid="run-error">

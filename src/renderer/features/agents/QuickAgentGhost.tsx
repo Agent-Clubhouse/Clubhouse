@@ -10,6 +10,8 @@ import { runDetail } from './states/RunMonitor';
 import { DiffStat, FileRow, ModelLabel, SectionHead, StateToolbar, ToolbarSeparator } from './states/parts';
 import { Button } from '../../components/Button';
 import { formatAgo, formatDuration, relativeTo } from './states/format';
+import { Markdown } from './chat/MessageBlocks';
+import { markdownToPlainText } from '../../utils/safe-markdown';
 
 interface Props {
   completed: CompletedQuickAgent;
@@ -90,7 +92,9 @@ function QuickAgentFinished({ completed, onDismiss, onDelete }: Props) {
           <h1 className="text-[15px] leading-normal font-normal text-ctp-text break-words" data-testid="quick-mission">{completed.mission}</h1>
           <div className="text-xs text-ctp-overlay1">{meta}</div>
           {completed.summary ? (
-            <p className="mt-2.5 text-[13px] leading-[1.55] text-ctp-subtext1 whitespace-pre-wrap break-words" data-testid="quick-summary">{completed.summary}</p>
+            <div className="mt-2.5" data-testid="quick-summary">
+              <Markdown text={completed.summary} className="text-[13px] leading-[1.55] text-ctp-subtext1 break-words" />
+            </div>
           ) : (
             <p className="mt-2.5 text-[13px] leading-[1.55] text-ctp-overlay1" data-testid="quick-summary">
               {completed.cancelled ? 'Stopped before it wrote a summary.' : 'It ended without writing a summary.'}
@@ -164,7 +168,7 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete: _onDele
     completed.model ? formatModelLabel(completed.model) : null,
   ].filter(Boolean).join(' · ');
   const detail = [
-    completed.summary || (completed.cancelled ? 'Stopped' : 'Interrupted'),
+    (completed.summary && markdownToPlainText(completed.summary)) || (completed.cancelled ? 'Stopped' : 'Interrupted'),
     completed.filesModified.length > 0 ? `${completed.filesModified.length} file${completed.filesModified.length === 1 ? '' : 's'}` : null,
     completed.durationMs != null ? formatDuration(completed.durationMs) : null,
   ].filter(Boolean).join(' · ');

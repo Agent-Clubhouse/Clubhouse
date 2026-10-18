@@ -17,6 +17,7 @@ vi.mock('./log-settings', () => ({
 import * as fsp from 'fs/promises';
 import * as logSettings from './log-settings';
 import { init, log, flush, appLog, getLogPath, getNamespaces } from './log-service';
+import { _resetBreadcrumbsForTests, recentBreadcrumbs } from './breadcrumbs';
 
 // The electron mock provides app.getPath('home') → path.join(os.tmpdir(), 'clubhouse-test-home')
 const EXPECTED_LOG_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'logs');
@@ -109,6 +110,31 @@ describe('log-service', () => {
       // Verify sorted
       const sorted = [...ns].sort();
       expect(ns).toEqual(sorted);
+    });
+  });
+
+  describe('feedback breadcrumbs', () => {
+    beforeEach(() => { _resetBreadcrumbsForTests(() => 1_000); });
+
+    it('turns ui:perf lines into performance breadcrumbs, even with logging off', () => {
+      vi.mocked(logSettings.getSettings).mockReturnValue({ enabled: false, namespaces: {}, retention: 'medium', minLogLevel: 'error' });
+      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Long frames: 640ms in agent', meta: { kind: 'long_frame', maxMs: 640, count: 2 } });
+      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Slow interaction: 320ms in agent', meta: { kind: 'slow_interaction', maxMs: 320 } });
+      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Window unresponsive', meta: { windowKind: 'main' } });
+      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Window responsive again', meta: { windowKind: 'main', durationMs: 2500 } });
+      expect(recentBreadcrumbs().map((b) => [b.kind, b.code, b.value])).toEqual(expect.arrayContaining([
+        ['performance', 'ui.long_frame', 640],
+        ['performance', 'ui.slow_interaction', 320],
+        ['performance', 'window.unresponsive', 2500],
+      ]));
+      expect(recentBreadcrumbs()).toHaveLength(3);
+    });
+
+    it('takes a meta.breadcrumb from app namespaces, never from plugins', () => {
+      log({ ts: 't', ns: 'ui:chat:switch', level: 'info', msg: 'Runtime switch requested', meta: { breadcrumb: { kind: 'event', code: 'runtime.switch.chat' } } });
+      log({ ts: 't', ns: 'plugin:evil', level: 'info', msg: 'x', meta: { breadcrumb: { kind: 'error', code: 'plugin.fake' } } });
+      log({ ts: 't', ns: 'ui:nav', level: 'debug', msg: 'x', meta: { breadcrumb: { kind: 'event', code: 'Has User Text!' } } });
+      expect(recentBreadcrumbs().map((b) => b.code)).toEqual(['runtime.switch.chat']);
     });
   });
 

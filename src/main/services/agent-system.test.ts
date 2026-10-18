@@ -67,11 +67,17 @@ vi.mock('./mcp-settings', () => ({
 const mockGetDurableConfig = vi.fn(() => null);
 const mockAddSessionEntry = vi.fn();
 const mockUpdateSessionId = vi.fn(async () => {});
+const mockGetSessionHistory = vi.fn(async (): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> => []);
+const mockRemoveSessionEntries = vi.fn(async () => {});
 vi.mock('./agent-config', () => ({
+  getSessionHistory: (...args: unknown[]) => mockGetSessionHistory(...(args as [])),
+  removeSessionEntries: (...args: unknown[]) => mockRemoveSessionEntries(...(args as [])),
   getDurableConfig: (...args: unknown[]) => mockGetDurableConfig(...args),
   addSessionEntry: (...args: unknown[]) => mockAddSessionEntry(...args),
   updateSessionId: (...args: unknown[]) => mockUpdateSessionId(...args),
+  updateDurableConfig: (...args: unknown[]) => mockUpdateDurableConfig(...args),
 }));
+const mockUpdateDurableConfig = vi.fn(async () => {});
 
 // Chat start runs for real unless a test stands in for it (to fail a chat resume).
 const { mockTryStartChatAgent } = vi.hoisted(() => ({ mockTryStartChatAgent: vi.fn() }));
@@ -262,6 +268,7 @@ import {
   setLaunchesBlocked,
   LaunchesBlockedError,
   awaitPendingSessionCaptures,
+  listSessions,
 } from './agent-system';
 import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
@@ -277,6 +284,9 @@ function notSessionCapable(provider: Record<string, unknown>): void {
   delete provider.listSessions;
   delete provider.readSessionTranscript;
   delete provider.extractSessionId;
+  delete provider.findRunSession;
+  delete provider.hasSession;
+  delete provider.hasSessionForCwd;
 }
 
 describe('agent-system', () => {
@@ -1071,7 +1081,7 @@ describe('agent-system', () => {
       const realStart = mockTryStartChatAgent.getMockImplementation()!;
       mockTryStartChatAgent.mockImplementationOnce(async (params: { agentId: string }) => {
         noteChatStartFailure(params.agentId, `RPC error: no rollout found for thread id ${DEAD}`);
-        return false;
+        return 'terminal';
       });
       try {
         await wake('codex-cli');
@@ -1088,12 +1098,170 @@ describe('agent-system', () => {
       const { noteChatStartFailure } = await import('./agent-runtime/stale-session');
       mockTryStartChatAgent.mockImplementationOnce(async (params: { agentId: string }) => {
         noteChatStartFailure(params.agentId, "RPC request 'session/new' timed out after 30000ms");
-        return false;
+        return 'terminal';
       });
       await wake('codex-cli');
       expect(mockUpdateSessionId).not.toHaveBeenCalled();
       const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
       expect(spawnArgs).toMatchObject({ resume: true, sessionId: DEAD });
+    });
+
+    describe('Codex runs that print no id (#2132)', () => {
+      beforeEach(() => sessionCapable(mockCodexProvider));
+
+      it('saves the session the CLI recorded for this run', async () => {
+        config = {};
+        const findRunSession = vi.fn(async () => REAL);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = findRunSession;
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, '\x1b[?25h\x1b[?2026l');
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+        const [run] = findRunSession.mock.calls[0] as unknown as [{ cwd: string; startedAt: number; endedAt: number; resumedId?: string }];
+        expect(run.cwd).toBe('/project');
+        expect(run.endedAt).toBeGreaterThanOrEqual(run.startedAt);
+        expect(run.resumedId).toBeUndefined();
+      });
+
+      it('passes the resumed id, and skips the lookup when the resume failed', async () => {
+        const findRunSession = vi.fn(async () => DEAD);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = findRunSession;
+        const first = await wake('codex-cli');
+        first.onExit('agent-1', 0, 'bye');
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalled());
+        expect(findRunSession.mock.calls[0]).toEqual([expect.objectContaining({ resumedId: DEAD })]);
+
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+          findRunSession.mockClear();
+          const second = await wake('codex-cli');
+          vi.setSystemTime(Date.now() + 60_000);
+          second.onExit('agent-1', 1, 'crash');
+          await settle();
+          expect(findRunSession).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('saves nothing when the store has no session for the run', async () => {
+        config = {};
+        (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => null);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, 'bye');
+        await settle();
+        expect(mockAddSessionEntry).not.toHaveBeenCalled();
+      });
+
+      it('starts fresh when the saved id has no rollout, and clears it', async () => {
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);
+        const { resumedWith } = await wake('codex-cli');
+        expect(resumedWith).toBe(DEAD);
+        expect(mockUpdateSessionId).toHaveBeenCalledWith('/project', 'agent-1', null);
+        expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+          IPC.CHAT.RUNTIME_NOTICE, 'agent-1', expect.objectContaining({ code: 'resume_session_missing' }),
+        );
+        const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+        expect(spawnArgs.resume).toBe(false);
+        expect(spawnArgs.sessionId).toBeUndefined();
+        expect(mockTryStartChatAgent.mock.calls.at(-1)![0]).toMatchObject({ resume: false, sessionId: undefined });
+      });
+
+      it('keeps resuming when the rollout exists or the store can\'t be read', async () => {
+        for (const answer of [true, undefined]) {
+          mockUpdateSessionId.mockClear();
+          (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => answer);
+          await wake('codex-cli');
+          expect(mockUpdateSessionId).not.toHaveBeenCalled();
+          const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+          expect(spawnArgs).toMatchObject({ resume: true, sessionId: DEAD });
+        }
+      });
+    });
+
+    describe('never saving an id the CLI store lacks (#2156)', () => {
+      beforeEach(() => sessionCapable(mockCodexProvider));
+
+      it('drops a scraped id the store does not have and uses the run\'s real session', async () => {
+        config = {};
+        const SCRAPED = 'a27ef93a-2030-45fd-943e-6e07ac0a811c';
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async (id: string) => id !== SCRAPED);
+        (mockCodexProvider.extractSessionId as ReturnType<typeof vi.fn>).mockReturnValueOnce(SCRAPED);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => REAL);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, `session: ${SCRAPED}`);
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+        expect(mockAddSessionEntry).not.toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: SCRAPED }));
+      });
+
+      it('does not save the resumed id on a clean exit when the store does not have it', async () => {
+        // Present when the wake checked it, gone by the time the run ended
+        const hasSession = vi.fn(async () => true).mockResolvedValueOnce(true).mockResolvedValue(false);
+        (mockCodexProvider as Record<string, unknown>).hasSession = hasSession;
+        (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => null);
+        const { onExit, resumedWith } = await wake('codex-cli');
+        expect(resumedWith).toBe(DEAD);
+        onExit('agent-1', 0, 'bye');
+        await settle();
+        expect(mockAddSessionEntry).not.toHaveBeenCalled();
+      });
+
+      it('drops a scraped id that is a real session from another cwd (#2172)', async () => {
+        config = {};
+        const OTHER = 'b0b0b0b0-0000-4000-8000-000000000002';
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => true);
+        const hasSessionForCwd = vi.fn(async (id: string) => id !== OTHER);
+        (mockCodexProvider as Record<string, unknown>).hasSessionForCwd = hasSessionForCwd;
+        (mockCodexProvider.extractSessionId as ReturnType<typeof vi.fn>).mockReturnValueOnce(OTHER);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => REAL);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, `session: ${OTHER}`);
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+        expect(hasSessionForCwd).toHaveBeenCalledWith(OTHER, '/project', undefined);
+        expect(mockAddSessionEntry).not.toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: OTHER }));
+      });
+
+      it('keeps a scraped id when the cwd check can\'t tell', async () => {
+        config = {};
+        (mockCodexProvider as Record<string, unknown>).hasSessionForCwd = vi.fn(async () => undefined);
+        (mockCodexProvider.extractSessionId as ReturnType<typeof vi.fn>).mockReturnValueOnce(REAL);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, `session: ${REAL}`);
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+      });
+
+      it('saves the id the provider assigned a fresh session without searching for it', async () => {
+        config = {};
+        mockCodexProvider.buildSpawnCommand.mockResolvedValueOnce({ binary: 'copilot', args: ['--session-id', REAL], sessionId: REAL } as never);
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => undefined);
+        const findRunSession = vi.fn(async () => DEAD);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = findRunSession;
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, 'bye');
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+        expect(findRunSession).not.toHaveBeenCalled();
+        expect(mockCodexProvider.extractSessionId).not.toHaveBeenCalled();
+      });
+
+      it('falls back to the store when the assigned id was never created', async () => {
+        config = {};
+        const ASSIGNED = 'c0c0c0c0-0000-4000-8000-000000000003';
+        mockCodexProvider.buildSpawnCommand.mockResolvedValueOnce({ binary: 'copilot', args: ['--session-id', ASSIGNED], sessionId: ASSIGNED } as never);
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async (id: string) => id !== ASSIGNED);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => REAL);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, 'bye');
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+        expect(mockAddSessionEntry).not.toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: ASSIGNED }));
+      });
+
+      it('keeps a scraped id when the store can\'t tell', async () => {
+        config = {};
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => undefined);
+        (mockCodexProvider.extractSessionId as ReturnType<typeof vi.fn>).mockReturnValueOnce(REAL);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, `session: ${REAL}`);
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+      });
     });
 
     it('does not clear an id that a newer run has replaced', async () => {
@@ -1104,6 +1272,55 @@ describe('agent-system', () => {
       await Promise.resolve();
       expect(mockUpdateSessionId).not.toHaveBeenCalled();
       expect(config.lastSessionId).toBe(REAL);
+    });
+  });
+
+  describe('sleep reason on PTY exit (#2104)', () => {
+    it("drops the last sleep's reason when the agent wakes again", async () => {
+      mockGetDurableConfig.mockResolvedValueOnce({ id: 'agent-1', lastSleep: { reason: 'agent', at: '2026-10-17T00:00:00.000Z', by: 'PM' } } as never);
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockUpdateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { lastSleep: null });
+      mockUpdateDurableConfig.mockClear();
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockUpdateDurableConfig).not.toHaveBeenCalled();
+    });
+
+    async function spawnDurable(): Promise<(id: string, code: number, buffer?: string, killed?: boolean) => void> {
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      return mockPtySpawn.mock.calls.at(-1)![5];
+    }
+    const saved = () => mockUpdateDurableConfig.mock.calls.map((c) => (c[2] as { lastSleep?: { reason: string; by?: string; exitCode?: number } }).lastSleep);
+
+    it('records a Stop as the user, and sleep_agent with the caller', async () => {
+      let onExit = await spawnDurable();
+      await killAgent('agent-1', '/project');
+      onExit('agent-1', 0, '', true);
+      onExit = await spawnDurable();
+      await killAgent('agent-1', '/project', undefined, 'agent_tool', { by: 'Clubhouse-PM' });
+      onExit('agent-1', 0, '', true);
+      await vi.waitFor(() => expect(saved()).toHaveLength(2));
+      expect(saved()).toMatchObject([{ reason: 'user' }, { reason: 'agent', by: 'Clubhouse-PM' }]);
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_SLEEP_REASON, 'agent-1', expect.objectContaining({ reason: 'agent' }));
+    });
+
+    it('records a CLI that exited on its own, by exit code', async () => {
+      let onExit = await spawnDurable();
+      onExit('agent-1', 2, 'boom');
+      onExit = await spawnDurable();
+      onExit('agent-1', 0, 'bye');
+      await vi.waitFor(() => expect(saved()).toHaveLength(2));
+      expect(saved()).toMatchObject([{ reason: 'crashed', exitCode: 2 }, { reason: 'exited' }]);
+    });
+
+    it("records nothing for Clubhouse's own kill (quitting), and forgets a kill that found nothing running", async () => {
+      const onExit = await spawnDurable();
+      onExit('agent-1', 1, '', true);
+      // A Stop for an agent that wasn't running leaves a request; the next run must not inherit it.
+      await killAgent('agent-1', '/project');
+      const next = await spawnDurable();
+      next('agent-1', 3, 'crash');
+      await vi.waitFor(() => expect(saved()).toHaveLength(1));
+      expect(saved()).toMatchObject([{ reason: 'crashed', exitCode: 3 }]);
     });
   });
 
@@ -2152,5 +2369,44 @@ describe('agent-system', () => {
     it('returns an empty array when none are running', () => {
       expect(getRunningAgentIds(['x', 'y'])).toEqual([]);
     });
+  });
+});
+
+describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
+  const entry = (id: string) => ({ sessionId: id, startedAt: '2026-10-17T00:00:00Z', lastActiveAt: '2026-10-17T01:00:00Z' });
+
+  afterEach(() => notSessionCapable(mockCodexProvider));
+
+  it('hides history entries the store does not have and prunes them; keeps ones it has or can\'t check', async () => {
+    sessionCapable(mockCodexProvider);
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli', worktreePath: '/wt' });
+    mockGetSessionHistory.mockResolvedValue([entry('dead-1'), entry('real-1'), entry('unknown-1')]);
+    (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async (id: string) => (id === 'dead-1' ? false : id === 'real-1' ? true : undefined));
+
+    const sessions = await listSessions('/project', 'durable_cp', 'codex-cli');
+
+    expect(sessions.map((s) => s.sessionId).sort()).toEqual(['real-1', 'unknown-1']);
+    expect(mockRemoveSessionEntries).toHaveBeenCalledWith('/project', 'durable_cp', ['dead-1']);
+  });
+
+  it('prunes nothing when the store can\'t tell (no store where it looked)', async () => {
+    sessionCapable(mockCodexProvider);
+    mockRemoveSessionEntries.mockClear();
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli' });
+    mockGetSessionHistory.mockResolvedValue([entry('a-1'), entry('b-1')]);
+    (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => undefined);
+    const sessions = await listSessions('/project', 'durable_cp', 'codex-cli');
+    expect(sessions.map((s) => s.sessionId).sort()).toEqual(['a-1', 'b-1']);
+    expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
+  });
+
+  it('prunes nothing when every entry exists', async () => {
+    sessionCapable(mockCodexProvider);
+    mockRemoveSessionEntries.mockClear();
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli' });
+    mockGetSessionHistory.mockResolvedValue([entry('real-1')]);
+    (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => true);
+    await listSessions('/project', 'durable_cp', 'codex-cli');
+    expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
   });
 });

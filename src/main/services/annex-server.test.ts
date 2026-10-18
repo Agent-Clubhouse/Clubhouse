@@ -661,6 +661,7 @@ describe('annex-server', () => {
         status: 'sleeping',
         detailedStatus: null,
         executionMode: null,
+        hasSession: false,
       });
     });
 
@@ -1045,6 +1046,22 @@ describe('annex-server', () => {
           sessionId: 'session-abc',
         }),
       );
+    });
+
+    it('POST /api/v1/agents/:id/wake starts fresh when asked to resume an agent with no session (#2028)', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'test', path: '/tmp/test' },
+      ]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01' } as any,
+      ]);
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
+
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/agents/durable_1/wake', { resume: true }, authHeaders(token));
+      expect(res.status).toBe(200);
+      // Not resume-latest (--continue) for an agent that never ran: that exits at once.
+      expect(agentSystem.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'durable_1', resume: false, sessionId: undefined }));
     });
   });
 

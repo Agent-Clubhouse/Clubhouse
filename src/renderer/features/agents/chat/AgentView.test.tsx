@@ -27,7 +27,7 @@ const api = window.clubhouse;
 describe('AgentView', () => {
   beforeEach(() => {
     resetChatFlagCache();
-    useChatStore.setState({ agents: {}, loading: {} });
+    useChatStore.setState({ agents: {}, loading: {}, loaded: {} });
     useAgentStore.setState({ agents: { [agent.id]: agent } } as never);
     api.app.getExperimentalSettings = vi.fn(async () => ({ chat: true })) as typeof api.app.getExperimentalSettings;
     api.app.isPreviewEligible = vi.fn(async () => true);

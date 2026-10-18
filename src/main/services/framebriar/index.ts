@@ -5,15 +5,26 @@
  */
 
 import * as path from 'path';
-import { app, net, safeStorage } from 'electron';
+import { app, Menu, net, safeStorage } from 'electron';
 import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { FeedbackService } from './feedback-service';
+import { buildSha } from '../../build-info';
+import { recentBreadcrumbs } from '../breadcrumbs';
 import { notifyFramebriarConnectionChanged, setFramebriarTelemetrySource } from '../../telemetry/destinations/framebriar-source';
 
 let service: FeedbackService | null = null;
 let quitting = false;
+
+/** The app menu's Capture Feedback Screenshot item (#2101); see menu.ts. */
+export const FEEDBACK_CAPTURE_MENU_ID = 'feedback-capture';
+
+/** Grey out the shortcut's menu item while feedback can't capture (not set up, quitting). */
+export function setFeedbackCaptureEnabled(enabled: boolean): void {
+  const item = Menu.getApplicationMenu()?.getMenuItemById(FEEDBACK_CAPTURE_MENU_ID);
+  if (item) item.enabled = enabled;
+}
 
 /** Feedback is always available until quit begins. */
 export function isFeedbackEnabled(): boolean {
@@ -27,6 +38,8 @@ export function getFeedbackService(): FeedbackService {
       safeStorage,
       dataDir: path.join(app.getPath('userData'), 'framebriar'),
       appVersion: app.getVersion(),
+      buildSha: buildSha(),
+      breadcrumbs: recentBreadcrumbs,
       isOnline: () => net.isOnline(),
       log: (level, msg, meta) => appLog('core:feedback', level, msg, meta ? { meta } : undefined),
     });
@@ -42,6 +55,8 @@ export function getFeedbackService(): FeedbackService {
         notifyFramebriarConnectionChanged();
       }
     });
+    // The capture shortcut works exactly when the Feedback button shows.
+    s.onChange((status) => setFeedbackCaptureEnabled(status.canCapture));
     service = s;
   }
   return service;
@@ -67,6 +82,7 @@ async function stopService(): Promise<void> {
 /** App quit: stop for good, so a late IPC call can't start a new service. */
 export async function shutdownFeedback(): Promise<void> {
   quitting = true;
+  setFeedbackCaptureEnabled(false);
   await stopService();
 }
 

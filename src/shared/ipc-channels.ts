@@ -70,6 +70,8 @@ export const IPC = {
     AGENT_WAKE_FAILED: 'agent:agent-wake-failed',
     AGENT_MATERIALIZATION_FAILED: 'agent:agent-materialization-failed',
     AGENT_SLEEPING: 'agent:agent-sleeping',
+    /** (agentId, AgentSleepInfo): why an agent just went to sleep (#2104). */
+    AGENT_SLEEP_REASON: 'agent:agent-sleep-reason',
     SPAWN_COMPANION: 'agent:spawn-companion',
     GET_COMPANION_STATUS: 'agent:get-companion-status',
     GET_COMPANION_WORKSPACE: 'agent:get-companion-workspace',
@@ -456,6 +458,8 @@ export const IPC = {
     UNREGISTER_WEBVIEW: 'mcp-binding:unregister-webview',
     SET_INSTRUCTIONS: 'mcp-binding:set-instructions',
     SET_DISABLED_TOOLS: 'mcp-binding:set-disabled-tools',
+    /** Renderer→main: the agent's Clubhouse MCP connection (AgentMcpConnection | null). */
+    GET_AGENT_CONNECTION: 'mcp-binding:get-agent-connection',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },
@@ -521,6 +525,8 @@ export const IPC = {
     CANCEL: 'feedback:cancel',
     /** Main → renderer broadcast: FeedbackStatus after any access, outbox or receipt change. */
     STATUS_CHANGED: 'feedback:status-changed',
+    /** Main → main window: a draft captured from the keyboard shortcut, to review (#2101). */
+    CAPTURED: 'feedback:captured',
   },
   GOOBERS: {
     GET_STATE: 'goobers:get-state',

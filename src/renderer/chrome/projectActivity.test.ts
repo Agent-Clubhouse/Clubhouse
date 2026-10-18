@@ -30,4 +30,18 @@ describe('idle rule', () => {
     expect(active.map((p) => p.id)).toEqual(['fresh', 'unseen']);
     expect(idle.map((p) => p.id)).toEqual(['old']);
   });
+
+  it('folds a project marked inactive at once, even with recent activity or idle set to never (#2116)', () => {
+    const marked = { ...base, inactiveIds: ['fresh'] };
+    expect(isProjectIdle('fresh', marked)).toBe(true);
+    expect(isProjectIdle('fresh', { ...marked, idleDays: 0 })).toBe(true);
+    expect(isProjectIdle('unseen', { ...base, inactiveIds: ['unseen'] })).toBe(true);
+  });
+
+  it('still shows a marked project while it is running or selected, and never folds a pinned one', () => {
+    const marked = { ...base, inactiveIds: ['fresh'] };
+    expect(isProjectIdle('fresh', { ...marked, runningIds: new Set(['fresh']) })).toBe(false);
+    expect(isProjectIdle('fresh', { ...marked, activeProjectId: 'fresh' })).toBe(false);
+    expect(isProjectIdle('fresh', { ...marked, pinnedIds: ['fresh'] })).toBe(false);
+  });
 });

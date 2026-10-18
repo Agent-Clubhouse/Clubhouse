@@ -309,6 +309,7 @@ describe('filters', () => {
     expect(f.log({ name: 'clubhouse.exception', attributes: {} })).toBe(true);
     expect(f.log({ name: 'clubhouse.app.unclean_exit', attributes: {} })).toBe(true);
     expect(f.log({ name: 'clubhouse.ui.feature_used', attributes: {} })).toBe(true);
+    expect(f.log({ name: 'clubhouse.ui.hang', attributes: {} })).toBe(true);
     expect(f.log({ name: 'clubhouse.goobers.liveness', attributes: {} })).toBe(false);
     expect(f.metric('clubhouse.app.sessions')).toBe(true);
     expect(f.metric('clubhouse.telemetry.dropped')).toBe(true);

@@ -44,12 +44,16 @@ export type ClaudeChatEventBody =
       slashCommands: string[];
       apiKeySource?: string;
       capabilities?: unknown;
+      /** MCP servers from init's `mcp_servers`; absent when the CLI didn't send the field. */
+      mcpServers?: Array<{ name: string; status: string }>;
     }
   | {
       /** Result of the `initialize` control handshake: commands, models, agents, account. */
       kind: 'initialized';
-      commands: Array<{ name: string; description?: string; argumentHint?: string }>;
-      models: Array<{ value: string; displayName?: string; description?: string }>;
+      /** `builtin`: Claude Code's own command, which only runs at the start of a message. */
+      commands: Array<{ name: string; description?: string; argumentHint?: string; builtin?: boolean }>;
+      /** `efforts`: the model's effort levels, empty when it has none. */
+      models: Array<{ value: string; displayName?: string; description?: string; resolvedModel?: string; efforts: string[] }>;
       raw: Record<string, unknown>;
     }
   | { kind: 'user_message'; text: string; uuid?: string; replay: boolean }
@@ -128,6 +132,33 @@ export type ClaudeChatEventBody =
     }
   /** A wire message the normalizer doesn't map yet. Logged as a drift signal, never dropped silently. */
   | { kind: 'unmapped'; type: string; subtype?: string; raw: Record<string, unknown> }
-  | { kind: 'session_ended'; exitCode: number | null; signal: string | null; reason?: string };
+  | { kind: 'session_ended'; exitCode: number | null; signal: string | null; reason?: string }
+  /**
+   * `tool_progress`: a tool is still running (Bash/PowerShell progress, a
+   * heartbeat for other long tools), or a subagent's API call is being retried.
+   */
+  | {
+      kind: 'tool_progress';
+      toolCallId: string;
+      toolName: string;
+      elapsedSeconds: number;
+      heartbeat: boolean;
+      parentToolCallId?: string;
+      subagentType?: string;
+      retry?: { attempt: number; maxRetries: number; retryDelayMs?: number; errorStatus?: number; errorCategory?: string };
+    }
+  /** `system/background_tasks_changed`: every live background task (replace semantics). */
+  | { kind: 'background_tasks'; tasks: ClaudeBackgroundTask[] }
+  /** `system/vcs_state_changed`: a commit, push, merge or rebase happened; the workspace's git state is stale. */
+  | { kind: 'vcs_changed'; vcsKind: string; branch?: string; cwd?: string };
+
+export interface ClaudeBackgroundTask {
+  taskId: string;
+  taskType: string;
+  description: string;
+  subagentType?: string;
+  /** Ambient tasks aren't user-visible activity. */
+  ambient: boolean;
+}
 
 export type ClaudeChatEvent = ClaudeEventEnvelope & ClaudeChatEventBody;

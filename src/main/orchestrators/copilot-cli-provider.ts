@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import {
   OrchestratorConventions,
   ProviderCapabilities,
@@ -21,6 +24,31 @@ import { BaseProvider } from './base-provider';
 import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
+import { getShellEnvironment } from '../util/shell';
+import { copilotSessionInCwd, findCopilotRunSession, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Copilot's state directory: `COPILOT_HOME` (per `copilot help environment`)
+ * from the agent's profile, then the environment the PTY inherits (the login
+ * shell's, then Clubhouse's own), else `~/.copilot`.
+ */
+export function resolveCopilotHome(profileEnv?: Record<string, string>): string {
+  let shellEnv: Record<string, string> | undefined;
+  try {
+    shellEnv = getShellEnvironment();
+  } catch {
+    // telemetry-exempt: the shell env can't be read; process.env still applies
+  }
+  const home = [profileEnv?.COPILOT_HOME, shellEnv?.COPILOT_HOME, process.env.COPILOT_HOME]
+    .map((v) => v?.trim())
+    .find((v): v is string => !!v);
+  if (!home) return homePath('.copilot');
+  if (home === '~') return homePath();
+  if (home.startsWith('~/') || home.startsWith('~\\')) return homePath(home.slice(2));
+  return home;
+}
 
 const TOOL_VERBS: Record<string, string> = {
   shell: 'Running command',
@@ -149,6 +177,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   async buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult> {
     const binary = this.findBinary();
     const args: string[] = [];
+    let sessionId: string | undefined;
 
     const hasPrompt = !!(opts.mission || opts.systemPrompt);
     // Session resume: --resume <id> for specific session, --continue for most recent.
@@ -161,6 +190,11 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       } else {
         args.push('--continue');
       }
+    } else if (opts.interactive && await this.supportsSessionIdFlag(binary)) {
+      // A fresh durable session: name its id up front (#2156), so the run's
+      // session is known without searching the store afterwards.
+      sessionId = randomUUID();
+      args.push('--session-id', sessionId);
     }
 
     if (opts.freeAgentMode) {
@@ -189,7 +223,28 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
     args.push(...this.buildAgentFileArgs({ agentFile: opts.agentFile, agentSource: opts.agentSource }));
 
-    return { binary, args };
+    return sessionId ? { binary, args, sessionId } : { binary, args };
+  }
+
+  /** `copilot --help` output per binary, read once; null when it couldn't be run. */
+  private readonly helpCache = new Map<string, Promise<string | null>>();
+
+  /**
+   * Whether this Copilot accepts `--session-id <uuid>` for a new session
+   * (1.0.98 does; older versions would reject the flag and not start).
+   */
+  async supportsSessionIdFlag(binary: string): Promise<boolean> {
+    let help = this.helpCache.get(binary);
+    if (!help) {
+      help = execFileAsync(binary, ['--help'], {
+        timeout: 5000,
+        shell: process.platform === 'win32',
+        env: getShellEnvironment(),
+      }).then((r) => (r ? String(r.stdout) : null)).catch((): null => null);
+      this.helpCache.set(binary, help);
+    }
+    const text = await help;
+    return !!text && /--session-id\b/.test(text);
   }
 
   // ── AgentFileCapable ───────────────────────────────────────────────────
@@ -311,73 +366,49 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
    * Falls back to the flat session-state directory when no project-scoped subdir exists.
    */
   private resolveSessionDir(cwd: string, profileEnv?: Record<string, string>): string | null {
-    const configDir = profileEnv?.GH_COPILOT_CONFIG_DIR || homePath('.copilot');
-    const sessionDir = path.join(configDir, 'session-state');
+    const sessionDir = this.sessionStateDir(profileEnv);
     if (!fs.existsSync(sessionDir)) return null;
     // Return project-scoped subdir if found, else fall back to flat session-state dir
     return resolveEncodedPathDir(sessionDir, cwd) ?? sessionDir;
   }
 
+  /** `<COPILOT_HOME>/session-state`, where Copilot keeps one directory per session. */
+  private sessionStateDir(profileEnv?: Record<string, string>): string {
+    return path.join(resolveCopilotHome(profileEnv), 'session-state');
+  }
+
   /**
-   * List available CLI sessions by scanning Copilot CLI's session storage.
+   * Sessions Copilot recorded for `cwd`, from each session directory's
+   * workspace.yaml (#2156). The old scan looked for flat `<id>.json(l)` files,
+   * a layout current Copilot no longer writes, and didn't filter by cwd.
    */
   async listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
-    const sessionDir = this.resolveSessionDir(cwd, profileEnv);
-    if (!sessionDir) return [];
-
-    const sessions: Array<{ sessionId: string; startedAt: string; lastActiveAt: string }> = [];
-    const seenIds = new Set<string>();
-
-    // Scan session directory and any project-scoped subdirectories
-    const dirsToScan = [sessionDir];
-
     try {
-      const topEntries = await fsp.readdir(sessionDir, { withFileTypes: true });
-      for (const entry of topEntries) {
-        if (entry.isDirectory()) {
-          dirsToScan.push(path.join(sessionDir, entry.name));
-        }
-      }
-    } catch {
-      // Can't read top-level — just scan sessionDir itself
+      return await listCopilotSessions(this.sessionStateDir(profileEnv), cwd);
+    } catch (err) {
+      appLog('core:orchestrator', 'warn', 'Failed to read GHCP session store', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+      return [];
     }
+  }
 
-    for (const dir of dirsToScan) {
-      try {
-        const entries = await fsp.readdir(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (!entry.isFile() || (!entry.name.endsWith('.json') && !entry.name.endsWith('.jsonl'))) continue;
+  /**
+   * The session a terminal run used, from Copilot's own store (#2156): its TUI
+   * doesn't print the id, so the PTY scrape rarely finds it.
+   */
+  async findRunSession(run: { cwd: string; startedAt: number; endedAt: number; resumedId?: string; profileEnv?: Record<string, string> }): Promise<string | null> {
+    return findCopilotRunSession(this.sessionStateDir(run.profileEnv), run);
+  }
 
-          const ext = path.extname(entry.name);
-          const sessionId = path.basename(entry.name, ext);
-          // Accept UUID-like or hex-based session identifiers
-          if (!/^[0-9a-f-]{8,}$/i.test(sessionId)) continue;
-          if (seenIds.has(sessionId)) continue;
-          seenIds.add(sessionId);
+  /** Whether Copilot still has `sessionId`; undefined when there's no store or it can't be read. */
+  async hasSession(sessionId: string, profileEnv?: Record<string, string>): Promise<boolean | undefined> {
+    return hasCopilotSession(this.sessionStateDir(profileEnv), sessionId);
+  }
 
-          try {
-            const stat = await fsp.stat(path.join(dir, entry.name));
-            sessions.push({
-              sessionId,
-              startedAt: stat.birthtime.toISOString(),
-              lastActiveAt: stat.mtime.toISOString(),
-            });
-          } catch (err) {
-            appLog('core:orchestrator', 'warn', 'Failed to stat GHCP session file', {
-              meta: { file: entry.name, error: err instanceof Error ? err.message : String(err) },
-            });
-          }
-        }
-      } catch (err) {
-        appLog('core:orchestrator', 'warn', 'Failed to read GHCP session directory', {
-          meta: { dir, error: err instanceof Error ? err.message : String(err) },
-        });
-      }
-    }
-
-    // Sort by most recently active first
-    sessions.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
-    return sessions;
+  /** Whether `sessionId` is a Copilot session for `cwd`; undefined when the store can't tell. */
+  async hasSessionForCwd(sessionId: string, cwd: string, profileEnv?: Record<string, string>): Promise<boolean | undefined> {
+    return copilotSessionInCwd(this.sessionStateDir(profileEnv), sessionId, cwd);
   }
 
   /**

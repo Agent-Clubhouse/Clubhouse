@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { renderMarkdownSafe } from './safe-markdown';
+import { describe, it, expect, vi } from 'vitest';
+import { markdownToPlainText, renderMarkdownSafe } from './safe-markdown';
 
 describe('renderMarkdownSafe', () => {
   it('strips script tags', () => {
@@ -149,5 +149,34 @@ describe('renderMarkdownSafe', () => {
       expect(result).toContain('<path');
       expect(result).toContain('d="M10 10 L90 90"');
     });
+  });
+});
+
+describe('markdownToPlainText', () => {
+  it('drops the markup and folds to one line', () => {
+    expect(markdownToPlainText('**Updated**\n\n- `a.ts`\n- [docs](https://x.y)')).toBe('Updated a.ts docs');
+  });
+
+  it('keeps no markup from embedded html', () => {
+    expect(markdownToPlainText('<img src=x onerror=alert(1)>hi')).toBe('hi');
+  });
+});
+
+describe('markdownToPlainText cache', () => {
+  it('returns a repeat from the cache and evicts the oldest past 200 entries', () => {
+    const parse = vi.spyOn(DOMParser.prototype, 'parseFromString');
+    try {
+      const first = 'cache-first **x**';
+      expect(markdownToPlainText(first)).toBe('cache-first x');
+      const calls = parse.mock.calls.length;
+      expect(markdownToPlainText(first)).toBe('cache-first x');
+      expect(parse.mock.calls.length).toBe(calls);
+      for (let i = 0; i < 200; i++) markdownToPlainText(`cache-fill ${i}`);
+      const before = parse.mock.calls.length;
+      expect(markdownToPlainText(first)).toBe('cache-first x');
+      expect(parse.mock.calls.length).toBeGreaterThan(before);
+    } finally {
+      parse.mockRestore();
+    }
   });
 });

@@ -27,6 +27,7 @@ import {
 } from '../../shared/settings-definitions';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
 import { goobersService } from '../services/goobers-service';
+import { chatIdleSettings } from '../services/chat-idle-settings';
 
 export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS };
 
@@ -63,6 +64,7 @@ export function registerSettingsHandlers(): void {
   editorSettings.register();
   mcpSettings.register();
   securitySettings.register();
+  chatIdleSettings.register();
   // Goobers settings must be readable/savable even before the panel ever
   // subscribes to the service (spec §4.1) — a settings UI needs them
   // immediately, independent of the idle-until-subscribed gate (§7.7).

@@ -5,6 +5,7 @@ import * as fsp from 'fs/promises';
 import { LogEntry, LOG_RETENTION_TIERS, LOG_LEVEL_PRIORITY } from '../../shared/types';
 import * as logSettings from './log-settings';
 import { bridgeLog, traceFieldsForLog, type LogTelemetry } from '../telemetry/log-bridge';
+import { recordBreadcrumb, recordBreadcrumbFrom } from './breadcrumbs';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 const FLUSH_INTERVAL_MS = 1_000;
@@ -114,12 +115,34 @@ export async function flush(): Promise<void> {
 }
 
 /**
+ * Feedback breadcrumbs from log entries (#2098), taken whatever the local log
+ * settings are: hang and lag lines (`ui:perf`, #2126) as performance
+ * breadcrumbs, and any entry that carries a `meta.breadcrumb` (the renderer's
+ * view changes and runtime switches). Plugins' namespaces can't add any.
+ */
+function tapBreadcrumb(entry: LogEntry): void {
+  const meta = entry.meta;
+  if (entry.ns === 'ui:perf') {
+    const kind = meta?.kind;
+    if ((kind === 'long_frame' || kind === 'slow_interaction') && typeof meta?.maxMs === 'number') {
+      recordBreadcrumb('performance', `ui.${kind}`, meta.maxMs);
+    } else if (typeof meta?.durationMs === 'number') {
+      // A window that stopped responding, logged once it recovers.
+      recordBreadcrumb('performance', 'window.unresponsive', meta.durationMs);
+    }
+    return;
+  }
+  if (meta?.breadcrumb && !entry.ns.startsWith('plugin')) recordBreadcrumbFrom(meta.breadcrumb);
+}
+
+/**
  * `telemetry` (opt-in, spec §6.6) is bridged before the local logging
  * filters: turning local logging off does not turn telemetry off, and the
  * reverse. Only the declared event and attributes are exported.
  */
 export function log(entry: LogEntry, telemetry?: LogTelemetry): void {
   if (telemetry) bridgeLog(entry.level, telemetry);
+  tapBreadcrumb(entry);
 
   const settings = logSettings.getSettings();
   if (!settings.enabled) return;

@@ -640,3 +640,110 @@ describe('MCP startup status', () => {
     expect(status('ready')).toEqual([]);
   });
 });
+
+describe('file change line counts (#2160)', () => {
+  const change = (kind: 'add' | 'delete' | 'update', diff: string) => ({
+    path: 'itest-codex.txt',
+    kind: kind === 'update' ? { type: 'update' as const, move_path: null } : { type: kind },
+    diff,
+  });
+  const fileChangeItem = (changes: ReturnType<typeof change>[]) => ({
+    type: 'fileChange' as const, id: 'patch-1', changes, status: 'inProgress' as const,
+  });
+  const diffsOf = (events: ChatEventDraft[]) => events.flatMap((e) => {
+    const content = (e.data as { content?: unknown[] }).content ?? [];
+    return content.filter((c) => (c as { type: string }).type === 'diff');
+  });
+
+  it("maps an added file's content as newText, so the card counts its lines and shows it as created", () => {
+    const events = new CodexChatEventMapper().mapNotification(itemStarted(fileChangeItem([change('add', 'hello\n')])));
+    expect(diffsOf(events)).toEqual([{ type: 'diff', path: 'itest-codex.txt', newText: 'hello\n' }]);
+  });
+
+  it("maps a deleted file's content as oldText", () => {
+    const events = new CodexChatEventMapper().mapNotification(itemStarted(fileChangeItem([change('delete', 'bye\n')])));
+    expect(diffsOf(events)).toEqual([{ type: 'diff', path: 'itest-codex.txt', oldText: 'bye\n' }]);
+  });
+
+  it('keeps an update as a unified diff', () => {
+    const events = new CodexChatEventMapper().mapNotification(itemStarted(fileChangeItem([change('update', '@@ -1 +1 @@\n-a\n+b\n')])));
+    expect(diffsOf(events)).toEqual([{ type: 'diff', path: 'itest-codex.txt', unifiedDiff: '@@ -1 +1 @@\n-a\n+b\n' }]);
+  });
+
+  it('maps the same way while pending approval (patchUpdated) and once applied (item/completed)', () => {
+    const mapper = new CodexChatEventMapper();
+    const pending = mapper.mapNotification({ method: 'item/fileChange/patchUpdated', params: { ...at, itemId: 'patch-1', changes: [change('add', 'hello\n')] } });
+    const applied = mapper.mapNotification({
+      method: 'item/completed',
+      params: { ...at, item: { ...fileChangeItem([change('add', 'hello\n')]), status: 'completed' }, completedAtMs: 2 },
+    });
+    expect(diffsOf(pending)).toEqual([{ type: 'diff', path: 'itest-codex.txt', newText: 'hello\n' }]);
+    expect(diffsOf(applied)).toEqual([{ type: 'diff', path: 'itest-codex.txt', newText: 'hello\n' }]);
+  });
+});
+
+describe('per-turn token usage (#2161)', () => {
+  const breakdown = (input: number, cached: number, output: number) => ({
+    totalTokens: input + output, inputTokens: input, cachedInputTokens: cached, cacheWriteInputTokens: 0, outputTokens: output, reasoningOutputTokens: 0,
+  });
+  const tokenUpdate = (turnId: string, total: ReturnType<typeof breakdown>, last: ReturnType<typeof breakdown>): ServerNotification => ({
+    method: 'thread/tokenUsage/updated',
+    params: { threadId: fx.THREAD_ID, turnId, tokenUsage: { total, last, modelContextWindow: 272_000 } },
+  });
+  const completed = fx.completedTurnNotifications.find((n) => n.method === 'turn/completed') as Extract<ServerNotification, { method: 'turn/completed' }>;
+  const turnCompleted = (turnId: string): ServerNotification => ({
+    method: 'turn/completed', params: { ...completed.params, turn: { ...completed.params.turn, id: turnId } },
+  });
+  const turnEndedUsage = (events: ChatEventDraft[]) => {
+    const ended = events.find((e) => e.type === 'turn_ended');
+    return (ended?.data as { usage?: unknown } | undefined)?.usage;
+  };
+
+  it("attaches the turn's own tokens to its turn_ended, from the full fixture turn", () => {
+    const events = mapAll(new CodexChatEventMapper(), fx.completedTurnNotifications);
+    // One update with no earlier total: the turn is that update's `last`.
+    expect(turnEndedUsage(events)).toEqual({ input: 250, cachedInput: 100, cacheWrite: 0, output: 50, reasoning: 10, total: 300 });
+  });
+
+  it("a later turn gets only what it added to the thread's total, however many updates it had", () => {
+    const mapper = new CodexChatEventMapper();
+    mapAll(mapper, [
+      tokenUpdate('t1', breakdown(1000, 400, 100), breakdown(1000, 400, 100)),
+      turnCompleted('t1'),
+    ]);
+    const second = mapAll(mapper, [
+      tokenUpdate('t2', breakdown(2500, 1400, 150), breakdown(1500, 1000, 50)),
+      tokenUpdate('t2', breakdown(4200, 2900, 260), breakdown(1700, 1500, 110)),
+      tokenUpdate('t2', breakdown(4200, 2900, 260), breakdown(1700, 1500, 110)), // repeated: not counted twice
+      turnCompleted('t2'),
+    ]);
+    expect(turnEndedUsage(second)).toEqual({ input: 3200, cachedInput: 2500, cacheWrite: 0, output: 160, reasoning: 0, total: 3360 });
+  });
+
+  it("a subagent thread's update doesn't move the parent's baseline", () => {
+    const mapper = new CodexChatEventMapper();
+    mapAll(mapper, [
+      tokenUpdate('t1', breakdown(50_000, 0, 1000), breakdown(50_000, 0, 1000)),
+      turnCompleted('t1'),
+      // A subagent thread reports its own, much smaller running total.
+      { method: 'thread/tokenUsage/updated', params: { threadId: 'sub-thread', turnId: 's1', tokenUsage: { total: breakdown(2000, 0, 100), last: breakdown(2000, 0, 100), modelContextWindow: 272_000 } } },
+    ]);
+    const second = mapAll(mapper, [
+      tokenUpdate('t2', breakdown(60_000, 0, 1200), breakdown(10_000, 0, 200)),
+      turnCompleted('t2'),
+    ]);
+    expect(turnEndedUsage(second)).toEqual({ input: 10_000, cachedInput: 0, cacheWrite: 0, output: 200, reasoning: 0, total: 10_200 });
+  });
+
+  it('a turn with no token updates ends without usage', () => {
+    expect(turnEndedUsage(mapAll(new CodexChatEventMapper(), [turnCompleted('t9')]))).toBeUndefined();
+  });
+
+  it('still reports the session total and context on each update', () => {
+    const [usage] = new CodexChatEventMapper().mapNotification(tokenUpdate('t1', breakdown(1000, 400, 100), breakdown(300, 100, 20)));
+    expect(usage).toMatchObject({
+      type: 'usage',
+      data: { scope: 'session', tokens: { input: 1000, cachedInput: 400, output: 100 }, context: { used: 320, size: 272_000 } },
+    });
+  });
+});

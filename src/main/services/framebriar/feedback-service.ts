@@ -25,7 +25,7 @@ import type {
 import { createFramebriar, otlpExporterOptions } from '../../vendor/framebriar/adapters/node/index.mjs';
 import { ACCESS_TIMEOUT_MS } from '../../vendor/framebriar/adapters/node/access.mjs';
 import type { FramebriarTelemetryExport } from '../../telemetry/destinations/framebriar-source';
-import type { FeedbackCaptureResult, FeedbackSendInput, FeedbackSendResult, FeedbackStatus } from '../../../shared/feedback-types';
+import { FEEDBACK_MAX_PNG_BYTES, type FeedbackCaptureResult, type FeedbackSendInput, type FeedbackSendResult, type FeedbackStatus } from '../../../shared/feedback-types';
 
 export const FRAMEBRIAR_APP_ID = 'clubhouse';
 /** Reviewed drafts are dropped if the review isn't finished in time. */
@@ -35,8 +35,14 @@ const RECEIPT_MEMORY = 20;
 /** Open reviews kept at once (each holds a screenshot); the oldest is dropped beyond this. */
 const MAX_DRAFTS = 5;
 /** Framebriar's media limit (protocol LIMITS.media). */
-const MAX_PNG_BYTES = 8 * 1024 * 1024;
+const MAX_PNG_BYTES = FEEDBACK_MAX_PNG_BYTES;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+/** Width and height from a PNG's IHDR chunk, or null if the bytes aren't a PNG. */
+export function pngSize(png: Buffer): { width: number; height: number } | null {
+  if (png.length < 24 || !png.subarray(0, 8).equals(PNG_SIGNATURE) || png.toString('latin1', 12, 16) !== 'IHDR') return null;
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+}
 /** Scene codes the renderer may report; anything else becomes 'app'. */
 const SCENE = /^[a-z][a-z0-9-]{0,39}$/;
 /** The SDK only sends invitations of this shape; anything else fails before any request. */
@@ -48,6 +54,17 @@ export const LIKELY_TIMEOUT_MS = ACCESS_TIMEOUT_MS - 500;
 const ACCESS_PROBLEMS = new Set(['offline', 'expired', 'access-required', 'connection-uncertain', 'storage-unavailable', 'migration-required']);
 /** In-between states, logged at debug only. */
 const ACCESS_TRANSIENT = new Set(['checking', 'connecting', 'disconnecting']);
+
+/** The SDK's per-report cap on breadcrumbs. */
+const MAX_REPORT_BREADCRUMBS = 40;
+
+/** One breadcrumb as the SDK takes it: `atMs` in epoch ms, `code` never user text. */
+export interface FeedbackBreadcrumb {
+  kind: 'error' | 'performance' | 'event';
+  atMs: number;
+  code: string;
+  value?: number;
+}
 
 export type FeedbackLogLevel = 'debug' | 'info' | 'warn' | 'error';
 /** Local diagnostics sink (appLog in the app). Never pass secrets or user text in meta. */
@@ -62,6 +79,10 @@ export interface FeedbackServiceDeps {
   safeStorage: SafeStorageLike;
   dataDir: string;
   appVersion: string;
+  /** The build commit (7 to 40 hex), or null (#2098). */
+  buildSha?: string | null;
+  /** Recent app events for the report, newest first, at most 40 (#2098). Defaults to none. */
+  breadcrumbs?: () => FeedbackBreadcrumb[];
   isOnline: () => boolean;
   /** For tests: the SDK factory (defaults to the vendored createFramebriar). */
   create?: typeof createFramebriar;
@@ -119,9 +140,24 @@ export function sdkVersion(version: string): string | undefined {
   return /^[A-Za-z0-9._+-]{1,40}$/.test(version) ? version : undefined;
 }
 
+/** One window's screenshot in a draft (#2100). */
+interface Shot {
+  shotId: string;
+  label: string;
+  png: Buffer;
+}
+
 interface Draft {
+  /** snapshot.png is the first shot: the window feedback was started from. */
   snapshot: FramebriarSnapshot;
+  shots: Shot[];
   createdAt: number;
+}
+
+/** A window to screenshot. The first one is the window feedback was started from. */
+export interface CaptureSource {
+  label: string;
+  grab: () => Promise<Buffer | null>;
 }
 
 export class FeedbackService {
@@ -157,6 +193,7 @@ export class FeedbackService {
         dataDir: this.deps.dataDir,
         appId: FRAMEBRIAR_APP_ID,
         appVersion: sdkVersion(this.deps.appVersion),
+        buildSha: this.deps.buildSha ?? null,
         telemetry: 'off',
         // No SDK-side capture: captureDraft grabs the calling window itself, so two
         // windows capturing at once can never get each other's screenshot.
@@ -231,13 +268,16 @@ export class FeedbackService {
   }
 
   /**
-   * Snapshot now, before any review UI is drawn, and return a draft id plus a data: URL
-   * preview. `grab` must capture only Clubhouse's own window contents.
+   * Snapshot now, before any review UI is drawn, and return a draft id plus data: URL
+   * previews. Each source must capture only one of Clubhouse's own windows. The first
+   * source is the window feedback started from: if it fails, capture fails. Other
+   * windows that fail or are unusable are left out (#2100).
    */
-  async captureDraft(grab: () => Promise<Buffer | null>): Promise<FeedbackCaptureResult> {
+  async captureDraft(sources: CaptureSource[] | (() => Promise<Buffer | null>)): Promise<FeedbackCaptureResult> {
+    const list = typeof sources === 'function' ? [{ label: 'This window', grab: sources }] : sources;
     try {
-      const result = await this.captureDraftInner(grab);
-      this.log('info', 'Feedback screenshot captured', { draftId: result.draftId, hasScreenshot: result.preview !== null, drafts: this.drafts.size });
+      const result = await this.captureDraftInner(list);
+      this.log('info', 'Feedback screenshot captured', { draftId: result.draftId, hasScreenshot: result.preview !== null, shots: result.shots.length, windows: list.length, drafts: this.drafts.size });
       return result;
     } catch (err) {
       this.log('warn', 'Feedback capture failed', errorMeta(err));
@@ -245,33 +285,51 @@ export class FeedbackService {
     }
   }
 
-  private async captureDraftInner(grab: () => Promise<Buffer | null>): Promise<FeedbackCaptureResult> {
+  /** Why a grabbed image can't be sent, or null when it can. */
+  private invalidShot(png: Buffer): Error | null {
+    if (png.length > MAX_PNG_BYTES) {
+      this.log('debug', 'Feedback screenshot too large', { bytes: png.length, maxBytes: MAX_PNG_BYTES });
+      return Object.assign(new Error('The screenshot is too large to send (8 MiB at most)'), { code: 'invalid-media' });
+    }
+    if (png.length <= PNG_SIGNATURE.length || !png.subarray(0, 8).equals(PNG_SIGNATURE)) {
+      return Object.assign(new Error('The screenshot is not a PNG image'), { code: 'invalid-media' });
+    }
+    return null;
+  }
+
+  private async captureDraftInner(sources: CaptureSource[]): Promise<FeedbackCaptureResult> {
     await this.start();
     this.pruneDrafts();
     // open() checks eligibility and records the moment (and trace) feedback opened.
     const opened = await this.sdk().feedback.open();
-    let png: Buffer | null;
-    try {
-      png = await grab();
-    } catch {
-      // telemetry-exempt: surfaced to the user as a capture failure
-      throw Object.assign(new Error('Screenshot capture failed'), { code: 'capture-failed' });
+    const shots: Shot[] = [];
+    for (const [i, source] of sources.entries()) {
+      let png: Buffer | null;
+      try {
+        png = await source.grab();
+      } catch {
+        // telemetry-exempt: surfaced to the user as a capture failure (first window), else skipped
+        if (i === 0) throw Object.assign(new Error('Screenshot capture failed'), { code: 'capture-failed' });
+        this.log('debug', 'Feedback skipped a window that could not be captured', { index: i });
+        continue;
+      }
+      if (!png) {
+        if (i === 0) break; // No screenshot of the starting window: text-only, as before.
+        continue;
+      }
+      const invalid = this.invalidShot(png);
+      if (invalid) {
+        if (i === 0) throw invalid;
+        continue;
+      }
+      shots.push({ shotId: `s${i}`, label: source.label, png });
     }
-    if (png && png.length > MAX_PNG_BYTES) {
-      this.log('debug', 'Feedback screenshot too large', { bytes: png.length, maxBytes: MAX_PNG_BYTES });
-      throw Object.assign(new Error('The screenshot is too large to send (8 MiB at most)'), { code: 'invalid-media' });
-    }
-    if (png && (png.length <= PNG_SIGNATURE.length || !png.subarray(0, 8).equals(PNG_SIGNATURE))) {
-      throw Object.assign(new Error('The screenshot is not a PNG image'), { code: 'invalid-media' });
-    }
-    const snapshot: FramebriarSnapshot = { ...opened, png: png ?? null };
+    const snapshot: FramebriarSnapshot = { ...opened, png: shots[0]?.png ?? null };
     const draftId = randomUUID();
-    this.drafts.set(draftId, { snapshot, createdAt: this.now() });
+    this.drafts.set(draftId, { snapshot, shots, createdAt: this.now() });
     while (this.drafts.size > MAX_DRAFTS) this.drafts.delete(this.drafts.keys().next().value as string);
-    return {
-      draftId,
-      preview: snapshot.png ? `data:image/png;base64,${snapshot.png.toString('base64')}` : null,
-    };
+    const previews = shots.map((shot) => ({ shotId: shot.shotId, label: shot.label, preview: `data:image/png;base64,${shot.png.toString('base64')}` }));
+    return { draftId, preview: previews[0]?.preview ?? null, shots: previews };
   }
 
   /**
@@ -280,7 +338,8 @@ export class FeedbackService {
    * locally; delivery and its receipt ("Received") come later.
    */
   async send(input: FeedbackSendInput): Promise<FeedbackSendResult> {
-    const meta = { draftId: input.draftId ?? null, includeScreenshot: input.includeScreenshot, notesLength: input.notes?.length ?? 0 };
+    // Never the image itself: only whether a drawing came along.
+    const meta = { draftId: input.draftId ?? null, includeScreenshot: input.includeScreenshot, notesLength: input.notes?.length ?? 0, annotated: input.annotatedPng !== undefined, shotId: input.shotId ?? null };
     try {
       const result = await this.sendInner(input);
       this.log('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state: this.fb?.access.status().state });
@@ -299,11 +358,13 @@ export class FeedbackService {
     const notes = input.notes ?? '';
     if (!input.includeScreenshot && notes.trim() === '') throw new Error('Add a note to send feedback without a screenshot.');
     const scene = input.scene && SCENE.test(input.scene) ? input.scene : 'app';
+    const png = input.includeScreenshot && draft ? this.annotatedOrCaptured(this.chosenShot(draft, input.shotId), input.annotatedPng) : null;
+    const breadcrumbs = (this.deps.breadcrumbs?.() ?? []).slice(0, MAX_REPORT_BREADCRUMBS);
     const prepared = await fb.feedback.prepare({
       notes,
-      context: { scene },
+      context: { scene, breadcrumbs },
       ...(input.includeScreenshot && draft
-        ? { ...draft.snapshot }
+        ? { ...draft.snapshot, png }
         : { png: null, ...(draft ? { capturedAt: draft.snapshot.capturedAt } : {}) }),
     });
     const ack = await fb.feedback.submit(prepared, { includeDiagnostics: false });
@@ -312,6 +373,34 @@ export class FeedbackService {
     if (input.draftId) this.drafts.delete(input.draftId);
     this.emit();
     return { id: ack.id, status: ack.status };
+  }
+
+  /** The screenshot the user picked (#2100); the starting window's when none was picked. */
+  private chosenShot(draft: Draft, shotId: string | undefined): Buffer {
+    if (shotId === undefined) return draft.snapshot.png!;
+    const shot = draft.shots.find((s) => s.shotId === shotId);
+    if (!shot) throw new Error('That screenshot is no longer available. Capture it again.');
+    return shot.png;
+  }
+
+  /**
+   * The user's marked-up copy of the capture (#2099), or the capture itself. The drawing
+   * may only mark up the capture: it must be a PNG of the same width and height, within
+   * the size cap. The draft keeps the original, so a failed save can be retried.
+   */
+  private annotatedOrCaptured(captured: Buffer, annotatedBase64: string | undefined): Buffer {
+    if (annotatedBase64 === undefined) return captured;
+    const annotated = Buffer.from(annotatedBase64, 'base64');
+    if (annotated.length > MAX_PNG_BYTES) {
+      throw Object.assign(new Error('The screenshot with your drawing is too large to send (8 MiB at most)'), { code: 'invalid-media' });
+    }
+    const size = pngSize(annotated);
+    const expected = pngSize(captured);
+    if (!size) throw Object.assign(new Error('The screenshot with your drawing is not a PNG image'), { code: 'invalid-media' });
+    if (!expected || size.width !== expected.width || size.height !== expected.height) {
+      throw Object.assign(new Error("The screenshot with your drawing doesn't match the captured screenshot"), { code: 'invalid-media' });
+    }
+    return annotated;
   }
 
   cancel(draftId: string): void {

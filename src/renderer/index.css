@@ -192,10 +192,17 @@
 
   /* When a gradient background is active, make layout-wrapper backgrounds transparent
      so the body gradient shows through nested elements.
-     Uses !important to override Tailwind's utilities. */
-  .theme-gradient-bg .bg-ctp-base,
-  .theme-gradient-bg .bg-ctp-mantle,
-  .theme-gradient-bg .bg-ctp-crust {
+     Floating surfaces (canvas cards, popovers, tooltips, dialogs, menus, sticky headers)
+     sit on top of other content, so they keep their solid color: anything positioned,
+     layered (z-*), shadowed, given a popup role, or marked .surface-opaque is excluded
+     (#2095). Uses !important to override Tailwind's utilities. */
+  .theme-gradient-bg :is(.bg-ctp-base, .bg-ctp-mantle, .bg-ctp-crust):not(
+    .fixed, .absolute, .sticky, .surface-opaque,
+    [class^="z-"], [class*=" z-"], [class^="shadow-"], [class*=" shadow-"],
+    /* A class after a newline or tab (multi-line template literals keep them, #2124). */
+    [class*="\a z-"], [class*="\9 z-"], [class*="\a shadow-"], [class*="\9 shadow-"],
+    [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"]
+  ) {
     background-color: transparent !important;
   }
 

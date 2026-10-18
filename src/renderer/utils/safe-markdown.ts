@@ -50,3 +50,20 @@ export function renderMarkdownSafe(content: string): string {
   const raw = marked.parse(content, { async: false }) as string;
   return sanitizeMarkdownHtml(raw);
 }
+
+const plainTextCache = new Map<string, string>();
+const PLAIN_TEXT_CACHE_MAX = 200;
+
+/**
+ * Markdown as one line of plain text, for rows too small to render it.
+ * Cached: list rows call this on every render.
+ */
+export function markdownToPlainText(content: string): string {
+  const hit = plainTextCache.get(content);
+  if (hit !== undefined) return hit;
+  const doc = new DOMParser().parseFromString(renderMarkdownSafe(content), 'text/html');
+  const text = (doc.body.textContent ?? '').replace(/\s+/g, ' ').trim();
+  if (plainTextCache.size >= PLAIN_TEXT_CACHE_MAX) plainTextCache.delete(plainTextCache.keys().next().value!);
+  plainTextCache.set(content, text);
+  return text;
+}

@@ -66,6 +66,7 @@ import {
   restTraceparent,
   wsTraceparent,
 } from '../telemetry/annex-telemetry';
+import { noteKillRequest } from './agent-runtime/sleep-reason';
 import type {
   AnnexStatus,
   AgentHookEvent,
@@ -453,6 +454,8 @@ function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[
     status,
     detailedStatus: isRunning ? getDetailedStatus(agentId) : null,
     executionMode: isRunning ? getAgentExecutionMode(agentId) : null,
+    /** There's a CLI session to resume, so a controller's default Wake can ask for one. */
+    hasSession: !!d.lastSessionId,
   };
 }
 
@@ -956,7 +959,6 @@ async function handleWakeAgent(
   body: Record<string, unknown>,
 ): Promise<void> {
   const message = body.message as string | undefined;
-  const resume = !!body.resume;
 
   const agentInfo = await findAgentAcrossProjects(agentId);
   if (!agentInfo) {
@@ -980,6 +982,9 @@ async function handleWakeAgent(
   }
 
   const { config, project } = agentInfo;
+  // Resume only an agent with a session to resume: a never-run agent would
+  // get the CLI's resume-latest form and exit at once.
+  const resume = !!body.resume && !!config.lastSessionId;
   const model = (body.model as string | undefined) || config.model;
   const cwd = config.worktreePath || project.path;
 
@@ -1693,6 +1698,7 @@ async function handleDurableDeleteRoute(ctx: AnnexRouteContext, match: RegExpMat
     const mode = (body.mode as string) || 'force';
     if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
       agentKillRequested(agentId, 'annex');
+      noteKillRequest(agentId, { trigger: 'user' });
       ptyManager.gracefulKill(agentId);
     }
     try {
@@ -2278,6 +2284,8 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const agentId = payload.agentId as string;
       if (!agentId) break;
       agentKillRequested(agentId, 'annex');
+      // A kill from a controller or the Annex app is the user's, for the sleep reason.
+      noteKillRequest(agentId, { trigger: 'user' });
       ptyManager.gracefulKill(agentId);
       safeSend(ws, JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
       break;
@@ -2431,7 +2439,7 @@ async function handleWakeAgentWs(
       agentId: config.id, projectPath: project.path, cwd,
       kind: 'durable', model: agentModel, mission: options.mission,
       orchestrator: config.orchestrator, freeAgentMode: config.freeAgentMode,
-      resume: options.resume,
+      resume: !!options.resume && !!config.lastSessionId,
       sessionId: options.resume ? config.lastSessionId : undefined,
     });
 

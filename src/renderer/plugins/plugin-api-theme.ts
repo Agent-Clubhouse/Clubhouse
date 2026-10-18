@@ -1,8 +1,7 @@
 import type { PluginContext, ThemeAPI, ThemeInfo, Disposable } from '../../shared/plugin-types';
+import { useThemeStore } from '../stores/themeStore';
 
 export function buildThemeInfo(): ThemeInfo {
-  // Lazy import to avoid circular deps — only needed when a plugin uses the theme API
-  const { useThemeStore } = require('../stores/themeStore');
   const state = useThemeStore.getState();
   const theme = state.theme;
   const info: ThemeInfo = {
@@ -27,11 +26,14 @@ export function createThemeAPI(ctx: PluginContext): ThemeAPI {
       return buildThemeInfo();
     },
     onDidChange(callback: (theme: ThemeInfo) => void): Disposable {
-      const { useThemeStore } = require('../stores/themeStore');
-      let prevId = useThemeStore.getState().themeId;
-      const unsub = useThemeStore.subscribe((state: { themeId: string; experimentalGradients: boolean; theme: { id: string; name: string; type: 'dark' | 'light'; colors: Record<string, string>; hljs: Record<string, string>; terminal: Record<string, string>; fonts?: { ui?: string; mono?: string }; gradients?: { background?: string; surface?: string; accent?: string } } }) => {
-        if (state.themeId !== prevId) {
-          prevId = state.themeId;
+      // Track the applied theme, not the selection: when the selected plugin theme is
+      // unregistered the store keeps themeId and only swaps in the fallback theme.
+      // The definition, not just its id: a pack update re-registers the same id
+      // with new colours (#2123).
+      let prev = useThemeStore.getState().theme;
+      const unsub = useThemeStore.subscribe((state) => {
+        if (state.theme !== prev) {
+          prev = state.theme;
           const info: ThemeInfo = {
             id: state.theme.id,
             name: state.theme.name,

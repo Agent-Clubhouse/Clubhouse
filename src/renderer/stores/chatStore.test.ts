@@ -444,7 +444,7 @@ describe('useChatStore', () => {
 
   beforeEach(() => {
     ev = makeEmitter();
-    useChatStore.setState({ agents: {}, loading: {} });
+    useChatStore.setState({ agents: {}, loading: {}, loaded: {} });
     window.clubhouse.chat.readTranscript = vi.fn().mockResolvedValue([]);
   });
 
@@ -492,10 +492,62 @@ describe('useChatStore', () => {
     expect(useChatStore.getState().agents[AGENT]).toBe(state);
   });
 
-  it('loadTranscript treats a failed read as empty', async () => {
+  it('loads history for an agent whose state so far came only from live events (#2150)', async () => {
+    // A running agent in a freshly opened window: live events arrive before any view loads its history.
+    const e1 = sessionStarted(ev);
+    const e2 = ev('user_message', { messageId: 'u1', content: text('Fix the bug'), source: 'user', delivery: 'prompt' });
+    const e3 = ev('agent_message', { messageId: 'm1', text: 'On it.' });
+    const e4 = ev('agent_message', { messageId: 'm2', text: 'Done.' });
+    const e5 = ev('agent_message', { messageId: 'm3', text: 'Anything else?' });
+    useChatStore.getState().applyEvent(e4);
+    expect(useChatStore.getState().agents[AGENT]).toBeDefined();
+    expect(useChatStore.getState().loaded[AGENT]).toBeUndefined();
+
+    let resolveTranscript!: (events: ChatEvent[]) => void;
+    window.clubhouse.chat.readTranscript = vi.fn(() => new Promise<ChatEvent[]>((resolve) => { resolveTranscript = resolve; }));
+    const loading = useChatStore.getState().loadTranscript(AGENT);
+    // One live event that the transcript also holds (e4), one that's newer (e5).
+    useChatStore.getState().applyEvent(e4);
+    useChatStore.getState().applyEvent(e5);
+    resolveTranscript([e1, e2, e3, e4]);
+    await loading;
+
+    const state = useChatStore.getState().agents[AGENT];
+    expect(useChatStore.getState().loaded[AGENT]).toBe(true);
+    expect(state.items.map((i) => i.seq)).toEqual([2, 3, 4, 5]);
+    expect(state.items.map((i) => i.kind)).toEqual(['user_message', 'agent_message', 'agent_message', 'agent_message']);
+    expect(state.items.slice(1).map((i) => (i as AgentMessageItem).text)).toEqual(['On it.', 'Done.', 'Anything else?']);
+  });
+
+  it('reset forgets that history was loaded', async () => {
+    await useChatStore.getState().loadTranscript(AGENT);
+    expect(useChatStore.getState().loaded[AGENT]).toBe(true);
+    useChatStore.getState().reset(AGENT);
+    expect(useChatStore.getState().loaded[AGENT]).toBeUndefined();
+  });
+
+  it('on a failed read keeps the live state, applies what arrived meanwhile, and leaves it unloaded so a later view retries', async () => {
+    useChatStore.getState().applyEvent(sessionStarted(ev));
+    useChatStore.getState().applyEvent(ev('agent_message', { messageId: 'm1', text: 'Seen live.' }));
+    let fail!: (err: Error) => void;
+    window.clubhouse.chat.readTranscript = vi.fn(() => new Promise<ChatEvent[]>((_resolve, reject) => { fail = reject; }));
+    const loading = useChatStore.getState().loadTranscript(AGENT);
+    useChatStore.getState().applyEvent(ev('agent_message', { messageId: 'm2', text: 'Arrived mid-load.' }));
+    fail(new Error('EBUSY'));
+    await loading;
+
+    const s = useChatStore.getState();
+    expect(s.agents[AGENT].items.map((i) => (i as AgentMessageItem).text)).toEqual(['Seen live.', 'Arrived mid-load.']);
+    expect(s.loaded[AGENT]).toBeUndefined();
+    expect(s.loading[AGENT]).toBeUndefined();
+    expect(s.partial[AGENT]).toBeUndefined();
+  });
+
+  it('a failed read with no state yet leaves an empty, unloaded view', async () => {
     window.clubhouse.chat.readTranscript = vi.fn().mockRejectedValue(new Error('nope'));
     await useChatStore.getState().loadTranscript(AGENT);
     expect(useChatStore.getState().agents[AGENT].items).toEqual([]);
+    expect(useChatStore.getState().loaded[AGENT]).toBeUndefined();
   });
 
   it('reset drops an agent', () => {
@@ -600,6 +652,16 @@ describe('reduceChatEvent: turn footers and diagnostics', () => {
     expect(s.protocolUnknown).toEqual({ 'notification:item/new': 2, 'field:usage.x': 1 });
     expect(s.items).toEqual([]);
   });
+
+  it('bumps the workspace revision on workspace_changed, without a transcript item (#2109)', () => {
+    const s = fold([
+      sessionStarted(ev),
+      ev('workspace_changed', { reason: 'vcs', vcsKind: 'commit' }),
+      ev('workspace_changed', { reason: 'vcs', vcsKind: 'push', branch: 'main' }),
+    ]);
+    expect(s.workspaceRevision).toBe(2);
+    expect(s.items).toEqual([]);
+  });
 });
 
 describe('picker lists on session_info', () => {
@@ -629,5 +691,20 @@ describe('picker lists on session_info', () => {
     expect(state.models).toEqual([]);
     expect(state.efforts).toEqual([]);
     expect(state.levelNames).toEqual({});
+  });
+});
+
+describe('MCP servers on session_info', () => {
+  it('is unknown until reported, replaced when present, and cleared by a new session', () => {
+    const ev = makeEmitter();
+    let state = fold([sessionStarted(ev)]);
+    expect(state.mcpServers).toBeNull();
+    state = fold([
+      ev('session_info', { mcpServers: [{ name: 'clubhouse', status: 'connected' }] }),
+      ev('session_info', { cliVersion: '2.1.302' }),
+    ], state);
+    expect(state.mcpServers).toEqual([{ name: 'clubhouse', status: 'connected' }]);
+    state = fold([sessionStarted(ev)], state);
+    expect(state.mcpServers).toBeNull();
   });
 });

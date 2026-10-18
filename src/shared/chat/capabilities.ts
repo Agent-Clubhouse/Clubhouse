@@ -47,8 +47,10 @@ export interface ChatCapabilities {
   images: boolean;
   slashCommands: boolean;
   modelSwitch: 'live' | 'per_turn' | 'restart' | 'none';
-  /** Reasoning-effort changes: applied live, only on the next start (Claude takes --effort at launch), or not supported. */
+  /** Reasoning-effort changes: applied live, from the next turn, only on the next start, or not supported. */
   effortSwitch: 'live' | 'per_turn' | 'restart' | 'none';
+  /** The effort can go back to the provider's default (`setModel(id, null)`); absent where it can't. */
+  effortDefault?: boolean;
   /** Levels the driver can switch to without restarting the session. */
   liveLevels: readonly PermissionLevel[];
   /** How the user logs in when auth is missing. */

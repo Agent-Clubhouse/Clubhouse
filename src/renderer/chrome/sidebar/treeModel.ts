@@ -85,6 +85,28 @@ export function orderProjects<T extends { id: string }>(projects: T[], pinnedIds
 }
 
 /**
+ * `items` most recent first by `activity` (#2116). Items with no activity
+ * yet go last, and ties keep their given (manual) order.
+ */
+export function sortByRecent<T extends { id: string }>(items: readonly T[], activity: Readonly<Record<string, number>>): T[] {
+  return items
+    .map((item, i) => ({ item, i, at: activity[item.id] ?? Number.NEGATIVE_INFINITY }))
+    .sort((a, b) => (a.at === b.at ? a.i - b.i : b.at - a.at))
+    .map((e) => e.item);
+}
+
+/**
+ * `items` in the order of `heldIds`, then any items that are new since, in
+ * their own order. Keeps rows from moving under the pointer while the Recent
+ * order changes (#2116).
+ */
+export function holdOrder<T extends { id: string }>(items: readonly T[], heldIds: readonly string[]): T[] {
+  const rank = new Map(heldIds.map((id, i) => [id, i]));
+  const held = items.filter((item) => rank.has(item.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  return [...held, ...items.filter((item) => !rank.has(item.id))];
+}
+
+/**
  * Move `draggedId` to sit before `targetId` in the full project order. Returns
  * null when nothing changes, so callers can skip a write.
  */
@@ -96,6 +118,34 @@ export function moveProject(orderedIds: readonly string[], draggedId: string, ta
   const next = orderedIds.filter((id) => id !== draggedId);
   next.splice(next.indexOf(targetId), 0, draggedId);
   return next.every((id, i) => id === orderedIds[i]) ? null : next;
+}
+
+/**
+ * Move `draggedId` onto `targetId` inside one group of agents (the awake ones,
+ * or the sleeping ones), and write the group's new order back into the full
+ * saved order at the same places, so agents outside the group keep theirs.
+ * Moving down lands after the target and moving up lands before it, so either
+ * end of the group can be reached. Returns null when nothing changes.
+ */
+export function moveWithinGroup(
+  order: readonly string[],
+  group: readonly string[],
+  draggedId: string,
+  targetId: string,
+): string[] | null {
+  const from = group.indexOf(draggedId);
+  const to = group.indexOf(targetId);
+  if (from === -1 || to === -1 || from === to) return null;
+  // Every group member must have a slot in the order, or one would be lost.
+  if (group.some((id) => !order.includes(id))) return null;
+  const reordered = group.filter((id) => id !== draggedId);
+  reordered.splice(to, 0, draggedId);
+  const next = [...order];
+  group.forEach((id, k) => {
+    const slot = order.indexOf(id);
+    if (slot !== -1) next[slot] = reordered[k];
+  });
+  return next.every((id, i) => id === order[i]) ? null : next;
 }
 
 export interface ProjectAgentGroups {

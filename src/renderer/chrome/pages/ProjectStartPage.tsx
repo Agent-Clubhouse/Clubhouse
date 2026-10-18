@@ -8,6 +8,7 @@ import { useChromeStore } from '../chromeStore';
 import { openNewAgentOrDialog } from '../startPage';
 import { reportChromeActionFailed, reportChromeFeature } from '../telemetry';
 import type { Agent, CompletedQuickAgent, Project } from '../../../shared/types';
+import { markdownToPlainText } from '../../utils/safe-markdown';
 
 /**
  * The project start page (docs/chrome-redesign-spec.md §2): the pane for a
@@ -187,7 +188,7 @@ function FinishedList({ projectId }: { projectId: string }) {
                 <span className="ml-auto flex-shrink-0 text-xs text-ctp-overlay1">{ago(c.completedAt, now)}</span>
               </div>
               <div className="text-xs text-ctp-subtext0 truncate">
-                {c.exitCode !== 0 ? `Exited with code ${c.exitCode}` : c.summary || `${c.filesModified.length} file${c.filesModified.length === 1 ? '' : 's'} changed`}
+                {c.exitCode !== 0 ? `Exited with code ${c.exitCode}` : (c.summary && markdownToPlainText(c.summary)) || `${c.filesModified.length} file${c.filesModified.length === 1 ? '' : 's'} changed`}
               </div>
             </button>
             <button

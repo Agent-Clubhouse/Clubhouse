@@ -66,6 +66,9 @@ describe('ChatView conversation', () => {
     const cmd = screen.getByTestId('chat-command-card');
     expect(cmd).toHaveTextContent('$ npm run typecheck');
     expect(cmd).toHaveTextContent('exit 0');
+    // Collapsed by default (#2110): output shows once the row is opened.
+    expect(cmd).not.toHaveTextContent('0 errors');
+    fireEvent.click(within(cmd).getByRole('button', { expanded: false }));
     expect(cmd).toHaveTextContent('0 errors');
     expect(screen.getAllByTestId('chat-agent-message')).toHaveLength(2);
     expect(screen.getByTestId('chat-turn-footer')).toHaveTextContent('Turn 1');
@@ -135,6 +138,9 @@ describe('ChatView conversation', () => {
     const card = screen.getByTestId('chat-command-card');
     expect(card).toHaveAttribute('data-status', 'in_progress');
     expect(card).toHaveTextContent('running');
+    // A running command stays one row; its live output is one click away.
+    expect(card).toHaveAttribute('data-open', 'false');
+    fireEvent.click(within(card).getByRole('button', { expanded: false }));
     expect(card).toHaveTextContent('tsc --noEmit');
   });
 });
@@ -301,7 +307,8 @@ describe('ChatView composer', () => {
 
   it('shows the model, effort and level', () => {
     renderFixture('claude', 'conversation');
-    expect(screen.getByTestId('chat-model-pill')).toHaveTextContent('claude-opus-5-5· high');
+    expect(screen.getByTestId('chat-model-pill')).toHaveTextContent('claude-opus-5-5');
+    expect(screen.getByTestId('chat-effort-pill')).toHaveTextContent('High effort');
     expect(screen.getByTestId('chat-level-pill')).toHaveTextContent('Ask first');
   });
 
@@ -511,6 +518,32 @@ describe('ChatView untested CLI version', () => {
     expect(note).toHaveTextContent('Claude Code 2.1.302 is newer than the version chat was tested with (2.1.301).');
   });
 
+  it('keeps the drift note to one line and lets it be dismissed until a new kind turns up (#2109)', () => {
+    const drift = fold(chatFixture('claude', 'protocol_drift'));
+    const { rerender } = renderState(drift);
+    const note = screen.getByTestId('chat-protocol-unknown');
+    expect(note.querySelector('.truncate')).not.toBeNull();
+    expect(note).not.toHaveTextContent('some activity may be missing');
+    fireEvent.click(screen.getByTestId('chat-protocol-unknown-dismiss'));
+    expect(screen.queryByTestId('chat-protocol-unknown')).not.toBeInTheDocument();
+
+    // More of the same kinds stay dismissed; a new kind brings it back.
+    const kinds = Object.keys(drift.protocolUnknown);
+    const more = { ...drift, protocolUnknown: { ...drift.protocolUnknown, [kinds[0]]: drift.protocolUnknown[kinds[0]] + 5 } };
+    rerender(<ChatViewBody agent={agent} state={more} actions={makeActions()} providerName="Provider" onSwitchToTerminal={vi.fn()} />);
+    expect(screen.queryByTestId('chat-protocol-unknown')).not.toBeInTheDocument();
+    const newKind = { ...more, protocolUnknown: { ...more.protocolUnknown, 'field:system/next_thing': 1 } };
+    rerender(<ChatViewBody agent={agent} state={newKind} actions={makeActions()} providerName="Provider" onSwitchToTerminal={vi.fn()} />);
+    expect(screen.getByTestId('chat-protocol-unknown')).toBeInTheDocument();
+  });
+
+  it('uses a short drift note on canvas cards (#2109)', () => {
+    render(<ChatViewBody agent={agent} state={fold(chatFixture('claude', 'protocol_drift'))} actions={makeActions()} providerName="Provider" context="canvas" />);
+    const note = screen.getByTestId('chat-protocol-unknown');
+    expect(note).toHaveTextContent('2 unrecognized CLI messages.');
+    expect(note).not.toHaveTextContent('recognize yet');
+  });
+
   it('shows the version after a fatal error', () => {
     renderState(fold(extend(chatFixture('claude', 'conversation'), versionNotice, { type: 'error', data: { code: 'process_exited', message: 'The CLI exited unexpectedly', fatal: true } })));
     const note = screen.getByTestId('chat-protocol-unknown');
@@ -541,7 +574,7 @@ describe('ChatView failures', () => {
 
 describe('ChatView (store-bound)', () => {
   beforeEach(() => {
-    useChatStore.setState({ agents: {}, loading: {}, partial: {}, answering: {} });
+    useChatStore.setState({ agents: {}, loading: {}, partial: {}, loaded: {}, answering: {} });
   });
 
   it('reuses loaded state when a view remounts, as a canvas card does when zooming', async () => {
@@ -555,6 +588,18 @@ describe('ChatView (store-bound)', () => {
     expect(screen.getByTestId('chat-turn-footer')).toBeInTheDocument();
     expect(screen.queryByText('Loading the conversation…')).not.toBeInTheDocument();
     expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads history in a freshly opened window even when live events got there first (#2150)', async () => {
+    const events = chatFixture('claude', 'conversation');
+    const read = vi.fn(async () => events);
+    vi.mocked(window.clubhouse.chat).readTranscript = read;
+    // The agent is running: its latest event reaches this window before any view mounts.
+    act(() => { useChatStore.getState().applyEvent(events[events.length - 1]); });
+    render(<ChatView agent={agent} />);
+    await waitFor(() => expect(read).toHaveBeenCalledWith(FIXTURE_AGENT_ID, undefined));
+    await screen.findByTestId('chat-turn-footer');
+    expect(useChatStore.getState().agents[FIXTURE_AGENT_ID].items.length).toBe(foldChatEvents(undefined, FIXTURE_AGENT_ID, events).items.length);
   });
 
   it('marks the view context, and keeps canvas cards out of the screen-reader live region', async () => {
@@ -865,7 +910,9 @@ describe('ChatView permission extras', () => {
     fireEvent.change(editor, { target: { value: '1. Only the row layout.' } });
     expect(screen.getByText('Approving sends your edited plan.')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Allow'));
-    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow', { updatedInput: { plan: '1. Only the row layout.' } });
+    expect(actions.respondPermission).toHaveBeenCalledWith('perm-plan', 'allow', {
+      updatedInput: { plan: '1. Only the row layout.', permissionMode: 'acceptEdits' },
+    });
   });
 
   it('approves an unedited plan without extras', () => {

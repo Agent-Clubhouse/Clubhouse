@@ -19,6 +19,7 @@ import {
   CODEX_APP_SERVER_SCHEMA_VERSION,
   type AskForApproval,
   type JsonValue,
+  type Model,
   type SandboxMode,
   type ReviewTarget,
   type SandboxPolicy,
@@ -47,6 +48,8 @@ const codexCapabilities: ChatCapabilities = {
   // of these apply from the next turn without restarting the process.
   modelSwitch: 'per_turn',
   effortSwitch: 'per_turn',
+  // turn/start's effort: null drops back to the model's default.
+  effortDefault: true,
   liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
   login: 'terminal',
   // thread/start takes developerInstructions.
@@ -63,8 +66,10 @@ export const CODEX_SLASH_COMMANDS: readonly AvailableCommand[] = Object.freeze([
     name: 'review',
     description: 'Review your changes: uncommitted by default, or against a branch or commit',
     inputHint: '[branch <name> | commit <sha> | instructions]',
+    // send() handles these only when the message is the command (parseCodexSlashCommand).
+    startOnly: true,
   },
-  { name: 'compact', description: 'Summarize the conversation to free up context' },
+  { name: 'compact', description: 'Summarize the conversation to free up context', startOnly: true },
 ]);
 
 export type CodexSlashCommand =
@@ -177,6 +182,14 @@ export function parseCodexVersion(userAgent: string | undefined): string | undef
   return userAgent ? /\/(\d+\.\d+\.\d+[^\s;)]*)/.exec(userAgent)?.[1] : undefined;
 }
 
+/** How long start waits for model/list before going on without menus. */
+const MODEL_LIST_TIMEOUT_MS = 5_000;
+
+/** A model's reasoning-effort levels, in Codex's order. */
+export function codexEfforts(model: Pick<Model, 'supportedReasoningEfforts'>): string[] {
+  return model.supportedReasoningEfforts.map((e) => e.reasoningEffort);
+}
+
 export class CodexChatDriver implements ChatDriver {
   readonly id = 'codex_app_server' as const;
   readonly provider = 'codex-cli';
@@ -248,6 +261,14 @@ class CodexChatSession implements ChatDriverSession {
   private lastEndedTurnId: string | undefined;
   /** The sandbox policy Codex resolved for the thread, used as the base for level changes. */
   private threadSandbox: SandboxPolicy | undefined;
+  /** model/list, for the model and effort menus (#2091); empty if Codex didn't answer. */
+  private catalog: Model[] = [];
+  /** Effort levels last reported, for the current model. */
+  private efforts: string[] | undefined;
+  /** The effort the next turn runs at, as far as Clubhouse knows. */
+  private effort: string | undefined;
+  /** `effort` is the model's default, not one chosen in the session (#2136). */
+  private effortIsDefault = false;
 
   constructor(private readonly opts: ChatDriverStartOptions, private readonly log?: LogFn) {
     const { args, dropped } = appServerArgs(opts.extraArgs ?? []);
@@ -351,6 +372,7 @@ class CodexChatSession implements ChatDriverSession {
     this.threadId = result.thread.id;
     this.threadSandbox = result.sandbox;
     if (opts.effort) this.nextTurn.effort = opts.effort as TurnStartParams['effort'];
+    this.catalog = await this.listModels();
 
     this.queue.push({
       type: 'session_started',
@@ -367,6 +389,24 @@ class CodexChatSession implements ChatDriverSession {
       },
     });
     this.queue.push({ type: 'commands_available', data: { commands: [...CODEX_SLASH_COMMANDS] } });
+    const row = this.catalogRow(result.model);
+    if (this.catalog.length) {
+      this.efforts = row ? codexEfforts(row) : [];
+      this.queue.push({
+        type: 'session_info',
+        data: {
+          models: this.catalog.map((m) => ({ id: m.model, label: m.displayName || m.model, description: m.description || undefined })),
+          efforts: this.efforts,
+        },
+      });
+      const effort = opts.effort ?? result.reasoningEffort ?? row?.defaultReasoningEffort ?? undefined;
+      this.effort = effort;
+      this.effortIsDefault = !!effort && !opts.effort && !result.reasoningEffort;
+      this.queue.push({
+        type: 'model_changed',
+        data: { modelId: result.model, ...(effort && { effort }), ...(this.effortIsDefault && { effortIsDefault: true }) },
+      });
+    }
     if (mcp.skipped.length > 0) {
       this.log?.('warn', 'MCP servers Codex cannot run were left out', { skipped: mcp.skipped });
       this.queue.push({
@@ -485,10 +525,61 @@ class CodexChatSession implements ChatDriverSession {
     this.emit({ type: 'mode_changed', data: { level, nativeMode: `${approvalPolicy}/${sandbox}` } });
   }
 
-  async setModel(modelId: string, effort?: string): Promise<void> {
+  /**
+   * Model and effort for the next turn. turn/start's `effort: null` means "no
+   * override" and an effort sent earlier sticks to the thread, so going back
+   * to the default (null, #2136) sends the model's own default level instead.
+   */
+  async setModel(modelId: string, effort?: string | null): Promise<void> {
+    const row = this.catalogRow(modelId);
+    const efforts = row ? codexEfforts(row) : undefined;
+    const modelDefault = row?.defaultReasoningEffort ?? undefined;
+    if (effort === null && !modelDefault) throw new Error("Codex didn't report this model's default effort");
+    let next: string | undefined;
+    let isDefault = false;
+    if (efforts && !efforts.length) {
+      // A model without effort levels takes none (the thread's last one doesn't apply to it).
+      next = undefined;
+    } else if (effort === null || (effort === undefined && this.effortIsDefault && modelDefault)) {
+      // Back to the default, or still on it: the new model's own default.
+      next = modelDefault;
+      isDefault = true;
+    } else if (effort) {
+      next = effort;
+    } else {
+      // Keep the chosen effort if the new model offers it, else its default.
+      const keep = this.effort && (!efforts || efforts.includes(this.effort)) ? this.effort : undefined;
+      next = keep ?? modelDefault;
+      isDefault = !keep && !!modelDefault;
+    }
     this.nextTurn.model = modelId;
-    if (effort) this.nextTurn.effort = effort as TurnStartParams['effort'];
-    this.emit({ type: 'model_changed', data: { modelId, ...(effort && { effort }) } });
+    if (next) this.nextTurn.effort = next as TurnStartParams['effort'];
+    else delete this.nextTurn.effort;
+    this.effort = next;
+    this.effortIsDefault = isDefault;
+    this.emit({ type: 'model_changed', data: { modelId, ...(next && { effort: next }), ...(isDefault && { effortIsDefault: true }) } });
+    // Without the catalog there are no menus to update.
+    if (!this.catalog.length) return;
+    const levels = efforts ?? [];
+    if (this.efforts && levels.join() === this.efforts.join()) return;
+    this.efforts = levels;
+    this.emit({ type: 'session_info', data: { efforts: levels } });
+  }
+
+  /** Codex's model picker, without the models it hides. Best-effort: the menus are just not offered without it. */
+  private async listModels(): Promise<Model[]> {
+    try {
+      // Best-effort and on the start path: don't wait the default RPC timeout for it.
+      const res = await this.client.request('model/list', {}, { timeoutMs: MODEL_LIST_TIMEOUT_MS });
+      return (res?.data ?? []).filter((m) => !m.hidden);
+    } catch (err) {
+      this.log?.('warn', 'Codex model/list failed; no model menu', { error: err instanceof Error ? err.message : String(err) });
+      return [];
+    }
+  }
+
+  private catalogRow(model: string): Model | undefined {
+    return this.catalog.find((m) => m.model === model || m.id === model);
   }
 
   async compact(): Promise<void> {

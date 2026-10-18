@@ -24,7 +24,8 @@ export function SettingsMonacoEditor({
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
   const onChangeRef = useRef(onChange);
-  const themeId = useThemeStore((s) => s.themeId);
+  // The applied theme, not the selection: they differ while a plugin theme is unregistered.
+  const themeId = useThemeStore((s) => s.theme.id);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 

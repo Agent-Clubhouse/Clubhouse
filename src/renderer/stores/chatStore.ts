@@ -18,6 +18,7 @@ import type {
   AvailableCommand,
   ChatCapabilities,
   ChatModelOption,
+  ChatMcpServer,
   ChatDriverId,
   ChatEvent,
   ChatEventDataMap,
@@ -190,6 +191,8 @@ export interface ChatViewState {
   level: PermissionLevel | null;
   model: string | null;
   effort: string | null;
+  /** The effort is the provider's default rather than one chosen in the session (model_changed). */
+  effortIsDefault: boolean;
   nativeSessionId: string | null;
   /** Last applied seq, per session id. Used to drop duplicates. */
   lastSeq: Record<string, number>;
@@ -210,9 +213,13 @@ export interface ChatViewState {
   efforts: string[];
   /** The provider's own name for each live level. */
   levelNames: Partial<Record<PermissionLevel, string>>;
+  /** MCP servers the CLI reported at session start; null when it doesn't report them. */
+  mcpServers: ChatMcpServer[] | null;
   queued: QueuedMessage[];
   /** Native messages the driver didn't recognize (protocol drift), by name. */
   protocolUnknown: Record<string, number>;
+  /** Bumped when the agent changes the workspace's git state (commit, push, …): views of its changes re-read. */
+  workspaceRevision: number;
   /**
    * "Newer than tested" CLI note. CLIs release faster than chat is retested,
    * so this isn't a transcript item; the view shows it only next to a real
@@ -233,6 +240,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     level: null,
     model: null,
     effort: null,
+    effortIsDefault: false,
     nativeSessionId: null,
     lastSeq: {},
     turnId: null,
@@ -247,8 +255,10 @@ export function createChatViewState(agentId: string): ChatViewState {
     models: [],
     efforts: [],
     levelNames: {},
+    mcpServers: null,
     queued: [],
     protocolUnknown: {},
+    workspaceRevision: 0,
     untestedCliNote: null,
   };
 }
@@ -395,6 +405,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         models: [],
         efforts: [],
         levelNames: {},
+        mcpServers: null,
         state: 'idle',
       };
     }
@@ -410,6 +421,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         models: d.models ?? state.models,
         efforts: d.efforts ?? state.efforts,
         levelNames: d.levelNames ?? state.levelNames,
+        mcpServers: d.mcpServers ?? state.mcpServers,
         capabilities: d.capabilities
           ? { ...(state.capabilities ?? MINIMAL_CHAT_CAPABILITIES), ...d.capabilities }
           : state.capabilities,
@@ -641,7 +653,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
     case 'mode_changed':
       return { ...state, level: event.data.level };
     case 'model_changed':
-      return { ...state, model: event.data.modelId, effort: event.data.effort ?? null };
+      return { ...state, model: event.data.modelId, effort: event.data.effort ?? null, effortIsDefault: event.data.effortIsDefault === true };
     case 'commands_available':
       return { ...state, commands: event.data.commands };
 
@@ -658,6 +670,9 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       if (d.toolCallId !== undefined) item.toolCallId = d.toolCallId;
       return { ...state, items: [...state.items, item] };
     }
+
+    case 'workspace_changed':
+      return { ...state, workspaceRevision: state.workspaceRevision + 1 };
 
     case 'protocol_unknown': {
       // Diagnostics: counted so the view can say the CLI sent something this build doesn't understand.
@@ -689,6 +704,12 @@ interface ChatStoreState {
   loading: Record<string, boolean>;
   /** Agents whose state came from a tail of the transcript; earlier events weren't read. */
   partial: Record<string, boolean>;
+  /**
+   * Agents whose transcript has been read in this window. Live events alone
+   * create an agent's state too (a running agent in a freshly opened window),
+   * so having state doesn't mean the history is there (#2150).
+   */
+  loaded: Record<string, boolean>;
   /** Permission or question answers in flight, keyed `${agentId}:${requestId}`, so every view disables the card. */
   answering: Record<string, true>;
 
@@ -702,7 +723,7 @@ interface ChatStoreState {
   respondPermission: (agentId: string, requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<void>;
   answerQuestion: (agentId: string, requestId: string, answers: ChatQuestionAnswers) => Promise<void>;
   setLevel: (agentId: string, level: PermissionLevel) => Promise<void>;
-  setModel: (agentId: string, modelId: string, effort?: string) => Promise<void>;
+  setModel: (agentId: string, modelId: string, effort?: string | null) => Promise<void>;
 }
 
 /**
@@ -739,21 +760,36 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     agents: {},
     loading: {},
     partial: {},
+    loaded: {},
     answering: {},
 
     loadTranscript: async (agentId, tail) => {
       pendingLive.set(agentId, []);
       set((s) => ({ loading: { ...s.loading, [agentId]: true } }));
-      let events: ChatEvent[] = [];
+      let events: ChatEvent[] | null = null;
       try {
         events = (await window.clubhouse.chat.readTranscript(agentId, tail)) ?? [];
       } catch {
-        // Treat an unreadable transcript as empty; live events still apply.
+        // Unreadable right now: handled below by keeping what this window has.
       }
       const buffered = pendingLive.get(agentId) ?? [];
       pendingLive.delete(agentId);
+      if (events === null) {
+        // Keep the state this window already had, with the live events that
+        // arrived meanwhile, and leave it marked not loaded so the next view
+        // that mounts tries again (#2150 review).
+        set((s) => {
+          const loading = { ...s.loading };
+          delete loading[agentId];
+          return { agents: { ...s.agents, [agentId]: foldChatEvents(s.agents[agentId], agentId, buffered) }, loading };
+        });
+        return;
+      }
       // The transcript is authoritative, so rebuild from it rather than merging
-      // into whatever live state existed before the load started.
+      // into whatever live state existed before the load started. That state
+      // came from events main had already written to the transcript (it
+      // appends before it broadcasts), so nothing seen live is lost, and seq
+      // dedupe drops the buffered events the transcript already holds.
       const fromTranscript = foldChatEvents(undefined, agentId, events);
       const next = foldChatEvents(fromTranscript, agentId, buffered);
       // A tail that came back full may have cut earlier events off.
@@ -761,7 +797,12 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       set((s) => {
         const loading = { ...s.loading };
         delete loading[agentId];
-        return { agents: { ...s.agents, [agentId]: next }, loading, partial: { ...s.partial, [agentId]: cut } };
+        return {
+          agents: { ...s.agents, [agentId]: next },
+          loading,
+          partial: { ...s.partial, [agentId]: cut },
+          loaded: { ...s.loaded, [agentId]: true },
+        };
       });
     },
 
@@ -783,10 +824,12 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
         const agents = { ...s.agents };
         const loading = { ...s.loading };
         const partial = { ...s.partial };
+        const loaded = { ...s.loaded };
         delete agents[agentId];
         delete loading[agentId];
         delete partial[agentId];
-        return { agents, loading, partial };
+        delete loaded[agentId];
+        return { agents, loading, partial, loaded };
       });
     },
 

@@ -128,7 +128,7 @@ export interface AgentRuntime {
 
   /** Chat-only controls; undefined on PTY runtimes. */
   setLevel?(level: PermissionLevel): Promise<void>;
-  setModel?(modelId: string, effort?: string): Promise<void>;
+  setModel?(modelId: string, effort?: string | null): Promise<void>;
   /** Capability record of the active chat driver; undefined on PTY runtimes. */
   getCapabilities?(): ChatCapabilities | undefined;
 }
@@ -164,6 +164,12 @@ export interface ChatDriverStartOptions {
    * SDK) ignore them and should log that they did.
    */
   extraArgs?: string[];
+  /**
+   * Aborted when the start is cancelled (the agent was killed or a newer
+   * start replaced this one). Drivers should close their CLI right away; the
+   * runtime stops waiting either way and closes a session that arrives late.
+   */
+  signal?: AbortSignal;
 }
 
 export interface ChatDriverSession {
@@ -188,8 +194,11 @@ export interface ChatDriverSession {
   respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void>;
   answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void>;
   setLevel(level: PermissionLevel): Promise<void>;
-  /** Effort is applied according to `capabilities.effortSwitch`; with 'restart' it takes effect on the next start. */
-  setModel(modelId: string, effort?: string): Promise<void>;
+  /**
+   * Effort is applied according to `capabilities.effortSwitch`; with 'restart' it takes effect on the next start.
+   * Omitted keeps the current effort; null returns it to the provider's default (`capabilities.effortDefault`).
+   */
+  setModel(modelId: string, effort?: string | null): Promise<void>;
   compact(): Promise<void>;
   /** Stop the CLI process. Resolves when it has exited. */
   close(): Promise<void>;

@@ -59,6 +59,8 @@ export const CHAT_EVENT_TYPES = [
   'mode_changed',
   'model_changed',
   'commands_available',
+  // Workspace
+  'workspace_changed',
   // Diagnostics
   'notice',
   'error',
@@ -213,10 +215,29 @@ export interface ChatModelOption {
   costHint?: string;
 }
 
+/**
+ * An MCP server as the CLI reports it at session start (Claude's init
+ * `mcp_servers`). `needs_auth` is waiting for a sign-in; `pending` was still
+ * connecting when the session started.
+ */
+export type ChatMcpServerStatus = 'connected' | 'pending' | 'needs_auth' | 'failed' | 'disabled' | 'unknown';
+
+export interface ChatMcpServer {
+  name: string;
+  status: ChatMcpServerStatus;
+}
+
 export interface AvailableCommand {
   name: string;
   description?: string;
   inputHint?: string;
+  /**
+   * Runs only when the message starts with it: the CLI's own commands
+   * (`/compact`, `/effort`, …). Mid-message the text goes to the model as is,
+   * so the composer doesn't offer these there (#2135). Absent when the
+   * provider doesn't say (skills and custom commands can work anywhere).
+   */
+  startOnly?: boolean;
 }
 
 // ── Event payloads ──────────────────────────────────────────────────────────
@@ -280,6 +301,8 @@ export interface ChatEventDataMap {
     efforts?: string[];
     /** The provider's own name for each live level, shown under Clubhouse's level name. */
     levelNames?: Partial<Record<PermissionLevel, string>>;
+    /** MCP servers the CLI loaded, with their status. Replaces any earlier list; absent leaves it unchanged. */
+    mcpServers?: ChatMcpServer[];
   };
   session_state: { state: ChatSessionState };
   session_ended: { reason: SessionEndReason; exitCode?: number; message?: string };
@@ -378,8 +401,23 @@ export interface ChatEventDataMap {
     limits?: UsageLimit[];
   };
   mode_changed: { level: PermissionLevel; nativeMode?: string };
-  model_changed: { modelId: string; effort?: string };
+  model_changed: {
+    modelId: string;
+    effort?: string;
+    /**
+     * `effort` is the level the provider picked by default, not one chosen in
+     * the session: the effort menu checks Default, and choosing that level pins it.
+     */
+    effortIsDefault?: boolean;
+  };
   commands_available: { commands: AvailableCommand[] };
+
+  /**
+   * The agent changed the workspace's git state (a commit, push, merge or
+   * rebase), so views of its branch and changes should re-read it. A hint
+   * only: consumers may coalesce several.
+   */
+  workspace_changed: { reason: 'vcs'; vcsKind?: string; branch?: string };
 
   notice: {
     level: 'info' | 'warn';

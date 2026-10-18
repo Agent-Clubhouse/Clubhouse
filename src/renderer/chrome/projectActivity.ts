@@ -3,6 +3,9 @@
  * it is unpinned and nothing happened in it for the idle window (7 days by
  * default). Activity is an agent running or waking, a quick agent starting,
  * or the user opening one of the project's tabs; sleeping agents don't count.
+ * A project the user marked inactive (#2116) is idle at once, and stays so
+ * until they mark it active; new activity doesn't undo the mark, but like any
+ * idle project it still shows while it is running or selected.
  * Pure, so the rule is unit-tested on its own.
  */
 
@@ -20,11 +23,14 @@ export interface IdleInput {
   activeProjectId: string | null;
   idleDays: number;
   now: number;
+  /** Projects marked inactive by the user. */
+  inactiveIds?: readonly string[];
 }
 
 export function isProjectIdle(projectId: string, input: IdleInput): boolean {
-  if (input.idleDays <= 0) return false;
   if (input.pinnedIds.includes(projectId) || input.runningIds.has(projectId) || input.activeProjectId === projectId) return false;
+  if (input.inactiveIds?.includes(projectId)) return true;
+  if (input.idleDays <= 0) return false;
   const last = input.activity[projectId];
   if (last === undefined) return false;
   return input.now - last > input.idleDays * DAY_MS;

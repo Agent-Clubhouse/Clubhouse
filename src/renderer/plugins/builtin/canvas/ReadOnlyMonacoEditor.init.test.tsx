@@ -47,7 +47,7 @@ vi.mock('../files/monaco-theme', () => ({
 }));
 
 vi.mock('../../../stores/themeStore', () => ({
-  useThemeStore: (sel: (s: { themeId: string }) => string) => sel({ themeId: 'mocha' }),
+  useThemeStore: (sel: (s: { themeId: string; theme: { id: string } }) => string) => sel({ themeId: 'mocha', theme: { id: 'mocha' } }),
 }));
 
 import { ReadOnlyMonacoEditor } from './ReadOnlyMonacoEditor';

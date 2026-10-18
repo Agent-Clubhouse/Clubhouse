@@ -18,6 +18,17 @@ describe('ClaudeNormalizer', () => {
     expect(sub).toMatchObject({ kind: 'thought_chunk', messageId: 'sub', text: 'b', parentToolCallId: 'toolu_task' });
   });
 
+  it('keeps the MCP servers from init, and leaves them out when the CLI sends none', () => {
+    const n = new ClaudeNormalizer();
+    const [withServers] = n.normalize({
+      type: 'system', subtype: 'init', session_id: 's1',
+      mcp_servers: [{ name: 'clubhouse', status: 'connected' }, { name: 'github', status: 'needs-auth' }, { status: 'failed' }, 'junk'],
+    });
+    expect(withServers).toMatchObject({ kind: 'session_started', mcpServers: [{ name: 'clubhouse', status: 'connected' }, { name: 'github', status: 'needs-auth' }] });
+    const [without] = new ClaudeNormalizer().normalize({ type: 'system', subtype: 'init', session_id: 's1' });
+    expect(without).not.toHaveProperty('mcpServers');
+  });
+
   it('maps assistant blocks and remembers tool names for their results', () => {
     const n = new ClaudeNormalizer();
     const a = n.normalize({
@@ -90,6 +101,79 @@ describe('ClaudeNormalizer', () => {
     expect(n.normalize({ type: 'system', subtype: 'permission_denied', tool_name: 'Bash' })).toMatchObject([{ seq: 1 }]);
   });
 
+  // Wire samples (#2109): shapes from Agent SDK 0.3.301's sdk.d.ts (tool_progress,
+  // background_tasks_changed) and the bundled CLI's message schemas (the rest).
+  describe('status frames from CLI 2.1.30x (#2109)', () => {
+    const base = { uuid: 'u1', session_id: 's1' };
+
+    it('maps tool_progress: Bash progress, heartbeats and subagent retries', () => {
+      const n = new ClaudeNormalizer();
+      expect(n.normalize({ ...base, type: 'tool_progress', tool_use_id: 'toolu_bash', tool_name: 'Bash', parent_tool_use_id: null, elapsed_time_seconds: 12, task_id: 'b1' }))
+        .toMatchObject([{ kind: 'tool_progress', toolCallId: 'toolu_bash', toolName: 'Bash', elapsedSeconds: 12, heartbeat: false }]);
+      expect(n.normalize({ ...base, type: 'tool_progress', tool_use_id: 'toolu_web', tool_name: 'WebFetch', parent_tool_use_id: 'toolu_task', elapsed_time_seconds: 30, heartbeat: true }))
+        .toMatchObject([{ kind: 'tool_progress', toolCallId: 'toolu_web', heartbeat: true, parentToolCallId: 'toolu_task' }]);
+      const [retry] = n.normalize({
+        ...base, type: 'tool_progress', tool_use_id: 'toolu_task', tool_name: 'Task', parent_tool_use_id: null, elapsed_time_seconds: 0,
+        subagent_type: 'Explore',
+        subagent_retry: { agent_id: 'ag1', attempt: 2, max_retries: 10, retry_delay_ms: 4000, error_status: 529, error_category: 'overloaded' },
+      });
+      expect(retry).toMatchObject({
+        kind: 'tool_progress', subagentType: 'Explore',
+        retry: { attempt: 2, maxRetries: 10, retryDelayMs: 4000, errorStatus: 529, errorCategory: 'overloaded' },
+      });
+    });
+
+    it('maps background_tasks_changed to the full live set', () => {
+      const n = new ClaudeNormalizer();
+      expect(n.normalize({
+        ...base, type: 'system', subtype: 'background_tasks_changed',
+        tasks: [
+          { task_id: 't1', task_type: 'local_bash', description: 'npm run dev' },
+          { task_id: 't2', task_type: 'local_agent', subagent_type: 'Explore', description: 'Find the bug', awaited: true },
+          { task_id: 't3', task_type: 'local_bash', description: 'watcher', ambient: true },
+        ],
+      })).toMatchObject([{
+        kind: 'background_tasks',
+        tasks: [
+          { taskId: 't1', taskType: 'local_bash', description: 'npm run dev', ambient: false },
+          { taskId: 't2', taskType: 'local_agent', subagentType: 'Explore', description: 'Find the bug', ambient: false },
+          { taskId: 't3', ambient: true },
+        ],
+      }]);
+      expect(n.normalize({ ...base, type: 'system', subtype: 'background_tasks_changed', tasks: [] })).toMatchObject([{ kind: 'background_tasks', tasks: [] }]);
+    });
+
+    it('maps vcs_state_changed to a workspace change', () => {
+      const n = new ClaudeNormalizer();
+      expect(n.normalize({ ...base, type: 'system', subtype: 'vcs_state_changed', kind: 'commit', cwd: '/repo', branch: 'fix/x' }))
+        .toMatchObject([{ kind: 'vcs_changed', vcsKind: 'commit', branch: 'fix/x', cwd: '/repo' }]);
+    });
+
+    it('knowingly drops code_change_published and command_lifecycle, without advancing seq', () => {
+      const n = new ClaudeNormalizer();
+      expect(n.normalize({
+        ...base, type: 'system', subtype: 'code_change_published',
+        provider: 'github', url: 'https://github.com/o/r/pull/1', repo: 'o/r', identifier: '1', action: 'created', branch: 'fix/x',
+      })).toEqual([]);
+      for (const state of ['queued', 'started', 'completed']) {
+        expect(n.normalize({ ...base, type: 'command_lifecycle', command_uuid: 'c1', state })).toEqual([]);
+      }
+      expect(n.normalize({ type: 'system', subtype: 'permission_denied', tool_name: 'Bash' })).toMatchObject([{ seq: 1 }]);
+    });
+
+    it('none of the five is reported as unmapped', () => {
+      const n = new ClaudeNormalizer();
+      const frames = [
+        { type: 'tool_progress', tool_use_id: 't', tool_name: 'Bash', elapsed_time_seconds: 1 },
+        { type: 'system', subtype: 'background_tasks_changed', tasks: [] },
+        { type: 'system', subtype: 'vcs_state_changed', kind: 'push', cwd: '/r' },
+        { type: 'system', subtype: 'code_change_published', provider: 'github', url: 'u', repo: 'r', identifier: '1' },
+        { type: 'command_lifecycle', command_uuid: 'c', state: 'queued' },
+      ];
+      expect(frames.flatMap((f) => n.normalize({ ...base, ...f })).filter((e) => e.kind === 'unmapped')).toEqual([]);
+    });
+  });
+
   it('reports an assistant API error without dropping its content', () => {
     const n = new ClaudeNormalizer();
     const evs = n.normalize({ type: 'assistant', message: { id: 'm', content: [{ type: 'text', text: 'partial' }] }, error: 'rate_limit' });
@@ -133,6 +217,12 @@ describe('control protocol mapping', () => {
   it('maps the initialize response', () => {
     const body = initializedFromWire({ commands: [{ name: 'compact' }, 'junk'], models: [{ value: 'opus', displayName: 'Opus' }] });
     expect(body).toMatchObject({ kind: 'initialized', commands: [{ name: 'compact' }], models: [{ value: 'opus', displayName: 'Opus' }] });
+  });
+
+  it('keeps the builtin marker on Claude Code\'s own commands (#2135)', () => {
+    const body = initializedFromWire({ commands: [{ name: 'compact', builtin: true }, { name: 'code-review' }] });
+    expect(body).toMatchObject({ commands: [{ name: 'compact', builtin: true }, { name: 'code-review' }] });
+    expect((body as { commands: Array<{ builtin?: boolean }> }).commands[1]).not.toHaveProperty('builtin');
   });
 
   it('echoes the original input on allow and keeps deny messages', () => {

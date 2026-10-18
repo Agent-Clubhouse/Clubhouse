@@ -1,0 +1,192 @@
+import { describe, it, expect } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import type { ToolCallItem } from '../../../stores/chatStore';
+import { DiffCard, ToolCallView } from './ToolBlocks';
+
+function tool(over: Partial<ToolCallItem>): ToolCallItem {
+  return {
+    kind: 'tool_call',
+    id: 't-1',
+    sessionId: 's-1',
+    seq: 1,
+    ts: 0,
+    toolCallId: 't-1',
+    toolKind: 'other',
+    title: 'Tool',
+    status: 'completed',
+    content: [],
+    ...over,
+  };
+}
+
+const command = (over: Partial<ToolCallItem> = {}) => tool({
+  toolKind: 'execute',
+  title: 'Typecheck',
+  rawInput: { command: 'npm run typecheck' },
+  content: [{ type: 'terminal', terminalId: 'term-1', command: 'npm run typecheck', output: 'Found 0 errors\n', exitCode: 0 }],
+  durationMs: 4200,
+  ...over,
+});
+
+const edit = (over: Partial<ToolCallItem> = {}) => tool({
+  toolKind: 'edit',
+  title: 'Edit src/a.ts',
+  locations: [{ path: 'src/a.ts' }],
+  content: [{ type: 'diff', path: 'src/a.ts', oldText: 'const a = 1;\n', newText: 'const a = 2;\n' }],
+  ...over,
+});
+
+const mcp = (over: Partial<ToolCallItem> = {}) => tool({
+  title: 'mcp__clubhouse__post_bulletin',
+  toolName: 'mcp__clubhouse__post_bulletin',
+  rawInput: { topic: 'theme-fixes', body: 'PR up' },
+  content: [{ type: 'text', text: '{"posted":true}' }],
+  durationMs: 300,
+  ...over,
+});
+
+function expandButton(card: HTMLElement) {
+  return within(card).getByRole('button', { expanded: false });
+}
+
+describe('tool calls in the transcript (#2110)', () => {
+  it('renders a command as one collapsed row and expands to its output', () => {
+    render(<ToolCallView tool={command()} />);
+    const card = screen.getByTestId('chat-command-card');
+    expect(card).toHaveAttribute('data-open', 'false');
+    expect(card).toHaveTextContent('$ npm run typecheck');
+    expect(card).toHaveTextContent('exit 0');
+    expect(card).toHaveTextContent('4s');
+    expect(card).not.toHaveTextContent('Found 0 errors');
+
+    fireEvent.click(expandButton(card));
+    expect(card).toHaveAttribute('data-open', 'true');
+    expect(card).toHaveTextContent('Found 0 errors');
+
+    fireEvent.click(within(card).getByRole('button', { expanded: true }));
+    expect(card).not.toHaveTextContent('Found 0 errors');
+  });
+
+  it('renders an edit as its header row and expands to the diff', () => {
+    render(<ToolCallView tool={edit()} />);
+    const card = screen.getByTestId('chat-diff-card');
+    expect(card).toHaveTextContent('src/a.ts');
+    expect(card).toHaveTextContent('+1');
+    expect(card).toHaveTextContent('−1');
+    expect(card.querySelector('[data-diff]')).toBeNull();
+
+    fireEvent.click(expandButton(card));
+    expect(card.querySelector('[data-diff="add"]')).toHaveTextContent('const a = 2;');
+  });
+
+  it('renders an MCP call as a server and tool row and expands to arguments and result', () => {
+    render(<ToolCallView tool={mcp()} />);
+    const card = screen.getByTestId('chat-tool-card');
+    expect(card).toHaveAttribute('data-mcp', 'true');
+    expect(card).toHaveTextContent('clubhouse · post_bulletin');
+    expect(card).toHaveTextContent('theme-fixes');
+    expect(screen.queryByTestId('chat-tool-args')).toBeNull();
+    expect(screen.queryByTestId('chat-tool-result')).toBeNull();
+
+    fireEvent.click(expandButton(card));
+    expect(screen.getByTestId('chat-tool-args')).toHaveTextContent('"body": "PR up"');
+    expect(screen.getByTestId('chat-tool-result')).toHaveTextContent('{"posted":true}');
+  });
+
+  it("labels an MCP call by the session's known server when the server name has `__`", () => {
+    render(<ToolCallView tool={mcp({ toolName: 'mcp__my__server__do_thing' })} mcpServers={[{ name: 'my__server', status: 'connected' }]} />);
+    expect(screen.getByTestId('chat-tool-card')).toHaveTextContent('my__server · do_thing');
+  });
+
+  it('falls back to the raw output for an MCP result with no text (Codex)', () => {
+    render(<ToolCallView tool={mcp({ content: [], rawOutput: { content: [{ type: 'text', text: 'ok' }] } })} />);
+    fireEvent.click(expandButton(screen.getByTestId('chat-tool-card')));
+    expect(screen.getByTestId('chat-tool-result')).toHaveTextContent('"text": "ok"');
+  });
+
+  it('collapses other tools too, with no toggle when there is nothing to show', () => {
+    const { rerender } = render(<ToolCallView tool={tool({ title: 'TodoWrite', rawInput: { todos: [] }, content: [{ type: 'text', text: 'Todos updated' }] })} />);
+    const card = screen.getByTestId('chat-tool-card');
+    expect(card).not.toHaveTextContent('Todos updated');
+    fireEvent.click(expandButton(card));
+    expect(card).toHaveTextContent('Todos updated');
+
+    rerender(<ToolCallView tool={tool({ id: 't-2', title: 'Ping' })} />);
+    expect(within(screen.getByTestId('chat-tool-card')).queryByRole('button')).toBeNull();
+  });
+
+  describe('the open rule', () => {
+    it('keeps a running command collapsed', () => {
+      render(<ToolCallView tool={command({ status: 'in_progress', durationMs: undefined, content: [{ type: 'terminal', terminalId: 'term-1', command: 'npm test', output: 'line 1\n' }] })} />);
+      const card = screen.getByTestId('chat-command-card');
+      expect(card).toHaveAttribute('data-open', 'false');
+      expect(card).toHaveTextContent('running');
+    });
+
+    it('opens failed calls so the error is in view', () => {
+      render(
+        <>
+          <ToolCallView tool={command({ status: 'failed', error: 'Command timed out', content: [{ type: 'terminal', terminalId: 'term-1', command: 'npm test', output: 'FAIL a.test.ts\n', exitCode: 1 }] })} />
+          <ToolCallView tool={mcp({ id: 't-2', status: 'failed', error: 'Not connected' })} />
+          <ToolCallView tool={edit({ id: 't-3', status: 'failed' })} />
+        </>,
+      );
+      expect(screen.getByTestId('chat-command-card')).toHaveAttribute('data-open', 'true');
+      expect(screen.getByTestId('chat-command-card')).toHaveTextContent('FAIL a.test.ts');
+      expect(screen.getByTestId('chat-command-card')).toHaveTextContent('Command timed out');
+      expect(screen.getByTestId('chat-tool-card')).toHaveTextContent('Not connected');
+      expect(screen.getByTestId('chat-diff-card')).toHaveAttribute('data-open', 'true');
+    });
+
+    it('opens calls waiting for approval', () => {
+      render(<ToolCallView tool={edit({ status: 'pending' })} />);
+      const card = screen.getByTestId('chat-diff-card');
+      expect(card).toHaveAttribute('data-open', 'true');
+      expect(card).toHaveTextContent('waiting for approval');
+    });
+
+    it('opens a running call when it fails', () => {
+      const running = command({ status: 'in_progress', content: [{ type: 'terminal', terminalId: 'term-1', command: 'npm test', output: '' }] });
+      const { rerender } = render(<ToolCallView tool={running} />);
+      expect(screen.getByTestId('chat-command-card')).toHaveAttribute('data-open', 'false');
+      rerender(<ToolCallView tool={{ ...running, status: 'failed', content: [{ type: 'terminal', terminalId: 'term-1', command: 'npm test', output: 'boom\n', exitCode: 1 }] }} />);
+      expect(screen.getByTestId('chat-command-card')).toHaveAttribute('data-open', 'true');
+      expect(screen.getByTestId('chat-command-card')).toHaveTextContent('boom');
+    });
+
+    it("keeps the user's choice when the status changes", () => {
+      const running = command({ status: 'in_progress', content: [{ type: 'terminal', terminalId: 'term-1', command: 'npm test', output: '' }] });
+      const { rerender } = render(<ToolCallView tool={running} />);
+      const card = screen.getByTestId('chat-command-card');
+      fireEvent.click(expandButton(card));
+      fireEvent.click(within(card).getByRole('button', { expanded: true }));
+      rerender(<ToolCallView tool={{ ...running, status: 'failed' }} />);
+      expect(screen.getByTestId('chat-command-card')).toHaveAttribute('data-open', 'false');
+    });
+  });
+
+  it('labels the toggle for keyboard and screen-reader use', () => {
+    render(<ToolCallView tool={command()} />);
+    expect(screen.getByRole('button', { name: 'Expand command npm run typecheck' })).toHaveAttribute('aria-expanded', 'false');
+  });
+});
+
+describe('DiffCard outside the transcript', () => {
+  it('stays open with no toggle (Changes, review, run insets)', () => {
+    render(<DiffCard diff={{ type: 'diff', path: 'src/a.ts', oldText: 'a\n', newText: 'b\n' }} />);
+    const card = screen.getByTestId('chat-diff-card');
+    expect(card).toHaveAttribute('data-open', 'true');
+    expect(card.querySelector('[data-diff="add"]')).toHaveTextContent('b');
+    expect(within(card).queryByRole('button')).toBeNull();
+  });
+
+  it("shows a Codex-added one-line file as Created, +1 −0 (#2160)", () => {
+    // What the Codex mapper now sends for an `add` change: the content as newText.
+    render(<DiffCard diff={{ type: 'diff', path: 'itest-codex.txt', newText: 'hello\n' }} status="pending" />);
+    const card = screen.getByTestId('chat-diff-card');
+    expect(card).toHaveTextContent('Created');
+    expect(card).toHaveTextContent('+1');
+    expect(card).toHaveTextContent('−0');
+    expect(card).toHaveTextContent('waiting for approval');
+  });
+});

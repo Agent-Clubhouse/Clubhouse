@@ -12,8 +12,9 @@ import { SessionPickerDialog } from './SessionPickerDialog';
 import { SessionNamePromptDialog } from './SessionNamePromptDialog';
 import { AgentContextMenu, OverflowIcon, useAgentRowActions } from './useAgentRowActions';
 import { pickGreeting } from './states/greetings';
+import { Markdown } from './chat/MessageBlocks';
 import { useLastSession, type LastSessionInfo } from './states/useLastSession';
-import { formatAgo, formatShortDuration, formatUsd, plural, relativeTo } from './states/format';
+import { describeSleep, formatAgo, formatShortDuration, formatUsd, plural, relativeTo } from './states/format';
 import {
   BranchIcon, FileRow, Kbd, ModelLabel, SectionHead, StateToolbar, ToolbarSeparator,
 } from './states/parts';
@@ -83,9 +84,8 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   const last = useLastSession(agent, agentProject?.path, isDurable && !isRemote);
   const hasLastSession = !!last?.sessionId;
 
-  // One greeting per visit to this agent, picked once when the visit starts
-  const [greeting, setGreeting] = useState('');
-  useEffect(() => { setGreeting(pickGreeting(agent.name, new Date().getHours())); }, [agent.id, agent.name]);
+  // The agent's own greeting (#2102): the same line for this agent on every render.
+  const greeting = useMemo(() => pickGreeting(agent.id, agent.name, new Date().getHours()), [agent.id, agent.name]);
 
   // Wake resumes the last session when there is one (#2019), so it waits until
   // that's known rather than starting a fresh session by mistake.
@@ -126,10 +126,12 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   }, [task, isRemote, remoteParts, agentProject, agent.id, agent.name, spawnDurableAgent]);
 
   // Wake picks up the last session when there is one (#2019).
-  const defaultMode: WakeMode = hasLastSession || isRemote ? 'resume' : 'fresh';
+  // A satellite says whether it has a session; older ones don't, and start fresh.
+  const canResume = hasLastSession || (isRemote && agent.hasSession === true);
+  const defaultMode: WakeMode = canResume ? 'resume' : 'fresh';
 
   const wakeItems: MenuEntry[] = [
-    { id: 'resume', label: 'Wake and resume last session', disabled: !hasLastSession && !isRemote, selected: defaultMode === 'resume', onSelect: () => { void wake('resume'); } },
+    { id: 'resume', label: 'Wake and resume last session', disabled: !canResume, selected: defaultMode === 'resume', onSelect: () => { void wake('resume'); } },
     { id: 'fresh', label: 'Wake with a fresh session', selected: defaultMode === 'fresh', onSelect: () => { void wake('fresh'); } },
     ...(!isRemote && agentProject ? [
       { id: 'sep', separator: true as const },
@@ -170,8 +172,10 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
     `${agent.name} has finished.`
   );
 
+  // Why it's asleep (idle, Stop, another agent, the CLI exiting) when known (#2104).
   const toolbarDetail = failed
     ? 'failed to launch'
+    : agent.lastSleep ? `${describeSleep(agent.lastSleep)}, ${formatAgo(Date.parse(agent.lastSleep.at))}`
     : last?.lastActiveAt ? `last active ${formatAgo(last.lastActiveAt)}` : undefined;
 
   return (
@@ -361,7 +365,7 @@ function LastSession({ info, branch, baseDir, onBrowse }: {
   return (
     <section className="w-full mt-[30px] text-left" aria-label="Last session" data-testid="last-session">
       <SectionHead title="Last session" right={meta || undefined} />
-      {info.summary && <p className="pt-0.5 pb-2.5 text-[13px] leading-[1.55] text-ctp-subtext1 line-clamp-4">{info.summary}</p>}
+      {info.summary && <Markdown text={info.summary} className="pt-0.5 pb-2.5 text-[13px] leading-[1.55] text-ctp-subtext1 break-words line-clamp-4" />}
       {branch && (
         <div className="h-[30px] flex items-center gap-2 px-2 -mx-2 min-w-0" data-testid="last-session-branch">
           <span className="flex-shrink-0 text-ctp-overlay1 flex"><BranchIcon /></span>

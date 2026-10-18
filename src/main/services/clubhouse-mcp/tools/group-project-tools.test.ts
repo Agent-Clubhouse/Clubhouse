@@ -910,7 +910,8 @@ describe('GroupProjectTools', () => {
     const parsed = JSON.parse(result.content[0].text!);
     expect(parsed.action).toBe('sleep_agent');
     expect(parsed.delivered).toBe(true);
-    expect(mockKillAgent).toHaveBeenCalledWith('agent-2', '/test/proj', 'claude-code', 'agent_tool');
+    // The caller's name becomes the target's sleep reason (#2104).
+    expect(mockKillAgent).toHaveBeenCalledWith('agent-2', '/test/proj', 'claude-code', 'agent_tool', { by: 'robin' });
     expect(mockBroadcastToAllWindows).toHaveBeenCalledWith('agent:agent-sleeping', 'agent-2');
 
     agentRegistry.untrack('agent-2');

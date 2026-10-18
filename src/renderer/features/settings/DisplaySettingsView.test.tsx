@@ -66,6 +66,11 @@ describe('DisplaySettingsView', () => {
       expect(screen.queryByText('Home')).toBeNull();
       fireEvent.change(screen.getByTestId('idle-days'), { target: { value: '30' } });
       expect(useChromeStore.getState().idleDays).toBe(30);
+      // Project and agent order (#2116).
+      fireEvent.change(screen.getByTestId('project-sort'), { target: { value: 'recent' } });
+      fireEvent.change(screen.getByTestId('agent-sort'), { target: { value: 'recent' } });
+      expect(useChromeStore.getState()).toMatchObject({ projectSort: 'recent', agentSort: 'recent' });
+      useChromeStore.setState({ projectSort: 'manual', agentSort: 'manual' });
     } finally {
       useChromeFlagStore.setState({ enabled: false });
     }

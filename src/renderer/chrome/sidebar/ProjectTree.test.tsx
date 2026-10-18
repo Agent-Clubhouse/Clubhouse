@@ -183,3 +183,270 @@ describe('ProjectTree menus', () => {
     expect(screen.getByTestId('project-menu-pin')).toBeTruthy();
   });
 });
+
+describe('ProjectTree finished quick agents', () => {
+  it('shows a markdown summary as plain text in the row (#2092)', () => {
+    useChromeStore.setState({ expandedFolds: ['a:finished'] });
+    setup({
+      completedByProject: {
+        a: [{ id: 'q1', projectId: 'a', name: 'fix', mission: 'Fix it', summary: '**Updated** `src/a.ts`', filesModified: [], exitCode: 0, completedAt: Date.now() } as never],
+      },
+    });
+    const row = screen.getByTestId('finished-quick-row-q1');
+    expect(row.textContent).toContain('Updated src/a.ts');
+    expect(row.textContent).not.toContain('**');
+  });
+});
+
+describe('ProjectTree agent drag and keyboard reorder (#2115)', () => {
+  /** jsdom has no DataTransfer; the handlers only need these. */
+  const dataTransfer = () => ({ setData: vi.fn(), getData: vi.fn(), effectAllowed: '', dropEffect: '' });
+  const row = (id: string) => screen.getByTestId(`agent-item-${id}`);
+  function drag(from: string, to: string, { drop = true } = {}) {
+    const dt = dataTransfer();
+    fireEvent.dragStart(row(from), { dataTransfer: dt });
+    const accepted = fireEvent.dragOver(row(to), { dataTransfer: dt });
+    if (drop) fireEvent.drop(row(to), { dataTransfer: dt });
+    return { accepted };
+  }
+
+  it('drags an awake agent below another and saves the new order', () => {
+    const props = setup();
+    expect(row('a1').getAttribute('draggable')).toBe('true');
+    drag('a1', 'a3');
+    expect(props.onReorderAgents).toHaveBeenCalledWith('a', ['a3', 'a2', 'a1']);
+  });
+
+  it('shows the drop line below the target when moving down and above it when moving up', () => {
+    setup();
+    drag('a1', 'a3', { drop: false });
+    expect(row('a3').querySelector('[data-testid="agent-drop-indicator"]')!.className).toContain('-bottom-px');
+    fireEvent.dragEnd(row('a1'));
+    expect(screen.queryByTestId('agent-drop-indicator')).toBeNull();
+
+    drag('a3', 'a1', { drop: false });
+    expect(row('a1').querySelector('[data-testid="agent-drop-indicator"]')!.className).toContain('-top-px');
+  });
+
+  it('does not drop an awake agent among sleeping ones', () => {
+    useChromeStore.setState({ expandedFolds: ['a:sleeping'] });
+    const props = setup({ agentsByProject: { a: [agent('a1', 'a'), agent('a3', 'a'), agent('s1', 'a', { status: 'sleeping' }), agent('s2', 'a', { status: 'sleeping' })] } });
+    const { accepted } = drag('a1', 's1');
+    // fireEvent returns false when the handler called preventDefault (the drop was accepted).
+    expect(accepted).toBe(true);
+    expect(props.onReorderAgents).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('agent-drop-indicator')).toBeNull();
+  });
+
+  it('reorders sleeping agents by drag inside the open fold', () => {
+    useChromeStore.setState({ expandedFolds: ['a:sleeping'] });
+    const props = setup({ agentsByProject: { a: [agent('a1', 'a'), agent('s1', 'a', { status: 'sleeping' }), agent('a3', 'a'), agent('s2', 'a', { status: 'sleeping' })] } });
+    drag('s2', 's1');
+    expect(props.onReorderAgents).toHaveBeenCalledWith('a', ['a1', 's2', 'a3', 's1']);
+  });
+
+  it('does not start a project drag when an agent row is dragged', () => {
+    const props = setup();
+    drag('a1', 'a3');
+    expect(props.onReorder).not.toHaveBeenCalled();
+  });
+
+  it('leaves quick agents, lone agents and satellite rows undraggable', () => {
+    setup({
+      agentsByProject: { a: [agent('a1', 'a'), agent('q1', 'a', { kind: 'quick' })] },
+    });
+    expect(row('q1').hasAttribute('draggable')).toBe(false);
+    // a1 is the only awake durable agent: nothing to reorder against.
+    expect(row('a1').hasAttribute('draggable')).toBe(false);
+  });
+
+  it('has no draggable rows on a satellite', () => {
+    setup({ onReorder: undefined, onReorderAgents: undefined });
+    expect(row('a1').hasAttribute('draggable')).toBe(false);
+  });
+
+  it('Alt+Down and Alt+Up on a focused agent row move it, and plain arrows still move focus', () => {
+    const props = setup();
+    const a1 = key('agent:a1');
+    fireEvent.keyDown(a1, { key: 'ArrowDown', altKey: true });
+    expect(props.onReorderAgents).toHaveBeenLastCalledWith('a', ['a3', 'a2', 'a1']);
+    fireEvent.keyDown(key('agent:a3'), { key: 'ArrowUp', altKey: true });
+    expect(props.onReorderAgents).toHaveBeenLastCalledWith('a', ['a3', 'a2', 'a1']);
+    expect(props.onReorderAgents).toHaveBeenCalledTimes(2);
+
+    a1.focus();
+    fireEvent.keyDown(a1, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(key('agent:a3'));
+    expect(props.onReorderAgents).toHaveBeenCalledTimes(2);
+  });
+
+  it('Alt+Up at the top of the group does nothing', () => {
+    const props = setup();
+    fireEvent.keyDown(key('agent:a1'), { key: 'ArrowUp', altKey: true });
+    expect(props.onReorderAgents).not.toHaveBeenCalled();
+  });
+
+  it('Alt+Down and Alt+Up move a project header within its section', () => {
+    useChromeStore.setState({ projectActivity: { a: Date.now(), b: Date.now(), c: Date.now(), old: Date.now() } });
+    const props = setup();
+    fireEvent.keyDown(key('project:b'), { key: 'ArrowDown', altKey: true });
+    expect(props.onReorder).toHaveBeenLastCalledWith(['a', 'c', 'b', 'old']);
+    fireEvent.keyDown(key('project:a'), { key: 'ArrowUp', altKey: true });
+    expect(props.onReorder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ProjectTree keeps focus on a moved row (#2115 review)', () => {
+  const rerenderInto = (props: ProjectTreeProps) =>
+    render(<ProjectTree {...props} />, { container: screen.getByTestId('project-tree').closest('section')!.parentElement! });
+
+  it('refocuses an agent row after Alt+Down, when moving its DOM node blurred it', () => {
+    const props = setup();
+    const a1 = key('agent:a1');
+    a1.focus();
+    fireEvent.keyDown(a1, { key: 'ArrowDown', altKey: true });
+    expect(props.onReorderAgents).toHaveBeenCalledWith('a', ['a3', 'a2', 'a1']);
+    // Chromium blurs a focused node React moves; jsdom doesn't, so do it here.
+    a1.blur();
+    expect(document.activeElement).toBe(document.body);
+    rerenderInto({ ...props, agentsByProject: { a: [agent('a3', 'a'), agent('a2', 'a', { status: 'sleeping' }), agent('a1', 'a')] } });
+    expect(document.activeElement).toBe(key('agent:a1'));
+  });
+
+  it('refocuses a project header after Alt+Down', () => {
+    useChromeStore.setState({ projectActivity: { a: Date.now(), b: Date.now(), c: Date.now(), old: Date.now() } });
+    const props = setup();
+    const b = key('project:b');
+    b.focus();
+    fireEvent.keyDown(b, { key: 'ArrowDown', altKey: true });
+    b.blur();
+    rerenderInto({ ...props, projects: [project('a'), project('c'), project('b'), project('old')] });
+    expect(document.activeElement).toBe(key('project:b'));
+  });
+
+  it('marks movable rows with their keyboard shortcut', () => {
+    setup();
+    expect(key('agent:a1').getAttribute('aria-keyshortcuts')).toBe('Alt+ArrowUp Alt+ArrowDown');
+    expect(key('project:a').getAttribute('aria-keyshortcuts')).toBe('Alt+ArrowUp Alt+ArrowDown');
+  });
+
+  it('clears the drop line when the drag leaves the row', () => {
+    setup();
+    const dt = { setData: vi.fn(), getData: vi.fn(), effectAllowed: '', dropEffect: '' };
+    fireEvent.dragStart(screen.getByTestId('agent-item-a1'), { dataTransfer: dt });
+    fireEvent.dragOver(screen.getByTestId('agent-item-a3'), { dataTransfer: dt });
+    expect(screen.getByTestId('agent-drop-indicator')).toBeTruthy();
+    fireEvent.dragLeave(screen.getByTestId('agent-item-a3'), { dataTransfer: dt, relatedTarget: document.body });
+    expect(screen.queryByTestId('agent-drop-indicator')).toBeNull();
+  });
+});
+
+describe('ProjectTree sort modes and inactive projects (#2116)', () => {
+  const dataTransfer = () => ({ setData: vi.fn(), getData: vi.fn(), effectAllowed: '', dropEffect: '' });
+  const shownProjects = () => [...document.querySelectorAll<HTMLElement>('[data-tree-key^="project:"]')].map((el) => el.dataset.treeKey!.slice(8));
+  const shownAgents = () => [...document.querySelectorAll<HTMLElement>('[data-tree-key^="agent:"]')].map((el) => el.dataset.treeKey!.slice(6));
+
+  beforeEach(async () => {
+    const { useToastStore } = await import('../../stores/toastStore');
+    useToastStore.setState({ toasts: [] } as never);
+    useChromeStore.setState({ projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [] });
+  });
+  const toasts = async () => {
+    const { useToastStore } = await import('../../stores/toastStore');
+    return (useToastStore.getState() as unknown as { toasts: Array<{ message: string }> }).toasts.map((t) => t.message);
+  };
+
+  it('in Recent project order, has no Move items, a note instead, and a drag only explains how to reorder', async () => {
+    useChromeStore.setState({ projectSort: 'recent' });
+    const props = setup();
+    fireEvent.contextMenu(key('project:b'));
+    expect(screen.queryByTestId('ctx-move-up')).toBeNull();
+    expect(screen.getByText('Sorted by recent activity')).toBeTruthy();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    fireEvent.dragStart(key('project:b'), { dataTransfer: dataTransfer() });
+    fireEvent.dragOver(screen.getByTestId('project-group-a'), { dataTransfer: dataTransfer() });
+    fireEvent.drop(screen.getByTestId('project-group-a'), { dataTransfer: dataTransfer() });
+    expect(props.onReorder).not.toHaveBeenCalled();
+    expect((await toasts()).some((m) => m.startsWith('Projects are sorted by recent activity'))).toBe(true);
+  });
+
+  it('in Recent agent order, agent rows have no Move items and a drag explains how to reorder', async () => {
+    useChromeStore.setState({ agentSort: 'recent' });
+    const props = setup();
+    fireEvent.contextMenu(screen.getByTestId('agent-item-a1'));
+    expect(screen.queryByTestId('ctx-move-down')).toBeNull();
+    fireEvent.dragStart(screen.getByTestId('agent-item-a3'), { dataTransfer: dataTransfer() });
+    expect(props.onReorderAgents).not.toHaveBeenCalled();
+    expect((await toasts()).some((m) => m.startsWith('Agents are sorted by recent activity'))).toBe(true);
+  });
+
+  it('holds the given order while the pointer is over the tree, then catches up', () => {
+    useChromeStore.setState({ projectSort: 'recent', agentSort: 'recent', collapsedProjectIds: ['b', 'c'] });
+    const base = {
+      projects: [project('a'), project('b'), project('c')],
+      agentsByProject: { a: [agent('a1', 'a'), agent('a3', 'a')] },
+    };
+    const props = setup(base);
+    const tree = screen.getByTestId('project-tree');
+    // Re-render the same tree (same container, so the same root) with a new upstream order.
+    const rerender = (over: Partial<ProjectTreeProps>) =>
+      render(<ProjectTree {...props} {...over} />, { container: tree.closest('section')!.parentElement! });
+    expect(shownProjects()).toEqual(['a', 'b', 'c']);
+    fireEvent.pointerEnter(tree);
+    rerender({ projects: [project('c'), project('a'), project('b')], agentsByProject: { a: [agent('a3', 'a'), agent('a1', 'a')] } });
+    expect(shownProjects()).toEqual(['a', 'b', 'c']);
+    expect(shownAgents()).toEqual(['a1', 'a3']);
+    fireEvent.pointerLeave(screen.getByTestId('project-tree'));
+    expect(shownProjects()).toEqual(['c', 'a', 'b']);
+    expect(shownAgents()).toEqual(['a3', 'a1']);
+  });
+
+  it('does not hold the order in manual mode, so a reorder shows at once', () => {
+    const props = setup({ projects: [project('a'), project('b')] });
+    fireEvent.pointerEnter(screen.getByTestId('project-tree'));
+    render(<ProjectTree {...props} projects={[project('b'), project('a')]} />, { container: screen.getByTestId('project-tree').closest('section')!.parentElement! });
+    expect(shownProjects()).toEqual(['b', 'a']);
+  });
+
+  it('Mark inactive moves a project to the idle row at once; Mark active brings it back', () => {
+    useChromeStore.setState({ idleOpen: true });
+    setup();
+    fireEvent.contextMenu(key('project:b'));
+    fireEvent.click(screen.getByText('Mark inactive'));
+    expect(useChromeStore.getState().inactiveProjectIds).toEqual(['b']);
+    expect(screen.getByTestId('idle-projects').textContent).toBe('2 idle projects');
+    expect(key('project:b').dataset.treeParent).toBe('idle');
+
+    fireEvent.contextMenu(key('project:b'));
+    expect(screen.queryByText('Mark inactive')).toBeNull();
+    fireEvent.click(screen.getByText('Mark active'));
+    expect(useChromeStore.getState().inactiveProjectIds).toEqual([]);
+    expect(key('project:b').dataset.treeParent).toBeUndefined();
+  });
+
+  it('offers Mark active for a project that went idle by time, and no Mark inactive on a pinned one', () => {
+    useChromeStore.setState({ idleOpen: true, pinnedProjectIds: ['c'] });
+    setup();
+    fireEvent.contextMenu(key('project:old'));
+    fireEvent.click(screen.getByText('Mark active'));
+    expect(key('project:old').dataset.treeParent).toBeUndefined();
+    fireEvent.contextMenu(key('project:c'));
+    expect(screen.queryByText('Mark inactive')).toBeNull();
+  });
+
+  it('switches project and agent order from the header menu', () => {
+    setup();
+    fireEvent.click(screen.getByTestId('sidebar-sort-menu'));
+    fireEvent.click(screen.getByText('Projects most recent first'));
+    fireEvent.click(screen.getByTestId('sidebar-sort-menu'));
+    fireEvent.click(screen.getByText('Agents most recent first'));
+    expect(useChromeStore.getState()).toMatchObject({ projectSort: 'recent', agentSort: 'recent' });
+  });
+
+  it('has no Mark inactive on a satellite', () => {
+    setup({ onReorder: undefined, onOpenSettings: undefined, onReorderAgents: undefined, onNewAgent: undefined });
+    fireEvent.contextMenu(key('project:a'));
+    expect(screen.queryByText('Mark inactive')).toBeNull();
+  });
+});

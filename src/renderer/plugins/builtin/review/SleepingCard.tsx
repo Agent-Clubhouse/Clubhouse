@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { AgentInfo, PluginAPI } from '../../../../shared/plugin-types';
 import type { SessionEvent, SessionSummary } from '../../../../shared/session-types';
-import { Button, Toggle, StatusDot } from './host';
+import { Button, Markdown, Toggle, StatusDot } from './host';
 import { formatDuration } from '../../../chrome/sidebar/AgentHoverCard';
 import { ReviewAvatar, Svg, Icon, useProjectName } from './reviewUi';
 import { timeAgo } from './reviewModel';
 import { resumeTarget, wakeAgent } from './wake';
 import { reportChromeActionFailed } from '../../../chrome/telemetry';
+import { markdownToPlainText } from '../../../utils/safe-markdown';
 
 /**
  * The card Review shows for a sleeping agent (#2021): what its last session
@@ -104,7 +105,8 @@ export const SleepingCard = React.forwardRef<SleepingCardHandle, {
   const ended = timeAgo(last?.endedAt);
   const duration = last?.summary?.totalDurationMs ? formatDuration(last.summary.totalDurationMs) : null;
   const files = last?.summary?.filesModified.length ?? 0;
-  const title = last?.title || last?.summary?.summary?.split('\n')[0] || last?.firstPrompt?.split('\n')[0] || 'Untitled session';
+  const summaryLine = last?.summary?.summary?.split('\n').find((l) => l.trim());
+  const title = last?.title || (summaryLine && markdownToPlainText(summaryLine)) || last?.firstPrompt?.split('\n')[0] || 'Untitled session';
 
   return (
     <div className="h-full w-full overflow-y-auto" data-testid="review-sleeping-card">
@@ -137,7 +139,7 @@ export const SleepingCard = React.forwardRef<SleepingCardHandle, {
                   <div className="self-end max-w-[80%] px-2.5 py-1.5 rounded-lg bg-surface-0 text-ctp-text line-clamp-3 whitespace-pre-wrap">{last.firstPrompt}</div>
                 )}
                 {(last.replies.length > 0 ? last.replies : [last.summary?.summary ?? '']).filter(Boolean).map((text, i) => (
-                  <div key={i} className="text-ctp-subtext1 line-clamp-3 whitespace-pre-wrap">{text}</div>
+                  <Markdown key={i} text={text} className="text-ctp-subtext1 line-clamp-3 break-words" />
                 ))}
               </div>
             )}

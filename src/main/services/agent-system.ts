@@ -4,13 +4,14 @@ import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isH
 import { waitReady as waitHookServerReady, portEnv as hookPortEnv } from './hook-server';
 import * as ptyManager from './pty-manager';
 import { appLog } from './log-service';
+import { recordBreadcrumb } from './breadcrumbs';
 import * as headlessManager from './headless-manager';
 import * as headlessSettings from './headless-settings';
 import * as freeAgentSettings from './free-agent-settings';
 import * as orchestratorSettings from './orchestrator-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
-import { getDurableConfig, addSessionEntry } from './agent-config';
+import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
 import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
@@ -25,8 +26,9 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
-import { tryStartChatAgent } from './agent-runtime/chat-spawn';
+import { cancelChatStart, tryStartChatAgent, type ChatStartResult } from './agent-runtime/chat-spawn';
 import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
+import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
@@ -253,15 +255,42 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     }
     facts.model = params.model;
 
+    // A saved id the CLI's own store doesn't have (Codex agents saved made-up
+    // ids before #2113, #2132): start fresh instead of resuming nothing.
+    if (params.kind === 'durable' && params.resume && params.sessionId && isSessionCapable(provider) && provider.hasSession) {
+      const exists = await provider.hasSession(params.sessionId, profileEnv).catch((): undefined => undefined);
+      if (exists === false) {
+        appLog('core:agent', 'warn', 'Saved session is gone from the CLI store; starting fresh', {
+          meta: { agentId: params.agentId, sessionId: params.sessionId },
+        });
+        await clearResume(params.projectPath, params.agentId, params.sessionId, 'not_found');
+        params = { ...params, resume: false, sessionId: undefined };
+      }
+    }
+
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
 
     // Chat runtime (experimental): durable agents whose provider is set to
     // Chat and has a registered driver. Falls through to the terminal otherwise.
     let chatStartMs: number | undefined;
-    let startedInChat: boolean;
+    let chatStart: ChatStartResult;
     takeChatStartFailure(params.agentId);
+    // A kill that never produced an exit (the agent wasn't running) mustn't label this run's.
+    takeKillRequest(params.agentId);
+    // The last sleep's reason describes the previous run, not this one: drop it
+    // before the run can end and record its own (#2104).
+    if (params.kind === 'durable' && durableConfig?.lastSleep) {
+      try {
+        await updateDurableConfig(params.projectPath, params.agentId, { lastSleep: null });
+      } catch (err) {
+        // telemetry-exempt: a stale reason on the card is cosmetic; the wake goes on.
+        appLog('core:agent', 'warn', 'Failed to clear the last sleep reason', {
+          meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+    }
     try {
-      startedInChat = await withErrorType('chat_start_failed', () => tryStartChatAgent({
+      chatStart = await withErrorType('chat_start_failed', () => tryStartChatAgent({
         agentId: params.agentId,
         projectPath: params.projectPath,
         cwd: params.cwd,
@@ -278,6 +307,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
       recordChatStart(chatStartMs, false);
       throw err;
     }
+    // Killed, or replaced by a newer start for this agent: that one owns the
+    // agent now, so this spawn opens nothing (in particular no terminal).
+    if (chatStart === 'cancelled') return;
+    const startedInChat = chatStart === 'chat';
     recordChatStart(chatStartMs, startedInChat);
     if (startedInChat) {
       facts.runtime = 'chat';
@@ -340,6 +373,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
             configPipeline.restoreForAgent(exitAgentId);
             if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
             untrackAgent(exitAgentId);
+            takeKillRequest(exitAgentId);
           },
           commandPrefix,
           headlessResult.createEventNormalizer,
@@ -524,10 +558,15 @@ async function spawnPtyAgent(
     configPipeline.restoreForAgent(exitAgentId);
     if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
+    // A terminal agent's run ended: a non-zero exit nobody asked for is an error (#2098).
+    recordBreadcrumb(exitCode !== 0 && killed !== true ? 'error' : 'event', exitCode !== 0 && killed !== true ? 'pty.exit_error' : 'pty.exit', exitCode);
 
+    const kill = takeKillRequest(exitAgentId);
     if (params.kind === 'durable') {
+      // A kill nobody asked for through killAgent is Clubhouse's own (quitting): no reason to show.
+      if (kill || !killed) void recordSleep(params.projectPath, exitAgentId, sleepInfoForExit(kill, exitCode));
       const capture = captureSessionOnExit(params, provider, exitAgentId, {
-        exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt,
+        exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt, profileEnv, assignedId: spawnCmd.sessionId,
       });
       if (capture) pendingSessionCaptures.set(exitAgentId, capture);
     }
@@ -542,17 +581,28 @@ const RESUME_ERROR_TAIL = 2_000;
 /**
  * Record the CLI session a durable agent's terminal run ended on, so the next
  * wake can resume it. Only an id the CLI actually reported is saved (#2086):
- * the one it printed, or the one it was resumed with when it exited cleanly.
+ * the one it printed, the one its own store recorded for this run (Codex
+ * prints none, #2132), or the one it was resumed with when it exited cleanly.
  * A resume that failed (the CLI said the session is gone, or it quit right
  * away on its own) clears the resume id instead, so the next wake starts fresh.
- * Returns the config write, if any.
+ * Resolves once the config write, if any, is done.
  */
 function captureSessionOnExit(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
   agentId: string,
-  { exitCode, buffer, killed, runMs }: { exitCode: number; buffer?: string; killed: boolean; runMs: number },
-): Promise<void> | undefined {
+  exit: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string>; assignedId?: string },
+): Promise<void> {
+  // Async: the id may come from the CLI's own session files (it never rejects; failures are logged).
+  return captureSession(params, provider, agentId, exit);
+}
+
+async function captureSession(
+  params: SpawnAgentParams,
+  provider: OrchestratorProvider,
+  agentId: string,
+  { exitCode, buffer, killed, runMs, profileEnv, assignedId }: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string>; assignedId?: string },
+): Promise<void> {
   const resumedId = params.resume ? params.sessionId : undefined;
   // Only a resume that quit on its own with an error can have failed to resume.
   const failedResume = !!resumedId && exitCode !== 0 && !killed;
@@ -564,9 +614,39 @@ function captureSessionOnExit(
       });
       return clearResume(params.projectPath, agentId, resumedId, 'not_found');
     }
-    let sessionId: string | null = null;
-    if (buffer && isSessionCapable(provider)) sessionId = provider.extractSessionId(buffer);
-    if (!sessionId && resumedId && exitCode === 0) sessionId = resumedId;
+    // Never save an id the CLI's own store doesn't have (#2156): a scraped UUID
+    // can come from the conversation text, and a clean exit doesn't prove the
+    // resumed id existed. undefined (can't tell) keeps the id.
+    const exists = async (id: string | null): Promise<string | null> => {
+      if (!id || !isSessionCapable(provider) || !provider.hasSession) return id;
+      const has = await provider.hasSession(id, profileEnv).catch((): undefined => undefined);
+      if (has === false) {
+        appLog('core:agent', 'warn', 'Ignoring a session id the CLI store does not have', { meta: { agentId, sessionId: id } });
+        return null;
+      }
+      return id;
+    };
+    // A scraped UUID must also be this agent's session, where the CLI can say
+    // so: the conversation can mention a real session from another cwd.
+    const scraped = async (id: string | null): Promise<string | null> => {
+      if (!id || !isSessionCapable(provider) || !provider.hasSessionForCwd) return exists(id);
+      const ours = await provider.hasSessionForCwd(id, params.cwd, profileEnv).catch((): undefined => undefined);
+      if (ours === false) {
+        appLog('core:agent', 'warn', 'Ignoring a scraped session id that is not this agent\'s', { meta: { agentId, sessionId: id } });
+        return null;
+      }
+      return id;
+    };
+    // The id Clubhouse gave a fresh session (Copilot's --session-id) is the
+    // run's own; it's checked too, as the CLI may have quit before creating it.
+    let sessionId: string | null = assignedId ? await exists(assignedId) : null;
+    if (!sessionId && buffer && isSessionCapable(provider)) sessionId = await scraped(provider.extractSessionId(buffer));
+    // A resume that failed wrote no session of its own, so there's nothing to look up.
+    if (!sessionId && !failedResume && isSessionCapable(provider) && provider.findRunSession) {
+      const endedAt = Date.now();
+      sessionId = await provider.findRunSession({ cwd: params.cwd, startedAt: endedAt - runMs, endedAt, resumedId, profileEnv });
+    }
+    if (!sessionId && resumedId && exitCode === 0) sessionId = await exists(resumedId);
     if (!sessionId) {
       if (failedResume && runMs < RESUME_EARLY_EXIT_MS) {
         appLog('core:agent', 'warn', 'Resume failed: the CLI exited right away', {
@@ -643,6 +723,8 @@ export interface KillAgentOptions {
    * a stale lastSessionId, and replacing the live PTY drops its exit capture.
    */
   waitForExit?: boolean;
+  /** For an agent_tool kill: the name of the agent that asked, shown as the sleep reason. */
+  by?: string;
 }
 
 export async function killAgent(
@@ -654,7 +736,10 @@ export async function killAgent(
 ): Promise<void> {
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId, trigger, waitForExit: opts.waitForExit === true } });
   agentKillRequested(agentId, trigger);
+  noteKillRequest(agentId, { trigger, ...(opts.by ? { by: opts.by } : {}) });
   try {
+    // A chat start in progress is cancelled (and its runtime stopped) here.
+    if (await cancelChatStart(agentId)) return;
     const tracked = agentRegistry.get(agentId);
 
     if (tracked?.runtime === 'chat' || isChatAgent(agentId)) {
@@ -788,11 +873,29 @@ export async function listSessions(
     merged.set(s.sessionId, { ...s, friendlyName: nameMap.get(s.sessionId) });
   }
 
-  // Add Clubhouse-only sessions (not found by provider)
+  // Add Clubhouse-only sessions (not found by provider), except ones the
+  // CLI's store says don't exist: those were saved by earlier builds that
+  // recorded made-up or wrong ids (#2086, #2156). They're pruned from history.
+  const missing: string[] = [];
   for (const s of clubhouseHistory) {
-    if (!merged.has(s.sessionId)) {
-      merged.set(s.sessionId, s);
+    if (merged.has(s.sessionId)) continue;
+    if (isSessionCapable(provider) && provider.hasSession) {
+      const profileEnv = await resolveProfileEnv(projectPath, provider.id);
+      const has = await provider.hasSession(s.sessionId, profileEnv).catch((): undefined => undefined);
+      if (has === false) {
+        missing.push(s.sessionId);
+        continue;
+      }
     }
+    merged.set(s.sessionId, s);
+  }
+  if (missing.length) {
+    const { removeSessionEntries } = await import('./agent-config');
+    await removeSessionEntries(projectPath, agentId, missing).catch((err: unknown) => {
+      appLog('core:agent', 'warn', 'Failed to prune missing sessions from history', {
+        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+    });
   }
 
   // Sort by most recently active

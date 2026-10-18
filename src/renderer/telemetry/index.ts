@@ -12,4 +12,5 @@ export {
   type TelemetryView,
   type TelemetrySurface,
 } from './long-frames';
+export { startUiPerf } from './ui-perf';
 export { ATTR } from '../../shared/telemetry/attributes';

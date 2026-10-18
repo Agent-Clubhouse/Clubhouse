@@ -3,7 +3,7 @@ import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
 import { getTheme } from '../../themes';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
-import { useChromeStore } from '../../chrome/chromeStore';
+import { useChromeStore, SIDEBAR_SORTS, type SidebarSort } from '../../chrome/chromeStore';
 import { IDLE_DAY_CHOICES } from '../../chrome/projectActivity';
 import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsInput } from './SettingsLayout';
@@ -25,6 +25,33 @@ function IdleProjectsSetting() {
         className={`${settingsInput} cursor-pointer`}
       >
         {IDLE_DAY_CHOICES.map((d) => <option key={d} value={d}>{d === 0 ? 'Never' : `After ${d} days`}</option>)}
+      </select>
+    </SettingsField>
+  );
+}
+
+const SORT_LABELS: Record<SidebarSort, string> = { manual: 'Manual', recent: 'Most recent first' };
+
+/** Manual or recent order for the sidebar's projects or agents (#2116). */
+function SidebarSortSetting({ kind }: { kind: 'project' | 'agent' }) {
+  const sort = useChromeStore((s) => (kind === 'project' ? s.projectSort : s.agentSort));
+  const setSort = useChromeStore((s) => (kind === 'project' ? s.setProjectSort : s.setAgentSort));
+  const noun = kind === 'project' ? 'projects' : 'agents';
+  return (
+    <SettingsField
+      label={kind === 'project' ? 'Project order' : 'Agent order'}
+      help={kind === 'project'
+        ? 'Manual keeps the order you set by dragging or Move up and Move down. Most recent first puts the projects with the latest agent activity on top.'
+        : 'Manual keeps the order you set by dragging or Move up and Move down. Most recent first puts the agents that woke or worked last on top.'}
+    >
+      <select
+        aria-label={`Order ${noun}`}
+        data-testid={`${kind}-sort`}
+        value={sort}
+        onChange={(e) => setSort(e.target.value as SidebarSort)}
+        className={`${settingsInput} cursor-pointer`}
+      >
+        {SIDEBAR_SORTS.map((value) => <option key={value} value={value}>{SORT_LABELS[value]}</option>)}
       </select>
     </SettingsField>
   );
@@ -68,6 +95,8 @@ export function DisplaySettingsView() {
     <SettingsPage title="Display & UI" description="App appearance and sidebar views.">
       <SettingsSection title="Views">
         {newChrome && <IdleProjectsSetting />}
+        {newChrome && <SidebarSortSetting kind="project" />}
+        {newChrome && <SidebarSortSetting kind="agent" />}
         {!newChrome && VIEW_TOGGLES.map(({ key, label, description, icon }) => {
           const { value, set } = toggleMap[key];
           return (

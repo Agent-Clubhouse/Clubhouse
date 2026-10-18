@@ -2,7 +2,7 @@
 
 On macOS, shortcuts use `Cmd`. On Windows/Linux, substitute `Ctrl`.
 
-All shortcuts are customizable in **Settings > Keyboard Shortcuts**.
+All shortcuts except the feedback capture shortcut are customizable in **Settings > Keyboard Shortcuts**.
 
 ## Global Shortcuts
 
@@ -54,6 +54,14 @@ Open `Cmd+K`, then type a prefix:
 | `Cmd+A` | Select All |
 | `Cmd+W` | Close Window |
 | `Ctrl+Cmd+F` | Toggle Fullscreen |
+
+## Feedback
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+Shift+2` | Capture a feedback screenshot of every Clubhouse window, then review it |
+
+This one lives in the app menu (**Help > Capture Feedback Screenshot**), so it captures before anything on screen reacts to the key: tooltips and hover states stay in the screenshot. It works from pop-out windows, only while Clubhouse is focused, and only once feedback is set up. It can't be changed in **Settings > Keyboard Shortcuts** yet. On Windows/Linux, `Ctrl+Shift+2` won't reach an agent terminal while Clubhouse is focused.
 
 ## Notes
 

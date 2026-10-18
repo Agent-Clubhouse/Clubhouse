@@ -11,6 +11,7 @@ import { bindingManager } from './binding-manager';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import type { JsonRpcRequest, JsonRpcResponse } from './types';
+import type { AgentMcpConnection } from '../../../shared/types';
 import { recordMcpToolCall } from '../../telemetry/agent-signals';
 import { recordToolsList } from '../../telemetry/feature-events';
 
@@ -23,6 +24,17 @@ let readyPromise: Promise<number> | null = null;
 
 /** Active SSE connections keyed by agentId. */
 const sseConnections = new Map<string, Set<http.ServerResponse>>();
+
+/**
+ * When each agent last finished the MCP handshake, and how many tools it was
+ * last given. Agent details compares connectedAt with the agent's spawn time,
+ * so an entry from an earlier run doesn't count as connected (#2093).
+ */
+const agentConnections = new Map<string, AgentMcpConnection>();
+
+export function getAgentConnection(agentId: string): AgentMcpConnection | null {
+  return agentConnections.get(agentId) ?? null;
+}
 
 export function getPort(): number {
   return serverPort;
@@ -120,6 +132,8 @@ function handleToolsList(agentId: string, id: number | string | null): JsonRpcRe
   const tools = getScopedToolList(agentId);
   // §12 H8: an empty list here is the "tools missing until canvas renders" bug (#1544).
   recordToolsList(tools.length);
+  const conn = agentConnections.get(agentId);
+  agentConnections.set(agentId, { connectedAt: conn?.connectedAt ?? Date.now(), toolCount: tools.length });
   appLog('core:mcp', 'info', 'Tools list requested', {
     meta: { agentId, toolCount: tools.length, toolNames: tools.map(t => t.name) },
   });
@@ -288,6 +302,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     case 'notifications/initialized':
       // Client ack — no response needed
       appLog('core:mcp', 'info', 'Agent MCP connection initialized', { meta: { agentId } });
+      agentConnections.set(agentId, { connectedAt: Date.now(), toolCount: null });
       res.writeHead(200);
       res.end();
       return;
@@ -354,6 +369,7 @@ export function stop(): void {
     }
   }
   sseConnections.clear();
+  agentConnections.clear();
 
   if (server) {
     server.close();

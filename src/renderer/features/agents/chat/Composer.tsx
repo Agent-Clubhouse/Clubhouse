@@ -4,7 +4,7 @@
  * queues. Stop (Esc) interrupts the turn and keeps the session.
  */
 
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { CHAT_ATTACHMENTS_MAX, PERMISSION_LEVELS, type AvailableCommand, type ChatCapabilities, type ChatModelOption, type PermissionLevel } from '../../../../shared/chat';
 import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
@@ -166,91 +166,80 @@ export function switchNote(modelSwitch: string, effortSwitch: string): string | 
   return model || effort ? `${parts.join('; ')}.` : undefined;
 }
 
-function ModelPill({ models, efforts, model, effort, capabilities, onChange }: {
+/** Closes an open menu on any mousedown outside it (the menu stops its own). */
+function useCloseOnMouseDown(open: boolean, close: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [open, close]);
+}
+
+// One line whatever the width (#2112): long names end in an ellipsis, with the full name in the tooltip.
+const chipClass = 'h-[26px] min-w-0 max-w-[180px] flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] whitespace-nowrap disabled:opacity-100 disabled:cursor-default';
+const menuClass = 'absolute left-0 bottom-9 bg-ctp-crust border border-surface-1 rounded-lg shadow-xl p-1.5 z-dropdown flex flex-col gap-px';
+
+function Radio({ on }: { on: boolean }) {
+  return <span className={`w-3 h-3 rounded-full flex-shrink-0 ${on ? 'border-[3.5px] border-ctp-accent' : 'border-[1.5px] border-surface-2'}`} />;
+}
+
+function ModelPill({ models, efforts, model, effort, effortIsDefault, capabilities, onChange }: {
   models: ChatModelOption[];
   efforts: string[];
   model: string | null;
   effort: string | null;
+  effortIsDefault?: boolean;
   capabilities: ChatCapabilities | null;
-  onChange: (modelId: string, effort?: string) => void;
+  onChange: (modelId: string, effort?: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  useCloseOnMouseDown(open, close);
   const modelSwitch = capabilities?.modelSwitch ?? 'none';
-  const effortSwitch = capabilities?.effortSwitch ?? 'none';
-  const canChange = models.length > 0 && (modelSwitch !== 'none' || effortSwitch !== 'none');
+  const canChange = models.length > 0 && modelSwitch !== 'none';
   const current = models.find((m) => m.id === model);
   const label = current?.label ?? model;
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener('mousedown', close);
-    return () => window.removeEventListener('mousedown', close);
-  }, [open]);
   if (!label) return null;
-  // Keep the effort across a model switch only if it's still on offer.
-  const keptEffort = effort && efforts.includes(effort) ? effort : undefined;
+  // Keep a chosen effort across a model switch if it's still on offer; a default one follows the new model's default.
+  const keptEffort = effort && !effortIsDefault && efforts.includes(effort) ? effort : undefined;
+  const note = switchNote(modelSwitch, 'none');
 
-  const note = switchNote(modelSwitch, effortSwitch);
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <button
         type="button"
         disabled={!canChange}
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={canChange ? 'Model' : "This agent can't change model mid-session"}
-        className="h-[26px] flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] disabled:opacity-100 disabled:cursor-default"
+        title={canChange ? label : `${label}. This agent can't change model mid-session.`}
+        className={chipClass}
         data-testid="chat-model-pill"
       >
-        {label}
-        {effort && <span className="text-ctp-overlay0">· {effort}</span>}
-        {canChange && <ChevronDown className="text-ctp-overlay1" />}
+        <span className="truncate min-w-0">{label}</span>
+        {canChange && <ChevronDown className="text-ctp-overlay1 flex-shrink-0" />}
       </button>
       {open && (
-        <div
-          role="menu"
-          className="absolute left-0 bottom-9 w-[300px] max-h-[360px] overflow-y-auto bg-ctp-crust border border-surface-1 rounded-lg shadow-xl p-1.5 z-dropdown flex flex-col gap-px"
-          onMouseDown={(e) => e.stopPropagation()}
-          data-testid="chat-model-menu"
-        >
+        <div role="menu" className={`${menuClass} w-[300px] max-h-[360px] overflow-y-auto`} onMouseDown={(e) => e.stopPropagation()} data-testid="chat-model-menu">
           <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Model</div>
           {models.map((m) => {
             const selected = m.id === current?.id;
-            const selectable = selected || modelSwitch !== 'none';
             return (
-              <div key={m.id} className={`flex flex-col gap-1 px-2 py-1.5 rounded-md ${selected ? 'bg-surface-0' : ''}`}>
-                <button
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={selected}
-                  disabled={!selectable}
-                  onClick={() => { if (!selected) { setOpen(false); onChange(m.id, keptEffort); } }}
-                  className="flex items-center gap-2.5 text-left text-[12.5px] text-ctp-text disabled:opacity-45"
-                >
-                  <span className={`w-3 h-3 rounded-full flex-shrink-0 ${selected ? 'border-[3.5px] border-ctp-accent' : 'border-[1.5px] border-surface-2'}`} />
-                  <span className="flex flex-col min-w-0">
-                    <span className="truncate">{m.label}</span>
-                    {m.description && <span className="text-[11px] text-ctp-overlay1 truncate">{m.description}</span>}
-                  </span>
-                  {m.costHint && <span className="ml-auto text-[11px] text-ctp-overlay1 whitespace-nowrap">{m.costHint}</span>}
-                </button>
-                {selected && efforts.length > 0 && effortSwitch !== 'none' && (
-                  <div className="flex flex-wrap gap-1 pl-[22px]" role="group" aria-label="Effort">
-                    {efforts.map((e) => (
-                      <button
-                        key={e}
-                        type="button"
-                        aria-pressed={e === effort}
-                        onClick={() => { if (e !== effort) { setOpen(false); onChange(m.id, e); } }}
-                        className={`px-2 py-0.5 rounded text-[11px] ${e === effort ? 'bg-ctp-accent text-ctp-crust' : 'bg-surface-1 text-ctp-subtext1'}`}
-                      >
-                        {e}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <button
+                key={m.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                onClick={() => { setOpen(false); if (!selected) onChange(m.id, keptEffort); }}
+                className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${selected ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
+              >
+                <Radio on={selected} />
+                <span className="flex flex-col min-w-0">
+                  <span className="truncate">{m.label}</span>
+                  {m.description && <span className="text-[11px] text-ctp-overlay1 truncate">{m.description}</span>}
+                </span>
+                {m.costHint && <span className="ml-auto text-[11px] text-ctp-overlay1 whitespace-nowrap">{m.costHint}</span>}
+              </button>
             );
           })}
           {note && <div className="px-2 pt-1.5 text-[11px] text-ctp-overlay1">{note}</div>}
@@ -260,7 +249,110 @@ function ModelPill({ models, efforts, model, effort, capabilities, onChange }: {
   );
 }
 
+/** "xhigh" → "Extra high"; other levels capitalised. */
+export function effortWord(effort: string): string {
+  if (effort === 'xhigh') return 'Extra high';
+  return `${effort.charAt(0).toUpperCase()}${effort.slice(1)}`;
+}
+
+/** Reasoning effort for the current model (#2091); absent when the model has none. */
+function EffortPill({ efforts, model, effort, effortIsDefault, capabilities, onChange }: {
+  efforts: string[];
+  model: string | null;
+  effort: string | null;
+  /** `effort` is the provider's default level, not one chosen in the session. */
+  effortIsDefault?: boolean;
+  capabilities: ChatCapabilities | null;
+  /** null returns the effort to the provider's default. */
+  onChange: (modelId: string, effort: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  useCloseOnMouseDown(open, close);
+  const effortSwitch = capabilities?.effortSwitch ?? 'none';
+  if (!efforts.length && !effort) return null;
+  const canChange = !!model && efforts.length > 0 && effortSwitch !== 'none';
+  const note = switchNote('none', effortSwitch);
+  // On the default the level still shows, since that's what applies.
+  const onDefault = effort === null || !!effortIsDefault;
+  const chosen = onDefault ? null : effort;
+  const label = effort ? `${effortWord(effort)} effort${effortIsDefault ? ' (default)' : ''}` : 'Default effort';
+
+  return (
+    <div className="relative min-w-0">
+      <button
+        type="button"
+        disabled={!canChange}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={canChange ? `Reasoning effort, ${effort ?? 'the default'}` : "This agent can't change effort mid-session"}
+        className={chipClass}
+        data-testid="chat-effort-pill"
+      >
+        <span className="truncate min-w-0">{label}</span>
+        {canChange && <ChevronDown className="text-ctp-overlay1 flex-shrink-0" />}
+      </button>
+      {open && model && (
+        <div role="menu" className={`${menuClass} w-[220px]`} onMouseDown={(e) => e.stopPropagation()} data-testid="chat-effort-menu">
+          <div className="px-2 py-1.5 text-[11.5px] font-semibold text-ctp-overlay1">Effort</div>
+          {capabilities?.effortDefault && (
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={onDefault}
+              onClick={() => { setOpen(false); if (!onDefault) onChange(model, null); }}
+              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${onDefault ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
+              data-testid="chat-effort-default"
+            >
+              <Radio on={onDefault} />
+              <span className="flex flex-col">
+                <span>Default</span>
+                <span className="text-[11px] text-ctp-overlay1">The model&apos;s own default</span>
+              </span>
+            </button>
+          )}
+          {efforts.map((e) => (
+            <button
+              key={e}
+              type="button"
+              role="menuitemradio"
+              aria-checked={e === chosen}
+              // Choosing the level the default resolved to pins it, so it isn't a no-op.
+              onClick={() => { setOpen(false); if (e !== chosen) onChange(model, e); }}
+              className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${e === chosen ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
+            >
+              <Radio on={e === chosen} />
+              {e}
+            </button>
+          ))}
+          {note && <div className="px-2 pt-1.5 text-[11px] text-ctp-overlay1">{note}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Composer ────────────────────────────────────────────────────────────────
+
+/** A `/word` being typed: starts the draft or follows whitespace, and runs up to the caret. */
+export interface SlashToken {
+  start: number;
+  end: number;
+  query: string;
+}
+
+/**
+ * The slash command under the caret (#2090), anywhere in the draft. Paths and
+ * URLs don't count: the slash has to open a word and the word has only the one.
+ */
+export function slashTokenAt(text: string, caret: number): SlashToken | null {
+  const m = /(^|\s)\/([^\s/]*)$/.exec(text.slice(0, caret));
+  if (!m) return null;
+  const rest = /^[^\s]*/.exec(text.slice(caret))![0];
+  if (rest.includes('/')) return null;
+  return { start: m.index + m[1].length, end: caret + rest.length, query: m[2] };
+}
 
 export interface ComposerProps {
   agentName: string;
@@ -271,6 +363,8 @@ export interface ComposerProps {
   level: PermissionLevel | null;
   model: string | null;
   effort: string | null;
+  /** `effort` is the provider's default level rather than one chosen in the session. */
+  effortIsDefault?: boolean;
   /** Model choices from the driver; empty means the menu isn't offered. */
   models?: ChatModelOption[];
   /** Effort choices for the current model. */
@@ -290,7 +384,8 @@ export interface ComposerProps {
   onSend: (text: string, action: SendAction, attachmentIds?: string[]) => void;
   onStop: () => void;
   onLevelChange: (level: PermissionLevel) => void;
-  onModelChange?: (modelId: string, effort?: string) => void;
+  /** Omitted effort keeps the current one; null returns it to the provider's default (capabilities.effortDefault). */
+  onModelChange?: (modelId: string, effort?: string | null) => void;
   /**
    * How much room there is (#2018): 'narrow' folds the permission pill to its
    * shield, 'line' (a popout near its minimum height) is one row with attach,
@@ -334,6 +429,15 @@ export function Composer(props: ComposerProps) {
   const agentId = props.attachmentAgentId;
   const canAttach = !!props.onAttachmentsChange && !!agentId;
   const [cmdIndex, setCmdIndex] = useState(0);
+  // The caret, tagged with the draft it was read from. The draft is owned by the
+  // caller: when it changes from outside (a restored draft after a failed send,
+  // another agent's draft), the caret is unknown until the user types or moves it,
+  // so no menu opens on its own.
+  const [caretAt, setCaretAt] = useState<{ text: string; at: number } | null>(null);
+  const caret = caretAt?.text === text ? Math.min(caretAt.at, text.length) : null;
+  // Where the slash was when Esc closed the menu; it stays closed for that word.
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const pendingCaret = useRef<number | null>(null);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -355,11 +459,28 @@ export function Composer(props: ComposerProps) {
     el.style.height = `${Math.min(el.scrollHeight, line ? 72 : 200)}px`;
   }, [text, line]);
 
+  const slash = useMemo(
+    () => (capabilities?.slashCommands && caret !== null ? slashTokenAt(text, caret) : null),
+    [capabilities?.slashCommands, text, caret],
+  );
   const slashMatches = useMemo(() => {
-    if (!capabilities?.slashCommands || !text.startsWith('/') || /\s/.test(text)) return [];
-    const q = text.slice(1).toLowerCase();
-    return props.commands.filter((c) => c.name.toLowerCase().startsWith(q)).slice(0, 8);
-  }, [capabilities?.slashCommands, text, props.commands]);
+    if (!slash || slash.start === dismissedAt) return [];
+    const q = slash.query.toLowerCase();
+    // The CLI's own commands only run when the message starts with them (#2135).
+    const atStart = text.slice(0, slash.start).trim() === '';
+    return props.commands.filter((c) => (atStart || !c.startOnly) && c.name.toLowerCase().startsWith(q)).slice(0, 8);
+  }, [slash, dismissedAt, props.commands, text]);
+
+  useEffect(() => {
+    if (dismissedAt !== null && slash?.start !== dismissedAt) setDismissedAt(null);
+  }, [slash, dismissedAt]);
+
+  useLayoutEffect(() => {
+    const at = pendingCaret.current;
+    if (at === null || !area.current) return;
+    pendingCaret.current = null;
+    area.current.setSelectionRange(at, at);
+  }, [text]);
 
   useEffect(() => { setCmdIndex(0); }, [slashMatches.length]);
 
@@ -420,22 +541,49 @@ export function Composer(props: ComposerProps) {
     if (attachments.length) props.onSend(trimmed, action, attachments.map((a) => a.id));
     else props.onSend(trimmed, action);
     setText('');
+    // A failed send restores this same text from outside; the caret read from it no longer counts.
+    setCaretAt(null);
     if (attachments.length) props.onAttachmentsChange?.([]);
     setAttachError(null);
   };
 
   const pickCommand = (c: AvailableCommand) => {
-    setText(`/${c.name} `);
+    if (!slash) return;
+    // Replace only the word being typed; keep one space after it.
+    const after = text.slice(slash.end).replace(/^ /, '');
+    const inserted = `/${c.name} `;
+    const at = slash.start + inserted.length;
+    const next = text.slice(0, slash.start) + inserted + after;
+    setCaretAt({ text: next, at });
     area.current?.focus();
+    if (next === text) {
+      // Nothing re-renders the textarea, so place the caret now rather than after the next edit.
+      area.current?.setSelectionRange(at, at);
+      return;
+    }
+    pendingCaret.current = at;
+    setText(next);
   };
 
+  const trackCaret = (el: HTMLTextAreaElement) => setCaretAt({ text: el.value, at: el.selectionStart ?? el.value.length });
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // While an IME is composing, its keys are its own: Enter commits, Esc cancels. None picks, sends or stops.
+    if (e.nativeEvent.isComposing) return;
     if (slashMatches.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex((i) => (i + 1) % slashMatches.length); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length); return; }
-      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && text.slice(1) !== slashMatches[cmdIndex].name)) {
+      // Enter picks only once a name is started: "yes and /" sends as typed. Tab always picks.
+      const enterPicks = e.key === 'Enter' && !e.shiftKey && !!slash?.query && slash.query !== slashMatches[cmdIndex].name;
+      if (e.key === 'Tab' || enterPicks) {
         e.preventDefault();
         pickCommand(slashMatches[cmdIndex]);
+        return;
+      }
+      // Esc closes the menu and leaves the text as typed; it doesn't stop the turn.
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDismissedAt(slash?.start ?? null);
         return;
       }
     }
@@ -444,7 +592,7 @@ export function Composer(props: ComposerProps) {
       props.onStop();
       return;
     }
-    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+    if (e.key !== 'Enter') return;
     if (e.shiftKey) {
       // Shift+Enter queues during a turn; otherwise it's a newline.
       if (!modes.secondary) return;
@@ -492,6 +640,15 @@ export function Composer(props: ComposerProps) {
         efforts={props.efforts ?? []}
         model={props.model}
         effort={props.effort}
+        effortIsDefault={props.effortIsDefault}
+        capabilities={capabilities}
+        onChange={(m, e) => props.onModelChange?.(m, e)}
+      />
+      <EffortPill
+        efforts={props.onModelChange ? props.efforts ?? [] : []}
+        model={props.model}
+        effort={props.effort}
+        effortIsDefault={props.effortIsDefault}
         capabilities={capabilities}
         onChange={(m, e) => props.onModelChange?.(m, e)}
       />
@@ -556,7 +713,8 @@ export function Composer(props: ComposerProps) {
       rows={1}
       value={text}
       disabled={disabled}
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => { trackCaret(e.target); setText(e.target.value); }}
+      onSelect={(e) => trackCaret(e.currentTarget)}
       onKeyDown={onKeyDown}
       onPaste={onPaste}
       placeholder={placeholder}

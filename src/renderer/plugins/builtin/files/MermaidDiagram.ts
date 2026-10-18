@@ -86,7 +86,8 @@ interface MermaidDiagramProps {
 }
 
 export function MermaidDiagram({ code }: MermaidDiagramProps): React.ReactElement {
-  const themeId = useThemeStore((s) => s.themeId);
+  // The applied theme, not the selection: they differ while a plugin theme is unregistered.
+  const themeId = useThemeStore((s) => s.theme.id);
   const themeType = useThemeStore((s) => s.theme.type);
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -968,6 +968,13 @@ export async function updateDurableConfig(
       delete agent.clubhouseModeOverride;
     }
   }
+  if (updates.lastSleep !== undefined) {
+    if (updates.lastSleep) {
+      agent.lastSleep = updates.lastSleep;
+    } else {
+      delete agent.lastSleep;
+    }
+  }
   if (updates.lastSessionId !== undefined) {
     if (updates.lastSessionId) {
       agent.lastSessionId = updates.lastSessionId;
@@ -1086,6 +1093,24 @@ export async function addSessionEntry(projectPath: string, agentId: string, entr
   await writeAgents(projectPath, agents);
 }
 
+/**
+ * Record that a session is active now: add it to the agent's session history
+ * (started now) if it isn't there, otherwise move its lastActiveAt, keeping
+ * when it started and its friendly name. Also sets lastSessionId. Chat runs
+ * call this when the CLI reports its native session id and when the session
+ * ends, so chat sessions reach the Sessions picker the way terminal runs do.
+ */
+export async function touchSessionEntry(projectPath: string, agentId: string, sessionId: string, at: string = new Date().toISOString()): Promise<void> {
+  const { agentsById } = await readAgentsEntry(projectPath);
+  const existing = agentsById.get(agentId)?.sessionHistory?.find((s) => s.sessionId === sessionId);
+  await addSessionEntry(projectPath, agentId, {
+    sessionId,
+    startedAt: existing?.startedAt ?? at,
+    lastActiveAt: at,
+    ...(existing?.friendlyName && { friendlyName: existing.friendlyName }),
+  });
+}
+
 /** Set or clear the friendly name for a session */
 export async function updateSessionName(projectPath: string, agentId: string, sessionId: string, friendlyName: string | null): Promise<void> {
   const { agents, agentsById } = await readAgentsEntry(projectPath);
@@ -1101,6 +1126,24 @@ export async function updateSessionName(projectPath: string, agentId: string, se
     delete session.friendlyName;
   }
 
+  await writeAgents(projectPath, agents);
+}
+
+/**
+ * Drop session history entries by id, and the resume id if it is one of them
+ * (sessions the CLI's own store no longer has, #2156).
+ */
+export async function removeSessionEntries(projectPath: string, agentId: string, sessionIds: string[]): Promise<void> {
+  if (!sessionIds.length) return;
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) return;
+  const drop = new Set(sessionIds);
+  const before = agent.sessionHistory?.length ?? 0;
+  if (agent.sessionHistory) agent.sessionHistory = agent.sessionHistory.filter((s) => !drop.has(s.sessionId));
+  const clearedResume = !!agent.lastSessionId && drop.has(agent.lastSessionId);
+  if (clearedResume) agent.lastSessionId = null;
+  if ((agent.sessionHistory?.length ?? 0) === before && !clearedResume) return;
   await writeAgents(projectPath, agents);
 }
 

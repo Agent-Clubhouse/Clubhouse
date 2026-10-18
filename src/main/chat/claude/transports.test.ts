@@ -113,7 +113,8 @@ describe.each<Kind>(['sdk', 'stream-json'])('Claude %s transport (fake claude)',
     await start();
     const init = await collector.waitFor('initialized');
     expect(init.commands).toEqual([{ name: 'review', description: 'Review a PR', argumentHint: '<pr>' }]);
-    expect(init.models.map((m) => m.value)).toEqual(['default', 'haiku']);
+    expect(init.models.map((m) => m.value)).toEqual(['default', 'fake', 'haiku']);
+    expect(init.models.map((m) => m.efforts)).toEqual([['low', 'medium', 'high'], ['low', 'medium', 'high'], []]);
     expect(collector.of('session_started')).toHaveLength(0);
     expect(hasFlag('--input-format', 'stream-json')).toBe(true);
     expect(hasFlag('--output-format', 'stream-json')).toBe(true);
@@ -204,7 +205,10 @@ describe.each<Kind>(['sdk', 'stream-json'])('Claude %s transport (fake claude)',
     await t.setPermissionMode('plan');
     expect(await collector.waitFor('mode_changed')).toMatchObject({ permissionMode: 'plan' });
     await t.setModel('haiku');
+    expect(await t.appliedSettings()).toEqual({ model: 'claude-haiku-fake', effort: null });
     await t.setModel();
+    await t.setEffort('high');
+    expect(await t.appliedSettings()).toEqual({ model: 'claude-fake-1', effort: 'high' });
     t.send({ text: 'hello' });
     expect(await collector.waitFor('session_started')).toMatchObject({ model: 'claude-fake-1', permissionMode: 'plan' });
   });
@@ -229,6 +233,21 @@ describe.each<Kind>(['sdk', 'stream-json'])('Claude %s transport (fake claude)',
     const t = await start();
     t.send({ text: 'novel' });
     expect(await collector.waitFor('unmapped')).toMatchObject({ type: 'system', subtype: 'brand_new_thing' });
+  });
+
+  it('logs an unmapped message once by name, and its key shape (never values) at debug (#2109)', async () => {
+    const log = vi.fn();
+    const t = await start({ log });
+    t.send({ text: 'novel' });
+    await collector.waitFor('turn_ended');
+    t.send({ text: 'novel' });
+    await vi.waitFor(() => expect(log.mock.calls.filter((c) => c[0] === 'debug')).toHaveLength(2));
+    const info = log.mock.calls.filter((c) => c[0] === 'info' && String(c[1]).includes('Unmapped Claude wire message'));
+    expect(info).toHaveLength(1);
+    const [, message, meta] = log.mock.calls.find((c) => c[0] === 'debug')!;
+    expect(message).toContain('Unmapped Claude wire message shape');
+    expect(meta).toMatchObject({ name: 'system/brand_new_thing', shape: { type: 'string', subtype: 'string', detail: 'number' } });
+    expect(JSON.stringify(meta)).not.toContain('42');
   });
 
   it('resumes a native session by id with model, effort and MCP servers', async () => {

@@ -48,6 +48,13 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 
 export const DEFAULT_CHAT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** "30 min", "1 h", "4 h", "90 min" for an idle timeout. */
+export function formatIdle(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes >= 60 && minutes % 60 === 0) return `${minutes / 60} h`;
+  return `${Math.max(1, minutes)} min`;
+}
 /** Longest a pre-prompt hook (checkpoint) may delay a prompt. */
 const BEFORE_PROMPT_TIMEOUT_MS = 5000;
 /** Chat permission requests wait for the user; the queue entry only needs to outlive them. */
@@ -64,8 +71,11 @@ export interface ChatAgentRuntimeOptions {
   provider: string;
   driverId: ChatDriverId;
   cwd: string;
-  /** Starts (or resumes) a driver session. Called once at start and again after clearContext(). */
-  startSession: (resumeNativeSessionId?: string) => Promise<ChatDriverSession>;
+  /**
+   * Starts (or resumes) a driver session. Called once at start and again after
+   * clearContext(). `signal` aborts when stop() or abandon() cancels the start.
+   */
+  startSession: (resumeNativeSessionId?: string, signal?: AbortSignal) => Promise<ChatDriverSession>;
   /** Continue this native session on start. */
   resumeNativeSessionId?: string;
   /** Clubhouse chat session to continue (keeps the transcript's sequence going). */
@@ -84,7 +94,16 @@ export interface ChatAgentRuntimeOptions {
    * checkpoint the working tree. Never blocks steering into a running turn.
    */
   beforePrompt?: () => Promise<void>;
-  idleTimeoutMs?: number;
+  /**
+   * Idle time before the runtime sleeps, read each time the timer arms so a
+   * settings change applies from the next idle period. 0 or less: never.
+   */
+  idleTimeoutMs?: number | (() => number);
+  /**
+   * Asked when the idle timer fires; false keeps the agent awake and re-arms
+   * (e.g. it waits on a group project that is polling).
+   */
+  shouldIdleSleep?: () => boolean;
   /** Called once when the runtime ends for good (stop, idle timeout or process exit). */
   onEnded?: (reason: SessionEndReason, exitCode: number) => void;
   /** Called whenever the CLI reports a native session id (for resume on the next wake). */
@@ -93,6 +112,14 @@ export interface ChatAgentRuntimeOptions {
   startNotices?: Array<ChatEventDataMap['notice']>;
   now?: () => number;
   newId?: () => string;
+}
+
+/** A start that stop() or abandon() cancelled before its session was up. */
+export class ChatStartCancelledError extends Error {
+  constructor() {
+    super('Chat start cancelled');
+    this.name = 'ChatStartCancelledError';
+  }
 }
 
 interface PendingPermission {
@@ -118,7 +145,11 @@ export class ChatAgentRuntime implements AgentRuntime {
   /** Questions awaiting an answer, so a late or duplicate answer is ignored. */
   private readonly questions = new Set<string>();
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
+  private sleptAfterMs: number | undefined;
   private ended = false;
+  private stopRequested = false;
+  /** Aborts the driver start in progress, if any. */
+  private opening: AbortController | undefined;
   private systemPromptApplied = false;
   private startNoticesEmitted = false;
   /** Serializes stamping so seq order matches transcript and bus order. */
@@ -146,9 +177,14 @@ export class ChatAgentRuntime implements AgentRuntime {
     }
   }
 
+  /** True once stop() has been called, even if the session never opened. */
+  get wasStopped(): boolean {
+    return this.stopRequested;
+  }
+
   private async openSession(resumeNativeSessionId: string | undefined): Promise<void> {
     await this.setState('starting');
-    const session = await this.opts.startSession(resumeNativeSessionId);
+    const session = await this.startDriverSession(resumeNativeSessionId);
     this.session = session;
     this.capabilities = session.capabilities;
     this.noteNativeSessionId(session.nativeSessionId ?? resumeNativeSessionId);
@@ -181,6 +217,46 @@ export class ChatAgentRuntime implements AgentRuntime {
     await this.setState('idle');
     this.armIdleTimer();
     void this.pump(session);
+  }
+
+  /**
+   * The driver start, cancellable: stop() or abandon() rejects it at once
+   * instead of waiting for the driver to give up, and a session that still
+   * arrives afterwards is closed, not adopted.
+   */
+  private async startDriverSession(resumeNativeSessionId: string | undefined): Promise<ChatDriverSession> {
+    if (this.ended) throw new ChatStartCancelledError();
+    const opening = new AbortController();
+    this.opening = opening;
+    const pending = this.opts.startSession(resumeNativeSessionId, opening.signal);
+    try {
+      return await new Promise<ChatDriverSession>((resolve, reject) => {
+        const onAbort = () => reject(new ChatStartCancelledError());
+        opening.signal.addEventListener('abort', onAbort, { once: true });
+        pending.then(
+          (session) => {
+            opening.signal.removeEventListener('abort', onAbort);
+            if (opening.signal.aborted) {
+              void session.close().catch((): void => undefined);
+              return;
+            }
+            resolve(session);
+          },
+          (err) => {
+            opening.signal.removeEventListener('abort', onAbort);
+            reject(opening.signal.aborted ? new ChatStartCancelledError() : err);
+          },
+        );
+      });
+    } finally {
+      if (this.opening === opening) this.opening = undefined;
+    }
+  }
+
+  private cancelOpening(): void {
+    const opening = this.opening;
+    this.opening = undefined;
+    opening?.abort();
   }
 
   private async pump(session: ChatDriverSession): Promise<void> {
@@ -382,6 +458,7 @@ export class ChatAgentRuntime implements AgentRuntime {
    * consumers (the renderer, telemetry) don't keep it open.
    */
   async abandon(): Promise<void> {
+    this.cancelOpening();
     if (this.ended) return;
     appLog('core:chat', 'info', 'Abandoning chat start', { meta: { agentId: this.agentId, driver: this.opts.driverId, sessionOpen: !!this.session } });
     this.ended = true;
@@ -401,7 +478,11 @@ export class ChatAgentRuntime implements AgentRuntime {
     appLog('core:chat', 'info', 'Stopping chat session', {
       meta: { agentId: this.agentId, driver: this.opts.driverId, nativeSessionId: this.nativeSessionId ?? null, sessionOpen: !!session },
     });
+    this.stopRequested = true;
     this.session = undefined;
+    // Stopped mid-start: cancel the driver start so it can't open a session
+    // (or time out and fall back) after this runtime has ended.
+    this.cancelOpening();
     if (session) {
       try {
         await session.close();
@@ -474,7 +555,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     await this.requireSession().setLevel(level);
   }
 
-  async setModel(modelId: string, effort?: string): Promise<void> {
+  async setModel(modelId: string, effort?: string | null): Promise<void> {
     await this.requireSession().setModel(modelId, effort);
   }
 
@@ -535,12 +616,24 @@ export class ChatAgentRuntime implements AgentRuntime {
     return next;
   }
 
-  private armIdleTimer(): void {
+  private idleTimeout(): number {
+    const configured = this.opts.idleTimeoutMs;
+    return typeof configured === 'function' ? configured() : configured ?? DEFAULT_CHAT_IDLE_TIMEOUT_MS;
+  }
+
+  /** Arm for the configured timeout, less `idleSoFar` ms already spent idle in this period. */
+  private armIdleTimer(idleSoFar = 0): void {
     this.clearIdleTimer();
-    const ms = this.opts.idleTimeoutMs ?? DEFAULT_CHAT_IDLE_TIMEOUT_MS;
-    if (ms <= 0) return;
-    this.idleTimer = setTimeout(() => { void this.sleepForIdle(); }, ms);
+    const ms = this.idleTimeout();
+    if (!(ms > 0)) return;
+    const wait = Math.max(0, ms - idleSoFar);
+    this.idleTimer = setTimeout(() => { void this.sleepForIdle(idleSoFar + wait); }, wait);
     this.idleTimer.unref?.();
+  }
+
+  /** The idle timeout the runtime slept after, once it has (for the sleep reason). */
+  get idleSleptAfterMs(): number | undefined {
+    return this.sleptAfterMs;
   }
 
   private clearIdleTimer(): void {
@@ -548,10 +641,27 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.idleTimer = undefined;
   }
 
-  private async sleepForIdle(): Promise<void> {
+  private async sleepForIdle(idleFor: number): Promise<void> {
     if (this.state !== 'idle' || this.ended) return;
+    // Read the setting again: Never, or a longer timeout, chosen since the
+    // timer armed applies to this idle period too.
+    const ms = this.idleTimeout();
+    if (!(ms > 0)) return;
+    if (idleFor < ms) {
+      this.armIdleTimer(idleFor);
+      return;
+    }
+    if (this.opts.shouldIdleSleep && !this.opts.shouldIdleSleep()) {
+      appLog('core:chat', 'info', 'Idle timeout reached; staying awake', { meta: { agentId: this.agentId } });
+      this.armIdleTimer();
+      return;
+    }
+    // Take the session before anything awaits, so a prompt arriving now finds
+    // the agent asleep rather than starting a turn that is then closed.
     const session = this.session;
     this.session = undefined;
+    this.sleptAfterMs = ms;
+    await this.emit({ type: 'notice', data: { level: 'info', code: 'idle_sleep', message: `Slept after ${formatIdle(ms)} idle.` } });
     if (session) await session.close().catch((): void => undefined);
     await this.end('idle_timeout', 0);
   }

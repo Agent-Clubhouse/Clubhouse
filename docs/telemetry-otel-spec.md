@@ -11,7 +11,7 @@
 
 Clubhouse gets an **opt-in, user-configured telemetry export**. Telemetry is off by default.
 
-A user creates their own Azure Application Insights resource and pastes its **connection string** into Settings → Logging → Telemetry export. Clubhouse then sends traces, metrics and sanitized error records to that resource, to an OpenTelemetry (OTLP) backend, or to both at once (§6.11). No ingestion key ships in the binary. The one developer-run destination is opt-in and narrow: with Feedback connected and its host confirmed, a copy of **user activity and errors only** can go to the Clubhouse developer's Framebriar service, so feedback reports have context. It runs only alongside one of the user's own destinations, never alone (§6.11). Ingestion with only an instrumentation key was retired in 2025, so the connection string is the only supported input.
+A user creates their own Azure Application Insights resource and pastes its **connection string** into Settings → Logging → Telemetry export. Clubhouse then sends traces, metrics and sanitized error records to that resource, to an OpenTelemetry (OTLP) backend, or to both at once (§6.11). No ingestion key ships in the binary. The one developer-run destination is opt-in and narrow: with Feedback connected and its host confirmed, a copy of **user activity and errors only** can go to the Clubhouse developer's Framebriar service, so feedback reports have context. It is set up on Settings → Feedback and works on its own once the user consents and confirms its host (§6.11, #2097). Ingestion with only an instrumentation key was retired in 2025, so the connection string is the only supported input.
 
 App Insights is the default and simplest destination: one field. For the minority who run another backend, the same Settings section offers **Other (OTLP)**: an HTTPS endpoint plus headers, sent as OTLP over HTTP/JSON (§6.8).
 
@@ -57,7 +57,7 @@ The data-classification ideas from that design are carried forward: the never-co
 
 ### Non-goals (v1)
 
-- Maintainer-run aggregate telemetry collected without the user's opt-in. The only developer-run destination is Framebriar (§6.11): it receives user activity and errors only, and only while Feedback is connected, its host is confirmed, and one of the user's own destinations is on.
+- Maintainer-run aggregate telemetry collected without the user's opt-in. The only developer-run destination is Framebriar (§6.11): it receives user activity and errors only, and only while Feedback is connected, the user has consented and its host is confirmed. It doesn't need one of the user's own destinations on (#2097).
 - Auto-instrumentation of `http`, `fs` or `child_process`.
 - Session replay, UI click tracking or per-keystroke anything.
 - Microsoft Entra ID (AAD) ingestion auth. Resources with `DisableLocalAuth=true` reject connection-string ingestion; see §10 for the follow-up.
@@ -602,9 +602,19 @@ The first draft left these as gaps. The maintainer set the goal as broad coverag
 | `c.process.memory` (observable gauge, By) | `app.getAppMetrics()` every 60 s: `workingSetSize`, `privateBytes` | `c.process.type` (`browser`/`renderer`/`gpu`/`utility`), `c.window.kind` | S |
 | `c.process.cpu` (observable gauge, %) | `app.getAppMetrics()` `percentCPUUsage` | `c.process.type` | S |
 | `c.renderer.long_frames` (counter) + `c.renderer.long_frame.duration` (histogram, s) | `PerformanceObserver` for `long-animation-frame` (Chromium LoAF), aggregated in the renderer facade and sent once a minute | `c.view` (the active main view: `agent`/`terminal`/`canvas`/`files`/`git`/`settings`/`plugin`/`other`) | S |
+| `c.ui.hang` (event) | the same LoAF observer: one event per coalesced burst of frames over the hang threshold (200 ms) (#2126) | `c.view`, `c.ui.surface`, `c.ui.hang.duration_ms` (longest frame), `c.ui.hang.frames`, `c.ui.hang.script_source` (`app`/`plugin`/`extension`/`none`, never the URL), `c.ui.interaction.type` (the input just before it) | S |
+| `c.ui.interaction.duration` (histogram, s) | Event Timing API: input to next paint per interaction, its longest entry. The browser only reports interactions of 16 ms and over, so faster ones are missing and the percentiles lean slow. | `c.view`, `c.ui.surface`, `c.ui.interaction.type` (`click`/`keydown`/`wheel`) | S |
 | `c.telemetry.export.failures` (counter) | exporter result callbacks | `c.telemetry.signal` (`traces`/`metrics`/`logs`), `c.http.class` | E |
 | `c.telemetry.offline.items` (observable gauge) | offline queue size; exported once connectivity returns | — | E |
 | `c.shell.spawn` (span) | non-agent PTYs (`ShellTerminal`, utility terminals) | `error.type` (`pty_spawn_failed`, `cwd_invalid`, `spawn_helper_not_executable`) | S |
+
+**Local hang log (#2126).** Hangs are also written to the local session log under `ui:perf`, whether or not telemetry is on (`src/renderer/telemetry/ui-perf.ts`):
+- **What is logged.** Frames and interactions at or over the hang threshold (200 ms; `localStorage clubhouse.uiPerf.hangMs` overrides it, minimum 50) are coalesced per second into one line. A line has the count, the max and total ms, view and surface, the last interaction (its type, a stable target id from `data-testid` or `data-tree-key`, named keys only, never text), and the top three LoAF scripts with the URL cut to `scheme:basename`.
+- **Limits.** At most six lines a minute; anything held back is counted as `suppressed` on the next line. The cap covers `c.ui.hang` too, so a hang storm sends at most six events a minute.
+- **Scrubbing.** LoAF `sourceURL`, and `invoker` when it's a script URL, are cut to `scheme:basename`.
+- **Unresponsive windows.** Main logs the `unresponsive` / `responsive` pair under the same namespace with `durationMs`.
+- **Breadcrumbs.** `ui:perf` lines become performance breadcrumbs on feedback reports regardless of log settings (`services/breadcrumbs.ts`, #2098).
+- **Idle cost.** The LoAF and Event Timing observers fire only for long frames and interactions. Three passive capture listeners (pointerdown, keydown, wheel) store one small object per input.
 
 ---
 
@@ -938,6 +948,8 @@ Telemetry export                                ← new (v1 layout; see §6.11 f
       Delete local telemetry data
 ```
 
+**Collapsible panels (#2097).** The Azure, Other destinations and Advanced panels fold away. A destination panel starts open when it is on or has an error, otherwise closed, and its header always shows the state (On, Off, Not set up, On, not sending). The developer destination has no panel here: a line states whether it is on and links to Settings → Feedback, where its switch, level and filter live next to the connection it depends on. Collapsing was chosen over splitting telemetry into its own page because it keeps the one privacy page (local logs and export together) without adding a nav item, and a returning user sees only what's on.
+
 **Layout** (decisions 2026-10-16: keep App Insights easy and simple; put other options in their own panel).
 
 - **The App Insights panel leads and holds only three things:** the on/off toggle, the connection string and **Send test event**. Turning the toggle on with a valid connection string starts telemetry at the Standard level. The Level row, Preview and the Workbook link sit just below the panel, outside the setup path.
@@ -1155,8 +1167,8 @@ Fan-out, filters, consent, health and the test event are shared.
 **The Framebriar destination** ([#2006](https://github.com/Agent-Clubhouse/Clubhouse/pull/2006)). This is the one developer-run destination: the Clubhouse developer's Framebriar service, which also receives Feedback reports. It exists so that a feedback report comes with context about what the user was doing. It has no URL or key fields; it rides on Feedback's enrollment.
 
 - **What it gets:** its default preset is "User activity and errors" at Standard, so never prompts, terminal output, paths or Detailed high-volume spans (§5, the preset table above). Its exporter is OTLP with delta temporality. It sets `session.id` to the Feedback session on a per-destination view of the resource, which is how reports and telemetry correlate. It copies `clubhouse.install.id`, `clubhouse.ui.chrome` and `clubhouse.channel` onto items, because Framebriar keeps few resource attributes.
-- **When it runs:** it is derived, not a sticky switch. It is on exactly while Feedback is connected, at least one of the user's own destinations is exporting, its host is the one the user confirmed, and the user hasn't switched it off. It never exports alone. Before every batch it re-reads Feedback's state, and with Feedback disconnected, switched off, in another session, or without a token, nothing is sent.
-- **Consent:** its host is listed in the export consent dialog when Feedback is connected. After connecting Feedback while export is on, the Feedback page asks "Share telemetry with the developer?", naming every host; Not now records it as off. Its Settings panel ("Clubhouse developer (Framebriar)") has the same switch, level, preset, health and test event as the others.
+- **When it runs:** it is derived, not a sticky switch. It is on exactly while Feedback is connected, telemetry is allowed (the experiment and consent), its host is the one the user confirmed, and the user hasn't switched it off. It doesn't need any of the user's own destinations on (#2097: with that rule, feedback reports came with no telemetry), and turning those off or clearing them leaves it on. **Upgrade:** a one-time migration (`developerRule: 2` in the settings file) records it as switched off for anyone who had confirmed its host while none of their own destinations was on, since under the old rule it sent nothing for them; it starts only when they turn it on. Users whose own export was on keep it. Delete local data also records it as switched off, so reconnecting Feedback doesn't bring it back. Before every batch it re-reads Feedback's state, and with Feedback disconnected, switched off, in another session, or without a token, nothing is sent.
+- **Consent:** its host is listed in the export consent dialog when Feedback is connected. After connecting Feedback, the Feedback page asks "Share telemetry with the developer?", naming every host; when no consent was given yet, the prompt is the consent and lists what is never sent. Not now records it as off. Settings → Feedback → "Telemetry for the developer" has its switch, level, preset, health and test event; user-facing text calls it "Clubhouse developer", never by the service's name.
 
 ## 7. Annex satellites and controllers
 

@@ -77,7 +77,7 @@ export const PROFILES: Record<FixtureProvider, ProviderFixtureProfile> = {
       images: true,
       slashCommands: true,
       modelSwitch: 'live',
-      effortSwitch: 'restart',
+      effortSwitch: 'live',
       liveLevels: ['plan', 'ask', 'auto_edit', 'auto', 'full_access'],
       login: 'terminal',
       systemPrompt: true,

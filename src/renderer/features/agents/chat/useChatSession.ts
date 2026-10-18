@@ -21,7 +21,8 @@ export interface ChatActions {
   answerQuestion: (requestId: string, answers: ChatQuestionAnswers) => Promise<boolean>;
   /** Resolves false when the level didn't change (a toast says why). */
   setLevel: (level: PermissionLevel) => Promise<boolean>;
-  setModel?: (modelId: string, effort?: string) => Promise<void>;
+  /** Omitted effort keeps the current one; null returns it to the provider's default. */
+  setModel?: (modelId: string, effort?: string | null) => Promise<void>;
 }
 
 /**
@@ -78,18 +79,21 @@ export function useChatLoading(agentId: string): boolean {
 }
 
 /**
- * Load the agent's transcript unless the store already has it. Live events
- * keep loaded state current, so a remount (a canvas card zooming, a second
- * view of the same agent) reuses it instead of re-reading and flashing a
- * loading state. `tail` reads only the last events; a view that wants the
- * whole history (no tail) reloads state that came from a tail.
+ * Load the agent's transcript unless this window has already read it. Live
+ * events keep loaded state current, so a remount (a canvas card zooming, a
+ * second view of the same agent) reuses it instead of re-reading and flashing
+ * a loading state. State built only from live events doesn't count: a running
+ * agent in a freshly opened window gets live events before any view loads its
+ * history, and that history must still be read (#2150). `tail` reads only the
+ * last events; a view that wants the whole history (no tail) reloads state
+ * that came from a tail.
  */
 export function useChatTranscript(agentId: string, tail?: number): void {
   const loadTranscript = useChatStore((s) => s.loadTranscript);
   useEffect(() => {
     const s = useChatStore.getState();
     if (s.loading[agentId]) return;
-    if (s.agents[agentId] && (tail !== undefined || !s.partial[agentId])) return;
+    if (s.loaded[agentId] && (tail !== undefined || !s.partial[agentId])) return;
     void loadTranscript(agentId, tail);
   }, [agentId, tail, loadTranscript]);
 }
@@ -98,7 +102,12 @@ export function useChatTranscript(agentId: string, tail?: number): void {
 export function useEarlierHistory(agentId: string): { partial: boolean; loadAll: () => void } {
   const partial = useChatStore((s) => !!s.partial[agentId]);
   const loadTranscript = useChatStore((s) => s.loadTranscript);
-  return { partial, loadAll: useCallback(() => { void loadTranscript(agentId); }, [agentId, loadTranscript]) };
+  const loadAll = useCallback(() => {
+    // A load already running owns the live events held for it; a second one would replace them.
+    if (useChatStore.getState().loading[agentId]) return;
+    void loadTranscript(agentId);
+  }, [agentId, loadTranscript]);
+  return { partial, loadAll };
 }
 
 function reportFailure(what: string, err: unknown): void {

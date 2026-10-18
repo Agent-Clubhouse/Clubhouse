@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { SleepingAgent } from './SleepingAgent';
@@ -176,6 +176,33 @@ describe('SleepingAgent', () => {
       expect(screen.getByTestId('sleeping-toolbar')).toHaveTextContent('last active 3h ago');
     });
 
+    it('says why the agent went to sleep, instead of when it was last active (#2104)', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'agent-1', name: 'bold-falcon' }]);
+      const at = new Date(Date.now() - 5 * 60_000).toISOString();
+      renderComponent({ lastSleep: { reason: 'idle', at, idleMinutes: 30 } });
+      expect(screen.getByTestId('sleeping-toolbar')).toHaveTextContent('slept after 30 min idle, 5m ago');
+    });
+
+    it('names the agent that put it to sleep (#2104)', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'agent-1', name: 'bold-falcon' }]);
+      renderComponent({ lastSleep: { reason: 'agent', at: new Date().toISOString(), by: 'Clubhouse-PM' } });
+      expect(screen.getByTestId('sleeping-toolbar')).toHaveTextContent('put to sleep by Clubhouse-PM, just now');
+    });
+
+    it('renders the summary as markdown (#2092)', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'agent-1', name: 'bold-falcon', lastSessionId: 'sess-1' }]);
+      window.clubhouse.agent.getSessionSummary = vi.fn().mockResolvedValue({
+        summary: '**Triaged** the audit in `docs/a.md`.',
+        filesModified: [],
+        totalDurationMs: 0,
+        totalCostUsd: 0,
+      });
+      renderComponent();
+      const section = await screen.findByTestId('last-session');
+      expect(section.querySelector('strong')).toHaveTextContent('Triaged');
+      expect(section.querySelector('code')).toHaveTextContent('docs/a.md');
+    });
+
     it('is omitted when there is no history and no branch', async () => {
       renderComponent();
       await waitFor(() => expect(window.clubhouse.agent.listDurable).toHaveBeenCalled());
@@ -303,7 +330,7 @@ describe('SleepingAgent', () => {
       it('wakes once on a double click, with the task', async () => {
         let resolve: () => void = () => {};
         window.clubhouse.annexClient.agentWake = vi.fn(() => new Promise<void>((r) => { resolve = r; }));
-        renderComponent({ id: remoteId });
+        renderComponent({ id: remoteId, hasSession: true });
         fireEvent.change(screen.getByTestId('wake-task-input'), { target: { value: 'Go' } });
         fireEvent.click(screen.getByTestId('wake-button'));
         fireEvent.click(screen.getByTestId('wake-button'));
@@ -311,6 +338,18 @@ describe('SleepingAgent', () => {
         await waitFor(() => expect(screen.getByTestId('wake-task-input')).toHaveValue(''));
         expect(window.clubhouse.annexClient.agentWake).toHaveBeenCalledTimes(1);
         expect(window.clubhouse.annexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-9', { resume: true, mission: 'Go' });
+      });
+
+      it('starts fresh on a satellite that has no session, or does not say (#2028)', async () => {
+        window.clubhouse.annexClient.agentWake = vi.fn().mockResolvedValue(undefined);
+        renderComponent({ id: remoteId, hasSession: false });
+        fireEvent.click(screen.getByTestId('wake-button'));
+        await waitFor(() => expect(window.clubhouse.annexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-9', expect.objectContaining({ resume: false })));
+        cleanup();
+        vi.mocked(window.clubhouse.annexClient.agentWake).mockClear();
+        renderComponent({ id: remoteId });
+        fireEvent.click(screen.getByTestId('wake-button'));
+        await waitFor(() => expect(window.clubhouse.annexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-9', expect.objectContaining({ resume: false })));
       });
 
       it('keeps the task and shows an error when the remote wake fails', async () => {

@@ -4,11 +4,32 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFramebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
 import type { Framebriar, FramebriarAccessView, FramebriarOutboxView } from '../../vendor/framebriar/adapters/node/index.mjs';
-import { connectFailureReason, FeedbackService, sdkVersion, toFeedbackStatus } from './feedback-service';
+import { connectFailureReason, FeedbackService, pngSize, sdkVersion, toFeedbackStatus } from './feedback-service';
 
 const ACCESS: FramebriarAccessView = { state: 'connected', connected: true, enrolled: true, canCapture: true, notice: null, expiresAt: '2026-11-15T00:00:00.000Z' };
 const OUTBOX: FramebriarOutboxView = { state: 'available', items: 2, bytes: 1234, maxItems: 10, maxBytes: 33554432, blocked: 1, retention: 'until-delivered-or-cleared' };
 const PNG = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from('fake-image-bytes')]);
+
+/** A PNG header with a real IHDR chunk (the body is never decoded). */
+function pngOf(width: number, height: number, body = 'pixels'): Buffer {
+  const ihdr = Buffer.alloc(25);
+  ihdr.writeUInt32BE(13, 0);
+  ihdr.write('IHDR', 4, 'latin1');
+  ihdr.writeUInt32BE(width, 8);
+  ihdr.writeUInt32BE(height, 12);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), ihdr, Buffer.from(body)]);
+}
+
+describe('pngSize', () => {
+  it('reads width and height from IHDR', () => {
+    expect(pngSize(pngOf(2880, 1800))).toEqual({ width: 2880, height: 1800 });
+  });
+  it('returns null for anything that is not a PNG with an IHDR', () => {
+    expect(pngSize(Buffer.from('GIF89a-not-a-png-at-all-really'))).toBeNull();
+    expect(pngSize(PNG)).toBeNull();
+    expect(pngSize(Buffer.alloc(0))).toBeNull();
+  });
+});
 
 /** In-memory safeStorage, like Electron's (Linux reports a real keyring backend). */
 const safeStorage = {
@@ -94,6 +115,25 @@ describe('FeedbackService (fake SDK)', () => {
     expect(s.status().started).toBe(true);
   });
 
+  it('passes the build commit to the SDK, and null when there is none (#2098)', async () => {
+    const withSha = fakeSdk();
+    await new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', buildSha: '71b4bc9d', isOnline: () => true, create: withSha.create as never }).start();
+    expect(withSha.opts()).toMatchObject({ buildSha: '71b4bc9d' });
+    const without = fakeSdk();
+    await service(without.create).start();
+    expect(without.opts()).toMatchObject({ buildSha: null });
+  });
+
+  it('sends the recent breadcrumbs with the report, at most 40 (#2098)', async () => {
+    const { create, fb } = fakeSdk();
+    const crumbs = Array.from({ length: 45 }, (_, i) => ({ kind: 'event' as const, atMs: 1_000 - i, code: 'view.agent' }));
+    const s = new FeedbackService({ safeStorage, dataDir: '/data', appVersion: '0.42.0-beta.1', isOnline: () => true, create: create as never, breadcrumbs: () => crumbs });
+    await s.send({ notes: 'it froze', includeScreenshot: false, scene: 'agents' });
+    const context = (fb.feedback.prepare.mock.lastCall![0] as { context: { breadcrumbs: unknown[] } }).context;
+    expect(context.breadcrumbs).toHaveLength(40);
+    expect(context.breadcrumbs[0]).toEqual({ kind: 'event', atMs: 1_000, code: 'view.agent' });
+  });
+
   it('reports a stopped status before start', () => {
     const { create } = fakeSdk();
     expect(service(create).status()).toMatchObject({ started: false, canCapture: false, state: 'disconnected' });
@@ -154,15 +194,101 @@ describe('FeedbackService (fake SDK)', () => {
     const s = service(create);
     const draft = await s.captureDraft(async () => PNG);
     await s.send({ draftId: draft.draftId, notes: 'broken', includeScreenshot: true, scene: 'agents' });
-    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ notes: 'broken', png: PNG, context: { scene: 'agents' } }));
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ notes: 'broken', png: PNG, context: { scene: 'agents', breadcrumbs: [] } }));
     expect(fb.feedback.submit).toHaveBeenLastCalledWith(expect.anything(), { includeDiagnostics: false });
 
     const second = await s.captureDraft(async () => PNG);
     await s.send({ draftId: second.draftId, notes: 'just text', includeScreenshot: false, scene: 'Not A Code!' });
-    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null, capturedAt: '2026-10-17T10:00:00.000Z', context: { scene: 'app' } }));
+    expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null, capturedAt: '2026-10-17T10:00:00.000Z', context: { scene: 'app', breadcrumbs: [] } }));
 
     await s.send({ notes: 'no capture at all', includeScreenshot: false });
     expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null }));
+  });
+
+  describe('several windows (#2100)', () => {
+    const main = pngOf(2880, 1800, 'main');
+    const popout = pngOf(1600, 1000, 'popout');
+
+    it('captures each window with its label, the starting window first', async () => {
+      const { create } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft([
+        { label: 'Agent: faithful-urchin', grab: async () => popout },
+        { label: 'Main window', grab: async () => main },
+      ]);
+      expect(draft.shots.map((x) => [x.shotId, x.label])).toEqual([['s0', 'Agent: faithful-urchin'], ['s1', 'Main window']]);
+      expect(draft.preview).toBe(draft.shots[0].preview);
+      expect(draft.shots[1].preview).toBe(`data:image/png;base64,${main.toString('base64')}`);
+    });
+
+    it('leaves out other windows that fail or are not PNGs, but fails when the starting window does', async () => {
+      const { create } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft([
+        { label: 'Main window', grab: async () => main },
+        { label: 'Broken', grab: async () => { throw new Error('gone'); } },
+        { label: 'Not a PNG', grab: async () => Buffer.from('nope') },
+        { label: 'Blank', grab: async () => null },
+        { label: 'Pop-out', grab: async () => popout },
+      ]);
+      expect(draft.shots.map((x) => x.label)).toEqual(['Main window', 'Pop-out']);
+      expect(draft.shots.map((x) => x.shotId)).toEqual(['s0', 's4']);
+      await expect(s.captureDraft([{ label: 'Main window', grab: async () => { throw new Error('gone'); } }, { label: 'Pop-out', grab: async () => popout }])).rejects.toThrow(/capture failed/);
+    });
+
+    it('sends the chosen window, and the annotated check uses that window', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft([{ label: 'Main window', grab: async () => main }, { label: 'Pop-out', grab: async () => popout }]);
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, shotId: 's1', annotatedPng: pngOf(2880, 1800).toString('base64') })).rejects.toThrow(/doesn't match/);
+      const drawn = pngOf(1600, 1000, 'popout-ink');
+      await s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, shotId: 's1', annotatedPng: drawn.toString('base64') });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: drawn }));
+    });
+
+    it('sends the starting window without a shotId, and refuses an unknown one', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft([{ label: 'Main window', grab: async () => main }, { label: 'Pop-out', grab: async () => popout }]);
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, shotId: 's9' })).rejects.toThrow(/no longer available/);
+      await s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: main }));
+    });
+  });
+
+  describe('a screenshot with the user\'s drawing (#2099)', () => {
+    const captured = pngOf(2880, 1800, 'captured');
+    const drawn = pngOf(2880, 1800, 'captured-with-ink');
+
+    it('uploads the annotated PNG in place of the capture', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => captured);
+      await s.send({ draftId: draft.draftId, notes: 'see the circle', includeScreenshot: true, annotatedPng: drawn.toString('base64') });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: drawn, capturedAt: '2026-10-17T10:00:00.000Z' }));
+    });
+
+    it('ignores the drawing on a text-only send', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => captured);
+      await s.send({ draftId: draft.draftId, notes: 'text only', includeScreenshot: false, annotatedPng: drawn.toString('base64') });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null }));
+    });
+
+    it.each([
+      ['a different size', pngOf(1440, 900).toString('base64'), /doesn't match/],
+      ['not a PNG', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64'), /not a PNG/],
+      ['over the decoded size cap', Buffer.concat([pngOf(2880, 1800), Buffer.alloc(8 * 1024 * 1024)]).toString('base64'), /too large/],
+    ])('refuses a drawing that is %s and keeps the draft for a retry', async (_label, annotatedPng, error) => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => captured);
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, annotatedPng })).rejects.toThrow(error);
+      expect(fb.feedback.prepare).not.toHaveBeenCalled();
+      await s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: captured }));
+    });
   });
 
   it('refuses a screenshot send without a draft, and text-only without notes', async () => {
@@ -303,13 +429,13 @@ describe('FeedbackService (fake SDK)', () => {
       const { create, fb } = fakeSdk();
       const { s, entries, find } = logged(create);
       const draft = await s.captureDraft(async () => PNG);
-      expect(find('Feedback screenshot captured')).toEqual(['info', 'Feedback screenshot captured', { draftId: draft.draftId, hasScreenshot: true, drafts: 1 }]);
+      expect(find('Feedback screenshot captured')).toEqual(['info', 'Feedback screenshot captured', { draftId: draft.draftId, hasScreenshot: true, shots: 1, windows: 1, drafts: 1 }]);
       await expect(s.captureDraft(async () => { throw new Error('gpu'); })).rejects.toThrow();
       expect(find('Feedback capture failed')).toEqual(['warn', 'Feedback capture failed', { error: 'Screenshot capture failed', code: 'capture-failed' }]);
 
       await s.send({ draftId: draft.draftId, notes: 'secret words', includeScreenshot: true });
       expect(find('Feedback saved for delivery')?.[2]).toEqual({
-        draftId: draft.draftId, includeScreenshot: true, notesLength: 12, id: 'rep-1', status: 'saved-local', state: 'connected',
+        draftId: draft.draftId, includeScreenshot: true, notesLength: 12, annotated: false, shotId: null, id: 'rep-1', status: 'saved-local', state: 'connected',
       });
       fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
       await expect(s.send({ notes: 'more secret words', includeScreenshot: false })).rejects.toThrow();

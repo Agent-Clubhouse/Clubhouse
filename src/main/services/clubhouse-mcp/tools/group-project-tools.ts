@@ -651,7 +651,9 @@ export function registerGroupProjectTools(): void {
           };
         }
 
-        await agentSystem.killAgent(targetAgentId, projectPath, tracked?.orchestrator || durable?.agentConfig.orchestrator, 'agent_tool');
+        // The caller's name becomes the target's sleep reason ("put to sleep by …").
+        const caller = bindingManager.getAllBindings().find((b) => b.agentId === _agentId)?.agentName;
+        await agentSystem.killAgent(targetAgentId, projectPath, tracked?.orchestrator || durable?.agentConfig.orchestrator, 'agent_tool', caller ? { by: caller } : {});
         broadcastToAllWindows(IPC.AGENT.AGENT_SLEEPING, targetAgentId);
 
         return {
