@@ -646,3 +646,30 @@ export function buildAgentMap(state: Pick<ChatViewState, 'items' | 'subagents' |
     : order;
   return { mode, nodes: ids.map(nodeFor) };
 }
+
+// ── Model labels ────────────────────────────────────────────────────────────
+
+const ONE_M = /\[1m\]$/i;
+const CLAUDE_ID = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/i;
+
+/**
+ * The name to show for a model id, the same in the header and the composer.
+ * The provider's own label wins; an id it doesn't list (a full Claude id such
+ * as `claude-opus-5-5[1m]`, or an alias with the 1M context suffix) is named
+ * the way the provider names its aliases, and anything else shows as-is.
+ */
+export function modelLabel(id: string, models: ReadonlyArray<{ id: string; label: string }> = []): string {
+  const listed = models.find((m) => m.id === id);
+  if (listed) return listed.label;
+  const oneM = ONE_M.test(id);
+  const base = id.replace(ONE_M, '');
+  const suffix = oneM ? ' · 1M' : '';
+  const alias = models.find((m) => m.id === base);
+  if (alias) return `${alias.label}${suffix}`;
+  const claude = CLAUDE_ID.exec(base);
+  if (claude) {
+    const [, family, major, minor] = claude;
+    return `${family.charAt(0).toUpperCase()}${family.slice(1).toLowerCase()} ${major}${minor ? `.${minor}` : ''}${suffix}`;
+  }
+  return id;
+}

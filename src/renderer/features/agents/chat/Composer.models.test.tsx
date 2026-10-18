@@ -207,8 +207,8 @@ describe('Composer model and effort chips (#2091)', () => {
     const pill = screen.getByTestId('chat-model-pill');
     expect(pill.className).toContain('whitespace-nowrap');
     expect(pill.className).toContain('max-w-[180px]');
-    expect(pill.querySelector('span.truncate')).toHaveTextContent('claude-opus-5-5[1m]');
-    expect(pill).toHaveAttribute('title', 'claude-opus-5-5[1m]');
+    expect(pill.querySelector('span.truncate')).toHaveTextContent('Opus 5.5 · 1M');
+    expect(pill).toHaveAttribute('title', 'Opus 5.5 · 1M (claude-opus-5-5[1m])');
   });
 
   it('shows plain labels when the driver cannot switch model or effort', () => {

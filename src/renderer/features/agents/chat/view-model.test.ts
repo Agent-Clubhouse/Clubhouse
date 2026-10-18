@@ -25,6 +25,7 @@ import {
   toolErrorText,
   toolOpenByDefault,
   toolResultText,
+  modelLabel,
 } from './view-model';
 
 const fold = (events: ReturnType<typeof chatFixture>) => foldChatEvents(undefined, FIXTURE_AGENT_ID, events);
@@ -302,5 +303,34 @@ describe('commandForRequest (#2183 review)', () => {
   it("leaves it to the request's own content when that already shows it", () => {
     expect(commandForRequest([], req({ rawInput: { command: 'rm -rf build' }, content: [{ type: 'text', text: 'rm -rf build' }] }))).toBeUndefined();
     expect(commandForRequest([], req({ rawInput: { path: '/a' } }))).toBeUndefined();
+  });
+});
+
+describe('modelLabel', () => {
+  // As the Claude SDK lists them (Claude Code 2.1.302).
+  const models = [
+    { id: 'default', label: 'Default (recommended)' },
+    { id: 'opus', label: 'Opus 5.5' },
+    { id: 'claude-opus-5', label: 'Opus 5' },
+  ];
+
+  it('uses the provider label for a listed id', () => {
+    expect(modelLabel('opus', models)).toBe('Opus 5.5');
+    expect(modelLabel('claude-opus-5', models)).toBe('Opus 5');
+  });
+
+  it('names an alias with the 1M context suffix after the alias', () => {
+    expect(modelLabel('opus[1m]', models)).toBe('Opus 5.5 · 1M');
+  });
+
+  it('names a full Claude id the way the aliases are named', () => {
+    expect(modelLabel('claude-opus-5-5[1m]', models)).toBe('Opus 5.5 · 1M');
+    expect(modelLabel('claude-haiku-4-5-20251001')).toBe('Haiku 4.5');
+    expect(modelLabel('claude-fable-5-1')).toBe('Fable 5.1');
+  });
+
+  it('shows anything else as-is', () => {
+    expect(modelLabel('gpt-6-astra', models)).toBe('gpt-6-astra');
+    expect(modelLabel('o4-mini')).toBe('o4-mini');
   });
 });
