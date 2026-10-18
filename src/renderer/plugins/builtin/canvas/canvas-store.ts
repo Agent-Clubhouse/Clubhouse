@@ -33,6 +33,7 @@ import {
   generateCanvasId,
   recomputeZones,
 } from './canvas-operations';
+import { bindWireDefinition } from './wire-binding';
 
 // ── Store state ──────────────────────────────────────────────────────
 
@@ -634,22 +635,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           }
           restoredDefinitions.push(entry);
           try {
-            await window.clubhouse.mcpBinding.bind(entry.agentId, {
-              targetId: entry.targetId,
-              targetKind: entry.targetKind,
-              label: entry.label,
-              agentName: entry.agentName,
-              targetName: entry.targetName,
-              projectName: entry.projectName,
-            });
-            // Restore instructions if present
-            if (entry.instructions && Object.keys(entry.instructions).length > 0) {
-              await window.clubhouse.mcpBinding.setInstructions(entry.agentId, entry.targetId, entry.instructions);
-            }
-            // Restore disabled tools if present
-            if (entry.disabledTools && entry.disabledTools.length > 0) {
-              await window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, entry.disabledTools);
-            }
+            await bindWireDefinition(entry);
           } catch {
             // Binding restore failed (e.g. MCP not enabled or agent sleeping) —
             // keep the wire definition so the wire remains visible and persisted

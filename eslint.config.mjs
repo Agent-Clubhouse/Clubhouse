@@ -33,6 +33,9 @@ const builtinHostImportAllowlist = new Set([
   'src/renderer/plugins/builtin/canvas/useBlueprintDrop.ts',
   'src/renderer/plugins/builtin/canvas/useViewportControls.ts',
   'src/renderer/plugins/builtin/canvas/useWiring.ts',
+  // Split out of main.ts / canvas-store.ts; same McpBindingEntry type import.
+  'src/renderer/plugins/builtin/canvas/wire-binding.ts',
+  'src/renderer/plugins/builtin/canvas/wire-reconcile.ts',
   'src/renderer/plugins/builtin/canvas/wire-render-contract.ts',
   'src/renderer/plugins/builtin/files/FileTree.ts',
   'src/renderer/plugins/builtin/files/FileViewer.ts',
