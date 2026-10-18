@@ -85,7 +85,7 @@ vi.mock('./monaco-theme', () => ({
 }));
 
 vi.mock('../../../stores/themeStore', () => ({
-  useThemeStore: (sel: (s: { themeId: string }) => string) => sel({ themeId: fake.themeId }),
+  useThemeStore: (sel: (s: { themeId: string; theme: { id: string } }) => string) => sel({ themeId: fake.themeId, theme: { id: fake.themeId } }),
 }));
 
 import { MonacoEditor, disposeAllModels, isModelDirty, getModelContent } from './MonacoEditor';

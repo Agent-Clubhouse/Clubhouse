@@ -17,7 +17,7 @@ vi.mock('./monaco-theme', () => ({
 }));
 
 vi.mock('../../../stores/themeStore', () => ({
-  useThemeStore: (sel: (s: { themeId: string }) => string) => sel({ themeId: 'catppuccin-mocha' }),
+  useThemeStore: (sel: (s: { themeId: string; theme: { id: string } }) => string) => sel({ themeId: 'catppuccin-mocha', theme: { id: 'catppuccin-mocha' } }),
 }));
 
 describe('MonacoEditor lazy loading', () => {

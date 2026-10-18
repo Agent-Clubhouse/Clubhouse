@@ -63,7 +63,8 @@ vi.mock('./dynamic-import', () => ({
 }));
 
 // Mock theme registry for pack plugin tests
-vi.mock('../themes', () => ({
+vi.mock('../themes', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../themes')>()),
   registerTheme: vi.fn(),
   unregisterTheme: vi.fn(),
 }));
@@ -2312,6 +2313,30 @@ describe('plugin-loader', () => {
         'plugin:theme-pack:added',
       ]);
       expect(vi.mocked(unregisterTheme).mock.calls).toEqual([['plugin:theme-pack:drop']]);
+    });
+
+    it('unregisters every pack theme when the refreshed manifest drops contributes.themes', async () => {
+      const theme = { id: 'dark', name: 'Dark', type: 'dark' as const, colors: {}, hljs: {}, terminal: {} };
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'theme-pack', scope: 'app', kind: 'pack', engine: { api: 0.7 }, permissions: [], contributes: { themes: [theme] } }),
+        'community', '/plugins/theme-pack', 'activated',
+      );
+      usePluginStore.setState({ externalPluginsEnabled: true });
+      mockPlugin.discoverCommunity.mockResolvedValue([{
+        manifest: makeManifest({
+          id: 'theme-pack', scope: 'app', kind: 'pack', engine: { api: 0.7 }, permissions: [],
+          contributes: { sounds: { name: 'Sounds', sounds: { 'agent-done': 'done.mp3' } } },
+        }),
+        pluginPath: '/plugins/theme-pack',
+        fromMarketplace: false,
+      }]);
+      vi.mocked(registerTheme).mockClear();
+      vi.mocked(unregisterTheme).mockClear();
+
+      await refreshCommunityPlugins();
+
+      expect(registerTheme).not.toHaveBeenCalled();
+      expect(vi.mocked(unregisterTheme).mock.calls).toEqual([['plugin:theme-pack:dark']]);
     });
 
     it('handles mix of new, existing, and incompatible plugins', async () => {
