@@ -310,6 +310,19 @@ export interface DurableAgentConfig {
    */
   handoff?: HelperHandoff;
   /**
+   * Helpers (#2227): the task start_helper gave this helper, kept from when
+   * its worktree is ready until it has been delivered in a spawn. Set while
+   * the helper never started (a restart, a failed spawn, its orchestrator
+   * gone); the next wake_helper delivers it.
+   */
+  pendingTask?: string;
+  /**
+   * Helpers (#2227): the access level start_helper was asked for (unset for
+   * "same"). Every later start resolves under it, so a wake
+   * never raises the helper above what its start asked for.
+   */
+  requestedAccess?: import('./orchestration-policy').AgentAccessLevel;
+  /**
    * True when Clubhouse created `branch` for this agent, so deleting the agent
    * may delete the branch (#2226). False for a branch that already existed.
    * Unset on records from before #2226: those count as owned only when the

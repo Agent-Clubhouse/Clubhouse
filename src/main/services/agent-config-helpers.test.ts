@@ -181,6 +181,7 @@ import {
   onAgentConfigChanged,
   renameDurable,
   resolveHelpersForDelete,
+  setHelperStartFields,
   setOrchestrationConfig,
   setHelperHandoff,
   setParentAgent,
@@ -469,6 +470,51 @@ describe('setParentAgent', () => {
     await setParentAgent(PROJECT_PATH, 'durable_3_c', 'durable_2_b');
     expect((await listHelpers(PROJECT_PATH, 'durable_1_a', { recursive: true })).map((a) => a.id))
       .toEqual(['durable_2_b', 'durable_3_c']);
+  });
+});
+
+describe('start_helper fields (#2227)', () => {
+  beforeEach(() => {
+    seed([agent('durable_1_orch'), agent('durable_2_help', { parentAgentId: 'durable_1_orch', disposable: true })]);
+  });
+
+  it('sets and clears the pending task and the requested access independently', async () => {
+    await setHelperStartFields(PROJECT_PATH, 'durable_2_help', { pendingTask: 'Fix it', requestedAccess: 'standard' });
+    await flushAllAgentConfigs();
+    expect(onDisk('durable_2_help')).toMatchObject({ pendingTask: 'Fix it', requestedAccess: 'standard' });
+
+    await setHelperStartFields(PROJECT_PATH, 'durable_2_help', { pendingTask: null });
+    await flushAllAgentConfigs();
+    expect(onDisk('durable_2_help')).not.toHaveProperty('pendingTask');
+    expect(onDisk('durable_2_help')?.requestedAccess).toBe('standard');
+  });
+
+  it('clears both when the helper is released with setParentAgent', async () => {
+    await setHelperStartFields(PROJECT_PATH, 'durable_2_help', { pendingTask: 'Fix it', requestedAccess: 'auto' });
+    await setParentAgent(PROJECT_PATH, 'durable_2_help', null);
+    const released = (await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help');
+    expect(released).not.toHaveProperty('pendingTask');
+    expect(released).not.toHaveProperty('requestedAccess');
+  });
+
+  it('clears both when the parent is deleted and its helpers are kept', async () => {
+    await setHelperStartFields(PROJECT_PATH, 'durable_2_help', { pendingTask: 'Fix it', requestedAccess: 'auto' });
+    await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'keep');
+    const released = (await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_help');
+    expect(released).not.toHaveProperty('parentAgentId');
+    expect(released).not.toHaveProperty('pendingTask');
+    expect(released).not.toHaveProperty('requestedAccess');
+  });
+
+  it('normalizeHelperFields drops malformed values', () => {
+    const agents = [agent('durable_2_help', {
+      parentAgentId: 'durable_1_orch',
+      pendingTask: '' as string,
+      requestedAccess: 'root' as unknown as DurableAgentConfig['requestedAccess'],
+    }), agent('durable_1_orch')];
+    expect(normalizeHelperFields(agents)).toBe(1);
+    expect(agents[0]).not.toHaveProperty('pendingTask');
+    expect(agents[0]).not.toHaveProperty('requestedAccess');
   });
 });
 

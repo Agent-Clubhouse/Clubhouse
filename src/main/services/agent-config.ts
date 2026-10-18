@@ -18,7 +18,7 @@ import { persist } from '../telemetry/persist';
 import { normalizeIdleSleep } from '../../shared/idle-sleep';
 import { setAgentIdleSleep } from './chat-idle-settings';
 import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-name';
-import type { OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
+import { ACCESS_LEVELS, type AgentAccessLevel, type OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
 import { notifyPersonaChanged } from './persona-change-hook';
 
 /**
@@ -568,6 +568,14 @@ export function normalizeHelperFields(agents: DurableAgentConfig[]): number {
       delete record.handoff;
       changed.add(agent.id);
     }
+    if ('pendingTask' in record && (typeof record.pendingTask !== 'string' || !record.pendingTask)) {
+      delete record.pendingTask;
+      changed.add(agent.id);
+    }
+    if ('requestedAccess' in record && !(ACCESS_LEVELS as readonly unknown[]).includes(record.requestedAccess)) {
+      delete record.requestedAccess;
+      changed.add(agent.id);
+    }
   }
   const ids = new Set(agents.map((a) => a.id));
   for (const agent of agents) {
@@ -577,9 +585,7 @@ export function normalizeHelperFields(agents: DurableAgentConfig[]): number {
     const dangling = !ids.has(parentId);
     if (parentId === agent.id || (!dangling && parentLinkError(others, agent.id, parentId))
       || (dangling && !isDisposedAgent(agent))) {
-      delete agent.parentAgentId;
-      delete agent.disposable;
-      delete agent.handoff;
+      clearHelperLink(agent);
       changed.add(agent.id);
     }
   }
@@ -2524,9 +2530,7 @@ function releaseHelpersOf(agents: DurableAgentConfig[], deletedId: string): Dura
     if (agent.parentAgentId !== deletedId || isDisposedAgent(agent)) return agent;
     released.push(agent.id);
     const copy = { ...agent };
-    delete copy.parentAgentId;
-    delete copy.disposable;
-    delete copy.handoff;
+    clearHelperLink(copy);
     return copy;
   });
   if (released.length > 0) {
@@ -2575,9 +2579,7 @@ export async function setParentAgent(
   if (!agent) throw new Error('Agent not found');
   if (isDisposedAgent(agent)) throw new Error('A disposed agent cannot change parent');
   if (parentAgentId === null) {
-    delete agent.parentAgentId;
-    delete agent.disposable;
-    delete agent.handoff;
+    clearHelperLink(agent);
   } else {
     const error = parentLinkError(agents, agentId, parentAgentId);
     if (error) throw new Error(error);
@@ -2628,6 +2630,44 @@ export async function setOrchestrationConfig(
   if (config && Object.keys(config).length > 0) agent.orchestration = { ...config };
   else delete agent.orchestration;
   await writeAgents(projectPath, agents);
+}
+
+/** What start_helper keeps on a helper (#2227). null clears a field; undefined leaves it. */
+export interface HelperStartFields {
+  pendingTask?: string | null;
+  requestedAccess?: AgentAccessLevel | null;
+}
+
+/**
+ * Record or clear the start_helper fields of a helper (#2227): the task it
+ * has yet to receive and the access start asked for. Written only by the
+ * helper tools, never through updateDurableConfig. A missing agent is a
+ * no-op.
+ */
+export async function setHelperStartFields(projectPath: string, agentId: string, fields: HelperStartFields): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) return;
+  const before = `${agent.pendingTask ?? ''}\0${agent.requestedAccess ?? ''}`;
+  if (fields.pendingTask !== undefined) {
+    if (fields.pendingTask) agent.pendingTask = fields.pendingTask;
+    else delete agent.pendingTask;
+  }
+  if (fields.requestedAccess !== undefined) {
+    if (fields.requestedAccess) agent.requestedAccess = fields.requestedAccess;
+    else delete agent.requestedAccess;
+  }
+  if (`${agent.pendingTask ?? ''}\0${agent.requestedAccess ?? ''}` === before) return;
+  await writeAgents(projectPath, agents);
+}
+
+/** A released helper is an ordinary agent: drop its link and every start_helper field. */
+function clearHelperLink(agent: DurableAgentConfig): void {
+  delete agent.parentAgentId;
+  delete agent.disposable;
+  delete agent.handoff;
+  delete agent.pendingTask;
+  delete agent.requestedAccess;
 }
 
 /** A `git rev-list --count` result. Any failure throws, so a check never reads as zero. */

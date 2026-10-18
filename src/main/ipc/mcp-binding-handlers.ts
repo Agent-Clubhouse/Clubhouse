@@ -12,6 +12,7 @@ import { registerBrowserTools, registerWebview, unregisterWebview } from '../ser
 import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
 import { registerNotifyTools } from '../services/clubhouse-mcp/tools/notify-tools';
 import { registerHelperDisposeTools } from '../services/clubhouse-mcp/tools/helper-dispose-tools';
+import { registerHelperTools } from '../services/clubhouse-mcp/tools/helper-tools';
 import { agentRegistry } from '../services/agent-registry';
 import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
 import { appLog } from '../services/log-service';
@@ -72,6 +73,7 @@ export function registerMcpBindingHandlers(): void {
   registerGroupProjectTools();
   registerNotifyTools();
   registerHelperDisposeTools();
+  registerHelperTools();
 
   appLog('core:mcp', 'info', 'MCP binding handlers registered');
 
