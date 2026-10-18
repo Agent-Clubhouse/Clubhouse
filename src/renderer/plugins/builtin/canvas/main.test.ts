@@ -1,11 +1,19 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { validateBuiltinPlugin } from '../builtin-plugin-testing';
 import { manifest } from './manifest';
 import * as canvasModule from './main';
 import { createMockContext, createMockAPI } from '../../testing';
 import { useUIStore } from '../../../stores/uiStore';
+import { queueAgentCard } from './agent-card-queue';
+import { useRemoteProjectStore } from '../../../stores/remoteProjectStore';
+
+// The New agent page can't open in these tests unless a test turns it on.
+const openNewAgentPage = vi.fn((..._args: unknown[]) => false);
+vi.mock('../../../chrome/startPage', () => ({
+  openNewAgentPage: (...args: unknown[]) => openNewAgentPage(...args),
+}));
 
 describe('canvas main', () => {
   it('passes validateBuiltinPlugin', () => {
@@ -402,6 +410,395 @@ describe('canvas main', () => {
       expect(overwriteWarnings).toHaveLength(0);
 
       warnSpy.mockRestore();
+    });
+  });
+
+  // #2020: New agent from a card's picker opens the New agent page, which
+  // replaces the pane, so the canvas unmounts. A remount reloads the canvas
+  // from disk, so a card added while it was away would be lost. Cards are
+  // queued instead and placed once the remounted canvas has loaded.
+  describe('sibling cards from the New agent page', () => {
+    function memoryStorage(fail = { value: false }) {
+      const files = new Map<string, unknown>();
+      return {
+        files,
+        fail,
+        read: vi.fn(async (key: string) => {
+          if (fail.value && key.startsWith('canvas-instances')) {
+            throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+          }
+          return files.get(key);
+        }),
+        write: vi.fn(async (key: string, value: unknown) => { files.set(key, value); }),
+        delete: vi.fn(async (key: string) => { files.delete(key); }),
+        list: vi.fn(async () => [...files.keys()]),
+      };
+    }
+
+    function setup(projectId: string, storage = memoryStorage()) {
+      const api = createMockAPI({
+        context: { mode: 'project', projectId, projectPath: `/tmp/${projectId}` },
+        storage: { project: storage, projectLocal: storage, global: storage },
+      });
+      const store = canvasModule.getProjectCanvasStore(projectId);
+      const mount = () => render(React.createElement(canvasModule.MainPanel, { api }));
+      // A mount's reload is done once it has read the wires (the last step).
+      const readsWires = () => storage.read.mock.calls.filter(([k]) => k === 'canvas-wires').length;
+      async function mountAndLoad() {
+        const before = readsWires();
+        const view = mount();
+        await waitFor(() => expect(readsWires()).toBeGreaterThan(before));
+        await waitFor(() => expect(store.getState().loaded).toBe(true));
+        return view;
+      }
+      return { api, store, storage, mount, mountAndLoad };
+    }
+
+    const placedFor = (store: ReturnType<typeof canvasModule.getProjectCanvasStore>, agentId: string) =>
+      store.getState().canvases.flatMap((c) => c.views.map((v) => ({ canvasId: c.id, view: v })))
+        .find(({ view }) => (view as { agentId?: string }).agentId === agentId);
+
+    async function addParent(store: ReturnType<typeof canvasModule.getProjectCanvasStore>, storage: ReturnType<typeof memoryStorage>) {
+      let parentId = '';
+      act(() => { parentId = store.getState().addView('agent', { x: 100, y: 100 }); });
+      await store.getState().saveCanvas(storage);
+      return store.getState().views.find((v) => v.id === parentId)!;
+    }
+
+    it('places a card queued while the canvas was unmounted, after it reloads', async () => {
+      const { store, storage, mountAndLoad } = setup('proj-card-queue-reload');
+      const first = await mountAndLoad();
+      const parent = await addParent(store, storage);
+      first.unmount();
+
+      queueAgentCard(store, { canvasId: store.getState().activeCanvasId, parentViewId: parent.id, fallback: { position: parent.position, size: parent.size }, agentId: 'agent-made-on-page' });
+
+      await mountAndLoad();
+      await waitFor(() => expect(placedFor(store, 'agent-made-on-page')).toBeDefined());
+      expect(placedFor(store, 'agent-made-on-page')!.view.position.x).toBeGreaterThanOrEqual(parent.position.x + parent.size.width);
+      expect(store.getState().views.find((v) => v.id === parent.id)).toBeDefined();
+    });
+
+    it('keeps a placed card when the canvas unmounts again right away (before the autosave debounce)', async () => {
+      const { store, storage, mountAndLoad } = setup('proj-card-queue-fast-unmount');
+      const first = await mountAndLoad();
+      const parent = await addParent(store, storage);
+      first.unmount();
+
+      queueAgentCard(store, { canvasId: store.getState().activeCanvasId, parentViewId: parent.id, fallback: { position: parent.position, size: parent.size }, agentId: 'agent-1' });
+      const second = await mountAndLoad();
+      await waitFor(() => expect(placedFor(store, 'agent-1')).toBeDefined());
+      // New agent again straight away: the page replaces the pane well inside 500 ms.
+      await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
+      second.unmount();
+
+      await mountAndLoad();
+      expect(placedFor(store, 'agent-1')).toBeDefined();
+    });
+
+    it('keeps a moved card when the canvas unmounts before the autosave debounce', async () => {
+      const { store, storage, mountAndLoad } = setup('proj-card-queue-fast-move');
+      const first = await mountAndLoad();
+      const parent = await addParent(store, storage);
+      act(() => { store.getState().moveView(parent.id, { x: 700, y: 400 }); });
+      first.unmount();
+
+      await mountAndLoad();
+      expect(store.getState().views.find((v) => v.id === parent.id)?.position).toEqual({ x: 700, y: 400 });
+    });
+
+    it('puts the card on the parent\'s canvas, not the canvas that is active when the agent is made', async () => {
+      const { store, storage, mountAndLoad } = setup('proj-card-queue-other-canvas');
+      const first = await mountAndLoad();
+      const parent = await addParent(store, storage);
+      const parentCanvas = store.getState().activeCanvasId;
+      queueAgentCard(store, { canvasId: parentCanvas, parentViewId: parent.id, fallback: { position: parent.position, size: parent.size }, agentId: 'agent-elsewhere' });
+      // Queued while the parent's canvas is active, so it's placed there at once.
+      await waitFor(() => expect(placedFor(store, 'agent-elsewhere')?.canvasId).toBe(parentCanvas));
+
+      // Now queue one while another canvas is active: it waits for the parent's canvas.
+      let otherCanvas = '';
+      act(() => { otherCanvas = store.getState().addCanvas(); store.getState().setActiveCanvas(otherCanvas); });
+      queueAgentCard(store, { canvasId: parentCanvas, parentViewId: parent.id, fallback: { position: parent.position, size: parent.size }, agentId: 'agent-later' });
+      await act(async () => { await Promise.resolve(); });
+      expect(placedFor(store, 'agent-later')).toBeUndefined();
+
+      act(() => { store.getState().setActiveCanvas(parentCanvas); });
+      await waitFor(() => expect(placedFor(store, 'agent-later')?.canvasId).toBe(parentCanvas));
+      first.unmount();
+    });
+
+    it('keeps cards queued through a failed load and places them once the canvas loads', async () => {
+      const storage = memoryStorage();
+      const { store, mount, mountAndLoad } = setup('proj-card-queue-load-error', storage);
+      const first = await mountAndLoad();
+      const parent = await addParent(store, storage);
+      first.unmount();
+
+      queueAgentCard(store, { canvasId: store.getState().activeCanvasId, parentViewId: parent.id, fallback: { position: parent.position, size: parent.size }, agentId: 'agent-after-error' });
+
+      storage.fail.value = true;
+      const failed = mount();
+      expect(await screen.findByTestId('canvas-load-error', {}, { timeout: 3000 })).toBeTruthy();
+      expect(placedFor(store, 'agent-after-error')).toBeUndefined();
+      failed.unmount();
+
+      storage.fail.value = false;
+      await mountAndLoad();
+      await waitFor(() => expect(placedFor(store, 'agent-after-error')).toBeDefined());
+    });
+
+    it('reads after a save the previous mount flushed is written, not before', async () => {
+      const storage = memoryStorage();
+      const { store, mountAndLoad } = setup('proj-card-queue-inflight', storage);
+      const first = await mountAndLoad();
+
+      // Writes hang until released, like a slow disk.
+      let release!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      const write = storage.write.getMockImplementation()!;
+      storage.write.mockImplementation(async (key: string, value: unknown) => { await gate; return write(key, value); });
+
+      let cardId = '';
+      act(() => { cardId = store.getState().addView('agent', { x: 300, y: 300 }); });
+      first.unmount(); // flushes the pending save, which is now stuck writing
+
+      const readsBefore = storage.read.mock.calls.filter(([k]) => k === 'canvas-instances').length;
+      const second = await act(async () => render(React.createElement(canvasModule.MainPanel, { api: setup('proj-card-queue-inflight', storage).api })));
+      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+      // The remount hasn't read the canvas while the save is still writing.
+      expect(storage.read.mock.calls.filter(([k]) => k === 'canvas-instances').length).toBe(readsBefore);
+
+      release();
+      await waitFor(() => expect(storage.read.mock.calls.filter(([k]) => k === 'canvas-instances').length).toBeGreaterThan(readsBefore));
+      await waitFor(() => expect(store.getState().views.find((v) => v.id === cardId)).toBeDefined());
+      second.unmount();
+    });
+
+    it('places the card on the parent\'s canvas end to end, from the picker\'s New agent', async () => {
+      const projectId = 'proj-card-queue-e2e';
+      const storage = memoryStorage();
+      const agents: Array<{ id: string; name: string; kind: string; status: string; projectId: string; color: string }> = [];
+      const api = createMockAPI({
+        context: { mode: 'project', projectId, projectPath: `/tmp/${projectId}` },
+        storage: { project: storage, projectLocal: storage, global: storage },
+        projects: { list: () => [{ id: projectId, name: 'E2E', path: `/tmp/${projectId}` }], getActive: () => null },
+      } as never);
+      (api.agents as unknown as { list: () => unknown[] }).list = () => agents;
+      const store = canvasModule.getProjectCanvasStore(projectId);
+      const mountAndLoad = async () => {
+        const view = render(React.createElement(canvasModule.MainPanel, { api }));
+        await waitFor(() => expect(store.getState().loaded).toBe(true));
+        return view;
+      };
+
+      const first = await mountAndLoad();
+      let parentId = '';
+      act(() => { parentId = store.getState().addView('agent', { x: 100, y: 100 }); });
+      const parentCanvas = store.getState().activeCanvasId;
+
+      openNewAgentPage.mockReturnValue(true);
+      fireEvent.click(await screen.findByTestId('canvas-create-agent'));
+      openNewAgentPage.mockReturnValue(false);
+      expect(openNewAgentPage).toHaveBeenCalledWith('durable', projectId, expect.objectContaining({ stayInView: true }));
+      const { onCreated } = openNewAgentPage.mock.calls.at(-1)![2] as { onCreated: (id: string) => void };
+
+      // The page replaces the pane; meanwhile the user switches to another canvas.
+      first.unmount();
+      let otherCanvas = '';
+      act(() => { otherCanvas = store.getState().addCanvas(); store.getState().setActiveCanvas(otherCanvas); });
+      agents.push({ id: 'agent-e2e', name: 'gallant-swift', kind: 'durable', status: 'sleeping', projectId, color: 'emerald' });
+      onCreated('agent-e2e');
+
+      const second = await mountAndLoad();
+      const findCard = () => store.getState().canvases.flatMap((c) => c.views.map((v) => ({ canvasId: c.id, view: v })))
+        .find(({ view }) => (view as { agentId?: string }).agentId === 'agent-e2e');
+      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+      expect(findCard()).toBeUndefined(); // not on the canvas that happens to be active
+
+      act(() => { store.getState().setActiveCanvas(parentCanvas); });
+      await waitFor(() => expect(findCard()?.canvasId).toBe(parentCanvas));
+      const parent = store.getState().views.find((v) => v.id === parentId)!;
+      expect(findCard()!.view.position.x).toBeGreaterThanOrEqual(parent.position.x + parent.size.width);
+      expect(findCard()!.view.displayName).toBe('gallant-swift');
+      second.unmount();
+    });
+  });
+
+  // #2076 review: the app canvas store is shared by the local and remote
+  // (satellite) views. Switching to a remote host must never write the
+  // satellite's canvas into this machine's storage.
+  it('does not write a satellite canvas into local storage when switching to a remote host', async () => {
+    const files = new Map<string, unknown>();
+    const storage = {
+      read: vi.fn(async (key: string) => files.get(key)),
+      write: vi.fn(async (key: string, value: unknown) => { files.set(key, value); }),
+      delete: vi.fn(async (key: string) => { files.delete(key); }),
+      list: vi.fn(async () => [...files.keys()]),
+    };
+    const api = createMockAPI({
+      context: { mode: 'app', projectId: undefined, projectPath: undefined },
+      storage: { project: storage, projectLocal: storage, global: storage },
+    });
+    const store = canvasModule.useAppCanvasStore;
+    useUIStore.setState({ activeHostId: null });
+    useRemoteProjectStore.setState({ remoteAppCanvasState: {} });
+
+    const view = render(React.createElement(canvasModule.MainPanel, { api }));
+    await waitFor(() => expect(storage.read.mock.calls.some(([k]) => k === 'canvas-wires')).toBe(true));
+    await waitFor(() => expect(store.getState().loaded).toBe(true));
+    // Local canvas on disk, then a local change whose save is still pending.
+    await act(async () => { store.getState().addView('agent', { x: 0, y: 0 }); await store.getState().saveCanvas(storage); });
+    act(() => { store.getState().addView('agent', { x: 600, y: 0 }); });
+
+    act(() => {
+      useRemoteProjectStore.setState({
+        remoteAppCanvasState: {
+          'sat-1': {
+            canvases: [{ id: 'REMOTE-CANVAS', name: 'Remote', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0 }],
+            activeCanvasId: 'REMOTE-CANVAS',
+          },
+        },
+      });
+      useUIStore.setState({ activeHostId: 'sat-1' });
+    });
+    await waitFor(() => expect(store.getState().activeCanvasId).toBe('REMOTE-CANVAS'));
+    // Past the autosave debounce, then away from the canvas (which flushes).
+    await act(async () => { await new Promise((r) => setTimeout(r, 650)); });
+    view.unmount();
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+
+    for (const key of ['canvas-instances', 'canvas-instances-backup', 'canvas-active-id']) {
+      expect(JSON.stringify(files.get(key) ?? null)).not.toContain('REMOTE-CANVAS');
+    }
+    useUIStore.setState({ activeHostId: null });
+    useRemoteProjectStore.setState({ remoteAppCanvasState: {} });
+  });
+
+  // #2076 re-verification: switching between local and a remote host must
+  // keep local edits and never write anything of the satellite's locally.
+  describe('switching the app canvas between local and a remote host', () => {
+    const REMOTE = {
+      canvases: [{ id: 'REMOTE-CANVAS', name: 'Remote', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0 }],
+      activeCanvasId: 'REMOTE-CANVAS',
+      wireDefinitions: [{ agentId: 'REMOTE-AGENT', targetId: 'remote-target', targetKind: 'agent', label: 'Remote wire' }],
+      zoneWireDefinitions: [{ id: 'REMOTE-ZONE-WIRE', sourceZoneId: 'z', targetId: 't', targetType: 'agent' }],
+    };
+    const sleep = (ms: number) => act(async () => { await new Promise((r) => setTimeout(r, ms)); });
+
+    function appSetup() {
+      const files = new Map<string, unknown>();
+      const slow = new Map<string, number>();
+      const storage = {
+        read: vi.fn(async (key: string) => {
+          const ms = slow.get(key);
+          if (ms) await new Promise((r) => setTimeout(r, ms));
+          return files.get(key);
+        }),
+        write: vi.fn(async (key: string, value: unknown) => { files.set(key, value); }),
+        delete: vi.fn(async (key: string) => { files.delete(key); }),
+        list: vi.fn(async () => [...files.keys()]),
+      };
+      const api = createMockAPI({
+        context: { mode: 'app', projectId: undefined, projectPath: undefined },
+        storage: { project: storage, projectLocal: storage, global: storage },
+      });
+      const store = canvasModule.useAppCanvasStore;
+      const wireReads = () => storage.read.mock.calls.filter(([k]) => k === 'canvas-wires').length;
+      const nothingRemoteSaved = () => {
+        const saved = JSON.stringify([...files.entries()]);
+        expect(saved).not.toContain('REMOTE-CANVAS');
+        expect(saved).not.toContain('REMOTE-AGENT');
+        expect(saved).not.toContain('REMOTE-ZONE-WIRE');
+      };
+      const goRemote = () => act(() => {
+        useRemoteProjectStore.setState({ remoteAppCanvasState: { 'sat-1': REMOTE } });
+        useUIStore.setState({ activeHostId: 'sat-1' });
+      });
+      const goLocal = () => act(() => { useUIStore.setState({ activeHostId: null }); });
+      return { files, slow, storage, api, store, wireReads, nothingRemoteSaved, goRemote, goLocal };
+    }
+
+    async function mountLocal(env: ReturnType<typeof appSetup>) {
+      useUIStore.setState({ activeHostId: null });
+      useRemoteProjectStore.setState({ remoteAppCanvasState: {} });
+      const before = env.wireReads();
+      const view = render(React.createElement(canvasModule.MainPanel, { api: env.api }));
+      await waitFor(() => expect(env.wireReads()).toBeGreaterThan(before));
+      await waitFor(() => expect(env.store.getState().loaded).toBe(true));
+      // A local canvas on disk.
+      await act(async () => { env.store.getState().addView('agent', { x: 0, y: 0 }); await env.store.getState().saveCanvas(env.storage); });
+      return view;
+    }
+
+    afterEach(() => {
+      useUIStore.setState({ activeHostId: null });
+      useRemoteProjectStore.setState({ remoteAppCanvasState: {} });
+    });
+
+    it('keeps a local edit made just before switching to a remote host', async () => {
+      const env = appSetup();
+      const view = await mountLocal(env);
+      let editId = '';
+      act(() => { editId = env.store.getState().addView('agent', { x: 900, y: 0 }); });
+      env.goRemote(); // well inside the 500 ms autosave debounce
+      await waitFor(() => expect(env.store.getState().activeCanvasId).toBe('REMOTE-CANVAS'));
+      await sleep(650);
+      view.unmount();
+      await sleep(20);
+
+      expect(JSON.stringify(env.files.get('canvas-instances'))).toContain(editId);
+      env.nothingRemoteSaved();
+    });
+
+    it('keeps a local edit made just before switching to a host whose canvas has not loaded yet', async () => {
+      const env = appSetup();
+      const view = await mountLocal(env);
+      let editId = '';
+      act(() => { editId = env.store.getState().addView('agent', { x: 900, y: 0 }); });
+      // A host with no canvas state yet: the load effect has nothing to hydrate.
+      act(() => { useUIStore.setState({ activeHostId: 'sat-not-loaded' }); });
+      await sleep(650);
+      view.unmount();
+      await sleep(20);
+
+      expect(JSON.stringify(env.files.get('canvas-instances'))).toContain(editId);
+      env.nothingRemoteSaved();
+    });
+
+    it('writes nothing remote while a slow local load runs on the switch back', async () => {
+      const env = appSetup();
+      const view = await mountLocal(env);
+      env.goRemote();
+      await waitFor(() => expect(env.store.getState().activeCanvasId).toBe('REMOTE-CANVAS'));
+
+      // Back to local, with a load slower than the autosave debounce.
+      env.slow.set('canvas-active-id', 800);
+      env.goLocal();
+      await sleep(1000); // the switch-back autosave fires mid-load
+      env.nothingRemoteSaved();
+      await waitFor(() => expect(env.store.getState().activeCanvasId).not.toBe('REMOTE-CANVAS'), { timeout: 3000 });
+      await sleep(650);
+      view.unmount();
+      await sleep(20);
+      env.nothingRemoteSaved();
+    });
+
+    it('does not keep a satellite\'s wires when the local wires file is empty', async () => {
+      const env = appSetup();
+      env.files.set('canvas-wires', []);
+      const view = await mountLocal(env);
+      env.goRemote();
+      await waitFor(() => expect(env.store.getState().wireDefinitions.some((w) => w.agentId === 'REMOTE-AGENT')).toBe(true));
+
+      const before = env.wireReads();
+      env.goLocal();
+      await waitFor(() => expect(env.wireReads()).toBeGreaterThan(before));
+      await waitFor(() => expect(env.store.getState().wireDefinitions.some((w) => w.agentId === 'REMOTE-AGENT')).toBe(false));
+      await sleep(650);
+      view.unmount();
+      await sleep(20);
+      env.nothingRemoteSaved();
     });
   });
 });

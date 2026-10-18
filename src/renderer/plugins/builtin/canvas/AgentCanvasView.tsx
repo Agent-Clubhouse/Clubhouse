@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import type { AgentCanvasView as AgentCanvasViewType, CanvasView } from './canvas-types';
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import { AddAgentDialog } from '../../../features/agents/AddAgentDialog';
@@ -6,6 +6,8 @@ import { WidgetPicker, projectRows, type PickerRow, type PickerSection } from '.
 import { StatusDot, DOT_LABEL } from '../../../features/agents/agent-status';
 import { cardDot } from './canvas-card-status';
 import { AgentView } from '../../../features/agents/chat/AgentView';
+import { openNewAgentPage } from '../../../chrome/startPage';
+import { isRemoteProjectId } from '../../../stores/remoteProjectStore';
 
 interface AgentCanvasViewProps {
   view: AgentCanvasViewType;
@@ -21,7 +23,7 @@ interface AgentCanvasViewProps {
    * If absent, falls back to the legacy behavior of assigning the new agent
    * to the current card.
    */
-  onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
+  onCreateAgentCard?: (parentView: AgentCanvasViewType, agentId: string) => void;
 }
 
 export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgentCard }: AgentCanvasViewProps) {
@@ -79,10 +81,16 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
     const changed = Object.keys(next).some(
       (k) => prev[k] !== next[k as keyof typeof next],
     );
-    if (changed) {
-      onUpdate({ metadata: next } as Partial<AgentCanvasViewType>);
+    // A card placed before the agent store knew the agent is titled with its
+    // raw id; give it the agent's name once the agent shows up.
+    const titledWithId = view.displayName === assignedAgent.id && !!assignedAgent.name && assignedAgent.name !== assignedAgent.id;
+    if (changed || titledWithId) {
+      onUpdate({
+        metadata: next,
+        ...(titledWithId ? { title: assignedAgent.name, displayName: assignedAgent.name } : {}),
+      } as Partial<AgentCanvasViewType>);
     }
-  }, [assignedAgent, projects, view.metadata, onUpdate]);
+  }, [assignedAgent, projects, view.metadata, view.displayName, onUpdate]);
 
   const handleBackToProjects = useCallback(() => {
     setSelectedProjectId(null);
@@ -96,29 +104,32 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
   }, [isAppMode, selectedProjectId, api.context.projectId, projects]);
 
   // A newly created agent lands in a sibling card next to this one (LB-M68),
-  // and this card stays in picker mode for rapid spawning. Falls back to
+  // and this card stays in picker mode for rapid spawning. The canvas places
+  // the card next to where this card is when the agent exists. Falls back to
   // assigning the agent here when no callback is wired (e.g. unit tests,
   // popout view).
-  const placeNewAgent = useCallback((agentId: string) => {
-    const newAgent = api.agents.list().find((a) => a.id === agentId);
-    if (!newAgent) return;
+  const placeSiblingCard = useCallback((agentId: string) => {
     if (onCreateAgentCard) {
-      onCreateAgentCard(view, newAgent);
-    } else {
-      handlePickAgent(newAgent);
+      onCreateAgentCard(view, agentId);
+      return;
     }
+    const newAgent = api.agents.list().find((a) => a.id === agentId);
+    if (newAgent) handlePickAgent(newAgent);
   }, [api.agents, handlePickAgent, onCreateAgentCard, view]);
 
-  // New agent. Whatever creates the agent hands its id to `onCreated`, which
-  // places the card. Today that is AddAgentDialog. When the New agent page
-  // (#2031) replaces it, open the page here and have it call `onCreated` with
-  // the created durable agent's id.
-  const pendingCreatedRef = useRef<((agentId: string) => void) | null>(null);
-  const openNewAgent = useCallback((onCreated: (agentId: string) => void) => {
+  // New agent: the New agent page (#2031) with Durable chosen and this
+  // card's project, keeping the canvas in view once the agent is made. It
+  // calls `onCreated` only when an agent exists, never on cancel, so the
+  // picker simply stays as it was. Where the page can't open (the classic
+  // shell, a satellite, a remote project, a popout window, no projects) the
+  // durable-agent dialog does the same job.
+  const openNewAgent = useCallback(() => {
+    const projectId = activeProjectForCreate?.id;
+    const pageable = !!projectId && !isRemoteProjectId(projectId) && !window.clubhouse?.window?.isPopout?.();
+    if (pageable && openNewAgentPage('durable', projectId, { onCreated: placeSiblingCard, stayInView: true })) return;
     setCreateError(null);
-    pendingCreatedRef.current = onCreated;
     setShowCreateDialog(true);
-  }, []);
+  }, [activeProjectForCreate, placeSiblingCard]);
 
   const handleCreateDurable = useCallback(async (
     name: string, color: string, model: string, useWorktree: boolean,
@@ -140,9 +151,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
         persona,
       });
       setShowCreateDialog(false);
-      const onCreated = pendingCreatedRef.current ?? placeNewAgent;
-      pendingCreatedRef.current = null;
-      onCreated(agentId);
+      placeSiblingCard(agentId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('Failed to create durable agent:', err);
@@ -151,7 +160,7 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
       // signal at all (#1564). Keep the dialog open so they can retry.
       setCreateError(message);
     }
-  }, [activeProjectForCreate, api.agents, placeNewAgent]);
+  }, [activeProjectForCreate, api.agents, placeSiblingCard]);
 
   // Agent assigned but not yet available in the store (e.g. sleeping durable
   // agent created by a blueprint import, or remote agent that hasn't synced yet).
@@ -249,11 +258,11 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
           backLabel="Projects"
           scrollTestId="canvas-agent-picker-scroll"
           sections={sections}
-          footer={{ label: 'New agent', testId: 'canvas-create-agent', onSelect: () => openNewAgent(placeNewAgent) }}
+          footer={{ label: 'New agent', testId: 'canvas-create-agent', onSelect: openNewAgent }}
         />
         {showCreateDialog && activeProjectForCreate && (
           <AddAgentDialog
-            onClose={() => { setShowCreateDialog(false); setCreateError(null); pendingCreatedRef.current = null; }}
+            onClose={() => { setShowCreateDialog(false); setCreateError(null); }}
             onCreate={handleCreateDurable}
             projectPath={activeProjectForCreate.path}
             error={createError}

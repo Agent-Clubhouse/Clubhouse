@@ -3,7 +3,7 @@ import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from 
 import type { CanvasMutation } from '../../../../shared/types';
 import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
-import { computeAdjacentPosition } from './canvas-operations';
+import { queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, canvasOfView, type PendingAgentCard } from './agent-card-queue';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
 import { setCanvasQueryProvider } from '../../plugin-api-canvas';
@@ -49,6 +49,9 @@ export function findBindingsForView(view: CanvasView, bindings: McpBindingEntry[
 
 // App-mode canvas store: single instance shared across all projects
 export const useAppCanvasStore = createCanvasStore();
+
+/** Saves still writing, per canvas store, so a remount reads after them. */
+const inflightSaves = new WeakMap<object, Promise<unknown>>();
 
 // Project-mode canvas stores: one per project, keyed by projectId
 const projectCanvasStores = new Map<string, ReturnType<typeof createCanvasStore>>();
@@ -184,7 +187,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       api.window.resetTitle();
     }
   }, [api, activeCanvasName, newChrome]);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { findCanvasPopout } = usePopouts();
 
   // Load persisted state (or remote canvas state for annex projects)
@@ -192,29 +194,57 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const isRemote = projectId ? isRemoteProjectId(projectId) : false;
   const activeHostId = useUIStore((s) => s.activeHostId);
   const isRemoteApp = isAppMode && !!activeHostId;
+  // The debounced local save, if one is waiting (see the auto-save below).
+  const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; owner: object; run: () => void } | null>(null);
+  /** Run a waiting local save now. */
+  const flushSave = useCallback(() => {
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingSaveRef.current = null;
+    pending.run();
+  }, []);
+
+  // Whether this mount has loaded the canvas. The store outlives the panel,
+  // but a remount reloads it, so queued agent cards wait for this.
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
+    let cancelled = false;
+    setHydrated(false);
     // App-mode with active satellite: hydrate from remote app canvas state
     if (isRemoteApp && activeHostId) {
       const remoteState = useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId];
       if (remoteState) {
+        // Save any local edit still waiting before the store takes the
+        // satellite's canvas. saveCanvas/saveWires capture their data before
+        // their first await, and hydrateFromRemote closes the guards, so
+        // nothing remote is written.
+        flushSave();
         store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
+        setHydrated(true);
         return;
       }
     }
     if (isRemote && projectId) {
       const remoteState = useRemoteProjectStore.getState().remoteCanvasState[projectId];
       if (remoteState) {
+        flushSave();
         store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId, remoteState.wireDefinitions, (remoteState as { zoneWireDefinitions?: unknown[] }).zoneWireDefinitions);
+        setHydrated(true);
         return;
       }
     }
     // Await loadCanvas before loadWires so that wire reconciliation has
     // access to the loaded canvas views.
     (async () => {
+      // A save flushed by the previous mount may still be writing; read after it.
+      await inflightSaves.get(store);
       await store.getState().loadCanvas(storage);
       await store.getState().loadWires(storage);
+      if (!cancelled) setHydrated(true);
     })();
-  }, [store, storage, isRemote, projectId, isRemoteApp, activeHostId]);
+    return () => { cancelled = true; };
+  }, [store, storage, isRemote, projectId, isRemoteApp, activeHostId, flushSave]);
 
   // Subscribe to live remote canvas state updates (project-level)
   useEffect(() => {
@@ -249,25 +279,40 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // Debounced auto-save (skip for remote projects/app — state is owned by satellite).
   // Wire definitions are saved from the canvas store (not from live MCP bindings),
   // so wires survive agent sleep/wake cycles.
+  //
+  // A save that is still pending when the panel unmounts (a fast tab switch,
+  // the New agent page replacing the pane) or when the panel moves to another
+  // store is flushed, not dropped: the next mount reloads from disk, so an
+  // unsaved move, resize or new card would be lost.
   const scheduleSave = useCallback(() => {
-    if (isRemote || isRemoteApp) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      store.getState().saveCanvas(storage);
-      store.getState().saveWires(storage);
+    // Never save remote state. A local save still waiting was scheduled while
+    // local, so run it (guards stop it writing a satellite's canvas).
+    if (isRemote || isRemoteApp) {
+      flushSave();
+      return;
+    }
+    const run = (): void => {
+      const saving = Promise.all([store.getState().saveCanvas(storage), store.getState().saveWires(storage)]);
+      inflightSaves.set(store, saving.catch((): undefined => undefined));
+    };
+    const previous = pendingSaveRef.current;
+    if (previous) {
+      clearTimeout(previous.timer);
+      if (previous.owner !== store) previous.run();
+    }
+    const timer = setTimeout((): void => {
+      pendingSaveRef.current = null;
+      run();
     }, 500);
-  }, [store, storage, isRemote, isRemoteApp]);
+    pendingSaveRef.current = { timer, owner: store, run };
+  }, [store, storage, isRemote, isRemoteApp, flushSave]);
 
   useEffect(() => {
     if (!loaded || !wiresLoaded) return;
     scheduleSave();
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-    };
   }, [canvases, views, viewport, zoomedViewId, wireDefinitions, zoneWireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, scheduleSave]);
+
+  useEffect(() => () => flushSave(), [flushSave]);
 
   // ── Agent wake reconciliation ────────────────────────────────────
   // When an agent wakes up (bindings appear in MCP store that match wire
@@ -506,43 +551,46 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().updateView(viewId, updates);
   }, [store, remoteForward]);
 
-  // LB-M68: Spawn a NEW agent card adjacent to a parent agent card. Used by
-  // AgentCanvasView's "+ New Agent" picker so the new agent lands as a sibling
-  // of the parent (instead of overwriting the parent). Position is computed
-  // from the parent's bounds and the existing canvas state, then snapped to
-  // grid. Persistence is handled by the existing scheduleSave debounce.
-  const handleCreateAgentCard = useCallback((
-    parentView: AgentCanvasView,
-    agent: { id: string; name: string; projectId?: string; orchestrator?: string; model?: string },
-  ) => {
-    const existingViews = store.getState().views;
-    const newSize = parentView.size; // mirror the parent dimensions for visual consistency
-    const position = computeAdjacentPosition(
-      parentView.position,
-      parentView.size,
-      newSize,
-      existingViews,
-    );
+  // LB-M68: a new agent made from a card's picker lands in a NEW card next to
+  // that card, which stays in picker mode. The agent is made elsewhere (the
+  // New agent page or AddAgentDialog), so the card is queued and placed once
+  // this mount has loaded the canvas, next to where the parent is by then
+  // (agent-card-queue.ts). Persistence is handled by the scheduleSave debounce.
+  const handleCreateAgentCard = useCallback((parentView: AgentCanvasView, agentId: string) => {
+    // The parent's own canvas, not whichever is active now: the user may have
+    // switched canvas tabs while the agent was being made.
+    const { canvases: all, activeCanvasId: active } = store.getState();
+    queueAgentCard(store, {
+      canvasId: canvasOfView(all, parentView.id, active),
+      parentViewId: parentView.id,
+      fallback: { position: parentView.position, size: parentView.size },
+      agentId,
+    });
+  }, [store]);
+
+  const placeQueuedAgentCard = useCallback((card: PendingAgentCard) => {
+    const { position, size: newSize } = placeAgentCard(card, store.getState().views);
 
     remoteForward({ type: 'addView', viewType: 'agent', position });
     const newViewId = store.getState().addView('agent', position);
     if (!newViewId) return;
 
-    const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
-    const displayName = agent.name || agent.id;
+    const agent = api.agents.list().find((a) => a.id === card.agentId);
+    const project = useProjectStore.getState().projects.find((p) => p.id === agent?.projectId);
+    const displayName = agent?.name || card.agentId;
     const updates: Partial<AgentCanvasView> = {
-      agentId: agent.id,
-      projectId: agent.projectId,
+      agentId: card.agentId,
+      projectId: agent?.projectId,
       title: displayName,
       displayName,
       size: newSize,
       metadata: {
-        agentId: agent.id,
-        projectId: agent.projectId ?? null,
-        agentName: agent.name ?? null,
+        agentId: card.agentId,
+        projectId: agent?.projectId ?? null,
+        agentName: agent?.name ?? null,
         projectName: project?.name ?? null,
-        orchestrator: agent.orchestrator ?? null,
-        model: agent.model ?? null,
+        orchestrator: agent?.orchestrator ?? null,
+        model: agent?.model ?? null,
       },
     };
     remoteForward({ type: 'updateView', viewId: newViewId, updates: updates as Record<string, unknown> });
@@ -552,7 +600,21 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       remoteForward({ type: 'resizeView', viewId: newViewId, size: newSize });
       store.getState().resizeView(newViewId, newSize);
     }
-  }, [store, remoteForward]);
+  }, [store, remoteForward, api]);
+
+  const [agentCardTick, setAgentCardTick] = useState(0);
+  useEffect(() => subscribeAgentCards(store, () => setAgentCardTick((n) => n + 1)), [store]);
+  useEffect(() => {
+    if (!hydrated || !loaded) return;
+    const { activeCanvasId: canvasId, canvases: all } = store.getState();
+    const cards = takeAgentCards(store, canvasId, all.map((c) => c.id));
+    if (cards.length === 0) return;
+    for (const card of cards) placeQueuedAgentCard(card);
+    // Save now rather than on the debounce: a card made from the New agent
+    // page often lands just before the user opens the page again.
+    scheduleSave();
+    flushSave();
+  }, [hydrated, loaded, activeCanvasId, agentCardTick, store, placeQueuedAgentCard, scheduleSave, flushSave]);
 
   const handleZoomView = useCallback((viewId: string | null) => {
     remoteForward({ type: 'zoomView', viewId });

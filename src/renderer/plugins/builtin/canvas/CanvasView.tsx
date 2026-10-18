@@ -2,7 +2,7 @@ import React, { memo, useCallback, useRef, useState, useEffect, useMemo } from '
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, AnchorCanvasView as AnchorCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
 import { InlineRename } from './InlineRename';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, ANCHOR_HEIGHT } from './canvas-types';
-import type { ProjectInfo, AgentInfo } from '../../../../shared/plugin-types';
+import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
@@ -93,7 +93,7 @@ interface CanvasViewComponentProps {
    * AgentCanvasView's "+ New Agent" picker so the new agent lands in a sibling
    * card instead of overwriting the parent.
    */
-  onCreateAgentCard?: (parentView: AgentCanvasViewType, agent: AgentInfo) => void;
+  onCreateAgentCard?: (parentView: AgentCanvasViewType, agentId: string) => void;
   /** Right-click context menu handler for view-level actions. */
   onViewContextMenu?: (e: React.MouseEvent) => void;
   /** Whether this card is the radial layout center. */

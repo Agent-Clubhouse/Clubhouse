@@ -1312,3 +1312,134 @@ describe('hydrateFromRemote', () => {
     });
   });
 });
+
+// #2076: the app canvas store is shared by the local and remote (satellite)
+// views. After hydrateFromRemote, nothing of the satellite's may be saved to
+// this machine's storage: not while a slow local load runs on the switch
+// back, and not when the local wires file is empty.
+describe('canvas store: remote then local', () => {
+  const REMOTE_CANVAS = { id: 'REMOTE-CANVAS', name: 'Remote', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0 };
+  const REMOTE_WIRE = { agentId: 'REMOTE-AGENT', targetId: 'remote-target', targetKind: 'agent', label: 'Remote wire' };
+  const REMOTE_ZONE_WIRE = { id: 'REMOTE-ZONE-WIRE', sourceZoneId: 'z', targetId: 't', targetType: 'agent' };
+
+  function memory(slow: Record<string, Promise<void>> = {}) {
+    const files = new Map<string, unknown>();
+    const storage = {
+      read: vi.fn(async (key: string) => { await slow[key]; return files.get(key); }),
+      write: vi.fn(async (key: string, value: unknown) => { files.set(key, value); }),
+      delete: vi.fn(async (key: string) => { files.delete(key); }),
+      list: vi.fn(async () => [...files.keys()]),
+    } as unknown as ScopedStorage;
+    const saved = () => JSON.stringify([...files.entries()]);
+    return { files, storage, saved };
+  }
+
+  async function localThenRemote(storage: ScopedStorage) {
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    store.getState().addView('agent', { x: 0, y: 0 });
+    await store.getState().saveCanvas(storage);
+    store.getState().hydrateFromRemote([REMOTE_CANVAS], 'REMOTE-CANVAS', [REMOTE_WIRE], [REMOTE_ZONE_WIRE]);
+    return store;
+  }
+
+  it('saves nothing while the store holds a satellite canvas', async () => {
+    const { storage, saved } = memory();
+    const store = await localThenRemote(storage);
+    await store.getState().saveCanvas(storage);
+    await store.getState().saveWires(storage);
+    expect(saved()).not.toMatch(/REMOTE-/);
+  });
+
+  it('keeps saves closed until a slow local load has swapped in the local canvas', async () => {
+    const slow: Record<string, Promise<void>> = {};
+    const { storage, saved } = memory(slow);
+    const store = await localThenRemote(storage);
+
+    // Back to local; the active-id read (the last before the swap) hangs.
+    let finishActiveRead!: () => void;
+    slow['canvas-active-id'] = new Promise<void>((r) => { finishActiveRead = r; });
+    const loading = store.getState().loadCanvas(storage);
+    await new Promise((r) => setTimeout(r, 10));
+    // An autosave mid-load: the store still holds the satellite's canvas.
+    expect(store.getState().activeCanvasId).toBe('REMOTE-CANVAS');
+    await store.getState().saveCanvas(storage);
+    expect(saved()).not.toMatch(/REMOTE-/);
+
+    finishActiveRead();
+    await loading;
+    expect(store.getState().activeCanvasId).not.toBe('REMOTE-CANVAS');
+    await store.getState().saveCanvas(storage);
+    expect(saved()).not.toMatch(/REMOTE-/);
+  });
+
+  it('drops the satellite\'s wires when the local wires file is empty', async () => {
+    const { storage, saved } = memory();
+    const store = await localThenRemote(storage);
+    expect(store.getState().wireDefinitions).toHaveLength(1);
+
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    expect(store.getState().wireDefinitions).toEqual([]);
+    await store.getState().saveCanvas(storage);
+    await store.getState().saveWires(storage);
+    expect(saved()).not.toMatch(/REMOTE-/);
+  });
+
+  it('keeps wire saves closed while the switch back re-binds local wires', async () => {
+    const { storage, files, saved } = memory();
+    const store = await localThenRemote(storage);
+    files.set('canvas-wires', [{ agentId: 'local-agent', targetId: 'local-target', targetKind: 'agent', label: 'Local wire' }]);
+
+    // A re-bind that hangs, like a slow MCP call.
+    let finishBind!: () => void;
+    const bindOpen = new Promise<void>((r) => { finishBind = r; });
+    const previous = (globalThis as any).window?.clubhouse;
+    (globalThis as any).window = {
+      ...(globalThis as any).window,
+      clubhouse: { ...(previous || {}), mcpBinding: { bind: vi.fn(() => bindOpen), setInstructions: vi.fn(), setDisabledTools: vi.fn() } },
+    };
+    try {
+      const loading = store.getState().loadWires(storage);
+      await new Promise((r) => setTimeout(r, 10));
+      // The autosave lands mid-rebind: the store still holds the satellite's wires.
+      expect(store.getState().wireDefinitions.some((w) => w.agentId === 'REMOTE-AGENT')).toBe(true);
+      await store.getState().saveWires(storage);
+      expect(saved()).not.toMatch(/REMOTE-/);
+
+      finishBind();
+      await loading;
+      expect(store.getState().wireDefinitions.map((w) => w.agentId)).toEqual(['local-agent']);
+    } finally {
+      (globalThis as any).window.clubhouse = previous;
+    }
+  });
+
+  it('saves the local zone wires a save captured before the store went remote', async () => {
+    let releaseBackup!: () => void;
+    const backupWrite = new Promise<void>((r) => { releaseBackup = r; });
+    const { storage, files } = memory();
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadWires(storage);
+    await store.getState().saveCanvas(storage); // first save opens the guard
+    const local = store.getState().addZoneWireDefinition({ sourceZoneId: 'zone-1', targetId: 'agent-1', targetType: 'agent' });
+
+    const write = (storage.write as ReturnType<typeof vi.fn>).getMockImplementation()!;
+    (storage.write as ReturnType<typeof vi.fn>).mockImplementation(async (key: string, value: unknown) => {
+      if (key === 'canvas-instances-backup') await backupWrite;
+      return write(key, value);
+    });
+    const saving = store.getState().saveCanvas(storage);
+    // The store goes remote while the save is writing.
+    store.getState().hydrateFromRemote([REMOTE_CANVAS], 'REMOTE-CANVAS', [REMOTE_WIRE], [REMOTE_ZONE_WIRE]);
+    releaseBackup();
+    await saving;
+
+    const zoneWires = JSON.stringify(files.get('canvas-zone-wires'));
+    expect(zoneWires).toContain(local.id);
+    expect(zoneWires).not.toContain('REMOTE-ZONE-WIRE');
+    expect(JSON.stringify(files.get('canvas-instances'))).not.toContain('REMOTE-CANVAS');
+  });
+});

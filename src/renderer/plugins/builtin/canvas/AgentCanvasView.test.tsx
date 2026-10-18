@@ -4,7 +4,7 @@
  * store yet (timing issue during remote canvas hydration), and the create-
  * from-card flow (LB-M68).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
@@ -15,6 +15,13 @@ vi.mock('../../../features/agents/chat/AgentView', () => ({
   AgentView: ({ agentId, zoneThemeId, context }: { agentId: string; zoneThemeId?: string; context?: string }) => (
     <div data-testid="agent-view" data-zone-theme={zoneThemeId} data-context={context}>{agentId}</div>
   ),
+}));
+
+// The New agent page can't open in tests by default (classic shell), so the
+// dialog path runs; the page tests below turn it on.
+const openNewAgentPage = vi.fn((..._args: unknown[]) => false);
+vi.mock('../../../chrome/startPage', () => ({
+  openNewAgentPage: (...args: unknown[]) => openNewAgentPage(...args),
 }));
 
 vi.mock('../../../features/agents/AddAgentDialog', () => ({
@@ -302,12 +309,11 @@ describe('AgentCanvasView', () => {
       fireEvent.click(screen.getByTestId('stub-add-agent-submit'));
 
       await waitFor(() => expect(onCreateAgentCard).toHaveBeenCalled());
-      const [parentView, newAgent] = onCreateAgentCard.mock.calls[0];
+      const [parentView, agentId] = onCreateAgentCard.mock.calls[0];
       expect(parentView.id).toBe('cv_agent_1');
       expect(parentView.position).toEqual({ x: 200, y: 300 });
       expect(parentView.size).toEqual({ width: 480, height: 480 });
-      expect(newAgent.id).toBe('agent-new-id');
-      expect(newAgent.name).toBe('NewAgent');
+      expect(agentId).toBe('agent-new-id');
 
       // The current card should NOT have been mutated (parent stays in picker mode)
       expect(onUpdate).not.toHaveBeenCalled();
@@ -459,6 +465,92 @@ describe('AgentCanvasView', () => {
       expect(createDurableSpy).toHaveBeenCalledWith(
         expect.objectContaining({ persona: undefined }),
       );
+    });
+  });
+
+  it('renames a card titled with the raw agent id once the agent shows up', () => {
+    const view = makeView({ agentId: 'agent-7', title: 'agent-7', displayName: 'agent-7' });
+    const onUpdate = vi.fn();
+    render(<AgentCanvasView view={view} api={stubApi({ agents: [{ id: 'agent-7', name: 'bold-falcon', status: 'sleeping', kind: 'durable', projectId: 'proj-1' }] })} onUpdate={onUpdate} />);
+    expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ title: 'bold-falcon', displayName: 'bold-falcon' }));
+  });
+
+  it('keeps a name the user gave the card', () => {
+    const view = makeView({ agentId: 'agent-7', title: 'Reviewer', displayName: 'Reviewer' });
+    const onUpdate = vi.fn();
+    render(<AgentCanvasView view={view} api={stubApi({ agents: [{ id: 'agent-7', name: 'bold-falcon', status: 'sleeping', kind: 'durable', projectId: 'proj-1' }] })} onUpdate={onUpdate} />);
+    for (const [update] of onUpdate.mock.calls) expect(update).not.toHaveProperty('displayName');
+  });
+
+  // ── New agent page (#2031) ─────────────────────────────────────────
+
+  describe('New agent page', () => {
+    beforeEach(() => {
+      openNewAgentPage.mockReset();
+      openNewAgentPage.mockReturnValue(false);
+    });
+
+    const project = { id: 'proj-1', name: 'Proj', path: '/tmp/proj' };
+
+    it('opens the page with Durable, this card\'s project and stayInView, and no dialog', () => {
+      openNewAgentPage.mockReturnValue(true);
+      render(<AgentCanvasView view={makeView()} api={stubApi({ projects: [project] })} onUpdate={noop} onCreateAgentCard={vi.fn()} />);
+
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+
+      expect(openNewAgentPage).toHaveBeenCalledWith('durable', 'proj-1', expect.objectContaining({ stayInView: true, onCreated: expect.any(Function) }));
+      expect(screen.queryByTestId('stub-add-agent-submit')).toBeNull();
+    });
+
+    it('places a sibling card for the agent the page created', () => {
+      openNewAgentPage.mockReturnValue(true);
+      const onCreateAgentCard = vi.fn();
+      const onUpdate = vi.fn();
+      const view = makeView({ position: { x: 200, y: 300 } });
+      render(<AgentCanvasView view={view} api={stubApi({ projects: [project] })} onUpdate={onUpdate} onCreateAgentCard={onCreateAgentCard} />);
+
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+      const { onCreated } = openNewAgentPage.mock.calls[0][2] as { onCreated: (id: string) => void };
+      onCreated('agent-from-page');
+
+      expect(onCreateAgentCard).toHaveBeenCalledWith(expect.objectContaining({ id: 'cv_agent_1' }), 'agent-from-page');
+      // This card stays a picker.
+      expect(onUpdate).not.toHaveBeenCalled();
+    });
+
+    it('still places the card when onCreated arrives after the card unmounted (the page replaced the pane)', () => {
+      openNewAgentPage.mockReturnValue(true);
+      const onCreateAgentCard = vi.fn();
+      const view = makeView({ position: { x: 200, y: 300 } });
+      const { unmount } = render(<AgentCanvasView view={view} api={stubApi({ projects: [project] })} onUpdate={noop} onCreateAgentCard={onCreateAgentCard} />);
+
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+      const { onCreated } = openNewAgentPage.mock.calls[0][2] as { onCreated: (id: string) => void };
+      unmount();
+      // With a worktree, onCreated comes seconds later, after spawn.
+      onCreated('agent-after-spawn');
+
+      expect(onCreateAgentCard).toHaveBeenCalledWith(expect.objectContaining({ id: 'cv_agent_1' }), 'agent-after-spawn');
+    });
+
+    it('falls back to the dialog where the page can\'t open', () => {
+      openNewAgentPage.mockReturnValue(false);
+      render(<AgentCanvasView view={makeView()} api={stubApi({ projects: [project] })} onUpdate={noop} />);
+
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+
+      expect(openNewAgentPage).toHaveBeenCalled();
+      expect(screen.getByTestId('stub-add-agent-submit')).toBeTruthy();
+    });
+
+    it('uses the dialog, without trying the page, for a remote project', () => {
+      const remote = { id: 'remote||sat-1||proj-9', name: 'Remote', path: '/remote' };
+      render(<AgentCanvasView view={makeView()} api={stubApi({ mode: 'app', projects: [remote] })} onUpdate={noop} />);
+      // App canvas: pick the remote project, then New agent.
+      fireEvent.click(screen.getByText('Remote'));
+      fireEvent.click(screen.getByTestId('canvas-create-agent'));
+      expect(screen.getByTestId('stub-add-agent-submit')).toBeTruthy();
+      expect(openNewAgentPage).not.toHaveBeenCalled();
     });
   });
 });
