@@ -34,7 +34,9 @@ export function chatEventToHookEvent(event: ChatEvent, toolNames: Map<string, st
     case 'permission_request':
       return { kind: 'permission_request', toolName: event.data.toolName, message: event.data.title, timestamp };
     case 'permission_resolved':
-      return { kind: 'permission_resolved', timestamp };
+      // As the hook server reports it: the decision rides in `message`, which
+      // picks the granted or denied sound. A cancelled turn counts as denied.
+      return { kind: 'permission_resolved', message: event.data.decision === 'allow' ? 'allow' : 'deny', timestamp };
     case 'turn_ended':
       return { kind: 'stop', timestamp };
     case 'error':

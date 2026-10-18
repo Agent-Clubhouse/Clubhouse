@@ -29,6 +29,15 @@ describe('chat status bridge', () => {
     expect(emit.mock.calls[0][1].toolVerb).toBe('Running tests');
   });
 
+  it('carries the permission decision, so an allow plays the granted sound', () => {
+    const emit = vi.fn();
+    const bridge = createStatusBridge(emit);
+    bridge(ev('permission_resolved', { requestId: 'p1', decision: 'allow', by: 'user' }));
+    bridge(ev('permission_resolved', { requestId: 'p2', decision: 'deny', by: 'user' }));
+    bridge(ev('permission_resolved', { requestId: 'p3', decision: 'cancelled', by: 'user' }));
+    expect(emit.mock.calls.map(([, e]) => e.message)).toEqual(['allow', 'deny', 'deny']);
+  });
+
   it('reports failures as tool errors and ignores non-fatal errors', () => {
     const emit = vi.fn();
     const bridge = createStatusBridge(emit);
