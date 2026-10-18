@@ -12,11 +12,16 @@ vi.mock('../../agent-config', () => ({
   getDurableConfig: vi.fn(async (_projectPath: string, id: string) => agents.get(id) ?? null),
   listHelpers: vi.fn(async (_projectPath: string, id: string) =>
     [...agents.values()].filter((a) => a.parentAgentId === id && !a.disposedAt)),
-  setHelperPendingTask: vi.fn(async (_projectPath: string, id: string, task: string | null) => {
+  setHelperStartFields: vi.fn(async (_projectPath: string, id: string, fields: { pendingTask?: string | null; requestedAccess?: string | null }) => {
     const agent = agents.get(id);
     if (!agent) return;
-    const { pendingTask: _old, ...rest } = agent;
-    agents.set(id, task ? { ...rest, pendingTask: task } : rest);
+    const next: Record<string, unknown> = { ...agent };
+    for (const key of ['pendingTask', 'requestedAccess'] as const) {
+      if (fields[key] === undefined) continue;
+      if (fields[key]) next[key] = fields[key];
+      else delete next[key];
+    }
+    agents.set(id, next as unknown as DurableAgentConfig);
   }),
 }));
 
@@ -388,6 +393,47 @@ describe('start_helper re-checks at spawn time', () => {
     await _settleHelperStartsForTesting();
     expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
     expect(agents.get('helper_h')?.pendingTask).toBeUndefined();
+  });
+
+  it('re-reads the helper after resolving access: a reparent during resolution blocks the spawn', async () => {
+    const creation = controllableCreation();
+    await callTool('orch', 'start_helper', { name: 'h', task: 't' });
+    mockResolveLaunch.mockImplementation(async (_p: string, _o: string, options: { helperProvider?: string } = {}) => {
+      agents.set('helper_h', { ...agents.get('helper_h')!, parentAgentId: 'someone-else' });
+      return resolveHelperAccess(live, 'same', options.helperProvider);
+    });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    expect(mockSpawnAgent).not.toHaveBeenCalled();
+    expect(agents.get('helper_h')?.pendingTask).toBe('t');
+  });
+
+  it('takes the task off the helper during the spawn, and puts it back if the spawn fails', async () => {
+    const creation = controllableCreation();
+    let fail!: (err: Error) => void;
+    mockSpawnAgent.mockImplementation(() => new Promise<void>((_resolve, reject) => { fail = reject; }));
+    await callTool('orch', 'start_helper', { name: 'h', task: 'Fix it' });
+    creation.ready('helper_h');
+    await vi.waitFor(() => expect(mockSpawnAgent).toHaveBeenCalled());
+    expect(agents.get('helper_h')?.pendingTask).toBeUndefined();
+    fail(new Error('boom'));
+    await _settleHelperStartsForTesting();
+    expect(agents.get('helper_h')?.pendingTask).toBe('Fix it');
+  });
+
+  it('keeps the requested access on the helper, so a later wake never goes above it', async () => {
+    const creation = controllableCreation();
+    await callTool('orch', 'start_helper', { name: 'h', task: 't', access: 'standard' });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    expect(agents.get('helper_h')?.requestedAccess).toBe('standard');
+    expect(mockSpawnAgent.mock.calls[0][0]).toMatchObject({ freeAgentMode: false });
+
+    running.delete('helper_h');
+    live = { freeAgentMode: true, permissionMode: 'skip-all' };
+    await callTool('orch', 'wake_helper', { helper: 'h' });
+    expect(mockSpawnAgent).toHaveBeenCalledTimes(2);
+    expect(mockSpawnAgent.mock.calls[1][0]).toMatchObject({ freeAgentMode: false });
   });
 
   it('serializes concurrent starts so both cannot pass the limit', async () => {

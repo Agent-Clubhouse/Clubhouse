@@ -265,6 +265,16 @@ function pickColor(helperCount: number): string {
   return AGENT_COLORS[helperCount % AGENT_COLORS.length].id;
 }
 
+/** Put an undelivered task back on a helper. Never throws. */
+async function restoreTask(projectPath: string, helperId: string, task: string): Promise<void> {
+  try {
+    await agentConfig.setHelperStartFields(projectPath, helperId, { pendingTask: task });
+  } catch (err) {
+    // telemetry-exempt: logged; the orchestrator is told the helper didn't start
+    appLog('core:mcp', 'warn', 'Could not save a helper\'s undelivered task', { meta: { helperId, error: errorText(err) } });
+  }
+}
+
 /**
  * The background half of start_helper: wait for the worktree, then spawn
  * the helper with its task and tell the orchestrator. The task is saved on
@@ -284,6 +294,7 @@ async function finishHelperStart(
   requestedAccess: string | undefined,
   done: Promise<'ready' | 'failed' | 'cancelled'>,
 ): Promise<void> {
+  let taskTaken = false;
   try {
     const outcome = await done;
     if (outcome === 'cancelled') {
@@ -297,7 +308,10 @@ async function finishHelperStart(
       return;
     }
 
-    await agentConfig.setHelperPendingTask(projectPath, helperId, task);
+    // The task and the requested level stay on the helper: a helper left
+    // asleep gets the task on its next wake, and no wake goes above the level.
+    const asked = requestedAccess && isAccessLevel(requestedAccess) ? requestedAccess : null;
+    await agentConfig.setHelperStartFields(projectPath, helperId, { pendingTask: task, requestedAccess: asked });
     const provider = config.orchestrator ?? orchestrator.orchestrator;
     const launch = await resolveLaunchFor(projectPath, orchestrator.id, provider, requestedAccess);
     config = await agentConfig.getDurableConfig(projectPath, helperId).catch((): null => null);
@@ -307,12 +321,21 @@ async function finishHelperStart(
       ? launch
       : await resolveLaunchFor(projectPath, orchestrator.id, finalProvider, requestedAccess);
 
-    // Nothing is awaited between these checks and the spawn.
-    const blocker = spawnBlocker(projectPath, orchestrator.id, config);
+    // Taken off before the spawn, so a wake can't deliver it a second time;
+    // put back below if the helper doesn't start.
+    await agentConfig.setHelperStartFields(projectPath, helperId, { pendingTask: null });
+    taskTaken = true;
+
+    // The last read: nothing is awaited between it, the checks and the spawn.
+    config = await agentConfig.getDurableConfig(projectPath, helperId).catch((): null => null);
+    const blocker = spawnBlocker(projectPath, orchestrator.id, config)
+      ?? ((config?.orchestrator ?? provider) !== finalProvider ? 'its CLI changed while it was starting' : null);
     if (blocker) {
       appLog('core:mcp', 'info', 'start_helper: helper left asleep', {
         meta: { orchestratorId: orchestrator.id, helperId, reason: blocker },
       });
+      if (config) await restoreTask(projectPath, helperId, task);
+      taskTaken = false;
       await notifyOrchestrator(orchestrator.id,
         `Helper "${helperName}" (${helperId}) is ready but was not started because ${blocker}. ` +
         'Its task is saved: wake_helper delivers it.');
@@ -333,10 +356,8 @@ async function finishHelperStart(
       freeAgentMode: finalLaunch.freeAgentMode,
       permissionMode: finalLaunch.permissionMode,
     });
+    taskTaken = false;
     spawning.delete(helperId);
-    await agentConfig.setHelperPendingTask(projectPath, helperId, null).catch((err) => {
-      appLog('core:mcp', 'warn', 'start_helper: could not clear the delivered task', { meta: { helperId, error: errorText(err) } });
-    });
     appLog('core:mcp', 'info', 'start_helper: helper started', {
       meta: { orchestratorId: orchestrator.id, helperId, access: finalLaunch.level },
     });
@@ -346,6 +367,7 @@ async function finishHelperStart(
   } catch (err) {
     // telemetry-exempt: the failure reaches the orchestrator and list_helpers
     const reason = errorText(err);
+    if (taskTaken) await restoreTask(projectPath, helperId, task);
     spawnFailures.set(helperId, reason);
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, helperId, reason);
     appLog('core:mcp', 'warn', 'start_helper: helper spawn failed', {
@@ -603,9 +625,16 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
     : fromCaller;
   const resume = !!helper.lastSessionId;
   let launch: HelperLaunch;
+  let taskTaken = false;
   try {
     const provider = helper.orchestrator ?? caller.config.orchestrator;
-    launch = await resolveLaunchFor(caller.projectPath, agentId, provider, undefined);
+    // Never above what start_helper asked for.
+    launch = await resolveLaunchFor(caller.projectPath, agentId, provider, helper.requestedAccess);
+    if (helper.pendingTask) {
+      // Taken off first so it is delivered once; put back if the spawn fails.
+      await agentConfig.setHelperStartFields(caller.projectPath, helper.id, { pendingTask: null });
+      taskTaken = true;
+    }
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, helper.id);
     await agentSystem.spawnAgent({
       agentId: helper.id,
@@ -622,16 +651,12 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
     });
   } catch (err) {
     const reason = errorText(err);
+    if (taskTaken && helper.pendingTask) await restoreTask(caller.projectPath, helper.id, helper.pendingTask);
     spawnFailures.set(helper.id, reason);
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, helper.id, reason);
     throw new HelperToolError(`Could not wake ${helper.name}: ${reason}`);
   } finally {
     spawning.delete(helper.id);
-  }
-  if (helper.pendingTask) {
-    await agentConfig.setHelperPendingTask(caller.projectPath, helper.id, null).catch((err) => {
-      appLog('core:mcp', 'warn', 'wake_helper: could not clear the delivered task', { meta: { helperId: helper.id, error: errorText(err) } });
-    });
   }
   appLog('core:mcp', 'info', 'wake_helper: helper woken', { meta: { agentId, helperId: helper.id, resume, access: launch.level } });
   return jsonResult({
