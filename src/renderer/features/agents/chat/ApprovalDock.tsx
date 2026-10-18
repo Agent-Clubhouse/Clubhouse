@@ -136,7 +136,8 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
         <span className="break-words min-w-0">{request.title}</span>
         {queueSize > 1 && <span className="ml-auto text-[11.5px] font-normal text-ctp-overlay1 whitespace-nowrap">1 of {queueSize}</span>}
       </div>
-      {request.description && <div className="text-[12.5px] text-ctp-subtext0 pl-6 break-words font-mono" data-testid="chat-permission-description">{request.description}</div>}
+      {/* Paths read best in monospace; the prose reasons Claude and Codex send don't. A request with a preview lists paths. */}
+      {request.description && <div className={`text-[12.5px] text-ctp-subtext0 pl-6 break-words ${request.content?.length ? 'font-mono' : ''}`} data-testid="chat-permission-description">{request.description}</div>}
       {request.content && request.content.length > 0 && (
         <div className="pl-6 flex flex-col gap-1.5" data-testid="chat-permission-preview">
           {request.content.map((c, i) =>
