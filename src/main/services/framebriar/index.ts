@@ -10,6 +10,8 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { FeedbackService } from './feedback-service';
+import { buildSha } from '../../build-info';
+import { recentBreadcrumbs } from '../breadcrumbs';
 import { notifyFramebriarConnectionChanged, setFramebriarTelemetrySource } from '../../telemetry/destinations/framebriar-source';
 
 let service: FeedbackService | null = null;
@@ -27,6 +29,8 @@ export function getFeedbackService(): FeedbackService {
       safeStorage,
       dataDir: path.join(app.getPath('userData'), 'framebriar'),
       appVersion: app.getVersion(),
+      buildSha: buildSha(),
+      breadcrumbs: recentBreadcrumbs,
       isOnline: () => net.isOnline(),
       log: (level, msg, meta) => appLog('core:feedback', level, msg, meta ? { meta } : undefined),
     });

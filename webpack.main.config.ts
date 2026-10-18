@@ -1,9 +1,11 @@
 import type { Configuration } from 'webpack';
 import CopyWebpackPlugin from 'copy-webpack-plugin';
+import { DefinePlugin } from 'webpack';
 import path from 'path';
 
 import { rules } from './webpack.rules';
 import { plugins } from './webpack.plugins';
+import { resolveBuildSha } from './scripts/build-sha';
 
 export const mainConfig: Configuration = {
   entry: './src/main/index.ts',
@@ -12,6 +14,8 @@ export const mainConfig: Configuration = {
   },
   plugins: [
     ...plugins,
+    // The build commit for feedback reports (src/main/build-info.ts, #2098).
+    new DefinePlugin({ __CLUBHOUSE_BUILD_SHA__: JSON.stringify(resolveBuildSha()) }),
     new CopyWebpackPlugin({
       patterns: [
         {

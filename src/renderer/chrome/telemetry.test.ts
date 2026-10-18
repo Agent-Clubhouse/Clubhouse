@@ -149,3 +149,19 @@ describe('chrome telemetry', () => {
     expect(getChromeSurface()).toBe('sidebar_agents');
   });
 });
+
+describe('view breadcrumbs (#2098)', () => {
+  it('notes each actual view change once, with the view name only, even with telemetry off', () => {
+    const write = vi.spyOn(window.clubhouse.log, 'write');
+    write.mockClear();
+    reportChromeView('plugin:canvas');
+    reportChromeView('plugin:canvas');
+    reportChromeView('agents');
+    const crumbs = write.mock.calls.map(([e]) => e).filter((e) => e.ns === 'ui:nav');
+    expect(crumbs.map((e) => (e.meta as { breadcrumb: unknown }).breadcrumb)).toEqual([
+      { kind: 'event', code: 'view.canvas' },
+      { kind: 'event', code: 'view.agent' },
+    ]);
+    write.mockRestore();
+  });
+});

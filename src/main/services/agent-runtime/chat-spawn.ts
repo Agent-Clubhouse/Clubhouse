@@ -38,6 +38,7 @@ import { noteChatStartFailure } from './stale-session';
 import { chatSleepInfo, recordSleep, takeKillRequest } from './sleep-reason';
 import { waitsOnPollingGroupProject } from './idle-policy';
 import { chatIdleTimeoutMs } from '../chat-idle-settings';
+import { codePart, recordBreadcrumb } from '../breadcrumbs';
 import { cleanSpawnEnv, getShellEnvironment, summarizeSpawnEnv } from '../../util/shell';
 
 export interface ChatSpawnParams {
@@ -248,6 +249,7 @@ export async function tryStartChatAgent(
     appLog('core:chat', 'warn', 'CLI binary not found for chat; using the terminal', {
       meta: { agentId: params.agentId, provider: provider.id, error: err instanceof Error ? err.message : String(err) },
     });
+    recordBreadcrumb('error', `chat.binary_missing.${codePart(provider.id)}`);
     return 'terminal';
   }
 
@@ -436,6 +438,7 @@ async function runChatStart(
       appLog('core:chat', 'info', 'Chat session ended', { meta: { agentId: params.agentId, reason, exitCode } });
       const sleep = chatSleepInfo(reason, exitCode, takeKillRequest(params.agentId), runtime.idleSleptAfterMs);
       if (sleep) void recordSleep(params.projectPath, params.agentId, sleep);
+      recordBreadcrumb(exitCode === 0 ? 'event' : 'error', `chat.ended.${codePart(reason)}`, exitCode);
       broadcastAgentExit(params.agentId, exitCode);
     };
 
@@ -517,6 +520,7 @@ async function runChatStart(
       unregisterChatRuntime(params.agentId, runtime);
       const message = err instanceof Error ? err.message : String(err);
       appLog('core:chat', 'warn', 'Chat start failed', { meta: { agentId: params.agentId, driver: driver.id, error: message, sessionStarted } });
+      recordBreadcrumb('error', `chat.start_failed.${codePart(driver.id)}`);
       return { ok: false, error: message, sessionStarted };
     }
   }

@@ -16,7 +16,8 @@ vi.mock('./log-settings', () => ({
 
 import * as fsp from 'fs/promises';
 import * as logSettings from './log-settings';
-import { init, log, flush, appLog, getLogPath, getNamespaces, getRecentUiPerf, UI_PERF_BREADCRUMB_LIMIT } from './log-service';
+import { init, log, flush, appLog, getLogPath, getNamespaces } from './log-service';
+import { _resetBreadcrumbsForTests, recentBreadcrumbs } from './breadcrumbs';
 
 // The electron mock provides app.getPath('home') → path.join(os.tmpdir(), 'clubhouse-test-home')
 const EXPECTED_LOG_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'logs');
@@ -112,20 +113,28 @@ describe('log-service', () => {
     });
   });
 
-  describe('ui:perf breadcrumbs', () => {
-    it('keeps the latest ui:perf entries even with logging off, and nothing else', () => {
+  describe('feedback breadcrumbs', () => {
+    beforeEach(() => { _resetBreadcrumbsForTests(() => 1_000); });
+
+    it('turns ui:perf lines into performance breadcrumbs, even with logging off', () => {
       vi.mocked(logSettings.getSettings).mockReturnValue({ enabled: false, namespaces: {}, retention: 'medium', minLogLevel: 'error' });
-      for (let i = 0; i < UI_PERF_BREADCRUMB_LIMIT + 3; i++) {
-        log({ ts: `t${i}`, ns: 'ui:perf', level: 'warn', msg: `hang ${i}` });
-      }
-      log({ ts: 'x', ns: 'app:test', level: 'warn', msg: 'unrelated' });
-      const recent = getRecentUiPerf();
-      expect(recent).toHaveLength(UI_PERF_BREADCRUMB_LIMIT);
-      expect(recent[0].msg).toBe('hang 3');
-      expect(recent[recent.length - 1].msg).toBe(`hang ${UI_PERF_BREADCRUMB_LIMIT + 2}`);
-      // A copy: callers can't change the buffer.
-      recent.pop();
-      expect(getRecentUiPerf()).toHaveLength(UI_PERF_BREADCRUMB_LIMIT);
+      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Long frames: 640ms in agent', meta: { kind: 'long_frame', maxMs: 640, count: 2 } });
+      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Slow interaction: 320ms in agent', meta: { kind: 'slow_interaction', maxMs: 320 } });
+      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Window unresponsive', meta: { windowKind: 'main' } });
+      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Window responsive again', meta: { windowKind: 'main', durationMs: 2500 } });
+      expect(recentBreadcrumbs().map((b) => [b.kind, b.code, b.value])).toEqual(expect.arrayContaining([
+        ['performance', 'ui.long_frame', 640],
+        ['performance', 'ui.slow_interaction', 320],
+        ['performance', 'window.unresponsive', 2500],
+      ]));
+      expect(recentBreadcrumbs()).toHaveLength(3);
+    });
+
+    it('takes a meta.breadcrumb from app namespaces, never from plugins', () => {
+      log({ ts: 't', ns: 'ui:chat:switch', level: 'info', msg: 'Runtime switch requested', meta: { breadcrumb: { kind: 'event', code: 'runtime.switch.chat' } } });
+      log({ ts: 't', ns: 'plugin:evil', level: 'info', msg: 'x', meta: { breadcrumb: { kind: 'error', code: 'plugin.fake' } } });
+      log({ ts: 't', ns: 'ui:nav', level: 'debug', msg: 'x', meta: { breadcrumb: { kind: 'event', code: 'Has User Text!' } } });
+      expect(recentBreadcrumbs().map((b) => b.code)).toEqual(['runtime.switch.chat']);
     });
   });
 
