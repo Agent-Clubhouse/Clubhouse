@@ -5,10 +5,10 @@ import { removeAgentsFromState } from './agentUtils';
 import { clearPendingActivityTimer } from './activityTimers';
 
 /** A loaded durable agent's status: creating or failed while its creation is unfinished (#2226), else asleep. */
-function creationStatus(config: DurableAgentConfig): Pick<Agent, 'status' | 'errorMessage'> {
-  if (config.creation?.state === 'creating') return { status: 'creating' };
-  if (config.creation?.state === 'failed') return { status: 'error', errorMessage: config.creation.reason };
-  return { status: 'sleeping' };
+function creationStatus(config: DurableAgentConfig): Pick<Agent, 'status' | 'errorMessage' | 'creationFailed'> {
+  if (config.creation?.state === 'creating') return { status: 'creating', creationFailed: undefined };
+  if (config.creation?.state === 'failed') return { status: 'error', errorMessage: config.creation.reason, creationFailed: true };
+  return { status: 'sleeping', creationFailed: undefined };
 }
 
 export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCrudSlice {
@@ -93,6 +93,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
             freeAgentMode: config.freeAgentMode,
             mcpIds: config.mcpIds,
             lastSleep: config.lastSleep,
+            parentAgentId: config.parentAgentId,
           };
         } else {
           // Always update projectId — the same agents.json may be loaded
@@ -103,7 +104,11 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
           // Re-hydrate `model` too: agents.json is the source of truth for it,
           // and a store entry that lost the value (e.g. rebuilt on spawn) would
           // otherwise stay stale for the lifetime of the window.
-          agents[config.id] = { ...agents[config.id], projectId, model: config.model, lastSleep: agents[config.id].lastSleep ?? config.lastSleep };
+          // The parent link (#2224) is config-only, so it follows agents.json too.
+          agents[config.id] = {
+            ...agents[config.id], projectId, model: config.model, lastSleep: agents[config.id].lastSleep ?? config.lastSleep,
+            parentAgentId: config.parentAgentId,
+          };
           // An unfinished creation (#2226) is ground truth for status; a finished
           // one moves an agent still shown as creating or failed to asleep.
           const existing = agents[config.id];

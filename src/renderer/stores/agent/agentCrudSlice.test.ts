@@ -116,6 +116,24 @@ describe('agentCrudSlice – loadDurableAgents', () => {
 
     expect(state().agents['durable-1']?.model).toBeUndefined();
   });
+
+  it('carries the parent link and a failed creation onto the agent (#2231)', async () => {
+    (window as any).clubhouse.agent.listDurable = vi.fn().mockResolvedValue([
+      { ...CONFIG, parentAgentId: 'lead' },
+      { ...CONFIG, id: 'durable-2', parentAgentId: 'lead', creation: { state: 'failed', startedAt: '2026-10-18T00:00:00Z', reason: 'The branch already exists' } },
+      { ...CONFIG, id: 'durable-3', creation: { state: 'creating', startedAt: '2026-10-18T00:00:00Z' } },
+    ]);
+    const { state, slice } = createTestStore({
+      agents: { 'durable-1': { id: 'durable-1', projectId: PROJECT_ID, name: 'Durable Agent', kind: 'durable', status: 'sleeping', color: 'blue' } as any },
+    });
+
+    await slice.loadDurableAgents(PROJECT_ID, PROJECT_PATH);
+
+    expect(state().agents['durable-1']?.parentAgentId).toBe('lead');
+    expect(state().agents['durable-2']).toMatchObject({ parentAgentId: 'lead', status: 'error', creationFailed: true, errorMessage: 'The branch already exists' });
+    expect(state().agents['durable-3']).toMatchObject({ status: 'creating' });
+    expect(state().agents['durable-3']?.creationFailed).toBeFalsy();
+  });
 });
 
 describe('agentCrudSlice – backup recovery', () => {

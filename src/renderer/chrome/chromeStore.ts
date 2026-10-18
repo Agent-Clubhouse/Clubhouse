@@ -48,6 +48,8 @@ interface PersistedChromeState {
   inactiveProjectIds?: string[];
   /** Last activity per agent (wake, or a turn starting), for the Recent agent order. */
   agentActivity?: Record<string, number>;
+  /** Agents whose helpers the user folded away in the sidebar (#2231). Helpers start shown. */
+  collapsedAgentIds?: string[];
 }
 
 /** Options an app view takes for one visit. */
@@ -168,6 +170,9 @@ export interface ChromeState {
   agentSort: SidebarSort;
   inactiveProjectIds: string[];
   agentActivity: Record<string, number>;
+  collapsedAgentIds: string[];
+  /** Fold or unfold the helpers nested under an agent (#2231). */
+  toggleAgentCollapsed: (agentId: string) => void;
   setProjectSort: (sort: SidebarSort) => void;
   setAgentSort: (sort: SidebarSort) => void;
   /** Move a project to the idle section now, until it is marked active. Pinned projects can't be (unpin first). */
@@ -202,7 +207,7 @@ export interface ChromeState {
 
 type PersistedFields = Pick<ChromeState,
   'sidebarWidth' | 'sidebarCollapsed' | 'lastProjectId' | 'pinnedProjectIds' | 'collapsedProjectIds' | 'expandedFolds' | 'tabMru'
-  | 'projectActivity' | 'idleDays' | 'idleOpen' | 'projectSort' | 'agentSort' | 'inactiveProjectIds' | 'agentActivity'>;
+  | 'projectActivity' | 'idleDays' | 'idleOpen' | 'projectSort' | 'agentSort' | 'inactiveProjectIds' | 'agentActivity' | 'collapsedAgentIds'>;
 
 const DEFAULTS: PersistedFields = {
   sidebarWidth: SIDEBAR_DEFAULT,
@@ -219,6 +224,7 @@ const DEFAULTS: PersistedFields = {
   agentSort: 'manual',
   inactiveProjectIds: [],
   agentActivity: {},
+  collapsedAgentIds: [],
 };
 
 const sidebarSort = (value: unknown): SidebarSort => (value === 'recent' ? 'recent' : 'manual');
@@ -264,6 +270,7 @@ export function loadChromeState(): PersistedFields {
       agentSort: sidebarSort(parsed.agentSort),
       inactiveProjectIds: stringArray(parsed.inactiveProjectIds),
       agentActivity: numberRecord(parsed.agentActivity),
+      collapsedAgentIds: stringArray(parsed.collapsedAgentIds),
     };
   } catch {
     // telemetry-exempt: read at module load, before telemetry is connected; corrupt state falls back to defaults
@@ -298,6 +305,7 @@ function persistChromeState(state: PersistedFields): void {
     agentSort: state.agentSort,
     inactiveProjectIds: state.inactiveProjectIds,
     agentActivity: state.agentActivity,
+    collapsedAgentIds: state.collapsedAgentIds,
   };
   try {
     // Keyboard shortcut overrides share the key but are written by their own store; keep them.
@@ -491,6 +499,12 @@ export const useChromeStore = create<ChromeState>((set, get) => {
         projectIds.forEach((id) => current.add(id));
       }
       set({ collapsedProjectIds: [...current] });
+      schedulePersist();
+    },
+
+    toggleAgentCollapsed: (agentId) => {
+      const current = get().collapsedAgentIds;
+      set({ collapsedAgentIds: current.includes(agentId) ? current.filter((id) => id !== agentId) : [...current, agentId] });
       schedulePersist();
     },
 

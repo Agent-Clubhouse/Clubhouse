@@ -31,8 +31,8 @@ export function applyDurableCreationEvent(event: DurableCreationEvent): void {
       ...current,
       ...(config ? { worktreePath: config.worktreePath, branch: config.branch } : {}),
       ...(event.stage === 'ready'
-        ? { status: 'sleeping' as const, errorMessage: undefined }
-        : { status: 'error' as const, errorMessage: event.reason ?? config?.creation?.reason }),
+        ? { status: 'sleeping' as const, errorMessage: undefined, creationFailed: undefined }
+        : { status: 'error' as const, errorMessage: event.reason ?? config?.creation?.reason, creationFailed: true }),
     };
     return { agents: { ...s.agents, [event.agentId]: next } };
   });

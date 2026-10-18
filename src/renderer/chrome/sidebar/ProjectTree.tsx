@@ -194,6 +194,30 @@ export function ProjectTree(props: ProjectTreeProps) {
   const toggleProjectCollapsed = useChromeStore((s) => s.toggleProjectCollapsed);
   const toggleCollapseAll = useChromeStore((s) => s.toggleCollapseAll);
   const toggleFold = useChromeStore((s) => s.toggleFold);
+  const collapsedAgentIds = useChromeStore((s) => s.collapsedAgentIds);
+  const toggleAgentCollapsed = useChromeStore((s) => s.toggleAgentCollapsed);
+  const collapsedAgentSet = useMemo(() => new Set(collapsedAgentIds), [collapsedAgentIds]);
+  const onToggleAgentCollapsed = useCallback((agentId: string) => {
+    toggleAgentCollapsed(agentId);
+    reportChromeFeature('fold_toggle');
+  }, [toggleAgentCollapsed]);
+  // Selecting a helper from elsewhere (Needs you, the palette) unfolds the
+  // parents it is folded under, so the selection is never hidden. Runs only
+  // when the selection changes, so folding a selected helper's parent sticks.
+  const agentsRef = useRef(agentsByProject);
+  agentsRef.current = agentsByProject;
+  useEffect(() => {
+    if (!activeAgentId || !activeProjectId) return;
+    const byId = new Map((agentsRef.current[activeProjectId] ?? []).filter((a) => a.kind === 'durable').map((a) => [a.id, a]));
+    const collapsed = new Set(useChromeStore.getState().collapsedAgentIds);
+    const seen = new Set<string>();
+    let parent = byId.get(activeAgentId)?.parentAgentId;
+    while (parent && byId.has(parent) && !seen.has(parent)) {
+      seen.add(parent);
+      if (collapsed.has(parent)) toggleAgentCollapsed(parent);
+      parent = byId.get(parent)!.parentAgentId;
+    }
+  }, [activeAgentId, activeProjectId, toggleAgentCollapsed]);
 
   const runningIds = useMemo(() => new Set(
     Object.entries(agentsByProject).filter(([, list]) => list.some((a) => a.status === 'running')).map(([id]) => id),
@@ -342,6 +366,8 @@ export function ProjectTree(props: ProjectTreeProps) {
       canMoveDown={neighbour(project.id, 1) !== null}
       onOpenSettings={props.onOpenSettings}
       onReorderAgents={onReorderAgents}
+      collapsedAgentIds={collapsedAgentSet}
+      onToggleAgentCollapsed={onToggleAgentCollapsed}
     />
   );
 

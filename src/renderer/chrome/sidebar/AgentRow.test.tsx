@@ -272,3 +272,43 @@ describe('AgentRow hover card for a chat agent (#2197)', () => {
     expect(screen.getByTestId('hover-stop')).toHaveTextContent('Stop');
   });
 });
+
+describe('AgentRow helpers and creation (#2231)', () => {
+  it('says why a helper couldn\'t start in the hover card', () => {
+    vi.useFakeTimers();
+    const { row } = setup(durable({ status: 'error', creationFailed: true, errorMessage: 'The branch already exists' }), { dot: 'error' });
+    expect(screen.getByTestId('agent-row-note')).toHaveTextContent("couldn't start");
+    fireEvent.mouseEnter(row);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    const card = screen.getByTestId('agent-hover-card');
+    expect(card).toHaveTextContent("Couldn't start");
+    expect(card).toHaveTextContent('The branch already exists');
+  });
+
+  it('shows Starting while a helper is created, with the starting status dot', () => {
+    vi.useFakeTimers();
+    const { row } = setup(durable({ status: 'creating' }), { dot: 'starting' });
+    expect(screen.getByTestId('agent-row-note')).toHaveTextContent('starting');
+    expect(screen.getByRole('img', { name: 'Starting' })).toHaveAttribute('data-dot', 'starting');
+    fireEvent.mouseEnter(row);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    expect(screen.getByTestId('agent-hover-card')).toHaveTextContent('Starting');
+  });
+
+  it('keeps an ordinary error as error', () => {
+    setup(durable({ status: 'error', errorMessage: 'Exited with code 1' }), { dot: 'error' });
+    expect(screen.getByTestId('agent-row-note')).toHaveTextContent('error');
+  });
+
+  it('gives a parent a caret that toggles its helpers, and a roll-up in place of the time when folded', () => {
+    const onToggleHelpers = vi.fn();
+    const { onSelect, focusable } = setup(durable(), { helperCount: 2, helpersExpanded: false, helperWorking: 1, onToggleHelpers });
+    expect(focusable).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('helper-rollup')).toHaveTextContent('2 helpers');
+    expect(screen.getByTestId('helper-rollup')).toHaveTextContent('1 working');
+    expect(screen.queryByRole('time')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show helpers of snazzy-fox' }));
+    expect(onToggleHelpers).toHaveBeenCalledWith('a1');
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});

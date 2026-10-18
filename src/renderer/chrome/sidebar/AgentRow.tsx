@@ -54,6 +54,42 @@ interface AgentRowProps {
   drag?: AgentDragHandlers;
   /** Shows the drop line above or below the row while a drag is over it. */
   dropEdge?: 'top' | 'bottom';
+  /** Helpers nested under this agent, at any depth (#2231); the row gets a caret when there are any. */
+  helperCount?: number;
+  /** Whether the helpers are shown under the row. */
+  helpersExpanded?: boolean;
+  /** Helpers that need you or stopped with an error, for the folded roll-up. */
+  helperNeeds?: number;
+  /** Helpers working, for the folded roll-up. */
+  helperWorking?: number;
+  onToggleHelpers?: (agentId: string) => void;
+}
+
+const Caret = ({ open }: { open: boolean }) => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    style={{ transform: open ? 'rotate(90deg)' : undefined, transition: 'transform 120ms' }}>
+    <path d="M9 6l6 6-6 6" />
+  </svg>
+);
+
+/** How far left of the status dot the caret starts; it lines up with the project chevron. */
+export const CARET_OFFSET = 18;
+
+/**
+ * What a row with folded helpers shows in place of its time (#2231): the
+ * helper count, with a small dot when any of them needs you (or errored) or
+ * is working. The words for the dot are for screen readers.
+ */
+function HelperRollup({ count, needs, working }: { count: number; needs: number; working: number }) {
+  const tone = needs > 0 ? 'bg-ctp-warning' : working > 0 ? 'bg-ctp-success' : null;
+  return (
+    <span data-testid="helper-rollup" className="flex items-center gap-1 text-ctp-overlay1 whitespace-nowrap">
+      {tone && <span data-testid="helper-rollup-dot" className={`w-1.5 h-1.5 rounded-full ${tone}`} aria-hidden="true" />}
+      {count} helper{count === 1 ? '' : 's'}
+      {needs > 0 && <span className="sr-only">, {needs} {needs === 1 ? 'needs' : 'need'} you</span>}
+      {working > 0 && <span className="sr-only">, {working} working</span>}
+    </span>
+  );
 }
 
 /** Drag handlers for a reorderable agent row, keyed by agent id so one set serves every row. */
@@ -91,12 +127,24 @@ function ActivityTime({ at, label }: { at: number; label: string }) {
   return <time dateTime={new Date(at).toISOString()} aria-label={`${label}: ${ago}`} className="text-ctp-overlay1 tabular-nums whitespace-nowrap">{ago}</time>;
 }
 
-export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions, highlight, drag, dropEdge }: AgentRowProps) {
-  const note = dot === 'needs' ? 'needs you' : dot === 'error' ? 'error' : agent.kind === 'quick' ? 'quick' : '';
+export const AgentRow = React.memo(function AgentRow({
+  agent, dot, detailed, active, indent, projectPath, onSelect, onOpenTerminal, level = 2, parentKey, extraActions, highlight, drag, dropEdge,
+  helperCount = 0, helpersExpanded = true, helperNeeds = 0, helperWorking = 0, onToggleHelpers,
+}: AgentRowProps) {
+  // A durable agent being created (#2226) can take up to a minute while its worktree is made.
+  const couldntStart = !!agent.creationFailed && agent.status === 'error';
+  const note = couldntStart ? "couldn't start"
+    : dot === 'needs' ? 'needs you'
+      : dot === 'error' ? 'error'
+        : agent.status === 'creating' ? 'starting'
+          : agent.kind === 'quick' ? 'quick' : '';
+  const hasHelpers = helperCount > 0;
+  const folded = hasHelpers && !helpersExpanded;
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const sleeping = agent.status === 'sleeping';
   const activityAt = sleeping ? Date.parse(agent.lastSleep?.at ?? '') : detailed?.timestamp ?? spawnedAt;
-  const hasActivityTime = activityAt !== undefined && Number.isFinite(activityAt);
+  // A folded parent shows its helpers' roll-up in place of its own time.
+  const hasActivityTime = !folded && activityAt !== undefined && Number.isFinite(activityAt);
   const timeLabel = sleeping ? 'Sleeping since' : detailed ? 'Last activity' : 'Started';
   const rowRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -193,6 +241,7 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
           role="treeitem"
           aria-level={level}
           aria-selected={active}
+          aria-expanded={hasHelpers ? helpersExpanded : undefined}
           aria-label={agent.name}
           data-tree-key={`agent:${agent.id}`}
           aria-keyshortcuts={canMove ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
@@ -214,8 +263,22 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
           onFocus={scheduleOpen}
           onBlur={onBlurOut}
           style={{ paddingLeft: indent }}
-          className="min-w-0 flex-1 h-full pr-1 rounded-md flex items-center gap-2 text-[13px] text-left focus-ring"
+          className="relative min-w-0 flex-1 h-full pr-1 rounded-md flex items-center gap-2 text-[13px] text-left focus-ring"
         >
+          {hasHelpers && (
+            <button
+              type="button"
+              tabIndex={-1}
+              data-tree-toggle
+              data-testid={`helpers-toggle-${agent.id}`}
+              aria-label={helpersExpanded ? `Hide helpers of ${agent.name}` : `Show helpers of ${agent.name}`}
+              onClick={(e) => { e.stopPropagation(); onToggleHelpers?.(agent.id); }}
+              style={{ left: indent - CARET_OFFSET }}
+              className="absolute top-0 h-full w-4 flex items-center justify-center text-ctp-overlay1 hover:text-ctp-text cursor-pointer"
+            >
+              <Caret open={helpersExpanded} />
+            </button>
+          )}
           <StatusDot dot={dot} />
           <span className="relative flex-shrink-0">
             <AgentAvatar agent={agent} size="2xs" />
@@ -229,9 +292,10 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
           </span>
           <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}><MarkedText text={agent.name} query={highlight} /></span>
           <OrchestratorGlyph orchestrator={agent.orchestrator || 'claude-code'} focusable={false} showTooltip={false} variant="row" />
-          {(note || hasActivityTime) && (
+          {(note || hasActivityTime || folded) && (
             <span className="ml-auto flex-shrink-0 flex items-center gap-2 text-xs group-hover/row:hidden">
-              {note && <span className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}
+              {note && <span data-testid="agent-row-note" className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}
+              {folded && <HelperRollup count={helperCount} needs={helperNeeds} working={helperWorking} />}
               {hasActivityTime && <ActivityTime at={activityAt} label={timeLabel} />}
             </span>
           )}
