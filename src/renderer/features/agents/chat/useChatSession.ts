@@ -102,7 +102,12 @@ export function useChatTranscript(agentId: string, tail?: number): void {
 export function useEarlierHistory(agentId: string): { partial: boolean; loadAll: () => void } {
   const partial = useChatStore((s) => !!s.partial[agentId]);
   const loadTranscript = useChatStore((s) => s.loadTranscript);
-  return { partial, loadAll: useCallback(() => { void loadTranscript(agentId); }, [agentId, loadTranscript]) };
+  const loadAll = useCallback(() => {
+    // A load already running owns the live events held for it; a second one would replace them.
+    if (useChatStore.getState().loading[agentId]) return;
+    void loadTranscript(agentId);
+  }, [agentId, loadTranscript]);
+  return { partial, loadAll };
 }
 
 function reportFailure(what: string, err: unknown): void {
