@@ -230,6 +230,24 @@ describe('fake-cli', () => {
     expect(r).toMatchObject({ complete: true, mismatch: null, unexpected: [] });
   });
 
+  it('answers the Claude driver\'s get_settings and get_usage reads with empty results', async () => {
+    const fixture = await writeFixture('claude-init.jsonl', [
+      header('claude-stream-json'),
+      { from: 'client', msg: { type: 'control_request', request_id: 'req_1', request: { subtype: 'initialize' } } },
+      { from: 'cli', msg: { type: 'control_response', response: { subtype: 'success', request_id: 'req_1', response: {} } } },
+    ]);
+    const report = path.join(tmp, 'report.json');
+    const out = await run([FAKE_CLI, '--fake-fixture', fixture, '--fake-report', report], [
+      { type: 'control_request', request_id: 'req_1', request: { subtype: 'initialize' } },
+      { type: 'control_request', request_id: 'req_2', request: { subtype: 'get_settings' } },
+      { type: 'control_request', request_id: 'req_3', request: { subtype: 'get_usage', skip_behaviors: true } },
+    ]);
+    expect(out.code).toBe(0);
+    expect(parseLines(out.stdout)).toContainEqual({ type: 'control_response', response: { subtype: 'success', request_id: 'req_3', response: {} } });
+    const r = JSON.parse(await fs.promises.readFile(report, 'utf8'));
+    expect(r).toMatchObject({ complete: true, mismatch: null, unexpected: [] });
+  });
+
   it('matches a standing query like any other message when the fixture records it', async () => {
     const fixture = await writeFixture('listed.jsonl', [
       header('codex-app-server'),
