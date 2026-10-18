@@ -4,16 +4,17 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import type { ChatEvent } from '../../../shared/chat';
-import { CHAT_CONTRACT_VERSION } from '../../../shared/chat';
+import { MINIMAL_CHAT_CAPABILITIES, CHAT_CONTRACT_VERSION } from '../../../shared/chat';
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-transcript-'));
+vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('electron', () => ({ app: { getPath: () => tmpRoot } }));
 vi.mock('fs/promises', async (importActual) => {
   const actual = await importActual<typeof import('fs/promises')>();
   return { ...actual, rename: vi.fn(actual.rename), readFile: vi.fn(actual.readFile) };
 });
 
-import { appendChatEvent, readChatTranscript, lastSeqFor, transcriptPath, listChatSessions, resetTranscriptCache, flushTranscript, transcriptExists } from './chat-transcript';
+import { appendChatEvent, readChatTranscript, lastSeqFor, transcriptPath, listChatSessions, resetTranscriptCache, flushTranscript, transcriptExists, cleanupTranscriptStaging } from './chat-transcript';
 
 function ev(seq: number, sessionId = 's1', agentId = 'agent-1'): ChatEvent {
   return { v: CHAT_CONTRACT_VERSION, agentId, sessionId, seq, ts: seq, type: 'session_state', data: { state: 'idle' } };
@@ -99,8 +100,9 @@ describe('session storage and migration', () => {
     expect(await readChatTranscript('agent-1', { sessionId: 'old' })).toEqual([original[0], original[2]]);
     expect(fs.readFileSync(legacy, 'utf8')).toBe(content);
     resetTranscriptCache();
-    await appendChatEvent(ev(3, 'old'));
-    expect(await readChatTranscript('agent-1')).toEqual([original[0], original[2], ev(3, 'old')]);
+    const resumed = start(3, 'old', 5);
+    await appendChatEvent(resumed);
+    expect(await readChatTranscript('agent-1')).toEqual([original[0], original[2], resumed]);
     expect(await lastSeqFor('agent-1', 'old')).toBe(3);
     expect(fs.readFileSync(legacy, 'utf8')).toBe(content);
   });
@@ -183,5 +185,95 @@ describe('session storage and migration', () => {
       expect(path.relative(path.join(tmpRoot, 'agent-logs', 'chat'), file).split(path.sep)).toHaveLength(2);
       expect(file).toMatch(/\.jsonl$/);
     }
+  });
+});
+
+function start(seq: number, sessionId: string, ts: number): ChatEvent {
+  return { ...ev(seq, sessionId), ts, type: 'session_started', data: {
+    driver: 'claude_agent_sdk', provider: 'claude-code', cwd: '/project', resumed: seq > 1, capabilities: MINIMAL_CHAT_CAPABILITIES,
+  } };
+}
+
+describe('migration and append failure recovery', () => {
+  it('persists appends when the staging FOLDER rename fails, then retries the complete migration', async () => {
+    const legacy = transcriptPath('agent-1');
+    fs.mkdirSync(path.dirname(legacy), { recursive: true });
+    fs.writeFileSync(legacy, JSON.stringify(ev(1)) + '\n');
+    const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+    const rename = vi.mocked(fsp.rename).mockImplementation(async (from, to) => {
+      if (String(from).includes('.migrating-') && !String(from).endsWith('index.json.tmp')) {
+        throw Object.assign(new Error('folder locked'), { code: 'EPERM' });
+      }
+      return actual.rename(from, to);
+    });
+    await expect(appendChatEvent(ev(2))).resolves.toBeUndefined();
+    await expect(appendChatEvent(ev(3))).resolves.toBeUndefined();
+    expect(fs.readFileSync(legacy, 'utf8').trim().split('\n').map((line) => JSON.parse(line).seq)).toEqual([1, 2, 3]);
+    rename.mockReset();
+    expect(await readChatTranscript('agent-1')).toEqual([ev(1), ev(2), ev(3)]);
+    expect(await lastSeqFor('agent-1', 's1')).toBe(3);
+  });
+
+  it.each(['read', 'verify'])('persists appends when migration fails during %s', async (failure) => {
+    const legacy = transcriptPath('agent-1');
+    fs.mkdirSync(path.dirname(legacy), { recursive: true });
+    fs.writeFileSync(legacy, JSON.stringify(ev(1)) + '\n');
+    const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+    vi.mocked(fsp.readFile).mockImplementation(async (...args) => {
+      if (failure === 'read' && String(args[0]) === legacy) throw new Error('read denied');
+      if (failure === 'verify' && String(args[0]).includes('.migrating-')) return 'incomplete';
+      return actual.readFile(...args);
+    });
+    await expect(appendChatEvent(ev(2))).resolves.toBeUndefined();
+    vi.mocked(fsp.readFile).mockReset();
+    expect(await readChatTranscript('agent-1')).toEqual([ev(1), ev(2)]);
+  });
+
+  it('does not fail a durable append when replacing its index fails', async () => {
+    await appendChatEvent(ev(1));
+    vi.mocked(fsp.rename).mockRejectedValueOnce(new Error('index locked'));
+    await expect(appendChatEvent(ev(2))).resolves.toBeUndefined();
+    expect(fs.readFileSync(transcriptPath('agent-1', 's1'), 'utf8')).toContain(JSON.stringify(ev(2)));
+    resetTranscriptCache();
+    expect(await lastSeqFor('agent-1', 's1')).toBe(2);
+    expect(await readChatTranscript('agent-1')).toEqual([ev(1), ev(2)]);
+  });
+
+  it('cleans crash-left staging folders at startup and migrates again from the untouched original', async () => {
+    const legacy = transcriptPath('agent-1');
+    const staging = path.join(path.dirname(legacy), 'agent-1.migrating-12345678-1234-1234-1234-123456789abc');
+    fs.mkdirSync(staging, { recursive: true });
+    fs.writeFileSync(path.join(staging, 's1.jsonl'), 'incomplete split');
+    fs.writeFileSync(legacy, JSON.stringify(ev(1)) + '\n');
+    await cleanupTranscriptStaging();
+    expect(fs.existsSync(staging)).toBe(false);
+    expect(fs.existsSync(legacy)).toBe(true);
+    expect(await readChatTranscript('agent-1')).toEqual([ev(1)]);
+  });
+
+  it('migrates realistic sessions with late ids and endings without selecting a retired session', async () => {
+    const oldStart = start(1, 'old', 100);
+    const newStart = start(1, 'new', 200);
+    const lateId: ChatEvent = { ...ev(2, 'old'), ts: 210, type: 'session_info', data: { nativeSessionId: 'native-old' } };
+    const newId: ChatEvent = { ...ev(2, 'new'), ts: 220, type: 'session_info', data: { nativeSessionId: 'native-new' } };
+    const newMessage: ChatEvent = { ...ev(3, 'new'), ts: 230, type: 'user_message', data: { messageId: 'm1', content: [{ type: 'text', text: 'New task' }], source: 'user', delivery: 'prompt' } };
+    const lateEnd: ChatEvent = { ...ev(3, 'old'), ts: 300, type: 'session_ended', data: { reason: 'stopped' } };
+    const events = [oldStart, newStart, lateId, newId, newMessage, lateEnd];
+    const legacy = transcriptPath('agent-1');
+    fs.mkdirSync(path.dirname(legacy), { recursive: true });
+    const content = events.map((event) => JSON.stringify(event) + '\n').join('');
+    fs.writeFileSync(legacy, content);
+    expect(await readChatTranscript('agent-1')).toEqual([newStart, newId, newMessage]);
+    expect(await readChatTranscript('agent-1', { sessionId: 'old' })).toEqual([oldStart, lateId, lateEnd]);
+    expect(await listChatSessions('agent-1')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sessionId: 'old', nativeSessionId: 'native-old', endedAt: 300 }),
+      expect.objectContaining({ sessionId: 'new', nativeSessionId: 'native-new', title: 'New task' }),
+    ]));
+    expect(fs.readFileSync(legacy, 'utf8')).toBe(content);
+    resetTranscriptCache();
+    expect((await readChatTranscript('agent-1'))[0]).toEqual(newStart);
+    const resumed = start(4, 'old', 400);
+    await appendChatEvent(resumed);
+    expect(await readChatTranscript('agent-1')).toEqual([oldStart, lateId, lateEnd, resumed]);
   });
 });

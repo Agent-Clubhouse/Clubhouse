@@ -395,6 +395,25 @@ describe('reduceChatEvent', () => {
     expect(s.items.filter((i) => i.kind === 'session_divider')).toHaveLength(0);
   });
 
+  it('ignores late events from an older session but allows a later explicit resume', () => {
+    const oldStart = { ...sessionStarted(ev, 'old'), ts: 100 };
+    const newStart = { ...sessionStarted(ev, 'new'), ts: 200 };
+    const reply = { ...ev('agent_message', { messageId: 'new-reply', text: 'Live conversation' }, { sessionId: 'new' }), ts: 210 };
+    const state = fold([oldStart, newStart, reply]);
+    const lateEnd = { ...ev('session_ended', { reason: 'stopped' }, { sessionId: 'old' }), ts: 300 };
+    const lateReply = { ...ev('agent_message', { messageId: 'late', text: 'Obsolete reply' }, { sessionId: 'old' }), ts: 310 };
+    expect(fold([lateEnd, lateReply], state)).toBe(state);
+    expect(fold([{ ...sessionStarted(ev, 'unseen-old'), ts: 50 }], state)).toBe(state);
+    const resumed = fold([{ ...sessionStarted(ev, 'old', { resumed: true }), ts: 400 }], state);
+    expect(resumed.sessionId).toBe('old');
+    expect(resumed.items).toEqual([]);
+  });
+
+  it('ignores an unknown old session ending after a current-only transcript load', () => {
+    const state = fold([{ ...sessionStarted(ev, 'current'), ts: 200 }]);
+    expect(fold([{ ...ev('session_ended', { reason: 'stopped' }, { sessionId: 'old' }), ts: 300 }], state)).toBe(state);
+  });
+
   it('does not add a divider when session_started repeats the same session id (resume)', () => {
     const s = fold([
       sessionStarted(ev, 's1'),

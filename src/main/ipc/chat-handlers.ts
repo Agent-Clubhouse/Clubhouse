@@ -85,11 +85,10 @@ export function registerChatHandlers(): void {
       const runtime = requireChatRuntime(agentId);
       // The agent would start editing files the revert is restoring.
       if (await isRevertRunning(agentId)) throw new Error('Wait for the revert to finish before sending');
-      // Bare context commands belong to Clubhouse so the transcript and CLI
-      // agree about session boundaries. Arguments and attachments remain messages.
-      if (!attachmentIds?.length && (text.trim() === '/clear' || text.trim() === '/compact')) {
-        if (text.trim() === '/clear') await runtime.clearContext();
-        else await runtime.compact();
+      // Clearing intentionally stops the current turn and discards its queue.
+      // /compact stays in sendMessage for driver guards, queue/steer and logging.
+      if (!attachmentIds?.length && text.trim() === '/clear') {
+        await runtime.clearContext();
         return { delivery: 'prompt' as const };
       }
       // Only ids staged through STAGE_ATTACHMENT: the renderer can't name a path here.

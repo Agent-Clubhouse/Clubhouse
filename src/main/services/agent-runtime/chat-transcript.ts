@@ -4,6 +4,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { app } from 'electron';
+import { appLog } from '../log-service';
 import { isChatEvent, type ChatEvent, type ChatSessionSummary } from '../../../shared/chat';
 
 function transcriptDir(): string {
@@ -21,10 +22,37 @@ export function transcriptPath(agentId: string, sessionId?: string): string {
     ? path.join(transcriptDir(), `${agentId.replace(/[^A-Za-z0-9._-]/g, '_')}.jsonl`)
     : path.join(sessionDir(agentId), `${segment(sessionId)}.jsonl`);
 }
-interface SessionEntry extends ChatSessionSummary { bytes: number }
+interface SessionEntry extends ChatSessionSummary { bytes: number; lastStartedAt?: number }
 interface SessionIndex { version: 1; currentSessionId: string | null; sessions: SessionEntry[] }
 const chains = new Map<string, Promise<unknown>>();
 const indexes = new Map<string, SessionIndex>();
+let stagingCleanup: Promise<void> | undefined;
+
+/** Run once at startup, before any migration can create a new staging folder. */
+export function cleanupTranscriptStaging(): Promise<void> {
+  return stagingCleanup ??= (async () => {
+    try {
+      const entries = await fsp.readdir(transcriptDir(), { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && /\.migrating-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.name)) {
+          await fsp.rm(path.join(transcriptDir(), entry.name), { recursive: true, force: true });
+        }
+      }
+    } catch (error) {
+      // telemetry-exempt: best-effort startup cleanup; failures are logged locally.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        appLog('core:chat', 'warn', 'Could not clean up chat migration staging folders', { meta: { error: String(error) } });
+      }
+    }
+  })();
+}
+
+function selectCurrent(index: SessionIndex): void {
+  // An old session can finish after its replacement starts. Only a start (or
+  // the first known event when no start marker exists) establishes recency.
+  index.currentSessionId = [...index.sessions].reverse().sort((a, b) =>
+    (b.lastStartedAt ?? b.startedAt) - (a.lastStartedAt ?? a.startedAt))[0]?.sessionId ?? null;
+}
 
 /** Reads, migration and appends share the lock, including writes to the index. */
 function serialized<T>(agentId: string, work: () => Promise<T>): Promise<T> {
@@ -66,9 +94,9 @@ function record(index: SessionIndex, event: ChatEvent): SessionEntry {
     index.sessions.push(entry);
   }
   entry.lastSeq = Math.max(entry.lastSeq, event.seq);
-  entry.lastActiveAt = event.ts;
-  index.currentSessionId = event.sessionId;
+  entry.lastActiveAt = Math.max(entry.lastActiveAt, event.ts);
   if (event.type === 'session_started') {
+    entry.lastStartedAt = Math.max(entry.lastStartedAt ?? 0, event.ts);
     entry.driver = event.data.driver;
     entry.provider = event.data.provider;
     delete entry.endedAt;
@@ -80,10 +108,12 @@ function record(index: SessionIndex, event: ChatEvent): SessionEntry {
   if (event.type === 'user_message' && !entry.title) {
     entry.title = event.data.content.filter((b) => b.type === 'text').map((b) => b.text).join(' ').slice(0, 120);
   }
+  selectCurrent(index);
   return entry;
 }
 
 async function loadIndex(agentId: string): Promise<SessionIndex> {
+  await cleanupTranscriptStaging();
   const dir = sessionDir(agentId);
   const indexFile = path.join(dir, 'index.json');
   const cached = indexes.get(dir);
@@ -131,22 +161,17 @@ async function loadIndex(agentId: string): Promise<SessionIndex> {
   await fsp.mkdir(dir, { recursive: true });
   // Repair an interrupted append/index update once per process. Unchanged
   // transcripts aren't parsed; normal reads and resume use only the index.
-  let repaired = false;
   for (const name of await fsp.readdir(dir)) {
     if (!name.endsWith('.jsonl')) continue;
     const file = path.join(dir, name);
     const size = (await fsp.stat(file)).size;
     const entry = index.sessions.find((s) => `${segment(s.sessionId)}.jsonl` === name);
     if (entry?.bytes === size) continue;
-    repaired = true;
     const events = parseEvents(await readText(file));
     for (const event of events) record(index, event);
     if (events.length) index.sessions.find((s) => s.sessionId === events[0].sessionId)!.bytes = size;
   }
-  // Recovery may visit files in arbitrary directory order.
-  if (repaired) {
-    index.currentSessionId = [...index.sessions].sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0]?.sessionId ?? null;
-  }
+  selectCurrent(index);
   await saveIndex(dir, index);
   indexes.set(dir, index);
   return index;
@@ -154,8 +179,19 @@ async function loadIndex(agentId: string): Promise<SessionIndex> {
 
 export function appendChatEvent(event: ChatEvent): Promise<void> {
   return serialized(event.agentId, async () => {
-    const index = await loadIndex(event.agentId);
-    const file = transcriptPath(event.agentId, event.sessionId);
+    let index: SessionIndex | undefined;
+    try { index = await loadIndex(event.agentId); }
+    catch (error) {
+      // telemetry-exempt: persistence recovers below; the retry reason is logged locally.
+      indexes.delete(sessionDir(event.agentId));
+      appLog('core:chat', 'warn', 'Chat migration/index unavailable; persisting event before retry', { meta: { agentId: event.agentId, error: String(error) } });
+    }
+    // Until the split is published, the legacy log remains authoritative.
+    // Append there on migration failure so a later attempt includes new events.
+    // Once published, each session file is authoritative even without an index.
+    const file = fs.existsSync(sessionDir(event.agentId))
+      ? transcriptPath(event.agentId, event.sessionId) : transcriptPath(event.agentId);
+    await fsp.mkdir(path.dirname(file), { recursive: true });
     let prefix = '';
     try {
       const handle = await fsp.open(file, 'r');
@@ -167,15 +203,28 @@ export function appendChatEvent(event: ChatEvent): Promise<void> {
           if (last[0] !== 10) prefix = '\n';
         }
       } finally { await handle.close(); }
-    } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
+    } catch (error) {
+      // telemetry-exempt: writing can still succeed when reading is denied.
+      // Separate a possibly torn line without requiring access to read it.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') prefix = '\n';
+    }
     await fsp.appendFile(file, prefix + JSON.stringify(event) + '\n', 'utf-8');
-    record(index, event).bytes = (await fsp.stat(file)).size;
-    await saveIndex(sessionDir(event.agentId), index);
+    if (!index) return;
+    try {
+      record(index, event).bytes = (await fsp.stat(file)).size;
+      await saveIndex(sessionDir(event.agentId), index);
+    } catch (error) {
+      // telemetry-exempt: metadata is rebuilt on retry; the saved event is unaffected.
+      // The event is already durable. Rebuild metadata on the next access;
+      // reporting failure here could cause a caller to retry the same event.
+      indexes.delete(sessionDir(event.agentId));
+      appLog('core:chat', 'warn', 'Chat event saved; index update will be retried', { meta: { agentId: event.agentId, error: String(error) } });
+    }
   });
 }
 
 export interface ReadTranscriptOptions {
-  /** Omitted means the current (most recently written) session. */
+  /** Omitted means the most recently started or resumed session. */
   sessionId?: string;
   afterSeq?: number;
   tail?: number;
@@ -228,7 +277,7 @@ export function readChatTranscript(agentId: string, opts: ReadTranscriptOptions 
 }
 export function listChatSessions(agentId: string): Promise<ChatSessionSummary[]> {
   return serialized(agentId, async () => (await loadIndex(agentId)).sessions
-    .map(({ bytes: _bytes, ...entry }) => entry).sort((a, b) => b.lastActiveAt - a.lastActiveAt));
+    .map(({ bytes: _bytes, lastStartedAt: _lastStartedAt, ...entry }) => entry).sort((a, b) => b.lastActiveAt - a.lastActiveAt));
 }
 export async function lastSeqFor(agentId: string, sessionId: string): Promise<number> {
   return serialized(agentId, async () => (await loadIndex(agentId)).sessions.find((s) => s.sessionId === sessionId)?.lastSeq ?? 0);
@@ -238,4 +287,4 @@ export function transcriptExists(agentId: string): boolean {
     && fs.readdirSync(sessionDir(agentId)).some((name) => name.endsWith('.jsonl')));
 }
 /** Simulate a process restart in storage tests. */
-export function resetTranscriptCache(): void { indexes.clear(); }
+export function resetTranscriptCache(): void { indexes.clear(); stagingCleanup = undefined; }

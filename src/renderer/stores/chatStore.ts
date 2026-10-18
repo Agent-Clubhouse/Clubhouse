@@ -204,6 +204,7 @@ export interface ChatViewState {
   agentId: string;
   /** Current Clubhouse chat session id (null before any event). */
   sessionId: string | null;
+  sessionStartedAt: number | null;
   state: ChatSessionState | null;
   capabilities: ChatCapabilities | null;
   driver: ChatDriverId | null;
@@ -260,6 +261,7 @@ export function createChatViewState(agentId: string): ChatViewState {
   return {
     agentId,
     sessionId: null,
+    sessionStartedAt: null,
     state: null,
     capabilities: null,
     driver: null,
@@ -353,6 +355,7 @@ function startSession(state: ChatViewState, event: ChatEvent): ChatViewState {
   return {
     ...createChatViewState(event.agentId),
     sessionId: event.sessionId,
+    sessionStartedAt: event.ts,
     lastSeq: state.lastSeq,
     usage: { ...createChatViewState(event.agentId).usage, limits: state.usage.limits },
   };
@@ -459,6 +462,13 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
   const last = base.lastSeq[event.sessionId];
   if (last !== undefined && event.seq <= last) return base;
 
+  if (base.sessionId !== null && base.sessionId !== event.sessionId) {
+    // A late end/message from a retired session must not replace the live view.
+    // A fresh start can reactivate a previously seen session when resuming it.
+    const startsSession = event.type === 'session_started' || (last === undefined && event.seq === 1 && event.type !== 'session_ended');
+    if (!startsSession || event.ts < (base.sessionStartedAt ?? 0)) return base;
+  }
+
   let state: ChatViewState = { ...base, lastSeq: { ...base.lastSeq, [event.sessionId]: event.seq } };
 
   // A different session id means a new conversation (clearContext, or a
@@ -474,6 +484,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const d = event.data;
       return {
         ...state,
+        sessionStartedAt: Math.max(state.sessionStartedAt ?? 0, event.ts),
         driver: d.driver,
         provider: d.provider,
         capabilities: d.capabilities,

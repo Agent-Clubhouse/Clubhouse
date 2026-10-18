@@ -144,12 +144,18 @@ describe('chat handlers: set model (#2136)', () => {
 
 
 describe('chat session commands', () => {
-  it.each(['/clear', ' /clear \n', '/compact'])('routes bare %s to the runtime', async (command) => {
+  it('preserves the driver compact busy guard through sendMessage', async () => {
+    runtime.sendMessage.mockRejectedValueOnce(new Error('Finish or stop the current turn before running /compact'));
+    await expect(call(IPC.CHAT.SEND_MESSAGE, 'agent-1', '/compact', 'auto')).rejects.toThrow('before running /compact');
+    expect(runtime.sendMessage).toHaveBeenCalledWith([{ type: 'text', text: '/compact' }], { source: 'user', delivery: 'auto' });
+    expect(runtime.compact).not.toHaveBeenCalled();
+  });
+  it.each(['/clear', ' /clear \n'])('routes bare %s to the runtime', async (command) => {
     await expect(call(IPC.CHAT.SEND_MESSAGE, 'agent-1', command, 'auto')).resolves.toEqual({ delivery: 'prompt' });
-    expect(command.trim() === '/clear' ? runtime.clearContext : runtime.compact).toHaveBeenCalledOnce();
+    expect(runtime.clearContext).toHaveBeenCalledOnce();
     expect(runtime.sendMessage).not.toHaveBeenCalled();
   });
-  it.each(['/clear please', 'explain /clear', '/compact focus on tests'])('keeps %s as a message', async (text) => {
+  it.each(['/compact', ' /compact \n', '/clear please', 'explain /clear', '/compact focus on tests'])('keeps %s as a message', async (text) => {
     await call(IPC.CHAT.SEND_MESSAGE, 'agent-1', text, 'auto');
     expect(runtime.sendMessage).toHaveBeenCalled();
     expect(runtime.clearContext).not.toHaveBeenCalled();

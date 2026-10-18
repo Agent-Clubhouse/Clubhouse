@@ -131,6 +131,26 @@ describe('ChatAgentRuntime', () => {
     expect(driver.last.sent).toEqual([{ content: [{ type: 'text', text: 'next: open a PR' }], delivery: 'prompt' }]);
   });
 
+  it.each([true, false])('sends /compact through mid-turn delivery and records it (steer=%s)', async (steer) => {
+    const driver = new FakeChatDriver('copilot_acp', 'copilot-cli', { ...STEERLESS, steer });
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    await flush();
+    const result = await runtime.sendMessage('/compact', { source: 'user' });
+    expect(result.delivery).toBe(steer ? 'steer' : 'queued');
+    expect(driver.last.compactions).toBe(0);
+    expect(transcript).toContainEqual(expect.objectContaining({ type: 'user_message', data: expect.objectContaining({
+      content: [{ type: 'text', text: '/compact' }], delivery: steer ? 'steer' : 'queued',
+    }) }));
+    if (!steer) {
+      expect(driver.last.sent).toHaveLength(0);
+      driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+      await flush();
+    }
+    expect(driver.last.sent.at(-1)).toEqual({ content: [{ type: 'text', text: '/compact' }], delivery: steer ? 'steer' : 'prompt' });
+  });
+
   it('mirrors permission requests into the shared queue and applies a queue decision', async () => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);
