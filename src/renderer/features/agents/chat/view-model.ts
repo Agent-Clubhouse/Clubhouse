@@ -163,15 +163,32 @@ export function argSummary(tool: ToolCallItem): string {
   return first ? first.replace(/\s+/g, ' ').trim() : '';
 }
 
+/** Claude wraps tool-level failures in `<tool_use_error>` tags (#2184); show the message alone. */
+export function stripToolUseError(text: string): string {
+  return text.replace(/<\/?tool_use_error>/g, '');
+}
+
 /** What a finished tool returned: its text content, else its raw output. */
 export function toolResultText(tool: ToolCallItem): string {
   const text = tool.content
     .filter((c): c is Extract<ToolCallContent, { type: 'text' }> => c.type === 'text')
-    .map((c) => c.text)
+    .map((c) => stripToolUseError(c.text))
     .join('\n');
   if (text) return text;
   if (tool.rawOutput === undefined || tool.rawOutput === null) return '';
   return typeof tool.rawOutput === 'string' ? tool.rawOutput : JSON.stringify(tool.rawOutput, null, 2);
+}
+
+/**
+ * The tool's error for display, unless `shown` (what the card already shows)
+ * contains it: drivers often send a failure's message as both (#2182).
+ */
+export function toolErrorText(tool: ToolCallItem, shown = ''): string | undefined {
+  if (!tool.error) return undefined;
+  const error = stripToolUseError(tool.error);
+  const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
+  if (!squash(error)) return undefined;
+  return squash(shown).includes(squash(error)) ? undefined : error;
 }
 
 export function diffContent(tool: ToolCallItem): Array<Extract<ToolCallContent, { type: 'diff' }>> {
@@ -376,6 +393,37 @@ export function implementLevel(caps: ChatCapabilities | null): PermissionLevel |
     if (live.includes(level)) return level;
   }
   return null;
+}
+
+// ── Command output ──────────────────────────────────────────────────────────
+
+/** The command a message starts with, when it's one the session offers. */
+export function slashCommandOf(text: string, commands: ReadonlyArray<{ name: string }>): string | null {
+  const m = /^\/([\w:.-]+)(?:\s|$)/.exec(text.trimStart());
+  return m && commands.some((c) => c.name === m[1]) ? m[1] : null;
+}
+
+/**
+ * Text laid out in lines and space-aligned columns, like a CLI's own command
+ * output, which markdown would join into one paragraph (#2179).
+ */
+export function looksPreformatted(text: string): boolean {
+  if (text.includes('```')) return false;
+  const lines = text.split('\n').filter((l) => l.trim() !== '');
+  if (lines.length < 2 || lines.some((l) => /^\s*(\||#{1,6} )/.test(l))) return false;
+  return lines.some((l) => /\S {2,}\S/.test(l));
+}
+
+/** Ids of agent messages that are a slash command's own laid-out output. */
+export function commandOutputIds(items: ChatItem[], commands: ReadonlyArray<{ name: string }>): Set<string> {
+  const ids = new Set<string>();
+  let afterCommand = false;
+  for (const item of items) {
+    if (item.kind === 'user_message') afterCommand = slashCommandOf(item.text, commands) !== null;
+    else if (item.kind === 'session_divider') afterCommand = false;
+    else if (afterCommand && item.kind === 'agent_message' && !item.subagentId && looksPreformatted(item.text)) ids.add(item.id);
+  }
+  return ids;
 }
 
 // ── Formatting ──────────────────────────────────────────────────────────────

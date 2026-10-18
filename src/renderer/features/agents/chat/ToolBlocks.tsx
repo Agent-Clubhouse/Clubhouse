@@ -14,6 +14,7 @@ import {
   mcpTool,
   terminalContent,
   toolArgs,
+  toolErrorText,
   toolOpenByDefault,
   toolResultText,
   toolTarget,
@@ -64,6 +65,7 @@ export function ToolRow({ tool }: { tool: ToolCallItem }) {
   const Ico = KIND_ICONS[tool.toolKind] ?? ToolIcon;
   const target = toolTarget(tool);
   const pending = tool.status === 'pending';
+  const error = toolErrorText(tool);
   return (
     <div className="flex flex-col" data-testid="chat-tool-row" data-status={tool.status}>
       <div className={`flex items-center gap-2 min-w-0 text-[12.5px] text-ctp-overlay1 ${pending ? 'h-[30px] px-2 rounded-md bg-surface-0/60' : 'h-6'}`}>
@@ -72,7 +74,7 @@ export function ToolRow({ tool }: { tool: ToolCallItem }) {
         <span className="font-mono text-[11.5px] text-ctp-subtext0 truncate min-w-0" title={target}>{target}</span>
         <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap"><StatusMeta tool={tool} /></span>
       </div>
-      {tool.error && <div className="ml-6 text-[12px] text-ctp-error break-words">{tool.error}</div>}
+      {error && <div className="ml-6 text-[12px] text-ctp-error break-words">{error}</div>}
     </div>
   );
 }
@@ -204,6 +206,7 @@ export function CommandCard({ tool }: { tool: ToolCallItem }) {
   const [open, toggle] = useToolOpen(tool.status);
   const running = tool.status === 'in_progress';
   const exit = term?.exitCode;
+  const error = toolErrorText(tool, term?.output);
   return (
     <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-command-card" data-status={tool.status} data-open={open}>
       <CardHeader open={open} onToggle={toggle} label={`${open ? 'Collapse' : 'Expand'} command ${command}`}>
@@ -221,7 +224,7 @@ export function CommandCard({ tool }: { tool: ToolCallItem }) {
           {term.output.replace(/\n$/, '')}
         </pre>
       )}
-      {open && tool.error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0">{tool.error}</div>}
+      {open && error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0" data-testid="chat-tool-error">{error}</div>}
     </div>
   );
 }
@@ -234,13 +237,14 @@ export function ToolCard({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?
   const mcp = useMemo(() => mcpTool(tool, mcpServers), [tool, mcpServers]);
   const args = useMemo(() => toolArgs(tool), [tool]);
   const result = useMemo(() => toolResultText(tool), [tool]);
+  const error = toolErrorText(tool, result);
   const [open, toggle] = useToolOpen(tool.status);
   const Ico = KIND_ICONS[tool.toolKind] ?? ToolIcon;
   const label = mcp ? `${mcp.server} · ${mcp.tool}` : KIND_VERBS[tool.toolKind];
   const summary = mcp ? argSummary(tool) : toolTarget(tool);
   // Built-in tools show their input only when it isn't already the summary (e.g. a path).
   const showArgs = args !== null && (mcp !== null || tool.toolKind === 'other');
-  const expandable = showArgs || result !== '' || !!tool.error;
+  const expandable = showArgs || result !== '' || !!error;
   return (
     <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-tool-card" data-status={tool.status} data-open={expandable && open} data-mcp={mcp ? 'true' : undefined}>
       <CardHeader open={expandable && open} onToggle={expandable ? toggle : undefined} indent label={`${open ? 'Collapse' : 'Expand'} ${label}`}>
@@ -261,7 +265,7 @@ export function ToolCard({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?
               {result.replace(/\n$/, '')}
             </pre>
           )}
-          {tool.error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0">{tool.error}</div>}
+          {error && <div className={`px-3 py-1.5 text-[12px] text-ctp-error ${showArgs || result ? 'border-t border-surface-0' : ''}`} data-testid="chat-tool-error">{error}</div>}
         </div>
       )}
     </div>
@@ -275,10 +279,11 @@ export function ToolCard({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?
 export function ToolCallView({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?: ChatMcpServer[] | null }) {
   const diffs = diffContent(tool);
   if (diffs.length > 0) {
+    const error = toolErrorText(tool);
     return (
       <>
         {diffs.map((d, i) => <TranscriptDiffCard key={`${d.path}:${i}`} diff={d} line={tool.locations?.[0]?.line} status={tool.status} />)}
-        {tool.error && <div className="text-[12px] text-ctp-error">{tool.error}</div>}
+        {error && <div className="text-[12px] text-ctp-error">{error}</div>}
       </>
     );
   }

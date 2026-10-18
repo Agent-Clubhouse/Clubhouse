@@ -28,8 +28,8 @@ function renderComposer(overrides: Partial<ComposerProps> = {}, caps: Partial<Ch
     onModelChange,
     ...overrides,
   };
-  render(<Composer {...props} />);
-  return { onModelChange };
+  const view = render(<Composer {...props} />);
+  return { onModelChange, unmount: view.unmount };
 }
 
 function renderComposerWithRerender(initial: Partial<ComposerProps>) {
@@ -74,15 +74,40 @@ describe('Composer model and effort chips (#2091)', () => {
     expect(pill).toHaveTextContent('High effort');
     fireEvent.click(pill);
     const items = screen.getAllByRole('menuitemradio');
-    expect(items.map((i) => i.textContent)).toEqual(['low', 'medium', 'high', 'max']);
+    expect(items.map((i) => i.textContent)).toEqual(['Low', 'Medium', 'High', 'Max']);
     expect(items[2]).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(items[3]);
     expect(onModelChange).toHaveBeenCalledWith('opus', 'max');
   });
 
-  it('names xhigh "Extra high"', () => {
-    expect(effortWord('xhigh')).toBe('Extra high');
-    expect(effortWord('max')).toBe('Max');
+  it('names every level in sentence case, xhigh as "Extra high" (#2181)', () => {
+    expect(['none', 'low', 'medium', 'high', 'xhigh', 'max'].map(effortWord)).toEqual(['None', 'Low', 'Medium', 'High', 'Extra high', 'Max']);
+  });
+
+  it('labels menu rows like the pill, not with raw ids (#2181)', () => {
+    renderComposer({ effort: 'medium', efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] });
+    expect(screen.getByTestId('chat-effort-pill')).toHaveTextContent('Medium effort');
+    fireEvent.click(screen.getByTestId('chat-effort-pill'));
+    expect(screen.getAllByRole('menuitemradio').map((i) => i.textContent)).toEqual(['None', 'Low', 'Medium', 'High', 'Extra high', 'Max']);
+  });
+
+  it('marks the level the default resolved to, with or without a Default row (#2181)', () => {
+    for (const effortDefault of [true, false]) {
+      const view = renderComposer({ effort: 'medium', effortIsDefault: true }, { effortDefault });
+      expect(screen.getByTestId('chat-effort-pill')).toHaveTextContent('Medium effort (default)');
+      fireEvent.click(screen.getByTestId('chat-effort-pill'));
+      const rows = screen.getAllByRole('menuitemradio').filter((i) => i.dataset.testid !== 'chat-effort-default');
+      expect(rows.map((i) => i.textContent)).toEqual(['Low', 'Mediumdefault', 'High', 'Max']);
+      // Without a Default row to check, the default level itself is checked.
+      expect(rows[1]).toHaveAttribute('aria-checked', effortDefault ? 'false' : 'true');
+      view.unmount();
+    }
+  });
+
+  it('marks no level as the default once one is chosen', () => {
+    renderComposer({ effort: 'medium' });
+    fireEvent.click(screen.getByTestId('chat-effort-pill'));
+    expect(screen.getAllByRole('menuitemradio').map((i) => i.textContent)).toEqual(['Low', 'Medium', 'High', 'Max']);
   });
 
   it('offers a Default row that returns the effort to the provider default (#2136)', () => {
@@ -106,7 +131,7 @@ describe('Composer model and effort chips (#2091)', () => {
     expect(pill).toHaveTextContent('High effort (default)');
     fireEvent.click(pill);
     expect(screen.getByTestId('chat-effort-default')).toHaveAttribute('aria-checked', 'true');
-    const high = screen.getAllByRole('menuitemradio').find((i) => i.textContent === 'high')!;
+    const high = screen.getAllByRole('menuitemradio').find((i) => i.textContent === 'Highdefault')!;
     expect(high).toHaveAttribute('aria-checked', 'false');
     fireEvent.click(high);
     expect(onModelChange).toHaveBeenCalledWith('opus', 'high');

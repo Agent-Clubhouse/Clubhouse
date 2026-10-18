@@ -249,7 +249,7 @@ function ModelPill({ models, efforts, model, effort, effortIsDefault, capabiliti
   );
 }
 
-/** "xhigh" → "Extra high"; other levels capitalised. */
+/** Sentence-case label for an effort id: "xhigh" → "Extra high"; other levels capitalised. */
 export function effortWord(effort: string): string {
   if (effort === 'xhigh') return 'Extra high';
   return `${effort.charAt(0).toUpperCase()}${effort.slice(1)}`;
@@ -275,7 +275,8 @@ function EffortPill({ efforts, model, effort, effortIsDefault, capabilities, onC
   const note = switchNote('none', effortSwitch);
   // On the default the level still shows, since that's what applies.
   const onDefault = effort === null || !!effortIsDefault;
-  const chosen = onDefault ? null : effort;
+  // Without a Default row, the level the default resolved to is the checked one.
+  const chosen = onDefault && capabilities?.effortDefault ? null : effort;
   const label = effort ? `${effortWord(effort)} effort${effortIsDefault ? ' (default)' : ''}` : 'Default effort';
 
   return (
@@ -286,7 +287,7 @@ function EffortPill({ efforts, model, effort, effortIsDefault, capabilities, onC
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={canChange ? `Reasoning effort, ${effort ?? 'the default'}` : "This agent can't change effort mid-session"}
+        title={canChange ? `Reasoning effort, ${effort ? effortWord(effort).toLowerCase() : 'the default'}` : "This agent can't change effort mid-session"}
         className={chipClass}
         data-testid="chat-effort-pill"
       >
@@ -323,7 +324,9 @@ function EffortPill({ efforts, model, effort, effortIsDefault, capabilities, onC
               className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left text-[12.5px] text-ctp-text ${e === chosen ? 'bg-surface-0' : 'hover:bg-surface-0/60'}`}
             >
               <Radio on={e === chosen} />
-              {e}
+              <span>{effortWord(e)}</span>
+              {/* The level the default resolved to, marked the same for every provider (#2181). */}
+              {effortIsDefault && e === effort && <span className="ml-auto text-[11px] text-ctp-overlay1">default</span>}
             </button>
           ))}
           {note && <div className="px-2 pt-1.5 text-[11px] text-ctp-overlay1">{note}</div>}

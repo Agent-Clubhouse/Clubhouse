@@ -89,11 +89,14 @@ export function UserMessage({ item }: { item: UserMessageItem }) {
   );
 }
 
-export function AgentMessage({ item }: { item: AgentMessageItem }) {
+/** `preformatted`: a slash command's own laid-out output, shown as is (#2179). */
+export function AgentMessage({ item, preformatted = false }: { item: AgentMessageItem; preformatted?: boolean }) {
   if (!item.text && !item.streaming) return null;
   return (
     <div className="text-[13.5px] leading-relaxed text-ctp-text" data-testid="chat-agent-message">
-      <Markdown text={item.text} streaming={item.streaming} />
+      {preformatted
+        ? <pre className="font-mono text-[12px] leading-[1.6] text-ctp-text whitespace-pre overflow-x-auto m-0" data-testid="chat-command-output">{item.text}</pre>
+        : <Markdown text={item.text} streaming={item.streaming} />}
       {item.streaming && <span className="inline-block w-1.5 h-3.5 bg-ctp-accent/70 animate-pulse align-text-bottom" aria-label="Streaming" />}
     </div>
   );

@@ -190,3 +190,35 @@ describe('DiffCard outside the transcript', () => {
     expect(card).toHaveTextContent('waiting for approval');
   });
 });
+
+describe('tool errors (#2182, #2184)', () => {
+  const DENY = "The user doesn't want to proceed with this tool use. The tool use was rejected.";
+
+  // Failed cards open themselves (toolOpenByDefault).
+  it('shows a denied edit\'s message once, not again in red', () => {
+    render(<ToolCallView tool={edit({ status: 'failed', content: [{ type: 'text', text: DENY }], error: DENY })} />);
+    expect(screen.getByTestId('chat-tool-result')).toHaveTextContent(DENY);
+    expect(screen.queryByTestId('chat-tool-error')).toBeNull();
+    expect(screen.getAllByText(DENY, { exact: false })).toHaveLength(1);
+  });
+
+  it('strips Claude\'s <tool_use_error> wrapper and shows the message once', () => {
+    const wrapped = '<tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>';
+    render(<ToolCallView tool={edit({ status: 'failed', content: [{ type: 'text', text: wrapped }], error: wrapped })} />);
+    expect(screen.getByTestId('chat-tool-result').textContent).toBe('File has not been read yet. Read it first before writing to it.');
+    expect(screen.queryByTestId('chat-tool-error')).toBeNull();
+    expect(document.body.textContent).not.toContain('tool_use_error');
+  });
+
+  it('keeps an error that says something the result doesn\'t', () => {
+    render(<ToolCallView tool={tool({ status: 'failed', content: [{ type: 'text', text: 'partial output' }], error: '<tool_use_error>Timed out</tool_use_error>' })} />);
+    expect(screen.getByTestId('chat-tool-error').textContent).toBe('Timed out');
+  });
+
+  it('shows a command\'s error once when its output already says it', () => {
+    const out = 'Exit code 1\nnpm ERR! missing script: typo\n';
+    render(<ToolCallView tool={command({ status: 'failed', error: 'Exit code 1\nnpm ERR! missing script: typo', content: [{ type: 'terminal', terminalId: 'term-1', command: 'npm run typo', output: out, exitCode: 1 }] })} />);
+    expect(screen.getByTestId('chat-command-card')).toHaveTextContent('npm ERR! missing script: typo');
+    expect(screen.queryByTestId('chat-tool-error')).toBeNull();
+  });
+});
