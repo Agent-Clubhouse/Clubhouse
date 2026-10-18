@@ -1,15 +1,19 @@
 /**
  * Settings → Logging → Telemetry export (docs/telemetry-otel-spec.md §6.8).
  *
- * Each destination has its own panel with its own switch, level, preset,
- * health and Send test event; several can be on at once (spec §6.11).
- * Secrets never come back from main: the status carries masked forms only.
+ * Each of the user's own destinations has its own collapsible panel with its
+ * own switch, level, preset, health and Send test event; several can be on at
+ * once (spec §6.11). A panel starts open when it's on or has an error. The
+ * developer destination lives on the Feedback page, next to the connection it
+ * depends on (#2097). Secrets never come back from main: the status carries
+ * masked forms only.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
 import { ConfirmDestructiveAction } from '../../components/ConfirmDestructiveAction';
 import { SettingsSection, SettingsField, settingsInput } from './SettingsLayout';
+import { useUIStore } from '../../stores/uiStore';
 import type { TelemetryLevel } from '../../../shared/telemetry/attributes';
 import type {
   OtlpHeaderInput,
@@ -91,14 +95,54 @@ const api = () => window.clubhouse.telemetrySettings;
 export const WORKBOOK_DOCS_URL = 'https://github.com/Agent-Clubhouse/Clubhouse/blob/main/docs/telemetry/workbook/README.md';
 
 const inputClass = `${settingsInput} w-full`;
-const panelClass = 'mt-[22px] space-y-3';
-const panelTitleClass = 'text-[13px] font-semibold text-ctp-text mb-1';
 const rowLabelClass = 'text-[13px] text-ctp-text';
 const linkClass = 'text-xs text-ctp-link hover:underline cursor-pointer';
+
+/** One word for a closed panel's header: whether the destination is sending. */
+function destinationSummary(on: boolean, configured: boolean, dest?: TelemetryDestinationStatus): string {
+  if (on && dest && healthText(dest)?.bad) return 'On, not sending';
+  if (on) return 'On';
+  return configured ? 'Off' : 'Not set up';
+}
+
+/** A destination panel whose body folds away; the header keeps its name and state. */
+function CollapsiblePanel({ id, title, summary, defaultOpen, forceOpen, children }: {
+  id: string;
+  title: string;
+  summary: string;
+  defaultOpen: boolean;
+  /** Opens the panel when it turns true (an error to show). */
+  forceOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => { if (forceOpen) setOpen(true); }, [forceOpen]);
+  const bodyId = `telemetry-panel-body-${id}`;
+  return (
+    <section className="mt-[22px]" aria-label={title} data-testid={`telemetry-panel-${id}`}>
+      <button
+        type="button"
+        className="flex items-center gap-2 w-full text-left"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" className={`text-ctp-overlay1 transition-transform ${open ? 'rotate-90' : ''}`}>
+          <path d="M3 2l4 3-4 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="text-[13px] font-semibold text-ctp-text">{title}</span>
+        <span className="ml-auto text-xs text-ctp-overlay1" data-testid={`telemetry-panel-summary-${id}`}>{summary}</span>
+      </button>
+      {/* Kept mounted while closed: aria-controls needs its target, and typed drafts survive a fold. */}
+      <div id={bodyId} className="mt-3 space-y-3" hidden={!open}>{children}</div>
+    </section>
+  );
+}
 
 export function TelemetrySettingsSection() {
   const [status, setStatus] = useState<TelemetryStatus | null>(null);
   const [error, setError] = useState<{ panel: string; message: string } | null>(null);
+  const setSettingsSubPage = useUIStore((st) => st.setSettingsSubPage);
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const [test, setTest] = useState<{ panel: string; report: TelemetryTestReport | 'sending' } | null>(null);
   const [preview, setPreview] = useState<TelemetryPreviewItem[] | null>(null);
@@ -215,7 +259,7 @@ export function TelemetrySettingsSection() {
     <div data-testid="telemetry-settings">
       <SettingsSection title="Telemetry export" />
       <p className="text-xs text-ctp-overlay1 mb-1">
-        Send anonymized diagnostics to your own Azure Application Insights, an OpenTelemetry backend, or both, each with its own level. Nothing goes to the Clubhouse developer unless you turn that on below. Off by default.
+        Send anonymized diagnostics to your own Azure Application Insights, an OpenTelemetry backend, or both, each with its own level. Nothing goes to the Clubhouse developer unless you turn that on in Settings, Feedback. Off by default.
       </p>
       <p className="text-xs text-ctp-overlay1">
         Telemetry is separate from local logging, and each has its own switch.{' '}
@@ -229,8 +273,13 @@ export function TelemetrySettingsSection() {
       )}
 
       {/* Azure Application Insights */}
-      <section className={panelClass} aria-label="Azure Application Insights">
-        <div className={panelTitleClass}>Azure Application Insights</div>
+      <CollapsiblePanel
+        id="azure"
+        title="Azure Application Insights"
+        summary={destinationSummary(azureOn, status.azure.configured, azure)}
+        defaultOpen={azureOn || error?.panel === 'azure'}
+        forceOpen={error?.panel === 'azure'}
+      >
         <SettingsField label="Send telemetry">
           <Toggle
             aria-label="Send telemetry to Application Insights"
@@ -277,7 +326,7 @@ export function TelemetrySettingsSection() {
           <Button kind="ghost" disabled={!azure?.active} onClick={() => void runTest('azure')}>Send test event</Button>
           {testLine('azure')}
         </div>
-      </section>
+      </CollapsiblePanel>
 
 
       {/* Preview, Workbook */}
@@ -295,11 +344,14 @@ export function TelemetrySettingsSection() {
       </div>
 
       {/* Other destinations */}
-      <section className={panelClass} aria-label="Other destinations">
-        <div>
-          <div className={panelTitleClass}>Other destinations</div>
-          <div className="text-xs text-ctp-overlay1 mt-px">Send to an OpenTelemetry (OTLP) backend, on its own or alongside Application Insights.</div>
-        </div>
+      <CollapsiblePanel
+        id="otlp"
+        title="Other destinations"
+        summary={destinationSummary(otlpOn, status.otlp.configured, otlp)}
+        defaultOpen={otlpOn || error?.panel === 'otlp'}
+        forceOpen={error?.panel === 'otlp'}
+      >
+        <div className="text-xs text-ctp-overlay1">Send to an OpenTelemetry (OTLP) backend, on its own or alongside Application Insights.</div>
         <SettingsField label="Send to OTLP">
           <Toggle
             aria-label="Send telemetry to OTLP"
@@ -380,36 +432,14 @@ export function TelemetrySettingsSection() {
           <Button kind="ghost" disabled={!otlp?.active} onClick={() => void runTest('otlp')}>Send test event</Button>
           {testLine('otlp')}
         </div>
-      </section>
+      </CollapsiblePanel>
 
-      {/* Clubhouse developer (Framebriar), through Feedback */}
+      {/* The developer destination follows Feedback, so it's set up there (#2097). */}
       {framebriar && (
-        <section className={panelClass} aria-label={framebriar.label} data-testid="telemetry-panel-framebriar">
-          <div className={panelTitleClass}>{framebriar.label}</div>
-          <p className="text-xs text-ctp-overlay1">
-            User activity and errors can also go to the Clubhouse developer, so feedback reports come with context. Once you confirm the developer&apos;s host, this sends only while Feedback is connected and another destination here is on. Switch it off to stop it until you switch it back on.
-          </p>
-          <SettingsField label="Send telemetry">
-            <Toggle
-              aria-label="Send telemetry to the Clubhouse developer"
-              checked={framebriar.enabled}
-              disabled={!framebriar.configured && !framebriar.enabled}
-              onChange={(v) => void handleResult('framebriar', 'framebriar', (ack) => api().setEnabled('framebriar', v, ack))}
-            />
-          </SettingsField>
-          {!framebriar.configured && (
-            <p className="text-xs text-ctp-subtext1" data-testid="telemetry-framebriar-needs-feedback">Connect Feedback in Settings, Feedback first.</p>
-          )}
-          <DestinationControls
-            dest={framebriar}
-            onFilter={(level, preset) => void handleResult('framebriar', 'framebriar', () => api().setFilter('framebriar', level, preset))}
-          />
-          <div className="flex items-center gap-3">
-            <Button kind="ghost" disabled={!framebriar.active} onClick={() => void runTest('framebriar')}>Send test event</Button>
-            {testLine('framebriar')}
-          </div>
-          {errorLine('framebriar')}
-        </section>
+        <p className="text-xs text-ctp-overlay1 mt-[22px]" data-testid="telemetry-developer-pointer">
+          Telemetry for the Clubhouse developer is {framebriar.enabled ? 'on' : 'off'}. It&apos;s set in{' '}
+          <button type="button" className={linkClass} onClick={() => setSettingsSubPage('feedback')}>Settings, Feedback</button>.
+        </p>
       )}
 
       {/* Advanced */}
@@ -465,7 +495,10 @@ export function TelemetrySettingsSection() {
           </p>
         ) : (
           <pre className="text-xs text-ctp-subtext1 bg-ctp-crust border border-surface-0 rounded-md p-3 max-h-[60vh] overflow-auto" data-testid="telemetry-preview">
-            {JSON.stringify(preview, null, 2)}
+            {/* Where each item went, by its name in Settings (never a service id); the item itself is shown as sent. */}
+            {JSON.stringify(preview?.map((item) => (item.destination
+              ? { ...item, destination: status.destinations.find((d) => d.id === item.destination)?.label ?? item.destination }
+              : item)), null, 2)}
           </pre>
         )}
       </Modal>
@@ -564,8 +597,8 @@ function ConfirmDialog({ confirm, onCancel, onConfirm }: { confirm: PendingConfi
   );
 }
 
-/** A destination's level, preset and health, inside its panel. */
-function DestinationControls({ dest, onFilter }: {
+/** A destination's level, preset and health, inside its panel. Also used on the Feedback page. */
+export function DestinationControls({ dest, onFilter }: {
   dest: TelemetryDestinationStatus;
   onFilter: (level: TelemetryLevel, preset: TelemetryFilterPreset) => void;
 }) {

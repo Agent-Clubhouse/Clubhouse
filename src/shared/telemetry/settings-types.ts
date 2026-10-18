@@ -51,9 +51,10 @@ export interface TelemetryDestinationEntry {
 }
 
 /**
- * The Framebriar destination follows Feedback (spec §6.11): its `enabled` is
- * derived, true exactly while Feedback is connected, another destination is
- * exporting, its host is confirmed, and the user hasn't switched it off.
+ * The developer destination follows Feedback (spec §6.11): its `enabled` is
+ * derived, true exactly while Feedback is connected, telemetry is allowed
+ * (experiment and consent), its host is confirmed, and the user hasn't
+ * switched it off. Since #2097 it doesn't need another destination on.
  */
 export interface FramebriarDestinationSettings {
   /** The user turned it off themselves ("Not now", or its switch): it stays off until they turn it on. */
@@ -77,6 +78,12 @@ export interface TelemetrySettingsFile {
   hashSalt?: string;
   /** App version seen at the previous start, for `clubhouse.startup.kind`. */
   lastVersion?: string;
+  /**
+   * The developer-destination rule this file has been migrated to: 2 once the
+   * #2097 migration ran (a destination that only sent alongside the user's
+   * own export doesn't start alone after the update).
+   */
+  developerRule?: number;
 }
 
 export type SecureStorageState = 'available' | 'weak' | 'unavailable';

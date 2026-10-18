@@ -104,6 +104,40 @@ describe('migrateTelemetrySettings', () => {
   });
 });
 
+describe('developer destination after #2097', () => {
+  const file = (developer: Record<string, unknown>, azureOn: boolean, extra: Record<string, unknown> = {}) => ({
+    sampleRate: 1,
+    consentVersion: 1,
+    destinations: [
+      { id: 'azure', kind: 'azure', enabled: azureOn, level: 'standard', preset: 'all', confirmedHost: 'h' },
+      { id: 'otlp', kind: 'otlp', enabled: false, level: 'standard', preset: 'all' },
+      { id: 'framebriar', kind: 'framebriar', enabled: azureOn, level: 'standard', preset: 'user_activity', framebriar: { userOff: false }, ...developer },
+    ],
+    ...extra,
+  });
+  const developer = (out: ReturnType<typeof migrateTelemetrySettings>) => out.destinations.find((d) => d.kind === 'framebriar')!;
+
+  it('does not start sending alone after the update: a confirmed host with none of the user\'s own destinations on is recorded as off', () => {
+    const out = migrateTelemetrySettings(file({ confirmedHost: 'fb.example.net' }, false));
+    expect(developer(out).framebriar).toEqual({ userOff: true });
+    expect(out.developerRule).toBe(2);
+  });
+
+  it('leaves it following when the user\'s own export was on', () => {
+    const out = migrateTelemetrySettings(file({ confirmedHost: 'fb.example.net' }, true));
+    expect(developer(out).framebriar).toEqual({ userOff: false });
+  });
+
+  it('leaves an unconfirmed destination alone (it asks before sending anyway)', () => {
+    expect(developer(migrateTelemetrySettings(file({}, false))).framebriar).toEqual({ userOff: false });
+  });
+
+  it('runs once: a later opt-in on its own is kept', () => {
+    const out = migrateTelemetrySettings(file({ confirmedHost: 'fb.example.net' }, false, { developerRule: 2 }));
+    expect(developer(out).framebriar).toEqual({ userOff: false });
+  });
+});
+
 describe('migrateLegacySecrets', () => {
   it('moves a Phase 1 plaintext connection string into the secret store and wipes it from the file', async () => {
     const file = path.join(userData.dir, 'telemetry-settings.json');

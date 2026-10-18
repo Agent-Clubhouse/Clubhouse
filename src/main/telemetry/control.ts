@@ -380,11 +380,6 @@ export async function setEnabled(
     return fail('not_configured', NOT_CONFIGURED[entry.kind]);
   }
 
-  // Framebriar never exports on its own: it follows another destination.
-  if (entry.kind === 'framebriar' && !exportIsOn(settings)) {
-    return fail('needs_other_destination', 'Turn on another telemetry destination first: the developer gets telemetry only while your own export is on.');
-  }
-
   const consented = settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
   // Framebriar will follow this destination on while Feedback is connected; if its
   // host isn't confirmed yet, this dialog names it and confirms it too.
@@ -407,7 +402,8 @@ export async function setEnabled(
   // after it changed, and always when another destination is already on, so
   // adding a second destination never starts sending without a dialog.
   const othersEnabled = enabledDestinations(settings).some((d) => d.id !== destinationId);
-  // Framebriar always has another destination on; only its own host needs confirming.
+  // The developer destination follows Feedback rather than adding to the
+  // user's export: only its own host needs confirming.
   const confirmEvenIfKnown = othersEnabled && entry.kind !== 'framebriar';
   if (!hostConfirmed && (entry.confirmedHost !== validation.host || confirmEvenIfKnown)) needs.push('destination');
   // The dialog must have named Framebriar's host too, or it isn't confirmed (it may
@@ -459,11 +455,9 @@ const NOT_CONFIGURED: Record<TelemetryDestinationEntry['kind'], string> = {
 
 // --- Framebriar follows Feedback (spec §6.11) ------------------------------------
 
-/** Export is on: the experiment, consent, and some other destination enabled. */
-function exportIsOn(settings: TelemetrySettings): boolean {
-  return isExperimentEnabled()
-    && settings.consentVersion >= TELEMETRY_CONSENT_VERSION
-    && enabledDestinations(settings).some((d) => d.kind !== 'framebriar');
+/** Telemetry may export at all: the experiment is on and the user consented (#2097: no other destination needed). */
+function exportAllowed(settings: TelemetrySettings): boolean {
+  return isExperimentEnabled() && settings.consentVersion >= TELEMETRY_CONSENT_VERSION;
 }
 
 function currentFramebriarHost(): string | undefined {
@@ -478,14 +472,15 @@ function framebriarFollowHost(settings: TelemetrySettings): string | undefined {
 }
 
 /**
- * Whether Framebriar should be exporting (spec §6.11): only while Feedback is
- * connected, another destination is exporting, its current host is the one the
- * user confirmed, and the user hasn't switched it off.
+ * Whether the developer destination should be exporting (spec §6.11): while
+ * Feedback is connected, telemetry is allowed (experiment and consent), its
+ * current host is the one the user confirmed, and the user hasn't switched it
+ * off. It doesn't need another destination on (#2097).
  */
 function framebriarWanted(settings: TelemetrySettings): boolean {
   const entry = findDestination(settings, 'framebriar');
   const host = currentFramebriarHost();
-  return !!entry && host !== undefined && exportIsOn(settings) && !entry.framebriar?.userOff && entry.confirmedHost === host;
+  return !!entry && host !== undefined && exportAllowed(settings) && !entry.framebriar?.userOff && entry.confirmedHost === host;
 }
 
 /** The settings with Framebriar's switch matching framebriarWanted. Every path that changes another destination goes through this. */
@@ -525,7 +520,7 @@ export function syncFramebriarDestination(): Promise<void> {
     else if (!entry.enabled && active) await applyRuntime();
   }).catch((err) => {
     // telemetry-exempt: logged; the next Feedback change retries.
-    appLog('telemetry:control', 'warn', 'Could not update the Framebriar destination', {
+    appLog('telemetry:control', 'warn', 'Could not update the Clubhouse developer destination', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
   });
@@ -589,7 +584,12 @@ export async function clearOfflineQueue(): Promise<TelemetryActionResult> {
 /** Turns every destination off and removes the install id, salt and offline queue. */
 export async function deleteLocalData(): Promise<TelemetryActionResult> {
   await prepare();
-  await updateTelemetrySettings((s) => ({ ...s, destinations: s.destinations.map((d) => ({ ...d, enabled: false })) }));
+  // Off for good: the developer destination is derived, so it's also marked
+  // switched off, or Feedback reconnecting would turn it back on (#2097).
+  await updateTelemetrySettings((s) => ({
+    ...s,
+    destinations: s.destinations.map((d) => ({ ...d, enabled: false, ...(d.kind === 'framebriar' ? { framebriar: { userOff: true } } : {}) })),
+  }));
   await disableTelemetry({ deleteLocalData: true });
   return done();
 }

@@ -2,25 +2,24 @@ import { useEffect, useRef, useState } from 'react';
 import type { FeedbackStatus } from '../../../shared/feedback-types';
 import { FEEDBACK_NOTICE_TEXT, useFeedbackStore } from '../../stores/feedbackStore';
 import { FeedbackTelemetryPrompt, type TelemetryShareAsk } from './FeedbackTelemetryPrompt';
+import { DeveloperTelemetrySection, shareAskFrom, shareTelemetry } from './DeveloperTelemetrySection';
 import { SettingsPage, SettingsSection, SettingsField, settingsInput, settingsHelp } from './SettingsLayout';
 import { Button } from '../../components/Button';
 
 /**
- * After connecting, offer the Framebriar telemetry destination when export is already on
- * somewhere else: it asks the main process, which requires confirming Framebriar's host.
+ * After connecting, offer the developer telemetry destination: it asks the main
+ * process, which requires confirming its host (and consent, when none was
+ * given yet). It doesn't need any other destination on (#2097).
  * Returns what to confirm, or null when there's nothing to ask.
  */
-async function framebriarTelemetryAsk(): Promise<TelemetryShareAsk | null> {
+async function developerTelemetryAsk(): Promise<TelemetryShareAsk | null> {
   const api = window.clubhouse.telemetrySettings;
   const status = await api.getStatus();
-  if (!status?.available || !status.consentAccepted) return null;
+  if (!status?.available) return null;
   const fb = status.destinations.find((d) => d.id === 'framebriar');
   // Already on, or the user said "Not now" before: don't ask again.
   if (!fb || fb.enabled || fb.userOff) return null;
-  if (!status.destinations.some((d) => d.id !== 'framebriar' && d.enabled)) return null;
-  const result = await api.setEnabled('framebriar', true, {});
-  if ('needs' in result && result.host) return { host: result.host, hosts: result.hosts ?? [result.host] };
-  return null;
+  return shareAskFrom(await api.setEnabled('framebriar', true, {}));
 }
 
 /** What the platform calls the keyring that safeStorage needs. */
@@ -66,6 +65,7 @@ export function FeedbackSettingsView() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [shareAsk, setShareAsk] = useState<TelemetryShareAsk | null>(null);
+  const [telemetryRevision, setTelemetryRevision] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { void init(); }, [init]);
@@ -97,7 +97,7 @@ export function FeedbackSettingsView() {
       setMessage(result.connected ? 'Connected.' : connectFailedMessage(result.status.notice));
       if (result.connected) {
         // telemetry-exempt: optional offer; without it Feedback still works and the panel stays off.
-        setShareAsk(await framebriarTelemetryAsk().catch((): null => null));
+        setShareAsk(await developerTelemetryAsk().catch((): null => null));
       }
     } catch (err) {
       // telemetry-exempt: shown to the user
@@ -128,13 +128,15 @@ export function FeedbackSettingsView() {
     const ask = shareAsk;
     setShareAsk(null);
     if (!ask) return;
-    const result = await window.clubhouse.telemetrySettings.setEnabled('framebriar', true, { host: ask.host });
-    setMessage(result.ok ? 'Connected. Telemetry is shared with the developer too.' : 'Connected. Telemetry sharing didn\'t start; see Settings, Logging.');
+    const result = await shareTelemetry(ask);
+    setMessage(result.ok ? 'Connected. Telemetry is shared with the developer too.' : 'Connected. Telemetry sharing didn\'t start; see Telemetry for the developer below.');
+    setTelemetryRevision((n) => n + 1);
   };
   const declineShare = () => {
     setShareAsk(null);
     // Record the choice, so telemetry never turns it on behind the user's back.
-    void window.clubhouse.telemetrySettings.setEnabled('framebriar', false).catch((): undefined => undefined);
+    void window.clubhouse.telemetrySettings.setEnabled('framebriar', false).catch((): undefined => undefined)
+      .then(() => setTelemetryRevision((n) => n + 1));
   };
 
   const expires = formatDate(status.expiresAt);
@@ -148,7 +150,7 @@ export function FeedbackSettingsView() {
       testId="feedback-settings"
     >
       <p className={`${settingsHelp} mt-3`}>
-        If telemetry export is on (Settings, Logging), Clubhouse then asks whether to share user activity and errors with the developer too, with the same redaction as your own export. Nothing is shared unless you agree.
+        After you connect, Clubhouse asks whether to share user activity and errors with the developer too. Nothing is shared unless you agree.
       </p>
 
       {storageUnavailable && (
@@ -221,6 +223,8 @@ export function FeedbackSettingsView() {
       {message && <p className="text-xs text-ctp-subtext1 mt-2" role="status" data-testid="feedback-message">{message}</p>}
 
       {shareAsk && <FeedbackTelemetryPrompt ask={shareAsk} onShare={() => void share()} onDecline={declineShare} />}
+
+      <DeveloperTelemetrySection refreshKey={`${status.connected}:${telemetryRevision}`} />
 
       {(status.outbox.pending > 0 || status.outbox.blocked > 0) && (
         <p className={`${settingsHelp} mt-2`} data-testid="feedback-outbox">

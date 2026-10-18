@@ -32,7 +32,7 @@ const EXPERIMENTAL_FEATURES: Array<{
   {
     id: 'telemetry',
     label: 'Telemetry export',
-    description: 'Send anonymized diagnostics to your own Application Insights resource or OTLP collector. Set it up in Settings, Logging, under Telemetry export.',
+    description: 'Send anonymized diagnostics to your own Application Insights resource or OTLP collector (Settings, Logging), or to the Clubhouse developer with your feedback (Settings, Feedback).',
   },
 ];
 
