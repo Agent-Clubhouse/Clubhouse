@@ -1034,7 +1034,7 @@ describe('agent-system', () => {
       const realStart = mockTryStartChatAgent.getMockImplementation()!;
       mockTryStartChatAgent.mockImplementationOnce(async (params: { agentId: string }) => {
         noteChatStartFailure(params.agentId, `RPC error: no rollout found for thread id ${DEAD}`);
-        return false;
+        return 'terminal';
       });
       try {
         await wake('codex-cli');
@@ -1051,7 +1051,7 @@ describe('agent-system', () => {
       const { noteChatStartFailure } = await import('./agent-runtime/stale-session');
       mockTryStartChatAgent.mockImplementationOnce(async (params: { agentId: string }) => {
         noteChatStartFailure(params.agentId, "RPC request 'session/new' timed out after 30000ms");
-        return false;
+        return 'terminal';
       });
       await wake('codex-cli');
       expect(mockUpdateSessionId).not.toHaveBeenCalled();
