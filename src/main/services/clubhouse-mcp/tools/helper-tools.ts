@@ -20,7 +20,9 @@
  * never sees or touches another's helpers.
  */
 
+import * as path from 'path';
 import { registerGlobalTool } from '../tool-registry';
+import { isOrchestrationEnabled } from '../orchestration-gate';
 import type { McpToolResult } from '../types';
 import * as agentConfig from '../../agent-config';
 import { agentRegistry } from '../../agent-registry';
@@ -44,8 +46,11 @@ import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import {
   ACCESS_LEVELS,
   launchAccessFor,
+  providerAccessLevel,
+  resolveHelperAccess,
   type AgentAccessLevel,
   type AgentLaunchAccess,
+  type HelperAccessResolution,
 } from '../../../../shared/orchestration-policy';
 import type { DurableAgentConfig } from '../../../../shared/types';
 import { McpArgError, optionalString } from './validation';
@@ -150,39 +155,104 @@ async function notifyOrchestrator(orchestratorId: string, text: string): Promise
 // ── Start state ──────────────────────────────────────────────────────────
 
 /**
- * Helpers between "worktree ready" and "spawned", and the reason for a
- * spawn that failed (the creation itself records its own failures). Both
- * live only for this run; list_helpers reads them.
+ * Helpers a start or wake is spawning (from start_helper's record write, or
+ * wake's check, until the spawn settles), and the reason for a spawn that
+ * failed (the creation records its own failures). Both live only for this
+ * run; list_helpers reads them, and a helper in `spawning` is never spawned
+ * twice.
  */
 const spawning = new Set<string>();
 const spawnFailures = new Map<string, string>();
 /** Background starts still running, for tests. */
 const inflight = new Set<Promise<void>>();
 
-/** Start requests run one at a time per orchestrator, so two can't both pass the limit. */
-const startLocks = new Map<string, Promise<unknown>>();
+/**
+ * Start requests run one at a time across the app, from the limit check to
+ * the helper's record being written, so two starts can't both pass the
+ * per-orchestrator limit or the global cap.
+ */
+let startChain: Promise<unknown> = Promise.resolve();
 
-async function withStartLock<T>(orchestratorId: string, fn: () => Promise<T>): Promise<T> {
-  const previous = startLocks.get(orchestratorId) ?? Promise.resolve();
-  const run = previous.catch((): undefined => undefined).then(fn);
-  const settled = run.catch((): undefined => undefined);
-  startLocks.set(orchestratorId, settled);
-  try {
-    return await run;
-  } finally {
-    if (startLocks.get(orchestratorId) === settled) startLocks.delete(orchestratorId);
-  }
+async function withStartLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = startChain.catch((): undefined => undefined).then(fn);
+  startChain = run.catch((): undefined => undefined);
+  return run;
 }
+
+/** At most one needs-approval notification per orchestrator per minute. */
+const APPROVAL_NOTICE_INTERVAL_MS = 60_000;
+const lastApprovalNotice = new Map<string, number>();
 
 function isAccessLevel(value: string): value is AgentAccessLevel {
   return (ACCESS_LEVELS as readonly string[]).includes(value);
 }
 
-/** Lower `resolved` to `requested` when that asks for less; never raise it. */
-function clampToRequest(resolved: AgentLaunchAccess & { level: AgentAccessLevel }, requested: string | undefined): AgentLaunchAccess & { level: AgentAccessLevel } {
-  if (!requested || requested === 'same' || !isAccessLevel(requested)) return resolved;
-  if (ACCESS_LEVELS.indexOf(requested) >= ACCESS_LEVELS.indexOf(resolved.level)) return resolved;
-  return { ...launchAccessFor(requested), level: requested };
+function rankOf(level: AgentAccessLevel): number {
+  return ACCESS_LEVELS.indexOf(level);
+}
+
+interface HelperLaunch extends AgentLaunchAccess {
+  /** What the helper's CLI really gets with these settings. */
+  level: AgentAccessLevel;
+  /** True when the helper got less than the policy or the request asked for. */
+  clamped: boolean;
+}
+
+/**
+ * The launch settings for a helper on `provider`: the policy's resolution
+ * (already under the orchestrator's live ceiling), lowered to `requested`
+ * when that asks for less, then ranked for the provider's real flags so the
+ * helper never gets more than the lower of the two. `level` is the level
+ * those flags give.
+ */
+function rankedLaunch(
+  resolved: HelperAccessResolution,
+  requested: string | undefined,
+  provider: string | undefined,
+): HelperLaunch {
+  let target = resolved.level;
+  const asked = requested && isAccessLevel(requested) ? requested : undefined;
+  if (asked && rankOf(asked) < rankOf(target)) target = asked;
+  const ranked = resolveHelperAccess(launchAccessFor(target), 'same', provider);
+  const launch = { freeAgentMode: ranked.freeAgentMode, permissionMode: ranked.permissionMode };
+  const level = providerAccessLevel(provider, launch);
+  const wanted = asked ?? resolved.level;
+  return { ...launch, level, clamped: resolved.clamped || rankOf(level) < rankOf(wanted) };
+}
+
+/** Resolve a helper's launch settings now, for the CLI it will run. */
+async function resolveLaunchFor(
+  projectPath: string,
+  orchestratorId: string,
+  provider: string | undefined,
+  requested: string | undefined,
+): Promise<HelperLaunch> {
+  const resolved = await resolveHelperLaunchSettings(projectPath, orchestratorId, provider ? { helperProvider: provider } : {});
+  return rankedLaunch(resolved, requested, provider);
+}
+
+function samePath(a: string, b: string): boolean {
+  const norm = (p: string) => {
+    const resolved = path.resolve(p);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  return norm(a) === norm(b);
+}
+
+/**
+ * Why a ready helper must not be spawned now, or null. Checked right before
+ * the spawn, with nothing awaited after it: the helper is still this
+ * orchestrator's and not disposed, and the orchestrator still runs in this
+ * project with orchestration on.
+ */
+function spawnBlocker(projectPath: string, orchestratorId: string, helper: DurableAgentConfig | null): string | null {
+  if (!helper) return 'it no longer exists';
+  if (helper.parentAgentId !== orchestratorId) return 'it is no longer your helper';
+  if (isDisposedAgent(helper)) return 'it was disposed';
+  const registration = agentRegistry.get(orchestratorId);
+  if (!registration || !samePath(registration.projectPath, projectPath)) return 'its orchestrator stopped';
+  if (!isOrchestrationEnabled(orchestratorId)) return 'orchestration was turned off for its orchestrator';
+  return null;
 }
 
 function helperMission(orchestratorName: string, task: string): string {
@@ -196,8 +266,14 @@ function pickColor(helperCount: number): string {
 }
 
 /**
- * The background half of start_helper: wait for the worktree, spawn the
- * helper with its task, tell the orchestrator. Never throws.
+ * The background half of start_helper: wait for the worktree, then spawn
+ * the helper with its task and tell the orchestrator. The task is saved on
+ * the helper until a spawn delivers it, so a helper left asleep (a restart,
+ * a failed spawn, a check below) gets it on its next wake. Everything that
+ * decides the spawn is read again here, after the wait: the helper's
+ * config (a persona may have changed its CLI), the orchestrator's gate and
+ * liveness, and the access, ranked for the helper's CLI. The helper is in
+ * `spawning` from the record write until this settles. Never throws.
  */
 async function finishHelperStart(
   projectPath: string,
@@ -205,23 +281,44 @@ async function finishHelperStart(
   helperId: string,
   helperName: string,
   task: string,
-  launch: AgentLaunchAccess,
+  requestedAccess: string | undefined,
   done: Promise<'ready' | 'failed' | 'cancelled'>,
 ): Promise<void> {
-  const outcome = await done;
-  if (outcome === 'cancelled') {
-    await notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) was cancelled before it started.`);
-    return;
-  }
-  const config = await agentConfig.getDurableConfig(projectPath, helperId).catch((): null => null);
-  if (outcome === 'failed' || !config || config.creation) {
-    const reason = config?.creation?.reason ?? 'its worktree could not be created.';
-    await notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) failed to start: ${reason}`);
-    return;
-  }
-
-  spawning.add(helperId);
   try {
+    const outcome = await done;
+    if (outcome === 'cancelled') {
+      await notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) was cancelled before it started.`);
+      return;
+    }
+    let config = await agentConfig.getDurableConfig(projectPath, helperId).catch((): null => null);
+    if (outcome === 'failed' || !config || config.creation) {
+      const reason = config?.creation?.reason ?? 'its worktree could not be created.';
+      await notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) failed to start: ${reason}`);
+      return;
+    }
+
+    await agentConfig.setHelperPendingTask(projectPath, helperId, task);
+    const provider = config.orchestrator ?? orchestrator.orchestrator;
+    const launch = await resolveLaunchFor(projectPath, orchestrator.id, provider, requestedAccess);
+    config = await agentConfig.getDurableConfig(projectPath, helperId).catch((): null => null);
+    // A persona applied during creation may have switched the CLI: rank again for it.
+    const finalProvider = config?.orchestrator ?? provider;
+    const finalLaunch = finalProvider === provider
+      ? launch
+      : await resolveLaunchFor(projectPath, orchestrator.id, finalProvider, requestedAccess);
+
+    // Nothing is awaited between these checks and the spawn.
+    const blocker = spawnBlocker(projectPath, orchestrator.id, config);
+    if (blocker) {
+      appLog('core:mcp', 'info', 'start_helper: helper left asleep', {
+        meta: { orchestratorId: orchestrator.id, helperId, reason: blocker },
+      });
+      await notifyOrchestrator(orchestrator.id,
+        `Helper "${helperName}" (${helperId}) is ready but was not started because ${blocker}. ` +
+        'Its task is saved: wake_helper delivers it.');
+      return;
+    }
+
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, helperId);
     await agentSystem.spawnAgent({
       agentId: helperId,
@@ -230,28 +327,34 @@ async function finishHelperStart(
       kind: 'durable',
       model: config.model,
       mission: helperMission(orchestrator.name, task),
-      orchestrator: config.orchestrator,
+      orchestrator: finalProvider as OrchestratorId | undefined,
       // Both explicitly: an unset mode would be filled from project settings
       // at spawn, and a persona may have written freeAgentMode on the config.
-      freeAgentMode: launch.freeAgentMode,
-      permissionMode: launch.permissionMode,
+      freeAgentMode: finalLaunch.freeAgentMode,
+      permissionMode: finalLaunch.permissionMode,
     });
     spawning.delete(helperId);
+    await agentConfig.setHelperPendingTask(projectPath, helperId, null).catch((err) => {
+      appLog('core:mcp', 'warn', 'start_helper: could not clear the delivered task', { meta: { helperId, error: errorText(err) } });
+    });
     appLog('core:mcp', 'info', 'start_helper: helper started', {
-      meta: { orchestratorId: orchestrator.id, helperId },
+      meta: { orchestratorId: orchestrator.id, helperId, access: finalLaunch.level },
     });
     const branch = config.branch ? ` on branch ${config.branch}` : '';
-    await notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) is ready${branch} and has started its task.`);
+    await notifyOrchestrator(orchestrator.id,
+      `Helper "${helperName}" (${helperId}) is ready${branch} with ${finalLaunch.level} access and has started its task.`);
   } catch (err) {
     // telemetry-exempt: the failure reaches the orchestrator and list_helpers
-    spawning.delete(helperId);
     const reason = errorText(err);
     spawnFailures.set(helperId, reason);
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKE_FAILED, helperId, reason);
     appLog('core:mcp', 'warn', 'start_helper: helper spawn failed', {
       meta: { orchestratorId: orchestrator.id, helperId, error: reason },
     });
-    await notifyOrchestrator(orchestrator.id, `Helper "${helperName}" (${helperId}) was created but failed to start: ${reason}`);
+    await notifyOrchestrator(orchestrator.id,
+      `Helper "${helperName}" (${helperId}) was created but failed to start: ${reason} Its task is saved: wake_helper delivers it.`);
+  } finally {
+    spawning.delete(helperId);
   }
 }
 
@@ -276,7 +379,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
   const caller = await resolveCaller(agentId);
   const { projectPath, config: orchestrator } = caller;
 
-  return withStartLock(agentId, async () => {
+  return withStartLock(async () => {
     const limit = await checkHelperLimitFor(projectPath, agentId);
     if (limit.ok === false) {
       appLog('core:mcp', 'info', 'start_helper refused by the helper limit', {
@@ -290,11 +393,16 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
       // TODO(#2232): a pending approval the user can accept from the
       // Orchestrate card. There is no approve/deny round trip in main yet,
       // so the start is refused and the user is notified through the
-      // existing Needs-you notification.
-      broadcastToAllWindows(IPC.APP.AGENT_ATTENTION, agentId, {
-        title: `${orchestrator.name} wants to start a helper`,
-        message: `Helper "${name}": ${task}`.slice(0, 240),
-      });
+      // existing Needs-you notification, at most once a minute.
+      const now = Date.now();
+      const last = lastApprovalNotice.get(agentId);
+      if (last === undefined || now - last >= APPROVAL_NOTICE_INTERVAL_MS) {
+        lastApprovalNotice.set(agentId, now);
+        broadcastToAllWindows(IPC.APP.AGENT_ATTENTION, agentId, {
+          title: `${orchestrator.name} wants to start a helper`,
+          message: `Helper "${name}": ${task}`.slice(0, 240),
+        });
+      }
       appLog('core:mcp', 'info', 'start_helper needs user approval', { meta: { agentId, control: policy.control } });
       return jsonResult({
         state: 'needs_approval',
@@ -307,10 +415,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
     }
 
     const helperProvider = cli ?? orchestrator.orchestrator ?? agentRegistry.get(agentId)?.orchestrator;
-    const resolved = await resolveHelperLaunchSettings(projectPath, agentId, helperProvider ? { helperProvider } : {});
-    const launch = clampToRequest(resolved, access);
-    const clamped = resolved.clamped || (access !== undefined && access !== 'same' && isAccessLevel(access)
-      && ACCESS_LEVELS.indexOf(launch.level) < ACCESS_LEVELS.indexOf(access));
+    const launch = await resolveLaunchFor(projectPath, agentId, helperProvider, access);
 
     let started: Awaited<ReturnType<typeof startDurableCreation>>;
     try {
@@ -347,7 +452,9 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
     }
 
     const { agentId: helperId, config, done } = started;
-    const background = finishHelperStart(projectPath, orchestrator, helperId, name, task, launch, done)
+    // Before anything is awaited: no wake may spawn it while this start owns it.
+    spawning.add(helperId);
+    const background = finishHelperStart(projectPath, orchestrator, helperId, name, task, access, done)
       .catch((err) => {
         appLog('core:mcp', 'error', 'start_helper: background start failed', { meta: { helperId, error: errorText(err) } });
       });
@@ -355,7 +462,7 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
     void background.finally(() => inflight.delete(background));
 
     appLog('core:mcp', 'info', 'start_helper: creating helper', {
-      meta: { agentId, helperId, access: launch.level, clamped },
+      meta: { agentId, helperId, access: launch.level, clamped: launch.clamped },
     });
     return jsonResult({
       helperId,
@@ -363,10 +470,10 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
       state: 'starting',
       ...(config.branch && { branch: config.branch }),
       access: launch.level,
-      ...(clamped && { accessNote: `Access lowered to ${launch.level}: a helper never gets more than you run with.` }),
+      ...(launch.clamped && { accessNote: `Access lowered to ${launch.level}: a helper never gets more than you run with or than its CLI allows at that level.` }),
       message:
         `Helper "${config.name}" is being created. Its worktree can take up to a minute; ` +
-        'you will get a message when it has started its task, or why it failed.',
+        'you will get a message when it has started its task, or why it failed. Its access is checked again at start.',
     });
   });
 }
@@ -414,6 +521,10 @@ async function describeHelper(helper: DurableAgentConfig): Promise<Record<string
     ...(helper.persona && { persona: helper.persona }),
     branch: helper.branch ?? null,
     lastActivity: lastActivity(helper) ?? null,
+    ...(helper.pendingTask && !spawning.has(helper.id) && {
+      taskPending: true,
+      note: 'It never received its task (Clubhouse restarted or the start was stopped). wake_helper delivers it.',
+    }),
   };
   if (!helper.creation && helper.worktreePath) {
     try {
@@ -472,22 +583,29 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
       : `${helper.name} failed to create: ${helper.creation.reason ?? 'unknown reason'}`);
   }
   if (spawning.has(helper.id)) {
-    return jsonResult({ helperId: helper.id, name: helper.name, status: 'starting' });
+    return jsonResult({
+      helperId: helper.id, name: helper.name, status: 'starting',
+      ...(message && { messageDelivered: false, note: 'It is still starting; send the message once it is running.' }),
+    });
   }
   if (agentSystem.isAgentRunning(helper.id)) {
     const delivered = message ? await deliverToAgent(helper.id, `[FROM:${caller.config.name}] ${message}`) : false;
     return jsonResult({ helperId: helper.id, name: helper.name, status: 'already_running', ...(message && { messageDelivered: delivered }) });
   }
 
-  const launch = await resolveHelperLaunchSettings(
-    caller.projectPath,
-    agentId,
-    helper.orchestrator ? { helperProvider: helper.orchestrator } : {},
-  );
-  const resume = !!helper.lastSessionId;
+  // Claimed before anything is awaited, so a parallel wake (or a start) can't spawn it too.
   spawning.add(helper.id);
   spawnFailures.delete(helper.id);
+  const fromCaller = message ? `[FROM:${caller.config.name}] ${message}` : undefined;
+  // A task start_helper never got to deliver goes first (#2227 restart recovery).
+  const mission = helper.pendingTask
+    ? [helperMission(caller.config.name, helper.pendingTask), fromCaller].filter(Boolean).join('\n\n')
+    : fromCaller;
+  const resume = !!helper.lastSessionId;
+  let launch: HelperLaunch;
   try {
+    const provider = helper.orchestrator ?? caller.config.orchestrator;
+    launch = await resolveLaunchFor(caller.projectPath, agentId, provider, undefined);
     broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, helper.id);
     await agentSystem.spawnAgent({
       agentId: helper.id,
@@ -495,8 +613,8 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
       cwd: helper.worktreePath || caller.projectPath,
       kind: 'durable',
       model: helper.model,
-      ...(message && { mission: `[FROM:${caller.config.name}] ${message}` }),
-      orchestrator: helper.orchestrator,
+      ...(mission && { mission }),
+      orchestrator: provider,
       freeAgentMode: launch.freeAgentMode,
       permissionMode: launch.permissionMode,
       resume,
@@ -510,8 +628,16 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
   } finally {
     spawning.delete(helper.id);
   }
+  if (helper.pendingTask) {
+    await agentConfig.setHelperPendingTask(caller.projectPath, helper.id, null).catch((err) => {
+      appLog('core:mcp', 'warn', 'wake_helper: could not clear the delivered task', { meta: { helperId: helper.id, error: errorText(err) } });
+    });
+  }
   appLog('core:mcp', 'info', 'wake_helper: helper woken', { meta: { agentId, helperId: helper.id, resume, access: launch.level } });
-  return jsonResult({ helperId: helper.id, name: helper.name, status: 'running', resumed: resume, access: launch.level });
+  return jsonResult({
+    helperId: helper.id, name: helper.name, status: 'running', resumed: resume, access: launch.level,
+    ...(helper.pendingTask && { taskDelivered: true }),
+  });
 }
 
 // ── message_parent ───────────────────────────────────────────────────────
@@ -632,5 +758,6 @@ export function _resetHelperToolsForTesting(): void {
   spawning.clear();
   spawnFailures.clear();
   inflight.clear();
-  startLocks.clear();
+  startChain = Promise.resolve();
+  lastApprovalNotice.clear();
 }

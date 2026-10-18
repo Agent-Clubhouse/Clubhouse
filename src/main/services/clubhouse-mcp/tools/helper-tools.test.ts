@@ -2,6 +2,7 @@ import * as path from 'path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { DurableAgentConfig } from '../../../../shared/types';
 import { IPC } from '../../../../shared/ipc-channels';
+import { resolveHelperAccess, type AgentLaunchAccess } from '../../../../shared/orchestration-policy';
 
 // ── Mocks: no CLI, git or disk is touched ──────────────────────────────────
 
@@ -11,6 +12,12 @@ vi.mock('../../agent-config', () => ({
   getDurableConfig: vi.fn(async (_projectPath: string, id: string) => agents.get(id) ?? null),
   listHelpers: vi.fn(async (_projectPath: string, id: string) =>
     [...agents.values()].filter((a) => a.parentAgentId === id && !a.disposedAt)),
+  setHelperPendingTask: vi.fn(async (_projectPath: string, id: string, task: string | null) => {
+    const agent = agents.get(id);
+    if (!agent) return;
+    const { pendingTask: _old, ...rest } = agent;
+    agents.set(id, task ? { ...rest, pendingTask: task } : rest);
+  }),
 }));
 
 const mockStartDurableCreation = vi.fn();
@@ -73,6 +80,9 @@ import { agentRegistry } from '../../agent-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
+
+/** The orchestrator's live launch access, the ceiling the policy mock ranks against. */
+let live: AgentLaunchAccess;
 
 const PROJECT = path.join(path.sep, 'tmp', 'project');
 const worktreeOf = (folder: string) => path.join(PROJECT, '.clubhouse', 'agents', folder);
@@ -143,7 +153,10 @@ beforeEach(() => {
 
   mockCheckLimit.mockResolvedValue({ ok: true, helperCount: 0, totalHelperCount: 0, maxHelpers: 5, globalCap: 20 });
   mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'hands-off', maxHelpers: 5 });
-  mockResolveLaunch.mockResolvedValue({ freeAgentMode: true, permissionMode: 'auto', level: 'auto', ceiling: 'auto', clamped: false });
+  live = { freeAgentMode: true, permissionMode: 'auto' };
+  // The real ranking, against the orchestrator's live level in `live`.
+  mockResolveLaunch.mockImplementation(async (_p: string, _o: string, options: { helperProvider?: string } = {}) =>
+    resolveHelperAccess(live, 'same', options.helperProvider));
   mockSpawnAgent.mockImplementation(async (params: { agentId: string }) => { running.add(params.agentId); });
   mockGetGitInfo.mockResolvedValue({
     hasGit: true, branch: 'x/standby', ahead: 2, behind: 1,
@@ -298,6 +311,110 @@ describe('start_helper', () => {
   });
 });
 
+// ── start_helper: what changes during creation ─────────────────────────────
+
+describe('start_helper re-checks at spawn time', () => {
+  it('ranks access again when a persona switched the CLI during creation', async () => {
+    // A Claude orchestrator at auto: Claude auto is --permission-mode auto,
+    // but any Free Agent Mode on Copilot is --yolo.
+    const creation = controllableCreation();
+    const started = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't', persona: 'copilot-fan' }));
+    expect(started.access).toBe('auto');
+
+    agents.set('helper_h', { ...agents.get('helper_h')!, orchestrator: 'copilot-cli' });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+
+    expect(mockResolveLaunch).toHaveBeenLastCalledWith(PROJECT, 'orch', { helperProvider: 'copilot-cli' });
+    const spawn = mockSpawnAgent.mock.calls[0][0];
+    expect(spawn).toMatchObject({ orchestrator: 'copilot-cli', freeAgentMode: false });
+    expect(sent.get('orch')?.[0]).toContain('with standard access');
+  });
+
+  it('ranks a requested level for the helper CLI and reports the real level', async () => {
+    live = { freeAgentMode: true, permissionMode: 'skip-all' };
+    controllableCreation();
+    const result = parse(await callTool('orch', 'start_helper', { name: 'h', task: 't', cli: 'copilot-cli', access: 'auto' }));
+    // Copilot has no auto: Free Agent Mode would be --yolo, so it starts standard.
+    expect(result.access).toBe('standard');
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ freeAgentMode: false });
+  });
+
+  it('uses the orchestrator\'s level at spawn time when it was lowered during creation', async () => {
+    const creation = controllableCreation();
+    await callTool('orch', 'start_helper', { name: 'h', task: 't' });
+    live = { freeAgentMode: false, permissionMode: 'auto' };
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    expect(mockSpawnAgent.mock.calls[0][0]).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
+  });
+
+  it('leaves the helper asleep, with its task saved, when orchestration was turned off', async () => {
+    const creation = controllableCreation();
+    await callTool('orch', 'start_helper', { name: 'h', task: 'Fix it' });
+    setOrchestrationEnabled('orch', false);
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    expect(mockSpawnAgent).not.toHaveBeenCalled();
+    expect(agents.get('helper_h')?.pendingTask).toBe('Fix it');
+    expect(sent.get('orch')?.[0]).toContain('orchestration was turned off');
+  });
+
+  it('leaves the helper asleep when the orchestrator stopped', async () => {
+    const creation = controllableCreation();
+    await callTool('orch', 'start_helper', { name: 'h', task: 'Fix it' });
+    running.delete('orch');
+    agentRegistry.untrack('orch');
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    expect(mockSpawnAgent).not.toHaveBeenCalled();
+    expect(agents.get('helper_h')?.pendingTask).toBe('Fix it');
+    expect(sent.get('orch')).toBeUndefined();
+  });
+
+  it('leaves the helper asleep when it was reparented', async () => {
+    const creation = controllableCreation();
+    await callTool('orch', 'start_helper', { name: 'h', task: 't' });
+    agents.set('helper_h', { ...agents.get('helper_h')!, parentAgentId: undefined });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    expect(mockSpawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('clears the saved task once the spawn delivered it', async () => {
+    const creation = controllableCreation();
+    await callTool('orch', 'start_helper', { name: 'h', task: 't' });
+    creation.ready('helper_h');
+    await _settleHelperStartsForTesting();
+    expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
+    expect(agents.get('helper_h')?.pendingTask).toBeUndefined();
+  });
+
+  it('serializes concurrent starts so both cannot pass the limit', async () => {
+    mockCheckLimit.mockImplementation(async (_p: string, id: string) => {
+      const helperCount = [...agents.values()].filter((a) => a.parentAgentId === id).length;
+      return helperCount >= 1
+        ? { ok: false, reason: 'agent-limit', message: `This agent already has ${helperCount} of 1 helpers.`, helperCount, totalHelperCount: helperCount, maxHelpers: 1, globalCap: 20 }
+        : { ok: true, helperCount, totalHelperCount: helperCount, maxHelpers: 1, globalCap: 20 };
+    });
+    controllableCreation();
+    const [a, b] = await Promise.all([
+      callTool('orch', 'start_helper', { name: 'a', task: 't' }),
+      callTool('orch', 'start_helper', { name: 'b', task: 't' }),
+    ]);
+    expect([a.isError, b.isError].filter(Boolean)).toHaveLength(1);
+    expect(mockStartDurableCreation).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies the user about a needed approval at most once a minute', async () => {
+    mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'ask-everything', maxHelpers: 5 });
+    await callTool('orch', 'start_helper', { name: 'a', task: 't' });
+    await callTool('orch', 'start_helper', { name: 'b', task: 't' });
+    const attention = mockBroadcast.mock.calls.filter((c) => c[0] === IPC.APP.AGENT_ATTENTION);
+    expect(attention).toHaveLength(1);
+  });
+});
+
 // ── list_helpers ───────────────────────────────────────────────────────────
 
 describe('list_helpers', () => {
@@ -381,6 +498,45 @@ describe('sleep_helper and wake_helper', () => {
       sessionId: 'sess-1',
       mission: expect.stringContaining('Rebase on main'),
     }));
+  });
+
+  it('spawns once for parallel wakes', async () => {
+    let release!: () => void;
+    mockSpawnAgent.mockImplementation(() => new Promise<void>((resolve) => { release = resolve; }));
+    const first = callTool('orch', 'wake_helper', { helper: 'mine' });
+    const second = callTool('orch', 'wake_helper', { helper: 'mine', message: 'hi' });
+    await vi.waitFor(() => expect(mockSpawnAgent).toHaveBeenCalled());
+    release();
+    const results = (await Promise.all([first, second])).map(parse);
+    expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
+    expect(results.map((r) => r.status).sort()).toEqual(['running', 'starting']);
+    expect(results.find((r) => r.status === 'starting')).toMatchObject({ messageDelivered: false });
+  });
+
+  it('will not wake a helper that start_helper is still spawning', async () => {
+    const creation = controllableCreation();
+    let release!: () => void;
+    mockSpawnAgent.mockImplementation(() => new Promise<void>((resolve) => { release = resolve; }));
+    await callTool('orch', 'start_helper', { name: 'h', task: 't' });
+    creation.ready('helper_h');
+    await vi.waitFor(() => expect(mockSpawnAgent).toHaveBeenCalled());
+    expect(parse(await callTool('orch', 'wake_helper', { helper: 'h', message: 'x' }))).toMatchObject({ status: 'starting', messageDelivered: false });
+    release();
+    await _settleHelperStartsForTesting();
+    expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('delivers a pending task on wake and clears it', async () => {
+    agents.set('mine', { ...agents.get('mine')!, pendingTask: 'Write the docs', lastSessionId: undefined });
+    const listed = parse(await callTool('orch', 'list_helpers', {})).helpers as Array<Record<string, unknown>>;
+    expect(listed.find((h) => h.helperId === 'mine')).toMatchObject({ status: 'sleeping', taskPending: true });
+
+    const result = parse(await callTool('orch', 'wake_helper', { helper: 'mine', message: 'Also lint' }));
+    expect(result).toMatchObject({ status: 'running', taskDelivered: true, resumed: false });
+    const mission = mockSpawnAgent.mock.calls[0][0].mission as string;
+    expect(mission).toContain('Write the docs');
+    expect(mission).toContain('Also lint');
+    expect(agents.get('mine')?.pendingTask).toBeUndefined();
   });
 
   it('delivers the message to a helper that is already running', async () => {

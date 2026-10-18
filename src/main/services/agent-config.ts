@@ -2630,6 +2630,21 @@ export async function setOrchestrationConfig(
   await writeAgents(projectPath, agents);
 }
 
+/**
+ * Record (or with null, clear) the task a helper has yet to receive (#2227).
+ * Written only by the helper tools, never through updateDurableConfig. A
+ * missing agent is a no-op.
+ */
+export async function setHelperPendingTask(projectPath: string, agentId: string, task: string | null): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) return;
+  if (task) agent.pendingTask = task;
+  else if (agent.pendingTask === undefined) return;
+  else delete agent.pendingTask;
+  await writeAgents(projectPath, agents);
+}
+
 /** A `git rev-list --count` result. Any failure throws, so a check never reads as zero. */
 async function gitCount(args: string[], cwd: string): Promise<number> {
   const out = await execGitFileAsync(args, cwd);
