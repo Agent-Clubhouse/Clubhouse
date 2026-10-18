@@ -29,7 +29,7 @@ import type { PluginAPI } from '../../../../shared/plugin-types';
 import { useBlueprintDrop } from './useBlueprintDrop';
 import { getProjectCanvasStore, useAppCanvasStore } from './main';
 import { applyParsedBlueprint, type ParseResult } from '../../../features/blueprints/parse-blueprint';
-import { useAgentStore } from '../../../stores/agentStore';
+import { blueprintParseContext } from '../../../features/blueprints/blueprint-parse-context';
 import { useViewportControls } from './useViewportControls';
 import { useBatchedViewportChange } from './canvas-viewport-batching';
 import { useSelectionManager } from './useSelectionManager';
@@ -328,11 +328,7 @@ export function CanvasWorkspace({
     setBlueprintError(message);
   }, []);
 
-  const getBlueprintParseContext = useCallback(() => ({
-    agents: Object.values(useAgentStore.getState().agents),
-    projects: useProjectStore.getState().projects.map((p) => ({ id: p.id, name: p.name, path: p.path })),
-    activeProjectId: projectId ?? undefined,
-  }), [projectId]);
+  const getBlueprintParseContext = useCallback(() => blueprintParseContext(projectId ?? undefined), [projectId]);
 
   const { isDragOver: isBlueprintDragOver } = useBlueprintDrop({
     containerRef,

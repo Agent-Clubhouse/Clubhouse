@@ -60,6 +60,8 @@ export interface ParseContext {
   projects: ExistingProject[];
   /** The project the importing canvas should belong to, if any. */
   activeProjectId?: string;
+  /** Group projects on this machine; see ImportOptions.groupProjectIds. */
+  groupProjectIds?: ReadonlySet<string>;
 }
 
 export interface ParseResult {
@@ -91,20 +93,26 @@ export function parseAnyBlueprint(data: unknown, ctx?: ParseContext): ParseResul
 
   if (format === 'manifest') {
     const safeCtx: ParseContext = ctx ?? { agents: [], projects: [] };
-    const result = manifestImportBlueprint(
+    const imported = manifestImportBlueprint(
       data as Parameters<typeof manifestImportBlueprint>[0],
       safeCtx.agents,
       safeCtx.projects,
       safeCtx.activeProjectId,
+      { groupProjectIds: safeCtx.groupProjectIds },
     );
+    const wires = planBlueprintWires(imported.pendingWires, imported.refIdToViewId, imported.canvas.views);
+    // Deferred wires travel with the canvas, so binding the stub later creates them (#2069).
+    const canvas: CanvasInstance = wires.deferred.length
+      ? { ...imported.canvas, deferredWires: wires.deferred.map(({ wire, sourceViewId, targetViewId }) => ({ wire, sourceViewId, targetViewId })) }
+      : imported.canvas;
     return {
       format,
-      canvas: result.canvas,
-      wires: planBlueprintWires(result.pendingWires, result.refIdToViewId, result.canvas.views),
-      pendingWires: result.pendingWires,
-      refIdToViewId: result.refIdToViewId,
-      stubs: result.stubs,
-      projectMatches: result.projectMatches,
+      canvas,
+      wires,
+      pendingWires: imported.pendingWires,
+      refIdToViewId: imported.refIdToViewId,
+      stubs: imported.stubs,
+      projectMatches: imported.projectMatches,
     };
   }
 

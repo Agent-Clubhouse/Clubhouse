@@ -52,6 +52,8 @@ vi.mock('../../plugins/plugin-api-storage', () => ({ createScopedStorage: () => 
 import { BlueprintGallery } from './BlueprintGallery';
 import { applyParsedBlueprint, type ParseResult } from './parse-blueprint';
 import { useBlueprintDrop } from '../../plugins/builtin/canvas/useBlueprintDrop';
+import { useGroupProjectStore } from '../../stores/groupProjectStore';
+import { blueprintParseContext } from './blueprint-parse-context';
 
 // ── The manifest ─────────────────────────────────────────────────────
 
@@ -110,6 +112,8 @@ beforeEach(() => {
   sink.canvases = [];
   sink.wires = [];
   canvasResults.length = 0;
+  // The group project the manifest's board shows exists on this machine.
+  useGroupProjectStore.setState({ projects: [{ id: 'gp-42', name: 'Board' } as never], loaded: true, loadError: null });
   ui.open = true;
   window.clubhouse.blueprint = {
     ...window.clubhouse.blueprint,
@@ -150,7 +154,8 @@ function canvasHook() {
     containerRef: { current: container },
     onImport,
     onError: (message) => { throw new Error(message); },
-    getParseContext: () => ({ agents: Object.values(AGENTS) as never, projects: PROJECTS, activeProjectId: 'p1' }),
+    // What CanvasWorkspace passes.
+    getParseContext: () => blueprintParseContext('p1'),
   }));
   return { container, onImport };
 }
@@ -209,6 +214,13 @@ describe('blueprint import paths', () => {
       sink.wires = [];
     }
     for (const output of outputs.slice(1)) expect(output).toEqual(outputs[0]);
+  });
+
+  it.each(PATHS)('%s defers a wire to a group project that is not on this machine, and clears the id', async (_name, run) => {
+    useGroupProjectStore.setState({ projects: [], loaded: true, loadError: null });
+    expect(await run()).toEqual(EXPECTED.filter((w) => w.targetKind !== 'group-project'));
+    const canvas = (sink.canvases[0] ?? canvasResults[0]?.canvas) as CanvasInstance;
+    expect(canvas.views.find((v) => v.displayName === 'Board')?.metadata).not.toHaveProperty('groupProjectId');
   });
 
   it('reports the wires it defers and skips', async () => {

@@ -23,10 +23,10 @@
 //   reverse definition (as dragging with "both ways" does). It means nothing
 //   for widget targets.
 // - Duplicates (an explicit reverse wire next to a bidirectional one) are
-//   created once.
+//   created once; a wire from a card (or agent) to itself is skipped.
 
 import type { BlueprintWire } from '../../../shared/blueprint-types';
-import type { AgentCanvasView, CanvasView, PluginCanvasView } from '../../plugins/builtin/canvas/canvas-types';
+import type { AgentCanvasView, CanvasView, DeferredCanvasWire, PluginCanvasView } from '../../plugins/builtin/canvas/canvas-types';
 import type { McpBindingEntry } from '../../stores/mcpBindingStore';
 
 export const BROWSER_WIDGET_TYPE = 'plugin:browser:webview';
@@ -35,7 +35,7 @@ export const GROUP_PROJECT_WIDGET_TYPE = 'plugin:group-project:group-project';
 /** Why a wire is waiting: one of its ends has no agent (or group project) yet. */
 export type DeferredWireReason = 'source_unbound' | 'target_unbound';
 /** Why a wire can never be created on this canvas. */
-export type SkippedWireReason = 'missing_view' | 'source_not_agent' | 'unsupported_target';
+export type SkippedWireReason = 'missing_view' | 'source_not_agent' | 'unsupported_target' | 'self';
 
 export interface DeferredBlueprintWire {
   wire: BlueprintWire;
@@ -122,12 +122,15 @@ export function planBlueprintWires(
     const source = sourceViewId ? viewById.get(sourceViewId) : undefined;
     const target = targetViewId ? viewById.get(targetViewId) : undefined;
     if (!source || !target || !sourceViewId || !targetViewId) { plan.skipped.push({ wire, reason: 'missing_view' }); continue; }
+    if (sourceViewId === targetViewId) { plan.skipped.push({ wire, reason: 'self' }); continue; }
     if (source.type !== 'agent') { plan.skipped.push({ wire, reason: 'source_not_agent' }); continue; }
     const identity = targetIdentity(target);
     if (!identity) { plan.skipped.push({ wire, reason: 'unsupported_target' }); continue; }
     const sourceAgentId = (source as AgentCanvasView).agentId;
     if (!sourceAgentId) { plan.deferred.push({ wire, sourceViewId, targetViewId, reason: 'source_unbound' }); continue; }
     if ('unbound' in identity) { plan.deferred.push({ wire, sourceViewId, targetViewId, reason: 'target_unbound' }); continue; }
+    // Two cards bound to the same agent: an agent can't be wired to itself.
+    if (identity.kind === 'agent' && identity.id === sourceAgentId) { plan.skipped.push({ wire, reason: 'self' }); continue; }
 
     const metadata = wireMetadata(wire);
     const project = projectName(target, source);
@@ -155,4 +158,37 @@ export function planBlueprintWires(
     }
   }
   return plan;
+}
+
+/**
+ * Resolve wires deferred at import against the canvas's current views
+ * (#2069): those whose ends are now bound become wire definitions, those
+ * still waiting stay deferred, and those that can no longer be created (a view
+ * was removed, or a target changed into something that can't be wired) are
+ * dropped. Each entry gets its own refs, so entries from different imports
+ * can't collide.
+ */
+export function resolveDeferredWires(
+  deferred: DeferredCanvasWire[],
+  views: CanvasView[],
+): { create: McpBindingEntry[]; deferred: DeferredCanvasWire[] } {
+  const refIdToViewId = new Map<string, string>();
+  const wires = deferred.map((d, i) => {
+    refIdToViewId.set(`s${i}`, d.sourceViewId);
+    refIdToViewId.set(`t${i}`, d.targetViewId);
+    return { ...d.wire, sourceRef: `s${i}`, targetRef: `t${i}` };
+  });
+  const plan = planBlueprintWires(wires, refIdToViewId, views);
+  return {
+    create: plan.create,
+    deferred: plan.deferred.map((d) => deferred[Number(d.wire.sourceRef.slice(1))]),
+  };
+}
+
+/** Deferred wires with every entry touching one of `viewIds` removed. */
+export function pruneDeferredWires(deferred: DeferredCanvasWire[] | undefined, viewIds: Iterable<string>): DeferredCanvasWire[] | undefined {
+  if (!deferred?.length) return deferred;
+  const removed = new Set(viewIds);
+  const kept = deferred.filter((d) => !removed.has(d.sourceViewId) && !removed.has(d.targetViewId));
+  return kept.length ? kept : undefined;
 }

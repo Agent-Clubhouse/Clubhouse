@@ -1,5 +1,6 @@
 // ── Canvas data model ─────────────────────────────────────────────────
 import type { CanvasWidgetMetadata } from '../../../../shared/plugin-types';
+import type { BlueprintWire } from '../../../../shared/blueprint-types';
 
 /**
  * Built-in canvas view types. Plugin widget types use the 'plugin' discriminant.
@@ -81,6 +82,18 @@ export type CanvasView = AgentCanvasView | AnchorCanvasView | PluginCanvasView |
 
 // ── Canvas instance (one per tab) ────────────────────────────────────
 
+/**
+ * A blueprint wire imported before one of its ends was bound: a stub agent
+ * card with no agent yet, or a group-project widget with no project. It's
+ * kept with its canvas (and saved with it, under the same save guards) and
+ * created once that end is bound (#2069).
+ */
+export interface DeferredCanvasWire {
+  wire: BlueprintWire;
+  sourceViewId: string;
+  targetViewId: string;
+}
+
 export interface CanvasInstance {
   id: string;
   name: string;
@@ -98,6 +111,8 @@ export interface CanvasInstance {
   elkDirection: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
   /** Preferred center card ID for radial layout. Persisted per canvas. */
   layoutCenterId: string | null;
+  /** Imported wires waiting for a stub to be bound. Persisted per canvas; absent when there are none. */
+  deferredWires?: DeferredCanvasWire[];
 }
 
 /** Serialisable snapshot persisted to storage */
@@ -112,6 +127,7 @@ export interface CanvasInstanceData {
   elkAlgorithm?: 'layered' | 'radial' | 'force' | 'mrtree';
   elkDirection?: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
   layoutCenterId?: string | null;
+  deferredWires?: DeferredCanvasWire[];
 }
 
 // ── Display name deduplication ────────────────────────────────────────
