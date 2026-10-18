@@ -520,7 +520,12 @@ describe('initAppEventBridge', () => {
 
     mockNoteLaunchFailure.mockClear();
     onRuntimeNotice('agent-1', { level: 'info', code: 'untested_cli_version', message: 'Codex 0.200 is untested' });
+    // Fell back to another chat driver: chat started, so it's no launch failure.
+    onRuntimeNotice('agent-1', { level: 'warn', code: 'fallback', message: 'Using Claude Code (stream-json): Claude Code (Agent SDK) handshake failed: boom' });
     expect(mockNoteLaunchFailure).not.toHaveBeenCalled();
+
+    onRuntimeNotice('agent-1', { level: 'info', code: 'login_required', message: 'Codex needs you to log in.' });
+    expect(mockNoteLaunchFailure).toHaveBeenCalledWith('agent-1', 'Codex needs you to log in.');
   });
 
   it('should register keyboard event listener', () => {

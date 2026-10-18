@@ -326,13 +326,19 @@ function initAgentWakingListener(): () => void {
   };
 }
 
-/** Notices that explain a start that didn't go as asked; a launch error card shows them. */
-const LAUNCH_FAILURE_CODES = new Set(['fallback', 'login_required']);
 const TERMINAL_FALLBACK_PREFIX = 'Opened in the terminal: ';
 
-/** The reason inside a chat fallback notice, without the "Opened in the terminal" lead-in. */
-export function launchFailureReason(message: string): string {
-  return message.startsWith(TERMINAL_FALLBACK_PREFIX) ? message.slice(TERMINAL_FALLBACK_PREFIX.length) : message;
+/**
+ * The reason a launch error card should show for a notice, or null. Only a
+ * fall back to the terminal or a login counts: a fallback to another chat
+ * driver ("Using …") started fine, so it's not why a launch failed.
+ */
+export function launchFailureReason(notice: { code: string; message: string }): string | null {
+  if (notice.code === 'login_required') return notice.message;
+  if (notice.code === 'fallback' && notice.message.startsWith(TERMINAL_FALLBACK_PREFIX)) {
+    return notice.message.slice(TERMINAL_FALLBACK_PREFIX.length);
+  }
+  return null;
 }
 
 /**
@@ -345,7 +351,8 @@ function initChatRuntimeNoticeListener(): () => void {
     const store = useAgentStore.getState();
     const name = store.agents[agentId]?.name ?? agentId;
     useToastStore.getState().addToast(`${name}: ${notice.message}`, 'info');
-    if (LAUNCH_FAILURE_CODES.has(notice.code)) store.noteLaunchFailure(agentId, launchFailureReason(notice.message));
+    const reason = launchFailureReason(notice);
+    if (reason) store.noteLaunchFailure(agentId, reason);
   });
 }
 
