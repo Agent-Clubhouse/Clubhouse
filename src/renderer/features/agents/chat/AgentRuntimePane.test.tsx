@@ -7,6 +7,7 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { AgentRuntimePane, resetChatFlagCache, switchAgentRuntime } from './AgentRuntimePane';
 import { chatFixture, FIXTURE_AGENT_ID } from './fixtures';
 import { CHAT_DEFAULT_TIP_KEY } from './chat-default-tip';
+import { CHAT_CONTRACT_VERSION, MINIMAL_CHAT_CAPABILITIES, type ChatEvent } from '../../../../shared/chat';
 
 const agent: Agent = {
   id: FIXTURE_AGENT_ID,
@@ -307,5 +308,91 @@ describe('switchAgentRuntime breadcrumbs (#2098)', () => {
       { kind: 'error', code: 'runtime.switch_failed.chat' },
     ]);
     write.mockRestore();
+  });
+});
+
+describe('/clear swapping the chat session (#2218)', () => {
+  const NEW_SESSION = 'session-after-clear';
+  let seq = 0;
+
+  function emit(type: ChatEvent['type'], data: unknown) {
+    act(() => {
+      useChatStore.getState().applyEvent({
+        v: CHAT_CONTRACT_VERSION, agentId: FIXTURE_AGENT_ID, sessionId: NEW_SESSION, seq: ++seq, ts: Date.now(), type, data,
+      } as ChatEvent);
+    });
+  }
+
+  /** What clearContext emits after the old session closes, in order. */
+  const clearNotice = () => emit('notice', { level: 'info', code: 'context_cleared', message: 'Started a new conversation.' });
+  function newSessionOpens() {
+    emit('session_state', { state: 'starting' });
+    emit('session_started', { driver: 'codex-app-server', provider: 'codex-cli', cwd: '/work/clubhouse', resumed: false, capabilities: MINIMAL_CHAT_CAPABILITIES });
+    emit('session_state', { state: 'idle' });
+  }
+
+  async function mountInChat() {
+    setFlag(true);
+    api.chat.getAgentRuntime = vi.fn(async () => ({ chat: true, live: true, chatAvailable: true }));
+    api.chat.readTranscript = vi.fn(async () => chatFixture('codex', 'conversation'));
+    const view = render(<AgentRuntimePane agent={agent} terminal={terminal} />);
+    await screen.findByTestId('chat-view');
+    return view;
+  }
+
+  beforeEach(() => {
+    seq = 0;
+    resetChatFlagCache();
+    useChatStore.setState({ agents: {}, loading: {}, loaded: {}, live: {} });
+    useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'Clubhouse', path: '/work/clubhouse' }] } as never);
+  });
+
+  it('returns to ChatView without a remount when main answered "not chat" before the new session opened', async () => {
+    await mountInChat();
+    // Mid-clear: the old session is closed and the new one isn't open yet.
+    api.chat.getAgentRuntime = vi.fn(async () => ({ chat: false, live: false, chatAvailable: true }));
+    clearNotice();
+    await waitFor(() => expect(api.chat.getAgentRuntime).toHaveBeenCalledTimes(1));
+    // The stuck state from the report: the terminal pane for a chat agent.
+    await screen.findByTestId('fake-terminal');
+
+    // The swap completes; main now answers chat.
+    api.chat.getAgentRuntime = vi.fn(async () => ({ chat: true, live: true, chatAvailable: true }));
+    newSessionOpens();
+    await screen.findByTestId('chat-view');
+    expect(api.chat.getAgentRuntime).toHaveBeenCalled();
+    expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
+    expect(useChatStore.getState().live[FIXTURE_AGENT_ID]).toBe(true);
+  });
+
+  it('never shows the terminal when the "not chat" answer arrives after the new session opened', async () => {
+    await mountInChat();
+    let answer!: (info: { chat: boolean; live: boolean; chatAvailable: boolean }) => void;
+    api.chat.getAgentRuntime = vi.fn(() => new Promise((resolve) => { answer = resolve; }));
+    clearNotice();
+    await waitFor(() => expect(api.chat.getAgentRuntime).toHaveBeenCalledTimes(1));
+    newSessionOpens();
+
+    // The answer from mid-clear lands last. It's older than the events, so it's asked again.
+    const stale = api.chat.getAgentRuntime;
+    api.chat.getAgentRuntime = vi.fn(async () => ({ chat: true, live: true, chatAvailable: true }));
+    await act(async () => { answer({ chat: false, live: false, chatAvailable: true }); });
+    await waitFor(() => expect(api.chat.getAgentRuntime).toHaveBeenCalledTimes(1));
+    expect(stale).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('chat-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('fake-terminal')).not.toBeInTheDocument();
+    expect(useChatStore.getState().live[FIXTURE_AGENT_ID]).toBe(true);
+  });
+
+  it('still settles on the terminal when chat really ended, without asking again', async () => {
+    const { rerender } = await mountInChat();
+    // Switched to the terminal: the chat session ends, then the restart answers terminal.
+    api.chat.getAgentRuntime = vi.fn(async () => ({ chat: false, live: false, chatAvailable: true }));
+    emit('session_ended', { reason: 'stopped', exitCode: 0 });
+    rerender(<AgentRuntimePane agent={{ ...agent, status: 'sleeping' }} terminal={terminal} />);
+    await screen.findByTestId('fake-terminal');
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(api.chat.getAgentRuntime).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('chat-view')).not.toBeInTheDocument();
   });
 });

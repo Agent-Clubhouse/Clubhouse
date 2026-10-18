@@ -13,7 +13,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
 import type { AgentRuntimeMode, ChatAgentRuntimeInfo } from '../../../../shared/chat';
-import { useChatStore } from '../../../stores/chatStore';
+import { chatEventCount, useChatStore } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useToastStore } from '../../../stores/toastStore';
@@ -99,6 +99,12 @@ function cachedInfo(agentId: string, starting: boolean): ChatAgentRuntimeInfo | 
  * Which runtime the agent is in, re-checked when it starts, stops or opens a
  * chat session. While it is starting, `chat` is the runtime it is starting
  * into. Null while the first answer for an eligible agent is pending.
+ *
+ * Live chat events outrank a "not chat" answer (#2218): an answer that crossed
+ * chat events in flight is asked again rather than shown, and chat events
+ * arriving while the pane shows the terminal ask again. Main can briefly say
+ * "not chat" while a chat runtime swaps sessions, and nothing else would ask
+ * again once the swap finished.
  */
 export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRuntimeInfo | null {
   const starting = isAgentStarting(agent);
@@ -107,6 +113,9 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
   // before the flag loaded is never returned once it has (#2206).
   const [entry, setEntry] = useState<{ agentId: string; eligible: boolean; info: ChatAgentRuntimeInfo | null }>(() => ({ agentId: agent.id, eligible: true, info: cachedInfo(agent.id, starting) }));
   const chatSession = useChatStore((s) => s.agents[agent.id]?.sessionId ?? null);
+  // A chat runtime runs it, as far as this window's chat events (or main's last answer) say.
+  const chatLive = useChatStore((s) => s.live[agent.id] === true);
+  const [recheck, setRecheck] = useState(0);
   const projectPath = useProjectStore((s) => s.projects.find((p) => p.id === agent.projectId)?.path);
   const remote = isRemoteProjectId(agent.projectId);
   const eligible = enabled && !remote && agent.kind === 'durable';
@@ -118,8 +127,15 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
       return prev.agentId === agent.id && prev.eligible && prev.info === info ? prev : { agentId: agent.id, eligible: true, info };
     });
     let cancelled = false;
+    const eventsBefore = chatEventCount(agent.id);
     const apply = (info: ChatAgentRuntimeInfo) => {
       if (cancelled) return;
+      if (!info.chat && chatEventCount(agent.id) !== eventsBefore && useChatStore.getState().live[agent.id] === true) {
+        // Chat events arrived while this answer was in flight and say chat runs
+        // the agent: the answer is older than them. Ask again, keeping the view.
+        setRecheck((n) => n + 1);
+        return;
+      }
       runtimeCache.set(agent.id, { info, starting });
       // Status surfaces overlay chat state only while chat runs the agent (#2208),
       // not while it is only starting into chat.
@@ -130,7 +146,12 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
       .then((r) => apply(r ?? NO_CHAT))
       .catch(() => apply(NO_CHAT));
     return () => { cancelled = true; };
-  }, [eligible, agent.id, agent.orchestrator, agent.status, chatSession, projectPath, starting]);
+  }, [eligible, agent.id, agent.orchestrator, agent.status, chatSession, projectPath, starting, recheck]);
+  const showsTerminal = eligible && entry.agentId === agent.id && entry.eligible && entry.info?.chat === false;
+  useEffect(() => {
+    // Chat events after a "not chat" answer: chat runs it now, so ask again.
+    if (showsTerminal && chatLive) setRecheck((n) => n + 1);
+  }, [showsTerminal, chatLive]);
   if (!eligible) return NO_CHAT;
   if (entry.agentId !== agent.id || !entry.eligible) return cachedInfo(agent.id, starting);
   return entry.info;

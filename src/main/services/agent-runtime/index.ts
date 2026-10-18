@@ -39,9 +39,10 @@ export function listChatRuntimes(): AgentRuntime[] {
   return [...chatRuntimes.values()];
 }
 
+/** A chat runtime runs the agent, including while it swaps sessions for a clear. */
 export function isChatAgent(agentId: string): boolean {
   const runtime = chatRuntimes.get(agentId);
-  return !!runtime && runtime.isRunning();
+  return !!runtime && (runtime.isRunning() || runtime.isSwappingSession?.() === true);
 }
 
 /** For tests. */

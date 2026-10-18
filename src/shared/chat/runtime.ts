@@ -87,6 +87,11 @@ export interface AgentRuntime {
 
   /** True while a live process backs this runtime. */
   isRunning(): boolean;
+  /**
+   * True while the runtime is replacing its session (chat clearContext): no
+   * process backs it for a moment, but it still runs the agent. Chat only.
+   */
+  isSwappingSession?(): boolean;
   /** Coarse state for status badges; chat runtimes derive it from events. */
   getState(): ChatSessionState;
   /** When the running turn started (ms), or null between turns. Chat runtimes only. */

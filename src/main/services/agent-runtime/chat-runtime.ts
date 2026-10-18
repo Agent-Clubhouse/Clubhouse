@@ -159,6 +159,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   private sleptAfterMs: number | undefined;
   private ended = false;
   private stopRequested = false;
+  /** clearContext() is replacing the driver session: no session is open, but chat still runs the agent. */
+  private swapping = false;
   /** Aborts the driver start in progress, if any. */
   private opening: AbortController | undefined;
   private systemPromptApplied = false;
@@ -398,6 +400,10 @@ export class ChatAgentRuntime implements AgentRuntime {
     return !!this.session && !this.ended;
   }
 
+  isSwappingSession(): boolean {
+    return this.swapping && !this.ended;
+  }
+
   getState(): ChatSessionState {
     return this.state;
   }
@@ -552,18 +558,26 @@ export class ChatAgentRuntime implements AgentRuntime {
   async clearContext(): Promise<void> {
     const old = this.session;
     this.session = undefined;
-    this.settleAllPermissions();
-    this.queued.length = 0;
-    this.turnId = undefined;
-    if (old) await old.close();
-    // Finish queued writes under the old id before starting its replacement.
-    await this.emitChain;
-    this.sessionId = this.newId();
-    this.seq = 0;
-    this.systemPromptApplied = false;
-    this.nativeSessionId = undefined;
-    await this.emit({ type: 'notice', data: { level: 'info', code: 'context_cleared', message: 'Started a new conversation.' } });
-    await this.openSession(undefined);
+    // Between closing the old session and opening the new one, isRunning() is
+    // false; isSwappingSession() keeps the agent counted as a chat agent, so a
+    // view asking "which runtime?" mid-clear doesn't get "terminal" (#2218).
+    this.swapping = true;
+    try {
+      this.settleAllPermissions();
+      this.queued.length = 0;
+      this.turnId = undefined;
+      if (old) await old.close();
+      // Finish queued writes under the old id before starting its replacement.
+      await this.emitChain;
+      this.sessionId = this.newId();
+      this.seq = 0;
+      this.systemPromptApplied = false;
+      this.nativeSessionId = undefined;
+      await this.emit({ type: 'notice', data: { level: 'info', code: 'context_cleared', message: 'Started a new conversation.' } });
+      await this.openSession(undefined);
+    } finally {
+      this.swapping = false;
+    }
   }
 
   async compact(): Promise<void> {
