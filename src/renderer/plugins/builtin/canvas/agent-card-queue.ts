@@ -1,4 +1,4 @@
-import type { CanvasView, Position, Size } from './canvas-types';
+import type { CanvasInstance, CanvasView, Position, Size } from './canvas-types';
 import { computeAdjacentPosition } from './canvas-operations';
 
 /**
@@ -10,6 +10,10 @@ import { computeAdjacentPosition } from './canvas-operations';
  * from disk, so a card added in the meantime would be lost. Cards wait here,
  * per canvas store, and the canvas places them once it has loaded in its
  * current mount, against where the parent card is at that moment.
+ *
+ * The queue is in memory only: a card still waiting when the app quits (the
+ * page closed onto another tab and the canvas never reopened) is not placed.
+ * The agent itself exists and can be added from any card's picker.
  */
 
 export interface PendingAgentCard {
@@ -66,4 +70,9 @@ export function placeAgentCard(card: PendingAgentCard, views: readonly CanvasVie
     position: computeAdjacentPosition(base.position, base.size, base.size, views as CanvasView[]),
     size: base.size,
   };
+}
+
+/** The canvas a card is on, or `fallback` when no canvas has it. */
+export function canvasOfView(canvases: readonly Pick<CanvasInstance, 'id' | 'views'>[], viewId: string, fallback: string): string {
+  return canvases.find((c) => c.views.some((v) => v.id === viewId))?.id ?? fallback;
 }

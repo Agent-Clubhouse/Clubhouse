@@ -3,7 +3,7 @@ import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from 
 import type { CanvasMutation } from '../../../../shared/types';
 import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
-import { queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, type PendingAgentCard } from './agent-card-queue';
+import { queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, canvasOfView, type PendingAgentCard } from './agent-card-queue';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
 import { setCanvasQueryProvider } from '../../plugin-api-canvas';
@@ -49,6 +49,9 @@ export function findBindingsForView(view: CanvasView, bindings: McpBindingEntry[
 
 // App-mode canvas store: single instance shared across all projects
 export const useAppCanvasStore = createCanvasStore();
+
+/** Saves still writing, per canvas store, so a remount reads after them. */
+const inflightSaves = new WeakMap<object, Promise<unknown>>();
 
 // Project-mode canvas stores: one per project, keyed by projectId
 const projectCanvasStores = new Map<string, ReturnType<typeof createCanvasStore>>();
@@ -184,7 +187,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       api.window.resetTitle();
     }
   }, [api, activeCanvasName, newChrome]);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { findCanvasPopout } = usePopouts();
 
   // Load persisted state (or remote canvas state for annex projects)
@@ -218,6 +220,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     // Await loadCanvas before loadWires so that wire reconciliation has
     // access to the loaded canvas views.
     (async () => {
+      // A save flushed by the previous mount may still be writing; read after it.
+      await inflightSaves.get(store);
       await store.getState().loadCanvas(storage);
       await store.getState().loadWires(storage);
       if (!cancelled) setHydrated(true);
@@ -258,25 +262,43 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // Debounced auto-save (skip for remote projects/app — state is owned by satellite).
   // Wire definitions are saved from the canvas store (not from live MCP bindings),
   // so wires survive agent sleep/wake cycles.
+  //
+  // A save that is still pending when the panel unmounts (a fast tab switch,
+  // the New agent page replacing the pane) or when the panel moves to another
+  // store is flushed, not dropped: the next mount reloads from disk, so an
+  // unsaved move, resize or new card would be lost.
+  const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; owner: object; run: () => void } | null>(null);
+  const flushSave = useCallback(() => {
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingSaveRef.current = null;
+    pending.run();
+  }, []);
   const scheduleSave = useCallback(() => {
     if (isRemote || isRemoteApp) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      store.getState().saveCanvas(storage);
-      store.getState().saveWires(storage);
+    const run = (): void => {
+      const saving = Promise.all([store.getState().saveCanvas(storage), store.getState().saveWires(storage)]);
+      inflightSaves.set(store, saving.catch((): undefined => undefined));
+    };
+    const previous = pendingSaveRef.current;
+    if (previous) {
+      clearTimeout(previous.timer);
+      if (previous.owner !== store) previous.run();
+    }
+    const timer = setTimeout((): void => {
+      pendingSaveRef.current = null;
+      run();
     }, 500);
+    pendingSaveRef.current = { timer, owner: store, run };
   }, [store, storage, isRemote, isRemoteApp]);
 
   useEffect(() => {
     if (!loaded || !wiresLoaded) return;
     scheduleSave();
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-    };
   }, [canvases, views, viewport, zoomedViewId, wireDefinitions, zoneWireDefinitions, minimapAutoHide, elkAlgorithm, elkDirection, layoutCenterId, loaded, wiresLoaded, scheduleSave]);
+
+  useEffect(() => () => flushSave(), [flushSave]);
 
   // ── Agent wake reconciliation ────────────────────────────────────
   // When an agent wakes up (bindings appear in MCP store that match wire
@@ -521,8 +543,11 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // this mount has loaded the canvas, next to where the parent is by then
   // (agent-card-queue.ts). Persistence is handled by the scheduleSave debounce.
   const handleCreateAgentCard = useCallback((parentView: AgentCanvasView, agentId: string) => {
+    // The parent's own canvas, not whichever is active now: the user may have
+    // switched canvas tabs while the agent was being made.
+    const { canvases: all, activeCanvasId: active } = store.getState();
     queueAgentCard(store, {
-      canvasId: store.getState().activeCanvasId,
+      canvasId: canvasOfView(all, parentView.id, active),
       parentViewId: parentView.id,
       fallback: { position: parentView.position, size: parentView.size },
       agentId,
@@ -568,8 +593,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   useEffect(() => {
     if (!hydrated || !loaded) return;
     const { activeCanvasId: canvasId, canvases: all } = store.getState();
-    for (const card of takeAgentCards(store, canvasId, all.map((c) => c.id))) placeQueuedAgentCard(card);
-  }, [hydrated, loaded, activeCanvasId, agentCardTick, store, placeQueuedAgentCard]);
+    const cards = takeAgentCards(store, canvasId, all.map((c) => c.id));
+    if (cards.length === 0) return;
+    for (const card of cards) placeQueuedAgentCard(card);
+    // Save now rather than on the debounce: a card made from the New agent
+    // page often lands just before the user opens the page again.
+    scheduleSave();
+    flushSave();
+  }, [hydrated, loaded, activeCanvasId, agentCardTick, store, placeQueuedAgentCard, scheduleSave, flushSave]);
 
   const handleZoomView = useCallback((viewId: string | null) => {
     remoteForward({ type: 'zoomView', viewId });

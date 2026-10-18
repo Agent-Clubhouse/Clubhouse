@@ -410,45 +410,135 @@ describe('canvas main', () => {
   // replaces the pane, so the canvas unmounts. A remount reloads the canvas
   // from disk, so a card added while it was away would be lost. Cards are
   // queued instead and placed once the remounted canvas has loaded.
-  it('places a sibling card queued while the canvas was unmounted, after it reloads', async () => {
-    const files = new Map<string, unknown>();
-    const storage = {
-      read: vi.fn(async (key: string) => files.get(key)),
-      write: vi.fn(async (key: string, value: unknown) => { files.set(key, value); }),
-      delete: vi.fn(async (key: string) => { files.delete(key); }),
-      list: vi.fn(async () => [...files.keys()]),
-    };
-    const api = createMockAPI({
-      context: { mode: 'project', projectId: 'proj-agent-card-queue', projectPath: '/tmp/proj-agent-card-queue' },
-      storage: { project: storage, projectLocal: storage, global: storage },
+  describe('sibling cards from the New agent page', () => {
+    function memoryStorage(fail = { value: false }) {
+      const files = new Map<string, unknown>();
+      return {
+        files,
+        fail,
+        read: vi.fn(async (key: string) => {
+          if (fail.value && key.startsWith('canvas-instances')) {
+            throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+          }
+          return files.get(key);
+        }),
+        write: vi.fn(async (key: string, value: unknown) => { files.set(key, value); }),
+        delete: vi.fn(async (key: string) => { files.delete(key); }),
+        list: vi.fn(async () => [...files.keys()]),
+      };
+    }
+
+    function setup(projectId: string, storage = memoryStorage()) {
+      const api = createMockAPI({
+        context: { mode: 'project', projectId, projectPath: `/tmp/${projectId}` },
+        storage: { project: storage, projectLocal: storage, global: storage },
+      });
+      const store = canvasModule.getProjectCanvasStore(projectId);
+      const mount = () => render(React.createElement(canvasModule.MainPanel, { api }));
+      // A mount's reload is done once it has read the wires (the last step).
+      const readsWires = () => storage.read.mock.calls.filter(([k]) => k === 'canvas-wires').length;
+      async function mountAndLoad() {
+        const before = readsWires();
+        const view = mount();
+        await waitFor(() => expect(readsWires()).toBeGreaterThan(before));
+        await waitFor(() => expect(store.getState().loaded).toBe(true));
+        return view;
+      }
+      return { api, store, storage, mount, mountAndLoad };
+    }
+
+    const placedFor = (store: ReturnType<typeof canvasModule.getProjectCanvasStore>, agentId: string) =>
+      store.getState().canvases.flatMap((c) => c.views.map((v) => ({ canvasId: c.id, view: v })))
+        .find(({ view }) => (view as { agentId?: string }).agentId === agentId);
+
+    async function addParent(store: ReturnType<typeof canvasModule.getProjectCanvasStore>, storage: ReturnType<typeof memoryStorage>) {
+      let parentId = '';
+      act(() => { parentId = store.getState().addView('agent', { x: 100, y: 100 }); });
+      await store.getState().saveCanvas(storage);
+      return store.getState().views.find((v) => v.id === parentId)!;
+    }
+
+    it('places a card queued while the canvas was unmounted, after it reloads', async () => {
+      const { store, storage, mountAndLoad } = setup('proj-card-queue-reload');
+      const first = await mountAndLoad();
+      const parent = await addParent(store, storage);
+      first.unmount();
+
+      queueAgentCard(store, { canvasId: store.getState().activeCanvasId, parentViewId: parent.id, fallback: { position: parent.position, size: parent.size }, agentId: 'agent-made-on-page' });
+
+      await mountAndLoad();
+      await waitFor(() => expect(placedFor(store, 'agent-made-on-page')).toBeDefined());
+      expect(placedFor(store, 'agent-made-on-page')!.view.position.x).toBeGreaterThanOrEqual(parent.position.x + parent.size.width);
+      expect(store.getState().views.find((v) => v.id === parent.id)).toBeDefined();
     });
-    const store = canvasModule.getProjectCanvasStore('proj-agent-card-queue');
 
-    // First visit: a picker card at (100, 100), saved to disk.
-    const first = render(React.createElement(canvasModule.MainPanel, { api }));
-    await waitFor(() => expect(store.getState().loaded).toBe(true));
-    let parentId = '';
-    act(() => { parentId = store.getState().addView('agent', { x: 100, y: 100 }); });
-    await store.getState().saveCanvas(storage);
-    const parent = store.getState().views.find((v) => v.id === parentId)!;
-    first.unmount();
+    it('keeps a placed card when the canvas unmounts again right away (before the autosave debounce)', async () => {
+      const { store, storage, mountAndLoad } = setup('proj-card-queue-fast-unmount');
+      const first = await mountAndLoad();
+      const parent = await addParent(store, storage);
+      first.unmount();
 
-    // The New agent page is open; the agent gets made and the card queued.
-    queueAgentCard(store, {
-      canvasId: store.getState().activeCanvasId,
-      parentViewId: parentId,
-      fallback: { position: parent.position, size: parent.size },
-      agentId: 'agent-made-on-page',
+      queueAgentCard(store, { canvasId: store.getState().activeCanvasId, parentViewId: parent.id, fallback: { position: parent.position, size: parent.size }, agentId: 'agent-1' });
+      const second = await mountAndLoad();
+      await waitFor(() => expect(placedFor(store, 'agent-1')).toBeDefined());
+      // New agent again straight away: the page replaces the pane well inside 500 ms.
+      await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
+      second.unmount();
+
+      await mountAndLoad();
+      expect(placedFor(store, 'agent-1')).toBeDefined();
     });
 
-    // Back on the canvas. Let the reload from disk finish before checking:
-    // a card placed before it would be wiped by it.
-    render(React.createElement(canvasModule.MainPanel, { api }));
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    it('keeps a moved card when the canvas unmounts before the autosave debounce', async () => {
+      const { store, storage, mountAndLoad } = setup('proj-card-queue-fast-move');
+      const first = await mountAndLoad();
+      const parent = await addParent(store, storage);
+      act(() => { store.getState().moveView(parent.id, { x: 700, y: 400 }); });
+      first.unmount();
 
-    const placed = store.getState().views.find((v) => (v as { agentId?: string }).agentId === 'agent-made-on-page');
-    expect(placed).toBeDefined();
-    expect(placed!.position.x).toBeGreaterThanOrEqual(parent.position.x + parent.size.width);
-    expect(store.getState().views.find((v) => v.id === parentId)).toBeDefined();
+      await mountAndLoad();
+      expect(store.getState().views.find((v) => v.id === parent.id)?.position).toEqual({ x: 700, y: 400 });
+    });
+
+    it('puts the card on the parent\'s canvas, not the canvas that is active when the agent is made', async () => {
+      const { store, storage, mountAndLoad } = setup('proj-card-queue-other-canvas');
+      const first = await mountAndLoad();
+      const parent = await addParent(store, storage);
+      const parentCanvas = store.getState().activeCanvasId;
+      queueAgentCard(store, { canvasId: parentCanvas, parentViewId: parent.id, fallback: { position: parent.position, size: parent.size }, agentId: 'agent-elsewhere' });
+      // Queued while the parent's canvas is active, so it's placed there at once.
+      await waitFor(() => expect(placedFor(store, 'agent-elsewhere')?.canvasId).toBe(parentCanvas));
+
+      // Now queue one while another canvas is active: it waits for the parent's canvas.
+      let otherCanvas = '';
+      act(() => { otherCanvas = store.getState().addCanvas(); store.getState().setActiveCanvas(otherCanvas); });
+      queueAgentCard(store, { canvasId: parentCanvas, parentViewId: parent.id, fallback: { position: parent.position, size: parent.size }, agentId: 'agent-later' });
+      await act(async () => { await Promise.resolve(); });
+      expect(placedFor(store, 'agent-later')).toBeUndefined();
+
+      act(() => { store.getState().setActiveCanvas(parentCanvas); });
+      await waitFor(() => expect(placedFor(store, 'agent-later')?.canvasId).toBe(parentCanvas));
+      first.unmount();
+    });
+
+    it('keeps cards queued through a failed load and places them once the canvas loads', async () => {
+      const storage = memoryStorage();
+      const { store, mount, mountAndLoad } = setup('proj-card-queue-load-error', storage);
+      const first = await mountAndLoad();
+      const parent = await addParent(store, storage);
+      first.unmount();
+
+      queueAgentCard(store, { canvasId: store.getState().activeCanvasId, parentViewId: parent.id, fallback: { position: parent.position, size: parent.size }, agentId: 'agent-after-error' });
+
+      storage.fail.value = true;
+      const failed = mount();
+      expect(await screen.findByTestId('canvas-load-error', {}, { timeout: 3000 })).toBeTruthy();
+      expect(placedFor(store, 'agent-after-error')).toBeUndefined();
+      failed.unmount();
+
+      storage.fail.value = false;
+      await mountAndLoad();
+      await waitFor(() => expect(placedFor(store, 'agent-after-error')).toBeDefined());
+    });
   });
 });

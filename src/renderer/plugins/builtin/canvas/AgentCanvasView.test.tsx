@@ -468,6 +468,20 @@ describe('AgentCanvasView', () => {
     });
   });
 
+  it('renames a card titled with the raw agent id once the agent shows up', () => {
+    const view = makeView({ agentId: 'agent-7', title: 'agent-7', displayName: 'agent-7' });
+    const onUpdate = vi.fn();
+    render(<AgentCanvasView view={view} api={stubApi({ agents: [{ id: 'agent-7', name: 'bold-falcon', status: 'sleeping', kind: 'durable', projectId: 'proj-1' }] })} onUpdate={onUpdate} />);
+    expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ title: 'bold-falcon', displayName: 'bold-falcon' }));
+  });
+
+  it('keeps a name the user gave the card', () => {
+    const view = makeView({ agentId: 'agent-7', title: 'Reviewer', displayName: 'Reviewer' });
+    const onUpdate = vi.fn();
+    render(<AgentCanvasView view={view} api={stubApi({ agents: [{ id: 'agent-7', name: 'bold-falcon', status: 'sleeping', kind: 'durable', projectId: 'proj-1' }] })} onUpdate={onUpdate} />);
+    for (const [update] of onUpdate.mock.calls) expect(update).not.toHaveProperty('displayName');
+  });
+
   // ── New agent page (#2031) ─────────────────────────────────────────
 
   describe('New agent page', () => {

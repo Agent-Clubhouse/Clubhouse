@@ -81,10 +81,16 @@ export function AgentCanvasView({ view, api, onUpdate, zoneThemeId, onCreateAgen
     const changed = Object.keys(next).some(
       (k) => prev[k] !== next[k as keyof typeof next],
     );
-    if (changed) {
-      onUpdate({ metadata: next } as Partial<AgentCanvasViewType>);
+    // A card placed before the agent store knew the agent is titled with its
+    // raw id; give it the agent's name once the agent shows up.
+    const titledWithId = view.displayName === assignedAgent.id && !!assignedAgent.name && assignedAgent.name !== assignedAgent.id;
+    if (changed || titledWithId) {
+      onUpdate({
+        metadata: next,
+        ...(titledWithId ? { title: assignedAgent.name, displayName: assignedAgent.name } : {}),
+      } as Partial<AgentCanvasViewType>);
     }
-  }, [assignedAgent, projects, view.metadata, onUpdate]);
+  }, [assignedAgent, projects, view.metadata, view.displayName, onUpdate]);
 
   const handleBackToProjects = useCallback(() => {
     setSelectedProjectId(null);

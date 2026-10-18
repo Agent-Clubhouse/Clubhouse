@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, type PendingAgentCard } from './agent-card-queue';
+import { queueAgentCard, takeAgentCards, subscribeAgentCards, placeAgentCard, canvasOfView, type PendingAgentCard } from './agent-card-queue';
 import type { CanvasView } from './canvas-types';
 
 const card = (over: Partial<PendingAgentCard> = {}): PendingAgentCard => ({
@@ -76,5 +76,20 @@ describe('placeAgentCard', () => {
       placed.position.x < v.position.x + v.size.width && placed.position.x + 400 > v.position.x
       && placed.position.y < v.position.y + v.size.height && placed.position.y + 300 > v.position.y);
     expect(overlaps).toBe(false);
+  });
+});
+
+describe('canvasOfView', () => {
+  const canvases = [
+    { id: 'c1', views: [view('a', 0, 0)] },
+    { id: 'c2', views: [view('parent', 0, 0)] },
+  ];
+
+  it('finds the canvas the card is on, even when another canvas is active', () => {
+    expect(canvasOfView(canvases, 'parent', 'c1')).toBe('c2');
+  });
+
+  it('falls back when no canvas has the card', () => {
+    expect(canvasOfView(canvases, 'gone', 'c1')).toBe('c1');
   });
 });
