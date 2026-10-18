@@ -67,7 +67,7 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
   setPolling: async (id, enabled) => {
     // Delegates the persist + member start/stop side-effect to the main process
     // (setProjectPolling), the same code path the toggle_polling MCP command uses.
-    // Optimistically reflect the new setting so the "Poll: On/Off" label updates
+    // Optimistically reflect the new setting so the Polling switch updates
     // immediately; the CHANGED broadcast will reconcile shortly after.
     await window.clubhouse.groupProject.setPolling(id, enabled);
     set((state) => ({

@@ -107,10 +107,10 @@ function renderWidget() {
   );
 }
 
-/** The unread badge text rendered next to a topic, e.g. "+2". */
+/** The unread count rendered next to a topic, e.g. "2 new". */
 function unreadBadge(topic: string): string | null {
   const button = screen.getByText(topic).closest('button')!;
-  const badge = button.querySelector('.text-ctp-green');
+  const badge = button.querySelector('[data-testid="group-project-topic-unread"]');
   return badge ? badge.textContent : null;
 }
 
@@ -139,14 +139,14 @@ describe('GroupProjectCanvasWidget — unread counts', () => {
     // "All" is selected by default and does not exist as a real topic, so both
     // channels start unread until one is opened.
     await waitFor(() => expect(screen.getByText('tasks')).toBeInTheDocument());
-    expect(unreadBadge('tasks')).toBe('+1');
+    expect(unreadBadge('tasks')).toBe('1 new');
   });
 
   it('clears the unread badge when a channel is opened', async () => {
     const user = userEvent.setup();
     renderWidget();
 
-    await waitFor(() => expect(unreadBadge('tasks')).toBe('+1'));
+    await waitFor(() => expect(unreadBadge('tasks')).toBe('1 new'));
 
     await user.click(screen.getByText('tasks'));
 
@@ -207,7 +207,7 @@ describe('GroupProjectCanvasWidget — unread counts', () => {
     // never flashes back on after a reload.
     expect(fetchDigest.mock.calls[0][1]).toEqual({ tasks: TASKS_LATEST });
     await waitFor(() => expect(unreadBadge('tasks')).toBeNull());
-    expect(unreadBadge('general')).toBe('+2');
+    expect(unreadBadge('general')).toBe('2 new');
   });
 
   it('does not mark anything read from the default All pane', async () => {
@@ -217,8 +217,8 @@ describe('GroupProjectCanvasWidget — unread counts', () => {
     // "All" is the default selection, so treating it as a read would clear
     // every badge before the user has opened anything.
     expect(storedReadState()).toEqual({});
-    expect(unreadBadge('general')).toBe('+2');
-    expect(unreadBadge('tasks')).toBe('+1');
+    expect(unreadBadge('general')).toBe('2 new');
+    expect(unreadBadge('tasks')).toBe('1 new');
   });
 });
 
