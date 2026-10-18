@@ -43,6 +43,10 @@ const ALLOWED_FILES: Record<string, string> = {
   'ipc/blueprint-handlers.ts': 'getFocusedWindow used as dialog parent for showSaveDialog',
   'ipc/project-handlers.ts': 'getFocusedWindow used as dialog parent for showOpenDialog',
 
+  // The feedback capture shortcut (#2101) screenshots the window the user was in
+  // first; the review it opens goes to the main window, not a broadcast.
+  'ipc/feedback-handlers.ts': 'getFocusedWindow picks the window to capture first for the feedback shortcut',
+
   // getAllWindows()[0] used as dialog parent for user confirmation before
   // executing agent-supplied JavaScript in browser widgets (SEC-04).
   'services/clubhouse-mcp/tools/browser-tools.ts': 'getAllWindows()[0] used as dialog parent for evaluate confirmation',

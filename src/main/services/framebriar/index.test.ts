@@ -4,7 +4,9 @@ vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/clubhouse-test', getVersion: () => '0.42.0' },
   net: { isOnline: () => true },
   safeStorage: {},
+  Menu: { getApplicationMenu: () => menu.current },
 }));
+const menu = vi.hoisted(() => ({ current: null as null | { getMenuItemById: (id: string) => { enabled: boolean } | null } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 const broadcast = vi.hoisted(() => vi.fn());
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: broadcast }));
@@ -53,6 +55,24 @@ describe('feedback wiring', () => {
     getFeedbackService();
     created[0].listeners[0]({ connected: true });
     expect(broadcast).toHaveBeenCalledWith(IPC.FEEDBACK.STATUS_CHANGED, { connected: true });
+  });
+
+  it('enables the capture shortcut menu item exactly when feedback can capture, and disables it at quit (#2101)', async () => {
+    const item = { enabled: false };
+    menu.current = { getMenuItemById: (id: string) => (id === 'feedback-capture' ? item : null) };
+    try {
+      getFeedbackService();
+      const notify = (status: unknown) => created[0].listeners.forEach((l) => l(status));
+      notify({ canCapture: true });
+      expect(item.enabled).toBe(true);
+      notify({ canCapture: false });
+      expect(item.enabled).toBe(false);
+      notify({ canCapture: true });
+      await shutdownFeedback();
+      expect(item.enabled).toBe(false);
+    } finally {
+      menu.current = null;
+    }
   });
 
   it('cannot be started again after quit', async () => {

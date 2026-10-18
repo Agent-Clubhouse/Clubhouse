@@ -45,8 +45,6 @@ export function getFeedbackService(): FeedbackService {
     });
     // The button, notices and Settings follow main's status in every window.
     s.onChange((status) => broadcastToAllWindows(IPC.FEEDBACK.STATUS_CHANGED, status));
-    // The capture shortcut works exactly when the Feedback button shows.
-    s.onChange((status) => setFeedbackCaptureEnabled(status.canCapture));
     // Telemetry export to Framebriar follows Feedback's connection (spec §6.11).
     setFramebriarTelemetrySource(() => (service === s ? s.telemetryExport() : null));
     let wasConnected = false;
@@ -57,6 +55,8 @@ export function getFeedbackService(): FeedbackService {
         notifyFramebriarConnectionChanged();
       }
     });
+    // The capture shortcut works exactly when the Feedback button shows.
+    s.onChange((status) => setFeedbackCaptureEnabled(status.canCapture));
     service = s;
   }
   return service;
