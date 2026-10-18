@@ -222,7 +222,7 @@ describe('SEC-06: MCP binding IPC authorization', () => {
     });
 
     it('rejects bind from non-app-window sender (webview)', () => {
-      mockFromWebContents.mockReturnValue(null as any);
+      mockFromWebContents.mockReturnValue(null);
       mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
       const handler = getHandler(IPC.MCP_BINDING.BIND);
       const target = { targetId: 'w1', targetKind: 'browser', label: 'Widget' };
@@ -253,7 +253,7 @@ describe('SEC-06: MCP binding IPC authorization', () => {
     });
 
     it('rejects unbind from non-app-window sender', () => {
-      mockFromWebContents.mockReturnValue(null as any);
+      mockFromWebContents.mockReturnValue(null);
       mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
       const handler = getHandler(IPC.MCP_BINDING.UNBIND);
       expect(() => handler(fakeEvent, 'agent-2', 'target-1')).toThrow('unauthorized caller');
@@ -277,7 +277,7 @@ describe('SEC-06: MCP binding IPC authorization', () => {
     });
 
     it('rejects setInstructions from non-app-window sender', () => {
-      mockFromWebContents.mockReturnValue(null as any);
+      mockFromWebContents.mockReturnValue(null);
       mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
       const handler = getHandler('mcp-binding:set-instructions');
       expect(() => handler(fakeEvent, 'agent-3', 'target-1', { key: 'val' })).toThrow('unauthorized caller');
@@ -301,7 +301,7 @@ describe('SEC-06: MCP binding IPC authorization', () => {
     });
 
     it('rejects setDisabledTools from non-app-window sender', () => {
-      mockFromWebContents.mockReturnValue(null as any);
+      mockFromWebContents.mockReturnValue(null);
       mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
       const handler = getHandler('mcp-binding:set-disabled-tools');
       expect(() => handler(fakeEvent, 'agent-4', 'target-1', ['tool-a'])).toThrow('unauthorized caller');
@@ -344,7 +344,7 @@ describe('GET_AGENT_CONNECTION', () => {
   });
 
   it('rejects callers that are not app windows', () => {
-    mockFromWebContents.mockReturnValue(null as any);
+    mockFromWebContents.mockReturnValue(null);
     const handler = getHandler(IPC.MCP_BINDING.GET_AGENT_CONNECTION);
     expect(() => handler(fakeEvent, 'agent-1')).toThrow();
   });
