@@ -959,6 +959,19 @@ describe('agentStore', () => {
       mockAgent.spawnAgent.mockResolvedValue(undefined);
     });
 
+    // The Sleeping view's wake with a task (#2038) resumes AND sends a new task;
+    // unlike the restart resume queue (#2074), it must keep the mission.
+    it('wake with a task resumes the last session and delivers the task', async () => {
+      const config = {
+        id: 'durable_wake', name: 'wake-agent', color: 'indigo', worktreePath: '/wt/wake',
+        branch: 'wake/standby', createdAt: '2024-01-01', lastSessionId: 'sess-9',
+      };
+      await getState().spawnDurableAgent('proj_1', '/project', config, true, 'Fix the flaky test');
+      expect(mockAgent.spawnAgent).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'durable_wake', kind: 'durable', resume: true, sessionId: 'sess-9', mission: 'Fix the flaky test',
+      }));
+    });
+
     it('preserves icon from config so avatar does not reset to initials', async () => {
       const config = {
         id: 'durable_icon',

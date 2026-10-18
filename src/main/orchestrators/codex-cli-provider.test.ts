@@ -238,6 +238,20 @@ describe('CodexCliProvider', () => {
       expect(args).not.toContain('--last');
     });
 
+    // #2074: the resume queue sends no mission, so a resumed session gets no new prompt
+    it('a resumed spawn without a mission has no trailing prompt', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/p', resume: true, sessionId: 'sess-1', interactive: true });
+      expect(result.args).toEqual(['resume', 'sess-1']);
+      expect(result.trailingArgs ?? []).toEqual([]);
+    });
+
+    // A wake with a task (Sleeping view) resumes and sends the new task
+    it('a resumed spawn with a mission passes it as the prompt', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/p', resume: true, sessionId: 'sess-1', mission: 'New task', interactive: true });
+      expect(result.args.slice(0, 2)).toEqual(['resume', 'sess-1']);
+      expect(result.trailingArgs).toEqual(['New task']);
+    });
+
     it('ignores sessionId when resume is not requested', async () => {
       const { args } = await provider.buildSpawnCommand({ cwd: '/p', sessionId: 'abc-123' });
       expect(args).not.toContain('resume');

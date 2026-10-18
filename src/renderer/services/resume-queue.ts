@@ -92,6 +92,8 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       resuming: true,
       orchestrator: entry.orchestrator,
       model: entry.model || durableConfig?.model,
+      // Kept on the agent for display (the run header, a quick agent's record);
+      // it is not sent to the resumed CLI.
       mission: entry.mission,
       worktreePath: entry.worktreePath,
       branch: durableConfig?.branch,
@@ -119,7 +121,8 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       sessionId: entry.sessionId || undefined,
       orchestrator: entry.orchestrator,
       model: entry.model || durableConfig?.model,
-      mission: entry.mission,
+      // No mission: the session being resumed already has it, and passing it
+      // again makes every provider re-send it as a new turn (#2074).
       permissionMode: entry.permissionMode,
       freeAgentMode: entry.freeAgentMode ?? durableConfig?.freeAgentMode,
     });
@@ -157,7 +160,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
           sessionId: undefined, // --continue instead of --resume <id>
           orchestrator: entry.orchestrator,
           model: entry.model || fallbackConfig?.model,
-          mission: entry.mission,
+          // No mission on resume (#2074), here as on the first attempt
           permissionMode: entry.permissionMode,
           freeAgentMode: entry.freeAgentMode ?? fallbackConfig?.freeAgentMode,
         });

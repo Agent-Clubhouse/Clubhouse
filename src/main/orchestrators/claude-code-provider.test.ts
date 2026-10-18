@@ -114,6 +114,19 @@ describe('ClaudeCodeProvider', () => {
   });
 
   describe('buildSpawnCommand', () => {
+    // #2074: the resume queue sends no mission, so a resumed session gets no new prompt
+    it('a resumed spawn without a mission ends at the resume flag, with no prompt', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', resume: true, sessionId: 'sess-1', interactive: true });
+      expect(args).toEqual(['--resume', 'sess-1']);
+      expect((await provider.buildSpawnCommand({ cwd: '/p', resume: true, interactive: true })).args).toEqual(['--continue']);
+    });
+
+    // A wake with a task (Sleeping view) resumes and sends the new task
+    it('a resumed spawn with a mission passes it as the positional prompt', async () => {
+      const { args } = await provider.buildSpawnCommand({ cwd: '/p', resume: true, sessionId: 'sess-1', mission: 'New task', interactive: true });
+      expect(args).toEqual(['--resume', 'sess-1', 'New task']);
+    });
+
     it('returns binary path and empty args by default', async () => {
       const { binary, args } = await provider.buildSpawnCommand({ cwd: '/project' });
       expect(binary).toContain('claude');

@@ -1213,6 +1213,7 @@ export interface RestartSessionEntry {
   resumeStrategy: ResumeStrategy;
   worktreePath?: string;
   kind: AgentKind;
+  /** The task the agent was running, for display after the restart. Never re-sent on resume (#2074). */
   mission?: string;
   model?: string;
   permissionMode?: FreeAgentPermissionMode;

@@ -149,9 +149,49 @@ describe('resume-queue', () => {
           sessionId: 'session-abc',
           orchestrator: 'claude-code',
           model: 'claude-opus-4',
-          mission: 'Fix the bug',
         }),
       );
+      // The resumed session already has its mission; sending it again replays it (#2074)
+      expect(mockSpawnAgent.mock.calls[0][0]).not.toHaveProperty('mission');
+    });
+
+    it('never sends the original mission with resume: true, including on the --continue fallback (#2074)', async () => {
+      const entry = makeEntry({
+        agentId: 'replay-agent',
+        sessionId: 'session-1',
+        kind: 'durable',
+        mission: 'Refactor the auth module',
+        resumeStrategy: 'auto',
+      });
+      mockSpawnAgent
+        .mockRejectedValueOnce(new Error('session not found'))
+        .mockResolvedValueOnce(undefined);
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['replay-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+
+      await processResumeQueue(makeState([entry]));
+
+      expect(mockSpawnAgent).toHaveBeenCalledTimes(2);
+      for (const [params] of mockSpawnAgent.mock.calls) {
+        expect(params).toMatchObject({ resume: true });
+        expect(params.mission).toBeUndefined();
+      }
+    });
+
+    it('still shows the mission on the resumed agent', async () => {
+      const entry = makeEntry({ agentId: 'shown-agent', kind: 'quick', mission: 'Write the spec', resumeStrategy: 'auto' });
+      vi.mocked(useAgentStore.subscribe).mockImplementation((callback) => {
+        mockAgents['shown-agent'] = { status: 'running' };
+        setTimeout(() => (callback as () => void)(), 0);
+        return vi.fn();
+      });
+      await processResumeQueue(makeState([entry]));
+      const setState = mockSetState.mock.calls.map(([u]) => (typeof u === 'function' ? u({ agents: {}, agentSpawnedAt: {} } as never) : u));
+      expect(setState.some((s) => (s as { agents?: Record<string, { mission?: string }> }).agents?.['shown-agent']?.mission === 'Write the spec')).toBe(true);
+      expect(mockSpawnAgent.mock.calls[0][0].mission).toBeUndefined();
     });
 
     it('skips spawnAgent for manual agents', async () => {

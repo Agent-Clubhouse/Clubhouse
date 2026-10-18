@@ -89,6 +89,8 @@ export async function captureSessionState(
       resumeStrategy: canResume ? 'auto' : 'manual',
       worktreePath: meta?.worktreePath,
       kind: meta?.kind || 'durable',
+      // For display after the restart only. The resume queue must not send it
+      // to the resumed CLI, which would run it again as a new turn (#2074).
       mission: meta?.mission,
       model: meta?.model,
       permissionMode,
