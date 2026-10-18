@@ -9,6 +9,7 @@ function createMinimalState(overrides: Partial<AgentState> = {}): AgentState {
     agentSpawnedAt: {},
     agentTerminalAt: {},
     agentDetailedStatus: {},
+    agentLaunchFailure: {},
     activeAgentId: null,
     agentSettingsOpenFor: null,
     deleteDialogAgent: null,

@@ -190,6 +190,63 @@ describe('agentStore', () => {
       expect(getState().agents['a_ansi'].errorMessage).not.toContain('\x1B');
     });
 
+    it('durable sleeping <3s strips private-mode and OSC sequences, leaving no codes behind (#2088)', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_codes', kind: 'durable', status: 'running' });
+      useAgentStore.setState((s) => ({ agentSpawnedAt: { ...s.agentSpawnedAt, a_codes: now } }));
+
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_codes', 'sleeping', 1, undefined,
+        '0m\x1b[?25h\x1b[?2026l\x1b]0;codex\x07Error: No saved session found\r\n\x1b[?2026h\x1b[?25h');
+      expect(getState().agents['a_codes'].errorMessage).toBe('Error: No saved session found');
+    });
+
+    it('durable sleeping <3s with only escape codes in the output uses the generic message (#2088)', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_onlycodes', kind: 'durable', status: 'running' });
+      useAgentStore.setState((s) => ({ agentSpawnedAt: { ...s.agentSpawnedAt, a_onlycodes: now } }));
+
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_onlycodes', 'sleeping', 1, undefined, '\x1b[0m\x1b[?25h\x1b[?2026l\x1b[?2026h\x1b[?25h');
+      expect(getState().agents['a_onlycodes'].errorMessage).toBe('Agent process exited immediately (code 1)');
+    });
+
+    it('durable sleeping <3s prefers the known launch failure over the PTY output (#2088)', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_known', kind: 'durable', status: 'running' });
+      useAgentStore.setState((s) => ({ agentSpawnedAt: { ...s.agentSpawnedAt, a_known: now } }));
+      getState().noteLaunchFailure('a_known', 'Codex (app-server) failed to start: no rollout found for thread id 562a');
+
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_known', 'sleeping', 1, undefined, '\x1b[?25hsome terminal noise');
+      expect(getState().agents['a_known'].errorMessage).toBe('Codex (app-server) failed to start: no rollout found for thread id 562a');
+    });
+
+    it('a new wake forgets the previous launch failure (#2088)', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_rewake', kind: 'durable', status: 'error' });
+      getState().noteLaunchFailure('a_rewake', 'old reason');
+      getState().updateAgentStatus('a_rewake', 'waking');
+      expect(getState().agentLaunchFailure['a_rewake']).toBeUndefined();
+
+      useAgentStore.setState((s) => ({ agentSpawnedAt: { ...s.agentSpawnedAt, a_rewake: now } }));
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_rewake', 'sleeping', 1, undefined, 'fresh output');
+      expect(getState().agents['a_rewake'].errorMessage).toBe('fresh output');
+    });
+
     it('durable sleeping <3s falls back to generic message when no PTY output', () => {
       vi.useFakeTimers();
       const now = Date.now();
