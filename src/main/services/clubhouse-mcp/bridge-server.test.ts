@@ -289,6 +289,20 @@ describe('BridgeServer', () => {
     expect(statusCode).toBe(200);
   });
 
+  it('records when an agent finishes the handshake and how many tools it was given', async () => {
+    expect(bridgeServer.getAgentConnection('agent-1')).toBeNull();
+    const before = Date.now();
+    await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', method: 'notifications/initialized' }, 'test-nonce');
+    const conn = bridgeServer.getAgentConnection('agent-1');
+    expect(conn?.connectedAt).toBeGreaterThanOrEqual(before);
+    expect(conn?.toolCount).toBeNull();
+    await makeRequest(port, 'POST', '/mcp/agent-1', { jsonrpc: '2.0', id: 2, method: 'tools/list' }, 'test-nonce');
+    expect(bridgeServer.getAgentConnection('agent-1')).toEqual({ connectedAt: conn?.connectedAt, toolCount: 0 });
+    expect(bridgeServer.getAgentConnection('agent-2')).toBeNull();
+    bridgeServer.stop();
+    expect(bridgeServer.getAgentConnection('agent-1')).toBeNull();
+  });
+
   it('returns missing tool name error for tools/call without name', async () => {
     const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', {
       jsonrpc: '2.0',

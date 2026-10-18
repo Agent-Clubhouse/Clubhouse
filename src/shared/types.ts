@@ -596,6 +596,12 @@ export interface McpSettings {
   projectOverrides?: Record<string, boolean>;
 }
 
+/** An agent's connection to the Clubhouse MCP: when it finished the handshake and how many tools it was last given. */
+export interface AgentMcpConnection {
+  connectedAt: number;
+  toolCount: number | null;
+}
+
 // --- Editor settings ---
 
 export interface EditorSettings {

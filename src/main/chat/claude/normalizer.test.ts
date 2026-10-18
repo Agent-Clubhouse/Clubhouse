@@ -18,6 +18,17 @@ describe('ClaudeNormalizer', () => {
     expect(sub).toMatchObject({ kind: 'thought_chunk', messageId: 'sub', text: 'b', parentToolCallId: 'toolu_task' });
   });
 
+  it('keeps the MCP servers from init, and leaves them out when the CLI sends none', () => {
+    const n = new ClaudeNormalizer();
+    const [withServers] = n.normalize({
+      type: 'system', subtype: 'init', session_id: 's1',
+      mcp_servers: [{ name: 'clubhouse', status: 'connected' }, { name: 'github', status: 'needs-auth' }, { status: 'failed' }, 'junk'],
+    });
+    expect(withServers).toMatchObject({ kind: 'session_started', mcpServers: [{ name: 'clubhouse', status: 'connected' }, { name: 'github', status: 'needs-auth' }] });
+    const [without] = new ClaudeNormalizer().normalize({ type: 'system', subtype: 'init', session_id: 's1' });
+    expect(without).not.toHaveProperty('mcpServers');
+  });
+
   it('maps assistant blocks and remembers tool names for their results', () => {
     const n = new ClaudeNormalizer();
     const a = n.normalize({

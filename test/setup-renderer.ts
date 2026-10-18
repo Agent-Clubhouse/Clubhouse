@@ -448,6 +448,7 @@ vi.stubGlobal('clubhouse', {
     unbind: asyncNoop,
     setInstructions: asyncNoop,
     setDisabledTools: asyncNoop,
+    getAgentConnection: async () => null,
     registerWebview: asyncNoop,
     unregisterWebview: asyncNoop,
     onBindingsChanged: () => noop,

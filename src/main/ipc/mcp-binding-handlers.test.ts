@@ -22,7 +22,7 @@ vi.mock('../services/clubhouse-mcp', () => ({
     getAllBindings: vi.fn(() => []),
     onChange: vi.fn(),
   },
-  bridgeServer: { start: vi.fn(async () => 0) },
+  bridgeServer: { start: vi.fn(async () => 0), getAgentConnection: vi.fn(() => null) },
 }));
 
 vi.mock('../services/clubhouse-mcp/tools/agent-tools', () => ({
@@ -108,6 +108,7 @@ describe('mcp-binding-handlers registration', () => {
       IPC.MCP_BINDING.UNBIND,
       IPC.MCP_BINDING.SET_INSTRUCTIONS,
       IPC.MCP_BINDING.SET_DISABLED_TOOLS,
+      IPC.MCP_BINDING.GET_AGENT_CONNECTION,
       IPC.MCP_BINDING.REGISTER_WEBVIEW,
       IPC.MCP_BINDING.UNREGISTER_WEBVIEW,
     ];
@@ -329,6 +330,23 @@ describe('SET_DISABLED_TOOLS', () => {
     mockGet.mockReturnValue({ projectPath: '/tmp', orchestrator: 'claude-code', runtime: 'pty' } as any);
     const handler = getHandler(IPC.MCP_BINDING.SET_DISABLED_TOOLS);
     expect(() => handler(fakeEvent, 'agent-1', 'target-1', [123])).toThrow();
+  });
+});
+
+// ── GET_AGENT_CONNECTION ───────────────────────────────────────────────
+
+describe('GET_AGENT_CONNECTION', () => {
+  it('returns the bridge server\'s record for the agent', () => {
+    vi.mocked(bridgeServer.getAgentConnection).mockReturnValue({ connectedAt: 5, toolCount: 9 });
+    const handler = getHandler(IPC.MCP_BINDING.GET_AGENT_CONNECTION);
+    expect(handler(fakeEvent, 'agent-1')).toEqual({ connectedAt: 5, toolCount: 9 });
+    expect(bridgeServer.getAgentConnection).toHaveBeenCalledWith('agent-1');
+  });
+
+  it('rejects callers that are not app windows', () => {
+    mockFromWebContents.mockReturnValue(null as any);
+    const handler = getHandler(IPC.MCP_BINDING.GET_AGENT_CONNECTION);
+    expect(() => handler(fakeEvent, 'agent-1')).toThrow();
   });
 });
 

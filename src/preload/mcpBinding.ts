@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { AgentMcpConnection } from '../shared/types';
 
 export const mcpBinding = {
   mcpBinding: {
@@ -17,6 +18,8 @@ export const mcpBinding = {
     ipcRenderer.invoke(IPC.MCP_BINDING.SET_INSTRUCTIONS, agentId, targetId, instructions),
   setDisabledTools: (agentId: string, targetId: string, disabledTools: string[]) =>
     ipcRenderer.invoke(IPC.MCP_BINDING.SET_DISABLED_TOOLS, agentId, targetId, disabledTools),
+  getAgentConnection: (agentId: string): Promise<AgentMcpConnection | null> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.GET_AGENT_CONNECTION, agentId),
   onBindingsChanged: (callback: (bindings: Array<{
     agentId: string;
     targetId: string;

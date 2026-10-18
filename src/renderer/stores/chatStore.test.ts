@@ -631,3 +631,18 @@ describe('picker lists on session_info', () => {
     expect(state.levelNames).toEqual({});
   });
 });
+
+describe('MCP servers on session_info', () => {
+  it('is unknown until reported, replaced when present, and cleared by a new session', () => {
+    const ev = makeEmitter();
+    let state = fold([sessionStarted(ev)]);
+    expect(state.mcpServers).toBeNull();
+    state = fold([
+      ev('session_info', { mcpServers: [{ name: 'clubhouse', status: 'connected' }] }),
+      ev('session_info', { cliVersion: '2.1.302' }),
+    ], state);
+    expect(state.mcpServers).toEqual([{ name: 'clubhouse', status: 'connected' }]);
+    state = fold([sessionStarted(ev)], state);
+    expect(state.mcpServers).toBeNull();
+  });
+});

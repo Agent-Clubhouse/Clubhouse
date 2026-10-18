@@ -132,7 +132,11 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     expect(drafts.of('usage')[0].data).toMatchObject({ scope: 'turn', costIsEstimate: true });
     expect(s.nativeSessionId).toBe('fake-session-1');
     // system/init arrives with the first prompt: native id and model via session_info.
-    expect(drafts.of('session_info').map((d) => d.data)).toEqual([{ nativeSessionId: 'fake-session-1', cliVersion: '2.1.300-fake', model: 'claude-fake-1' }]);
+    // ...and the MCP servers it loaded, in the shared status words (#2093).
+    expect(drafts.of('session_info').map((d) => d.data)).toEqual([{
+      nativeSessionId: 'fake-session-1', cliVersion: '2.1.300-fake', model: 'claude-fake-1',
+      mcpServers: [{ name: 'clubhouse', status: 'connected' }, { name: 'github', status: 'needs_auth' }],
+    }]);
     expect(drafts.of('model_changed').map((d) => d.data.modelId)).toEqual(['claude-fake-1']);
     // Every draft becomes a valid envelope once stamped.
     drafts.all.forEach((d, i) => {
