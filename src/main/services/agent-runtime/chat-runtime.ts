@@ -13,7 +13,9 @@
  *
  * Driver contract: drivers emit turn_started / turn_ended for every turn they
  * run. The runtime emits user_message, session_started, session_state,
- * session_ended and permission_resolved itself.
+ * session_ended, permission_resolved and question_resolved itself. A driver
+ * that also reports an answer the runtime gave (Claude, Codex) has that echo
+ * dropped; a driver's own cancellation of a request still goes through.
  */
 
 import { randomUUID } from 'crypto';
@@ -138,6 +140,12 @@ export class ChatAgentRuntime implements AgentRuntime {
   private seq: number;
   private state: ChatSessionState = 'starting';
   private turnId: string | undefined;
+  /**
+   * Requests whose answer the runtime itself wrote to the transcript. A driver
+   * that also reports its own answer (Claude, Codex) would otherwise write a
+   * second permission_resolved or question_resolved for one click.
+   */
+  private readonly answeredHere = new Set<string>();
   private nativeSessionId: string | undefined;
   private capabilities: ChatCapabilities | undefined;
   private readonly queued: Array<{ content: ContentBlock[]; source: MessageSource }> = [];
@@ -183,6 +191,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   private async openSession(resumeNativeSessionId: string | undefined): Promise<void> {
+    // A new driver session never echoes answers given in the old one.
+    this.answeredHere.clear();
     await this.setState('starting');
     const session = await this.startDriverSession(resumeNativeSessionId);
     this.session = session;
@@ -263,6 +273,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     try {
       for await (const draft of session.events) {
         if (this.session !== session) break;
+        if (this.isEchoedAnswer(draft)) continue;
         await this.observe(draft);
         if (this.session !== session) break;
         await this.emit(draft);
@@ -284,6 +295,36 @@ export class ChatAgentRuntime implements AgentRuntime {
       this.session = undefined;
       await this.end('process_exit', 0);
     }
+  }
+
+  /** A driver's own report of an answer the runtime already recorded (a driver's cancellation still counts). */
+  private isEchoedAnswer(draft: ChatEventDraft): boolean {
+    if (draft.type === 'permission_resolved') {
+      if (draft.data.decision === 'cancelled') return false;
+      return this.answeredHere.delete(`p:${draft.data.requestId}`);
+    }
+    if (draft.type === 'question_resolved') {
+      if (draft.data.cancelled) return false;
+      return this.answeredHere.delete(`q:${draft.data.requestId}`);
+    }
+    return false;
+  }
+
+  /**
+   * Note that the runtime records this answer itself, before the driver is
+   * told, so the driver's echo is dropped whichever arrives first. Returns the
+   * undo, for when the driver call fails and nothing was answered.
+   */
+  private answerHere(kind: 'p' | 'q', requestId: string): () => void {
+    const key = `${kind}:${requestId}`;
+    this.answeredHere.add(key);
+    return () => { this.answeredHere.delete(key); };
+  }
+
+  /** The runtime's own record of an answer, in the current turn, so it sits with the request it answers. */
+  private async emitAnswer(draft: Extract<ChatEventDraft, { type: 'permission_resolved' | 'question_resolved' }>): Promise<void> {
+    if (!draft.turnId && this.turnId) draft.turnId = this.turnId;
+    await this.emit(draft);
   }
 
   private async observe(draft: ChatEventDraft): Promise<void> {
@@ -525,16 +566,18 @@ export class ChatAgentRuntime implements AgentRuntime {
     // Already answered (another view, the desktop prompt or Annex got there first): nothing to do.
     if (!pending || pending.settled) return;
     pending.settled = true;
+    const undo = this.answerHere('p', requestId);
     try {
       await session.respondPermission(requestId, optionId, extras);
     } catch (err) {
       pending.settled = false;
+      undo();
       throw err;
     }
     const option = pending?.options.find((o) => o.optionId === optionId);
     const decision = decisionFor(option);
     this.settlePermission(requestId, decision === 'allow' ? 'allow' : 'deny');
-    await this.emit({
+    await this.emitAnswer({
       type: 'permission_resolved',
       data: { requestId, optionId, decision, by: 'user' },
     });
@@ -545,13 +588,15 @@ export class ChatAgentRuntime implements AgentRuntime {
     const session = this.requireSession();
     // Already answered from another view: nothing to do.
     if (!this.questions.delete(requestId)) return;
+    const undo = this.answerHere('q', requestId);
     try {
       await session.answerQuestion(requestId, answers);
     } catch (err) {
       this.questions.add(requestId);
+      undo();
       throw err;
     }
-    await this.emit({ type: 'question_resolved', data: { requestId, answers } });
+    await this.emitAnswer({ type: 'question_resolved', data: { requestId, answers } });
     if (this.state === 'waiting_input') await this.setState('running');
   }
 
@@ -704,15 +749,17 @@ export class ChatAgentRuntime implements AgentRuntime {
       if (!option) return;
       pending.settled = true;
       broadcastToAllWindows(IPC.AGENT.PERMISSION_SETTLED, this.agentId, { requestId, agentId: this.agentId, decision: d });
+      const undo = this.answerHere('p', chatRequestId);
       try {
         await this.session.respondPermission(chatRequestId, option.optionId);
         this.permissions.delete(chatRequestId);
-        await this.emit({
+        await this.emitAnswer({
           type: 'permission_resolved',
           data: { requestId: chatRequestId, optionId: option.optionId, decision: d, by: 'annex' },
         });
         if (this.state === 'waiting_permission' && this.permissions.size === 0) await this.setState('running');
       } catch (err) {
+        undo();
         appLog('core:chat', 'warn', 'Applying queued permission decision failed', {
           meta: { agentId: this.agentId, requestId: chatRequestId, error: err instanceof Error ? err.message : String(err) },
         });
