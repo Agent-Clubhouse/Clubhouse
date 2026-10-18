@@ -21,6 +21,7 @@ import {
   clearBindingRemovedByUser,
 } from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
+import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
@@ -220,19 +221,23 @@ export function onMcpSettingsChanged(): void {
 }
 
 let persistedSourcesRegistered = false;
+let stopWatchingHelperWires: (() => void) | null = null;
 
 /**
- * Rebuild bindings from every persisted wire store (canvas wires today) so
- * tools and group-project membership don't wait for a canvas to be opened
- * (#1544). Runs only once MCP is on. Idempotent: bindings that already exist
- * are left alone, so calling it again (or the canvas binding the same wires
- * later) creates nothing twice.
+ * Rebuild bindings from every persisted wire store (canvas wires, #1544, and
+ * orchestrator ↔ helper wires from the agent config, #2225) so tools and
+ * group-project membership don't wait for a canvas to be opened. Runs only
+ * once MCP is on, and again whenever a project's helper wires change.
+ * Idempotent: bindings that already exist are left alone, so calling it again
+ * (or the canvas binding the same wires later) creates nothing twice.
  */
 export function restorePersistedBindings(): void {
   if (!handlersRegistered) return;
   if (!persistedSourcesRegistered) {
     persistedSourcesRegistered = true;
     registerPersistedBindingSource(canvasWireBindingSource);
+    registerPersistedBindingSource(helperWireBindingSource);
+    stopWatchingHelperWires = watchHelperWires(() => restorePersistedBindings());
   }
   rebuildPersistedBindings().catch((err) => {
     appLog('core:mcp', 'error', 'Persisted binding rebuild failed', {
@@ -245,5 +250,7 @@ export function restorePersistedBindings(): void {
 export function _resetHandlersForTesting(): void {
   handlersRegistered = false;
   persistedSourcesRegistered = false;
+  stopWatchingHelperWires?.();
+  stopWatchingHelperWires = null;
   bridgeState = 'idle';
 }

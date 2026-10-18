@@ -62,6 +62,11 @@ vi.mock('../services/canvas-wire-source', () => ({
   canvasWireBindingSource: { id: 'canvas-wires', collect: vi.fn(async () => []) },
 }));
 
+vi.mock('../services/helper-wire-source', () => ({
+  helperWireBindingSource: { id: 'helper-wires', prune: true, collect: vi.fn(async () => []) },
+  watchHelperWires: vi.fn(() => () => undefined),
+}));
+
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
@@ -76,6 +81,7 @@ import {
   clearBindingRemovedByUser,
 } from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
+import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import {
   registerMcpBindingHandlers,
   maybeStartMcpBridge,
@@ -462,11 +468,20 @@ describe('restorePersistedBindings (#1544)', () => {
     expect(rebuildPersistedBindings).not.toHaveBeenCalled();
   });
 
-  it('registers the canvas wire source once and rebuilds on every call', () => {
+  it('registers the canvas and helper wire sources once and rebuilds on every call', () => {
     restorePersistedBindings();
     restorePersistedBindings();
-    expect(registerPersistedBindingSource).toHaveBeenCalledTimes(1);
+    expect(registerPersistedBindingSource).toHaveBeenCalledTimes(2);
     expect(registerPersistedBindingSource).toHaveBeenCalledWith(canvasWireBindingSource);
+    expect(registerPersistedBindingSource).toHaveBeenCalledWith(helperWireBindingSource);
+    expect(rebuildPersistedBindings).toHaveBeenCalledTimes(2);
+  });
+
+  it('rebuilds again when a project\'s helper wires change (#2225)', () => {
+    restorePersistedBindings();
+    expect(watchHelperWires).toHaveBeenCalledTimes(1);
+    const onWiresChanged = vi.mocked(watchHelperWires).mock.calls.at(-1)![0];
+    onWiresChanged();
     expect(rebuildPersistedBindings).toHaveBeenCalledTimes(2);
   });
 

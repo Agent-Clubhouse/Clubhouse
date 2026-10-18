@@ -167,6 +167,7 @@ import {
   listDurable,
   listHelpers,
   normalizeHelperFields,
+  onAgentConfigChanged,
   renameDurable,
   resolveHelpersForDelete,
   setParentAgent,
@@ -347,6 +348,17 @@ describe('setParentAgent', () => {
     const released = (await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_b');
     expect(released).not.toHaveProperty('parentAgentId');
     expect(released).not.toHaveProperty('disposable');
+  });
+
+  it('notifies agent config listeners with the project path (#2225)', async () => {
+    const listener = vi.fn();
+    const stop = onAgentConfigChanged(listener);
+    await setParentAgent(PROJECT_PATH, 'durable_2_b', 'durable_1_a');
+    expect(listener).toHaveBeenCalledWith(PROJECT_PATH);
+    stop();
+    listener.mockClear();
+    await setParentAgent(PROJECT_PATH, 'durable_2_b', null);
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it('rejects self-parenting', async () => {
