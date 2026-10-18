@@ -63,6 +63,15 @@ describe('AgentPaneToolbar', () => {
     expect(screen.getByTestId('pane-model')).toHaveTextContent('opus');
   });
 
+  it('keeps the toolbar glyph focusable with a provider tooltip', () => {
+    render(<AgentPaneToolbar agent={agent} dot="idle" model="opus" />);
+    const glyph = screen.getByTestId('pane-orchestrator');
+    expect(glyph).toHaveAttribute('tabindex', '0');
+    expect(glyph).toHaveClass('bg-surface-0');
+    fireEvent.focus(glyph);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Claude Code');
+  });
+
   it('offers the agent menu only where asked', () => {
     const { rerender } = render(<AgentPaneToolbar agent={agent} dot="idle" />);
     expect(screen.queryByTestId('pane-menu-button')).not.toBeInTheDocument();
