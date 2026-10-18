@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
 
 const mockIsMcpEnabled = vi.fn();
 vi.mock('../mcp-settings', () => ({
-  isMcpEnabled: () => mockIsMcpEnabled(),
+  isMcpEnabled: (...args: unknown[]) => mockIsMcpEnabled(...args),
 }));
 
 vi.mock('../log-service', () => ({
@@ -69,6 +69,22 @@ describe('MCP Injection', () => {
       // The nonce is named, never stored (#2222).
       expect(content.mcpServers.clubhouse.env).not.toHaveProperty('CLUBHOUSE_HOOK_NONCE');
       expect(content.mcpServers.clubhouse.env_vars).toEqual(['CLUBHOUSE_AGENT_ID', 'CLUBHOUSE_HOOK_NONCE', 'CLUBHOUSE_MCP_PORT']);
+    });
+
+    it('injects when MCP is enabled only for the agent\'s project (#2223)', async () => {
+      // Global off, project override on: only a check that sees the project path passes.
+      mockIsMcpEnabled.mockImplementationOnce((projectPath?: string) => projectPath === '/projects/on');
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, undefined, '/projects/on');
+
+      expect(mockIsMcpEnabled).toHaveBeenCalledWith('/projects/on');
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+      expect(content.mcpServers.clubhouse).toBeDefined();
+    });
+
+    it('does not inject when MCP is enabled only for a different project (#2223)', async () => {
+      mockIsMcpEnabled.mockImplementationOnce((projectPath?: string) => projectPath === '/projects/on');
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, undefined, '/projects/off');
+      await expect(fsp.access(path.join(tmpDir, '.mcp.json'))).rejects.toThrow();
     });
 
     describe('keeps the nonce out of the worktree (#2222)', () => {

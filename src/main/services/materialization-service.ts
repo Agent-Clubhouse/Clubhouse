@@ -263,16 +263,19 @@ export async function extractAgentPersona(params: {
 }
 
 /**
- * Write the agent's resolved persona body to its instructions (overwrite).
- * Used when applying a persona outside Clubhouse mode, where materialization
- * does not run on wake. Mirrors the persona-only branch of materializeAgent.
+ * Write the agent's resolved persona body to its instructions. Overwrites by
+ * default; with `append`, adds it after any existing instructions (used at
+ * creation so the project-default snapshot is kept). Used outside Clubhouse
+ * mode, where materialization does not run on wake. Mirrors the persona-only
+ * branch of materializeAgent.
  */
 export async function writeResolvedPersonaInstructions(params: {
   projectPath: string;
   agent: DurableAgentConfig;
   provider: OrchestratorProvider;
+  append?: boolean;
 }): Promise<void> {
-  const { projectPath, agent, provider } = params;
+  const { projectPath, agent, provider, append } = params;
   if (!agent.worktreePath) return;
   const defaults = await readProjectAgentDefaults(projectPath);
   const personaId = resolvePersonaId(agent, defaults);
@@ -283,7 +286,12 @@ export async function writeResolvedPersonaInstructions(params: {
   const missionId = resolveMissionId(agent, defaults);
   const missionContent = missionId ? await readSourceMissionContent(projectPath, missionId) : undefined;
   const ctx = buildWildcardContext(agent, projectPath, scp, commands, missionContent, personaContent);
-  await provider.writeInstructions(agent.worktreePath, replaceWildcards(personaContent, ctx));
+  const resolved = replaceWildcards(personaContent, ctx);
+  let existing = '';
+  if (append) {
+    try { existing = await provider.readInstructions(agent.worktreePath); } catch { /* none yet */ }
+  }
+  await provider.writeInstructions(agent.worktreePath, existing ? `${existing}\n\n${resolved}` : resolved);
 }
 
 /**

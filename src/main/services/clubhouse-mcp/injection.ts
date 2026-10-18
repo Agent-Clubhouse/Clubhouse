@@ -197,15 +197,17 @@ function withInjectionLock<T>(fn: () => Promise<T>): Promise<T> {
 /**
  * Inject the Clubhouse MCP server entry into the agent's MCP config.
  * The bridge script path is resolved relative to the app bundle.
+ * Pass `projectPath` so MCP enabled only for that project counts (#2223).
  */
 export function injectClubhouseMcp(
   cwd: string,
   agentId: string,
   mcpPort: number,
   conventions?: Partial<SettingsConventions>,
+  projectPath?: string,
 ): Promise<void> {
   return withInjectionLock(() =>
-    injectClubhouseMcpImpl(cwd, agentId, mcpPort, conventions),
+    injectClubhouseMcpImpl(cwd, agentId, mcpPort, conventions, projectPath),
   );
 }
 
@@ -214,8 +216,9 @@ async function injectClubhouseMcpImpl(
   agentId: string,
   mcpPort: number,
   conventions?: Partial<SettingsConventions>,
+  projectPath?: string,
 ): Promise<void> {
-  if (!isMcpEnabled()) {
+  if (!isMcpEnabled(projectPath)) {
     return; // Feature not enabled
   }
 

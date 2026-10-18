@@ -271,7 +271,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     const opts = driver.last.startOptions!;
     expect(opts.env).toMatchObject({ CLUBHOUSE_HOOK_NONCE: nonce, CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_MCP_PORT: '4321' });
     // Neither the worktree config nor the session's MCP definitions get it.
-    expect(vi.mocked(injectClubhouseMcp)).toHaveBeenCalledWith('/p/wt', 'agent-1', 4321, p.conventions);
+    expect(vi.mocked(injectClubhouseMcp)).toHaveBeenCalledWith('/p/wt', 'agent-1', 4321, p.conventions, '/p');
     expect(vi.mocked(buildClubhouseMcpDef)).toHaveBeenCalledWith(4321, 'agent-1');
     expect(JSON.stringify(opts.mcpServers)).not.toContain(nonce);
   });

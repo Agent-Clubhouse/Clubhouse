@@ -480,7 +480,7 @@ async function spawnPtyAgent(
     })),
     waitMcpBridgeReady().then((port) => tel.step('clubhouse.mcp.inject', async () => {
       mcpPort = port;
-      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions);
+      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions, params.projectPath);
     })).catch((err) => {
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped', {
         meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },

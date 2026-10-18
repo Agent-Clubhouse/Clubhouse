@@ -757,10 +757,12 @@ describe('agent-system', () => {
       const [, , , args, env] = mockPtySpawn.mock.calls[0] as unknown as [string, string, string, string[], Record<string, string>];
       expect(env).toMatchObject({ CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: nonce, CLUBHOUSE_MCP_PORT: '23456' });
       expect(args.join(' ')).not.toContain(nonce);
-      // injectClubhouseMcp(cwd, agentId, port, conventions): no nonce argument.
+      // injectClubhouseMcp(cwd, agentId, port, conventions, projectPath): no nonce argument.
       expect(mockInjectClubhouseMcp).toHaveBeenCalledTimes(1);
       const injectArgs = (mockInjectClubhouseMcp.mock.calls[0] as unknown[]);
       expect(injectArgs.slice(0, 3)).toEqual(['/project/worktree', 'agent-1', 23456]);
+      // The project path rides along so project-only MCP enablement counts (#2223).
+      expect(injectArgs[4]).toBe('/project');
       expect(JSON.stringify(injectArgs)).not.toContain(nonce);
       // Codex takes MCP servers as `-c` launch flags built from this definition.
       if (orchestrator === 'codex-cli') expect(mockBuildClubhouseMcpDef).toHaveBeenCalled();

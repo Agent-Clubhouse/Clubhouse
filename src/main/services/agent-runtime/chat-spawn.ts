@@ -413,7 +413,7 @@ async function runChatStart(
       mcpPort = await waitMcpBridgeReady();
       // A newer start has its own nonce: don't overwrite its MCP config with this one.
       checkpoint();
-      await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions);
+      await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions, params.projectPath);
     } catch (err) {
       if (err instanceof ChatStartCancelledError) throw err;
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped for chat agent', {
