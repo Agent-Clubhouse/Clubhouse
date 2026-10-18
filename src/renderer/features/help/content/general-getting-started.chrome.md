@@ -18,7 +18,7 @@ Press `⌘K` at any time to jump to an agent, a project or a setting.
 | **Project** | A folder on your machine. Each has its own agents, tabs and settings. |
 | **Durable agent** | A named agent that keeps its own worktree and branch, and survives restarts. Use it for work that spans sessions. |
 | **Quick agent** | A one-off agent that runs a single task and stops. Use it for small fixes and questions. |
-| **Orchestrator** | The CLI that runs an agent, such as Claude Code, Copilot CLI or Codex CLI. |
+| **Runs on** | The CLI that runs an agent, such as Claude Code, Copilot CLI or Codex CLI. Settings pages call these CLIs orchestrators. |
 | **Plugin** | Adds a tab, a sidebar item or a tool, such as Files, Git or Canvas. |
 
 ## Next

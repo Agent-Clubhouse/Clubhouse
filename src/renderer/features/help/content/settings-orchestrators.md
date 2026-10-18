@@ -1,6 +1,6 @@
 # Orchestrators
 
-An orchestrator is the CLI backend powering your agents — it handles AI communication, tool calls, file operations, and output streaming.
+An orchestrator is the CLI backend powering your agents. It handles AI communication, tool calls, file operations, and output streaming. Each agent's **Runs on** setting picks the CLI it uses.
 
 ## Available orchestrators
 
@@ -34,7 +34,7 @@ You cannot disable the last remaining orchestrator.
 
 ## Per-project selection
 
-Each project can use a different orchestrator: set **Default Orchestrator** on the project's **Orchestrators & Agents** settings page. Only enabled orchestrators with detected binaries appear as options.
+Each project can use a different orchestrator. To choose it, set **Agents run on** on the project's **Orchestrators & Agents** settings page. Only enabled orchestrators with detected binaries appear as options.
 
 ## Model selection
 

@@ -5,7 +5,7 @@ Durable agents are for ongoing work. Each keeps its own Git worktree and branch,
 ## Creating one
 
 1. Click **New** at the top of the sidebar and choose **Durable agent…**. Or hover a project and click its **+** button.
-2. Set the **Name**, **Color**, **Model** and **Orchestrator**. Optionally pick a **Persona**, **MCPs** and **Free Agent Mode**.
+2. Set the **Name**, **Color**, **Runs on** and **Model**. Optionally pick a **Persona**, **MCPs** and **Free Agent Mode**.
 3. Leave **Use git worktree** on to give the agent its own branch.
 4. Click **Create agent**. The agent appears under its project and starts right away. Select it to give it work.
 
@@ -35,7 +35,7 @@ Open **Settings** from the agent's row menu or hover card.
 | Setting | What it does |
 |---------|--------------|
 | **Appearance** | Name, color and icon |
-| **Orchestrator** and **Model** | What runs the agent. Changes apply the next time it starts or wakes. |
+| **Runs on** and **Model** | The CLI and model the agent uses. Changes apply the next time it starts or wakes. |
 | **Runtime** | Chat or terminal. Shown only when the experimental Chat feature is on. |
 | **Persona** | A role the agent takes on, such as reviewer or researcher |
 | **Instructions** | Markdown that guides the agent: style, limits, how to work |

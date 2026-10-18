@@ -397,6 +397,13 @@ describe('AgentSettingsView', () => {
         expect(useAgentStore.getState().agents['agent-1'].orchestrator).toBe('github-copilot');
       });
     });
+
+    it('labels the CLI picker "Runs on" (#2233)', () => {
+      setupMultiOrch();
+      renderSettings({ orchestrator: 'claude-code' });
+      expect((screen.getByLabelText('Runs on') as HTMLSelectElement).value).toBe('claude-code');
+      expect(screen.queryByLabelText('Orchestrator')).toBeNull();
+    });
   });
 
   describe('runtime override', () => {

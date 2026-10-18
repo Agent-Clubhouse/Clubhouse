@@ -124,7 +124,7 @@ function Composer({ project }: { project: Project }) {
           )}
         </select>
         {isQuick && orchestrators.length > 1 && (
-          <select aria-label="Orchestrator" value={resolvedOrchestrator} onChange={(e) => { setOrchestrator(e.target.value); setModel('default'); }} className={selectClass}>
+          <select aria-label="Runs on" value={resolvedOrchestrator} onChange={(e) => { setOrchestrator(e.target.value); setModel('default'); }} className={selectClass}>
             {orchestrators.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
           </select>
         )}

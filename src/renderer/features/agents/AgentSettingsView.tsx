@@ -933,7 +933,7 @@ export function AgentSettingsView({ agent }: Props) {
     ? worktreePath.slice(projectPath.length + 1)
     : worktreePath;
   const permissionsSupported = capabilities?.permissions ?? false;
-  const orchestratorName = orchestratorInfo?.displayName || 'this orchestrator';
+  const orchestratorName = orchestratorInfo?.displayName || 'this CLI';
   const stopFirst = isRunning ? 'Stop the agent to change this' : undefined;
 
   const reloadButton = (
@@ -1038,7 +1038,7 @@ export function AgentSettingsView({ agent }: Props) {
 
       <SectionHeading title="Runtime" sub="Applied on the next wake" />
       {orchestratorOptions.length > 1 ? (
-        <Field label="Orchestrator" htmlFor="agent-settings-orchestrator">
+        <Field label="Runs on" htmlFor="agent-settings-orchestrator">
           <select
             id="agent-settings-orchestrator"
             value={agentOrchestrator}
@@ -1053,7 +1053,7 @@ export function AgentSettingsView({ agent }: Props) {
           </select>
         </Field>
       ) : (orchestratorInfo || orchestratorOptions[0]) ? (
-        <Field label="Orchestrator">
+        <Field label="Runs on">
           <span className="text-xs text-ctp-subtext1">{(orchestratorInfo || orchestratorOptions[0]).displayName}</span>
         </Field>
       ) : null}

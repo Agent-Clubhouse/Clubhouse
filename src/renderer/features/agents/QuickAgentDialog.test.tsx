@@ -156,10 +156,12 @@ describe('QuickAgentDialog', () => {
     expect(options[1].textContent).toBe('calm-bear');
   });
 
-  it('shows orchestrator selector', () => {
+  it('shows the Runs on selector', () => {
     setupStores();
     render(<QuickAgentDialog />);
-    expect(screen.getByText('Orchestrator')).toBeInTheDocument();
+    expect(screen.getByText('Runs on')).toBeInTheDocument();
+    // "Orchestrator" now names the persona, not the CLI field (#2233).
+    expect(screen.queryByText('Orchestrator')).not.toBeInTheDocument();
   });
 
   it('shows model selector', () => {

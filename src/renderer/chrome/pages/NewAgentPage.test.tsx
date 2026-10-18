@@ -154,6 +154,21 @@ describe('NewAgentPage', () => {
     await waitFor(() => expect(spawnQuickAgent).toHaveBeenCalledWith('p2', '/tmp/gb', 'Run tests', 'default', 'a1', undefined, undefined));
   });
 
+  it('calls the CLI field "Runs on" (#2233)', () => {
+    render(<NewAgentPage request={req()} />);
+    expect(screen.getByLabelText('Runs on').tagName).toBe('SELECT');
+    expect(screen.queryByText('Orchestrator', { selector: 'label' })).toBeNull();
+  });
+
+  it("says a quick agent in another agent's worktree runs on that agent's CLI", () => {
+    render(<NewAgentPage request={req({ kind: 'quick' })} />);
+    fireEvent.click(screen.getByTestId('new-agent-project'));
+    fireEvent.click(screen.getByRole('option', { name: /Goobers/ }));
+    fireEvent.change(screen.getByLabelText('Runs in'), { target: { value: 'a1' } });
+    expect(screen.getByText('Runs on the same CLI as gallant-swift.')).toBeTruthy();
+    expect(screen.getByLabelText('Runs on')).toBeDisabled();
+  });
+
   it('the picker searches every project', () => {
     render(<NewAgentPage request={req()} />);
     fireEvent.click(screen.getByTestId('new-agent-project'));

@@ -552,7 +552,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
     <>
       <SettingsSection title="Project defaults">
         {enabledOrchestrators.length > 1 && (
-          <SettingsField label="Default orchestrator" help="Orchestrator for agents in this project." htmlFor={`${idBase}-orch`}>
+          <SettingsField label="Agents run on" help="The CLI new agents in this project run on." htmlFor={`${idBase}-orch`}>
             <select
               id={`${idBase}-orch`}
               value={currentOrchestrator}

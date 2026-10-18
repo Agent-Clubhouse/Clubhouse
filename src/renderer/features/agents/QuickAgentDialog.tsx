@@ -136,10 +136,10 @@ export function QuickAgentDialog() {
           </select>
         </label>
 
-        {/* Orchestrator (hidden when a parent is selected, inherits parent's orchestrator) */}
+        {/* Runs on (hidden when a parent is selected, inherits parent's orchestrator) */}
         {!parentAgentId && enabledOrchestrators.length > 0 && (
           <label className="block mb-3">
-            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
+            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Runs on</span>
             <select
               value={orchestrator || enabledOrchestrators[0]?.id}
               onChange={(e) => { setOrchestrator(e.target.value); setModel('default'); }}
@@ -182,7 +182,7 @@ export function QuickAgentDialog() {
         {/* Free Agent Mode */}
         <label
           className={`flex items-center gap-2 mb-4 ${supportsPermissions ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-          title={supportsPermissions ? 'Autonomous permissions (auto mode by default)' : 'Not supported by this orchestrator'}
+          title={supportsPermissions ? 'Autonomous permissions (auto mode by default)' : 'Not supported by this CLI'}
         >
           <input
             type="checkbox"

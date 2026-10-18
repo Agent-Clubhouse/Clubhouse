@@ -8,7 +8,7 @@ Quick agents are one-shot task runners. Give them a mission, they execute it, an
 2. Type a mission description
 3. Optionally configure:
    - **Model** — from the orchestrator's available models
-   - **Orchestrator** — when no parent agent is selected
+   - **Runs on**, the CLI to use, when no parent agent is selected
    - **Parent agent** — inherit a durable agent's context and defaults
    - **Project** — if launching from outside a project context
 4. Press `Cmd+Enter` or click **Run**
