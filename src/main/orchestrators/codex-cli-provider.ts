@@ -23,6 +23,7 @@ import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, pars
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
+import { stripTerminalEscapes } from '../../shared/terminal-text';
 
 const execFileAsync = promisify(execFile);
 
@@ -49,6 +50,36 @@ const CODEX_SESSION_WALK_MAX_DEPTH = 4;
 
 /** Upper bound on rollout files examined per listing, newest partitions first. */
 const CODEX_SESSION_SCAN_LIMIT = 500;
+
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+/**
+ * Ids Codex prints into its terminal, in order of preference: the exit hint
+ * (`To continue this session, run codex resume <id>`), then the older
+ * `thread_…` ids, then `thread:` / `/status`'s `Session:` / `resume` labels.
+ */
+const PTY_SESSION_PATTERNS = [
+  new RegExp(`codex resume (${UUID})`, 'gi'),
+  /thread_([a-zA-Z0-9_-]{16,})/g,
+  new RegExp(`thread(?: id)?[:\\s]+(${UUID})`, 'gi'),
+  new RegExp(`session(?: id)?[:\\s]+(${UUID})`, 'gi'),
+  new RegExp(`resume[:\\s]+(${UUID})`, 'gi'),
+];
+
+/** How far a rollout's times may sit outside a run's window and still count as that run's (clock and flush skew). */
+const RUN_WINDOW_SLACK_MS = 5_000;
+
+/** A JSON string field read straight from text, for a meta line cut off before it parses. */
+function rawJsonField(raw: string, key: string): string | undefined {
+  const m = new RegExp(`"${key}"\\s*:\\s*("(?:[^"\\\\]|\\\\.)*")`).exec(raw);
+  if (!m) return undefined;
+  try {
+    const value: unknown = JSON.parse(m[1]);
+    return typeof value === 'string' ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Enough to cover the opening `session_meta` line without reading whole transcripts. */
 const ROLLOUT_META_READ_BYTES = 64 * 1024;
@@ -536,9 +567,56 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
         startedAt: typeof payload.timestamp === 'string' ? payload.timestamp : undefined,
       };
     } catch {
-      // A truncated prefix can't be parsed — fall back to filename metadata.
-      return {};
+      // A meta line longer than the prefix doesn't parse: its leading fields
+      // (id, timestamp, cwd come before the large ones) can still be read.
+      return { cwd: rawJsonField(firstLine, 'cwd'), startedAt: rawJsonField(firstLine, 'timestamp') };
     }
+  }
+
+  /**
+   * The session a terminal run used (#2132): the rollout for `cwd` whose
+   * activity overlaps the run, newest first. A resumed run appends to its old
+   * rollout, so overlap counts rather than the start time alone.
+   */
+  async findRunSession(run: { cwd: string; startedAt: number; endedAt: number; profileEnv?: Record<string, string> }): Promise<string | null> {
+    const sessions = await this.listSessions(run.cwd, run.profileEnv);
+    const hit = sessions.find((s) => {
+      const started = Date.parse(s.startedAt);
+      const lastActive = Date.parse(s.lastActiveAt);
+      return started <= run.endedAt + RUN_WINDOW_SLACK_MS && lastActive >= run.startedAt - RUN_WINDOW_SLACK_MS;
+    });
+    return hit?.sessionId ?? null;
+  }
+
+  /**
+   * Whether Codex still has a rollout for `sessionId`. Walks the whole store
+   * (by name only, no reads), so an old session isn't missed the way the
+   * capped listing could miss it. undefined when the store can't be read.
+   */
+  async hasSession(sessionId: string, profileEnv?: Record<string, string>): Promise<boolean | undefined> {
+    const sessionsDir = path.join(this.resolveCodexHome(profileEnv), 'sessions');
+    let unreadable = false;
+    const walk = async (dir: string, depth: number): Promise<boolean> => {
+      if (depth > CODEX_SESSION_WALK_MAX_DEPTH) return false;
+      let entries;
+      try {
+        entries = await fsp.readdir(dir, { withFileTypes: true });
+      } catch (err) {
+        // No store at all means no sessions; anything else means we can't tell.
+        if (depth > 0 || (err as NodeJS.ErrnoException).code !== 'ENOENT') unreadable = true;
+        return false;
+      }
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          if (await walk(path.join(dir, entry.name), depth + 1)) return true;
+        } else if (ROLLOUT_FILE_PATTERN.exec(entry.name)?.[2]?.toLowerCase() === sessionId.toLowerCase()) {
+          return true;
+        }
+      }
+      return false;
+    };
+    if (await walk(sessionsDir, 0)) return true;
+    return unreadable ? undefined : false;
   }
 
   /**
@@ -633,21 +711,17 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
     return events;
   }
 
+  /**
+   * An id Codex printed into its terminal, on escape-stripped text; the last
+   * one printed wins. Codex's TUI often prints none, so terminal runs resolve
+   * the id from the rollout files (findRunSession) when this finds nothing.
+   */
   extractSessionId(ptyBuffer: string): string | null {
-    const patterns = [
-      // Codex thread IDs with thread_ prefix
-      /thread[_:]([a-zA-Z0-9_-]{16,})/,
-      // UUID-style thread/session IDs
-      /thread[:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-      /session[:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-      /resume[:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-    ];
-
-    for (const pattern of patterns) {
-      const match = ptyBuffer.match(pattern);
-      if (match) return match[1];
+    const text = stripTerminalEscapes(ptyBuffer);
+    for (const pattern of PTY_SESSION_PATTERNS) {
+      const matches = [...text.matchAll(pattern)];
+      if (matches.length) return matches[matches.length - 1][1];
     }
-
     return null;
   }
 

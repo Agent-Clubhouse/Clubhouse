@@ -211,6 +211,15 @@ export interface SessionCapable {
 
   /** Extract session ID from PTY buffer output, if recognizable */
   extractSessionId(ptyBuffer: string): string | null;
+
+  /**
+   * The session a terminal run used, from the CLI's own store, for CLIs that
+   * don't print their id (Codex). `startedAt`/`endedAt` bound the run (epoch ms).
+   */
+  findRunSession?(run: { cwd: string; startedAt: number; endedAt: number; profileEnv?: Record<string, string> }): Promise<string | null>;
+
+  /** Whether the CLI still has `sessionId`; undefined when it can't tell. */
+  hasSession?(sessionId: string, profileEnv?: Record<string, string>): Promise<boolean | undefined>;
 }
 
 /**
