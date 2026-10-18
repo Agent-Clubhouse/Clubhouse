@@ -1,5 +1,14 @@
 import { app, Menu, BrowserWindow } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import { captureFromShortcut } from './ipc/feedback-handlers';
+import { FEEDBACK_CAPTURE_MENU_ID } from './services/framebriar';
+import { appLog } from './services/log-service';
+
+/**
+ * Feedback capture shortcut (#2101). Not Cmd/Ctrl+Alt+F: that is Monaco's Replace on
+ * macOS, and a menu accelerator would take it from every editor.
+ */
+export const FEEDBACK_CAPTURE_ACCELERATOR = 'CmdOrCtrl+Shift+2';
 
 export function buildMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -36,6 +45,24 @@ export function buildMenu(): void {
     { role: 'editMenu' },
     { role: 'viewMenu' },
     { role: 'windowMenu' },
+    {
+      role: 'help',
+      submenu: [
+        {
+          id: FEEDBACK_CAPTURE_MENU_ID,
+          label: 'Capture Feedback Screenshot',
+          accelerator: FEEDBACK_CAPTURE_ACCELERATOR,
+          // Off until feedback status says it can capture.
+          enabled: false,
+          click: (_item, win) => {
+            // Electron passes the window whose menu fired (a BaseWindow); only a BrowserWindow can be captured.
+            captureFromShortcut(win && 'webContents' in win ? (win as BrowserWindow) : null).catch((err: unknown) => {
+              appLog('core:feedback', 'warn', 'Feedback shortcut capture failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+            });
+          },
+        },
+      ],
+    },
   ];
 
   // Dev-only Debug menu — never appears in packaged builds.

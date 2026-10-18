@@ -15,12 +15,12 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 let latest: Stroke[] = [];
-function Harness({ initial = [] as Stroke[] }) {
+function Harness({ initial = [] as Stroke[], disabled = false }) {
   const [strokes, setStrokes] = useState<Stroke[]>(initial);
   latest = strokes;
   return (
     <>
-      <ScreenshotAnnotator src={SRC} strokes={strokes} onChange={setStrokes} />
+      <ScreenshotAnnotator src={SRC} strokes={strokes} onChange={setStrokes} disabled={disabled} />
       <textarea aria-label="notes" />
     </>
   );
@@ -36,8 +36,8 @@ function loadPreview() {
 
 function draw(canvas: HTMLCanvasElement, points: Array<[number, number]>, end: 'pointerUp' | 'pointerCancel' = 'pointerUp') {
   const [first, ...rest] = points;
-  fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, clientX: first[0], clientY: first[1] });
-  for (const [x, y] of rest) fireEvent.pointerMove(canvas, { pointerId: 1, clientX: x, clientY: y });
+  fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, buttons: 1, clientX: first[0], clientY: first[1] });
+  for (const [x, y] of rest) fireEvent.pointerMove(canvas, { pointerId: 1, buttons: 1, clientX: x, clientY: y });
   fireEvent[end](canvas, { pointerId: 1 });
 }
 
@@ -66,7 +66,7 @@ describe('ScreenshotAnnotator', () => {
     draw(canvas, [[5, 5]]);
     draw(canvas, [[30, 30], [40, 40]], 'pointerCancel');
     // A move after the cancel doesn't extend the cancelled stroke.
-    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 90, clientY: 90 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, buttons: 1, clientX: 90, clientY: 90 });
     expect(latest.map((s) => s.points.length)).toEqual([1, 2]);
   });
 
@@ -120,5 +120,62 @@ describe('ScreenshotAnnotator', () => {
     loadPreview();
     expect(ctx.clearRect).toHaveBeenCalledWith(0, 0, 2880, 1800);
     expect(ctx.arc).toHaveBeenCalled();
+  });
+
+  it('stops inking when the release was lost (no buttons down, or capture lost)', () => {
+    render(<Harness />);
+    const canvas = loadPreview();
+    fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, buttons: 1, clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, buttons: 1, clientX: 2, clientY: 2 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, buttons: 0, clientX: 50, clientY: 50 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, buttons: 0, clientX: 60, clientY: 60 });
+    expect(latest[0].points).toHaveLength(2);
+
+    fireEvent.pointerDown(canvas, { pointerId: 2, button: 0, buttons: 1, clientX: 5, clientY: 5 });
+    fireEvent(canvas, new PointerEvent('lostpointercapture', { pointerId: 2, bubbles: true }));
+    fireEvent.pointerMove(canvas, { pointerId: 2, buttons: 1, clientX: 70, clientY: 70 });
+    expect(latest[1].points).toHaveLength(1);
+  });
+
+  it('keeps an Undo made mid-drag', () => {
+    render(<Harness />);
+    const canvas = loadPreview();
+    draw(canvas, [[1, 1], [2, 2]]);
+    fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, buttons: 1, clientX: 5, clientY: 5 });
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.pointerMove(canvas, { pointerId: 1, buttons: 1, clientX: 9, clientY: 9 });
+    expect(latest).toHaveLength(1);
+    expect(latest[0].points).toHaveLength(2);
+  });
+
+  it('turns the pen and tools off while disabled (sending)', () => {
+    render(<Harness disabled initial={[{ color: '#ff3b30', width: 10, points: [{ x: 1, y: 1 }] }]} />);
+    const canvas = loadPreview();
+    draw(canvas, [[10, 10], [20, 20]]);
+    expect(latest).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Clear drawing' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Blue ink' })).toBeDisabled();
+    fireEvent.keyDown(canvas, { key: 'z', metaKey: true });
+    expect(latest).toHaveLength(1);
+  });
+
+  it('keeps a Clear made mid-drag', () => {
+    render(<Harness />);
+    const canvas = loadPreview();
+    draw(canvas, [[1, 1], [2, 2]]);
+    fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, buttons: 1, clientX: 5, clientY: 5 });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear drawing' }));
+    fireEvent.pointerMove(canvas, { pointerId: 1, buttons: 1, clientX: 9, clientY: 9 });
+    expect(latest).toEqual([]);
+  });
+
+  it('stops a drag that was going when Send started', () => {
+    const { rerender } = render(<Harness />);
+    const canvas = loadPreview();
+    fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, buttons: 1, clientX: 1, clientY: 1 });
+    rerender(<Harness disabled />);
+    fireEvent.pointerMove(canvas, { pointerId: 1, buttons: 1, clientX: 30, clientY: 30 });
+    expect(latest[0].points).toHaveLength(1);
   });
 });

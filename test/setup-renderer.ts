@@ -486,10 +486,11 @@ vi.stubGlobal('clubhouse', {
     }),
     connect: async () => ({ connected: false }),
     disconnect: async () => ({ forgotten: true, revoked: null }),
-    capture: async () => ({ draftId: 'draft', preview: null }),
+    capture: async () => ({ draftId: 'draft', preview: null, shots: [] }),
     send: async () => ({ id: 'report', status: 'saved-local' }),
     cancel: asyncNoop,
     onStatusChanged: () => noop,
+    onCaptured: () => noop,
   },
   telemetrySettings: {
     getStatus: async () => ({ available: false }),

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
 import { Modal } from '../../components/Modal';
-import type { FeedbackCaptureResult } from '../../../shared/feedback-types';
+import type { FeedbackCaptureResult, FeedbackShot } from '../../../shared/feedback-types';
 import { useFeedbackStore } from '../../stores/feedbackStore';
 import { useUIStore } from '../../stores/uiStore';
 import { compositeAnnotatedPng, type Stroke } from './annotation';
@@ -19,6 +19,12 @@ function currentScene(): string {
   return typeof tab === 'string' && /^[a-z][a-z0-9-]{0,39}$/.test(tab) ? tab : 'app';
 }
 
+/** The windows captured, falling back to the single preview from an older main. */
+function shotsOf(draft: FeedbackCaptureResult): FeedbackShot[] {
+  if (draft.shots?.length) return draft.shots;
+  return draft.preview ? [{ shotId: '', label: 'This window', preview: draft.preview }] : [];
+}
+
 /**
  * Review a captured screenshot before it leaves the computer: preview, notes, and Send,
  * "Send without screenshot" or Cancel. After sending it shows "Saved" (queued on this
@@ -30,11 +36,28 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
   const [reportId, setReportId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const received = useFeedbackStore((s) => (reportId ? s.status?.received.includes(reportId) === true : false));
-  const [strokes, setStrokes] = useState<Stroke[]>([]);
-  const hasScreenshot = draft.preview !== null;
+  const shots = shotsOf(draft);
+  const [shotIndex, setShotIndex] = useState(0);
+  // Ink is per window: switching windows keeps each one's drawing.
+  const [inkByShot, setInkByShot] = useState<Stroke[][]>([]);
+  const shot = shots[shotIndex] ?? null;
+  const strokes = inkByShot[shotIndex] ?? [];
+  const setStrokes = useCallback((next: Stroke[]) => {
+    setInkByShot((all) => { const copy = [...all]; copy[shotIndex] = next; return copy; });
+  }, [shotIndex]);
+  const hasScreenshot = shot !== null;
 
   // Ink belongs to one capture: a new capture starts clean.
-  useEffect(() => { setStrokes([]); }, [draft.draftId]);
+  useEffect(() => { setInkByShot([]); setShotIndex(0); }, [draft.draftId]);
+
+  const onShotKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (!step || phase === 'sending') return;
+    e.preventDefault();
+    const next = (shotIndex + step + shots.length) % shots.length;
+    setShotIndex(next);
+    e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+  };
 
   const cancel = useCallback(() => {
     if (phase === 'review') void window.clubhouse.feedback.cancel(draft.draftId);
@@ -46,8 +69,8 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
     setError(null);
     try {
       // The drawing is baked into the capture at full size; main checks it is the same image size.
-      const annotatedPng = includeScreenshot && draft.preview && strokes.length > 0
-        ? await compositeAnnotatedPng(draft.preview, strokes)
+      const annotatedPng = includeScreenshot && shot && strokes.length > 0
+        ? await compositeAnnotatedPng(shot.preview, strokes)
         : undefined;
       const result = await window.clubhouse.feedback.send({
         draftId: draft.draftId,
@@ -55,6 +78,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
         includeScreenshot,
         scene: currentScene(),
         ...(annotatedPng !== undefined && { annotatedPng }),
+        ...(includeScreenshot && shot?.shotId && { shotId: shot.shotId }),
       });
       setReportId(result.id);
       setPhase('saved');
@@ -79,8 +103,29 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
           </div>
         ) : (
           <>
-            {hasScreenshot ? (
-              <ScreenshotAnnotator src={draft.preview!} strokes={strokes} onChange={setStrokes} />
+            {shots.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto" role="radiogroup" aria-label="Window to send" onKeyDown={onShotKey} data-testid="feedback-shots">
+                {shots.map((s, i) => (
+                  <button
+                    key={s.shotId || i}
+                    type="button"
+                    role="radio"
+                    aria-checked={i === shotIndex}
+                    // Roving tabindex: one Tab stop for the group, arrows move between windows.
+                    tabIndex={i === shotIndex ? 0 : -1}
+                    disabled={phase === 'sending'}
+                    onClick={() => setShotIndex(i)}
+                    className={`flex-shrink-0 w-32 p-1 rounded-md border text-left focus-ring disabled:opacity-50 ${i === shotIndex ? 'border-ctp-accent bg-surface-0' : 'border-surface-1 hover:bg-surface-0'}`}
+                    data-testid={`feedback-shot-${i}`}
+                  >
+                    <img src={s.preview} alt="" className="block w-full h-16 object-cover rounded-sm bg-ctp-base" draggable={false} />
+                    <span className="block mt-1 text-xs text-ctp-subtext1 truncate" title={s.label}>{s.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {shot ? (
+              <ScreenshotAnnotator key={shotIndex} src={shot.preview} strokes={strokes} onChange={setStrokes} disabled={phase === 'sending'} />
             ) : (
               <p className="text-sm text-ctp-subtext0">No screenshot could be taken. You can still send a note.</p>
             )}
@@ -95,7 +140,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
               className="w-full px-3 py-2 text-sm rounded-md bg-ctp-base border border-surface-1 text-ctp-text placeholder:text-ctp-overlay0 resize-none"
             />
             <p className="text-xs text-ctp-subtext0">
-              Only this Clubhouse window is captured. Links, email addresses and file paths in notes are removed before sending.
+              Only Clubhouse windows are captured, and only the one you choose is sent. Links, email addresses and file paths in notes are removed before sending.
             </p>
             {error && <p className="text-sm text-ctp-error" role="alert" data-testid="feedback-error">{error}</p>}
             <div className="flex items-center justify-end gap-2">

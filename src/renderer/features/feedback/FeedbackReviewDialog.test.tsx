@@ -142,3 +142,90 @@ describe('FeedbackReviewDialog drawing (#2099)', () => {
     expect(screen.getByRole('button', { name: 'Clear drawing' })).toBeEnabled();
   });
 });
+
+describe('FeedbackReviewDialog with several windows (#2100)', () => {
+  const composite = vi.mocked(compositeAnnotatedPng);
+  const MULTI = {
+    draftId: '2d7e8c4a-3b5f-4ea0-9c9d-4f6a8b0c2e3a',
+    preview: 'data:image/png;base64,TUFJTg==',
+    shots: [
+      { shotId: 's0', label: 'Main window', preview: 'data:image/png;base64,TUFJTg==' },
+      { shotId: 's1', label: 'Agent: faithful-urchin', preview: 'data:image/png;base64,UE9QT1VU' },
+    ],
+  };
+
+  beforeEach(() => {
+    composite.mockReset().mockResolvedValue('ANNOTATED');
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ clearRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), arc: vi.fn(), fill: vi.fn() } as never);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}) });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  function drawOnce() {
+    const img = screen.getByTestId('feedback-preview');
+    Object.defineProperty(img, 'naturalWidth', { value: 200, configurable: true });
+    Object.defineProperty(img, 'naturalHeight', { value: 200, configurable: true });
+    fireEvent.load(img);
+    const canvas = screen.getByTestId('feedback-ink-canvas');
+    fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(canvas, { pointerId: 1 });
+  }
+
+  it('lists each window, starting with the one feedback came from', () => {
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    const radios = screen.getAllByRole('radio');
+    expect(radios.map((r) => r.textContent)).toEqual(['Main window', 'Agent: faithful-urchin']);
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('feedback-preview').getAttribute('src')).toBe(MULTI.shots[0].preview);
+  });
+
+  it('sends the chosen window', async () => {
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('radio', { name: /faithful-urchin/ }));
+    expect(screen.getByTestId('feedback-preview').getAttribute('src')).toBe(MULTI.shots[1].preview);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ includeScreenshot: true, shotId: 's1' }));
+  });
+
+  it("keeps each window's ink and bakes the chosen window's", async () => {
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    drawOnce();
+    fireEvent.click(screen.getByRole('radio', { name: /faithful-urchin/ }));
+    expect(screen.getByRole('button', { name: 'Clear drawing' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: 'Main window' }));
+    expect(screen.getByRole('button', { name: 'Clear drawing' })).toBeEnabled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    expect(composite).toHaveBeenCalledWith(MULTI.shots[0].preview, [expect.anything()]);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ shotId: 's0', annotatedPng: 'ANNOTATED' }));
+  });
+
+  it('shows no picker for a single window, and no shotId on a text-only send', async () => {
+    render(<FeedbackReviewDialog draft={{ ...MULTI, shots: [MULTI.shots[0]] }} onClose={vi.fn()} />);
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'text' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send without screenshot' })); });
+    expect(send.mock.calls[0][0]).not.toHaveProperty('shotId');
+  });
+
+  it('moves between windows with the arrow keys, one Tab stop for the group', () => {
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    const radios = screen.getAllByRole('radio');
+    expect(radios.map((r) => r.tabIndex)).toEqual([0, -1]);
+    fireEvent.keyDown(radios[0], { key: 'ArrowRight' });
+    expect(radios[1]).toHaveAttribute('aria-checked', 'true');
+    expect(document.activeElement).toBe(radios[1]);
+    expect(radios.map((r) => r.tabIndex)).toEqual([-1, 0]);
+    fireEvent.keyDown(radios[1], { key: 'ArrowRight' });
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('locks the window choice while sending', async () => {
+    let resolveSend: (v: unknown) => void = () => {};
+    send.mockReturnValueOnce(new Promise((r) => { resolveSend = r; }));
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    await act(async () => {});
+    for (const r of screen.getAllByRole('radio')) expect(r).toBeDisabled();
+    await act(async () => { resolveSend({ id: 'rep-1', status: 'saved-local' }); });
+  });
+});

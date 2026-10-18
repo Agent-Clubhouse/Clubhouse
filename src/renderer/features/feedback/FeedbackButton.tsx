@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { FeedbackCaptureResult } from '../../../shared/feedback-types';
+import { FEEDBACK_CAPTURE_SHORTCUT_LABEL } from '../../../shared/feedback-types';
 import { FEEDBACK_NOTICE_TEXT, useFeedbackStore } from '../../stores/feedbackStore';
 import { useToastStore } from '../../stores/toastStore';
-import { FeedbackReviewDialog } from './FeedbackReviewDialog';
 
 interface Props {
   /** 'rail': classic project rail footer row. 'sidebar': new layout sidebar footer icon. */
@@ -30,22 +29,20 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
   const notice = useFeedbackStore((s) => s.status?.notice ?? null);
   const pending = useFeedbackStore((s) => s.status?.outbox.pending ?? 0);
   const init = useFeedbackStore((s) => s.init);
-  const [draft, setDraft] = useState<FeedbackCaptureResult | null>(null);
+  const openDraft = useFeedbackStore((s) => s.openDraft);
   const [capturing, setCapturing] = useState(false);
 
   useEffect(() => { void init(); }, [init]);
 
-  // A review in progress stays open even if capture eligibility flips mid-Send
-  // (e.g. access expires), so the draft isn't orphaned.
-  const dialog = draft ? <FeedbackReviewDialog draft={draft} onClose={() => setDraft(null)} /> : null;
-  if (!canCapture) return dialog;
+  // The review dialog itself lives in FeedbackDialogHost, at app level.
+  if (!canCapture) return null;
 
   const open = async () => {
     if (capturing) return;
     setCapturing(true);
     try {
       // Captured before the dialog draws, so the screenshot shows what the user saw.
-      setDraft(await window.clubhouse.feedback.capture());
+      openDraft(await window.clubhouse.feedback.capture());
     } catch (err) {
       // telemetry-exempt: shown to the user
       useToastStore.getState().addToast(`Couldn't capture feedback: ${err instanceof Error ? err.message : String(err)}`, 'error');
@@ -55,7 +52,10 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
   };
 
   const pendingText = pending > 0 ? `${pending} feedback ${pending === 1 ? 'report' : 'reports'} waiting to send` : null;
-  const title = ['Send feedback', notice ? FEEDBACK_NOTICE_TEXT[notice] : null, pendingText].filter(Boolean).join('. ');
+  const shortcut = window.clubhouse.platform === 'darwin' ? FEEDBACK_CAPTURE_SHORTCUT_LABEL.mac : FEEDBACK_CAPTURE_SHORTCUT_LABEL.other;
+  const label = ['Send feedback', notice ? FEEDBACK_NOTICE_TEXT[notice] : null, pendingText].filter(Boolean).join('. ');
+  // The tooltip also names the capture shortcut; the accessible name stays short.
+  const title = [`Send feedback (${shortcut} captures what's under the pointer)`, notice ? FEEDBACK_NOTICE_TEXT[notice] : null, pendingText].filter(Boolean).join('. ');
   const marker = notice || pending > 0 ? (
     <span
       className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full ${notice ? 'bg-ctp-warning' : 'bg-ctp-subtext0'}`}
@@ -70,7 +70,7 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
       onClick={() => void open()}
       disabled={capturing}
       title={title}
-      aria-label={title}
+      aria-label={label}
       data-testid="nav-feedback"
       className="relative w-7 h-7 rounded-md flex items-center justify-center text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text cursor-pointer disabled:opacity-50"
     >
@@ -83,7 +83,7 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
       onClick={() => void open()}
       disabled={capturing}
       title={title}
-      aria-label={title}
+      aria-label={label}
       data-testid="nav-feedback"
       className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 disabled:opacity-50 ${expanded ? 'hover:bg-surface-0' : ''}`}
     >
@@ -99,10 +99,5 @@ export function FeedbackButton({ variant, expanded = false }: Props) {
     </button>
   );
 
-  return (
-    <>
-      {button}
-      {dialog}
-    </>
-  );
+  return button;
 }
