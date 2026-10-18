@@ -172,8 +172,8 @@ describe('agent-handlers', () => {
   it('CREATE_DURABLE refuses a worktree agent name that is not a safe folder/branch name (#2221)', async () => {
     vi.mocked(agentConfig.createDurable).mockClear();
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    await expect(handler({}, '/project', 'x;rm -rf ~', '#ff0000', undefined, true)).rejects.toThrow(/^Invalid agent name/);
-    await expect(handler({}, '/project', '-x', '#ff0000')).rejects.toThrow(/^Invalid agent name/);
+    await expect(handler({}, '/project', 'x;rm -rf ~', '#ff0000', undefined, true)).rejects.toThrow('Use only letters, digits, - and _ in the agent name.');
+    await expect(handler({}, '/project', '-x', '#ff0000')).rejects.toThrow('Start the agent name with a letter, digit or _.');
     expect(agentConfig.createDurable).not.toHaveBeenCalled();
   });
 

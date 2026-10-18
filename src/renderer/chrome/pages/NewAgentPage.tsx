@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { McpCatalogEntry, Project } from '../../../shared/types';
 import { AGENT_COLORS, generateDurableName } from '../../../shared/name-generator';
+import { validateAgentGitName } from '../../../shared/agent-name';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -153,9 +154,16 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
   const busy = useChromeStore((s) => s.newAgentBusy);
   const setBusy = useChromeStore((s) => s.setNewAgentBusy);
   const [error, setError] = useState<string | null>(null);
+  // With its own worktree a durable agent's name becomes a folder and a git
+  // branch, so it is checked here as strictly as the main process will (#2221).
+  const nameProblem = durable && !!isGit && useWorktree && name.trim()
+    ? validateAgentGitName(name.trim(), 'folder')
+    : null;
   // Durable waits for the git check, which decides the worktree row.
+  // The help line never shows a branch or folder the main process would refuse.
+  const worktreeName = name.trim() && !nameProblem ? name.trim() : 'name';
   const canSubmit = !!project && !busy && (durable
-    ? !!name.trim() && isGit !== null
+    ? !!name.trim() && isGit !== null && !nameProblem
     : !!mission.trim() && (model !== 'custom' || !!customModel.trim()));
 
   // The page stays up, busy, until the agent exists; a failure is shown here
@@ -294,7 +302,13 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
 
         {durable ? (
           <>
-            <Row label="Name" htmlFor="new-agent-name" help="Generated. Change it now or rename it later.">
+            <Row
+              label="Name"
+              htmlFor="new-agent-name"
+              help={nameProblem
+                ? <span id="new-agent-name-error" data-testid="new-agent-name-error" className="text-ctp-error">{nameProblem}</span>
+                : 'Generated. Change it now or rename it later.'}
+            >
               <AgentAvatar agent={{ id: 'new', name, color, kind: 'durable', status: 'sleeping' } as never} size="2xs" />
               <input
                 id="new-agent-name"
@@ -302,6 +316,8 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
                 data-testid="new-agent-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                aria-invalid={nameProblem ? true : undefined}
+                aria-describedby={nameProblem ? 'new-agent-name-error' : undefined}
                 className={`${inputClass} w-[220px]`}
                 spellCheck={false}
                 autoComplete="off"
@@ -403,7 +419,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
           <Row
             label="Worktree"
             help={useWorktree
-              ? <>Branch <span className={mono}>{name.trim() || 'name'}/standby</span> from the current branch, checked out in <span className={mono}>.clubhouse/agents/{name.trim() || 'name'}</span>.</>
+              ? <>Branch <span className={mono}>{worktreeName}/standby</span> from the current branch, checked out in <span className={mono}>.clubhouse/agents/{worktreeName}</span>.</>
               : 'Works in the project folder, on whatever branch is checked out there.'}
           >
             <Toggle checked={useWorktree} onChange={setUseWorktree} aria-label="Own worktree and branch" />

@@ -626,7 +626,7 @@ describe('createDurable', () => {
   ];
 
   it.each(HOSTILE_NAMES)('rejects a worktree agent named with %s before touching git or disk', async (_label, name) => {
-    await expect(createDurable(PROJECT_PATH, name, 'indigo')).rejects.toThrow(/^Invalid agent name/);
+    await expect(createDurable(PROJECT_PATH, name, 'indigo')).rejects.toThrow(/agent/);
     expect(vi.mocked(execFile)).not.toHaveBeenCalled();
     expect(vi.mocked(fsp.mkdir)).not.toHaveBeenCalled();
   });
@@ -646,7 +646,7 @@ describe('resolveAgentWorktreePath (#2221)', () => {
   });
 
   it.each(['../x', '..', 'a/b', 'a\\b', '/abs', 'C:\\abs', ''])('refuses %j', (name) => {
-    expect(() => resolveAgentWorktreePath(PROJECT_PATH, name)).toThrow(/^Invalid agent name/);
+    expect(() => resolveAgentWorktreePath(PROJECT_PATH, name)).toThrow(/agent/);
   });
 });
 
@@ -657,6 +657,11 @@ describe('cleanupBranchFor (#2221)', () => {
 
   it('falls back to the standby prefix when the name was renamed to something git cannot take', () => {
     expect(cleanupBranchFor({ id: 'durable_1_a', name: 'My Agent', branch: 'bold-falcon/standby' })).toBe('bold-falcon/cleanup');
+  });
+
+  it('uses clubhouse-agent/cleanup as a last resort when name, branch and id are all unusable', () => {
+    expect(cleanupBranchFor({ id: '-bad id', name: 'My Agent', branch: undefined })).toBe('clubhouse-agent/cleanup');
+    expect(cleanupBranchFor({ id: '', name: '', branch: 'x:y/standby' })).toBe('clubhouse-agent/cleanup');
   });
 
   it('falls back to the id when neither name nor branch is usable', () => {

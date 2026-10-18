@@ -55,7 +55,7 @@ export function resolveAgentWorktreePath(projectPath: string, name: string): str
   const target = path.resolve(root, name);
   const rel = path.relative(root, target);
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || rel !== name) {
-    throw new Error(`Invalid agent name: worktree path must stay inside ${root}`);
+    throw new Error(`The agent's worktree must stay inside ${root}.`);
   }
   return path.join(agentsDir(projectPath), name);
 }

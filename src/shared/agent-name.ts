@@ -21,19 +21,22 @@ const PART = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
 
 function problemWith(value: unknown, kind: AgentGitNameKind): string | null {
-  if (typeof value !== 'string' || value.length === 0) return 'is required';
+  const what = kind === 'folder' ? 'the agent name' : 'the branch name';
+  if (typeof value !== 'string' || value.length === 0) {
+    return kind === 'folder' ? 'Enter a name for the agent.' : 'Enter a branch name.';
+  }
   const max = kind === 'folder' ? AGENT_FOLDER_NAME_MAX_LENGTH : AGENT_BRANCH_NAME_MAX_LENGTH;
-  if (value.length > max) return `must be at most ${max} characters`;
-  if (value.startsWith('-') || value.startsWith('.')) return 'must not start with "-" or "."';
-  if (value.includes('..')) return 'must not contain ".."';
+  if (value.length > max) return `Keep ${what} to ${max} characters or fewer.`;
+  if (value.startsWith('-') || value.startsWith('.')) return `Start ${what} with a letter, digit or _.`;
+  if (value.includes('..')) return `Remove the ".." from ${what}.`;
   const parts = kind === 'branch' ? value.split('/') : [value];
   for (const part of parts) {
     if (!PART.test(part)) {
       return kind === 'branch'
-        ? 'may only use letters, digits, "-", "_" and "/" between parts, and no part may start with "-"'
-        : 'may only use letters, digits, "-" and "_"';
+        ? 'Use only letters, digits, - and _ in the branch name, with / between parts that each start with a letter, digit or _.'
+        : 'Use only letters, digits, - and _ in the agent name.';
     }
-    if (WINDOWS_RESERVED.test(part)) return `must not use "${part}", which is reserved on Windows`;
+    if (WINDOWS_RESERVED.test(part)) return `"${part}" is reserved on Windows, so choose another ${kind === 'folder' ? 'agent' : 'branch'} name.`;
   }
   return null;
 }
@@ -43,12 +46,11 @@ function problemWith(value: unknown, kind: AgentGitNameKind): string | null {
  * branch name (`kind: 'branch'`), as a sentence for the user, or null when it is valid.
  */
 export function validateAgentGitName(value: unknown, kind: AgentGitNameKind = 'folder'): string | null {
-  const problem = problemWith(value, kind);
-  return problem ? `${kind === 'folder' ? 'Agent name' : 'Branch name'} ${problem}` : null;
+  return problemWith(value, kind);
 }
 
-/** Like validateAgentGitName, but throws an `Invalid agent name: ...` / `Invalid branch name: ...` error. */
+/** Like validateAgentGitName, but throws an Error whose message is that sentence. */
 export function assertAgentGitName(value: unknown, kind: AgentGitNameKind = 'folder'): asserts value is string {
   const problem = problemWith(value, kind);
-  if (problem) throw new Error(`Invalid ${kind === 'folder' ? 'agent' : 'branch'} name: ${problem}`);
+  if (problem) throw new Error(problem);
 }

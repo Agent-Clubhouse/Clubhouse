@@ -148,7 +148,12 @@ describe('AddAgentDialog', () => {
     render(<AddAgentDialog {...defaultProps} />);
     fireEvent.click(screen.getByRole('checkbox', { name: /worktree/i }));
     fireEvent.change(screen.getByDisplayValue('test-agent'), { target: { value: 'x$(touch pwned)' } });
-    expect(screen.getByTestId('add-agent-name-error')).toBeInTheDocument();
+    const error = screen.getByTestId('add-agent-name-error');
+    expect(error.textContent).toBe('Use only letters, digits, - and _ in the agent name.');
+    const input = screen.getByDisplayValue('x$(touch pwned)');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', error.id);
+    expect(screen.getByText('Create Agent')).toBeDisabled();
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).not.toHaveBeenCalled();
   });

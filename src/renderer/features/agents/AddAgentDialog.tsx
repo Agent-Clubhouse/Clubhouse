@@ -78,6 +78,8 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                aria-invalid={nameProblem ? true : undefined}
+                aria-describedby={nameProblem ? 'add-agent-name-error' : undefined}
                 className="flex-1 bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
                   text-ctp-text focus-ring"
                 autoFocus
@@ -93,7 +95,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
               </button>
             </div>
             {nameProblem && (
-              <p className="mt-1 text-xs text-ctp-error" data-testid="add-agent-name-error">{nameProblem}</p>
+              <p id="add-agent-name-error" className="mt-1 text-xs text-ctp-error" data-testid="add-agent-name-error">{nameProblem}</p>
             )}
           </label>
 
@@ -251,7 +253,7 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
               disabled={!!nameProblem}
               className="px-4 py-1.5 text-xs rounded bg-ctp-accent text-white
                 hover:bg-ctp-accent/80 cursor-pointer font-medium
-                disabled:opacity-50 disabled:cursor-default"
+                disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Create Agent
             </button>

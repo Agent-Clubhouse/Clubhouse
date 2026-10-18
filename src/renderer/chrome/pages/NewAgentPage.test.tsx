@@ -91,6 +91,43 @@ describe('NewAgentPage', () => {
     expect(useChromeStore.getState().newAgent).toBeNull();
   });
 
+  it('checks a worktree name inline and keeps Create off until it is valid (#2221)', async () => {
+    openWith({});
+    await waitFor(() => expect(screen.getByLabelText('Own worktree and branch')).toBeTruthy());
+    const input = screen.getByTestId('new-agent-name');
+    fireEvent.change(input, { target: { value: 'My Agent' } });
+    const error = screen.getByTestId('new-agent-name-error');
+    expect(error.textContent).toBe('Use only letters, digits, - and _ in the agent name.');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', error.id);
+    expect(screen.getByTestId('new-agent-submit')).toBeDisabled();
+    // The worktree help never shows a branch or folder the main process would refuse.
+    expect(screen.queryByText('My Agent/standby')).toBeNull();
+    expect(screen.getByText('name/standby')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    expect(createDurableAgent).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: 'my-agent' } });
+    expect(screen.queryByTestId('new-agent-name-error')).toBeNull();
+    expect(input).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByText('my-agent/standby')).toBeTruthy();
+    expect(screen.getByTestId('new-agent-submit')).not.toBeDisabled();
+  });
+
+  it('allows a free-form name when the worktree switch is off', async () => {
+    openWith({});
+    await waitFor(() => expect(screen.getByLabelText('Own worktree and branch')).toBeTruthy());
+    fireEvent.change(screen.getByTestId('new-agent-name'), { target: { value: 'My Agent' } });
+    fireEvent.click(screen.getByRole('switch', { name: 'Own worktree and branch' }));
+    expect(screen.queryByTestId('new-agent-name-error')).toBeNull();
+    fireEvent.click(screen.getByTestId('new-agent-submit'));
+    expect(createDurableAgent).toHaveBeenCalledWith(
+      { id: 'p1', path: '/tmp/ch' },
+      expect.objectContaining({ name: 'My Agent', useWorktree: false }),
+      expect.anything(),
+    );
+  });
+
   it('Quick swaps the durable rows for a required Mission and Runs in', async () => {
     render(<NewAgentPage request={req({ kind: 'quick' })} />);
     const mission = screen.getByTestId('new-agent-mission');
