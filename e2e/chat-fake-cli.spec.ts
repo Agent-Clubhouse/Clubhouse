@@ -176,7 +176,7 @@ for (const p of PROVIDERS) {
       try {
         await send(window, 'Run the long command.');
         await expect(chat).toHaveAttribute('data-state', 'running', { timeout: ENDED_TIMEOUT });
-        await expect(window.locator('[data-testid="chat-tool-row"], [data-testid="chat-command-card"]').first())
+        await expect(window.locator('[data-testid="chat-tool-row"], [data-testid="chat-command-card"], [data-testid="chat-tool-card"]').first())
           .toBeVisible({ timeout: ENDED_TIMEOUT });
         await window.locator('[data-testid="chat-stop"]').click();
 

@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../../shared/chat';
 import { foldChatEvents } from '../../../stores/chatStore';
 import { chatFixture, FIXTURE_AGENT_ID, FIXTURE_PROVIDERS, FIXTURE_SCENARIOS, PROFILES } from './fixtures';
+import type { ToolCallItem } from '../../../stores/chatStore';
 import {
+  argSummary,
   buildStreamBlocks,
   composerModes,
   diffStats,
@@ -11,8 +13,12 @@ import {
   formatDuration,
   formatTokens,
   implementLevel,
+  mcpTool,
   needsManualPlanHandoff,
   parseUnifiedDiff,
+  toolArgs,
+  toolOpenByDefault,
+  toolResultText,
 } from './view-model';
 
 const fold = (events: ReturnType<typeof chatFixture>) => foldChatEvents(undefined, FIXTURE_AGENT_ID, events);
@@ -142,5 +148,54 @@ describe('formatting', () => {
     expect(formatTokens(950)).toBe('950');
     expect(formatTokens(18200)).toBe('18.2k');
     expect(formatTokens(258000)).toBe('258k');
+  });
+});
+
+describe('tool card helpers (#2110)', () => {
+  const tool = (over: Partial<ToolCallItem>): ToolCallItem => ({
+    kind: 'tool_call', id: 't', sessionId: 's', seq: 1, ts: 0, toolCallId: 't', toolKind: 'other', title: 'T', status: 'completed', content: [], ...over,
+  });
+
+  it('opens only failed and pending calls by default', () => {
+    expect(toolOpenByDefault('failed')).toBe(true);
+    expect(toolOpenByDefault('pending')).toBe(true);
+    expect(toolOpenByDefault('in_progress')).toBe(false);
+    expect(toolOpenByDefault('completed')).toBe(false);
+    expect(toolOpenByDefault('cancelled')).toBe(false);
+  });
+
+  it('splits an MCP tool name into server and tool', () => {
+    expect(mcpTool(tool({ toolName: 'mcp__clubhouse__read_topic' }))).toEqual({ server: 'clubhouse', tool: 'read_topic' });
+    // Clubhouse's own tool names contain `__`: the first split keeps them whole.
+    expect(mcpTool(tool({ toolName: 'mcp__clubhouse__group__proj_x7q__post_bulletin' }))).toEqual({ server: 'clubhouse', tool: 'group__proj_x7q__post_bulletin' });
+    expect(mcpTool(tool({ toolName: 'Bash' }))).toBeNull();
+    expect(mcpTool(tool({ toolName: 'mcp__solo' }))).toBeNull();
+    expect(mcpTool(tool({}))).toBeNull();
+  });
+
+  it('prefers the longest known server name when one contains `__`', () => {
+    const servers = [{ name: 'my' }, { name: 'my__server' }];
+    expect(mcpTool(tool({ toolName: 'mcp__my__server__do_thing' }), servers)).toEqual({ server: 'my__server', tool: 'do_thing' });
+    expect(mcpTool(tool({ toolName: 'mcp__my__other' }), servers)).toEqual({ server: 'my', tool: 'other' });
+    expect(mcpTool(tool({ toolName: 'mcp__unknown__x__y' }), servers)).toEqual({ server: 'unknown', tool: 'x__y' });
+  });
+
+  it('summarizes with the first non-empty string argument on one line', () => {
+    expect(argSummary(tool({ rawInput: { limit: 5, topic: '  theme\nfixes ', body: 'x' } }))).toBe('theme fixes');
+    expect(argSummary(tool({ rawInput: { limit: 5 } }))).toBe('');
+    expect(argSummary(tool({ rawInput: 'raw' }))).toBe('');
+  });
+
+  it('treats empty or non-object input as no arguments', () => {
+    expect(toolArgs(tool({ rawInput: {} }))).toBeNull();
+    expect(toolArgs(tool({ rawInput: ['a'] }))).toBeNull();
+    expect(toolArgs(tool({ rawInput: { a: 1 } }))).toEqual({ a: 1 });
+  });
+
+  it('prefers text content for the result and falls back to raw output', () => {
+    expect(toolResultText(tool({ content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] }))).toBe('a\nb');
+    expect(toolResultText(tool({ rawOutput: 'plain' }))).toBe('plain');
+    expect(toolResultText(tool({ rawOutput: { ok: true } }))).toBe('{\n  "ok": true\n}');
+    expect(toolResultText(tool({}))).toBe('');
   });
 });

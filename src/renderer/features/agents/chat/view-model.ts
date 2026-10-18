@@ -119,6 +119,61 @@ export function toolTarget(tool: ToolCallItem): string {
   return tool.locations?.[0]?.path ?? tool.title;
 }
 
+/**
+ * Tool cards in the transcript start collapsed to one row (#2110). Failed calls
+ * start open so the error and output are in view, and so do calls waiting for
+ * approval, so you can see what you're approving. Running calls stay collapsed:
+ * their live output is what floods the transcript. A row the user toggled keeps
+ * the user's choice; otherwise it follows the status, so a running call that
+ * fails opens itself.
+ */
+export function toolOpenByDefault(status: ToolCallItem['status']): boolean {
+  return status === 'failed' || status === 'pending';
+}
+
+/**
+ * Server and tool of an MCP call, from the `mcp__<server>__<tool>` name every
+ * driver reports. Tool names can contain `__` (Clubhouse's own
+ * `group__<project>__post_bulletin`), so the longest known server name wins,
+ * and without one the name splits at the first `__` after the prefix.
+ */
+export function mcpTool(tool: ToolCallItem, servers?: ReadonlyArray<{ name: string }> | null): { server: string; tool: string } | null {
+  const name = tool.toolName ?? '';
+  if (!name.startsWith('mcp__')) return null;
+  const rest = name.slice('mcp__'.length);
+  const known = (servers ?? [])
+    .map((s) => s.name)
+    .filter((n) => n && rest.startsWith(`${n}__`) && rest.length > n.length + 2)
+    .sort((a, b) => b.length - a.length)[0];
+  if (known) return { server: known, tool: rest.slice(known.length + 2) };
+  const m = /^(.+?)__(.+)$/.exec(rest);
+  return m ? { server: m[1], tool: m[2] } : null;
+}
+
+/** The tool's input as an object with at least one key, else null. */
+export function toolArgs(tool: ToolCallItem): Record<string, unknown> | null {
+  const input = tool.rawInput;
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return null;
+  return Object.keys(input).length > 0 ? input as Record<string, unknown> : null;
+}
+
+/** A one-line hint for a collapsed tool row: the first short string argument. */
+export function argSummary(tool: ToolCallItem): string {
+  const first = Object.values(toolArgs(tool) ?? {}).find((v): v is string => typeof v === 'string' && v.trim() !== '');
+  return first ? first.replace(/\s+/g, ' ').trim() : '';
+}
+
+/** What a finished tool returned: its text content, else its raw output. */
+export function toolResultText(tool: ToolCallItem): string {
+  const text = tool.content
+    .filter((c): c is Extract<ToolCallContent, { type: 'text' }> => c.type === 'text')
+    .map((c) => c.text)
+    .join('\n');
+  if (text) return text;
+  if (tool.rawOutput === undefined || tool.rawOutput === null) return '';
+  return typeof tool.rawOutput === 'string' ? tool.rawOutput : JSON.stringify(tool.rawOutput, null, 2);
+}
+
 export function diffContent(tool: ToolCallItem): Array<Extract<ToolCallContent, { type: 'diff' }>> {
   return tool.content.filter((c): c is Extract<ToolCallContent, { type: 'diff' }> => c.type === 'diff');
 }
