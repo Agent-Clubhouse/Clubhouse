@@ -7,6 +7,8 @@ interface Props {
   src: string;
   strokes: Stroke[];
   onChange: (strokes: Stroke[]) => void;
+  /** While sending: ink added now wouldn't be uploaded, so the pen and tools are off. */
+  disabled?: boolean;
 }
 
 /**
@@ -14,7 +16,7 @@ interface Props {
  * is the capture's natural size and CSS scales it with the image, so what you draw
  * lands on the same pixels the upload is composited at.
  */
-export function ScreenshotAnnotator({ src, strokes, onChange }: Props) {
+export function ScreenshotAnnotator({ src, strokes, onChange, disabled = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState<Size | null>(null);
   const [color, setColor] = useState<string>(INKS[0].color);
@@ -33,7 +35,7 @@ export function ScreenshotAnnotator({ src, strokes, onChange }: Props) {
     toImagePoint(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), size!);
 
   const onPointerDown = (e: PointerEvent<HTMLCanvasElement>) => {
-    if (!size || e.button !== 0 || active.current) return;
+    if (!size || disabled || e.button !== 0 || active.current) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture?.(e.pointerId);
     const stroke: Stroke = { color, width: strokeWidthFor(size), points: [point(e)] };
@@ -44,23 +46,26 @@ export function ScreenshotAnnotator({ src, strokes, onChange }: Props) {
   const onPointerMove = (e: PointerEvent<HTMLCanvasElement>) => {
     const a = active.current;
     if (!a || a.pointerId !== e.pointerId) return;
+    // The release was lost (a context menu or window switch took it): stop inking.
+    if (e.buttons === 0) { active.current = null; return; }
     a.stroke = { ...a.stroke, points: [...a.stroke.points, point(e)] };
     onChange([...a.base, a.stroke]);
   };
 
-  // pointerup and pointercancel both end the stroke; what was drawn stays.
+  // pointerup, pointercancel and a lost capture all end the stroke; what was drawn stays.
   const endStroke = (e: PointerEvent<HTMLCanvasElement>) => {
     if (active.current?.pointerId !== e.pointerId) return;
     active.current = null;
-    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    if (e.type !== 'lostpointercapture') e.currentTarget.releasePointerCapture?.(e.pointerId);
   };
 
-  const undo = () => onChange(strokes.slice(0, -1));
-  const clear = () => onChange([]);
+  // Undo or Clear mid-drag also drops the stroke being drawn, so the next move can't bring it back.
+  const undo = () => { active.current = null; onChange(strokes.slice(0, -1)); };
+  const clear = () => { active.current = null; onChange([]); };
 
   // Cmd/Ctrl+Z only while the annotator has focus, so the notes field keeps its own undo.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && strokes.length > 0) {
+    if (!disabled && (e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && strokes.length > 0) {
       e.preventDefault();
       undo();
     }
@@ -91,6 +96,7 @@ export function ScreenshotAnnotator({ src, strokes, onChange }: Props) {
               onPointerMove={onPointerMove}
               onPointerUp={endStroke}
               onPointerCancel={endStroke}
+              onLostPointerCapture={endStroke}
               data-testid="feedback-ink-canvas"
             />
           )}
@@ -108,15 +114,16 @@ export function ScreenshotAnnotator({ src, strokes, onChange }: Props) {
               aria-pressed={selected}
               title={`${ink.label} ink`}
               onClick={() => setColor(ink.color)}
-              className={`w-5 h-5 rounded-full border border-surface-2 focus-ring ${selected ? 'ring-2 ring-offset-2 ring-offset-ctp-mantle ring-ctp-text' : ''}`}
+              disabled={disabled}
+              className={`w-5 h-5 rounded-full border border-surface-2 focus-ring disabled:opacity-50 ${selected ? 'ring-2 ring-offset-2 ring-offset-ctp-mantle ring-ctp-text' : ''}`}
               style={{ backgroundColor: ink.color }}
               data-testid={`feedback-ink-${ink.id}`}
             />
           );
         })}
         <span className="flex-1" />
-        <Button kind="quiet" onClick={undo} disabled={strokes.length === 0} data-testid="feedback-ink-undo">Undo</Button>
-        <Button kind="quiet" onClick={clear} disabled={strokes.length === 0} data-testid="feedback-ink-clear">Clear drawing</Button>
+        <Button kind="quiet" onClick={undo} disabled={disabled || strokes.length === 0} data-testid="feedback-ink-undo">Undo</Button>
+        <Button kind="quiet" onClick={clear} disabled={disabled || strokes.length === 0} data-testid="feedback-ink-clear">Clear drawing</Button>
       </div>
     </div>
   );

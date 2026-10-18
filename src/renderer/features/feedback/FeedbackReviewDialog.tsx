@@ -118,7 +118,7 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
               </div>
             )}
             {shot ? (
-              <ScreenshotAnnotator key={shotIndex} src={shot.preview} strokes={strokes} onChange={setStrokes} />
+              <ScreenshotAnnotator key={shotIndex} src={shot.preview} strokes={strokes} onChange={setStrokes} disabled={phase === 'sending'} />
             ) : (
               <p className="text-sm text-ctp-subtext0">No screenshot could be taken. You can still send a note.</p>
             )}
