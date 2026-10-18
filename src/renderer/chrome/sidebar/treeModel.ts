@@ -85,6 +85,28 @@ export function orderProjects<T extends { id: string }>(projects: T[], pinnedIds
 }
 
 /**
+ * `items` most recent first by `activity` (#2116). Items with no activity
+ * yet go last, and ties keep their given (manual) order.
+ */
+export function sortByRecent<T extends { id: string }>(items: readonly T[], activity: Readonly<Record<string, number>>): T[] {
+  return items
+    .map((item, i) => ({ item, i, at: activity[item.id] ?? Number.NEGATIVE_INFINITY }))
+    .sort((a, b) => (a.at === b.at ? a.i - b.i : b.at - a.at))
+    .map((e) => e.item);
+}
+
+/**
+ * `items` in the order of `heldIds`, then any items that are new since, in
+ * their own order. Keeps rows from moving under the pointer while the Recent
+ * order changes (#2116).
+ */
+export function holdOrder<T extends { id: string }>(items: readonly T[], heldIds: readonly string[]): T[] {
+  const rank = new Map(heldIds.map((id, i) => [id, i]));
+  const held = items.filter((item) => rank.has(item.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  return [...held, ...items.filter((item) => !rank.has(item.id))];
+}
+
+/**
  * Move `draggedId` to sit before `targetId` in the full project order. Returns
  * null when nothing changes, so callers can skip a write.
  */

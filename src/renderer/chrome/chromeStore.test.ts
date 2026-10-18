@@ -14,7 +14,7 @@ import { useAgentStore } from '../stores/agentStore';
 describe('chromeStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false });
+    useChromeStore.setState({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {} });
   });
 
   afterEach(() => {
@@ -23,7 +23,7 @@ describe('chromeStore', () => {
 
   describe('loadChromeState', () => {
     it('defaults to a 264px expanded sidebar when nothing is stored', () => {
-      expect(loadChromeState()).toEqual({ sidebarWidth: 264, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false });
+      expect(loadChromeState()).toEqual({ sidebarWidth: 264, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {} });
     });
 
     it('reads persisted width and collapsed state', () => {
@@ -38,7 +38,7 @@ describe('chromeStore', () => {
 
     it('falls back to defaults on corrupt JSON', () => {
       localStorage.setItem(CHROME_STORAGE_KEY, '{not json');
-      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false });
+      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {} });
     });
 
     it('reads the last selected project', () => {
@@ -48,7 +48,7 @@ describe('chromeStore', () => {
 
     it('never reads the legacy panel sizes key', () => {
       localStorage.setItem('clubhouse_panel_sizes', JSON.stringify({ explorerWidth: 390, explorerCollapsed: true }));
-      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false });
+      expect(loadChromeState()).toEqual({ sidebarWidth: SIDEBAR_DEFAULT, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {} });
     });
   });
 
@@ -60,7 +60,7 @@ describe('chromeStore', () => {
 
     it('reads a version 1 payload without tree state', () => {
       localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 1, sidebarWidth: 280, sidebarCollapsed: false }));
-      expect(loadChromeState()).toEqual({ sidebarWidth: 280, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false });
+      expect(loadChromeState()).toEqual({ sidebarWidth: 280, sidebarCollapsed: false, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {} });
     });
 
     it('togglePinned adds and removes a project', () => {
@@ -132,7 +132,7 @@ describe('chromeStore', () => {
       useChromeStore.getState().toggleSidebar();
       expect(localStorage.getItem(CHROME_STORAGE_KEY)).toBeNull();
       vi.advanceTimersByTime(400);
-      expect(JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!)).toEqual({ version: 2, sidebarWidth: 310, sidebarCollapsed: true, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false });
+      expect(JSON.parse(localStorage.getItem(CHROME_STORAGE_KEY)!)).toEqual({ version: 2, sidebarWidth: 310, sidebarCollapsed: true, lastProjectId: null, pinnedProjectIds: [], collapsedProjectIds: [], expandedFolds: [], tabMru: {}, projectActivity: {}, idleDays: 7, idleOpen: false, projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [], agentActivity: {} });
       expect(localStorage.getItem('clubhouse_panel_sizes')).toBe('{"explorerWidth":200}');
     });
   });
@@ -241,6 +241,57 @@ describe('chromeStore', () => {
       try {
         useAgentStore.setState({ agentSpawnedAt: { a1: 123_000 } });
         expect(useChromeStore.getState().projectActivity.p4).toBe(123_000);
+      } finally {
+        stop();
+      }
+    });
+
+    it('persists sort modes, inactive marks and agent activity, and reads bad values as defaults (#2116)', () => {
+      vi.useFakeTimers();
+      const s = useChromeStore.getState();
+      s.setProjectSort('recent');
+      s.setAgentSort('recent');
+      s.markProjectInactive('p1');
+      s.markAgentActivity('a1', 5_000);
+      vi.advanceTimersByTime(400);
+      expect(loadChromeState()).toMatchObject({ projectSort: 'recent', agentSort: 'recent', inactiveProjectIds: ['p1'], agentActivity: { a1: 5_000 } });
+
+      localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 2, projectSort: 'sideways', agentSort: 7, inactiveProjectIds: 'p1' }));
+      expect(loadChromeState()).toMatchObject({ projectSort: 'manual', agentSort: 'manual', inactiveProjectIds: [] });
+    });
+
+    it('marks a project inactive, but not a pinned one, and Mark active clears it and counts as activity now', () => {
+      const s = useChromeStore.getState();
+      useChromeStore.setState({ pinnedProjectIds: ['pinned'], projectActivity: { p1: 1_000 } });
+      s.markProjectInactive('pinned');
+      s.markProjectInactive('p1');
+      s.markProjectInactive('p1');
+      expect(useChromeStore.getState().inactiveProjectIds).toEqual(['p1']);
+      // Unthrottled: well inside the activity write interval of the last write.
+      s.markProjectActive('p1', 2_000);
+      expect(useChromeStore.getState().inactiveProjectIds).toEqual([]);
+      expect(useChromeStore.getState().projectActivity.p1).toBe(2_000);
+    });
+
+    it('forgets inactive marks for removed projects', () => {
+      useChromeStore.setState({ inactiveProjectIds: ['p1', 'p2'] });
+      useChromeStore.getState().forgetProjects(['p1']);
+      expect(useChromeStore.getState().inactiveProjectIds).toEqual(['p2']);
+    });
+
+    it('agent wakes and turns starting are agent activity, through the agent subscription', () => {
+      useAgentStore.setState({ agents: { a1: { id: 'a1', projectId: 'p4' } as never }, agentSpawnedAt: {}, agentDetailedStatus: {} });
+      const stop = syncProjectActivityWithAgents();
+      try {
+        useAgentStore.setState({ agentSpawnedAt: { a1: 123_000 } });
+        expect(useChromeStore.getState().agentActivity.a1).toBe(123_000);
+        useChromeStore.setState({ agentActivity: {} });
+        useAgentStore.setState({ agentDetailedStatus: { a1: { state: 'working', message: '', timestamp: 1 } } });
+        expect(useChromeStore.getState().agentActivity.a1).toBeGreaterThan(0);
+        // Still working: no new write.
+        useChromeStore.setState({ agentActivity: { a1: 1 } });
+        useAgentStore.setState({ agentDetailedStatus: { a1: { state: 'working', message: 'still', timestamp: 2 } } });
+        expect(useChromeStore.getState().agentActivity.a1).toBe(1);
       } finally {
         stop();
       }

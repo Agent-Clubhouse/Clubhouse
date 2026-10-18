@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
-import { agentDot, filterTree, groupProjectAgents, moveProject, moveWithinGroup, orderProjects, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
+import { agentDot, filterTree, groupProjectAgents, moveProject, moveWithinGroup, orderProjects, sortByRecent, holdOrder, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
 
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   id, projectId: 'p1', name: id, kind: 'durable', status: 'running', color: 'blue', ...over,
@@ -171,5 +171,19 @@ describe('moveWithinGroup (#2115)', () => {
     expect(moveWithinGroup(order, awake, 'a1', 'a1')).toBeNull();
     expect(moveWithinGroup(order, awake, 's1', 'a1')).toBeNull();
     expect(moveWithinGroup(order, awake, 'a1', 's1')).toBeNull();
+  });
+});
+
+describe('sortByRecent and holdOrder (#2116)', () => {
+  const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+
+  it('puts the most recent first, items with no activity last, ties in manual order', () => {
+    expect(sortByRecent(items, { a: 1, b: 3, c: 3 }).map((i) => i.id)).toEqual(['b', 'c', 'a', 'd']);
+    expect(sortByRecent(items, {}).map((i) => i.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('holds a previous order and appends new items in their own order', () => {
+    expect(holdOrder(items, ['c', 'a']).map((i) => i.id)).toEqual(['c', 'a', 'b', 'd']);
+    expect(holdOrder(items.slice(1), ['a', 'd', 'b']).map((i) => i.id)).toEqual(['d', 'b', 'c']);
   });
 });

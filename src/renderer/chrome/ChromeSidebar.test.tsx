@@ -379,6 +379,32 @@ describe('ChromeSidebar', () => {
     });
   });
 
+  it('orders the tree and the filter results most recent first in Recent mode (#2116)', () => {
+    const now = Date.now();
+    useChromeStore.setState({
+      projectSort: 'recent', agentSort: 'recent',
+      projectActivity: { p1: now - 3_000, p2: now - 1_000, p3: now - 2_000 },
+      agentActivity: { a1: 1, a3: 5 },
+      expandedFolds: ['p1:sleeping'],
+    });
+    try {
+      render(<ChromeSidebar />);
+      const projectOrder = () => [...document.querySelectorAll<HTMLElement>('[data-testid^="project-group-"]')].map((el) => el.dataset.testid!.slice(14));
+      expect(projectOrder()).toEqual(['p2', 'p3', 'p1']);
+      // Sleeping a2, a3: a3 woke last.
+      const sleeping = [...document.querySelectorAll<HTMLElement>('[data-agent-id]')].map((el) => el.dataset.agentId).filter((id) => id === 'a2' || id === 'a3');
+      expect(sleeping).toEqual(['a3', 'a2']);
+
+      // The filter results use the same order.
+      fireEvent.change(screen.getByTestId('chrome-filter'), { target: { value: 'a' } });
+      const results = screen.getByTestId('filter-results');
+      const matched = [...results.querySelectorAll<HTMLElement>('[data-agent-id]')].map((el) => el.dataset.agentId);
+      expect(matched.indexOf('a3')).toBeLessThan(matched.indexOf('a2'));
+    } finally {
+      useChromeStore.setState({ projectSort: 'manual', agentSort: 'manual', projectActivity: {}, agentActivity: {} });
+    }
+  });
+
   it('forgets pins, collapsed state and folds for a removed project', () => {
     useChromeStore.setState({ pinnedProjectIds: ['p3'], collapsedProjectIds: ['p3'], expandedFolds: ['p3:sleeping'] });
     render(<ChromeSidebar />);

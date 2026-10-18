@@ -101,6 +101,14 @@ export interface ProjectGroupProps {
   onOpenSettings?: (projectId: string) => void;
   /** Saves a new durable-agent order; absent for a satellite's projects. */
   onReorderAgents?: (projectId: string, orderedIds: string[]) => void;
+  /** Projects are in Recent order, so Move up / Move down are replaced by a note saying so (#2116). */
+  sortedByRecent?: boolean;
+  /** The tree section the project is shown in; idle projects offer Mark active. */
+  inSection?: 'pinned' | 'active' | 'idle';
+  /** Mark inactive / Mark active (#2116); absent for a satellite's projects. */
+  onSetInactive?: (projectId: string, inactive: boolean) => void;
+  /** Agents are in Recent order: dragging a row says how to reorder instead (#2116). */
+  onAgentReorderHint?: () => void;
   /** Tree depth of the header: 1, or 2 inside the idle row. */
   level?: number;
   /** The header's tree parent: the idle row, when it is inside it. */
@@ -119,6 +127,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     onSelectProject, onToggleCollapsed, onTogglePinned, onToggleFold, onNewAgent,
     onSelectAgent, onOpenTerminal, onSelectCompleted, onDismissCompleted, onClearCompleted, dragHandlers, dropIndicator, draggable = true,
     onMoveProject, canMoveUp, canMoveDown, onOpenSettings, onReorderAgents, level = 1, parentKey,
+    sortedByRecent, inSection, onSetInactive, onAgentReorderHint,
   } = props;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const armRefocus = useRefocusAfterMove();
@@ -198,6 +207,14 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     onDragEnd: () => { agentDragRef.current = null; setAgentDrag(null); },
     onDragLeave: (_e, id) => setAgentDrag((drag) => (drag && drag.overId === id ? { ...drag, overId: null } : drag)),
   }), [reorder]);
+  /** In Recent order a drag only explains how to reorder. */
+  const hintDragHandlers = useMemo<AgentDragHandlers | undefined>(() => (onAgentReorderHint ? {
+    onDragStart: (e) => { e.preventDefault(); e.stopPropagation(); onAgentReorderHint(); },
+    onDragOver: () => {},
+    onDrop: () => {},
+    onDragEnd: () => {},
+  } : undefined), [onAgentReorderHint]);
+
   /** Where the drop line goes: above the target when moving up, below it when moving down. */
   const dropEdge = useCallback((agentId: string): 'top' | 'bottom' | undefined => {
     if (!agentDrag || agentDrag.overId !== agentId) return undefined;
@@ -219,7 +236,8 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
       parentKey={parentKey}
       extraActions={moveActions(agent)}
       onSelect={onSelectAgent}
-      drag={reorder.actions.has(agent.id) && reorder.groupOf.get(agent.id)!.length > 1 ? agentDragHandlers : undefined}
+      drag={reorder.actions.has(agent.id) && reorder.groupOf.get(agent.id)!.length > 1 ? agentDragHandlers
+        : agent.kind === 'durable' ? hintDragHandlers : undefined}
       dropEdge={dropEdge(agent.id)}
     />
   );
@@ -228,8 +246,14 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     ...(onMoveProject ? [
       { id: 'move-up', label: 'Move up', disabled: !canMoveUp, onSelect: () => onMoveProject(project.id, -1) },
       { id: 'move-down', label: 'Move down', disabled: !canMoveDown, onSelect: () => onMoveProject(project.id, 1) },
+    ] : sortedByRecent ? [
+      { id: 'sorted-recent', label: 'Sorted by recent activity', disabled: true, onSelect: () => {} },
     ] : []),
     { id: 'pin', label: pinned ? 'Unpin' : 'Pin to top', onSelect: () => onTogglePinned(project.id) },
+    // Pinned projects can't be marked inactive: unpin first (#2116).
+    ...(onSetInactive && inSection === 'idle' ? [{ id: 'mark-active', label: 'Mark active', onSelect: () => onSetInactive(project.id, false) }]
+      : onSetInactive && !pinned ? [{ id: 'mark-inactive', label: 'Mark inactive', onSelect: () => onSetInactive(project.id, true) }]
+        : []),
     { id: 'collapse', label: expanded ? 'Collapse' : 'Expand', onSelect: () => onToggleCollapsed(project.id) },
     ...(onNewAgent ? [{ id: 'new-agent', label: 'New agent…', onSelect: () => onNewAgent(project.id) }] : []),
     ...(onOpenSettings ? [{ id: 'settings', label: 'Project settings', onSelect: () => onOpenSettings(project.id) }] : []),
