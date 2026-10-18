@@ -10,7 +10,7 @@ import type { PlanEntry } from '../../../../shared/chat';
 import type { QueuedMessage } from '../../../stores/chatStore';
 import { CheckIcon, ChevronDown, FileIcon, PaperclipIcon, PlanIcon, PlusIcon, ShieldIcon, StopIcon, UpIcon, XIcon } from './icons';
 import { attachmentFromFile, attachmentName, type ComposerAttachment } from './attachments';
-import { composerModes, LEVEL_DESCRIPTIONS, LEVEL_LABELS, type SendAction } from './view-model';
+import { composerModes, LEVEL_DESCRIPTIONS, LEVEL_LABELS, modelLabel, type SendAction } from './view-model';
 
 const ACTION_LABELS: Record<SendAction, string> = {
   send: 'Send',
@@ -198,8 +198,10 @@ function ModelPill({ models, efforts, model, effort, effortIsDefault, capabiliti
   const modelSwitch = capabilities?.modelSwitch ?? 'none';
   const canChange = models.length > 0 && modelSwitch !== 'none';
   const current = models.find((m) => m.id === model);
-  const label = current?.label ?? model;
+  const label = model ? modelLabel(model, models) : model;
   if (!label) return null;
+  // The exact id stays in the tooltip when the label is a friendlier name for it.
+  const fullName = model && label !== model ? `${label} (${model})` : label;
   // Keep a chosen effort across a model switch if it's still on offer; a default one follows the new model's default.
   const keptEffort = effort && !effortIsDefault && efforts.includes(effort) ? effort : undefined;
   const note = switchNote(modelSwitch, 'none');
@@ -212,7 +214,7 @@ function ModelPill({ models, efforts, model, effort, effortIsDefault, capabiliti
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={canChange ? label : `${label}. This agent can't change model mid-session.`}
+        title={canChange ? fullName : `${fullName}. This agent can't change model mid-session.`}
         className={chipClass}
         data-testid="chat-model-pill"
       >

@@ -4,7 +4,7 @@ import type { ChatDriverId, UsageLimit } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { chatDot } from '../agent-status';
 import { AgentPaneToolbar, type PaneUsage, type ReviewView } from '../pane/AgentPaneToolbar';
-import { formatElapsed, formatTokens } from './view-model';
+import { formatElapsed, formatTokens, modelLabel } from './view-model';
 import { ChatDefaultTip } from './ChatDefaultTip';
 
 export const DRIVER_LABELS: Record<ChatDriverId, string> = {
@@ -168,7 +168,7 @@ export function ChatHeader({ agent, state, onSwitchToTerminal, switching, detail
       orchestrator={state.provider}
       dot={chatDot(state.state)}
       activity={chatActivity(state, now)}
-      model={state.model ?? agent.model}
+      model={headerModel(state.model ?? agent.model, state.models)}
       details={chatDetails(agent, state)}
       usage={chatUsage(state)}
       runtime={onSwitchToTerminal
@@ -180,4 +180,9 @@ export function ChatHeader({ agent, state, onSwitchToTerminal, switching, detail
       showName={showName}
     />
   );
+}
+
+/** The model as the composer names it, so header and picker agree. */
+function headerModel(model: string | undefined, models: ReadonlyArray<{ id: string; label: string }>): string | undefined {
+  return model && model !== 'default' ? modelLabel(model, models) : model;
 }
