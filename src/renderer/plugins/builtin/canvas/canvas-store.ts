@@ -252,7 +252,6 @@ function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): P
   };
 }
 
-/** Deferred wires from storage or a satellite: well-formed entries whose views still exist (#2069). */
 /**
  * After a view update on the active canvas, create any deferred wires whose
  * ends are now bound (a stub card got an agent, a group-project widget got a
@@ -280,6 +279,21 @@ function resolveDeferredOnActive(state: CanvasState, update: Partial<CanvasState
   };
 }
 
+/** A stored blueprint wire: string refs, and optional fields of the right shape. */
+function isWellFormedWire(wire: unknown): boolean {
+  if (!wire || typeof wire !== 'object') return false;
+  const w = wire as Record<string, unknown>;
+  if (typeof w.sourceRef !== 'string' || typeof w.targetRef !== 'string') return false;
+  if (w.bidirectional !== undefined && typeof w.bidirectional !== 'boolean') return false;
+  if (w.disabledTools !== undefined && !(Array.isArray(w.disabledTools) && w.disabledTools.every((t) => typeof t === 'string'))) return false;
+  if (w.instructions !== undefined) {
+    if (!w.instructions || typeof w.instructions !== 'object' || Array.isArray(w.instructions)) return false;
+    if (!Object.values(w.instructions).every((v) => typeof v === 'string')) return false;
+  }
+  return true;
+}
+
+/** Deferred wires from storage or a satellite: well-formed entries whose views still exist (#2069). */
 function normalizeDeferredWires(
   raw: unknown,
   views: CanvasView[],
@@ -292,7 +306,7 @@ function normalizeDeferredWires(
   const kept = raw.filter((d): d is DeferredCanvasWire => {
     const ok = !!d && typeof d === 'object'
       && typeof d.sourceViewId === 'string' && typeof d.targetViewId === 'string'
-      && !!d.wire && typeof d.wire.sourceRef === 'string' && typeof d.wire.targetRef === 'string';
+      && isWellFormedWire(d.wire);
     if (!ok) issues?.push(`canvas ${canvasId}: dropped malformed deferred wire`);
     return ok && viewIds.has(d.sourceViewId) && viewIds.has(d.targetViewId);
   });

@@ -31,4 +31,20 @@ describe('bindWireDefinition', () => {
     await expect(bindWireDefinition({ ...def, disabledTools: ['broadcast'] })).rejects.toThrow('MCP disabled');
     expect(window.clubhouse.mcpBinding.setDisabledTools).not.toHaveBeenCalled();
   });
+
+  it('applies the definition as it is when bind resolves, not the copy it started with', async () => {
+    let latest: McpBindingEntry | undefined = { ...def, disabledTools: ['broadcast'] };
+    vi.mocked(window.clubhouse.mcpBinding.bind).mockImplementationOnce(async () => {
+      // The wire popover saves new options while bind is in flight.
+      latest = { ...def, disabledTools: ['read_output'], instructions: { '*': 'New' } };
+    });
+    await bindWireDefinition({ ...def, disabledTools: ['broadcast'] }, () => latest);
+    expect(window.clubhouse.mcpBinding.setDisabledTools).toHaveBeenCalledWith('a1', 'a2', ['read_output']);
+    expect(window.clubhouse.mcpBinding.setInstructions).toHaveBeenCalledWith('a1', 'a2', { '*': 'New' });
+  });
+
+  it('applies nothing when the wire was removed while binding', async () => {
+    await bindWireDefinition({ ...def, disabledTools: ['broadcast'] }, () => undefined);
+    expect(window.clubhouse.mcpBinding.setDisabledTools).not.toHaveBeenCalled();
+  });
 });

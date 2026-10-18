@@ -23,31 +23,43 @@ describe('createWireReconciler', () => {
     expect(bind).not.toHaveBeenCalled();
   });
 
-  it('backs off after failures and gives up after MAX_BIND_FAILURES, reporting once', async () => {
-    const bind = vi.fn(async () => { throw new Error('agent not registered'); });
-    const onGiveUp = vi.fn();
-    const r = createWireReconciler({ bind, onGiveUp });
+  it('keeps retrying a failing bind at the 60 s cap, reporting once, and binds when it starts working', async () => {
+    let failing = true;
+    const bind = vi.fn(async () => { if (failing) throw new Error('MCP is off'); });
+    const onReport = vi.fn();
+    const r = createWireReconciler({ bind, onReport });
     const def = wire('a1', 'a2');
-    for (let tick = 0; tick < 200; tick++) {
+    // Well past the point where it would once have given up.
+    for (let tick = 0; tick < 600; tick++) {
       r.reconcile([def], []);
       await vi.advanceTimersByTimeAsync(2000);
     }
-    expect(bind).toHaveBeenCalledTimes(MAX_BIND_FAILURES);
-    expect(onGiveUp).toHaveBeenCalledTimes(1);
-    expect(onGiveUp).toHaveBeenCalledWith(def, 'bind_failed');
+    const attempts = bind.mock.calls.length;
+    expect(attempts).toBeGreaterThan(MAX_BIND_FAILURES);
+    expect(onReport).toHaveBeenCalledTimes(1);
+    expect(onReport).toHaveBeenCalledWith(def, 'bind_failing');
+
+    // MCP comes on: the next attempt (within the 60 s cap) succeeds.
+    failing = false;
+    for (let tick = 0; tick < 31; tick++) {
+      r.reconcile([def], []);
+      await vi.advanceTimersByTimeAsync(2000);
+    }
+    expect(bind.mock.calls.length).toBeGreaterThan(attempts);
+    await expect(bind.mock.results.at(-1)!.value).resolves.toBeUndefined();
     r.dispose();
   });
 
   it('never binds a target that does not exist here, and says so once', () => {
     const bind = vi.fn(async () => {});
-    const onGiveUp = vi.fn();
-    const r = createWireReconciler({ bind, onGiveUp, targetState: () => 'missing' });
+    const onReport = vi.fn();
+    const r = createWireReconciler({ bind, onReport, targetState: () => 'missing' });
     const def = wire('a1', 'gp-from-another-machine', { targetKind: 'group-project' });
     r.reconcile([def], []);
     r.reconcile([def], []);
     expect(bind).not.toHaveBeenCalled();
-    expect(onGiveUp).toHaveBeenCalledTimes(1);
-    expect(onGiveUp).toHaveBeenCalledWith(def, 'missing_target');
+    expect(onReport).toHaveBeenCalledTimes(1);
+    expect(onReport).toHaveBeenCalledWith(def, 'missing_target');
   });
 
   it('waits while a target is unknown, then binds once it is known', () => {
@@ -63,12 +75,12 @@ describe('createWireReconciler', () => {
   });
 
   it('starts fresh for a wire that was removed and added back', async () => {
-    const onGiveUp = vi.fn();
-    const r = createWireReconciler({ bind: vi.fn(async () => {}), onGiveUp, targetState: () => 'missing' });
+    const onReport = vi.fn();
+    const r = createWireReconciler({ bind: vi.fn(async () => {}), onReport, targetState: () => 'missing' });
     const def = wire('a1', 'gp', { targetKind: 'group-project' });
     r.reconcile([def], []);
     r.reconcile([], []);
     r.reconcile([def], []);
-    expect(onGiveUp).toHaveBeenCalledTimes(2);
+    expect(onReport).toHaveBeenCalledTimes(2);
   });
 });

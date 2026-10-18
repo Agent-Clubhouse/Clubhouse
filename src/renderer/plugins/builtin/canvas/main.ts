@@ -336,18 +336,19 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     const groupProjects = useGroupProjectStore.getState();
     if (!groupProjects.loaded) void groupProjects.loadProjects();
     const reconciler = createWireReconciler({
-      // With its instructions and disabled tools, as on load (#2070).
-      bind: bindWireDefinition,
+      // With its instructions and disabled tools, as on load (#2070), read
+      // from the definition as it is when bind resolves.
+      bind: (def) => bindWireDefinition(def, () => wireDefsRef.current.find((w) => w.agentId === def.agentId && w.targetId === def.targetId)),
       targetState: (def) => {
         if (def.targetKind !== 'group-project') return 'ok';
         const gp = useGroupProjectStore.getState();
         if (!gp.loaded || gp.loadError) return 'unknown';
         return gp.projects.some((p) => p.id === def.targetId) ? 'ok' : 'missing';
       },
-      onGiveUp: (def, reason) => {
+      onReport: (def, reason) => {
         rendererLog('canvas', 'warn', reason === 'missing_target'
           ? 'Wire target does not exist on this machine; not binding it'
-          : 'Wire binding keeps failing; stopped retrying', {
+          : 'Wire binding keeps failing; retrying every minute', {
           meta: { agentId: def.agentId, targetId: def.targetId, targetKind: def.targetKind },
         });
       },

@@ -75,4 +75,29 @@ describe('blueprint wire round trip', () => {
     expect(result.wires.deferred).toEqual([]);
     expect(result.wires.skipped).toEqual([]);
   });
+
+  it('exports wires still waiting for a stub, so a re-import defers them again', () => {
+    const withStub: CanvasInstance = {
+      ...canvas,
+      views: [...views, { ...base, id: 'v-new', type: 'agent', title: 'Newcomer', displayName: 'Newcomer', metadata: {}, agentId: null } as CanvasView],
+      deferredWires: [{ wire: { sourceRef: 'x', targetRef: 'y', instructions: { '*': 'Welcome them' } }, sourceViewId: 'v-lead', targetViewId: 'v-new' }],
+    };
+    const manifest = exportCanvasToBlueprint(withStub, { agents, projects: {}, wireDefinitions: [] });
+    const refName = new Map(manifest.canvas.views.map((v) => [v.refId, v.displayName]));
+    expect(manifest.canvas.wires.map((w) => [refName.get(w.sourceRef), refName.get(w.targetRef), w.instructions])).toEqual([
+      ['Lead', 'Newcomer', { '*': 'Welcome them' }],
+    ]);
+    const result = parseAnyBlueprint(JSON.parse(JSON.stringify(manifest)), { agents: Object.values(agents), projects: [] });
+    expect(result.wires.deferred).toEqual([expect.objectContaining({ reason: 'target_unbound' })]);
+  });
+
+  it('maps only group-project widgets by their group project id', () => {
+    const lookalike: CanvasInstance = {
+      ...canvas,
+      views: views.map((v) => (v.id === 'v-docs' ? { ...v, metadata: { groupProjectId: 'gp-7' } } : v.id === 'v-board' ? { ...v, metadata: {} } : v)) as CanvasView[],
+    };
+    const manifest = exportCanvasToBlueprint(lookalike, { agents, projects: {}, wireDefinitions: [wires[2]] });
+    expect(manifest.canvas.wires).toEqual([]);
+  });
 });
+

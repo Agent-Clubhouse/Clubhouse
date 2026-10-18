@@ -8,7 +8,13 @@
 
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 
-export async function bindWireDefinition(def: McpBindingEntry): Promise<void> {
+/**
+ * `current` returns the wire's definition as it is now. Instructions and
+ * disabled tools are read from it after bind resolves, so an edit made in the
+ * meantime (the wire popover) isn't overwritten with the captured copy; when it
+ * returns undefined the wire was removed and nothing more is applied.
+ */
+export async function bindWireDefinition(def: McpBindingEntry, current: () => McpBindingEntry | undefined = () => def): Promise<void> {
   await window.clubhouse.mcpBinding.bind(def.agentId, {
     targetId: def.targetId,
     targetKind: def.targetKind,
@@ -17,10 +23,12 @@ export async function bindWireDefinition(def: McpBindingEntry): Promise<void> {
     targetName: def.targetName,
     projectName: def.projectName,
   });
-  if (def.instructions && Object.keys(def.instructions).length > 0) {
-    await window.clubhouse.mcpBinding.setInstructions(def.agentId, def.targetId, def.instructions);
+  const latest = current();
+  if (!latest) return;
+  if (latest.instructions && Object.keys(latest.instructions).length > 0) {
+    await window.clubhouse.mcpBinding.setInstructions(def.agentId, def.targetId, latest.instructions);
   }
-  if (def.disabledTools && def.disabledTools.length > 0) {
-    await window.clubhouse.mcpBinding.setDisabledTools(def.agentId, def.targetId, def.disabledTools);
+  if (latest.disabledTools && latest.disabledTools.length > 0) {
+    await window.clubhouse.mcpBinding.setDisabledTools(def.agentId, def.targetId, latest.disabledTools);
   }
 }

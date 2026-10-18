@@ -243,7 +243,7 @@ describe('canvas main', () => {
     // Binding goes through the shared helper (instructions and disabled tools
     // included); the loop itself is unit-tested in wire-reconcile.test.ts.
     expect(source).toContain('createWireReconciler');
-    expect(source).toContain('bind: bindWireDefinition');
+    expect(source).toContain('bindWireDefinition(def,');
   });
 
   it('group-project privileged access is governed by admin role, not a per-wire default (structural)', () => {

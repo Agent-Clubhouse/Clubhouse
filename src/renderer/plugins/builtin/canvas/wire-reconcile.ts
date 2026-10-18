@@ -6,12 +6,14 @@
 // exponentially (1 s, 2 s, 4 s … capped at 60 s) so a sleeping agent isn't
 // spammed.
 //
-// It gives up on a wire (#2071) rather than retrying forever when:
+// Two cases are reported once through onReport (#2071):
 // - its target can't exist here, e.g. a group project that isn't on this
-//   machine. Such a wire is never bound, so no binding points at a dead id;
-// - bind keeps failing: MAX_BIND_FAILURES in a row.
-// Either way it's reported once through onGiveUp. A wire that gets a binding
-// some other way, or is removed and added again, starts fresh.
+//   machine: the wire is never bound, so no binding points at a dead id;
+// - bind has failed MAX_BIND_FAILURES times in a row: it keeps retrying at
+//   the 60 s cap, because the usual cause is transient (MCP turned off, whose
+//   binding handlers only exist once it's on), and the wire must come up
+//   when that changes.
+// A wire that gets a binding, or is removed and added again, starts fresh.
 
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 
@@ -21,12 +23,13 @@ const MAX_RETRY_MS = 60_000;
 
 /** Whether a wire's target exists here: 'unknown' waits (e.g. group projects still loading). */
 export type WireTargetState = 'ok' | 'missing' | 'unknown';
-export type WireGiveUpReason = 'missing_target' | 'bind_failed';
+/** 'missing_target' stops for good; 'bind_failing' keeps retrying at the cap. */
+export type WireReportReason = 'missing_target' | 'bind_failing';
 
 export interface WireReconcilerDeps {
   bind: (def: McpBindingEntry) => Promise<void>;
   targetState?: (def: McpBindingEntry) => WireTargetState;
-  onGiveUp?: (def: McpBindingEntry, reason: WireGiveUpReason) => void;
+  onReport?: (def: McpBindingEntry, reason: WireReportReason) => void;
   setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
   clearTimer?: (timer: ReturnType<typeof setTimeout>) => void;
 }
@@ -44,6 +47,7 @@ export function createWireReconciler(deps: WireReconcilerDeps): WireReconciler {
   const backoff = new Map<string, number>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const failures = new Map<string, number>();
+  /** Wires whose target can't exist here: never bound. */
   const gaveUp = new Set<string>();
 
   const forget = (key: string) => {
@@ -72,7 +76,7 @@ export function createWireReconciler(deps: WireReconcilerDeps): WireReconciler {
       if (target === 'unknown') continue;
       if (target === 'missing') {
         gaveUp.add(key);
-        deps.onGiveUp?.(def, 'missing_target');
+        deps.onReport?.(def, 'missing_target');
         continue;
       }
 
@@ -82,12 +86,7 @@ export function createWireReconciler(deps: WireReconcilerDeps): WireReconciler {
         deps.bind(def).catch(() => {
           const failed = (failures.get(key) ?? 0) + 1;
           failures.set(key, failed);
-          if (failed >= MAX_BIND_FAILURES) {
-            gaveUp.add(key);
-            backoff.delete(key);
-            deps.onGiveUp?.(def, 'bind_failed');
-            return;
-          }
+          if (failed === MAX_BIND_FAILURES) deps.onReport?.(def, 'bind_failing');
           backoff.set(key, Math.min((delay || FIRST_RETRY_MS) * 2, MAX_RETRY_MS));
         });
       };

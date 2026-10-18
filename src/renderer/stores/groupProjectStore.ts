@@ -125,6 +125,8 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
 export function initGroupProjectListener(): () => void {
   return window.clubhouse.groupProject.onChanged((projects) => {
     const valid = Array.isArray(projects) ? (projects as unknown[]).filter(isGroupProject) : [];
-    useGroupProjectStore.setState({ projects: valid });
+    // A delivered list is authoritative: it also clears an earlier load failure,
+    // which would otherwise leave group-project wires waiting all session.
+    useGroupProjectStore.setState(Array.isArray(projects) ? { projects: valid, loaded: true, loadError: null } : { projects: valid });
   });
 }

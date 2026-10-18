@@ -1523,6 +1523,24 @@ describe('deferred blueprint wires (#2069)', () => {
     expect(s3.getState().activeCanvas().deferredWires).toBeUndefined();
   });
 
+  it('drops stored deferred wires with malformed fields', async () => {
+    const storage = createMockStorage();
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    const good = { wire: { sourceRef: 'a', targetRef: 'b', disabledTools: ['broadcast'], instructions: { '*': 'ok' } }, sourceViewId: 'v-lead', targetViewId: 'v-new' };
+    const bad = [
+      { wire: { sourceRef: 'a', targetRef: 'b', disabledTools: 'broadcast' }, sourceViewId: 'v-lead', targetViewId: 'v-new' },
+      { wire: { sourceRef: 'a', targetRef: 'b', instructions: { '*': 3 } }, sourceViewId: 'v-lead', targetViewId: 'v-new' },
+      { wire: { sourceRef: 'a', targetRef: 'b', bidirectional: 'yes' }, sourceViewId: 'v-lead', targetViewId: 'v-new' },
+      { wire: { sourceRef: 'a' }, sourceViewId: 'v-lead', targetViewId: 'v-new' },
+    ];
+    await store.getState().loadAndInsertCanvas({ ...importedCanvas(), deferredWires: [good, ...bad] as never }, storage);
+    const reloaded = createCanvasStore();
+    await reloaded.getState().loadCanvas(storage);
+    reloaded.getState().setActiveCanvas('IMPORTED');
+    expect(reloaded.getState().activeCanvas().deferredWires).toEqual([good]);
+  });
+
   it('is saved only under the canvas save guards: not before hydration, not while remote', async () => {
     const storage = createMockStorage();
     const store = createCanvasStore();

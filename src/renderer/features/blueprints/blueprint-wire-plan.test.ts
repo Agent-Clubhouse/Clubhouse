@@ -79,4 +79,15 @@ describe('planBlueprintWires', () => {
     const plan = planBlueprintWires([{ sourceRef: 'a', targetRef: 'b' }], refs('a', 'b'), [agent('a', 'agent-a'), agent('b', 'agent-b')]);
     expect(plan.create[0]).toMatchObject({ label: 'b', agentName: 'a', targetName: 'b' });
   });
+
+  it('skips a wire from a card to itself, or between two cards of the same agent', () => {
+    const plan = planBlueprintWires(
+      [{ sourceRef: 'a', targetRef: 'a' }, { sourceRef: 'a', targetRef: 'twin' }],
+      refs('a', 'twin'),
+      [agent('a', 'agent-a'), agent('twin', 'agent-a')],
+    );
+    expect(plan.create).toEqual([]);
+    expect(plan.skipped.map((s) => s.reason)).toEqual(['self', 'self']);
+  });
 });
+
