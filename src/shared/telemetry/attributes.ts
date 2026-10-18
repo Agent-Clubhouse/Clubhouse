@@ -530,7 +530,7 @@ export const ATTR = {
   /** Event types the satellite streams; anything unlisted is `other`. */
   annexEventType: enumAttr('clubhouse.annex.event.type', [
     'pty:data', 'pty:exit', 'hook:event', 'chat:event', 'permission:request', 'permission:response',
-    'agent:spawned', 'agent:woken', 'agent:completed', 'snapshot', 'canvas:state', 'theme:changed',
+    'agent:spawned', 'agent:woken', 'agent:status', 'agent:completed', 'snapshot', 'canvas:state', 'theme:changed',
     'group-project:list', 'group-project:changed', 'bulletin:message', 'other',
   ]),
   annexRemoteAction: enumAttr('clubhouse.annex.remote.action', ['spawn', 'wake']),

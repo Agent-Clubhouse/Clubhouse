@@ -373,6 +373,14 @@ export function initAnnexClientListener(): () => void {
       if (p.agentId && p.detailedStatus) {
         throttledHookUpdate(satelliteId, p.agentId, p.detailedStatus);
       }
+    } else if (type === 'agent:status') {
+      // A chat agent's status on a session state change or turn start/end (#2211).
+      // Older satellites never send detailedStatus here.
+      const p = payload as { id?: string; agentId?: string; detailedStatus?: import('../../shared/types').AgentDetailedStatus };
+      const agentId = p.agentId || p.id;
+      if (agentId && p.detailedStatus) {
+        throttledHookUpdate(satelliteId, agentId, p.detailedStatus);
+      }
     } else if (type === 'structured:event') {
       // Sent only by satellites on versions before structured mode was removed.
       const p = payload as { agentId: string; event: unknown; detailedStatus?: import('../../shared/types').AgentDetailedStatus };

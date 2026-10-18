@@ -3017,3 +3017,134 @@ describe('annex-server getDetailedStatus for chat agents', () => {
     expect(getDetailedStatus('pty_a')).toEqual(fresh);
   });
 });
+
+// #2211: between snapshots, satellites and iOS get a chat agent's status on each chat state change.
+describe('annex-server chat status push', () => {
+  const { detailedStatusCache, pushChatStatus, lastChatStatusPush } = annexServer._testing;
+  const NOW = 1_800_000_000_000;
+  let state = 'idle';
+  let turnStartedAt: number | null = null;
+  let seq = 0;
+  let sinceSeq = 0;
+
+  function chatEvent(type: string, data: unknown = {}, ts = NOW): any {
+    return { v: 1, agentId: 'chat_a', sessionId: 's1', seq: ++seq, ts, type, data };
+  }
+
+  function statusPushes(): Array<{ id: string; kind: string; status: string; detailedStatus: { state: string; message: string; timestamp: number } }> {
+    return (_eventReplay.getEventsSince(sinceSeq) ?? [])
+      .filter((e) => e.type === 'agent:status')
+      .map((e) => e.payload as any);
+  }
+
+  beforeEach(() => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    detailedStatusCache.clear();
+    lastChatStatusPush.clear();
+    clearChatRuntimes();
+    state = 'idle';
+    turnStartedAt = null;
+    registerChatRuntime({ agentId: 'chat_a', kind: 'chat', isRunning: () => true, getState: () => state, getTurnStartedAt: () => turnStartedAt } as unknown as Parameters<typeof registerChatRuntime>[0]);
+    // The previous turn ended with a stop hook event: Done.
+    detailedStatusCache.set('chat_a', { state: 'idle', message: 'Idle', timestamp: NOW - 120_000 });
+    sinceSeq = _eventReplay.pushEvent('test:marker', null);
+  });
+
+  afterEach(() => {
+    vi.mocked(Date.now).mockRestore();
+    detailedStatusCache.clear();
+    lastChatStatusPush.clear();
+    clearChatRuntimes();
+  });
+
+  it('pushes Working when a turn starts, with no tool event, and not again for its session_state', () => {
+    // As the runtime publishes them: turn_started before it sets 'running'.
+    turnStartedAt = NOW - 1_000;
+    pushChatStatus(chatEvent('turn_started', {}, NOW - 1_000));
+    state = 'running';
+    pushChatStatus(chatEvent('session_state', { state: 'running' }));
+
+    const pushes = statusPushes();
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0]).toMatchObject({ id: 'chat_a', kind: 'durable', status: 'running' });
+    expect(pushes[0].detailedStatus).toEqual({ state: 'working', message: 'Working', timestamp: NOW - 1_000 });
+    // The same status a snapshot reports.
+    expect(pushes[0].detailedStatus).toEqual(annexServer._testing.getDetailedStatus('chat_a'));
+  });
+
+  it('pushes nothing for streamed chunks, messages or thoughts during a long think', () => {
+    turnStartedAt = NOW - 1_000;
+    pushChatStatus(chatEvent('turn_started'));
+    state = 'running';
+    pushChatStatus(chatEvent('session_state', { state: 'running' }));
+    const afterStart = statusPushes().length;
+
+    for (let i = 0; i < 20; i++) {
+      pushChatStatus(chatEvent('agent_thought_chunk', { text: 'hmm' }));
+      pushChatStatus(chatEvent('agent_message_chunk', { text: 'x' }));
+    }
+    pushChatStatus(chatEvent('agent_message', { text: 'done thinking' }));
+    pushChatStatus(chatEvent('usage', {}));
+
+    expect(statusPushes()).toHaveLength(afterStart);
+  });
+
+  it('pushes Done when the turn ends', () => {
+    turnStartedAt = NOW - 60_000;
+    pushChatStatus(chatEvent('turn_started'));
+    state = 'running';
+    pushChatStatus(chatEvent('session_state', { state: 'running' }));
+
+    // turn_ended is published first; its stop hook event may land before or after.
+    pushChatStatus(chatEvent('turn_ended', { stopReason: 'end_turn' }));
+    detailedStatusCache.set('chat_a', { state: 'idle', message: 'Idle', timestamp: NOW });
+    turnStartedAt = null;
+    state = 'idle';
+    pushChatStatus(chatEvent('session_state', { state: 'idle' }));
+
+    const pushes = statusPushes();
+    expect(pushes.map((p) => p.detailedStatus.state)).toEqual(['working', 'idle']);
+    expect(pushes[1].detailedStatus).toMatchObject({ state: 'idle', message: 'Idle' });
+  });
+
+  it('pushes Done even when no hook status is left', () => {
+    detailedStatusCache.clear();
+    pushChatStatus(chatEvent('turn_started'));
+    pushChatStatus(chatEvent('turn_ended'));
+    expect(statusPushes().map((p) => p.detailedStatus)).toEqual([
+      { state: 'working', message: 'Working', timestamp: NOW },
+      { state: 'idle', message: 'Idle', timestamp: NOW },
+    ]);
+  });
+
+  it('pushes Needs you when the session waits for an answer, then Working again', () => {
+    state = 'running';
+    pushChatStatus(chatEvent('session_state', { state: 'running' }));
+    state = 'waiting_input';
+    pushChatStatus(chatEvent('session_state', { state: 'waiting_input' }));
+    state = 'running';
+    pushChatStatus(chatEvent('session_state', { state: 'running' }));
+
+    expect(statusPushes().map((p) => p.detailedStatus.message)).toEqual(['Working', 'Has a question', 'Working']);
+  });
+
+  it('pushes nothing for an agent no chat runtime runs', () => {
+    clearChatRuntimes();
+    pushChatStatus(chatEvent('turn_started'));
+    pushChatStatus(chatEvent('session_state', { state: 'running' }));
+    expect(statusPushes()).toHaveLength(0);
+  });
+
+  it('marks a quick agent with its project so older iOS builds keep it running', () => {
+    annexServer._testing.trackedQuickAgents.set('chat_a', {
+      id: 'chat_a', name: 'q', kind: 'quick', status: 'running', prompt: '', model: null,
+      orchestrator: null, freeAgentMode: false, parentAgentId: 'durable_1', projectId: 'proj_1',
+    } as any);
+    try {
+      pushChatStatus(chatEvent('turn_started'));
+      expect(statusPushes()[0]).toMatchObject({ id: 'chat_a', kind: 'quick', status: 'running', projectId: 'proj_1', parentAgentId: 'durable_1' });
+    } finally {
+      annexServer._testing.trackedQuickAgents.delete('chat_a');
+    }
+  });
+});

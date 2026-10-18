@@ -32,6 +32,7 @@ import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './s
 import { isSessionCapable, getProvider } from '../orchestrators';
 import { getAgentRuntime, isChatAgent, onChatEvent } from './agent-runtime';
 import { chatDetailedStatus } from '../../shared/chat-agent-status';
+import type { ChatEvent, ChatSessionState } from '../../shared/chat';
 import { injectPtyText } from './agent-runtime/pty-input';
 import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
@@ -226,7 +227,11 @@ function hookEventToDetailedStatus(event: AgentHookEvent): AgentDetailedStatus {
   return { state, message, toolName: event.toolName, timestamp: event.timestamp };
 }
 
-function getDetailedStatus(agentId: string): AgentDetailedStatus | null {
+/**
+ * `chatState` lets a chat event say the state it moves to before the runtime
+ * reports it: turn_started is published before the runtime sets 'running'.
+ */
+function getDetailedStatus(agentId: string, chatState?: ChatSessionState): AgentDetailedStatus | null {
   let status = detailedStatusCache.get(agentId);
 
   // Clear stale statuses (except needs_permission, which persists)
@@ -240,9 +245,68 @@ function getDetailedStatus(agentId: string): AgentDetailedStatus | null {
   // says Working, as the app's chat header does (#2208).
   const runtime = getAgentRuntime(agentId);
   if (runtime?.kind === 'chat' && runtime.isRunning()) {
-    status = chatDetailedStatus({ status: 'running' }, status, { state: runtime.getState(), turnStartedAt: runtime.getTurnStartedAt?.() ?? null });
+    status = chatDetailedStatus({ status: 'running' }, status, { state: chatState ?? runtime.getState(), turnStartedAt: runtime.getTurnStartedAt?.() ?? null });
   }
   return status ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Live chat status push (#2211)
+// ---------------------------------------------------------------------------
+
+/** Last status pushed per chat agent, as a key, so repeated states aren't re-sent. */
+const lastChatStatusPush = new Map<string, string>();
+
+/** The chat session state a chat event moves to, or null when it isn't a state transition. */
+function chatStateTransition(event: ChatEvent): ChatSessionState | null {
+  switch (event.type) {
+    case 'session_state': return event.data.state;
+    case 'turn_started': return 'running';
+    case 'turn_ended': return 'idle';
+    default: return null;
+  }
+}
+
+/**
+ * Satellites and the iOS app get a chat agent's status from snapshots, and
+ * between snapshots only from hook events, which a chat agent makes only for
+ * tools, permissions and turn ends. So a turn that thinks before its first
+ * tool showed Done (#2211). On each chat state transition this pushes the
+ * status the snapshot would report, as `agent:status` with `detailedStatus`.
+ * Streamed chunks and other events push nothing.
+ */
+function pushChatStatus(event: ChatEvent): void {
+  const agentId = event.agentId;
+  if (event.type === 'session_ended') {
+    lastChatStatusPush.delete(agentId);
+    return;
+  }
+  const chatState = chatStateTransition(event);
+  if (!chatState) return;
+  const runtime = getAgentRuntime(agentId);
+  if (runtime?.kind !== 'chat' || !runtime.isRunning()) return;
+  if (chatState !== 'running' && chatState !== 'waiting_permission' && chatState !== 'waiting_input' && chatState !== 'idle') return;
+
+  // Done with no hook status left (it went stale): say Idle, as a stop event does.
+  const detailedStatus = getDetailedStatus(agentId, chatState)
+    ?? (chatState === 'idle' ? { state: 'idle' as const, message: 'Idle', timestamp: event.ts } : null);
+  if (!detailedStatus) return;
+
+  const key = `${detailedStatus.state}|${detailedStatus.message}|${detailedStatus.toolName ?? ''}`;
+  if (lastChatStatusPush.get(agentId) === key) return;
+  lastChatStatusPush.set(agentId, key);
+
+  // agent:status is in the protocol already: the iOS app decodes it and only
+  // updates a quick agent's run status from it, which stays 'running' here.
+  const quick = trackedQuickAgents.get(agentId);
+  broadcastAndBuffer('agent:status', {
+    id: agentId,
+    agentId,
+    kind: quick ? 'quick' : 'durable',
+    status: 'running',
+    ...(quick ? { projectId: quick.projectId, parentAgentId: quick.parentAgentId } : {}),
+    detailedStatus,
+  });
 }
 
 /** Resolve the execution mode of an agent. */
@@ -2669,6 +2733,7 @@ export function start(): void {
 
   unsubChatEvent = onChatEvent((event) => {
     broadcastAndBuffer('chat:event', { agentId: event.agentId, event });
+    pushChatStatus(event);
   });
 
   unsubHookEvent = annexEventBus.onHookEvent((agentId, event) => {
@@ -2898,6 +2963,7 @@ export function stop(): void {
   sessionTokens.clear();
   revokedTokens.clear();
   detailedStatusCache.clear();
+  lastChatStatusPush.clear();
   trackedQuickAgents.clear();
   eventReplay.reset();
   permissionQueue.reset();
@@ -3288,4 +3354,6 @@ export const _testing = {
   resetSessionPauseOwner() { sessionPauseOwner = null; sessionPaused = false; },
   detailedStatusCache,
   getDetailedStatus,
+  pushChatStatus,
+  lastChatStatusPush,
 };

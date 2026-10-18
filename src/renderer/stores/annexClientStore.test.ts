@@ -305,6 +305,47 @@ describe('annexClientStore', () => {
       spy.mockRestore();
     });
 
+    it('forwards agent:status detailedStatus to updateRemoteAgentStatus (#2211)', async () => {
+      const { useRemoteProjectStore } = await import('./remoteProjectStore');
+      const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentStatus');
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      const detailedStatus = { state: 'working', message: 'Working', timestamp: 1000 };
+      vi.useFakeTimers();
+      eventCallback!({ satelliteId: 'sat-1', type: 'agent:status', payload: { id: 'agent-1', agentId: 'agent-1', kind: 'durable', status: 'running', detailedStatus } });
+      vi.advanceTimersByTime(50);
+
+      expect(spy).toHaveBeenCalledWith('sat-1', 'agent-1', detailedStatus);
+      spy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('ignores agent:status without detailedStatus (a quick agent run state)', async () => {
+      const { useRemoteProjectStore } = await import('./remoteProjectStore');
+      const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentStatus');
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      vi.useFakeTimers();
+      eventCallback!({ satelliteId: 'sat-1', type: 'agent:status', payload: { id: 'quick-1', kind: 'quick', status: 'running', projectId: 'p1' } });
+      vi.advanceTimersByTime(50);
+
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+      vi.useRealTimers();
+    });
+
     it('forwards structured:event detailedStatus to updateRemoteAgentStatus', async () => {
       const { useRemoteProjectStore } = await import('./remoteProjectStore');
       const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentStatus');
