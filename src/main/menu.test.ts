@@ -68,7 +68,11 @@ describe('buildMenu', () => {
     const item = (help?.submenu as MenuItemConstructorOptions[] | undefined)?.find((i) => i.id === 'feedback-capture');
     expect(item).toMatchObject({ label: 'Capture Feedback Screenshot', accelerator: 'CmdOrCtrl+Shift+2', enabled: false });
     expect(FEEDBACK_CAPTURE_ACCELERATOR).toBe('CmdOrCtrl+Shift+2');
-    (item!.click as () => void)();
-    expect(captureFromShortcut).toHaveBeenCalledTimes(1);
+    const click = item!.click as (item: unknown, win: unknown) => void;
+    click({}, undefined);
+    expect(captureFromShortcut).toHaveBeenLastCalledWith(null);
+    const win = { webContents: {} };
+    click({}, win);
+    expect(captureFromShortcut).toHaveBeenLastCalledWith(win);
   });
 });

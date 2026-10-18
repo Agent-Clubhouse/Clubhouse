@@ -54,8 +54,9 @@ export function buildMenu(): void {
           accelerator: FEEDBACK_CAPTURE_ACCELERATOR,
           // Off until feedback status says it can capture.
           enabled: false,
-          click: () => {
-            captureFromShortcut().catch((err: unknown) => {
+          click: (_item, win) => {
+            // Electron passes the window whose menu fired (a BaseWindow); only a BrowserWindow can be captured.
+            captureFromShortcut(win && 'webContents' in win ? (win as BrowserWindow) : null).catch((err: unknown) => {
               appLog('core:feedback', 'warn', 'Feedback shortcut capture failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
             });
           },

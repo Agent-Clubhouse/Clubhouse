@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useFeedbackStore } from '../../stores/feedbackStore';
 import { FeedbackReviewDialog } from './FeedbackReviewDialog';
 
@@ -9,6 +10,9 @@ import { FeedbackReviewDialog } from './FeedbackReviewDialog';
 export function FeedbackDialogHost() {
   const draft = useFeedbackStore((s) => s.draft);
   const closeDraft = useFeedbackStore((s) => s.closeDraft);
+  const init = useFeedbackStore((s) => s.init);
+  // Start following main here too, so shortcut captures arrive with no Feedback button mounted.
+  useEffect(() => { void init(); }, [init]);
   // Keyed by draft: a new capture is a fresh review (notes, ink, chosen window).
   return draft ? <FeedbackReviewDialog key={draft.draftId} draft={draft} onClose={closeDraft} /> : null;
 }

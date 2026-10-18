@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
 import { Modal } from '../../components/Modal';
-import { FEEDBACK_CAPTURE_SHORTCUT_LABEL, type FeedbackCaptureResult, type FeedbackShot } from '../../../shared/feedback-types';
+import type { FeedbackCaptureResult, FeedbackShot } from '../../../shared/feedback-types';
 import { useFeedbackStore } from '../../stores/feedbackStore';
 import { useUIStore } from '../../stores/uiStore';
 import { compositeAnnotatedPng, type Stroke } from './annotation';
@@ -17,11 +17,6 @@ type Phase = 'review' | 'sending' | 'saved';
 function currentScene(): string {
   const tab = useUIStore.getState().explorerTab;
   return typeof tab === 'string' && /^[a-z][a-z0-9-]{0,39}$/.test(tab) ? tab : 'app';
-}
-
-/** The capture shortcut as this platform writes it. */
-function shortcutLabel(): string {
-  return window.clubhouse.platform === 'darwin' ? FEEDBACK_CAPTURE_SHORTCUT_LABEL.mac : FEEDBACK_CAPTURE_SHORTCUT_LABEL.other;
 }
 
 /** The windows captured, falling back to the single preview from an older main. */
@@ -54,6 +49,15 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
 
   // Ink belongs to one capture: a new capture starts clean.
   useEffect(() => { setInkByShot([]); setShotIndex(0); }, [draft.draftId]);
+
+  const onShotKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (!step || phase === 'sending') return;
+    e.preventDefault();
+    const next = (shotIndex + step + shots.length) % shots.length;
+    setShotIndex(next);
+    e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+  };
 
   const cancel = useCallback(() => {
     if (phase === 'review') void window.clubhouse.feedback.cancel(draft.draftId);
@@ -100,15 +104,18 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
         ) : (
           <>
             {shots.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto" role="radiogroup" aria-label="Window to send" data-testid="feedback-shots">
+              <div className="flex gap-2 overflow-x-auto" role="radiogroup" aria-label="Window to send" onKeyDown={onShotKey} data-testid="feedback-shots">
                 {shots.map((s, i) => (
                   <button
                     key={s.shotId || i}
                     type="button"
                     role="radio"
                     aria-checked={i === shotIndex}
+                    // Roving tabindex: one Tab stop for the group, arrows move between windows.
+                    tabIndex={i === shotIndex ? 0 : -1}
+                    disabled={phase === 'sending'}
                     onClick={() => setShotIndex(i)}
-                    className={`flex-shrink-0 w-32 p-1 rounded-md border text-left focus-ring ${i === shotIndex ? 'border-ctp-accent bg-surface-0' : 'border-surface-1 hover:bg-surface-0'}`}
+                    className={`flex-shrink-0 w-32 p-1 rounded-md border text-left focus-ring disabled:opacity-50 ${i === shotIndex ? 'border-ctp-accent bg-surface-0' : 'border-surface-1 hover:bg-surface-0'}`}
                     data-testid={`feedback-shot-${i}`}
                   >
                     <img src={s.preview} alt="" className="block w-full h-16 object-cover rounded-sm bg-ctp-base" draggable={false} />
@@ -134,7 +141,6 @@ export function FeedbackReviewDialog({ draft, onClose }: Props) {
             />
             <p className="text-xs text-ctp-subtext0">
               Only Clubhouse windows are captured, and only the one you choose is sent. Links, email addresses and file paths in notes are removed before sending.
-              {' '}Press {shortcutLabel()} to capture what's under the pointer, tooltips included.
             </p>
             {error && <p className="text-sm text-ctp-error" role="alert" data-testid="feedback-error">{error}</p>}
             <div className="flex items-center justify-end gap-2">

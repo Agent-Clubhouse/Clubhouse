@@ -23,7 +23,10 @@ interface FeedbackState {
   setStatus: (status: FeedbackStatus) => void;
   /** The capture being reviewed, from the button or the keyboard shortcut (#2101). */
   draft: FeedbackCaptureResult | null;
-  /** Open a capture for review. One that was already open is cancelled first. */
+  /**
+   * Open a capture for review. While a review is already open it wins: the new capture
+   * is cancelled, so a stray shortcut press never throws away notes or ink.
+   */
   openDraft: (draft: FeedbackCaptureResult) => void;
   closeDraft: () => void;
 }
@@ -40,8 +43,11 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   draft: null,
 
   openDraft: (draft) => {
-    const previous = get().draft;
-    if (previous && previous.draftId !== draft.draftId) void window.clubhouse.feedback.cancel(previous.draftId);
+    const open = get().draft;
+    if (open && open.draftId !== draft.draftId) {
+      void window.clubhouse.feedback.cancel(draft.draftId);
+      return;
+    }
     set({ draft });
   },
 

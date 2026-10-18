@@ -46,8 +46,8 @@ export function ScreenshotAnnotator({ src, strokes, onChange, disabled = false }
   const onPointerMove = (e: PointerEvent<HTMLCanvasElement>) => {
     const a = active.current;
     if (!a || a.pointerId !== e.pointerId) return;
-    // The release was lost (a context menu or window switch took it): stop inking.
-    if (e.buttons === 0) { active.current = null; return; }
+    // The release was lost (a context menu or window switch took it), or Send started mid-drag: stop inking.
+    if (e.buttons === 0 || disabled) { active.current = null; return; }
     a.stroke = { ...a.stroke, points: [...a.stroke.points, point(e)] };
     onChange([...a.base, a.stroke]);
   };

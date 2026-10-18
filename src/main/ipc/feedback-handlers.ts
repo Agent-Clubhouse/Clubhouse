@@ -45,7 +45,7 @@ export function captureSources(first: BrowserWindow | null): CaptureSource[] {
  * focus, then hand the draft to the main window's review dialog. Runs in main from the
  * menu accelerator, so no renderer sees a keydown first and hover states stay on screen.
  */
-export async function captureFromShortcut(): Promise<void> {
+export async function captureFromShortcut(from?: BrowserWindow | null): Promise<void> {
   if (!isFeedbackEnabled()) return;
   const service = getFeedbackService();
   await service.start();
@@ -53,13 +53,13 @@ export async function captureFromShortcut(): Promise<void> {
     appLog('core:feedback', 'info', 'Feedback shortcut ignored: feedback is not set up');
     return;
   }
-  const focused = BrowserWindow.getFocusedWindow();
-  const draft = await service.captureDraft(captureSources(focused));
   const main = findMainWindow();
   if (!main || main.isDestroyed()) {
-    service.cancel(draft.draftId);
+    // The review dialog lives in the main window (macOS keeps running with only a pop-out).
+    appLog('core:feedback', 'info', 'Feedback shortcut ignored: no main window to review in');
     return;
   }
+  const draft = await service.captureDraft(captureSources(from ?? BrowserWindow.getFocusedWindow()));
   if (main.isMinimized()) main.restore();
   main.focus();
   main.webContents.send(IPC.FEEDBACK.CAPTURED, draft);

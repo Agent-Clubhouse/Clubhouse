@@ -189,10 +189,19 @@ describe('captureFromShortcut (#2101)', () => {
     expect(svc.service.captureDraft).not.toHaveBeenCalled();
   });
 
-  it('cancels the draft if there is no main window to review it in', async () => {
+  it('captures nothing when there is no main window to review in', async () => {
     win.focused = fakeWindow('pop');
     await captureFromShortcut();
-    expect(svc.service.cancel).toHaveBeenCalledWith('d1');
+    expect(svc.service.captureDraft).not.toHaveBeenCalled();
+  });
+
+  it('captures from the window the menu fired in when Electron passes one', async () => {
+    win.main = fakeWindow('main');
+    const pop = fakeWindow('pop');
+    win.popouts = [{ window: pop, label: 'Canvas window' }];
+    win.focused = win.main;
+    await captureFromShortcut(pop as never);
+    expect(win.main.webContents.send).toHaveBeenCalledWith(IPC.FEEDBACK.CAPTURED, expect.objectContaining({ labels: ['Canvas window', 'Main window'] }));
   });
 });
 

@@ -69,12 +69,28 @@ describe('FeedbackButton', () => {
     expect(screen.queryByTestId('feedback-review')).toBeNull();
   });
 
-  it('cancels a review that is replaced by a new capture', () => {
+  it('keeps an open review when a new capture arrives, and cancels the new one', () => {
     setFeedback(true);
     render(<FeedbackDialogHost />);
     act(() => useFeedbackStore.getState().openDraft({ draftId: '0b5c6a2e-1f3d-4c8e-9a7b-2d4e6f8a0c1e', preview: PREVIEW, shots: [] }));
+    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'half-written note' } });
     act(() => useFeedbackStore.getState().openDraft({ draftId: '1c6d7b3f-2a4e-4d9f-8b8c-3e5f7a9b1d2f', preview: PREVIEW, shots: [] }));
-    expect(window.clubhouse.feedback.cancel).toHaveBeenCalledWith('0b5c6a2e-1f3d-4c8e-9a7b-2d4e6f8a0c1e');
-    expect(screen.getAllByTestId('feedback-review')).toHaveLength(1);
+    expect(window.clubhouse.feedback.cancel).toHaveBeenCalledWith('1c6d7b3f-2a4e-4d9f-8b8c-3e5f7a9b1d2f');
+    expect(window.clubhouse.feedback.cancel).not.toHaveBeenCalledWith('0b5c6a2e-1f3d-4c8e-9a7b-2d4e6f8a0c1e');
+    expect(useFeedbackStore.getState().draft?.draftId).toBe('0b5c6a2e-1f3d-4c8e-9a7b-2d4e6f8a0c1e');
+    expect(screen.getByLabelText('What happened?')).toHaveValue('half-written note');
+  });
+
+  it('names the capture shortcut in the button title', () => {
+    setFeedback(true);
+    render(<FeedbackButton variant="sidebar" />);
+    expect(screen.getByTestId('nav-feedback').getAttribute('title')).toMatch(/^Send feedback \((⌘⇧2|Ctrl\+Shift\+2) captures what's under the pointer\)/);
+  });
+
+  it('starts following main from the dialog host alone', () => {
+    const init = vi.fn(async () => {});
+    useFeedbackStore.setState({ init });
+    render(<FeedbackDialogHost />);
+    expect(init).toHaveBeenCalled();
   });
 });

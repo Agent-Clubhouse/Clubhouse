@@ -159,4 +159,23 @@ describe('ScreenshotAnnotator', () => {
     fireEvent.keyDown(canvas, { key: 'z', metaKey: true });
     expect(latest).toHaveLength(1);
   });
+
+  it('keeps a Clear made mid-drag', () => {
+    render(<Harness />);
+    const canvas = loadPreview();
+    draw(canvas, [[1, 1], [2, 2]]);
+    fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, buttons: 1, clientX: 5, clientY: 5 });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear drawing' }));
+    fireEvent.pointerMove(canvas, { pointerId: 1, buttons: 1, clientX: 9, clientY: 9 });
+    expect(latest).toEqual([]);
+  });
+
+  it('stops a drag that was going when Send started', () => {
+    const { rerender } = render(<Harness />);
+    const canvas = loadPreview();
+    fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, buttons: 1, clientX: 1, clientY: 1 });
+    rerender(<Harness disabled />);
+    fireEvent.pointerMove(canvas, { pointerId: 1, buttons: 1, clientX: 30, clientY: 30 });
+    expect(latest[0].points).toHaveLength(1);
+  });
 });

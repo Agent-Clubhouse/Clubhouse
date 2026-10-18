@@ -207,8 +207,25 @@ describe('FeedbackReviewDialog with several windows (#2100)', () => {
     expect(send.mock.calls[0][0]).not.toHaveProperty('shotId');
   });
 
-  it('names the capture shortcut for this platform', () => {
+  it('moves between windows with the arrow keys, one Tab stop for the group', () => {
     render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
-    expect(screen.getByTestId('feedback-review')).toHaveTextContent(/(⌘⇧2|Ctrl\+Shift\+2) to capture what's under the pointer/);
+    const radios = screen.getAllByRole('radio');
+    expect(radios.map((r) => r.tabIndex)).toEqual([0, -1]);
+    fireEvent.keyDown(radios[0], { key: 'ArrowRight' });
+    expect(radios[1]).toHaveAttribute('aria-checked', 'true');
+    expect(document.activeElement).toBe(radios[1]);
+    expect(radios.map((r) => r.tabIndex)).toEqual([-1, 0]);
+    fireEvent.keyDown(radios[1], { key: 'ArrowRight' });
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('locks the window choice while sending', async () => {
+    let resolveSend: (v: unknown) => void = () => {};
+    send.mockReturnValueOnce(new Promise((r) => { resolveSend = r; }));
+    render(<FeedbackReviewDialog draft={MULTI} onClose={vi.fn()} />);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    await act(async () => {});
+    for (const r of screen.getAllByRole('radio')) expect(r).toBeDisabled();
+    await act(async () => { resolveSend({ id: 'rep-1', status: 'saved-local' }); });
   });
 });
