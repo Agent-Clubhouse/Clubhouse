@@ -199,6 +199,8 @@
   .theme-gradient-bg :is(.bg-ctp-base, .bg-ctp-mantle, .bg-ctp-crust):not(
     .fixed, .absolute, .sticky, .surface-opaque,
     [class^="z-"], [class*=" z-"], [class^="shadow-"], [class*=" shadow-"],
+    /* A class after a newline or tab (multi-line template literals keep them, #2124). */
+    [class*="\a z-"], [class*="\9 z-"], [class*="\a shadow-"], [class*="\9 shadow-"],
     [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"]
   ) {
     background-color: transparent !important;
