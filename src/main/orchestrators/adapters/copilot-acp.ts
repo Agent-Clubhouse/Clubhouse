@@ -172,6 +172,9 @@ export function copilotAcpCapabilities(init: InitializeResponse): AcpDriverCapab
     interactiveSlashCommands: false,
     // Copilot does its own file I/O even when fs/* is advertised.
     clientFs: false,
+    // 1.0.98 drops client stdio servers with "Rejecting non-http/sse MCP
+    // server" despite ACP's stdio baseline (#2240). Only http/sse get through.
+    mcp: { ...base.mcp, stdio: false },
     quirks: [
       'model-list-duplicates',
       'stray-info-line',

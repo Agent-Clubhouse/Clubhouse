@@ -428,6 +428,7 @@ describe('ACP → chat contract mapping', () => {
         { type: 'sse', name: 'remote', url: 'https://example.test/sse', headers: [{ name: 'A', value: 'b' }] },
       ],
       skipped: ['odd'],
+      unsupported: [],
     });
   });
 
@@ -443,6 +444,7 @@ describe('ACP → chat contract mapping', () => {
 
 // ── Inline scripts ───────────────────────────────────────────────────────────
 
+
 const rec = (dir: 'in' | 'out', msg: Record<string, unknown>): AcpFixtureRecord => ({ dir, msg: { jsonrpc: '2.0', ...msg } });
 const genericStart: AcpFixtureRecord[] = [
   rec('out', { id: 1, method: 'initialize' }),
@@ -450,6 +452,82 @@ const genericStart: AcpFixtureRecord[] = [
   rec('out', { id: 2, method: 'session/new' }),
   rec('in', { id: 2, result: { sessionId: 's1' } }),
 ];
+
+describe('Clubhouse MCP over HTTP for ACP agents (#2240)', () => {
+  const bridge = { command: 'node', args: ['bridge.js'], env: { CLUBHOUSE_MCP_FALLBACK_PORT: '4321' }, env_vars: ['CLUBHOUSE_HOOK_NONCE'] };
+  const endpoints = { clubhouse: { url: 'http://127.0.0.1:4321/mcp/agent-1', headersFromEnv: { 'X-Clubhouse-Nonce': 'CLUBHOUSE_HOOK_NONCE' } } };
+  const env = { CLUBHOUSE_HOOK_NONCE: 'n1' };
+
+  it('sends the bridge as an http server with the nonce header when the agent takes http', () => {
+    const out = toAcpMcpServers({ clubhouse: bridge, local: { command: 'tool' } }, env, {
+      transports: { stdio: false, http: true, sse: true },
+      httpEndpoints: endpoints,
+    });
+    expect(out.servers).toEqual([
+      { type: 'http', name: 'clubhouse', url: 'http://127.0.0.1:4321/mcp/agent-1', headers: [{ name: 'X-Clubhouse-Nonce', value: 'n1' }] },
+      { name: 'local', command: 'tool', args: [], env: [] },
+    ]);
+    // The agent refuses stdio: the leftover stdio server is named for a warning.
+    expect(out.unsupported).toEqual(['local']);
+  });
+
+  it('keeps stdio when the agent does not advertise http', () => {
+    const out = toAcpMcpServers({ clubhouse: bridge }, env, { transports: { stdio: true, http: false, sse: false }, httpEndpoints: endpoints });
+    expect(out.servers).toEqual([
+      { name: 'clubhouse', command: 'node', args: ['bridge.js'], env: [{ name: 'CLUBHOUSE_MCP_FALLBACK_PORT', value: '4321' }, { name: 'CLUBHOUSE_HOOK_NONCE', value: 'n1' }] },
+    ]);
+    expect(out.unsupported).toEqual([]);
+  });
+
+  it('keeps stdio when the header value is missing from the CLI env', () => {
+    const out = toAcpMcpServers({ clubhouse: bridge }, {}, { transports: { stdio: true, http: true, sse: true }, httpEndpoints: endpoints });
+    expect(out.servers[0]).toMatchObject({ name: 'clubhouse', command: 'node' });
+  });
+
+  it('Copilot: session/new carries the http entry as recorded, and stdio servers get a notice', async () => {
+    const records = withoutRequest(loadAcpFixture(COPILOT, 'mcp-http-handshake.jsonl'), 'session/close');
+    const { driver, replayer, proc } = setup(records);
+    const session = await driver.start(startOpts({
+      env: { CLUBHOUSE_HOOK_NONCE: 'nonce-1' },
+      mcpServers: { clubhouse: bridge, local: { command: 'tool' } },
+      mcpHttpEndpoints: endpoints,
+    }));
+
+    const recorded = records.find((r) => r.dir === 'out' && r.msg.method === 'session/new')!.msg.params as { mcpServers: unknown[] };
+    const sent = replayer.written.find((m) => m.method === 'session/new')!.params as { mcpServers: unknown[] };
+    // The shape the probe saw Copilot accept, with this test's nonce in the header.
+    expect(sent.mcpServers[0]).toEqual(JSON.parse(JSON.stringify(recorded.mcpServers[0]).replace('[redacted]', 'nonce-1')));
+    expect(sent.mcpServers[1]).toMatchObject({ name: 'local', command: 'tool' });
+
+    proc.emit('exit', 0, null);
+    const drafts: ChatEventDraft[] = [];
+    for await (const d of session.events) drafts.push(d);
+    expect(drafts.find((d) => d.type === 'notice')).toMatchObject({
+      type: 'notice',
+      data: { level: 'warn', code: 'mcp_servers_unsupported', message: expect.stringContaining('local') },
+    });
+    expect(replayer.errors).toEqual([]);
+  });
+
+  it('generic agent without http: the bridge stays stdio and no notice is raised', async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+    const replayer = new AcpFixtureReplayer(proc, genericStart);
+    const driver = createGenericAcpChatDriver('example');
+    const session = await driver.start(startOpts({
+      provider: 'example',
+      env: { CLUBHOUSE_HOOK_NONCE: 'nonce-1' },
+      mcpServers: { clubhouse: bridge },
+      mcpHttpEndpoints: endpoints,
+    }));
+    const sent = replayer.written.find((m) => m.method === 'session/new')!.params as { mcpServers: Array<Record<string, unknown>> };
+    expect(sent.mcpServers).toEqual([expect.objectContaining({ name: 'clubhouse', command: 'node' })]);
+    proc.emit('exit', 0, null);
+    const drafts: ChatEventDraft[] = [];
+    for await (const d of session.events) drafts.push(d);
+    expect(drafts.some((d) => d.type === 'notice' && d.data.code === 'mcp_servers_unsupported')).toBe(false);
+  });
+});
 
 describe('ACP chat driver failure paths', () => {
   it('reports the turn as failed before the stream ends when the agent dies mid-turn', async () => {

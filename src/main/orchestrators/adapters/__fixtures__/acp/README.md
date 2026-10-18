@@ -30,6 +30,7 @@ The version column is what each handshake reports.
 | `delete-unsupported.jsonl` | 1.0.98 | `session/delete` answering -32601 |
 | `autopilot-task-complete.jsonl` | 1.0.98 | Recorded 2026-10-18 (#2191), `claude-haiku-4.5`. `set_mode` to autopilot, then one prompt that creates three files: the whole autopilot loop runs inside `session/prompt`, ends with a `task_complete` tool call, and nothing arrives after the answer |
 | `background-agent.jsonl` | 1.0.98 | Recorded 2026-10-18 (#2191), `claude-haiku-4.5`. The agent starts a background subagent (`sleep 30; ls`), says STARTED, and is told to report when notified. 1.0.98 holds `session/prompt` open until the subagent finishes and the follow-up (`read_agent`, a file edit, two permission requests) is done |
+| `mcp-http-handshake.jsonl` | 1.0.98 | Recorded 2026-10-18 (#2240), handshake only (no prompt). `session/new` carries the Clubhouse MCP as an `http` server with an `X-Clubhouse-Nonce` header. The URL pointed at a local test server that answers like `bridge-server.ts`. It received `server/discover`, `initialize` and `notifications/initialized`, all with the nonce, and Copilot's log said `Service initialized as client` with no `Rejecting` line. A stdio entry in the same probe was logged as rejected. The nonce is replaced with `[redacted]`, the port with 4321 and the agent id with `agent-1` |
 
 For #2191, tests also replay `background-agent.jsonl` with the prompt's answer moved to right after
 STARTED (`promptAnsweredEarly` in `acp-replay.ts`). That is the order Copilot 1.0.82 used: it answered

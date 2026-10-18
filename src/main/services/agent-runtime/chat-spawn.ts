@@ -16,8 +16,8 @@ import type { FreeAgentPermissionMode, DurableAgentConfig } from '../../../share
 import type { PermissionLevel, SessionEndReason } from '../../../shared/chat';
 import { agentRegistry, untrackAgent } from '../agent-registry';
 import * as configPipeline from '../config-pipeline';
-import { waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server';
-import { injectClubhouseMcp, buildClubhouseMcpDef } from '../clubhouse-mcp/injection';
+import { agentEndpointUrl, NONCE_HEADER, waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server';
+import { injectClubhouseMcp, buildClubhouseMcpDef, CLUBHOUSE_NONCE_ENV } from '../clubhouse-mcp/injection';
 import { isMcpEnabled } from '../mcp-settings';
 import { resolveProjectMcpServers } from '../materialization-service';
 import { touchSessionEntry } from '../agent-config';
@@ -25,6 +25,7 @@ import { broadcastAgentExit } from '../agent-exit-broadcast';
 import { appLog } from '../log-service';
 import { resolveRuntimeMode } from '../chat-runtime-settings';
 import type { ChatDriver } from '../../../shared/chat';
+import type { McpHttpEndpoint } from '../../../shared/chat/runtime';
 import { IPC } from '../../../shared/ipc-channels';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { listChatDrivers, resolveChatDriver } from './chat-drivers';
@@ -325,7 +326,7 @@ async function runChatStart(
       profileEnvKeys: profileEnv ? Object.keys(profileEnv) : [],
     },
   });
-  let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; continued?: { sessionId: string; lastSeq: number } } | undefined;
+  let prepared: { env: Record<string, string>; mcpServers: Record<string, unknown>; mcpHttpEndpoints: Record<string, McpHttpEndpoint>; continued?: { sessionId: string; lastSeq: number } } | undefined;
 
   // Probe lazily, in order, and stop at the first usable driver: the
   // preferred driver working means no other driver is probed or reported.
@@ -425,6 +426,13 @@ async function runChatStart(
       // The bridge too follows the agent > project > global setting (#2223).
       ...(mcpEnabled && mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
     };
+    // The bridge's own endpoint, for drivers whose agent takes HTTP MCP
+    // servers (ACP agents such as Copilot, which refuse stdio, #2240). The
+    // nonce header is resolved from `env` by the driver, so it too travels
+    // only over the RPC pipe.
+    const mcpHttpEndpoints: Record<string, McpHttpEndpoint> = mcpPort > 0
+      ? { clubhouse: { url: agentEndpointUrl(mcpPort, params.agentId), headersFromEnv: { [NONCE_HEADER]: CLUBHOUSE_NONCE_ENV } } }
+      : {};
     const env: Record<string, string> = {
       ...launchEnv,
       CLUBHOUSE_AGENT_ID: params.agentId,
@@ -434,7 +442,7 @@ async function runChatStart(
       ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
     };
     const continued = resumeNativeSessionId ? await findChatSessionFor(params.agentId, resumeNativeSessionId) : undefined;
-    return { env, mcpServers, continued };
+    return { env, mcpServers, mcpHttpEndpoints, continued };
   }
 
   /**
@@ -444,7 +452,7 @@ async function runChatStart(
   async function startChatRuntime(
     driver: ChatDriver,
     startNotices: ChatRuntimeNotice[],
-    { env, mcpServers, continued }: NonNullable<typeof prepared>,
+    { env, mcpServers, mcpHttpEndpoints, continued }: NonNullable<typeof prepared>,
   ): Promise<{ ok: true } | { ok: false; error: string; sessionStarted: boolean }> {
     let sessionStarted = false;
     const recordChatSession = (id: string) => {
@@ -498,6 +506,7 @@ async function runChatStart(
         systemPrompt: params.systemPrompt,
         resumeNativeSessionId: resumeId,
         mcpServers,
+        mcpHttpEndpoints,
         ...(params.extraArgs?.length ? { extraArgs: params.extraArgs } : {}),
         ...(startSignal ? { signal: startSignal } : {}),
         });

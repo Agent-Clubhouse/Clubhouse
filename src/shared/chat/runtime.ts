@@ -142,6 +142,13 @@ export interface AgentRuntime {
 
 // ── ChatDriver ──────────────────────────────────────────────────────────────
 
+/** An MCP server's HTTP endpoint; see ChatDriverStartOptions.mcpHttpEndpoints. */
+export interface McpHttpEndpoint {
+  url: string;
+  /** Header name → name of the env var (in ChatDriverStartOptions.env) holding its value. */
+  headersFromEnv?: Record<string, string>;
+}
+
 export interface ChatDriverStartOptions {
   agentId: string;
   /** Orchestrator id, e.g. 'claude-code'. */
@@ -165,6 +172,15 @@ export interface ChatDriverStartOptions {
   resumeNativeSessionId?: string;
   /** MCP servers to attach, keyed by name (the Clubhouse bridge plus project servers). */
   mcpServers?: Record<string, unknown>;
+  /**
+   * HTTP endpoints serving the same server as a stdio entry in `mcpServers`,
+   * keyed by that entry's name. A driver whose agent takes HTTP MCP servers
+   * (ACP agents that advertise `mcpCapabilities.http`) sends the endpoint
+   * instead of the stdio command. Header values are named by env var and
+   * resolved from `env`, so secrets such as the agent's nonce stay out of
+   * this object (#2240).
+   */
+  mcpHttpEndpoints?: Record<string, McpHttpEndpoint>;
   /**
    * Provider-specific extra CLI args (e.g. Copilot --agent / --source).
    * Best-effort: drivers whose transport can't pass CLI args (the Claude Agent

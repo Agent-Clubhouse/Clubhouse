@@ -82,6 +82,18 @@ function readBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<
   });
 }
 
+/** The header carrying the agent's nonce on every request. */
+export const NONCE_HEADER = 'X-Clubhouse-Nonce';
+
+/**
+ * An agent's MCP endpoint (Streamable HTTP: POST JSON-RPC, JSON replies).
+ * The stdio bridge script proxies to it; agents that take HTTP MCP servers
+ * (Copilot over ACP, #2240) connect to it directly with {@link NONCE_HEADER}.
+ */
+export function agentEndpointUrl(port: number, agentId: string): string {
+  return `http://127.0.0.1:${port}/mcp/${agentId}`;
+}
+
 /** Parse route: /mcp/:agentId or /mcp/:agentId/:action */
 function parseRoute(url: string): { agentId: string; action: string } | null {
   if (!url.startsWith('/mcp/')) return null;
@@ -93,7 +105,7 @@ function parseRoute(url: string): { agentId: string; action: string } | null {
 
 function validateNonce(agentId: string, req: http.IncomingMessage): boolean {
   const expectedNonce = getAgentNonce(agentId);
-  const receivedNonce = req.headers['x-clubhouse-nonce'] as string | undefined;
+  const receivedNonce = req.headers[NONCE_HEADER.toLowerCase()] as string | undefined;
   if (!expectedNonce || receivedNonce !== expectedNonce) {
     if (!expectedNonce) {
       appLog('core:mcp', 'warn', 'Rejected MCP request — no nonce registered for agent', { meta: { agentId } });

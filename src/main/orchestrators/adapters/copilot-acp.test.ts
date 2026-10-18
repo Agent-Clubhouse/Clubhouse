@@ -109,7 +109,8 @@ describe('Copilot capability record', () => {
       permissionRules: 'launch_only',
       usage: { context: true, turnTokens: true, cost: false },
       prompt: { image: true, audio: false, embeddedContext: true },
-      mcp: { stdio: true, http: true, sse: true },
+      // Copilot drops client stdio servers over ACP (#2240).
+      mcp: { stdio: false, http: true, sse: true },
       login: 'terminal',
       clientFs: false,
     });

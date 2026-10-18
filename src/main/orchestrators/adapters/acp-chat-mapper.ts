@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { pathToFileURL } from 'url';
 import * as path from 'path';
 import type { ChatCapabilities, ChatDriverId, PermissionLevel } from '../../../shared/chat/capabilities';
+import type { McpHttpEndpoint } from '../../../shared/chat/runtime';
 import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat/capabilities';
 import type {
   ChatErrorCode,
@@ -106,22 +107,38 @@ function fileLink(target: string, mimeType?: string): ContentBlock {
  * the stdio RPC pipe to a process that already holds them, never in a config
  * file or argv, and AcpClient redacts them from its request log
  * (redactAcpParamsForLog).
+ *
+ * When the agent takes HTTP servers (`opts.transports.http`), a stdio entry
+ * with an endpoint in `opts.httpEndpoints` is sent as that `http` server
+ * instead, its header values resolved from `cliEnv` the same way (#2240: the
+ * Clubhouse bridge, whose stdio script only proxies to that endpoint). Stdio
+ * entries left over when the agent refuses stdio are still sent, and named in
+ * `unsupported` so the caller can say they won't load.
  */
 export function toAcpMcpServers(
   servers: Record<string, unknown> | undefined,
   cliEnv?: Record<string, string | undefined>,
-): { servers: McpServer[]; skipped: string[] } {
+  opts: {
+    transports?: { stdio: boolean; http: boolean; sse: boolean };
+    httpEndpoints?: Record<string, McpHttpEndpoint>;
+  } = {},
+): { servers: McpServer[]; skipped: string[]; unsupported: string[] } {
   const out: McpServer[] = [];
   const skipped: string[] = [];
+  const unsupported: string[] = [];
   for (const [name, raw] of Object.entries(servers ?? {})) {
     const s = raw as Record<string, unknown> | null;
-    if (s && typeof s.command === 'string') {
+    const endpoint = opts.transports?.http ? httpEndpointServer(name, opts.httpEndpoints?.[name], cliEnv) : undefined;
+    if (endpoint) {
+      out.push(endpoint);
+    } else if (s && typeof s.command === 'string') {
       out.push({
         name,
         command: s.command,
         args: Array.isArray(s.args) ? s.args.map(String) : [],
         env: [...pairs(s.env), ...forwardedPairs(s.env_vars, cliEnv)],
       });
+      if (opts.transports && !opts.transports.stdio) unsupported.push(name);
     } else if (s && typeof s.url === 'string') {
       // 'sse' is SSE; anything else with a URL ('http', 'streamable-http', unset) is HTTP.
       out.push({ type: s.type === 'sse' ? 'sse' : 'http', name, url: s.url, headers: pairs(s.headers) });
@@ -129,7 +146,23 @@ export function toAcpMcpServers(
       skipped.push(name);
     }
   }
-  return { servers: out, skipped };
+  return { servers: out, skipped, unsupported };
+}
+
+/** The `http` entry for an endpoint, or undefined when a header's env var is unset. */
+function httpEndpointServer(
+  name: string,
+  endpoint: McpHttpEndpoint | undefined,
+  env: Record<string, string | undefined> | undefined,
+): McpServer | undefined {
+  if (!endpoint) return undefined;
+  const headers: Array<{ name: string; value: string }> = [];
+  for (const [header, envName] of Object.entries(endpoint.headersFromEnv ?? {})) {
+    const value = env?.[envName];
+    if (typeof value !== 'string' || !value) return undefined;
+    headers.push({ name: header, value });
+  }
+  return { type: 'http', name, url: endpoint.url, headers };
 }
 
 function forwardedPairs(names: unknown, env: Record<string, string | undefined> | undefined): Array<{ name: string; value: string }> {
