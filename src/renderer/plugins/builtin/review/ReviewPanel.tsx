@@ -26,6 +26,9 @@ let appliedLaunchSeq = 0;
 const OWN_KEYS = 'input, textarea, select, [role="menu"], [role="dialog"], .xterm';
 const ownsKeys = (el: HTMLElement) => el.isContentEditable || !!el.closest?.(OWN_KEYS);
 
+/** Where an agent running in chat is typed to; the terminal's equivalent is .xterm. */
+const COMPOSER = '[data-testid="chat-composer"] textarea';
+
 type SlideDirection = 'left' | 'right' | null;
 
 function SlideContainer({ agentId, slideDirection, onTransitionEnd, children }: {
@@ -232,6 +235,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     api.settings.set('include-remote', true);
   }, [api, setNeedsYouOnly]);
 
+  const contentRef = useRef<HTMLDivElement>(null);
+
   // Actions
   const sleepingRef = useRef<SleepingCardHandle>(null);
   const isSleeping = agent?.status === 'sleeping';
@@ -247,9 +252,13 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     if (isSleeping) { sleepingRef.current?.focusPrompt(); return; }
     if (!isRunning) return;
     setTyping(agent.id);
-    // Hand xterm the focus once the terminal has re-rendered with focused={true}.
+    // Hand the agent the focus once its view has re-rendered with focused={true}:
+    // the chat composer for an agent running in chat, xterm otherwise.
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (typingRef.current) window.dispatchEvent(new Event(FOCUS_ACTIVE_TERMINAL_EVENT));
+      if (!typingRef.current) return;
+      const composer = contentRef.current?.querySelector<HTMLTextAreaElement>(COMPOSER);
+      if (composer) composer.focus();
+      else window.dispatchEvent(new Event(FOCUS_ACTIVE_TERMINAL_EVENT));
     }));
   }, [agent, isSleeping, isRunning, setTyping]);
 
@@ -306,7 +315,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   };
 
   // The terminal focuses itself when it mounts. Unless the user clicked into it or pressed Return, keep browsing.
-  const contentRef = useRef<HTMLDivElement>(null);
   const onContentPointerDown = (e: React.PointerEvent) => {
     if (agent && isRunning && (e.target as HTMLElement).closest('.xterm')) setTyping(agent.id);
   };
@@ -316,7 +324,11 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     if (typingRef.current && to && !contentRef.current?.contains(to)) setTyping(null);
   };
   const onContentFocus = (e: React.FocusEvent) => {
-    if (typingRef.current || !(e.target as HTMLElement).closest('.xterm')) return;
+    if (typingRef.current) return;
+    const target = e.target as HTMLElement;
+    // The chat composer never focuses itself, so focus landing there is the user typing to the agent.
+    if (target.closest(COMPOSER)) { if (agent && isRunning) setTyping(agent.id); return; }
+    if (!target.closest('.xterm')) return;
     requestAnimationFrame(() => { if (!typingRef.current) rootRef.current?.focus({ preventScroll: true }); });
   };
 
@@ -403,7 +415,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     </>
   );
 
-  const AgentTerminal = api.widgets.AgentTerminal;
+  // AgentView shows the agent the way it runs: the chat transcript in chat, the terminal otherwise (#2089).
+  const AgentView = api.widgets.AgentView ?? api.widgets.AgentTerminal;
   let content: React.ReactNode = null;
   if (agent) {
     content = (
@@ -411,7 +424,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         {isSleeping ? (
           <SleepingCard ref={sleepingRef} api={api} agent={agent} onSkip={goNext} onLeavePrompt={browse} />
         ) : (
-          <div className="h-full w-full"><AgentTerminal agentId={agent.id} focused={typing} /></div>
+          <div className="h-full w-full"><AgentView agentId={agent.id} focused={typing} /></div>
         )}
       </SlideContainer>
     );

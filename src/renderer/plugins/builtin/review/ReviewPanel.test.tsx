@@ -92,11 +92,20 @@ describe('MainPanel', () => {
   function StubTerminal({ agentId, focused }: { agentId: string; focused?: boolean }) {
     return <div data-testid={`terminal-${agentId}`} data-focused={String(!!focused)} />;
   }
+  /** The bare terminal widget, blank for an agent running in chat: Review must not use it (#2089). */
+  function BareTerminal({ agentId }: { agentId: string }) {
+    return <div data-testid={`bare-terminal-${agentId}`} />;
+  }
+  /** AgentView for an agent running in chat: the transcript and its composer. */
+  function StubChat({ agentId }: { agentId: string }) {
+    return <div data-testid={`chat-${agentId}`}><div data-testid="chat-composer"><textarea aria-label="Message" /></div></div>;
+  }
 
   function makeApi(initial: AgentInfo[], opts: {
     settings?: Record<string, boolean>;
     detailed?: Record<string, PluginAgentDetailedStatus>;
     mode?: 'app' | 'project';
+    view?: PluginAPI['widgets']['AgentView'];
     sessions?: Array<{ sessionId: string; startedAt: string; lastActiveAt: string; friendlyName?: string }>;
   } = {}) {
     let list = initial;
@@ -119,7 +128,7 @@ describe('MainPanel', () => {
         readSessionTranscript: async () => null,
         getSessionSummary: async () => null,
       },
-      widgets: { ...base.widgets, AgentTerminal: StubTerminal },
+      widgets: { ...base.widgets, AgentTerminal: BareTerminal, AgentView: opts.view ?? StubTerminal },
       settings: {
         get: <T,>(key: string): T | undefined => settings[key] as unknown as T,
         getAll: () => ({}),
@@ -191,6 +200,35 @@ describe('MainPanel', () => {
     fireEvent.keyDown(panel(), { key: 'Enter' });
     await waitFor(() => expect(onFocus).toHaveBeenCalled());
     window.removeEventListener(FOCUS_ACTIVE_TERMINAL_EVENT, onFocus);
+  });
+
+  it('shows the agent through the runtime-aware view, never the bare terminal', () => {
+    const { api } = makeApi([makeAgent({ id: 'a1' })], { view: StubChat });
+    render(<MainPanel api={api} />);
+    expect(screen.getByTestId('chat-a1')).toBeInTheDocument();
+    expect(screen.queryByTestId('bare-terminal-a1')).not.toBeInTheDocument();
+  });
+
+  it('Return on an agent running in chat focuses its composer, not a terminal', async () => {
+    const { api } = makeApi([makeAgent({ id: 'a1', name: 'one' })], { view: StubChat });
+    const onFocus = vi.fn();
+    window.addEventListener(FOCUS_ACTIVE_TERMINAL_EVENT, onFocus);
+    render(<MainPanel api={api} />);
+    fireEvent.keyDown(panel(), { key: 'Enter' });
+    expect(panel().getAttribute('data-mode')).toBe('typing');
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Message')));
+    expect(onFocus).not.toHaveBeenCalled();
+    window.removeEventListener(FOCUS_ACTIVE_TERMINAL_EVENT, onFocus);
+  });
+
+  it('clicking into the chat composer types to the agent, and leaving it goes back to browsing', () => {
+    const { api } = makeApi([makeAgent({ id: 'a1', name: 'one' })], { view: StubChat });
+    render(<MainPanel api={api} />);
+    act(() => screen.getByLabelText('Message').focus());
+    expect(panel().getAttribute('data-mode')).toBe('typing');
+    expect(screen.getByTestId('review-hints').textContent).toContain('Typing to one');
+    act(() => screen.getByTestId('review-jump-list-button').focus());
+    expect(panel().getAttribute('data-mode')).toBe('browsing');
   });
 
   it('stops typing when the agent drops out of the list, so the next agent never gets the keys', () => {
