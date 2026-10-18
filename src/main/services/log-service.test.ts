@@ -16,7 +16,7 @@ vi.mock('./log-settings', () => ({
 
 import * as fsp from 'fs/promises';
 import * as logSettings from './log-settings';
-import { init, log, flush, appLog, getLogPath, getNamespaces } from './log-service';
+import { init, log, flush, appLog, getLogPath, getNamespaces, getRecentUiPerf, UI_PERF_BREADCRUMB_LIMIT } from './log-service';
 
 // The electron mock provides app.getPath('home') → path.join(os.tmpdir(), 'clubhouse-test-home')
 const EXPECTED_LOG_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'logs');
@@ -109,6 +109,23 @@ describe('log-service', () => {
       // Verify sorted
       const sorted = [...ns].sort();
       expect(ns).toEqual(sorted);
+    });
+  });
+
+  describe('ui:perf breadcrumbs', () => {
+    it('keeps the latest ui:perf entries even with logging off, and nothing else', () => {
+      vi.mocked(logSettings.getSettings).mockReturnValue({ enabled: false, namespaces: {}, retention: 'medium', minLogLevel: 'error' });
+      for (let i = 0; i < UI_PERF_BREADCRUMB_LIMIT + 3; i++) {
+        log({ ts: `t${i}`, ns: 'ui:perf', level: 'warn', msg: `hang ${i}` });
+      }
+      log({ ts: 'x', ns: 'app:test', level: 'warn', msg: 'unrelated' });
+      const recent = getRecentUiPerf();
+      expect(recent).toHaveLength(UI_PERF_BREADCRUMB_LIMIT);
+      expect(recent[0].msg).toBe('hang 3');
+      expect(recent[recent.length - 1].msg).toBe(`hang ${UI_PERF_BREADCRUMB_LIMIT + 2}`);
+      // A copy: callers can't change the buffer.
+      recent.pop();
+      expect(getRecentUiPerf()).toHaveLength(UI_PERF_BREADCRUMB_LIMIT);
     });
   });
 
