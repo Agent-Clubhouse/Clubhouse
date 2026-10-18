@@ -44,6 +44,27 @@ export function chatActivity(state: ChatViewState, now: number): string {
   return '';
 }
 
+const LIMIT_NAMES: Record<string, { name: string; short: string }> = {
+  '5h': { name: 'Session (5-hour)', short: '5h' },
+  week: { name: 'Weekly', short: 'wk' },
+  week_opus: { name: 'Weekly Opus', short: 'wk Opus' },
+  week_sonnet: { name: 'Weekly Sonnet', short: 'wk Sonnet' },
+  week_oauth_apps: { name: 'Weekly apps', short: 'wk apps' },
+  week_overage_included: { name: 'Weekly with extra usage', short: 'wk' },
+  overage: { name: 'Extra usage', short: 'extra' },
+};
+
+/** A plan window's name for people: "Session (5-hour)", "Weekly", "Weekly Fable". */
+export function limitName(window: string): string {
+  if (window.startsWith('week:')) return `Weekly ${window.slice(5)}`;
+  return LIMIT_NAMES[window]?.name ?? window;
+}
+
+function limitShort(window: string): string {
+  if (window.startsWith('week:')) return `wk ${window.slice(5)}`;
+  return LIMIT_NAMES[window]?.short ?? window;
+}
+
 export function limitLabel(l: UsageLimit): string {
   if (l.utilization !== undefined) return `${Math.round(l.utilization * 100)}%`;
   if (l.status === 'exceeded') return 'limit reached';
@@ -60,24 +81,60 @@ export function chatDetails(agent: Agent, state: ChatViewState): string[] {
   return out;
 }
 
-function limitHot(l: UsageLimit): boolean {
-  return l.status === 'exceeded' || (l.utilization !== undefined && l.utilization >= 0.9);
+/** A limit the user has run out of. */
+function limitReached(l: UsageLimit): boolean {
+  return l.status === 'exceeded' || (l.utilization !== undefined && l.utilization >= 1);
 }
 
-/** The toolbar's context meter: context fill and plan limits with their reset times, red when one runs out. */
+/** A limit at warning or above: the provider says so, or it's 80% used. */
+function limitWarning(l: UsageLimit): boolean {
+  return limitReached(l) || l.status === 'warning' || (l.utilization !== undefined && l.utilization >= 0.8);
+}
+
+const pctOf = (l: UsageLimit) => (l.utilization !== undefined ? Math.round(l.utilization * 100) : null);
+
+/** The limit that matters most: reached first, then warning, then the most used. */
+function worstLimit(limits: UsageLimit[]): UsageLimit | undefined {
+  const rank = (l: UsageLimit) => (limitReached(l) ? 2 : limitWarning(l) ? 1 : 0);
+  return [...limits].sort((a, b) => rank(b) - rank(a) || (b.utilization ?? -1) - (a.utilization ?? -1))[0];
+}
+
+/**
+ * The toolbar's meter. The ring shows context fill; a plan limit takes over
+ * when one is at warning or above (amber, red once reached), or when there is
+ * no context to show. The tooltip lists context and every limit with its reset.
+ */
 export function chatUsage(state: ChatViewState): PaneUsage | null {
   const caps = state.capabilities;
   const ctx = caps && caps.usage !== 'none' ? state.usage.context : null;
   const limits = caps?.limits ? state.usage.limits : [];
-  const pct = ctx && ctx.size > 0 ? Math.min(100, Math.round((ctx.used / ctx.size) * 100)) : null;
-  if (pct === null && limits.length === 0) return null;
+  const ctxPct = ctx && ctx.size > 0 ? Math.min(100, Math.round((ctx.used / ctx.size) * 100)) : null;
+  if (ctxPct === null && limits.length === 0) return null;
   const lines: string[] = [];
-  if (pct !== null && ctx) lines.push(`Context ${pct}%: ${formatTokens(ctx.used)} of ${formatTokens(ctx.size)} tokens`);
+  if (ctxPct !== null && ctx) lines.push(`Context ${ctxPct}%: ${formatTokens(ctx.used)} of ${formatTokens(ctx.size)} tokens`);
   for (const l of limits) {
     const reset = l.resetsAt ? `, resets ${new Date(l.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
-    lines.push(`${l.window} limit: ${limitLabel(l)}${reset}`);
+    lines.push(`${limitName(l.window)} limit: ${limitLabel(l)}${reset}`);
   }
-  return { contextPct: pct, hot: (pct !== null && pct >= 90) || limits.some(limitHot), lines };
+  const worst = worstLimit(limits);
+  const limitShown = worst && (limitWarning(worst) || ctxPct === null) ? worst : undefined;
+  const ctxHot = ctxPct !== null && ctxPct >= 90;
+  const tone = ctxHot || (worst && limitReached(worst)) ? 'hot' : worst && limitWarning(worst) ? 'warn' : 'normal';
+  if (limitShown) {
+    const pct = pctOf(limitShown);
+    const amount = pct !== null ? `${pct}%` : limitLabel(limitShown);
+    // A limit known only as "ok" has nothing to draw.
+    const quiet = pct === null && !limitWarning(limitShown);
+    return {
+      // A limit known only by status ("near limit") fills from context, if any.
+      fillPct: pct ?? ctxPct,
+      text: quiet ? null : `${amount} ${limitShort(limitShown.window)}`,
+      label: `${limitName(limitShown.window)} limit ${amount}`,
+      tone,
+      lines,
+    };
+  }
+  return { fillPct: ctxPct, text: ctxPct !== null ? `${ctxPct}%` : null, label: `Context ${ctxPct}%`, tone, lines };
 }
 
 export { RuntimeSwitch, type RuntimeView } from '../pane/AgentPaneToolbar';

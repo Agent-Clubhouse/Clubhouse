@@ -180,6 +180,19 @@ describe('ClaudeNormalizer', () => {
     expect(evs).toMatchObject([{ kind: 'message', text: 'partial' }, { kind: 'error', message: 'rate_limit', fatal: false, apiError: 'rate_limit' }]);
   });
 
+  it('reports a main-loop call\'s usage for context, and not a subagent\'s', () => {
+    const n = new ClaudeNormalizer();
+    const usage = { input_tokens: 1, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4 };
+    const main = n.normalize({ type: 'assistant', message: { id: 'm', model: 'claude-opus-5-5', content: [], usage }, parent_tool_use_id: null });
+    expect(main).toMatchObject([{ kind: 'assistant_usage', messageId: 'm', model: 'claude-opus-5-5', usage: { inputTokens: 1, outputTokens: 2, cacheReadInputTokens: 3, cacheCreationInputTokens: 4 } }]);
+    expect(n.normalize({ type: 'assistant', message: { id: 's', content: [], usage }, parent_tool_use_id: 'toolu_task' })).toHaveLength(0);
+  });
+
+  it('keeps extra usage on a rate_limit_event', () => {
+    const [ev] = new ClaudeNormalizer().normalize({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed', rateLimitType: 'five_hour', overageStatus: 'allowed_warning', overageResetsAt: 1_760_000_000 } });
+    expect(ev).toMatchObject({ kind: 'rate_limit', rateLimitType: 'five_hour', overageStatus: 'allowed_warning', overageResetsAt: 1_760_000_000 });
+  });
+
   it('maps an error result', () => {
     const n = new ClaudeNormalizer();
     const [r] = n.normalize({ type: 'result', subtype: 'error_max_turns', is_error: true, errors: ['too many', 3], num_turns: 9, stop_reason: 'tool_use', terminal_reason: 'max_turns' });

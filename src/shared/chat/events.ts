@@ -154,7 +154,7 @@ export interface TokenUsage {
 }
 
 export interface UsageLimit {
-  /** e.g. '5h', 'week', or a provider-specific window name. */
+  /** e.g. '5h', 'week', 'week_opus', 'week:<model>' (Claude's per-model weekly), 'overage', or a provider-specific name. */
   window: string;
   /** 0..1, when the provider reports a fraction. */
   utilization?: number;

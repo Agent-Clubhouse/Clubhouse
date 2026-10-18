@@ -177,6 +177,8 @@ export interface ChatUsage {
   /** Plan / rate-limit windows; account-wide, so kept across sessions. */
   limits: UsageLimit[];
   context: { used: number; size: number } | null;
+  /** Every completed turn's tokens summed, for drivers that send no session total (ACP). */
+  turnTotal: TokenUsage | null;
 }
 
 export interface ChatViewState {
@@ -250,7 +252,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     pendingQuestions: [],
     plan: [],
     subagents: {},
-    usage: { turn: null, session: null, limits: [], context: null },
+    usage: { turn: null, session: null, limits: [], context: null, turnTotal: null },
     commands: [],
     models: [],
     efforts: [],
@@ -314,7 +316,7 @@ function startSession(state: ChatViewState, event: ChatEvent): ChatViewState {
     subagents: {},
     queued: [],
     nativeSessionId: null,
-    usage: { ...state.usage, turn: null, session: null, context: null },
+    usage: { ...state.usage, turn: null, session: null, context: null, turnTotal: null },
   };
   if (previous !== null) {
     const divider: SessionDividerItem = {
@@ -327,6 +329,24 @@ function startSession(state: ChatViewState, event: ChatEvent): ChatViewState {
     next.items = [...state.items, divider];
   }
   return next;
+}
+
+const totalOf = (t: TokenUsage): number => t.total ?? (t.input ?? 0) + (t.cachedInput ?? 0) + (t.cacheWrite ?? 0) + (t.output ?? 0);
+
+function addTokens(a: TokenUsage | null, b: TokenUsage): TokenUsage {
+  const out: TokenUsage = { ...(a ?? {}) };
+  for (const key of ['input', 'cachedInput', 'cacheWrite', 'output', 'reasoning'] as const) {
+    if (b[key] !== undefined) out[key] = (out[key] ?? 0) + b[key];
+  }
+  // A turn without a total still counts toward it.
+  out.total = (a ? totalOf(a) : 0) + totalOf(b);
+  return out;
+}
+
+function mergeLimits(current: UsageLimit[], next: UsageLimit[]): UsageLimit[] {
+  const byWindow = new Map(current.map((l) => [l.window, l]));
+  for (const l of next) byWindow.set(l.window, l);
+  return [...byWindow.values()];
 }
 
 function usageSnapshot(data: { tokens?: TokenUsage; usage?: TokenUsage; costUsd?: number; costIsEstimate?: boolean }): UsageSnapshot {
@@ -472,7 +492,11 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         turnStartedAt: null,
         state: d.stopReason === 'error' ? 'error' : 'idle',
         items: [...stopStreaming(state.items, event.turnId), end],
-        usage: hasUsage ? { ...state.usage, turn: usageSnapshot(d) } : state.usage,
+        usage: {
+          ...state.usage,
+          ...(hasUsage && { turn: usageSnapshot(d) }),
+          ...(tokens !== undefined && { turnTotal: addTokens(state.usage.turnTotal, tokens) }),
+        },
       };
     }
 
@@ -646,7 +670,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       if (d.tokens !== undefined || d.costUsd !== undefined) {
         usage[d.scope] = usageSnapshot(d);
       }
-      if (d.limits) usage.limits = d.limits;
+      // A driver may report one window at a time (Claude's rate_limit_event): replace by window, keep the rest.
+      if (d.limits) usage.limits = mergeLimits(state.usage.limits, d.limits);
       if (d.context) usage.context = d.context;
       return { ...state, usage };
     }

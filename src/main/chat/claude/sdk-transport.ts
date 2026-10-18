@@ -166,6 +166,13 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
     return appliedSettingsFromWire(await query.getSettings());
   }
 
+  async planUsage(): Promise<unknown> {
+    // Experimental in the SDK: absent from older versions, so the driver treats it as optional.
+    const query = this.requireQuery() as Query & { usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: (o: { skipBehaviors?: boolean }) => Promise<unknown> };
+    if (!query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET) return null;
+    return query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true });
+  }
+
   async close(): Promise<void> {
     if (!this.query) return;
     this.input.finish();

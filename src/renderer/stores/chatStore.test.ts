@@ -373,6 +373,38 @@ describe('reduceChatEvent', () => {
     expect(s.usage.session).toBeNull();
   });
 
+  it('merges limits by window, so a one-window update keeps the others', () => {
+    const s = fold([
+      sessionStarted(ev),
+      ev('usage', { scope: 'session', limits: [{ window: '5h', utilization: 0.4 }, { window: 'week', utilization: 0.6 }] }),
+      ev('usage', { scope: 'session', limits: [{ window: 'week', utilization: 0.71, status: 'warning' }] }),
+      ev('usage', { scope: 'session', limits: [{ window: 'overage', status: 'ok' }] }),
+    ]);
+    expect(s.usage.limits).toEqual([
+      { window: '5h', utilization: 0.4 },
+      { window: 'week', utilization: 0.71, status: 'warning' },
+      { window: 'overage', status: 'ok' },
+    ]);
+  });
+
+  it('sums each turn\'s tokens once, for drivers without a session total, and resets per session', () => {
+    let s = fold([
+      sessionStarted(ev),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
+      ev('usage', { scope: 'turn', tokens: { input: 100, output: 20 } }, { turnId: 't1' }),
+      ev('turn_ended', { stopReason: 'end_turn', usage: { input: 100, output: 20 } }, { turnId: 't1' }),
+      ev('turn_started', { trigger: 'prompt' }, { turnId: 't2' }),
+      ev('usage', { scope: 'turn', tokens: { input: 50, output: 5, total: 60 } }, { turnId: 't2' }),
+      ev('turn_ended', { stopReason: 'end_turn' }, { turnId: 't2' }),
+      // ACP's usage_update carries context only: no session tokens.
+      ev('usage', { scope: 'session', context: { used: 1000, size: 128000 } }),
+    ]);
+    expect(s.usage.session).toBeNull();
+    expect(s.usage.turnTotal).toEqual({ input: 150, output: 25, total: 180 });
+    s = fold([sessionStarted(ev, 's2')], s);
+    expect(s.usage.turnTotal).toBeNull();
+  });
+
   it('tracks plan, plan documents, subagents, commands, level and model', () => {
     let s = fold([
       sessionStarted(ev),

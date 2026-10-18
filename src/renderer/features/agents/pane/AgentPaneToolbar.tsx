@@ -110,39 +110,46 @@ function TipLines({ title, lines }: { title?: string; lines: string[] }) {
   );
 }
 
-/** How full the context window is, plus any plan limits, for the toolbar's meter. */
+/** What the toolbar's meter draws: context fill, or the plan limit that matters more. */
 export interface PaneUsage {
-  /** Context fill, 0-100, or null when the driver reports only limits. */
-  contextPct: number | null;
-  /** Context at 90% or more, or a plan limit reached or near it. */
-  hot: boolean;
+  /** Ring fill, 0-100, or null for an empty track (a limit known only by status). */
+  fillPct: number | null;
+  /** Beside the ring: "42%" for context, "71% wk" for a limit. */
+  text: string | null;
+  /** What the ring shows, for its accessible name ("Context 42%", "Weekly limit 71%"). */
+  label: string;
+  /** warn: a plan limit at warning or above. hot: a limit reached, or context at 90% or more. */
+  tone: 'normal' | 'warn' | 'hot';
   /** Tooltip lines: context tokens, then each limit with its reset time. */
   lines: string[];
 }
 
-/** A 14px ring and the context %, focusable, red when the context or a limit runs out. */
+const TONE_TEXT = { normal: 'text-ctp-overlay1', warn: 'text-ctp-warning', hot: 'text-ctp-error' } as const;
+const TONE_STROKE = { normal: 'stroke-ctp-info', warn: 'stroke-ctp-warning', hot: 'stroke-ctp-error' } as const;
+
+/** A 14px ring and its %, focusable: context fill, or a plan limit when one runs low (amber) or out (red). */
 export function UsageMeter({ usage, compact }: { usage: PaneUsage; compact?: boolean }) {
-  const pct = usage.contextPct;
+  const pct = usage.fillPct;
   const r = 5;
   const c = 2 * Math.PI * r;
-  const label = pct !== null ? `Context ${pct}%` : 'Usage limits';
   return (
     <Tooltip content={<TipLines lines={usage.lines} />}>
       <span
         role="img"
         tabIndex={0}
-        aria-label={[label, ...usage.lines.filter((l) => !l.startsWith('Context '))].join(', ')}
+        aria-label={[usage.label, ...usage.lines].join(', ')}
         data-testid="pane-usage"
-        data-hot={usage.hot || undefined}
-        className={`flex-shrink-0 flex items-center gap-1 px-1 h-7 rounded-md tabular-nums focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent ${usage.hot ? 'text-ctp-error' : 'text-ctp-overlay1'}`}
+        data-tone={usage.tone}
+        data-hot={usage.tone === 'hot' || undefined}
+        className={`flex-shrink-0 flex items-center gap-1 px-1 h-7 rounded-md tabular-nums focus-visible:outline focus-visible:outline-1 focus-visible:outline-ctp-accent ${TONE_TEXT[usage.tone]}`}
       >
         <svg width="14" height="14" viewBox="0 0 14 14" className="-rotate-90 flex-shrink-0" aria-hidden="true">
           <circle cx="7" cy="7" r={r} fill="none" strokeWidth="2" className="stroke-surface-0" />
-          {pct !== null && (
-            <circle cx="7" cy="7" r={r} fill="none" strokeWidth="2" strokeDasharray={`${(pct / 100) * c} ${c}`} className={usage.hot ? 'stroke-ctp-error' : 'stroke-ctp-info'} />
+          {pct !== null && pct > 0 && (
+            <circle cx="7" cy="7" r={r} fill="none" strokeWidth="2" strokeDasharray={`${(pct / 100) * c} ${c}`} className={TONE_STROKE[usage.tone]} data-testid="pane-usage-fill" />
           )}
         </svg>
-        {!compact && pct !== null && <span>{pct}%</span>}
+        {!compact && usage.text && <span>{usage.text}</span>}
       </span>
     </Tooltip>
   );

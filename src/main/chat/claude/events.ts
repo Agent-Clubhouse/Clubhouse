@@ -118,6 +118,16 @@ export type ClaudeChatEventBody =
       resetsAt?: number;
       utilization?: number;
       isUsingOverage?: boolean;
+      /** Extra usage (overage) beside the plan window, when the account has it. */
+      overageStatus?: string;
+      overageResetsAt?: number;
+    }
+  | {
+      /** A main-loop assistant message's API usage: what the context held for that call. */
+      kind: 'assistant_usage';
+      messageId: string;
+      model?: string;
+      usage: ClaudeUsage;
     }
   | { kind: 'compacted'; trigger?: string; preTokens?: number }
   | { kind: 'subagent'; phase: 'started' | 'progress' | 'notification' | 'updated'; taskId: string; raw: Record<string, unknown> }
