@@ -1,8 +1,8 @@
 /**
- * Long-frame collection (spec §4.15). Uses the Chromium
- * `long-animation-frame` entry type (falls back to `longtask`), aggregates per
- * active view, and sends one counter per view per minute plus a sample of
- * durations. Never one IPC per frame.
+ * Long-frame telemetry aggregate (spec §4.15). The always-on observer lives in
+ * ui-perf.ts (#2126) and hands every long frame to recordLongFrame, which
+ * aggregates per active view only while telemetry is on and sends one counter
+ * per view per minute plus a sample of durations. Never one IPC per frame.
  *
  * The active view comes from setTelemetryView(). The chrome refresh owns the
  * view values (spec §9.1); until it calls this, everything counts as `other`.
@@ -27,7 +27,6 @@ let currentView: TelemetryView = 'other';
 let currentSurface: TelemetrySurface | null = null;
 /** Keyed by view and surface; at most 8 views x 10 surfaces, well under the 200-set cap. */
 const buckets = new Map<string, Bucket & { view: TelemetryView; surface: TelemetrySurface | null }>();
-let observer: PerformanceObserver | null = null;
 let interval: ReturnType<typeof setInterval> | null = null;
 
 export function setTelemetryView(view: TelemetryView): void {
@@ -76,25 +75,11 @@ export function flushLongFrames(): void {
   buckets.clear();
 }
 
-function startObserver(): void {
-  if (observer || typeof PerformanceObserver === 'undefined') return;
-  const supported = PerformanceObserver.supportedEntryTypes ?? [];
-  const type = supported.includes('long-animation-frame') ? 'long-animation-frame' : supported.includes('longtask') ? 'longtask' : null;
-  if (!type) return;
-  try {
-    observer = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) recordLongFrame(entry.duration);
-    });
-    observer.observe({ type, buffered: false });
-    interval = setInterval(flushLongFrames, AGGREGATE_INTERVAL_MS);
-  } catch {
-    observer = null;
-  }
+function startAggregation(): void {
+  if (!interval) interval = setInterval(flushLongFrames, AGGREGATE_INTERVAL_MS);
 }
 
-function stopObserver(): void {
-  observer?.disconnect();
-  observer = null;
+function stopAggregation(): void {
   if (interval) clearInterval(interval);
   interval = null;
   buckets.clear();
@@ -103,24 +88,24 @@ function stopObserver(): void {
 let subscribed: (() => void) | null = null;
 
 /**
- * Collect long frames only while telemetry is on: the observer and the
- * aggregation timer start on the enabled transition and stop on disable, so
- * a disabled install pays nothing.
+ * Aggregate long frames for telemetry only while it's on: the per-minute
+ * timer starts on the enabled transition and stops on disable. The observer
+ * itself runs regardless, for the local hang log (ui-perf.ts).
  */
 export function startLongFrameCollection(): void {
   if (subscribed) return;
-  subscribed = onTelemetryEnabledChange((enabled) => (enabled ? startObserver() : stopObserver()));
-  if (isTelemetryEnabled()) startObserver();
+  subscribed = onTelemetryEnabledChange((enabled) => (enabled ? startAggregation() : stopAggregation()));
+  if (isTelemetryEnabled()) startAggregation();
 }
 
-/** True while the PerformanceObserver is installed. Exported for tests. */
-export function isCollectingLongFrames(): boolean {
-  return observer !== null;
+/** True while the per-minute aggregate is running. Exported for tests. */
+export function isAggregatingLongFrames(): boolean {
+  return interval !== null;
 }
 
 /** Test-only reset. */
 export function _resetLongFramesForTests(): void {
-  stopObserver();
+  stopAggregation();
   subscribed?.();
   subscribed = null;
   currentView = 'other';

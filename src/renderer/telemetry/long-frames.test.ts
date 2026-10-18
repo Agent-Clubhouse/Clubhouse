@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { _resetRendererTelemetryForTests, _setStateForTests, initRendererTelemetry, flushTelemetry } from './facade';
-import { MAX_DURATION_SAMPLES, _resetLongFramesForTests, flushLongFrames, isCollectingLongFrames, recordLongFrame, setTelemetryView, startLongFrameCollection } from './long-frames';
+import { MAX_DURATION_SAMPLES, _resetLongFramesForTests, flushLongFrames, isAggregatingLongFrames, recordLongFrame, setTelemetryView, startLongFrameCollection } from './long-frames';
 
 const emit = vi.fn();
 
@@ -34,21 +34,14 @@ describe('long frames', () => {
     expect(durations[0].value).toBeCloseTo(0.08);
   });
 
-  it('installs the observer only while telemetry is on', () => {
-    class FakeObserver {
-      static supportedEntryTypes = ['long-animation-frame'];
-      observe = vi.fn();
-      disconnect = vi.fn();
-    }
-    vi.stubGlobal('PerformanceObserver', FakeObserver);
+  it('runs the per-minute aggregate only while telemetry is on', () => {
     _setStateForTests({ enabled: false, level: null });
     startLongFrameCollection();
-    expect(isCollectingLongFrames()).toBe(false);
+    expect(isAggregatingLongFrames()).toBe(false);
     _setStateForTests({ enabled: true, level: 'standard' });
-    expect(isCollectingLongFrames()).toBe(true);
+    expect(isAggregatingLongFrames()).toBe(true);
     _setStateForTests({ enabled: false, level: null });
-    expect(isCollectingLongFrames()).toBe(false);
-    vi.unstubAllGlobals();
+    expect(isAggregatingLongFrames()).toBe(false);
   });
 
   it('records nothing while telemetry is off', () => {

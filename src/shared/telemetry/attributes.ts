@@ -313,6 +313,17 @@ export const ATTR = {
   uiSurface: enumAttr('clubhouse.ui.surface', [
     'sidebar_agents', 'sidebar_list', 'sidebar_settings', 'sidebar_help', 'sidebar_agent_settings', 'start_page', 'first_run', 'host_menu', 'more_menu', 'hover_card', 'row_menu', 'new_agent', 'satellite_start',
   ]),
+  /**
+   * The kind of input behind a hang or a measured interaction (#2126). Event
+   * Timing names map onto these; never the key or the target.
+   */
+  uiInteractionType: enumAttr('clubhouse.ui.interaction.type', ['click', 'keydown', 'wheel', 'none']),
+  /** Longest frame in a coalesced hang burst, in ms (`clubhouse.ui.hang`). */
+  uiHangDurationMs: intAttr('clubhouse.ui.hang.duration_ms'),
+  /** Long frames over the hang threshold in the burst. */
+  uiHangFrames: intAttr('clubhouse.ui.hang.frames'),
+  /** Whose script the long-animation-frame attribution blamed. Never the URL. */
+  uiHangScriptSource: enumAttr('clubhouse.ui.hang.script_source', ['app', 'plugin', 'extension', 'none']),
   /** Feature-usage events from the new chrome. */
   uiFeature: enumAttr('clubhouse.ui.feature', [
     'sidebar_toggle', 'sidebar_resize', 'tab_select', 'project_select', 'agent_select', 'app_item_open',
@@ -791,6 +802,13 @@ export const METRICS = {
     description: 'Duration of sampled long animation frames',
     attributes: ['clubhouse.view', 'clubhouse.window.kind', 'clubhouse.ui.surface'],
   },
+  'clubhouse.ui.interaction.duration': {
+    kind: 'histogram',
+    unit: 's',
+    level: 'standard',
+    description: 'Input to next paint for clicks, keys and wheel (Event Timing, interactions of 16 ms and over)',
+    attributes: ['clubhouse.view', 'clubhouse.window.kind', 'clubhouse.ui.surface', 'clubhouse.ui.interaction.type'],
+  },
   'clubhouse.renderer.unresponsive_count': {
     kind: 'counter',
     unit: '{event}',
@@ -1148,6 +1166,11 @@ export const EVENTS = {
   'clubhouse.ui.action_failed': { level: 'errors' },
   /** A chrome feature was used. Attributes: `clubhouse.ui.feature`, `clubhouse.ui.surface`. */
   'clubhouse.ui.feature_used': { level: 'standard' },
+  /**
+   * A burst of renderer frames over the hang threshold (#2126), one per coalesced burst.
+   * Attributes: view, surface, `clubhouse.ui.hang.duration_ms`, `.frames`, `.script_source`, `clubhouse.ui.interaction.type`.
+   */
+  'clubhouse.ui.hang': { level: 'standard' },
   /** The previous session ended without a clean shutdown (§4.1). */
   'clubhouse.app.unclean_exit': { level: 'errors' },
   /** Safe-mode decision at startup (§4.1). */
