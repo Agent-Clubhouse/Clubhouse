@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { ChatCapabilities, ChatQuestion, ChatQuestionAnswers, PermissionOption, PermissionResponseExtras } from '../../../../shared/chat';
 import type { PendingPermission, PendingQuestion, PlanDocumentItem } from '../../../stores/chatStore';
 import { PlanIcon, QuestionIcon, ShieldIcon } from './icons';
+import { DiffCard } from './ToolBlocks';
 
 const ALLOW_KINDS = new Set<PermissionOption['kind']>(['allow_once', 'allow_session', 'allow_always']);
 const REJECT_KINDS = new Set<PermissionOption['kind']>(['reject_once', 'reject_always', 'cancel_turn']);
@@ -135,7 +136,18 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
         <span className="break-words min-w-0">{request.title}</span>
         {queueSize > 1 && <span className="ml-auto text-[11.5px] font-normal text-ctp-overlay1 whitespace-nowrap">1 of {queueSize}</span>}
       </div>
-      {request.description && <div className="text-[12.5px] text-ctp-subtext0 pl-6 break-words">{request.description}</div>}
+      {request.description && <div className="text-[12.5px] text-ctp-subtext0 pl-6 break-words font-mono" data-testid="chat-permission-description">{request.description}</div>}
+      {request.content && request.content.length > 0 && (
+        <div className="pl-6 flex flex-col gap-1.5" data-testid="chat-permission-preview">
+          {request.content.map((c, i) =>
+            c.type === 'diff' ? (
+              <DiffCard key={i} diff={c} />
+            ) : c.type === 'text' ? (
+              <pre key={i} className="max-h-40 overflow-auto rounded-md bg-ctp-crust px-2.5 py-2 font-mono text-[11.5px] text-ctp-subtext1 whitespace-pre-wrap break-words">{c.text}</pre>
+            ) : null,
+          )}
+        </div>
+      )}
       <div className="flex flex-col gap-0.5 pl-5">
         {request.options.map((opt, i) => {
           const isPrimary = opt === primary;

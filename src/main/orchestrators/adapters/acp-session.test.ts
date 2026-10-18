@@ -6,7 +6,7 @@ vi.mock('child_process', () => ({
 }));
 
 import { spawn } from 'child_process';
-import { AcpSession, CLUBHOUSE_ACP_CLIENT_CAPABILITIES, GENERIC_ACP_PROFILE, SESSION_CLOSE_TIMEOUT_MS, type AcpSessionEvent, type AcpSessionOpts } from './acp-session';
+import { AcpResumeStalledError, AcpSession, CLUBHOUSE_ACP_CLIENT_CAPABILITIES, GENERIC_ACP_PROFILE, SESSION_CLOSE_TIMEOUT_MS, type AcpSessionEvent, type AcpSessionOpts } from './acp-session';
 import { RpcError } from './acp-client';
 import { selectAcpProfile } from './copilot-acp';
 import {
@@ -46,7 +46,7 @@ function setup(records: AcpFixtureRecord[], opts: Partial<AcpSessionOpts> = {}, 
   const logs: Array<{ level: string; message: string }> = [];
   const session = new AcpSession({
     binary: 'copilot',
-    args: ['--acp', '--stdio', '--no-auto-update'],
+    args: ['--acp', '--stdio'],
     cwd: CWD,
     profile: selectAcpProfile,
     onLog: (level, message) => logs.push({ level, message }),
@@ -456,5 +456,98 @@ describe('AcpSession as a generic ACP driver', () => {
     expect(events.find((e) => e.type === 'turn_ended')).toMatchObject({ stopReason: 'error', errorKind: 'process_exited' });
     expect(events.find((e) => e.type === 'exit')).toEqual({ type: 'exit', code: 1, signal: null });
     expect(session.getState().turnInFlight).toBe(false);
+  });
+});
+
+/** The rejection of a settled load, or undefined when it succeeded. */
+const errOf = (r: { ok: boolean }): unknown => (r as { err?: unknown }).err;
+
+describe('AcpSession resume timeouts (#2155)', () => {
+  const loadOnly = () => [...genericStart({ loadSession: true }), out(2, 'session/load')];
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function startLoad(opts: Partial<AcpSessionOpts>) {
+    const { session, proc, replayer } = setup(loadOnly(), opts);
+    await session.start();
+    const loading = session.resumeSession('s1', { cwd: CWD }).then(
+      (v) => ({ ok: true as const, v }),
+      (err: unknown) => ({ ok: false as const, err }),
+    );
+    await vi.waitFor(() => expect(replayer.written[1]).toMatchObject({ method: 'session/load' }), { interval: 5 });
+    const say = (msg: Record<string, unknown>) => proc.stdout.emit('data', JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
+    const replay = (i: number) => say({ method: 'session/update', params: { sessionId: 's1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `old ${i}` } } } });
+    return { loading, say, replay, loadId: replayer.written[1].id };
+  }
+
+  it('waits out a silent start longer than the between-updates window', async () => {
+    const { loading, say, replay, loadId } = await startLoad({ resumeFirstReplyTimeoutMs: 400, resumeStallTimeoutMs: 60 });
+    // Silent for 200ms (over the 60ms stall window, under the 400ms first-reply window),
+    // then replays steadily and answers.
+    await sleep(200);
+    for (let i = 0; i < 3; i++) { replay(i); await sleep(30); }
+    say({ id: loadId, result: {} });
+    expect(await loading).toMatchObject({ ok: true, v: { method: 'load' } });
+  });
+
+  it('gives up when nothing comes back within the first-reply window', async () => {
+    const { loading } = await startLoad({ resumeFirstReplyTimeoutMs: 50, resumeStallTimeoutMs: 1_000 });
+    const result = await loading;
+    expect(result.ok).toBe(false);
+    expect(errOf(result)).toMatchObject({ name: 'AcpResumeStalledError', reason: 'no_reply', timeoutMs: 50 });
+  });
+
+  it('gives up when replay goes quiet', async () => {
+    const { loading, replay } = await startLoad({ resumeFirstReplyTimeoutMs: 1_000, resumeStallTimeoutMs: 50 });
+    replay(0);
+    const result = await loading;
+    expect(errOf(result)).toMatchObject({ reason: 'stalled', timeoutMs: 50 });
+  });
+
+  it('caps a load that keeps replaying forever', async () => {
+    const { loading, replay } = await startLoad({ resumeFirstReplyTimeoutMs: 1_000, resumeStallTimeoutMs: 1_000, resumeMaxMs: 150 });
+    let i = 0;
+    const timer = setInterval(() => replay(i++), 20);
+    const result = await loading;
+    clearInterval(timer);
+    expect(errOf(result)).toBeInstanceOf(AcpResumeStalledError);
+    expect(errOf(result)).toMatchObject({ reason: 'too_long', timeoutMs: 150 });
+  });
+});
+
+describe('AcpSession cancelled turns (#2158)', () => {
+  it('reports a turn the user stopped as cancelled even when the agent says end_turn', async () => {
+    const { session, events } = setup([
+      ...genericStart(),
+      ...genericNew(),
+      out(3, 'session/prompt'),
+      out(undefined, 'session/cancel'),
+      inMsg({ id: 3, result: { stopReason: 'end_turn' } }),
+    ]);
+    await session.start();
+    await session.newSession({ cwd: CWD });
+    const turn = session.prompt('long task');
+    await tick();
+    session.cancel();
+    expect(await turn).toMatchObject({ stopReason: 'cancelled' });
+    expect(events.find((e) => e.type === 'turn_ended')).toMatchObject({ stopReason: 'cancelled' });
+  });
+
+  it('does not carry a cancel into the next turn', async () => {
+    const { session } = setup([
+      ...genericStart(),
+      ...genericNew(),
+      out(3, 'session/prompt'),
+      out(undefined, 'session/cancel'),
+      inMsg({ id: 3, result: { stopReason: 'cancelled' } }),
+      out(4, 'session/prompt'),
+      inMsg({ id: 4, result: { stopReason: 'end_turn' } }),
+    ]);
+    await session.start();
+    await session.newSession({ cwd: CWD });
+    const first = session.prompt('one');
+    await tick();
+    session.cancel();
+    await first;
+    expect(await session.prompt('two')).toMatchObject({ stopReason: 'end_turn' });
   });
 });

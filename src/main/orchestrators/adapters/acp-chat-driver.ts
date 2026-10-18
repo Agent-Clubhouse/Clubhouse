@@ -126,7 +126,7 @@ export class AcpChatDriver implements ChatDriver {
   readonly provider: string;
 
   /** Session options tests override, e.g. a short stall timeout. */
-  sessionOverrides: Pick<AcpSessionOpts, 'resumeStallTimeoutMs' | 'rpcTimeoutMs'> = {};
+  sessionOverrides: Pick<AcpSessionOpts, 'resumeFirstReplyTimeoutMs' | 'resumeStallTimeoutMs' | 'resumeMaxMs' | 'rpcTimeoutMs'> = {};
 
   constructor(private readonly spec: AcpLaunchSpec, private readonly log: Log = () => undefined) {
     this.id = spec.id;
@@ -153,8 +153,9 @@ export class AcpChatDriver implements ChatDriver {
 
   /**
    * Start a session, resuming `opts.resumeNativeSessionId` when given. A
-   * resume the agent no longer has, or one that stalls (no reply or replay
-   * for RESUME_STALL_TIMEOUT_MS), continues in a fresh session with a notice:
+   * resume the agent no longer has (checked on disk first where the profile
+   * can), or one that times out (see RESUME_FIRST_REPLY_TIMEOUT_MS), continues
+   * in a fresh session with a notice:
    * a stalled one in a new process, since the old one may still be busy.
    * `opts.signal` kills the CLI and rejects.
    */
@@ -214,27 +215,38 @@ export class AcpChatDriver implements ChatDriver {
       const { servers, skipped } = toAcpMcpServers(opts.mcpServers);
       if (skipped.length) this.log('warn', 'MCP servers not expressible over ACP', { skipped });
       const setup = { cwd: opts.cwd, mcpServers: servers };
-      if (resumeNativeSessionId) {
+      const startFresh = async (logMessage: string, message: string) => {
+        this.log('warn', logMessage, { sessionId: resumeNativeSessionId });
+        // Drop anything a failed load replayed before it gave up.
+        buffered.length = 0;
+        queue.push({ type: 'notice', data: { level: 'info', code: 'resume_unavailable', message } });
+        await session.newSession(setup);
+      };
+      let resumed = false;
+      const exists = resumeNativeSessionId
+        ? await session.agentProfile.nativeSessionExists?.(resumeNativeSessionId, { ...process.env, ...opts.env })
+        : undefined;
+      if (resumeNativeSessionId && exists === false) {
+        // Copilot hangs on session/load for a session it doesn't have (#2155):
+        // don't send it at all.
+        await startFresh(
+          'Native session not found on disk; starting a new one',
+          'The previous session was not found, so this conversation continues in a new session without the earlier context.',
+        );
+      } else if (resumeNativeSessionId) {
         try {
           await session.resumeSession(resumeNativeSessionId, setup);
+          resumed = true;
         } catch (err) {
           // The agent no longer has the session and answers "resource not found"
           // (Copilot, for one, doesn't persist a session that never got a prompt).
           // Clubhouse's transcript still has the history; start a fresh native
           // session and say so. Applies to every ACP agent, not just Copilot.
           if (!(err instanceof RpcError) || err.code !== ACP_ERROR_CODES.resourceNotFound) throw err;
-          this.log('warn', 'Native session not found; starting a new one', { sessionId: resumeNativeSessionId });
-          // Drop anything the failed load replayed before it gave up.
-          buffered.length = 0;
-          queue.push({
-            type: 'notice',
-            data: {
-              level: 'info',
-              code: 'resume_unavailable',
-              message: 'The agent no longer has this conversation, so it continues in a new session without the earlier context.',
-            },
-          });
-          await session.newSession(setup);
+          await startFresh(
+            'Native session not found; starting a new one',
+            'The agent no longer has this conversation, so it continues in a new session without the earlier context.',
+          );
         }
       } else {
         await session.newSession(setup);
@@ -248,7 +260,8 @@ export class AcpChatDriver implements ChatDriver {
       if (opts.model) await driverSession.setModel(opts.model);
       if (opts.effort) await driverSession.setEffort(opts.effort).catch((err: Error) => this.log('warn', 'Effort not applied', { error: err.message }));
       if (levels && levels.live.includes(opts.level)) {
-        await levels.apply(session, opts.level);
+        // A resumed session's options describe the old process; re-send them.
+        await levels.apply(session, opts.level, { force: resumed });
       } else {
         this.log('warn', 'Permission level not available over ACP; keeping the agent default', { level: opts.level });
       }
@@ -311,7 +324,7 @@ const MINIMAL_ACP_CAPS = {
   quirks: [],
 } as const satisfies Parameters<typeof toChatCapabilities>[0];
 
-/** Copilot CLI over ACP (`copilot --acp --stdio --no-auto-update`). */
+/** Copilot CLI over ACP (`copilot --acp --stdio`). */
 export const COPILOT_ACP_LAUNCH: AcpLaunchSpec = {
   id: 'copilot_acp',
   provider: 'copilot-cli',

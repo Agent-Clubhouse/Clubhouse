@@ -22,7 +22,7 @@ Copilot chat runs today on the ACP driver (`copilot_acp`, `src/main/orchestrator
 
 The Node SDK bundles a Copilot CLI by default. Clubhouse must not ship or run that copy; this is the same rule as for the Claude Agent SDK. Instead:
 
-- Connect with `RuntimeConnection.forStdio({ path: <user's copilot>, args, env })`, with `--no-auto-update` in `args` so the handshake version stays fixed.
+- Connect with `RuntimeConnection.forStdio({ path: <user's copilot>, args, env })`. The SDK always adds `--no-auto-update`, which makes the Homebrew/WinGet shim run its bundled runtime instead of the installed Copilot (#2154). The ACP driver dropped that flag for this reason; the SDK driver needs a workaround (for example `--prefer-version <installed version>`, which selects the installed package even with auto-update off) before it can be the default.
 - **Version skew is the main risk.** SDK 1.0.N is tested against CLI 1.0.N, and the user's CLI changes almost daily. The driver checks the SDK protocol version when it connects. On a mismatch it falls back to `copilot_acp`, following the §7.1 rule: fall back only on real failures. A newer CLI that still connects gets an "untested version" notice instead.
 
 ## Shape of the code

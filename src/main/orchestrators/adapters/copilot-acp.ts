@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { deriveAcpCapabilities, type AcpDriverCapabilities } from './acp-capabilities';
 import { GENERIC_ACP_PROFILE, type AcpAgentProfile, type AcpPermissionLevels } from './acp-session';
 import type { PermissionLevel } from '../../../shared/chat/capabilities';
@@ -21,18 +24,23 @@ import { resolveStructuredSpawn, type StructuredSpawnCommand } from './structure
  */
 
 /**
- * - `--acp --stdio`: ACP over stdio (stdio is the default; `--stdio` is
- *   accepted though hidden from `--help`, and keeps us off `--port`).
- * - `--no-auto-update`: the brew/winget shim otherwise runs a newer cached
- *   package, so the version the handshake reports could change between runs.
+ * `--acp --stdio`: ACP over stdio (stdio is the default; `--stdio` is accepted
+ * though hidden from `--help`, and keeps us off `--port`).
+ *
+ * No `--no-auto-update` (#2154). With it, the Homebrew/WinGet shim ignores the
+ * newer package the user has already downloaded and runs the runtime bundled
+ * in the shim (1.0.82 while the user's terminal runs 1.0.98), so chat and
+ * Terminal would run different Copilots. Without it, chat runs exactly what
+ * `copilot` runs. Auto-update only changes what the next launch picks; a
+ * running process keeps its version, so a session can't change under us.
  */
-export const COPILOT_ACP_ARGS: readonly string[] = ['--acp', '--stdio', '--no-auto-update'];
+export const COPILOT_ACP_ARGS: readonly string[] = ['--acp', '--stdio'];
 
 /**
- * Versions whose ACP behaviour the fixtures and probes cover. Newer is
- * "untested", not broken. 1.0.82 is what the Homebrew/WinGet shim runs under
- * `--no-auto-update` (its bundled runtime); its handshake is recorded in
- * test/chat-fixtures/copilot/handshake-1.0.82.jsonl.
+ * Versions whose ACP behaviour the fixtures and probes cover: 1.0.82 (a
+ * recorded handshake, test/chat-fixtures/copilot/handshake-1.0.82.jsonl, from
+ * the shim's bundled runtime), 1.0.92 and 1.0.98. Newer is "untested", not
+ * broken.
  */
 export const COPILOT_ACP_TESTED_RANGE = { min: '1.0.82', max: '1.0.98' } as const;
 
@@ -198,7 +206,7 @@ export const COPILOT_PERMISSION_LEVELS: AcpPermissionLevels = {
     if (kind === 'agent') return stringOption(state.configOptions, 'allow_all') === 'on' ? 'full_access' : 'ask';
     return undefined;
   },
-  async apply(session, level: PermissionLevel) {
+  async apply(session, level: PermissionLevel, opts) {
     if (!COPILOT_PERMISSION_LEVELS.live.includes(level)) {
       throw new Error(`Copilot over ACP has no ${level} level`);
     }
@@ -206,10 +214,16 @@ export const COPILOT_PERMISSION_LEVELS: AcpPermissionLevels = {
     const targetMode = COPILOT_MODE_BASE + (level === 'plan' ? 'plan' : 'agent');
     const modeId = state.modes?.availableModes.find((m) => copilotModeKind(m.id) === copilotModeKind(targetMode))?.id ?? targetMode;
     const allowAll = level === 'full_access' ? 'on' : 'off';
-    if (stringOption(state.configOptions, 'allow_all') !== allowAll && state.configOptions.some((o) => o.id === 'allow_all')) {
+    // `force` (after a resume) sends both even when the reported options
+    // match: a loaded session reports the old process's allow_all, which the
+    // new process may not be honouring, and Full access then prompts for every
+    // tool (#2155).
+    const force = !!opts?.force;
+    if (state.configOptions.some((o) => o.id === 'allow_all') && (force || stringOption(state.configOptions, 'allow_all') !== allowAll)) {
       await session.setConfigOption('allow_all', allowAll);
     }
-    if ((state.modes?.currentModeId ?? stringOption(state.configOptions, 'mode')) !== modeId) {
+    const currentMode = state.modes?.currentModeId ?? stringOption(state.configOptions, 'mode');
+    if ((state.modes || state.configOptions.some((o) => o.category === 'mode')) && (force || currentMode !== modeId)) {
       await session.setMode(modeId);
     }
   },
@@ -226,8 +240,37 @@ export function copilotModelCostHint(meta: Meta | undefined): string | undefined
   return typeof usage === 'string' && usage ? usage : undefined;
 }
 
+// ── Native session lookup ────────────────────────────────────────────────────
+
+/**
+ * Where Copilot keeps its sessions: `$COPILOT_HOME/session-state`, defaulting
+ * to `~/.copilot/session-state` (the user's home on Windows too).
+ */
+export function copilotSessionStateDir(env: Record<string, string | undefined>): string {
+  const home = env.COPILOT_HOME || env.GH_COPILOT_CONFIG_DIR || path.join(os.homedir(), '.copilot');
+  return path.join(home, 'session-state');
+}
+
+const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * Copilot answers session/load for a session it doesn't have by hanging, not
+ * with an error (#2155), so look on disk first. Ids that aren't a plain
+ * token can't be Copilot's and are never used as a path.
+ */
+export async function copilotNativeSessionExists(sessionId: string, env: Record<string, string | undefined>): Promise<boolean | undefined> {
+  if (!SESSION_ID_RE.test(sessionId)) return false;
+  try {
+    await fs.promises.stat(path.join(copilotSessionStateDir(env), sessionId));
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? false : undefined;
+  }
+}
+
 export const COPILOT_ACP_PROFILE: AcpAgentProfile = {
   id: 'copilot',
+  nativeSessionExists: copilotNativeSessionExists,
   modelCostHint: copilotModelCostHint,
   capabilities: copilotAcpCapabilities,
   normalizeConfigOptions: dedupeCopilotConfigOptions,

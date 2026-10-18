@@ -355,7 +355,10 @@ export interface ChatEventDataMap {
   permission_request: {
     requestId: string;
     title: string;
+    /** What the request is about when the title is generic, e.g. the file path. */
     description?: string;
+    /** A preview of the change being asked for (a diff or text), when the provider sends one. */
+    content?: ToolCallContent[];
     toolCallId?: string;
     toolName?: string;
     rawInput?: unknown;

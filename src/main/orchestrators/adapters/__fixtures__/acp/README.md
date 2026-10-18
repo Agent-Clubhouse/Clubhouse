@@ -17,6 +17,8 @@ schema version, replace both files, update `ACP_SCHEMA_VERSION`, and fix whateve
 Real `copilot --acp` transcripts recorded on 2026-10-16 for docs/structured-chat-research.md, one
 JSON-RPC message per line: `{"dir":"out"|"in","msg":{...}}`. `out` is client → agent. The probes
 ran without `--no-auto-update`, so the brew shim moved from 1.0.92 to 1.0.98 between recordings.
+The driver doesn't pass that flag either (#2154): with it, the Homebrew/WinGet shim runs the runtime
+bundled in the shim instead of the installed Copilot, so chat and Terminal would differ.
 The version column is what each handshake reports.
 
 | File | Copilot | What it covers |

@@ -429,10 +429,10 @@ describe('copilot_acp ChatDriver against fake Copilot ACP', () => {
   }, 15_000);
 });
 
-describe('copilot_acp ChatDriver against Copilot 1.0.82 (Homebrew shim runtime)', () => {
-  // `--no-auto-update` makes the Homebrew/WinGet shim run its own bundled
-  // runtime (1.0.82 here) instead of the newer downloaded package, so this is
-  // the version Homebrew users get. The fixture is a real handshake recording.
+describe('copilot_acp ChatDriver against Copilot 1.0.82', () => {
+  // A real handshake recording of the Homebrew shim's bundled 1.0.82 runtime
+  // (recorded with --no-auto-update, which the driver no longer passes: #2154).
+  // It stays as coverage for older Copilots.
   async function shim() {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'acp-1082-'));
     cleanups.push(() => fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
@@ -449,7 +449,7 @@ describe('copilot_acp ChatDriver against Copilot 1.0.82 (Homebrew shim runtime)'
       agentId: 'agent-1', provider: 'copilot-cli', cwd: dir, binaryPath: binary, level: 'ask',
     });
     const drafts = EventLog.fromAsyncIterable(session.events);
-    const info = (await drafts.waitFor({ type: 'session_info' })).data;
+    const info = (await drafts.waitFor({ type: 'session_info' })).data as { models?: unknown[]; efforts?: string[] };
     expect(info).toMatchObject({ cliVersion: '1.0.82', levelNames: { plan: 'Plan', ask: 'Agent', full_access: 'Agent, allow all' } });
     expect(info.models).toHaveLength(23);
     expect(info.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -461,7 +461,7 @@ describe('copilot_acp ChatDriver against Copilot 1.0.82 (Homebrew shim runtime)'
     type Report = { consumed: number; total: number; mismatch: unknown; argv: string[] };
     const before = await waitForJson(report, (r: Report) => r.consumed >= 6 || r.mismatch !== null) as unknown as Report;
     expect(before.mismatch).toBeNull();
-    expect(before.argv).toEqual(['--acp', '--stdio', '--no-auto-update']);
+    expect(before.argv).toEqual(['--acp', '--stdio']);
     // The fake answers session/close only when the request matches its recording.
     await session.close();
   }, 15_000);
