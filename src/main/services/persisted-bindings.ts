@@ -14,11 +14,21 @@
  * hydrate can't double-create one and the rebuild never overwrites
  * instructions edited since. Sources only read their stores; this module never
  * writes them.
+ *
+ * A restore is silent: it brings back tools and wires only. Each binding it
+ * creates is recorded so the group-project lifecycle can tell a membership
+ * that existed before this launch from one the user just drew, and skip the
+ * join bulletin, polling start and lead bootstrap for it
+ * ({@link consumeRestoredBinding}).
+ *
+ * The rebuild runs again when MCP settings or Clubhouse Mode change. A wire
+ * the user removed this session may still be in a store whose save hasn't
+ * landed (or is blocked), so pairs removed through the renderer are skipped
+ * until the user draws them again ({@link markBindingRemovedByUser}).
  */
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
-import { bootstrapGroupProjectAdmin } from './group-project-admin-service';
 import { appLog } from './log-service';
 
 const VALID_TARGET_KINDS: ReadonlySet<string> = new Set<BindingTargetKind>([
@@ -49,7 +59,7 @@ export interface PersistedBindingSource {
   collect(): Promise<PersistedBinding[]>;
 }
 
-export type ApplyOutcome = 'created' | 'existing' | 'invalid';
+export type ApplyOutcome = 'created' | 'existing' | 'removed' | 'invalid';
 
 /** Per-source result of a rebuild. */
 export interface SourceRebuildResult {
@@ -57,6 +67,8 @@ export interface SourceRebuildResult {
   collected: number;
   created: number;
   existing: number;
+  /** Skipped: the user removed the pair earlier this session. */
+  removed: number;
   invalid: number;
   error?: string;
 }
@@ -67,6 +79,32 @@ export interface RebuildResult {
 
 const sources = new Map<string, PersistedBindingSource>();
 let inflight: Promise<RebuildResult> | null = null;
+
+const pairKey = (agentId: string, targetId: string): string => `${agentId}\u0000${targetId}`;
+/** Bindings created by a restore whose membership side effects are still to be skipped. */
+const restoredPairs = new Set<string>();
+/** Pairs the user removed through the renderer this session. */
+const removedByUser = new Set<string>();
+
+/**
+ * True (once) when this binding was created by a restore rather than drawn by
+ * the user. The group-project lifecycle calls it on join to stay silent; a
+ * later rejoin of the same pair announces as usual.
+ */
+export function consumeRestoredBinding(agentId: string, targetId: string): boolean {
+  return restoredPairs.delete(pairKey(agentId, targetId));
+}
+
+/** The user removed this wire (renderer unbind): later rebuilds skip it. */
+export function markBindingRemovedByUser(agentId: string, targetId: string): void {
+  removedByUser.add(pairKey(agentId, targetId));
+  restoredPairs.delete(pairKey(agentId, targetId));
+}
+
+/** The user drew this wire (renderer bind): rebuilds may restore it again. */
+export function clearBindingRemovedByUser(agentId: string, targetId: string): void {
+  removedByUser.delete(pairKey(agentId, targetId));
+}
 
 /**
  * Register a source. A source with the same id replaces the earlier one.
@@ -92,6 +130,11 @@ export function applyPersistedBinding(binding: PersistedBinding): ApplyOutcome {
   if (!binding || !binding.agentId || !binding.targetId || !binding.label || !VALID_TARGET_KINDS.has(binding.targetKind)) {
     return 'invalid';
   }
+  const key = pairKey(binding.agentId, binding.targetId);
+  if (removedByUser.has(key)) return 'removed';
+  // Recorded before bind: bind notifies listeners synchronously.
+  const alreadyRestored = restoredPairs.has(key);
+  restoredPairs.add(key);
   const created = bindingManager.bind(binding.agentId, {
     targetId: binding.targetId,
     targetKind: binding.targetKind,
@@ -100,22 +143,21 @@ export function applyPersistedBinding(binding: PersistedBinding): ApplyOutcome {
     targetName: binding.targetName,
     projectName: binding.projectName,
   });
-  if (!created) return 'existing';
+  if (!created) {
+    if (!alreadyRestored) restoredPairs.delete(key);
+    return 'existing';
+  }
   if (binding.instructions && Object.keys(binding.instructions).length > 0) {
     bindingManager.setInstructions(binding.agentId, binding.targetId, binding.instructions);
   }
   if (binding.disabledTools && binding.disabledTools.length > 0) {
     bindingManager.setDisabledTools(binding.agentId, binding.targetId, binding.disabledTools);
   }
-  if (binding.targetKind === 'group-project') {
-    // Same as the renderer's bind IPC: the first member becomes the lead.
-    void bootstrapGroupProjectAdmin(binding.targetId, binding.agentId).catch((): void => undefined);
-  }
   return 'created';
 }
 
 async function rebuildSource(source: PersistedBindingSource): Promise<SourceRebuildResult> {
-  const result: SourceRebuildResult = { id: source.id, collected: 0, created: 0, existing: 0, invalid: 0 };
+  const result: SourceRebuildResult = { id: source.id, collected: 0, created: 0, existing: 0, removed: 0, invalid: 0 };
   let bindings: PersistedBinding[];
   try {
     bindings = await source.collect();
@@ -160,4 +202,6 @@ export function rebuildPersistedBindings(): Promise<RebuildResult> {
 export function _resetPersistedBindingSourcesForTesting(): void {
   sources.clear();
   inflight = null;
+  restoredPairs.clear();
+  removedByUser.clear();
 }

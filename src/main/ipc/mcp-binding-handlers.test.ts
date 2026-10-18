@@ -54,6 +54,8 @@ vi.mock('../services/agent-registry', () => ({
 vi.mock('../services/persisted-bindings', () => ({
   registerPersistedBindingSource: vi.fn(),
   rebuildPersistedBindings: vi.fn(async () => ({ sources: [] })),
+  markBindingRemovedByUser: vi.fn(),
+  clearBindingRemovedByUser: vi.fn(),
 }));
 
 vi.mock('../services/canvas-wire-source', () => ({
@@ -67,7 +69,12 @@ import { agentRegistry } from '../services/agent-registry';
 import { registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
 import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { registerPersistedBindingSource, rebuildPersistedBindings } from '../services/persisted-bindings';
+import {
+  registerPersistedBindingSource,
+  rebuildPersistedBindings,
+  markBindingRemovedByUser,
+  clearBindingRemovedByUser,
+} from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import {
   registerMcpBindingHandlers,
@@ -466,5 +473,14 @@ describe('restorePersistedBindings (#1544)', () => {
   it('runs when MCP is turned on later', () => {
     onMcpSettingsChanged();
     expect(rebuildPersistedBindings).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('user removals and later restores', () => {
+  it('UNBIND marks the pair so a restore re-run skips it; BIND clears the mark', async () => {
+    await handlers.get(IPC.MCP_BINDING.UNBIND)!(fakeEvent, 'agent-1', 'agent-2');
+    expect(markBindingRemovedByUser).toHaveBeenCalledWith('agent-1', 'agent-2');
+    await handlers.get(IPC.MCP_BINDING.BIND)!(fakeEvent, 'agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'x' });
+    expect(clearBindingRemovedByUser).toHaveBeenCalledWith('agent-1', 'agent-2');
   });
 });

@@ -14,7 +14,12 @@ import { registerNotifyTools } from '../services/clubhouse-mcp/tools/notify-tool
 import { agentRegistry } from '../services/agent-registry';
 import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
 import { appLog } from '../services/log-service';
-import { registerPersistedBindingSource, rebuildPersistedBindings } from '../services/persisted-bindings';
+import {
+  registerPersistedBindingSource,
+  rebuildPersistedBindings,
+  markBindingRemovedByUser,
+  clearBindingRemovedByUser,
+} from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
@@ -86,6 +91,7 @@ export function registerMcpBindingHandlers(): void {
         appLog('core:mcp', 'debug', 'Creating binding for sleeping agent', { meta: { agentId } });
       }
       assertValidTargetKind(target.targetKind);
+      clearBindingRemovedByUser(agentId as string, target.targetId);
       const isNew = bindingManager.bind(agentId as string, target as { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string; projectName?: string });
       // Bootstrap the project lead: the first agent to join a group project
       // becomes its admin (no-op once an admin exists). The registry change
@@ -119,6 +125,9 @@ export function registerMcpBindingHandlers(): void {
       // Allow unbinding for sleeping/exited agents to support cleanup of stale
       // wire definitions without requiring the agent to be running.
       bindingManager.unbind(agentId as string, targetId as string);
+      // A restore re-run (MCP settings save, Clubhouse Mode toggle) must not
+      // bring this back from a store whose save hasn't landed yet.
+      markBindingRemovedByUser(agentId as string, targetId as string);
       appLog('core:mcp', 'info', 'Binding removed', { meta: { agentId, targetId } });
     },
   ));

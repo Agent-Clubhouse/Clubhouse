@@ -39,7 +39,14 @@ vi.mock('./pty-manager', () => ({
 import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { groupProjectRegistry } from './group-project-registry';
-import { setProjectPolling, getProjectPollingState } from './group-project-polling';
+import {
+  setProjectPolling,
+  getProjectPollingState,
+  _resetPollingForTesting,
+  _pendingStartsForTesting,
+  _DEFERRED_POLLING_DELAY_MS_FOR_TESTING,
+} from './group-project-polling';
+import { emitAgentMcpConnected } from './clubhouse-mcp/connection-events';
 
 function bindMember(projectId: string, agentId: string, agentName: string): void {
   bindingManager.bind(agentId, {
@@ -58,6 +65,7 @@ describe('group-project-polling', () => {
     mockIsRunning.mockReturnValue(false);
     bindingManager._resetForTesting();
     groupProjectRegistry._resetForTesting();
+    _resetPollingForTesting();
   });
 
   describe('setProjectPolling', () => {
@@ -149,6 +157,52 @@ describe('group-project-polling', () => {
 
     it('returns null for an unknown project', async () => {
       expect(await getProjectPollingState('gp_missing')).toBeNull();
+    });
+  });
+
+  describe('members asleep when polling is turned on', () => {
+    const starts = () => mockPtyWrite.mock.calls.filter((c: unknown[]) => String(c[1]).includes('start polling'));
+
+    async function connectAndWait(agentId: string): Promise<void> {
+      vi.useFakeTimers();
+      try {
+        emitAgentMcpConnected(agentId);
+        await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 100);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+
+    it('get the start message after their next MCP handshake, once', async () => {
+      const project = await groupProjectRegistry.create('Bridge');
+      bindMember(project.id, 'sleepy', 'sleepy');
+      await setProjectPolling(project.id, true);
+      expect(starts()).toHaveLength(0);
+      expect(_pendingStartsForTesting.get('sleepy')?.has(project.id)).toBe(true);
+
+      await connectAndWait('sleepy');
+      await connectAndWait('sleepy');
+      expect(starts()).toHaveLength(1);
+      expect(starts()[0][0]).toBe('sleepy');
+      expect(String(starts()[0][1])).toContain('inbox-sleepy');
+    });
+
+    it('get nothing if polling is turned off before they wake', async () => {
+      const project = await groupProjectRegistry.create('Bridge');
+      bindMember(project.id, 'sleepy', 'sleepy');
+      await setProjectPolling(project.id, true);
+      await setProjectPolling(project.id, false);
+      expect(_pendingStartsForTesting.size).toBe(0);
+      await connectAndWait('sleepy');
+      expect(starts()).toHaveLength(0);
+    });
+
+    it('get nothing for a handshake when the user never toggled polling', async () => {
+      const project = await groupProjectRegistry.create('Bridge');
+      await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
+      bindMember(project.id, 'sleepy', 'sleepy');
+      await connectAndWait('sleepy');
+      expect(mockPtyWrite).not.toHaveBeenCalled();
     });
   });
 });

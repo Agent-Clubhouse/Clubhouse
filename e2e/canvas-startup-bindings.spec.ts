@@ -2,10 +2,10 @@
  * #1544: canvas wires are bound at startup, before any canvas is opened.
  *
  * Seeds the app-wide canvas store in a disposable profile (two agents wired
- * both ways, plus a wire to an agent whose card was removed), launches
- * without opening the canvas, and checks the bindings and the canvas
- * membership index from the main process. The seeded files must come out
- * byte-for-byte unchanged.
+ * both ways, plus a wire to an agent whose card was removed) and launches on
+ * the default (agents) view. The canvas UI is never opened, so the bindings
+ * can only have come from the main process's startup rebuild. The store files
+ * must still match, byte for byte, what the test wrote.
  */
 import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'fs';
@@ -33,10 +33,15 @@ const wires = [
   { agentId: 'durable_e2e_a', targetId: 'durable_e2e_gone', targetKind: 'agent', label: 'gone' },
 ];
 
+/** Every file the test seeded, as written: the expected end state. */
+const seeded: Record<string, string> = {};
+
 function writeKv(key: string, value: unknown): void {
   const json = JSON.stringify(value);
-  fs.writeFileSync(path.join(kvDir, `${key}.json`), json);
-  fs.writeFileSync(path.join(kvDir, `${key}.json.bak`), json);
+  for (const name of [`${key}.json`, `${key}.json.bak`]) {
+    fs.writeFileSync(path.join(kvDir, name), json);
+    seeded[name] = json;
+  }
 }
 
 /** The store files the app left on disk (its output, not source). */
@@ -64,7 +69,6 @@ test.afterAll(async () => {
 });
 
 test('wires from the app-wide canvas are bound without opening the canvas', async () => {
-  const before = await readStoreFiles();
 
   await expect.poll(async () => {
     const bindings = await window.evaluate(() => window.clubhouse.mcpBinding.getBindings()) as Array<{ agentId: string; targetId: string }>;
@@ -79,5 +83,9 @@ test('wires from the app-wide canvas are bound without opening the canvas', asyn
     { scope: 'app', canvasId: 'canvas_e2e_1544', name: 'startup-board', viewId: 'cv_a' },
   ]);
 
-  expect(await readStoreFiles()).toEqual(before);
+  // The canvas was never opened, so the renderer can't have bound these.
+  await expect(window.getByTestId('canvas-controls')).toHaveCount(0);
+
+  // Nothing at startup wrote to the store, not even an identical rewrite.
+  expect(await readStoreFiles()).toEqual(seeded);
 });

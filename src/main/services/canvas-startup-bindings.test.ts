@@ -27,14 +27,13 @@ vi.mock('./group-project-registry', () => ({
     }),
   },
 }));
-const bootstrapAdmin = vi.fn(async () => {});
-vi.mock('./group-project-admin-service', () => ({
-  bootstrapGroupProjectAdmin: (...args: unknown[]) => bootstrapAdmin(...(args as [])),
-}));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   applyPersistedBinding,
+  clearBindingRemovedByUser,
+  consumeRestoredBinding,
+  markBindingRemovedByUser,
   rebuildPersistedBindings,
   registerPersistedBindingSource,
   _resetPersistedBindingSourcesForTesting,
@@ -134,7 +133,6 @@ beforeEach(() => {
   ];
   groupProjects.list = [{ id: 'gp_wardfall', name: 'Wardfall' }];
   groupProjects.fail = false;
-  bootstrapAdmin.mockClear();
   bindingManager._resetForTesting();
   _resetPersistedBindingSourcesForTesting();
   writeFixtures();
@@ -221,6 +219,19 @@ describe('canvas wire binding source', () => {
     expect(bindings.map(key)).toContain('durable_w1->gp_deleted');
   });
 
+  it('keeps the first store\'s copy when a pair is in two stores', () => {
+    const snap = (scope: 'app' | 'project', label: string) => ({
+      location: scope === 'app'
+        ? { scope: 'app' as const, kvDir: '/a' }
+        : { scope: 'project' as const, projectId: 'p', projectName: 'p', projectPath: '/p', kvDir: '/p' },
+      canvases: [],
+      wires: [{ ...wire('a', 'b', 'agent'), label }],
+      problems: [],
+    });
+    const out = bindingsFromCanvasStores([snap('app', 'from app'), snap('project', 'from project')], new Map());
+    expect(out.map((b) => b.label)).toEqual(['from app']);
+  });
+
   it('binds every wire of a store with no canvases yet (renderer rule)', () => {
     const out = bindingsFromCanvasStores([{
       location: { scope: 'app', kvDir: '/x' },
@@ -240,14 +251,13 @@ describe('rebuildPersistedBindings', () => {
     registerPersistedBindingSource(canvasWireBindingSource);
     const result = await rebuildPersistedBindings();
 
-    expect(result.sources).toEqual([{ id: 'canvas-wires', collected: 6, created: 6, existing: 0, invalid: 0 }]);
+    expect(result.sources).toEqual([{ id: 'canvas-wires', collected: 6, created: 6, existing: 0, removed: 0, invalid: 0 }]);
     expect(bindingManager.getAllBindings().map(key).sort()).toHaveLength(6);
     const gpMembers = bindingManager.getAllBindings().filter((b) => b.targetId === 'gp_wardfall');
     expect(gpMembers).toHaveLength(3);
     const w1 = bindingManager.getBindingsForAgent('durable_w1')[0];
     expect(w1.instructions).toEqual({ send_message: 'be brief' });
     expect(w1.disabledTools).toEqual(['broadcast']);
-    expect(bootstrapAdmin).toHaveBeenCalledTimes(3);
     expect(snapshotTree(root)).toEqual(before);
   });
 
@@ -284,8 +294,8 @@ describe('rebuildPersistedBindings', () => {
     });
     const result = await rebuildPersistedBindings();
     expect(result.sources).toEqual([
-      { id: 'broken', collected: 0, created: 0, existing: 0, invalid: 0, error: 'nope' },
-      { id: 'helpers', collected: 1, created: 1, existing: 0, invalid: 0 },
+      { id: 'broken', collected: 0, created: 0, existing: 0, removed: 0, invalid: 0, error: 'nope' },
+      { id: 'helpers', collected: 1, created: 1, existing: 0, removed: 0, invalid: 0 },
     ]);
     expect(bindingManager.getBindingsForAgent('h1')).toHaveLength(1);
   });
@@ -307,5 +317,30 @@ describe('rebuildPersistedBindings', () => {
     expect(applyPersistedBinding({ agentId: 'a', targetId: 'b', targetKind: 'nonsense' as never, label: 'x' })).toBe('invalid');
     expect(applyPersistedBinding({ agentId: '', targetId: 'b', targetKind: 'agent', label: 'x' })).toBe('invalid');
     expect(bindingManager.getAllBindings()).toHaveLength(0);
+  });
+
+  it('marks the bindings it creates as restored, once, and not ones that already existed', async () => {
+    bindingManager.bind('durable_w2', { targetId: 'gp_wardfall', targetKind: 'group-project', label: 'GP' });
+    registerPersistedBindingSource(canvasWireBindingSource);
+    await rebuildPersistedBindings();
+    expect(consumeRestoredBinding('durable_w1', 'gp_wardfall')).toBe(true);
+    expect(consumeRestoredBinding('durable_w1', 'gp_wardfall')).toBe(false);
+    expect(consumeRestoredBinding('durable_w2', 'gp_wardfall')).toBe(false);
+  });
+
+  it('does not bring back a wire the user removed this session until it is drawn again', async () => {
+    registerPersistedBindingSource(canvasWireBindingSource);
+    await rebuildPersistedBindings();
+    // The user deletes the wire; the store's save has not landed yet.
+    bindingManager.unbind('durable_a', 'durable_b');
+    markBindingRemovedByUser('durable_a', 'durable_b');
+
+    const rerun = await rebuildPersistedBindings(); // e.g. MCP settings saved
+    expect(rerun.sources[0]).toMatchObject({ created: 0, removed: 1 });
+    expect(bindingManager.getBindingsForAgent('durable_a')).toHaveLength(0);
+
+    clearBindingRemovedByUser('durable_a', 'durable_b'); // drawn again
+    bindingManager.bind('durable_a', { targetId: 'durable_b', targetKind: 'agent', label: 'B' });
+    expect((await rebuildPersistedBindings()).sources[0]).toMatchObject({ existing: 6, removed: 0 });
   });
 });

@@ -32,15 +32,18 @@ export function bindingsFromCanvasStores(
   groupProjects: ReadonlyMap<string, string> | null,
 ): PersistedBinding[] {
   const out: PersistedBinding[] = [];
-  const seen = new Set<string>();
+  /** pair → the store it was taken from; the first store wins (app store first). */
+  const seen = new Map<string, string>();
   for (const snapshot of snapshots) {
     if (snapshot.problems.length > 0) {
       appLog('core:mcp', 'warn', 'Canvas store skipped for startup bindings; the canvas restores it when opened', {
         meta: { store: storeLabel(snapshot), problems: snapshot.problems },
       });
     }
-    // Without the views there is nothing to reconcile against, and binding
-    // possibly stale wires blindly is worse than waiting for the canvas.
+    // Skip a store whose instances or wires could not be read: reconciling
+    // needs its views, and the canvas plugin's own load deals with it when
+    // opened. A store with no canvases saved yet (canvases = []) is not
+    // skipped: like the renderer, it binds every well-formed wire.
     if (!snapshot.canvases || !snapshot.wires || snapshot.wires.length === 0) continue;
     const views = snapshot.canvases.flatMap((c) => c.views);
     for (const wire of reconcilePersistedWires(snapshot.wires, views)) {
@@ -52,8 +55,14 @@ export function bindingsFromCanvasStores(
         if (current) projectName = current;
       }
       const key = `${wire.agentId}\u0000${wire.targetId}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const firstStore = seen.get(key);
+      if (firstStore !== undefined) {
+        appLog('core:mcp', 'debug', 'Canvas wire is in more than one store; keeping the first', {
+          meta: { agentId: wire.agentId, targetId: wire.targetId, kept: firstStore, ignored: storeLabel(snapshot) },
+        });
+        continue;
+      }
+      seen.set(key, storeLabel(snapshot));
       out.push({
         agentId: wire.agentId,
         targetId: wire.targetId,

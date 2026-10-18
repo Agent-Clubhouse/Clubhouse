@@ -56,13 +56,11 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { getBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
 import { agentRegistry } from './agent-registry';
-import { emitAgentMcpConnected } from './clubhouse-mcp/connection-events';
+import { applyPersistedBinding, _resetPersistedBindingSourcesForTesting } from './persisted-bindings';
 import {
   initGroupProjectLifecycle,
   _resetLifecycleForTesting,
   _recentLeavesForTesting,
-  _pendingPollingStartsForTesting,
-  _DEFERRED_POLLING_DELAY_MS_FOR_TESTING,
 } from './group-project-lifecycle';
 
 describe('GroupProjectLifecycle', () => {
@@ -75,6 +73,7 @@ describe('GroupProjectLifecycle', () => {
     bindingManager._resetForTesting();
     _resetAllBoardsForTesting();
     _resetLifecycleForTesting();
+    _resetPersistedBindingSourcesForTesting();
   });
 
   it('posts join event when agent binds to group project', async () => {
@@ -164,7 +163,6 @@ describe('GroupProjectLifecycle', () => {
   });
 
   it('injects polling instruction on join when polling is enabled', async () => {
-    mockIsRunning.mockReturnValue(true); // a running member gets the message on join
     // Set up a project with polling enabled
     await groupProjectRegistry.create('Test Project');
     const projects = await groupProjectRegistry.list();
@@ -192,7 +190,6 @@ describe('GroupProjectLifecycle', () => {
   });
 
   it('uses orchestrator-specific paste timing for PTY injection', async () => {
-    mockIsRunning.mockReturnValue(true); // a running member gets the message on join
     // Set up a project with polling enabled
     const project = await groupProjectRegistry.create('Timing Project');
     await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
@@ -264,7 +261,6 @@ describe('GroupProjectLifecycle', () => {
   });
 
   it('includes project name in polling start message', async () => {
-    mockIsRunning.mockReturnValue(true); // a running member gets the message on join
     const project = await groupProjectRegistry.create('Beta Team');
     await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
 
@@ -288,7 +284,6 @@ describe('GroupProjectLifecycle', () => {
   });
 
   it('sends Claude Code-specific polling instruction with /loop', async () => {
-    mockIsRunning.mockReturnValue(true); // a running member gets the message on join
     const project = await groupProjectRegistry.create('CC Project');
     await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
 
@@ -316,7 +311,6 @@ describe('GroupProjectLifecycle', () => {
   });
 
   it('does not inject duplicate loop when concurrent notifyChange calls fire before members.add', async () => {
-    mockIsRunning.mockReturnValue(true); // a running member gets the message on join
     // Regression test for the race condition where two concurrent syncMemberships
     // calls both pass the !members.has() check before either reaches members.add().
     // This happens when an agent has multiple bindings created in rapid succession
@@ -358,7 +352,6 @@ describe('GroupProjectLifecycle', () => {
   });
 
   it('sends generic polling instruction for non-claude orchestrators', async () => {
-    mockIsRunning.mockReturnValue(true); // a running member gets the message on join
     const project = await groupProjectRegistry.create('Codex Project');
     await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
 
@@ -613,7 +606,6 @@ describe('GroupProjectLifecycle', () => {
   });
 
   it('passes the inbox channel to the polling instruction', async () => {
-    mockIsRunning.mockReturnValue(true); // a running member gets the message on join
     const project = await groupProjectRegistry.create('Inboxer');
     await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
     mockGetAgentOrchestrator.mockReturnValue('claude-code');
@@ -637,54 +629,46 @@ describe('GroupProjectLifecycle', () => {
     expect(pollingCall![1]).toContain('"inbox-falcon"');
   });
 
-  describe('members restored while asleep (#1544)', () => {
-    const pollingStarts = () => mockPtyWrite.mock.calls.filter(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('start polling'),
-    );
+  describe('bindings restored at startup (#1544)', () => {
+    const restore = (agentId: string, projectId: string, agentName: string) =>
+      applyPersistedBinding({ agentId, targetId: projectId, targetKind: 'group-project', label: 'GP', agentName });
 
-    async function joinWhileAsleep(): Promise<string> {
-      const project = await groupProjectRegistry.create('Wardfall');
+    it('posts no join bulletin and sends no polling start for a restored member', async () => {
+      const project = await groupProjectRegistry.create('Goobers');
       await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
       initGroupProjectLifecycle();
-      // What the startup rebuild does before any agent is running.
-      bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'GP', agentName: 'robin' });
+      mockIsRunning.mockReturnValue(true);
+
+      expect(restore('agent-1', project.id, 'robin')).toBe('created');
       await new Promise(r => setTimeout(r, 800));
-      return project.id;
-    }
 
-    it('holds the polling start until the member connects, then sends it once', async () => {
-      const projectId = await joinWhileAsleep();
-      expect(pollingStarts()).toHaveLength(0);
-      expect(_pendingPollingStartsForTesting.get('agent-1')?.has(projectId)).toBe(true);
-
-      vi.useFakeTimers();
-      try {
-        mockIsRunning.mockReturnValue(true);
-        emitAgentMcpConnected('agent-1');
-        await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 100);
-        emitAgentMcpConnected('agent-1'); // a reconnect sends nothing more
-        await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 100);
-      } finally {
-        vi.useRealTimers();
-      }
-      expect(pollingStarts()).toHaveLength(1);
-      expect(pollingStarts()[0][0]).toBe('agent-1');
-      expect(pollingStarts()[0][1]).toContain('inbox-robin');
-      expect(_pendingPollingStartsForTesting.has('agent-1')).toBe(false);
+      expect(await getBulletinBoard(project.id).getTopicMessages('system')).toHaveLength(0);
+      // Timers from earlier tests may still write a bare Enter; no message text was written.
+      expect(mockPtyWrite.mock.calls.filter((c: unknown[]) => String(c[1]).length > 1)).toHaveLength(0);
     });
 
-    it('drops the deferred start if polling was turned off meanwhile', async () => {
-      const projectId = await joinWhileAsleep();
-      await groupProjectRegistry.update(projectId, { metadata: { pollingEnabled: false } });
+    it('still announces a member the user draws afterwards', async () => {
+      initGroupProjectLifecycle();
+      restore('agent-1', 'gp_r', 'robin');
+      bindingManager.bind('agent-2', { targetId: 'gp_r', targetKind: 'group-project', label: 'GP', agentName: 'finch' });
+      await new Promise(r => setTimeout(r, 50));
 
-      vi.useFakeTimers();
-      try {
-        emitAgentMcpConnected('agent-1');
-        await vi.advanceTimersByTimeAsync(_DEFERRED_POLLING_DELAY_MS_FOR_TESTING + 100);
-      } finally {
-        vi.useRealTimers();
-      }
-      expect(pollingStarts()).toHaveLength(0);
+      const messages = await getBulletinBoard('gp_r').getTopicMessages('system');
+      expect(messages.map((m) => m.body)).toEqual([expect.stringContaining('finch joined')]);
+    });
+
+    it('announces a restored member that leaves and is drawn again', async () => {
+      initGroupProjectLifecycle();
+      restore('agent-1', 'gp_r', 'robin');
+      await new Promise(r => setTimeout(r, 50));
+      bindingManager.unbind('agent-1', 'gp_r');
+      _recentLeavesForTesting.clear();
+      await new Promise(r => setTimeout(r, 50));
+      bindingManager.bind('agent-1', { targetId: 'gp_r', targetKind: 'group-project', label: 'GP', agentName: 'robin' });
+      await new Promise(r => setTimeout(r, 50));
+
+      const bodies = (await getBulletinBoard('gp_r').getTopicMessages('system')).map((m) => m.body);
+      expect(bodies.filter((b) => b.includes('joined'))).toHaveLength(1);
     });
   });
 });
