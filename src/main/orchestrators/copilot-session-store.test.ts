@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  findCopilotRunSession, hasCopilotSession, listCopilotSessions, parseWorkspaceYaml,
+  copilotSessionInCwd, cwdKey, findCopilotRunSession, hasCopilotSession, listCopilotSessions, parseWorkspaceYaml,
 } from './copilot-session-store';
 
 let root: string;
@@ -53,6 +53,28 @@ describe('parseWorkspaceYaml', () => {
     expect(parseWorkspaceYaml(`id: ${A}\ncwd: "/a b/c"\ncreated_at: '2026-10-18T07:34:33.488Z'\nupdated_at: 2026-10-18T07:38:52.225Z\nname: x\n`)).toEqual({
       id: A, cwd: '/a b/c', createdAt: '2026-10-18T07:34:33.488Z', updatedAt: '2026-10-18T07:38:52.225Z',
     });
+  });
+
+  it('unescapes double-quoted values (a Windows cwd) and doubled single quotes', () => {
+    expect(parseWorkspaceYaml('cwd: "C:\\\\Users\\\\me\\\\my \\"wt\\""\n').cwd).toBe('C:\\Users\\me\\my "wt"');
+    expect(parseWorkspaceYaml("cwd: 'C:\\Users\\it''s'\n").cwd).toBe("C:\\Users\\it's");
+    expect(parseWorkspaceYaml('cwd: C:\\Users\\me\n').cwd).toBe('C:\\Users\\me');
+  });
+});
+
+describe('cwdKey', () => {
+  it('on Windows ignores case, separator style and a trailing separator', () => {
+    const key = cwdKey('C:\\Users\\Me\\wt', 'win32');
+    expect(cwdKey('c:\\users\\me\\WT\\', 'win32')).toBe(key);
+    expect(cwdKey('C:/Users/Me/wt', 'win32')).toBe(key);
+    expect(cwdKey('C:\\Users\\Me\\other\\..\\wt', 'win32')).toBe(key);
+    expect(cwdKey('C:\\Users\\Me\\wt2', 'win32')).not.toBe(key);
+  });
+
+  it('elsewhere keeps case and drops a trailing slash', () => {
+    expect(cwdKey('/a/B/', 'darwin')).toBe('/a/B');
+    expect(cwdKey('/a/b', 'linux')).not.toBe(cwdKey('/a/B', 'linux'));
+    expect(cwdKey('/', 'linux')).toBe('/');
   });
 });
 
@@ -139,8 +161,40 @@ describe('hasCopilotSession', () => {
     }
   });
 
-  it('is false for a non-uuid id and when there is no store', async () => {
+  it('is false for a non-uuid id', async () => {
     expect(await hasCopilotSession(store, '../etc')).toBe(false);
-    expect(await hasCopilotSession(path.join(root, 'nope'), A)).toBe(false);
+  });
+
+  it('can\'t tell when there is no store where it looked (COPILOT_HOME elsewhere)', async () => {
+    expect(await hasCopilotSession(path.join(root, 'nope'), A)).toBeUndefined();
+    const file = path.join(root, 'not-a-dir');
+    fs.writeFileSync(file, '');
+    expect(await hasCopilotSession(file, A)).toBeUndefined();
+  });
+});
+
+describe('copilotSessionInCwd', () => {
+  it('is true for a session recorded for the cwd, also through a symlink', async () => {
+    session(A, { cwd: fs.realpathSync(cwd), created: T0 });
+    expect(await copilotSessionInCwd(store, A, cwd)).toBe(true);
+    const link = path.join(root, 'link');
+    fs.symlinkSync(cwd, link);
+    expect(await copilotSessionInCwd(store, A, link)).toBe(true);
+  });
+
+  it('is false for a real session from another cwd, or a missing one', async () => {
+    session(B, { cwd: otherCwd, created: T0 });
+    expect(await copilotSessionInCwd(store, B, cwd)).toBe(false);
+    expect(await copilotSessionInCwd(store, C, cwd)).toBe(false);
+    expect(await copilotSessionInCwd(store, 'not-a-uuid', cwd)).toBe(false);
+  });
+
+  it('can\'t tell without a store, for a legacy file, or with no cwd recorded', async () => {
+    expect(await copilotSessionInCwd(path.join(root, 'nope'), A, cwd)).toBeUndefined();
+    fs.writeFileSync(path.join(store, `${D}.jsonl`), '{}\n');
+    expect(await copilotSessionInCwd(store, D, cwd)).toBeUndefined();
+    fs.mkdirSync(path.join(store, C));
+    fs.writeFileSync(path.join(store, C, 'workspace.yaml'), `id: ${C}\n`);
+    expect(await copilotSessionInCwd(store, C, cwd)).toBeUndefined();
   });
 });

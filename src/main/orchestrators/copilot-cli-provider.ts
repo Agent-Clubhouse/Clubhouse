@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import {
   OrchestratorConventions,
   ProviderCapabilities,
@@ -21,7 +24,31 @@ import { BaseProvider } from './base-provider';
 import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
-import { findCopilotRunSession, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
+import { getShellEnvironment } from '../util/shell';
+import { copilotSessionInCwd, findCopilotRunSession, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Copilot's state directory: `COPILOT_HOME` (per `copilot help environment`)
+ * from the agent's profile, then the environment the PTY inherits (the login
+ * shell's, then Clubhouse's own), else `~/.copilot`.
+ */
+export function resolveCopilotHome(profileEnv?: Record<string, string>): string {
+  let shellEnv: Record<string, string> | undefined;
+  try {
+    shellEnv = getShellEnvironment();
+  } catch {
+    // telemetry-exempt: the shell env can't be read; process.env still applies
+  }
+  const home = [profileEnv?.COPILOT_HOME, shellEnv?.COPILOT_HOME, process.env.COPILOT_HOME]
+    .map((v) => v?.trim())
+    .find((v): v is string => !!v);
+  if (!home) return homePath('.copilot');
+  if (home === '~') return homePath();
+  if (home.startsWith('~/') || home.startsWith('~\\')) return homePath(home.slice(2));
+  return home;
+}
 
 const TOOL_VERBS: Record<string, string> = {
   shell: 'Running command',
@@ -150,6 +177,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   async buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult> {
     const binary = this.findBinary();
     const args: string[] = [];
+    let sessionId: string | undefined;
 
     const hasPrompt = !!(opts.mission || opts.systemPrompt);
     // Session resume: --resume <id> for specific session, --continue for most recent.
@@ -162,6 +190,11 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
       } else {
         args.push('--continue');
       }
+    } else if (opts.interactive && await this.supportsSessionIdFlag(binary)) {
+      // A fresh durable session: name its id up front (#2156), so the run's
+      // session is known without searching the store afterwards.
+      sessionId = randomUUID();
+      args.push('--session-id', sessionId);
     }
 
     if (opts.freeAgentMode) {
@@ -190,7 +223,28 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
     args.push(...this.buildAgentFileArgs({ agentFile: opts.agentFile, agentSource: opts.agentSource }));
 
-    return { binary, args };
+    return sessionId ? { binary, args, sessionId } : { binary, args };
+  }
+
+  /** `copilot --help` output per binary, read once; null when it couldn't be run. */
+  private readonly helpCache = new Map<string, Promise<string | null>>();
+
+  /**
+   * Whether this Copilot accepts `--session-id <uuid>` for a new session
+   * (1.0.98 does; older versions would reject the flag and not start).
+   */
+  async supportsSessionIdFlag(binary: string): Promise<boolean> {
+    let help = this.helpCache.get(binary);
+    if (!help) {
+      help = execFileAsync(binary, ['--help'], {
+        timeout: 5000,
+        shell: process.platform === 'win32',
+        env: getShellEnvironment(),
+      }).then((r) => (r ? String(r.stdout) : null)).catch((): null => null);
+      this.helpCache.set(binary, help);
+    }
+    const text = await help;
+    return !!text && /--session-id\b/.test(text);
   }
 
   // ── AgentFileCapable ───────────────────────────────────────────────────
@@ -312,17 +366,15 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
    * Falls back to the flat session-state directory when no project-scoped subdir exists.
    */
   private resolveSessionDir(cwd: string, profileEnv?: Record<string, string>): string | null {
-    const configDir = profileEnv?.GH_COPILOT_CONFIG_DIR || homePath('.copilot');
-    const sessionDir = path.join(configDir, 'session-state');
+    const sessionDir = this.sessionStateDir(profileEnv);
     if (!fs.existsSync(sessionDir)) return null;
     // Return project-scoped subdir if found, else fall back to flat session-state dir
     return resolveEncodedPathDir(sessionDir, cwd) ?? sessionDir;
   }
 
-  /** `<config>/session-state`, where Copilot keeps one directory per session. */
+  /** `<COPILOT_HOME>/session-state`, where Copilot keeps one directory per session. */
   private sessionStateDir(profileEnv?: Record<string, string>): string {
-    const configDir = profileEnv?.GH_COPILOT_CONFIG_DIR || homePath('.copilot');
-    return path.join(configDir, 'session-state');
+    return path.join(resolveCopilotHome(profileEnv), 'session-state');
   }
 
   /**
@@ -349,9 +401,14 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     return findCopilotRunSession(this.sessionStateDir(run.profileEnv), run);
   }
 
-  /** Whether Copilot still has `sessionId`; undefined when the store can't be read. */
+  /** Whether Copilot still has `sessionId`; undefined when there's no store or it can't be read. */
   async hasSession(sessionId: string, profileEnv?: Record<string, string>): Promise<boolean | undefined> {
     return hasCopilotSession(this.sessionStateDir(profileEnv), sessionId);
+  }
+
+  /** Whether `sessionId` is a Copilot session for `cwd`; undefined when the store can't tell. */
+  async hasSessionForCwd(sessionId: string, cwd: string, profileEnv?: Record<string, string>): Promise<boolean | undefined> {
+    return copilotSessionInCwd(this.sessionStateDir(profileEnv), sessionId, cwd);
   }
 
   /**

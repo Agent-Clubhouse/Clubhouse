@@ -283,6 +283,7 @@ function notSessionCapable(provider: Record<string, unknown>): void {
   delete provider.extractSessionId;
   delete provider.findRunSession;
   delete provider.hasSession;
+  delete provider.hasSessionForCwd;
 }
 
 describe('agent-system', () => {
@@ -1165,6 +1166,55 @@ describe('agent-system', () => {
         onExit('agent-1', 0, 'bye');
         await settle();
         expect(mockAddSessionEntry).not.toHaveBeenCalled();
+      });
+
+      it('drops a scraped id that is a real session from another cwd (#2172)', async () => {
+        config = {};
+        const OTHER = 'b0b0b0b0-0000-4000-8000-000000000002';
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => true);
+        const hasSessionForCwd = vi.fn(async (id: string) => id !== OTHER);
+        (mockCodexProvider as Record<string, unknown>).hasSessionForCwd = hasSessionForCwd;
+        (mockCodexProvider.extractSessionId as ReturnType<typeof vi.fn>).mockReturnValueOnce(OTHER);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => REAL);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, `session: ${OTHER}`);
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+        expect(hasSessionForCwd).toHaveBeenCalledWith(OTHER, '/project', undefined);
+        expect(mockAddSessionEntry).not.toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: OTHER }));
+      });
+
+      it('keeps a scraped id when the cwd check can\'t tell', async () => {
+        config = {};
+        (mockCodexProvider as Record<string, unknown>).hasSessionForCwd = vi.fn(async () => undefined);
+        (mockCodexProvider.extractSessionId as ReturnType<typeof vi.fn>).mockReturnValueOnce(REAL);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, `session: ${REAL}`);
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+      });
+
+      it('saves the id the provider assigned a fresh session without searching for it', async () => {
+        config = {};
+        mockCodexProvider.buildSpawnCommand.mockResolvedValueOnce({ binary: 'copilot', args: ['--session-id', REAL], sessionId: REAL } as never);
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => undefined);
+        const findRunSession = vi.fn(async () => DEAD);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = findRunSession;
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, 'bye');
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+        expect(findRunSession).not.toHaveBeenCalled();
+        expect(mockCodexProvider.extractSessionId).not.toHaveBeenCalled();
+      });
+
+      it('falls back to the store when the assigned id was never created', async () => {
+        config = {};
+        const ASSIGNED = 'c0c0c0c0-0000-4000-8000-000000000003';
+        mockCodexProvider.buildSpawnCommand.mockResolvedValueOnce({ binary: 'copilot', args: ['--session-id', ASSIGNED], sessionId: ASSIGNED } as never);
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async (id: string) => id !== ASSIGNED);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => REAL);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, 'bye');
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+        expect(mockAddSessionEntry).not.toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: ASSIGNED }));
       });
 
       it('keeps a scraped id when the store can\'t tell', async () => {
@@ -2300,6 +2350,17 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
 
     expect(sessions.map((s) => s.sessionId).sort()).toEqual(['real-1', 'unknown-1']);
     expect(mockRemoveSessionEntries).toHaveBeenCalledWith('/project', 'durable_cp', ['dead-1']);
+  });
+
+  it('prunes nothing when the store can\'t tell (no store where it looked)', async () => {
+    sessionCapable(mockCodexProvider);
+    mockRemoveSessionEntries.mockClear();
+    mockGetDurableConfig.mockResolvedValue({ id: 'durable_cp', orchestrator: 'codex-cli' });
+    mockGetSessionHistory.mockResolvedValue([entry('a-1'), entry('b-1')]);
+    (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => undefined);
+    const sessions = await listSessions('/project', 'durable_cp', 'codex-cli');
+    expect(sessions.map((s) => s.sessionId).sort()).toEqual(['a-1', 'b-1']);
+    expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
   });
 
   it('prunes nothing when every entry exists', async () => {

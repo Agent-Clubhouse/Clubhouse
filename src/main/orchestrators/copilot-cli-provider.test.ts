@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
@@ -57,6 +57,7 @@ vi.mock('./copilot-session-store', () => ({
   listCopilotSessions: vi.fn(async () => []),
   findCopilotRunSession: vi.fn(async () => null),
   hasCopilotSession: vi.fn(async () => undefined),
+  copilotSessionInCwd: vi.fn(async () => undefined),
 }));
 
 vi.mock('../util/shell', () => ({
@@ -68,7 +69,7 @@ import * as fsp from 'fs/promises';
 import * as childProcess from 'child_process';
 import { getShellEnvironment } from '../util/shell';
 import { CopilotCliProvider } from './copilot-cli-provider';
-import { findCopilotRunSession, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
+import { copilotSessionInCwd, findCopilotRunSession, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
 import { findBinaryInPath } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 
@@ -378,6 +379,53 @@ describe('CopilotCliProvider', () => {
       expect(result.args).toEqual(expect.arrayContaining(['-i', 'Go']));
       expect(result.args).not.toContain('--resume');
       expect(result.args).not.toContain('--continue');
+    });
+
+    describe('--session-id for a fresh durable session (#2156)', () => {
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+      const helpWith = (text: string) => vi.mocked(childProcess.execFile).mockReturnValue({ stdout: text } as never);
+      afterEach(() => { vi.mocked(childProcess.execFile).mockReset(); });
+
+      it('names a fresh interactive session and returns its id when the CLI supports the flag', async () => {
+        helpWith('  --session-id <id>   Resume an existing session or task by ID, or set the UUID for a new session');
+        const result = await provider.buildSpawnCommand({ cwd: '/project', mission: 'Go', interactive: true });
+        expect(result.sessionId).toMatch(UUID_RE);
+        const i = result.args.indexOf('--session-id');
+        expect(result.args[i + 1]).toBe(result.sessionId);
+      });
+
+      it('gives each fresh spawn its own id and reads --help only once', async () => {
+        helpWith('--session-id <id>');
+        const a = await provider.buildSpawnCommand({ cwd: '/project', interactive: true });
+        const b = await provider.buildSpawnCommand({ cwd: '/project', interactive: true });
+        expect(a.sessionId).not.toBe(b.sessionId);
+        expect(vi.mocked(childProcess.execFile).mock.calls.filter((c) => (c[1] as string[])?.[0] === '--help')).toHaveLength(1);
+      });
+
+      it('leaves the flag off for an older CLI without it', async () => {
+        helpWith('  --resume [<value>]  Resume from a previous session');
+        const result = await provider.buildSpawnCommand({ cwd: '/project', interactive: true });
+        expect(result.args).not.toContain('--session-id');
+        expect(result.sessionId).toBeUndefined();
+      });
+
+      it('leaves the flag off when --help can\'t be run', async () => {
+        vi.mocked(childProcess.execFile).mockImplementation(() => { throw new Error('ENOENT'); });
+        const result = await provider.buildSpawnCommand({ cwd: '/project', interactive: true });
+        expect(result.args).not.toContain('--session-id');
+      });
+
+      it('never names a resumed or non-interactive session', async () => {
+        helpWith('--session-id <id>');
+        const resumed = await provider.buildSpawnCommand({ cwd: '/project', resume: true, sessionId: 'abc', interactive: true });
+        expect(resumed.args).not.toContain('--session-id');
+        expect(resumed.sessionId).toBeUndefined();
+        const latest = await provider.buildSpawnCommand({ cwd: '/project', resume: true, interactive: true });
+        expect(latest.args).not.toContain('--session-id');
+        const quick = await provider.buildSpawnCommand({ cwd: '/project', mission: 'Go' });
+        expect(quick.args).not.toContain('--session-id');
+        expect(quick.sessionId).toBeUndefined();
+      });
     });
 
     it('suppresses resume flags when a systemPrompt is set (prompt mode cannot resume)', async () => {
@@ -1026,11 +1074,56 @@ describe('CopilotCliProvider', () => {
         expect(await provider.listSessions('/project')).toEqual([]);
       });
 
-      it('finds a terminal run\'s session in the store, honoring GH_COPILOT_CONFIG_DIR', async () => {
+      it('finds a terminal run\'s session in the store, honoring the profile\'s COPILOT_HOME', async () => {
         vi.mocked(findCopilotRunSession).mockResolvedValue('real-id');
-        const run = { cwd: '/wt', startedAt: 1, endedAt: 2, resumedId: 'r', profileEnv: { GH_COPILOT_CONFIG_DIR: '/custom-copilot' } };
+        const run = { cwd: '/wt', startedAt: 1, endedAt: 2, resumedId: 'r', profileEnv: { COPILOT_HOME: '/custom-copilot' } };
         expect(await provider.findRunSession(run)).toBe('real-id');
         expect(findCopilotRunSession).toHaveBeenCalledWith(custom, run);
+      });
+
+      describe('COPILOT_HOME', () => {
+        const saved = process.env.COPILOT_HOME;
+        beforeEach(() => { delete process.env.COPILOT_HOME; });
+        afterEach(() => {
+          if (saved === undefined) delete process.env.COPILOT_HOME;
+          else process.env.COPILOT_HOME = saved;
+          vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/usr/bin' });
+        });
+
+        it('comes from the login shell when the profile has none', async () => {
+          vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/usr/bin', COPILOT_HOME: '/shell-copilot' });
+          await provider.hasSession('id');
+          expect(hasCopilotSession).toHaveBeenCalledWith(path.join('/shell-copilot', 'session-state'), 'id');
+        });
+
+        it('comes from Clubhouse\'s own environment last', async () => {
+          process.env.COPILOT_HOME = '/proc-copilot';
+          await provider.hasSession('id');
+          expect(hasCopilotSession).toHaveBeenCalledWith(path.join('/proc-copilot', 'session-state'), 'id');
+        });
+
+        it('prefers the profile over the shell and process env', async () => {
+          process.env.COPILOT_HOME = '/proc-copilot';
+          vi.mocked(getShellEnvironment).mockReturnValue({ COPILOT_HOME: '/shell-copilot' });
+          await provider.listSessions('/wt', { COPILOT_HOME: '/custom-copilot' });
+          expect(listCopilotSessions).toHaveBeenCalledWith(custom, '/wt');
+        });
+
+        it('expands a leading ~', async () => {
+          await provider.hasSession('id', { COPILOT_HOME: '~/alt' });
+          expect(hasCopilotSession).toHaveBeenCalledWith(path.join('/home/user/alt', 'session-state'), 'id');
+        });
+
+        it('ignores the undocumented GH_COPILOT_CONFIG_DIR', async () => {
+          await provider.hasSession('id', { GH_COPILOT_CONFIG_DIR: '/custom-copilot' });
+          expect(hasCopilotSession).toHaveBeenCalledWith(store, 'id');
+        });
+      });
+
+      it('checks a scraped id against the agent\'s cwd', async () => {
+        vi.mocked(copilotSessionInCwd).mockResolvedValue(false);
+        expect(await provider.hasSessionForCwd('id', '/wt', { COPILOT_HOME: '/custom-copilot' })).toBe(false);
+        expect(copilotSessionInCwd).toHaveBeenCalledWith(custom, 'id', '/wt');
       });
 
       it('checks a saved id against the store', async () => {

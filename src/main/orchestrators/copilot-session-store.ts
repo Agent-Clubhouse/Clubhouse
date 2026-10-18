@@ -34,9 +34,18 @@ const STAT_BATCH = 256;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const YAML_ESCAPES: Record<string, string> = { '\\': '\\', '"': '"', '/': '/', n: '\n', t: '\t', r: '\r', '0': '\0' };
+
+/**
+ * A YAML scalar's value. Double-quoted strings carry escapes (a Windows cwd is
+ * written `"C:\\Users\\me"`); single-quoted ones double their quotes.
+ */
 function unquote(v: string): string {
   const t = v.trim();
-  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) return t.slice(1, -1);
+  if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) {
+    return t.slice(1, -1).replace(/\\(.)/g, (m, c: string) => YAML_ESCAPES[c] ?? m);
+  }
+  if (t.length >= 2 && t.startsWith("'") && t.endsWith("'")) return t.slice(1, -1).replace(/''/g, "'");
   return t;
 }
 
@@ -65,11 +74,22 @@ async function readWorkspace(dir: string): Promise<CopilotWorkspace | null> {
   }
 }
 
+/**
+ * A cwd in comparable form: resolved, without a trailing separator, and on
+ * Windows with one separator style and case folded (its paths are
+ * case-insensitive, and Copilot may record `c:\\` where Node has `C:\\`).
+ */
+export function cwdKey(p: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'win32') return path.win32.resolve(p.replace(/\//g, '\\')).replace(/\\+$/, '').toLowerCase();
+  const r = path.posix.resolve(p);
+  return r.length > 1 ? r.replace(/\/+$/, '') : r;
+}
+
 /** The paths a cwd may be recorded as: as given and with symlinks resolved (macOS /var vs /private/var). */
 function cwdForms(cwd: string): Set<string> {
-  const forms = new Set([path.resolve(cwd)]);
+  const forms = new Set([cwdKey(cwd)]);
   try {
-    forms.add(fs.realpathSync(cwd));
+    forms.add(cwdKey(fs.realpathSync(cwd)));
   } catch {
     // telemetry-exempt: the cwd may be gone; the resolved form still matches
   }
@@ -77,7 +97,7 @@ function cwdForms(cwd: string): Set<string> {
 }
 
 function sameCwd(recorded: string | undefined, forms: Set<string>): boolean {
-  return !!recorded && forms.has(path.resolve(recorded));
+  return !!recorded && forms.has(cwdKey(recorded));
 }
 
 interface SessionDir {
@@ -172,26 +192,57 @@ export async function findCopilotRunSession(
   return started[0]?.id ?? null;
 }
 
+type Located = { kind: 'dir'; dir: string } | { kind: 'legacy' } | { kind: 'missing' } | { kind: 'unknown' };
+
 /**
- * Whether Copilot has `sessionId`: its directory, or a legacy `<id>.jsonl`.
- * false when the store doesn't exist; undefined when it can't be read.
+ * Where the store keeps `sessionId`. 'unknown' when the store directory is
+ * missing or can't be read: Copilot may keep its state somewhere Clubhouse
+ * didn't look (COPILOT_HOME), so that isn't proof the session is gone.
  */
-export async function hasCopilotSession(stateDir: string, sessionId: string): Promise<boolean | undefined> {
-  if (!UUID.test(sessionId)) return false;
+async function locateSession(stateDir: string, sessionId: string): Promise<Located> {
   try {
-    await fsp.access(stateDir);
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? false : undefined;
+    if (!(await fsp.stat(stateDir)).isDirectory()) return { kind: 'unknown' };
+  } catch {
+    // telemetry-exempt: no store where we looked; can't tell
+    return { kind: 'unknown' };
   }
   for (const name of new Set([sessionId, sessionId.toLowerCase(), sessionId.toUpperCase()])) {
-    for (const p of [path.join(stateDir, name), path.join(stateDir, `${name}.jsonl`)]) {
+    const dir = path.join(stateDir, name);
+    for (const [p, found] of [[dir, { kind: 'dir', dir }], [`${dir}.jsonl`, { kind: 'legacy' }]] as const) {
       try {
         await fsp.access(p);
-        return true;
+        return found;
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return undefined;
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return { kind: 'unknown' };
       }
     }
   }
-  return false;
+  return { kind: 'missing' };
+}
+
+/**
+ * Whether Copilot has `sessionId`: its directory, or a legacy `<id>.jsonl`.
+ * undefined (can't tell) when the store doesn't exist or can't be read;
+ * callers keep the id then.
+ */
+export async function hasCopilotSession(stateDir: string, sessionId: string): Promise<boolean | undefined> {
+  if (!UUID.test(sessionId)) return false;
+  const at = await locateSession(stateDir, sessionId);
+  return at.kind === 'unknown' ? undefined : at.kind !== 'missing';
+}
+
+/**
+ * Whether `sessionId` is a Copilot session recorded for `cwd` (its
+ * workspace.yaml `cwd`). A UUID scraped from the terminal can be any session
+ * the conversation mentions, so existing isn't enough. undefined when the
+ * store can't tell: no store, or a legacy session with no cwd recorded.
+ */
+export async function copilotSessionInCwd(stateDir: string, sessionId: string, cwd: string): Promise<boolean | undefined> {
+  if (!UUID.test(sessionId)) return false;
+  const at = await locateSession(stateDir, sessionId);
+  if (at.kind === 'missing') return false;
+  if (at.kind !== 'dir') return undefined;
+  const ws = await readWorkspace(at.dir);
+  if (!ws?.cwd) return undefined;
+  return sameCwd(ws.cwd, cwdForms(cwd));
 }
