@@ -7,6 +7,7 @@ import {
   initChatEventListener,
   reduceChatEvent,
   settleDeadSession,
+  liveChatAgent,
   totalOf,
   useChatStore,
   type AgentMessageItem,
@@ -325,6 +326,15 @@ describe('reduceChatEvent', () => {
       expect(settled.pendingPermissions).toEqual([]);
       expect(settleDeadSession(settled)).toBe(settled);
     });
+
+    it('settleDeadSession leaves the session sleeping, not idle or running (#2208)', () => {
+      const s = fold([sessionStarted(ev), ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' })]);
+      expect(s.state).toBe('running');
+      const settled = settleDeadSession(s);
+      expect(settled).toMatchObject({ state: 'sleeping', turnId: null, turnStartedAt: null });
+      expect(settleDeadSession(settled)).toBe(settled);
+      expect(settleDeadSession(fold([sessionStarted(ev)])).state).toBe('sleeping');
+    });
   });
 
   describe('a new run after the app quit mid-turn (#2183)', () => {
@@ -612,8 +622,32 @@ describe('useChatStore', () => {
 
   beforeEach(() => {
     ev = makeEmitter();
-    useChatStore.setState({ agents: {}, loading: {}, loaded: {} });
+    useChatStore.setState({ agents: {}, loading: {}, loaded: {}, live: {} });
     window.clubhouse.chat.readTranscript = vi.fn().mockResolvedValue([]);
+  });
+
+  it('tracks whether a chat runtime runs the agent (#2208)', async () => {
+    const getAgentRuntime = window.clubhouse.chat.getAgentRuntime;
+    window.clubhouse.chat.getAgentRuntime = vi.fn(async () => ({ chat: false, chatAvailable: true }));
+    try {
+      window.clubhouse.chat.readTranscript = vi.fn().mockResolvedValue([sessionStarted(ev), ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' })]);
+      await useChatStore.getState().loadTranscript(AGENT);
+      expect(useChatStore.getState().live[AGENT]).toBe(false);
+      expect(useChatStore.getState().agents[AGENT].state).toBe('sleeping');
+      expect(liveChatAgent(useChatStore.getState(), AGENT)).toBeUndefined();
+
+      useChatStore.getState().applyEvent(sessionStarted(ev, 's2'));
+      expect(useChatStore.getState().live[AGENT]).toBe(true);
+      expect(liveChatAgent(useChatStore.getState(), AGENT)?.state).toBe('idle');
+
+      useChatStore.getState().applyEvent(ev('session_ended', { reason: 'stopped' }));
+      expect(useChatStore.getState().live[AGENT]).toBe(false);
+
+      useChatStore.getState().reset(AGENT);
+      expect(useChatStore.getState().live[AGENT]).toBeUndefined();
+    } finally {
+      window.clubhouse.chat.getAgentRuntime = getAgentRuntime;
+    }
   });
 
   it('applyEvent folds live events per agent', () => {

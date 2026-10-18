@@ -73,7 +73,9 @@ function useSessionChanges(agentId: string, chat: ChatViewState | undefined) {
 function AgentSummary({ agent }: { agent: Agent }) {
   const detailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
   const chat = useChatStore((s) => s.agents[agent.id]);
-  const dot = chat?.sessionId && agent.status === 'running' ? chatDot(chat.state) : agentDot(agent, detailed);
+  // Chat state counts only while chat runs the agent, not left over from an earlier session (#2208).
+  const inChat = useChatStore((s) => s.live[agent.id] === true);
+  const dot = inChat && chat?.sessionId && agent.status === 'running' ? chatDot(chat.state) : agentDot(agent, detailed);
   const line = latestLine(chat, agent.status === 'running' ? detailed?.message : agent.errorMessage);
   const changes = useSessionChanges(agent.id, chat);
   return (

@@ -413,14 +413,18 @@ function expireQuestions(items: ChatItem[], which: (q: QuestionItem) => boolean)
 
 /**
  * Settle a restored transcript whose session no longer runs (the app quit or
- * crashed mid-turn): open questions expire and nothing is left awaiting an answer.
+ * crashed mid-turn): open questions expire, nothing is left awaiting an
+ * answer, and the session reads as sleeping. A transcript cut off without
+ * session_ended otherwise keeps its last state, idle or running, which status
+ * surfaces would show over a terminal the agent now runs in (#2208).
  */
 export function settleDeadSession(state: ChatViewState): ChatViewState {
-  if (state.pendingQuestions.length === 0 && state.pendingPermissions.length === 0
-    && !state.items.some((i) => i.kind === 'question' && !i.answers && !i.cancelled && !i.expired)) {
-    return state;
-  }
-  return { ...state, items: expireQuestions(state.items, () => true), pendingQuestions: [], pendingPermissions: [] };
+  const open = state.pendingQuestions.length > 0 || state.pendingPermissions.length > 0
+    || state.items.some((i) => i.kind === 'question' && !i.answers && !i.cancelled && !i.expired);
+  const asleep = state.state === 'sleeping' && state.turnId === null && state.turnStartedAt === null;
+  if (!open && asleep) return state;
+  const settled: ChatViewState = { ...state, state: 'sleeping', turnId: null, turnStartedAt: null };
+  return open ? { ...settled, items: expireQuestions(state.items, () => true), pendingQuestions: [], pendingPermissions: [] } : settled;
 }
 
 function stopStreaming(items: ChatItem[], turnId: string | undefined): ChatItem[] {
@@ -860,6 +864,17 @@ interface ChatStoreState {
   loaded: Record<string, boolean>;
   /** Permission or question answers in flight, keyed `${agentId}:${requestId}`, so every view disables the card. */
   answering: Record<string, true>;
+  /**
+   * Whether a chat runtime runs the agent now, as far as this window knows:
+   * from main (getAgentRuntime) and from live events (any event but
+   * session_ended means it runs). Status surfaces overlay chat state only
+   * when this is true, so state left from an earlier chat session never
+   * overrides an agent now running in the terminal (#2208).
+   */
+  live: Record<string, boolean>;
+
+  /** Record what main said about whether a chat runtime runs the agent. */
+  setRuntimeLive: (agentId: string, live: boolean) => void;
 
   loadTranscript: (agentId: string, tail?: number) => Promise<void>;
   applyEvent: (event: ChatEvent) => void;
@@ -920,6 +935,12 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     partial: {},
     loaded: {},
     answering: {},
+    live: {},
+
+    setRuntimeLive: (agentId, live) => {
+      if (get().live[agentId] === live) return;
+      set((s) => ({ live: { ...s.live, [agentId]: live } }));
+    },
 
     loadTranscript: async (agentId, tail) => {
       if (get().loading[agentId]) return;
@@ -938,6 +959,8 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       if (pendingLive.get(agentId) !== pending) return; // Reset/replaced while the read was in flight.
       const buffered = pending;
       pendingLive.delete(agentId);
+      // Live events that arrived during the read are newer than main's answer.
+      if (runtimeLive !== undefined && buffered.length === 0) get().setRuntimeLive(agentId, runtimeLive);
       if (events === null) {
         // Keep the state this window already had, with the live events that
         // arrived meanwhile, and leave it marked not loaded so the next view
@@ -983,6 +1006,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     },
 
     applyEvent: (event) => {
+      get().setRuntimeLive(event.agentId, event.type !== 'session_ended');
       const buffer = pendingLive.get(event.agentId);
       if (buffer) {
         buffer.push(event);
@@ -1013,7 +1037,9 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
         delete loading[agentId];
         delete partial[agentId];
         delete loaded[agentId];
-        return { agents, loading, partial, loaded };
+        const live = { ...s.live };
+        delete live[agentId];
+        return { agents, loading, partial, loaded, live };
       });
     },
 
@@ -1036,14 +1062,25 @@ export function useAnswering(agentId: string, requestId: string): boolean {
 }
 
 /**
- * Each agent's chat session state and running turn's start, for status
- * surfaces such as the sidebar. Re-renders only when one of them changes,
- * not on every streamed chunk.
+ * Each live chat agent's session state and running turn's start, for status
+ * surfaces such as the sidebar. Agents no chat runtime runs now are left out
+ * (#2208). Re-renders only when one of them changes, not on every streamed chunk.
  */
 export function useChatStatuses(): Record<string, { state: ChatSessionState | null; turnStartedAt: number | null }> {
-  const states = useChatStore(useShallow((s) => mapAgents(s.agents, (a) => a.state)));
-  const turns = useChatStore(useShallow((s) => mapAgents(s.agents, (a) => a.turnStartedAt)));
+  const states = useChatStore(useShallow((s) => mapAgents(liveAgents(s), (a) => a.state)));
+  const turns = useChatStore(useShallow((s) => mapAgents(liveAgents(s), (a) => a.turnStartedAt)));
   return useMemo(() => mapAgents(states, (state, id) => ({ state, turnStartedAt: turns[id] ?? null })), [states, turns]);
+}
+
+/** The chat view state of agents a chat runtime runs now (ChatStoreState.live). */
+export function liveChatAgent(s: Pick<ChatStoreState, 'agents' | 'live'>, agentId: string): ChatViewState | undefined {
+  return s.live[agentId] === true ? s.agents[agentId] : undefined;
+}
+
+function liveAgents(s: Pick<ChatStoreState, 'agents' | 'live'>): Record<string, ChatViewState> {
+  const out: Record<string, ChatViewState> = {};
+  for (const [id, a] of Object.entries(s.agents)) if (s.live[id] === true) out[id] = a;
+  return out;
 }
 
 function mapAgents<T, U>(record: Record<string, T>, fn: (value: T, id: string) => U): Record<string, U> {

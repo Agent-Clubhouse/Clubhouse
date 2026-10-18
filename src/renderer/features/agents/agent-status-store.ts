@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
-import { useChatStatuses, useChatStore } from '../../stores/chatStore';
+import { liveChatAgent, useChatStatuses, useChatStore } from '../../stores/chatStore';
 import { chatDetailedStatus, withChatStatus } from './agent-status';
 
 /**
  * An agent's effective detailed status: its chat session's state while a chat
- * runtime runs it, otherwise its hook status (#2197, #2208). Every status
+ * runtime runs it (chatStore `live`), otherwise its hook status (#2197, #2208).
+ * Chat state left from an earlier session never overrides a terminal agent. Every status
  * surface reads this, so they agree with the chat header. Hook status alone
  * reads Done mid-turn for a chat agent after 30s without a tool event.
  */
@@ -22,8 +23,8 @@ export function useAgentStatuses(): Record<string, AgentDetailedStatus> {
 /** Effective status for one local agent. */
 export function useAgentStatus(agent: Pick<Agent, 'id' | 'status'>): AgentDetailedStatus | undefined {
   const hook = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
-  const state = useChatStore((s) => s.agents[agent.id]?.state ?? null);
-  const turnStartedAt = useChatStore((s) => s.agents[agent.id]?.turnStartedAt ?? null);
+  const state = useChatStore((s) => liveChatAgent(s, agent.id)?.state ?? null);
+  const turnStartedAt = useChatStore((s) => liveChatAgent(s, agent.id)?.turnStartedAt ?? null);
   const status = agent.status;
   return useMemo(
     () => chatDetailedStatus({ status }, hook, { state, turnStartedAt }),
@@ -36,25 +37,27 @@ export function getAgentStatus(agentId: string): AgentDetailedStatus | undefined
   const { agents, agentDetailedStatus } = useAgentStore.getState();
   const hook = agentDetailedStatus[agentId];
   const agent = agents[agentId];
-  const chat = useChatStore.getState().agents[agentId];
+  const chat = liveChatAgent(useChatStore.getState(), agentId);
   if (!agent || !chat) return hook;
   return chatDetailedStatus(agent, hook, { state: chat.state, turnStartedAt: chat.turnStartedAt });
 }
 
 /**
- * Calls `listener` when any chat session's state or turn start changes: the
- * chat inputs of getAgentStatus. Streamed chunks don't fire it.
+ * Calls `listener` when a live chat session's state or turn start changes, or
+ * an agent starts or stops running in chat: the chat inputs of
+ * getAgentStatus. Streamed chunks don't fire it.
  */
 export function onChatStatusChange(listener: () => void): () => void {
-  let prev = useChatStore.getState().agents;
-  return useChatStore.subscribe((s) => {
-    const next = s.agents;
-    if (next === prev) return;
+  let prev = useChatStore.getState();
+  return useChatStore.subscribe((next) => {
+    if (next.agents === prev.agents && next.live === prev.live) return;
     const before = prev;
     prev = next;
-    const ids = new Set([...Object.keys(before), ...Object.keys(next)]);
+    const ids = new Set([...Object.keys(before.agents), ...Object.keys(next.agents)]);
     for (const id of ids) {
-      if (before[id]?.state !== next[id]?.state || before[id]?.turnStartedAt !== next[id]?.turnStartedAt) {
+      const a = liveChatAgent(before, id);
+      const b = liveChatAgent(next, id);
+      if (a?.state !== b?.state || a?.turnStartedAt !== b?.turnStartedAt) {
         listener();
         return;
       }

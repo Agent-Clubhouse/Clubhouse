@@ -49,7 +49,7 @@ function resetStores() {
   });
   useQuickAgentStore.setState({ completedAgents: {}, selectedCompletedId: null });
   useOrchestratorStore.setState({ enabled: ['claude-code'], allOrchestrators: [] });
-  useChatStore.setState({ agents: {} });
+  useChatStore.setState({ agents: {}, live: {} });
 }
 
 /** A chat turn that last reported a tool 31s ago, after the renderer's stale sweep. */
@@ -59,6 +59,19 @@ function chatTurnQuietFor31s() {
   useAgentStore.getState().handleHookEvent(ID, { kind: 'post_tool', toolName: 'execute', timestamp: Date.now() });
   advance(31_000);
   act(() => { useAgentStore.getState().clearStaleStatuses(); });
+}
+
+/**
+ * A chat agent last seen in an old build: its transcript ends mid-session
+ * with no session_ended. Now it runs in the terminal, and the chat store
+ * still holds that session's last state (#2208 review).
+ */
+function staleChatState(state: 'idle' | 'running') {
+  useChatStore.getState().applyEvent(ev('session_state', { state }));
+  if (state === 'running') useChatStore.getState().applyEvent(ev('turn_started', { trigger: 'prompt' }, 't1'));
+  // Main says no chat runtime runs it (useAgentRuntimeInfo / loadTranscript).
+  act(() => { useChatStore.getState().setRuntimeLive(ID, false); });
+  expect(useChatStore.getState().agents[ID].state).toBe(state);
 }
 
 /** A terminal agent whose hook status says it's running a tool. */
@@ -86,6 +99,8 @@ const cases: Array<{ name: string; setup: () => void; dot: 'working' | 'idle' }>
   { name: 'chat agent 31s into a quiet turn', setup: chatTurnQuietFor31s, dot: 'working' },
   { name: 'terminal agent mid tool', setup: terminalWorking, dot: 'working' },
   { name: 'terminal agent with stale hook status', setup: terminalStale, dot: 'idle' },
+  { name: 'terminal agent mid tool, chat store left idle', setup: () => { staleChatState('idle'); terminalWorking(); }, dot: 'working' },
+  { name: 'terminal agent with stale hook status, chat store left running', setup: () => { staleChatState('running'); terminalStale(); }, dot: 'idle' },
 ];
 
 describe.each(cases)('status surfaces: $name', ({ setup, dot }) => {
@@ -94,7 +109,7 @@ describe.each(cases)('status surfaces: $name', ({ setup, dot }) => {
   it('the hook status alone reads Done for the chat case (the drift)', () => {
     setup();
     const hookOnly = agentDot(agent, useAgentStore.getState().agentDetailedStatus[ID]);
-    const chatCase = !!useChatStore.getState().agents[ID];
+    const chatCase = useChatStore.getState().live[ID] === true;
     expect(hookOnly).toBe(chatCase ? 'idle' : dot);
   });
 

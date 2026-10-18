@@ -2960,8 +2960,8 @@ describe('annex-server getDetailedStatus for chat agents', () => {
   const { detailedStatusCache, getDetailedStatus } = annexServer._testing;
   const NOW = 1_800_000_000_000;
 
-  function chatRuntime(agentId: string, state: string) {
-    registerChatRuntime({ agentId, kind: 'chat', isRunning: () => true, getState: () => state } as unknown as Parameters<typeof registerChatRuntime>[0]);
+  function chatRuntime(agentId: string, state: string, turnStartedAt: number | null = null) {
+    registerChatRuntime({ agentId, kind: 'chat', isRunning: () => true, getState: () => state, getTurnStartedAt: () => turnStartedAt } as unknown as Parameters<typeof registerChatRuntime>[0]);
   }
 
   beforeEach(() => {
@@ -2982,9 +2982,9 @@ describe('annex-server getDetailedStatus for chat agents', () => {
     expect(getDetailedStatus('chat_a')).toMatchObject({ state: 'working' });
   });
 
-  it('reads Working for a turn that has had no tool event yet', () => {
-    chatRuntime('chat_a', 'running');
-    expect(getDetailedStatus('chat_a')).toMatchObject({ state: 'working' });
+  it('reads Working for a turn that has had no tool event yet, timed from the turn start', () => {
+    chatRuntime('chat_a', 'running', NOW - 60_000);
+    expect(getDetailedStatus('chat_a')).toEqual({ state: 'working', message: 'Working', timestamp: NOW - 60_000 });
   });
 
   it('keeps a fresh tool verb while the turn runs', () => {

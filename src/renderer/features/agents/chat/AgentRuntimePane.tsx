@@ -95,6 +95,8 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
     const apply = (info: ChatAgentRuntimeInfo) => {
       if (cancelled) return;
       runtimeCache.set(agent.id, info);
+      // Status surfaces overlay chat state only while chat runs the agent (#2208).
+      useChatStore.getState().setRuntimeLive(agent.id, info.chat);
       setEntry({ agentId: agent.id, info });
     };
     window.clubhouse.chat.getAgentRuntime(agent.id, agent.orchestrator)

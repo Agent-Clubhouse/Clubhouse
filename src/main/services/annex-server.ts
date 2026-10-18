@@ -240,7 +240,7 @@ function getDetailedStatus(agentId: string): AgentDetailedStatus | null {
   // says Working, as the app's chat header does (#2208).
   const runtime = getAgentRuntime(agentId);
   if (runtime?.kind === 'chat' && runtime.isRunning()) {
-    status = chatDetailedStatus({ status: 'running' }, status, { state: runtime.getState(), turnStartedAt: null });
+    status = chatDetailedStatus({ status: 'running' }, status, { state: runtime.getState(), turnStartedAt: runtime.getTurnStartedAt?.() ?? null });
   }
   return status ?? null;
 }

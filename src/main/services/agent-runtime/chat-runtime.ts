@@ -141,6 +141,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   private seq: number;
   private state: ChatSessionState = 'starting';
   private turnId: string | undefined;
+  /** When the running turn started, for status timestamps (Annex). */
+  private turnStartedAt: number | null = null;
   /**
    * Requests whose answer the runtime itself wrote to the transcript. A driver
    * that also reports its own answer (Claude, Codex) would otherwise write a
@@ -331,6 +333,7 @@ export class ChatAgentRuntime implements AgentRuntime {
     switch (draft.type) {
       case 'turn_started':
         this.turnId = draft.turnId ?? this.newId();
+        this.turnStartedAt = this.now();
         this.clearIdleTimer();
         break;
       case 'session_state':
@@ -356,6 +359,7 @@ export class ChatAgentRuntime implements AgentRuntime {
         break;
       case 'turn_ended':
         this.turnId = undefined;
+        this.turnStartedAt = null;
         await this.setState('idle');
         await this.drainQueue();
         if (this.state === 'idle') this.armIdleTimer();
@@ -396,6 +400,10 @@ export class ChatAgentRuntime implements AgentRuntime {
 
   getState(): ChatSessionState {
     return this.state;
+  }
+
+  getTurnStartedAt(): number | null {
+    return this.turnStartedAt;
   }
 
   getCapabilities(): ChatCapabilities | undefined {

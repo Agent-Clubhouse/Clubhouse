@@ -9,7 +9,7 @@ describe('PoppedOutPlaceholder', () => {
     window.clubhouse.window.focusPopout = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.window.closePopout = vi.fn().mockResolvedValue(undefined);
     useAgentStore.setState({ agents: {}, agentDetailedStatus: {} });
-    useChatStore.setState({ agents: {} });
+    useChatStore.setState({ agents: {}, live: {} });
   });
 
   it('names a canvas that is open in its own window', () => {
@@ -50,6 +50,7 @@ describe('PoppedOutPlaceholder', () => {
           items: [{ id: 'm1', sessionId: 's1', seq: 1, ts: 1, kind: 'agent_message', messageId: 'm1', text: 'Looked at it.\nNow updating HoverCard.tsx.', streaming: false }],
         },
       },
+      live: { a1: true },
     });
     render(<PoppedOutPlaceholder type="agent" agentId="a1" windowId={3} />);
     expect(screen.getByTestId('popped-out-status')).toHaveTextContent('Done');
