@@ -6,6 +6,7 @@ import { foldChatEvents, useChatStore, type ChatViewState } from '../../../store
 import { CANVAS_TRANSCRIPT_TAIL, ChatView, ChatViewBody } from './ChatView';
 import { useChatDraftStore, type ChatActions } from './useChatSession';
 import { chatFixture, FIXTURE_AGENT_ID, PROFILES, type FixtureProvider } from './fixtures';
+import { editedPlanInput } from './ApprovalDock';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { useProjectStore } from '../../../stores/projectStore';
 
@@ -862,6 +863,25 @@ describe('ChatView agent details', () => {
 });
 
 describe('ChatView permission extras', () => {
+  it('preserves provider-native fields when replacing the plan input', () => {
+    const rawInput = {
+      plan: 'Original plan',
+      providerMode: 'acceptEdits',
+      metadata: { source: 'provider' },
+    };
+
+    expect(editedPlanInput(rawInput, 'Edited plan')).toEqual({
+      plan: 'Edited plan',
+      providerMode: 'acceptEdits',
+      metadata: { source: 'provider' },
+    });
+    expect(rawInput).toEqual({
+      plan: 'Original plan',
+      providerMode: 'acceptEdits',
+      metadata: { source: 'provider' },
+    });
+  });
+
   it('sends a denial message when the driver carries one', () => {
     const { actions } = renderFixture('claude', 'approval');
     const input = screen.getByTestId('chat-permission-feedback');
