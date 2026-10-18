@@ -1,0 +1,22 @@
+{
+  "id": "e2e-mcp-tools",
+  "name": "E2E MCP Tools Plugin",
+  "version": "1.0.0",
+  "description": "E2E fixture: contributes one MCP tool at activation and records what the host lists for it.",
+  "author": "Clubhouse E2E",
+  "engine": { "api": 0.9 },
+  "scope": "app",
+  "main": "./dist/main.js",
+  "permissions": ["mcp.tools"],
+  "contributes": {
+    "help": {
+      "topics": [
+        {
+          "id": "e2e-mcp-tools",
+          "title": "E2E MCP Tools Plugin",
+          "content": "Fixture plugin. activate() contributes the `e2e_echo` MCP tool, then writes the listed tool names (or the error) to `data-e2e-mcp-tools` on the document element."
+        }
+      ]
+    }
+  }
+}
