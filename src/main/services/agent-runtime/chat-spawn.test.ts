@@ -488,6 +488,28 @@ describe('overlapping chat starts (#2087)', () => {
     await getAgentRuntime('agent-1')?.stop();
   });
 
+  it('a newer start restores the MCP config the replaced start had injected', async () => {
+    const configPipeline = await import('../config-pipeline');
+    const driver = new HangingDriver();
+    registerChatDriver(driver);
+    const first = tryStartChatAgent(params, provider, undefined, undefined, null);
+    await vi.waitFor(() => expect(driver.starts).toHaveLength(1));
+    expect(configPipeline.restoreForAgent).not.toHaveBeenCalled();
+
+    const second = tryStartChatAgent(params, provider, undefined, undefined, null);
+    await vi.waitFor(() => expect(driver.starts).toHaveLength(2));
+    expect(configPipeline.restoreForAgent).toHaveBeenCalledTimes(1);
+    expect(configPipeline.restoreForAgent).toHaveBeenCalledWith('agent-1');
+
+    driver.starts[0].reject(timeout());
+    driver.starts[1].resolve();
+    expect(await first).toBe('cancelled');
+    expect(await second).toBe('chat');
+    // The replaced start restores nothing more of its own.
+    expect(configPipeline.restoreForAgent).toHaveBeenCalledTimes(1);
+    await getAgentRuntime('agent-1')?.stop();
+  });
+
   it('a cancelled start that times out does not try the next driver or count a failure', async () => {
     const hanging = new HangingDriver();
     const next = new FakeChatDriver('claude_agent_sdk');

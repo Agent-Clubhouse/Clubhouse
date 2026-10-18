@@ -254,6 +254,9 @@ export async function tryStartChatAgent(
       await previous.runtime.abandon();
       unregisterChatRuntime(params.agentId, previous.runtime);
     }
+    // Undo its MCP injection now: this start snapshots the file again, and
+    // the agent's one restore on exit would otherwise leave the old entry.
+    if (previous.prepared) configPipeline.restoreForAgent(params.agentId);
   }
   onStarting?.();
   try {
