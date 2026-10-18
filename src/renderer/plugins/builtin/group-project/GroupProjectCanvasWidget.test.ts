@@ -34,8 +34,9 @@ describe('GroupProjectCanvasWidget — chrome style', () => {
 describe('GroupProjectCanvasWidget — polling switch', () => {
   it('is the shared Toggle, labelled Polling', () => {
     expect(source).toContain('function PollingSwitch');
-    expect(source).toMatch(/<Toggle checked=\{on\} onChange=\{onToggle\} aria-labelledby=\{labelId\} \/>/);
-    expect(source).toContain('>Polling</span>');
+    expect(source).toMatch(/<Toggle id=\{switchId\} checked=\{on\} onChange=\{onToggle\} \/>/);
+    expect(source).toContain('<label htmlFor={switchId}');
+    expect(source).toContain('>Polling</label>');
     expect(source).not.toContain('Poll: On');
   });
 });
