@@ -53,10 +53,10 @@ export const LIKELY_TIMEOUT_MS = ACCESS_TIMEOUT_MS - 500;
 /** Access states that need the user (or a retry) before feedback can be delivered. */
 const ACCESS_PROBLEMS = new Set(['offline', 'expired', 'access-required', 'connection-uncertain', 'storage-unavailable', 'migration-required']);
 /** In-between states, logged at debug only. */
+const ACCESS_TRANSIENT = new Set(['checking', 'connecting', 'disconnecting']);
+
 /** The SDK's per-report cap on breadcrumbs. */
 const MAX_REPORT_BREADCRUMBS = 40;
-
-const ACCESS_TRANSIENT = new Set(['checking', 'connecting', 'disconnecting']);
 
 /** One breadcrumb as the SDK takes it: `atMs` in epoch ms, `code` never user text. */
 export interface FeedbackBreadcrumb {
