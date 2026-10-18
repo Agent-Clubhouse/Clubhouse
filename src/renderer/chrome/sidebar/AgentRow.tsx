@@ -228,7 +228,7 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
             )}
           </span>
           <span className={`truncate ${dot === 'sleeping' ? '' : 'font-medium'}`}><MarkedText text={agent.name} query={highlight} /></span>
-          <OrchestratorGlyph orchestrator={agent.orchestrator || 'claude-code'} focusable={false} />
+          <OrchestratorGlyph orchestrator={agent.orchestrator || 'claude-code'} focusable={false} showTooltip={false} variant="row" />
           {(note || hasActivityTime) && (
             <span className="ml-auto flex-shrink-0 flex items-center gap-2 text-xs group-hover/row:hidden">
               {note && <span className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}

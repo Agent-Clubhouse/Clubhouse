@@ -42,10 +42,27 @@ describe('AgentRow identity and activity', () => {
     expect(glyph).toHaveClass('text-ctp-overlay1');
     expect(glyph).not.toHaveAttribute('style');
     expect(glyph).not.toHaveAttribute('tabindex');
+    expect(glyph).not.toHaveAttribute('data-testid');
     expect(focusable.querySelector('[tabindex="0"]')).toBeNull();
     expect(screen.getByText('SF')).toHaveClass('w-[18px]', 'h-[18px]');
     fireEvent.click(glyph);
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens only the row hover card when hovering its provider glyph', () => {
+    vi.useFakeTimers();
+    setup(durable());
+    fireEvent.mouseEnter(screen.getByRole('img', { name: 'Claude Code' }));
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    expect(screen.getByTestId('agent-hover-card')).toHaveTextContent('Claude Code');
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
+  it('keeps the glyph tile distinct from the selected row background', () => {
+    const { row } = setup(durable(), { active: true });
+    expect(row).toHaveClass('bg-surface-0');
+    expect(screen.getByRole('img', { name: 'Claude Code' })).toHaveClass('bg-surface-1');
+    expect(screen.getByRole('img', { name: 'Claude Code' })).not.toHaveClass('bg-surface-0');
   });
 
   it('shows the latest activity time and refreshes it without new agent events', () => {

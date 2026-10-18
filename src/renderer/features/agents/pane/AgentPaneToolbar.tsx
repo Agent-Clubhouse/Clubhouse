@@ -16,7 +16,6 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { Tooltip } from '../../../components/Tooltip';
 import { holdChromeSurface, reportChromeFeature } from '../../../chrome/telemetry';
 import { OrchestratorGlyph } from '../OrchestratorGlyph';
-export { OrchestratorGlyph } from '../OrchestratorGlyph';
 import { AgentContextMenu, useAgentRowActions } from '../useAgentRowActions';
 import { agentDot, DOT_LABEL, StatusDot, type AgentDot } from '../agent-status';
 import { useNarrow } from './useNarrow';
@@ -228,7 +227,7 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
       <span className="text-ctp-text flex-shrink-0" data-testid="pane-status">{DOT_LABEL[dot]}</span>
       {activity && <span className="min-w-0 truncate" data-testid="pane-activity">{activity}</span>}
       <span className="ml-auto flex-shrink-0 flex items-center gap-1">
-        <OrchestratorGlyph orchestrator={orchestrator ?? agent.orchestrator ?? 'claude-code'} details={glyphDetails} />
+        <OrchestratorGlyph orchestrator={orchestrator ?? agent.orchestrator ?? 'claude-code'} details={glyphDetails} testId="pane-orchestrator" />
         {shownModel && !narrow && <span className="ml-1 text-ctp-overlay1" data-testid="pane-model">{shownModel}</span>}
         {usage && <UsageMeter usage={usage} compact={narrow} />}
         {(switchShown || detailsToggle) && <span className="w-px h-4 bg-surface-0 mx-1" aria-hidden="true" />}

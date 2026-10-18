@@ -7,7 +7,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { OrchestratorGlyph } from '../pane/AgentPaneToolbar';
+import { OrchestratorGlyph } from '../OrchestratorGlyph';
 import { DOT_LABEL, StatusDot, type AgentDot } from '../agent-status';
 import { splitPath } from './format';
 
