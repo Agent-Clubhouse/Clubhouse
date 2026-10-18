@@ -4,7 +4,8 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { app } from 'electron';
-import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
+import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, HelperCascadeResult, HelperDeleteChoice, HelperDisposeBlock, HelperDisposeChecks } from '../../shared/types';
+import { isDisposedAgent, parentLinkError } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { tagError } from '../telemetry/types';
@@ -226,6 +227,13 @@ function reassignForeignAgentIds(
     reassigned.push({ agent: copy, oldId: agent.id });
     return copy;
   });
+  // Helpers (#2224) follow their parent to its new ID.
+  const newIdFor = new Map(reassigned.map(({ agent, oldId }) => [oldId, agent.id]));
+  for (let i = 0; i < result.length; i++) {
+    const parentId = result[i].parentAgentId;
+    const newParentId = parentId ? newIdFor.get(parentId) : undefined;
+    if (newParentId) result[i] = { ...result[i], parentAgentId: newParentId };
+  }
 
   appLog('core:agent-config', 'warn', `Reassigned ${reassigned.length} durable agent ID(s) already used by another project`, {
     meta: {
@@ -483,7 +491,14 @@ async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConf
     });
   }
 
-  if (removed.length > 0 || droppedInvalid || strippedLegacy > 0) {
+  const normalizedHelpers = normalizeHelperFields(deduped);
+  if (normalizedHelpers > 0) {
+    appLog('core:agent-config', 'warn', `Repaired helper fields on ${normalizedHelpers} agent(s)`, {
+      meta: { projectPath },
+    });
+  }
+
+  if (removed.length > 0 || droppedInvalid || strippedLegacy > 0 || normalizedHelpers > 0) {
     // Persist the cleaned list without clobbering a valid backup when the
     // current file had to be recovered from backup first, or when the current
     // file held invalid records (copying it into the backup would replace the
@@ -512,6 +527,46 @@ export function stripLegacyStructuredMode(agents: DurableAgentConfig[]): number 
     }
   }
   return count;
+}
+
+/**
+ * Repair helper fields (#2224) in place: drop malformed values, self-parenting
+ * and parent cycles, and release a live helper whose parent no longer exists
+ * so it loads as an ordinary durable agent instead of an orphan. A disposed
+ * helper keeps its link for history. Configs without the fields are untouched.
+ * Returns how many records changed.
+ */
+export function normalizeHelperFields(agents: DurableAgentConfig[]): number {
+  const changed = new Set<string>();
+  for (const agent of agents) {
+    const record = agent as DurableAgentConfig & Record<string, unknown>;
+    if ('parentAgentId' in record && (typeof record.parentAgentId !== 'string' || !record.parentAgentId)) {
+      delete record.parentAgentId;
+      changed.add(agent.id);
+    }
+    if ('disposable' in record && record.disposable !== true) {
+      delete record.disposable;
+      changed.add(agent.id);
+    }
+    if ('disposedAt' in record && (typeof record.disposedAt !== 'string' || !record.disposedAt)) {
+      delete record.disposedAt;
+      changed.add(agent.id);
+    }
+  }
+  const ids = new Set(agents.map((a) => a.id));
+  for (const agent of agents) {
+    const parentId = agent.parentAgentId;
+    if (!parentId) continue;
+    const others = agents.map((a) => (a === agent ? { id: a.id } : a));
+    const dangling = !ids.has(parentId);
+    if (parentId === agent.id || (!dangling && parentLinkError(others, agent.id, parentId))
+      || (dangling && !isDisposedAgent(agent))) {
+      delete agent.parentAgentId;
+      delete agent.disposable;
+      changed.add(agent.id);
+    }
+  }
+  return changed.size;
 }
 
 async function writeAgentsToDisk(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
@@ -1385,50 +1440,51 @@ export async function updateDurable(
 }
 
 export async function deleteDurable(projectPath: string, agentId: string): Promise<void> {
-  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
 
-  // If no worktree, just unregister
-  if (!agent.worktreePath) {
-    const filtered = agents.filter((a) => a.id !== agentId);
-    await writeAgents(projectPath, filtered);
-    return;
-  }
+  if (agent.worktreePath) await removeAgentWorktree(projectPath, agent);
 
-  // Remove worktree
+  // Re-read: the cache may have been replaced while git ran.
+  const agents = await readAgents(projectPath);
+  await writeAgents(projectPath, releaseHelpersOf(agents.filter((a) => a.id !== agentId), agentId));
+}
+
+/** Remove an agent's worktree, its branch and any leftover directory. */
+async function removeAgentWorktree(projectPath: string, agent: DurableAgentConfig): Promise<void> {
+  const worktreePath = agent.worktreePath;
+  if (!worktreePath) return;
+  const agentId = agent.id;
   const hasGit = await isInsideGitRepo(projectPath);
   if (hasGit) {
     try {
-      await stepUnderFlow('clubhouse.git.worktree_remove', () => execGitFileAsync(['worktree', 'remove', '--force', '--', agent.worktreePath], projectPath));
+      await stepUnderFlow('clubhouse.git.worktree_remove', () => execGitFileAsync(['worktree', 'remove', '--force', '--', worktreePath], projectPath));
     } catch (err) {
       appLog('core:agent-config', 'warn', 'Git worktree removal failed, will clean up manually', {
         meta: {
-          agentId, worktreePath: agent.worktreePath,
+          agentId, worktreePath,
           error: err instanceof Error ? err.message : String(err),
         },
       });
     }
+  }
 
-    // Optionally delete branch
-    if (agent.branch) {
-      try {
-        await execGitFileAsync(['branch', '-D', '--', agent.branch], projectPath);
-      } catch (err) {
-        appLog('core:agent-config', 'warn', 'Git branch deletion failed', {
-          meta: { agentId, branch: agent.branch, error: err instanceof Error ? err.message : String(err) },
-        });
-      }
+  // Remove the folder if it is still there. A failure (EBUSY on Windows)
+  // throws before the branch goes, so a half-removed agent keeps its branch.
+  if (await pathExists(worktreePath)) {
+    await fsp.rm(worktreePath, { recursive: true, force: true });
+  }
+
+  if (hasGit && agent.branch) {
+    try {
+      await execGitFileAsync(['branch', '-D', '--', agent.branch], projectPath);
+    } catch (err) {
+      appLog('core:agent-config', 'warn', 'Git branch deletion failed', {
+        meta: { agentId, branch: agent.branch, error: err instanceof Error ? err.message : String(err) },
+      });
     }
   }
-
-  // Remove directory if still exists
-  if (await pathExists(agent.worktreePath)) {
-    await fsp.rm(agent.worktreePath, { recursive: true, force: true });
-  }
-
-  const filtered = agents.filter((a) => a.id !== agentId);
-  await writeAgents(projectPath, filtered);
 }
 
 async function detectBaseBranch(projectPath: string): Promise<string> {
@@ -1723,8 +1779,430 @@ export async function deleteForce(projectPath: string, agentId: string): Promise
 export async function deleteUnregister(projectPath: string, agentId: string): Promise<DeleteResult> {
   const agents = await readAgents(projectPath);
   const filtered = agents.filter((a) => a.id !== agentId);
-  await writeAgents(projectPath, filtered);
+  await writeAgents(projectPath, releaseHelpersOf(filtered, agentId));
   return { ok: true, message: 'Removed from agents list (files left on disk)' };
+}
+
+// --- Helpers (#2224) ---
+//
+// A helper is a durable agent whose `parentAgentId` names another durable
+// agent in the same project. Disposing a helper removes its worktree and
+// branch but keeps its row and session history with `disposedAt` set.
+
+/**
+ * Release the live helpers of a deleted agent so none is left pointing at a
+ * parent that no longer exists. Callers that want the helpers disposed do that
+ * first through resolveHelpersForDelete; this is the safe fallback for every
+ * other delete path (remote, plugins). Returns `agents` with copies where
+ * something changed.
+ */
+function releaseHelpersOf(agents: DurableAgentConfig[], deletedId: string): DurableAgentConfig[] {
+  const released: string[] = [];
+  const result = agents.map((agent) => {
+    if (agent.parentAgentId !== deletedId || isDisposedAgent(agent)) return agent;
+    released.push(agent.id);
+    const copy = { ...agent };
+    delete copy.parentAgentId;
+    delete copy.disposable;
+    return copy;
+  });
+  if (released.length > 0) {
+    appLog('core:agent-config', 'info', `Kept ${released.length} helper(s) of a deleted agent as ordinary agents`, {
+      meta: { deletedId, released },
+    });
+  }
+  return released.length > 0 ? result : agents;
+}
+
+/**
+ * The helpers of an agent in sidebar order: direct ones, or every live helper
+ * below it with `recursive`. Disposed ones only when asked (never recursive).
+ */
+export async function listHelpers(
+  projectPath: string,
+  agentId: string,
+  options: { includeDisposed?: boolean; recursive?: boolean } = {},
+): Promise<DurableAgentConfig[]> {
+  const agents = await readAgents(projectPath);
+  if (options.recursive) return liveDescendants(agents, agentId);
+  return agents.filter((a) => a.parentAgentId === agentId && (options.includeDisposed || !isDisposedAgent(a)));
+}
+
+/** The agent's parent, or null for a top-level agent or a parent that no longer exists. */
+export async function getParentAgent(projectPath: string, agentId: string): Promise<DurableAgentConfig | null> {
+  const { agentsById } = await readAgentsEntry(projectPath);
+  const parentId = agentsById.get(agentId)?.parentAgentId;
+  return parentId ? agentsById.get(parentId) ?? null : null;
+}
+
+/**
+ * Make `agentId` a helper of `parentAgentId`, or a top-level agent when the
+ * parent is null. Rejects self-parenting, unknown agents, cycles and disposed
+ * agents on either side. `disposable` is set alongside when given; releasing
+ * a helper always clears it.
+ */
+export async function setParentAgent(
+  projectPath: string,
+  agentId: string,
+  parentAgentId: string | null,
+  options: { disposable?: boolean } = {},
+): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) throw new Error('Agent not found');
+  if (isDisposedAgent(agent)) throw new Error('A disposed agent cannot change parent');
+  if (parentAgentId === null) {
+    delete agent.parentAgentId;
+    delete agent.disposable;
+  } else {
+    const error = parentLinkError(agents, agentId, parentAgentId);
+    if (error) throw new Error(error);
+    if (isDisposedAgent(agentsById.get(parentAgentId))) throw new Error('A disposed agent cannot be a parent');
+    agent.parentAgentId = parentAgentId;
+    if (options.disposable !== undefined) {
+      if (options.disposable) agent.disposable = true;
+      else delete agent.disposable;
+    }
+  }
+  await writeAgents(projectPath, agents);
+}
+
+/** A `git rev-list --count` result. Any failure throws, so a check never reads as zero. */
+async function gitCount(args: string[], cwd: string): Promise<number> {
+  const out = await execGitFileAsync(args, cwd);
+  const n = Number.parseInt(out.trim(), 10);
+  if (!Number.isFinite(n)) throw new Error(`git ${args.join(' ')} returned "${out.trim()}"`);
+  return n;
+}
+
+/** Whether a local branch exists. Throws when git can't answer. */
+async function localBranchExists(branch: string, cwd: string): Promise<boolean> {
+  try {
+    await execGitFileAsync(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], cwd);
+    return true;
+  } catch (err) {
+    // show-ref exits 1 for a missing ref; anything else is a failure.
+    if ((err as { code?: unknown } | null)?.code === 1) return false;
+    throw err;
+  }
+}
+
+/** The local base branch (main, then master), or null when neither exists. */
+async function findLocalBase(cwd: string): Promise<string | null> {
+  for (const candidate of ['main', 'master']) {
+    if (await localBranchExists(candidate, cwd)) return `refs/heads/${candidate}`;
+  }
+  return null;
+}
+
+/**
+ * Hook for async creation (#2226, PR #2242): a helper whose creation is still
+ * running must not be disposed under it. Reads `creation.state` structurally
+ * until that field is typed on DurableAgentConfig; whichever of #2241 and
+ * #2242 lands second should switch this to the typed field (or cancel the
+ * creation first). Returns the reason to block, or null.
+ */
+export function helperCreationBlock(agent: DurableAgentConfig): string | null {
+  const creation = (agent as DurableAgentConfig & { creation?: { state?: unknown } }).creation;
+  return creation?.state === 'creating' ? 'it is still being created' : null;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * The delete status checks for an agent before its worktree and branch go:
+ * uncommitted files, commits deleting the branch would destroy, and commits
+ * not merged into the base branch. Fails closed: if any check can't run, the
+ * result carries `error` and disposal is blocked.
+ */
+export async function getDisposeChecks(
+  projectPath: string,
+  agentId: string,
+  options: { alsoDisposed?: string[] } = {},
+): Promise<HelperDisposeChecks> {
+  const { agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) return { dirty: 0, unpushed: 0, unmerged: null, error: 'agent not found' };
+  const creating = helperCreationBlock(agent);
+  if (creating) return { dirty: 0, unpushed: 0, unmerged: null, error: creating };
+  if (isDisposedAgent(agent)) return { dirty: 0, unpushed: 0, unmerged: 0 };
+  try {
+    return await runDisposeChecks(projectPath, agent, agentsById, options.alsoDisposed ?? []);
+  } catch (err) {
+    // telemetry-exempt: the failure blocks disposal and reaches the user in the result
+    return { dirty: 0, unpushed: 0, unmerged: null, error: `couldn't check, ${errorText(err)}` };
+  }
+}
+
+/**
+ * Whether `dir` is inside a git work tree. Only git's own "not a git
+ * repository" answer means no; any other failure throws, so a check that
+ * can't run never reads as "no repository, nothing to lose".
+ */
+async function probeGitWorkTree(dir: string): Promise<boolean> {
+  try {
+    return (await execGitFileAsync(['rev-parse', '--is-inside-work-tree'], dir)).trim() === 'true';
+  } catch (err) {
+    if (/not a git repository/i.test(errorText(err))) return false;
+    throw err;
+  }
+}
+
+/**
+ * The local branches disposing an agent deletes or leaves without a
+ * worktree: its recorded branch and the branch its worktree has checked out.
+ * Throws when git can't answer.
+ */
+async function branchesDisposedWith(agent: DurableAgentConfig): Promise<string[]> {
+  const names = agent.branch ? [agent.branch] : [];
+  const wt = agent.worktreePath;
+  if (wt && await pathExists(path.join(wt, '.git'))) {
+    try {
+      const head = (await execGitFileAsync(['symbolic-ref', '--quiet', 'HEAD'], wt)).trim();
+      if (head.startsWith('refs/heads/')) names.push(head.slice('refs/heads/'.length));
+    } catch (err) {
+      // symbolic-ref exits 1 on a detached HEAD; anything else is a failure.
+      if ((err as { code?: unknown } | null)?.code !== 1) throw err;
+    }
+  }
+  return names;
+}
+
+/**
+ * `alsoDisposed` names the branches of every other helper disposed in the
+ * same cascade. Work that survives only on one of those branches is not safe.
+ */
+async function runDisposeChecks(
+  projectPath: string,
+  agent: DurableAgentConfig,
+  agentsById: Map<string, DurableAgentConfig>,
+  alsoDisposed: string[],
+): Promise<HelperDisposeChecks> {
+  const wt = agent.worktreePath;
+  const wtExists = !!wt && await pathExists(wt);
+  if (wtExists && !(await pathExists(path.join(wt, '.git')))) {
+    throw new Error(`${wt} is not a git worktree`);
+  }
+  if (!wtExists && !(await probeGitWorkTree(projectPath))) {
+    // No worktree and no repository: nothing on disk to lose.
+    return { dirty: 0, unpushed: 0, unmerged: 0 };
+  }
+  const cwd = wtExists ? wt : projectPath;
+
+  // The refs disposal would destroy: the worktree's HEAD and the agent's
+  // branch. `own` holds their short branch names, left out of --branches.
+  const refs: string[] = [];
+  const own: string[] = [];
+  if (agent.branch && await localBranchExists(agent.branch, cwd)) {
+    refs.push(`refs/heads/${agent.branch}`);
+    own.push(agent.branch);
+  }
+  let dirty = 0;
+  if (wtExists) {
+    refs.push('HEAD');
+    const status = await execGitFileAsync(['status', '--porcelain'], cwd);
+    dirty = status.split('\n').filter((line) => line.trim()).length;
+    try {
+      const head = (await execGitFileAsync(['symbolic-ref', '--quiet', 'HEAD'], cwd)).trim();
+      if (head.startsWith('refs/heads/')) own.push(head.slice('refs/heads/'.length));
+    } catch (err) {
+      // symbolic-ref exits 1 on a detached HEAD; anything else is a failure.
+      if ((err as { code?: unknown } | null)?.code !== 1) throw err;
+    }
+  }
+  if (refs.length === 0) {
+    // The worktree folder and the branch are both gone already.
+    return { dirty: 0, unpushed: 0, unmerged: 0 };
+  }
+
+  const remotes = (await execGitFileAsync(['remote'], cwd)).trim();
+  if (remotes) {
+    // A remote with no remote-tracking refs was never fetched; every commit
+    // would read as unpushed, which says nothing useful.
+    const tracking = (await execGitFileAsync(['for-each-ref', '--count=1', '--format=%(refname)', 'refs/remotes'], cwd)).trim();
+    if (!tracking) throw new Error('its remote has never been fetched');
+  }
+  // With a remote, pushed work survives disposal. Without one, work survives
+  // only on a local branch that stays: not this agent's, and not one of the
+  // other helpers disposed with it.
+  const excluded = [...new Set([...own, ...alsoDisposed])];
+  const unpushed = remotes
+    ? await gitCount(['rev-list', '--count', ...refs, '--not', '--remotes'], cwd)
+    : await gitCount(['rev-list', '--count', ...refs, '--not', ...excluded.map((r) => `--exclude=${r}`), '--branches'], cwd);
+
+  // Information only: merged into main/master, else into the parent's branch.
+  const parentBranch = agent.parentAgentId ? agentsById.get(agent.parentAgentId)?.branch : undefined;
+  let base = await findLocalBase(cwd);
+  if (!base && parentBranch && await localBranchExists(parentBranch, cwd)) base = `refs/heads/${parentBranch}`;
+  const unmerged = base ? await gitCount(['rev-list', '--count', ...refs, '--not', base], cwd) : null;
+
+  return { dirty, unpushed, unmerged };
+}
+
+/** Disposal loses nothing only when the worktree is clean, all work is saved and every check ran. */
+function hasWorkAtRisk(checks: HelperDisposeChecks): boolean {
+  return checks.dirty > 0 || checks.unpushed > 0 || !!checks.error;
+}
+
+/** Remove a helper's worktree and branch and mark it disposed, keeping its row. */
+async function disposeAgent(projectPath: string, agentId: string): Promise<void> {
+  const { agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent || isDisposedAgent(agent)) return;
+  const creating = helperCreationBlock(agent);
+  if (creating) throw new Error(`${agent.name} can't be disposed because ${creating}`);
+  if (agent.worktreePath) await removeAgentWorktree(projectPath, agent);
+
+  // Re-read: the cache may have been replaced while git ran.
+  const { agents, agentsById: current } = await readAgentsEntry(projectPath);
+  const row = current.get(agentId);
+  if (!row) return;
+  row.disposedAt = new Date().toISOString();
+  delete row.worktreePath;
+  await writeAgents(projectPath, agents);
+}
+
+/**
+ * Dispose one helper after the delete status checks. With work at risk it
+ * changes nothing and returns the checks, unless `force` is set.
+ */
+export async function disposeHelper(
+  projectPath: string,
+  agentId: string,
+  options: { force?: boolean } = {},
+): Promise<DeleteResult & { checks?: HelperDisposeChecks }> {
+  const { agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) return { ok: false, message: 'Agent not found' };
+  if (isDisposedAgent(agent)) return { ok: true, message: 'Already disposed' };
+  const checks = await getDisposeChecks(projectPath, agentId);
+  if (!options.force && hasWorkAtRisk(checks)) {
+    return {
+      ok: false,
+      message: checks.error ? `${agent.name} wasn't disposed (${checks.error})` : `${agent.name} has work that disposing would lose`,
+      checks,
+    };
+  }
+  try {
+    await disposeAgent(projectPath, agentId);
+  } catch (err) {
+    // telemetry-exempt: returned to the caller as a failed result
+    return { ok: false, message: errorText(err), checks };
+  }
+  return { ok: true, message: 'Disposed', checks };
+}
+
+/** Every live helper below an agent, nearest first. */
+function liveDescendants(agents: DurableAgentConfig[], agentId: string): DurableAgentConfig[] {
+  const result: DurableAgentConfig[] = [];
+  const seen = new Set<string>([agentId]);
+  const queue = [agentId];
+  while (queue.length > 0) {
+    const parentId = queue.shift()!;
+    for (const agent of agents) {
+      if (agent.parentAgentId !== parentId || seen.has(agent.id)) continue;
+      seen.add(agent.id);
+      queue.push(agent.id);
+      if (!isDisposedAgent(agent)) result.push(agent);
+    }
+  }
+  return result;
+}
+
+/**
+ * Settle an orchestrator's helpers before it is deleted, so none is orphaned.
+ * - 'dispose' disposes every live helper below it, helpers of helpers too.
+ *   It runs the delete status checks first; if any helper has uncommitted,
+ *   unpushed or unmerged work it changes nothing and returns `blocked`,
+ *   unless `force` is set.
+ * - 'keep' makes its direct helpers ordinary durable agents. Their own
+ *   helpers stay attached to them.
+ * `dryRun` runs the checks and reports what would happen without changing
+ * anything. The caller stops running helpers first and deletes the
+ * orchestrator after.
+ */
+export async function resolveHelpersForDelete(
+  projectPath: string,
+  agentId: string,
+  choice: HelperDeleteChoice,
+  options: { force?: boolean; dryRun?: boolean } = {},
+): Promise<HelperCascadeResult> {
+  const agents = await readAgents(projectPath);
+  if (!agents.some((a) => a.id === agentId)) return { ok: false, message: 'Agent not found' };
+
+  if (choice === 'keep') {
+    const released = await listHelpers(projectPath, agentId);
+    if (released.length === 0) return { ok: true, message: 'No helpers', helperIds: [] };
+    if (options.dryRun) return { ok: true, message: `Would keep ${released.length} helper(s)`, helperIds: released.map((a) => a.id) };
+    await writeAgents(projectPath, releaseHelpersOf(await readAgents(projectPath), agentId));
+    return { ok: true, message: `Kept ${released.length} helper(s)`, helperIds: released.map((a) => a.id) };
+  }
+
+  const helpers = liveDescendants(agents, agentId);
+  if (helpers.length === 0) return { ok: true, message: 'No helpers', helperIds: [] };
+
+  // Every branch this cascade removes, so one helper's work kept only on a
+  // sibling's branch is not counted as safe.
+  const disposedBranches = new Set<string>();
+  const branchErrors = new Map<string, string>();
+  for (const helper of helpers) {
+    try {
+      for (const name of await branchesDisposedWith(helper)) disposedBranches.add(name);
+    } catch (err) {
+      // telemetry-exempt: blocks this helper below and reaches the user in the result
+      branchErrors.set(helper.id, `couldn't check, ${errorText(err)}`);
+    }
+  }
+  const checked = await Promise.all(helpers.map(async (helper) => {
+    const branchError = branchErrors.get(helper.id);
+    return {
+      helper,
+      checks: branchError
+        ? { dirty: 0, unpushed: 0, unmerged: null, error: branchError }
+        : await getDisposeChecks(projectPath, helper.id, { alsoDisposed: [...disposedBranches] }),
+    };
+  }));
+  const blocked: HelperDisposeBlock[] = checked
+    .filter(({ checks }) => hasWorkAtRisk(checks))
+    .map(({ helper, checks }) => ({ agentId: helper.id, name: helper.name, checks }));
+  if (blocked.length > 0 && !options.force) {
+    return {
+      ok: false,
+      message: blocked.length === 1
+        ? `${blocked[0].name} has work that disposing would lose, or couldn't be checked`
+        : `${blocked.length} helpers have work that disposing would lose, or couldn't be checked`,
+      blocked,
+    };
+  }
+
+  if (options.dryRun) {
+    return { ok: true, message: `Would dispose ${helpers.length} helper(s)`, helperIds: helpers.map((a) => a.id) };
+  }
+  const disposed: string[] = [];
+  const failed: NonNullable<HelperCascadeResult['failed']> = [];
+  for (const helper of helpers) {
+    try {
+      await disposeAgent(projectPath, helper.id);
+      disposed.push(helper.id);
+    } catch (err) {
+      // telemetry-exempt: logged and returned in `failed`; the delete flow reports it
+      failed.push({ agentId: helper.id, name: helper.name, reason: errorText(err) });
+      appLog('core:agent-config', 'error', 'Failed to dispose a helper', {
+        meta: { agentId: helper.id, parentId: agentId, error: errorText(err) },
+      });
+    }
+  }
+  if (failed.length > 0) {
+    return {
+      ok: false,
+      message: `Disposed ${disposed.length} of ${helpers.length} helpers`,
+      helperIds: disposed,
+      failed,
+    };
+  }
+  return { ok: true, message: `Disposed ${helpers.length} helper(s)`, helperIds: disposed };
 }
 
 // --- Agent icon storage ---

@@ -12,6 +12,7 @@ import * as orchestratorSettings from './orchestrator-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
+import { isDisposedAgent } from '../../shared/agent-helpers';
 import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
@@ -259,6 +260,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
           if (params.agentSource === undefined && durableConfig.agentSource) params = { ...params, agentSource: durableConfig.agentSource };
         }
       } catch { /* config not available — use caller-provided values */ }
+    }
+    // A disposed helper keeps its row but has no worktree to run in (#2224).
+    if (isDisposedAgent(durableConfig)) {
+      throw tagError(new Error(`${durableConfig?.name ?? 'This agent'} was disposed and can't be started`), 'preflight_failed');
     }
     facts.model = params.model;
 

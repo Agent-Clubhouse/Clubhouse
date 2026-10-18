@@ -286,6 +286,58 @@ export interface DurableAgentConfig {
   agentFile?: string;
   /** Directory to search for the agent file (e.g. "~/.copilot/agents/" → --source ...) */
   agentSource?: string;
+  /**
+   * Helpers (#2224): the durable agent that owns this one. A helper is an
+   * ordinary durable agent with a parent; unset means a top-level agent.
+   */
+  parentAgentId?: string;
+  /** Helpers (#2224): the parent may dispose this agent when its work is done. */
+  disposable?: boolean;
+  /**
+   * Helpers (#2224): ISO time the agent was disposed. A disposed agent keeps
+   * its row and session history but has no worktree and never spawns.
+   */
+  disposedAt?: string;
+}
+
+/** What to do with an orchestrator's helpers when it is deleted (#2224). */
+export type HelperDeleteChoice = 'dispose' | 'keep';
+
+/**
+ * What disposing a helper would lose (#2224). It blocks on dirty files,
+ * unpushed commits or a check that couldn't run; `unmerged` is information
+ * only, since disposing never deletes a remote branch.
+ */
+export interface HelperDisposeChecks {
+  /** Uncommitted or untracked files in the worktree. */
+  dirty: number;
+  /**
+   * Commits that deleting the branch would destroy: those on no remote, or,
+   * when the repository has no remote, those on no other local branch.
+   */
+  unpushed: number;
+  /** Commits not merged into the base branch; null when no base could be found. */
+  unmerged: number | null;
+  /** Set when a check couldn't run, or the helper is still being created. Blocks disposal. */
+  error?: string;
+}
+
+export interface HelperDisposeBlock {
+  agentId: string;
+  name: string;
+  checks: HelperDisposeChecks;
+}
+
+/** Result of resolving an orchestrator's helpers before it is deleted (#2224). */
+export interface HelperCascadeResult {
+  ok: boolean;
+  message: string;
+  /** Helpers that would lose work if disposed. Nothing was changed when set. */
+  blocked?: HelperDisposeBlock[];
+  /** Helpers that were disposed or released. */
+  helperIds?: string[];
+  /** Helpers whose disposal failed part way; the ones in `helperIds` were disposed. */
+  failed?: Array<{ agentId: string; name: string; reason: string }>;
 }
 
 /** Maps an orchestrator ID to its wrapper subcommand */

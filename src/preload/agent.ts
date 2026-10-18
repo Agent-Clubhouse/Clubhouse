@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentHookEvent, AgentSleepInfo, DurableConfigUpdates } from '../shared/types';
+import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, HelperCascadeResult, HelperDeleteChoice } from '../shared/types';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
 export const agent = {
@@ -39,6 +39,12 @@ export const agent = {
     ipcRenderer.invoke(IPC.AGENT.DELETE_FORCE, projectPath, agentId),
   deleteUnregister: (projectPath: string, agentId: string) =>
     ipcRenderer.invoke(IPC.AGENT.DELETE_UNREGISTER, projectPath, agentId),
+  /** Live helpers of a durable agent, or every one below it with `recursive` (#2224). */
+  listHelpers: (projectPath: string, agentId: string, recursive?: boolean): Promise<DurableAgentConfig[]> =>
+    ipcRenderer.invoke(IPC.AGENT.LIST_HELPERS, projectPath, agentId, recursive),
+  /** Dispose or keep an orchestrator's helpers before it is deleted (#2224). */
+  resolveHelpersForDelete: (projectPath: string, agentId: string, choice: HelperDeleteChoice, dryRun?: boolean): Promise<HelperCascadeResult> =>
+    ipcRenderer.invoke(IPC.AGENT.RESOLVE_HELPERS_FOR_DELETE, projectPath, agentId, choice, dryRun),
   readQuickSummary: (agentId: string, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.READ_QUICK_SUMMARY, agentId, projectPath),
   getDurableConfig: (projectPath: string, agentId: string) =>

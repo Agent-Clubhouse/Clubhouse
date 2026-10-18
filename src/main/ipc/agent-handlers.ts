@@ -289,6 +289,25 @@ export function registerAgentHandlers(): void {
     },
   ));
 
+  // --- Helpers (#2224) ---
+
+  ipcMain.handle(IPC.AGENT.LIST_HELPERS, withValidatedArgs(
+    [stringArg(), stringArg(), booleanArg({ optional: true })],
+    async (_event, projectPath, agentId, recursive) => agentConfig.listHelpers(projectPath, agentId, { recursive }),
+  ));
+
+  ipcMain.handle(IPC.AGENT.RESOLVE_HELPERS_FOR_DELETE, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), booleanArg({ optional: true })],
+    async (_event, projectPath, agentId, choice, dryRun) => {
+      if (choice !== 'dispose' && choice !== 'keep') {
+        throw new Error(`Unknown helper choice: ${choice}`);
+      }
+      const result = await agentConfig.resolveHelpersForDelete(projectPath, agentId, choice, { dryRun });
+      if (!dryRun && result.ok && (result.helperIds?.length ?? 0) > 0) broadcastSnapshotRefresh();
+      return result;
+    },
+  ));
+
   // --- Orchestrator-based handlers ---
 
   ipcMain.handle(IPC.AGENT.SPAWN_AGENT, withValidatedArgs(

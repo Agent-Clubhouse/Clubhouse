@@ -6,6 +6,7 @@ import {
   AgentHookEvent,
   DurableAgentConfig,
   DeleteResult,
+  HelperDeleteChoice,
 } from '../../../shared/types';
 
 export type DeleteMode = 'commit-push' | 'cleanup-branch' | 'save-patch' | 'force' | 'unregister';
@@ -98,7 +99,11 @@ export interface AgentLifecycleSlice {
   ) => string;
   /** Clear the resuming flag for an agent (called when session replay finishes) */
   clearResuming: (id: string) => void;
-  executeDelete: (mode: DeleteMode, projectPath: string) => Promise<DeleteResult>;
+  /**
+   * Delete the agent in the delete dialog. An agent with helpers (#2224) needs
+   * `helperChoice`: dispose them, or keep them as ordinary durable agents.
+   */
+  executeDelete: (mode: DeleteMode, projectPath: string, helperChoice?: HelperDeleteChoice) => Promise<DeleteResult>;
   resumingAgents: Record<string, import('../../features/app/ResumeBanner').ResumeStatus>;
   setResumeStatus: (agentId: string, status: import('../../features/app/ResumeBanner').ResumeStatus) => void;
   clearResumingAgents: () => void;

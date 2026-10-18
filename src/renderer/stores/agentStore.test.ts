@@ -19,6 +19,8 @@ vi.stubGlobal('window', {
       deleteSavePatch: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       deleteForce: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       deleteUnregister: vi.fn().mockResolvedValue({ ok: true, message: '' }),
+      listHelpers: vi.fn().mockResolvedValue([]),
+      resolveHelpersForDelete: vi.fn().mockResolvedValue({ ok: true, message: '', helperIds: [] }),
       reorderDurable: vi.fn().mockResolvedValue(undefined),
       readIcon: vi.fn().mockResolvedValue(null),
       getDurableConfig: vi.fn().mockResolvedValue(null),
@@ -1061,6 +1063,16 @@ describe('agentStore', () => {
       mockAgent.spawnAgent.mockResolvedValue(undefined);
     });
 
+    it('never starts a disposed helper (#2224)', async () => {
+      const config = {
+        id: 'durable_disposed', name: 'gone', color: 'indigo', createdAt: '2024-01-01',
+        parentAgentId: 'durable_parent', disposedAt: '2026-10-18T00:00:00.000Z',
+      };
+      await expect(getState().spawnDurableAgent('proj_1', '/project', config, false)).rejects.toThrow(/disposed/);
+      expect(mockAgent.spawnAgent).not.toHaveBeenCalled();
+      expect(getState().agents['durable_disposed']).toBeUndefined();
+    });
+
     // The Sleeping view's wake with a task (#2038) resumes AND sends a new task;
     // unlike the restart resume queue (#2074), it must keep the mission.
     it('wake with a task resumes the last session and delivers the task', async () => {
@@ -1266,6 +1278,18 @@ describe('agentStore', () => {
   });
 
   describe('loadDurableAgents', () => {
+    it('leaves disposed helpers off the rail (#2224)', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      seedAgent({ id: 'durable_gone', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      mockAgent.listDurable.mockResolvedValue([
+        { id: 'durable_live', name: 'live', color: 'indigo', createdAt: '2024-01-01' },
+        { id: 'durable_gone', name: 'gone', color: 'indigo', createdAt: '2024-01-01', parentAgentId: 'durable_live', disposedAt: '2026-10-18T00:00:00.000Z' },
+      ]);
+      await getState().loadDurableAgents('proj_1', '/project');
+      expect(getState().agents['durable_live']).toBeDefined();
+      expect(getState().agents['durable_gone']).toBeUndefined();
+    });
+
     it('loads model from durable config', async () => {
       const mockAgent = window.clubhouse.agent as any;
       mockAgent.listDurable.mockResolvedValue([
@@ -1523,6 +1547,104 @@ describe('agentStore', () => {
       vi.mocked(window.clubhouse.agent.deleteForce).mockResolvedValueOnce({ ok: false, message: 'error' });
       await getState().executeDelete('force', projectPath);
       expect(getState().deleteDialogAgent).toBe('target');
+    });
+
+    describe('helpers (#2224)', () => {
+      const helperConfigs = [
+        { id: 'helper_1', name: 'scout', color: 'blue', createdAt: 'x', parentAgentId: 'target' },
+        { id: 'helper_2', name: 'fixer', color: 'red', createdAt: 'x', parentAgentId: 'target' },
+      ];
+
+      beforeEach(() => {
+        vi.mocked(window.clubhouse.agent.listHelpers).mockResolvedValue(helperConfigs);
+        vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mockImplementation(async (_p, _id, choice) => ({
+          ok: true, message: '', helperIds: choice === 'dispose' ? ['helper_1', 'helper_2'] : ['helper_1', 'helper_2'],
+        }));
+        seedAgent({ id: 'helper_1', projectId: 'proj_1', status: 'running', kind: 'durable' });
+        seedAgent({ id: 'helper_2', projectId: 'proj_1', status: 'sleeping', kind: 'durable' });
+      });
+
+      it('refuses to delete an orchestrator until a helper choice is made', async () => {
+        const result = await getState().executeDelete('force', projectPath);
+        expect(result.ok).toBe(false);
+        expect(window.clubhouse.agent.deleteForce).not.toHaveBeenCalled();
+        expect(window.clubhouse.agent.resolveHelpersForDelete).not.toHaveBeenCalled();
+        expect(getState().agents['target']).toBeDefined();
+      });
+
+      it('dispose: checks first, stops running helpers, disposes them, then deletes', async () => {
+        const result = await getState().executeDelete('force', projectPath, 'dispose');
+
+        expect(result.ok).toBe(true);
+        const resolve = vi.mocked(window.clubhouse.agent.resolveHelpersForDelete);
+        expect(resolve.mock.calls).toEqual([
+          [projectPath, 'target', 'dispose', true],
+          [projectPath, 'target', 'dispose'],
+        ]);
+        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledWith('helper_1', projectPath, true);
+        expect(window.clubhouse.agent.killAgent).toHaveBeenCalledTimes(1);
+        expect(getState().agents['helper_1']).toBeUndefined();
+        expect(getState().agents['helper_2']).toBeUndefined();
+        expect(window.clubhouse.agent.deleteForce).toHaveBeenCalledWith(projectPath, 'target');
+      });
+
+      it('dispose: dirty, unpushed or unchecked helpers block the whole delete before anything stops', async () => {
+        vi.mocked(window.clubhouse.agent.resolveHelpersForDelete).mockResolvedValueOnce({
+          ok: false,
+          message: 'blocked',
+          blocked: [
+            { agentId: 'helper_1', name: 'scout', checks: { dirty: 2, unpushed: 0, unmerged: 0 } },
+            { agentId: 'helper_2', name: 'fixer', checks: { dirty: 0, unpushed: 1, unmerged: 4 } },
+            { agentId: 'helper_4', name: 'mover', checks: { dirty: 0, unpushed: 4210, unmerged: 4210 } },
+            { agentId: 'helper_3', name: 'mapper', checks: { dirty: 0, unpushed: 0, unmerged: null, error: "couldn't check, fatal: bad object" } },
+          ],
+        });
+
+        const result = await getState().executeDelete('force', projectPath, 'dispose');
+
+        expect(result.ok).toBe(false);
+        expect(result.message).toBe(
+          "Nothing was deleted. Disposing would lose work in scout (2 uncommitted files), fixer (1 unpushed commit), mover (more than 99 unpushed commits) and mapper (couldn't check, fatal: bad object). Keep the helpers, or commit and push their work first.",
+        );
+        expect(window.clubhouse.agent.resolveHelpersForDelete).toHaveBeenCalledTimes(1);
+        expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
+        expect(window.clubhouse.agent.deleteForce).not.toHaveBeenCalled();
+        expect(getState().agents['target']).toBeDefined();
+        expect(getState().agents['helper_1']).toBeDefined();
+      });
+
+      it('dispose: a helper that fails part way keeps the orchestrator, and the disposed ones leave the rail', async () => {
+        vi.mocked(window.clubhouse.agent.resolveHelpersForDelete)
+          .mockResolvedValueOnce({ ok: true, message: '', helperIds: ['helper_1', 'helper_2'] })
+          .mockResolvedValueOnce({
+            ok: false,
+            message: 'Disposed 1 of 2 helpers',
+            helperIds: ['helper_2'],
+            failed: [{ agentId: 'helper_1', name: 'scout', reason: 'EBUSY: resource busy or locked' }],
+          });
+
+        const result = await getState().executeDelete('force', projectPath, 'dispose');
+
+        expect(result).toEqual({
+          ok: false,
+          message: 'Disposed 1 helper, but couldn\'t dispose scout (EBUSY: resource busy or locked), so the orchestrator was not deleted.',
+        });
+        expect(getState().agents['helper_2']).toBeUndefined();
+        expect(getState().agents['helper_1']).toBeDefined();
+        expect(getState().agents['target']).toBeDefined();
+        expect(window.clubhouse.agent.deleteForce).not.toHaveBeenCalled();
+      });
+
+      it('keep: releases helpers without stopping them, then deletes', async () => {
+        const result = await getState().executeDelete('force', projectPath, 'keep');
+
+        expect(result.ok).toBe(true);
+        expect(window.clubhouse.agent.resolveHelpersForDelete).toHaveBeenCalledWith(projectPath, 'target', 'keep');
+        expect(window.clubhouse.agent.killAgent).not.toHaveBeenCalled();
+        expect(getState().agents['helper_1']).toBeDefined();
+        expect(getState().agents['helper_2']).toBeDefined();
+        expect(getState().agents['target']).toBeUndefined();
+      });
     });
   });
 });

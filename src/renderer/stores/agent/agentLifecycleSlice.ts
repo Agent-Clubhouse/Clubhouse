@@ -1,4 +1,4 @@
-import { Agent, DeleteResult } from '../../../shared/types';
+import { Agent, DeleteResult, DurableAgentConfig, HelperCascadeResult, HelperDisposeBlock } from '../../../shared/types';
 import { generateQuickAgentId } from '../../../shared/agent-id';
 import { generateQuickName } from '../../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../../shared/template-engine';
@@ -165,6 +165,8 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
 
     spawnDurableAgent: async (projectId, projectPath, config, resume, mission?) => {
       const agentId = config.id;
+      // A disposed helper (#2224) keeps its row but has no worktree to run in.
+      if (config.disposedAt) throw new Error(`${config.name} was disposed and can't be started`);
 
       const agent: Agent = {
         id: agentId,
@@ -313,11 +315,43 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
       });
     },
 
-    executeDelete: async (mode, projectPath) => {
+    executeDelete: async (mode, projectPath, helperChoice) => {
       const agentId = get().deleteDialogAgent;
       if (!agentId) return { ok: false, message: 'No agent selected' };
 
       const agent = get().agents[agentId];
+
+      // Settle helpers first so none is left pointing at a deleted parent (#2224).
+      if (agent?.kind === 'durable') {
+        const helpers = await listLiveHelpers(projectPath, agentId);
+        if (helpers.length > 0) {
+          if (!helperChoice) {
+            return { ok: false, message: `Choose what happens to ${agent.name}'s helpers` };
+          }
+          // Run the checks right before stopping anything: a helper that
+          // would block the dispose keeps running.
+          const preview: HelperCascadeResult = await window.clubhouse.agent.resolveHelpersForDelete(projectPath, agentId, helperChoice, true);
+          if (!preview.ok) return { ok: false, message: describeHelperBlock(preview) };
+          if (helperChoice === 'dispose') {
+            for (const helper of helpers) {
+              if (get().agents[helper.id]?.status === 'running') {
+                // Wait for the process to exit so it no longer holds the
+                // worktree folder open (EBUSY on Windows).
+                await window.clubhouse.agent.killAgent(helper.id, projectPath, true);
+              }
+            }
+          }
+          // Main checks again before it removes anything.
+          const resolved: HelperCascadeResult = await window.clubhouse.agent.resolveHelpersForDelete(projectPath, agentId, helperChoice);
+          // A disposed helper keeps its config row but leaves the rail, even
+          // when another helper's disposal failed.
+          if (helperChoice === 'dispose') {
+            for (const helperId of resolved.helperIds ?? []) get().removeAgent(helperId);
+          }
+          // The orchestrator stays unless every helper was settled.
+          if (!resolved.ok) return { ok: false, message: describeHelperBlock(resolved) };
+        }
+      }
 
       // Kill and remove any child quick agents before deleting a durable parent
       if (agent?.kind === 'durable') {
@@ -368,4 +402,51 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
       return result;
     },
   };
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** Past this, an exact count says nothing more (a branch with its whole history unpushed). */
+const MAX_LISTED_COMMITS = 99;
+
+function describeBlock(block: HelperDisposeBlock): string {
+  const parts: string[] = [];
+  if (block.checks.error) parts.push(block.checks.error);
+  if (block.checks.dirty > 0) parts.push(plural(block.checks.dirty, 'uncommitted file', 'uncommitted files'));
+  if (block.checks.unpushed > MAX_LISTED_COMMITS) parts.push(`more than ${MAX_LISTED_COMMITS} unpushed commits`);
+  else if (block.checks.unpushed > 0) parts.push(plural(block.checks.unpushed, 'unpushed commit', 'unpushed commits'));
+  return `${block.name} (${parts.join(', ')})`;
+}
+
+function joinNames(names: string[]): string {
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/** The delete error when helpers blocked the dispose, or some failed part way. */
+export function describeHelperBlock(result: HelperCascadeResult): string {
+  if (result.failed && result.failed.length > 0) {
+    const done = result.helperIds?.length ?? 0;
+    const failed = joinNames(result.failed.map((f) => `${f.name} (${f.reason})`));
+    return `Disposed ${plural(done, 'helper', 'helpers')}, but couldn't dispose ${failed}, so the orchestrator was not deleted.`;
+  }
+  if (!result.blocked || result.blocked.length === 0) return result.message;
+  const list = joinNames(result.blocked.map(describeBlock));
+  return `Nothing was deleted. Disposing would lose work in ${list}. Keep the helpers, or commit and push their work first.`;
+}
+
+/**
+ * The live helpers of a durable agent (#2224): every one below it, or only
+ * its direct helpers with `recursive` false. A failed lookup reads as none:
+ * main then keeps any helpers as ordinary agents when the parent goes.
+ */
+export async function listLiveHelpers(projectPath: string, agentId: string, recursive = true): Promise<DurableAgentConfig[]> {
+  try {
+    const helpers = await window.clubhouse.agent.listHelpers(projectPath, agentId, recursive);
+    return Array.isArray(helpers) ? helpers : [];
+  } catch {
+    // telemetry-exempt: main keeps helpers as ordinary agents when this lookup fails
+    return [];
+  }
 }

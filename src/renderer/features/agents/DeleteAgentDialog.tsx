@@ -4,8 +4,9 @@ import { useAgentStore, DeleteMode } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useRemoteProjectStore, isRemoteAgentId, parseNamespacedId, isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
-import { WorktreeStatus } from '../../../shared/types';
+import { HelperDeleteChoice, WorktreeStatus } from '../../../shared/types';
 import { Spinner } from '../../components/Spinner';
+import { listLiveHelpers } from '../../stores/agent/agentLifecycleSlice';
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   M: { label: 'M', cls: 'bg-ctp-warning/20 text-ctp-warning' },
@@ -57,6 +58,19 @@ const DIRTY_OPTIONS: OptionCard[] = [
   },
 ];
 
+const HELPER_OPTIONS: Array<{ choice: HelperDeleteChoice; label: string; description: string }> = [
+  {
+    choice: 'dispose',
+    label: 'Dispose helpers',
+    description: 'Remove their worktrees and branches, and those of their own helpers. Stops if any has uncommitted or unpushed work.',
+  },
+  {
+    choice: 'keep',
+    label: 'Keep helpers',
+    description: 'They stay as ordinary agents with their worktrees. Their own helpers stay with them.',
+  },
+];
+
 export function DeleteAgentDialog() {
   const { deleteDialogAgent, closeDeleteDialog, executeDelete, agents } = useAgentStore();
   const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
@@ -77,6 +91,9 @@ export function DeleteAgentDialog() {
 
   const [status, setStatus] = useState<WorktreeStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  // Helpers (#2224): an orchestrator's helpers are disposed or kept before it goes.
+  const [helperCount, setHelperCount] = useState(0);
+  const [helperChoice, setHelperChoice] = useState<HelperDeleteChoice | null>(null);
   const [executing, setExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,8 +109,13 @@ export function DeleteAgentDialog() {
         );
         setStatus(s as WorktreeStatus);
       } else if (activeProject) {
-        const s = await window.clubhouse.agent.getWorktreeStatus(activeProject.path, deleteDialogAgent);
+        const [s, helpers] = await Promise.all([
+          window.clubhouse.agent.getWorktreeStatus(activeProject.path, deleteDialogAgent),
+          // Direct helpers: Keep releases these; their own helpers stay with them.
+          listLiveHelpers(activeProject.path, deleteDialogAgent, false),
+        ]);
         setStatus(s);
+        setHelperCount(helpers.length);
       }
     } catch {
       setStatus(null);
@@ -134,9 +156,16 @@ export function DeleteAgentDialog() {
           setError(result.message);
         }
       } else if (activeProject) {
-        const result = await executeDelete(mode, activeProject.path);
+        const result = helperChoice
+          ? await executeDelete(mode, activeProject.path, helperChoice)
+          : await executeDelete(mode, activeProject.path);
         if (!result.ok && result.message !== 'cancelled') {
           setError(result.message);
+          // Helpers that blocked the delete are still there; ask again.
+          if (helperChoice) {
+            setHelperChoice(null);
+            await fetchStatus();
+          }
         }
       }
     } catch (err: any) {
@@ -144,6 +173,54 @@ export function DeleteAgentDialog() {
     }
     setExecuting(false);
   };
+
+  if (!loading && !isRemote && helperCount > 0 && !helperChoice) {
+    return createPortal(
+      // eslint-disable-next-line no-restricted-syntax
+      <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50" onClick={closeDeleteDialog}>
+        <div
+          className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[440px] shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+          data-testid="delete-agent-helpers-step"
+        >
+          <h2 className="text-base font-semibold text-ctp-text mb-2">
+            Delete {agent.name}?
+          </h2>
+          <p className="text-sm text-ctp-subtext0 mb-3">
+            {agent.name} has {helperCount === 1 ? '1 helper' : `${helperCount} helpers`}. Choose what happens to {helperCount === 1 ? 'it' : 'them'} first.
+          </p>
+          {error && (
+            <div className="mb-3 px-3 py-2 rounded bg-ctp-error/10 border border-ctp-error/30 text-ctp-error text-xs">
+              {error}
+            </div>
+          )}
+          <div className="space-y-1.5 mb-3">
+            {HELPER_OPTIONS.map((opt) => (
+              <button
+                key={opt.choice}
+                onClick={() => setHelperChoice(opt.choice)}
+                data-testid={`delete-agent-helpers-${opt.choice}`}
+                className="w-full text-left px-3 py-2.5 rounded-lg border border-surface-0 hover:border-surface-2 hover:bg-surface-0 transition-colors cursor-pointer"
+              >
+                <div className="text-sm font-medium text-ctp-text">{opt.label}</div>
+                <div className="text-xs text-ctp-subtext0 mt-0.5">{opt.description}</div>
+              </button>
+            ))}
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={closeDeleteDialog}
+              className="px-3 py-1.5 text-xs rounded bg-surface-1 text-ctp-subtext1
+                hover:bg-surface-2 cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  }
 
   // Non-worktree agents get a simple unregister dialog
   if (!agent.worktreePath) {

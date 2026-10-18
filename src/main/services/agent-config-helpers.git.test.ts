@@ -1,0 +1,130 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+// Real git in a temp repository: the dispose checks rely on rev-list's
+// --exclude/--branches semantics, which a fake git can't reproduce (#2224).
+
+vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+vi.mock('./agent-settings-service', () => ({
+  applyAgentDefaults: vi.fn(async () => undefined),
+  readProjectAgentDefaults: vi.fn(async () => ({})),
+}));
+vi.mock('./agent-system', () => ({ resolveOrchestrator: vi.fn() }));
+vi.mock('./chat-idle-settings', () => ({ setAgentIdleSleep: vi.fn() }));
+
+import {
+  clearAgentConfigCache,
+  flushAllAgentConfigs,
+  getDisposeChecks,
+  resolveHelpersForDelete,
+} from './agent-config';
+import type { DurableAgentConfig } from '../../shared/types';
+
+let root: string;
+let project: string;
+
+function git(args: string[], cwd = project): string {
+  return execFileSync('git', [
+    '-c', 'user.name=Clubhouse Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false',
+    ...args,
+  ], { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+function worktree(name: string): string {
+  return path.join(project, '.clubhouse', 'agents', name);
+}
+
+function addAgent(id: string, name: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
+  git(['worktree', 'add', '-q', '-b', `${name}/standby`, worktree(name), 'main']);
+  return {
+    id, name, color: 'blue', createdAt: '2026-10-18T00:00:00.000Z',
+    worktreePath: worktree(name), branch: `${name}/standby`, ...extra,
+  };
+}
+
+function commit(cwd: string, file: string): void {
+  fs.writeFileSync(path.join(cwd, file), `${file}\n`);
+  git(['add', file], cwd);
+  git(['commit', '-q', '-m', `add ${file}`], cwd);
+}
+
+function branchExists(name: string): boolean {
+  try {
+    git(['show-ref', '--verify', '--quiet', `refs/heads/${name}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+beforeEach(() => {
+  clearAgentConfigCache();
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'clubhouse-helpers-'));
+  project = path.join(root, 'project');
+  fs.mkdirSync(project);
+  git(['init', '-q']);
+  git(['checkout', '-q', '-b', 'main']);
+  commit(project, 'README.md');
+
+  const agents = [
+    addAgent('durable_1_orch', 'orch'),
+    addAgent('durable_2_a', 'helper-a', { parentAgentId: 'durable_1_orch' }),
+    addAgent('durable_3_b', 'helper-b', { parentAgentId: 'durable_1_orch' }),
+  ];
+  fs.writeFileSync(path.join(project, '.clubhouse', 'agents.json'), JSON.stringify(agents, null, 2));
+});
+
+afterEach(async () => {
+  await flushAllAgentConfigs();
+  clearAgentConfigCache();
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+describe('dispose checks against a real repository (no remote)', () => {
+  it('does not count work kept only on a sibling helper being disposed as safe', async () => {
+    // Helper A commits X; helper B's branch is fast-forwarded onto it.
+    commit(worktree('helper-a'), 'x.txt');
+    git(['merge', '-q', '--ff-only', 'helper-a/standby'], worktree('helper-b'));
+
+    // On its own, A's commit survives on B's branch.
+    expect((await getDisposeChecks(project, 'durable_2_a')).unpushed).toBe(0);
+
+    // Disposed together, both branches go, so X is at risk in both.
+    const result = await resolveHelpersForDelete(project, 'durable_1_orch', 'dispose');
+
+    expect(result.ok).toBe(false);
+    expect(result.blocked?.map((b) => [b.agentId, b.checks.unpushed])).toEqual([
+      ['durable_2_a', 1],
+      ['durable_3_b', 1],
+    ]);
+    expect(branchExists('helper-a/standby')).toBe(true);
+    expect(branchExists('helper-b/standby')).toBe(true);
+    expect(fs.existsSync(worktree('helper-a'))).toBe(true);
+  });
+
+  it('disposes helpers whose work is on a branch that stays', async () => {
+    commit(worktree('helper-a'), 'x.txt');
+    git(['merge', '-q', '--ff-only', 'helper-a/standby'], worktree('helper-b'));
+    git(['merge', '-q', '--ff-only', 'helper-a/standby']);
+
+    const result = await resolveHelpersForDelete(project, 'durable_1_orch', 'dispose');
+
+    expect(result).toMatchObject({ ok: true, helperIds: ['durable_2_a', 'durable_3_b'] });
+    expect(branchExists('helper-a/standby')).toBe(false);
+    expect(branchExists('helper-b/standby')).toBe(false);
+    expect(branchExists('orch/standby')).toBe(true);
+    expect(fs.existsSync(worktree('helper-a'))).toBe(false);
+    expect(fs.existsSync(worktree('helper-b'))).toBe(false);
+  });
+
+  it('blocks on uncommitted files', async () => {
+    fs.writeFileSync(path.join(worktree('helper-b'), 'notes.txt'), 'draft\n');
+    const result = await resolveHelpersForDelete(project, 'durable_1_orch', 'dispose');
+    expect(result.blocked).toEqual([
+      { agentId: 'durable_3_b', name: 'helper-b', checks: { dirty: 1, unpushed: 0, unmerged: 0 } },
+    ]);
+  });
+});
