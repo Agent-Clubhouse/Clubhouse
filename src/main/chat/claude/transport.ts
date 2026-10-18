@@ -4,7 +4,7 @@ import { ClaudeNormalizer, type ClaudeWireMessage } from './normalizer';
 
 export type ClaudeTransportKind = 'sdk' | 'stream-json';
 
-export type ClaudeTransportLog = (level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
+export type ClaudeTransportLog = (level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 
 export interface ClaudeTransportOptions {
   /** The user's own installed `claude`, as ClaudeCodeProvider finds it. Never the SDK's bundled binary. */
@@ -164,18 +164,27 @@ export abstract class ClaudeTransportBase implements ClaudeTransport {
     pending.resolve(toWirePermissionResult(decision, pending.input, pending.toolUseId));
   }
 
-  protected log(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
+  protected log(level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
     this.opts.log?.(level, `[claude-${this.kind}] ${message}`, meta);
   }
 
   protected pushWire(msg: ClaudeWireMessage): void {
     for (const ev of this.normalizer.normalize(msg)) {
       if (ev.kind === 'unmapped') {
-        this.log('info', 'Unmapped Claude wire message', { type: ev.type, subtype: ev.subtype });
+        // The name once at info; every occurrence's shape at debug, so the
+        // next drift can be mapped without guessing (never the values).
+        const name = ev.subtype ? `${ev.type}/${ev.subtype}` : ev.type;
+        if (!this.loggedUnmapped.has(name)) {
+          this.loggedUnmapped.add(name);
+          this.log('info', 'Unmapped Claude wire message', { type: ev.type, subtype: ev.subtype });
+        }
+        this.log('debug', 'Unmapped Claude wire message shape', { name, shape: wireKeyShape(ev.raw) });
       }
       this.queue.push(ev);
     }
   }
+
+  private readonly loggedUnmapped = new Set<string>();
 
   protected pushEvent(body: ClaudeChatEventBody): void {
     this.queue.push(this.normalizer.emit(body));
@@ -224,4 +233,19 @@ export abstract class ClaudeTransportBase implements ClaudeTransport {
   protected get isEnded(): boolean {
     return this.ended;
   }
+}
+
+/**
+ * The keys of a wire message and the kinds of their values, never the values
+ * themselves (they can hold prompts, paths and output). Nested objects go
+ * three levels deep; an array shows its first element's shape.
+ */
+export function wireKeyShape(value: unknown, depth = 0): unknown {
+  if (Array.isArray(value)) return value.length === 0 ? [] : [depth >= 3 ? 'array' : wireKeyShape(value[0], depth + 1)];
+  if (value === null) return 'null';
+  if (typeof value !== 'object') return typeof value;
+  if (depth >= 3) return 'object';
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) out[k] = wireKeyShape(v, depth + 1);
+  return out;
 }

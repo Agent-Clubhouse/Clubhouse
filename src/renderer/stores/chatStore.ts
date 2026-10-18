@@ -213,6 +213,8 @@ export interface ChatViewState {
   queued: QueuedMessage[];
   /** Native messages the driver didn't recognize (protocol drift), by name. */
   protocolUnknown: Record<string, number>;
+  /** Bumped when the agent changes the workspace's git state (commit, push, …): views of its changes re-read. */
+  workspaceRevision: number;
   /**
    * "Newer than tested" CLI note. CLIs release faster than chat is retested,
    * so this isn't a transcript item; the view shows it only next to a real
@@ -249,6 +251,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     levelNames: {},
     queued: [],
     protocolUnknown: {},
+    workspaceRevision: 0,
     untestedCliNote: null,
   };
 }
@@ -658,6 +661,9 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       if (d.toolCallId !== undefined) item.toolCallId = d.toolCallId;
       return { ...state, items: [...state.items, item] };
     }
+
+    case 'workspace_changed':
+      return { ...state, workspaceRevision: state.workspaceRevision + 1 };
 
     case 'protocol_unknown': {
       // Diagnostics: counted so the view can say the CLI sent something this build doesn't understand.

@@ -426,6 +426,44 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     expect(drafts.of('plan_document').map((d) => d.data)).toEqual([{ planId: 't3', markdown: '# Plan\n1. Fix', status: 'ready', toolCallId: 't3' }]);
   });
 
+  it('marks a tool running on its first progress report, once, and never after it finished (#2109)', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'run' }], 'prompt');
+    transport.emit({ kind: 'tool_call', toolCallId: 'b1', name: 'Bash', input: { command: 'npm test' } });
+    transport.emit({ kind: 'tool_progress', toolCallId: 'b1', toolName: 'Bash', elapsedSeconds: 3, heartbeat: false });
+    transport.emit({ kind: 'tool_progress', toolCallId: 'b1', toolName: 'Bash', elapsedSeconds: 6, heartbeat: false });
+    transport.emit({ kind: 'tool_progress', toolCallId: 'b1', toolName: 'Bash', elapsedSeconds: 9, heartbeat: true });
+    transport.emit({ kind: 'tool_call_update', toolCallId: 'b1', name: 'Bash', status: 'completed', content: 'ok' });
+    transport.emit({ kind: 'tool_progress', toolCallId: 'b1', toolName: 'Bash', elapsedSeconds: 12, heartbeat: true });
+    // Progress for a tool this session never saw adds nothing.
+    transport.emit({ kind: 'tool_progress', toolCallId: 'ghost', toolName: 'Bash', elapsedSeconds: 1, heartbeat: false });
+    await settle();
+    expect(drafts.of('tool_call_update').map((d) => [d.data.toolCallId, d.data.status])).toEqual([['b1', 'in_progress'], ['b1', 'completed']]);
+    expect(drafts.of('tool_call_update')[0].turnId).toBe('turn-1');
+  });
+
+  it('turns a subagent retry into a notice (#2109)', async () => {
+    const { transport, drafts } = await scripted();
+    transport.emit({
+      kind: 'tool_progress', toolCallId: 'task', toolName: 'Task', elapsedSeconds: 0, heartbeat: false, subagentType: 'Explore',
+      retry: { attempt: 2, maxRetries: 10, retryDelayMs: 4000, errorStatus: 529, errorCategory: 'overloaded' },
+    });
+    await settle();
+    expect(drafts.of('notice').map((d) => d.data)).toContainEqual({
+      level: 'info', code: 'subagent_retry', message: 'Explore is retrying its request after a 529 error (attempt 2 of 10).',
+    });
+  });
+
+  it('maps VCS changes to workspace_changed and treats background tasks as known (#2109)', async () => {
+    const { transport, drafts } = await scripted();
+    transport.emit({ kind: 'vcs_changed', vcsKind: 'commit', branch: 'fix/x', cwd: '/repo' });
+    transport.emit({ kind: 'background_tasks', tasks: [{ taskId: 't1', taskType: 'local_bash', description: 'dev server', ambient: false }] });
+    await settle();
+    expect(drafts.of('workspace_changed').map((d) => d.data)).toEqual([{ reason: 'vcs', vcsKind: 'commit', branch: 'fix/x' }]);
+    expect(drafts.of('protocol_unknown')).toHaveLength(0);
+    expect(drafts.of('turn_started')).toHaveLength(0);
+  });
+
   it('maps system/status permission mode changes', async () => {
     const { transport, drafts } = await scripted();
     transport.emit({ kind: 'mode_changed', permissionMode: 'acceptEdits' });

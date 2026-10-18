@@ -339,6 +339,9 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private readonly pendingQuestions = new Map<string, Obj>();
   /** Subagent names from task_started; later task_* messages don't repeat them. */
   private readonly subagentNames = new Map<string, string>();
+  /** Tools already reported running (from tool_progress), and tools that finished, so progress never reopens one. */
+  private readonly runningTools = new Set<string>();
+  private readonly finishedTools = new Set<string>();
   private turn = 0;
   private turnRunning = false;
   private interrupting = false;
@@ -581,6 +584,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         return;
       }
       case 'tool_call_update': {
+        this.finishedTools.add(ev.toolCallId);
         const tool = this.tools.get(ev.toolCallId) ?? { name: ev.name, input: {} };
         this.push({
           type: 'tool_call_update',
@@ -684,6 +688,18 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
           data: { code: ev.fatal ? 'driver_stream_failed' : claudeTurnErrorCode(ev.apiError), message: ev.message, fatal: ev.fatal },
         });
         return;
+      case 'tool_progress':
+        this.mapToolProgress(ev);
+        return;
+      case 'background_tasks':
+        // Known and expected, so it doesn't count as drift. Subagent status
+        // still comes from task_started / task_notification: whether this set
+        // lists foreground subagents isn't settled, and reading a missing one
+        // as finished would end it early.
+        return;
+      case 'vcs_changed':
+        this.push({ type: 'workspace_changed', data: { reason: 'vcs', vcsKind: ev.vcsKind, ...(ev.branch ? { branch: ev.branch } : {}) } });
+        return;
       case 'unmapped':
         this.push({ type: 'protocol_unknown', data: { driver: this.driverId, kind: 'field', name: ev.subtype ? `${ev.type}/${ev.subtype}` : ev.type } });
         return;
@@ -738,6 +754,27 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     }
     // A mid-session /clear resets the running total.
     return total >= previous ? total - previous : total;
+  }
+
+  /**
+   * A tool that reports progress is running, not waiting for approval: mark
+   * it in progress once. A subagent API retry becomes a notice; heartbeats and
+   * later ticks add nothing.
+   */
+  private mapToolProgress(ev: Extract<ClaudeChatEvent, { kind: 'tool_progress' }>): void {
+    if (ev.retry) {
+      const who = ev.subagentType ?? 'A subagent';
+      const cause = ev.retry.errorStatus ? ` after a ${ev.retry.errorStatus} error` : ev.retry.errorCategory ? ` after a ${ev.retry.errorCategory} error` : '';
+      this.push({
+        type: 'notice',
+        data: { level: 'info', code: 'subagent_retry', message: `${who} is retrying its request${cause} (attempt ${ev.retry.attempt} of ${ev.retry.maxRetries}).` },
+      }, true);
+      return;
+    }
+    const id = ev.toolCallId;
+    if (!id || !this.tools.has(id) || this.runningTools.has(id) || this.finishedTools.has(id)) return;
+    this.runningTools.add(id);
+    this.push({ type: 'tool_call_update', data: { toolCallId: id, status: 'in_progress' } }, true);
   }
 
   private mapSubagent(ev: Extract<ClaudeChatEvent, { kind: 'subagent' }>): void {
