@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Agent } from '../../../../shared/types';
+import type { Agent, Project } from '../../../../shared/types';
 import type { BranchChanges } from '../../../../shared/git-branch';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { useAgentStore } from '../../../stores/agentStore';
@@ -29,6 +29,7 @@ import { SubagentList, subagentSummary } from '../chat/AgentMapPanel';
 import { buildAgentMap, formatCost, formatDuration, formatTokens, LEVEL_LABELS } from '../chat/view-model';
 import { ChangesCard, type ChangesScope } from './ChangesCard';
 import { CardNote, CardRow, DetailsCard, UsageBar } from './DetailsCard';
+import { AutoSleepRow } from './AutoSleepRow';
 import { McpCard } from './McpCard';
 import { useAgentDetailsStore } from './detailsStore';
 
@@ -47,6 +48,26 @@ export function relativeFolder(worktree: string | undefined, projectPath: string
 export function agentCwd(agent: Agent, projectPath: string | undefined): string | undefined {
   if (isRemoteProjectId(agent.projectId)) return undefined;
   return agent.worktreePath || projectPath;
+}
+
+/**
+ * The agent's project folder. A popout window has no project list of its own,
+ * so it asks main for one when the store doesn't know the project.
+ */
+export function useProjectPath(projectId: string | undefined): string | undefined {
+  const known = useProjectStore((s) => s.projects.find((p) => p.id === projectId)?.path);
+  const [fetched, setFetched] = useState<{ id: string; path: string | undefined } | null>(null);
+  useEffect(() => {
+    if (known || !projectId || isRemoteProjectId(projectId) || !window.clubhouse.window?.isPopout?.()) return;
+    let alive = true;
+    Promise.resolve().then(() => window.clubhouse.project.list()).then(
+      (projects) => { if (alive) setFetched({ id: projectId, path: (projects as Project[]).find((p) => p.id === projectId)?.path }); },
+      // telemetry-exempt: the cards that need the folder say so; the rest work without it.
+      () => { /* no folder */ },
+    );
+    return () => { alive = false; };
+  }, [known, projectId]);
+  return known ?? (fetched?.id === projectId ? fetched.path : undefined);
 }
 
 /** Minimum gap between branch reads while an agent is busy (each tool event bumps the refresh key). */
@@ -203,7 +224,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
     if (focus.subagentId) setSelectedSub(focus.subagentId);
   }, [focus, agent.id]);
 
-  const projectPath = useProjectStore((s) => s.projects.find((p) => p.id === agent.projectId)?.path);
+  const projectPath = useProjectPath(agent.projectId);
   const cwd = agentCwd(agent, projectPath);
   const hook = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
@@ -366,6 +387,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           {provider}
           {chat?.driver ? <span className="text-ctp-overlay1"> · {DRIVER_LABELS[chat.driver] ?? chat.driver}{chat.cliVersion ? ` ${chat.cliVersion}` : ''}</span> : !chat ? <span className="text-ctp-overlay1"> · terminal</span> : null}
         </CardRow>
+        {/* Only chat agents idle-sleep; agents on another machine keep their config there. */}
+        {chat && agent.kind === 'durable' && projectPath && !isRemoteProjectId(agent.projectId) && <AutoSleepRow agent={agent} projectPath={projectPath} />}
         {shownModel && <CardRow label="Model">{shownModel}{chat?.effort ? <span className="text-ctp-overlay1"> · {chat.effort} effort</span> : null}</CardRow>}
         {chat?.level && <CardRow label="Level">{chat.levelNames?.[chat.level] ?? LEVEL_LABELS[chat.level]}</CardRow>}
         <CardRow label="Usage">

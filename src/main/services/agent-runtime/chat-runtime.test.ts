@@ -384,6 +384,47 @@ describe('ChatAgentRuntime', () => {
     expect(second.last.closed).toBe(false);
   });
 
+  it('re-arms when the agent\'s auto-sleep changes, counting from the change (#2143)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let timeout = 60 * 60_000;
+    const driver = new FakeChatDriver();
+    const { runtime, onEnded } = makeRuntime(driver, { idleTimeoutMs: () => timeout });
+    await runtime.start();
+    // Twenty minutes idle, then the agent is set to 15 min: it doesn't sleep
+    // at once, but 15 min after the change.
+    await vi.advanceTimersByTimeAsync(20 * 60_000);
+    timeout = 15 * 60_000;
+    runtime.idleTimeoutChanged();
+    await vi.advanceTimersByTimeAsync(14 * 60_000);
+    await flush();
+    expect(onEnded).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await flush();
+    expect(onEnded).toHaveBeenCalledWith('idle_timeout', 0);
+    expect(runtime.idleSleptAfterMs).toBe(15 * 60_000);
+  });
+
+  it('ignores an auto-sleep change mid-turn; the turn end arms with the new value (#2143)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let timeout = 60 * 60_000;
+    const driver = new FakeChatDriver();
+    const { runtime, onEnded } = makeRuntime(driver, { idleTimeoutMs: () => timeout });
+    await runtime.start();
+    await runtime.sendMessage('hi', { source: 'user' });
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    await flush();
+    timeout = 60_000;
+    runtime.idleTimeoutChanged();
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    await flush();
+    expect(onEnded).not.toHaveBeenCalled();
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await flush();
+    expect(onEnded).toHaveBeenCalledWith('idle_timeout', 0);
+  });
+
   it('stays awake when shouldIdleSleep says no, and checks again next period (#2104)', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     let polling = true;

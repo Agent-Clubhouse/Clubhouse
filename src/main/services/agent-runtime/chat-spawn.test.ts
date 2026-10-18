@@ -58,6 +58,9 @@ import { appLog } from '../log-service';
 import { registerChatDriver, clearChatDrivers } from './chat-drivers';
 import { getAgentRuntime, clearChatRuntimes, isChatAgent } from './index';
 import { FakeChatDriver } from './fake-chat-driver';
+import type { ChatAgentRuntime } from './chat-runtime';
+import type { DurableAgentConfig } from '../../../shared/types';
+import { chatIdleTimeoutMs, clearAgentIdleSleep, setAgentIdleSleep } from '../chat-idle-settings';
 import { clearDriverHealth, DRIVER_FAILURE_THRESHOLD } from './chat-driver-health';
 import { evaluateCliVersion } from './chat-version-policy';
 import { appendChatEvent, listChatSessions, readChatTranscript } from './chat-transcript';
@@ -249,6 +252,27 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(isChatAgent('agent-1')).toBe(true);
     // Into session history (the Sessions picker), not just lastSessionId.
     expect(agentConfig.touchSessionEntry).toHaveBeenCalledWith('/p', 'agent-1', 'native-1');
+  });
+
+  it('reads the agent\'s own auto-sleep at start and re-arms when it changes, until the session ends (#2143)', async () => {
+    clearAgentIdleSleep();
+    const driver = new FakeChatDriver();
+    registerChatDriver(driver);
+    const config = { id: 'agent-1', idleSleep: 15 } as unknown as DurableAgentConfig;
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, config)).toBe('chat');
+    expect(chatIdleTimeoutMs('agent-1')).toBe(15 * 60_000);
+
+    const runtime = getAgentRuntime('agent-1') as ChatAgentRuntime;
+    const changed = vi.spyOn(runtime, 'idleTimeoutChanged');
+    setAgentIdleSleep('agent-1', 'never');
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(chatIdleTimeoutMs('agent-1')).toBe(0);
+
+    await runtime.stop();
+    await vi.waitFor(() => expect(isChatAgent('agent-1')).toBe(false));
+    setAgentIdleSleep('agent-1', 60);
+    expect(changed).toHaveBeenCalledTimes(1);
+    clearAgentIdleSleep();
   });
 
   it('records the chat session in session history when it ends, as its last activity (#2157)', async () => {
