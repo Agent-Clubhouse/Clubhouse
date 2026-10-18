@@ -25,7 +25,7 @@ import type {
 import { createFramebriar, otlpExporterOptions } from '../../vendor/framebriar/adapters/node/index.mjs';
 import { ACCESS_TIMEOUT_MS } from '../../vendor/framebriar/adapters/node/access.mjs';
 import type { FramebriarTelemetryExport } from '../../telemetry/destinations/framebriar-source';
-import type { FeedbackCaptureResult, FeedbackSendInput, FeedbackSendResult, FeedbackStatus } from '../../../shared/feedback-types';
+import { FEEDBACK_MAX_PNG_BYTES, type FeedbackCaptureResult, type FeedbackSendInput, type FeedbackSendResult, type FeedbackStatus } from '../../../shared/feedback-types';
 
 export const FRAMEBRIAR_APP_ID = 'clubhouse';
 /** Reviewed drafts are dropped if the review isn't finished in time. */
@@ -35,8 +35,14 @@ const RECEIPT_MEMORY = 20;
 /** Open reviews kept at once (each holds a screenshot); the oldest is dropped beyond this. */
 const MAX_DRAFTS = 5;
 /** Framebriar's media limit (protocol LIMITS.media). */
-const MAX_PNG_BYTES = 8 * 1024 * 1024;
+const MAX_PNG_BYTES = FEEDBACK_MAX_PNG_BYTES;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+/** Width and height from a PNG's IHDR chunk, or null if the bytes aren't a PNG. */
+export function pngSize(png: Buffer): { width: number; height: number } | null {
+  if (png.length < 24 || !png.subarray(0, 8).equals(PNG_SIGNATURE) || png.toString('latin1', 12, 16) !== 'IHDR') return null;
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+}
 /** Scene codes the renderer may report; anything else becomes 'app'. */
 const SCENE = /^[a-z][a-z0-9-]{0,39}$/;
 /** The SDK only sends invitations of this shape; anything else fails before any request. */
@@ -280,7 +286,8 @@ export class FeedbackService {
    * locally; delivery and its receipt ("Received") come later.
    */
   async send(input: FeedbackSendInput): Promise<FeedbackSendResult> {
-    const meta = { draftId: input.draftId ?? null, includeScreenshot: input.includeScreenshot, notesLength: input.notes?.length ?? 0 };
+    // Never the image itself: only whether a drawing came along.
+    const meta = { draftId: input.draftId ?? null, includeScreenshot: input.includeScreenshot, notesLength: input.notes?.length ?? 0, annotated: input.annotatedPng !== undefined };
     try {
       const result = await this.sendInner(input);
       this.log('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state: this.fb?.access.status().state });
@@ -299,11 +306,12 @@ export class FeedbackService {
     const notes = input.notes ?? '';
     if (!input.includeScreenshot && notes.trim() === '') throw new Error('Add a note to send feedback without a screenshot.');
     const scene = input.scene && SCENE.test(input.scene) ? input.scene : 'app';
+    const png = input.includeScreenshot && draft ? this.annotatedOrCaptured(draft.snapshot.png!, input.annotatedPng) : null;
     const prepared = await fb.feedback.prepare({
       notes,
       context: { scene },
       ...(input.includeScreenshot && draft
-        ? { ...draft.snapshot }
+        ? { ...draft.snapshot, png }
         : { png: null, ...(draft ? { capturedAt: draft.snapshot.capturedAt } : {}) }),
     });
     const ack = await fb.feedback.submit(prepared, { includeDiagnostics: false });
@@ -312,6 +320,26 @@ export class FeedbackService {
     if (input.draftId) this.drafts.delete(input.draftId);
     this.emit();
     return { id: ack.id, status: ack.status };
+  }
+
+  /**
+   * The user's marked-up copy of the capture (#2099), or the capture itself. The drawing
+   * may only mark up the capture: it must be a PNG of the same width and height, within
+   * the size cap. The draft keeps the original, so a failed save can be retried.
+   */
+  private annotatedOrCaptured(captured: Buffer, annotatedBase64: string | undefined): Buffer {
+    if (annotatedBase64 === undefined) return captured;
+    const annotated = Buffer.from(annotatedBase64, 'base64');
+    if (annotated.length > MAX_PNG_BYTES) {
+      throw Object.assign(new Error('The screenshot with your drawing is too large to send (8 MiB at most)'), { code: 'invalid-media' });
+    }
+    const size = pngSize(annotated);
+    const expected = pngSize(captured);
+    if (!size) throw Object.assign(new Error('The screenshot with your drawing is not a PNG image'), { code: 'invalid-media' });
+    if (!expected || size.width !== expected.width || size.height !== expected.height) {
+      throw Object.assign(new Error("The screenshot with your drawing doesn't match the captured screenshot"), { code: 'invalid-media' });
+    }
+    return annotated;
   }
 
   cancel(draftId: string): void {

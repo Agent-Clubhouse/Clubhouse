@@ -4,11 +4,32 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFramebriar } from '../../vendor/framebriar/adapters/node/index.mjs';
 import type { Framebriar, FramebriarAccessView, FramebriarOutboxView } from '../../vendor/framebriar/adapters/node/index.mjs';
-import { connectFailureReason, FeedbackService, sdkVersion, toFeedbackStatus } from './feedback-service';
+import { connectFailureReason, FeedbackService, pngSize, sdkVersion, toFeedbackStatus } from './feedback-service';
 
 const ACCESS: FramebriarAccessView = { state: 'connected', connected: true, enrolled: true, canCapture: true, notice: null, expiresAt: '2026-11-15T00:00:00.000Z' };
 const OUTBOX: FramebriarOutboxView = { state: 'available', items: 2, bytes: 1234, maxItems: 10, maxBytes: 33554432, blocked: 1, retention: 'until-delivered-or-cleared' };
 const PNG = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from('fake-image-bytes')]);
+
+/** A PNG header with a real IHDR chunk (the body is never decoded). */
+function pngOf(width: number, height: number, body = 'pixels'): Buffer {
+  const ihdr = Buffer.alloc(25);
+  ihdr.writeUInt32BE(13, 0);
+  ihdr.write('IHDR', 4, 'latin1');
+  ihdr.writeUInt32BE(width, 8);
+  ihdr.writeUInt32BE(height, 12);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), ihdr, Buffer.from(body)]);
+}
+
+describe('pngSize', () => {
+  it('reads width and height from IHDR', () => {
+    expect(pngSize(pngOf(2880, 1800))).toEqual({ width: 2880, height: 1800 });
+  });
+  it('returns null for anything that is not a PNG with an IHDR', () => {
+    expect(pngSize(Buffer.from('GIF89a-not-a-png-at-all-really'))).toBeNull();
+    expect(pngSize(PNG)).toBeNull();
+    expect(pngSize(Buffer.alloc(0))).toBeNull();
+  });
+});
 
 /** In-memory safeStorage, like Electron's (Linux reports a real keyring backend). */
 const safeStorage = {
@@ -165,6 +186,41 @@ describe('FeedbackService (fake SDK)', () => {
     expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null }));
   });
 
+  describe('a screenshot with the user\'s drawing (#2099)', () => {
+    const captured = pngOf(2880, 1800, 'captured');
+    const drawn = pngOf(2880, 1800, 'captured-with-ink');
+
+    it('uploads the annotated PNG in place of the capture', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => captured);
+      await s.send({ draftId: draft.draftId, notes: 'see the circle', includeScreenshot: true, annotatedPng: drawn.toString('base64') });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: drawn, capturedAt: '2026-10-17T10:00:00.000Z' }));
+    });
+
+    it('ignores the drawing on a text-only send', async () => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => captured);
+      await s.send({ draftId: draft.draftId, notes: 'text only', includeScreenshot: false, annotatedPng: drawn.toString('base64') });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: null }));
+    });
+
+    it.each([
+      ['a different size', pngOf(1440, 900).toString('base64'), /doesn't match/],
+      ['not a PNG', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64'), /not a PNG/],
+      ['over the decoded size cap', Buffer.concat([pngOf(2880, 1800), Buffer.alloc(8 * 1024 * 1024)]).toString('base64'), /too large/],
+    ])('refuses a drawing that is %s and keeps the draft for a retry', async (_label, annotatedPng, error) => {
+      const { create, fb } = fakeSdk();
+      const s = service(create);
+      const draft = await s.captureDraft(async () => captured);
+      await expect(s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true, annotatedPng })).rejects.toThrow(error);
+      expect(fb.feedback.prepare).not.toHaveBeenCalled();
+      await s.send({ draftId: draft.draftId, notes: 'n', includeScreenshot: true });
+      expect(fb.feedback.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ png: captured }));
+    });
+  });
+
   it('refuses a screenshot send without a draft, and text-only without notes', async () => {
     const { create } = fakeSdk();
     const s = service(create);
@@ -309,7 +365,7 @@ describe('FeedbackService (fake SDK)', () => {
 
       await s.send({ draftId: draft.draftId, notes: 'secret words', includeScreenshot: true });
       expect(find('Feedback saved for delivery')?.[2]).toEqual({
-        draftId: draft.draftId, includeScreenshot: true, notesLength: 12, id: 'rep-1', status: 'saved-local', state: 'connected',
+        draftId: draft.draftId, includeScreenshot: true, notesLength: 12, annotated: false, id: 'rep-1', status: 'saved-local', state: 'connected',
       });
       fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
       await expect(s.send({ notes: 'more secret words', includeScreenshot: false })).rejects.toThrow();
