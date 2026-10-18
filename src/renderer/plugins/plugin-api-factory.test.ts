@@ -4125,25 +4125,29 @@ describe('plugin-api-factory', () => {
     });
   });
 
-  describe('mcp tool lifetime', () => {
+  describe('mcp capability token', () => {
     type ToolCall = { callId: string; pluginId: string; toolName: string; args: Record<string, unknown> };
     const bridge = window.clubhouse as unknown as { pluginMcp?: unknown };
     let original: unknown;
     let listeners: Array<(data: ToolCall) => void>;
-    let pluginMcp: {
-      contributeTools: ReturnType<typeof vi.fn>;
-      removeTools: ReturnType<typeof vi.fn>;
-      onToolCall: ReturnType<typeof vi.fn>;
-      sendToolResult: ReturnType<typeof vi.fn>;
-    };
+    let issued: number;
+    let pluginMcp: Record<
+      'claimIssuer' | 'issueToken' | 'revokeToken' | 'contributeTools' | 'removeTools' | 'listTools' | 'onToolCall' | 'sendToolResult',
+      ReturnType<typeof vi.fn>
+    >;
 
     beforeEach(() => {
       _resetPluginMcpStateForTests();
       original = bridge.pluginMcp;
       listeners = [];
+      issued = 0;
       pluginMcp = {
+        claimIssuer: vi.fn(async () => 'issuer-secret'),
+        issueToken: vi.fn(async (_secret: string, pluginId: string) => `token-${pluginId}-${++issued}`),
+        revokeToken: vi.fn(async () => undefined),
         contributeTools: vi.fn(async () => undefined),
         removeTools: vi.fn(async () => undefined),
+        listTools: vi.fn(async () => ['plugin__p__t']),
         onToolCall: vi.fn((listener: (data: ToolCall) => void) => {
           listeners.push(listener);
           return () => { listeners = listeners.filter((l) => l !== listener); };
@@ -4162,66 +4166,197 @@ describe('plugin-api-factory', () => {
     const tool = { name: 't', description: 'd', inputSchema: { type: 'object' } };
     const dispose = (ctx: PluginContext) => { for (const sub of ctx.subscriptions) sub.dispose(); };
     const deliver = async (call: ToolCall) => { for (const l of [...listeners]) await l(call); };
+    const settle = () => new Promise((r) => setTimeout(r, 0));
 
-    it('removes the contributed tools once when the plugin deactivates', async () => {
+    it('is issued at activation, with the issuer secret, and sent on every call in place of the pluginId', async () => {
       const ctx = makeCtx();
       const api = createPluginAPI(ctx, undefined, mcpManifest());
+      await settle();
+      expect(pluginMcp.issueToken).toHaveBeenCalledWith('issuer-secret', ctx.pluginId);
 
       await api.mcp.contributeTools([tool]);
-      await api.mcp.contributeTools([tool]);
-      expect(pluginMcp.contributeTools).toHaveBeenCalledTimes(2);
+      await api.mcp.listContributedTools();
+      await api.mcp.removeTools();
 
-      dispose(ctx);
-      expect(pluginMcp.removeTools).toHaveBeenCalledTimes(1);
-      expect(pluginMcp.removeTools).toHaveBeenCalledWith(ctx.pluginId);
+      const token = `token-${ctx.pluginId}-1`;
+      expect(pluginMcp.contributeTools).toHaveBeenCalledWith(token, [tool]);
+      expect(pluginMcp.listTools).toHaveBeenCalledWith(token);
+      expect(pluginMcp.removeTools).toHaveBeenCalledWith(token);
     });
 
-    it('keeps the tools while another context of the same plugin is still active', async () => {
+    it('claims the issuer once per page', async () => {
+      createPluginAPI(makeCtx({ pluginId: 'p1' }), undefined, mcpManifest());
+      createPluginAPI(makeCtx({ pluginId: 'p2' }), undefined, mcpManifest());
+      await settle();
+      expect(pluginMcp.claimIssuer).toHaveBeenCalledTimes(1);
+      expect(pluginMcp.issueToken).toHaveBeenCalledTimes(2);
+    });
+
+    it('is not reachable from the plugin API', async () => {
+      const ctx = makeCtx();
+      const api = createPluginAPI(ctx, undefined, mcpManifest());
+      await settle();
+      const token = `token-${ctx.pluginId}-1`;
+      // api.mcp holds only methods; the token stays in the host's closure.
+      for (const value of Object.values(api.mcp)) expect(typeof value).toBe('function');
+      expect(JSON.stringify(api.mcp)).not.toContain(token);
+      expect(JSON.stringify(window.clubhouse)).not.toContain(token);
+    });
+
+    it('is not handed to a bridge method that plugin code replaced after the host claimed the issuer', async () => {
+      const ctx = makeCtx();
+      const api = createPluginAPI(ctx, undefined, mcpManifest());
+      await settle();
+      const original = pluginMcp.contributeTools;
+      const thief = vi.fn(async () => undefined);
+      pluginMcp.contributeTools = thief; // what a plugin sharing window.clubhouse could try
+
+      await api.mcp.contributeTools([tool]);
+
+      expect(thief).not.toHaveBeenCalled();
+      expect(original).toHaveBeenCalledWith(`token-${ctx.pluginId}-1`, [tool]);
+    });
+
+    it('is not seen by Promise.prototype.then or Map.prototype.get patched after the host loaded', async () => {
+      const seen: unknown[] = [];
+      // Plain stubs: vi.fn itself calls .then on returned promises to record results.
+      const issuedFor: string[] = [];
+      pluginMcp.claimIssuer = (() => Promise.resolve('issuer-secret')) as never;
+      pluginMcp.issueToken = ((secret: string, pluginId: string) => {
+        issuedFor.push(`${secret}:${pluginId}`);
+        return Promise.resolve(`token-${pluginId}-1`);
+      }) as never;
+      const revoked: string[] = [];
+      pluginMcp.revokeToken = ((token: string) => { revoked.push(token); return Promise.resolve(); }) as never;
+      const realThen = Promise.prototype.then;
+      const realGet = Map.prototype.get;
+      // eslint-disable-next-line no-extend-native
+      Promise.prototype.then = function (this: Promise<unknown>, onValue?: unknown, onError?: unknown) {
+        const wrap = typeof onValue === 'function'
+          ? (v: unknown) => { seen.push(v); return (onValue as (v: unknown) => unknown)(v); }
+          : onValue;
+        return realThen.call(this, wrap as never, onError as never);
+      } as typeof Promise.prototype.then;
+      // eslint-disable-next-line no-extend-native
+      Map.prototype.get = function (this: Map<unknown, unknown>, key: unknown) {
+        const v = realGet.call(this, key);
+        seen.push(v);
+        return v;
+      };
+      try {
+        const ctx = makeCtx();
+        const api = createPluginAPI(ctx, undefined, mcpManifest());
+        api.mcp.onToolCall(async () => ({ content: [{ type: 'text', text: 'ok' }] }));
+        await settle();
+        await api.mcp.contributeTools([tool]);
+        await api.mcp.listContributedTools();
+        await deliver({ callId: 'c1', pluginId: ctx.pluginId, toolName: 't', args: {} });
+        await settle();
+        dispose(ctx);
+        await settle();
+
+        // The host really did use the secret and the token...
+        expect(issuedFor).toEqual([`issuer-secret:${ctx.pluginId}`]);
+        expect(revoked).toEqual([`token-${ctx.pluginId}-1`]);
+        // ...but neither passed through a patched built-in.
+        const leaked = JSON.stringify(seen, (_k, v) => (v instanceof Map || v instanceof Set ? [...v] : v));
+        expect(leaked).not.toContain('issuer-secret');
+        expect(leaked).not.toContain(`token-${ctx.pluginId}-1`);
+      } finally {
+        Promise.prototype.then = realThen;
+        Map.prototype.get = realGet;
+      }
+    });
+
+    it("lets a plugin's deactivate() call removeTools after its token is gone, and gives the old context no new token", async () => {
+      const ctx = makeCtx();
+      const api = createPluginAPI(ctx, undefined, mcpManifest());
+      await settle();
+      dispose(ctx);
+
+      await expect(api.mcp.removeTools()).resolves.toBeUndefined();
+      expect(pluginMcp.removeTools).not.toHaveBeenCalled();
+
+      // A panel re-rendering with the stale context doesn't revive the token.
+      const again = createPluginAPI(ctx, undefined, mcpManifest());
+      await settle();
+      await expect(again.mcp.contributeTools([tool])).rejects.toThrow(/deactivated/);
+      expect(pluginMcp.issueToken).toHaveBeenCalledTimes(1);
+    });
+
+    it('is issued for no plugin without mcp.tools', async () => {
+      createPluginAPI(makeCtx(), undefined, makeAllPermsManifest({ permissions: ['files'] as PluginManifest['permissions'] }));
+      await settle();
+      expect(pluginMcp.issueToken).not.toHaveBeenCalled();
+    });
+
+    it('is shared by all contexts of a plugin, and revoked once when the last one deactivates', async () => {
       const a = makeCtx({ projectId: 'proj-a' });
       const b = makeCtx({ projectId: 'proj-b' });
       await createPluginAPI(a, undefined, mcpManifest()).mcp.contributeTools([tool]);
       await createPluginAPI(b, undefined, mcpManifest()).mcp.contributeTools([tool]);
+      expect(pluginMcp.issueToken).toHaveBeenCalledTimes(1);
 
       dispose(b); // closing project B
-      expect(pluginMcp.removeTools).not.toHaveBeenCalled();
+      await settle();
+      expect(pluginMcp.revokeToken).not.toHaveBeenCalled();
 
-      dispose(a); // the last context goes
-      expect(pluginMcp.removeTools).toHaveBeenCalledTimes(1);
+      dispose(a); // the last context goes; main removes the tools with the token
+      await settle();
+      expect(pluginMcp.revokeToken).toHaveBeenCalledTimes(1);
+      expect(pluginMcp.revokeToken).toHaveBeenCalledWith(`token-${a.pluginId}-1`);
     });
 
-    it('registers no cleanup for a plugin that never contributes tools', () => {
-      const ctx = makeCtx();
-      createPluginAPI(ctx, undefined, mcpManifest());
-      dispose(ctx);
-      expect(pluginMcp.removeTools).not.toHaveBeenCalled();
+    it('a reactivated plugin gets a fresh token', async () => {
+      const first = makeCtx();
+      createPluginAPI(first, undefined, mcpManifest());
+      await settle();
+      dispose(first);
+      const second = makeCtx();
+      await createPluginAPI(second, undefined, mcpManifest()).mcp.contributeTools([tool]);
+      expect(pluginMcp.contributeTools).toHaveBeenCalledWith(`token-${second.pluginId}-2`, [tool]);
     });
 
-    it('answers a call that arrives after the plugin deactivated, instead of leaving it to time out', async () => {
+    it("answers its plugin's calls with its own token", async () => {
       const ctx = makeCtx();
       const api = createPluginAPI(ctx, undefined, mcpManifest());
-      await api.mcp.contributeTools([tool]);
       api.mcp.onToolCall(async () => ({ content: [{ type: 'text', text: 'live' }] }));
+      await settle();
 
-      dispose(ctx); // handler gone; main has not processed removeTools yet
-      await deliver({ callId: 'late', pluginId: ctx.pluginId, toolName: 't', args: {} });
+      await deliver({ callId: 'c1', pluginId: ctx.pluginId, toolName: 't', args: {} });
+      await settle();
 
       expect(pluginMcp.sendToolResult).toHaveBeenCalledTimes(1);
-      expect(pluginMcp.sendToolResult).toHaveBeenCalledWith('late', {
+      expect(pluginMcp.sendToolResult).toHaveBeenCalledWith(`token-${ctx.pluginId}-1`, 'c1', { content: [{ type: 'text', text: 'live' }] });
+    });
+
+    it('answers, with an error, a call for an active plugin whose handler is gone', async () => {
+      const ctx = makeCtx();
+      const api = createPluginAPI(ctx, undefined, mcpManifest());
+      api.mcp.onToolCall(async () => ({ content: [{ type: 'text', text: 'live' }] })).dispose();
+      await settle();
+
+      await deliver({ callId: 'late', pluginId: ctx.pluginId, toolName: 't', args: {} });
+      await settle();
+
+      expect(pluginMcp.sendToolResult).toHaveBeenCalledWith(`token-${ctx.pluginId}-1`, 'late', {
         content: [{ type: 'text', text: `Plugin ${ctx.pluginId} has no active tool handler` }],
         isError: true,
       });
     });
 
-    it('leaves calls to the live handler alone', async () => {
+    it('leaves a call after deactivation to main, which settles it when the token is revoked', async () => {
       const ctx = makeCtx();
       const api = createPluginAPI(ctx, undefined, mcpManifest());
-      await api.mcp.contributeTools([tool]);
       api.mcp.onToolCall(async () => ({ content: [{ type: 'text', text: 'live' }] }));
+      await settle();
 
-      await deliver({ callId: 'c1', pluginId: ctx.pluginId, toolName: 't', args: {} });
+      dispose(ctx);
+      await deliver({ callId: 'late', pluginId: ctx.pluginId, toolName: 't', args: {} });
+      await settle();
 
-      expect(pluginMcp.sendToolResult).toHaveBeenCalledTimes(1);
-      expect(pluginMcp.sendToolResult).toHaveBeenCalledWith('c1', { content: [{ type: 'text', text: 'live' }] });
+      expect(pluginMcp.sendToolResult).not.toHaveBeenCalled();
+      expect(pluginMcp.revokeToken).toHaveBeenCalledTimes(1);
     });
   });
 });
