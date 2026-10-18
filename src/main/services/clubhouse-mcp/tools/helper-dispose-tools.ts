@@ -23,11 +23,12 @@ import { registerGlobalTool } from '../tool-registry';
 import type { McpToolResult } from '../types';
 import { agentRegistry } from '../../agent-registry';
 import * as agentConfig from '../../agent-config';
-import { getOrchestrationPolicy } from '../../orchestration-policy';
+import { getOrchestrationPolicy, withAgentLock } from '../../orchestration-policy';
 import { isAgentRunning, killAgent } from '../../agent-system';
 import * as projectStore from '../../project-store';
 import { appLog } from '../../log-service';
 import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
+import { findMainWindow } from '../../../ipc/window-handlers';
 import { IPC } from '../../../../shared/ipc-channels';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import {
@@ -90,14 +91,15 @@ interface DisposeFacts {
   errors: string[];
 }
 
-async function factsFor(projectPath: string, helperId: string, checks: HelperDisposeChecks): Promise<DisposeFacts> {
+/** The facts from `checks`, plus the uncommitted paths while the worktree is still there. */
+async function factsFor(projectPath: string, helperId: string, checks: HelperDisposeChecks, listPaths = true): Promise<DisposeFacts> {
   const facts: DisposeFacts = {
     uncommittedFiles: checks.dirty,
     unpushedCommits: checks.unpushed,
     unmergedCommits: checks.unmerged,
     errors: checks.error ? [checks.error] : [],
   };
-  if (checks.dirty > 0) {
+  if (listPaths && checks.dirty > 0) {
     try {
       const status = await agentConfig.getWorktreeStatus(projectPath, helperId);
       if (status.uncommittedFiles.length > 0) {
@@ -114,11 +116,16 @@ function workAtRisk(checks: HelperDisposeChecks): boolean {
   return checks.dirty > 0 || checks.unpushed > 0;
 }
 
-/** Ask the renderer to put the dispose in front of the user. */
-function requestUserDispose(request: HelperDisposeRequest): void {
-  // TODO(#2232): a dedicated dispose confirmation. The renderer opens the
-  // helper's delete dialog for now.
-  broadcastToAllWindows(IPC.AGENT.HELPER_DISPOSE_REQUEST, request);
+/**
+ * Put the dispose in front of the user: the main window shows it under Needs
+ * you with the check facts. Returns false when there is no main window.
+ * TODO(#2232): a real dispose confirmation the user can accept or decline.
+ */
+function requestUserDispose(request: HelperDisposeRequest): boolean {
+  const main = findMainWindow();
+  if (!main) return false;
+  main.webContents.send(IPC.AGENT.HELPER_DISPOSE_REQUEST, request);
+  return true;
 }
 
 /** Tell windows to reload the project's agents so a disposed helper leaves the rail. */
@@ -144,12 +151,16 @@ export async function handOff(callerId: string, args: Record<string, unknown>): 
 
   const projectPath = callerProject(callerId);
   if (!projectPath) return textResult('Clubhouse could not find the project you are running in.', true);
+  return withAgentLock(projectPath, callerId, () => handOffLocked(projectPath, callerId, ref, how as HelperHandoffHow, note));
+}
+
+async function handOffLocked(projectPath: string, callerId: string, ref: string, how: HelperHandoffHow, note: string): Promise<McpToolResult> {
   try {
     const found = await findOwnHelper(projectPath, callerId, ref);
     if ('error' in found) return textResult(found.error, true);
     const { helper } = found;
     if (isDisposedAgent(helper)) return textResult(`${helper.name} was already disposed.`, true);
-    const handoff = await agentConfig.setHelperHandoff(projectPath, helper.id, callerId, { how: how as HelperHandoffHow, note });
+    const handoff = await agentConfig.setHelperHandoff(projectPath, helper.id, callerId, { how, note });
     appLog('core:orchestration', 'info', 'Helper handed off', {
       meta: { orchestratorId: callerId, helperId: helper.id, how },
     });
@@ -174,7 +185,12 @@ export async function disposeHelperTool(callerId: string, args: Record<string, u
 
   const projectPath = callerProject(callerId);
   if (!projectPath) return textResult('Clubhouse could not find the project you are running in.', true);
+  // Under the caller's policy lock, which turn-off also takes, so the helper
+  // can't be released (or disposed by the cascade) in the middle of this call.
+  return withAgentLock(projectPath, callerId, () => disposeLocked(projectPath, callerId, ref, force));
+}
 
+async function disposeLocked(projectPath: string, callerId: string, ref: string, force: boolean): Promise<McpToolResult> {
   try {
     const found = await findOwnHelper(projectPath, callerId, ref);
     if ('error' in found) return textResult(found.error, true);
@@ -204,7 +220,7 @@ export async function disposeHelperTool(callerId: string, args: Record<string, u
     const facts = await factsFor(projectPath, helper.id, checks);
 
     if (policy.control === 'ask-everything') {
-      requestUserDispose({
+      const delivered = requestUserDispose({
         projectPath,
         orchestratorId: callerId,
         helperId: helper.id,
@@ -213,15 +229,18 @@ export async function disposeHelperTool(callerId: string, args: Record<string, u
         forceRequested: force,
       });
       appLog('core:orchestration', 'info', 'Helper dispose sent to the user (ask-everything)', {
-        meta: { orchestratorId: callerId, helperId: helper.id, forceRequested: force },
+        meta: { orchestratorId: callerId, helperId: helper.id, forceRequested: force, delivered },
       });
       return jsonResult({
         status: 'sent-to-user',
         helper: who,
+        delivered,
         ...facts,
         ...(force ? { forceRefused: true } : {}),
         message: `${force ? 'Force is refused because the user approves every dispose. ' : ''}`
-          + `The user decides whether ${helper.name} is disposed. Nothing was changed yet.`,
+          + (delivered
+            ? `The user decides whether ${helper.name} is disposed. Nothing was changed.`
+            : `No Clubhouse window is open to ask the user. Nothing was changed; ask the user directly.`),
       });
     }
 
@@ -255,7 +274,7 @@ export async function disposeHelperTool(callerId: string, args: Record<string, u
 
     // disposeHelper checks again now the helper is stopped; force never
     // overrides a check that couldn't run.
-    const result = await agentConfig.disposeHelper(projectPath, helper.id, { force });
+    const result = await agentConfig.disposeHelper(projectPath, helper.id, { force, expectedParentId: callerId });
     if (!result.ok) {
       const after = result.checks;
       if (after && (after.error || workAtRisk(after))) {
@@ -273,15 +292,18 @@ export async function disposeHelperTool(callerId: string, args: Record<string, u
     }
 
     await refreshRenderer(projectPath);
+    // Report what the re-check after the stop found: that is what was lost.
+    const final = result.checks ?? checks;
+    const forced = force && workAtRisk(final);
     appLog('core:orchestration', 'info', 'Helper disposed by its orchestrator', {
-      meta: { orchestratorId: callerId, helperId: helper.id, forced: force && workAtRisk(checks) },
+      meta: { orchestratorId: callerId, helperId: helper.id, forced },
     });
     return jsonResult({
       status: 'disposed',
       helper: who,
-      forced: force && workAtRisk(checks),
-      ...facts,
-      message: `${helper.name} was stopped and disposed. Its worktree folder and local branch are gone; any pushed remote branch was kept.`,
+      forced,
+      ...(await factsFor(projectPath, helper.id, final, false)),
+      message: `${helper.name} was ${wasRunning ? 'stopped and ' : ''}disposed. Its worktree folder and local branch are gone; any pushed remote branch was kept.`,
     });
   } catch (err) {
     // telemetry-exempt: returned to the calling agent

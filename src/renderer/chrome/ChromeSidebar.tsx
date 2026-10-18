@@ -28,6 +28,7 @@ import { useSidebarMode } from './listTabs';
 import { SCOPE_FOLLOWING_TABS } from './scope';
 import { useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
 import { selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './sidebar/treeModel';
+import { useHelperDisposeRequestStore, describeHelperDispose } from '../stores/helperDisposeRequestStore';
 import { HostSwitcher, LOCAL_HOST } from './sidebar/HostSwitcher';
 import { useClickOutside } from './sidebar/useClickOutside';
 import { hostOf, switchHost } from './hosts';
@@ -395,11 +396,20 @@ export function ChromeSidebar() {
   // Manual or most-recent order (#2116), shared by the tree and the filter results.
   const ordered = useSidebarOrder(treeProjects, agentsByProject);
 
+  // Helpers an orchestrator asked to dispose under "ask-everything" (#2229).
+  const pendingDisposes = useHelperDisposeRequestStore((s) => s.requests);
+  const disposeRequests = useMemo(() => {
+    const out: Record<string, { message: string; at: number }> = {};
+    for (const [helperId, pending] of Object.entries(pendingDisposes)) {
+      out[helperId] = { message: describeHelperDispose(pending), at: pending.at };
+    }
+    return out;
+  }, [pendingDisposes]);
   // Needs you covers every host, so a blocked agent anywhere is one click away.
   const needs = useMemo(() => mergeNeedsAttention(
-    selectNeedsAttention(agents, detailed, localProjectIds),
+    selectNeedsAttention(agents, detailed, localProjectIds, disposeRequests),
     selectRemoteNeedsAttention(satellites, satelliteProjects, remoteAgents, remoteDetailed),
-  ), [agents, detailed, localProjectIds, satellites, satelliteProjects, remoteAgents, remoteDetailed]);
+  ), [agents, detailed, localProjectIds, disposeRequests, satellites, satelliteProjects, remoteAgents, remoteDetailed]);
   const needsByHost = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const item of needs) counts[item.hostId ?? LOCAL_HOST] = (counts[item.hostId ?? LOCAL_HOST] ?? 0) + 1;
@@ -499,6 +509,9 @@ export function ChromeSidebar() {
   const selectNeedsYou = useCallback((agent: Agent) => {
     // needs_you_remote_select: the agent runs on a satellite, whichever host is shown.
     const remote = hostOf(agent.projectId) !== null;
+    // Selecting a helper's dispose request shows the helper; the request has
+    // been seen. TODO(#2232): accept or decline it from a real confirmation.
+    useHelperDisposeRequestStore.getState().dismiss(agent.id);
     openAgent(agent, false);
     reportChromeFeature(remote ? 'needs_you_remote_select' : 'needs_you_select');
   }, [openAgent]);

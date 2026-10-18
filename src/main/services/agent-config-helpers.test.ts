@@ -857,6 +857,20 @@ describe('delete cascade', () => {
     expect(onDisk('durable_2_done')).not.toHaveProperty('worktreePath');
   });
 
+  it('disposeHelper with expectedParentId refuses a helper released or moved meanwhile (#2229)', async () => {
+    seedFamily({ durable_2_h: {} });
+    await setParentAgent(PROJECT_PATH, 'durable_2_h', null);
+    expect(await disposeHelper(PROJECT_PATH, 'durable_2_h', { force: true, expectedParentId: 'durable_1_orch' }))
+      .toMatchObject({ ok: false, message: expect.stringMatching(/no longer a helper/) });
+    expect(worktreeRemovals()).toEqual([]);
+    expect(branchDeletions()).toEqual([]);
+    expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_h')?.disposedAt).toBeUndefined();
+
+    expect(await disposeHelper(PROJECT_PATH, 'durable_1_orch', { expectedParentId: 'durable_2_h' }))
+      .toMatchObject({ ok: false });
+    expect(worktreeRemovals()).toEqual([]);
+  });
+
   it('a failed folder removal keeps the branch on a plain delete too', async () => {
     seed([withWorktree('durable_1_a')]);
     rmFailures.add(worktree('durable_1_a'));

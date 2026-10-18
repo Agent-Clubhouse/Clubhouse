@@ -15,6 +15,7 @@ import { useProjectStore } from './stores/projectStore';
 import { applyDurableCreationEvent } from './features/agents/durable-creation-events';
 import { useUIStore } from './stores/uiStore';
 import { useNotificationStore } from './stores/notificationStore';
+import { useHelperDisposeRequestStore, describeHelperDispose } from './stores/helperDisposeRequestStore';
 import { useToastStore } from './stores/toastStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useClubhouseModeStore } from './stores/clubhouseModeStore';
@@ -338,29 +339,31 @@ function initCreationEventListener(): () => void {
 
 /**
  * An orchestrator asked to dispose a helper while its control level is
- * "ask-everything" (#2229): the user decides. Opens the helper's delete dialog,
- * which shows its uncommitted and unpushed work, unless another delete dialog
- * is open, and notifies through the orchestrator.
- * TODO(#2232): a dedicated dispose confirmation that keeps the helper's row.
+ * "ask-everything" (#2229). The helper shows under Needs you with the check
+ * facts, and a desktop notification on the helper selects it when clicked.
+ * Nothing is disposed or deleted from here; the delete dialog is not opened,
+ * since it doesn't run the helper dispose checks.
+ * TODO(#2232): a real dispose confirmation the user can accept or decline.
  */
 export function handleHelperDisposeRequest(request: HelperDisposeRequest): void {
   const state = useAgentStore.getState();
   const helper = state.agents[request.helperId];
   if (!helper) return;
-  const orchestrator = state.agents[request.orchestratorId];
-  const orchestratorName = orchestrator?.name ?? 'An orchestrator';
+  const orchestratorName = state.agents[request.orchestratorId]?.name ?? 'An orchestrator';
+  const pending = { request, orchestratorName, at: Date.now() };
+  useHelperDisposeRequestStore.getState().add(request, orchestratorName, pending.at);
   useNotificationStore.getState().checkAndNotify(
-    orchestratorName,
+    helper.name,
     'attention',
     undefined,
-    request.orchestratorId,
-    orchestrator?.projectId,
-    { message: `Wants to dispose ${request.helperName}` },
+    request.helperId,
+    helper.projectId,
+    { title: `${orchestratorName} asked to dispose ${request.helperName}`, message: describeHelperDispose(pending) },
   );
-  if (!state.deleteDialogAgent) state.openDeleteDialog(request.helperId);
 }
 
 function initHelperDisposeRequestListener(): () => void {
+  // Main sends these to the main window only; a pop-out never subscribes.
   if (window.clubhouse.window.isPopout()) return () => {};
   return window.clubhouse.agent.onHelperDisposeRequest(handleHelperDisposeRequest);
 }

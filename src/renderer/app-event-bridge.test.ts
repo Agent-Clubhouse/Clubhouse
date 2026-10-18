@@ -323,6 +323,7 @@ vi.mock('./stores/soundStore', () => ({
   ),
 }));
 
+import { useHelperDisposeRequestStore } from './stores/helperDisposeRequestStore';
 import { initAppEventBridge, handleProtocolAction } from './app-event-bridge';
 import { useAgentStore } from './stores/agentStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
@@ -752,8 +753,9 @@ describe('initAppEventBridge', () => {
     );
   });
 
-  it('opens the helper\'s delete dialog for a dispose the user decides (#2229)', () => {
+  it('puts a dispose the user decides under Needs you with the facts, without opening the delete dialog (#2229)', () => {
     const openDeleteDialog = vi.fn();
+    useHelperDisposeRequestStore.setState({ requests: {} });
     vi.mocked(useAgentStore.getState).mockReturnValue({
       agents: {
         orch: { id: 'orch', name: 'Orchestrator', projectId: 'proj-1', kind: 'durable', status: 'running' },
@@ -764,32 +766,34 @@ describe('initAppEventBridge', () => {
     } as any);
 
     const callback = vi.mocked(window.clubhouse.agent.onHelperDisposeRequest).mock.calls[0][0];
-    callback({
+    const request = {
       projectPath: '/p', orchestratorId: 'orch', helperId: 'helper', helperName: 'Docs',
-      checks: { dirty: 1, unpushed: 0, unmerged: 0 }, forceRequested: true,
-    });
+      checks: { dirty: 2, unpushed: 1, unmerged: 0 }, forceRequested: true,
+    };
+    callback(request);
 
-    expect(openDeleteDialog).toHaveBeenCalledWith('helper');
+    expect(openDeleteDialog).not.toHaveBeenCalled();
+    expect(useHelperDisposeRequestStore.getState().requests.helper).toMatchObject({ request, orchestratorName: 'Orchestrator' });
+    // The notification is on the helper, so clicking it selects the helper.
     expect(mockCheckAndNotify).toHaveBeenCalledWith(
-      'Orchestrator', 'attention', undefined, 'orch', 'proj-1', { message: 'Wants to dispose Docs' },
+      'Docs', 'attention', undefined, 'helper', 'proj-1',
+      {
+        title: 'Orchestrator asked to dispose Docs',
+        message: 'Orchestrator asked to dispose this helper (forced). 2 uncommitted files, 1 unpushed commit.',
+      },
     );
   });
 
-  it('leaves an open delete dialog alone and ignores an unknown helper', () => {
-    const openDeleteDialog = vi.fn();
-    vi.mocked(useAgentStore.getState).mockReturnValue({
-      agents: { helper: { id: 'helper', name: 'Docs', projectId: 'proj-1', kind: 'durable', status: 'running' } },
-      deleteDialogAgent: 'someone-else',
-      openDeleteDialog,
-    } as any);
+  it('ignores a dispose request for a helper this window does not have', () => {
+    useHelperDisposeRequestStore.setState({ requests: {} });
+    vi.mocked(useAgentStore.getState).mockReturnValue({ agents: {}, deleteDialogAgent: null, openDeleteDialog: vi.fn() } as any);
     const callback = vi.mocked(window.clubhouse.agent.onHelperDisposeRequest).mock.calls[0][0];
-    const request = {
-      projectPath: '/p', orchestratorId: 'orch', helperId: 'helper', helperName: 'Docs',
+    callback({
+      projectPath: '/p', orchestratorId: 'orch', helperId: 'ghost', helperName: 'Ghost',
       checks: { dirty: 0, unpushed: 0, unmerged: 0 }, forceRequested: false,
-    };
-    callback(request);
-    callback({ ...request, helperId: 'ghost' });
-    expect(openDeleteDialog).not.toHaveBeenCalled();
+    });
+    expect(useHelperDisposeRequestStore.getState().requests).toEqual({});
+    expect(mockCheckAndNotify).not.toHaveBeenCalled();
   });
 
   it('registers the protocol action listener and pulls any pending action', () => {

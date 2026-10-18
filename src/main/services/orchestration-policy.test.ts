@@ -15,6 +15,8 @@ const state = vi.hoisted(() => ({
 
 const mocks = vi.hoisted(() => ({
   resolveHelpersForDelete: vi.fn(),
+  getDisposeChecks: vi.fn(),
+  disposeHelper: vi.fn(),
   killAgent: vi.fn(),
   projectList: vi.fn(),
 }));
@@ -45,7 +47,15 @@ vi.mock('./agent-config', () => ({
     else delete agent.orchestration;
   }),
   resolveHelpersForDelete: mocks.resolveHelpersForDelete,
+  // dispose_helper (#2229), for the lock race below.
+  getDisposeChecks: mocks.getDisposeChecks,
+  getWorktreeStatus: vi.fn(async () => ({ isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: true })),
+  disposeHelper: mocks.disposeHelper,
 }));
+
+vi.mock('./clubhouse-mcp/tool-registry', () => ({ registerGlobalTool: vi.fn() }));
+vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: vi.fn() }));
+vi.mock('../ipc/window-handlers', () => ({ findMainWindow: () => undefined }));
 
 vi.mock('./agent-system', () => ({
   isAgentRunning: (id: string) => state.running.has(id),
@@ -89,6 +99,7 @@ import {
 import { isOrchestrationEnabled, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './clubhouse-mcp/orchestration-gate';
 import { notifyPersonaChanged, notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import * as agentConfig from './agent-config';
+import { disposeHelperTool } from './clubhouse-mcp/tools/helper-dispose-tools';
 
 function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
   return { id, name: id, color: 'blue', createdAt: '2026-10-18T00:00:00Z', ...extra };
@@ -680,5 +691,82 @@ describe('checkHelperLimitFor', () => {
     await syncOrchestrationGate(PROJECT, 'orch');
     await checkHelperLimitFor(PROJECT, 'orch', { projectPaths: [] });
     expect(mocks.projectList).not.toHaveBeenCalled();
+  });
+});
+
+describe('dispose_helper and turn-off share the orchestrator lock (#2229)', () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => { resolve = r; });
+    return { promise, resolve };
+  }
+
+  const clean = { dirty: 0, unpushed: 0, unmerged: 0 };
+
+  beforeEach(async () => {
+    setAgents(PROJECT, [
+      agent('orch', { orchestration: { orchestrate: true } }),
+      agent('h1', { parentAgentId: 'orch' }),
+    ]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string) => {
+      for (const a of agentsOf(projectPath)) if (a.parentAgentId === agentId && !a.disposedAt) delete a.parentAgentId;
+      return { ok: true, message: 'Kept', helperIds: [] } satisfies HelperCascadeResult;
+    });
+    // Like agent-config's disposeHelper: refuses a helper that changed parent.
+    mocks.disposeHelper.mockImplementation(async (projectPath: string, id: string, opts: { expectedParentId?: string } = {}) => {
+      const row = agentsOf(projectPath).find((a) => a.id === id)!;
+      if (opts.expectedParentId !== undefined && row.parentAgentId !== opts.expectedParentId) {
+        return { ok: false, message: `${id} is no longer a helper of this agent` };
+      }
+      row.disposedAt = '2026-10-18T03:00:00Z';
+      return { ok: true, message: 'Disposed', checks: clean };
+    });
+  });
+
+  it('a turn-off "keep" that arrives mid-dispose waits until the dispose is done', async () => {
+    const checks = deferred<typeof clean>();
+    mocks.getDisposeChecks.mockReturnValue(checks.promise);
+
+    const dispose = disposeHelperTool('orch', { helper: 'h1' });
+    await vi.waitFor(() => expect(mocks.getDisposeChecks).toHaveBeenCalled());
+    const turnOff = turnOffOrchestration(PROJECT, 'orch', 'keep');
+    await new Promise((r) => setTimeout(r, 10));
+    // The keep can't release h1 while its dispose holds the lock.
+    expect(mocks.resolveHelpersForDelete).not.toHaveBeenCalled();
+    expect(find('h1').parentAgentId).toBe('orch');
+
+    checks.resolve(clean);
+    const result = await dispose;
+    expect(JSON.parse(result.content[0].text!)).toMatchObject({ status: 'disposed' });
+    expect(mocks.disposeHelper).toHaveBeenCalledWith(PROJECT, 'h1', { force: false, expectedParentId: 'orch' });
+    expect(await turnOff).toMatchObject({ ok: true });
+    expect(find('h1')).toMatchObject({ parentAgentId: 'orch', disposedAt: expect.any(String) });
+  });
+
+  it('a dispose that arrives during a turn-off "keep" finds the helper released and refuses', async () => {
+    mocks.getDisposeChecks.mockResolvedValue(clean);
+    const release = deferred<void>();
+    mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string) => {
+      await release.promise;
+      for (const a of agentsOf(projectPath)) if (a.parentAgentId === agentId) delete a.parentAgentId;
+      return { ok: true, message: 'Kept', helperIds: ['h1'] } satisfies HelperCascadeResult;
+    });
+
+    const turnOff = turnOffOrchestration(PROJECT, 'orch', 'keep');
+    await vi.waitFor(() => expect(mocks.resolveHelpersForDelete).toHaveBeenCalled());
+    const dispose = disposeHelperTool('orch', { helper: 'h1', force: true });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mocks.getDisposeChecks).not.toHaveBeenCalled();
+
+    release.resolve();
+    await turnOff;
+    const result = await dispose;
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/not one of your helpers/);
+    expect(mocks.disposeHelper).not.toHaveBeenCalled();
+    expect(mocks.killAgent).not.toHaveBeenCalled();
+    expect(find('h1').disposedAt).toBeUndefined();
   });
 });

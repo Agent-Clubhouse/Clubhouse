@@ -12,7 +12,8 @@ export { agentDot, type AgentDot } from '../../features/agents/agent-status';
 
 export interface NeedsAttentionItem {
   agent: Agent;
-  reason: 'permission' | 'tool_error' | 'error';
+  /** `dispose_request`: an orchestrator asked the user to approve disposing this helper (#2229). */
+  reason: 'permission' | 'tool_error' | 'error' | 'dispose_request';
   message: string;
   /** When the agent started waiting, for ordering across hosts. */
   at: number;
@@ -24,11 +25,14 @@ export interface NeedsAttentionItem {
 /**
  * Agents waiting on the user, across every given project. Mirrors the old Home
  * "Needs attention" rule: a permission prompt, a failed tool, or an errored agent.
+ * `disposeRequests` (keyed by helper id) adds helpers an orchestrator asked to
+ * dispose (#2229); an agent already listed for another reason keeps that one.
  */
 export function selectNeedsAttention(
   agents: Record<string, Agent>,
   detailed: Record<string, AgentDetailedStatus>,
   projectIds: ReadonlySet<string>,
+  disposeRequests: Readonly<Record<string, { message: string; at: number }>> = {},
 ): NeedsAttentionItem[] {
   const items: NeedsAttentionItem[] = [];
   for (const agent of Object.values(agents)) {
@@ -41,6 +45,9 @@ export function selectNeedsAttention(
       items.push({ agent, at, reason: 'tool_error', message: d.message || (d.toolName ? `${d.toolName} failed` : 'A tool failed') });
     } else if (agent.status === 'error') {
       items.push({ agent, at, reason: 'error', message: agent.errorMessage || 'Stopped with an error' });
+    } else if (disposeRequests[agent.id]) {
+      const { message, at: requestedAt } = disposeRequests[agent.id];
+      items.push({ agent, at: requestedAt, reason: 'dispose_request', message });
     }
   }
   // Oldest request first, so the queue reads in the order things happened.

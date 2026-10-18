@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   control: 'hands-off' as string,
   running: new Set<string>(),
   broadcast: vi.fn(),
+  mainWindowSend: vi.fn(),
+  hasMainWindow: true,
   killAgent: vi.fn(async (..._args: unknown[]) => undefined),
   disposeHelper: vi.fn(),
   setHelperHandoff: vi.fn(),
@@ -40,7 +42,12 @@ vi.mock('../../agent-config', () => ({
   setHelperHandoff: mocks.setHelperHandoff,
 }));
 
+vi.mock('../../../ipc/window-handlers', () => ({
+  findMainWindow: () => (mocks.hasMainWindow ? { webContents: { send: mocks.mainWindowSend } } : undefined),
+}));
+
 vi.mock('../../orchestration-policy', () => ({
+  withAgentLock: vi.fn((_p: string, _id: string, fn: () => Promise<unknown>) => fn()),
   getOrchestrationPolicy: vi.fn(async (_p: string, id: string) => (
     mocks.agents.some((a) => a.id === id)
       ? { orchestrate: true, access: 'same', control: mocks.control, maxHelpers: 5 } as unknown as ResolvedOrchestrationPolicy
@@ -66,6 +73,7 @@ import { registerHelperDisposeTools } from './helper-dispose-tools';
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
 import { agentRegistry } from '../../agent-registry';
+import { withAgentLock } from '../../orchestration-policy';
 
 function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
   return { id, name: id, color: 'blue', createdAt: '2026-10-18T00:00:00.000Z', ...extra };
@@ -100,6 +108,7 @@ beforeEach(() => {
   mocks.checksAfterStop.clear();
   mocks.control = 'hands-off';
   mocks.running.clear();
+  mocks.hasMainWindow = true;
   mocks.disposeHelper.mockImplementation(async (_p: string, id: string, opts: { force?: boolean } = {}) => {
     const checks = mocks.checksAfterStop.get(id) ?? mocks.checks.get(id) ?? clean();
     if (checks.error || (!opts.force && (checks.dirty > 0 || checks.unpushed > 0))) {
@@ -138,7 +147,8 @@ describe('dispose_helper', () => {
     expect(json).toMatchObject({ status: 'disposed', helper: { id: 'helper' }, forced: false });
     expect(mocks.killAgent).toHaveBeenCalledWith('helper', PROJECT, undefined, 'agent_tool', { waitForExit: true });
     expect(mocks.killAgent.mock.invocationCallOrder[0]).toBeLessThan(mocks.disposeHelper.mock.invocationCallOrder[0]);
-    expect(mocks.disposeHelper).toHaveBeenCalledWith(PROJECT, 'helper', { force: false });
+    expect(mocks.disposeHelper).toHaveBeenCalledWith(PROJECT, 'helper', { force: false, expectedParentId: 'orch' });
+    expect(withAgentLock).toHaveBeenCalledWith(PROJECT, 'orch', expect.any(Function));
     expect(mocks.broadcast).toHaveBeenCalledWith(IPC.WINDOW.REQUEST_DURABLE_RELOAD, 'proj_1');
   });
 
@@ -165,7 +175,32 @@ describe('dispose_helper', () => {
     mocks.checks.set('helper', { dirty: 1, unpushed: 1, unmerged: 1 });
     const { json } = await call('dispose_helper', { helper: 'helper', force: true });
     expect(json).toMatchObject({ status: 'disposed', forced: true, uncommittedFiles: 1, unpushedCommits: 1 });
-    expect(mocks.disposeHelper).toHaveBeenCalledWith(PROJECT, 'helper', { force: true });
+    expect(mocks.disposeHelper).toHaveBeenCalledWith(PROJECT, 'helper', { force: true, expectedParentId: 'orch' });
+  });
+
+  it('reports the facts and forced from the re-check after the stop', async () => {
+    mocks.running.add('helper');
+    mocks.checks.set('helper', { dirty: 1, unpushed: 0, unmerged: 0 });
+    // The helper committed and pushed before it stopped: nothing was lost after all.
+    mocks.checksAfterStop.set('helper', { dirty: 0, unpushed: 0, unmerged: 5 });
+    const { json } = await call('dispose_helper', { helper: 'helper', force: true });
+    expect(json).toMatchObject({ status: 'disposed', forced: false, uncommittedFiles: 0, unpushedCommits: 0, unmergedCommits: 5 });
+    expect(json).not.toHaveProperty('uncommittedPaths');
+  });
+
+  it('reports a forced loss the re-check found even when the pre-check was clean', async () => {
+    mocks.running.add('helper');
+    mocks.checksAfterStop.set('helper', { dirty: 3, unpushed: 1, unmerged: 1 });
+    const { json } = await call('dispose_helper', { helper: 'helper', force: true });
+    expect(json).toMatchObject({ status: 'disposed', forced: true, uncommittedFiles: 3, unpushedCommits: 1 });
+  });
+
+  it('refuses when the helper was released before the dispose re-read', async () => {
+    mocks.disposeHelper.mockResolvedValueOnce({ ok: false, message: 'helper is no longer a helper of this agent' });
+    const { result, text } = await call('dispose_helper', { helper: 'helper' });
+    expect(result.isError).toBe(true);
+    expect(text).toMatch(/no longer a helper/);
+    expect(mocks.broadcast).not.toHaveBeenCalledWith(IPC.WINDOW.REQUEST_DURABLE_RELOAD, expect.anything());
   });
 
   it('force can not override a check that could not run', async () => {
@@ -199,10 +234,12 @@ describe('dispose_helper', () => {
     mocks.checks.set('helper', { dirty: 1, unpushed: 0, unmerged: 2 });
     const { result, json } = await call('dispose_helper', { helper: 'helper', force: true });
     expect(result.isError).toBe(false);
-    expect(json).toMatchObject({ status: 'sent-to-user', forceRefused: true, uncommittedFiles: 1, unmergedCommits: 2 });
+    expect(json).toMatchObject({ status: 'sent-to-user', delivered: true, forceRefused: true, uncommittedFiles: 1, unmergedCommits: 2 });
     expect(mocks.disposeHelper).not.toHaveBeenCalled();
     expect(mocks.killAgent).not.toHaveBeenCalled();
-    expect(mocks.broadcast).toHaveBeenCalledWith(IPC.AGENT.HELPER_DISPOSE_REQUEST, {
+    // Only the main window gets it, never every window.
+    expect(mocks.broadcast).not.toHaveBeenCalledWith(IPC.AGENT.HELPER_DISPOSE_REQUEST, expect.anything());
+    expect(mocks.mainWindowSend).toHaveBeenCalledWith(IPC.AGENT.HELPER_DISPOSE_REQUEST, {
       projectPath: PROJECT,
       orchestratorId: 'orch',
       helperId: 'helper',
@@ -217,6 +254,14 @@ describe('dispose_helper', () => {
     const { json } = await call('dispose_helper', { helper: 'helper' });
     expect(json).toMatchObject({ status: 'sent-to-user' });
     expect(json).not.toHaveProperty('forceRefused');
+    expect(mocks.disposeHelper).not.toHaveBeenCalled();
+  });
+
+  it('under ask-everything with no main window says the user could not be asked', async () => {
+    mocks.control = 'ask-everything';
+    mocks.hasMainWindow = false;
+    const { json } = await call('dispose_helper', { helper: 'helper' });
+    expect(json).toMatchObject({ status: 'sent-to-user', delivered: false, message: expect.stringMatching(/ask the user directly/) });
     expect(mocks.disposeHelper).not.toHaveBeenCalled();
   });
 

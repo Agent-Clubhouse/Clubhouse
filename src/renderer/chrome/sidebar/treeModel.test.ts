@@ -45,6 +45,21 @@ describe('selectNeedsAttention', () => {
       ['a', 'permission', 'Wants to run: npm test'],
     ]);
   });
+
+  it('lists helpers an orchestrator asked to dispose, unless already listed or gone (#2229)', () => {
+    const agents = { h: agent('h'), p: agent('p'), x: agent('x', { projectId: 'other' }) };
+    const requests = {
+      h: { message: 'Orch asked to dispose this helper. 1 uncommitted file.', at: 30 },
+      p: { message: 'ignored: a permission prompt comes first', at: 1 },
+      x: { message: 'ignored: other project', at: 2 },
+      gone: { message: 'ignored: no such agent', at: 3 },
+    };
+    const items = selectNeedsAttention(agents, { p: detail('needs_permission', 'Wants to run: ls', 5) }, new Set(['p1']), requests);
+    expect(items.map((i) => [i.agent.id, i.reason, i.message, i.at])).toEqual([
+      ['p', 'permission', 'Wants to run: ls', 5],
+      ['h', 'dispose_request', 'Orch asked to dispose this helper. 1 uncommitted file.', 30],
+    ]);
+  });
 });
 
 describe('orderProjects', () => {
