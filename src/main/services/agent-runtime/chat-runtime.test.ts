@@ -221,6 +221,88 @@ describe('ChatAgentRuntime', () => {
     expect(onEnded).toHaveBeenCalledWith('idle_timeout', 0);
   });
 
+  it('notes the idle sleep in the transcript before the session ends (#2104)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver, { idleTimeoutMs: 30 * 60_000 });
+    const events: Array<{ type: string; data: unknown }> = [];
+    runtime.onEvent((e) => events.push({ type: e.type, data: e.data }));
+    await runtime.start();
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    await flush();
+    const notice = events.findIndex((e) => e.type === 'notice');
+    expect(events[notice].data).toEqual({ level: 'info', code: 'idle_sleep', message: 'Slept after 30 min idle.' });
+    expect(notice).toBeLessThan(events.findIndex((e) => e.type === 'session_ended'));
+    expect(runtime.idleSleptAfterMs).toBe(30 * 60_000);
+  });
+
+  it('reads the idle timeout each time it arms, and never sleeps at 0 (#2104)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let timeout = 0;
+    const driver = new FakeChatDriver();
+    const { runtime, onEnded } = makeRuntime(driver, { idleTimeoutMs: () => timeout });
+    await runtime.start();
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+    await flush();
+    expect(onEnded).not.toHaveBeenCalled();
+
+    // The new value applies from the next idle period (after a turn).
+    timeout = 60_000;
+    await runtime.sendMessage('hi', { source: 'user' });
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    driver.last.emit({ type: 'turn_ended', data: { stopReason: 'end_turn' } });
+    await flush();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await flush();
+    expect(onEnded).toHaveBeenCalledWith('idle_timeout', 0);
+  });
+
+  it('a Never or a longer timeout chosen while the timer runs applies to that idle period (#2104)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let timeout = 30 * 60_000;
+    const driver = new FakeChatDriver();
+    const { runtime, onEnded } = makeRuntime(driver, { idleTimeoutMs: () => timeout });
+    await runtime.start();
+    // Five minutes in, the user picks 1 h: no sleep at 30 min, sleep at 60.
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    timeout = 60 * 60_000;
+    await vi.advanceTimersByTimeAsync(25 * 60_000);
+    await flush();
+    expect(onEnded).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    await flush();
+    expect(onEnded).toHaveBeenCalledWith('idle_timeout', 0);
+    expect(runtime.idleSleptAfterMs).toBe(60 * 60_000);
+
+    const second = new FakeChatDriver();
+    const { runtime: other, onEnded: otherEnded } = makeRuntime(second, { idleTimeoutMs: () => timeout });
+    timeout = 30 * 60_000;
+    await other.start();
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    timeout = 0; // Never
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+    await flush();
+    expect(otherEnded).not.toHaveBeenCalled();
+    expect(second.last.closed).toBe(false);
+  });
+
+  it('stays awake when shouldIdleSleep says no, and checks again next period (#2104)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let polling = true;
+    const driver = new FakeChatDriver();
+    const { runtime, onEnded } = makeRuntime(driver, { idleTimeoutMs: 60_000, shouldIdleSleep: () => !polling });
+    await runtime.start();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await flush();
+    expect(onEnded).not.toHaveBeenCalled();
+    expect(driver.last.closed).toBe(false);
+
+    polling = false;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await flush();
+    expect(onEnded).toHaveBeenCalledWith('idle_timeout', 0);
+  });
+
   it('clearContext starts a new conversation with a fresh sequence', async () => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);

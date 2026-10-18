@@ -1,5 +1,6 @@
 import {
   Agent,
+  AgentSleepInfo,
   AgentStatus,
   AgentDetailedStatus,
   AgentHookEvent,
@@ -110,6 +111,8 @@ export interface AgentStatusSlice {
   agentDetailedStatus: Record<string, AgentDetailedStatus>;
   /** Why the agent's last start didn't go as asked (e.g. chat failed and it fell back to the terminal). Cleared on the next wake. */
   agentLaunchFailure: Record<string, string>;
+  /** Record why the agent went to sleep (#2104). */
+  noteAgentSleep: (id: string, info: AgentSleepInfo) => void;
   /** Remember a launch failure reason; a launch error card shows it instead of the terminal's output. */
   noteLaunchFailure: (id: string, reason: string) => void;
   updateAgentStatus: (

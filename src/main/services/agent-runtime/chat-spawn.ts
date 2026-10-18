@@ -35,6 +35,9 @@ import { registerChatRuntime, unregisterChatRuntime } from './index';
 import { readChatTranscript } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
 import { noteChatStartFailure } from './stale-session';
+import { chatSleepInfo, recordSleep, takeKillRequest } from './sleep-reason';
+import { waitsOnPollingGroupProject } from './idle-policy';
+import { chatIdleTimeoutMs } from '../chat-idle-settings';
 import { cleanSpawnEnv, getShellEnvironment, summarizeSpawnEnv } from '../../util/shell';
 
 export interface ChatSpawnParams {
@@ -161,6 +164,8 @@ interface InflightStart {
   runtime?: ChatAgentRuntime;
   /** Whether prepare() ran, so there is MCP config to restore. */
   prepared: boolean;
+  /** For the sleep reason when the start is killed before a runtime exists. */
+  projectPath: string;
 }
 
 /** One chat start at a time per agent. */
@@ -184,6 +189,9 @@ export async function cancelChatStart(agentId: string): Promise<boolean> {
   } else {
     if (start.prepared) configPipeline.restoreForAgent(agentId);
     untrackAgent(agentId);
+    // Sent before the exit, so the renderer reads it as a deliberate stop, not a failed launch (#2127).
+    const sleep = chatSleepInfo('stopped', 0, takeKillRequest(agentId), undefined);
+    if (sleep) void recordSleep(start.projectPath, agentId, sleep);
     broadcastAgentExit(agentId, 0);
   }
   return true;
@@ -244,7 +252,7 @@ export async function tryStartChatAgent(
   }
 
   const previous = inflightStarts.get(params.agentId);
-  const start: InflightStart = { controller: new AbortController(), prepared: false };
+  const start: InflightStart = { controller: new AbortController(), prepared: false, projectPath: params.projectPath };
   inflightStarts.set(params.agentId, start);
   if (previous) {
     appLog('core:chat', 'info', 'Cancelling chat start', { meta: { agentId: params.agentId, reason: 'superseded', runtimeRegistered: !!previous.runtime } });
@@ -426,6 +434,8 @@ async function runChatStart(
       unregisterChatRuntime(params.agentId, runtime);
       untrackAgent(params.agentId);
       appLog('core:chat', 'info', 'Chat session ended', { meta: { agentId: params.agentId, reason, exitCode } });
+      const sleep = chatSleepInfo(reason, exitCode, takeKillRequest(params.agentId), runtime.idleSleptAfterMs);
+      if (sleep) void recordSleep(params.projectPath, params.agentId, sleep);
       broadcastAgentExit(params.agentId, exitCode);
     };
 
@@ -441,6 +451,8 @@ async function runChatStart(
       sessionId: continued?.sessionId,
       lastSeq: continued?.lastSeq,
       startNotices,
+      idleTimeoutMs: chatIdleTimeoutMs,
+      shouldIdleSleep: () => !waitsOnPollingGroupProject(params.agentId),
       startSession: async (resumeId, startSignal) => {
         const session = await driver.start({
         agentId: params.agentId,
@@ -509,3 +521,4 @@ async function runChatStart(
     }
   }
 }
+

@@ -176,6 +176,19 @@ describe('SleepingAgent', () => {
       expect(screen.getByTestId('sleeping-toolbar')).toHaveTextContent('last active 3h ago');
     });
 
+    it('says why the agent went to sleep, instead of when it was last active (#2104)', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'agent-1', name: 'bold-falcon' }]);
+      const at = new Date(Date.now() - 5 * 60_000).toISOString();
+      renderComponent({ lastSleep: { reason: 'idle', at, idleMinutes: 30 } });
+      expect(screen.getByTestId('sleeping-toolbar')).toHaveTextContent('slept after 30 min idle, 5m ago');
+    });
+
+    it('names the agent that put it to sleep (#2104)', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'agent-1', name: 'bold-falcon' }]);
+      renderComponent({ lastSleep: { reason: 'agent', at: new Date().toISOString(), by: 'Clubhouse-PM' } });
+      expect(screen.getByTestId('sleeping-toolbar')).toHaveTextContent('put to sleep by Clubhouse-PM, just now');
+    });
+
     it('renders the summary as markdown (#2092)', async () => {
       window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'agent-1', name: 'bold-falcon', lastSessionId: 'sess-1' }]);
       window.clubhouse.agent.getSessionSummary = vi.fn().mockResolvedValue({

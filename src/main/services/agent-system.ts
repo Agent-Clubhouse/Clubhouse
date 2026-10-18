@@ -10,7 +10,7 @@ import * as freeAgentSettings from './free-agent-settings';
 import * as orchestratorSettings from './orchestrator-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
-import { getDurableConfig, addSessionEntry } from './agent-config';
+import { getDurableConfig, addSessionEntry, updateDurableConfig } from './agent-config';
 import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
@@ -27,6 +27,7 @@ import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
 import { cancelChatStart, tryStartChatAgent, type ChatStartResult } from './agent-runtime/chat-spawn';
 import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
+import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
@@ -245,6 +246,20 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     let chatStartMs: number | undefined;
     let chatStart: ChatStartResult;
     takeChatStartFailure(params.agentId);
+    // A kill that never produced an exit (the agent wasn't running) mustn't label this run's.
+    takeKillRequest(params.agentId);
+    // The last sleep's reason describes the previous run, not this one: drop it
+    // before the run can end and record its own (#2104).
+    if (params.kind === 'durable' && durableConfig?.lastSleep) {
+      try {
+        await updateDurableConfig(params.projectPath, params.agentId, { lastSleep: null });
+      } catch (err) {
+        // telemetry-exempt: a stale reason on the card is cosmetic; the wake goes on.
+        appLog('core:agent', 'warn', 'Failed to clear the last sleep reason', {
+          meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+    }
     try {
       chatStart = await withErrorType('chat_start_failed', () => tryStartChatAgent({
         agentId: params.agentId,
@@ -329,6 +344,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
             configPipeline.restoreForAgent(exitAgentId);
             if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
             untrackAgent(exitAgentId);
+            takeKillRequest(exitAgentId);
           },
           commandPrefix,
           headlessResult.createEventNormalizer,
@@ -514,7 +530,10 @@ async function spawnPtyAgent(
     if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
 
+    const kill = takeKillRequest(exitAgentId);
     if (params.kind === 'durable') {
+      // A kill nobody asked for through killAgent is Clubhouse's own (quitting): no reason to show.
+      if (kill || !killed) void recordSleep(params.projectPath, exitAgentId, sleepInfoForExit(kill, exitCode));
       const capture = captureSessionOnExit(params, provider, exitAgentId, {
         exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt,
       });
@@ -619,6 +638,8 @@ export interface KillAgentOptions {
    * a stale lastSessionId, and replacing the live PTY drops its exit capture.
    */
   waitForExit?: boolean;
+  /** For an agent_tool kill: the name of the agent that asked, shown as the sleep reason. */
+  by?: string;
 }
 
 export async function killAgent(
@@ -630,6 +651,7 @@ export async function killAgent(
 ): Promise<void> {
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId, trigger, waitForExit: opts.waitForExit === true } });
   agentKillRequested(agentId, trigger);
+  noteKillRequest(agentId, { trigger, ...(opts.by ? { by: opts.by } : {}) });
   try {
     // A chat start in progress is cancelled (and its runtime stopped) here.
     if (await cancelChatStart(agentId)) return;

@@ -325,6 +325,36 @@ describe('OrchestratorSettingsView', () => {
       window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(true);
     }
 
+    it('offers the chat idle timeout when chat is on, and saves Never as 0 (#2104)', async () => {
+      setChatFlag(true);
+      const save = vi.fn().mockResolvedValue(undefined);
+      window.clubhouse.settings.get = vi.fn().mockImplementation(async (key: string) => (key === 'chat_idle' ? { idleTimeoutMinutes: 30 } : null));
+      window.clubhouse.settings.save = save;
+      render(<OrchestratorSettingsView />);
+      const select = await screen.findByTestId('chat-idle-timeout');
+      await waitFor(() => expect(select).toHaveValue('30'));
+      expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['15 minutes', '30 minutes', '1 hour', '4 hours', 'Never']);
+      fireEvent.change(select, { target: { value: '0' } });
+      await waitFor(() => expect(save).toHaveBeenCalledWith('chat_idle', { idleTimeoutMinutes: 0 }));
+    });
+
+    it('shows a hand-edited idle timeout that is not one of the choices (#2104)', async () => {
+      setChatFlag(true);
+      window.clubhouse.settings.get = vi.fn().mockImplementation(async (key: string) => (key === 'chat_idle' ? { idleTimeoutMinutes: 45 } : null));
+      window.clubhouse.settings.save = vi.fn().mockResolvedValue(undefined);
+      render(<OrchestratorSettingsView />);
+      const select = await screen.findByTestId('chat-idle-timeout');
+      await waitFor(() => expect(select).toHaveValue('45'));
+      expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['15 minutes', '30 minutes', '45 minutes', '1 hour', '4 hours', 'Never']);
+    });
+
+    it('hides the chat idle timeout when chat is off (#2104)', async () => {
+      setChatFlag(false);
+      render(<OrchestratorSettingsView />);
+      await waitFor(() => expect(window.clubhouse.app.getExperimentalSettings).toHaveBeenCalled());
+      expect(screen.queryByTestId('chat-idle-timeout')).not.toBeInTheDocument();
+    });
+
     it('is hidden on stable builds even when a Chat flag is saved', async () => {
       setChatFlag(true);
       window.clubhouse.app.isPreviewEligible = vi.fn().mockResolvedValue(false);

@@ -48,6 +48,13 @@ import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
 
 export const DEFAULT_CHAT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** "30 min", "1 h", "4 h", "90 min" for an idle timeout. */
+export function formatIdle(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes >= 60 && minutes % 60 === 0) return `${minutes / 60} h`;
+  return `${Math.max(1, minutes)} min`;
+}
 /** Longest a pre-prompt hook (checkpoint) may delay a prompt. */
 const BEFORE_PROMPT_TIMEOUT_MS = 5000;
 /** Chat permission requests wait for the user; the queue entry only needs to outlive them. */
@@ -87,7 +94,16 @@ export interface ChatAgentRuntimeOptions {
    * checkpoint the working tree. Never blocks steering into a running turn.
    */
   beforePrompt?: () => Promise<void>;
-  idleTimeoutMs?: number;
+  /**
+   * Idle time before the runtime sleeps, read each time the timer arms so a
+   * settings change applies from the next idle period. 0 or less: never.
+   */
+  idleTimeoutMs?: number | (() => number);
+  /**
+   * Asked when the idle timer fires; false keeps the agent awake and re-arms
+   * (e.g. it waits on a group project that is polling).
+   */
+  shouldIdleSleep?: () => boolean;
   /** Called once when the runtime ends for good (stop, idle timeout or process exit). */
   onEnded?: (reason: SessionEndReason, exitCode: number) => void;
   /** Called whenever the CLI reports a native session id (for resume on the next wake). */
@@ -129,6 +145,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   /** Questions awaiting an answer, so a late or duplicate answer is ignored. */
   private readonly questions = new Set<string>();
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
+  private sleptAfterMs: number | undefined;
   private ended = false;
   private stopRequested = false;
   /** Aborts the driver start in progress, if any. */
@@ -599,12 +616,24 @@ export class ChatAgentRuntime implements AgentRuntime {
     return next;
   }
 
-  private armIdleTimer(): void {
+  private idleTimeout(): number {
+    const configured = this.opts.idleTimeoutMs;
+    return typeof configured === 'function' ? configured() : configured ?? DEFAULT_CHAT_IDLE_TIMEOUT_MS;
+  }
+
+  /** Arm for the configured timeout, less `idleSoFar` ms already spent idle in this period. */
+  private armIdleTimer(idleSoFar = 0): void {
     this.clearIdleTimer();
-    const ms = this.opts.idleTimeoutMs ?? DEFAULT_CHAT_IDLE_TIMEOUT_MS;
-    if (ms <= 0) return;
-    this.idleTimer = setTimeout(() => { void this.sleepForIdle(); }, ms);
+    const ms = this.idleTimeout();
+    if (!(ms > 0)) return;
+    const wait = Math.max(0, ms - idleSoFar);
+    this.idleTimer = setTimeout(() => { void this.sleepForIdle(idleSoFar + wait); }, wait);
     this.idleTimer.unref?.();
+  }
+
+  /** The idle timeout the runtime slept after, once it has (for the sleep reason). */
+  get idleSleptAfterMs(): number | undefined {
+    return this.sleptAfterMs;
   }
 
   private clearIdleTimer(): void {
@@ -612,10 +641,27 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.idleTimer = undefined;
   }
 
-  private async sleepForIdle(): Promise<void> {
+  private async sleepForIdle(idleFor: number): Promise<void> {
     if (this.state !== 'idle' || this.ended) return;
+    // Read the setting again: Never, or a longer timeout, chosen since the
+    // timer armed applies to this idle period too.
+    const ms = this.idleTimeout();
+    if (!(ms > 0)) return;
+    if (idleFor < ms) {
+      this.armIdleTimer(idleFor);
+      return;
+    }
+    if (this.opts.shouldIdleSleep && !this.opts.shouldIdleSleep()) {
+      appLog('core:chat', 'info', 'Idle timeout reached; staying awake', { meta: { agentId: this.agentId } });
+      this.armIdleTimer();
+      return;
+    }
+    // Take the session before anything awaits, so a prompt arriving now finds
+    // the agent asleep rather than starting a turn that is then closed.
     const session = this.session;
     this.session = undefined;
+    this.sleptAfterMs = ms;
+    await this.emit({ type: 'notice', data: { level: 'info', code: 'idle_sleep', message: `Slept after ${formatIdle(ms)} idle.` } });
     if (session) await session.close().catch((): void => undefined);
     await this.end('idle_timeout', 0);
   }

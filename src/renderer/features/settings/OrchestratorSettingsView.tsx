@@ -15,6 +15,8 @@ import { SettingsPage, SettingsSection, SettingsField, SettingsBlock, settingsIn
 import type { FreeAgentPermissionMode, SourceControlProvider } from '../../../shared/types';
 import type { AgentRuntimeMode, ChatRuntimeSettings } from '../../../shared/chat';
 import { Button } from '../../components/Button';
+import { useChatIdleSettingsStore } from '../../stores/chatIdleSettingsStore';
+import { CHAT_IDLE_TIMEOUT_CHOICES } from '../../../shared/settings-definitions';
 
 interface Props {
   projectId?: string;
@@ -89,6 +91,21 @@ function useChatRuntimeSettings() {
   return { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode };
 }
 
+/** The offered choices, plus a hand-edited value that isn't one of them, so the select shows it. */
+function idleChoices(current: number): number[] {
+  const choices: number[] = [...CHAT_IDLE_TIMEOUT_CHOICES];
+  if (Number.isFinite(current) && current > 0 && !choices.includes(current)) {
+    choices.splice(choices.findIndex((m) => m === 0 || m > current), 0, current);
+  }
+  return choices;
+}
+
+function idleChoiceLabel(minutes: number): string {
+  if (minutes <= 0) return 'Never';
+  if (minutes >= 60 && minutes % 60 === 0) return `${minutes / 60} ${minutes === 60 ? 'hour' : 'hours'}`;
+  return `${minutes} minutes`;
+}
+
 function RuntimeModeControl({ value, onChange }: { value: AgentRuntimeMode; onChange: (mode: AgentRuntimeMode) => void }) {
   return (
     <div role="radiogroup" aria-label="Runtime" className="flex h-7 p-0.5 gap-0.5 rounded-md border border-surface-1">
@@ -140,6 +157,10 @@ function AppAgentSettings() {
   const loadFreeAgentSettings = useFreeAgentSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
   const { chatEnabled, chatResolved, runtimeSettings, setRuntimeMode } = useChatRuntimeSettings();
+  const idleMinutes = useChatIdleSettingsStore((st) => st.idleTimeoutMinutes as number);
+  const saveIdle = useChatIdleSettingsStore((st) => st.saveSettings);
+  const loadIdle = useChatIdleSettingsStore((st) => st.loadSettings);
+  useEffect(() => { if (chatEnabled) void loadIdle(); }, [chatEnabled, loadIdle]);
   const idBase = useId();
 
   // Deep link (uiStore.openRuntimeSettings): scroll to the provider's runtime
@@ -278,6 +299,25 @@ function AppAgentSettings() {
         >
           <Toggle aria-label="Prompt for session name on quit" checked={promptForName} onChange={setPromptForName} />
         </SettingsField>
+        {chatEnabled && (
+          <SettingsField
+            label="Sleep idle chat agents after"
+            help="A chat agent with no turn for this long goes to sleep. Agents in a group project with polling on stay awake."
+            htmlFor={`${idBase}-chat-idle`}
+          >
+            <select
+              id={`${idBase}-chat-idle`}
+              value={String(idleMinutes)}
+              onChange={(e) => { void saveIdle({ idleTimeoutMinutes: Number(e.target.value) }); }}
+              className={SELECT_CLASS}
+              data-testid="chat-idle-timeout"
+            >
+              {idleChoices(idleMinutes).map((m) => (
+                <option key={m} value={m}>{idleChoiceLabel(m)}</option>
+              ))}
+            </select>
+          </SettingsField>
+        )}
       </SettingsSection>
 
       <Modal open={showConfirm} onClose={() => setShowConfirm(false)} title="Enable Clubhouse Mode?" width="w-[420px] max-w-[calc(100vw-32px)]" testId="clubhouse-mode-confirm" footer={

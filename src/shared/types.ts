@@ -54,6 +54,21 @@ export interface Project {
 export type AgentStatus = 'running' | 'sleeping' | 'waking' | 'creating' | 'spawning' | 'error';
 export type AgentKind = 'durable' | 'quick' | 'companion';
 
+/**
+ * Why an agent last went to sleep, and when (#2104). `idle`: the chat idle
+ * timeout (`idleMinutes`); `user`: Stop; `agent`: another agent's sleep_agent
+ * (`by` is its name); `crashed`: the CLI exited with an error on its own;
+ * `exited`: it exited cleanly on its own.
+ */
+export interface AgentSleepInfo {
+  reason: 'idle' | 'user' | 'agent' | 'crashed' | 'exited';
+  /** ISO time it went to sleep. */
+  at: string;
+  idleMinutes?: number;
+  by?: string;
+  exitCode?: number;
+}
+
 export interface Agent {
   id: string;
   projectId: string;
@@ -69,6 +84,8 @@ export interface Agent {
   errorMessage?: string;
   /** Remote (satellite) durable agents: the satellite has a CLI session to resume. */
   hasSession?: boolean;
+  /** Why it last went to sleep, for durable agents (#2104). */
+  lastSleep?: AgentSleepInfo;
   mission?: string;
   model?: string;
   parentAgentId?: string;
@@ -224,6 +241,8 @@ export interface DurableAgentConfig {
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
   lastSessionId?: string;
+  /** Why the agent last went to sleep (#2104). */
+  lastSleep?: AgentSleepInfo;
   /**
    * Per-agent Chat / Terminal override. Only consulted when the experimental
    * Chat flag is on; unset means the provider's runtime setting.
@@ -321,6 +340,7 @@ export interface DurableConfigUpdates {
   freeAgentMode?: boolean;
   clubhouseModeOverride?: boolean;
   lastSessionId?: string | null;
+  lastSleep?: AgentSleepInfo | null;
   mcpIds?: string[] | null;
   mcpConfigs?: Record<string, Record<string, string>> | null;
   /** Per-agent Chat / Terminal override; null clears it (provider default). */
@@ -589,6 +609,13 @@ export interface SoundSettings {
 }
 
 export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback';
+
+// --- Chat idle settings ---
+
+/** How long a chat agent may sit idle before it's put to sleep (#2104). 0 means never. */
+export interface ChatIdleSettings {
+  idleTimeoutMinutes: number;
+}
 
 // --- MCP settings ---
 

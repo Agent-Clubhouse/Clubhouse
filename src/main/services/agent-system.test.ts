@@ -71,7 +71,9 @@ vi.mock('./agent-config', () => ({
   getDurableConfig: (...args: unknown[]) => mockGetDurableConfig(...args),
   addSessionEntry: (...args: unknown[]) => mockAddSessionEntry(...args),
   updateSessionId: (...args: unknown[]) => mockUpdateSessionId(...args),
+  updateDurableConfig: (...args: unknown[]) => mockUpdateDurableConfig(...args),
 }));
+const mockUpdateDurableConfig = vi.fn(async () => {});
 
 // Chat start runs for real unless a test stands in for it (to fail a chat resume).
 const { mockTryStartChatAgent } = vi.hoisted(() => ({ mockTryStartChatAgent: vi.fn() }));
@@ -1067,6 +1069,55 @@ describe('agent-system', () => {
       await Promise.resolve();
       expect(mockUpdateSessionId).not.toHaveBeenCalled();
       expect(config.lastSessionId).toBe(REAL);
+    });
+  });
+
+  describe('sleep reason on PTY exit (#2104)', () => {
+    it("drops the last sleep's reason when the agent wakes again", async () => {
+      mockGetDurableConfig.mockResolvedValueOnce({ id: 'agent-1', lastSleep: { reason: 'agent', at: '2026-10-17T00:00:00.000Z', by: 'PM' } } as never);
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockUpdateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { lastSleep: null });
+      mockUpdateDurableConfig.mockClear();
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      expect(mockUpdateDurableConfig).not.toHaveBeenCalled();
+    });
+
+    async function spawnDurable(): Promise<(id: string, code: number, buffer?: string, killed?: boolean) => void> {
+      await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
+      return mockPtySpawn.mock.calls.at(-1)![5];
+    }
+    const saved = () => mockUpdateDurableConfig.mock.calls.map((c) => (c[2] as { lastSleep?: { reason: string; by?: string; exitCode?: number } }).lastSleep);
+
+    it('records a Stop as the user, and sleep_agent with the caller', async () => {
+      let onExit = await spawnDurable();
+      await killAgent('agent-1', '/project');
+      onExit('agent-1', 0, '', true);
+      onExit = await spawnDurable();
+      await killAgent('agent-1', '/project', undefined, 'agent_tool', { by: 'Clubhouse-PM' });
+      onExit('agent-1', 0, '', true);
+      await vi.waitFor(() => expect(saved()).toHaveLength(2));
+      expect(saved()).toMatchObject([{ reason: 'user' }, { reason: 'agent', by: 'Clubhouse-PM' }]);
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(IPC.AGENT.AGENT_SLEEP_REASON, 'agent-1', expect.objectContaining({ reason: 'agent' }));
+    });
+
+    it('records a CLI that exited on its own, by exit code', async () => {
+      let onExit = await spawnDurable();
+      onExit('agent-1', 2, 'boom');
+      onExit = await spawnDurable();
+      onExit('agent-1', 0, 'bye');
+      await vi.waitFor(() => expect(saved()).toHaveLength(2));
+      expect(saved()).toMatchObject([{ reason: 'crashed', exitCode: 2 }, { reason: 'exited' }]);
+    });
+
+    it("records nothing for Clubhouse's own kill (quitting), and forgets a kill that found nothing running", async () => {
+      const onExit = await spawnDurable();
+      onExit('agent-1', 1, '', true);
+      // A Stop for an agent that wasn't running leaves a request; the next run must not inherit it.
+      await killAgent('agent-1', '/project');
+      const next = await spawnDurable();
+      next('agent-1', 3, 'crash');
+      await vi.waitFor(() => expect(saved()).toHaveLength(1));
+      expect(saved()).toMatchObject([{ reason: 'crashed', exitCode: 3 }]);
     });
   });
 

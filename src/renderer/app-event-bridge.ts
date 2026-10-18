@@ -317,12 +317,16 @@ function initAgentWakingListener(): () => void {
   const removeSleepingListener = window.clubhouse.agent.onAgentSleeping((agentId: string) => {
     useAgentStore.getState().updateAgentStatus(agentId, 'sleeping');
   });
+  const removeSleepReasonListener = window.clubhouse.agent.onAgentSleepReason((agentId, info) => {
+    useAgentStore.getState().noteAgentSleep(agentId, info);
+  });
   return () => {
     removeWakingListener();
     removeAwokeListener();
     removeWakeFailedListener();
     removeMaterializationFailedListener();
     removeSleepingListener();
+    removeSleepReasonListener();
   };
 }
 

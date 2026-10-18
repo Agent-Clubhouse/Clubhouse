@@ -14,7 +14,7 @@ import { AgentContextMenu, OverflowIcon, useAgentRowActions } from './useAgentRo
 import { pickGreeting } from './states/greetings';
 import { Markdown } from './chat/MessageBlocks';
 import { useLastSession, type LastSessionInfo } from './states/useLastSession';
-import { formatAgo, formatShortDuration, formatUsd, plural, relativeTo } from './states/format';
+import { describeSleep, formatAgo, formatShortDuration, formatUsd, plural, relativeTo } from './states/format';
 import {
   BranchIcon, FileRow, Kbd, ModelLabel, SectionHead, StateToolbar, ToolbarSeparator,
 } from './states/parts';
@@ -173,8 +173,10 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
     `${agent.name} has finished.`
   );
 
+  // Why it's asleep (idle, Stop, another agent, the CLI exiting) when known (#2104).
   const toolbarDetail = failed
     ? 'failed to launch'
+    : agent.lastSleep ? `${describeSleep(agent.lastSleep)}, ${formatAgo(Date.parse(agent.lastSleep.at))}`
     : last?.lastActiveAt ? `last active ${formatAgo(last.lastActiveAt)}` : undefined;
 
   return (

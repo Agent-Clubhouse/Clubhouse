@@ -968,6 +968,13 @@ export async function updateDurableConfig(
       delete agent.clubhouseModeOverride;
     }
   }
+  if (updates.lastSleep !== undefined) {
+    if (updates.lastSleep) {
+      agent.lastSleep = updates.lastSleep;
+    } else {
+      delete agent.lastSleep;
+    }
+  }
   if (updates.lastSessionId !== undefined) {
     if (updates.lastSessionId) {
       agent.lastSessionId = updates.lastSessionId;

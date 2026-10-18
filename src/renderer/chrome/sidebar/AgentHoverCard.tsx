@@ -9,6 +9,9 @@ import { relativeTo } from '../scope';
 import { DOT_LABEL, StatusDot } from '../../features/agents/agent-status';
 import type { AgentDot } from './treeModel';
 import { Tooltip } from '../../components/Tooltip';
+import { describeSleep, formatAgo } from '../../features/agents/states/format';
+
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /**
  * The agent hover card (docs/chrome-redesign-spec.md §2, §4.2): the details the
@@ -79,6 +82,11 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
           {DOT_LABEL[dot]}{running && dot !== 'idle' ? ` for ${formatDuration(Date.now() - spawnedAt)}` : ''}
         </span>
       </div>
+      {!detailed?.message && !agent.errorMessage && agent.status === 'sleeping' && agent.lastSleep && (
+        <p className="leading-snug text-ctp-subtext0" data-testid="agent-sleep-reason">
+          {capitalize(describeSleep(agent.lastSleep))}, {formatAgo(Date.parse(agent.lastSleep.at))}.
+        </p>
+      )}
       {(detailed?.message || agent.errorMessage) && (
         <p className={`leading-snug ${dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-subtext0'}`}>
           {detailed?.message || agent.errorMessage}

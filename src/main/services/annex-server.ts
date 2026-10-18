@@ -66,6 +66,7 @@ import {
   restTraceparent,
   wsTraceparent,
 } from '../telemetry/annex-telemetry';
+import { noteKillRequest } from './agent-runtime/sleep-reason';
 import type {
   AnnexStatus,
   AgentHookEvent,
@@ -1697,6 +1698,7 @@ async function handleDurableDeleteRoute(ctx: AnnexRouteContext, match: RegExpMat
     const mode = (body.mode as string) || 'force';
     if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
       agentKillRequested(agentId, 'annex');
+      noteKillRequest(agentId, { trigger: 'user' });
       ptyManager.gracefulKill(agentId);
     }
     try {
@@ -2282,6 +2284,8 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const agentId = payload.agentId as string;
       if (!agentId) break;
       agentKillRequested(agentId, 'annex');
+      // A kill from a controller or the Annex app is the user's, for the sleep reason.
+      noteKillRequest(agentId, { trigger: 'user' });
       ptyManager.gracefulKill(agentId);
       safeSend(ws, JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
       break;

@@ -38,7 +38,7 @@ export function settingsChannels(key: string) {
 // Concrete definitions — importable from both main and renderer
 // ---------------------------------------------------------------------------
 
-import type { ClipboardSettings, EditorSettings, GoobersSettings, McpSettings, SecuritySettings } from './types';
+import type { ChatIdleSettings, ClipboardSettings, EditorSettings, GoobersSettings, McpSettings, SecuritySettings } from './types';
 import type { TelemetrySettingsFile } from './telemetry/settings-types';
 
 export const CLIPBOARD_COMPAT_DEFAULT = false;
@@ -60,6 +60,15 @@ export const MCP_SETTINGS: SettingsDefinition<McpSettings> = {
   key: 'mcp',
   filename: 'mcp-settings.json',
   defaults: { enabled: true, projectDefault: true },
+};
+
+/** Choices offered for the chat idle timeout, in minutes; 0 is Never. */
+export const CHAT_IDLE_TIMEOUT_CHOICES = [15, 30, 60, 240, 0] as const;
+
+export const CHAT_IDLE_SETTINGS: SettingsDefinition<ChatIdleSettings> = {
+  key: 'chat_idle',
+  filename: 'chat-idle-settings.json',
+  defaults: { idleTimeoutMinutes: 30 },
 };
 
 export const SECURITY_SETTINGS: SettingsDefinition<SecuritySettings> = {
