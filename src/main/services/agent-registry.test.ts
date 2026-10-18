@@ -26,6 +26,7 @@ vi.mock('fs/promises', () => ({
 }));
 
 import * as fsp from 'fs/promises';
+import { isOrchestrationEnabled, setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
 import {
   agentRegistry,
   getAgentProjectPath,
@@ -238,6 +239,47 @@ describe('agent-registry', () => {
       expect(agentRegistry).toBeDefined();
       expect(getAgentProjectPath).toBeInstanceOf(Function);
       expect(resolveOrchestrator).toBeInstanceOf(Function);
+    });
+  });
+
+  describe('launch access and the orchestration gate (#2228)', () => {
+    it('sets the spawn cap once, on a tracked agent only', () => {
+      agentRegistry.register('la-1', { projectPath: path.join('p', 'a'), orchestrator: 'claude-code', runtime: 'pty' });
+      agentRegistry.setLaunchCap('la-1', { freeAgentMode: true, permissionMode: 'auto' });
+      agentRegistry.setLaunchCap('la-1', { freeAgentMode: true, permissionMode: 'skip-all' });
+      expect(agentRegistry.get('la-1')?.launchCap).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+      expect(agentRegistry.get('la-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+      agentRegistry.setLaunchCap('la-missing', { freeAgentMode: true, permissionMode: 'skip-all' });
+      expect(agentRegistry.get('la-missing')).toBeUndefined();
+      agentRegistry.untrack('la-1');
+    });
+
+    it('clamps reports to max(spawn cap, user level)', () => {
+      agentRegistry.register('la-3', { projectPath: path.join('p', 'a'), orchestrator: 'claude-code', runtime: 'chat' });
+      agentRegistry.setLaunchCap('la-3', { freeAgentMode: false, permissionMode: 'skip-all' });
+      agentRegistry.reportLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'skip-all' });
+      expect(agentRegistry.get('la-3')?.launchAccess).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+      agentRegistry.setUserLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'auto' });
+      agentRegistry.reportLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'skip-all' });
+      expect(agentRegistry.get('la-3')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+      agentRegistry.setUserLaunchAccess('la-3', undefined);
+      agentRegistry.reportLaunchAccess('la-3', { freeAgentMode: true, permissionMode: 'auto' });
+      expect(agentRegistry.get('la-3')?.launchAccess?.freeAgentMode).toBe(false);
+      agentRegistry.untrack('la-3');
+    });
+
+    it('reads an agent with no cap as standard', () => {
+      agentRegistry.register('la-4', { projectPath: path.join('p', 'a'), orchestrator: 'claude-code', runtime: 'pty' });
+      agentRegistry.reportLaunchAccess('la-4', { freeAgentMode: true, permissionMode: 'skip-all' });
+      expect(agentRegistry.get('la-4')?.launchAccess?.freeAgentMode).toBe(false);
+      agentRegistry.untrack('la-4');
+    });
+
+    it('closes the agent\'s orchestration gate when it is untracked', () => {
+      agentRegistry.register('la-2', { projectPath: path.join('p', 'a'), orchestrator: 'claude-code', runtime: 'pty' });
+      setOrchestrationEnabled('la-2', true);
+      agentRegistry.untrack('la-2');
+      expect(isOrchestrationEnabled('la-2')).toBe(false);
     });
   });
 });

@@ -82,6 +82,15 @@ vi.mock('../services/materialization-service', () => ({
   refreshClubhouseModeReadme: vi.fn(async () => undefined),
 }));
 
+vi.mock('../services/orchestration-policy', () => ({
+  getOrchestrationPolicy: vi.fn(async () => ({ orchestrate: true })),
+  setOrchestrationPolicy: vi.fn(async () => ({ ok: true, message: 'Saved' })),
+  turnOffOrchestration: vi.fn(async () => ({ ok: true, message: 'Kept 1 helper(s)', helperIds: ['h1'] })),
+  getHelperSummary: vi.fn(async () => ({ hasHelpers: false, helperIds: [] })),
+  resolveHelperLaunchSettings: vi.fn(async () => ({ freeAgentMode: false, level: 'standard', ceiling: 'standard', clamped: false })),
+  checkHelperLimitFor: vi.fn(async () => ({ ok: true })),
+}));
+
 vi.mock('../services/clubhouse-mode-settings', () => ({
   isClubhouseModeEnabled: vi.fn(() => false),
 }));
@@ -98,6 +107,8 @@ import { appLog } from '../services/log-service';
 import { refreshClubhouseModeReadme } from '../services/materialization-service';
 import { applyPersonaToAgent } from '../services/persona-application';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
+import * as orchestrationPolicy from '../services/orchestration-policy';
+import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { agentRegistry } from '../services/agent-registry';
 import * as permissionQueue from '../services/annex-permission-queue';
 
@@ -310,6 +321,34 @@ describe('agent-handlers', () => {
     const handler = handlers.get(IPC.AGENT.UPDATE_DURABLE_CONFIG)!;
     await handler({}, '/project', 'agent-1', { model: 'opus' });
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { model: 'opus' });
+  });
+
+  describe('orchestration policy (#2228)', () => {
+    it('reads, sets and queries through the policy service', async () => {
+      await handlers.get(IPC.AGENT.GET_ORCHESTRATION_POLICY)!({}, '/project', 'agent-1');
+      expect(orchestrationPolicy.getOrchestrationPolicy).toHaveBeenCalledWith('/project', 'agent-1');
+      await handlers.get(IPC.AGENT.SET_ORCHESTRATION_POLICY)!({}, '/project', 'agent-1', { orchestrate: true });
+      expect(orchestrationPolicy.setOrchestrationPolicy).toHaveBeenCalledWith('/project', 'agent-1', { orchestrate: true });
+      expect(broadcastSnapshotRefresh).toHaveBeenCalled();
+      await handlers.get(IPC.AGENT.GET_HELPER_SUMMARY)!({}, '/project', 'agent-1');
+      expect(orchestrationPolicy.getHelperSummary).toHaveBeenCalledWith('/project', 'agent-1');
+      await handlers.get(IPC.AGENT.RESOLVE_HELPER_ACCESS)!({}, '/project', 'agent-1', 'copilot-cli');
+      expect(orchestrationPolicy.resolveHelperLaunchSettings).toHaveBeenCalledWith('/project', 'agent-1', { helperProvider: 'copilot-cli' });
+      await handlers.get(IPC.AGENT.CHECK_HELPER_LIMIT)!({}, '/project', 'agent-1');
+      expect(orchestrationPolicy.checkHelperLimitFor).toHaveBeenCalledWith('/project', 'agent-1');
+    });
+
+    it('turns orchestration off with a helper choice', async () => {
+      const result = await handlers.get(IPC.AGENT.TURN_OFF_ORCHESTRATION)!({}, '/project', 'agent-1', 'dispose', true);
+      expect(orchestrationPolicy.turnOffOrchestration).toHaveBeenCalledWith('/project', 'agent-1', 'dispose', { force: true });
+      expect(result.ok).toBe(true);
+      expect(broadcastSnapshotRefresh).toHaveBeenCalled();
+    });
+
+    it('rejects an unknown turn-off choice', async () => {
+      await expect(handlers.get(IPC.AGENT.TURN_OFF_ORCHESTRATION)!({}, '/project', 'agent-1', 'maybe')).rejects.toThrow(/Unknown choice/);
+      expect(orchestrationPolicy.turnOffOrchestration).not.toHaveBeenCalled();
+    });
   });
 
   it('REORDER_DURABLE delegates to agentConfig.reorderDurable and broadcasts snapshot', async () => {

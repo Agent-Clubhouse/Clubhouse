@@ -2,6 +2,9 @@ import * as path from 'path';
 import * as fsp from 'fs/promises';
 import { getProvider, OrchestratorId, OrchestratorProvider } from '../orchestrators';
 import { appLog } from './log-service';
+import type { FreeAgentPermissionMode } from '../../shared/types';
+import { ACCESS_LEVELS, accessLevelOf, launchAccessFor } from '../../shared/orchestration-policy';
+import { setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
 
 export const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
@@ -14,6 +17,26 @@ export interface AgentRegistration {
   orchestrator: OrchestratorId;
   runtime: AgentRuntime;
   nonce?: string;
+  /**
+   * What the agent runs with now (#2228): Free Agent Mode plus the resolved
+   * permission mode, the ceiling for its helpers. Unset means unknown, which
+   * reads as standard access. Written only through setLaunchCap,
+   * setUserLaunchAccess and reportLaunchAccess.
+   */
+  launchAccess?: LaunchAccess;
+  /** What the agent was spawned with (#2228). Set once per registration and never raised. */
+  launchCap?: Readonly<LaunchAccess>;
+  /** The last level the user set in chat (#2228); the only thing that may lift the record above `launchCap`. */
+  userAccess?: Readonly<LaunchAccess>;
+}
+
+export interface LaunchAccess {
+  freeAgentMode: boolean;
+  permissionMode?: FreeAgentPermissionMode;
+}
+
+function rankOf(access: LaunchAccess | undefined): number {
+  return ACCESS_LEVELS.indexOf(accessLevelOf(access));
 }
 
 /** Called when an agent's nonce changes or it is untracked. */
@@ -55,8 +78,48 @@ class AgentRegistry {
     registration.runtime = runtime;
   }
 
+  /**
+   * The spawn-time launch access (#2228): the cap, and the starting record.
+   * Set once per registration; a later call is ignored, so nothing the agent
+   * does after spawn can lift its cap.
+   */
+  setLaunchCap(agentId: string, access: LaunchAccess): void {
+    const registration = this.registrations.get(agentId);
+    if (!registration || registration.launchCap) return;
+    registration.launchCap = Object.freeze({ ...access });
+    registration.launchAccess = { ...access };
+  }
+
+  /**
+   * A level the user chose (chat setLevel), which may lift the record above
+   * the spawn cap. `undefined` forgets it (a new session starts at the spawn
+   * level again).
+   */
+  setUserLaunchAccess(agentId: string, access: LaunchAccess | undefined): void {
+    const registration = this.registrations.get(agentId);
+    if (!registration) return;
+    registration.userAccess = access ? Object.freeze({ ...access }) : undefined;
+    if (access) registration.launchAccess = { ...access };
+  }
+
+  /**
+   * A level the agent or its CLI reported (hook payload, driver mode event).
+   * Recorded as reported when it's at or below max(spawn cap, the user's
+   * last level), else clamped to that bound: a report can lower the record
+   * or restore it, never lift it on the agent's own word.
+   */
+  reportLaunchAccess(agentId: string, access: LaunchAccess): void {
+    const registration = this.registrations.get(agentId);
+    if (!registration) return;
+    const bound = Math.max(rankOf(registration.launchCap), rankOf(registration.userAccess));
+    registration.launchAccess = rankOf(access) <= bound ? { ...access } : launchAccessFor(ACCESS_LEVELS[bound]);
+  }
+
   untrack(agentId: string): void {
-    if (this.registrations.delete(agentId)) this.emitAuthChange(agentId);
+    if (!this.registrations.delete(agentId)) return;
+    // A gone agent keeps no orchestration tools (#2228); the next spawn re-syncs.
+    setOrchestrationEnabled(agentId, false);
+    this.emitAuthChange(agentId);
   }
 
   getAllRegistrations(): Map<string, AgentRegistration> {

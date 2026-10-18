@@ -227,6 +227,12 @@ function pickPatternSettings(agent: DurableAgentConfig): PatternSettings {
   if (agent.testCommand) s.testCommand = agent.testCommand;
   if (agent.lintCommand) s.lintCommand = agent.lintCommand;
   if (agent.sourceControlProvider) s.sourceControlProvider = agent.sourceControlProvider;
+  // Access, control and limits carry over; `orchestrate` itself doesn't, so
+  // extracting a persona never turns orchestration on for its users (#2228).
+  if (agent.orchestration) {
+    const { orchestrate: _orchestrate, ...rest } = agent.orchestration;
+    if (Object.keys(rest).length > 0) s.orchestration = rest;
+  }
   return s;
 }
 

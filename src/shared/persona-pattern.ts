@@ -1,4 +1,5 @@
 import { SourceControlProvider } from './types';
+import { normalizeOrchestrationConfig, type OrchestrationPolicyConfig } from './orchestration-policy';
 
 /**
  * The reusable agent-settings bundle a persona "pattern" can carry, stored as
@@ -25,6 +26,13 @@ export interface PatternSettings {
   lintCommand?: string;
   sourceControlProvider?: SourceControlProvider;
   skills?: SkillDefinition[];
+  /**
+   * Orchestration defaults (#2228). Not a pattern setting: it is not in
+   * PATTERN_SETTING_KEYS and is never copied onto the agent when the persona
+   * is applied. The policy reads it live (services/orchestration-policy.ts).
+   * Parsed and serialized here so a persona file round-trips with it.
+   */
+  orchestration?: OrchestrationPolicyConfig;
 }
 
 /** Ordered list of the keys a pattern may carry (used by extract UI + apply). */
@@ -76,7 +84,40 @@ export function parsePersonaFile(raw: string): { settings: PatternSettings; body
     }
   }
 
+  const orchestration = normalizeOrchestrationConfig(readFrontMatterValue(raw, 'orchestration'));
+  if (orchestration) settings.orchestration = orchestration;
+
   return { settings: settings as PatternSettings, body };
+}
+
+/**
+ * Read one front-matter value by key, parsed as JSON when possible, whether or
+ * not it is a pattern setting. Used for front-matter that supplies defaults
+ * rather than settings copied onto the agent, such as `orchestration` (#2228):
+ *
+ *     ---
+ *     orchestration: {"orchestrate": true, "access": "same", "control": "hands-off", "maxHelpers": 5}
+ *     ---
+ *
+ * Returns undefined when the file has no front-matter or no such key.
+ */
+export function readFrontMatterValue(raw: string, key: string): unknown {
+  const match = raw.match(FRONT_MATTER_RE);
+  if (!match) return undefined;
+  for (const line of match[1].split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf(':');
+    if (idx === -1 || trimmed.slice(0, idx).trim() !== key) continue;
+    const rawValue = trimmed.slice(idx + 1).trim();
+    if (rawValue === '') return undefined;
+    try {
+      return JSON.parse(rawValue);
+    } catch {
+      return rawValue;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -102,6 +143,8 @@ export function serializePersonaFile(settings: PatternSettings, body: string): s
     if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) continue;
     lines.push(`${key}: ${JSON.stringify(value)}`);
   }
+  const orchestration = normalizeOrchestrationConfig(settings.orchestration);
+  if (orchestration) lines.push(`orchestration: ${JSON.stringify(orchestration)}`);
   if (lines.length === 0) return body;
   return `---\n${lines.join('\n')}\n---\n\n${body}`;
 }

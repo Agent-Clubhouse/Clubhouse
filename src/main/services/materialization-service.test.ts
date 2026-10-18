@@ -364,6 +364,16 @@ describe('materialization-service', () => {
       expect(settings).toEqual({ model: 'claude-opus-4-8', mcpIds: ['github'], freeAgentMode: true });
     });
 
+    it('extractAgentPersona keeps orchestration access, control and limits but never orchestrate (#2228)', async () => {
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
+      const provider = { ...mockProvider, readInstructions: vi.fn(async () => 'body') };
+      const on = { ...testAgent, orchestration: { orchestrate: true, control: 'ask-everything' as const, maxHelpers: 3 } };
+      expect((await extractAgentPersona({ projectPath: '/project', agent: on, provider })).settings.orchestration)
+        .toEqual({ control: 'ask-everything', maxHelpers: 3 });
+      const onlyToggle = { ...testAgent, orchestration: { orchestrate: true } };
+      expect((await extractAgentPersona({ projectPath: '/project', agent: onlyToggle, provider })).settings).not.toHaveProperty('orchestration');
+    });
+
     it('writeResolvedPersonaInstructions writes the resolved persona body', async () => {
       const agent = { ...testAgent, persona: 'qa' };
       vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {

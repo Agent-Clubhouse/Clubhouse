@@ -1,4 +1,5 @@
 import * as fsp from 'fs/promises';
+import { notifyProjectDefaultPersonaChanged } from './persona-change-hook';
 import * as path from 'path';
 import * as os from 'os';
 import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry, WrapperCatalogSnapshot } from '../../shared/types';
@@ -733,8 +734,20 @@ export async function writeProjectAgentDefaults(projectPath: string, defaults: P
     validateCommandPrefix(defaults.commandPrefix);
   }
   const settings = await readSettings(projectPath);
+  const previousDefault = settings.agentDefaults?.persona;
   settings.agentDefaults = defaults;
   await writeSettings(projectPath, settings);
+  if (defaults.persona !== previousDefault) {
+    // The orchestration policy re-checks agents that use the default persona (#2228).
+    try {
+      await notifyProjectDefaultPersonaChanged(projectPath, previousDefault);
+    } catch (err) {
+      // telemetry-exempt: logged; the defaults themselves are saved
+      appLog('core:agent-settings', 'warn', 'Project default persona hook failed', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
 }
 
 /**

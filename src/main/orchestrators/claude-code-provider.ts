@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { levelFromClaudeMode } from '../chat/claude/permission-mode';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import {
@@ -219,6 +220,9 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
       toolName: obj.tool_name as string | undefined,
       toolInput: obj.tool_input as Record<string, unknown> | undefined,
       message: obj.message as string | undefined,
+      ...(typeof obj.permission_mode === 'string' && obj.permission_mode
+        ? { permissionLevel: levelFromClaudeMode(obj.permission_mode) }
+        : {}),
     };
   }
 

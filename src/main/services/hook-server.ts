@@ -1,7 +1,8 @@
 import * as http from 'http';
 import { IPC } from '../../shared/ipc-channels';
 import { ATTR } from '../../shared/telemetry/attributes';
-import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrchestrator } from './agent-registry';
+import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrchestrator, agentRegistry } from './agent-registry';
+import { launchAccessForChatLevel } from '../../shared/orchestration-policy';
 import { isHookCapable } from '../orchestrators';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -342,6 +343,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     });
 
     recordHookEvent(provider.id, normalized.kind, normalized.toolName, agentId);
+    // A terminal agent's live level, for its helpers' ceiling (#2228). The
+    // agent's own shell holds this endpoint's id and nonce, so a report is
+    // only trusted up to the spawn cap: it can lower the record or restore
+    // it, never raise it. Chat agents track theirs from the driver.
+    if (normalized.permissionLevel && agentRegistry.get(agentId)?.runtime !== 'chat') {
+      agentRegistry.reportLaunchAccess(agentId, launchAccessForChatLevel(normalized.permissionLevel));
+    }
 
     const hookEvent = buildHookEvent(provider, normalized);
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);

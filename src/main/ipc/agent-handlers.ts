@@ -15,6 +15,7 @@ import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
 import { refreshClubhouseModeReadme } from '../services/materialization-service';
 import { applyPersonaToAgent } from '../services/persona-application';
+import * as orchestrationPolicy from '../services/orchestration-policy';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as permissionQueue from '../services/annex-permission-queue';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
@@ -416,6 +417,50 @@ export function registerAgentHandlers(): void {
       if (!dryRun && result.ok && (result.helperIds?.length ?? 0) > 0) broadcastSnapshotRefresh();
       return result;
     },
+  ));
+
+  // --- Orchestration policy (#2228) ---
+
+  ipcMain.handle(IPC.AGENT.GET_ORCHESTRATION_POLICY, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath, agentId) => orchestrationPolicy.getOrchestrationPolicy(projectPath, agentId),
+  ));
+
+  ipcMain.handle(IPC.AGENT.SET_ORCHESTRATION_POLICY, withValidatedArgs(
+    [stringArg(), stringArg(), objectArg<Record<string, unknown>>()],
+    async (_event, projectPath, agentId, patch) => {
+      const result = await orchestrationPolicy.setOrchestrationPolicy(projectPath, agentId, patch);
+      if (result.ok) broadcastSnapshotRefresh();
+      return result;
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.TURN_OFF_ORCHESTRATION, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), booleanArg({ optional: true })],
+    async (_event, projectPath, agentId, choice, force) => {
+      if (choice !== 'keep' && choice !== 'dispose' && choice !== 'cancel') {
+        throw new Error(`Unknown choice: ${choice}`);
+      }
+      const result = await orchestrationPolicy.turnOffOrchestration(projectPath, agentId, choice, { force });
+      if (result.ok && !result.cancelled) broadcastSnapshotRefresh();
+      return result;
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.GET_HELPER_SUMMARY, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath, agentId) => orchestrationPolicy.getHelperSummary(projectPath, agentId),
+  ));
+
+  ipcMain.handle(IPC.AGENT.RESOLVE_HELPER_ACCESS, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ optional: true })],
+    async (_event, projectPath, agentId, helperProvider) =>
+      orchestrationPolicy.resolveHelperLaunchSettings(projectPath, agentId, { helperProvider }),
+  ));
+
+  ipcMain.handle(IPC.AGENT.CHECK_HELPER_LIMIT, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath, agentId) => orchestrationPolicy.checkHelperLimitFor(projectPath, agentId),
   ));
 
   // --- Orchestrator-based handlers ---

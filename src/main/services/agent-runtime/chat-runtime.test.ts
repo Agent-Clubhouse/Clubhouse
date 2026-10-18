@@ -21,6 +21,8 @@ import { FakeChatDriver } from './fake-chat-driver';
 import { registerChatRuntime, clearChatRuntimes, isChatAgent } from './index';
 import { onChatEvent, removeAllChatEventListeners } from './chat-event-bus';
 import * as permissionQueue from '../annex-permission-queue';
+import { agentRegistry } from '../agent-registry';
+import { accessLevelOf } from '../../../shared/orchestration-policy';
 
 /** Let queued microtasks and the runtime's emit chain settle. */
 async function flush(times = 10): Promise<void> {
@@ -832,5 +834,96 @@ describe('ChatAgentRuntime stop during start (#2087)', () => {
     await expect(started).rejects.toBeInstanceOf(ChatStartCancelledError);
     expect(pending.signal?.aborted).toBe(true);
     expect(onEnded).not.toHaveBeenCalled();
+  });
+
+  describe('live launch access for the helper ceiling (#2228)', () => {
+    beforeEach(() => {
+      agentRegistry.register('agent-1', { projectPath: '/repo', orchestrator: 'claude-code', runtime: 'chat' });
+      agentRegistry.setLaunchCap('agent-1', { freeAgentMode: true, permissionMode: 'skip-all' });
+    });
+    afterEach(() => agentRegistry.untrack('agent-1'));
+
+    it('records the level the driver reports', async () => {
+      const driver = new FakeChatDriver();
+      const { runtime } = makeRuntime(driver);
+      await runtime.start();
+      driver.last.emit({ type: 'mode_changed', data: { level: 'auto' } });
+      await flush();
+      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+      driver.last.emit({ type: 'mode_changed', data: { level: 'plan' } });
+      await flush();
+      expect(agentRegistry.get('agent-1')?.launchAccess?.freeAgentMode).toBe(false);
+    });
+
+    it('takes a lowered level before the driver answers, and a raise only after', async () => {
+      const driver = new FakeChatDriver();
+      const { runtime } = makeRuntime(driver);
+      await runtime.start();
+      let seen: unknown;
+      const real = driver.last.setLevel.bind(driver.last);
+      driver.last.setLevel = async (level) => { seen = agentRegistry.get('agent-1')?.launchAccess; await real(level); };
+      await runtime.setLevel('ask');
+      expect(seen).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+      expect(agentRegistry.get('agent-1')?.launchAccess?.freeAgentMode).toBe(false);
+
+      await runtime.setLevel('full_access');
+      expect(seen).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
+    });
+
+    it('records the spawn level when a session opens, and again after /clear', async () => {
+      const driver = new FakeChatDriver();
+      const { runtime } = makeRuntime(driver);
+      // Registered from spawn as bypass, but this runtime opens at ask.
+      await runtime.start();
+      expect(agentRegistry.get('agent-1')?.launchAccess?.freeAgentMode).toBe(false);
+      await runtime.setLevel('full_access');
+      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
+      // The new session starts at the spawn level (ask), not full access.
+      await runtime.clearContext();
+      expect(agentRegistry.get('agent-1')?.launchAccess).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+    });
+
+    it('clamps a driver mode_changed above the user-set level', async () => {
+      // Spawned at ask (standard).
+      agentRegistry.register('agent-1', { projectPath: '/repo', orchestrator: 'claude-code', runtime: 'chat' });
+      agentRegistry.setLaunchCap('agent-1', { freeAgentMode: false, permissionMode: 'auto' });
+      const driver = new FakeChatDriver();
+      const { runtime } = makeRuntime(driver);
+      await runtime.start();
+      const level = () => accessLevelOf(agentRegistry.get('agent-1')?.launchAccess);
+
+      // The agent switches its own mode (ExitPlanMode, a native switch): no raise.
+      driver.last.emit({ type: 'mode_changed', data: { level: 'full_access' } });
+      await flush();
+      expect(level()).toBe('standard');
+
+      // The user raises to auto; a reported full access is held to auto.
+      await runtime.setLevel('auto');
+      expect(level()).toBe('auto');
+      driver.last.emit({ type: 'mode_changed', data: { level: 'full_access' } });
+      await flush();
+      expect(level()).toBe('auto');
+
+      // Only the user may go higher.
+      await runtime.setLevel('full_access');
+      expect(level()).toBe('bypass');
+
+      // /clear forgets the user's level: back to the spawn cap.
+      await runtime.clearContext();
+      driver.last.emit({ type: 'mode_changed', data: { level: 'auto' } });
+      await flush();
+      expect(level()).toBe('standard');
+    });
+
+    it('keeps the old level when a raise fails', async () => {
+      const driver = new FakeChatDriver();
+      const { runtime } = makeRuntime(driver);
+      await runtime.start();
+      await runtime.setLevel('ask');
+      driver.last.setLevel = async () => { throw new Error('refused'); };
+      await expect(runtime.setLevel('full_access')).rejects.toThrow('refused');
+      expect(agentRegistry.get('agent-1')?.launchAccess?.freeAgentMode).toBe(false);
+    });
   });
 });

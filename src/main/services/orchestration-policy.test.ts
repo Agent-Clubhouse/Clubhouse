@@ -1,0 +1,684 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as path from 'path';
+import type { DurableAgentConfig, HelperCascadeResult } from '../../shared/types';
+
+const PROJECT = path.join('projects', 'app');
+const OTHER_PROJECT = path.join('projects', 'other');
+
+const state = vi.hoisted(() => ({
+  agents: new Map<string, Record<string, unknown>[]>(),
+  personas: new Map<string, string>(),
+  projectDefaults: {} as { persona?: string },
+  globalCap: 20,
+  running: new Set<string>(),
+}));
+
+const mocks = vi.hoisted(() => ({
+  resolveHelpersForDelete: vi.fn(),
+  killAgent: vi.fn(),
+  projectList: vi.fn(),
+}));
+
+function agentsOf(projectPath: string): DurableAgentConfig[] {
+  return (state.agents.get(projectPath) ?? []) as unknown as DurableAgentConfig[];
+}
+
+vi.mock('./agent-config', () => ({
+  getDurableConfig: vi.fn(async (projectPath: string, agentId: string) =>
+    agentsOf(projectPath).find((a) => a.id === agentId) ?? null),
+  listDurable: vi.fn(async (projectPath: string) => agentsOf(projectPath)),
+  listHelpers: vi.fn(async (projectPath: string, agentId: string, options: { recursive?: boolean } = {}) => {
+    const live = agentsOf(projectPath).filter((a) => !a.disposedAt);
+    if (!options.recursive) return live.filter((a) => a.parentAgentId === agentId);
+    const out: DurableAgentConfig[] = [];
+    const queue = [agentId];
+    while (queue.length) {
+      const id = queue.shift()!;
+      for (const a of live) if (a.parentAgentId === id) { out.push(a); queue.push(a.id); }
+    }
+    return out;
+  }),
+  setOrchestrationConfig: vi.fn(async (projectPath: string, agentId: string, config: unknown) => {
+    const agent = agentsOf(projectPath).find((a) => a.id === agentId);
+    if (!agent) throw new Error('Agent not found');
+    if (config) agent.orchestration = config as DurableAgentConfig['orchestration'];
+    else delete agent.orchestration;
+  }),
+  resolveHelpersForDelete: mocks.resolveHelpersForDelete,
+}));
+
+vi.mock('./agent-system', () => ({
+  isAgentRunning: (id: string) => state.running.has(id),
+  killAgent: mocks.killAgent,
+}));
+
+const registry = vi.hoisted(() => new Map<string, { projectPath: string; orchestrator: string; runtime: string; launchAccess?: { freeAgentMode: boolean; permissionMode?: 'auto' | 'skip-all' } }>());
+vi.mock('./agent-registry', () => ({
+  agentRegistry: { get: (id: string) => registry.get(id) },
+}));
+
+vi.mock('./orchestration-settings', () => ({
+  getGlobalHelperCap: () => state.globalCap,
+}));
+
+vi.mock('./project-store', () => ({
+  list: mocks.projectList,
+}));
+
+vi.mock('./agent-settings-service', () => ({
+  readProjectAgentDefaults: vi.fn(async () => state.projectDefaults),
+}));
+
+vi.mock('./materialization-service', () => ({
+  resolvePersonaId: (agent: DurableAgentConfig, defaults: { persona?: string }) => agent.persona ?? defaults.persona,
+  readLayeredPersonaRaw: vi.fn(async (_projectPath: string, personaId: string) => state.personas.get(personaId)),
+}));
+
+vi.mock('./log-service', () => ({ appLog: vi.fn() }));
+
+import {
+  checkHelperLimitFor,
+  getHelperSummary,
+  getOrchestrationPolicy,
+  reconcileAfterPersonaChange,
+  resolveHelperLaunchSettings,
+  setOrchestrationPolicy,
+  syncOrchestrationGate,
+  turnOffOrchestration,
+} from './orchestration-policy';
+import { isOrchestrationEnabled, setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './clubhouse-mcp/orchestration-gate';
+import { notifyPersonaChanged, notifyProjectDefaultPersonaChanged } from './persona-change-hook';
+import * as agentConfig from './agent-config';
+
+function agent(id: string, extra: Partial<DurableAgentConfig> = {}): DurableAgentConfig {
+  return { id, name: id, color: 'blue', createdAt: '2026-10-18T00:00:00Z', ...extra };
+}
+
+function setAgents(projectPath: string, list: DurableAgentConfig[]): void {
+  state.agents.set(projectPath, list as unknown as Record<string, unknown>[]);
+}
+
+function persona(policy: Record<string, unknown>): string {
+  return `---\norchestration: ${JSON.stringify(policy)}\n---\n\n# Persona`;
+}
+
+/** Register the agent as running in `projectPath`, as a spawn does. */
+function live(id: string, launchAccess?: { freeAgentMode: boolean; permissionMode?: 'auto' | 'skip-all' }, projectPath = PROJECT, orchestrator = 'claude-code'): void {
+  registry.set(id, { projectPath, orchestrator, runtime: 'pty', ...(launchAccess && { launchAccess }) });
+}
+
+function find(id: string, projectPath = PROJECT): DurableAgentConfig {
+  return agentsOf(projectPath).find((a) => a.id === id)!;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  _resetOrchestrationGateForTesting();
+  state.agents.clear();
+  state.personas.clear();
+  state.projectDefaults = {};
+  registry.clear();
+  state.globalCap = 20;
+  state.running.clear();
+  mocks.projectList.mockResolvedValue([{ id: 'p1', name: 'app', path: PROJECT }]);
+  mocks.killAgent.mockResolvedValue(undefined);
+});
+
+describe('getOrchestrationPolicy', () => {
+  it('returns the defaults', async () => {
+    setAgents(PROJECT, [agent('orch')]);
+    expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5 });
+  });
+
+  it('takes defaults from the agent\'s persona front-matter', async () => {
+    state.personas.set('orchestrator', persona({ orchestrate: true, control: 'ask-before-start', maxHelpers: 3 }));
+    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' })]);
+    const policy = await getOrchestrationPolicy(PROJECT, 'orch');
+    expect(policy).toMatchObject({ orchestrate: true, control: 'ask-before-start', maxHelpers: 3 });
+    expect(policy?.sources.control).toBe('persona');
+  });
+
+  it('uses the Orchestrator persona\'s limits for other agents but never its orchestrate', async () => {
+    state.personas.set('orchestrator', persona({ orchestrate: true, maxHelpers: 2 }));
+    setAgents(PROJECT, [agent('dev', { persona: 'developer' })]);
+    expect(await getOrchestrationPolicy(PROJECT, 'dev')).toMatchObject({ orchestrate: false, maxHelpers: 2 });
+  });
+
+  it('follows the project default persona when the agent has none', async () => {
+    state.projectDefaults = { persona: 'lead' };
+    state.personas.set('lead', persona({ orchestrate: true }));
+    setAgents(PROJECT, [agent('orch')]);
+    expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.orchestrate).toBe(true);
+  });
+
+  it('lets the agent\'s own fields win over its persona', async () => {
+    state.personas.set('orchestrator', persona({ orchestrate: true, access: 'auto' }));
+    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator', orchestration: { orchestrate: false } })]);
+    expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ orchestrate: false, access: 'auto' });
+  });
+
+  it('never opens the gate, even when the config on disk says on', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);
+    live('orch');
+    await getOrchestrationPolicy(PROJECT, 'orch');
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+
+  it('closes the gate when the policy on disk is now off', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: false } })]);
+    live('orch');
+    setOrchestrationEnabled('orch', true);
+    await getOrchestrationPolicy(PROJECT, 'orch');
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+
+  it('leaves the gate of an agent running in another project alone', async () => {
+    setAgents(PROJECT, [agent('orch')]);
+    live('orch', undefined, OTHER_PROJECT);
+    setOrchestrationEnabled('orch', true);
+    await getOrchestrationPolicy(PROJECT, 'orch');
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+  });
+
+  it('returns null for an unknown agent', async () => {
+    expect(await getOrchestrationPolicy(PROJECT, 'nope')).toBeNull();
+  });
+});
+
+describe('syncOrchestrationGate (spawn)', () => {
+  it('opens the gate for an agent running in this project', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+  });
+
+  it('keeps it closed when the registry has the agent in another project', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);
+    live('orch', undefined, OTHER_PROJECT);
+    await syncOrchestrationGate(PROJECT, 'orch');
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+
+  it('keeps it closed for a disposed agent', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true }, disposedAt: '2026-10-18T00:00:00Z' })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+
+  it('fails closed when the config can\'t be read', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    vi.mocked(agentConfig.getDurableConfig).mockRejectedValueOnce(new Error('disk gone'));
+    await expect(syncOrchestrationGate(PROJECT, 'orch')).resolves.toBeUndefined();
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+});
+
+describe('setOrchestrationPolicy', () => {
+  it('persists the change and opens the gate of a running agent', async () => {
+    setAgents(PROJECT, [agent('orch')]);
+    live('orch');
+    const result = await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: true, control: 'ask-everything' });
+    expect(result.ok).toBe(true);
+    expect(find('orch').orchestration).toEqual({ orchestrate: true, control: 'ask-everything' });
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+  });
+
+  it('saves for an agent that isn\'t running without opening a gate', async () => {
+    setAgents(PROJECT, [agent('orch')]);
+    expect((await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: true })).ok).toBe(true);
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+
+  it('closes the gate when turned off without helpers', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { orchestrate: true } })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    expect((await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: false })).ok).toBe(true);
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+
+  it('a null field goes back to the persona value', async () => {
+    state.personas.set('orchestrator', persona({ maxHelpers: 3 }));
+    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator', orchestration: { maxHelpers: 8 } })]);
+    const result = await setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: null });
+    expect(result.policy?.maxHelpers).toBe(3);
+    expect(find('orch').orchestration).toBeUndefined();
+  });
+
+  it('asks for a helper choice instead of turning off an agent with helpers', async () => {
+    setAgents(PROJECT, [
+      agent('orch', { orchestration: { orchestrate: true } }),
+      agent('h1', { parentAgentId: 'orch' }),
+      agent('h2', { parentAgentId: 'orch', disposedAt: '2026-10-18T00:00:00Z' }),
+    ]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    const result = await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: false });
+    expect(result).toMatchObject({ ok: false, needsHelperChoice: { helperIds: ['h1'] } });
+    expect(find('orch').orchestration).toEqual({ orchestrate: true });
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+    expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+  });
+
+  it('applies concurrent patches one after another, losing none', async () => {
+    setAgents(PROJECT, [agent('orch')]);
+    // Every read yields to the event loop, so unlocked patches would interleave.
+    const real = vi.mocked(agentConfig.getDurableConfig).getMockImplementation()!;
+    vi.mocked(agentConfig.getDurableConfig).mockImplementation(async (p, id) => {
+      await new Promise((r) => setTimeout(r, 5));
+      return real(p, id);
+    });
+    const results = await Promise.all([
+      setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: true }),
+      setOrchestrationPolicy(PROJECT, 'orch', { control: 'ask-everything' }),
+      setOrchestrationPolicy(PROJECT, 'orch', { maxHelpers: 2 }),
+    ]);
+    expect(results.every((r) => r.ok)).toBe(true);
+    expect(find('orch').orchestration).toEqual({ orchestrate: true, control: 'ask-everything', maxHelpers: 2 });
+  });
+
+  it('rejects an invalid patch without writing', async () => {
+    setAgents(PROJECT, [agent('orch')]);
+    await expect(setOrchestrationPolicy(PROJECT, 'orch', { access: 'root' })).rejects.toThrow(/access/);
+    expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+  });
+
+  it('refuses to turn on orchestration for a disposed agent', async () => {
+    setAgents(PROJECT, [agent('orch', { disposedAt: '2026-10-18T00:00:00Z' })]);
+    expect((await setOrchestrationPolicy(PROJECT, 'orch', { orchestrate: true })).ok).toBe(false);
+  });
+
+  it('reports an unknown agent', async () => {
+    expect(await setOrchestrationPolicy(PROJECT, 'nope', { orchestrate: true })).toMatchObject({ ok: false, message: 'Agent not found' });
+  });
+});
+
+describe('persona change re-sync', () => {
+  beforeEach(() => {
+    state.personas.set('orchestrator', persona({ orchestrate: true }));
+  });
+
+  it('closes the gate when the new persona turns orchestration off', async () => {
+    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+    find('orch').persona = 'developer';
+    await notifyPersonaChanged(PROJECT, 'orch', 'orchestrator');
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+    expect(find('orch').orchestration).toBeUndefined();
+  });
+
+  it('keeps orchestration on, pinned on the agent, while it has helpers', async () => {
+    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' }), agent('h1', { parentAgentId: 'orch' })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    find('orch').persona = 'developer';
+    await reconcileAfterPersonaChange(PROJECT, 'orch', 'orchestrator');
+    expect(find('orch').orchestration).toEqual({ orchestrate: true });
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+    expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.orchestrate).toBe(true);
+  });
+
+  it('handles an agent that had no persona of its own, via the project default', async () => {
+    state.projectDefaults = { persona: 'orchestrator' };
+    setAgents(PROJECT, [agent('orch', { persona: 'developer' })]);
+    live('orch');
+    setOrchestrationEnabled('orch', true);
+    // It used the project default (orchestrator) before choosing developer.
+    await notifyPersonaChanged(PROJECT, 'orch', undefined);
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+
+  it('re-checks agents on the project default persona when it changes', async () => {
+    state.projectDefaults = { persona: 'developer' };
+    setAgents(PROJECT, [
+      agent('follower'),
+      agent('keeper'),
+      agent('h1', { parentAgentId: 'keeper' }),
+      agent('own', { persona: 'orchestrator' }),
+    ]);
+    for (const id of ['follower', 'keeper', 'own']) {
+      live(id);
+      setOrchestrationEnabled(id, true);
+    }
+    await notifyProjectDefaultPersonaChanged(PROJECT, 'orchestrator');
+    expect(isOrchestrationEnabled('follower')).toBe(false);
+    // Has helpers: kept on, pinned.
+    expect(isOrchestrationEnabled('keeper')).toBe(true);
+    expect(find('keeper').orchestration).toEqual({ orchestrate: true });
+    // Has its own persona: not affected.
+    expect(isOrchestrationEnabled('own')).toBe(true);
+  });
+
+  it('never opens the gate when the new persona turns orchestration on', async () => {
+    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' })]);
+    live('orch');
+    await reconcileAfterPersonaChange(PROJECT, 'orch', 'developer');
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+});
+
+describe('getHelperSummary', () => {
+  it('lists live direct helpers only', async () => {
+    setAgents(PROJECT, [
+      agent('orch'),
+      agent('h1', { parentAgentId: 'orch' }),
+      agent('h1a', { parentAgentId: 'h1' }),
+      agent('gone', { parentAgentId: 'orch', disposedAt: '2026-10-18T00:00:00Z' }),
+    ]);
+    expect(await getHelperSummary(PROJECT, 'orch')).toEqual({ hasHelpers: true, helperIds: ['h1'] });
+    expect(await getHelperSummary(PROJECT, 'h1a')).toEqual({ hasHelpers: false, helperIds: [] });
+  });
+});
+
+describe('turnOffOrchestration', () => {
+  function releaseHelpers(projectPath: string, agentId: string): void {
+    for (const a of agentsOf(projectPath)) if (a.parentAgentId === agentId) delete a.parentAgentId;
+  }
+
+  beforeEach(async () => {
+    setAgents(PROJECT, [
+      agent('orch', { orchestration: { orchestrate: true, maxHelpers: 3 } }),
+      agent('h1', { parentAgentId: 'orch' }),
+      agent('h2', { parentAgentId: 'orch' }),
+    ]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+  });
+
+  it('cancel changes nothing', async () => {
+    const result = await turnOffOrchestration(PROJECT, 'orch', 'cancel');
+    expect(result).toMatchObject({ ok: true, cancelled: true });
+    expect(mocks.resolveHelpersForDelete).not.toHaveBeenCalled();
+    expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+  });
+
+  it('keep releases the direct helpers and turns orchestration off', async () => {
+    mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string) => {
+      releaseHelpers(projectPath, agentId);
+      return { ok: true, message: 'Kept 2 helper(s)', helperIds: ['h1', 'h2'] } satisfies HelperCascadeResult;
+    });
+    const result = await turnOffOrchestration(PROJECT, 'orch', 'keep');
+    expect(mocks.resolveHelpersForDelete).toHaveBeenCalledWith(PROJECT, 'orch', 'keep');
+    expect(result).toMatchObject({ ok: true, helperIds: ['h1', 'h2'] });
+    expect(find('h1').parentAgentId).toBeUndefined();
+    expect(find('orch').orchestration).toEqual({ orchestrate: false, maxHelpers: 3 });
+    expect(result.policy?.orchestrate).toBe(false);
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+
+  it('keeps the gate closed while the cascade runs', async () => {
+    const gateDuring: boolean[] = [];
+    mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string, _choice: string, opts: { dryRun?: boolean } = {}) => {
+      gateDuring.push(isOrchestrationEnabled('orch'));
+      if (!opts.dryRun) releaseHelpers(projectPath, agentId);
+      return { ok: true, message: 'Disposed', helperIds: ['h1', 'h2'] };
+    });
+    state.running.add('h1');
+    mocks.killAgent.mockImplementation(async () => { gateDuring.push(isOrchestrationEnabled('orch')); });
+    await turnOffOrchestration(PROJECT, 'orch', 'dispose');
+    expect(gateDuring).toEqual([false, false, false]);
+  });
+
+  it('dispose stops running helpers and disposes through the cascade checks', async () => {
+    state.running.add('h2');
+    mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string, _c: string, opts: { dryRun?: boolean } = {}) => {
+      if (!opts.dryRun) releaseHelpers(projectPath, agentId);
+      return { ok: true, message: 'Disposed 2 helper(s)', helperIds: ['h1', 'h2'] };
+    });
+    const result = await turnOffOrchestration(PROJECT, 'orch', 'dispose');
+    expect(mocks.resolveHelpersForDelete).toHaveBeenNthCalledWith(1, PROJECT, 'orch', 'dispose', { dryRun: true, force: undefined });
+    expect(mocks.resolveHelpersForDelete).toHaveBeenNthCalledWith(2, PROJECT, 'orch', 'dispose', { force: undefined });
+    expect(mocks.killAgent).toHaveBeenCalledTimes(1);
+    expect(mocks.killAgent).toHaveBeenCalledWith('h2', PROJECT, undefined, 'user', { waitForExit: true });
+    expect(result.ok).toBe(true);
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+
+  it('dispose with work at risk changes nothing and reopens the gate', async () => {
+    state.running.add('h1');
+    const blocked = { ok: false, message: 'h1 has work', blocked: [{ agentId: 'h1', name: 'h1', checks: { dirty: 2, unpushed: 0, unmerged: 0 } }] };
+    mocks.resolveHelpersForDelete.mockResolvedValue(blocked);
+    const result = await turnOffOrchestration(PROJECT, 'orch', 'dispose');
+    expect(result).toMatchObject(blocked);
+    expect(mocks.killAgent).not.toHaveBeenCalled();
+    expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+  });
+
+  it('a failed or throwing cascade leaves orchestration on', async () => {
+    mocks.resolveHelpersForDelete
+      .mockResolvedValueOnce({ ok: true, message: 'Would dispose', helperIds: ['h1', 'h2'] })
+      .mockResolvedValueOnce({ ok: false, message: 'Disposed 1 of 2 helpers', helperIds: ['h1'], failed: [{ agentId: 'h2', name: 'h2', reason: 'EBUSY' }] });
+    expect((await turnOffOrchestration(PROJECT, 'orch', 'dispose')).ok).toBe(false);
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+
+    mocks.resolveHelpersForDelete.mockRejectedValueOnce(new Error('disk gone'));
+    await expect(turnOffOrchestration(PROJECT, 'orch', 'keep')).rejects.toThrow('disk gone');
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+    expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+  });
+
+  it('a spawn sync during the cascade can\'t reopen the gate', async () => {
+    let syncDone: Promise<void> | undefined;
+    mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string) => {
+      // The orchestrator respawns mid-turn-off.
+      syncDone = syncOrchestrationGate(PROJECT, 'orch');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(isOrchestrationEnabled('orch')).toBe(false);
+      releaseHelpers(projectPath, agentId);
+      return { ok: true, message: 'Kept', helperIds: ['h1', 'h2'] };
+    });
+    await turnOffOrchestration(PROJECT, 'orch', 'keep');
+    await syncDone;
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+    expect(find('orch').orchestration?.orchestrate).toBe(false);
+  });
+
+  it('does not reopen the gate after a failure when the agent is no longer running here', async () => {
+    mocks.resolveHelpersForDelete.mockImplementation(async () => {
+      registry.delete('orch');
+      return { ok: false, message: 'blocked', blocked: [] };
+    });
+    await turnOffOrchestration(PROJECT, 'orch', 'dispose');
+    expect(isOrchestrationEnabled('orch')).toBe(false);
+  });
+
+  it('settles a helper that appeared during the cascade with the same choice', async () => {
+    let calls = 0;
+    mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string) => {
+      calls++;
+      releaseHelpers(projectPath, agentId);
+      // A start already in flight lands its helper during the first pass.
+      if (calls === 1) agentsOf(projectPath).push(agent('late', { parentAgentId: 'orch' }));
+      return { ok: true, message: 'Kept', helperIds: calls === 1 ? ['h1', 'h2'] : ['late'] };
+    });
+    const result = await turnOffOrchestration(PROJECT, 'orch', 'keep');
+    expect(calls).toBe(2);
+    expect(result).toMatchObject({ ok: true, helperIds: ['h1', 'h2', 'late'] });
+    expect(find('late').parentAgentId).toBeUndefined();
+  });
+
+  it('does not write orchestrate: false for an agent already off', async () => {
+    find('orch').orchestration = { maxHelpers: 3 };
+    mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string) => {
+      releaseHelpers(projectPath, agentId);
+      return { ok: true, message: 'Kept', helperIds: ['h1', 'h2'] };
+    });
+    expect((await turnOffOrchestration(PROJECT, 'orch', 'keep')).ok).toBe(true);
+    expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+    expect(find('orch').orchestration).toEqual({ maxHelpers: 3 });
+  });
+
+  it('runs after a policy change in flight, not alongside it', async () => {
+    const order: string[] = [];
+    const realSet = vi.mocked(agentConfig.setOrchestrationConfig).getMockImplementation()!;
+    vi.mocked(agentConfig.setOrchestrationConfig).mockImplementation(async (...args) => {
+      await new Promise((r) => setTimeout(r, 5));
+      order.push(`set:${JSON.stringify(args[2])}`);
+      return realSet(...args);
+    });
+    mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string) => {
+      order.push('cascade');
+      releaseHelpers(projectPath, agentId);
+      return { ok: true, message: 'Kept', helperIds: [] };
+    });
+    await Promise.all([
+      setOrchestrationPolicy(PROJECT, 'orch', { control: 'ask-everything' }),
+      turnOffOrchestration(PROJECT, 'orch', 'keep'),
+    ]);
+    expect(order[0]).toContain('ask-everything');
+    expect(order[1]).toBe('cascade');
+    expect(find('orch').orchestration).toEqual({ orchestrate: false, maxHelpers: 3, control: 'ask-everything' });
+  });
+
+  it('a forced turn-off stops at a helper that couldn\'t be checked', async () => {
+    state.running.add('h1');
+    const unchecked = { ok: false, message: "h1 couldn't be checked (couldn't check, EIO), so it can't be disposed, even with force", blocked: [{ agentId: 'h1', name: 'h1', checks: { dirty: 0, unpushed: 0, unmerged: null, error: "couldn't check, EIO" } }] };
+    mocks.resolveHelpersForDelete.mockResolvedValue(unchecked);
+    const result = await turnOffOrchestration(PROJECT, 'orch', 'dispose', { force: true });
+    expect(result).toMatchObject({ ok: false, blocked: unchecked.blocked });
+    expect(mocks.resolveHelpersForDelete).toHaveBeenCalledWith(PROJECT, 'orch', 'dispose', { dryRun: true, force: true });
+    expect(mocks.killAgent).not.toHaveBeenCalled();
+    expect(agentConfig.setOrchestrationConfig).not.toHaveBeenCalled();
+    expect(isOrchestrationEnabled('orch')).toBe(true);
+  });
+
+  it('passes force through', async () => {
+    mocks.resolveHelpersForDelete.mockImplementation(async (projectPath: string, agentId: string) => {
+      releaseHelpers(projectPath, agentId);
+      return { ok: true, message: 'Disposed', helperIds: [] };
+    });
+    await turnOffOrchestration(PROJECT, 'orch', 'dispose', { force: true });
+    expect(mocks.resolveHelpersForDelete).toHaveBeenLastCalledWith(PROJECT, 'orch', 'dispose', { force: true });
+  });
+
+  it('rejects an unknown choice', async () => {
+    await expect(turnOffOrchestration(PROJECT, 'orch', 'maybe' as never)).rejects.toThrow(/Unknown choice/);
+  });
+});
+
+describe('resolveHelperLaunchSettings', () => {
+  it('gives bypass helpers to a running bypass orchestrator with same', async () => {
+    setAgents(PROJECT, [agent('orch', { freeAgentMode: true })]);
+    live('orch', { freeAgentMode: true, permissionMode: 'skip-all' });
+    expect(await resolveHelperLaunchSettings(PROJECT, 'orch')).toMatchObject({
+      freeAgentMode: true, permissionMode: 'skip-all', level: 'bypass', clamped: false, helperProvider: 'claude-code',
+    });
+  });
+
+  it('follows the live level, not the saved Free Agent Mode', async () => {
+    setAgents(PROJECT, [agent('orch', { freeAgentMode: true })]);
+    // Lowered to auto in chat since it started.
+    live('orch', { freeAgentMode: true, permissionMode: 'auto' });
+    expect((await resolveHelperLaunchSettings(PROJECT, 'orch')).level).toBe('auto');
+  });
+
+  it('clamps to standard when the orchestrator isn\'t running, runs elsewhere, or its mode is unknown', async () => {
+    setAgents(PROJECT, [agent('orch', { freeAgentMode: true })]);
+    expect(await resolveHelperLaunchSettings(PROJECT, 'orch')).toMatchObject({ freeAgentMode: false, permissionMode: 'auto', level: 'standard' });
+    live('orch', { freeAgentMode: true, permissionMode: 'skip-all' }, OTHER_PROJECT);
+    expect((await resolveHelperLaunchSettings(PROJECT, 'orch')).level).toBe('standard');
+    live('orch', { freeAgentMode: true });
+    expect((await resolveHelperLaunchSettings(PROJECT, 'orch')).level).toBe('standard');
+    live('orch');
+    expect((await resolveHelperLaunchSettings(PROJECT, 'orch')).level).toBe('standard');
+  });
+
+  it('never exceeds a standard orchestrator, whatever the policy asks', async () => {
+    for (const access of ['same', 'standard', 'auto', 'bypass'] as const) {
+      setAgents(PROJECT, [agent('orch', { orchestration: { access } })]);
+      live('orch', { freeAgentMode: false, permissionMode: 'skip-all' });
+      expect(await resolveHelperLaunchSettings(PROJECT, 'orch')).toMatchObject({ freeAgentMode: false, permissionMode: 'auto', level: 'standard' });
+    }
+  });
+
+  it('ranks for the helper\'s provider', async () => {
+    setAgents(PROJECT, [agent('orch')]);
+    live('orch', { freeAgentMode: true, permissionMode: 'auto' });
+    expect((await resolveHelperLaunchSettings(PROJECT, 'orch')).level).toBe('auto');
+    expect(await resolveHelperLaunchSettings(PROJECT, 'orch', { helperProvider: 'copilot-cli' })).toMatchObject({ level: 'standard', clamped: true });
+  });
+
+  it('uses a fixed lower level', async () => {
+    setAgents(PROJECT, [agent('orch', { orchestration: { access: 'standard' } })]);
+    live('orch', { freeAgentMode: true, permissionMode: 'skip-all' });
+    expect(await resolveHelperLaunchSettings(PROJECT, 'orch')).toMatchObject({ freeAgentMode: false, level: 'standard' });
+  });
+
+  it('throws for an unknown orchestrator', async () => {
+    await expect(resolveHelperLaunchSettings(PROJECT, 'nope')).rejects.toThrow(/not found/);
+  });
+});
+
+describe('checkHelperLimitFor', () => {
+  async function orchestrating(id: string, extra: Partial<DurableAgentConfig> = {}): Promise<DurableAgentConfig> {
+    return agent(id, { ...extra, orchestration: { orchestrate: true, ...extra.orchestration } });
+  }
+
+  it('refuses when orchestration is off', async () => {
+    setAgents(PROJECT, [agent('orch')]);
+    live('orch');
+    expect(await checkHelperLimitFor(PROJECT, 'orch')).toMatchObject({ ok: false, reason: 'orchestration-off', message: 'Orchestration is turned off for this agent.' });
+  });
+
+  it('refuses when the policy is on but the gate is closed (not running)', async () => {
+    setAgents(PROJECT, [await orchestrating('orch')]);
+    expect(await checkHelperLimitFor(PROJECT, 'orch')).toMatchObject({ ok: false, reason: 'orchestration-off' });
+  });
+
+  it('counts the orchestrator\'s live helpers against its limit', async () => {
+    setAgents(PROJECT, [
+      await orchestrating('orch', { orchestration: { maxHelpers: 2 } }),
+      agent('h1', { parentAgentId: 'orch' }),
+      agent('h2', { parentAgentId: 'orch' }),
+      agent('gone', { parentAgentId: 'orch', disposedAt: '2026-10-18T00:00:00Z' }),
+    ]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    expect(await checkHelperLimitFor(PROJECT, 'orch')).toMatchObject({ ok: false, reason: 'agent-limit', helperCount: 2, maxHelpers: 2 });
+  });
+
+  it('counts live helpers in every project, each once, against the global cap', async () => {
+    state.globalCap = 4;
+    mocks.projectList.mockResolvedValue([
+      { id: 'p1', name: 'app', path: PROJECT },
+      { id: 'p1b', name: 'app again', path: path.join(PROJECT, '.') },
+      { id: 'p2', name: 'other', path: OTHER_PROJECT },
+    ]);
+    setAgents(PROJECT, [await orchestrating('orch'), agent('h1', { parentAgentId: 'orch' })]);
+    setAgents(path.join(PROJECT, '.'), agentsOf(PROJECT));
+    setAgents(OTHER_PROJECT, [agent('o2'), agent('x1', { parentAgentId: 'o2' }), agent('x2', { parentAgentId: 'o2' })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    expect(await checkHelperLimitFor(PROJECT, 'orch')).toMatchObject({ ok: true, totalHelperCount: 3, globalCap: 4 });
+    state.globalCap = 3;
+    expect(await checkHelperLimitFor(PROJECT, 'orch')).toMatchObject({ ok: false, reason: 'global-cap', totalHelperCount: 3 });
+  });
+
+  it('skips a project it can\'t read', async () => {
+    mocks.projectList.mockResolvedValue([{ id: 'p2', name: 'other', path: OTHER_PROJECT }]);
+    setAgents(PROJECT, [await orchestrating('orch'), agent('h1', { parentAgentId: 'orch' })]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    vi.mocked(agentConfig.listDurable).mockImplementation(async (p: string) => {
+      if (p === OTHER_PROJECT) throw new Error('unreadable');
+      return agentsOf(p);
+    });
+    expect(await checkHelperLimitFor(PROJECT, 'orch')).toMatchObject({ ok: true, helperCount: 1, totalHelperCount: 1 });
+  });
+
+  it('uses the given project paths instead of the store', async () => {
+    setAgents(PROJECT, [await orchestrating('orch')]);
+    live('orch');
+    await syncOrchestrationGate(PROJECT, 'orch');
+    await checkHelperLimitFor(PROJECT, 'orch', { projectPaths: [] });
+    expect(mocks.projectList).not.toHaveBeenCalled();
+  });
+});

@@ -171,9 +171,11 @@ import {
   onAgentConfigChanged,
   renameDurable,
   resolveHelpersForDelete,
+  setOrchestrationConfig,
   setParentAgent,
   updateDurableConfig,
 } from './agent-config';
+import { setPersonaChangeHook } from './persona-change-hook';
 import type { DurableAgentConfig } from '../../shared/types';
 
 const PROJECT_PATH = path.resolve('helpers-project');
@@ -408,6 +410,51 @@ describe('setParentAgent', () => {
   });
 });
 
+describe('orchestration config (#2228)', () => {
+  it('stores the policy fields across a restart and other writes, and clears them', async () => {
+    seed([agent('durable_1_orch')]);
+    await setOrchestrationConfig(PROJECT_PATH, 'durable_1_orch', { orchestrate: true, control: 'ask-before-start' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { model: 'opus' });
+    await flushAllAgentConfigs();
+    clearAgentConfigCache();
+    expect((await listDurable(PROJECT_PATH))[0]).toMatchObject({
+      model: 'opus', orchestration: { orchestrate: true, control: 'ask-before-start' },
+    });
+
+    await setOrchestrationConfig(PROJECT_PATH, 'durable_1_orch', undefined);
+    await flushAllAgentConfigs();
+    expect(onDisk('durable_1_orch')).not.toHaveProperty('orchestration');
+  });
+
+  it('is not written by updateDurableConfig', async () => {
+    seed([agent('durable_1_orch')]);
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { orchestration: { orchestrate: true } } as never);
+    expect((await listDurable(PROJECT_PATH))[0]).not.toHaveProperty('orchestration');
+  });
+
+  it('tells the persona hook about a persona change, with the old persona', async () => {
+    seed([agent('durable_1_orch', { persona: 'orchestrator' })]);
+    const hook = vi.fn(async () => undefined);
+    setPersonaChangeHook(hook);
+    try {
+      await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { model: 'opus' });
+      expect(hook).not.toHaveBeenCalled();
+      await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'developer' });
+      expect(hook).toHaveBeenCalledWith({ kind: 'agent', projectPath: PROJECT_PATH, agentId: 'durable_1_orch', previousPersona: 'orchestrator' });
+      // A failing hook doesn't fail the update.
+      hook.mockRejectedValueOnce(new Error('boom'));
+      await expect(updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'qa' })).resolves.toBeUndefined();
+    } finally {
+      setPersonaChangeHook(null);
+    }
+  });
+
+  it('throws for an unknown agent', async () => {
+    seed([]);
+    await expect(setOrchestrationConfig(PROJECT_PATH, 'durable_9_missing', { orchestrate: true })).rejects.toThrow(/not found/);
+  });
+});
+
 describe('delete cascade', () => {
   function seedFamily(helperRepos: Record<string, Partial<FakeRepo>>): void {
     seed([
@@ -560,6 +607,24 @@ describe('delete cascade', () => {
     expect(branchDeletions()).toEqual([]);
   });
 
+  it('force overrides work at risk but never a check that couldn\'t run (#2228)', async () => {
+    seedFamily({ durable_2_dirty: { dirty: 1 }, durable_3_broken: { failOn: 'status' } });
+
+    for (const dryRun of [true, false]) {
+      const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose', { force: true, dryRun });
+      expect(result.ok).toBe(false);
+      expect(result.message).toMatch(/even with force/);
+      expect(result.blocked?.map((b) => b.agentId)).toEqual(['durable_3_broken']);
+    }
+    expect(worktreeRemovals()).toEqual([]);
+    expect(branchDeletions()).toEqual([]);
+
+    // With every check able to run, force does dispose work at risk.
+    seedFamily({ durable_2_dirty: { dirty: 1 } });
+    clearAgentConfigCache();
+    expect(await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose', { force: true })).toMatchObject({ ok: true });
+  });
+
   it('B3: a branch lookup that fails (not a missing branch) blocks', async () => {
     seedFamily({ durable_2_h: {} });
     showRefBroken = true;
@@ -583,6 +648,10 @@ describe('delete cascade', () => {
     expect(result.blocked?.[0].checks.error).toMatch(/being created/);
 
     expect(await disposeHelper(PROJECT_PATH, 'durable_2_new', { force: true })).toMatchObject({ ok: false });
+    // Nor through the cascade (orchestrate turn-off with force, #2228).
+    const forced = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose', { force: true });
+    expect(forced.ok).toBe(false);
+    expect(forced.blocked?.[0].checks.error).toMatch(/being created/);
     expect(worktreeRemovals()).toEqual([]);
     expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_new')?.disposedAt).toBeUndefined();
   });

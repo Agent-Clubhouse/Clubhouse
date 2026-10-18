@@ -38,7 +38,8 @@ vi.mock('../../util/ipc-broadcast', () => ({
 
 import * as bridgeServer from './bridge-server';
 import { bindingManager } from './binding-manager';
-import { registerToolTemplate, buildToolName, _resetForTesting as resetTools } from './tool-registry';
+import { registerToolTemplate, registerGlobalTool, buildToolName, _resetForTesting as resetTools } from './tool-registry';
+import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import { IPC } from '../../../shared/ipc-channels';
 
 function makeRequest(port: number, method: string, path: string, body?: unknown, nonce?: string, rawBody?: string): Promise<{ statusCode: number; body: any }> {
@@ -128,6 +129,7 @@ describe('BridgeServer', () => {
   beforeEach(async () => {
     bindingManager._resetForTesting();
     resetTools();
+    _resetOrchestrationGateForTesting();
     mockGetAgentNonce.mockReturnValue('test-nonce');
     mockBroadcast.mockReset();
     port = await bridgeServer.start();
@@ -562,6 +564,34 @@ describe('BridgeServer', () => {
       // Every data line is a JSON-RPC message (the ping is a comment).
       const dataLines = stream.chunks.join('').split('\n').filter((l) => l.startsWith('data: '));
       expect(dataLines.map((l) => JSON.parse(l.slice(6)).method)).toEqual(['notifications/tools/list_changed']);
+      stream.close();
+    });
+
+    it('toggling orchestration sends tools/list_changed and a stale call is refused (#2228)', async () => {
+      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'started' }] });
+      registerGlobalTool('test_start_helper', { description: 'Test', inputSchema: { type: 'object' } }, handler, { group: 'orchestration' });
+      const sid = await initialize();
+      const headers = { ...NONCE, 'Mcp-Session-Id': sid };
+      const list = async () => JSON.parse((await rawRequest(port, 'POST', '/mcp/agent-1', headers, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).body).result.tools.map((t: { name: string }) => t.name);
+      expect(await list()).not.toContain('test_start_helper');
+
+      const stream = await openStream(port, '/mcp/agent-1', { ...SSE, 'Mcp-Session-Id': sid });
+      await new Promise((r) => setTimeout(r, 30));
+      setOrchestrationEnabled('agent-1', true);
+      await vi.waitFor(() => expect(stream.chunks.join('')).toContain('notifications/tools/list_changed'), { timeout: 2000 });
+      expect(await list()).toContain('test_start_helper');
+
+      // Off again: the client still holds the old list and calls the tool.
+      setOrchestrationEnabled('agent-1', false);
+      const call = await rawRequest(port, 'POST', '/mcp/agent-1', headers, {
+        jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'test_start_helper', arguments: {} },
+      });
+      const result = JSON.parse(call.body).result;
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe('Orchestration is turned off for this agent.');
+      expect(handler).not.toHaveBeenCalled();
+      const dataLines = stream.chunks.join('').split('\n').filter((l) => l.startsWith('data: '));
+      expect(dataLines).toHaveLength(2);
       stream.close();
     });
 

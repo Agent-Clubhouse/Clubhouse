@@ -312,6 +312,12 @@ export interface DurableAgentConfig {
    * failed (#2226). A ready agent has no `creation` field.
    */
   creation?: DurableAgentCreation;
+  /**
+   * Orchestration policy (#2228): only the fields set on this agent. Unset
+   * fields come from the persona's front-matter, then the defaults. Written
+   * only through services/orchestration-policy.ts, never updateDurableConfig.
+   */
+  orchestration?: import('./orchestration-policy').OrchestrationPolicyConfig;
 }
 
 /** What to do with an orchestrator's helpers when it is deleted (#2224). */

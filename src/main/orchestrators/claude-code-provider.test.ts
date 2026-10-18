@@ -279,6 +279,12 @@ describe('ClaudeCodeProvider', () => {
   });
 
   describe('parseHookEvent', () => {
+    it('reports permission_mode as a level (#2228)', () => {
+      expect(provider.parseHookEvent({ hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'bypassPermissions' })?.permissionLevel).toBe('full_access');
+      expect(provider.parseHookEvent({ hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default' })?.permissionLevel).toBe('ask');
+      expect(provider.parseHookEvent({ hook_event_name: 'PreToolUse', tool_name: 'Bash' })).not.toHaveProperty('permissionLevel');
+    });
+
     it('parses PreToolUse as pre_tool', () => {
       const result = provider.parseHookEvent({
         hook_event_name: 'PreToolUse',

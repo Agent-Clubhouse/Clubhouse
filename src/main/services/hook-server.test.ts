@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as http from 'http';
+import { agentRegistry as realRegistry } from './agent-registry';
+import { accessLevelOf } from '../../shared/orchestration-policy';
 
 // Track what gets sent to BrowserWindow
 const mockSend = vi.fn();
@@ -27,12 +29,17 @@ const mockGetAgentOrchestrator = vi.fn<(id: string) => string | undefined>();
 const mockGetAgentNonce = vi.fn<(id: string) => string | undefined>();
 const mockResolveOrchestrator = vi.fn();
 
-vi.mock('./agent-registry', () => ({
-  getAgentProjectPath: (id: string) => mockGetAgentProjectPath(id),
-  getAgentOrchestrator: (id: string) => mockGetAgentOrchestrator(id),
-  getAgentNonce: (id: string) => mockGetAgentNonce(id),
-  resolveOrchestrator: (...args: unknown[]) => mockResolveOrchestrator(...args),
-}));
+// The real registry, so the spawn cap is enforced as in the app; only the lookups the server uses are stubbed.
+vi.mock('./agent-registry', async (importActual) => {
+  const actual = await importActual<typeof import('./agent-registry')>();
+  return {
+    getAgentProjectPath: (id: string) => mockGetAgentProjectPath(id),
+    getAgentOrchestrator: (id: string) => mockGetAgentOrchestrator(id),
+    getAgentNonce: (id: string) => mockGetAgentNonce(id),
+    resolveOrchestrator: (...args: unknown[]) => mockResolveOrchestrator(...args),
+    agentRegistry: actual.agentRegistry,
+  };
+});
 
 vi.mock('../orchestrators', () => ({
   isHookCapable: vi.fn((provider: any) => typeof provider.parseHookEvent === 'function'),
@@ -231,6 +238,51 @@ describe('hook-server', () => {
           timestamp: expect.any(Number),
         })
       );
+    });
+
+    describe('reported permission levels and the spawn cap (#2228)', () => {
+      async function hook(level: string): Promise<void> {
+        mockResolveOrchestrator.mockResolvedValue({
+          parseHookEvent: vi.fn(() => ({ ...mockNormalized, permissionLevel: level })),
+          toolVerb: vi.fn(),
+        });
+        await postToServer(port, '/hook/agent-1', { hook_event_name: 'PreToolUse' }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+        await new Promise((r) => setTimeout(r, 30));
+      }
+      const access = () => realRegistry.get('agent-1')?.launchAccess;
+
+      beforeEach(() => {
+        realRegistry.register('agent-1', { projectPath: '/my/project', orchestrator: 'claude-code', runtime: 'pty' });
+      });
+      afterEach(() => realRegistry.untrack('agent-1'));
+
+      it('a hook can\'t raise above the spawn cap', async () => {
+        realRegistry.setLaunchCap('agent-1', { freeAgentMode: false, permissionMode: 'skip-all' });
+        // The agent's own shell posts a forged bypassPermissions hook.
+        await hook('full_access');
+        expect(accessLevelOf(access())).toBe('standard');
+        // Nor can a second cap be set after spawn.
+        realRegistry.setLaunchCap('agent-1', { freeAgentMode: true, permissionMode: 'skip-all' });
+        await hook('full_access');
+        expect(accessLevelOf(access())).toBe('standard');
+      });
+
+      it('a hook lowers the record and restores it up to the cap', async () => {
+        realRegistry.setLaunchCap('agent-1', { freeAgentMode: true, permissionMode: 'skip-all' });
+        await hook('plan');
+        expect(accessLevelOf(access())).toBe('standard');
+        await hook('auto');
+        expect(accessLevelOf(access())).toBe('auto');
+        await hook('full_access');
+        expect(accessLevelOf(access())).toBe('bypass');
+      });
+
+      it('leaves a chat agent\'s level to its driver events', async () => {
+        realRegistry.register('agent-1', { projectPath: '/my/project', orchestrator: 'claude-code', runtime: 'chat' });
+        realRegistry.setLaunchCap('agent-1', { freeAgentMode: true, permissionMode: 'skip-all' });
+        await hook('plan');
+        expect(accessLevelOf(access())).toBe('bypass');
+      });
     });
 
     it('decodes multi-byte UTF-8 characters split across request chunks', async () => {

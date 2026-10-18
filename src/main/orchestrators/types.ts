@@ -1,3 +1,4 @@
+import type { PermissionLevel } from '../../shared/chat/capabilities';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import type { McpServerDef } from '../../shared/types';
 
@@ -84,6 +85,12 @@ export interface NormalizedHookEvent {
   toolName?: string;
   toolInput?: Record<string, unknown>;
   message?: string;
+  /**
+   * The agent's permission level as the CLI reports it with the hook, when
+   * it does (Claude's `permission_mode`). Keeps the helper ceiling (#2228)
+   * on a terminal agent in step with in-CLI mode changes (Shift+Tab).
+   */
+  permissionLevel?: PermissionLevel;
 }
 
 /**

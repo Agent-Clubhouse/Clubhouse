@@ -97,6 +97,8 @@ export function ExtractPersonaDialog() {
           (chosen as Record<string, unknown>)[key] = settings[key];
         }
       }
+      // The agent's orchestration policy rides along as persona defaults (#2228).
+      if (settings.orchestration) chosen.orchestration = settings.orchestration;
       const file = serializePersonaFile(chosen, content);
       await window.clubhouse.agentSettings.writeSourcePersonaContent(projectPath, trimmed, file, scope);
       closeExtractPersonaDialog();

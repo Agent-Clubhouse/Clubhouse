@@ -18,6 +18,8 @@ import { persist } from '../telemetry/persist';
 import { normalizeIdleSleep } from '../../shared/idle-sleep';
 import { setAgentIdleSleep } from './chat-idle-settings';
 import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-name';
+import type { OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
+import { notifyPersonaChanged } from './persona-change-hook';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -1052,6 +1054,7 @@ export async function updateDurableConfig(
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
+  const previousPersona = agent.persona;
   if (updates.quickAgentDefaults !== undefined) {
     agent.quickAgentDefaults = updates.quickAgentDefaults;
   }
@@ -1167,6 +1170,17 @@ export async function updateDurableConfig(
   await writeAgents(projectPath, agents);
   // A running chat session picks the new timeout up now.
   if (updates.idleSleep !== undefined) setAgentIdleSleep(agentId, agent.idleSleep);
+  if (agent.persona !== previousPersona) {
+    // The orchestration policy re-checks its persona defaults (#2228).
+    try {
+      await notifyPersonaChanged(projectPath, agentId, previousPersona);
+    } catch (err) {
+      // telemetry-exempt: logged; the persona change itself is saved
+      appLog('core:agent-config', 'warn', 'Persona change hook failed', {
+        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
 }
 
 /** Persist the last CLI session ID for a durable agent */
@@ -2561,6 +2575,24 @@ export async function setParentAgent(
   await writeAgents(projectPath, agents);
 }
 
+/**
+ * Store an agent's own orchestration policy fields (#2228), or clear them all
+ * with undefined. Callers go through services/orchestration-policy.ts, which
+ * validates, keeps the tool gate in sync and handles helpers on turn-off.
+ */
+export async function setOrchestrationConfig(
+  projectPath: string,
+  agentId: string,
+  config: OrchestrationPolicyConfig | undefined,
+): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) throw new Error('Agent not found');
+  if (config && Object.keys(config).length > 0) agent.orchestration = { ...config };
+  else delete agent.orchestration;
+  await writeAgents(projectPath, agents);
+}
+
 /** A `git rev-list --count` result. Any failure throws, so a check never reads as zero. */
 async function gitCount(args: string[], cwd: string): Promise<number> {
   const out = await execGitFileAsync(args, cwd);
@@ -2817,7 +2849,8 @@ function liveDescendants(agents: DurableAgentConfig[], agentId: string): Durable
  * - 'dispose' disposes every live helper below it, helpers of helpers too.
  *   It runs the delete status checks first; if any helper has uncommitted,
  *   unpushed or unmerged work it changes nothing and returns `blocked`,
- *   unless `force` is set.
+ *   unless `force` is set. `force` never overrides a check that couldn't
+ *   run or a helper still being created: those always block.
  * - 'keep' makes its direct helpers ordinary durable agents. Their own
  *   helpers stay attached to them.
  * `dryRun` runs the checks and reports what would happen without changing
@@ -2868,6 +2901,18 @@ export async function resolveHelpersForDelete(
   const blocked: HelperDisposeBlock[] = checked
     .filter(({ checks }) => hasWorkAtRisk(checks))
     .map(({ helper, checks }) => ({ agentId: helper.id, name: helper.name, checks }));
+  // `force` overrides work at risk only. A check that couldn't run, or a
+  // creation still in flight, blocks even a forced dispose (#2228).
+  const unchecked = blocked.filter(({ checks }) => !!checks.error);
+  if (unchecked.length > 0 && options.force) {
+    return {
+      ok: false,
+      message: unchecked.length === 1
+        ? `${unchecked[0].name} couldn't be checked (${unchecked[0].checks.error}), so it can't be disposed, even with force`
+        : `${unchecked.length} helpers couldn't be checked, so they can't be disposed, even with force`,
+      blocked: unchecked,
+    };
+  }
   if (blocked.length > 0 && !options.force) {
     return {
       ok: false,

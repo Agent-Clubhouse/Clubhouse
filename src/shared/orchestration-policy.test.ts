@@ -1,0 +1,200 @@
+import { describe, it, expect } from 'vitest';
+import {
+  ACCESS_LEVELS,
+  ORCHESTRATION_DEFAULTS,
+  accessLevelOf,
+  applyOrchestrationPatch,
+  checkHelperLimit,
+  launchAccessFor,
+  launchAccessForChatLevel,
+  providerAccessLevel,
+  normalizeOrchestrationConfig,
+  resolveHelperAccess,
+  resolveOrchestrationPolicy,
+  validateOrchestrationPatch,
+  type OrchestrationAccess,
+} from './orchestration-policy';
+import type { FreeAgentPermissionMode } from './types';
+
+describe('orchestration policy', () => {
+  describe('defaults', () => {
+    it('is off, same access, hands-off, five helpers', () => {
+      expect(ORCHESTRATION_DEFAULTS).toEqual({ orchestrate: false, access: 'same', control: 'hands-off', maxHelpers: 5 });
+    });
+  });
+
+  describe('normalizeOrchestrationConfig', () => {
+    it('keeps valid fields and drops the rest', () => {
+      expect(normalizeOrchestrationConfig({
+        orchestrate: true, access: 'root', control: 'ask-everything', maxHelpers: 0, extra: 1,
+      })).toEqual({ orchestrate: true, control: 'ask-everything' });
+    });
+
+    it('returns undefined for nothing valid', () => {
+      expect(normalizeOrchestrationConfig(undefined)).toBeUndefined();
+      expect(normalizeOrchestrationConfig('on')).toBeUndefined();
+      expect(normalizeOrchestrationConfig([])).toBeUndefined();
+      expect(normalizeOrchestrationConfig({ maxHelpers: 2.5 })).toBeUndefined();
+    });
+  });
+
+  describe('validateOrchestrationPatch', () => {
+    it('accepts valid fields and null resets', () => {
+      expect(validateOrchestrationPatch({ orchestrate: true, access: 'auto', control: null, maxHelpers: 3 }))
+        .toEqual({ orchestrate: true, access: 'auto', control: null, maxHelpers: 3 });
+    });
+
+    it('throws on an invalid or unknown field', () => {
+      expect(() => validateOrchestrationPatch({ access: 'root' })).toThrow(/access/);
+      expect(() => validateOrchestrationPatch({ control: 'sometimes' })).toThrow(/control/);
+      expect(() => validateOrchestrationPatch({ maxHelpers: 1000 })).toThrow(/maxHelpers/);
+      expect(() => validateOrchestrationPatch({ orchestrate: 'yes' })).toThrow(/orchestrate/);
+      expect(() => validateOrchestrationPatch({ bypass: true })).toThrow(/Unknown/);
+      expect(() => validateOrchestrationPatch(null)).toThrow();
+    });
+  });
+
+  describe('applyOrchestrationPatch', () => {
+    it('sets and clears fields', () => {
+      expect(applyOrchestrationPatch({ orchestrate: true, maxHelpers: 3 }, { maxHelpers: null, control: 'ask-before-start' }))
+        .toEqual({ orchestrate: true, control: 'ask-before-start' });
+    });
+
+    it('returns undefined when everything is cleared', () => {
+      expect(applyOrchestrationPatch({ orchestrate: true }, { orchestrate: null })).toBeUndefined();
+    });
+  });
+
+  describe('resolveOrchestrationPolicy', () => {
+    it('layers agent over persona over defaults and reports sources', () => {
+      const policy = resolveOrchestrationPolicy({ control: 'ask-everything' }, { orchestrate: true, control: 'hands-off', maxHelpers: 2 });
+      expect(policy).toMatchObject({ orchestrate: true, access: 'same', control: 'ask-everything', maxHelpers: 2 });
+      expect(policy.sources).toEqual({ orchestrate: 'persona', access: 'default', control: 'agent', maxHelpers: 'persona' });
+    });
+
+    it('lets an agent turn off what its persona turns on', () => {
+      expect(resolveOrchestrationPolicy({ orchestrate: false }, { orchestrate: true }).orchestrate).toBe(false);
+    });
+
+    it('ignores invalid stored values', () => {
+      expect(resolveOrchestrationPolicy({ maxHelpers: -1 } as never, undefined).maxHelpers).toBe(5);
+    });
+  });
+
+  describe('access levels', () => {
+    it('reads the level from live launch settings, unknown as standard', () => {
+      expect(accessLevelOf(undefined)).toBe('standard');
+      expect(accessLevelOf({ freeAgentMode: false, permissionMode: 'skip-all' })).toBe('standard');
+      expect(accessLevelOf({ freeAgentMode: true, permissionMode: 'auto' })).toBe('auto');
+      expect(accessLevelOf({ freeAgentMode: true, permissionMode: 'skip-all' })).toBe('bypass');
+      expect(accessLevelOf({ freeAgentMode: true })).toBe('standard');
+    });
+
+    it('pins an explicit permission mode for every level', () => {
+      expect(launchAccessFor('standard')).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+      expect(launchAccessFor('auto')).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+      expect(launchAccessFor('bypass')).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
+      for (const level of ACCESS_LEVELS) expect(accessLevelOf(launchAccessFor(level))).toBe(level);
+    });
+
+    it('ranks each provider by its real flags', () => {
+      for (const id of ['claude-code', 'codex-cli']) {
+        expect(ACCESS_LEVELS.map((l) => providerAccessLevel(id, launchAccessFor(l)))).toEqual(['standard', 'auto', 'bypass']);
+      }
+      // Copilot: any Free Agent Mode is --yolo; skip-all without it is --allow-all-tools.
+      expect(ACCESS_LEVELS.map((l) => providerAccessLevel('copilot-cli', launchAccessFor(l)))).toEqual(['standard', 'bypass', 'bypass']);
+      expect(providerAccessLevel('copilot-cli', { freeAgentMode: false, permissionMode: 'skip-all' })).toBe('auto');
+      expect(providerAccessLevel('someday-cli', launchAccessFor('auto'))).toBe('bypass');
+    });
+
+    it('maps chat levels to launch settings', () => {
+      expect(accessLevelOf(launchAccessForChatLevel('plan'))).toBe('standard');
+      expect(accessLevelOf(launchAccessForChatLevel('ask'))).toBe('standard');
+      expect(accessLevelOf(launchAccessForChatLevel('auto_edit'))).toBe('standard');
+      expect(accessLevelOf(launchAccessForChatLevel('auto'))).toBe('auto');
+      expect(accessLevelOf(launchAccessForChatLevel('full_access'))).toBe('bypass');
+    });
+  });
+
+  describe('resolveHelperAccess', () => {
+    const orchestrators: Array<{ freeAgentMode: boolean; permissionMode?: FreeAgentPermissionMode } | undefined> = [
+      undefined,
+      { freeAgentMode: false },
+      { freeAgentMode: false, permissionMode: 'skip-all' },
+      { freeAgentMode: true },
+      { freeAgentMode: true, permissionMode: 'auto' },
+      { freeAgentMode: true, permissionMode: 'skip-all' },
+    ];
+    const accesses: OrchestrationAccess[] = ['same', ...ACCESS_LEVELS];
+    const providers = ['claude-code', 'codex-cli', 'copilot-cli', undefined];
+
+    it('never gives a helper flags above its orchestrator, on any provider', () => {
+      for (const orchestrator of orchestrators) {
+        const ceiling = ACCESS_LEVELS.indexOf(accessLevelOf(orchestrator));
+        for (const access of accesses) {
+          for (const provider of providers) {
+            const helper = resolveHelperAccess(orchestrator, access, provider);
+            expect(ACCESS_LEVELS.indexOf(helper.level)).toBeLessThanOrEqual(ceiling);
+            expect(ACCESS_LEVELS.indexOf(providerAccessLevel(provider, helper))).toBeLessThanOrEqual(ceiling);
+            expect(helper.permissionMode).toBeDefined();
+          }
+        }
+      }
+    });
+
+    it('carries bypass through with same', () => {
+      expect(resolveHelperAccess({ freeAgentMode: true, permissionMode: 'skip-all' }, 'same', 'claude-code')).toMatchObject({
+        freeAgentMode: true, permissionMode: 'skip-all', level: 'bypass', ceiling: 'bypass', clamped: false,
+      });
+    });
+
+    it('starts standard helpers, with the mode pinned, for an orchestrator that is not running or has no known mode', () => {
+      for (const live of [undefined, { freeAgentMode: true }]) {
+        expect(resolveHelperAccess(live, 'same', 'copilot-cli')).toMatchObject({
+          freeAgentMode: false, permissionMode: 'auto', level: 'standard', ceiling: 'standard',
+        });
+      }
+    });
+
+    it('uses a fixed lower level', () => {
+      expect(resolveHelperAccess({ freeAgentMode: true, permissionMode: 'skip-all' }, 'auto', 'claude-code')).toMatchObject({
+        freeAgentMode: true, permissionMode: 'auto', level: 'auto', clamped: false,
+      });
+      expect(resolveHelperAccess({ freeAgentMode: true, permissionMode: 'auto' }, 'standard', 'codex-cli')).toMatchObject({
+        freeAgentMode: false, permissionMode: 'auto', level: 'standard', clamped: false,
+      });
+    });
+
+    it('lowers a fixed level above the orchestrator to its level', () => {
+      expect(resolveHelperAccess({ freeAgentMode: false, permissionMode: 'auto' }, 'bypass', 'claude-code')).toMatchObject({
+        freeAgentMode: false, level: 'standard', ceiling: 'standard', clamped: true,
+      });
+      expect(resolveHelperAccess({ freeAgentMode: true, permissionMode: 'auto' }, 'bypass', 'claude-code')).toMatchObject({
+        permissionMode: 'auto', level: 'auto', clamped: true,
+      });
+    });
+
+    it('starts a Copilot helper of an auto orchestrator standard, not --yolo', () => {
+      expect(resolveHelperAccess({ freeAgentMode: true, permissionMode: 'auto' }, 'same', 'copilot-cli')).toMatchObject({
+        freeAgentMode: false, permissionMode: 'auto', level: 'standard', ceiling: 'auto', clamped: true,
+      });
+      expect(resolveHelperAccess({ freeAgentMode: true, permissionMode: 'skip-all' }, 'same', 'copilot-cli').level).toBe('bypass');
+    });
+  });
+
+  describe('checkHelperLimit', () => {
+    it('allows a start under both limits', () => {
+      expect(checkHelperLimit({ helperCount: 4, totalHelperCount: 19, maxHelpers: 5, globalCap: 20 }).ok).toBe(true);
+    });
+
+    it('refuses at the agent limit first', () => {
+      const result = checkHelperLimit({ helperCount: 5, totalHelperCount: 20, maxHelpers: 5, globalCap: 20 });
+      expect(result).toMatchObject({ ok: false, reason: 'agent-limit' });
+    });
+
+    it('refuses at the global cap', () => {
+      const result = checkHelperLimit({ helperCount: 1, totalHelperCount: 20, maxHelpers: 5, globalCap: 20 });
+      expect(result).toMatchObject({ ok: false, reason: 'global-cap' });
+    });
+  });
+});
