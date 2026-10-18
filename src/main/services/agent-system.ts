@@ -30,6 +30,8 @@ import { cancelChatStart, tryStartChatAgent, type ChatStartResult } from './agen
 import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
 import { noteKillRequest, recordSleep, sleepInfoForExit, takeKillRequest } from './agent-runtime/sleep-reason';
 import { onAgentExit } from './agent-exit-broadcast';
+import { sessionCaptureFor, trackSessionCapture } from './session-capture-barrier';
+import { assertLaunchesOpen } from './launch-gate';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { agentKillRequested, clearSpawnKind, noteSpawnKind } from '../telemetry/agent-telemetry';
@@ -97,7 +99,27 @@ export function getRunningAgentIds(agentIds: string[]): string[] {
   return agentIds.filter(isAgentRunning);
 }
 
+/** Spawns in progress; shutdown lets them settle before stopping runtimes (#2053). */
+const inflightSpawns = new Set<Promise<void>>();
+
+/** Resolves once every spawn in progress, including ones started meanwhile, has settled. */
+export async function whenSpawnsSettled(): Promise<void> {
+  while (inflightSpawns.size) await Promise.allSettled([...inflightSpawns]);
+}
+
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
+  // Quit and update close this before stopping runtimes (#2053).
+  assertLaunchesOpen();
+  const spawn = spawnAgentTracked(params);
+  inflightSpawns.add(spawn);
+  try {
+    await spawn;
+  } finally {
+    inflightSpawns.delete(spawn);
+  }
+}
+
+async function spawnAgentTracked(params: SpawnAgentParams): Promise<void> {
   const facts: SpawnFacts = { model: params.model };
   const startMs = Date.now();
   await tel.flow(
@@ -274,6 +296,9 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         });
       }
     }
+    // Again here and before each runtime start below: a spawn can pass the
+    // entry check, then reach its runtime after shutdown began (#2053).
+    assertLaunchesOpen();
     try {
       chatStart = await withErrorType('chat_start_failed', () => tryStartChatAgent({
         agentId: params.agentId,
@@ -347,6 +372,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         facts.wrapperApplied = wrapperApplied;
         const spawnEnv = { ...headlessResult.env, ...profileEnv, ...(wrapperApplied ? wrapperConfig?.env : undefined), CLUBHOUSE_AGENT_ID: params.agentId };
         noteSpawnKind(params.agentId, params.kind);
+        assertLaunchesOpen();
         await tel.step('clubhouse.headless.spawn', () => headlessManager.spawnHeadless(
           params.agentId,
           params.cwd,
@@ -539,6 +565,7 @@ async function spawnPtyAgent(
 
   noteSpawnKind(params.agentId, params.kind);
   const spawnedAt = Date.now();
+  assertLaunchesOpen();
   await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, exitCode, buffer, killed) => {
     configPipeline.restoreForAgent(exitAgentId);
     if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
@@ -553,7 +580,7 @@ async function spawnPtyAgent(
       const capture = captureSessionOnExit(params, provider, exitAgentId, {
         exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt, profileEnv, assignedId: spawnCmd.sessionId,
       });
-      if (capture) pendingSessionCaptures.set(exitAgentId, capture);
+      if (capture) trackSessionCapture(exitAgentId, capture);
     }
   }, commandPrefix)));
 }
@@ -679,12 +706,6 @@ async function clearResume(projectPath: string, agentId: string, sessionId: stri
   }
 }
 
-/**
- * Session-entry writes started by a PTY exit, per agent. A restart that
- * resumes must wait for this, or it reads the previous lastSessionId.
- */
-const pendingSessionCaptures = new Map<string, Promise<void>>();
-
 /** Past gracefulKill's SIGKILL step (9s), so a timeout means the exit was lost. */
 const KILL_WAIT_TIMEOUT_MS = 12_000;
 
@@ -753,11 +774,9 @@ async function settleKill(agentId: string, exited: Promise<boolean>): Promise<vo
   const didExit = await exited;
   // The exit callback runs in the same tick as the exit broadcast (before it
   // on a normal exit, after it on SIGKILL), so the capture is registered by now.
-  const capture = pendingSessionCaptures.get(agentId);
-  if (capture) {
-    await capture;
-    pendingSessionCaptures.delete(agentId);
-  }
+  // A restart that resumes must wait for it, or it reads the previous lastSessionId.
+  const capture = sessionCaptureFor(agentId);
+  if (capture) await capture;
   appLog('core:agent', didExit ? 'info' : 'warn', didExit ? 'Agent exited after kill' : 'Timed out waiting for agent exit after kill', {
     meta: { agentId, waitedMs: Date.now() - startedAt, sessionCaptured: capture !== undefined },
   });

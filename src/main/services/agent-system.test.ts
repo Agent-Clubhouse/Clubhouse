@@ -342,6 +342,42 @@ describe('agent-system', () => {
   });
 
   describe('spawnAgent', () => {
+    it('refuses to launch while the app shuts down (#2053)', async () => {
+      const { closeLaunches, reopenLaunches, LaunchesClosedError } = await import('./launch-gate');
+      closeLaunches('quitting');
+      try {
+        await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/my/project', cwd: '/my/project', kind: 'durable' }))
+          .rejects.toBeInstanceOf(LaunchesClosedError);
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+        expect(getAgentProjectPath('agent-1')).toBeUndefined();
+      } finally {
+        reopenLaunches();
+      }
+    });
+
+    it('a spawn already past the entry check doesn\'t start its terminal once shutdown closed launches', async () => {
+      const { closeLaunches, reopenLaunches, LaunchesClosedError } = await import('./launch-gate');
+      const { whenSpawnsSettled } = await import('./agent-system');
+      let release!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      // Quit lands while the spawn reads the agent's config.
+      mockGetDurableConfig.mockImplementationOnce((async () => { await gate; return null; }) as never);
+      const spawn = spawnAgent({ agentId: 'agent-1', projectPath: '/my/project', cwd: '/my/project', kind: 'durable' });
+      let settled = false;
+      const drained = whenSpawnsSettled().then(() => { settled = true; });
+      try {
+        closeLaunches('quitting');
+        await new Promise((r) => setTimeout(r, 0));
+        expect(settled).toBe(false);
+        release();
+        await expect(spawn).rejects.toBeInstanceOf(LaunchesClosedError);
+        await drained;
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+      } finally {
+        reopenLaunches();
+      }
+    });
+
     it('tracks agent project path', async () => {
       await spawnAgent({
         agentId: 'agent-1',

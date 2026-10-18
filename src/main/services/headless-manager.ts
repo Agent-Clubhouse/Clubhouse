@@ -67,6 +67,18 @@ interface HeadlessSession {
 
 const sessions = new Map<string, HeadlessSession>();
 
+/** Transcript files still being written after their run exited; shutdown waits for them (#2053). */
+const closingTranscripts = new Set<Promise<void>>();
+
+/** End a run's transcript stream, tracking it until its writes are flushed (or failed). */
+function endTranscript(logStream: fs.WriteStream): void {
+  const flushed = new Promise<void>((resolve) => {
+    logStream.end(() => resolve());
+  });
+  closingTranscripts.add(flushed);
+  void flushed.then(() => closingTranscripts.delete(flushed));
+}
+
 function cleanupHeadlessSession(agentId: string): void {
   const session = sessions.get(agentId);
   if (session?.killTimer) {
@@ -521,7 +533,7 @@ function setupExitHandlers(
       annexEventBus.emitHookEvent(agentId, stopEvent);
     }
 
-    logStream.end();
+    endTranscript(logStream);
 
     // Only clean up and broadcast exit if this session has not been replaced.
     // When spawnHeadless replaces a session, the old process's close handler
@@ -550,7 +562,7 @@ function setupExitHandlers(
     exited = true;
 
     appLog('core:headless', 'error', `Process error`, { meta: { agentId, error: err.message } });
-    logStream.end();
+    endTranscript(logStream);
 
     // Only clean up and broadcast exit if this session has not been replaced (CQ-2).
     const currentSession = sessions.get(agentId);
@@ -636,6 +648,7 @@ export const _internal = {
   setupExitHandlers,
   mapToHookEvent,
   stderrTail,
+  closingTranscripts,
 };
 
 export function kill(agentId: string): void {
@@ -663,6 +676,37 @@ export function kill(agentId: string): void {
       cleanupHeadlessSession(agentId);
     }
   }, 5000);
+}
+
+/** Past kill()'s SIGKILL step (5s), so a timeout means the close event was lost. */
+const STOP_ALL_TIMEOUT_MS = 7_000;
+
+/**
+ * Stop every headless run for quit or update (#2053): SIGTERM each, SIGKILL
+ * after 5s, and resolve once every process closed and its transcript file is
+ * written. Bounded, so a lost close event can't hold up the quit.
+ */
+export async function stopAll(timeoutMs = STOP_ALL_TIMEOUT_MS): Promise<void> {
+  const closes = [...sessions.entries()].map(([agentId, session]) => {
+    const proc = session.process;
+    const closed = proc.exitCode !== null || (proc.signalCode ?? null) !== null
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => {
+        proc.once('close', () => resolve());
+        proc.once('error', () => resolve());
+      });
+    agentKillRequested(agentId, 'shutdown');
+    kill(agentId);
+    return closed;
+  });
+  if (!closes.length && !closingTranscripts.size) return;
+  // Each close ends its transcript, so wait for the transcripts after the closes.
+  const done = Promise.all(closes).then(() => Promise.all([...closingTranscripts])).then(() => false);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(true), timeoutMs); });
+  const late = await Promise.race([done, timedOut]);
+  if (timer) clearTimeout(timer);
+  if (late) appLog('core:headless', 'warn', 'Headless runs did not all close before shutdown went on', { meta: { runs: closes.length, timeoutMs } });
 }
 
 export async function readTranscript(agentId: string): Promise<string | null> {

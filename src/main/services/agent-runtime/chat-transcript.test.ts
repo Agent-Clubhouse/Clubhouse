@@ -14,7 +14,7 @@ vi.mock('fs/promises', async (importActual) => {
   return { ...actual, rename: vi.fn(actual.rename), readFile: vi.fn(actual.readFile) };
 });
 
-import { appendChatEvent, readChatTranscript, lastSeqFor, transcriptPath, listChatSessions, resetTranscriptCache, flushTranscript, transcriptExists, cleanupTranscriptStaging } from './chat-transcript';
+import { appendChatEvent, flushAllTranscripts, readChatTranscript, lastSeqFor, transcriptPath, listChatSessions, resetTranscriptCache, flushTranscript, transcriptExists, cleanupTranscriptStaging } from './chat-transcript';
 
 function ev(seq: number, sessionId = 's1', agentId = 'agent-1'): ChatEvent {
   return { v: CHAT_CONTRACT_VERSION, agentId, sessionId, seq, ts: seq, type: 'session_state', data: { state: 'idle' } };
@@ -275,5 +275,15 @@ describe('migration and append failure recovery', () => {
     const resumed = start(4, 'old', 400);
     await appendChatEvent(resumed);
     expect(await readChatTranscript('agent-1')).toEqual([oldStart, lateId, lateEnd, resumed]);
+  });
+});
+
+describe('flushAllTranscripts (#2053)', () => {
+  it('resolves once every agent\'s appends are on disk, even ones queued while flushing', async () => {
+    void appendChatEvent(ev(1, 's1', 'agent-a'));
+    void appendChatEvent(ev(1, 's1', 'agent-b')).then(() => appendChatEvent(ev(2, 's1', 'agent-c')));
+    await flushAllTranscripts();
+    const read = (id: string) => fs.readFileSync(transcriptPath(id, 's1'), 'utf-8').trim().split('\n').length;
+    expect([read('agent-a'), read('agent-b'), read('agent-c')]).toEqual([1, 1, 1]);
   });
 });

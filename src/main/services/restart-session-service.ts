@@ -4,6 +4,7 @@ import * as path from 'path';
 import { appLog } from './log-service';
 import { agentRegistry } from './agent-registry';
 import * as ptyManager from './pty-manager';
+import * as headlessManager from './headless-manager';
 import { getAgentRuntime } from './agent-runtime';
 import { getProvider, isSessionCapable, supportsAutoResumeAfterUpdate } from '../orchestrators';
 import { pathExists } from './fs-utils';
@@ -198,6 +199,14 @@ function resumeStrategyFor(orchestrator: string): ResumeStrategy {
   return supportsAutoResumeAfterUpdate(provider) ? 'auto' : 'manual';
 }
 
+/** Chat states with a turn in progress. */
+const CHAT_WORKING_STATES = new Set(['running', 'waiting_permission', 'waiting_input']);
+
+/**
+ * Every live agent the update restart stops (#2053): terminals, chat sessions
+ * and headless runs. Chat agents resume like terminals; a headless run ends
+ * with the restart and isn't resumed.
+ */
 export function getLiveAgentsForUpdate(): LiveAgentInfo[] {
   const all = agentRegistry.getAllRegistrations();
   const result: LiveAgentInfo[] = [];
@@ -205,20 +214,19 @@ export function getLiveAgentsForUpdate(): LiveAgentInfo[] {
   const WORKING_THRESHOLD_MS = 5000;
 
   for (const [agentId, reg] of all) {
-    if (reg.runtime !== 'pty') continue;
-
-    const lastActivity = ptyManager.getLastActivity(agentId);
-    const isWorking = lastActivity !== null && (now - lastActivity) < WORKING_THRESHOLD_MS;
-
-    result.push({
-      agentId,
-      projectPath: reg.projectPath,
-      orchestrator: reg.orchestrator,
-      runtime: reg.runtime,
-      isWorking,
-      lastActivity,
-      resumeStrategy: resumeStrategyFor(reg.orchestrator),
-    });
+    const base = { agentId, projectPath: reg.projectPath, orchestrator: reg.orchestrator, runtime: reg.runtime };
+    if (reg.runtime === 'pty') {
+      const lastActivity = ptyManager.getLastActivity(agentId);
+      const isWorking = lastActivity !== null && (now - lastActivity) < WORKING_THRESHOLD_MS;
+      result.push({ ...base, isWorking, lastActivity, resumeStrategy: resumeStrategyFor(reg.orchestrator) });
+    } else if (reg.runtime === 'chat') {
+      const runtime = getAgentRuntime(agentId);
+      if (!runtime?.isRunning()) continue;
+      result.push({ ...base, isWorking: CHAT_WORKING_STATES.has(runtime.getState()), lastActivity: null, resumeStrategy: resumeStrategyFor(reg.orchestrator) });
+    } else if (reg.runtime === 'headless') {
+      if (!headlessManager.isHeadless(agentId)) continue;
+      result.push({ ...base, isWorking: true, lastActivity: null, resumeStrategy: 'manual' });
+    }
   }
 
   return result;

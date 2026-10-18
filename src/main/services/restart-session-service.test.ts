@@ -50,12 +50,24 @@ vi.mock('./agent-config', () => ({
   getDurableConfig: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock('./headless-manager', () => ({
+  isHeadless: vi.fn().mockReturnValue(false),
+}));
+
+vi.mock('./agent-runtime', async () => {
+  const actual = await vi.importActual<typeof import('./agent-runtime')>('./agent-runtime');
+  return { ...actual, getAgentRuntime: vi.fn((id: string) => actual.getAgentRuntime(id)) };
+});
+
 import { captureSessionState, loadPendingResume, clearPendingResume, getLiveAgentsForUpdate } from './restart-session-service';
 import { agentRegistry } from './agent-registry';
 import * as ptyManager from './pty-manager';
 import { getProvider, isSessionCapable } from '../orchestrators';
 import { pathExists } from './fs-utils';
 import { getDurableConfig } from './agent-config';
+import * as headlessManager from './headless-manager';
+import { getAgentRuntime } from './agent-runtime';
+import type { AgentRuntime } from '../../shared/chat';
 
 describe('restart-session-service', () => {
   const statePath = '/tmp/test-userdata/restart-session-state.json';
@@ -291,25 +303,35 @@ describe('restart-session-service', () => {
       expect(result).toEqual([]);
     });
 
-    it('returns only PTY agents, filtering out headless runtimes', () => {
-      agentRegistry.register('pty-agent', {
-        projectPath: '/projects/club',
-        orchestrator: 'claude-code' as const,
-        runtime: 'pty',
-      });
-      agentRegistry.register('headless-agent', {
-        projectPath: '/projects/club',
-        orchestrator: 'claude-code' as const,
-        runtime: 'headless',
-      });
-
+    it('lists terminal, chat and headless agents the restart stops (#2053)', () => {
+      const reg = (runtime: string) => ({ projectPath: '/projects/club', orchestrator: 'claude-code' as const, runtime });
+      agentRegistry.register('pty-agent', reg('pty'));
+      agentRegistry.register('chat-busy', reg('chat'));
+      agentRegistry.register('chat-idle', reg('chat'));
+      agentRegistry.register('chat-ended', reg('chat'));
+      agentRegistry.register('headless-agent', reg('headless'));
+      agentRegistry.register('headless-gone', reg('headless'));
+      const chat = (running: boolean, state: string) => ({ kind: 'chat', isRunning: () => running, getState: () => state }) as unknown as AgentRuntime;
+      const chats: Record<string, AgentRuntime> = {
+        'chat-busy': chat(true, 'waiting_permission'),
+        'chat-idle': chat(true, 'idle'),
+        'chat-ended': chat(false, 'sleeping'),
+      };
+      vi.mocked(getAgentRuntime).mockImplementation((id: string) => chats[id]);
+      vi.mocked(headlessManager.isHeadless).mockImplementation((id: string) => id === 'headless-agent');
       vi.mocked(ptyManager.getLastActivity).mockReturnValue(null);
 
-      const result = getLiveAgentsForUpdate();
+      const byId = Object.fromEntries(getLiveAgentsForUpdate().map((a) => [a.agentId, a]));
 
-      expect(result).toHaveLength(1);
-      expect(result[0].agentId).toBe('pty-agent');
-      expect(result[0].runtime).toBe('pty');
+      expect(Object.keys(byId).sort()).toEqual(['chat-busy', 'chat-idle', 'headless-agent', 'pty-agent']);
+      expect(byId['chat-busy']).toMatchObject({ runtime: 'chat', isWorking: true });
+      expect(byId['chat-idle']).toMatchObject({ runtime: 'chat', isWorking: false });
+      // Chat resumes the way a terminal on the same provider does.
+      expect(byId['chat-busy'].resumeStrategy).toBe(byId['pty-agent'].resumeStrategy);
+      // A headless run ends with the restart; it isn't resumed.
+      expect(byId['headless-agent']).toMatchObject({ runtime: 'headless', isWorking: true, resumeStrategy: 'manual' });
+      expect(byId['pty-agent']).toMatchObject({ runtime: 'pty', isWorking: false });
+      vi.mocked(getAgentRuntime).mockReset();
     });
 
     it('classifies agent as working when lastActivity is within 5 seconds', () => {

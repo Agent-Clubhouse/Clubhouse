@@ -27,6 +27,8 @@ import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg, arrayAr
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
 import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState } from '../services/restart-session-service';
 import * as ptyManager from '../services/pty-manager';
+import * as headlessManager from '../services/headless-manager';
+import { cancelAppShutdown, runAppShutdown } from '../services/app-shutdown';
 import { getAgentRuntime } from '../services/agent-runtime';
 import * as agentSystem from '../services/agent-system';
 import { syncPluginThemes, PluginThemeSummary } from '../services/plugin-theme-store';
@@ -38,20 +40,48 @@ import { newChromeEnabled, usesTitleBarOverlay } from '../window-chrome';
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
 const OPEN_EXTERNAL_ALLOWED_PROTOCOLS = ['https:', 'http:', 'mailto:'];
 
+type RestartAgentMeta = Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string; permissionMode?: import('../../shared/types').FreeAgentPermissionMode }>;
+
+type RestartData = { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> };
+
 /**
- * app.exit() skips before-quit, so the shutdown flush never runs on these
- * paths. Persist pending agent-config writes first; a flush failure is logged
- * but must not block the restart the user asked for.
+ * Capture what the restart resumes, then run the app shutdown (#2053):
+ * stop every runtime, save their session ids and restore config. app.exit()
+ * skips before-quit, so these paths await it before exiting.
  */
-async function flushAgentConfigsBeforeExit(): Promise<void> {
-  try {
-    const { flushAllAgentConfigs } = await import('../services/agent-config');
-    await flushAllAgentConfigs();
-  } catch (err) {
-    logService.appLog('core:shutdown', 'error', 'Failed to flush agent configs before exit', {
-      meta: { error: err instanceof Error ? err.message : String(err) },
-    });
-  }
+async function captureAndShutDown(data: RestartData): Promise<void> {
+  const agentNames = new Map(Object.entries(data.agentNames));
+  const agentMeta = data.agentMeta ? new Map(Object.entries(data.agentMeta)) as RestartAgentMeta : undefined;
+  // Before the stop: it reads the live runtimes and terminal buffers.
+  await captureSessionState(agentNames, agentMeta);
+  await runAppShutdown('update');
+}
+
+/** The update restart in progress, which a second click joins. */
+let updateRestart: Promise<void> | null = null;
+
+/**
+ * Shut down and apply the update, once. A second request while one is in
+ * progress (a double-click on Restart) joins it instead of applying again.
+ * Nothing stops before the update is known to be ready. Installing exits the
+ * app; if this apply returns or throws instead, the app is still running, so
+ * launches reopen and agents can be woken again.
+ */
+function applyUpdateRestart(data?: RestartData): Promise<void> {
+  if (updateRestart) return updateRestart;
+  if (autoUpdateService.getStatus().state !== 'ready') return Promise.reject(new Error('No update ready to apply'));
+  const run = (async () => {
+    try {
+      if (data) await captureAndShutDown(data);
+      else await runAppShutdown('update');
+      await autoUpdateService.applyUpdate();
+    } finally {
+      cancelAppShutdown();
+      updateRestart = null;
+    }
+  })();
+  updateRestart = run;
+  return run;
 }
 
 export function registerAppHandlers(): void {
@@ -301,10 +331,7 @@ export function registerAppHandlers(): void {
     return autoUpdateService.getStatus();
   });
 
-  ipcMain.handle(IPC.APP.APPLY_UPDATE, async () => {
-    await flushAgentConfigsBeforeExit();
-    return autoUpdateService.applyUpdate();
-  });
+  ipcMain.handle(IPC.APP.APPLY_UPDATE, () => applyUpdateRestart());
 
   ipcMain.handle(IPC.APP.GET_PENDING_RELEASE_NOTES, async () => {
     return autoUpdateService.getPendingReleaseNotes();
@@ -436,7 +463,7 @@ export function registerAppHandlers(): void {
 
   // --- App Restart ---
   ipcMain.handle(IPC.APP.RESTART, async () => {
-    await flushAgentConfigsBeforeExit();
+    await runAppShutdown('restart');
     await flushBeforeExit();
     app.relaunch();
     app.exit(0);
@@ -495,7 +522,10 @@ export function registerAppHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, agentId, action) => {
       const runtime = getAgentRuntime(agentId);
-      if (action === 'interrupt') {
+      if (!runtime && headlessManager.isHeadless(agentId)) {
+        // A headless run has no interrupt: both end it.
+        headlessManager.kill(agentId);
+      } else if (action === 'interrupt') {
         if (runtime) await runtime.interrupt();
         else ptyManager.write(agentId, '\x03');
       } else if (action === 'kill') {
@@ -507,23 +537,7 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.APP.CONFIRM_UPDATE_RESTART, withValidatedArgs(
     [objectArg<{ agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }>()],
-    async (_event, data) => {
-      const agentNames = new Map(Object.entries(data.agentNames));
-
-      let agentMeta: Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string; permissionMode?: import('../../shared/types').FreeAgentPermissionMode }> | undefined;
-      if (data.agentMeta) {
-        agentMeta = new Map(Object.entries(data.agentMeta)) as typeof agentMeta;
-      }
-
-      await captureSessionState(agentNames, agentMeta);
-
-      const { restoreAll } = await import('../services/config-pipeline');
-      const { flushAllAgentConfigs } = await import('../services/agent-config');
-      await flushAllAgentConfigs();
-      restoreAll();
-
-      await autoUpdateService.applyUpdate();
-    },
+    (_event, data) => applyUpdateRestart(data),
   ));
 
   // Dev-only: simulate update restart to test session resume flow.
@@ -532,25 +546,11 @@ export function registerAppHandlers(): void {
     ipcMain.handle(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, withValidatedArgs(
       [objectArg<{ agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }>()],
       async (_event, data) => {
-        const agentNames = new Map(Object.entries(data.agentNames));
-
-        let agentMeta: Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string; permissionMode?: import('../../shared/types').FreeAgentPermissionMode }> | undefined;
-        if (data.agentMeta) {
-          agentMeta = new Map(Object.entries(data.agentMeta)) as typeof agentMeta;
-        }
-
-        await captureSessionState(agentNames, agentMeta);
-
-        const { restoreAll } = await import('../services/config-pipeline');
-        const { flushAllAgentConfigs } = await import('../services/agent-config');
-        await flushAllAgentConfigs();
-        restoreAll();
-
         // In dev mode, app.relaunch() + app.exit() kills the Forge dev server.
-        // Instead, kill all PTY sessions and reload the renderer window —
-        // this simulates the "restart" without killing the parent process.
-        const { killAll } = await import('../services/pty-manager');
-        await killAll();
+        // Instead, run the same shutdown and reload the renderer window: this
+        // simulates the restart without killing the parent process.
+        await captureAndShutDown(data);
+        cancelAppShutdown();
 
         for (const win of BrowserWindow.getAllWindows()) {
           win.webContents.reload();

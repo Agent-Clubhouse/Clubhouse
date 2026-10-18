@@ -111,6 +111,7 @@ import {
   setMaxStderrBytes,
   startStaleSweep,
   stopStaleSweep,
+  stopAll,
   _internal,
   resolveExitCode,
 } from './headless-manager';
@@ -2054,5 +2055,63 @@ describe('headless-manager run monitor data (#2033)', () => {
       expect(tail!.startsWith('€')).toBe(true);
       expect(Buffer.byteLength(tail!, 'utf-8')).toBeLessThanOrEqual(4096);
     });
+  });
+});
+
+describe('headless-manager stopAll (#2053)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    mockProcess = createMockProcess();
+  });
+
+  beforeEach(async () => {
+    // Earlier suites can leave runs whose mock processes never close: SIGKILL
+    // them (kill() drops the session at 5s) so they don't hold these up.
+    const sweep = stopAll(0);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await sweep;
+    // Their mock streams never call back from end().
+    _internal.closingTranscripts.clear();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    mockWriteStream.end.mockReset();
+    vi.useRealTimers();
+  });
+
+  it('SIGTERMs every run and waits for its close and its transcript flush', async () => {
+    let flush: (() => void) | undefined;
+    mockWriteStream.end.mockImplementation((cb?: () => void) => { flush = cb; });
+    await spawnHeadless('run-1', '/project', '/usr/local/bin/claude', ['-p', 'x']);
+    let done = false;
+    const stopping = stopAll().then(() => { done = true; });
+    expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+    await vi.advanceTimersByTimeAsync(10);
+    expect(done).toBe(false);
+    mockProcess.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+    // Closed, but the transcript file is still being written.
+    expect(done).toBe(false);
+    flush!();
+    await stopping;
+    expect(isHeadless('run-1')).toBe(false);
+  });
+
+  it('gives up after its timeout when a close never comes', async () => {
+    mockWriteStream.end.mockImplementation((cb?: () => void) => cb?.());
+    await spawnHeadless('run-2', '/project', '/usr/local/bin/claude', ['-p', 'x']);
+    const stopping = stopAll(7_000);
+    // kill() escalates to SIGKILL at 5s; the close event is lost.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(mockProcess.kill).toHaveBeenCalledWith('SIGKILL');
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(stopping).resolves.toBeUndefined();
+    expect(appLog).toHaveBeenCalledWith('core:headless', 'warn', 'Headless runs did not all close before shutdown went on', expect.anything());
+  });
+
+  it('returns at once with no runs', async () => {
+    await expect(stopAll()).resolves.toBeUndefined();
   });
 });
