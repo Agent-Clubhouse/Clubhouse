@@ -887,6 +887,18 @@ interface ChatStoreState {
  */
 const pendingLive = new Map<string, ChatEvent[]>();
 
+/**
+ * Live chat events seen per agent. Not state: nothing renders from it. A
+ * caller that asks main which runtime runs the agent compares it before and
+ * after, to tell whether chat events arrived while the answer was in flight
+ * (an answer from before them is stale, #2218).
+ */
+const liveEventCounts = new Map<string, number>();
+
+export function chatEventCount(agentId: string): number {
+  return liveEventCounts.get(agentId) ?? 0;
+}
+
 /** True or false when main says whether a chat runtime runs the agent; undefined when it can't say. */
 async function runtimeIsLive(agentId: string): Promise<boolean | undefined> {
   try {
@@ -1000,6 +1012,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     },
 
     applyEvent: (event) => {
+      liveEventCounts.set(event.agentId, chatEventCount(event.agentId) + 1);
       get().setRuntimeLive(event.agentId, event.type !== 'session_ended');
       const buffer = pendingLive.get(event.agentId);
       if (buffer) {

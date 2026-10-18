@@ -18,6 +18,7 @@ vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...args: un
 import { ChatAgentRuntime, ChatStartCancelledError } from './chat-runtime';
 import { appendChatEvent } from './chat-transcript';
 import { FakeChatDriver } from './fake-chat-driver';
+import { registerChatRuntime, clearChatRuntimes, isChatAgent } from './index';
 import { onChatEvent, removeAllChatEventListeners } from './chat-event-bus';
 import * as permissionQueue from '../annex-permission-queue';
 
@@ -417,6 +418,62 @@ describe('ChatAgentRuntime', () => {
     expect((await runtime.readTranscript()).events).toEqual(newSessionEvents);
     expect((await runtime.readTranscript({ tail: 1 })).events).toEqual(newSessionEvents.slice(-1));
     expect(runtime.isRunning()).toBe(true);
+  });
+
+  it('counts as a chat agent for the whole clearContext swap (#2218)', async () => {
+    const driver = new FakeChatDriver();
+    let releaseStart!: () => void;
+    let starts = 0;
+    const { runtime } = makeRuntime(driver, {
+      startSession: async (resumeId) => {
+        // The second start (the clear) waits, like a real CLI handshake.
+        if (++starts === 2) await new Promise<void>((resolve) => { releaseStart = resolve; });
+        return driver.start({ agentId: 'agent-1', provider: 'claude-code', cwd: '/repo', binaryPath: '/bin/claude', level: 'ask', resumeNativeSessionId: resumeId });
+      },
+    });
+    await runtime.start();
+    registerChatRuntime(runtime);
+    try {
+      expect(runtime.isSwappingSession()).toBe(false);
+      const clearing = runtime.clearContext();
+      await flush();
+      // The renderer already sees the new session id; the old session is closed and the new one isn't open.
+      expect(transcript.some((e) => e.sessionId === runtime.getSessionId() && e.type === 'notice')).toBe(true);
+      expect(runtime.isRunning()).toBe(false);
+      expect(runtime.isSwappingSession()).toBe(true);
+      expect(isChatAgent('agent-1')).toBe(true);
+      releaseStart();
+      await clearing;
+      expect(runtime.isRunning()).toBe(true);
+      expect(runtime.isSwappingSession()).toBe(false);
+      expect(isChatAgent('agent-1')).toBe(true);
+    } finally {
+      clearChatRuntimes();
+    }
+  });
+
+  it('stops counting as a chat agent when stopped mid-clear (#2218)', async () => {
+    const driver = new FakeChatDriver();
+    let starts = 0;
+    const { runtime } = makeRuntime(driver, {
+      startSession: async (resumeId, signal) => {
+        if (++starts === 2) await new Promise<void>((_resolve, reject) => { signal?.addEventListener('abort', () => reject(new Error('aborted'))); });
+        return driver.start({ agentId: 'agent-1', provider: 'claude-code', cwd: '/repo', binaryPath: '/bin/claude', level: 'ask', resumeNativeSessionId: resumeId });
+      },
+    });
+    await runtime.start();
+    registerChatRuntime(runtime);
+    try {
+      const clearing = runtime.clearContext().catch((err: unknown) => err);
+      await flush();
+      expect(isChatAgent('agent-1')).toBe(true);
+      await runtime.stop();
+      expect(await clearing).toBeInstanceOf(ChatStartCancelledError);
+      expect(runtime.isSwappingSession()).toBe(false);
+      expect(isChatAgent('agent-1')).toBe(false);
+    } finally {
+      clearChatRuntimes();
+    }
   });
 
   it('finishes pending old-session writes before clearing context', async () => {
