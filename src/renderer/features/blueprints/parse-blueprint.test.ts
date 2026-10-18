@@ -165,3 +165,36 @@ describe('wire plan in the parse result', () => {
     expect(calls).toEqual(['canvas:true', 'wire:x']);
   });
 });
+
+describe('group project ids from another machine (#2071)', () => {
+  const manifest = {
+    id: 'bp-gp', name: 'GP', version: '1.0.0', schemaVersion: 1, createdAt: '2026-10-17T00:00:00.000Z',
+    agents: [{ refId: 'a', name: 'Alpha', matchBy: { name: 'Alpha' } }],
+    canvas: {
+      views: [
+        { refId: 'a', type: 'agent', displayName: 'Alpha', agentRef: 'a', position: { x: 0, y: 0 } },
+        { refId: 'gp', type: 'plugin:group-project:group-project', displayName: 'Board', position: { x: 600, y: 0 }, metadata: { pluginWidgetType: 'plugin:group-project:group-project', pluginId: 'group-project', groupProjectId: 'gp-away' } },
+      ],
+      wires: [{ sourceRef: 'a', targetRef: 'gp' }],
+    },
+  };
+  const alpha = { id: 'agent-a', name: 'Alpha' } as unknown as Agent;
+  const board = (r: ReturnType<typeof parseAnyBlueprint>) => r.canvas.views.find((v) => v.displayName === 'Board');
+
+  it('clears an id this machine does not have and defers the wire', () => {
+    const result = parseAnyBlueprint(manifest, { agents: [alpha], projects: [], groupProjectIds: new Set(['gp-here']) });
+    expect(board(result)?.metadata).not.toHaveProperty('groupProjectId');
+    expect(result.wires.create).toEqual([]);
+    expect(result.wires.deferred).toEqual([expect.objectContaining({ reason: 'target_unbound' })]);
+  });
+
+  it('keeps an id this machine has', () => {
+    const result = parseAnyBlueprint(manifest, { agents: [alpha], projects: [], groupProjectIds: new Set(['gp-away']) });
+    expect(result.wires.create).toEqual([expect.objectContaining({ targetKind: 'group-project', targetId: 'gp-away' })]);
+  });
+
+  it('keeps ids when the group projects here are unknown', () => {
+    const result = parseAnyBlueprint(manifest, { agents: [alpha], projects: [] });
+    expect(board(result)?.metadata).toHaveProperty('groupProjectId', 'gp-away');
+  });
+});

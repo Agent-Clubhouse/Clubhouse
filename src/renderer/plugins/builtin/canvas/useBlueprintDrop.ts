@@ -31,7 +31,7 @@ export interface UseBlueprintDropOptions {
    * Optional — legacy blueprints don't need it. If omitted, manifests
    * import with no matches (stubs stay unbound, wires stay pending).
    */
-  getParseContext?: () => ParseContext;
+  getParseContext?: () => ParseContext | Promise<ParseContext>;
 }
 
 /**
@@ -130,7 +130,7 @@ export function useBlueprintDrop({ containerRef, onImport, onError, getParseCont
     // Import the first .json file
     try {
       const text = await files[0].text();
-      const result = parseAnyBlueprintText(text, getParseContext?.());
+      const result = parseAnyBlueprintText(text, await getParseContext?.());
       await onImport(result);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Failed to import blueprint');
@@ -153,20 +153,17 @@ export function useBlueprintDrop({ containerRef, onImport, onError, getParseCont
       (trimmed.includes('"version"') && trimmed.includes('"views"'));
     if (!looksLikeBlueprint) return;
 
-    try {
-      const result = parseAnyBlueprintText(trimmed, getParseContext?.());
-      e.preventDefault(); // We're consuming this paste — stop default text insertion
-      // preventDefault has to happen synchronously; applying the import can finish later.
-      void Promise.resolve(onImport(result)).catch((err: unknown) => {
-        onError(err instanceof Error ? err.message : 'Failed to import blueprint');
-      });
-    } catch (err) {
-      // The clipboard *looked* like a blueprint (passed the heuristic) but failed
-      // to parse. Surface the error so the user knows their paste was rejected,
-      // rather than silently dropping it.
-      e.preventDefault();
+    // It looks like a blueprint, so this paste is ours whether or not it
+    // parses: stop the default text insertion now (it has to be synchronous),
+    // then build the context, parse and apply. A failure at any step is
+    // surfaced so the user knows the paste was rejected.
+    e.preventDefault();
+    void (async () => {
+      const result = parseAnyBlueprintText(trimmed, await getParseContext?.());
+      await onImport(result);
+    })().catch((err: unknown) => {
       onError(err instanceof Error ? err.message : 'Failed to import blueprint');
-    }
+    });
   }, [onImport, onError, getParseContext]);
 
   // ── Attach event listeners ──────────────────────────────────────────

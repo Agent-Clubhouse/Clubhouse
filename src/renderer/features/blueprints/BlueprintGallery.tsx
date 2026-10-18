@@ -2,10 +2,10 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useUIStore } from '../../stores/uiStore';
 import type { BlueprintSummary } from '../../../shared/blueprint-summary';
 import { applyParsedBlueprint, parseAnyBlueprint } from './parse-blueprint';
+import { blueprintParseContext } from './blueprint-parse-context';
 import { getProjectCanvasStore, useAppCanvasStore } from '../../plugins/builtin/canvas/main';
 import { createScopedStorage } from '../../plugins/plugin-api-storage';
 import { useProjectStore } from '../../stores/projectStore';
-import { useAgentStore } from '../../stores/agentStore';
 import {
   listBuiltinBlueprintSummaries,
   getBuiltinBlueprint,
@@ -144,11 +144,7 @@ export function BlueprintGallery() {
    */
   const importData = useCallback(async (data: unknown) => {
     const { store, storage, projectId: targetProjectId } = resolveTarget();
-    const parsed = parseAnyBlueprint(data, {
-      agents: Object.values(useAgentStore.getState().agents),
-      projects: useProjectStore.getState().projects.map((p) => ({ id: p.id, name: p.name, path: p.path })),
-      activeProjectId: targetProjectId,
-    });
+    const parsed = parseAnyBlueprint(data, await blueprintParseContext(targetProjectId));
     await applyParsedBlueprint(parsed, {
       insertCanvas: (canvas) => store.getState().loadAndInsertCanvas(canvas, storage),
       addWireDefinition: (wire) => store.getState().addWireDefinition(wire),

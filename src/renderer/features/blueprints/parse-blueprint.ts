@@ -60,6 +60,8 @@ export interface ParseContext {
   projects: ExistingProject[];
   /** The project the importing canvas should belong to, if any. */
   activeProjectId?: string;
+  /** Group projects on this machine; see ImportOptions.groupProjectIds. */
+  groupProjectIds?: ReadonlySet<string>;
 }
 
 export interface ParseResult {
@@ -96,6 +98,7 @@ export function parseAnyBlueprint(data: unknown, ctx?: ParseContext): ParseResul
       safeCtx.agents,
       safeCtx.projects,
       safeCtx.activeProjectId,
+      { groupProjectIds: safeCtx.groupProjectIds },
     );
     return {
       format,
