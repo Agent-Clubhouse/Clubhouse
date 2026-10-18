@@ -1,6 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import {
   COPILOT_ACP_ARGS,
+  COPILOT_PERMISSION_LEVELS,
+  copilotNativeSessionExists,
+  copilotSessionStateDir,
   COPILOT_ACP_PROFILE,
   copilotAcpCapabilities,
   copilotModeKind,
@@ -21,14 +27,14 @@ const init = recording.find((r) => r.dir === 'in' && r.msg.id === 1)!.msg.result
 const newSession = recording.find((r) => r.dir === 'in' && r.msg.id === 2)!.msg.result as NewSessionResponse;
 
 describe('Copilot ACP launch', () => {
-  it('launches ACP over stdio with auto-update off', () => {
-    expect(COPILOT_ACP_ARGS).toEqual(['--acp', '--stdio', '--no-auto-update']);
+  it('launches ACP over stdio, running the same Copilot as Terminal (no --no-auto-update, #2154)', () => {
+    expect(COPILOT_ACP_ARGS).toEqual(['--acp', '--stdio']);
   });
 
   it('appends launch-only flags after the ACP flags', () => {
     const cmd = resolveCopilotAcpSpawn({ binary: 'copilot', extraArgs: ['--deny-tool=shell(rm)'] });
     expect(cmd.binary).toBe('copilot');
-    expect(cmd.args).toEqual(['--acp', '--stdio', '--no-auto-update', '--deny-tool=shell(rm)']);
+    expect(cmd.args).toEqual(['--acp', '--stdio', '--deny-tool=shell(rm)']);
   });
 });
 
@@ -139,5 +145,51 @@ describe('Copilot helpers', () => {
   it('selects the Copilot profile only for Copilot', () => {
     expect(selectAcpProfile(init)).toBe(COPILOT_ACP_PROFILE);
     expect(selectAcpProfile({ protocolVersion: 1, agentInfo: { name: 'gemini-cli', version: '1.0.0' } })).toBe(GENERIC_ACP_PROFILE);
+  });
+});
+
+describe('Copilot native session lookup (#2155)', () => {
+  it('finds sessions under $COPILOT_HOME/session-state, defaulting to ~/.copilot', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
+    fs.mkdirSync(path.join(home, 'session-state', 'bc755b6e-1'), { recursive: true });
+    expect(copilotSessionStateDir({ COPILOT_HOME: home })).toBe(path.join(home, 'session-state'));
+    expect(copilotSessionStateDir({})).toBe(path.join(os.homedir(), '.copilot', 'session-state'));
+    await expect(copilotNativeSessionExists('bc755b6e-1', { COPILOT_HOME: home })).resolves.toBe(true);
+    await expect(copilotNativeSessionExists('a27ef93a-missing', { COPILOT_HOME: home })).resolves.toBe(false);
+  });
+
+  it('never uses an id that is not a plain token as a path', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'copilot-home-'));
+    fs.mkdirSync(path.join(home, 'outside'), { recursive: true });
+    await expect(copilotNativeSessionExists(path.join('..', 'outside'), { COPILOT_HOME: path.join(home, 'x') })).resolves.toBe(false);
+    await expect(copilotNativeSessionExists('', { COPILOT_HOME: home })).resolves.toBe(false);
+  });
+});
+
+describe('Copilot level re-send', () => {
+  function fakeSession(allowAll: string, mode: string) {
+    const calls: string[] = [];
+    const state = {
+      modes: { currentModeId: `https://agentclientprotocol.com/protocol/session-modes#${mode}`, availableModes: [] as unknown[] },
+      configOptions: [{ type: 'select', id: 'allow_all', name: 'Allow All', currentValue: allowAll, options: [] as unknown[] }],
+    };
+    const session = {
+      getState: () => state,
+      setConfigOption: vi.fn(async (id: string, value: string) => { calls.push(`${id}=${value}`); }),
+      setMode: vi.fn(async (id: string) => { calls.push(`mode=${id.split('#')[1]}`); }),
+    };
+    return { session: session as unknown as Parameters<typeof COPILOT_PERMISSION_LEVELS.apply>[0], calls };
+  }
+
+  it('skips settings that already match on a fresh session', async () => {
+    const { session, calls } = fakeSession('on', 'agent');
+    await COPILOT_PERMISSION_LEVELS.apply(session, 'full_access');
+    expect(calls).toEqual([]);
+  });
+
+  it('re-sends allow_all and mode after a resume, even when they report as set (#2155)', async () => {
+    const { session, calls } = fakeSession('on', 'agent');
+    await COPILOT_PERMISSION_LEVELS.apply(session, 'full_access', { force: true });
+    expect(calls).toEqual(['allow_all=on', 'mode=agent']);
   });
 });

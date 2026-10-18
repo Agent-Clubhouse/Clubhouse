@@ -191,6 +191,21 @@ function blockText(block: ContentBlock): string | undefined {
   }
 }
 
+/** A file path in a permission request's raw input (Copilot: `fileName`; others: `path`). */
+function rawInputPath(rawInput: unknown): string | undefined {
+  if (!rawInput || typeof rawInput !== 'object') return undefined;
+  const r = rawInput as Record<string, unknown>;
+  return [r.fileName, r.path, r.file_path].find((v): v is string => typeof v === 'string' && v.length > 0);
+}
+
+/** A unified diff in a permission request's raw input (Copilot sends `diff`), as diff content. */
+function rawInputPreview(rawInput: unknown): ChatToolCallContent[] | undefined {
+  const path = rawInputPath(rawInput);
+  const diff = rawInput && typeof rawInput === 'object' ? (rawInput as Record<string, unknown>).diff : undefined;
+  if (!path || typeof diff !== 'string' || !diff.includes('@@')) return undefined;
+  return [{ type: 'diff', path, unifiedDiff: diff }];
+}
+
 function locations(locs: ToolCall['locations'] | null | undefined) {
   return Array.isArray(locs) ? locs.map((l) => ({ path: l.path, ...(typeof l.line === 'number' && { line: l.line }) })) : undefined;
 }
@@ -251,6 +266,8 @@ function selectValue(options: SessionConfigOption[], match: (o: SessionConfigOpt
  */
 export class AcpChatEventMapper {
   /** Distinguishes this driver session's ids from earlier ones in the same (resumed) chat session. */
+  /** Path and content of each tool call seen, for the permission request that follows it. */
+  private readonly toolCalls = new Map<string, { locations?: ReturnType<typeof locations>; content?: ChatToolCallContent[] }>();
   private readonly idPrefix = randomUUID().slice(0, 8);
   private turn = 0;
   private turnId: string | undefined;
@@ -364,11 +381,21 @@ export class AcpChatEventMapper {
       case 'permission_request': {
         this.lastKind = 'other';
         const tc = event.toolCall;
+        // Copilot's request carries a generic title ("Create file") and no
+        // content; the tool_call it belongs to has the path and diff (#2159).
+        const known = this.toolCalls.get(tc.toolCallId);
+        const locs = locations(tc.locations) ?? known?.locations;
+        const content = toolContent(tc.content) ?? known?.content ?? rawInputPreview(tc.rawInput);
+        const description = locs?.length
+          ? locs.map((l) => (l.line !== undefined ? `${l.path}:${l.line}` : l.path)).join(', ')
+          : rawInputPath(tc.rawInput);
         return [this.scoped({
           type: 'permission_request',
           data: {
             requestId: event.requestId,
             title: tc.title ?? 'Permission requested',
+            ...(description && { description }),
+            ...(content?.length && { content }),
             toolCallId: tc.toolCallId,
             ...(tc.name && { toolName: tc.name }),
             ...(tc.rawInput !== undefined && { rawInput: tc.rawInput }),
@@ -416,6 +443,10 @@ export class AcpChatEventMapper {
       case 'tool_call': {
         if (replay) return [];
         this.lastKind = 'other';
+        this.toolCalls.set(u.toolCallId, {
+          locations: locations(u.locations),
+          content: u.content ? toolContent(u.content, u.rawOutput) : undefined,
+        });
         return [this.scoped({
           type: 'tool_call',
           data: {

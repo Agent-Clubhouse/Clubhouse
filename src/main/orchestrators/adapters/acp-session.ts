@@ -36,17 +36,35 @@ import type { PermissionLevel } from '../../../shared/chat/capabilities';
 export const SESSION_CLOSE_TIMEOUT_MS = 2_000;
 
 /**
- * How long `session/load` (or `session/resume`) may go without answering or
- * replaying anything before it counts as stalled. Each replayed update resets
- * the clock, so a long history still loads; a load that hangs gives up here
- * instead of at the 30s RPC timeout.
+ * Timeouts for `session/load` (or `session/resume`), #2155. Copilot often
+ * says nothing for several seconds before it starts replaying (a small
+ * session took 9.4s on 1.0.82, 2.6s on 1.0.98), then streams the history:
+ *
+ * - RESUME_FIRST_REPLY_TIMEOUT_MS: how long to wait for the first replayed
+ *   update or the answer.
+ * - RESUME_STALL_TIMEOUT_MS: once replay has started, how long it may go
+ *   quiet. Each replayed update resets this clock, so a long history loads.
+ * - RESUME_MAX_MS: a cap on the whole load, however it is going.
  */
+export const RESUME_FIRST_REPLY_TIMEOUT_MS = 20_000;
 export const RESUME_STALL_TIMEOUT_MS = 10_000;
+export const RESUME_MAX_MS = 60_000;
 
-/** `session/load` or `session/resume` went quiet for the stall timeout. */
+/** `session/load` or `session/resume` didn't finish within the resume timeouts. */
 export class AcpResumeStalledError extends Error {
-  constructor(readonly method: string, readonly sessionId: string, readonly timeoutMs: number) {
-    super(`ACP ${method} for session ${sessionId} got no reply or replay for ${timeoutMs}ms`);
+  constructor(
+    readonly method: string,
+    readonly sessionId: string,
+    readonly timeoutMs: number,
+    readonly reason: 'no_reply' | 'stalled' | 'too_long' = 'stalled',
+  ) {
+    super(
+      reason === 'too_long'
+        ? `ACP ${method} for session ${sessionId} took longer than ${timeoutMs}ms`
+        : reason === 'no_reply'
+          ? `ACP ${method} for session ${sessionId} got no reply or replay for ${timeoutMs}ms`
+          : `ACP ${method} for session ${sessionId} stopped replaying for ${timeoutMs}ms`,
+    );
     this.name = 'AcpResumeStalledError';
   }
 }
@@ -59,7 +77,11 @@ export interface AcpPermissionLevels {
   names?: Partial<Record<PermissionLevel, string>>;
   /** The level the session's current mode and options amount to, if any. */
   current(state: Readonly<AcpSessionState>): PermissionLevel | undefined;
-  apply(session: AcpSession, level: PermissionLevel): Promise<void>;
+  /**
+   * Switch to `level`. With `force`, send every setting even when the reported
+   * options already match: after a resume they describe the old process.
+   */
+  apply(session: AcpSession, level: PermissionLevel, opts?: { force?: boolean }): Promise<void>;
 }
 
 /**
@@ -77,6 +99,12 @@ export interface AcpAgentProfile {
   filterUpdate?(update: SessionUpdate, ctx: { openToolCallIds: ReadonlySet<string> }): SessionUpdate | null;
   /** Permission-ladder mapping. Without one, the session reports no levels. */
   permissionLevels?: AcpPermissionLevels;
+  /**
+   * Whether the agent still has a native session, checked before resuming it
+   * so a missing one goes straight to session/new instead of waiting out a
+   * load that may hang (#2155). `undefined` means "can't tell": try the load.
+   */
+  nativeSessionExists?(sessionId: string, env: Record<string, string | undefined>): Promise<boolean | undefined>;
   /** A cost hint for a model option, from the agent's private `_meta`. */
   modelCostHint?(meta: Meta | undefined): string | undefined;
 }
@@ -130,8 +158,10 @@ export interface AcpSessionState {
 
 export interface AcpSessionOpts extends Pick<AcpClientOpts, 'binary' | 'args' | 'cwd' | 'env' | 'windowsVerbatimArguments' | 'rpcTimeoutMs' | 'onLog'> {
   clientInfo?: Implementation;
-  /** Stall timeout for `session/load` and `session/resume`; default RESUME_STALL_TIMEOUT_MS. */
+  /** Resume timeouts (see RESUME_FIRST_REPLY_TIMEOUT_MS); defaults apply when unset. */
+  resumeFirstReplyTimeoutMs?: number;
   resumeStallTimeoutMs?: number;
+  resumeMaxMs?: number;
   /**
    * Profile to apply. Pass a fixed one, or a function that picks it from the
    * handshake (copilot-acp.ts exports `selectAcpProfile`). Defaults to generic.
@@ -180,6 +210,8 @@ export class AcpSession {
   private init: InitializeResponse | null = null;
   private caps: AcpDriverCapabilities | null = null;
   private replaying = false;
+  /** session/cancel was sent for the turn in flight. */
+  private cancelRequested = false;
   private loadRequestId: number | null = null;
   /** Resets the resume stall timer; set while `session/load` or `session/resume` is pending. */
   private resumeActivity: (() => void) | null = null;
@@ -358,27 +390,40 @@ export class AcpSession {
   }
 
   /**
-   * Reject with AcpResumeStalledError once `pending` has gone the stall
-   * timeout without an answer or a session update. The request itself is left
-   * to the process: callers kill it, which settles it.
+   * Reject with AcpResumeStalledError when `pending` gets no answer or replay
+   * within the first-reply window, goes quiet for the stall window once replay
+   * has started, or runs past the overall cap. The request itself is left to
+   * the process: callers kill it, which settles it.
    */
   private withStallTimeout<T>(method: string, sessionId: string, pending: Promise<T>): Promise<T> {
-    const timeoutMs = this.opts.resumeStallTimeoutMs ?? RESUME_STALL_TIMEOUT_MS;
+    const firstMs = this.opts.resumeFirstReplyTimeoutMs ?? RESUME_FIRST_REPLY_TIMEOUT_MS;
+    const stallMs = this.opts.resumeStallTimeoutMs ?? RESUME_STALL_TIMEOUT_MS;
+    const maxMs = this.opts.resumeMaxMs ?? RESUME_MAX_MS;
     return new Promise<T>((resolve, reject) => {
-      let timer: ReturnType<typeof setTimeout>;
+      let idle: ReturnType<typeof setTimeout>;
+      let heard = false;
+      const fail = (timeoutMs: number, reason: AcpResumeStalledError['reason']) => {
+        settle();
+        this.log('warn', `ACP ${method} timed out`, { sessionId, timeoutMs, reason });
+        reject(new AcpResumeStalledError(method, sessionId, timeoutMs, reason));
+      };
       const arm = () => {
-        clearTimeout(timer);
-        timer = setTimeout(() => {
-          this.resumeActivity = null;
-          this.log('warn', `ACP ${method} stalled`, { sessionId, timeoutMs });
-          reject(new AcpResumeStalledError(method, sessionId, timeoutMs));
-        }, timeoutMs);
+        clearTimeout(idle);
+        const ms = heard ? stallMs : firstMs;
+        const reason = heard ? 'stalled' : 'no_reply';
+        idle = setTimeout(() => fail(ms, reason), ms);
       };
+      const onActivity = () => {
+        heard = true;
+        arm();
+      };
+      const cap = setTimeout(() => fail(maxMs, 'too_long'), maxMs);
       const settle = () => {
-        clearTimeout(timer);
-        if (this.resumeActivity === arm) this.resumeActivity = null;
+        clearTimeout(idle);
+        clearTimeout(cap);
+        if (this.resumeActivity === onActivity) this.resumeActivity = null;
       };
-      this.resumeActivity = arm;
+      this.resumeActivity = onActivity;
       arm();
       pending.then(
         (value) => { settle(); resolve(value); },
@@ -433,6 +478,7 @@ export class AcpSession {
     const blocks: ContentBlock[] = typeof prompt === 'string' ? [{ type: 'text', text: prompt }] : prompt;
 
     this.state.turnInFlight = true;
+    this.cancelRequested = false;
     let settle: () => void = () => undefined;
     this.turnSettled = new Promise<void>((resolve) => { settle = resolve; });
     this.emit({ type: 'turn_started', sessionId });
@@ -442,7 +488,13 @@ export class AcpSession {
         { sessionId, prompt: blocks },
         { timeoutMs: null },
       )) as PromptResponse;
-      const raw = typeof res?.stopReason === 'string' ? res.stopReason : '';
+      let raw = typeof res?.stopReason === 'string' ? res.stopReason : '';
+      // The user stopped this turn. Some agents (Copilot) still answer
+      // end_turn after session/cancel; report what happened (#2158).
+      if (this.cancelRequested && raw !== 'cancelled') {
+        this.log('info', 'Turn ended after cancel; reporting it as cancelled', { stopReason: raw });
+        raw = 'cancelled';
+      }
       const known = (ACP_STOP_REASONS as readonly string[]).includes(raw);
       const stopReason: TurnStopReason = known ? (raw as StopReason) : 'unknown';
       const usage = readTurnUsage(res);
@@ -469,6 +521,7 @@ export class AcpSession {
       throw err;
     } finally {
       this.state.turnInFlight = false;
+      this.cancelRequested = false;
       this.openToolCalls.clear();
       this.turnSettled = null;
       settle();
@@ -483,6 +536,7 @@ export class AcpSession {
   cancel(): void {
     const sessionId = this.state.sessionId;
     if (!sessionId) return;
+    if (this.state.turnInFlight) this.cancelRequested = true;
     this.answerPendingPermissionsCancelled();
     this.client.notify(ACP_AGENT_METHODS.sessionCancel, { sessionId });
   }
