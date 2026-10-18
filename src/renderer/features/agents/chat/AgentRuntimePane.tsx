@@ -69,43 +69,68 @@ export function useChatFlag(): boolean | null {
   return on;
 }
 
-const NO_CHAT: ChatAgentRuntimeInfo = { chat: false, chatAvailable: false };
+const NO_CHAT: ChatAgentRuntimeInfo = { chat: false, live: false, chatAvailable: false };
 
-/** Last known runtime per agent: a pane remounting for an agent starts from it instead of NO_CHAT. */
-const runtimeCache = new Map<string, ChatAgentRuntimeInfo>();
+/** A chat runtime is running the agent now. Older answers have no `live`; their `chat` meant the same. */
+export function isChatLive(info: ChatAgentRuntimeInfo): boolean {
+  return info.live ?? info.chat;
+}
+
+/** Created, spawning or waking: its runtime may not have started yet. */
+export function isAgentStarting(agent: Pick<Agent, 'status'>): boolean {
+  return agent.status === 'creating' || agent.status === 'spawning' || agent.status === 'waking';
+}
+
+/**
+ * Last known runtime per agent: a pane remounting for an agent starts from it
+ * instead of NO_CHAT. `starting` records whether it was asked while the agent
+ * was starting, so an answer from before a wake (terminal, since nothing ran)
+ * isn't shown for the wake itself (#2206).
+ */
+const runtimeCache = new Map<string, { info: ChatAgentRuntimeInfo; starting: boolean }>();
+
+function cachedInfo(agentId: string, starting: boolean): ChatAgentRuntimeInfo | null {
+  const cached = runtimeCache.get(agentId);
+  if (!cached || (starting && !cached.starting)) return null;
+  return cached.info;
+}
 
 /**
  * Which runtime the agent is in, re-checked when it starts, stops or opens a
- * chat session. Null while the first answer for an eligible agent is pending.
+ * chat session. While it is starting, `chat` is the runtime it is starting
+ * into. Null while the first answer for an eligible agent is pending.
  */
 export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRuntimeInfo | null {
+  const starting = isAgentStarting(agent);
   // Tagged with the agent id, so a result for a different agent is never shown.
-  const [entry, setEntry] = useState<{ agentId: string; info: ChatAgentRuntimeInfo | null }>(() => ({ agentId: agent.id, info: runtimeCache.get(agent.id) ?? null }));
+  const [entry, setEntry] = useState<{ agentId: string; info: ChatAgentRuntimeInfo | null }>(() => ({ agentId: agent.id, info: cachedInfo(agent.id, starting) }));
   const chatSession = useChatStore((s) => s.agents[agent.id]?.sessionId ?? null);
+  const projectPath = useProjectStore((s) => s.projects.find((p) => p.id === agent.projectId)?.path);
   const remote = isRemoteProjectId(agent.projectId);
   const eligible = enabled && !remote && agent.kind === 'durable';
   useEffect(() => {
     if (!eligible) { setEntry({ agentId: agent.id, info: NO_CHAT }); return; }
     // Drop a NO_CHAT left from before the flag loaded: until the answer comes, it's the last known runtime or unknown.
     setEntry((prev) => {
-      const info = runtimeCache.get(agent.id) ?? null;
+      const info = cachedInfo(agent.id, starting);
       return prev.agentId === agent.id && prev.info === info ? prev : { agentId: agent.id, info };
     });
     let cancelled = false;
     const apply = (info: ChatAgentRuntimeInfo) => {
       if (cancelled) return;
-      runtimeCache.set(agent.id, info);
-      // Status surfaces overlay chat state only while chat runs the agent (#2208).
-      useChatStore.getState().setRuntimeLive(agent.id, info.chat);
+      runtimeCache.set(agent.id, { info, starting });
+      // Status surfaces overlay chat state only while chat runs the agent (#2208),
+      // not while it is only starting into chat.
+      useChatStore.getState().setRuntimeLive(agent.id, isChatLive(info));
       setEntry({ agentId: agent.id, info });
     };
-    window.clubhouse.chat.getAgentRuntime(agent.id, agent.orchestrator)
+    window.clubhouse.chat.getAgentRuntime(agent.id, agent.orchestrator, { projectPath, starting })
       .then((r) => apply(r ?? NO_CHAT))
       .catch(() => apply(NO_CHAT));
     return () => { cancelled = true; };
-  }, [eligible, agent.id, agent.orchestrator, agent.status, chatSession]);
+  }, [eligible, agent.id, agent.orchestrator, agent.status, chatSession, projectPath, starting]);
   if (!eligible) return NO_CHAT;
-  if (entry.agentId !== agent.id) return runtimeCache.get(agent.id) ?? null;
+  if (entry.agentId !== agent.id) return cachedInfo(agent.id, starting);
   return entry.info;
 }
 
@@ -220,6 +245,8 @@ export function AgentRuntimePane({ agent, terminal, canSwitch = true, context = 
   );
 
   if (info.chat) {
+    // Waking into chat: wait for the chat runtime rather than show the terminal or a chat it can't take yet.
+    if (!isChatLive(info) && isAgentStarting(agent)) return <RuntimePending agentName={agent.name} />;
     return (
       <>
         <Suspense fallback={<RuntimePending agentName={agent.name} />}>

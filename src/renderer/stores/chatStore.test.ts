@@ -649,6 +649,18 @@ describe('useChatStore', () => {
     }
   });
 
+  it('reads live from `live`, not from an agent only starting into chat (#2206)', async () => {
+    const getAgentRuntime = window.clubhouse.chat.getAgentRuntime;
+    window.clubhouse.chat.getAgentRuntime = vi.fn(async () => ({ chat: true, live: false, chatAvailable: true }));
+    try {
+      window.clubhouse.chat.readTranscript = vi.fn().mockResolvedValue([sessionStarted(ev)]);
+      await useChatStore.getState().loadTranscript(AGENT);
+      expect(useChatStore.getState().live[AGENT]).toBe(false);
+    } finally {
+      window.clubhouse.chat.getAgentRuntime = getAgentRuntime;
+    }
+  });
+
   it('applyEvent folds live events per agent', () => {
     useChatStore.getState().applyEvent(sessionStarted(ev));
     useChatStore.getState().applyEvent(ev('agent_message_chunk', { messageId: 'm1', text: 'hi' }));

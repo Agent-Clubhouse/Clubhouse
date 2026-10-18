@@ -44,8 +44,9 @@ export const chat = {
       ipcRenderer.invoke(IPC.CHAT.GET_RUNTIME_SETTINGS),
     saveRuntimeSettings: (settings: ChatRuntimeSettings): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.SAVE_RUNTIME_SETTINGS, settings),
-    getAgentRuntime: (agentId: string, provider?: string): Promise<ChatAgentRuntimeInfo> =>
-      ipcRenderer.invoke(IPC.CHAT.GET_AGENT_RUNTIME, agentId, provider),
+    /** `query` (project path, starting) lets a waking agent answer with the runtime it is starting into. */
+    getAgentRuntime: (agentId: string, provider?: string, query?: { projectPath?: string; starting?: boolean }): Promise<ChatAgentRuntimeInfo> =>
+      ipcRenderer.invoke(IPC.CHAT.GET_AGENT_RUNTIME, agentId, provider, query),
     listCheckpoints: (agentId: string): Promise<CheckpointTurn[]> =>
       ipcRenderer.invoke(IPC.CHAT.LIST_CHECKPOINTS, agentId),
     getChanges: (agentId: string, scope: { turnId: string } | { sessionId: string }, filePath?: string): Promise<ChangesResult> =>
