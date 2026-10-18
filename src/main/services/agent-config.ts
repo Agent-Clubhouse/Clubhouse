@@ -13,6 +13,8 @@ import { pathExists } from './fs-utils';
 import { isInsideGitRepo } from './git-service';
 import { stepUnderFlow } from '../telemetry/workspace';
 import { persist } from '../telemetry/persist';
+import { normalizeIdleSleep } from '../../shared/idle-sleep';
+import { setAgentIdleSleep } from './chat-idle-settings';
 
 /** Non-blocking git command execution. Prevents UI freezes in large repos. */
 function execGitAsync(cmd: string, cwd: string): Promise<string> {
@@ -1003,6 +1005,14 @@ export async function updateDurableConfig(
       delete agent.runtimeMode;
     }
   }
+  if (updates.idleSleep !== undefined) {
+    const idleSleep = normalizeIdleSleep(updates.idleSleep);
+    if (idleSleep === 'inherit') {
+      delete agent.idleSleep;
+    } else {
+      agent.idleSleep = idleSleep;
+    }
+  }
   if (updates.mission !== undefined) {
     if (updates.mission) {
       agent.mission = updates.mission;
@@ -1046,6 +1056,8 @@ export async function updateDurableConfig(
     }
   }
   await writeAgents(projectPath, agents);
+  // A running chat session picks the new timeout up now.
+  if (updates.idleSleep !== undefined) setAgentIdleSleep(agentId, agent.idleSleep);
 }
 
 /** Persist the last CLI session ID for a durable agent */

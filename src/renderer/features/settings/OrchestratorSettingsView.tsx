@@ -302,7 +302,7 @@ function AppAgentSettings() {
         {chatEnabled && (
           <SettingsField
             label="Sleep idle chat agents after"
-            help="A chat agent with no turn for this long goes to sleep. Agents in a group project with polling on stay awake."
+            help="A chat agent with no turn for this long goes to sleep. An agent can set its own in its Session details. Agents in a group project with polling on stay awake."
             htmlFor={`${idBase}-chat-idle`}
           >
             <select

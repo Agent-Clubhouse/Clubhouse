@@ -248,6 +248,11 @@ export interface DurableAgentConfig {
    * Chat flag is on; unset means the provider's runtime setting.
    */
   runtimeMode?: import('./chat').AgentRuntimeMode;
+  /**
+   * Per-agent auto-sleep (#2143): 'never' or minutes idle before a chat agent
+   * sleeps. Unset inherits the app's idle timeout.
+   */
+  idleSleep?: Exclude<import('./idle-sleep').AgentIdleSleep, 'inherit'>;
   /** History of CLI sessions for this agent */
   sessionHistory?: SessionInfo[];
   /** MCP IDs to inject via launch wrapper (when unset, falls back to project defaultMcps) */
@@ -345,6 +350,8 @@ export interface DurableConfigUpdates {
   mcpConfigs?: Record<string, Record<string, string>> | null;
   /** Per-agent Chat / Terminal override; null clears it (provider default). */
   runtimeMode?: import('./chat').AgentRuntimeMode | null;
+  /** Per-agent auto-sleep; 'inherit' or null clears it (app default). */
+  idleSleep?: import('./idle-sleep').AgentIdleSleep | null;
   persona?: string;
   mission?: string;
   buildCommand?: string;

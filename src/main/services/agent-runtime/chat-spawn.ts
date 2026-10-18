@@ -38,7 +38,7 @@ import { captureBeforePrompt } from './checkpoint-tracker';
 import { noteChatStartFailure } from './stale-session';
 import { chatSleepInfo, recordSleep, takeKillRequest } from './sleep-reason';
 import { waitsOnPollingGroupProject } from './idle-policy';
-import { chatIdleTimeoutMs } from '../chat-idle-settings';
+import { chatIdleTimeoutMs, onAgentIdleSleepChange, setAgentIdleSleep } from '../chat-idle-settings';
 import { codePart, recordBreadcrumb } from '../breadcrumbs';
 import { cleanSpawnEnv, getShellEnvironment, summarizeSpawnEnv } from '../../util/shell';
 
@@ -452,7 +452,9 @@ async function runChatStart(
         });
       }));
     };
+    let stopIdleWatch = () => {};
     const cleanup = (reason: SessionEndReason, exitCode: number) => {
+      stopIdleWatch();
       // The session's last activity is when it ended.
       const nativeId = runtime.getNativeSessionId();
       if (nativeId) recordChatSession(nativeId);
@@ -478,7 +480,7 @@ async function runChatStart(
       sessionId: continued?.sessionId,
       lastSeq: continued?.lastSeq,
       startNotices,
-      idleTimeoutMs: chatIdleTimeoutMs,
+      idleTimeoutMs: () => chatIdleTimeoutMs(params.agentId),
       shouldIdleSleep: () => !waitsOnPollingGroupProject(params.agentId),
       startSession: async (resumeId, startSignal) => {
         const session = await driver.start({
@@ -523,10 +525,15 @@ async function runChatStart(
 
     registerChatRuntime(runtime);
     start.runtime = runtime;
+    // The agent's own auto-sleep (#2143): read from its config now, and
+    // applied live when the details card or settings change it.
+    setAgentIdleSleep(params.agentId, durableConfig?.idleSleep);
+    stopIdleWatch = onAgentIdleSleepChange(params.agentId, () => runtime.idleTimeoutChanged());
     try {
       await runtime.start(params.mission);
       return { ok: true };
     } catch (err) {
+      stopIdleWatch();
       if (signal.aborted || runtime.wasStopped) {
         // Killed or replaced mid-start. stop() already ended it the usual way;
         // a replaced start is abandoned here, without onEnded.

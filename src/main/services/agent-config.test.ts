@@ -63,8 +63,13 @@ vi.mock('./git-service', () => ({
   isInsideGitRepo: vi.fn(),
 }));
 
+vi.mock('./chat-idle-settings', () => ({
+  setAgentIdleSleep: vi.fn(),
+}));
+
 import * as fsp from 'fs/promises';
 import { watch } from 'fs';
+import { setAgentIdleSleep } from './chat-idle-settings';
 import { exec, execFile } from 'child_process';
 import { pathExists } from './fs-utils';
 import { isInsideGitRepo } from './git-service';
@@ -1118,6 +1123,48 @@ describe('updateDurableConfig', () => {
     const result = await getDurableConfig(PROJECT_PATH, 'durable_model');
     expect(result).not.toBeNull();
     expect(result!.model).toBe('sonnet');
+  });
+
+  it('persists and clears the per-agent auto-sleep, and applies it live (#2143)', async () => {
+    const agents = [
+      { id: 'durable_idle', name: 'idle-agent', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+    vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json'));
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => writtenData[String(p)] || '[]');
+    vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(setAgentIdleSleep).mockClear();
+
+    await updateDurableConfig(PROJECT_PATH, 'durable_idle', { idleSleep: 15 });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_idle'))!.idleSleep).toBe(15);
+    expect(setAgentIdleSleep).toHaveBeenLastCalledWith('durable_idle', 15);
+
+    await updateDurableConfig(PROJECT_PATH, 'durable_idle', { idleSleep: 'never' });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_idle'))!.idleSleep).toBe('never');
+
+    // A bad value inherits rather than being stored.
+    await updateDurableConfig(PROJECT_PATH, 'durable_idle', { idleSleep: -1 as never });
+    expect((await getDurableConfig(PROJECT_PATH, 'durable_idle'))!.idleSleep).toBeUndefined();
+
+    await updateDurableConfig(PROJECT_PATH, 'durable_idle', { idleSleep: 60 });
+    await updateDurableConfig(PROJECT_PATH, 'durable_idle', { idleSleep: null });
+    const cleared = await getDurableConfig(PROJECT_PATH, 'durable_idle');
+    expect(cleared).not.toHaveProperty('idleSleep');
+    expect(setAgentIdleSleep).toHaveBeenLastCalledWith('durable_idle', undefined);
+
+    // Other updates leave the live value alone.
+    vi.mocked(setAgentIdleSleep).mockClear();
+    await updateDurableConfig(PROJECT_PATH, 'durable_idle', { model: 'sonnet' });
+    expect(setAgentIdleSleep).not.toHaveBeenCalled();
   });
 
   it('removes model field when set to "default"', async () => {

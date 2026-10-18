@@ -691,6 +691,15 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.idleTimer.unref?.();
   }
 
+  /**
+   * The idle timeout changed (#2143): an idle session re-arms so the new value
+   * applies now, counting from the change rather than sleeping at once.
+   */
+  idleTimeoutChanged(): void {
+    if (this.state !== 'idle' || this.ended || !this.session) return;
+    this.armIdleTimer();
+  }
+
   /** The idle timeout the runtime slept after, once it has (for the sleep reason). */
   get idleSleptAfterMs(): number | undefined {
     return this.sleptAfterMs;
