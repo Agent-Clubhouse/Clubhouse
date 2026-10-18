@@ -20,6 +20,7 @@ import { MINIMAL_CHAT_CAPABILITIES } from '../../../shared/chat/capabilities';
 import type { ChatEventDraft } from '../../../shared/chat/events';
 import type { ChatDriverStartOptions } from '../../../shared/chat/runtime';
 import * as fx from './codex-protocol/__fixtures__/app-server-session';
+import { CodexAppServerClient } from './codex-app-server-client';
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -576,6 +577,35 @@ describe('CodexChatDriver', () => {
         { type: 'model_changed', data: { modelId: 'gpt-5', effort: 'xhigh' } },
         { type: 'session_info', data: { efforts: ['minimal', 'low', 'medium', 'high', 'xhigh'] } },
       ]);
+    });
+
+    it('drops the effort for a model without levels, and offers none for a model the catalog lacks', async () => {
+      useServer({ 'model/list': () => ({ result: { data: [...catalog, model('gpt-mini', [])], nextCursor: null } }) });
+      const { session, take } = await startSession({ effort: 'high' });
+      await take(4);
+      await session.setModel('gpt-mini', 'high');
+      expect(await take(2)).toEqual([
+        { type: 'model_changed', data: { modelId: 'gpt-mini' } },
+        { type: 'session_info', data: { efforts: [] } },
+      ]);
+      await session.setModel('gpt-5-codex', 'low');
+      await take(2);
+      await session.setModel('gpt-unlisted', 'low');
+      expect(await take(2)).toEqual([
+        { type: 'model_changed', data: { modelId: 'gpt-unlisted', effort: 'low' } },
+        { type: 'session_info', data: { efforts: [] } },
+      ]);
+    });
+
+    it('asks for model/list with a short timeout', async () => {
+      useServer({ 'model/list': () => ({ result: { data: catalog, nextCursor: null } }) });
+      const request = vi.spyOn(CodexAppServerClient.prototype, 'request');
+      try {
+        await startSession();
+        expect(request).toHaveBeenCalledWith('model/list', {}, { timeoutMs: 5_000 });
+      } finally {
+        request.mockRestore();
+      }
     });
 
     it('starts without menus when model/list fails', async () => {

@@ -4,7 +4,8 @@ import { ClaudeNormalizer, type ClaudeWireMessage } from './normalizer';
 
 export type ClaudeTransportKind = 'sdk' | 'stream-json';
 
-export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type ClaudeEffort = typeof CLAUDE_EFFORTS[number];
 
 /** What the session will use on its next request, after /model, /effort and any caps. */
 export interface ClaudeAppliedSettings {

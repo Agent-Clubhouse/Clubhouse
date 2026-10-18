@@ -29,7 +29,7 @@ import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import type { ClaudeChatEvent, ClaudePermissionMode, ClaudePermissionUpdate, ClaudeUsage } from './events';
 import { ClaudeSdkTransport } from './sdk-transport';
 import { ClaudeStreamTransport } from './stream-transport';
-import type { ClaudeEffort, ClaudeImageInput, ClaudeTransport, ClaudeTransportLog, ClaudeTransportOptions } from './transport';
+import { CLAUDE_EFFORTS, type ClaudeEffort, type ClaudeImageInput, type ClaudeTransport, type ClaudeTransportLog, type ClaudeTransportOptions } from './transport';
 
 export type ClaudeChatDriverId = Extract<ChatDriverId, 'claude_agent_sdk' | 'claude_stream_json'>;
 
@@ -331,6 +331,14 @@ const LIMIT_WINDOWS: Record<string, string> = {
 
 // ── Models ──────────────────────────────────────────────────────────────────
 
+/**
+ * How long a get_settings read may take. start() waits on the first one, and
+ * the SDK's control requests have no timeout of their own.
+ */
+export const APPLIED_SETTINGS_TIMEOUT_MS = 5_000;
+
+const isClaudeEffort = (e: string): e is ClaudeEffort => (CLAUDE_EFFORTS as readonly string[]).includes(e);
+
 type ClaudeModelRow = Extract<ClaudeChatEvent, { kind: 'initialized' }>['models'][number];
 
 /**
@@ -495,11 +503,26 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   }
 
   async setModel(modelId: string, effort?: string): Promise<void> {
-    if (modelId !== this.model) await this.transport.setModel(modelId === 'default' ? undefined : modelId);
-    if (effort && effort !== this.effort) await this.transport.setEffort(effort as ClaudeEffort);
-    // The CLI may resolve or cap what was asked for; report what it applied.
-    if (await this.refreshApplied()) return;
-    this.noteModel(modelId, effort ?? this.effort);
+    if (effort && !isClaudeEffort(effort)) throw new Error(`Claude has no effort level "${effort}"`);
+    let modelSet = modelId === this.model;
+    let failure: unknown;
+    try {
+      if (!modelSet) {
+        await this.transport.setModel(modelId === 'default' ? undefined : modelId);
+        modelSet = true;
+      }
+      if (effort && effort !== this.effort) await this.transport.setEffort(effort as ClaudeEffort);
+    } catch (err) {
+      failure = err;
+    }
+    // The CLI may resolve or cap what was asked for, or have applied only part of it: report what it uses.
+    if (!(await this.refreshApplied()) && modelSet) {
+      // No get_settings: keep the effort only if the model offers it.
+      const levels = claudeModelRow(this.modelRows, modelId)?.efforts ?? [];
+      const kept = failure ? this.effort : effort ?? this.effort;
+      this.noteModel(modelId, kept && levels.includes(kept) ? kept : undefined);
+    }
+    if (failure) throw failure;
   }
 
   /**
@@ -508,11 +531,19 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
    */
   private async refreshApplied(): Promise<boolean> {
     let applied;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      applied = await this.transport.appliedSettings();
+      applied = await Promise.race([
+        this.transport.appliedSettings(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`get_settings timed out after ${APPLIED_SETTINGS_TIMEOUT_MS}ms`)), APPLIED_SETTINGS_TIMEOUT_MS);
+        }),
+      ]);
     } catch (err) {
       this.log?.('warn', '[claude-chat] Could not read the applied model and effort', { error: err instanceof Error ? err.message : String(err) });
       return false;
+    } finally {
+      clearTimeout(timer);
     }
     if (!applied.model && applied.effort === undefined) return false;
     this.applied = {
@@ -563,11 +594,11 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       this.effort = effort;
       this.push({ type: 'model_changed', data: { modelId: model, ...(effort && { effort }) } });
     }
-    const row = claudeModelRow(this.modelRows, model);
-    if (!row) return;
-    if (this.efforts && row.efforts.join() === this.efforts.join()) return;
-    this.efforts = row.efforts;
-    this.push({ type: 'session_info', data: { efforts: row.efforts } });
+    // A model the menu doesn't list has no known levels: don't leave the previous model's on offer.
+    const levels = claudeModelRow(this.modelRows, model)?.efforts ?? [];
+    if (this.efforts && levels.join() === this.efforts.join()) return;
+    this.efforts = levels;
+    this.push({ type: 'session_info', data: { efforts: levels } });
   }
 
   async compact(): Promise<void> {

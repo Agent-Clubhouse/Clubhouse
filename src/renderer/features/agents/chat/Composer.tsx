@@ -263,7 +263,7 @@ function EffortPill({ efforts, model, effort, capabilities, onChange }: {
   if (!efforts.length && !effort) return null;
   const canChange = !!model && efforts.length > 0 && effortSwitch !== 'none';
   const note = switchNote('none', effortSwitch);
-  const label = effort ? `${effort} effort` : 'Default effort';
+  const label = effort ? `${effort.charAt(0).toUpperCase()}${effort.slice(1)} effort` : 'Default effort';
 
   return (
     <div className="relative min-w-0">

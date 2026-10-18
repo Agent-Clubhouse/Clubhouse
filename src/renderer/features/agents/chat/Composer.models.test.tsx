@@ -71,7 +71,7 @@ describe('Composer model and effort chips (#2091)', () => {
   it('shows the effort in its own chip with a menu of the model\'s levels', () => {
     const { onModelChange } = renderComposer();
     const pill = screen.getByTestId('chat-effort-pill');
-    expect(pill).toHaveTextContent('high effort');
+    expect(pill).toHaveTextContent('High effort');
     fireEvent.click(pill);
     const items = screen.getAllByRole('menuitemradio');
     expect(items.map((i) => i.textContent)).toEqual(['low', 'medium', 'high', 'max']);
@@ -96,7 +96,7 @@ describe('Composer model and effort chips (#2091)', () => {
     const { rerender } = renderComposerWithRerender(props);
     rerender({ model: 'sonnet', effort: 'low' });
     expect(screen.getByTestId('chat-model-pill')).toHaveTextContent('Sonnet 5.5');
-    expect(screen.getByTestId('chat-effort-pill')).toHaveTextContent('low effort');
+    expect(screen.getByTestId('chat-effort-pill')).toHaveTextContent('Low effort');
   });
 
   it('explains when effort changes apply on restart', () => {

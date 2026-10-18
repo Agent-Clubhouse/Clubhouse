@@ -12,6 +12,7 @@ import {
   claudeTurnErrorCode,
   claudeModeFromLevel,
   claudeModelRow,
+  APPLIED_SETTINGS_TIMEOUT_MS,
   claudePermissionOptions,
   claudeToolContent,
   claudeToolKind,
@@ -382,11 +383,18 @@ class ScriptedTransport implements ClaudeTransport {
   respondToPermission(requestId: string, decision: ClaudePermissionDecision): void { this.answers.push([requestId, decision]); }
   async interrupt(): Promise<void> {}
   async setPermissionMode(): Promise<void> {}
-  async setModel(): Promise<void> {}
-  async setEffort(): Promise<void> {}
+  readonly calls: string[] = [];
+  async setModel(model?: string): Promise<void> { this.calls.push(`model:${model ?? 'default'}`); }
+  async setEffort(effort: string): Promise<void> {
+    this.calls.push(`effort:${effort}`);
+    if (this.effortError) throw this.effortError;
+  }
+  effortError: Error | undefined;
   applied: { model?: string; effort?: string | null } = {};
   models: Extract<ClaudeChatEventBody, { kind: 'initialized' }>['models'] = [];
-  async appliedSettings() { return this.applied; }
+  /** Replace to make the read hang or fail. */
+  readApplied: () => Promise<{ model?: string; effort?: string | null }> = async () => this.applied;
+  appliedSettings() { return this.readApplied(); }
   async close(): Promise<void> { this.emit({ kind: 'session_ended', exitCode: 0, signal: null }); this.queue.finish(); }
   end(exitCode: number | null): void { this.emit({ kind: 'session_ended', exitCode, signal: null }); this.queue.finish(); }
 }
@@ -404,6 +412,64 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
   const result = (over: Partial<Extract<ClaudeChatEventBody, { kind: 'turn_ended' }>> = {}): ClaudeChatEventBody =>
     ({ kind: 'turn_ended', subtype: 'success', isError: false, ...over });
   const settle = () => new Promise((r) => setImmediate(r));
+
+  const menuRows = [
+    { value: 'opus', displayName: 'Opus 5.5', resolvedModel: 'claude-opus-5-5', efforts: ['low', 'high'] },
+    { value: 'haiku', displayName: 'Haiku', resolvedModel: 'claude-haiku-5-5', efforts: [] },
+  ];
+
+  it('starts even when get_settings never answers (#2091)', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = new ScriptedTransport();
+      transport.readApplied = () => new Promise(() => {});
+      const driver = new ClaudeChatDriver('claude_agent_sdk', { createTransport: () => transport });
+      let started = false;
+      const pending = driver.start({ agentId: 'a', provider: 'claude-code', cwd: os.tmpdir(), binaryPath: 'claude', level: 'ask' }).then((s) => { started = true; return s; });
+      await vi.advanceTimersByTimeAsync(APPLIED_SETTINGS_TIMEOUT_MS - 1);
+      expect(started).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await (await pending).close();
+      expect(started).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('without get_settings, drops the effort for a model that has none, and the levels with it', async () => {
+    const { session, drafts } = await scripted({ model: 'opus', effort: 'high' }, (t) => {
+      t.models = menuRows;
+      t.readApplied = async () => { throw new Error('unknown subtype get_settings'); };
+    });
+    await session.setModel('haiku');
+    await settle();
+    expect(drafts.of('model_changed').at(-1)?.data).toEqual({ modelId: 'haiku' });
+    expect(drafts.of('session_info').filter((d) => d.data.efforts).at(-1)?.data.efforts).toEqual([]);
+    await session.setModel('opus', 'low');
+    await settle();
+    expect(drafts.of('model_changed').at(-1)?.data).toEqual({ modelId: 'opus', effort: 'low' });
+    await session.setModel('claude-unlisted');
+    await settle();
+    expect(drafts.of('session_info').filter((d) => d.data.efforts).at(-1)?.data.efforts).toEqual([]);
+  });
+
+  it('reports the model that did change when the effort change fails, then rethrows', async () => {
+    const { session, transport, drafts } = await scripted({}, (t) => {
+      t.models = menuRows;
+      t.effortError = new Error('effort refused');
+    });
+    transport.applied = { model: 'claude-opus-5-5', effort: 'medium' };
+    await expect(session.setModel('opus', 'high')).rejects.toThrow('effort refused');
+    await settle();
+    expect(transport.calls).toEqual(['model:opus', 'effort:high']);
+    expect(drafts.of('model_changed').at(-1)?.data).toEqual({ modelId: 'opus', effort: 'medium' });
+  });
+
+  it('refuses an effort level Claude does not have, without touching the session', async () => {
+    const { session, transport } = await scripted();
+    await expect(session.setModel('opus', 'ultra')).rejects.toThrow(/no effort level "ultra"/);
+    expect(transport.calls).toEqual([]);
+  });
 
   it('names a [1m] variant on one line as its own menu row, and keeps it across turns (#2112)', async () => {
     const { session, transport, drafts } = await scripted({}, (t) => {

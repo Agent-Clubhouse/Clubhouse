@@ -178,6 +178,9 @@ export function parseCodexVersion(userAgent: string | undefined): string | undef
   return userAgent ? /\/(\d+\.\d+\.\d+[^\s;)]*)/.exec(userAgent)?.[1] : undefined;
 }
 
+/** How long start waits for model/list before going on without menus. */
+const MODEL_LIST_TIMEOUT_MS = 5_000;
+
 /** A model's reasoning-effort levels, in Codex's order. */
 export function codexEfforts(model: Pick<Model, 'supportedReasoningEfforts'>): string[] {
   return model.supportedReasoningEfforts.map((e) => e.reasoningEffort);
@@ -510,21 +513,26 @@ class CodexChatSession implements ChatDriverSession {
   }
 
   async setModel(modelId: string, effort?: string): Promise<void> {
-    this.nextTurn.model = modelId;
-    if (effort) this.nextTurn.effort = effort as TurnStartParams['effort'];
-    this.emit({ type: 'model_changed', data: { modelId, ...(effort && { effort }) } });
     const row = this.catalogRow(modelId);
-    if (!row) return;
-    const efforts = codexEfforts(row);
-    if (this.efforts && efforts.join() === this.efforts.join()) return;
-    this.efforts = efforts;
-    this.emit({ type: 'session_info', data: { efforts } });
+    const efforts = row ? codexEfforts(row) : undefined;
+    // A model the catalog lists without effort levels takes none: drop it rather than show a stale one.
+    const kept = efforts && !efforts.length ? undefined : effort;
+    this.nextTurn.model = modelId;
+    if (kept) this.nextTurn.effort = kept as TurnStartParams['effort'];
+    this.emit({ type: 'model_changed', data: { modelId, ...(kept && { effort: kept }) } });
+    // Without the catalog there are no menus to update.
+    if (!this.catalog.length) return;
+    const levels = efforts ?? [];
+    if (this.efforts && levels.join() === this.efforts.join()) return;
+    this.efforts = levels;
+    this.emit({ type: 'session_info', data: { efforts: levels } });
   }
 
   /** Codex's model picker, without the models it hides. Best-effort: the menus are just not offered without it. */
   private async listModels(): Promise<Model[]> {
     try {
-      const res = await this.client.request('model/list', {});
+      // Best-effort and on the start path: don't wait the default RPC timeout for it.
+      const res = await this.client.request('model/list', {}, { timeoutMs: MODEL_LIST_TIMEOUT_MS });
       return (res?.data ?? []).filter((m) => !m.hidden);
     } catch (err) {
       this.log?.('warn', 'Codex model/list failed; no model menu', { error: err instanceof Error ? err.message : String(err) });

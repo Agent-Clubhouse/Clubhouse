@@ -14,7 +14,9 @@
 // Standing queries: read-only requests a driver may send at any point (the
 // applied model and effort, the model list) are answered with an empty result
 // whenever they arrive, unless the fixture records that request itself. So a
-// fixture recorded before a driver started asking still replays.
+// fixture recorded before a driver started asking still replays. A fixture that
+// records one must record every one the driver sends: the Claude driver reads
+// get_settings at start, after model changes and after /model or /effort turns.
 //
 // Options (flag or environment variable):
 //   --fake-fixture <path>      CLUBHOUSE_FAKE_CLI_FIXTURE   fixture to replay (required)
