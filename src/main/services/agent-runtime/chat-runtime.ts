@@ -49,6 +49,8 @@ import * as permissionQueue from '../annex-permission-queue';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
+import { agentRegistry } from '../agent-registry';
+import { ACCESS_LEVELS, accessLevelOf, launchAccessForChatLevel } from '../../../shared/orchestration-policy';
 
 export const DEFAULT_CHAT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -341,6 +343,10 @@ export class ChatAgentRuntime implements AgentRuntime {
       case 'session_state':
         this.state = draft.data.state;
         break;
+      case 'mode_changed':
+        // The ceiling for this agent's helpers follows its live level (#2228).
+        agentRegistry.setLaunchAccess(this.agentId, launchAccessForChatLevel(draft.data.level));
+        break;
       case 'session_info':
         if (draft.data.capabilities && this.capabilities) {
           this.capabilities = { ...this.capabilities, ...draft.data.capabilities };
@@ -625,7 +631,16 @@ export class ChatAgentRuntime implements AgentRuntime {
   }
 
   async setLevel(level: PermissionLevel): Promise<void> {
-    await this.requireSession().setLevel(level);
+    const session = this.requireSession();
+    // Helpers' ceiling (#2228): take a lowering at once, a raise only once
+    // the driver accepted it, so the record never runs above the agent.
+    const before = agentRegistry.get(this.agentId)?.launchAccess;
+    const next = launchAccessForChatLevel(level);
+    if (ACCESS_LEVELS.indexOf(accessLevelOf(next)) < ACCESS_LEVELS.indexOf(accessLevelOf(before))) {
+      agentRegistry.setLaunchAccess(this.agentId, next);
+    }
+    await session.setLevel(level);
+    agentRegistry.setLaunchAccess(this.agentId, next);
   }
 
   async setModel(modelId: string, effort?: string | null): Promise<void> {

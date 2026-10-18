@@ -75,6 +75,11 @@ export const app = {
     ipcRenderer.invoke(IPC.APP.GET_ORCHESTRATION_SETTINGS),
   saveOrchestrationSettings: (settings: { globalHelperCap: number }): Promise<void> =>
     ipcRenderer.invoke(IPC.APP.SAVE_ORCHESTRATION_SETTINGS, settings),
+  onOrchestrationSettingsChanged: (callback: (settings: { globalHelperCap: number }) => void) => {
+    const listener = (_event: unknown, settings: { globalHelperCap: number }) => callback(settings);
+    ipcRenderer.on(IPC.APP.ORCHESTRATION_SETTINGS_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.APP.ORCHESTRATION_SETTINGS_CHANGED, listener); };
+  },
   setDockBadge: (count: number) =>
     ipcRenderer.invoke(IPC.APP.SET_DOCK_BADGE, count),
   getBadgeSettings: () =>

@@ -27,10 +27,12 @@ export async function applyPersonaToAgent(
   // Settings ride along in the persona file's front-matter (if any).
   const raw = await readLayeredPersonaRaw(projectPath, personaId);
   const { settings } = raw ? parsePersonaFile(raw) : { settings: {} };
+  // Orchestration defaults stay on the persona and are read live (#2228).
+  const { orchestration: _orchestration, ...copied } = settings as typeof settings & { orchestration?: unknown };
 
   const updates: DurableConfigUpdates = {
     persona: personaId,
-    ...(settings as DurableConfigUpdates),
+    ...(copied as DurableConfigUpdates),
   };
   await updateDurableConfig(projectPath, agentId, updates);
 

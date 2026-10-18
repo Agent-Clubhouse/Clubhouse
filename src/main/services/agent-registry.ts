@@ -2,6 +2,8 @@ import * as path from 'path';
 import * as fsp from 'fs/promises';
 import { getProvider, OrchestratorId, OrchestratorProvider } from '../orchestrators';
 import { appLog } from './log-service';
+import type { FreeAgentPermissionMode } from '../../shared/types';
+import { setOrchestrationEnabled } from './clubhouse-mcp/orchestration-gate';
 
 export const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
@@ -14,6 +16,12 @@ export interface AgentRegistration {
   orchestrator: OrchestratorId;
   runtime: AgentRuntime;
   nonce?: string;
+  /**
+   * What the agent runs with now (#2228): Free Agent Mode plus the resolved
+   * permission mode, recorded at spawn and updated when a chat agent's level
+   * changes. Unset means unknown, which reads as standard access.
+   */
+  launchAccess?: { freeAgentMode: boolean; permissionMode?: FreeAgentPermissionMode };
 }
 
 /** Called when an agent's nonce changes or it is untracked. */
@@ -55,8 +63,18 @@ class AgentRegistry {
     registration.runtime = runtime;
   }
 
+  /** Record what the agent runs with now. Ignored for an untracked agent. */
+  setLaunchAccess(agentId: string, launchAccess: AgentRegistration['launchAccess']): void {
+    const registration = this.registrations.get(agentId);
+    if (!registration) return;
+    registration.launchAccess = launchAccess ? { ...launchAccess } : undefined;
+  }
+
   untrack(agentId: string): void {
-    if (this.registrations.delete(agentId)) this.emitAuthChange(agentId);
+    if (!this.registrations.delete(agentId)) return;
+    // A gone agent keeps no orchestration tools (#2228); the next spawn re-syncs.
+    setOrchestrationEnabled(agentId, false);
+    this.emitAuthChange(agentId);
   }
 
   getAllRegistrations(): Map<string, AgentRegistration> {

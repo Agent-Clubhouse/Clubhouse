@@ -1,4 +1,5 @@
 import type { FreeAgentPermissionMode, HelperCascadeResult } from './types';
+import type { PermissionLevel } from './chat/capabilities';
 
 /**
  * Orchestration policy (#2228): whether an agent may start and manage helper
@@ -177,25 +178,72 @@ export function resolveOrchestrationPolicy(
 
 // ── Access ───────────────────────────────────────────────────────────────
 
-/** The launch settings an agent starts with, as spawnAgent takes them. */
+/** The launch settings an agent starts or runs with, as spawnAgent takes them. */
 export interface AgentLaunchAccess {
   freeAgentMode: boolean;
-  /** Set only with Free Agent Mode on. */
-  permissionMode?: FreeAgentPermissionMode;
+  /**
+   * Always set on settings Clubhouse produces for a helper, even with Free
+   * Agent Mode off: an unset mode is filled from project settings at spawn,
+   * and some providers read it without Free Agent Mode (Copilot adds
+   * --allow-all-tools for skip-all).
+   */
+  permissionMode: FreeAgentPermissionMode;
 }
 
-/** The access level of a set of launch settings. Free Agent Mode with no mode reads as bypass, the app default. */
-export function accessLevelOf(launch: { freeAgentMode?: boolean; permissionMode?: FreeAgentPermissionMode }): AgentAccessLevel {
-  if (!launch.freeAgentMode) return 'standard';
-  return launch.permissionMode === 'auto' ? 'auto' : 'bypass';
+/**
+ * The access level of a running agent's launch settings. Anything not known
+ * to be higher reads as standard: Free Agent Mode with no recorded mode is
+ * standard, never bypass.
+ */
+export function accessLevelOf(launch: { freeAgentMode?: boolean; permissionMode?: FreeAgentPermissionMode } | undefined): AgentAccessLevel {
+  if (!launch?.freeAgentMode) return 'standard';
+  if (launch.permissionMode === 'skip-all') return 'bypass';
+  if (launch.permissionMode === 'auto') return 'auto';
+  return 'standard';
 }
 
-/** The launch settings for an access level. */
+/** The launch settings for an access level, with the permission mode pinned. */
 export function launchAccessFor(level: AgentAccessLevel): AgentLaunchAccess {
   switch (level) {
-    case 'standard': return { freeAgentMode: false };
+    case 'standard': return { freeAgentMode: false, permissionMode: 'auto' };
     case 'auto': return { freeAgentMode: true, permissionMode: 'auto' };
     case 'bypass': return { freeAgentMode: true, permissionMode: 'skip-all' };
+  }
+}
+
+/**
+ * The access a provider's real launch flags give for these settings, in
+ * terminal and chat. Checked against the provider mappings:
+ * - claude-code: FAM off, no flags; auto, --permission-mode auto (chat
+ *   `auto`); skip-all, --dangerously-skip-permissions (chat
+ *   bypassPermissions).
+ * - codex-cli: FAM off, no flags; auto, workspace-write sandbox with no
+ *   approvals; skip-all, --dangerously-bypass-approvals-and-sandbox.
+ * - copilot-cli: any FAM adds --yolo --autopilot (allow everything), and
+ *   skip-all adds --allow-all-tools even with FAM off. Over ACP there is no
+ *   `auto` level, only ask and allow-all. So FAM ranks as bypass, and
+ *   skip-all without FAM as auto.
+ * An unknown provider is ranked like Copilot, the most permissive mapping.
+ */
+export function providerAccessLevel(
+  providerId: string | undefined,
+  launch: { freeAgentMode?: boolean; permissionMode?: FreeAgentPermissionMode },
+): AgentAccessLevel {
+  if (providerId === 'claude-code' || providerId === 'codex-cli') {
+    // Both read an unset mode with FAM as auto.
+    if (!launch.freeAgentMode) return 'standard';
+    return launch.permissionMode === 'skip-all' ? 'bypass' : 'auto';
+  }
+  if (launch.freeAgentMode) return 'bypass';
+  return launch.permissionMode === 'skip-all' ? 'auto' : 'standard';
+}
+
+/** A chat agent's live permission level as launch settings (lower levels read as standard). */
+export function launchAccessForChatLevel(level: PermissionLevel): AgentLaunchAccess {
+  switch (level) {
+    case 'full_access': return launchAccessFor('bypass');
+    case 'auto': return launchAccessFor('auto');
+    default: return launchAccessFor('standard');
   }
 }
 
@@ -203,28 +251,45 @@ function rank(level: AgentAccessLevel): number {
   return ACCESS_LEVELS.indexOf(level);
 }
 
+function lower(a: AgentAccessLevel, b: AgentAccessLevel): AgentAccessLevel {
+  return rank(a) <= rank(b) ? a : b;
+}
+
 export interface HelperAccessResolution extends AgentLaunchAccess {
   level: AgentAccessLevel;
-  /** The orchestrator's own level, the ceiling. */
+  /** The orchestrator's live level, the ceiling. Standard when it isn't running or its mode is unknown. */
   ceiling: AgentAccessLevel;
-  /** True when a fixed level above the orchestrator's was lowered to it. */
+  /** True when the helper got less than the policy asked for. */
   clamped: boolean;
+  /** The provider the level was ranked for. */
+  helperProvider?: string;
 }
 
 /**
- * A helper's launch access: the orchestrator's own with `same` (bypass
- * carries through), or the fixed level, lowered to the orchestrator's when
- * it asks for more. Never higher than the orchestrator.
+ * A helper's launch access. `orchestratorLive` is what the orchestrator runs
+ * with now (undefined when it isn't running); `same` follows it, bypass
+ * included, and a fixed level is lowered to it. The level is then lowered
+ * until the helper provider's real flags don't exceed the ceiling, so a
+ * Copilot helper of an `auto` orchestrator starts standard, not --yolo.
  */
 export function resolveHelperAccess(
-  orchestrator: { freeAgentMode?: boolean; permissionMode?: FreeAgentPermissionMode },
+  orchestratorLive: { freeAgentMode?: boolean; permissionMode?: FreeAgentPermissionMode } | undefined,
   access: OrchestrationAccess,
+  helperProvider?: string,
 ): HelperAccessResolution {
-  const ceiling = accessLevelOf(orchestrator);
+  const ceiling = accessLevelOf(orchestratorLive);
   const requested = access === 'same' ? ceiling : access;
-  const clamped = rank(requested) > rank(ceiling);
-  const level = clamped ? ceiling : requested;
-  return { ...launchAccessFor(level), level, ceiling, clamped };
+  let level = lower(requested, ceiling);
+  while (rank(level) > 0 && rank(providerAccessLevel(helperProvider, launchAccessFor(level))) > rank(ceiling)) {
+    level = ACCESS_LEVELS[rank(level) - 1];
+  }
+  return {
+    ...launchAccessFor(level),
+    level,
+    ceiling,
+    clamped: rank(level) < rank(requested),
+    ...(helperProvider && { helperProvider }),
+  };
 }
 
 // ── Limits ───────────────────────────────────────────────────────────────
@@ -233,7 +298,7 @@ export type HelperLimitCheck =
   | { ok: true; helperCount: number; totalHelperCount: number; maxHelpers: number; globalCap: number }
   | {
     ok: false;
-    reason: 'agent-limit' | 'global-cap';
+    reason: 'orchestration-off' | 'agent-limit' | 'global-cap';
     message: string;
     helperCount: number;
     totalHelperCount: number;

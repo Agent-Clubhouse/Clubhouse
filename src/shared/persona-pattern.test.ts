@@ -4,6 +4,7 @@ import {
   serializePersonaFile,
   stripPersonaFrontMatter,
   readFrontMatterValue,
+  PATTERN_SETTING_KEYS,
   PatternSettings,
 } from './persona-pattern';
 
@@ -106,9 +107,18 @@ describe('persona-pattern', () => {
       expect(readFrontMatterValue('---\nmodel: opus\n---\n\nbody', 'orchestration')).toBeUndefined();
     });
 
-    it('does not turn the key into a pattern setting', () => {
-      const raw = '---\norchestration: {"orchestrate": true}\n---\n\nbody';
-      expect(parsePersonaFile(raw).settings).toEqual({});
+    it('parses orchestration outside the pattern setting keys', () => {
+      const raw = '---\norchestration: {"orchestrate": true, "bogus": 1}\n---\n\nbody';
+      expect(parsePersonaFile(raw).settings).toEqual({ orchestration: { orchestrate: true } });
+      expect(PATTERN_SETTING_KEYS).not.toContain('orchestration');
+    });
+
+    it('round-trips orchestration through serializePersonaFile', () => {
+      const raw = serializePersonaFile({ model: 'opus', orchestration: { orchestrate: true, maxHelpers: 3 } }, '# body');
+      expect(raw).toContain('orchestration: {"orchestrate":true,"maxHelpers":3}');
+      const parsed = parsePersonaFile(raw);
+      expect(parsed.settings).toEqual({ model: 'opus', orchestration: { orchestrate: true, maxHelpers: 3 } });
+      expect(serializePersonaFile(parsed.settings, parsed.body)).toBe(raw);
     });
   });
 });

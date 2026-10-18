@@ -332,8 +332,8 @@ describe('agent-handlers', () => {
       expect(broadcastSnapshotRefresh).toHaveBeenCalled();
       await handlers.get(IPC.AGENT.GET_HELPER_SUMMARY)!({}, '/project', 'agent-1');
       expect(orchestrationPolicy.getHelperSummary).toHaveBeenCalledWith('/project', 'agent-1');
-      await handlers.get(IPC.AGENT.RESOLVE_HELPER_ACCESS)!({}, '/project', 'agent-1');
-      expect(orchestrationPolicy.resolveHelperLaunchSettings).toHaveBeenCalledWith('/project', 'agent-1');
+      await handlers.get(IPC.AGENT.RESOLVE_HELPER_ACCESS)!({}, '/project', 'agent-1', 'copilot-cli');
+      expect(orchestrationPolicy.resolveHelperLaunchSettings).toHaveBeenCalledWith('/project', 'agent-1', { helperProvider: 'copilot-cli' });
       await handlers.get(IPC.AGENT.CHECK_HELPER_LIMIT)!({}, '/project', 'agent-1');
       expect(orchestrationPolicy.checkHelperLimitFor).toHaveBeenCalledWith('/project', 'agent-1');
     });

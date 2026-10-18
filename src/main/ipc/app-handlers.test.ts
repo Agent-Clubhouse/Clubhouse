@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
 
 vi.mock('../services/free-agent-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn(async () => {}) }));
+vi.mock('../services/orchestration-settings', () => ({ getSettings: vi.fn(() => ({ globalHelperCap: 7 })), saveSettings: vi.fn(async () => {}) }));
+const orchestrationBroadcast = vi.hoisted(() => vi.fn());
+vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: orchestrationBroadcast }));
 vi.mock('../services/session-settings', () => ({ getSettings: vi.fn(() => ({})), saveSettings: vi.fn(async () => {}) }));
 vi.mock('../telemetry/feature-events', () => ({ settingsChanged: vi.fn(), themeChanged: vi.fn(), popoutOpened: vi.fn(), blueprintTransfer: vi.fn(), recordToolsList: vi.fn() }));
 
@@ -903,4 +906,8 @@ describe('app-handlers', () => {
     expect(() => handler({}, 'not-object')).toThrow('must be an object');
   });
 
+  it('SAVE_ORCHESTRATION_SETTINGS saves and broadcasts the new settings (#2228)', async () => {
+    await handleHandlers.get(IPC.APP.SAVE_ORCHESTRATION_SETTINGS)!({}, { globalHelperCap: 7 });
+    expect(orchestrationBroadcast).toHaveBeenCalledWith(IPC.APP.ORCHESTRATION_SETTINGS_CHANGED, { globalHelperCap: 7 });
+  });
 });

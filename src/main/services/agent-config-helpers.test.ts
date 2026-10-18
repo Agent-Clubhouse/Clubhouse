@@ -173,6 +173,7 @@ import {
   setParentAgent,
   updateDurableConfig,
 } from './agent-config';
+import { setPersonaChangeHook } from './persona-change-hook';
 import type { DurableAgentConfig } from '../../shared/types';
 
 const PROJECT_PATH = path.resolve('helpers-project');
@@ -397,6 +398,23 @@ describe('orchestration config (#2228)', () => {
     seed([agent('durable_1_orch')]);
     await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { orchestration: { orchestrate: true } } as never);
     expect((await listDurable(PROJECT_PATH))[0]).not.toHaveProperty('orchestration');
+  });
+
+  it('tells the persona hook about a persona change, with the old persona', async () => {
+    seed([agent('durable_1_orch', { persona: 'orchestrator' })]);
+    const hook = vi.fn(async () => undefined);
+    setPersonaChangeHook(hook);
+    try {
+      await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { model: 'opus' });
+      expect(hook).not.toHaveBeenCalled();
+      await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'developer' });
+      expect(hook).toHaveBeenCalledWith(PROJECT_PATH, 'durable_1_orch', 'orchestrator');
+      // A failing hook doesn't fail the update.
+      hook.mockRejectedValueOnce(new Error('boom'));
+      await expect(updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { persona: 'qa' })).resolves.toBeUndefined();
+    } finally {
+      setPersonaChangeHook(null);
+    }
   });
 
   it('throws for an unknown agent', async () => {

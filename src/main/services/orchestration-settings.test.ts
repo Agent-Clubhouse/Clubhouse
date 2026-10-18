@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -17,6 +17,11 @@ const file = path.join(userData, 'orchestration-settings.json');
 beforeEach(() => {
   resetAllSettingsStoresForTests();
   fs.rmSync(file, { force: true });
+});
+
+afterAll(() => {
+  resetAllSettingsStoresForTests();
+  fs.rmSync(userData, { recursive: true, force: true });
 });
 
 describe('orchestration settings', () => {

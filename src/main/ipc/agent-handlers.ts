@@ -453,8 +453,9 @@ export function registerAgentHandlers(): void {
   ));
 
   ipcMain.handle(IPC.AGENT.RESOLVE_HELPER_ACCESS, withValidatedArgs(
-    [stringArg(), stringArg()],
-    async (_event, projectPath, agentId) => orchestrationPolicy.resolveHelperLaunchSettings(projectPath, agentId),
+    [stringArg(), stringArg(), stringArg({ optional: true })],
+    async (_event, projectPath, agentId, helperProvider) =>
+      orchestrationPolicy.resolveHelperLaunchSettings(projectPath, agentId, { helperProvider }),
   ));
 
   ipcMain.handle(IPC.AGENT.CHECK_HELPER_LIMIT, withValidatedArgs(

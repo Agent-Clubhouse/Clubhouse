@@ -19,6 +19,7 @@ import { normalizeIdleSleep } from '../../shared/idle-sleep';
 import { setAgentIdleSleep } from './chat-idle-settings';
 import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-name';
 import type { OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
+import { notifyPersonaChanged } from './persona-change-hook';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -1023,6 +1024,7 @@ export async function updateDurableConfig(
   const { agents, agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
+  const previousPersona = agent.persona;
   if (updates.quickAgentDefaults !== undefined) {
     agent.quickAgentDefaults = updates.quickAgentDefaults;
   }
@@ -1138,6 +1140,17 @@ export async function updateDurableConfig(
   await writeAgents(projectPath, agents);
   // A running chat session picks the new timeout up now.
   if (updates.idleSleep !== undefined) setAgentIdleSleep(agentId, agent.idleSleep);
+  if (agent.persona !== previousPersona) {
+    // The orchestration policy re-checks its persona defaults (#2228).
+    try {
+      await notifyPersonaChanged(projectPath, agentId, previousPersona);
+    } catch (err) {
+      // telemetry-exempt: logged; the persona change itself is saved
+      appLog('core:agent-config', 'warn', 'Persona change hook failed', {
+        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
 }
 
 /** Persist the last CLI session ID for a durable agent */

@@ -9,6 +9,7 @@ import { onOrchestratorHookServerChanged } from '../services/hook-server-toggle'
 import * as headlessSettings from '../services/headless-settings';
 import * as freeAgentSettings from '../services/free-agent-settings';
 import * as orchestrationSettings from '../services/orchestration-settings';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as badgeSettings from '../services/badge-settings';
 import { clipboardSettings } from './settings-handlers';
@@ -257,6 +258,7 @@ export function registerAppHandlers(): void {
     [objectArg<orchestrationSettings.OrchestrationSettings>()],
     async (_event, settings) => {
       await orchestrationSettings.saveSettings(settings);
+      broadcastToAllWindows(IPC.APP.ORCHESTRATION_SETTINGS_CHANGED, orchestrationSettings.getSettings());
     },
   ));
 

@@ -69,9 +69,9 @@ export const agent = {
   /** Whether an agent has live direct helpers, for the turn-off warning. */
   getHelperSummary: (projectPath: string, agentId: string): Promise<{ hasHelpers: boolean; helperIds: string[] }> =>
     ipcRenderer.invoke(IPC.AGENT.GET_HELPER_SUMMARY, projectPath, agentId),
-  /** The launch access this orchestrator's helpers would get now. */
-  resolveHelperAccess: (projectPath: string, agentId: string): Promise<HelperAccessResolution> =>
-    ipcRenderer.invoke(IPC.AGENT.RESOLVE_HELPER_ACCESS, projectPath, agentId),
+  /** The launch access this orchestrator's helpers would get now, ranked for `helperProvider` (default: its own). */
+  resolveHelperAccess: (projectPath: string, agentId: string, helperProvider?: string): Promise<HelperAccessResolution> =>
+    ipcRenderer.invoke(IPC.AGENT.RESOLVE_HELPER_ACCESS, projectPath, agentId, helperProvider),
   /** Whether this orchestrator may start another helper under its limit and the global cap. */
   checkHelperLimit: (projectPath: string, agentId: string): Promise<HelperLimitCheck> =>
     ipcRenderer.invoke(IPC.AGENT.CHECK_HELPER_LIMIT, projectPath, agentId),

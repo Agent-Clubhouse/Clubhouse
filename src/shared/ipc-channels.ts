@@ -252,6 +252,7 @@ export const IPC = {
     SAVE_FREE_AGENT_SETTINGS: 'app:save-free-agent-settings',
     GET_ORCHESTRATION_SETTINGS: 'app:get-orchestration-settings',
     SAVE_ORCHESTRATION_SETTINGS: 'app:save-orchestration-settings',
+    ORCHESTRATION_SETTINGS_CHANGED: 'app:orchestration-settings-changed',
     SET_DOCK_BADGE: 'app:set-dock-badge',
     GET_BADGE_SETTINGS: 'app:get-badge-settings',
     SAVE_BADGE_SETTINGS: 'app:save-badge-settings',

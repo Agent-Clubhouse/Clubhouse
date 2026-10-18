@@ -227,6 +227,7 @@ function pickPatternSettings(agent: DurableAgentConfig): PatternSettings {
   if (agent.testCommand) s.testCommand = agent.testCommand;
   if (agent.lintCommand) s.lintCommand = agent.lintCommand;
   if (agent.sourceControlProvider) s.sourceControlProvider = agent.sourceControlProvider;
+  if (agent.orchestration && Object.keys(agent.orchestration).length > 0) s.orchestration = { ...agent.orchestration };
   return s;
 }
 
