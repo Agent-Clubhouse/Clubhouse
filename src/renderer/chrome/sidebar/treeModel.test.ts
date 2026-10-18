@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
-import { agentDot, filterTree, groupProjectAgents, moveProject, orderProjects, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
+import { agentDot, filterTree, groupProjectAgents, moveProject, moveWithinGroup, orderProjects, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
 
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   id, projectId: 'p1', name: id, kind: 'durable', status: 'running', color: 'blue', ...over,
@@ -142,5 +142,34 @@ describe('filterTree', () => {
     const { groups, count } = filterTree('goob', projects, byProject);
     expect(groups.map((g) => [g.project.id, g.nameMatch, g.agents.length])).toEqual([['p2', true, 0]]);
     expect(count).toBe(1);
+  });
+});
+
+describe('moveWithinGroup (#2115)', () => {
+  const order = ['a1', 's1', 'a2', 's2', 'a3'];
+  const awake = ['a1', 'a2', 'a3'];
+
+  it('moving down lands after the target, so the end of the group is reachable', () => {
+    expect(moveWithinGroup(order, awake, 'a1', 'a3')).toEqual(['a2', 's1', 'a3', 's2', 'a1']);
+  });
+
+  it('moving up lands before the target', () => {
+    expect(moveWithinGroup(order, awake, 'a3', 'a1')).toEqual(['a3', 's1', 'a1', 's2', 'a2']);
+  });
+
+  it('keeps agents outside the group at their places', () => {
+    const next = moveWithinGroup(order, awake, 'a2', 'a1')!;
+    expect(next[1]).toBe('s1');
+    expect(next[3]).toBe('s2');
+  });
+
+  it('refuses a move that would lose a group member missing from the order', () => {
+    expect(moveWithinGroup(['a1', 'a3'], awake, 'a1', 'a3')).toBeNull();
+  });
+
+  it('returns null for a no-op or an agent outside the group', () => {
+    expect(moveWithinGroup(order, awake, 'a1', 'a1')).toBeNull();
+    expect(moveWithinGroup(order, awake, 's1', 'a1')).toBeNull();
+    expect(moveWithinGroup(order, awake, 'a1', 's1')).toBeNull();
   });
 });

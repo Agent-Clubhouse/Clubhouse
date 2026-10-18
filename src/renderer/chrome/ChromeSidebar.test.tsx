@@ -355,6 +355,20 @@ describe('ChromeSidebar', () => {
       expect(reorder).toHaveBeenCalledWith(['p3', 'p2', 'p1']);
     });
 
+    it('drags an agent in the tree and persists the order through reorderAgents (#2115)', async () => {
+      const reorderDurable = vi.fn(async () => {});
+      (window.clubhouse.agent as unknown as { reorderDurable: typeof reorderDurable }).reorderDurable = reorderDurable;
+      useChromeStore.setState({ expandedFolds: ['p1:sleeping'] });
+      render(<ChromeSidebar />);
+      // Saved order a1, a2, a3; a2 and a3 sleep. Drop a3 on a2: it goes first among the sleeping.
+      fireEvent.dragStart(screen.getByTestId('agent-item-a3'), { dataTransfer });
+      fireEvent.dragOver(screen.getByTestId('agent-item-a2'), { dataTransfer });
+      fireEvent.drop(screen.getByTestId('agent-item-a2'), { dataTransfer });
+      expect(reorderDurable).toHaveBeenCalledWith('/tmp/ch', ['a1', 'a3', 'a2']);
+      await act(async () => {});
+      expect(Object.keys(useAgentStore.getState().agents).filter((id) => id.startsWith('a'))).toEqual(['a1', 'a3', 'a2']);
+    });
+
     it('ignores drops across the pinned and unpinned sections', () => {
       const reorder = vi.fn(async () => {});
       useProjectStore.setState({ reorderProjects: reorder } as never);

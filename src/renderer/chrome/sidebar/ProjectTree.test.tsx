@@ -197,3 +197,146 @@ describe('ProjectTree finished quick agents', () => {
     expect(row.textContent).not.toContain('**');
   });
 });
+
+describe('ProjectTree agent drag and keyboard reorder (#2115)', () => {
+  /** jsdom has no DataTransfer; the handlers only need these. */
+  const dataTransfer = () => ({ setData: vi.fn(), getData: vi.fn(), effectAllowed: '', dropEffect: '' });
+  const row = (id: string) => screen.getByTestId(`agent-item-${id}`);
+  function drag(from: string, to: string, { drop = true } = {}) {
+    const dt = dataTransfer();
+    fireEvent.dragStart(row(from), { dataTransfer: dt });
+    const accepted = fireEvent.dragOver(row(to), { dataTransfer: dt });
+    if (drop) fireEvent.drop(row(to), { dataTransfer: dt });
+    return { accepted };
+  }
+
+  it('drags an awake agent below another and saves the new order', () => {
+    const props = setup();
+    expect(row('a1').getAttribute('draggable')).toBe('true');
+    drag('a1', 'a3');
+    expect(props.onReorderAgents).toHaveBeenCalledWith('a', ['a3', 'a2', 'a1']);
+  });
+
+  it('shows the drop line below the target when moving down and above it when moving up', () => {
+    setup();
+    drag('a1', 'a3', { drop: false });
+    expect(row('a3').querySelector('[data-testid="agent-drop-indicator"]')!.className).toContain('-bottom-px');
+    fireEvent.dragEnd(row('a1'));
+    expect(screen.queryByTestId('agent-drop-indicator')).toBeNull();
+
+    drag('a3', 'a1', { drop: false });
+    expect(row('a1').querySelector('[data-testid="agent-drop-indicator"]')!.className).toContain('-top-px');
+  });
+
+  it('does not drop an awake agent among sleeping ones', () => {
+    useChromeStore.setState({ expandedFolds: ['a:sleeping'] });
+    const props = setup({ agentsByProject: { a: [agent('a1', 'a'), agent('a3', 'a'), agent('s1', 'a', { status: 'sleeping' }), agent('s2', 'a', { status: 'sleeping' })] } });
+    const { accepted } = drag('a1', 's1');
+    // fireEvent returns false when the handler called preventDefault (the drop was accepted).
+    expect(accepted).toBe(true);
+    expect(props.onReorderAgents).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('agent-drop-indicator')).toBeNull();
+  });
+
+  it('reorders sleeping agents by drag inside the open fold', () => {
+    useChromeStore.setState({ expandedFolds: ['a:sleeping'] });
+    const props = setup({ agentsByProject: { a: [agent('a1', 'a'), agent('s1', 'a', { status: 'sleeping' }), agent('a3', 'a'), agent('s2', 'a', { status: 'sleeping' })] } });
+    drag('s2', 's1');
+    expect(props.onReorderAgents).toHaveBeenCalledWith('a', ['a1', 's2', 'a3', 's1']);
+  });
+
+  it('does not start a project drag when an agent row is dragged', () => {
+    const props = setup();
+    drag('a1', 'a3');
+    expect(props.onReorder).not.toHaveBeenCalled();
+  });
+
+  it('leaves quick agents, lone agents and satellite rows undraggable', () => {
+    setup({
+      agentsByProject: { a: [agent('a1', 'a'), agent('q1', 'a', { kind: 'quick' })] },
+    });
+    expect(row('q1').hasAttribute('draggable')).toBe(false);
+    // a1 is the only awake durable agent: nothing to reorder against.
+    expect(row('a1').hasAttribute('draggable')).toBe(false);
+  });
+
+  it('has no draggable rows on a satellite', () => {
+    setup({ onReorder: undefined, onReorderAgents: undefined });
+    expect(row('a1').hasAttribute('draggable')).toBe(false);
+  });
+
+  it('Alt+Down and Alt+Up on a focused agent row move it, and plain arrows still move focus', () => {
+    const props = setup();
+    const a1 = key('agent:a1');
+    fireEvent.keyDown(a1, { key: 'ArrowDown', altKey: true });
+    expect(props.onReorderAgents).toHaveBeenLastCalledWith('a', ['a3', 'a2', 'a1']);
+    fireEvent.keyDown(key('agent:a3'), { key: 'ArrowUp', altKey: true });
+    expect(props.onReorderAgents).toHaveBeenLastCalledWith('a', ['a3', 'a2', 'a1']);
+    expect(props.onReorderAgents).toHaveBeenCalledTimes(2);
+
+    a1.focus();
+    fireEvent.keyDown(a1, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(key('agent:a3'));
+    expect(props.onReorderAgents).toHaveBeenCalledTimes(2);
+  });
+
+  it('Alt+Up at the top of the group does nothing', () => {
+    const props = setup();
+    fireEvent.keyDown(key('agent:a1'), { key: 'ArrowUp', altKey: true });
+    expect(props.onReorderAgents).not.toHaveBeenCalled();
+  });
+
+  it('Alt+Down and Alt+Up move a project header within its section', () => {
+    useChromeStore.setState({ projectActivity: { a: Date.now(), b: Date.now(), c: Date.now(), old: Date.now() } });
+    const props = setup();
+    fireEvent.keyDown(key('project:b'), { key: 'ArrowDown', altKey: true });
+    expect(props.onReorder).toHaveBeenLastCalledWith(['a', 'c', 'b', 'old']);
+    fireEvent.keyDown(key('project:a'), { key: 'ArrowUp', altKey: true });
+    expect(props.onReorder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ProjectTree keeps focus on a moved row (#2115 review)', () => {
+  const rerenderInto = (props: ProjectTreeProps) =>
+    render(<ProjectTree {...props} />, { container: screen.getByTestId('project-tree').closest('section')!.parentElement! });
+
+  it('refocuses an agent row after Alt+Down, when moving its DOM node blurred it', () => {
+    const props = setup();
+    const a1 = key('agent:a1');
+    a1.focus();
+    fireEvent.keyDown(a1, { key: 'ArrowDown', altKey: true });
+    expect(props.onReorderAgents).toHaveBeenCalledWith('a', ['a3', 'a2', 'a1']);
+    // Chromium blurs a focused node React moves; jsdom doesn't, so do it here.
+    a1.blur();
+    expect(document.activeElement).toBe(document.body);
+    rerenderInto({ ...props, agentsByProject: { a: [agent('a3', 'a'), agent('a2', 'a', { status: 'sleeping' }), agent('a1', 'a')] } });
+    expect(document.activeElement).toBe(key('agent:a1'));
+  });
+
+  it('refocuses a project header after Alt+Down', () => {
+    useChromeStore.setState({ projectActivity: { a: Date.now(), b: Date.now(), c: Date.now(), old: Date.now() } });
+    const props = setup();
+    const b = key('project:b');
+    b.focus();
+    fireEvent.keyDown(b, { key: 'ArrowDown', altKey: true });
+    b.blur();
+    rerenderInto({ ...props, projects: [project('a'), project('c'), project('b'), project('old')] });
+    expect(document.activeElement).toBe(key('project:b'));
+  });
+
+  it('marks movable rows with their keyboard shortcut', () => {
+    setup();
+    expect(key('agent:a1').getAttribute('aria-keyshortcuts')).toBe('Alt+ArrowUp Alt+ArrowDown');
+    expect(key('project:a').getAttribute('aria-keyshortcuts')).toBe('Alt+ArrowUp Alt+ArrowDown');
+  });
+
+  it('clears the drop line when the drag leaves the row', () => {
+    setup();
+    const dt = { setData: vi.fn(), getData: vi.fn(), effectAllowed: '', dropEffect: '' };
+    fireEvent.dragStart(screen.getByTestId('agent-item-a1'), { dataTransfer: dt });
+    fireEvent.dragOver(screen.getByTestId('agent-item-a3'), { dataTransfer: dt });
+    expect(screen.getByTestId('agent-drop-indicator')).toBeTruthy();
+    fireEvent.dragLeave(screen.getByTestId('agent-item-a3'), { dataTransfer: dt, relatedTarget: document.body });
+    expect(screen.queryByTestId('agent-drop-indicator')).toBeNull();
+  });
+});
