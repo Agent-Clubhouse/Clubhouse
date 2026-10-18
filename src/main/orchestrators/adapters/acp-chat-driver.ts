@@ -9,7 +9,7 @@ import type {
 import { AsyncQueue } from './async-queue';
 import { RpcError } from './acp-client';
 import { ACP_ERROR_CODES } from './acp-schema';
-import { AcpSession, GENERIC_ACP_PROFILE, type AcpAgentProfile, type AcpSessionEvent } from './acp-session';
+import { AcpResumeStalledError, AcpSession, GENERIC_ACP_PROFILE, type AcpAgentProfile, type AcpSessionEvent, type AcpSessionOpts } from './acp-session';
 import { AcpChatEventMapper, toAcpMcpServers, toAcpPrompt, toChatCapabilities } from './acp-chat-mapper';
 import type { InitializeResponse } from './acp-schema';
 import { resolveStructuredSpawn, type StructuredSpawnCommand } from './structured-spawn';
@@ -123,6 +123,9 @@ export class AcpChatDriver implements ChatDriver {
   readonly id: ChatDriverId;
   readonly provider: string;
 
+  /** Session options tests override, e.g. a short stall timeout. */
+  sessionOverrides: Pick<AcpSessionOpts, 'resumeStallTimeoutMs' | 'rpcTimeoutMs'> = {};
+
   constructor(private readonly spec: AcpLaunchSpec, private readonly log: Log = () => undefined) {
     this.id = spec.id;
     this.provider = spec.provider;
@@ -146,15 +149,42 @@ export class AcpChatDriver implements ChatDriver {
     }
   }
 
+  /**
+   * Start a session, resuming `opts.resumeNativeSessionId` when given. A
+   * resume the agent no longer has, or one that stalls (no reply or replay
+   * for RESUME_STALL_TIMEOUT_MS), continues in a fresh session with a notice:
+   * a stalled one in a new process, since the old one may still be busy.
+   * `opts.signal` kills the CLI and rejects.
+   */
   async start(opts: ChatDriverStartOptions): Promise<ChatDriverSession> {
+    try {
+      return await this.open(opts, opts.resumeNativeSessionId, []);
+    } catch (err) {
+      if (!(err instanceof AcpResumeStalledError) || opts.signal?.aborted) throw err;
+      this.log('warn', 'Native session resume stalled; starting a new one', { sessionId: err.sessionId, method: err.method, timeoutMs: err.timeoutMs });
+      return this.open(opts, undefined, [{
+        type: 'notice',
+        data: {
+          level: 'info',
+          code: 'resume_stalled',
+          message: 'The agent didn\'t reopen this conversation in time, so it continues in a new session without the earlier context.',
+        },
+      }]);
+    }
+  }
+
+  private async open(opts: ChatDriverStartOptions, resumeNativeSessionId: string | undefined, notices: ChatEventDraft[]): Promise<ChatDriverSession> {
+    if (opts.signal?.aborted) throw new Error('Chat start cancelled');
     const cmd = this.spec.spawn({ binary: opts.binaryPath, extraArgs: opts.extraArgs, commandPrefix: opts.commandPrefix });
     const queue = new AsyncQueue<ChatEventDraft>();
+    for (const notice of notices) queue.push(notice);
     let mapper: AcpChatEventMapper | null = null;
     let driverSession: AcpChatDriverSession | null = null;
     const buffered: AcpSessionEvent[] = [];
 
     const session = new AcpSession({
       ...cmd,
+      ...this.sessionOverrides,
       cwd: opts.cwd,
       env: opts.env,
       profile: this.spec.profile,
@@ -174,21 +204,24 @@ export class AcpChatDriver implements ChatDriver {
       },
     });
 
+    // Killing the CLI settles whatever request is pending, so the start rejects.
+    const onAbort = () => session.kill();
+    opts.signal?.addEventListener('abort', onAbort, { once: true });
     try {
       const caps = await session.start();
       const { servers, skipped } = toAcpMcpServers(opts.mcpServers);
       if (skipped.length) this.log('warn', 'MCP servers not expressible over ACP', { skipped });
       const setup = { cwd: opts.cwd, mcpServers: servers };
-      if (opts.resumeNativeSessionId) {
+      if (resumeNativeSessionId) {
         try {
-          await session.resumeSession(opts.resumeNativeSessionId, setup);
+          await session.resumeSession(resumeNativeSessionId, setup);
         } catch (err) {
           // The agent no longer has the session and answers "resource not found"
           // (Copilot, for one, doesn't persist a session that never got a prompt).
           // Clubhouse's transcript still has the history; start a fresh native
           // session and say so. Applies to every ACP agent, not just Copilot.
           if (!(err instanceof RpcError) || err.code !== ACP_ERROR_CODES.resourceNotFound) throw err;
-          this.log('warn', 'Native session not found; starting a new one', { sessionId: opts.resumeNativeSessionId });
+          this.log('warn', 'Native session not found; starting a new one', { sessionId: resumeNativeSessionId });
           // Drop anything the failed load replayed before it gave up.
           buffered.length = 0;
           queue.push({
@@ -232,11 +265,14 @@ export class AcpChatDriver implements ChatDriver {
         }
       }
       mapper.prime(session.getState());
+      if (opts.signal?.aborted) throw new Error('Chat start cancelled');
       return driverSession;
     } catch (err) {
       session.kill();
       queue.finish();
       throw err;
+    } finally {
+      opts.signal?.removeEventListener('abort', onAbort);
     }
   }
 }

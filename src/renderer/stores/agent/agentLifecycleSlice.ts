@@ -213,9 +213,13 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         });
 
         set((s) => {
-          if (!s.agents[agentId]) return s;
+          const current = s.agents[agentId];
+          // Only a start still in progress becomes running here. One that was
+          // killed while main was starting it (a chat start cancelled mid-load)
+          // has already exited and been marked sleeping; keep it that way (#2087).
+          if (!current || (current.status !== 'spawning' && current.status !== 'waking')) return s;
           return {
-            agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'running' } },
+            agents: { ...s.agents, [agentId]: { ...current, status: 'running' } },
           };
         });
       } catch (err) {

@@ -15,7 +15,7 @@ vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 const broadcasts = vi.hoisted(() => ({ calls: [] as unknown[][] }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...args: unknown[]) => { broadcasts.calls.push(args); } }));
 
-import { ChatAgentRuntime } from './chat-runtime';
+import { ChatAgentRuntime, ChatStartCancelledError } from './chat-runtime';
 import { FakeChatDriver } from './fake-chat-driver';
 import { onChatEvent, removeAllChatEventListeners } from './chat-event-bus';
 import * as permissionQueue from '../annex-permission-queue';
@@ -465,5 +465,67 @@ describe('ChatAgentRuntime', () => {
     await runtime.start();
     await runtime.stop();
     await expect(runtime.sendMessage('hello', { source: 'user' })).rejects.toThrow(/not running/);
+  });
+});
+
+describe('ChatAgentRuntime stop during start (#2087)', () => {
+  function hangingStart(driver: FakeChatDriver) {
+    const pending: { signal?: AbortSignal; resolve?: () => void; reject?: (err: Error) => void } = {};
+    const { runtime, onEnded } = makeRuntime(driver, {
+      startSession: (resumeId, signal) => new Promise((resolve, reject) => {
+        pending.signal = signal;
+        pending.resolve = () => void driver.start({
+          agentId: 'agent-1', provider: 'claude-code', cwd: '/repo', binaryPath: '/bin/claude', level: 'ask', resumeNativeSessionId: resumeId,
+        }).then(resolve);
+        pending.reject = reject;
+      }),
+    });
+    return { runtime, onEnded, pending };
+  }
+
+  it('rejects the start at once, aborts the driver start and ends once', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime, onEnded, pending } = hangingStart(driver);
+    const started = runtime.start('mission');
+    await flush();
+
+    await runtime.stop();
+    await expect(started).rejects.toBeInstanceOf(ChatStartCancelledError);
+    expect(pending.signal?.aborted).toBe(true);
+    expect(runtime.wasStopped).toBe(true);
+    expect(onEnded).toHaveBeenCalledTimes(1);
+
+    // The driver gives up later: nothing more happens.
+    pending.reject?.(new Error("RPC request 'session/load' timed out after 30000ms"));
+    await flush();
+    expect(onEnded).toHaveBeenCalledTimes(1);
+    expect(types().filter((t) => t === 'session_ended')).toHaveLength(1);
+  });
+
+  it('closes a session that opens after the stop instead of adopting it', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime, pending } = hangingStart(driver);
+    const started = runtime.start();
+    await flush();
+
+    await runtime.stop();
+    pending.resolve?.();
+    await expect(started).rejects.toBeInstanceOf(ChatStartCancelledError);
+    await flush();
+    expect(driver.last.closed).toBe(true);
+    expect(driver.last.sent).toEqual([]);
+    expect(runtime.isRunning()).toBe(false);
+  });
+
+  it('abandon() also cancels a pending start', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime, onEnded, pending } = hangingStart(driver);
+    const started = runtime.start();
+    await flush();
+
+    await runtime.abandon();
+    await expect(started).rejects.toBeInstanceOf(ChatStartCancelledError);
+    expect(pending.signal?.aborted).toBe(true);
+    expect(onEnded).not.toHaveBeenCalled();
   });
 });

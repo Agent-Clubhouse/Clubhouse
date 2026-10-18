@@ -443,3 +443,82 @@ describe('ACP chat driver failure paths', () => {
     expect(replayer.errors).toEqual([]);
   });
 });
+
+describe('ACP chat driver resume stalls and cancellation (#2087)', () => {
+  const loadOnly: AcpFixtureRecord[] = [genericStart[0], genericStart[1], rec('out', { id: 2, method: 'session/load' })];
+  const freshStart: AcpFixtureRecord[] = [...genericStart.slice(0, 2), rec('out', { id: 2, method: 'session/new' }), rec('in', { id: 2, result: { sessionId: 's-fresh' } })];
+
+  /** Two CLI processes in spawn order, each replaying its own records. */
+  function setupTwo(first: AcpFixtureRecord[], second: AcpFixtureRecord[]) {
+    const procs = [createMockProcess(), createMockProcess()];
+    mockSpawn.mockReturnValueOnce(procs[0] as unknown as ReturnType<typeof spawn>).mockReturnValueOnce(procs[1] as unknown as ReturnType<typeof spawn>);
+    const replayers = [new AcpFixtureReplayer(procs[0], first), new AcpFixtureReplayer(procs[1], second)];
+    const driver = createCopilotAcpChatDriver();
+    driver.sessionOverrides = { resumeStallTimeoutMs: 40 };
+    return { procs, replayers, driver };
+  }
+
+  it('gives up on a session/load that never answers and continues in a fresh session in a new process', async () => {
+    const { procs, replayers, driver } = setupTwo(loadOnly, freshStart);
+    const startedAt = Date.now();
+    const session = await driver.start(startOpts({ resumeNativeSessionId: '88618d97' }));
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(session.nativeSessionId).toBe('s-fresh');
+    expect(procs[0].kill).toHaveBeenCalled();
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+    const first: ChatEventDraft[] = [];
+    for await (const d of session.events) {
+      first.push(d);
+      if (d.type === 'session_info') break;
+    }
+    expect(first[0]).toMatchObject({ type: 'notice', data: { code: 'resume_stalled' } });
+    expect(replayers[0].errors).toEqual([]);
+    expect(replayers[1].errors).toEqual([]);
+    expect(replayers[1].done).toBe(true);
+  });
+
+  it('keeps waiting on a slow load while it is still replaying history', async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+    const replayer = new AcpFixtureReplayer(proc, loadOnly);
+    const driver = createCopilotAcpChatDriver();
+    driver.sessionOverrides = { resumeStallTimeoutMs: 200 };
+    const started = driver.start(startOpts({ resumeNativeSessionId: 'long' }));
+
+    const say = (msg: Record<string, unknown>) => proc.stdout.emit('data', JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
+    await vi.waitFor(() => expect(replayer.written[1]).toMatchObject({ method: 'session/load' }), { interval: 5 });
+    // 5 updates 80ms apart: 400ms in total, twice the stall timeout, never 200ms quiet.
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setTimeout(r, 80));
+      say({ method: 'session/update', params: { sessionId: 'long', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `old ${i}` } } } });
+    }
+    say({ id: replayer.written[1].id, result: {} });
+
+    const session = await started;
+    expect(session.nativeSessionId).toBe('long');
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(replayer.errors).toEqual([]);
+  });
+
+  it('kills the CLI and rejects when the start is aborted mid-load, without retrying', async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+    const replayer = new AcpFixtureReplayer(proc, loadOnly);
+    const controller = new AbortController();
+    const started = createCopilotAcpChatDriver().start(startOpts({ resumeNativeSessionId: 's1', signal: controller.signal }));
+    await vi.waitFor(() => expect(replayer.written[1]).toMatchObject({ method: 'session/load' }));
+
+    controller.abort();
+    await expect(started).rejects.toThrow();
+    expect(proc.kill).toHaveBeenCalled();
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not spawn at all for an already aborted start', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(createCopilotAcpChatDriver().start(startOpts({ signal: controller.signal }))).rejects.toThrow(/cancelled/);
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+});

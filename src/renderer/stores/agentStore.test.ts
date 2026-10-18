@@ -1029,6 +1029,16 @@ describe('agentStore', () => {
       }));
     });
 
+    it('does not mark a start running when it was killed before the spawn returned (#2087)', async () => {
+      const config = { id: 'durable_killed', name: 'killed-agent', color: 'indigo', createdAt: '2024-01-01' };
+      // Main cancels the chat start on kill: the exit (sleeping) lands before spawnAgent resolves.
+      mockAgent.spawnAgent.mockImplementationOnce(async () => {
+        useAgentStore.setState((s) => ({ agents: { ...s.agents, durable_killed: { ...s.agents.durable_killed, status: 'sleeping' } } }));
+      });
+      await getState().spawnDurableAgent('proj_1', '/project', config, false);
+      expect(getState().agents['durable_killed'].status).toBe('sleeping');
+    });
+
     it('preserves icon from config so avatar does not reset to initials', async () => {
       const config = {
         id: 'durable_icon',
