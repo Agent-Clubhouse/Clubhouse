@@ -70,6 +70,11 @@ export const app = {
     ipcRenderer.invoke(IPC.APP.GET_FREE_AGENT_SETTINGS),
   saveFreeAgentSettings: (settings: { defaultMode: string; projectOverrides?: Record<string, string> }) =>
     ipcRenderer.invoke(IPC.APP.SAVE_FREE_AGENT_SETTINGS, settings),
+  /** App-wide orchestration settings (#2228): the global helper cap. */
+  getOrchestrationSettings: (): Promise<{ globalHelperCap: number }> =>
+    ipcRenderer.invoke(IPC.APP.GET_ORCHESTRATION_SETTINGS),
+  saveOrchestrationSettings: (settings: { globalHelperCap: number }): Promise<void> =>
+    ipcRenderer.invoke(IPC.APP.SAVE_ORCHESTRATION_SETTINGS, settings),
   setDockBadge: (count: number) =>
     ipcRenderer.invoke(IPC.APP.SET_DOCK_BADGE, count),
   getBadgeSettings: () =>

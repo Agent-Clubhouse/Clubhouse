@@ -9,6 +9,8 @@ import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
 import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
+import { isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
+import { ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
 
 /** Check if a value matches a JSON Schema type (handles array vs object correctly). */
 function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
@@ -17,10 +19,43 @@ function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
   return typeof value === schemaType;
 }
 
+/**
+ * A tool group gates its tools per agent: they are listed only for agents the
+ * group is on for, and callTool refuses them for any other agent, so a client
+ * holding a stale tool list can't reach them either.
+ * - `orchestration` (#2228): helper and connection tools, on when the agent's
+ *   "Let this agent orchestrate" policy is on.
+ */
+export type ToolGroup = 'orchestration';
+
+interface ToolGroupGate {
+  isEnabled: (agentId: string) => boolean;
+  refusal: string;
+}
+
+const toolGroupGates: Record<ToolGroup, ToolGroupGate> = {
+  orchestration: { isEnabled: isOrchestrationEnabled, refusal: ORCHESTRATION_OFF_MESSAGE },
+};
+
+/** Whether a tool in `group` (or in no group) is available to an agent. */
+function groupAllows(group: ToolGroup | undefined, agentId: string): boolean {
+  return !group || toolGroupGates[group].isEnabled(agentId);
+}
+
+function groupRefusal(group: ToolGroup): McpToolResult {
+  return { content: [{ type: 'text', text: toolGroupGates[group].refusal }], isError: true };
+}
+
+export interface ToolRegistrationOptions {
+  /** Gate the tool behind a tool group. */
+  group?: ToolGroup;
+}
+
 export interface ToolTemplate {
   nameSuffix: string;
   definition: Omit<McpToolDefinition, 'name'>;
   handler: (targetId: string, agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
+  group?: ToolGroup;
 }
 
 /**
@@ -78,6 +113,7 @@ export function clearTargetToolTemplates(targetKind: BindingTargetKind, targetId
 const globalTools = new Map<string, {
   definition: McpToolDefinition;
   handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>;
+  group?: ToolGroup;
 }>();
 
 /** Maximum length for wire instruction strings before truncation. */
@@ -123,6 +159,7 @@ export function registerToolTemplate(
   nameSuffix: string,
   definition: Omit<McpToolDefinition, 'name'>,
   handler: (targetId: string, agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>,
+  options: ToolRegistrationOptions = {},
 ): void {
   let templates = toolTemplates.get(targetKind);
   if (!templates) {
@@ -132,7 +169,7 @@ export function registerToolTemplate(
   if (templates.some(t => t.nameSuffix === nameSuffix)) {
     throw new Error(`Duplicate tool template nameSuffix "${nameSuffix}" for targetKind "${targetKind}"`);
   }
-  templates.push({ nameSuffix, definition, handler });
+  templates.push({ nameSuffix, definition, handler, ...(options.group && { group: options.group }) });
 }
 
 /**
@@ -159,11 +196,14 @@ export function registerGlobalTool(
   name: string,
   definition: Omit<McpToolDefinition, 'name'>,
   handler: (agentId: string, args: Record<string, unknown>) => Promise<McpToolResult>,
+  options: ToolRegistrationOptions = {},
 ): void {
   globalTools.set(name, {
     definition: { ...definition, name },
     handler,
+    ...(options.group && { group: options.group }),
   });
+  invalidateToolListCache();
 }
 
 /** True if `name` is a registered global tool. */
@@ -273,6 +313,8 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
         continue;
       }
 
+      if (!groupAllows(template.group, agentId)) continue;
+
       // Skip tools disabled by role gating and/or at the wire level
       if (deniedTools.has(template.nameSuffix)) {
         continue;
@@ -304,8 +346,9 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     }
   }
 
-  // Append global tools (always available regardless of bindings)
+  // Append global tools (available regardless of bindings, unless gated by a group)
   for (const [, tool] of globalTools) {
+    if (!groupAllows(tool.group, agentId)) continue;
     tools.push(tool.definition);
   }
 
@@ -326,6 +369,13 @@ export async function callTool(
   // Check global tools first (no binding required)
   const globalTool = globalTools.get(toolName);
   if (globalTool) {
+    // Checked at call time too: the client's tool list may be stale.
+    if (globalTool.group && !groupAllows(globalTool.group, agentId)) {
+      appLog('core:mcp', 'info', 'Tool call refused: tool group is off for this agent', {
+        meta: { agentId, toolName, group: globalTool.group },
+      });
+      return groupRefusal(globalTool.group);
+    }
     const schema = globalTool.definition.inputSchema;
     if (schema && typeof schema === 'object') {
       const required = (schema.required as string[]) || [];
@@ -401,6 +451,13 @@ export async function callTool(
     };
   }
 
+  if (template.group && !groupAllows(template.group, agentId)) {
+    appLog('core:mcp', 'info', 'Tool call refused: tool group is off for this agent', {
+      meta: { agentId, toolName, group: template.group },
+    });
+    return groupRefusal(template.group);
+  }
+
   // Validate arguments against the tool's declared inputSchema
   const schema = template.definition.inputSchema;
   if (schema && typeof schema === 'object') {
@@ -468,6 +525,10 @@ function matchScopedToolName(
 // its version counter doesn't change). Refresh scoped tool lists whenever a
 // group project changes so role-based gating takes effect immediately.
 groupProjectRegistry.onChange(() => invalidateToolListCache());
+
+// Tool groups are not bindings either: drop the agent's cached list when its
+// orchestration gate flips. The bridge server sends tools/list_changed.
+onOrchestrationGateChange((agentId) => { toolListCache.delete(agentId); });
 
 /** For testing: clear all registered templates and global tools. */
 export function _resetForTesting(): void {

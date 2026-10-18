@@ -169,6 +169,7 @@ import {
   normalizeHelperFields,
   renameDurable,
   resolveHelpersForDelete,
+  setOrchestrationConfig,
   setParentAgent,
   updateDurableConfig,
 } from './agent-config';
@@ -373,6 +374,34 @@ describe('setParentAgent', () => {
     await setParentAgent(PROJECT_PATH, 'durable_3_c', 'durable_2_b');
     expect((await listHelpers(PROJECT_PATH, 'durable_1_a', { recursive: true })).map((a) => a.id))
       .toEqual(['durable_2_b', 'durable_3_c']);
+  });
+});
+
+describe('orchestration config (#2228)', () => {
+  it('stores the policy fields across a restart and other writes, and clears them', async () => {
+    seed([agent('durable_1_orch')]);
+    await setOrchestrationConfig(PROJECT_PATH, 'durable_1_orch', { orchestrate: true, control: 'ask-before-start' });
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { model: 'opus' });
+    await flushAllAgentConfigs();
+    clearAgentConfigCache();
+    expect((await listDurable(PROJECT_PATH))[0]).toMatchObject({
+      model: 'opus', orchestration: { orchestrate: true, control: 'ask-before-start' },
+    });
+
+    await setOrchestrationConfig(PROJECT_PATH, 'durable_1_orch', undefined);
+    await flushAllAgentConfigs();
+    expect(onDisk('durable_1_orch')).not.toHaveProperty('orchestration');
+  });
+
+  it('is not written by updateDurableConfig', async () => {
+    seed([agent('durable_1_orch')]);
+    await updateDurableConfig(PROJECT_PATH, 'durable_1_orch', { orchestration: { orchestrate: true } } as never);
+    expect((await listDurable(PROJECT_PATH))[0]).not.toHaveProperty('orchestration');
+  });
+
+  it('throws for an unknown agent', async () => {
+    seed([]);
+    await expect(setOrchestrationConfig(PROJECT_PATH, 'durable_9_missing', { orchestrate: true })).rejects.toThrow(/not found/);
   });
 });
 

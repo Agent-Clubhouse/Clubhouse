@@ -1,6 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, HelperCascadeResult, HelperDeleteChoice, StartDurableCreationParams } from '../shared/types';
+import type { HelperAccessResolution, HelperLimitCheck, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
 export const agent = {
@@ -56,6 +57,24 @@ export const agent = {
   /** Dispose or keep an orchestrator's helpers before it is deleted (#2224). */
   resolveHelpersForDelete: (projectPath: string, agentId: string, choice: HelperDeleteChoice, dryRun?: boolean): Promise<HelperCascadeResult> =>
     ipcRenderer.invoke(IPC.AGENT.RESOLVE_HELPERS_FOR_DELETE, projectPath, agentId, choice, dryRun),
+  /** An agent's resolved orchestration policy (#2228), or null for an unknown agent. */
+  getOrchestrationPolicy: (projectPath: string, agentId: string): Promise<ResolvedOrchestrationPolicy | null> =>
+    ipcRenderer.invoke(IPC.AGENT.GET_ORCHESTRATION_POLICY, projectPath, agentId),
+  /** Change policy fields (null resets one). Turning off with helpers returns needsHelperChoice and changes nothing. */
+  setOrchestrationPolicy: (projectPath: string, agentId: string, patch: OrchestrationPolicyPatch): Promise<SetOrchestrationPolicyResult> =>
+    ipcRenderer.invoke(IPC.AGENT.SET_ORCHESTRATION_POLICY, projectPath, agentId, patch),
+  /** Turn orchestration off, keeping or disposing the helpers; cancel changes nothing. */
+  turnOffOrchestration: (projectPath: string, agentId: string, choice: OrchestrationOffChoice, force?: boolean): Promise<TurnOffOrchestrationResult> =>
+    ipcRenderer.invoke(IPC.AGENT.TURN_OFF_ORCHESTRATION, projectPath, agentId, choice, force),
+  /** Whether an agent has live direct helpers, for the turn-off warning. */
+  getHelperSummary: (projectPath: string, agentId: string): Promise<{ hasHelpers: boolean; helperIds: string[] }> =>
+    ipcRenderer.invoke(IPC.AGENT.GET_HELPER_SUMMARY, projectPath, agentId),
+  /** The launch access this orchestrator's helpers would get now. */
+  resolveHelperAccess: (projectPath: string, agentId: string): Promise<HelperAccessResolution> =>
+    ipcRenderer.invoke(IPC.AGENT.RESOLVE_HELPER_ACCESS, projectPath, agentId),
+  /** Whether this orchestrator may start another helper under its limit and the global cap. */
+  checkHelperLimit: (projectPath: string, agentId: string): Promise<HelperLimitCheck> =>
+    ipcRenderer.invoke(IPC.AGENT.CHECK_HELPER_LIMIT, projectPath, agentId),
   readQuickSummary: (agentId: string, projectPath?: string) =>
     ipcRenderer.invoke(IPC.AGENT.READ_QUICK_SUMMARY, agentId, projectPath),
   getDurableConfig: (projectPath: string, agentId: string) =>

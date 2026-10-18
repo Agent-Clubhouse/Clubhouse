@@ -18,6 +18,7 @@ import { persist } from '../telemetry/persist';
 import { normalizeIdleSleep } from '../../shared/idle-sleep';
 import { setAgentIdleSleep } from './chat-idle-settings';
 import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-name';
+import type { OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -2528,6 +2529,24 @@ export async function setParentAgent(
       else delete agent.disposable;
     }
   }
+  await writeAgents(projectPath, agents);
+}
+
+/**
+ * Store an agent's own orchestration policy fields (#2228), or clear them all
+ * with undefined. Callers go through services/orchestration-policy.ts, which
+ * validates, keeps the tool gate in sync and handles helpers on turn-off.
+ */
+export async function setOrchestrationConfig(
+  projectPath: string,
+  agentId: string,
+  config: OrchestrationPolicyConfig | undefined,
+): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) throw new Error('Agent not found');
+  if (config && Object.keys(config).length > 0) agent.orchestration = { ...config };
+  else delete agent.orchestration;
   await writeAgents(projectPath, agents);
 }
 

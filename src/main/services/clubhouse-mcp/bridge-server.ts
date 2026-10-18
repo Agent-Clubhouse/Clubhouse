@@ -9,6 +9,7 @@ import { appLog } from '../log-service';
 import { getAgentNonce, agentRegistry } from '../agent-registry';
 import { getScopedToolList, callTool, parseToolName, buildToolKey, isGlobalTool } from './tool-registry';
 import { bindingManager } from './binding-manager';
+import { onOrchestrationGateChange } from './orchestration-gate';
 import { emitAgentMcpConnected } from './connection-events';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { IPC } from '../../../shared/ipc-channels';
@@ -474,6 +475,7 @@ export function _sessionCountForTesting(agentId: string): number {
 }
 
 let unsubscribeBindingChanges: (() => void) | null = null;
+let unsubscribeOrchestrationGate: (() => void) | null = null;
 let unsubscribeAgentAuth: (() => void) | null = null;
 
 export function start(): Promise<number> {
@@ -481,6 +483,8 @@ export function start(): Promise<number> {
   unsubscribeBindingChanges = bindingManager.onChange((agentId) => {
     notifyToolsChanged(agentId);
   });
+  // Turning orchestration on or off adds or removes the orchestration tools (#2228).
+  unsubscribeOrchestrationGate = onOrchestrationGateChange(notifyToolsChanged);
   // A new nonce or an untracked agent invalidates its sessions.
   unsubscribeAgentAuth = agentRegistry.onAuthChange(endAgentSessions);
 
@@ -520,6 +524,8 @@ export function stop(): void {
   }
   unsubscribeAgentAuth?.();
   unsubscribeAgentAuth = null;
+  unsubscribeOrchestrationGate?.();
+  unsubscribeOrchestrationGate = null;
 
   // Close all SSE connections
   for (const connections of sseConnections.values()) {

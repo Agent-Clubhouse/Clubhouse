@@ -3,6 +3,7 @@ import {
   parsePersonaFile,
   serializePersonaFile,
   stripPersonaFrontMatter,
+  readFrontMatterValue,
   PatternSettings,
 } from './persona-pattern';
 
@@ -86,6 +87,28 @@ describe('persona-pattern', () => {
     it('returns the input unchanged when there is no front-matter', () => {
       const raw = '# Role: QA\n\nbody';
       expect(stripPersonaFrontMatter(raw)).toBe(raw);
+    });
+  });
+
+  describe('readFrontMatterValue', () => {
+    it('reads a non-pattern key as JSON', () => {
+      const raw = '---\nmodel: opus\norchestration: {"orchestrate": true, "maxHelpers": 3}\n---\n\nbody';
+      expect(readFrontMatterValue(raw, 'orchestration')).toEqual({ orchestrate: true, maxHelpers: 3 });
+    });
+
+    it('handles CRLF files', () => {
+      const raw = '---\r\norchestration: {"control": "ask-everything"}\r\n---\r\n\r\nbody';
+      expect(readFrontMatterValue(raw, 'orchestration')).toEqual({ control: 'ask-everything' });
+    });
+
+    it('returns undefined without front-matter or the key', () => {
+      expect(readFrontMatterValue('# body', 'orchestration')).toBeUndefined();
+      expect(readFrontMatterValue('---\nmodel: opus\n---\n\nbody', 'orchestration')).toBeUndefined();
+    });
+
+    it('does not turn the key into a pattern setting', () => {
+      const raw = '---\norchestration: {"orchestrate": true}\n---\n\nbody';
+      expect(parsePersonaFile(raw).settings).toEqual({});
     });
   });
 });

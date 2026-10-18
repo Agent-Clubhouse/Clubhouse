@@ -13,6 +13,7 @@ vi.mock('fs/promises', () => ({
 
 import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
+import { setOrchestrationEnabled, onOrchestrationGateChange, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import { agentRegistry } from '../agent-registry';
 import { groupProjectRegistry } from '../group-project-registry';
 import type { McpBinding } from './types';
@@ -25,6 +26,7 @@ describe('ToolRegistry', () => {
   beforeEach(() => {
     _resetForTesting();
     bindingManager._resetForTesting();
+    _resetOrchestrationGateForTesting();
     // Clean up any registrations from previous tests
     agentRegistry.untrack('agent-2');
     agentRegistry.untrack('agent-3');
@@ -921,6 +923,106 @@ describe('ToolRegistry', () => {
       invalidateToolListCache();
       const second = getScopedToolList('agent-1');
       expect(second).not.toBe(first);
+    });
+  });
+
+  describe('orchestration tool group (#2228)', () => {
+    const OFF = 'Orchestration is turned off for this agent.';
+    const schema = { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] };
+
+    function registerOrchestrationTool() {
+      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
+      registerGlobalTool('test_start_helper', { description: 'Start a helper', inputSchema: schema }, handler, { group: 'orchestration' });
+      return handler;
+    }
+
+    function names(agentId: string): string[] {
+      return getScopedToolList(agentId).map((t) => t.name);
+    }
+
+    it('lists the group\'s global tools only for agents with orchestration on', () => {
+      registerOrchestrationTool();
+      registerGlobalTool('plain_tool', { description: 'Plain', inputSchema: { type: 'object' } }, vi.fn());
+      expect(names('agent-1')).toEqual(['plain_tool']);
+      setOrchestrationEnabled('agent-1', true);
+      expect(names('agent-1')).toEqual(['test_start_helper', 'plain_tool']);
+      expect(names('agent-other')).toEqual(['plain_tool']);
+    });
+
+    it('callTool refuses a group tool for an agent with orchestration off', async () => {
+      const handler = registerOrchestrationTool();
+      const result = await callTool('agent-1', 'test_start_helper', { name: 'x' });
+      expect(result).toEqual({ content: [{ type: 'text', text: OFF }], isError: true });
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('refuses before argument validation, so the reason is always the gate', async () => {
+      registerOrchestrationTool();
+      const result = await callTool('agent-1', 'test_start_helper', {});
+      expect(result.content[0].text).toBe(OFF);
+    });
+
+    it('callTool runs a group tool once orchestration is on', async () => {
+      const handler = registerOrchestrationTool();
+      setOrchestrationEnabled('agent-1', true);
+      const result = await callTool('agent-1', 'test_start_helper', { name: 'x' });
+      expect(result.isError).toBeFalsy();
+      expect(handler).toHaveBeenCalledWith('agent-1', { name: 'x' });
+    });
+
+    it('refuses a stale call after orchestration is turned off', async () => {
+      const handler = registerOrchestrationTool();
+      setOrchestrationEnabled('agent-1', true);
+      // The client lists the tools, then orchestration goes off before it refreshes.
+      expect(names('agent-1')).toContain('test_start_helper');
+      setOrchestrationEnabled('agent-1', false);
+      const result = await callTool('agent-1', 'test_start_helper', { name: 'x' });
+      expect(result.content[0].text).toBe(OFF);
+      expect(result.isError).toBe(true);
+      expect(handler).not.toHaveBeenCalled();
+      expect(names('agent-1')).not.toContain('test_start_helper');
+    });
+
+    it('drops only the toggled agent\'s cached list', () => {
+      registerOrchestrationTool();
+      const before1 = getScopedToolList('agent-1');
+      const before2 = getScopedToolList('agent-2');
+      setOrchestrationEnabled('agent-1', true);
+      expect(getScopedToolList('agent-1')).not.toBe(before1);
+      expect(getScopedToolList('agent-2')).toBe(before2);
+    });
+
+    it('gates binding templates in the group the same way', async () => {
+      const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
+      registerToolTemplate('agent', 'connect_helper', { description: 'Connect', inputSchema: { type: 'object' } }, handler, { group: 'orchestration' });
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
+      const binding = { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent' as const, label: 'A2', targetName: 'robin', projectName: 'app' };
+      agentRegistry.register('agent-2', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'pty' });
+      bindingManager.bind('agent-1', binding);
+      const connect = buildToolName(binding, 'connect_helper');
+      const send = buildToolName(binding, 'send_message');
+
+      expect(names('agent-1')).toEqual([send]);
+      const refused = await callTool('agent-1', connect, {});
+      expect(refused.content[0].text).toBe(OFF);
+      expect(handler).not.toHaveBeenCalled();
+
+      setOrchestrationEnabled('agent-1', true);
+      expect(names('agent-1')).toEqual([connect, send]);
+      await callTool('agent-1', connect, {});
+      expect(handler).toHaveBeenCalledWith('agent-2', 'agent-1', {});
+    });
+
+    it('notifies gate listeners only when the value changes', () => {
+      const listener = vi.fn();
+      const off = onOrchestrationGateChange(listener);
+      setOrchestrationEnabled('agent-1', false);
+      setOrchestrationEnabled('agent-1', true);
+      setOrchestrationEnabled('agent-1', true);
+      setOrchestrationEnabled('agent-1', false);
+      off();
+      setOrchestrationEnabled('agent-1', true);
+      expect(listener.mock.calls).toEqual([['agent-1'], ['agent-1']]);
     });
   });
 });
