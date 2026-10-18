@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type ChatModelOption } from '../../../../shared/chat';
-import { Composer, switchNote, type ComposerProps } from './Composer';
+import { Composer, effortWord, switchNote, type ComposerProps } from './Composer';
 
 const MODELS: ChatModelOption[] = [
   { id: 'opus', label: 'Opus 5.5' },
@@ -78,6 +78,11 @@ describe('Composer model and effort chips (#2091)', () => {
     expect(items[2]).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(items[3]);
     expect(onModelChange).toHaveBeenCalledWith('opus', 'max');
+  });
+
+  it('names xhigh "Extra high"', () => {
+    expect(effortWord('xhigh')).toBe('Extra high');
+    expect(effortWord('max')).toBe('Max');
   });
 
   it('says Default effort before the provider reports one', () => {

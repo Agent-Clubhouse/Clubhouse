@@ -518,7 +518,9 @@ class CodexChatSession implements ChatDriverSession {
     // A model the catalog lists without effort levels takes none: drop it rather than show a stale one.
     const kept = efforts && !efforts.length ? undefined : effort;
     this.nextTurn.model = modelId;
-    if (kept) this.nextTurn.effort = kept as TurnStartParams['effort'];
+    // A model without levels also clears an effort already queued (null resets it), so none goes out.
+    if (efforts && !efforts.length) this.nextTurn.effort = null;
+    else if (kept) this.nextTurn.effort = kept as TurnStartParams['effort'];
     this.emit({ type: 'model_changed', data: { modelId, ...(kept && { effort: kept }) } });
     // Without the catalog there are no menus to update.
     if (!this.catalog.length) return;

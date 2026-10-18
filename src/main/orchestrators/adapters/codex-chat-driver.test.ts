@@ -597,6 +597,18 @@ describe('CodexChatDriver', () => {
       ]);
     });
 
+    it('clears an effort already queued when switching to a model without levels', async () => {
+      useServer({ 'model/list': () => ({ result: { data: [...catalog, model('gpt-mini', [])], nextCursor: null } }) });
+      const { session, take } = await startSession();
+      await take(4);
+      await session.setModel('gpt-5', 'high');
+      await take(2);
+      await session.setModel('gpt-mini');
+      await take(2);
+      await session.send([{ type: 'text', text: 'go' }], 'prompt');
+      expect(server.requests('turn/start')[0].params).toMatchObject({ model: 'gpt-mini', effort: null });
+    });
+
     it('asks for model/list with a short timeout', async () => {
       useServer({ 'model/list': () => ({ result: { data: catalog, nextCursor: null } }) });
       const request = vi.spyOn(CodexAppServerClient.prototype, 'request');

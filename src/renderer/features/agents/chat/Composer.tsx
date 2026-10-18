@@ -248,6 +248,12 @@ function ModelPill({ models, efforts, model, effort, capabilities, onChange }: {
   );
 }
 
+/** "xhigh" → "Extra high"; other levels capitalised. */
+export function effortWord(effort: string): string {
+  if (effort === 'xhigh') return 'Extra high';
+  return `${effort.charAt(0).toUpperCase()}${effort.slice(1)}`;
+}
+
 /** Reasoning effort for the current model (#2091); absent when the model has none. */
 function EffortPill({ efforts, model, effort, capabilities, onChange }: {
   efforts: string[];
@@ -263,7 +269,7 @@ function EffortPill({ efforts, model, effort, capabilities, onChange }: {
   if (!efforts.length && !effort) return null;
   const canChange = !!model && efforts.length > 0 && effortSwitch !== 'none';
   const note = switchNote('none', effortSwitch);
-  const label = effort ? `${effort.charAt(0).toUpperCase()}${effort.slice(1)} effort` : 'Default effort';
+  const label = effort ? `${effortWord(effort)} effort` : 'Default effort';
 
   return (
     <div className="relative min-w-0">
