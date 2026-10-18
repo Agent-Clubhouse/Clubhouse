@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { ChatMcpServer, ToolCallContent, ToolKind } from '../../../../shared/chat';
 import type { ToolCallItem } from '../../../stores/chatStore';
 import type { SubagentBlock } from './view-model';
@@ -53,6 +53,58 @@ function Spin() {
   return <span className="inline-block w-2.5 h-2.5 rounded-full border-[1.5px] border-surface-1 border-t-ctp-success animate-spin" aria-label="Running" />;
 }
 
+interface TranscriptExpansionStore {
+  get: (key: string) => boolean | undefined;
+  set: (key: string, open: boolean) => void;
+  subscribe: (key: string, listener: () => void) => () => void;
+}
+
+export function createTranscriptExpansionStore(): TranscriptExpansionStore {
+  const values = new Map<string, boolean>();
+  const listeners = new Map<string, Set<() => void>>();
+  return {
+    get: (key) => values.get(key),
+    set: (key, open) => {
+      if (values.get(key) === open) return;
+      values.set(key, open);
+      listeners.get(key)?.forEach((listener) => listener());
+    },
+    subscribe: (key, listener) => {
+      const keyListeners = listeners.get(key) ?? new Set();
+      keyListeners.add(listener);
+      listeners.set(key, keyListeners);
+      return () => {
+        keyListeners.delete(listener);
+        if (keyListeners.size === 0) listeners.delete(key);
+      };
+    },
+  };
+}
+
+const TranscriptExpansionContext = createContext<TranscriptExpansionStore | null>(null);
+
+export function TranscriptExpansionProvider({ store, children }: { store: TranscriptExpansionStore; children: ReactNode }) {
+  return <TranscriptExpansionContext.Provider value={store}>{children}</TranscriptExpansionContext.Provider>;
+}
+
+function useOpenState(defaultOpen: boolean, expansionKey?: string): [boolean, () => void] {
+  const store = useContext(TranscriptExpansionContext);
+  const subscribe = useCallback((listener: () => void) => (
+    store && expansionKey ? store.subscribe(expansionKey, listener) : () => undefined
+  ), [store, expansionKey]);
+  const getSnapshot = useCallback(() => (
+    store && expansionKey ? store.get(expansionKey) : undefined
+  ), [store, expansionKey]);
+  const storedOpen = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const [localOpen, setLocalOpen] = useState<boolean | undefined>(undefined);
+  const open = storedOpen ?? localOpen ?? defaultOpen;
+  const toggle = useCallback(() => {
+    if (store && expansionKey) store.set(expansionKey, !open);
+    else setLocalOpen(!open);
+  }, [store, expansionKey, open]);
+  return [open, toggle];
+}
+
 function StatusMeta({ tool }: { tool: ToolCallItem }) {
   if (tool.status === 'pending') return <span className="text-ctp-warning">waiting for approval</span>;
   if (tool.status === 'in_progress') return <><Spin /> running</>;
@@ -79,15 +131,15 @@ export function ToolRow({ tool }: { tool: ToolCallItem }) {
   );
 }
 
-export function ExploreGroup({ tools }: { tools: ToolCallItem[] }) {
-  const [open, setOpen] = useState(false);
+export function ExploreGroup({ tools, expansionKey }: { tools: ToolCallItem[]; expansionKey?: string }) {
+  const [open, toggle] = useOpenState(false, expansionKey);
   const running = tools.some((t) => t.status === 'in_progress');
   return (
     <div className="flex flex-col" data-testid="chat-explore-group">
       <button
         type="button"
         className="flex items-center gap-2 h-6 text-[12.5px] text-left text-ctp-overlay1 hover:text-ctp-subtext0"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         aria-expanded={open}
       >
         {open ? <ChevronDown className="text-ctp-overlay0" /> : <ChevronRight className="text-ctp-overlay0" />}
@@ -104,10 +156,8 @@ export function ExploreGroup({ tools }: { tools: ToolCallItem[] }) {
 }
 
 /** Open state for a tool card: follows the status until the user toggles it (see toolOpenByDefault). */
-function useToolOpen(status: ToolCallItem['status'] | undefined): [boolean, () => void] {
-  const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const open = userOpen ?? (status !== undefined && toolOpenByDefault(status));
-  return [open, () => setUserOpen(!open)];
+function useToolOpen(status: ToolCallItem['status'] | undefined, expansionKey?: string): [boolean, () => void] {
+  return useOpenState(status !== undefined && toolOpenByDefault(status), expansionKey);
 }
 
 const CARD_HEADER = 'flex items-center gap-2 h-[34px] px-3 text-[12.5px] text-ctp-overlay1 min-w-0';
@@ -191,19 +241,19 @@ export function DiffCard({ diff, line, status, open = true, onToggle }: {
 }
 
 /** A diff card in the transcript: collapsed to its header until opened. */
-function TranscriptDiffCard({ diff, line, status }: { diff: Extract<ToolCallContent, { type: 'diff' }>; line?: number; status: ToolCallItem['status'] }) {
-  const [open, toggle] = useToolOpen(status);
+function TranscriptDiffCard({ diff, line, status, expansionKey }: { diff: Extract<ToolCallContent, { type: 'diff' }>; line?: number; status: ToolCallItem['status']; expansionKey?: string }) {
+  const [open, toggle] = useToolOpen(status, expansionKey);
   return <DiffCard diff={diff} line={line} status={status} open={open} onToggle={toggle} />;
 }
 
 /** Output lines kept visible; older lines scroll inside the card. */
 const OUTPUT_MAX_HEIGHT = 'max-h-56';
 
-export function CommandCard({ tool }: { tool: ToolCallItem }) {
+export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expansionKey?: string }) {
   // Output arrives in many appended chunks; join them only when they change.
   const term = useMemo(() => terminalContent(tool), [tool]);
   const command = useMemo(() => commandOf(tool), [tool]);
-  const [open, toggle] = useToolOpen(tool.status);
+  const [open, toggle] = useToolOpen(tool.status, expansionKey);
   const running = tool.status === 'in_progress';
   const exit = term?.exitCode;
   const error = toolErrorText(tool, term?.output);
@@ -233,12 +283,12 @@ export function CommandCard({ tool }: { tool: ToolCallItem }) {
  * Any other tool call, MCP included: one row with the tool and a short summary;
  * open it for the arguments and what came back.
  */
-export function ToolCard({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?: ChatMcpServer[] | null }) {
+export function ToolCard({ tool, mcpServers, expansionKey }: { tool: ToolCallItem; mcpServers?: ChatMcpServer[] | null; expansionKey?: string }) {
   const mcp = useMemo(() => mcpTool(tool, mcpServers), [tool, mcpServers]);
   const args = useMemo(() => toolArgs(tool), [tool]);
   const result = useMemo(() => toolResultText(tool), [tool]);
   const error = toolErrorText(tool, result);
-  const [open, toggle] = useToolOpen(tool.status);
+  const [open, toggle] = useToolOpen(tool.status, expansionKey);
   const Ico = KIND_ICONS[tool.toolKind] ?? ToolIcon;
   const label = mcp ? `${mcp.server} · ${mcp.tool}` : KIND_VERBS[tool.toolKind];
   const summary = mcp ? argSummary(tool) : toolTarget(tool);
@@ -276,19 +326,19 @@ export function ToolCard({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?
  * One tool call in the transcript: a diff card per file edit, a command card for
  * commands, a tool card otherwise. All start collapsed to one row (toolOpenByDefault).
  */
-export function ToolCallView({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?: ChatMcpServer[] | null }) {
+export function ToolCallView({ tool, mcpServers, expansionKey }: { tool: ToolCallItem; mcpServers?: ChatMcpServer[] | null; expansionKey?: string }) {
   const diffs = diffContent(tool);
   if (diffs.length > 0) {
     const error = toolErrorText(tool);
     return (
       <>
-        {diffs.map((d, i) => <TranscriptDiffCard key={`${d.path}:${i}`} diff={d} line={tool.locations?.[0]?.line} status={tool.status} />)}
+        {diffs.map((d, i) => <TranscriptDiffCard key={`${d.path}:${i}`} diff={d} line={tool.locations?.[0]?.line} status={tool.status} expansionKey={expansionKey && `${expansionKey}:diff:${i}`} />)}
         {error && <div className="text-[12px] text-ctp-error">{error}</div>}
       </>
     );
   }
-  if (tool.toolKind === 'execute' || tool.content.some((c) => c.type === 'terminal')) return <CommandCard tool={tool} />;
-  return <ToolCard tool={tool} mcpServers={mcpServers} />;
+  if (tool.toolKind === 'execute' || tool.content.some((c) => c.type === 'terminal')) return <CommandCard tool={tool} expansionKey={expansionKey} />;
+  return <ToolCard tool={tool} mcpServers={mcpServers} expansionKey={expansionKey} />;
 }
 
 const SUB_STATUS: Record<SubagentBlock['info']['status'], string> = {
@@ -298,8 +348,8 @@ const SUB_STATUS: Record<SubagentBlock['info']['status'], string> = {
   cancelled: 'cancelled',
 };
 
-export function SubagentCard({ block, onOpenInMap }: { block: SubagentBlock; onOpenInMap?: (subagentId: string) => void }) {
-  const [open, setOpen] = useState(false);
+export function SubagentCard({ block, onOpenInMap, expansionKey }: { block: SubagentBlock; onOpenInMap?: (subagentId: string) => void; expansionKey?: string }) {
+  const [open, toggle] = useOpenState(false, expansionKey);
   const { info, tool, children } = block;
   const toolCount = info.toolCount ?? children.filter((c) => c.kind === 'tool_call').length;
   const summary = [...children].reverse().find((c) => c.kind === 'agent_message');
@@ -314,7 +364,7 @@ export function SubagentCard({ block, onOpenInMap }: { block: SubagentBlock; onO
         <button
           type="button"
           className="flex-1 flex items-center gap-2 h-[34px] px-3 text-[12.5px] text-left min-w-0"
-          onClick={() => setOpen((o) => !o)}
+          onClick={toggle}
           aria-expanded={open}
         >
           <AgentsIcon className="text-ctp-mauve" />
