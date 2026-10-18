@@ -1,4 +1,5 @@
 import { Agent, DurableAgentConfig } from '../../../shared/types';
+import { isDisposedAgent } from '../../../shared/agent-helpers';
 import { AgentCrudSlice, GetAgentState, SetAgentState } from './types';
 import { removeAgentsFromState } from './agentUtils';
 import { clearPendingActivityTimer } from './activityTimers';
@@ -59,8 +60,14 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
     },
 
     loadDurableAgents: async (projectId, projectPath) => {
-      const configs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(projectPath);
+      const allConfigs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(projectPath);
       const agents = { ...get().agents };
+      // A disposed helper (#2224) keeps its config row but has no worktree and
+      // can't run, so the rail skips it.
+      for (const config of allConfigs) {
+        if (isDisposedAgent(config) && agents[config.id]?.kind === 'durable') delete agents[config.id];
+      }
+      const configs = allConfigs.filter((config) => !isDisposedAgent(config));
 
       for (const config of configs) {
         if (!agents[config.id]) {
@@ -136,14 +143,14 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
       try {
         const backupInfo = await window.clubhouse.agent.getBackupInfo(projectPath) as
           { backupAgents: DurableAgentConfig[]; currentCount: number } | null;
-        if (backupInfo && backupInfo.backupAgents.length > configs.length) {
-          const currentIds = new Set(configs.map((c: DurableAgentConfig) => c.id));
+        if (backupInfo && backupInfo.backupAgents.length > allConfigs.length) {
+          const currentIds = new Set(allConfigs.map((c: DurableAgentConfig) => c.id));
           const missing = backupInfo.backupAgents.filter((a: DurableAgentConfig) => !currentIds.has(a.id));
           if (missing.length > 0) {
             set({
               pendingRecovery: {
                 backupAgentCount: backupInfo.backupAgents.length,
-                currentCount: configs.length,
+                currentCount: allConfigs.length,
                 missingNames: missing.map((a: DurableAgentConfig) => a.name),
                 projectId,
                 projectPath,
@@ -163,7 +170,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
         const configs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(projectPath);
         const agents = { ...get().agents };
         for (const config of configs) {
-          if (!agents[config.id]) {
+          if (!agents[config.id] && !isDisposedAgent(config)) {
             agents[config.id] = {
               id: config.id,
               projectId,

@@ -14,6 +14,7 @@ import * as annexIdentity from './annex-identity';
 import * as annexPeers from './annex-peers';
 import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
+import { isDisposedAgent } from '../../shared/agent-helpers';
 import * as ptyManager from './pty-manager';
 import * as themeService from './theme-service';
 import * as eventReplay from './annex-event-replay';
@@ -562,7 +563,8 @@ async function buildSnapshotData(): Promise<object> {
 
   // Fetch agents and their icons per project in parallel
   await Promise.all(projects.map(async (proj) => {
-    const durables = await agentConfig.listDurable(proj.path);
+    // Disposed helpers (#2224) keep a config row but are not agents to show.
+    const durables = (await agentConfig.listDurable(proj.path)).filter((d) => !isDisposedAgent(d));
     agents[proj.id] = durables.map((d) => mapDurableAgent(d, proj.id));
     quickAgents[proj.id] = [];
 
@@ -1333,7 +1335,7 @@ async function handleStatusRoute(ctx: AnnexRouteContext): Promise<void> {
   let agentCount = 0;
   for (const p of projects) {
     const durables = await agentConfig.listDurable(p.path);
-    agentCount += durables.length;
+    agentCount += durables.filter((d) => !isDisposedAgent(d)).length;
   }
   sendJson(res, 200, {
     version: '1',
@@ -1354,7 +1356,7 @@ async function handleProjectAgentsRoute(ctx: AnnexRouteContext, match: RegExpMat
     sendJson(ctx.res, 404, { error: 'project_not_found' });
     return;
   }
-  const durables = await agentConfig.listDurable(project.path);
+  const durables = (await agentConfig.listDurable(project.path)).filter((d) => !isDisposedAgent(d));
   sendJson(ctx.res, 200, durables.map((d) => mapDurableAgent(d, projectId)));
 }
 

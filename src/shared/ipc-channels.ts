@@ -53,6 +53,8 @@ export const IPC = {
     DELETE_SAVE_PATCH: 'agent:delete-save-patch',
     DELETE_FORCE: 'agent:delete-force',
     DELETE_UNREGISTER: 'agent:delete-unregister',
+    LIST_HELPERS: 'agent:list-helpers',
+    RESOLVE_HELPERS_FOR_DELETE: 'agent:resolve-helpers-for-delete',
     RENAME_DURABLE: 'agent:rename-durable',
     UPDATE_DURABLE: 'agent:update-durable',
     READ_QUICK_SUMMARY: 'agent:read-quick-summary',

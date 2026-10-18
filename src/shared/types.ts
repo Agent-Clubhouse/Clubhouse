@@ -277,6 +277,47 @@ export interface DurableAgentConfig {
   agentFile?: string;
   /** Directory to search for the agent file (e.g. "~/.copilot/agents/" → --source ...) */
   agentSource?: string;
+  /**
+   * Helpers (#2224): the durable agent that owns this one. A helper is an
+   * ordinary durable agent with a parent; unset means a top-level agent.
+   */
+  parentAgentId?: string;
+  /** Helpers (#2224): the parent may dispose this agent when its work is done. */
+  disposable?: boolean;
+  /**
+   * Helpers (#2224): ISO time the agent was disposed. A disposed agent keeps
+   * its row and session history but has no worktree and never spawns.
+   */
+  disposedAt?: string;
+}
+
+/** What to do with an orchestrator's helpers when it is deleted (#2224). */
+export type HelperDeleteChoice = 'dispose' | 'keep';
+
+/** Why a helper can't be disposed without losing work (#2224). */
+export interface HelperDisposeChecks {
+  /** Uncommitted or untracked files in the worktree. */
+  dirty: number;
+  /** Commits not on the branch's upstream (all branch commits when it has none). */
+  unpushed: number;
+  /** Commits not merged into the project's base branch. */
+  unmerged: number;
+}
+
+export interface HelperDisposeBlock {
+  agentId: string;
+  name: string;
+  checks: HelperDisposeChecks;
+}
+
+/** Result of resolving an orchestrator's helpers before it is deleted (#2224). */
+export interface HelperCascadeResult {
+  ok: boolean;
+  message: string;
+  /** Helpers that would lose work if disposed. Nothing was changed when set. */
+  blocked?: HelperDisposeBlock[];
+  /** Helpers that were disposed or released. */
+  helperIds?: string[];
 }
 
 /** Maps an orchestrator ID to its wrapper subcommand */

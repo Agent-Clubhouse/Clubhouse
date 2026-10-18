@@ -150,6 +150,49 @@ describe('DeleteAgentDialog', () => {
     expect(mockCloseDeleteDialog).toHaveBeenCalled();
   });
 
+  describe('an orchestrator with helpers (#2224)', () => {
+    const helpers = [
+      { id: 'h1', name: 'scout', color: 'blue', createdAt: 'x', parentAgentId: 'agent-1' },
+      { id: 'h2', name: 'fixer', color: 'red', createdAt: 'x', parentAgentId: 'agent-1' },
+    ];
+
+    beforeEach(() => {
+      window.clubhouse.agent.listHelpers = vi.fn().mockResolvedValue(helpers);
+    });
+
+    afterEach(() => {
+      window.clubhouse.agent.listHelpers = vi.fn().mockResolvedValue([]);
+    });
+
+    it('asks what happens to the helpers before the usual confirmation', async () => {
+      render(<DeleteAgentDialog />);
+      await waitFor(() => screen.getByTestId('delete-agent-helpers-step'));
+      expect(window.clubhouse.agent.listHelpers).toHaveBeenCalledWith('/home/user/project', 'agent-1', true);
+      expect(screen.getByText(/bold-falcon has 2 helpers/)).toBeInTheDocument();
+      expect(screen.queryByText(/No uncommitted changes detected/)).not.toBeInTheDocument();
+    });
+
+    it.each(['keep', 'dispose'] as const)('passes the %s choice to the delete', async (choice) => {
+      render(<DeleteAgentDialog />);
+      await waitFor(() => screen.getByTestId('delete-agent-helpers-step'));
+      fireEvent.click(screen.getByTestId(`delete-agent-helpers-${choice}`));
+      await waitFor(() => screen.getByText(/No uncommitted changes detected/));
+      fireEvent.click(screen.getByText('Delete'));
+      await waitFor(() => expect(mockExecuteDelete).toHaveBeenCalledWith('force', '/home/user/project', choice));
+    });
+
+    it('returns to the helper choice with the error when helpers block the delete', async () => {
+      mockExecuteDelete.mockResolvedValueOnce({ ok: false, message: 'Nothing was deleted. scout (1 uncommitted file) has unsaved work.' });
+      render(<DeleteAgentDialog />);
+      await waitFor(() => screen.getByTestId('delete-agent-helpers-step'));
+      fireEvent.click(screen.getByTestId('delete-agent-helpers-dispose'));
+      await waitFor(() => screen.getByText(/No uncommitted changes detected/));
+      fireEvent.click(screen.getByText('Delete'));
+      await waitFor(() => screen.getByTestId('delete-agent-helpers-step'));
+      expect(screen.getByText(/scout \(1 uncommitted file\) has unsaved work/)).toBeInTheDocument();
+    });
+  });
+
   describe('agents outside the active project (the new chrome tree)', () => {
     it('reads and deletes the worktree in the agent’s own project', async () => {
       resetStores();
