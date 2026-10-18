@@ -438,6 +438,30 @@ describe('transcript hardening (#2198)', () => {
     expect(await readChatTranscript('agent-1', { sessionId: 'down' })).toEqual([downgrade[1], downgrade[2]]);
   });
 
+  it('skips legacy events at or below the session\'s last seq, which the chat view would drop', async () => {
+    const legacy = writeLegacy([ev(1, 'old'), ev(2, 'old')]);
+    await readChatTranscript('agent-1', { sessionId: 'old' });
+    // This build continues the session to seq 5 after migration...
+    for (const seq of [3, 4, 5]) await appendChatEvent(ev(seq, 'old'));
+    await flushAllTranscripts();
+    // ...then a downgraded build appends its own seq 4 and 5, plus one newer event.
+    const stale = [{ ...ev(4, 'old'), ts: 40 }, { ...ev(5, 'old'), ts: 50 }];
+    const newer = { ...ev(6, 'old'), ts: 60 };
+    fs.appendFileSync(legacy, [...stale, newer].map((e) => JSON.stringify(e) + '\n').join(''));
+    const grown = fs.readFileSync(legacy, 'utf8');
+    const { appLog } = await import('../log-service');
+    vi.mocked(appLog).mockClear();
+    resetTranscriptCache();
+    const events = await readChatTranscript('agent-1', { sessionId: 'old' });
+    expect(events).toEqual([ev(1, 'old'), ev(2, 'old'), ev(3, 'old'), ev(4, 'old'), ev(5, 'old'), newer]);
+    expect(events.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(vi.mocked(appLog)).toHaveBeenCalledWith('core:chat', 'warn', expect.stringContaining('Skipped legacy chat events'), expect.objectContaining({ meta: expect.objectContaining({ skipped: 2 }) }));
+    // The legacy log stays the copy of record, and a restart doesn't retry the skipped events.
+    expect(fs.readFileSync(legacy, 'utf8')).toBe(grown);
+    resetTranscriptCache();
+    expect((await readChatTranscript('agent-1', { sessionId: 'old' })).map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
   it('reconciles a legacy log split by a build that did not record its size, without duplicates', async () => {
     const legacy = writeLegacy([ev(1), ev(2)]);
     await readChatTranscript('agent-1');

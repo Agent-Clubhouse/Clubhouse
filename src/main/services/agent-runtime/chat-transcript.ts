@@ -130,7 +130,11 @@ async function saveIndex(dir: string, index: SessionIndex): Promise<void> {
   await fsp.writeFile(temp, JSON.stringify(index), 'utf-8');
   await fsp.rename(temp, path.join(dir, 'index.json'));
 }
-/** Writes a file and flushes it to disk before returning. */
+/**
+ * Writes a file and flushes it to disk before returning. On macOS,
+ * FileHandle.sync() already issues F_FULLFSYNC: libuv's fsync falls back to
+ * F_BARRIERFSYNC, then fsync(), only when the filesystem rejects it.
+ */
 async function writeDurable(file: string, content: string): Promise<void> {
   const handle = await fsp.open(file, 'w');
   try {
@@ -261,7 +265,9 @@ async function migrateLegacy(agentId: string, index: SessionIndex): Promise<bool
 /**
  * Imports events an older build appended to the legacy log after migration.
  * Events already in a session file are skipped, so an import interrupted
- * before the index recorded it can safely run again.
+ * before the index recorded it can safely run again. So are events at or
+ * below the session's last seq: the chat view drops those, so they would sit
+ * on disk unseen. The legacy log keeps them.
  */
 async function importLegacyGrowth(state: AgentState): Promise<void> {
   const { agentId, index } = state;
@@ -281,10 +287,20 @@ async function importLegacyGrowth(state: AgentState): Promise<void> {
     const start = recorded !== undefined && recorded < size ? recorded : 0;
     const events = parseEvents((await readRange(legacyFile, start, size)).toString('utf-8'));
     let imported = 0;
+    let skipped = 0;
     for (const [id, list] of groupBySession(events)) {
       const file = transcriptPath(agentId, id);
-      const existing = new Set(parseEvents(await readText(file)).map((e) => JSON.stringify(e)));
-      const missing = list.filter((e) => !existing.has(JSON.stringify(e)));
+      const current = parseEvents(await readText(file));
+      const existing = new Set(current.map((e) => JSON.stringify(e)));
+      // The file is checked too: a crash can leave the index behind it.
+      let lastSeq = Math.max(index.sessions.find((s) => s.sessionId === id)?.lastSeq ?? 0, ...current.map((e) => e.seq));
+      const missing: ChatEvent[] = [];
+      for (const event of list) {
+        if (existing.has(JSON.stringify(event))) continue;
+        if (event.seq <= lastSeq) { skipped++; continue; }
+        lastSeq = event.seq;
+        missing.push(event);
+      }
       if (!missing.length) continue;
       await appendLines(file, missing.map((e) => JSON.stringify(e) + '\n').join(''), state.sizes);
       imported += missing.length;
@@ -292,6 +308,9 @@ async function importLegacyGrowth(state: AgentState): Promise<void> {
     index.legacyBytes = size;
     if (imported) {
       appLog('core:chat', 'info', 'Imported chat events added to the legacy log after migration', { meta: { agentId, imported } });
+    }
+    if (skipped) {
+      appLog('core:chat', 'warn', 'Skipped legacy chat events at or below their session\'s last seq; they remain in the legacy log', { meta: { agentId, skipped, legacyFile } });
     }
   } catch (error) {
     // telemetry-exempt: the legacy log is untouched and the import runs again on the next load.
