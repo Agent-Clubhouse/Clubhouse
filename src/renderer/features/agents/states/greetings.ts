@@ -1,6 +1,8 @@
 /**
- * Greeting lines for a sleeping agent (#2019). One is picked per visit from the
- * time-of-day set plus the any-time set, never the same line twice in a row.
+ * Greeting lines for a sleeping agent (#2019), shown on its canvas card and
+ * sleeping pane. Each agent gets a line from the time-of-day set plus the
+ * any-time set, picked by a hash of its id (#2102): the same agent keeps the
+ * same line across renders, and agents side by side mostly differ.
  */
 
 export type TimeOfDay = 'morning' | 'afternoon' | 'night' | 'evening';
@@ -28,6 +30,13 @@ const ANY_TIME_LINES = [
   'Where should we pick up?',
   'Got something for {name}?',
   '{name} is rested and ready.',
+  "What's next for {name}?",
+  '{name} is ready and waiting.',
+  '{name} is standing by.',
+  'What should {name} take on?',
+  'Give {name} something to do.',
+  'Ready when you are.',
+  'Wake {name} with a new task.',
 ];
 
 /** Morning 5 to 11, afternoon 12 to 17, evening 18 to 21, late night 22 to 4. */
@@ -45,21 +54,21 @@ export function greetingPool(name: string, hour: number): string[] {
   return [...lines, ...ANY_TIME_LINES].map((l) => l.replace('{name}', name));
 }
 
-let lastGreeting: string | null = null;
-
-/**
- * Pick a line for this visit. Avoids the line shown last time (across agents,
- * for the life of the window). `random` is injectable for tests.
- */
-export function pickGreeting(name: string, hour: number, random: () => number = Math.random): string {
-  const pool = greetingPool(name, hour);
-  const choices = pool.length > 1 ? pool.filter((l) => l !== lastGreeting) : pool;
-  const line = choices[Math.min(choices.length - 1, Math.floor(random() * choices.length))];
-  lastGreeting = line;
-  return line;
+/** FNV-1a, 32-bit: a cheap, stable spread of agent ids over the lines. */
+export function hashId(id: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
 }
 
-/** @internal for tests */
-export function resetGreetingMemory(): void {
-  lastGreeting = null;
+/**
+ * The line for this agent at this hour. Stable for an agent; it only changes
+ * when the time of day changes the pool.
+ */
+export function pickGreeting(agentId: string, name: string, hour: number): string {
+  const pool = greetingPool(name, hour);
+  return pool[hashId(agentId) % pool.length];
 }
