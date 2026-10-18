@@ -397,8 +397,11 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private effortPinned: boolean;
   /** effortPinned as last reported, so a change in it alone is reported too. */
   private reportedDefault = false;
-  /** /effort ran this turn: the effort is pinned once it ends. */
-  private effortCommandThisTurn = false;
+  /**
+   * What an `/effort <arg>` that opened this turn's message did, applied when
+   * the turn ends: a level pins it, `auto` goes back to Claude's default.
+   */
+  private effortCommandThisTurn: 'pin' | 'default' | undefined;
   /** The model menu from `initialize`. */
   private modelRows: ClaudeModelRow[] = [];
   /** Effort levels last reported for the current model. */
@@ -461,7 +464,10 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     const actual: MessageDelivery = this.turnRunning ? delivery : 'prompt';
     if (!this.turnRunning) this.beginTurn('prompt');
     if (/(^|\s)\/(model|effort)\b/.test(text)) this.slashThisTurn = true;
-    if (/(^|\s)\/effort\b/.test(text)) this.effortCommandThisTurn = true;
+    // Built-ins only run at the start of a message (#2135), and only a known argument changes anything.
+    const effortArg = /^\s*\/effort\s+(\S+)/.exec(text)?.[1]?.toLowerCase();
+    if (effortArg && isClaudeEffort(effortArg)) this.effortCommandThisTurn = 'pin';
+    else if (effortArg === 'auto') this.effortCommandThisTurn = 'default';
     this.transport.send({
       text,
       images: images.length ? images : undefined,
@@ -836,8 +842,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
         this.interrupting = false;
         this.turnApiError = undefined;
         if (this.effortCommandThisTurn) {
-          this.effortCommandThisTurn = false;
-          this.effortPinned = true;
+          this.effortPinned = this.effortCommandThisTurn === 'pin';
+          this.effortCommandThisTurn = undefined;
         }
         if (this.slashThisTurn) {
           this.slashThisTurn = false;

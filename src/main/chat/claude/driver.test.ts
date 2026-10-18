@@ -507,6 +507,31 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     await vi.waitFor(() => expect(drafts.of('model_changed').at(-1)?.data).toEqual({ modelId: 'opus', effort: 'high' }));
   });
 
+  it('/effort pins only with a known level at the start; /effort auto goes back to the default', async () => {
+    const { session, transport, drafts } = await scripted({}, (t) => {
+      t.models = menuRows;
+      t.applied = { model: 'claude-opus-5-5', effort: 'medium' };
+    });
+    await settle();
+    const turn = async (text: string) => {
+      await session.send([{ type: 'text', text }], 'prompt');
+      transport.emit(result());
+      await settle();
+      await settle();
+    };
+    const last = () => drafts.of('model_changed').at(-1)?.data;
+    for (const text of ['please read about /effort high first', '/effort', '/effort turbo']) {
+      await turn(text);
+      expect(last()).toEqual({ modelId: 'opus', effort: 'medium', effortIsDefault: true });
+    }
+    transport.applied = { model: 'claude-opus-5-5', effort: 'high' };
+    await turn('  /effort HIGH');
+    expect(last()).toEqual({ modelId: 'opus', effort: 'high' });
+    transport.applied = { model: 'claude-opus-5-5', effort: 'medium' };
+    await turn('/effort auto');
+    expect(last()).toEqual({ modelId: 'opus', effort: 'medium', effortIsDefault: true });
+  });
+
   it('refuses an effort level Claude does not have, without touching the session', async () => {
     const { session, transport } = await scripted();
     await expect(session.setModel('opus', 'ultra')).rejects.toThrow(/no effort level "ultra"/);
