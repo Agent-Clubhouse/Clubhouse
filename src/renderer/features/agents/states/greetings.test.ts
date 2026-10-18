@@ -54,11 +54,11 @@ describe('pickGreeting', () => {
     expect(greetingPool('faithful-urchin', 19)).toContain(first);
   });
 
-  it('spreads agents across every line, none taking more than a quarter', () => {
-    const pool = greetingPool('x', 19);
+  it.each([[19, 'evening, any-time lines only'], [9, 'morning, mixed with the any-time lines']])('spreads agents across every line at hour %i (%s), none taking more than a quarter', (hour) => {
+    const pool = greetingPool('x', hour);
     const counts = new Map<string, number>();
     for (const id of ids) {
-      const line = pickGreeting(id, 'x', 19);
+      const line = pickGreeting(id, 'x', hour);
       counts.set(line, (counts.get(line) ?? 0) + 1);
     }
     expect(counts.size).toBe(pool.length);
