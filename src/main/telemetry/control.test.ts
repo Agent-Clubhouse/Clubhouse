@@ -438,35 +438,31 @@ describe('Framebriar destination follows Feedback', () => {
     expect(state.calls).toEqual(['restart:keep']);
   });
 
-  it('after Share, turning export off turns it off too: it never exports alone', async () => {
+  it('after Share, turning Azure off leaves it exporting on its own (#2097)', async () => {
     await shared();
     await control.setEnabled('azure', false);
-    expect(fbEntry()).toMatchObject({ enabled: false, framebriar: { userOff: false } });
-    expect(state.active).toEqual([]);
-    expect(state.calls).toEqual(['disable']);
-    // And back on with export, without asking (its host is confirmed).
-    await control.setEnabled('azure', true, { host: HOST });
-    expect(state.active).toEqual(['azure', 'framebriar']);
+    expect(fbEntry()).toMatchObject({ enabled: true, framebriar: { userOff: false } });
+    expect(state.active).toEqual(['framebriar']);
+    expect(state.calls).not.toContain('disable');
+    expect(state.running).toBe(true);
   });
 
-  it('clearing the Azure connection string stops it too', async () => {
+  it('clearing the Azure connection string leaves it on (#2097)', async () => {
     await shared();
     await control.clearAzureConnectionString();
-    expect(fbEntry().enabled).toBe(false);
-    expect(state.calls).toEqual(['disable']);
-    expect(state.running).toBe(false);
+    expect(fbEntry().enabled).toBe(true);
+    expect(state.active).toEqual(['framebriar']);
   });
 
-  it('clearing the OTLP config stops it too', async () => {
+  it('clearing the OTLP config leaves it on (#2097)', async () => {
     await control.saveOtlpConfig({ endpoint: 'https://otel.example.com', headers: [] });
     await control.setEnabled('otlp', true, { consent: true, host: 'otel.example.com' });
     connect();
     await control.setEnabled('framebriar', true, { host: FB_HOST });
     expect(state.active).toEqual(['otlp', 'framebriar']);
-    state.calls = [];
     await control.clearOtlpConfig();
-    expect(fbEntry().enabled).toBe(false);
-    expect(state.calls).toEqual(['disable']);
+    expect(fbEntry().enabled).toBe(true);
+    expect(state.active).toEqual(['framebriar']);
   });
 
   it('follows Feedback automatically once its host is confirmed', async () => {
@@ -525,13 +521,22 @@ describe('Framebriar destination follows Feedback', () => {
     expect(await control.setEnabled('azure', true)).toMatchObject({ ok: false, needs: ['destination'], hosts: [HOST, FB_HOST], followHost: FB_HOST });
   });
 
-  it('cannot be turned on without another destination exporting', async () => {
+  it('works with no other destination on, after consent and its host are confirmed (#2097)', async () => {
+    connect();
+    // Asks for consent and names only its own host.
+    expect(await control.setEnabled('framebriar', true)).toMatchObject({
+      ok: false, needs: ['consent', 'destination'], host: FB_HOST, hosts: [FB_HOST],
+    });
+    expect(fbEntry().enabled).toBe(false);
+    expect(await control.setEnabled('framebriar', true, { consent: true, host: FB_HOST })).toMatchObject({ ok: true });
+    expect(fbEntry()).toMatchObject({ enabled: true, confirmedHost: FB_HOST });
+    expect(state.active).toEqual(['framebriar']);
+    expect(state.calls).toEqual(['enable']);
+  });
+
+  it('still needs consent: a confirmed host alone does not start it (#2097)', async () => {
     connect();
     setEntry('framebriar', { confirmedHost: FB_HOST });
-    await control.syncFramebriarDestination();
-    expect(fbEntry().enabled).toBe(false);
-    expect(await control.setEnabled('framebriar', true, { host: FB_HOST })).toMatchObject({ ok: false, reason: 'needs_other_destination' });
-    state.settings.consentVersion = 1;
     await control.syncFramebriarDestination();
     expect(fbEntry().enabled).toBe(false);
     expect(state.calls).toEqual([]);
@@ -540,7 +545,7 @@ describe('Framebriar destination follows Feedback', () => {
   it('explains what to do when Feedback is not connected', async () => {
     await exportOnWithAzure();
     expect(await control.setEnabled('framebriar', true)).toMatchObject({ ok: false, reason: 'not_configured', message: 'Connect Feedback in Settings, Feedback first.' });
-    expect(await fbStatus()).toMatchObject({ label: 'Clubhouse developer (Framebriar)', configured: false, enabled: false, userOff: false });
+    expect(await fbStatus()).toMatchObject({ label: 'Clubhouse developer', configured: false, enabled: false, userOff: false });
   });
 
   it('joins a running export when Feedback connects late, only for the confirmed host', async () => {

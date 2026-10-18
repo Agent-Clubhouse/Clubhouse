@@ -81,7 +81,7 @@ const otlp: DestinationAdapter<OtlpDestinationConfig> = {
  */
 const framebriar: DestinationAdapter<FramebriarTelemetryExport> = {
   kind: 'framebriar',
-  label: 'Clubhouse developer (Framebriar)',
+  label: 'Clubhouse developer',
   resolve: () => currentFramebriarExport(),
   validate(config) {
     let url: URL;

@@ -151,6 +151,6 @@ describe('Framebriar destination adapter', () => {
 
   it('copies install id, layout and channel onto events', () => {
     expect(getAdapter('framebriar').copyResourceAttributes).toEqual(['clubhouse.install.id', 'clubhouse.ui.chrome', 'clubhouse.channel']);
-    expect(getAdapter('framebriar').label).toBe('Clubhouse developer (Framebriar)');
+    expect(getAdapter('framebriar').label).toBe('Clubhouse developer');
   });
 });
