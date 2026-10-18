@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { markdownToPlainText, renderMarkdownSafe } from './safe-markdown';
 
 describe('renderMarkdownSafe', () => {
@@ -159,5 +159,24 @@ describe('markdownToPlainText', () => {
 
   it('keeps no markup from embedded html', () => {
     expect(markdownToPlainText('<img src=x onerror=alert(1)>hi')).toBe('hi');
+  });
+});
+
+describe('markdownToPlainText cache', () => {
+  it('returns a repeat from the cache and evicts the oldest past 200 entries', () => {
+    const parse = vi.spyOn(DOMParser.prototype, 'parseFromString');
+    try {
+      const first = 'cache-first **x**';
+      expect(markdownToPlainText(first)).toBe('cache-first x');
+      const calls = parse.mock.calls.length;
+      expect(markdownToPlainText(first)).toBe('cache-first x');
+      expect(parse.mock.calls.length).toBe(calls);
+      for (let i = 0; i < 200; i++) markdownToPlainText(`cache-fill ${i}`);
+      const before = parse.mock.calls.length;
+      expect(markdownToPlainText(first)).toBe('cache-first x');
+      expect(parse.mock.calls.length).toBeGreaterThan(before);
+    } finally {
+      parse.mockRestore();
+    }
   });
 });
