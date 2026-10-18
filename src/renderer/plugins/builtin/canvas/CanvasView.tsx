@@ -931,6 +931,7 @@ export const CanvasViewComponent = memo(function CanvasViewComponent({
         ref={contentRef}
         className="relative flex-1 min-h-0 overflow-hidden rounded-b-lg"
         onWheel={isSelected ? stopPlainWheelPropagation : (e) => containScrollableWheel(e, e.currentTarget)}
+        data-testid="canvas-view-content"
       >
         {!isZoomed && renderContent()}
       </div>
