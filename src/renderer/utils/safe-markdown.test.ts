@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderMarkdownSafe } from './safe-markdown';
+import { markdownToPlainText, renderMarkdownSafe } from './safe-markdown';
 
 describe('renderMarkdownSafe', () => {
   it('strips script tags', () => {
@@ -149,5 +149,15 @@ describe('renderMarkdownSafe', () => {
       expect(result).toContain('<path');
       expect(result).toContain('d="M10 10 L90 90"');
     });
+  });
+});
+
+describe('markdownToPlainText', () => {
+  it('drops the markup and folds to one line', () => {
+    expect(markdownToPlainText('**Updated**\n\n- `a.ts`\n- [docs](https://x.y)')).toBe('Updated a.ts docs');
+  });
+
+  it('keeps no markup from embedded html', () => {
+    expect(markdownToPlainText('<img src=x onerror=alert(1)>hi')).toBe('hi');
   });
 });

@@ -12,6 +12,7 @@ import { SessionPickerDialog } from './SessionPickerDialog';
 import { SessionNamePromptDialog } from './SessionNamePromptDialog';
 import { AgentContextMenu, OverflowIcon, useAgentRowActions } from './useAgentRowActions';
 import { pickGreeting } from './states/greetings';
+import { Markdown } from './chat/MessageBlocks';
 import { useLastSession, type LastSessionInfo } from './states/useLastSession';
 import { formatAgo, formatShortDuration, formatUsd, plural, relativeTo } from './states/format';
 import {
@@ -361,7 +362,7 @@ function LastSession({ info, branch, baseDir, onBrowse }: {
   return (
     <section className="w-full mt-[30px] text-left" aria-label="Last session" data-testid="last-session">
       <SectionHead title="Last session" right={meta || undefined} />
-      {info.summary && <p className="pt-0.5 pb-2.5 text-[13px] leading-[1.55] text-ctp-subtext1 line-clamp-4">{info.summary}</p>}
+      {info.summary && <Markdown text={info.summary} className="pt-0.5 pb-2.5 text-[13px] leading-[1.55] text-ctp-subtext1 break-words line-clamp-4" />}
       {branch && (
         <div className="h-[30px] flex items-center gap-2 px-2 -mx-2 min-w-0" data-testid="last-session-branch">
           <span className="flex-shrink-0 text-ctp-overlay1 flex"><BranchIcon /></span>

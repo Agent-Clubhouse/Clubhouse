@@ -50,3 +50,9 @@ export function renderMarkdownSafe(content: string): string {
   const raw = marked.parse(content, { async: false }) as string;
   return sanitizeMarkdownHtml(raw);
 }
+
+/** Markdown as one line of plain text, for rows too small to render it. */
+export function markdownToPlainText(content: string): string {
+  const doc = new DOMParser().parseFromString(renderMarkdownSafe(content), 'text/html');
+  return (doc.body.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
