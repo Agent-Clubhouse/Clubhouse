@@ -6,6 +6,7 @@ import type {
   ErrorItem,
   NoticeItem,
   PlanDocumentItem,
+  QuestionItem,
   SessionDividerItem,
   ThoughtItem,
   TurnEndItem,
@@ -13,7 +14,7 @@ import type {
 } from '../../../stores/chatStore';
 import type { ChatCapabilities, ContentBlock } from '../../../../shared/chat';
 import { attachmentName } from './attachments';
-import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, FileIcon, ImageIcon, PlanIcon } from './icons';
+import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, FileIcon, ImageIcon, PlanIcon, QuestionIcon } from './icons';
 import { formatCost, formatDuration, formatTokens } from './view-model';
 
 /** Markdown re-renders at most this often while a message streams. */
@@ -128,13 +129,20 @@ export function ThoughtRow({ item }: { item: ThoughtItem }) {
   );
 }
 
+function planState(item: PlanDocumentItem): { label: string; tone: string } {
+  if (item.decision === 'approved') return { label: 'Approved', tone: 'text-ctp-success' };
+  if (item.decision === 'rejected') return { label: 'Not approved', tone: 'text-ctp-subtext0' };
+  return { label: item.status === 'ready' ? 'Ready for review' : 'Writing…', tone: 'text-ctp-subtext0' };
+}
+
 export function PlanDocumentCard({ item }: { item: PlanDocumentItem }) {
+  const state = planState(item);
   return (
-    <div className="border border-surface-1 rounded-lg bg-ctp-mantle" data-testid="chat-plan-document">
+    <div className="border border-surface-1 rounded-lg bg-ctp-mantle" data-testid="chat-plan-document" data-decision={item.decision ?? 'pending'}>
       <div className="flex items-center gap-2 h-9 px-3 border-b border-surface-0 text-[12.5px]">
         <PlanIcon className="text-ctp-overlay1" />
         <span className="font-semibold text-ctp-text">Plan</span>
-        <span className="text-ctp-subtext0">{item.status === 'ready' ? 'Ready for review' : 'Writing…'}</span>
+        <span className={state.tone}>{state.label}</span>
       </div>
       <div className="px-4 py-3 text-[13px]">
         <Markdown text={item.markdown} streaming={item.status === 'streaming'} />
@@ -220,6 +228,47 @@ export function SessionDivider({ item }: { item: SessionDividerItem }) {
       <span className="flex-1 border-t border-surface-0" />
       <span>{item.resumed ? 'Session resumed' : 'New session'}</span>
       <span className="flex-1 border-t border-surface-0" />
+    </div>
+  );
+}
+
+/** The answer text for one question: option labels for choices, the text itself otherwise. */
+function answerText(item: QuestionItem, questionId: string): string | null {
+  const answer = item.answers?.[questionId];
+  if (answer === undefined) return null;
+  const q = item.questions.find((x) => x.id === questionId);
+  const label = (id: string) => q?.options?.find((o) => o.id === id)?.label ?? id;
+  return Array.isArray(answer) ? answer.map(label).join(', ') : label(answer);
+}
+
+/**
+ * A question the agent asked, as one line per question: "Asked" while it
+ * waits (the card in the composer dock takes the answer), then "Answered".
+ */
+export function QuestionRow({ item }: { item: QuestionItem }) {
+  return (
+    <div className="flex flex-col gap-0.5" data-testid="chat-question-row" data-state={item.cancelled ? 'cancelled' : item.answers ? 'answered' : 'asked'}>
+      {item.questions.map((q) => {
+        const answer = answerText(item, q.id);
+        return (
+          <div key={q.id} className="flex flex-col text-[12.5px] min-w-0">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <QuestionIcon size={13} className="text-ctp-overlay1 self-center" />
+              <span className="font-medium text-ctp-subtext1 flex-shrink-0">Asked</span>
+              <span className="text-ctp-subtext0 min-w-0 break-words">{q.prompt}</span>
+              {!item.answers && !item.cancelled && <span className="ml-auto text-[11.5px] text-ctp-warning whitespace-nowrap">waiting for your answer</span>}
+            </div>
+            {item.cancelled ? (
+              <div className="pl-[21px] text-[12px] text-ctp-overlay0">Not answered</div>
+            ) : answer !== null && (
+              <div className="pl-[21px] flex items-baseline gap-2 min-w-0">
+                <span className="font-medium text-ctp-subtext1 flex-shrink-0">Answered</span>
+                <span className="text-ctp-text min-w-0 break-words">{answer}</span>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

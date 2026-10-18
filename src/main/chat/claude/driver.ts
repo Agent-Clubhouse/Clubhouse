@@ -2,7 +2,7 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { MINIMAL_CHAT_CAPABILITIES, type ChatCapabilities, type ChatDriverId, type PermissionLevel } from '../../../shared/chat/capabilities';
+import { MINIMAL_CHAT_CAPABILITIES, PERMISSION_LEVEL_LABELS, type ChatCapabilities, type ChatDriverId, type PermissionLevel } from '../../../shared/chat/capabilities';
 import type {
   ChatErrorCode,
   ChatEventDraft,
@@ -156,6 +156,32 @@ function toolLocations(input: Obj): ToolCallLocation[] | undefined {
   return p ? [{ path: p }] : undefined;
 }
 
+/**
+ * The change an Edit, MultiEdit or Write call proposes, from its input, so a
+ * pending call (and its approval card) shows a diff before it runs. The
+ * CLI's result replaces it once the call finishes (claudeToolContent).
+ */
+export function claudeInputDiff(name: string, input: Obj): ToolCallContent[] | undefined {
+  const filePath = str(input.file_path);
+  if (!filePath) return undefined;
+  if (name === 'Edit' && typeof input.new_string === 'string') {
+    return [{ type: 'diff', path: filePath, oldText: str(input.old_string) ?? '', newText: input.new_string }];
+  }
+  if (name === 'MultiEdit' && Array.isArray(input.edits)) {
+    const diffs = input.edits.filter(isObj).filter((e) => typeof e.new_string === 'string')
+      .map((e): ToolCallContent => ({ type: 'diff', path: filePath, oldText: str(e.old_string) ?? '', newText: e.new_string as string }));
+    return diffs.length > 0 ? diffs : undefined;
+  }
+  if (name === 'Write' && typeof input.content === 'string') {
+    // Write may create or overwrite; the old content isn't in the input. A
+    // unified diff of additions avoids labelling an overwrite "Created".
+    const lines = input.content.replace(/\n$/, '').split('\n');
+    const unifiedDiff = [`@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`)].join('\n');
+    return [{ type: 'diff', path: filePath, newText: input.content, unifiedDiff }];
+  }
+  return undefined;
+}
+
 /** Diff or terminal content from the CLI's typed tool_use_result, falling back to the result text. */
 export function claudeToolContent(name: string, input: Obj, result: unknown, text: string, cwd: string): ToolCallContent[] | undefined {
   if (isObj(result)) {
@@ -192,7 +218,8 @@ function describeSuggestion(s: ClaudePermissionUpdate): string | undefined {
   if (Array.isArray(s.rules)) {
     return s.rules.filter(isObj).map((r) => (r.ruleContent ? `${String(r.toolName)}(${String(r.ruleContent)})` : String(r.toolName))).join(', ');
   }
-  if (s.type === 'setMode' && typeof s.mode === 'string') return `${s.mode} mode`;
+  // A mode switch is named by its Clubhouse level ("Auto-accept edits"), not the CLI's mode id.
+  if (s.type === 'setMode' && typeof s.mode === 'string') return PERMISSION_LEVEL_LABELS[levelFromClaudeMode(s.mode)];
   if (Array.isArray(s.directories)) return s.directories.join(', ');
   return undefined;
 }
@@ -303,12 +330,15 @@ const LIMIT_STATUS: Record<string, 'ok' | 'warning' | 'exceeded'> = {
 
 function tokens(u: ClaudeUsage | undefined) {
   if (!u) return undefined;
+  // Anthropic's input_tokens excludes cache reads and writes; the contract's
+  // `input` is the total input (TokenUsage), so add them in.
+  const input = u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens;
   return {
-    input: u.inputTokens,
+    input,
     cachedInput: u.cacheReadInputTokens,
     cacheWrite: u.cacheCreationInputTokens,
     output: u.outputTokens,
-    total: u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens + u.outputTokens,
+    total: input + u.outputTokens,
   };
 }
 
@@ -323,7 +353,9 @@ function sessionTokens(modelUsage: Record<string, unknown> | undefined) {
     cachedInput += typeof m.cacheReadInputTokens === 'number' ? m.cacheReadInputTokens : 0;
     cacheWrite += typeof m.cacheCreationInputTokens === 'number' ? m.cacheCreationInputTokens : 0;
   }
-  return { input, output, cachedInput, cacheWrite, total: input + output + cachedInput + cacheWrite };
+  // Total input, as in tokens(): uncached input plus cache reads and writes.
+  const totalInput = input + cachedInput + cacheWrite;
+  return { input: totalInput, output, cachedInput, cacheWrite, total: totalInput + output };
 }
 
 /** Every plan window the CLI reports (rate_limit_event's rateLimitType, get_usage's rate_limits keys). */
@@ -455,6 +487,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private readonly queue = new AsyncQueue<ChatEventDraft>();
   private readonly tools = new Map<string, ToolInfo>();
   private readonly pendingPermissions = new Map<string, ClaudePermissionUpdate[]>();
+  /** The tool call each pending permission is for: requestId → toolCallId. */
+  private readonly permissionTools = new Map<string, string>();
   /** AskUserQuestion requests, surfaced as `question`: requestId → tool input. */
   private readonly pendingQuestions = new Map<string, Obj>();
   /** Subagent names from task_started; later task_* messages don't repeat them. */
@@ -612,6 +646,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
     const suggestions = this.pendingPermissions.get(requestId);
     if (!suggestions) throw new Error(`No pending Claude permission request ${requestId}`);
     this.pendingPermissions.delete(requestId);
+    const toolCallId = this.permissionTools.get(requestId);
+    this.permissionTools.delete(requestId);
     // e.g. a revised plan for ExitPlanMode
     const updatedInput = isObj(extras?.updatedInput) ? extras.updatedInput : undefined;
     if (optionId === CLAUDE_OPTION_ALLOW) {
@@ -623,7 +659,14 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       this.transport.respondToPermission(requestId, { behavior: 'deny', message: extras?.message || 'The user denied this request.' });
     } else {
       this.pendingPermissions.set(requestId, suggestions);
+      if (toolCallId) this.permissionTools.set(requestId, toolCallId);
       throw new Error(`Unknown Claude permission option ${optionId}`);
+    }
+    // An approved, edited plan replaces the one shown for review, so the
+    // transcript matches what Claude was told to implement.
+    const tool = toolCallId ? this.tools.get(toolCallId) : undefined;
+    if (optionId !== CLAUDE_OPTION_DENY && toolCallId && tool?.name === 'ExitPlanMode' && typeof updatedInput?.plan === 'string') {
+      this.push({ type: 'plan_document', data: { planId: toolCallId, markdown: updatedInput.plan, status: 'ready', toolCallId } }, true);
     }
     this.push({
       type: 'permission_resolved',
@@ -885,6 +928,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
             toolName: ev.name,
             rawInput: ev.input,
             locations: toolLocations(ev.input),
+            content: claudeInputDiff(ev.name, ev.input),
             subagentId: ev.parentToolCallId,
           },
         }, true);
@@ -919,6 +963,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
           return;
         }
         this.pendingPermissions.set(ev.requestId, ev.suggestions);
+        if (ev.toolCallId) this.permissionTools.set(ev.requestId, ev.toolCallId);
         this.push({
           type: 'permission_request',
           data: {
@@ -942,6 +987,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
           return;
         }
         if (!this.pendingPermissions.delete(ev.requestId)) return;
+        this.permissionTools.delete(ev.requestId);
         this.push({ type: 'permission_resolved', data: { requestId: ev.requestId, decision: 'cancelled', by: 'agent' } }, true);
         return;
       case 'permission_denied':

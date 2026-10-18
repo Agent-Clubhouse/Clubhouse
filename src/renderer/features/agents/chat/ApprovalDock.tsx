@@ -6,10 +6,10 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import type { ChatCapabilities, ChatQuestion, ChatQuestionAnswers, PermissionOption, PermissionResponseExtras } from '../../../../shared/chat';
+import type { ChatCapabilities, ChatQuestion, ChatQuestionAnswers, PermissionOption, PermissionResponseExtras, ToolCallContent } from '../../../../shared/chat';
 import type { PendingPermission, PendingQuestion, PlanDocumentItem } from '../../../stores/chatStore';
 import { PlanIcon, QuestionIcon, ShieldIcon } from './icons';
-import { DiffCard } from './ToolBlocks';
+import { ApprovalDiffPreview } from './ToolBlocks';
 
 const ALLOW_KINDS = new Set<PermissionOption['kind']>(['allow_once', 'allow_session', 'allow_always']);
 const REJECT_KINDS = new Set<PermissionOption['kind']>(['reject_once', 'reject_always', 'cancel_turn']);
@@ -60,9 +60,13 @@ interface PermissionCardProps {
   onRespond: (requestId: string, optionId: string, extras?: PermissionResponseExtras) => Promise<boolean>;
   /** An answer is already in flight, possibly from another view of this agent. */
   busy?: boolean;
+  /** File changes the request's tool call would make; shown only when the request carries no content of its own. */
+  diffs?: DiffContent[];
 }
 
-export function PermissionCard({ request, plan, queueSize, agentName, extras, onRespond, busy }: PermissionCardProps) {
+type DiffContent = Extract<ToolCallContent, { type: 'diff' }>;
+
+export function PermissionCard({ request, plan, queueSize, agentName, extras, onRespond, busy, diffs }: PermissionCardProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [answeredHere, setAnswered] = useState(false);
   const answered = answeredHere || !!busy;
@@ -78,6 +82,16 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
   // With unsent text in the card, shortcuts on the card would throw it away, so they pause.
   const dirty = (canFeedback && feedback.trim() !== '') || planEdited;
   const editor = useRef<HTMLTextAreaElement>(null);
+  // One preview: what the request itself carries (#2159), else the linked tool call's diffs. Never both.
+  const hasContent = !!request.content?.length;
+  const previewDiffs = useMemo<DiffContent[]>(
+    () => (hasContent ? request.content!.filter((c): c is DiffContent => c.type === 'diff') : plan ? [] : diffs ?? []),
+    [hasContent, request.content, plan, diffs],
+  );
+  const previewTexts = useMemo(
+    () => (hasContent ? request.content!.flatMap((c) => (c.type === 'text' ? [c.text] : [])) : []),
+    [hasContent, request.content],
+  );
 
   useEffect(() => {
     if (editing) editor.current?.focus();
@@ -137,16 +151,13 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
         {queueSize > 1 && <span className="ml-auto text-[11.5px] font-normal text-ctp-overlay1 whitespace-nowrap">1 of {queueSize}</span>}
       </div>
       {/* Paths read best in monospace; the prose reasons Claude and Codex send don't. A request with a preview lists paths. */}
-      {request.description && <div className={`text-[12.5px] text-ctp-subtext0 pl-6 break-words ${request.content?.length ? 'font-mono' : ''}`} data-testid="chat-permission-description">{request.description}</div>}
-      {request.content && request.content.length > 0 && (
+      {request.description && <div className={`text-[12.5px] text-ctp-subtext0 pl-6 break-words ${hasContent ? 'font-mono' : ''}`} data-testid="chat-permission-description">{request.description}</div>}
+      {(previewDiffs.length > 0 || previewTexts.length > 0) && (
         <div className="pl-6 flex flex-col gap-1.5" data-testid="chat-permission-preview">
-          {request.content.map((c, i) =>
-            c.type === 'diff' ? (
-              <DiffCard key={i} diff={c} />
-            ) : c.type === 'text' ? (
-              <pre key={i} className="max-h-40 overflow-auto rounded-md bg-ctp-crust px-2.5 py-2 font-mono text-[11.5px] text-ctp-subtext1 whitespace-pre-wrap break-words">{c.text}</pre>
-            ) : null,
-          )}
+          <ApprovalDiffPreview diffs={previewDiffs} />
+          {previewTexts.map((text, i) => (
+            <pre key={i} className="max-h-40 overflow-auto rounded-md bg-ctp-crust px-2.5 py-2 font-mono text-[11.5px] text-ctp-subtext1 whitespace-pre-wrap break-words">{text}</pre>
+          ))}
         </div>
       )}
       <div className="flex flex-col gap-0.5 pl-5">

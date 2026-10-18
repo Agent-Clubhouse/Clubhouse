@@ -8,6 +8,7 @@ import {
   ClaudeChatDriver,
   claudeCapabilities,
   claudeImageInput,
+  claudeInputDiff,
   claudeQuestionInput,
   claudeTurnErrorCode,
   claudeContextWindow,
@@ -128,7 +129,7 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     const s = await start();
     expect(await s.send([{ type: 'text', text: 'hello' }], 'steer')).toBe('prompt');
     const ended = await drafts.waitFor('turn_ended');
-    expect(ended).toMatchObject({ turnId: 'turn-1', data: { stopReason: 'end_turn', costUsd: 0.0012, usage: { input: 10, cachedInput: 100, output: 5, total: 115 } } });
+    expect(ended).toMatchObject({ turnId: 'turn-1', data: { stopReason: 'end_turn', costUsd: 0.0012, usage: { input: 110, cachedInput: 100, output: 5, total: 115 } } });
     const turnTypes = drafts.all.filter((d) => d.turnId === 'turn-1').map((d) => d.type);
     expect(turnTypes).toEqual(['turn_started', 'agent_message_chunk', 'agent_message_chunk', 'agent_message', 'usage', 'usage', 'turn_ended']);
     const turnUsage = drafts.of('usage').filter((d) => d.turnId === 'turn-1');
@@ -137,6 +138,11 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
     // Context is the last main-loop call's prompt (2,000 + 30,000 cache read + 8,000 cache write)
     // against the model's window from modelUsage.
     expect(turnUsage[0].data).toMatchObject({ scope: 'turn', costIsEstimate: true, context: { used: 40_000, size: 200_000 } });
+    // TokenUsage.input is the total input, cache included, for turn and session totals alike (#2170).
+    for (const u of turnUsage) {
+      const t = u.data.tokens;
+      if (t) expect(t.input).toBe((t.total ?? 0) - (t.output ?? 0));
+    }
     expect(s.nativeSessionId).toBe('fake-session-1');
     // system/init arrives with the first prompt: native id and model via session_info.
     // ...and the MCP servers it loaded, in the shared status words (#2093).
@@ -378,7 +384,7 @@ describe('Claude contract mapping helpers', () => {
   it('offers "always" only when Claude suggests a rule', () => {
     expect(claudePermissionOptions([]).map((o) => o.kind)).toEqual(['allow_once', 'reject_once']);
     expect(claudePermissionOptions([{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }])[1]).toMatchObject({
-      kind: 'allow_always', scope: 'acceptEdits mode',
+      kind: 'allow_always', scope: 'Auto-accept edits',
     });
   });
 });
@@ -789,6 +795,61 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     await expect(claudeImageInput({ type: 'image', mimeType: 'image/tiff', data: 'AA' })).rejects.toThrow(/image\/tiff/);
     fs.rmSync(path.dirname(file), { recursive: true, force: true });
   });
+
+  it('attaches the input diff to a pending Edit call', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'edit' }], 'prompt');
+    transport.emit({ kind: 'tool_call', toolCallId: 'toolu_edit', name: 'Edit', input: { file_path: '/work/PRINCIPLES.md', old_string: '2026-10-18', new_string: '2026-10-19' } });
+    const call = await drafts.waitFor('tool_call');
+    expect(call.data).toMatchObject({ status: 'pending', content: [{ type: 'diff', path: '/work/PRINCIPLES.md', oldText: '2026-10-18', newText: '2026-10-19' }] });
+  });
+
+  it('re-emits the plan document with the edited text when an edited plan is approved (#2167)', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'plan' }], 'prompt');
+    transport.emit({ kind: 'tool_call', toolCallId: 'toolu_plan', name: 'ExitPlanMode', input: { plan: 'Ship on 2026-10-18' } });
+    transport.emit({ kind: 'permission_request', requestId: 'p1', toolName: 'ExitPlanMode', toolCallId: 'toolu_plan', input: { plan: 'Ship on 2026-10-18' }, suggestions: [] });
+    await drafts.waitFor('permission_request');
+    await session.respondPermission('p1', 'allow', { updatedInput: { plan: 'Ship on 2026-10-19' } });
+    await drafts.waitFor('permission_resolved');
+    const plans = drafts.of('plan_document');
+    expect(plans.map((p) => p.data.markdown)).toEqual(['Ship on 2026-10-18', 'Ship on 2026-10-19']);
+    expect(plans[1].data).toMatchObject({ planId: 'toolu_plan', toolCallId: 'toolu_plan', status: 'ready' });
+    // The updated plan comes before the resolution, so the card is current when it's marked approved.
+    const types = drafts.types();
+    expect(types.lastIndexOf('plan_document')).toBeLessThan(types.lastIndexOf('permission_resolved'));
+  });
+
+  it('leaves the plan alone when it is denied or approved unedited', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'plan' }], 'prompt');
+    transport.emit({ kind: 'tool_call', toolCallId: 'toolu_plan', name: 'ExitPlanMode', input: { plan: 'P' } });
+    transport.emit({ kind: 'permission_request', requestId: 'p1', toolName: 'ExitPlanMode', toolCallId: 'toolu_plan', input: { plan: 'P' }, suggestions: [] });
+    await drafts.waitFor('permission_request');
+    await session.respondPermission('p1', 'deny', { message: 'no' });
+    await drafts.waitFor('permission_resolved');
+    expect(drafts.of('plan_document')).toHaveLength(1);
+  });
+});
+
+describe('Claude chat UI fixes (chat-itest-2026-10-18)', () => {
+  it('previews Edit, MultiEdit and Write changes from the tool input (#2168)', () => {
+    expect(claudeInputDiff('Edit', { file_path: '/p/PRINCIPLES.md', old_string: 'a', new_string: 'b' }))
+      .toEqual([{ type: 'diff', path: '/p/PRINCIPLES.md', oldText: 'a', newText: 'b' }]);
+    expect(claudeInputDiff('MultiEdit', { file_path: '/p/x.ts', edits: [{ old_string: '1', new_string: '2' }, { old_string: '3', new_string: '4' }] }))
+      .toHaveLength(2);
+    const write = claudeInputDiff('Write', { file_path: '/p/new.md', content: 'one\ntwo\n' });
+    expect(write).toEqual([{ type: 'diff', path: '/p/new.md', newText: 'one\ntwo\n', unifiedDiff: '@@ -0,0 +1,2 @@\n+one\n+two' }]);
+    expect(claudeInputDiff('Bash', { command: 'ls' })).toBeUndefined();
+    expect(claudeInputDiff('Edit', { old_string: 'a', new_string: 'b' })).toBeUndefined();
+  });
+
+  it('names an always-allow mode switch by its level (#2169)', () => {
+    const [, always] = claudePermissionOptions([{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }]);
+    expect(always.scope).toBe('Auto-accept edits');
+    expect(claudePermissionOptions([{ type: 'setMode', mode: 'bypassPermissions', destination: 'session' }])[1].scope).toBe('Full access');
+  });
+
 });
 
 describe('Claude usage helpers', () => {

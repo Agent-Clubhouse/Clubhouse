@@ -22,6 +22,7 @@ import type {
   ChatDriverId,
   ChatEvent,
   ChatEventDataMap,
+  ChatQuestion,
   ChatQuestionAnswers,
   ChatSessionState,
   ContentBlock,
@@ -119,6 +120,19 @@ export interface PlanDocumentItem extends ChatItemBase {
   markdown: string;
   status: 'streaming' | 'ready';
   toolCallId?: string;
+  /** Set when the permission request for this plan's tool call was answered. */
+  decision?: 'approved' | 'rejected';
+}
+
+/** A question the agent asked, kept in the transcript with its answer once given. */
+export interface QuestionItem extends ChatItemBase {
+  kind: 'question';
+  requestId: string;
+  questions: ChatQuestion[];
+  /** The tool call the question rides on (e.g. Claude's AskUserQuestion), shown as this row instead. */
+  toolCallId?: string;
+  answers?: ChatQuestionAnswers;
+  cancelled?: boolean;
 }
 
 /** Closes a turn: drives the turn footer (duration, usage) and turn-failure states. */
@@ -146,6 +160,7 @@ export type ChatItem =
   | NoticeItem
   | ErrorItem
   | PlanDocumentItem
+  | QuestionItem
   | TurnEndItem
   | SessionDividerItem;
 
@@ -626,22 +641,48 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const pendingPermissions = state.pendingPermissions.filter((p) => p.requestId !== req.requestId);
       return { ...state, pendingPermissions: [...pendingPermissions, req] };
     }
-    case 'permission_resolved':
-      return {
-        ...state,
-        pendingPermissions: state.pendingPermissions.filter((p) => p.requestId !== event.data.requestId),
-      };
+    case 'permission_resolved': {
+      const resolved = state.pendingPermissions.find((p) => p.requestId === event.data.requestId);
+      const pendingPermissions = state.pendingPermissions.filter((p) => p.requestId !== event.data.requestId);
+      // A plan approval (or denial) settles the plan card for that tool call.
+      const decision = event.data.decision === 'allow' ? 'approved' : event.data.decision === 'deny' ? 'rejected' : undefined;
+      const toolCallId = resolved?.toolCallId;
+      if (!decision || !toolCallId) return { ...state, pendingPermissions };
+      if (!state.items.some((item) => item.kind === 'plan_document' && item.toolCallId === toolCallId)) {
+        return { ...state, pendingPermissions };
+      }
+      const items = state.items.map((item): ChatItem =>
+        item.kind === 'plan_document' && item.toolCallId === toolCallId ? { ...item, decision } : item);
+      return { ...state, pendingPermissions, items };
+    }
     case 'question': {
       const q: PendingQuestion = { ...event.data, ts: event.ts };
       if (event.turnId) q.turnId = event.turnId;
       const pendingQuestions = state.pendingQuestions.filter((p) => p.requestId !== q.requestId);
-      return { ...state, pendingQuestions: [...pendingQuestions, q] };
+      const id = `question:${sid}:${event.data.requestId}`;
+      const items = upsertItem<QuestionItem>(
+        state.items,
+        id,
+        () => {
+          const item: QuestionItem = { ...itemBase(event, id), kind: 'question', requestId: event.data.requestId, questions: event.data.questions };
+          if (event.data.toolCallId !== undefined) item.toolCallId = event.data.toolCallId;
+          return item;
+        },
+        (existing) => ({ ...existing, questions: event.data.questions }),
+      );
+      return { ...state, items, pendingQuestions: [...pendingQuestions, q] };
     }
-    case 'question_resolved':
-      return {
-        ...state,
-        pendingQuestions: state.pendingQuestions.filter((p) => p.requestId !== event.data.requestId),
-      };
+    case 'question_resolved': {
+      const id = `question:${sid}:${event.data.requestId}`;
+      const idx = findItemIndex(state.items, id);
+      const pendingQuestions = state.pendingQuestions.filter((p) => p.requestId !== event.data.requestId);
+      if (idx === -1) return { ...state, pendingQuestions };
+      const items = state.items.slice();
+      const answered: QuestionItem = { ...(items[idx] as QuestionItem), answers: event.data.answers };
+      if (event.data.cancelled) answered.cancelled = true;
+      items[idx] = answered;
+      return { ...state, items, pendingQuestions };
+    }
 
     case 'plan':
       return { ...state, plan: event.data.entries };

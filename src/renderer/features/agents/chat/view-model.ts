@@ -6,6 +6,7 @@
  * id (docs/structured-chat-research.md §7, "Capabilities, not provider checks").
  */
 
+import { PERMISSION_LEVEL_LABELS } from '../../../../shared/chat';
 import type { ChatCapabilities, PermissionLevel, ToolCallContent } from '../../../../shared/chat';
 import type { ChatItem, ChatViewState, PendingPermission, PlanDocumentItem, SubagentInfo, ToolCallItem, TurnEndItem } from '../../../stores/chatStore';
 
@@ -56,7 +57,15 @@ export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagent
     top.push({ type: 'subagent', key: `sub:${info.subagentId}`, info, ...(tool && { tool }), children: childrenOf.get(info.subagentId) ?? [] });
   };
 
+  // A question row or plan card already stands for its tool call (Claude's
+  // AskUserQuestion, ExitPlanMode); don't show the call's raw input as well.
+  const shownElsewhere = new Set<string>();
   for (const item of items) {
+    if ((item.kind === 'question' || item.kind === 'plan_document') && item.toolCallId) shownElsewhere.add(item.toolCallId);
+  }
+
+  for (const item of items) {
+    if (item.kind === 'tool_call' && shownElsewhere.has(item.toolCallId)) continue;
     const subId = 'subagentId' in item ? item.subagentId : undefined;
     if (nestSubagents && subId && childrenOf.has(subId)) {
       childrenOf.get(subId)!.push(item);
@@ -330,13 +339,7 @@ export function composerModes(caps: ChatCapabilities | null, running: boolean): 
   return { primary: 'queue', secondary: null, canStop };
 }
 
-export const LEVEL_LABELS: Record<PermissionLevel, string> = {
-  plan: 'Plan',
-  ask: 'Ask first',
-  auto_edit: 'Auto-accept edits',
-  auto: 'Auto',
-  full_access: 'Full access',
-};
+export const LEVEL_LABELS: Readonly<Record<PermissionLevel, string>> = PERMISSION_LEVEL_LABELS;
 
 export const LEVEL_DESCRIPTIONS: Record<PermissionLevel, string> = {
   plan: 'Reads and plans, changes nothing',
@@ -363,6 +366,20 @@ export function isSessionEnded(state: ChatViewState): boolean {
     if (it.kind === 'turn_end' || it.kind === 'user_message') return false;
   }
   return false;
+}
+
+/**
+ * The file changes a permission request would allow: the diff content of its
+ * tool call, whichever driver supplied it (Claude from the tool input, ACP
+ * from the tool_call content). Empty when there's nothing to preview.
+ */
+export function diffsForRequest(items: ChatItem[], req: PendingPermission): Array<Extract<ToolCallContent, { type: 'diff' }>> {
+  if (!req.toolCallId) return [];
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === 'tool_call' && it.toolCallId === req.toolCallId) return diffContent(it);
+  }
+  return [];
 }
 
 /** The plan document a permission request approves, if it's a plan approval. */

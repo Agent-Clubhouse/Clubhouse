@@ -105,8 +105,21 @@ function useOpenState(defaultOpen: boolean, expansionKey?: string): [boolean, ()
   return [open, toggle];
 }
 
+/**
+ * Tool calls with a permission request still waiting for an answer. A call
+ * can be `pending` without one (e.g. auto-approved under Full access, not
+ * started yet); only these get "waiting for approval". ChatStream provides it.
+ */
+export const AwaitingApprovalContext = createContext<ReadonlySet<string>>(new Set());
+
+function useAwaitingApproval(tool: ToolCallItem): boolean {
+  const awaiting = useContext(AwaitingApprovalContext);
+  return tool.status === 'pending' && awaiting.has(tool.toolCallId);
+}
+
 function StatusMeta({ tool }: { tool: ToolCallItem }) {
-  if (tool.status === 'pending') return <span className="text-ctp-warning">waiting for approval</span>;
+  const awaiting = useAwaitingApproval(tool);
+  if (tool.status === 'pending') return awaiting ? <span className="text-ctp-warning">waiting for approval</span> : <span>starting</span>;
   if (tool.status === 'in_progress') return <><Spin /> running</>;
   if (tool.status === 'failed') return <span className="text-ctp-error">failed</span>;
   if (tool.status === 'cancelled') return <span>cancelled</span>;
@@ -116,7 +129,7 @@ function StatusMeta({ tool }: { tool: ToolCallItem }) {
 export function ToolRow({ tool }: { tool: ToolCallItem }) {
   const Ico = KIND_ICONS[tool.toolKind] ?? ToolIcon;
   const target = toolTarget(tool);
-  const pending = tool.status === 'pending';
+  const pending = useAwaitingApproval(tool);
   const error = toolErrorText(tool);
   return (
     <div className="flex flex-col" data-testid="chat-tool-row" data-status={tool.status}>
@@ -206,19 +219,23 @@ const DIFF_PREVIEW_LINES = 40;
  * A file edit. In the transcript it collapses to its header (pass `open` and
  * `onToggle`); elsewhere (Changes, review, run insets) it is always open.
  */
-export function DiffCard({ diff, line, status, open = true, onToggle }: {
+export function DiffCard({ diff, line, status, awaitingApproval = false, open = true, onToggle, previewLines = DIFF_PREVIEW_LINES }: {
   diff: Extract<ToolCallContent, { type: 'diff' }>;
   line?: number;
   status?: ToolCallItem['status'];
+  /** Its tool call has a permission request waiting for an answer. */
+  awaitingApproval?: boolean;
   open?: boolean;
   onToggle?: () => void;
+  /** Lines shown before "Show all". */
+  previewLines?: number;
 }) {
   const lines = useMemo(() => diffLines(diff, line), [diff, line]);
   const { added, removed } = useMemo(() => diffStats(lines), [lines]);
   const [expanded, setExpanded] = useState(false);
   const created = diff.oldText === undefined && !diff.unifiedDiff;
   const deleted = diff.newText === undefined && !diff.unifiedDiff && diff.oldText !== undefined;
-  const shown = expanded ? lines : lines.slice(0, DIFF_PREVIEW_LINES);
+  const shown = expanded ? lines : lines.slice(0, previewLines);
   return (
     <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-diff-card" data-open={open}>
       <CardHeader open={open} onToggle={onToggle} label={`${open ? 'Collapse' : 'Expand'} edit of ${diff.path}`}>
@@ -227,11 +244,11 @@ export function DiffCard({ diff, line, status, open = true, onToggle }: {
         <span className="font-mono text-[11.5px] text-ctp-text truncate min-w-0" title={diff.path}>{diff.path}</span>
         <span className="font-mono text-[11.5px] text-ctp-success">+{added}</span>
         <span className="font-mono text-[11.5px] text-ctp-error">−{removed}</span>
-        {status === 'pending' && <span className="ml-auto text-[11.5px] text-ctp-warning">waiting for approval</span>}
+        {awaitingApproval && <span className="ml-auto text-[11.5px] text-ctp-warning">waiting for approval</span>}
         {status === 'failed' && <span className="ml-auto text-[11.5px] text-ctp-error">failed</span>}
       </CardHeader>
       {open && <DiffBody lines={shown} />}
-      {open && lines.length > DIFF_PREVIEW_LINES && (
+      {open && lines.length > previewLines && (
         <button type="button" className="w-full text-[11.5px] text-ctp-overlay1 hover:text-ctp-text py-1 border-t border-surface-0" onClick={() => setExpanded((e) => !e)}>
           {expanded ? 'Show less' : `Show all ${lines.length} lines`}
         </button>
@@ -240,10 +257,28 @@ export function DiffCard({ diff, line, status, open = true, onToggle }: {
   );
 }
 
+/** Diff lines an approval card shows per file before "Show all". */
+const APPROVAL_PREVIEW_LINES = 12;
+
+/**
+ * What a permission request would change, for the approval card: one compact
+ * diff per file from generic diff content, so any driver's edit requests
+ * (Claude Edit/MultiEdit/Write, ACP diffs) preview the same way.
+ */
+export function ApprovalDiffPreview({ diffs }: { diffs: Array<Extract<ToolCallContent, { type: 'diff' }>> }) {
+  if (diffs.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto" data-testid="chat-permission-diff">
+      {diffs.map((d, i) => <DiffCard key={`${d.path}:${i}`} diff={d} previewLines={APPROVAL_PREVIEW_LINES} />)}
+    </div>
+  );
+}
+
 /** A diff card in the transcript: collapsed to its header until opened. */
-function TranscriptDiffCard({ diff, line, status, expansionKey }: { diff: Extract<ToolCallContent, { type: 'diff' }>; line?: number; status: ToolCallItem['status']; expansionKey?: string }) {
-  const [open, toggle] = useToolOpen(status, expansionKey);
-  return <DiffCard diff={diff} line={line} status={status} open={open} onToggle={toggle} />;
+function TranscriptDiffCard({ diff, line, tool, expansionKey }: { diff: Extract<ToolCallContent, { type: 'diff' }>; line?: number; tool: ToolCallItem; expansionKey?: string }) {
+  const [open, toggle] = useToolOpen(tool.status, expansionKey);
+  const awaiting = useAwaitingApproval(tool);
+  return <DiffCard diff={diff} line={line} status={tool.status} awaitingApproval={awaiting} open={open} onToggle={toggle} />;
 }
 
 /** Output lines kept visible; older lines scroll inside the card. */
@@ -254,6 +289,7 @@ export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expans
   const term = useMemo(() => terminalContent(tool), [tool]);
   const command = useMemo(() => commandOf(tool), [tool]);
   const [open, toggle] = useToolOpen(tool.status, expansionKey);
+  const awaiting = useAwaitingApproval(tool);
   const running = tool.status === 'in_progress';
   const exit = term?.exitCode;
   const error = toolErrorText(tool, term?.output);
@@ -264,7 +300,7 @@ export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expans
         <span className="font-mono text-[11.5px] text-ctp-text truncate min-w-0" title={command}>$ {command}</span>
         <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap">
           {running ? <><Spin /> running</>
-            : tool.status === 'pending' ? <span className="text-ctp-warning">waiting for approval</span>
+            : awaiting ? <span className="text-ctp-warning">waiting for approval</span>
               : exit !== undefined ? <><span className={exit === 0 ? 'text-ctp-success font-mono' : 'text-ctp-error font-mono'}>exit {exit}</span>{tool.durationMs !== undefined && <span>· {formatDuration(tool.durationMs)}</span>}</>
                 : <StatusMeta tool={tool} />}
         </span>
@@ -332,7 +368,7 @@ export function ToolCallView({ tool, mcpServers, expansionKey }: { tool: ToolCal
     const error = toolErrorText(tool);
     return (
       <>
-        {diffs.map((d, i) => <TranscriptDiffCard key={`${d.path}:${i}`} diff={d} line={tool.locations?.[0]?.line} status={tool.status} expansionKey={expansionKey && `${expansionKey}:diff:${i}`} />)}
+        {diffs.map((d, i) => <TranscriptDiffCard key={`${d.path}:${i}`} diff={d} line={tool.locations?.[0]?.line} tool={tool} expansionKey={expansionKey && `${expansionKey}:diff:${i}`} />)}
         {error && <div className="text-[12px] text-ctp-error">{error}</div>}
       </>
     );

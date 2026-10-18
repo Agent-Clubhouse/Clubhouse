@@ -8,12 +8,14 @@ import {
   ErrorRow,
   NoticeRow,
   PlanDocumentCard,
+  QuestionRow,
   SessionDivider,
   ThoughtRow,
   TurnFooter,
   UserMessage,
 } from './MessageBlocks';
 import {
+  AwaitingApprovalContext,
   createTranscriptExpansionStore,
   ExploreGroup,
   SubagentCard,
@@ -110,6 +112,7 @@ function BlockBody({ block, turnNumber, capabilities, mcpServers, preformatted }
     case 'thought': return <ThoughtRow item={item} />;
     case 'tool_call': return <ToolCallView tool={item} mcpServers={mcpServers} expansionKey={`${block.key}:tool`} />;
     case 'plan_document': return <PlanDocumentCard item={item} />;
+    case 'question': return <QuestionRow item={item} />;
     case 'notice': return <NoticeRow item={item} />;
     case 'error': return <ErrorRow item={item} />;
     case 'turn_end': return <TurnFooter item={item} turnNumber={turnNumber} capabilities={capabilities} />;
@@ -325,7 +328,12 @@ const ChatStreamInner = memo(function ChatStreamInner({
     setWindowStart(tailStart);
   };
 
+  // Tool calls whose permission request is still open (only those say "waiting for approval").
+  const awaitingKey = state.pendingPermissions.map((p) => p.toolCallId ?? '').join('\n');
+  const awaiting = useMemo(() => new Set(awaitingKey.split('\n').filter(Boolean)), [awaitingKey]);
+
   return (
+    <AwaitingApprovalContext.Provider value={awaiting}>
     <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-7 pt-5 pb-2.5" data-testid="chat-stream">
       <div className="mx-auto w-full max-w-[740px] flex flex-col gap-2.5 min-h-full justify-end">
         {announce && <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="chat-live-region">{announcement}</div>}
@@ -389,5 +397,6 @@ const ChatStreamInner = memo(function ChatStreamInner({
         )}
       </div>
     </div>
+    </AwaitingApprovalContext.Provider>
   );
 });

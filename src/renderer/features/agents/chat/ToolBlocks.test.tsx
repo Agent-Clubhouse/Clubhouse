@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ToolCallItem } from '../../../stores/chatStore';
-import { DiffCard, ToolCallView } from './ToolBlocks';
+import { ApprovalDiffPreview, AwaitingApprovalContext, DiffCard, ToolCallView } from './ToolBlocks';
 
 function tool(over: Partial<ToolCallItem>): ToolCallItem {
   return {
@@ -139,10 +139,30 @@ describe('tool calls in the transcript (#2110)', () => {
     });
 
     it('opens calls waiting for approval', () => {
-      render(<ToolCallView tool={edit({ status: 'pending' })} />);
+      render(
+        <AwaitingApprovalContext.Provider value={new Set(['t-1'])}>
+          <ToolCallView tool={edit({ status: 'pending' })} />
+        </AwaitingApprovalContext.Provider>,
+      );
       const card = screen.getByTestId('chat-diff-card');
       expect(card).toHaveAttribute('data-open', 'true');
       expect(card).toHaveTextContent('waiting for approval');
+    });
+
+    it('says "waiting for approval" only when a permission request is open (#2171)', () => {
+      const { unmount } = render(<ToolCallView tool={edit({ status: 'pending' })} />);
+      expect(screen.getByTestId('chat-diff-card')).not.toHaveTextContent('waiting for approval');
+      unmount();
+      const cmd = command({ status: 'pending' });
+      const r2 = render(<ToolCallView tool={cmd} />);
+      expect(screen.getByTestId('chat-command-card')).not.toHaveTextContent('waiting for approval');
+      r2.unmount();
+      render(
+        <AwaitingApprovalContext.Provider value={new Set([cmd.toolCallId])}>
+          <ToolCallView tool={cmd} />
+        </AwaitingApprovalContext.Provider>,
+      );
+      expect(screen.getByTestId('chat-command-card')).toHaveTextContent('waiting for approval');
     });
 
     it('opens a running call when it fails', () => {
@@ -220,5 +240,25 @@ describe('tool errors (#2182, #2184)', () => {
     render(<ToolCallView tool={command({ status: 'failed', error: 'Exit code 1\nnpm ERR! missing script: typo', content: [{ type: 'terminal', terminalId: 'term-1', command: 'npm run typo', output: out, exitCode: 1 }] })} />);
     expect(screen.getByTestId('chat-command-card')).toHaveTextContent('npm ERR! missing script: typo');
     expect(screen.queryByTestId('chat-tool-error')).toBeNull();
+  });
+});
+
+describe('ApprovalDiffPreview (#2168)', () => {
+  it('previews each file compactly, from generic diff content', () => {
+    const many = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n');
+    render(<ApprovalDiffPreview diffs={[
+      { type: 'diff', path: 'a.md', oldText: 'old', newText: 'new' },
+      { type: 'diff', path: 'b.md', newText: many, unifiedDiff: `@@ -0,0 +1,30 @@\n${many.split('\n').map((l) => `+${l}`).join('\n')}` },
+    ]} />);
+    const cards = screen.getAllByTestId('chat-diff-card');
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toHaveTextContent('a.md');
+    expect(cards[1]).not.toHaveTextContent('Created');
+    expect(within(cards[1]).getByText('Show all 31 lines')).toBeInTheDocument();
+  });
+
+  it('renders nothing without diffs', () => {
+    const { container } = render(<ApprovalDiffPreview diffs={[]} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });
