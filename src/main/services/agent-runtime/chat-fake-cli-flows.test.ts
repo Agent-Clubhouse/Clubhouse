@@ -62,7 +62,7 @@ afterEach(async () => {
   await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
-async function startRuntime(p: Provider, fixture: string) {
+async function startRuntime(p: Provider, fixture: string, onNativeSessionId?: (id: string) => void) {
   const report = path.join(tmp, 'report.json');
   const shims = await writeFakeCliShims(path.join(tmp, 'bin'), {
     [p.cli]: { fixture: chatFixturePath(p.cli, fixture), report },
@@ -77,6 +77,7 @@ async function startRuntime(p: Provider, fixture: string) {
     cwd,
     level: 'ask',
     idleTimeoutMs: 0,
+    onNativeSessionId,
     startSession: (resumeId) => driver.start({
       agentId: 'agent-1', provider: p.provider, cwd, binaryPath: shims[p.cli], level: 'ask', resumeNativeSessionId: resumeId,
     }),
@@ -103,6 +104,14 @@ async function expectFixtureComplete(readReport: () => Promise<FakeCliReport>): 
     expect(r.complete).toBe(true);
   }, { timeout: 10_000, interval: 20 });
 }
+
+describe('codex chat session id (#2132)', () => {
+  it('reports the thread/start id, which chat-spawn saves as the resume id', async () => {
+    const onNativeSessionId = vi.fn();
+    await startRuntime(PROVIDERS.find((p) => p.cli === 'codex')!, 'multi-turn', onNativeSessionId);
+    expect(onNativeSessionId).toHaveBeenCalledWith('019a0000-0000-7000-8000-00000000c001');
+  });
+});
 
 describe.each(PROVIDERS)('$cli chat over the fake CLI (the E2E flows)', (p) => {
   it('multi-turn: two sends stream replies and each turn ends', async () => {

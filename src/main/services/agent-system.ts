@@ -239,6 +239,19 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     }
     facts.model = params.model;
 
+    // A saved id the CLI's own store doesn't have (Codex agents saved made-up
+    // ids before #2113, #2132): start fresh instead of resuming nothing.
+    if (params.kind === 'durable' && params.resume && params.sessionId && isSessionCapable(provider) && provider.hasSession) {
+      const exists = await provider.hasSession(params.sessionId, profileEnv).catch((): undefined => undefined);
+      if (exists === false) {
+        appLog('core:agent', 'warn', 'Saved session is gone from the CLI store; starting fresh', {
+          meta: { agentId: params.agentId, sessionId: params.sessionId },
+        });
+        await clearResume(params.projectPath, params.agentId, params.sessionId, 'not_found');
+        params = { ...params, resume: false, sessionId: undefined };
+      }
+    }
+
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
 
     // Chat runtime (experimental): durable agents whose provider is set to
@@ -535,7 +548,7 @@ async function spawnPtyAgent(
       // A kill nobody asked for through killAgent is Clubhouse's own (quitting): no reason to show.
       if (kill || !killed) void recordSleep(params.projectPath, exitAgentId, sleepInfoForExit(kill, exitCode));
       const capture = captureSessionOnExit(params, provider, exitAgentId, {
-        exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt,
+        exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt, profileEnv,
       });
       if (capture) pendingSessionCaptures.set(exitAgentId, capture);
     }
@@ -550,17 +563,28 @@ const RESUME_ERROR_TAIL = 2_000;
 /**
  * Record the CLI session a durable agent's terminal run ended on, so the next
  * wake can resume it. Only an id the CLI actually reported is saved (#2086):
- * the one it printed, or the one it was resumed with when it exited cleanly.
+ * the one it printed, the one its own store recorded for this run (Codex
+ * prints none, #2132), or the one it was resumed with when it exited cleanly.
  * A resume that failed (the CLI said the session is gone, or it quit right
  * away on its own) clears the resume id instead, so the next wake starts fresh.
- * Returns the config write, if any.
+ * Resolves once the config write, if any, is done.
  */
 function captureSessionOnExit(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
   agentId: string,
-  { exitCode, buffer, killed, runMs }: { exitCode: number; buffer?: string; killed: boolean; runMs: number },
-): Promise<void> | undefined {
+  exit: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string> },
+): Promise<void> {
+  // Async: the id may come from the CLI's own session files (it never rejects; failures are logged).
+  return captureSession(params, provider, agentId, exit);
+}
+
+async function captureSession(
+  params: SpawnAgentParams,
+  provider: OrchestratorProvider,
+  agentId: string,
+  { exitCode, buffer, killed, runMs, profileEnv }: { exitCode: number; buffer?: string; killed: boolean; runMs: number; profileEnv?: Record<string, string> },
+): Promise<void> {
   const resumedId = params.resume ? params.sessionId : undefined;
   // Only a resume that quit on its own with an error can have failed to resume.
   const failedResume = !!resumedId && exitCode !== 0 && !killed;
@@ -574,6 +598,11 @@ function captureSessionOnExit(
     }
     let sessionId: string | null = null;
     if (buffer && isSessionCapable(provider)) sessionId = provider.extractSessionId(buffer);
+    // A resume that failed wrote no session of its own, so there's nothing to look up.
+    if (!sessionId && !failedResume && isSessionCapable(provider) && provider.findRunSession) {
+      const endedAt = Date.now();
+      sessionId = await provider.findRunSession({ cwd: params.cwd, startedAt: endedAt - runMs, endedAt, resumedId, profileEnv });
+    }
     if (!sessionId && resumedId && exitCode === 0) sessionId = resumedId;
     if (!sessionId) {
       if (failedResume && runMs < RESUME_EARLY_EXIT_MS) {

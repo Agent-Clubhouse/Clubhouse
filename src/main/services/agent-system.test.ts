@@ -276,6 +276,8 @@ function notSessionCapable(provider: Record<string, unknown>): void {
   delete provider.listSessions;
   delete provider.readSessionTranscript;
   delete provider.extractSessionId;
+  delete provider.findRunSession;
+  delete provider.hasSession;
 }
 
 describe('agent-system', () => {
@@ -1059,6 +1061,78 @@ describe('agent-system', () => {
       expect(mockUpdateSessionId).not.toHaveBeenCalled();
       const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
       expect(spawnArgs).toMatchObject({ resume: true, sessionId: DEAD });
+    });
+
+    describe('Codex runs that print no id (#2132)', () => {
+      beforeEach(() => sessionCapable(mockCodexProvider));
+
+      it('saves the session the CLI recorded for this run', async () => {
+        config = {};
+        const findRunSession = vi.fn(async () => REAL);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = findRunSession;
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, '\x1b[?25h\x1b[?2026l');
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
+        const [run] = findRunSession.mock.calls[0] as unknown as [{ cwd: string; startedAt: number; endedAt: number; resumedId?: string }];
+        expect(run.cwd).toBe('/project');
+        expect(run.endedAt).toBeGreaterThanOrEqual(run.startedAt);
+        expect(run.resumedId).toBeUndefined();
+      });
+
+      it('passes the resumed id, and skips the lookup when the resume failed', async () => {
+        const findRunSession = vi.fn(async () => DEAD);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = findRunSession;
+        const first = await wake('codex-cli');
+        first.onExit('agent-1', 0, 'bye');
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalled());
+        expect(findRunSession.mock.calls[0]).toEqual([expect.objectContaining({ resumedId: DEAD })]);
+
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+          findRunSession.mockClear();
+          const second = await wake('codex-cli');
+          vi.setSystemTime(Date.now() + 60_000);
+          second.onExit('agent-1', 1, 'crash');
+          await settle();
+          expect(findRunSession).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('saves nothing when the store has no session for the run', async () => {
+        config = {};
+        (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => null);
+        const { onExit } = await wake('codex-cli');
+        onExit('agent-1', 0, 'bye');
+        await settle();
+        expect(mockAddSessionEntry).not.toHaveBeenCalled();
+      });
+
+      it('starts fresh when the saved id has no rollout, and clears it', async () => {
+        (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);
+        const { resumedWith } = await wake('codex-cli');
+        expect(resumedWith).toBe(DEAD);
+        expect(mockUpdateSessionId).toHaveBeenCalledWith('/project', 'agent-1', null);
+        expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+          IPC.CHAT.RUNTIME_NOTICE, 'agent-1', expect.objectContaining({ code: 'resume_session_missing' }),
+        );
+        const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+        expect(spawnArgs.resume).toBe(false);
+        expect(spawnArgs.sessionId).toBeUndefined();
+        expect(mockTryStartChatAgent.mock.calls.at(-1)![0]).toMatchObject({ resume: false, sessionId: undefined });
+      });
+
+      it('keeps resuming when the rollout exists or the store can\'t be read', async () => {
+        for (const answer of [true, undefined]) {
+          mockUpdateSessionId.mockClear();
+          (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => answer);
+          await wake('codex-cli');
+          expect(mockUpdateSessionId).not.toHaveBeenCalled();
+          const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+          expect(spawnArgs).toMatchObject({ resume: true, sessionId: DEAD });
+        }
+      });
     });
 
     it('does not clear an id that a newer run has replaced', async () => {
