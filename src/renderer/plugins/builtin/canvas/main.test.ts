@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { validateBuiltinPlugin } from '../builtin-plugin-testing';
 import { manifest } from './manifest';
@@ -673,5 +673,117 @@ describe('canvas main', () => {
     }
     useUIStore.setState({ activeHostId: null });
     useRemoteProjectStore.setState({ remoteAppCanvasState: {} });
+  });
+
+  // #2076 re-verification: switching between local and a remote host must
+  // keep local edits and never write anything of the satellite's locally.
+  describe('switching the app canvas between local and a remote host', () => {
+    const REMOTE = {
+      canvases: [{ id: 'REMOTE-CANVAS', name: 'Remote', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0 }],
+      activeCanvasId: 'REMOTE-CANVAS',
+      wireDefinitions: [{ agentId: 'REMOTE-AGENT', targetId: 'remote-target', targetKind: 'agent', label: 'Remote wire' }],
+      zoneWireDefinitions: [{ id: 'REMOTE-ZONE-WIRE', sourceZoneId: 'z', targetId: 't', targetType: 'agent' }],
+    };
+    const sleep = (ms: number) => act(async () => { await new Promise((r) => setTimeout(r, ms)); });
+
+    function appSetup() {
+      const files = new Map<string, unknown>();
+      const slow = new Map<string, number>();
+      const storage = {
+        read: vi.fn(async (key: string) => {
+          const ms = slow.get(key);
+          if (ms) await new Promise((r) => setTimeout(r, ms));
+          return files.get(key);
+        }),
+        write: vi.fn(async (key: string, value: unknown) => { files.set(key, value); }),
+        delete: vi.fn(async (key: string) => { files.delete(key); }),
+        list: vi.fn(async () => [...files.keys()]),
+      };
+      const api = createMockAPI({
+        context: { mode: 'app', projectId: undefined, projectPath: undefined },
+        storage: { project: storage, projectLocal: storage, global: storage },
+      });
+      const store = canvasModule.useAppCanvasStore;
+      const wireReads = () => storage.read.mock.calls.filter(([k]) => k === 'canvas-wires').length;
+      const nothingRemoteSaved = () => {
+        const saved = JSON.stringify([...files.entries()]);
+        expect(saved).not.toContain('REMOTE-CANVAS');
+        expect(saved).not.toContain('REMOTE-AGENT');
+        expect(saved).not.toContain('REMOTE-ZONE-WIRE');
+      };
+      const goRemote = () => act(() => {
+        useRemoteProjectStore.setState({ remoteAppCanvasState: { 'sat-1': REMOTE } });
+        useUIStore.setState({ activeHostId: 'sat-1' });
+      });
+      const goLocal = () => act(() => { useUIStore.setState({ activeHostId: null }); });
+      return { files, slow, storage, api, store, wireReads, nothingRemoteSaved, goRemote, goLocal };
+    }
+
+    async function mountLocal(env: ReturnType<typeof appSetup>) {
+      useUIStore.setState({ activeHostId: null });
+      useRemoteProjectStore.setState({ remoteAppCanvasState: {} });
+      const before = env.wireReads();
+      const view = render(React.createElement(canvasModule.MainPanel, { api: env.api }));
+      await waitFor(() => expect(env.wireReads()).toBeGreaterThan(before));
+      await waitFor(() => expect(env.store.getState().loaded).toBe(true));
+      // A local canvas on disk.
+      await act(async () => { env.store.getState().addView('agent', { x: 0, y: 0 }); await env.store.getState().saveCanvas(env.storage); });
+      return view;
+    }
+
+    afterEach(() => {
+      useUIStore.setState({ activeHostId: null });
+      useRemoteProjectStore.setState({ remoteAppCanvasState: {} });
+    });
+
+    it('keeps a local edit made just before switching to a remote host', async () => {
+      const env = appSetup();
+      const view = await mountLocal(env);
+      let editId = '';
+      act(() => { editId = env.store.getState().addView('agent', { x: 900, y: 0 }); });
+      env.goRemote(); // well inside the 500 ms autosave debounce
+      await waitFor(() => expect(env.store.getState().activeCanvasId).toBe('REMOTE-CANVAS'));
+      await sleep(650);
+      view.unmount();
+      await sleep(20);
+
+      expect(JSON.stringify(env.files.get('canvas-instances'))).toContain(editId);
+      env.nothingRemoteSaved();
+    });
+
+    it('writes nothing remote while a slow local load runs on the switch back', async () => {
+      const env = appSetup();
+      const view = await mountLocal(env);
+      env.goRemote();
+      await waitFor(() => expect(env.store.getState().activeCanvasId).toBe('REMOTE-CANVAS'));
+
+      // Back to local, with a load slower than the autosave debounce.
+      env.slow.set('canvas-active-id', 800);
+      env.goLocal();
+      await sleep(1000); // the switch-back autosave fires mid-load
+      env.nothingRemoteSaved();
+      await waitFor(() => expect(env.store.getState().activeCanvasId).not.toBe('REMOTE-CANVAS'), { timeout: 3000 });
+      await sleep(650);
+      view.unmount();
+      await sleep(20);
+      env.nothingRemoteSaved();
+    });
+
+    it('does not keep a satellite\'s wires when the local wires file is empty', async () => {
+      const env = appSetup();
+      env.files.set('canvas-wires', []);
+      const view = await mountLocal(env);
+      env.goRemote();
+      await waitFor(() => expect(env.store.getState().wireDefinitions.some((w) => w.agentId === 'REMOTE-AGENT')).toBe(true));
+
+      const before = env.wireReads();
+      env.goLocal();
+      await waitFor(() => expect(env.wireReads()).toBeGreaterThan(before));
+      await waitFor(() => expect(env.store.getState().wireDefinitions.some((w) => w.agentId === 'REMOTE-AGENT')).toBe(false));
+      await sleep(650);
+      view.unmount();
+      await sleep(20);
+      env.nothingRemoteSaved();
+    });
   });
 });
