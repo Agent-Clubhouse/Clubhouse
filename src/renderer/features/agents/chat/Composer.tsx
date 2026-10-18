@@ -175,7 +175,8 @@ function useCloseOnMouseDown(open: boolean, close: () => void) {
   }, [open, close]);
 }
 
-const chipClass = 'h-[26px] flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] disabled:opacity-100 disabled:cursor-default';
+// One line whatever the width (#2112): long names end in an ellipsis, with the full name in the tooltip.
+const chipClass = 'h-[26px] min-w-0 max-w-[180px] flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] whitespace-nowrap disabled:opacity-100 disabled:cursor-default';
 const menuClass = 'absolute left-0 bottom-9 bg-ctp-crust border border-surface-1 rounded-lg shadow-xl p-1.5 z-dropdown flex flex-col gap-px';
 
 function Radio({ on }: { on: boolean }) {
@@ -203,19 +204,19 @@ function ModelPill({ models, efforts, model, effort, capabilities, onChange }: {
   const note = switchNote(modelSwitch, 'none');
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <button
         type="button"
         disabled={!canChange}
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={canChange ? 'Model' : "This agent can't change model mid-session"}
+        title={canChange ? label : `${label}. This agent can't change model mid-session.`}
         className={chipClass}
         data-testid="chat-model-pill"
       >
-        {label}
-        {canChange && <ChevronDown className="text-ctp-overlay1" />}
+        <span className="truncate min-w-0">{label}</span>
+        {canChange && <ChevronDown className="text-ctp-overlay1 flex-shrink-0" />}
       </button>
       {open && (
         <div role="menu" className={`${menuClass} w-[300px] max-h-[360px] overflow-y-auto`} onMouseDown={(e) => e.stopPropagation()} data-testid="chat-model-menu">
@@ -265,19 +266,19 @@ function EffortPill({ efforts, model, effort, capabilities, onChange }: {
   const label = effort ? `${effort} effort` : 'Default effort';
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <button
         type="button"
         disabled={!canChange}
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={canChange ? 'Reasoning effort' : "This agent can't change effort mid-session"}
+        title={canChange ? `Reasoning effort, ${effort ?? 'the default'}` : "This agent can't change effort mid-session"}
         className={chipClass}
         data-testid="chat-effort-pill"
       >
-        {label}
-        {canChange && <ChevronDown className="text-ctp-overlay1" />}
+        <span className="truncate min-w-0">{label}</span>
+        {canChange && <ChevronDown className="text-ctp-overlay1 flex-shrink-0" />}
       </button>
       {open && model && (
         <div role="menu" className={`${menuClass} w-[220px]`} onMouseDown={(e) => e.stopPropagation()} data-testid="chat-effort-menu">

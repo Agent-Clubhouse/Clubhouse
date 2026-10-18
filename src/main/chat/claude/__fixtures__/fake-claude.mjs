@@ -245,7 +245,7 @@ function onControlRequest(msg) {
       return;
     case 'get_settings':
       // Models without effort levels report null, as the CLI does.
-      respond(id, { applied: { model: model === 'claude-fake-1' ? 'claude-fake-1[1m]' : model, effort: model === 'claude-haiku-fake' ? null : effort } });
+      respond(id, { applied: { model, effort: model === 'claude-haiku-fake' ? null : effort } });
       return;
     case 'interrupt':
       respond(id, {});

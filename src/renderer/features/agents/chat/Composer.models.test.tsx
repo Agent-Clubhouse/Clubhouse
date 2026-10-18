@@ -122,6 +122,15 @@ describe('Composer model and effort chips (#2091)', () => {
     expect(onModelChange).toHaveBeenCalledWith('sonnet', undefined);
   });
 
+  it('keeps a long model name on one line with the full name in the tooltip (#2112)', () => {
+    renderComposer({ model: 'claude-opus-5-5[1m]' });
+    const pill = screen.getByTestId('chat-model-pill');
+    expect(pill.className).toContain('whitespace-nowrap');
+    expect(pill.className).toContain('max-w-[180px]');
+    expect(pill.querySelector('span.truncate')).toHaveTextContent('claude-opus-5-5[1m]');
+    expect(pill).toHaveAttribute('title', 'claude-opus-5-5[1m]');
+  });
+
   it('shows plain labels when the driver cannot switch model or effort', () => {
     renderComposer({}, { modelSwitch: 'none', effortSwitch: 'none' });
     expect(screen.getByTestId('chat-model-pill')).toBeDisabled();

@@ -208,7 +208,7 @@ describe.each<Kind>(['sdk', 'stream-json'])('Claude %s transport (fake claude)',
     expect(await t.appliedSettings()).toEqual({ model: 'claude-haiku-fake', effort: null });
     await t.setModel();
     await t.setEffort('high');
-    expect(await t.appliedSettings()).toEqual({ model: 'claude-fake-1[1m]', effort: 'high' });
+    expect(await t.appliedSettings()).toEqual({ model: 'claude-fake-1', effort: 'high' });
     t.send({ text: 'hello' });
     expect(await collector.waitFor('session_started')).toMatchObject({ model: 'claude-fake-1', permissionMode: 'plan' });
   });

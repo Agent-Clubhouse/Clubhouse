@@ -526,8 +526,33 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
   private noteApplied(): void {
     if (!this.started || !this.applied) return;
     const { model, effort } = this.applied;
-    const id = model ? claudeModelRow(this.modelRows, model)?.value ?? model : this.model;
+    const id = model ? this.menuId(model) : this.model;
     if (id) this.noteModel(id, effort);
+  }
+
+  /**
+   * The menu id for a model id the CLI reports. A variant the menu doesn't
+   * list (`claude-opus-5-5[1m]`) gets its own row, `opus[1m]` labelled
+   * "Opus 5.5 · 1M", which the CLI also accepts as a model (#2112).
+   */
+  private menuId(model: string): string {
+    const row = claudeModelRow(this.modelRows, model);
+    if (!row) return model;
+    const variant = /\[([^\]]+)\]$/.exec(model)?.[1];
+    if (!variant || row.value.endsWith(`[${variant}]`)) return row.value;
+    const id = `${row.value}[${variant}]`;
+    if (!this.modelRows.some((r) => r.value === id)) {
+      this.modelRows = [...this.modelRows, { ...row, value: id, displayName: `${row.displayName || row.value} · ${variant.toUpperCase()}` }];
+      this.pushModels();
+    }
+    return id;
+  }
+
+  private pushModels(): void {
+    this.push({
+      type: 'session_info',
+      data: { models: this.modelRows.map((m) => ({ id: m.value, label: m.displayName || m.value, description: m.description || undefined })) },
+    });
   }
 
   /** Report a model or effort change, and the effort levels the model offers when they differ. */
@@ -618,12 +643,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
           });
         }
         this.modelRows = ev.models.filter((m) => m.value);
-        if (this.modelRows.length) {
-          this.push({
-            type: 'session_info',
-            data: { models: this.modelRows.map((m) => ({ id: m.value, label: m.displayName || m.value, description: m.description || undefined })) },
-          });
-        }
+        if (this.modelRows.length) this.pushModels();
         this.started = true;
         this.noteApplied();
         return;
@@ -641,7 +661,7 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
           },
         });
         // A per-turn init reports the model the turn started with, before any /model in it ran.
-        if (ev.model) this.noteModel(claudeModelRow(this.modelRows, ev.model)?.value ?? ev.model, this.effort);
+        if (ev.model) this.noteModel(this.menuId(ev.model), this.effort);
         if (ev.permissionMode) this.changeLevel(levelFromClaudeMode(ev.permissionMode), ev.permissionMode);
         return;
       case 'user_message':

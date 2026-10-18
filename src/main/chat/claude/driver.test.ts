@@ -377,21 +377,24 @@ class ScriptedTransport implements ClaudeTransport {
   emit(body: ClaudeChatEventBody): void {
     this.queue.push({ ...body, sessionId: this.sessionId, turnId: 0, seq: ++this.seq } as ClaudeChatEvent);
   }
-  async start(): Promise<void> { this.emit({ kind: 'initialized', commands: [], models: [], raw: { claude_code_version: '2.1.300' } }); }
+  async start(): Promise<void> { this.emit({ kind: 'initialized', commands: [], models: this.models, raw: { claude_code_version: '2.1.300' } }); }
   send(input: ClaudeUserInput): void { this.sent.push(input); }
   respondToPermission(requestId: string, decision: ClaudePermissionDecision): void { this.answers.push([requestId, decision]); }
   async interrupt(): Promise<void> {}
   async setPermissionMode(): Promise<void> {}
   async setModel(): Promise<void> {}
   async setEffort(): Promise<void> {}
-  async appliedSettings() { return {}; }
+  applied: { model?: string; effort?: string | null } = {};
+  models: Extract<ClaudeChatEventBody, { kind: 'initialized' }>['models'] = [];
+  async appliedSettings() { return this.applied; }
   async close(): Promise<void> { this.emit({ kind: 'session_ended', exitCode: 0, signal: null }); this.queue.finish(); }
   end(exitCode: number | null): void { this.emit({ kind: 'session_ended', exitCode, signal: null }); this.queue.finish(); }
 }
 
 describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
-  async function scripted(extra: Partial<ChatDriverStartOptions> = {}) {
+  async function scripted(extra: Partial<ChatDriverStartOptions> = {}, setup?: (t: ScriptedTransport) => void) {
     const transport = new ScriptedTransport();
+    setup?.(transport);
     const driver = new ClaudeChatDriver('claude_agent_sdk', { createTransport: () => transport });
     const session = await driver.start({ agentId: 'a', provider: 'claude-code', cwd: os.tmpdir(), binaryPath: 'claude', level: 'ask', ...extra });
     const drafts = new Drafts(session.events);
@@ -401,6 +404,27 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
   const result = (over: Partial<Extract<ClaudeChatEventBody, { kind: 'turn_ended' }>> = {}): ClaudeChatEventBody =>
     ({ kind: 'turn_ended', subtype: 'success', isError: false, ...over });
   const settle = () => new Promise((r) => setImmediate(r));
+
+  it('names a [1m] variant on one line as its own menu row, and keeps it across turns (#2112)', async () => {
+    const { session, transport, drafts } = await scripted({}, (t) => {
+      t.models = [
+        { value: 'default', displayName: 'Default (recommended)', resolvedModel: 'claude-opus-5-5', efforts: ['low', 'high'] },
+        { value: 'opus', displayName: 'Opus 5.5', resolvedModel: 'claude-opus-5-5', efforts: ['low', 'high'] },
+      ];
+      t.applied = { model: 'claude-opus-5-5[1m]', effort: 'high' };
+    });
+    await settle();
+    expect(drafts.of('model_changed').map((d) => d.data)).toEqual([{ modelId: 'opus[1m]', effort: 'high' }]);
+    const menu = drafts.of('session_info').filter((d) => d.data.models).at(-1)?.data.models;
+    expect(menu?.at(-1)).toEqual({ id: 'opus[1m]', label: 'Opus 5.5 · 1M' });
+    expect(menu).toHaveLength(3);
+    // The per-turn init reports the same id: no flip back to the raw model.
+    await session.send([{ type: 'text', text: 'go' }], 'prompt');
+    transport.emit({ kind: 'session_started', model: 'claude-opus-5-5[1m]', cwd: '/', permissionMode: 'default', cliVersion: '2.1.300', tools: [], slashCommands: [] });
+    await settle();
+    expect(drafts.of('model_changed')).toHaveLength(1);
+    expect(drafts.of('session_info').filter((d) => d.data.models)).toHaveLength(2);
+  });
 
   it('reports per-turn cost from the CLI running total, and the total as session usage', async () => {
     const { session, transport, drafts } = await scripted();
