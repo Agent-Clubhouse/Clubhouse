@@ -224,7 +224,12 @@ export function expandZoneWires(
  *
  * Only bindings that were *previously* zone-derived (`prevDesired`) are eligible
  * for removal, so manual wires (which never appear in `prevDesired`) are
- * preserved. Bindings already present in `currentKeys` are not re-added.
+ * preserved.
+ *
+ * A pair the zone newly wants is bound even if it is already bound (by a
+ * helper wire, #2225, or a manual wire): BIND is idempotent, and it tells main
+ * the zone needs the pair, so a helper being disposed can't unbind it. A pair
+ * the zone already wanted is re-bound only if it went missing.
  */
 export function diffZoneBindings(
   prevDesired: ExpandedBinding[],
@@ -236,29 +241,10 @@ export function diffZoneBindings(
 } {
   const keyOf = (b: { agentId: string; targetId: string }) => `${b.agentId}:${b.targetId}`;
   const newKeys = new Set(newDesired.map(keyOf));
-  const toAdd = newDesired.filter((b) => !currentKeys.has(keyOf(b)));
+  const prevKeys = new Set(prevDesired.map(keyOf));
+  const toAdd = newDesired.filter((b) => !prevKeys.has(keyOf(b)) || !currentKeys.has(keyOf(b)));
   const toRemove = prevDesired
     .filter((b) => !newKeys.has(keyOf(b)))
     .map((b) => ({ agentId: b.agentId, targetId: b.targetId }));
-  return { toAdd, toRemove };
-}
-
-/**
- * Reconcile expanded zone bindings with current MCP bindings.
- * Returns lists of bindings to add and remove.
- */
-export function reconcileZoneBindings(
-  desired: ExpandedBinding[],
-  current: Array<{ agentId: string; targetId: string }>,
-): {
-  toAdd: ExpandedBinding[];
-  toRemove: Array<{ agentId: string; targetId: string }>;
-} {
-  const desiredSet = new Set(desired.map((b) => `${b.agentId}:${b.targetId}`));
-  const currentSet = new Set(current.map((b) => `${b.agentId}:${b.targetId}`));
-
-  const toAdd = desired.filter((b) => !currentSet.has(`${b.agentId}:${b.targetId}`));
-  const toRemove = current.filter((b) => !desiredSet.has(`${b.agentId}:${b.targetId}`));
-
   return { toAdd, toRemove };
 }

@@ -107,6 +107,18 @@ describe('mcpBindingStore', () => {
 
       expect(mocks.unbind).toHaveBeenCalledWith('a1', 'w1');
     });
+
+    it('keeps the binding when main kept it on canvas cleanup (#2225)', async () => {
+      useMcpBindingStore.setState({
+        bindings: [{ agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'helper' }],
+      });
+      mocks.unbind.mockResolvedValue({ kept: true });
+
+      await useMcpBindingStore.getState().unbind('a1', 'a2', 'canvas-cleanup');
+
+      expect(mocks.unbind).toHaveBeenCalledWith('a1', 'a2', 'canvas-cleanup');
+      expect(useMcpBindingStore.getState().bindings).toHaveLength(1);
+    });
   });
 
   describe('initMcpBindingListener', () => {

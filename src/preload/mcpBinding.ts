@@ -1,6 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 import type { AgentMcpConnection } from '../shared/types';
+import type { McpUnbindCause, McpUnbindResult } from '../shared/mcp-unbind';
 
 export const mcpBinding = {
   mcpBinding: {
@@ -8,8 +9,10 @@ export const mcpBinding = {
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_BINDINGS),
   bind: (agentId: string, target: { targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) =>
     ipcRenderer.invoke(IPC.MCP_BINDING.BIND, agentId, target),
-  unbind: (agentId: string, targetId: string) =>
-    ipcRenderer.invoke(IPC.MCP_BINDING.UNBIND, agentId, targetId),
+  unbind: (agentId: string, targetId: string, cause?: McpUnbindCause): Promise<McpUnbindResult | undefined> =>
+    cause
+      ? ipcRenderer.invoke(IPC.MCP_BINDING.UNBIND, agentId, targetId, cause)
+      : ipcRenderer.invoke(IPC.MCP_BINDING.UNBIND, agentId, targetId),
   registerWebview: (widgetId: string, webContentsId: string) =>
     ipcRenderer.invoke(IPC.MCP_BINDING.REGISTER_WEBVIEW, widgetId, webContentsId),
   unregisterWebview: (widgetId: string) =>

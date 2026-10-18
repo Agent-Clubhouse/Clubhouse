@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { McpUnbindCause } from '../../shared/mcp-unbind';
 
 export interface McpBindingEntry {
   agentId: string;
@@ -28,7 +29,12 @@ interface McpBindingStoreState {
   bindings: McpBindingEntry[];
   loadBindings: () => Promise<void>;
   bind: (agentId: string, target: { targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => Promise<void>;
-  unbind: (agentId: string, targetId: string) => Promise<void>;
+  /**
+   * Unbind a wire. With `cause: 'canvas-cleanup'` (a card or canvas tab
+   * closed, a zone member left) main may keep a binding a persisted source
+   * still lists, such as a helper wire; the store then keeps it too.
+   */
+  unbind: (agentId: string, targetId: string, cause?: McpUnbindCause) => Promise<void>;
   setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) => Promise<void>;
   setDisabledTools: (agentId: string, targetId: string, disabledTools: string[]) => Promise<void>;
   registerWebview: (widgetId: string, webContentsId: number) => Promise<void>;
@@ -59,8 +65,11 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
     });
   },
 
-  unbind: async (agentId, targetId) => {
-    await window.clubhouse.mcpBinding.unbind(agentId, targetId);
+  unbind: async (agentId, targetId, cause) => {
+    const result = cause
+      ? await window.clubhouse.mcpBinding.unbind(agentId, targetId, cause)
+      : await window.clubhouse.mcpBinding.unbind(agentId, targetId);
+    if (result?.kept) return;
     // Optimistic update
     set((state) => ({
       bindings: state.bindings.filter(

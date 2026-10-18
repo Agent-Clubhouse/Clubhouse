@@ -19,8 +19,11 @@ import {
   rebuildPersistedBindings,
   markBindingRemovedByUser,
   clearBindingRemovedByUser,
+  keepHeldBinding,
 } from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
+import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
+import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
@@ -119,9 +122,19 @@ export function registerMcpBindingHandlers(): void {
   ));
 
   ipcMain.handle(IPC.MCP_BINDING.UNBIND, withValidatedArgs(
-    [stringArg(), stringArg()],
-    (event, agentId, targetId) => {
+    [stringArg(), stringArg(), stringArg({ optional: true })],
+    (event, agentId, targetId, cause): { kept: boolean } => {
       assertCallerIsAppWindow(event);
+      // Canvas cleanup (a card or canvas tab closed, a zone member left) only
+      // hides a wire the canvas displays. A helper wire (#2225) stays: closing
+      // a card must not cut orchestration. Deleting the wire itself sends no
+      // cause and unbinds as before.
+      if (cause === MCP_UNBIND_CANVAS_CLEANUP && keepHeldBinding(agentId as string, targetId as string)) {
+        appLog('core:mcp', 'info', 'Binding kept on canvas cleanup: a persisted source still lists it', {
+          meta: { agentId, targetId },
+        });
+        return { kept: true };
+      }
       // Allow unbinding for sleeping/exited agents to support cleanup of stale
       // wire definitions without requiring the agent to be running.
       bindingManager.unbind(agentId as string, targetId as string);
@@ -129,6 +142,7 @@ export function registerMcpBindingHandlers(): void {
       // bring this back from a store whose save hasn't landed yet.
       markBindingRemovedByUser(agentId as string, targetId as string);
       appLog('core:mcp', 'info', 'Binding removed', { meta: { agentId, targetId } });
+      return { kept: false };
     },
   ));
 
@@ -220,21 +234,25 @@ export function onMcpSettingsChanged(): void {
 }
 
 let persistedSourcesRegistered = false;
+let stopWatchingHelperWires: (() => void) | null = null;
 
 /**
- * Rebuild bindings from every persisted wire store (canvas wires today) so
- * tools and group-project membership don't wait for a canvas to be opened
- * (#1544). Runs only once MCP is on. Idempotent: bindings that already exist
- * are left alone, so calling it again (or the canvas binding the same wires
- * later) creates nothing twice.
+ * Rebuild bindings from every persisted wire store (canvas wires, #1544, and
+ * orchestrator ↔ helper wires from the agent config, #2225) so tools and
+ * group-project membership don't wait for a canvas to be opened. Runs only
+ * once MCP is on, and again whenever a project's helper wires change.
+ * Idempotent: bindings that already exist are left alone, so calling it again
+ * (or the canvas binding the same wires later) creates nothing twice.
  */
-export function restorePersistedBindings(): void {
-  if (!handlersRegistered) return;
+export function restorePersistedBindings(): Promise<void> {
+  if (!handlersRegistered) return Promise.resolve();
   if (!persistedSourcesRegistered) {
     persistedSourcesRegistered = true;
     registerPersistedBindingSource(canvasWireBindingSource);
+    registerPersistedBindingSource(helperWireBindingSource);
+    stopWatchingHelperWires = watchHelperWires(() => restorePersistedBindings());
   }
-  rebuildPersistedBindings().catch((err) => {
+  return rebuildPersistedBindings().then((): void => undefined, (err): void => {
     appLog('core:mcp', 'error', 'Persisted binding rebuild failed', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
@@ -245,5 +263,7 @@ export function restorePersistedBindings(): void {
 export function _resetHandlersForTesting(): void {
   handlersRegistered = false;
   persistedSourcesRegistered = false;
+  stopWatchingHelperWires?.();
+  stopWatchingHelperWires = null;
   bridgeState = 'idle';
 }

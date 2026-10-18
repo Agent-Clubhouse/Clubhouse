@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { expandZoneWires, reconcileZoneBindings, diffZoneBindings, type ExpandedBinding } from './zone-wire-expansion';
+import { expandZoneWires, diffZoneBindings, type ExpandedBinding } from './zone-wire-expansion';
 import type { AgentCanvasView, ZoneCanvasView, PluginCanvasView } from './canvas-types';
 import type { ZoneWireDefinition } from './zone-wire-store';
 
@@ -133,43 +133,6 @@ describe('expandZoneWires', () => {
   });
 });
 
-describe('reconcileZoneBindings', () => {
-  it('identifies bindings to add and remove', () => {
-    const desired = [
-      { agentId: 'a1', targetId: 'a2', targetKind: 'agent' as const, label: 'A2', agentName: 'A1', targetName: 'A2' },
-      { agentId: 'a1', targetId: 'a3', targetKind: 'agent' as const, label: 'A3', agentName: 'A1', targetName: 'A3' },
-    ];
-    const current = [
-      { agentId: 'a1', targetId: 'a2' },
-      { agentId: 'a1', targetId: 'a4' },
-    ];
-    const { toAdd, toRemove } = reconcileZoneBindings(desired, current);
-    expect(toAdd.length).toBe(1);
-    expect(toAdd[0].targetId).toBe('a3');
-    expect(toRemove.length).toBe(1);
-    expect(toRemove[0].targetId).toBe('a4');
-  });
-
-  it('individual bindings not in zone expansion are only in toRemove, not toAdd', () => {
-    // Simulates the real usage where only toAdd is used — individual bindings
-    // that aren't part of zone expansion are not affected.
-    const desired = [
-      { agentId: 'a1', targetId: 'a2', targetKind: 'agent' as const, label: 'A2', agentName: 'A1', targetName: 'A2' },
-    ];
-    const current = [
-      { agentId: 'a1', targetId: 'a2' }, // matches zone expansion
-      { agentId: 'a1', targetId: 'a3' }, // individual binding (not in zone expansion)
-    ];
-    const { toAdd, toRemove } = reconcileZoneBindings(desired, current);
-    // Nothing new to add
-    expect(toAdd.length).toBe(0);
-    // a1->a3 appears in toRemove but since the real handler only uses toAdd,
-    // this individual binding is preserved
-    expect(toRemove.length).toBe(1);
-    expect(toRemove[0].targetId).toBe('a3');
-  });
-});
-
 describe('diffZoneBindings (containment auto-update)', () => {
   const eb = (agentId: string, targetId: string): ExpandedBinding => ({
     agentId, targetId, targetKind: 'agent', label: targetId, agentName: agentId, targetName: targetId,
@@ -205,11 +168,27 @@ describe('diffZoneBindings (containment auto-update)', () => {
     expect(toRemove).toEqual([{ agentId: 'durable_1', targetId: 'durable_t' }]);
   });
 
-  it('does not re-add a binding already present in current', () => {
-    const prev: ExpandedBinding[] = [];
+  it('does not re-add a binding the zone already wanted and that is still bound', () => {
+    const prev = [eb('durable_1', 'durable_t')];
     const next = [eb('durable_1', 'durable_t')];
     const current = new Set(['durable_1:durable_t']);
     const { toAdd } = diffZoneBindings(prev, next, current);
     expect(toAdd).toHaveLength(0);
+  });
+
+  it('binds a newly wanted pair even when it is already bound, so main knows the zone needs it (#2225)', () => {
+    // e.g. a helper wire between the two agents already exists; on hydrate prev is empty.
+    const prev: ExpandedBinding[] = [];
+    const next = [eb('durable_1', 'durable_t')];
+    const current = new Set(['durable_1:durable_t']);
+    const { toAdd } = diffZoneBindings(prev, next, current);
+    expect(toAdd.map((b) => `${b.agentId}:${b.targetId}`)).toEqual(['durable_1:durable_t']);
+  });
+
+  it('re-binds a pair the zone still wants if it went missing', () => {
+    const prev = [eb('durable_1', 'durable_t')];
+    const next = [eb('durable_1', 'durable_t')];
+    const { toAdd } = diffZoneBindings(prev, next, new Set());
+    expect(toAdd).toHaveLength(1);
   });
 });

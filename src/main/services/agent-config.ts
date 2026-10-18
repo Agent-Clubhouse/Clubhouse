@@ -686,6 +686,7 @@ function ensureConfigWatcher(projectPath: string): void {
       if (entry && !entry.dirty && !entry.pendingFlush) {
         clearAgentConfigCache(projectPath);
       }
+      notifyAgentConfigChanged(projectPath);
     });
     watcher.on('error', (err) => {
       appLog('core:agent-config', 'warn', 'Failed to watch agents.json for external changes', {
@@ -883,6 +884,35 @@ async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): P
   entry.revision++;
   entry.dirty = true;
   scheduleFlush(projectPath, entry);
+  notifyAgentConfigChanged(projectPath);
+}
+
+/** Called with the project path after a project's agent list may have changed. */
+export type AgentConfigChangeListener = (projectPath: string) => void;
+const agentConfigChangeListeners = new Set<AgentConfigChangeListener>();
+
+/**
+ * Listen for changes to a project's agents: every in-app write, and external
+ * edits seen by the agents.json watcher. Listeners run synchronously and may
+ * be called for writes that changed nothing they care about. Returns an
+ * unsubscribe function.
+ */
+export function onAgentConfigChanged(listener: AgentConfigChangeListener): () => void {
+  agentConfigChangeListeners.add(listener);
+  return () => { agentConfigChangeListeners.delete(listener); };
+}
+
+function notifyAgentConfigChanged(projectPath: string): void {
+  for (const listener of agentConfigChangeListeners) {
+    try {
+      listener(projectPath);
+    } catch (err) {
+      // telemetry-exempt: logged; a listener's failure must not fail the config write
+      appLog('core:agent-config', 'warn', 'Agent config change listener failed', {
+        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
 }
 
 /** Flush any pending writes for a project path immediately */
