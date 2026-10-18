@@ -442,7 +442,8 @@ export class AcpChatEventMapper {
         this.turnStartedAt = this.now();
         this.seqInTurn = 0;
         this.lastKind = 'other';
-        return [this.scoped({ type: 'turn_started', data: { trigger: 'prompt' } })];
+        // An agent-initiated turn (#2191) has no user message behind it.
+        return [this.scoped({ type: 'turn_started', data: { trigger: event.trigger === 'agent' ? 'system' : 'prompt' } })];
       }
       case 'turn_ended': {
         const out: ChatEventDraft[] = [];

@@ -11,7 +11,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 export interface AcpFixtureRecord {
-  dir: 'in' | 'out';
+  /** `gate` holds back the agent messages after it until the test calls `openGate()`. */
+  dir: 'in' | 'out' | 'gate';
   msg: Record<string, unknown>;
 }
 
@@ -43,6 +44,26 @@ export function withoutRequest(records: AcpFixtureRecord[], method: string): Acp
   return [...records.slice(0, start), ...records.slice(end)];
 }
 
+/**
+ * Move the agent's answer to the first `session/prompt` back to just after
+ * the record `after` matches, and put a gate behind it, so the test decides
+ * when the rest arrives. Turns a recording where the agent held the prompt
+ * open into one where it answered early and kept working (#2191).
+ */
+export function promptAnsweredEarly(
+  records: AcpFixtureRecord[],
+  after: (record: AcpFixtureRecord) => boolean,
+): AcpFixtureRecord[] {
+  const request = records.find((r) => r.dir === 'out' && r.msg.method === 'session/prompt');
+  if (!request) throw new Error('fixture has no session/prompt');
+  const answer = records.findIndex((r) => r.dir === 'in' && r.msg.method === undefined && r.msg.id === request.msg.id);
+  if (answer === -1) throw new Error('fixture never answers session/prompt');
+  const rest = records.filter((_, i) => i !== answer);
+  const at = rest.findIndex(after);
+  if (at === -1 || at > answer) throw new Error('no matching record before the prompt answer');
+  return [...rest.slice(0, at + 1), records[answer], { dir: 'gate', msg: {} }, ...rest.slice(at + 1)];
+}
+
 export type OutMatcher = (expected: Record<string, unknown>, actual: Record<string, unknown>) => string | null;
 
 export class AcpFixtureReplayer {
@@ -67,6 +88,18 @@ export class AcpFixtureReplayer {
     };
     // Agents may speak first in some recordings.
     queueMicrotask(() => this.flush());
+  }
+
+  /** Deliver what a `gate` record held back. */
+  openGate(): void {
+    if (this.records[this.cursor]?.dir !== 'gate') throw new Error('the replay is not waiting at a gate');
+    this.cursor++;
+    this.flush();
+  }
+
+  /** True once the replay is waiting at a `gate`. */
+  get atGate(): boolean {
+    return this.records[this.cursor]?.dir === 'gate';
   }
 
   /** True once every record has been consumed or delivered. */
