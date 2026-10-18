@@ -17,6 +17,7 @@ import {
   isObservingFrames,
   noteInteraction,
   scriptSourceOf,
+  scrubInvoker,
   scrubScriptUrl,
   startUiPerf,
   type UiPerfLine,
@@ -194,6 +195,10 @@ describe('interaction tracking', () => {
     expect(getLastInteraction()).not.toHaveProperty('key');
     noteInteraction('keydown', label, 'Escape');
     expect(getLastInteraction()?.key).toBe('Escape');
+    noteInteraction('keydown', label, '😀');
+    expect(getLastInteraction()).not.toHaveProperty('key');
+    noteInteraction('keydown', label, 'Dead');
+    expect(getLastInteraction()?.key).toBe('Dead');
     noteInteraction('click', document.createElement('section'));
     expect(getLastInteraction()?.target).toBe('section');
   });
@@ -216,6 +221,14 @@ describe('script attribution', () => {
     expect(scrubScriptUrl('clubhouse-plugin://board/src/view.js')).toBe('clubhouse-plugin://board/…/view.js');
     expect(scrubScriptUrl('')).toBeUndefined();
     expect(scrubScriptUrl('not a url')).toBeUndefined();
+  });
+
+  it('scrubs a script invoker, which is the script URL for script entries', () => {
+    expect(scrubInvoker('file:///Users/alice/.clubhouse/plugins/board/main.js', 'classic-script')).toBe('file:main.js');
+    expect(scrubInvoker('clubhouse-plugin://board/dist/main.js', 'module-script')).toBe('clubhouse-plugin://board/…/main.js');
+    expect(scrubInvoker('file:///Users/alice/x.js', 'event-listener')).toBe('file:x.js');
+    expect(scrubInvoker('BUTTON#save.onclick', 'event-listener')).toBe('BUTTON#save.onclick');
+    expect(scrubInvoker('garbage', 'classic-script')).toBe('script');
   });
 
   it('classifies whose script it was', () => {

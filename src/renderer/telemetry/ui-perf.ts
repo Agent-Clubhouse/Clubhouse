@@ -37,6 +37,8 @@ export const MAX_SCRIPTS = 3;
 const MAX_TARGET_CHARS = 80;
 /** Event Timing's minimum. Faster interactions aren't reported by the browser. */
 const EVENT_DURATION_THRESHOLD_MS = 16;
+/** `KeyboardEvent.key` names such as Enter, Escape, ArrowUp, F5; never a typed character. */
+const NAMED_KEY = /^[A-Z][A-Za-z0-9]+$/;
 
 export type InteractionType = 'click' | 'keydown' | 'wheel';
 
@@ -131,8 +133,8 @@ export function targetIdOf(el: Element | null): string {
 /** Record an input as the last interaction. Exported for tests. */
 export function noteInteraction(type: InteractionType, target: EventTarget | null, key?: string, at = performance.now()): void {
   const el = target instanceof Element ? target : null;
-  // A character key would leak what was typed; only named keys are kept.
-  const named = key && key.length > 1 ? key : undefined;
+  // A character key (including an emoji) would leak what was typed; only named keys are kept.
+  const named = key && NAMED_KEY.test(key) ? key : undefined;
   lastInteraction = { type, target: targetIdOf(el), ...(named && { key: named }), at };
 }
 
@@ -161,6 +163,17 @@ export function scriptSourceOf(url: string | undefined): ScriptSource {
   return 'app';
 }
 
+/**
+ * For classic-script and module-script entries the LoAF invoker is the
+ * script's URL, so it gets the same scrubbing as sourceURL. Exported for tests.
+ */
+export function scrubInvoker(invoker: string, invokerType?: string): string {
+  if (invokerType?.endsWith('-script') || /^[a-z][a-z0-9+.-]*:\/\//i.test(invoker)) {
+    return scrubScriptUrl(invoker) ?? 'script';
+  }
+  return invoker.slice(0, MAX_TARGET_CHARS);
+}
+
 interface LoafScript {
   invoker?: string;
   invokerType?: string;
@@ -173,7 +186,7 @@ interface LoafScript {
 export function scriptsOf(entry: { scripts?: readonly LoafScript[] }): { scripts: ScriptAttribution[]; source: ScriptSource } {
   const raw = [...(entry.scripts ?? [])].sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0));
   const scripts = raw.slice(0, MAX_SCRIPTS).map((s) => ({
-    ...(s.invoker && { invoker: s.invoker.slice(0, MAX_TARGET_CHARS) }),
+    ...(s.invoker && { invoker: scrubInvoker(s.invoker, s.invokerType) }),
     ...(s.invokerType && { invokerType: s.invokerType }),
     ...(s.sourceFunctionName && { fn: s.sourceFunctionName.slice(0, MAX_TARGET_CHARS) }),
     ...(scrubScriptUrl(s.sourceURL) && { source: scrubScriptUrl(s.sourceURL) }),
@@ -192,6 +205,7 @@ function flush(kind: PerfKind, now = performance.now()): void {
   bursts.delete(kind);
   if (!b) return;
   lineTimes = lineTimes.filter((t) => now - t < 60_000);
+  // The cap covers clubhouse.ui.hang too: a hang storm sends at most six events a minute.
   if (lineTimes.length >= MAX_LINES_PER_MINUTE) {
     suppressed += b.count;
     return;

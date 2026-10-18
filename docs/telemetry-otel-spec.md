@@ -610,7 +610,8 @@ The first draft left these as gaps. The maintainer set the goal as broad coverag
 
 **Local hang log (#2126).** Hangs are also written to the local session log under `ui:perf`, whether or not telemetry is on (`src/renderer/telemetry/ui-perf.ts`):
 - **What is logged.** Frames and interactions at or over the hang threshold (200 ms; `localStorage clubhouse.uiPerf.hangMs` overrides it, minimum 50) are coalesced per second into one line. A line has the count, the max and total ms, view and surface, the last interaction (its type, a stable target id from `data-testid` or `data-tree-key`, named keys only, never text), and the top three LoAF scripts with the URL cut to `scheme:basename`.
-- **Limits.** At most six lines a minute; anything held back is counted as `suppressed` on the next line.
+- **Limits.** At most six lines a minute; anything held back is counted as `suppressed` on the next line. The cap covers `c.ui.hang` too, so a hang storm sends at most six events a minute.
+- **Scrubbing.** LoAF `sourceURL`, and `invoker` when it's a script URL, are cut to `scheme:basename`.
 - **Unresponsive windows.** Main logs the `unresponsive` / `responsive` pair under the same namespace with `durationMs`.
 - **Breadcrumbs.** The last 20 `ui:perf` entries are kept in memory regardless of log settings (`getRecentUiPerf()` in log-service) for feedback breadcrumbs.
 - **Idle cost.** The LoAF and Event Timing observers fire only for long frames and interactions. Three passive capture listeners (pointerdown, keydown, wheel) store one small object per input.
