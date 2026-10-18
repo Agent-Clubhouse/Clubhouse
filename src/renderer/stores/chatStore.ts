@@ -204,6 +204,7 @@ export interface ChatViewState {
   agentId: string;
   /** Current Clubhouse chat session id (null before any event). */
   sessionId: string | null;
+  sessionStartedAt: number | null;
   state: ChatSessionState | null;
   capabilities: ChatCapabilities | null;
   driver: ChatDriverId | null;
@@ -260,6 +261,7 @@ export function createChatViewState(agentId: string): ChatViewState {
   return {
     agentId,
     sessionId: null,
+    sessionStartedAt: null,
     state: null,
     capabilities: null,
     driver: null,
@@ -348,36 +350,15 @@ function settleCompaction(state: ChatViewState, replacement?: NoticeItem): ChatV
   return { ...state, items, compactionItemId: null };
 }
 
-/** Fields reset when a new chat session begins. History (`items`) is kept. */
-function startSession(prev: ChatViewState, event: ChatEvent): ChatViewState {
-  const state = settleCompaction(prev);
-  const previous = state.sessionId;
-  const next: ChatViewState = {
-    ...state,
+/** A different session is a different conversation, never an extension of its predecessor. */
+function startSession(state: ChatViewState, event: ChatEvent): ChatViewState {
+  return {
+    ...createChatViewState(event.agentId),
     sessionId: event.sessionId,
-    turnId: null,
-    turnStartedAt: null,
-    items: expireQuestions(state.items, (q) => q.sessionId === previous),
-    pendingPermissions: [],
-    pendingQuestions: [],
-    plan: [],
-    subagents: {},
-    queued: [],
-    nativeSessionId: null,
-    effortReported: false,
-    usage: { ...state.usage, turn: null, session: null, context: null, turnTotal: null },
+    sessionStartedAt: event.ts,
+    lastSeq: state.lastSeq,
+    usage: { ...createChatViewState(event.agentId).usage, limits: state.usage.limits },
   };
-  if (previous !== null) {
-    const divider: SessionDividerItem = {
-      ...itemBase(event, `session:${event.sessionId}`),
-      kind: 'session_divider',
-      previousSessionId: previous,
-      resumed: event.type === 'session_started' ? event.data.resumed : false,
-    };
-    delete divider.turnId;
-    next.items = [...next.items, divider];
-  }
-  return next;
 }
 
 /** A usage's total: `input` already includes cache reads and writes (TokenUsage), so they aren't added again. */
@@ -481,10 +462,17 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
   const last = base.lastSeq[event.sessionId];
   if (last !== undefined && event.seq <= last) return base;
 
+  if (base.sessionId !== null && base.sessionId !== event.sessionId) {
+    // A late end/message from a retired session must not replace the live view.
+    // A fresh start can reactivate a previously seen session when resuming it.
+    const startsSession = event.type === 'session_started' || (last === undefined && event.seq === 1 && event.type !== 'session_ended');
+    if (!startsSession || event.ts < (base.sessionStartedAt ?? 0)) return base;
+  }
+
   let state: ChatViewState = { ...base, lastSeq: { ...base.lastSeq, [event.sessionId]: event.seq } };
 
   // A different session id means a new conversation (clearContext, or a
-  // transcript spanning several sessions). Keep history; add a divider.
+  // transcript spanning several sessions). Start with an empty view.
   if (state.sessionId !== event.sessionId) {
     state = startSession(state, event);
   }
@@ -496,6 +484,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       const d = event.data;
       return {
         ...state,
+        sessionStartedAt: Math.max(state.sessionStartedAt ?? 0, event.ts),
         driver: d.driver,
         provider: d.provider,
         capabilities: d.capabilities,
@@ -931,7 +920,9 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     answering: {},
 
     loadTranscript: async (agentId, tail) => {
-      pendingLive.set(agentId, []);
+      if (get().loading[agentId]) return;
+      const pending: ChatEvent[] = [];
+      pendingLive.set(agentId, pending);
       set((s) => ({ loading: { ...s.loading, [agentId]: true } }));
       let events: ChatEvent[] | null = null;
       // Whether a chat runtime runs this agent now; asked alongside the read.
@@ -942,7 +933,8 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
         // Unreadable right now: handled below by keeping what this window has.
       }
       const runtimeLive = await live;
-      const buffered = pendingLive.get(agentId) ?? [];
+      if (pendingLive.get(agentId) !== pending) return; // Reset/replaced while the read was in flight.
+      const buffered = pending;
       pendingLive.delete(agentId);
       if (events === null) {
         // Keep the state this window already had, with the live events that
@@ -965,10 +957,12 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       // crashed mid-turn): what it was waiting on can't be answered.
       if (runtimeLive === false) fromTranscript = settleDeadSession(fromTranscript);
       // A tail that came back full may have cut earlier events off.
-      const cut = tail !== undefined && events.length >= tail;
+      const transcriptCut = tail !== undefined && events.length >= tail;
       // ...including the model_changed that reported the effort: show what's known.
-      if (cut) fromTranscript = { ...fromTranscript, effortReported: true };
+      if (transcriptCut) fromTranscript = { ...fromTranscript, effortReported: true };
       const next = foldChatEvents(fromTranscript, agentId, buffered);
+      const changedSession = next.sessionId !== fromTranscript.sessionId;
+      const cut = !changedSession && transcriptCut;
       set((s) => {
         const loading = { ...s.loading };
         delete loading[agentId];
@@ -979,6 +973,11 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           loaded: { ...s.loaded, [agentId]: true },
         };
       });
+      // A resume that arrived during the read needs that session's earlier
+      // events too, not just the live session_started buffered above.
+      if (changedSession && buffered.some((e) => e.sessionId === next.sessionId && e.type === 'session_started' && e.data.resumed)) {
+        await get().loadTranscript(agentId, tail);
+      }
     },
 
     applyEvent: (event) => {
@@ -990,7 +989,15 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       const prev = get().agents[event.agentId];
       const next = reduceChatEvent(prev, event);
       if (next === prev) return;
-      set((s) => ({ agents: { ...s.agents, [event.agentId]: next } }));
+      const changedSession = prev?.sessionId !== next.sessionId;
+      set((s) => ({
+        agents: { ...s.agents, [event.agentId]: next },
+        ...(changedSession && prev ? {
+          partial: { ...s.partial, [event.agentId]: false },
+          loaded: { ...s.loaded, [event.agentId]: event.seq === 1 },
+        } : {}),
+      }));
+      if (changedSession && event.type === 'session_started' && event.data.resumed) void get().loadTranscript(event.agentId);
     },
 
     reset: (agentId) => {

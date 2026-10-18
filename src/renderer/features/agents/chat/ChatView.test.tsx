@@ -583,6 +583,19 @@ describe('ChatView (store-bound)', () => {
     vi.mocked(window.clubhouse.chat).getAgentRuntime = getAgentRuntime;
   });
 
+  it('opens read-only saved history and returns to the current conversation', async () => {
+    window.clubhouse.chat.readTranscript = vi.fn(async () => chatFixture('claude', 'conversation'));
+    window.clubhouse.chat.listSessions = vi.fn(async () => []);
+    render(<ChatView agent={agent} />);
+    await screen.findByTestId('chat-user-message');
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    expect(await screen.findByText('No saved conversations.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Message')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Back to current chat'));
+    expect(screen.getByTestId('chat-user-message')).toHaveTextContent('The agent list rows are too tall');
+    expect(screen.getByLabelText('Message')).toBeInTheDocument();
+  });
+
   it('reuses loaded state when a view remounts, as a canvas card does when zooming', async () => {
     const read = vi.fn(async () => chatFixture('claude', 'conversation'));
     vi.mocked(window.clubhouse.chat).readTranscript = read;

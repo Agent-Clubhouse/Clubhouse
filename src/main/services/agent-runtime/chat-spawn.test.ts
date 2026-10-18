@@ -14,6 +14,16 @@ vi.mock('../chat-runtime-settings', () => ({ resolveRuntimeMode: vi.fn(() => mod
 const transcript = vi.hoisted(() => ({ events: [] as ChatEvent[] }));
 vi.mock('./chat-transcript', () => ({
   readChatTranscript: vi.fn(async () => transcript.events),
+  listChatSessions: vi.fn(async () => {
+    const sessions = new Map<string, { sessionId: string; nativeSessionId?: string; lastSeq: number }>();
+    for (const e of transcript.events) {
+      const entry = sessions.get(e.sessionId) ?? { sessionId: e.sessionId, lastSeq: 0 };
+      entry.lastSeq = Math.max(entry.lastSeq, e.seq);
+      if (e.type === 'session_started') entry.nativeSessionId = e.data.nativeSessionId;
+      sessions.set(e.sessionId, entry);
+    }
+    return [...sessions.values()].reverse();
+  }),
   appendChatEvent: vi.fn(async () => {}),
 }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
@@ -48,7 +58,7 @@ import { getAgentRuntime, clearChatRuntimes, isChatAgent } from './index';
 import { FakeChatDriver } from './fake-chat-driver';
 import { clearDriverHealth, DRIVER_FAILURE_THRESHOLD } from './chat-driver-health';
 import { evaluateCliVersion } from './chat-version-policy';
-import { appendChatEvent } from './chat-transcript';
+import { appendChatEvent, listChatSessions, readChatTranscript } from './chat-transcript';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { noteKillRequest } from './sleep-reason';
 import { IPC } from '../../../shared/ipc-channels';
@@ -163,6 +173,8 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     ];
     expect(await findChatSessionFor('agent-1', 'n1')).toEqual({ sessionId: 'c1', lastSeq: 2 });
     expect(await findChatSessionFor('agent-1', 'unknown')).toBeUndefined();
+    expect(listChatSessions).toHaveBeenCalledWith('agent-1');
+    expect(readChatTranscript).not.toHaveBeenCalled();
   });
 
   it('falls back to the terminal when the mode is terminal, the agent is quick, or no driver exists', async () => {

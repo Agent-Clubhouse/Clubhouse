@@ -299,14 +299,15 @@ describe('reduceChatEvent', () => {
       expect(questionItem(s, 'q2')?.expired).toBeUndefined();
     });
 
-    it('expire when a new run starts after the app quit mid-turn (no session_ended)', () => {
+    it.each(['s1', 's2'])('settles a new run of %s after the app quit mid-turn (no session_ended)', (sessionId) => {
       const s = fold([
         sessionStarted(ev),
         ev('turn_started', { trigger: 'prompt' }, { turnId: 't1' }),
         asked('q1', 't1'),
-        sessionStarted(ev, 's2'),
+        sessionStarted(ev, sessionId),
       ]);
-      expect(questionItem(s, 'q1')?.expired).toBe(true);
+      if (sessionId === 's1') expect(questionItem(s, 'q1')?.expired).toBe(true);
+      else expect(questionItem(s, 'q1')).toBeUndefined();
       expect(s.pendingQuestions).toEqual([]);
     });
 
@@ -374,7 +375,7 @@ describe('reduceChatEvent', () => {
     expect((s1.items[0] as AgentMessageItem).text).toBe('a');
   });
 
-  it('appends a session divider on a new session id without wiping history', () => {
+  it('starts an empty conversation on a new session id', () => {
     let s = fold([
       sessionStarted(ev, 's1'),
       ev('user_message', { messageId: 'u1', content: text('hi'), source: 'user', delivery: 'prompt' }, { sessionId: 's1' }),
@@ -386,15 +387,32 @@ describe('reduceChatEvent', () => {
       sessionStarted(ev, 's2'),
     ], s);
     expect(s.sessionId).toBe('s2');
-    expect(s.items.map((i) => i.kind)).toEqual(['user_message', 'session_divider', 'notice']);
-    const divider = s.items[1];
-    expect(divider.kind === 'session_divider' && divider.previousSessionId).toBe('s1');
+    expect(s.items.map((i) => i.kind)).toEqual(['notice']);
     // Session-scoped state is reset for the new conversation.
     expect(s.plan).toEqual([]);
     expect(s.pendingPermissions).toEqual([]);
     expect(s.lastSeq).toEqual({ s1: 4, s2: 2 });
-    // Only one divider even though two s2 events arrived.
-    expect(s.items.filter((i) => i.kind === 'session_divider')).toHaveLength(1);
+    // Old messages stay in their own session transcript.
+    expect(s.items.filter((i) => i.kind === 'session_divider')).toHaveLength(0);
+  });
+
+  it('ignores late events from an older session but allows a later explicit resume', () => {
+    const oldStart = { ...sessionStarted(ev, 'old'), ts: 100 };
+    const newStart = { ...sessionStarted(ev, 'new'), ts: 200 };
+    const reply = { ...ev('agent_message', { messageId: 'new-reply', text: 'Live conversation' }, { sessionId: 'new' }), ts: 210 };
+    const state = fold([oldStart, newStart, reply]);
+    const lateEnd = { ...ev('session_ended', { reason: 'stopped' }, { sessionId: 'old' }), ts: 300 };
+    const lateReply = { ...ev('agent_message', { messageId: 'late', text: 'Obsolete reply' }, { sessionId: 'old' }), ts: 310 };
+    expect(fold([lateEnd, lateReply], state)).toBe(state);
+    expect(fold([{ ...sessionStarted(ev, 'unseen-old'), ts: 50 }], state)).toBe(state);
+    const resumed = fold([{ ...sessionStarted(ev, 'old', { resumed: true }), ts: 400 }], state);
+    expect(resumed.sessionId).toBe('old');
+    expect(resumed.items).toEqual([]);
+  });
+
+  it('ignores an unknown old session ending after a current-only transcript load', () => {
+    const state = fold([{ ...sessionStarted(ev, 'current'), ts: 200 }]);
+    expect(fold([{ ...ev('session_ended', { reason: 'stopped' }, { sessionId: 'old' }), ts: 300 }], state)).toBe(state);
   });
 
   it('does not add a divider when session_started repeats the same session id (resume)', () => {
@@ -686,6 +704,51 @@ describe('useChatStore', () => {
     expect(state.items.map((i) => i.seq)).toEqual([2, 3, 4, 5]);
     expect(state.items.map((i) => i.kind)).toEqual(['user_message', 'agent_message', 'agent_message', 'agent_message']);
     expect(state.items.slice(1).map((i) => (i as AgentMessageItem).text)).toEqual(['On it.', 'Done.', 'Anything else?']);
+  });
+
+  it('clears the live view and its Show earlier flag when a new session starts', async () => {
+    const old = [sessionStarted(ev), ev('agent_message', { messageId: 'm1', text: 'Old context' })];
+    window.clubhouse.chat.readTranscript = vi.fn().mockResolvedValue(old);
+    await useChatStore.getState().loadTranscript(AGENT, 2);
+    expect(useChatStore.getState().partial[AGENT]).toBe(true);
+    useChatStore.getState().applyEvent(sessionStarted(ev, 'fresh'));
+    expect(useChatStore.getState().agents[AGENT].items).toEqual([]);
+    expect(useChatStore.getState().partial[AGENT]).toBe(false);
+  });
+
+  it('loads the matching history when resuming a different session', async () => {
+    const older = [sessionStarted(ev), ev('agent_message', { messageId: 'm1', text: 'Remembered task' })];
+    useChatStore.getState().applyEvent(sessionStarted(ev, 'fresh'));
+    const resumed = sessionStarted(ev, 's1', { resumed: true });
+    window.clubhouse.chat.readTranscript = vi.fn().mockResolvedValue([...older, resumed]);
+    useChatStore.getState().applyEvent(resumed);
+    await vi.waitFor(() => expect(useChatStore.getState().loading[AGENT]).toBeUndefined());
+    expect(useChatStore.getState().agents[AGENT].sessionId).toBe('s1');
+    expect(useChatStore.getState().agents[AGENT].items.map((i) => i.kind)).toEqual(['agent_message']);
+    expect((useChatStore.getState().agents[AGENT].items[0] as AgentMessageItem).text).toBe('Remembered task');
+  });
+
+  it('does not restore old messages when a clear arrives during Show earlier', async () => {
+    const old = [sessionStarted(ev), ev('agent_message', { messageId: 'm1', text: 'Old context' })];
+    let resolve!: (events: ChatEvent[]) => void;
+    window.clubhouse.chat.readTranscript = vi.fn(() => new Promise<ChatEvent[]>((r) => { resolve = r; }));
+    const loading = useChatStore.getState().loadTranscript(AGENT, 2);
+    useChatStore.getState().applyEvent(sessionStarted(ev, 'fresh'));
+    resolve(old);
+    await loading;
+    expect(useChatStore.getState().agents[AGENT].sessionId).toBe('fresh');
+    expect(useChatStore.getState().agents[AGENT].items).toEqual([]);
+    expect(useChatStore.getState().partial[AGENT]).toBe(false);
+  });
+
+  it('ignores a read completing after the agent store was reset', async () => {
+    let resolve!: (events: ChatEvent[]) => void;
+    window.clubhouse.chat.readTranscript = vi.fn(() => new Promise<ChatEvent[]>((r) => { resolve = r; }));
+    const loading = useChatStore.getState().loadTranscript(AGENT);
+    useChatStore.getState().reset(AGENT);
+    resolve([sessionStarted(ev)]);
+    await loading;
+    expect(useChatStore.getState().agents[AGENT]).toBeUndefined();
   });
 
   it('reset forgets that history was loaded', async () => {
