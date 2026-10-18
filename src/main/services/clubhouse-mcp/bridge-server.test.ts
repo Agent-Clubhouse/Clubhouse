@@ -626,6 +626,18 @@ describe('BridgeServer', () => {
       expect((await rawRequest(port, 'POST', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid }, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).statusCode).toBe(404);
     });
 
+    it('a request naming another agent\'s session gets 404 and leaves that session alone', async () => {
+      mockGetAgentNonce.mockImplementation((id) => (id === 'agent-2' ? 'nonce-2' : 'test-nonce'));
+      const res = await rawRequest(port, 'POST', '/mcp/agent-2', { 'X-Clubhouse-Nonce': 'nonce-2' }, init);
+      const sid = res.headers['mcp-session-id'] as string;
+      expect(bridgeServer._sessionCountForTesting('agent-2')).toBe(1);
+      const cross = await rawRequest(port, 'POST', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid }, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
+      expect(cross.statusCode).toBe(404);
+      expect(bridgeServer._sessionCountForTesting('agent-2')).toBe(1);
+      // Still usable by its own agent.
+      expect((await rawRequest(port, 'POST', '/mcp/agent-2', { 'X-Clubhouse-Nonce': 'nonce-2', 'Mcp-Session-Id': sid }, { jsonrpc: '2.0', id: 3, method: 'tools/list' })).statusCode).toBe(200);
+    });
+
     it('treats a session issued under an earlier nonce as unknown', async () => {
       const sid = await initialize();
       mockGetAgentNonce.mockReturnValue('new-nonce');

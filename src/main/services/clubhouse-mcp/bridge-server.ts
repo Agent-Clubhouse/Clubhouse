@@ -340,13 +340,16 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   // session of this agent (404 tells the client to initialize again).
   const sessionHeader = req.headers[SESSION_HEADER];
   const sessionId = typeof sessionHeader === 'string' ? sessionHeader : undefined;
-  let session = sessionId ? mcpSessions.get(sessionId) : undefined;
-  if (session && session.nonce !== getAgentNonce(agentId)) {
-    // Issued under an earlier nonce: the agent restarted.
-    endSession(sessionId!);
-    session = undefined;
-  }
+  const session = sessionId ? mcpSessions.get(sessionId) : undefined;
+  // Another agent's session: 404, and leave it alone.
   if (sessionId && session?.agentId !== agentId) {
+    res.writeHead(404);
+    res.end();
+    return;
+  }
+  if (session && session.nonce !== getAgentNonce(agentId)) {
+    // This agent's session, issued under an earlier nonce: the agent restarted.
+    endSession(sessionId!);
     res.writeHead(404);
     res.end();
     return;
