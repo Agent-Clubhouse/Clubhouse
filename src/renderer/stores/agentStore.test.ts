@@ -247,6 +247,42 @@ describe('agentStore', () => {
       expect(getState().agents['a_rewake'].errorMessage).toBe('fresh output');
     });
 
+    it('a Stop or sleep_agent during the start goes to sleeping, not the error card (#2127)', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+      for (const id of ['a_stop', 'a_pm']) {
+        seedAgent({ id, kind: 'durable', status: 'running' });
+        useAgentStore.setState((s) => ({ agentSpawnedAt: { ...s.agentSpawnedAt, [id]: now } }));
+      }
+      vi.setSystemTime(now + 1000);
+      // Main sends the sleep reason just before the exit.
+      getState().noteAgentSleep('a_stop', { reason: 'user', at: new Date(now + 900).toISOString() });
+      getState().updateAgentStatus('a_stop', 'sleeping', 0);
+      getState().noteAgentSleep('a_pm', { reason: 'agent', at: new Date(now + 900).toISOString(), by: 'PM' });
+      getState().updateAgentStatus('a_pm', 'sleeping', 0);
+      expect(getState().agents['a_stop'].status).toBe('sleeping');
+      expect(getState().agents['a_pm'].status).toBe('sleeping');
+    });
+
+    it('an early crash is still a launch failure, even after an earlier Stop (#2127)', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+      // A Stop from the previous run doesn't excuse this run's crash.
+      seedAgent({ id: 'a_crash', kind: 'durable', status: 'running', lastSleep: { reason: 'user', at: new Date(now - 60_000).toISOString() } });
+      useAgentStore.setState((s) => ({ agentSpawnedAt: { ...s.agentSpawnedAt, a_crash: now } }));
+      vi.setSystemTime(now + 1000);
+      getState().noteAgentSleep('a_crash', { reason: 'crashed', at: new Date(now + 900).toISOString(), exitCode: 1 });
+      getState().updateAgentStatus('a_crash', 'sleeping', 1, undefined, 'boom');
+      expect(getState().agents['a_crash'].status).toBe('error');
+
+      seedAgent({ id: 'a_old_stop', kind: 'durable', status: 'running', lastSleep: { reason: 'user', at: new Date(now - 60_000).toISOString() } });
+      useAgentStore.setState((s) => ({ agentSpawnedAt: { ...s.agentSpawnedAt, a_old_stop: now } }));
+      getState().updateAgentStatus('a_old_stop', 'sleeping', 1, undefined, 'boom');
+      expect(getState().agents['a_old_stop'].status).toBe('error');
+    });
+
     it('durable sleeping <3s falls back to generic message when no PTY output', () => {
       vi.useFakeTimers();
       const now = Date.now();

@@ -27,7 +27,7 @@ vi.mock('../clubhouse-mcp/injection', () => ({
 }));
 vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => false) }));
 vi.mock('../materialization-service', () => ({ resolveProjectMcpServers: vi.fn(async () => ({})) }));
-const agentConfig = vi.hoisted(() => ({ updateSessionId: vi.fn(async () => {}) }));
+const agentConfig = vi.hoisted(() => ({ updateSessionId: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}) }));
 vi.mock('../agent-config', () => agentConfig);
 const exitBroadcast = vi.hoisted(() => ({ broadcastAgentExit: vi.fn() }));
 vi.mock('../agent-exit-broadcast', () => exitBroadcast);
@@ -50,6 +50,7 @@ import { clearDriverHealth, DRIVER_FAILURE_THRESHOLD } from './chat-driver-healt
 import { evaluateCliVersion } from './chat-version-policy';
 import { appendChatEvent } from './chat-transcript';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
+import { noteKillRequest } from './sleep-reason';
 import { IPC } from '../../../shared/ipc-channels';
 import type { OrchestratorProvider } from '../../orchestrators';
 import { getShellEnvironment } from '../../util/shell';
@@ -545,9 +546,15 @@ describe('overlapping chat starts (#2087)', () => {
     const started = tryStartChatAgent(params, provider, undefined, undefined, null);
     await vi.waitFor(() => expect(finishProbe).toBeDefined());
 
+    noteKillRequest('agent-1', { trigger: 'user' });
     expect(await cancelChatStart('agent-1')).toBe(true);
     expect(untrackAgent).toHaveBeenCalledWith('agent-1');
     expect(exitBroadcast.broadcastAgentExit).toHaveBeenCalledWith('agent-1', 0);
+    // The reason goes out before the exit, so the renderer shows Sleeping, not "couldn't start" (#2127).
+    const reasonAt = vi.mocked(broadcastToAllWindows).mock.invocationCallOrder[
+      vi.mocked(broadcastToAllWindows).mock.calls.findIndex((c) => c[0] === IPC.AGENT.AGENT_SLEEP_REASON)];
+    expect(vi.mocked(broadcastToAllWindows)).toHaveBeenCalledWith(IPC.AGENT.AGENT_SLEEP_REASON, 'agent-1', expect.objectContaining({ reason: 'user' }));
+    expect(reasonAt).toBeLessThan(exitBroadcast.broadcastAgentExit.mock.invocationCallOrder.at(-1)!);
     finishProbe();
     expect(await started).toBe('cancelled');
     expect(start).not.toHaveBeenCalled();

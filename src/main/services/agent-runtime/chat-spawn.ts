@@ -164,6 +164,8 @@ interface InflightStart {
   runtime?: ChatAgentRuntime;
   /** Whether prepare() ran, so there is MCP config to restore. */
   prepared: boolean;
+  /** For the sleep reason when the start is killed before a runtime exists. */
+  projectPath: string;
 }
 
 /** One chat start at a time per agent. */
@@ -187,6 +189,9 @@ export async function cancelChatStart(agentId: string): Promise<boolean> {
   } else {
     if (start.prepared) configPipeline.restoreForAgent(agentId);
     untrackAgent(agentId);
+    // Sent before the exit, so the renderer reads it as a deliberate stop, not a failed launch (#2127).
+    const sleep = chatSleepInfo('stopped', 0, takeKillRequest(agentId), undefined);
+    if (sleep) void recordSleep(start.projectPath, agentId, sleep);
     broadcastAgentExit(agentId, 0);
   }
   return true;
@@ -247,7 +252,7 @@ export async function tryStartChatAgent(
   }
 
   const previous = inflightStarts.get(params.agentId);
-  const start: InflightStart = { controller: new AbortController(), prepared: false };
+  const start: InflightStart = { controller: new AbortController(), prepared: false, projectPath: params.projectPath };
   inflightStarts.set(params.agentId, start);
   if (previous) {
     appLog('core:chat', 'info', 'Cancelling chat start', { meta: { agentId: params.agentId, reason: 'superseded', runtimeRegistered: !!previous.runtime } });

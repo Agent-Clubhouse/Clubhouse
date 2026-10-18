@@ -55,7 +55,11 @@ export function createStatusSlice(set: SetAgentState, get: GetAgentState): Agent
         if (status === 'sleeping' && agent.kind === 'durable') {
           // If the agent exited within 3 seconds of spawning, treat as error (likely launch failure)
           const spawnedAt = s.agentSpawnedAt[id];
-          if (spawnedAt && Date.now() - spawnedAt < 3000) {
+          // A Stop or sleep_agent during the start isn't a failed launch (#2127):
+          // main sends that sleep reason just before the exit.
+          const stopped = agent.lastSleep && (agent.lastSleep.reason === 'user' || agent.lastSleep.reason === 'agent')
+            && !!spawnedAt && Date.parse(agent.lastSleep.at) >= spawnedAt;
+          if (spawnedAt && Date.now() - spawnedAt < 3000 && !stopped) {
             finalStatus = 'error';
             if (!resolvedErrorMessage) {
               // Prefer the known reason (e.g. why chat fell back to the
