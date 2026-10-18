@@ -21,6 +21,7 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import type { DeleteResult } from '../../shared/types';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { orchestratorAttr } from '../telemetry/spawn-telemetry';
+import { assertAgentGitName } from '../../shared/agent-name';
 
 type DeleteMode = Parameters<typeof ATTR.deleteMode>[0];
 
@@ -50,6 +51,15 @@ async function createDurableAgent(
   mcpConfigs: Record<string, Record<string, string>> | undefined,
   persona: string | undefined,
 ) {
+  // The name becomes a folder and a git branch; refuse a bad one up front (#2221).
+  if (useWorktree !== false) {
+    try {
+      assertAgentGitName(name, 'folder');
+    } catch (err) {
+      throw tagError(err, 'validation');
+    }
+  }
+
   let config: Awaited<ReturnType<typeof agentConfig.createDurable>>;
   try {
     config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, freeAgentMode, mcpIds, mcpConfigs, persona);

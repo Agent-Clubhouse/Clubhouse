@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { generateDurableName, AGENT_COLORS } from '../../../shared/name-generator';
+import { validateAgentGitName } from '../../../shared/agent-name';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
@@ -48,9 +49,12 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
     });
   }, [projectPath]);
 
+  // With a worktree the name becomes a folder and a git branch, so it must be strict.
+  const nameProblem = useWorktree && name.trim() ? validateAgentGitName(name.trim(), 'folder') : null;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || nameProblem) return;
     onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined, persona || undefined);
   };
 
@@ -74,6 +78,8 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                aria-invalid={nameProblem ? true : undefined}
+                aria-describedby={nameProblem ? 'add-agent-name-error' : undefined}
                 className="flex-1 bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
                   text-ctp-text focus-ring"
                 autoFocus
@@ -88,6 +94,9 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
                 {'\u21BB'}
               </button>
             </div>
+            {nameProblem && (
+              <p id="add-agent-name-error" className="mt-1 text-xs text-ctp-error" data-testid="add-agent-name-error">{nameProblem}</p>
+            )}
           </label>
 
           {/* Color */}
@@ -241,8 +250,10 @@ export function AddAgentDialog({ onClose, onCreate, projectPath, error }: Props)
             </button>
             <button
               type="submit"
+              disabled={!!nameProblem}
               className="px-4 py-1.5 text-xs rounded bg-ctp-accent text-white
-                hover:bg-ctp-accent/80 cursor-pointer font-medium"
+                hover:bg-ctp-accent/80 cursor-pointer font-medium
+                disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Create Agent
             </button>

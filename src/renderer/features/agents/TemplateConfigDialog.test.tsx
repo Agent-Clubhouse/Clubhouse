@@ -130,6 +130,28 @@ describe('TemplateConfigDialog', () => {
     expect(defaultProps.onCreate.mock.calls[0][0]).not.toHaveProperty('structuredMode');
   });
 
+  it('blocks a worktree name that is not a safe folder and branch name, and says why (#2221)', () => {
+    render(<TemplateConfigDialog {...defaultProps} />);
+    const input = screen.getByDisplayValue('qa');
+    fireEvent.change(input, { target: { value: 'QA Agent' } });
+    const error = screen.getByTestId('template-agent-name-error');
+    expect(error.textContent).toBe('Use only letters, digits, - and _ in the agent name.');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', error.id);
+    expect(screen.getByText('Create Agent')).toBeDisabled();
+    fireEvent.click(screen.getByText('Create Agent'));
+    expect(defaultProps.onCreate).not.toHaveBeenCalled();
+  });
+
+  it('accepts a free-form name once the worktree is off', () => {
+    render(<TemplateConfigDialog {...defaultProps} />);
+    fireEvent.change(screen.getByDisplayValue('qa'), { target: { value: 'QA Agent' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /worktree/i }));
+    expect(screen.queryByTestId('template-agent-name-error')).toBeNull();
+    fireEvent.click(screen.getByText('Create Agent'));
+    expect(defaultProps.onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: 'QA Agent', useWorktree: false }));
+  });
+
   it('calls onClose when Cancel is clicked', () => {
     render(<TemplateConfigDialog {...defaultProps} />);
     fireEvent.click(screen.getByText('Cancel'));

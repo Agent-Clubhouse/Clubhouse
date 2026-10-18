@@ -144,6 +144,30 @@ describe('AddAgentDialog', () => {
     );
   });
 
+  it('blocks a worktree agent whose name is not a valid folder and branch name (#2221)', () => {
+    render(<AddAgentDialog {...defaultProps} />);
+    fireEvent.click(screen.getByRole('checkbox', { name: /worktree/i }));
+    fireEvent.change(screen.getByDisplayValue('test-agent'), { target: { value: 'x$(touch pwned)' } });
+    const error = screen.getByTestId('add-agent-name-error');
+    expect(error.textContent).toBe('Use only letters, digits, - and _ in the agent name.');
+    const input = screen.getByDisplayValue('x$(touch pwned)');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', error.id);
+    expect(screen.getByText('Create Agent')).toBeDisabled();
+    fireEvent.click(screen.getByText('Create Agent'));
+    expect(defaultProps.onCreate).not.toHaveBeenCalled();
+  });
+
+  it('allows any display name when the agent has no worktree', () => {
+    render(<AddAgentDialog {...defaultProps} />);
+    fireEvent.change(screen.getByDisplayValue('test-agent'), { target: { value: 'My Agent' } });
+    expect(screen.queryByTestId('add-agent-name-error')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Create Agent'));
+    expect(defaultProps.onCreate).toHaveBeenCalledWith(
+      'My Agent', 'indigo', 'default', false, 'claude-code', undefined, undefined, undefined,
+    );
+  });
+
   describe('persona selector (#1565)', () => {
     it('renders a persona select defaulting to Project default', () => {
       render(<AddAgentDialog {...defaultProps} />);
