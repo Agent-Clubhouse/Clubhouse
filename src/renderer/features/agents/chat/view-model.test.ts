@@ -6,6 +6,7 @@ import type { ToolCallItem } from '../../../stores/chatStore';
 import {
   argSummary,
   buildStreamBlocks,
+  commandOutputIds,
   composerModes,
   diffStats,
   diffTexts,
@@ -13,9 +14,11 @@ import {
   formatDuration,
   formatTokens,
   implementLevel,
+  looksPreformatted,
   mcpTool,
   needsManualPlanHandoff,
   parseUnifiedDiff,
+  slashCommandOf,
   toolArgs,
   toolOpenByDefault,
   toolResultText,
@@ -197,5 +200,47 @@ describe('tool card helpers (#2110)', () => {
     expect(toolResultText(tool({ rawOutput: 'plain' }))).toBe('plain');
     expect(toolResultText(tool({ rawOutput: { ok: true } }))).toBe('{\n  "ok": true\n}');
     expect(toolResultText(tool({}))).toBe('');
+  });
+});
+
+describe('slash command output (#2179)', () => {
+  // Copilot's /context reply, verbatim from a live session.
+  const CONTEXT = [
+    'Context Usage',
+    '',
+    '○ ○ ◌ ● ◉ · · · · ·   gpt-5.6-sol · 17k/400k tokens (4%)',
+    '· · · · · · · · · ·   ○ System Prompt           8.9k   (2%)',
+    '· · · · · · · · · ·   ◌ System Tools            6.0k   (2%)',
+    '◎ ◎ ◎ ◎ ◎ ◎ ◎ ◎ ◎ ◎   ◎ Buffer                141.6k  (35%)',
+  ].join('\n');
+  const COMMANDS = [{ name: 'context' }, { name: 'mission' }];
+  const base = { sessionId: 's', seq: 0, ts: 0 };
+  const user = (id: string, text: string) => ({ ...base, id, kind: 'user_message' as const, messageId: id, content: [], text, source: 'user' as const, delivery: 'prompt' as const });
+  const reply = (id: string, text: string) => ({ ...base, id, kind: 'agent_message' as const, messageId: id, text, streaming: false });
+
+  it('recognises only commands the session offers, at the start of the message', () => {
+    expect(slashCommandOf('/context', COMMANDS)).toBe('context');
+    expect(slashCommandOf('  /mission fix it', COMMANDS)).toBe('mission');
+    expect(slashCommandOf('/contexts', COMMANDS)).toBeNull();
+    expect(slashCommandOf('/usr/bin is missing', COMMANDS)).toBeNull();
+    expect(slashCommandOf('run /context', COMMANDS)).toBeNull();
+  });
+
+  it('treats column-aligned lines as preformatted, and prose or markdown as not', () => {
+    expect(looksPreformatted(CONTEXT)).toBe(true);
+    expect(looksPreformatted('One line  with  gaps')).toBe(false);
+    expect(looksPreformatted('First paragraph.\n\nSecond paragraph.')).toBe(false);
+    expect(looksPreformatted('| a  | b |\n|----|---|\n| 1  | 2 |')).toBe(false);
+    expect(looksPreformatted('## Heading\nsome    text\nmore    text')).toBe(false);
+    expect(looksPreformatted('```\na    b\nc    d\n```')).toBe(false);
+  });
+
+  it('marks a command\'s laid-out reply, not ordinary replies or skill output in markdown', () => {
+    const items = [
+      user('u1', '/context'), reply('a1', CONTEXT),
+      user('u2', 'Same grid again please'), reply('a2', CONTEXT),
+      user('u3', '/mission tidy up'), reply('a3', 'Plan:\n\n- one\n- two'),
+    ];
+    expect([...commandOutputIds(items, COMMANDS)]).toEqual(['a1']);
   });
 });

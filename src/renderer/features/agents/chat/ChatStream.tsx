@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import type { ChatCapabilities, ChatMcpServer } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
-import { buildStreamBlocks, type StreamBlock } from './view-model';
+import { buildStreamBlocks, commandOutputIds, type StreamBlock } from './view-model';
 import { scrollWithin } from './scroll';
 import {
   AgentMessage,
@@ -28,6 +28,8 @@ interface BlockProps {
   inlineSubagentId?: string;
   /** Open the agent map at a subagent; omitted hides the jump links. */
   onOpenSubagent?: (subagentId: string) => void;
+  /** An agent message that is a slash command's laid-out output. */
+  preformatted?: boolean;
 }
 
 /** The subagent a top-level block belongs to, when its work shows inline (ids_only, or nesting off). */
@@ -64,7 +66,7 @@ function sameItems<T>(a: readonly T[], b: readonly T[]): boolean {
  */
 function sameBlock(prev: BlockProps, next: BlockProps): boolean {
   if (prev.turnNumber !== next.turnNumber || prev.capabilities !== next.capabilities || prev.mcpServers !== next.mcpServers) return false;
-  if (prev.inlineSubagentId !== next.inlineSubagentId || prev.onOpenSubagent !== next.onOpenSubagent) return false;
+  if (prev.inlineSubagentId !== next.inlineSubagentId || prev.onOpenSubagent !== next.onOpenSubagent || prev.preformatted !== next.preformatted) return false;
   const a = prev.block;
   const b = next.block;
   if (a.type === 'item' && b.type === 'item') return a.item === b.item;
@@ -89,13 +91,13 @@ const Block = memo(function Block(props: BlockProps) {
   return <BlockBody {...props} />;
 }, sameBlock);
 
-function BlockBody({ block, turnNumber, capabilities, mcpServers }: BlockProps) {
+function BlockBody({ block, turnNumber, capabilities, mcpServers, preformatted }: BlockProps) {
   if (block.type === 'explore') return <ExploreGroup tools={block.tools} />;
   if (block.type === 'subagent') return null;
   const item = block.item;
   switch (item.kind) {
     case 'user_message': return <UserMessage item={item} />;
-    case 'agent_message': return <AgentMessage item={item} />;
+    case 'agent_message': return <AgentMessage item={item} preformatted={preformatted} />;
     case 'thought': return <ThoughtRow item={item} />;
     case 'tool_call': return <ToolCallView tool={item} mcpServers={mcpServers} />;
     case 'plan_document': return <PlanDocumentCard item={item} />;
@@ -132,8 +134,9 @@ export interface ChatStreamProps {
 export function ChatStream({ state, onOpenSubagent, jump, onJumpResult, announce = true, onShowEarlier }: ChatStreamProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
-  const { items, subagents, capabilities } = state;
+  const { items, subagents, capabilities, commands } = state;
   const blocks = useMemo(() => buildStreamBlocks({ items, subagents, capabilities }), [items, subagents, capabilities]);
+  const commandOutput = useMemo(() => commandOutputIds(items, commands), [items, commands]);
   const turnNumbers = useMemo(() => {
     const m = new Map<string, number>();
     let n = 0;
@@ -222,6 +225,7 @@ export function ChatStream({ state, onOpenSubagent, jump, onJumpResult, announce
             mcpServers={state.mcpServers}
             inlineSubagentId={inlineJumps.get(b.key)}
             onOpenSubagent={onOpenSubagent}
+            preformatted={b.type === 'item' && commandOutput.has(b.item.id)}
           />
         ))}
       </div>

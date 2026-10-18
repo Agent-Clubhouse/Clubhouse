@@ -1045,3 +1045,22 @@ describe('compound actions stop when their first step fails (#2057)', () => {
     expect(actions.send).not.toHaveBeenCalled();
   });
 });
+
+describe('slash command output (#2179)', () => {
+  const GRID = 'Context Usage\n\n· · · ·   ○ System Prompt           8.9k   (2%)\n· · · ·   ◌ System Tools            6.0k   (2%)';
+
+  it('shows a command\'s laid-out reply as is, keeping its lines and spacing', () => {
+    const events = extend(chatFixture('copilot', 'conversation'),
+      { type: 'commands_available', data: { commands: [{ name: 'context', description: 'Show context usage' }] } },
+      { type: 'user_message', data: { messageId: 'u-ctx', content: [{ type: 'text', text: '/context' }], source: 'user', delivery: 'prompt' } },
+      { type: 'agent_message', data: { messageId: 'm-ctx', text: GRID } },
+    );
+    renderState(fold(events));
+    const out = screen.getByTestId('chat-command-output');
+    expect(out.tagName).toBe('PRE');
+    expect(out.textContent).toBe(GRID);
+    // Ordinary replies in the same conversation still render as markdown.
+    expect(screen.getAllByTestId('chat-agent-message').length).toBeGreaterThan(1);
+    expect(screen.getAllByTestId('chat-command-output')).toHaveLength(1);
+  });
+});
