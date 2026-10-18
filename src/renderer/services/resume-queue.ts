@@ -112,17 +112,21 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       useAgentStore.getState().loadAgentIcon(agent);
     }
 
+    // An agent still starting when the app restarted never had a session to
+    // resume: start it fresh with its mission. Anything else resumes, and a
+    // resumed session already has its mission, so it isn't sent again: every
+    // provider would re-run it as a new turn (#2074).
+    const fresh = !entry.sessionId && entry.sessionStarted === false;
     await window.clubhouse.agent.spawnAgent({
       agentId: entry.agentId,
       projectPath: entry.projectPath,
       cwd,
       kind: entry.kind,
-      resume: true,
+      resume: !fresh,
       sessionId: entry.sessionId || undefined,
       orchestrator: entry.orchestrator,
       model: entry.model || durableConfig?.model,
-      // No mission: the session being resumed already has it, and passing it
-      // again makes every provider re-send it as a new turn (#2074).
+      ...(fresh && entry.mission ? { mission: entry.mission } : {}),
       permissionMode: entry.permissionMode,
       freeAgentMode: entry.freeAgentMode ?? durableConfig?.freeAgentMode,
     });

@@ -36,10 +36,16 @@ export async function captureSessionState(
     const cwd = meta0?.worktreePath || reg.projectPath;
 
     let sessionId: string | null = null;
+    // Whether the agent ever started a CLI session (#2074): true with an id,
+    // false when we know there is none (resume would have nothing to continue,
+    // so the agent is spawned fresh with its mission), undefined when we can't tell.
+    let sessionStarted: boolean | undefined;
     const runtime = getAgentRuntime(agentId);
     if (runtime?.kind === 'chat') {
       // Chat runtimes know their native session id exactly; resume re-enters chat.
       sessionId = runtime.getNativeSessionId() ?? null;
+      // No id yet means the session never initialized
+      sessionStarted = sessionId !== null;
     } else if (isSessionCapable(provider)) {
       // Preferred: scrape the id the CLI printed into its own terminal.
       const buffer = ptyManager.getBuffer(agentId);
@@ -55,6 +61,8 @@ export async function captureSessionState(
         try {
           const [newest] = await provider.listSessions(cwd);
           if (newest) sessionId = newest.sessionId;
+          // Nothing on disk for this directory while it was running: it never started one
+          else sessionStarted = false;
         } catch (err) {
           appLog('update:session-resume', 'warn', 'Session lookup failed; will resume the most recent session', {
             meta: { agentId, cwd, error: err instanceof Error ? err.message : String(err) },
@@ -86,6 +94,7 @@ export async function captureSessionState(
       projectPath: reg.projectPath,
       orchestrator: reg.orchestrator,
       sessionId,
+      sessionStarted: sessionId ? true : sessionStarted,
       resumeStrategy: canResume ? 'auto' : 'manual',
       worktreePath: meta?.worktreePath,
       kind: meta?.kind || 'durable',

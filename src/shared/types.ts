@@ -1210,10 +1210,22 @@ export interface RestartSessionEntry {
   projectPath: string;
   orchestrator: OrchestratorId;
   sessionId: string | null;
+  /**
+   * Whether the agent had started a CLI session when the state was captured:
+   * true with a `sessionId`; false when none existed (the agent was still
+   * starting), so it is spawned fresh with its mission; absent when it can't
+   * be told (lookup failed, a provider without session listing, or state
+   * written by an older version), which resumes the most recent session.
+   */
+  sessionStarted?: boolean;
   resumeStrategy: ResumeStrategy;
   worktreePath?: string;
   kind: AgentKind;
-  /** The task the agent was running, for display after the restart. Never re-sent on resume (#2074). */
+  /**
+   * The task the agent was running. Never re-sent to a resumed session (#2074);
+   * sent only when the agent never started a session (`sessionStarted: false`)
+   * and is spawned fresh instead.
+   */
   mission?: string;
   model?: string;
   permissionMode?: FreeAgentPermissionMode;
