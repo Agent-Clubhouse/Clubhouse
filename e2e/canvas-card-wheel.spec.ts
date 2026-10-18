@@ -5,7 +5,8 @@
  * A live chat transcript needs a running agent, so the test puts a
  * scrolling region into an unselected agent card's content area (the same
  * shape as a transcript: overflow-y auto with more content than fits) and
- * uses real mouse-wheel input.
+ * uses real mouse-wheel input. It checks that the wheel reached the region and
+ * the canvas didn't pan; the region's own scrolling is the browser's.
  *
  * Note: the canvas right-click flow is known to flake on macOS/Windows CI.
  */
@@ -77,6 +78,8 @@ test('wheel over a scrolling region in an unselected card scrolls it and does no
     tall.style.height = '3000px';
     tall.textContent = 'transcript';
     scroller.appendChild(tall);
+    // Record that the wheel really landed in the scroller, not on something beside it.
+    scroller.addEventListener('wheel', () => { scroller.dataset.wheels = String(Number(scroller.dataset.wheels ?? 0) + 1); });
     content.appendChild(scroller);
   });
   const scroller = card.locator('[data-testid="e2e-scroller"]');
@@ -85,7 +88,7 @@ test('wheel over a scrolling region in an unselected card scrolls it and does no
   const before = await viewportTransform();
   await window.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await window.mouse.wheel(0, 300);
-  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(() => scroller.getAttribute('data-wheels')).toBe('1');
   // Give a batched pan a frame to land before checking it didn't.
   await window.waitForTimeout(200);
   expect(await viewportTransform()).toBe(before);
