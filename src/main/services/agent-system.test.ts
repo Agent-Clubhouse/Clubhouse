@@ -342,6 +342,19 @@ describe('agent-system', () => {
   });
 
   describe('spawnAgent', () => {
+    it('refuses to launch while the app shuts down (#2053)', async () => {
+      const { closeLaunches, reopenLaunches, LaunchesClosedError } = await import('./launch-gate');
+      closeLaunches('quitting');
+      try {
+        await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/my/project', cwd: '/my/project', kind: 'durable' }))
+          .rejects.toBeInstanceOf(LaunchesClosedError);
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+        expect(getAgentProjectPath('agent-1')).toBeUndefined();
+      } finally {
+        reopenLaunches();
+      }
+    });
+
     it('tracks agent project path', async () => {
       await spawnAgent({
         agentId: 'agent-1',

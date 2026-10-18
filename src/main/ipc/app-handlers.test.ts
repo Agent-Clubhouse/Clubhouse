@@ -129,6 +129,7 @@ vi.mock('../services/agent-system', () => ({
 vi.mock('../services/pty-manager', () => ({
   write: vi.fn(),
   kill: vi.fn(),
+  killAll: vi.fn(async () => {}),
   getBuffer: vi.fn(() => ''),
   getLastActivity: vi.fn(() => null),
 }));
@@ -169,6 +170,10 @@ vi.mock('../services/agent-config', () => ({
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAppHandlers } from './app-handlers';
+import { cancelAppShutdown } from '../services/app-shutdown';
+import { launchesOpen } from '../services/launch-gate';
+import { captureSessionState } from '../services/restart-session-service';
+import * as ptyManagerMock from '../services/pty-manager';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
@@ -191,6 +196,8 @@ describe('app-handlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // The shutdown runs once per app; each test is a fresh app.
+    cancelAppShutdown();
     handleHandlers = new Map();
     onHandlers = new Map();
     vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: any) => {
@@ -653,9 +660,27 @@ describe('app-handlers', () => {
     mockFlushAllAgentConfigs.mockRejectedValueOnce(new Error('disk full'));
     await handleHandlers.get(IPC.APP.RESTART)!({});
     expect(app.exit).toHaveBeenCalledWith(0);
-    expect(logService.appLog).toHaveBeenCalledWith(
-      'core:shutdown', 'error', 'Failed to flush agent configs before exit', expect.anything(),
-    );
+    expect(logService.appLog).toHaveBeenCalledWith('core:shutdown', 'error', 'Failed to flush agent configs: disk full');
+  });
+
+  it('CONFIRM_UPDATE_RESTART captures sessions, stops agents and flushes before applying (#2053)', async () => {
+    const order: string[] = [];
+    vi.mocked(captureSessionState).mockImplementationOnce(async () => { order.push('capture'); });
+    vi.mocked(ptyManagerMock.killAll).mockImplementationOnce(async () => { order.push('stop'); });
+    mockFlushAllAgentConfigs.mockImplementationOnce(async () => { order.push('flush'); });
+    vi.mocked(autoUpdateService.applyUpdate).mockImplementationOnce(async () => {
+      order.push('apply');
+      // Launches stay closed while the update applies.
+      expect(launchesOpen()).toBe(false);
+    });
+    await handleHandlers.get(IPC.APP.CONFIRM_UPDATE_RESTART)!({}, { agentNames: { a1: 'gallant-swift' } });
+    expect(order).toEqual(['capture', 'stop', 'flush', 'apply']);
+  });
+
+  it('CONFIRM_UPDATE_RESTART reopens launches when the update fails to apply', async () => {
+    vi.mocked(autoUpdateService.applyUpdate).mockRejectedValueOnce(new Error('Update.exe not found'));
+    await expect(handleHandlers.get(IPC.APP.CONFIRM_UPDATE_RESTART)!({}, { agentNames: {} })).rejects.toThrow('Update.exe not found');
+    expect(launchesOpen()).toBe(true);
   });
 
   it('GET_PENDING_RELEASE_NOTES delegates to autoUpdateService', async () => {

@@ -49,7 +49,8 @@ vi.mock('./chat-version-policy', async (importActual) => {
   return { ...actual, evaluateCliVersion: vi.fn(actual.evaluateCliVersion) };
 });
 
-import { levelForFreeAgent, findChatSessionFor, tryStartChatAgent, isLoginRequiredError, cancelChatStart, hasChatStartInFlight } from './chat-spawn';
+import { levelForFreeAgent, findChatSessionFor, tryStartChatAgent, isLoginRequiredError, cancelChatStart, hasChatStartInFlight, stopAllChatAgents } from './chat-spawn';
+import { whenSessionCapturesSettled } from '../session-capture-barrier';
 import { takeChatStartFailure } from './stale-session';
 import { untrackAgent } from '../agent-registry';
 import { appLog } from '../log-service';
@@ -602,5 +603,51 @@ describe('overlapping chat starts (#2087)', () => {
   it('reports no start in flight when there is nothing to cancel', async () => {
     expect(await cancelChatStart('agent-1')).toBe(false);
     expect(exitBroadcast.broadcastAgentExit).not.toHaveBeenCalled();
+  });
+});
+
+describe('stopAllChatAgents (#2053)', () => {
+  /** Starts hang until settled, like a CLI still doing its handshake at quit. */
+  class HangingDriver extends FakeChatDriver {
+    readonly pending: ChatDriverStartOptions[] = [];
+    override start(opts: ChatDriverStartOptions): Promise<ChatDriverSession> {
+      if (opts.agentId === 'agent-1') return super.start(opts);
+      this.pending.push(opts);
+      return new Promise(() => undefined);
+    }
+  }
+
+  it('stops running sessions and cancels starts, and the session-id writes join the barrier', async () => {
+    const driver = new HangingDriver();
+    registerChatDriver(driver);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('chat');
+    const starting = tryStartChatAgent({ ...params, agentId: 'agent-2' }, provider, undefined, undefined, null);
+    await vi.waitFor(() => expect(driver.pending).toHaveLength(1));
+
+    // The native-id write on session end lands late.
+    const written: string[] = [];
+    agentConfig.touchSessionEntry.mockImplementation(async (_p: string, agentId: string, id: string) => {
+      await new Promise((r) => setTimeout(r, 20));
+      written.push(`${agentId}:${id}`);
+    });
+
+    await stopAllChatAgents();
+    expect(driver.sessions[0].closed).toBe(true);
+    expect(getAgentRuntime('agent-1')).toBeUndefined();
+    expect(driver.pending[0].signal?.aborted).toBe(true);
+    expect(await starting).toBe('cancelled');
+    expect(exitBroadcast.broadcastAgentExit).toHaveBeenCalledWith('agent-2', 0);
+
+    await whenSessionCapturesSettled();
+    expect(written).toContain('agent-1:native-1');
+  });
+
+  it('settles even when a driver close fails', async () => {
+    const driver = new FakeChatDriver();
+    registerChatDriver(driver);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('chat');
+    vi.spyOn(driver.last, 'close').mockRejectedValue(new Error('EPIPE'));
+    await expect(stopAllChatAgents()).resolves.toBeUndefined();
+    expect(getAgentRuntime('agent-1')).toBeUndefined();
   });
 });
