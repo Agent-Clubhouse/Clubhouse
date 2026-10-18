@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, HelperCascadeResult, HelperDeleteChoice } from '../shared/types';
+import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, HelperCascadeResult, HelperDeleteChoice, StartDurableCreationParams } from '../shared/types';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
 export const agent = {
@@ -9,8 +9,19 @@ export const agent = {
     ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
   getRunningStatuses: (agentIds: string[]): Promise<string[]> =>
     ipcRenderer.invoke(IPC.AGENT.GET_RUNNING_STATUSES, agentIds),
-  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, persona?: string) =>
-    ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona),
+  createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[], mcpConfigs?: Record<string, Record<string, string>>, persona?: string, worktreeOptions?: DurableWorktreeOptions) =>
+    ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona, worktreeOptions),
+  /** Asynchronous create (#2226): resolves with the id while the worktree is still being made. */
+  startDurableCreation: (projectPath: string, params: StartDurableCreationParams): Promise<{ agentId: string; config: DurableAgentConfig }> =>
+    ipcRenderer.invoke(IPC.AGENT.START_DURABLE_CREATION, projectPath, params),
+  /** Cancel a creation in progress; resolves false when the agent is not being created. */
+  cancelDurableCreation: (projectPath: string, agentId: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.AGENT.CANCEL_DURABLE_CREATION, projectPath, agentId),
+  onDurableCreationEvent: (callback: (event: DurableCreationEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, creationEvent: DurableCreationEvent) => callback(creationEvent);
+    ipcRenderer.on(IPC.AGENT.DURABLE_CREATION_EVENT, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.DURABLE_CREATION_EVENT, listener); };
+  },
   deleteDurable: (projectPath: string, agentId: string) =>
     ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
   renameDurable: (projectPath: string, agentId: string, newName: string) =>

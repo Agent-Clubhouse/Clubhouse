@@ -28,6 +28,9 @@ let showRefBroken = false;
 let remoteFetched = true;
 let probeError: string | null = null;
 const gitCalls: Array<{ args: string[]; cwd: string }> = [];
+const START_SHA = 'a'.repeat(40);
+const MOVED_SHA = 'b'.repeat(40);
+const movedBranches = new Set<string>();
 
 function exitError(code: number, message: string): Error {
   return Object.assign(new Error(message), { code });
@@ -53,6 +56,12 @@ function gitOutput(args: string[], cwd: string): string {
     if (name === baseBranch || branches.has(name)) return '';
     throw exitError(1, '');
   }
+  if (cmd.startsWith('rev-parse --verify --quiet refs/heads/')) {
+    // An owned branch's tip (#2226): unmoved unless a test moves it.
+    const name = args[3].slice('refs/heads/'.length);
+    if (branches.has(name)) return `${movedBranches.has(name) ? MOVED_SHA : START_SHA}\n`;
+    throw exitError(1, '');
+  }
   if (cmd.startsWith('rev-parse --verify')) {
     if (args[2] === baseBranch) return 'abc\n';
     throw exitError(128, 'unknown revision');
@@ -64,7 +73,7 @@ function gitOutput(args: string[], cwd: string): string {
     dirs.delete(path.join(wt, '.git'));
     return '';
   }
-  if (cmd.startsWith('branch -D')) {
+  if (cmd.startsWith('branch -D') || cmd.startsWith('branch -d')) {
     branches.delete(args[args.length - 1]);
     return '';
   }
@@ -218,6 +227,7 @@ beforeEach(() => {
   repoByBranch.clear();
   branches.clear();
   rmFailures.clear();
+  movedBranches.clear();
   remoteConfigured = true;
   baseBranch = 'main';
   showRefBroken = false;
@@ -376,7 +386,7 @@ describe('delete cascade', () => {
   }
 
   function branchDeletions(): string[] {
-    return gitCalls.filter((c) => c.args[0] === 'branch' && c.args[1] === '-D').map((c) => c.args[c.args.length - 1]);
+    return gitCalls.filter((c) => c.args[0] === 'branch' && (c.args[1] === '-D' || c.args[1] === '-d')).map((c) => c.args[c.args.length - 1]);
   }
 
   it('reports the dirty, unpushed and unmerged checks for a worktree', async () => {
@@ -525,13 +535,14 @@ describe('delete cascade', () => {
     expect(checks.error).toMatch(/couldn't check, fatal: not a git repository/);
   });
 
-  it('B4: a helper still being created is never disposed, even forced', async () => {
+  it('B4: a helper another Clubhouse instance is still creating is never disposed, even forced', async () => {
     seed([
       withWorktree('durable_1_orch'),
       withWorktree('durable_2_new', {}, {
         parentAgentId: 'durable_1_orch',
-        creation: { state: 'creating', startedAt: 'x' },
-      } as Partial<DurableAgentConfig>),
+        // Owned by a live process with a fresh heartbeat, so recovery leaves it alone (#2226).
+        creation: { state: 'creating', startedAt: new Date().toISOString(), heartbeatAt: new Date().toISOString(), owner: { pid: process.ppid, instanceId: 'other-window' } },
+      }),
     ]);
     expect(helperCreationBlock((await listDurable(PROJECT_PATH))[1])).toMatch(/being created/);
 
@@ -542,6 +553,24 @@ describe('delete cascade', () => {
     expect(await disposeHelper(PROJECT_PATH, 'durable_2_new', { force: true })).toMatchObject({ ok: false });
     expect(worktreeRemovals()).toEqual([]);
     expect((await listDurable(PROJECT_PATH)).find((a) => a.id === 'durable_2_new')?.disposedAt).toBeUndefined();
+  });
+
+  it('disposes an owned helper branch only while it is unmoved (#2226)', async () => {
+    seed([
+      withWorktree('durable_1_orch'),
+      withWorktree('durable_2_owned', {}, { parentAgentId: 'durable_1_orch', branchOwned: true, branchStartSha: START_SHA }),
+      withWorktree('durable_3_moved', {}, { parentAgentId: 'durable_1_orch', branchOwned: true, branchStartSha: START_SHA }),
+      withWorktree('durable_4_theirs', {}, { parentAgentId: 'durable_1_orch', branchOwned: false }),
+    ]);
+    movedBranches.add('durable_3_moved/standby');
+
+    const result = await resolveHelpersForDelete(PROJECT_PATH, 'durable_1_orch', 'dispose');
+
+    expect(result).toMatchObject({ ok: true, helperIds: ['durable_2_owned', 'durable_3_moved', 'durable_4_theirs'] });
+    // Only the unmoved owned branch goes, with -D after the tip check; the folders all go first.
+    expect(branchDeletions()).toEqual(['durable_2_owned/standby']);
+    expect(gitCalls.map((c) => c.args)).toContainEqual(['branch', '-D', '--', 'durable_2_owned/standby']);
+    expect(worktreeRemovals()).toHaveLength(3);
   });
 
   it('reports exactly which helpers were disposed when one fails part way', async () => {

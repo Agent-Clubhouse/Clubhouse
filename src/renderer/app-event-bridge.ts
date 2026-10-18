@@ -12,6 +12,7 @@
 
 import { useAgentStore, consumeCancelled } from './stores/agentStore';
 import { useProjectStore } from './stores/projectStore';
+import { applyDurableCreationEvent } from './features/agents/durable-creation-events';
 import { useUIStore } from './stores/uiStore';
 import { useNotificationStore } from './stores/notificationStore';
 import { useToastStore } from './stores/toastStore';
@@ -328,6 +329,11 @@ function initAgentWakingListener(): () => void {
     removeSleepingListener();
     removeSleepReasonListener();
   };
+}
+
+/** Stages of an asynchronous agent creation (#2226); see applyDurableCreationEvent. */
+function initCreationEventListener(): () => void {
+  return window.clubhouse.agent.onDurableCreationEvent(applyDurableCreationEvent);
 }
 
 /** Notices that explain a start that didn't go as asked; a launch error card shows them. */
@@ -753,6 +759,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(...initWindowListeners());
   cleanups.push(initPtyExitListener());
   cleanups.push(initAgentWakingListener());
+  cleanups.push(initCreationEventListener());
   cleanups.push(initChatRuntimeNoticeListener());
   cleanups.push(initHookEventListener());
   cleanups.push(initPermissionQueueListener());

@@ -35,6 +35,12 @@ vi.mock('../services/agent-config', () => ({
   deleteUnregister: vi.fn(() => ({ ok: true })),
 }));
 
+vi.mock('../services/agent-creation', () => ({
+  startDurableCreation: vi.fn(async () => ({ agentId: 'agent-2', config: { id: 'agent-2', name: 'Helper', creation: { state: 'creating' } }, done: Promise.resolve('ready') })),
+  cancelDurableCreation: vi.fn(async () => true),
+  onDurableCreationEvent: vi.fn(() => () => {}),
+}));
+
 vi.mock('../services/annex-server', () => ({
   broadcastSnapshotRefresh: vi.fn(),
 }));
@@ -84,6 +90,7 @@ import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAgentHandlers } from './agent-handlers';
 import * as agentConfig from '../services/agent-config';
+import * as agentCreation from '../services/agent-creation';
 import * as agentSystem from '../services/agent-system';
 import * as headlessManager from '../services/headless-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
@@ -122,6 +129,7 @@ describe('agent-handlers', () => {
       IPC.AGENT.READ_TRANSCRIPT, IPC.AGENT.GET_TRANSCRIPT_INFO,
       IPC.AGENT.READ_TRANSCRIPT_PAGE, IPC.AGENT.READ_TRANSCRIPT_FROM, IPC.AGENT.IS_HEADLESS_AGENT,
       IPC.AGENT.GET_RUNNING_STATUSES,
+      IPC.AGENT.START_DURABLE_CREATION, IPC.AGENT.CANCEL_DURABLE_CREATION,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
@@ -163,7 +171,7 @@ describe('agent-handlers', () => {
   it('CREATE_DURABLE delegates to agentConfig.createDurable', async () => {
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
     const result = await handler({}, '/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined);
-    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined);
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Bot', '#ff0000', 'gpt-5', true, 'claude-code', false, undefined, undefined, undefined, undefined);
     expect(result).toEqual({ id: 'agent-1', name: 'Test' });
   });
 
@@ -178,7 +186,55 @@ describe('agent-handlers', () => {
   it('CREATE_DURABLE lets a non-worktree agent keep a free-form display name', async () => {
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
     await handler({}, '/project', 'My Bot', '#ff0000', undefined, false);
-    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'My Bot', '#ff0000', undefined, false, undefined, undefined, undefined, undefined, undefined);
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'My Bot', '#ff0000', undefined, false, undefined, undefined, undefined, undefined, undefined, undefined);
+  });
+
+  it('CREATE_DURABLE passes folder, branch and branch-from options through (#2226)', async () => {
+    const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
+    await handler({}, '/project', 'Helper one', '#ff0000', undefined, true, undefined, undefined, undefined, undefined, undefined,
+      { folderName: 'helper-1', branchName: 'helper-1/work', branchFrom: 'orch/standby', extra: 'ignored' });
+    expect(agentConfig.createDurable).toHaveBeenCalledWith('/project', 'Helper one', '#ff0000', undefined, true, undefined, undefined, undefined, undefined, undefined,
+      { folderName: 'helper-1', branchName: 'helper-1/work', branchFrom: 'orch/standby' });
+  });
+
+  describe('START_DURABLE_CREATION (#2226)', () => {
+    it('returns the id and creating config without the done promise', async () => {
+      const handler = handlers.get(IPC.AGENT.START_DURABLE_CREATION)!;
+      const result = await handler({}, '/project', { name: 'Helper', color: 'indigo', folderName: 'helper-1', branchFrom: 'main', model: 'default' });
+      expect(result).toEqual({ agentId: 'agent-2', config: { id: 'agent-2', name: 'Helper', creation: { state: 'creating' } } });
+      expect(agentCreation.startDurableCreation).toHaveBeenCalledWith(
+        '/project',
+        expect.objectContaining({ name: 'Helper', color: 'indigo', folderName: 'helper-1', branchFrom: 'main' }),
+        expect.objectContaining({ inject: undefined }),
+      );
+      const params = vi.mocked(agentCreation.startDurableCreation).mock.calls[0][1];
+      expect(params).not.toHaveProperty('model');
+    });
+
+    it('passes a persona injection when a persona is given', async () => {
+      const handler = handlers.get(IPC.AGENT.START_DURABLE_CREATION)!;
+      await handler({}, '/project', { name: 'Helper', color: 'indigo', persona: 'qa' });
+      const opts = vi.mocked(agentCreation.startDurableCreation).mock.calls[0][2];
+      expect(typeof opts?.inject).toBe('function');
+    });
+
+    it.each([
+      [{ color: 'indigo' }, /params.name/],
+      [{ name: 'a', color: 3 }, /params.color/],
+      [{ name: 'a', color: 'indigo', branchFrom: 7 }, /params.branchFrom/],
+      [{ name: 'a', color: 'indigo', mcpIds: [1] }, /params.mcpIds/],
+      [{ name: 'a', color: 'indigo', useWorktree: 'yes' }, /params.useWorktree/],
+    ])('refuses malformed params %j', async (params, message) => {
+      const handler = handlers.get(IPC.AGENT.START_DURABLE_CREATION)!;
+      await expect(handler({}, '/project', params)).rejects.toThrow(message);
+      expect(agentCreation.startDurableCreation).not.toHaveBeenCalled();
+    });
+
+    it('CANCEL_DURABLE_CREATION delegates to cancelDurableCreation', async () => {
+      const handler = handlers.get(IPC.AGENT.CANCEL_DURABLE_CREATION)!;
+      expect(await handler({}, '/project', 'agent-2')).toBe(true);
+      expect(agentCreation.cancelDurableCreation).toHaveBeenCalledWith('/project', 'agent-2');
+    });
   });
 
   it('DELETE_DURABLE delegates to agentConfig.deleteDurable', async () => {

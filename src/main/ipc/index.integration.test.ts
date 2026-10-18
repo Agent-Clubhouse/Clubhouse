@@ -218,6 +218,7 @@ vi.mock('../services/project-store', () => ({
 vi.mock('../services/agent-config', () => ({
   ensureGitignore: vi.fn(),
   getDurableConfig: vi.fn(() => ({})),
+  onDurableCreationEvent: vi.fn(() => () => {}),
 }));
 
 // ── Service mocks (process-handlers deps) ──────────────────────────────

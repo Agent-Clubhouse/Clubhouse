@@ -214,6 +214,7 @@ describe('preload IPC bridge', () => {
         ['mcp-1'],
         { 'mcp-1': { mode: 'safe' } },
         'persona',
+        { folderName: 'builder', branchName: 'builder/work', branchFrom: 'main' },
       )).resolves.toBe('bridge-result');
 
       expect(invoke).toHaveBeenCalledWith(
@@ -228,7 +229,16 @@ describe('preload IPC bridge', () => {
         ['mcp-1'],
         { 'mcp-1': { mode: 'safe' } },
         'persona',
+        { folderName: 'builder', branchName: 'builder/work', branchFrom: 'main' },
       );
+    });
+
+    it('starts and cancels asynchronous creations (#2226)', async () => {
+      const params = { name: 'Helper', color: 'indigo', branchFrom: 'main' };
+      await expect(api.agent.startDurableCreation('/projects/demo', params)).resolves.toBe('bridge-result');
+      expect(invoke).toHaveBeenCalledWith('agent:start-durable-creation', '/projects/demo', params);
+      await expect(api.agent.cancelDurableCreation('/projects/demo', 'agent-1')).resolves.toBe('bridge-result');
+      expect(invoke).toHaveBeenCalledWith('agent:cancel-durable-creation', '/projects/demo', 'agent-1');
     });
 
     it('passes agent updates and returns the handler result', async () => {
