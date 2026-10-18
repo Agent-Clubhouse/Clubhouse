@@ -2,7 +2,7 @@ import { forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
-import { useChatStore } from '../../stores/chatStore';
+import { liveChatAgent, useChatStore } from '../../stores/chatStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { getOrchestratorLabel, formatModelLabel } from '../../features/agents/orchestrator-colors';
 import type { ActionDef } from '../../features/agents/useAgentRowActions';
@@ -55,8 +55,9 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
 }>(function AgentHoverCard({ agent, dot, detailed, projectPath, anchor, actions, onOpenTerminal, onAction, onMouseEnter, onMouseLeave, onFocus, onBlur }, ref) {
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
-  const chatState = useChatStore((s) => s.agents[agent.id]?.state ?? null);
-  const turnStartedAt = useChatStore((s) => s.agents[agent.id]?.turnStartedAt ?? null);
+  // Only while chat runs the agent: state left from an earlier chat session doesn't count (#2208).
+  const chatState = useChatStore((s) => liveChatAgent(s, agent.id)?.state ?? null);
+  const turnStartedAt = useChatStore((s) => liveChatAgent(s, agent.id)?.turnStartedAt ?? null);
   // A chat agent's Working time is its turn's, as in the chat header (#2197).
   const since = chatState === 'running' && turnStartedAt ? turnStartedAt : spawnedAt;
   const running = agent.status === 'running' && since;

@@ -221,9 +221,9 @@ describe('AgentRow hover card', () => {
 });
 
 describe('AgentRow hover card for a chat agent (#2197)', () => {
-  const chatState = (state: 'running' | 'idle', turnStartedAt: number | null) =>
-    useChatStore.setState({ agents: { a1: { ...createChatViewState('a1'), sessionId: 's1', state, turnStartedAt } } });
-  afterEach(() => useChatStore.setState({ agents: {} }));
+  const chatState = (state: 'running' | 'idle', turnStartedAt: number | null, live = true) =>
+    useChatStore.setState({ agents: { a1: { ...createChatViewState('a1'), sessionId: 's1', state, turnStartedAt } }, live: { a1: live } });
+  afterEach(() => useChatStore.setState({ agents: {}, live: {} }));
 
   it('times Working from the turn, as the chat header does, and offers Sleep', () => {
     vi.useFakeTimers();
@@ -250,6 +250,18 @@ describe('AgentRow hover card for a chat agent (#2197)', () => {
     expect(card).toHaveTextContent('Done');
     expect(card).not.toHaveTextContent('Idle');
     expect(screen.getByTestId('hover-stop')).toHaveTextContent('Sleep');
+  });
+
+  it('ignores chat state left from an earlier session once the agent runs in the terminal (#2208)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-18T09:22:29Z'));
+    useAgentStore.setState({ agentSpawnedAt: { a1: Date.now() - 41 * 60_000 } });
+    chatState('running', Date.now() - 9 * 60_000, false);
+    const { focusable } = setup(durable({ status: 'running' }), { dot: 'working' });
+    fireEvent.focus(focusable);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    expect(screen.getByTestId('agent-hover-card')).toHaveTextContent('Working for 41m');
+    expect(screen.getByTestId('hover-stop')).toHaveTextContent('Stop');
   });
 
   it('keeps Stop for an agent in the terminal', () => {

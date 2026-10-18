@@ -1,5 +1,8 @@
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import type { ChatSessionState } from '../../../shared/chat';
+import { chatDetailedStatus, isMidTurn, type ChatStatus } from '../../../shared/chat-agent-status';
+
+export { chatDetailedStatus, isMidTurn, type ChatStatus };
 
 /**
  * One status vocabulary for agents (#2018): the sidebar's 8px dot and one
@@ -10,15 +13,6 @@ import type { ChatSessionState } from '../../../shared/chat';
 
 /** What an agent's status dot shows. `idle` is an agent between turns, shown as Done. */
 export type AgentDot = 'working' | 'idle' | 'needs' | 'error' | 'sleeping' | 'starting';
-
-/**
- * Hook status between tool calls: post_tool and permission_resolved report
- * state 'idle' with message "Thinking" while the turn is still going
- * (agentStatusSlice). That is working, not done.
- */
-export function isMidTurn(detailed: Pick<AgentDetailedStatus, 'state' | 'message'> | undefined): boolean {
-  return detailed?.state === 'idle' && detailed.message === 'Thinking';
-}
 
 type DetailedLike = Pick<AgentDetailedStatus, 'state'> & Partial<Pick<AgentDetailedStatus, 'message'>>;
 
@@ -41,46 +35,6 @@ export function chatDot(state: ChatSessionState | null): AgentDot {
     case 'sleeping': return 'sleeping';
     case 'idle': return 'idle';
     default: return 'starting';
-  }
-}
-
-/** What the chat store knows about an agent's chat session, for status surfaces. */
-export interface ChatStatus {
-  state: ChatSessionState | null;
-  /** ts of the running turn's turn_started. */
-  turnStartedAt: number | null;
-}
-
-/**
- * Hook-shaped status for an agent a chat runtime runs, from its chat session
- * state: the state the chat header shows. The status bridge only reports
- * tool and permission events, and stale hook status is cleared after 30s
- * (clearStaleStatuses), so during a long tool call or a long think the hook
- * status alone reads as Done mid-turn (#2197). Returns `detailed` unchanged
- * when the chat state can't say (no session yet, sleeping, or an error, which
- * the agent's own status reports).
- */
-export function chatDetailedStatus(
-  agent: Pick<Agent, 'status'>,
-  detailed: AgentDetailedStatus | undefined,
-  chat: ChatStatus | undefined,
-): AgentDetailedStatus | undefined {
-  if (agent.status !== 'running' || !chat?.state) return detailed;
-  const at = Math.max(detailed?.timestamp ?? 0, chat.turnStartedAt ?? 0) || Date.now();
-  switch (chat.state) {
-    case 'running':
-      if (detailed?.state === 'working' || detailed?.state === 'tool_error' || isMidTurn(detailed)) return detailed;
-      return { state: 'working', message: 'Working', timestamp: at };
-    case 'waiting_permission':
-      if (detailed?.state === 'needs_permission') return detailed;
-      return { state: 'needs_permission', message: 'Needs permission', toolName: detailed?.toolName, timestamp: at };
-    case 'waiting_input':
-      return { state: 'needs_permission', message: 'Has a question', timestamp: at };
-    case 'idle':
-      if (!detailed || (detailed.state === 'idle' && !isMidTurn(detailed))) return detailed;
-      return { state: 'idle', message: 'Idle', timestamp: detailed.timestamp };
-    default:
-      return detailed;
   }
 }
 

@@ -89,6 +89,8 @@ export interface AgentRuntime {
   isRunning(): boolean;
   /** Coarse state for status badges; chat runtimes derive it from events. */
   getState(): ChatSessionState;
+  /** When the running turn started (ms), or null between turns. Chat runtimes only. */
+  getTurnStartedAt?(): number | null;
 
   /** Deliver user, mission, MCP, shoulder-tap, group-project or Annex text. */
   sendMessage(content: string | ContentBlock[], opts: RuntimeSendOptions): Promise<RuntimeSendResult>;

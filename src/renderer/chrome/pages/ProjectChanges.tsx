@@ -13,6 +13,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
 import { agentDot, isMidTurn, StatusDot } from '../../features/agents/agent-status';
+import { useAgentStatuses } from '../../features/agents/agent-status-store';
 import { useAgentDetailsStore } from '../../features/agents/details/detailsStore';
 import { ChangesReview } from '../../features/agents/review/ChangesReview';
 import { useBranchChanges } from '../../features/agents/details/AgentDetails';
@@ -108,7 +109,7 @@ function branchLine(b: BranchChanges | null | undefined): string {
 
 export function AgentBranches({ project, refreshKey }: { project: Project; refreshKey: unknown }) {
   const agents = useBranchAgents(project.id);
-  const detailed = useAgentStore((s) => s.agentDetailedStatus);
+  const detailed = useAgentStatuses();
   const branches = useAgentBranches(agents, refreshKey);
   const names = useMemo(() => Object.fromEntries(agents.map((a) => [a.id, a.name])), [agents]);
   const shared = useMemo(() => overlaps(branches, names), [branches, names]);

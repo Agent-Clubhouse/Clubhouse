@@ -31,6 +31,7 @@ import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './session-reader';
 import { isSessionCapable, getProvider } from '../orchestrators';
 import { getAgentRuntime, isChatAgent, onChatEvent } from './agent-runtime';
+import { chatDetailedStatus } from '../../shared/chat-agent-status';
 import { injectPtyText } from './agent-runtime/pty-input';
 import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
@@ -226,15 +227,22 @@ function hookEventToDetailedStatus(event: AgentHookEvent): AgentDetailedStatus {
 }
 
 function getDetailedStatus(agentId: string): AgentDetailedStatus | null {
-  const status = detailedStatusCache.get(agentId);
-  if (!status) return null;
+  let status = detailedStatusCache.get(agentId);
 
   // Clear stale statuses (except needs_permission, which persists)
-  if (status.state !== 'needs_permission' && Date.now() - status.timestamp > STALE_THRESHOLD_MS) {
+  if (status && status.state !== 'needs_permission' && Date.now() - status.timestamp > STALE_THRESHOLD_MS) {
     detailedStatusCache.delete(agentId);
-    return null;
+    status = undefined;
   }
-  return status;
+
+  // A chat agent's hook status only moves on tool and permission events, so
+  // a long think or tool call goes stale mid-turn. Its chat session's state
+  // says Working, as the app's chat header does (#2208).
+  const runtime = getAgentRuntime(agentId);
+  if (runtime?.kind === 'chat' && runtime.isRunning()) {
+    status = chatDetailedStatus({ status: 'running' }, status, { state: runtime.getState(), turnStartedAt: runtime.getTurnStartedAt?.() ?? null });
+  }
+  return status ?? null;
 }
 
 /** Resolve the execution mode of an agent. */
@@ -3278,4 +3286,6 @@ export const _testing = {
   get sessionPauseOwner() { return sessionPauseOwner; },
   setSessionPauseOwner(fp: string | null) { sessionPauseOwner = fp; },
   resetSessionPauseOwner() { sessionPauseOwner = null; sessionPaused = false; },
+  detailedStatusCache,
+  getDetailedStatus,
 };

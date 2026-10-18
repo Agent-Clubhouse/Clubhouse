@@ -15,6 +15,7 @@ import type { CanvasView, CanvasViewType, Viewport, Position, Size } from '../..
 import { clampViewport } from '../../plugins/builtin/canvas/canvas-operations';
 import type { ZoneWireDefinition } from '../../plugins/builtin/canvas/zone-wire-store';
 import { useAgentStore } from '../../stores/agentStore';
+import { getAgentStatus, onChatStatusChange } from '../agents/agent-status-store';
 import { useProjectStore } from '../../stores/projectStore';
 import { createWidgetsAPI } from '../../plugins/plugin-api-ui';
 import type { PluginAPI, AgentsAPI, ProjectsAPI, Disposable, AgentInfo, PluginAgentDetailedStatus } from '../../../shared/plugin-types';
@@ -59,12 +60,13 @@ function createPopoutApi(projectId?: string): PluginAPI {
         }));
     },
     getDetailedStatus(agentId: string): PluginAgentDetailedStatus | null {
-      const ds = useAgentStore.getState().agentDetailedStatus[agentId];
+      const ds = getAgentStatus(agentId);
       return ds ?? null;
     },
     onAnyChange(callback: () => void): Disposable {
       const unsub = useAgentStore.subscribe(callback);
-      return { dispose: unsub };
+      const unsubChat = onChatStatusChange(callback);
+      return { dispose: () => { unsub(); unsubChat(); } };
     },
     onStatusChange(callback: (agentId: string, status: string, prevStatus: string) => void): Disposable {
       let prev: Record<string, string> = {};
