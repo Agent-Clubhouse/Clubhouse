@@ -444,7 +444,7 @@ describe('useChatStore', () => {
 
   beforeEach(() => {
     ev = makeEmitter();
-    useChatStore.setState({ agents: {}, loading: {} });
+    useChatStore.setState({ agents: {}, loading: {}, loaded: {} });
     window.clubhouse.chat.readTranscript = vi.fn().mockResolvedValue([]);
   });
 
@@ -490,6 +490,40 @@ describe('useChatStore', () => {
     // After load, a replayed event is ignored.
     useChatStore.getState().applyEvent(e2);
     expect(useChatStore.getState().agents[AGENT]).toBe(state);
+  });
+
+  it('loads history for an agent whose state so far came only from live events (#2150)', async () => {
+    // A running agent in a freshly opened window: live events arrive before any view loads its history.
+    const e1 = sessionStarted(ev);
+    const e2 = ev('user_message', { messageId: 'u1', content: text('Fix the bug'), source: 'user', delivery: 'prompt' });
+    const e3 = ev('agent_message', { messageId: 'm1', text: 'On it.' });
+    const e4 = ev('agent_message', { messageId: 'm2', text: 'Done.' });
+    const e5 = ev('agent_message', { messageId: 'm3', text: 'Anything else?' });
+    useChatStore.getState().applyEvent(e4);
+    expect(useChatStore.getState().agents[AGENT]).toBeDefined();
+    expect(useChatStore.getState().loaded[AGENT]).toBeUndefined();
+
+    let resolveTranscript!: (events: ChatEvent[]) => void;
+    window.clubhouse.chat.readTranscript = vi.fn(() => new Promise<ChatEvent[]>((resolve) => { resolveTranscript = resolve; }));
+    const loading = useChatStore.getState().loadTranscript(AGENT);
+    // One live event that the transcript also holds (e4), one that's newer (e5).
+    useChatStore.getState().applyEvent(e4);
+    useChatStore.getState().applyEvent(e5);
+    resolveTranscript([e1, e2, e3, e4]);
+    await loading;
+
+    const state = useChatStore.getState().agents[AGENT];
+    expect(useChatStore.getState().loaded[AGENT]).toBe(true);
+    expect(state.items.map((i) => i.seq)).toEqual([2, 3, 4, 5]);
+    expect(state.items.map((i) => i.kind)).toEqual(['user_message', 'agent_message', 'agent_message', 'agent_message']);
+    expect(state.items.slice(1).map((i) => (i as AgentMessageItem).text)).toEqual(['On it.', 'Done.', 'Anything else?']);
+  });
+
+  it('reset forgets that history was loaded', async () => {
+    await useChatStore.getState().loadTranscript(AGENT);
+    expect(useChatStore.getState().loaded[AGENT]).toBe(true);
+    useChatStore.getState().reset(AGENT);
+    expect(useChatStore.getState().loaded[AGENT]).toBeUndefined();
   });
 
   it('loadTranscript treats a failed read as empty', async () => {
