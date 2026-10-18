@@ -44,6 +44,65 @@ export function chatDot(state: ChatSessionState | null): AgentDot {
   }
 }
 
+/** What the chat store knows about an agent's chat session, for status surfaces. */
+export interface ChatStatus {
+  state: ChatSessionState | null;
+  /** ts of the running turn's turn_started. */
+  turnStartedAt: number | null;
+}
+
+/**
+ * Hook-shaped status for an agent a chat runtime runs, from its chat session
+ * state: the state the chat header shows. The status bridge only reports
+ * tool and permission events, and stale hook status is cleared after 30s
+ * (clearStaleStatuses), so during a long tool call or a long think the hook
+ * status alone reads as Done mid-turn (#2197). Returns `detailed` unchanged
+ * when the chat state can't say (no session yet, sleeping, or an error, which
+ * the agent's own status reports).
+ */
+export function chatDetailedStatus(
+  agent: Pick<Agent, 'status'>,
+  detailed: AgentDetailedStatus | undefined,
+  chat: ChatStatus | undefined,
+): AgentDetailedStatus | undefined {
+  if (agent.status !== 'running' || !chat?.state) return detailed;
+  const at = Math.max(detailed?.timestamp ?? 0, chat.turnStartedAt ?? 0) || Date.now();
+  switch (chat.state) {
+    case 'running':
+      if (detailed?.state === 'working' || detailed?.state === 'tool_error' || isMidTurn(detailed)) return detailed;
+      return { state: 'working', message: 'Working', timestamp: at };
+    case 'waiting_permission':
+      if (detailed?.state === 'needs_permission') return detailed;
+      return { state: 'needs_permission', message: 'Needs permission', toolName: detailed?.toolName, timestamp: at };
+    case 'waiting_input':
+      return { state: 'needs_permission', message: 'Has a question', timestamp: at };
+    case 'idle':
+      if (!detailed || (detailed.state === 'idle' && !isMidTurn(detailed))) return detailed;
+      return { state: 'idle', message: 'Idle', timestamp: detailed.timestamp };
+    default:
+      return detailed;
+  }
+}
+
+/** `detailed` with chat agents' status taken from their chat sessions (chatDetailedStatus). */
+export function withChatStatus(
+  agents: Record<string, Pick<Agent, 'id' | 'status'>>,
+  detailed: Record<string, AgentDetailedStatus>,
+  chat: Record<string, ChatStatus>,
+): Record<string, AgentDetailedStatus> {
+  let merged = detailed;
+  for (const id of Object.keys(chat)) {
+    const agent = agents[id];
+    if (!agent) continue;
+    const next = chatDetailedStatus(agent, detailed[id], chat[id]);
+    if (next === detailed[id]) continue;
+    if (merged === detailed) merged = { ...detailed };
+    if (next) merged[id] = next;
+    else delete merged[id];
+  }
+  return merged;
+}
+
 export const DOT_LABEL: Record<AgentDot, string> = {
   working: 'Working',
   idle: 'Done',

@@ -4,6 +4,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { AgentRow, HOVER_OPEN_MS } from './AgentRow';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { createChatViewState, useChatStore } from '../../stores/chatStore';
 import type { Agent } from '../../../shared/types';
 
 const durable = (over: Partial<Agent> = {}): Agent => ({
@@ -216,5 +217,46 @@ describe('AgentRow hover card', () => {
     fireEvent.mouseEnter(row);
     act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
     expect(screen.queryByText('Open terminal')).toBeNull();
+  });
+});
+
+describe('AgentRow hover card for a chat agent (#2197)', () => {
+  const chatState = (state: 'running' | 'idle', turnStartedAt: number | null) =>
+    useChatStore.setState({ agents: { a1: { ...createChatViewState('a1'), sessionId: 's1', state, turnStartedAt } } });
+  afterEach(() => useChatStore.setState({ agents: {} }));
+
+  it('times Working from the turn, as the chat header does, and offers Sleep', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-18T09:22:29Z'));
+    useAgentStore.setState({ agentSpawnedAt: { a1: Date.now() - 41 * 60_000 } });
+    chatState('running', Date.now() - 9 * 60_000);
+    const { focusable } = setup(durable({ status: 'running' }), { dot: 'working' });
+    fireEvent.focus(focusable);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    const card = screen.getByTestId('agent-hover-card');
+    expect(card).toHaveTextContent('Working for 9m');
+    expect(screen.getByTestId('hover-stop')).toHaveTextContent('Sleep');
+  });
+
+  it('says Done without repeating Idle once the turn ends', () => {
+    vi.useFakeTimers();
+    chatState('idle', null);
+    const { focusable } = setup(durable({ status: 'running' }), {
+      dot: 'idle', detailed: { state: 'idle', message: 'Idle', timestamp: Date.now() },
+    });
+    fireEvent.focus(focusable);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    const card = screen.getByTestId('agent-hover-card');
+    expect(card).toHaveTextContent('Done');
+    expect(card).not.toHaveTextContent('Idle');
+    expect(screen.getByTestId('hover-stop')).toHaveTextContent('Sleep');
+  });
+
+  it('keeps Stop for an agent in the terminal', () => {
+    vi.useFakeTimers();
+    const { focusable } = setup(durable({ status: 'running' }));
+    fireEvent.focus(focusable);
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_MS); });
+    expect(screen.getByTestId('hover-stop')).toHaveTextContent('Stop');
   });
 });

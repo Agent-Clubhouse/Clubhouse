@@ -2,6 +2,7 @@ import { forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
+import { useChatStore } from '../../stores/chatStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { getOrchestratorLabel, formatModelLabel } from '../../features/agents/orchestrator-colors';
 import type { ActionDef } from '../../features/agents/useAgentRowActions';
@@ -54,7 +55,15 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
 }>(function AgentHoverCard({ agent, dot, detailed, projectPath, anchor, actions, onOpenTerminal, onAction, onMouseEnter, onMouseLeave, onFocus, onBlur }, ref) {
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
-  const running = agent.status === 'running' && spawnedAt;
+  const chatState = useChatStore((s) => s.agents[agent.id]?.state ?? null);
+  const turnStartedAt = useChatStore((s) => s.agents[agent.id]?.turnStartedAt ?? null);
+  // A chat agent's Working time is its turn's, as in the chat header (#2197).
+  const since = chatState === 'running' && turnStartedAt ? turnStartedAt : spawnedAt;
+  const running = agent.status === 'running' && since;
+  // In chat, Stop in the header ends the turn; this ends the runtime, so it says Sleep.
+  const inChat = agent.kind === 'durable' && chatState !== null && chatState !== 'sleeping';
+  // "Done" already says the agent is idle.
+  const message = detailed?.message === 'Idle' && dot === 'idle' ? undefined : detailed?.message;
   const worktree = agent.worktreePath && projectPath ? relativeTo(projectPath, agent.worktreePath) : agent.worktreePath;
   const quick = actions.filter((a) => a.id === 'stop' || a.id === 'wake' || a.id === 'settings');
 
@@ -79,17 +88,17 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
         <StatusDot dot={dot} />
         <span className="text-[13px] font-medium text-ctp-text truncate">{agent.name}</span>
         <span className="ml-auto flex-shrink-0 text-ctp-overlay1">
-          {DOT_LABEL[dot]}{running && dot !== 'idle' ? ` for ${formatDuration(Date.now() - spawnedAt)}` : ''}
+          {DOT_LABEL[dot]}{running && dot !== 'idle' ? ` for ${formatDuration(Date.now() - since)}` : ''}
         </span>
       </div>
-      {!detailed?.message && !agent.errorMessage && agent.status === 'sleeping' && agent.lastSleep && (
+      {!message && !agent.errorMessage && agent.status === 'sleeping' && agent.lastSleep && (
         <p className="leading-snug text-ctp-subtext0" data-testid="agent-sleep-reason">
           {capitalize(describeSleep(agent.lastSleep))}, {formatAgo(Date.parse(agent.lastSleep.at))}.
         </p>
       )}
-      {(detailed?.message || agent.errorMessage) && (
+      {(message || agent.errorMessage) && (
         <p className={`leading-snug ${dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-subtext0'}`}>
-          {detailed?.message || agent.errorMessage}
+          {message || agent.errorMessage}
         </p>
       )}
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
@@ -108,7 +117,7 @@ export const AgentHoverCard = forwardRef<HTMLDivElement, {
           )}
           {quick.map((action) => (
             <button key={action.id} type="button" data-testid={`hover-${action.id}`} onClick={() => onAction(action)} className="text-ctp-subtext0 hover:text-ctp-text cursor-pointer">
-              {action.label}
+              {action.id === 'stop' && inChat ? 'Sleep' : action.label}
             </button>
           ))}
         </div>

@@ -12,7 +12,9 @@
  * and live events that overlap it.
  */
 
+import { useMemo } from 'react';
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { COMPACTION_SETTLED, COMPACTION_STARTED, MINIMAL_CHAT_CAPABILITIES } from '../../shared/chat';
 import type {
   AvailableCommand,
@@ -1031,6 +1033,23 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
 /** True while an answer to this request is in flight from any view. */
 export function useAnswering(agentId: string, requestId: string): boolean {
   return useChatStore((s) => !!s.answering[answerKey(agentId, requestId)]);
+}
+
+/**
+ * Each agent's chat session state and running turn's start, for status
+ * surfaces such as the sidebar. Re-renders only when one of them changes,
+ * not on every streamed chunk.
+ */
+export function useChatStatuses(): Record<string, { state: ChatSessionState | null; turnStartedAt: number | null }> {
+  const states = useChatStore(useShallow((s) => mapAgents(s.agents, (a) => a.state)));
+  const turns = useChatStore(useShallow((s) => mapAgents(s.agents, (a) => a.turnStartedAt)));
+  return useMemo(() => mapAgents(states, (state, id) => ({ state, turnStartedAt: turns[id] ?? null })), [states, turns]);
+}
+
+function mapAgents<T, U>(record: Record<string, T>, fn: (value: T, id: string) => U): Record<string, U> {
+  const out: Record<string, U> = {};
+  for (const [id, value] of Object.entries(record)) out[id] = fn(value, id);
+  return out;
 }
 
 /** Subscribe the store to live chat events from the main process. Returns the unsubscribe. */

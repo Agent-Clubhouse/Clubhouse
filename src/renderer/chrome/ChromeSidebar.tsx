@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useChatStatuses } from '../stores/chatStore';
+import { withChatStatus } from '../features/agents/agent-status';
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
@@ -288,7 +290,10 @@ export function ChromeSidebar() {
   const toggleHelp = useUIStore((s) => s.toggleHelp);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
   const agents = useAgentStore(useOrderedShallow((s) => s.agents));
-  const detailed = useAgentStore((s) => s.agentDetailedStatus);
+  const hookDetailed = useAgentStore((s) => s.agentDetailedStatus);
+  // Chat agents show their chat session's state, as the chat header does (#2197).
+  const chatStatuses = useChatStatuses();
+  const detailed = useMemo(() => withChatStatus(agents, hookDetailed, chatStatuses), [agents, hookDetailed, chatStatuses]);
   const activeAgentId = useAgentStore((s) => s.activeAgentId);
   const setActiveAgent = useAgentStore((s) => s.setActiveAgent);
   const completedByProject = useQuickAgentStore((s) => s.completedAgents);
