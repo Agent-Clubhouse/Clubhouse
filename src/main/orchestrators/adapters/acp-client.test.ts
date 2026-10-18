@@ -8,6 +8,7 @@ vi.mock('child_process', () => ({
 
 import { spawn } from 'child_process';
 import { AcpClient, RpcError } from './acp-client';
+import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../../util/__fixtures__/host-session-env';
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -115,6 +116,18 @@ describe('AcpClient', () => {
         env: { PATH: '/usr/bin' },
       },
     );
+  });
+
+  it('spawns Copilot ACP without inherited Claude Code host-session vars', async () => {
+    autoHandshake(mockProc);
+    const env = { PATH: '/usr/bin', ...HOST_SESSION_ENV_FIXTURE, ...USER_CLAUDE_CONFIG_FIXTURE };
+    const client = new AcpClient({ binary: 'copilot', args: [], env });
+    await client.start();
+
+    const spawned = mockSpawn.mock.calls[0][2]?.env as Record<string, string>;
+    expect(spawned).toEqual({ PATH: '/usr/bin', ...USER_CLAUDE_CONFIG_FIXTURE });
+    // The caller's env object is not mutated.
+    expect(env).toHaveProperty('CLAUDE_CODE_MESSAGING_TOKEN');
   });
 
   it('performs initialize handshake during start()', async () => {

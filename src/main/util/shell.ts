@@ -21,7 +21,7 @@ function getShellEnv(): Record<string, string> {
   if (cachedShellEnv) return cachedShellEnv;
 
   if (process.platform === 'win32') {
-    cachedShellEnv = { ...process.env } as Record<string, string>;
+    cachedShellEnv = cleanSpawnEnv({ ...process.env } as Record<string, string>);
     return cachedShellEnv;
   }
 
@@ -31,14 +31,18 @@ function getShellEnv(): Record<string, string> {
       encoding: 'utf-8',
       timeout: 5000,
     });
-    cachedShellEnv = { ...process.env, ...parseEnvOutput(raw) } as Record<string, string>;
+    cachedShellEnv = cleanSpawnEnv({ ...process.env, ...parseEnvOutput(raw) } as Record<string, string>);
   } catch {
-    cachedShellEnv = { ...process.env } as Record<string, string>;
+    cachedShellEnv = cleanSpawnEnv({ ...process.env } as Record<string, string>);
   }
   return cachedShellEnv;
 }
 
-/** Returns the user's full shell environment — use for spawning processes. */
+/**
+ * Returns the user's full shell environment, minus inherited Claude Code
+ * host-session variables: use for spawning processes. Callers that merge in
+ * overrides should still pass the result through cleanSpawnEnv.
+ */
 export function getShellEnvironment(): Record<string, string> {
   return getShellEnv();
 }
@@ -51,7 +55,7 @@ export function preWarmShellEnvironment(): void {
   if (cachedShellEnv || process.platform === 'win32') {
     // Already cached or not needed on Windows
     if (!cachedShellEnv && process.platform === 'win32') {
-      cachedShellEnv = { ...process.env } as Record<string, string>;
+      cachedShellEnv = cleanSpawnEnv({ ...process.env } as Record<string, string>);
     }
     return;
   }
@@ -61,9 +65,9 @@ export function preWarmShellEnvironment(): void {
     // Don't overwrite if getShellEnv() was called synchronously while we were waiting
     if (cachedShellEnv) return;
     if (err) {
-      cachedShellEnv = { ...process.env } as Record<string, string>;
+      cachedShellEnv = cleanSpawnEnv({ ...process.env } as Record<string, string>);
     } else {
-      cachedShellEnv = { ...process.env, ...parseEnvOutput(stdout) } as Record<string, string>;
+      cachedShellEnv = cleanSpawnEnv({ ...process.env, ...parseEnvOutput(stdout) } as Record<string, string>);
     }
   });
 }
@@ -76,12 +80,86 @@ export function invalidateShellEnvironmentCache(): void {
 }
 
 /**
- * Remove environment variables that prevent nested agent spawning.
- * Mutates and returns the given env object.
+ * Variables a Claude Code host session sets in its own environment. When
+ * Clubhouse is launched from inside a Claude Code session (`npm start` in a
+ * Claude Code terminal, or the app opened from a Claude desktop session), it
+ * inherits them, and every agent it spawns would inherit them too. They
+ * describe the host session, not the user's setup, so they are stripped from
+ * every env Clubhouse builds for a child process.
+ *
+ * Exact names only, plus the prefixes below. User configuration the CLI reads
+ * (CLAUDE_CONFIG_DIR, ANTHROPIC_*, CLAUDE_CODE_USE_BEDROCK / _VERTEX and their
+ * region and model vars, CLAUDE_CODE_MAX_OUTPUT_TOKENS, proxies) must survive,
+ * so this is deliberately not a CLAUDE_CODE_* wildcard.
  */
-export function cleanSpawnEnv(env: Record<string, string>): Record<string, string> {
-  delete env.CLAUDECODE;
-  delete env.CLAUDE_CODE_ENTRYPOINT;
+export const HOST_SESSION_ENV_VARS: readonly string[] = [
+  // Nested-agent markers: the CLI refuses to start, or starts as a child of
+  // the host, when it sees these.
+  'CLAUDECODE',
+  'CLAUDE_CODE_ENTRYPOINT',
+
+  // Session markers: they tie the agent to the host's session. An inherited
+  // CLAUDE_CODE_CHILD_SESSION turns transcript saving off, which breaks
+  // terminal-to-chat resume.
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_SESSION_ATTENDED',
+  'CLAUDE_CODE_HOST_SESSION_ID',
+  'CLAUDE_PID',
+
+  // Host identity: the host app's binary, version, account and auth wiring.
+  // The agent must use its own login (or CLAUDE_CONFIG_DIR profile).
+  'CLAUDE_CODE_EXECPATH',
+  'CLAUDE_CODE_DESKTOP_APP_VERSION',
+  'CLAUDE_CODE_OAUTH_SCOPES',
+  'CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH',
+  'CLAUDE_CODE_ORGANIZATION_UUID',
+  'CLAUDE_CODE_ACCOUNT_UUID',
+  'CLAUDE_CODE_USER_EMAIL',
+
+  // Host tool config: switches the host chose for its own session. They
+  // change which tools and output the agent gets. The Agent SDK sets its own
+  // CLAUDE_AGENT_SDK_VERSION / CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING when
+  // Clubhouse's chat driver needs them.
+  'CLAUDE_CODE_TERMINAL_MCP_TOOLS',
+  'CLAUDE_CODE_REPORT_FINDINGS',
+  'CLAUDE_CODE_STARTUP_FAILURE_RESULTS',
+  'CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES',
+  'CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL',
+  'CLAUDE_CODE_DISABLE_TERMINAL_TITLE',
+  'CLAUDE_CODE_SIMPLE',
+  'CLAUDE_CODE_DISABLE_CRON',
+  'CLAUDE_CODE_EAGER_FLUSH',
+  'CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING',
+  'CLAUDE_AGENT_SDK_MCP_NO_PREFIX',
+  'CLAUDE_AGENT_SDK_VERSION',
+  'CLAUDE_PREVIEW_CLASSIFIER_FLOOR',
+  'CLAUDE_EFFORT',
+];
+
+/**
+ * Prefixes of host-session variables. CLAUDE_CODE_MESSAGING_* is the host's
+ * IPC socket and token: an agent must never be able to reach the host's
+ * messaging channel.
+ */
+export const HOST_SESSION_ENV_PREFIXES: readonly string[] = ['CLAUDE_CODE_MESSAGING_'];
+
+const HOST_SESSION_ENV_SET = new Set(HOST_SESSION_ENV_VARS);
+
+/** Whether `key` names a host-session variable (case-insensitive, for Windows). */
+export function isHostSessionEnvVar(key: string): boolean {
+  const upper = key.toUpperCase();
+  return HOST_SESSION_ENV_SET.has(upper) || HOST_SESSION_ENV_PREFIXES.some((p) => upper.startsWith(p));
+}
+
+/**
+ * Remove inherited Claude Code host-session variables (see
+ * HOST_SESSION_ENV_VARS). Mutates and returns the given env object.
+ */
+export function cleanSpawnEnv<T extends Record<string, string | undefined>>(env: T): T {
+  for (const key of Object.keys(env)) {
+    if (isHostSessionEnvVar(key)) delete env[key];
+  }
   return env;
 }
 

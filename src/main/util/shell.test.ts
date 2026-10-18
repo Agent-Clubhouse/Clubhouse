@@ -5,7 +5,8 @@ vi.mock('child_process', () => ({
   execFile: vi.fn(),
 }));
 
-import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, buildCliSpawnEnv, summarizeSpawnEnv, winQuoteArg } from './shell';
+import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, buildCliSpawnEnv, summarizeSpawnEnv, winQuoteArg, HOST_SESSION_ENV_VARS, isHostSessionEnvVar } from './shell';
+import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from './__fixtures__/host-session-env';
 import { execSync, execFile } from 'child_process';
 
 // The module caches the shell env, so we need to reset between tests
@@ -107,6 +108,68 @@ describe('getDefaultShell', () => {
   });
 });
 
+describe('getShellEnvironment host-session stripping', () => {
+  const originalPlatform = process.platform;
+  let saved: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    saved = {};
+    for (const [k, v] of Object.entries({ ...HOST_SESSION_ENV_FIXTURE, ...USER_CLAUDE_CONFIG_FIXTURE })) {
+      saved[k] = process.env[k];
+      process.env[k] = v;
+    }
+    invalidateShellEnvironmentCache();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    invalidateShellEnvironmentCache();
+  });
+
+  function expectClean(env: Record<string, string>) {
+    for (const key of Object.keys(HOST_SESSION_ENV_FIXTURE)) expect(env).not.toHaveProperty(key);
+    expect(env).toMatchObject(USER_CLAUDE_CONFIG_FIXTURE);
+  }
+
+  it('strips vars inherited through process.env and the login shell (POSIX)', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    // The login shell is a child of Clubhouse, so its `env` echoes them back too.
+    vi.mocked(execSync).mockImplementation(() =>
+      Object.entries(HOST_SESSION_ENV_FIXTURE).map(([k, v]) => `${k}=${v}`).join('\n') + '\nHOME=/home/user\n');
+    const env = getShellEnvironment();
+    expectClean(env);
+    expect(env.HOME).toBe('/home/user');
+  });
+
+  it('strips them when the login shell fails', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    vi.mocked(execSync).mockImplementation(() => { throw new Error('boom'); });
+    expectClean(getShellEnvironment());
+  });
+
+  it('strips them on Windows', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    expectClean(getShellEnvironment());
+  });
+
+  it('strips them from the pre-warmed cache', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    vi.mocked(execFile).mockImplementation(((_f: string, _a: string[], _o: unknown, cb: (e: Error | null, out: string) => void) => {
+      cb(null, 'CLAUDE_CODE_CHILD_SESSION=1\nHOME=/home/user\n');
+    }) as unknown as typeof execFile);
+    preWarmShellEnvironment();
+    expect(execSync).not.toHaveBeenCalled();
+    const env = getShellEnvironment();
+    expect(execSync).not.toHaveBeenCalled();
+    expectClean(env);
+  });
+});
+
 describe('cleanSpawnEnv', () => {
   it('removes CLAUDECODE and CLAUDE_CODE_ENTRYPOINT', () => {
     const env: Record<string, string> = {
@@ -121,6 +184,34 @@ describe('cleanSpawnEnv', () => {
     expect(result.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
     expect(result.PATH).toBe('/usr/bin');
     expect(result.HOME).toBe('/home/user');
+  });
+
+  it('strips every inherited host-session var and keeps user Claude config', () => {
+    const env: Record<string, string> = { PATH: '/usr/bin', ...HOST_SESSION_ENV_FIXTURE, ...USER_CLAUDE_CONFIG_FIXTURE };
+    cleanSpawnEnv(env);
+    for (const key of Object.keys(HOST_SESSION_ENV_FIXTURE)) expect(env).not.toHaveProperty(key);
+    expect(env).toEqual({ PATH: '/usr/bin', ...USER_CLAUDE_CONFIG_FIXTURE });
+  });
+
+  it('covers every name in HOST_SESSION_ENV_VARS', () => {
+    const env: Record<string, string> = Object.fromEntries(HOST_SESSION_ENV_VARS.map((k) => [k, 'x']));
+    expect(cleanSpawnEnv(env)).toEqual({});
+  });
+
+  it('strips any CLAUDE_CODE_MESSAGING_ var, not just the known ones', () => {
+    const env: Record<string, string> = { CLAUDE_CODE_MESSAGING_FUTURE_THING: 'x', CLAUDE_CODE_MESSAGINGX: 'kept' };
+    expect(cleanSpawnEnv(env)).toEqual({ CLAUDE_CODE_MESSAGINGX: 'kept' });
+  });
+
+  it('matches names case-insensitively (Windows env keys)', () => {
+    expect(isHostSessionEnvVar('ClaudeCode')).toBe(true);
+    expect(isHostSessionEnvVar('claude_code_messaging_socket')).toBe(true);
+    expect(isHostSessionEnvVar('CLAUDE_CONFIG_DIR')).toBe(false);
+  });
+
+  it('leaves undefined-valued envs typed as such', () => {
+    const env: Record<string, string | undefined> = { CLAUDE_PID: '1', HOME: undefined };
+    expect(cleanSpawnEnv(env)).toEqual({ HOME: undefined });
   });
 
   it('is a no-op when keys are not present', () => {
@@ -165,7 +256,16 @@ describe('buildCliSpawnEnv', () => {
     const env = buildCliSpawnEnv({ CLAUDE_CODE_ENTRYPOINT: 'cli' });
     expect(env.CLAUDECODE).toBeUndefined();
     expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
-    expect(getShellEnvironment().CLAUDECODE).toBe('1');
+    // The cached env is cleaned at the source, and buildCliSpawnEnv works on a copy.
+    expect(getShellEnvironment().CLAUDECODE).toBeUndefined();
+    expect(getShellEnvironment().HOME).toBe('/home/user');
+  });
+
+  it('strips host-session vars from overrides and keeps user Claude config', () => {
+    vi.mocked(execSync).mockImplementation(() => 'HOME=/home/user\n');
+    const env = buildCliSpawnEnv({ ...HOST_SESSION_ENV_FIXTURE, ...USER_CLAUDE_CONFIG_FIXTURE });
+    for (const key of Object.keys(HOST_SESSION_ENV_FIXTURE)) expect(env).not.toHaveProperty(key);
+    expect(env).toMatchObject(USER_CLAUDE_CONFIG_FIXTURE);
   });
 
   it('works with no overrides', () => {

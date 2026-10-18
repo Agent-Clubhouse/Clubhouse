@@ -26,7 +26,6 @@ vi.mock('../util/shell', async () => {
     ...actual,
     getShellEnvironment: vi.fn(() => ({ ...process.env })),
     getDefaultShell: vi.fn(() => process.platform === 'win32' ? (process.env.COMSPEC || 'cmd.exe') : (process.env.SHELL || '/bin/zsh')),
-    cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
   };
 });
 
@@ -87,6 +86,7 @@ import { getBuffer, getBufferSnapshot, getSerializedBuffer, getLastActivity, isR
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as headlessTerminal from './pty-headless-terminal';
+import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../util/__fixtures__/host-session-env';
 
 // Helper: spawn and immediately fire resize to clear pendingCommands
 // so that onData callbacks start buffering data.
@@ -931,6 +931,20 @@ describe('pty-manager', () => {
       expect(env.CLAUDECODE).toBeUndefined();
       expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
       expect(env.KEEP_THIS).toBe('yes');
+    });
+
+    it('strips inherited Claude Code host-session vars and keeps user Claude config', async () => {
+      const pty = await import('node-pty');
+      vi.mocked(pty.spawn).mockClear();
+      const shell = await import('../util/shell');
+      // A Clubhouse launched from a Claude Code session: the env it hands out still carries the host's vars.
+      vi.mocked(shell.getShellEnvironment).mockReturnValueOnce({ PATH: '/usr/bin', ...HOST_SESSION_ENV_FIXTURE });
+
+      await spawn('agent_hostenv', '/test', '/usr/local/bin/claude', [], { ...USER_CLAUDE_CONFIG_FIXTURE });
+
+      const env = vi.mocked(pty.spawn).mock.calls[0][2].env as Record<string, string>;
+      for (const key of Object.keys(HOST_SESSION_ENV_FIXTURE)) expect(env).not.toHaveProperty(key);
+      expect(env).toMatchObject(USER_CLAUDE_CONFIG_FIXTURE);
     });
 
     it('quotes mission text with spaces for Windows pendingCommand', async () => {

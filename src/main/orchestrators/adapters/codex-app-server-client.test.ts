@@ -16,6 +16,7 @@ import {
   type CodexAppServerClientOpts,
 } from './codex-app-server-client';
 import { RpcError } from './acp-client';
+import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../../util/__fixtures__/host-session-env';
 import {
   commandApprovalDecisions,
   CODEX_APP_SERVER_SCHEMA_VERSION,
@@ -121,6 +122,32 @@ describe('CodexAppServerClient', () => {
           env: { PATH: 'bin' },
         },
       );
+    });
+
+    it('spawns the app-server without inherited Claude Code host-session vars', async () => {
+      const client = new CodexAppServerClient({
+        binary: 'codex', args: ['app-server'],
+        env: { PATH: 'bin', ...HOST_SESSION_ENV_FIXTURE, ...USER_CLAUDE_CONFIG_FIXTURE },
+      });
+      setTimeout(() => autoRespondInit(mockProc), 0);
+      await client.start();
+      expect(mockSpawn.mock.calls.at(-1)?.[2]?.env).toEqual({ PATH: 'bin', ...USER_CLAUDE_CONFIG_FIXTURE });
+    });
+
+    it('cleans process.env when no env is given', async () => {
+      const saved = process.env.CLAUDE_CODE_CHILD_SESSION;
+      process.env.CLAUDE_CODE_CHILD_SESSION = '1';
+      try {
+        const client = new CodexAppServerClient({ binary: 'codex', args: ['app-server'] });
+        setTimeout(() => autoRespondInit(mockProc), 0);
+        await client.start();
+        const env = mockSpawn.mock.calls.at(-1)?.[2]?.env as Record<string, string>;
+        expect(env).not.toHaveProperty('CLAUDE_CODE_CHILD_SESSION');
+        expect(env.PATH ?? env.Path).toBe(process.env.PATH ?? process.env.Path);
+      } finally {
+        if (saved === undefined) delete process.env.CLAUDE_CODE_CHILD_SESSION;
+        else process.env.CLAUDE_CODE_CHILD_SESSION = saved;
+      }
     });
 
     it('sends requests without jsonrpc field', async () => {
