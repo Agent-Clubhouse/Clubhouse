@@ -10,6 +10,7 @@ import type { ChatCapabilities, ChatQuestion, ChatQuestionAnswers, PermissionOpt
 import type { PendingPermission, PendingQuestion, PlanDocumentItem } from '../../../stores/chatStore';
 import { PlanIcon, QuestionIcon, ShieldIcon } from './icons';
 import { ApprovalDiffPreview } from './ToolBlocks';
+import { shortName } from './view-model';
 
 const ALLOW_KINDS = new Set<PermissionOption['kind']>(['allow_once', 'allow_session', 'allow_always']);
 const REJECT_KINDS = new Set<PermissionOption['kind']>(['reject_once', 'reject_always', 'cancel_turn']);
@@ -356,7 +357,7 @@ export function QuestionCard({ request, onAnswer, busy }: QuestionCardProps) {
                 onChange={(e) => setFree((f) => ({ ...f, [q.id]: e.target.value }))}
                 onKeyDown={(e) => { if (e.key === 'Enter' && complete) { e.preventDefault(); submit(); } }}
                 placeholder={q.options?.length ? 'Or type an answer…' : 'Type an answer…'}
-                aria-label={`Answer: ${q.prompt}`}
+                aria-label={`Answer: ${shortName(q.prompt)}`}
                 className="ml-5 h-[30px] rounded-md border border-surface-1 bg-transparent px-2.5 text-[12.5px] text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-accent/60"
               />
             )}

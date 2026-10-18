@@ -233,6 +233,22 @@ export function terminalContent(tool: ToolCallItem): { command?: string; output:
 }
 
 /** The command a tool ran, from its terminal content or its raw input. */
+/** Longest accessible name built from content (a command, a path, a prompt), ellipsis included. */
+export const ACCESSIBLE_NAME_MAX = 80;
+
+/**
+ * A short name for content that can run to kilobytes (a heredoc command, a
+ * long prompt): its first line, cut to `max` characters with an ellipsis when
+ * anything is left out. Screen readers read a button's whole name, and role
+ * queries match against it, so content never goes into one in full.
+ */
+export function shortName(text: string, max = ACCESSIBLE_NAME_MAX): string {
+  const all = text.trim();
+  const first = all.split('\n', 1)[0].trimEnd();
+  if (first.length === all.length && first.length <= max) return first;
+  return `${first.slice(0, max - 1).trimEnd()}…`;
+}
+
 export function commandOf(tool: ToolCallItem): string {
   const term = terminalContent(tool);
   if (term?.command) return term.command;

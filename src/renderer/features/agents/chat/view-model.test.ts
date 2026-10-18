@@ -20,6 +20,7 @@ import {
   mcpTool,
   needsManualPlanHandoff,
   parseUnifiedDiff,
+  shortName,
   slashCommandOf,
   toolArgs,
   toolErrorText,
@@ -332,5 +333,24 @@ describe('modelLabel', () => {
   it('shows anything else as-is', () => {
     expect(modelLabel('gpt-6-astra', models)).toBe('gpt-6-astra');
     expect(modelLabel('o4-mini')).toBe('o4-mini');
+  });
+});
+
+describe('shortName', () => {
+  it('keeps a short single line as it is', () => {
+    expect(shortName('npm run typecheck')).toBe('npm run typecheck');
+    expect(shortName('  git status \n')).toBe('git status');
+  });
+
+  it('cuts to the first line, with an ellipsis, when there is more', () => {
+    expect(shortName("cat <<'EOF' > notes.md\nline one\nEOF")).toBe("cat <<'EOF' > notes.md…");
+  });
+
+  it('caps at 80 characters, the ellipsis included', () => {
+    const name = shortName('x'.repeat(500));
+    expect(name).toHaveLength(80);
+    expect(name.endsWith('…')).toBe(true);
+    expect(shortName('y'.repeat(80))).toBe('y'.repeat(80));
+    expect(shortName('z'.repeat(81))).toHaveLength(80);
   });
 });
