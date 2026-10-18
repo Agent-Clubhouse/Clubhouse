@@ -441,6 +441,8 @@ export const ATTR = {
     'notify_user',
     // orchestration: hand off and dispose (#2229)
     'hand_off', 'dispose_helper',
+    // helpers (#2227)
+    'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent',
     'other',
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
