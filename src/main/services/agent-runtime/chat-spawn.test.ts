@@ -391,7 +391,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       const { sdk, stream } = drivers();
       sdk.start = async () => { throw new Error('No conversation found with session ID: stale'); };
       stream.start = sdk.start;
-      expect(await tryStartChatAgent({ ...params, agentId: 'rf', mission: undefined, resume: true, sessionId: 'stale' }, provider, undefined, undefined, null)).toBe(false);
+      expect(await tryStartChatAgent({ ...params, agentId: 'rf', mission: undefined, resume: true, sessionId: 'stale' }, provider, undefined, undefined, null)).toBe('terminal');
       expect(takeChatStartFailure('rf')).toBe('No conversation found with session ID: stale');
       expect(takeChatStartFailure('rf')).toBeUndefined();
     });
