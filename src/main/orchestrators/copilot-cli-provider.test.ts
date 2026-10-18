@@ -337,6 +337,14 @@ describe('CopilotCliProvider', () => {
       expect(result.args).toContain('-p');
     });
 
+    // #2074: the resume queue sends no mission, so a resumed session gets no new prompt
+    it('a resumed interactive spawn without a mission has no -i or -p', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/project', resume: true, sessionId: 'sess-123', interactive: true });
+      expect(result.args[result.args.indexOf('--resume') + 1]).toBe('sess-123');
+      expect(result.args).not.toContain('-i');
+      expect(result.args).not.toContain('-p');
+    });
+
     // A durable agent woken with a first message (#2019): -i runs the prompt and
     // stays interactive, so the resumed session survives the task.
     it('keeps --resume and uses -i when an interactive (durable) spawn has a mission', async () => {

@@ -482,6 +482,29 @@ describe('restart-session-service', () => {
       // Without this the resume degrades to "most recent session in this cwd",
       // which picks the wrong conversation when agents share a directory.
       expect(entry.sessionId).toBe('newest-session');
+      expect(entry.sessionStarted).toBe(true);
+    });
+
+    // #2074: an agent still starting at restart has no session; resuming would
+    // drop its mission, so the entry says it never started.
+    it('records sessionStarted: false when no session exists on disk for the agent', async () => {
+      vi.mocked(isSessionCapable).mockReturnValue(true);
+      vi.mocked(ptyManager.getBuffer).mockReturnValue('still booting');
+      vi.mocked(getProvider).mockReturnValue({
+        id: 'claude-code',
+        capabilities: { sessionResume: true },
+        extractSessionId: vi.fn().mockReturnValue(null),
+        listSessions: vi.fn().mockResolvedValue([]),
+      } as never);
+
+      agentRegistry.register('agent-starting', {
+        runtime: 'pty', projectPath: '/proj', orchestrator: 'claude-code',
+      });
+      await captureSessionState(new Map(), new Map([['agent-starting', { kind: 'durable' as const, mission: 'Do the thing' }]]));
+
+      const written = JSON.parse(await fsp.readFile(statePath, 'utf-8'));
+      const entry = written.sessions.find((x: { agentId: string }) => x.agentId === 'agent-starting');
+      expect(entry).toMatchObject({ sessionId: null, sessionStarted: false, mission: 'Do the thing' });
     });
 
     it('prefers the id the CLI printed over the session list', async () => {
@@ -527,6 +550,8 @@ describe('restart-session-service', () => {
       expect(entry).toBeDefined();
       expect(entry.sessionId).toBeNull();
       expect(entry.resumeStrategy).toBe('auto');
+      // Can't tell whether a session exists: left unset, so the queue resumes the most recent one
+      expect(entry.sessionStarted).toBeUndefined();
     });
   });
 });
