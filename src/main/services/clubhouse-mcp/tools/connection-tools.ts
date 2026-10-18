@@ -164,6 +164,11 @@ async function connect(callerId: string, scope: CallerScope, bindings: Persisted
     if (outcome === 'created' && b.targetKind === 'group-project') void bootstrapGroupProjectAdmin(b.targetId, b.agentId);
     return outcome;
   });
+  // The user removed a pair between the check above and the claim: don't keep it.
+  const refusedNow = bindings.filter((_, i) => outcomes[i] === 'removed');
+  if (refusedNow.length > 0) {
+    await removeConnections(scope.projectPath, callerId, (c) => refusedNow.some((b) => b.agentId === c.agentId && b.targetId === c.targetId));
+  }
   await rebuildPersistedBindings();
   return outcomes;
 }

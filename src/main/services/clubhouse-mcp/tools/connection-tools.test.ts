@@ -9,7 +9,7 @@ import * as path from 'path';
 import type { DurableAgentConfig } from '../../../../shared/types';
 import type { GroupProject } from '../../../../shared/group-project-types';
 
-const { configs, projects, configListeners, ptyWrite, postMessage, getBoard, groupProjects, gpCounter } = vi.hoisted(() => {
+const { configs, projects, configListeners, ptyWrite, postMessage, getBoard, groupProjects, gpCounter, storeHooks } = vi.hoisted(() => {
   const postMessage = vi.fn(async () => undefined);
   return {
     configs: new Map<string, DurableAgentConfig[]>(),
@@ -20,11 +20,24 @@ const { configs, projects, configListeners, ptyWrite, postMessage, getBoard, gro
     getBoard: vi.fn(() => ({ postMessage })),
     groupProjects: new Map<string, GroupProject>(),
     gpCounter: { n: 0 },
+    storeHooks: { afterAdd: undefined as undefined | (() => void) },
   };
 });
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir() } }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
+// Lets a test act between saving a connection and binding it.
+vi.mock('../../orchestrator-connections', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../orchestrator-connections')>();
+  return {
+    ...actual,
+    addConnections: vi.fn(async (...args: Parameters<typeof actual.addConnections>) => {
+      const added = await actual.addConnections(...args);
+      storeHooks.afterAdd?.();
+      return added;
+    }),
+  };
+});
 vi.mock('../../project-store', () => ({ list: vi.fn(async () => projects.list) }));
 vi.mock('../../agent-config', () => {
   const isDisposed = (a: DurableAgentConfig) => !!a.disposedAt;
@@ -105,6 +118,27 @@ const pairKey = (b: { agentId: string; targetId: string }) => `${b.agentId}->${b
 const boundPairs = () => bindingManager.getAllBindings().map(pairKey).sort();
 const ticks = () => new Promise((r) => setTimeout(r, 20));
 
+/** Watch the stores, rebuilding on each change; `rebuilt(n)` resolves once n rebuilds have finished. */
+function watchWithRebuilds() {
+  let done = 0;
+  const waiters = new Set<() => void>();
+  const stop = watchOrchestratorConnections(async () => {
+    await rebuildPersistedBindings();
+    done++;
+    for (const w of [...waiters]) w();
+  });
+  const rebuilt = (n: number) => new Promise<void>((resolve) => {
+    const check = () => {
+      if (done < n) return;
+      waiters.delete(check);
+      resolve();
+    };
+    waiters.add(check);
+    check();
+  });
+  return { stop, rebuilt };
+}
+
 async function call(tool: string, args: Record<string, unknown>, caller = 'durable_lead') {
   const result = await callTool(caller, tool, args);
   return { text: result.content.map((c) => ('text' in c ? c.text : '')).join('\n'), isError: !!result.isError };
@@ -132,6 +166,7 @@ beforeEach(() => {
   configListeners.clear();
   groupProjects.clear();
   gpCounter.n = 0;
+  storeHooks.afterAdd = undefined;
   ptyWrite.mockClear();
   postMessage.mockClear();
   getBoard.mockClear();
@@ -378,24 +413,21 @@ describe('disconnect', () => {
 
 describe('helper disposal', () => {
   it('drops a disposed helper\'s connections from the store and its live bindings', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const stop = watchOrchestratorConnections(() => rebuildPersistedBindings());
+    const { stop, rebuilt } = watchWithRebuilds();
     await call('connect_agents', { from: 'lead', to: 'h1', twoWay: true });
     await call('connect_agents', { from: 'h2', to: 'lead' });
     await call('create_group_project', { name: 'Raid', members: ['h1', 'h2'] });
 
     setAgents(configs.get(projectPath)!.map((a) =>
       a.id === 'durable_h1' ? { ...a, disposedAt: '2026-10-18T02:00:00.000Z' } : a));
-    await vi.advanceTimersByTimeAsync(100);
-    vi.useRealTimers();
-    await ticks();
+    await rebuilt(1);
 
     expect(boundPairs()).toEqual(['durable_h2->durable_lead', 'durable_h2->gp_1']);
     expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(['durable_h2->durable_lead', 'durable_h2->gp_1']);
 
     // A deleted helper goes the same way.
     setAgents(configs.get(projectPath)!.filter((a) => a.id !== 'durable_h2'));
-    await new Promise((r) => setTimeout(r, 120));
+    await rebuilt(2);
     expect(boundPairs()).toEqual([]);
     expect(await readConnections(projectPath)).toEqual([]);
     stop();
@@ -498,6 +530,19 @@ describe('store', () => {
     expect(fs.readFileSync(connectionsStorePath(projectPath), 'utf-8')).toBe(body);
   });
 
+  it('never moves aside a store from a newer version, even one it cannot make sense of', async () => {
+    const body = JSON.stringify({ version: 3, connections: { shape: 'changed' } });
+    fs.mkdirSync(storeDir(), { recursive: true });
+    fs.writeFileSync(connectionsStorePath(projectPath), body);
+
+    expect(await readConnections(projectPath)).toEqual([]);
+    const res = await call('connect_agents', { from: 'lead', to: 'h1' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/newer version/);
+    expect(asideFiles()).toEqual([]);
+    expect(fs.readFileSync(connectionsStorePath(projectPath), 'utf-8')).toBe(body);
+  });
+
   it('only removes the caller\'s own entries from the store', async () => {
     // An entry another orchestrator owns for the same pair (left over from a reparent).
     const foreign = { ownerId: 'durable_other', agentId: 'durable_lead', targetId: 'durable_h1', targetKind: 'agent', createdAt: '' };
@@ -520,9 +565,9 @@ describe('scope over time', () => {
     await call('create_group_project', { name: 'Raid', members: ['lead', 'h1', 'h2'] });
   };
   const watchAndWait = async (agents: DurableAgentConfig[]) => {
-    const stop = watchOrchestratorConnections(() => rebuildPersistedBindings());
+    const { stop, rebuilt } = watchWithRebuilds();
     setAgents(agents);
-    await new Promise((r) => setTimeout(r, 150));
+    await rebuilt(1);
     stop();
   };
 
@@ -589,5 +634,33 @@ describe('names and user removals', () => {
     expect(boundPairs()).toEqual([]);
     expect(await readConnections(projectPath)).toEqual([]);
     expect(isBindingRemovedByUser('durable_lead', 'durable_h1')).toBe(true);
+  });
+  it('drops the saved entry when the user removes the pair while the tool is binding it', async () => {
+    storeHooks.afterAdd = () => markBindingRemovedByUser('durable_lead', 'durable_h1');
+    const res = await call('connect_agents', { from: 'lead', to: 'h1' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/The user removed this connection/);
+    expect(boundPairs()).toEqual([]);
+    expect(await readConnections(projectPath)).toEqual([]);
+  });
+
+  it('keeps a tool-made wire the user deleted in the UI deleted across restarts', async () => {
+    const { stop } = watchWithRebuilds();
+    await call('connect_agents', { from: 'lead', to: 'h1', twoWay: true });
+    await call('create_group_project', { name: 'Raid', members: ['h1'] });
+
+    // The user deletes lead -> h1 and h1's membership in the UI (IPC UNBIND).
+    for (const [agentId, targetId] of [['durable_lead', 'durable_h1'], ['durable_h1', 'gp_1']]) {
+      bindingManager.unbind(agentId, targetId);
+      markBindingRemovedByUser(agentId, targetId);
+    }
+    await vi.waitFor(async () => {
+      expect((await readConnections(projectPath)).map(pairKey)).toEqual(['durable_h1->durable_lead']);
+    });
+    stop();
+
+    restart();
+    await rebuildPersistedBindings();
+    expect(boundPairs()).toEqual(['durable_h1->durable_lead']);
   });
 });

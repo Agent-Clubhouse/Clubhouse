@@ -62,7 +62,10 @@ export interface PersistedBindingSource {
   /** Stable id, used in logs and to replace a source registered twice. */
   id: string;
   /**
-   * The bindings to restore. Read-only: must not write the source's store.
+   * The bindings to restore. Read-only: must not change the source's
+   * entries. The one exception is housekeeping that loses nothing: a store
+   * file that can't be parsed may be moved aside (kept, renamed) so it is
+   * read as empty, as orchestrator-connections does.
    * Stale entries (endpoints that no longer exist) should already be dropped.
    */
   collect(): Promise<PersistedBinding[] | CollectedBindings>;
@@ -160,6 +163,29 @@ export function markBindingRemovedByUser(agentId: string, targetId: string): voi
   removedByUser.add(pairKey(agentId, targetId));
   restoredPairs.delete(pairKey(agentId, targetId));
   releaseOwnership(pairKey(agentId, targetId));
+  for (const listener of [...removedByUserListeners]) {
+    try {
+      listener(agentId, targetId);
+    } catch (err) {
+      // telemetry-exempt: logged; one listener failing must not stop the removal or the others
+      appLog('core:mcp', 'warn', 'User-removal listener failed', {
+        meta: { agentId, targetId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+}
+
+export type BindingRemovedByUserListener = (agentId: string, targetId: string) => void;
+const removedByUserListeners = new Set<BindingRemovedByUserListener>();
+
+/**
+ * Listen for the user removing a pair through the renderer, so a source that
+ * stores the pair itself can drop it and keep it removed across restarts
+ * (orchestrator connections, #2230). Returns an unsubscribe function.
+ */
+export function onBindingRemovedByUser(listener: BindingRemovedByUserListener): () => void {
+  removedByUserListeners.add(listener);
+  return () => { removedByUserListeners.delete(listener); };
 }
 
 /** True when the user removed this pair through the renderer this session. */
@@ -383,23 +409,27 @@ async function rebuildSource(source: PersistedBindingSource): Promise<SourceRun>
  */
 function pruneRuns(runs: SourceRun[]): void {
   if (runs.some((run) => run.listed === null)) return;
+  /** Pairs a source lists, could not check, or (pruning sources) claimed since this run started. */
+  const holds = (run: SourceRun, key: string): boolean =>
+    run.listed!.has(key) || run.unverified.has(key) || (!!run.source.prune && !!claimedDuringRun.get(run.source.id)?.has(key));
   const listedAnywhere = new Set<string>();
-  for (const run of runs) for (const key of [...run.listed!, ...run.unverified]) listedAnywhere.add(key);
+  for (const run of runs) {
+    for (const key of [...run.listed!, ...run.unverified]) listedAnywhere.add(key);
+    if (run.source.prune) for (const key of claimedDuringRun.get(run.source.id) ?? []) listedAnywhere.add(key);
+  }
   for (const run of runs) {
     if (!run.source.prune) continue;
     const owned = ownedBySource.get(run.source.id);
     if (!owned) continue;
-    const claimed = claimedDuringRun.get(run.source.id);
     for (const [key, pair] of owned) {
-      if (run.listed!.has(key) || run.unverified.has(key) || claimed?.has(key)) continue;
+      if (holds(run, key)) continue;
       owned.delete(key);
       // Another source lists it: that wire keeps the binding. A pruning
       // source that lists it takes ownership, so it can remove the binding
       // once it stops listing it too.
       if (listedAnywhere.has(key)) {
         for (const other of runs) {
-          if (other === run || !other.source.prune) continue;
-          if (!other.listed!.has(key) && !other.unverified.has(key)) continue;
+          if (other === run || !other.source.prune || !holds(other, key)) continue;
           ownedFor(other.source.id).set(key, pair);
         }
         continue;

@@ -152,3 +152,34 @@ describe('pruning handoff (#2246)', () => {
     expect(pairs()).toEqual(['a->b']);
   });
 });
+
+describe('pruning handoff to a claim made during the run (#2230)', () => {
+  it('hands the pair to a pruning source that claimed it after its collect', async () => {
+    const first = listSource('first');
+    const second = listSource('second');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let slow = false;
+    registerPersistedBindingSource({ id: 'slow', collect: async () => { if (slow) await gate; return []; } });
+    first.push(wire('a', 'b'));
+    await rebuildPersistedBindings(); // 'first' creates and owns it
+
+    first.length = 0;
+    slow = true;
+    const running = rebuildPersistedBindings(); // 'second' collects nothing, then 'slow' waits
+    await new Promise((r) => setImmediate(r));
+    // 'second' saves the pair to its store and claims it while the run is still going.
+    second.push(wire('a', 'b'));
+    expect(claimSourceBinding('second', wire('a', 'b'))).toBe('existing');
+    release();
+    const result = await running;
+    expect(result.sources[0]).toMatchObject({ id: 'first', pruned: 0 });
+    expect(pairs()).toEqual(['a->b']);
+
+    // 'second' owns it now: it goes once 'second' stops listing it.
+    slow = false;
+    second.length = 0;
+    await rebuildPersistedBindings();
+    expect(pairs()).toEqual([]);
+  });
+});

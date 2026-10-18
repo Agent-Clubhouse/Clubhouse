@@ -14,7 +14,8 @@
  * removed by it. Entries are scoped to their owner: once the owner is gone or
  * an end is no longer the owner or one of its live direct helpers, the entry
  * is skipped at restore and dropped from the store when the project's agents
- * change ({@link watchOrchestratorConnections}).
+ * change ({@link watchOrchestratorConnections}). A pair the user deletes in
+ * the UI is dropped from the store too, so it stays deleted across restarts.
  *
  * The store is written atomically (temp file, then rename) and read and
  * written under a per-project lock. A file that can't be parsed is moved
@@ -27,7 +28,7 @@ import { randomUUID } from 'crypto';
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { groupProjectRegistry } from './group-project-registry';
-import type { CollectedBindings, PersistedBinding, PersistedBindingSource } from './persisted-bindings';
+import { onBindingRemovedByUser, type CollectedBindings, type PersistedBinding, type PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
 import { appLog } from './log-service';
@@ -100,8 +101,13 @@ async function loadStore(projectPath: string): Promise<StoreState> {
     await quarantine(file, err instanceof Error ? err.message : String(err));
     return empty;
   }
-  const record = data && typeof data === 'object' ? data as Record<string, unknown> : null;
+  const record = data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : null;
   const version = record?.version;
+  // A newer Clubhouse wrote it: read what this build recognizes, never rewrite or move it.
+  if (typeof version === 'number' && version > CONNECTION_STORE_VERSION) {
+    const entries = Array.isArray(record!.connections) ? record!.connections as unknown[] : [];
+    return { connections: entries.filter(isConnection), unknown: entries.filter((e) => !isConnection(e)), writable: false };
+  }
   if (!record || !Array.isArray(record.connections) || typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
     await quarantine(file, 'not a connections store');
     return empty;
@@ -110,7 +116,7 @@ async function loadStore(projectPath: string): Promise<StoreState> {
   return {
     connections: entries.filter(isConnection),
     unknown: entries.filter((e) => !isConnection(e)),
-    writable: version <= CONNECTION_STORE_VERSION,
+    writable: true,
   };
 }
 
@@ -183,6 +189,26 @@ export function removeConnections(
     if (removed.length > 0) await saveStore(projectPath, { ...state, connections: remaining });
     return { removed, remaining };
   });
+}
+
+/**
+ * Drop every stored entry for a pair, whoever made it, in every registered
+ * project: the user removed that connection, and it stays removed across
+ * restarts. Returns the number of entries dropped.
+ */
+export async function removeStoredPair(agentId: string, targetId: string): Promise<number> {
+  let dropped = 0;
+  for (const project of await projectStore.list()) {
+    const removed = await withStoreLock(project.path, async () => {
+      const state = await loadStore(project.path);
+      const match = (c: OrchestratorConnection) => c.agentId === agentId && c.targetId === targetId;
+      const hits = state.connections.filter(match);
+      if (hits.length > 0) await saveStore(project.path, { ...state, connections: state.connections.filter((c) => !match(c)) });
+      return hits.length;
+    });
+    dropped += removed;
+  }
+  return dropped;
 }
 
 /**
@@ -307,7 +333,9 @@ export async function pruneOutOfScopeConnections(projectPath: string): Promise<O
 }
 
 /**
- * When a project's agents change, drop the connections that fell out of
+ * Keep the stores in step. When the user removes a pair through the UI, drop
+ * its stored entries so it stays removed after a restart. When a project's
+ * agents change, drop the connections that fell out of
  * scope (a helper disposed, deleted, reparented or released) and call `onConnectionsChanged` (a rebuild, which
  * prunes their bindings). Returns an unsubscribe function.
  */
@@ -353,9 +381,24 @@ export function watchOrchestratorConnections(onConnectionsChanged: () => unknown
       });
     }, 50);
   });
+  // The user deleted a tool-made wire in the UI: drop it from the store so a
+  // restart doesn't bring it back. The binding is already gone.
+  const unsubscribeRemovals = onBindingRemovedByUser((agentId, targetId) => {
+    void removeStoredPair(agentId, targetId).then((dropped) => {
+      if (dropped > 0) {
+        appLog('core:mcp', 'info', 'Dropped orchestrator connections the user removed', { meta: { agentId, targetId, dropped } });
+      }
+    }, (err) => {
+      // telemetry-exempt: logged; the pair stays skipped this session, and the next removal retries
+      appLog('core:mcp', 'warn', 'Could not drop a user-removed orchestrator connection', {
+        meta: { agentId, targetId, error: err instanceof Error ? err.message : String(err) },
+      });
+    });
+  });
   return () => {
     stopped = true;
     unsubscribe();
+    unsubscribeRemovals();
     if (timer) clearTimeout(timer);
     timer = null;
   };
