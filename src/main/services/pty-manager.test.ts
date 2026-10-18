@@ -1414,6 +1414,21 @@ describe('pty-manager', () => {
       expect(annexEventBus.emitPtyExit).toHaveBeenCalledWith('agent_exit_bcast', 1);
     });
 
+    it('sends the last output to the log and renderer without escape codes (#2088)', async () => {
+      await spawn('agent_exit_ansi', '/test', '/usr/local/bin/codex', []);
+      vi.mocked(broadcastToAllWindows).mockClear();
+      resize('agent_exit_ansi', 120, 30);
+
+      const onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
+      onDataCb('\x1b[31mError:\x1b[0m No saved session found\r\n\x1b[?25h\x1b[?2026l\x1b]0;codex\x07');
+
+      const onExitCb = mockProcess.onExit.mock.calls[mockProcess.onExit.mock.calls.length - 1][0];
+      onExitCb({ exitCode: 1 });
+
+      const exit = vi.mocked(broadcastToAllWindows).mock.calls.find((c) => c[0] === 'pty:exit');
+      expect(exit?.[3]).toBe('Error: No saved session found\n');
+    });
+
     it('session is cleaned up after onExit fires', async () => {
       await spawn('agent_exit_cleanup', '/test', '/usr/local/bin/claude', []);
 

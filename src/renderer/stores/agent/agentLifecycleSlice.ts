@@ -5,6 +5,7 @@ import { expandTemplate, AgentContext } from '../../../shared/template-engine';
 import { useHeadlessStore } from '../headlessStore';
 import { useProjectStore } from '../projectStore';
 import { AgentLifecycleSlice, GetAgentState, SetAgentState } from './types';
+import { omitRecordKey } from './agentUtils';
 
 export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): AgentLifecycleSlice {
   return {
@@ -96,6 +97,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         agents: { ...s.agents, [agentId]: agent },
         activeAgentId: agentId,
         agentSpawnedAt: { ...s.agentSpawnedAt, [agentId]: Date.now() },
+        agentLaunchFailure: omitRecordKey(s.agentLaunchFailure, agentId),
         projectActiveAgent: { ...s.projectActiveAgent, [projectId]: agentId },
       }));
 
@@ -190,6 +192,7 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
         agents: { ...s.agents, [agentId]: agent },
         activeAgentId: agentId,
         agentSpawnedAt: { ...s.agentSpawnedAt, [agentId]: Date.now() },
+        agentLaunchFailure: omitRecordKey(s.agentLaunchFailure, agentId),
         projectActiveAgent: { ...s.projectActiveAgent, [projectId]: agentId },
       }));
 

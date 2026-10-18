@@ -13,6 +13,7 @@ import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
 import { agentKillRequested, agentKillStage, agentOutput, agentRunKilled, agentRunStarted, agentShellReady, agentSwept } from '../telemetry/agent-telemetry';
 import { tagError } from '../telemetry/types';
+import { stripTerminalEscapes } from '../../shared/terminal-text';
 
 /** Pattern matching common API key environment variable names. */
 const API_KEY_ENV_PATTERN = /^(ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AZURE_OPENAI_API_KEY|MISTRAL_API_KEY|COHERE_API_KEY|HUGGING_FACE_TOKEN|HF_TOKEN)$/;
@@ -377,7 +378,9 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
     if (!current || current.generation !== expectedGeneration) return;
 
     const fullBuffer = getSessionBuffer(current);
-    const ptyBuffer = fullBuffer.slice(-500);
+    // Plain text for the log and the renderer's launch error (#2088); the raw
+    // slice can start mid escape sequence, so strip a wider window first.
+    const ptyBuffer = stripTerminalEscapes(fullBuffer.slice(-4000)).slice(-500);
     appLog('core:pty', exitCode !== 0 && !current.killing ? 'error' : 'info', `PTY exited`, {
       meta: { agentId, exitCode, binary, lastOutput: ptyBuffer },
     });
