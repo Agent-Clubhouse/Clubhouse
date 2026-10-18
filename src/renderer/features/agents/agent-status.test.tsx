@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { agentDot, chatDot, DOT_LABEL, StatusDot, statusCounts, statusRingColor } from './agent-status';
+import { agentDot, chatDetailedStatus, chatDot, DOT_LABEL, StatusDot, statusCounts, statusRingColor } from './agent-status';
 
 describe('agent status vocabulary', () => {
   it('uses the five words, with Done for an agent between turns', () => {
@@ -48,5 +48,31 @@ describe('agent status vocabulary', () => {
     const dot = screen.getByRole('img', { name: 'Needs you' });
     expect(dot.className).toContain('w-2 h-2');
     expect(dot.className).toContain('bg-ctp-warning');
+  });
+});
+
+describe('chatDetailedStatus (#2197)', () => {
+  const running = { status: 'running' as const };
+  const thinking = { state: 'idle' as const, message: 'Thinking', timestamp: 5 };
+
+  it('keeps hook detail that agrees with the chat state', () => {
+    expect(chatDetailedStatus(running, thinking, { state: 'running', turnStartedAt: 1 })).toBe(thinking);
+    const perm = { state: 'needs_permission' as const, message: 'Needs permission', toolName: 'Edit', timestamp: 5 };
+    expect(chatDetailedStatus(running, perm, { state: 'waiting_permission', turnStartedAt: 1 })).toBe(perm);
+  });
+
+  it('fills in what the hook status lost or got wrong', () => {
+    expect(chatDetailedStatus(running, undefined, { state: 'running', turnStartedAt: 7 }))
+      .toEqual({ state: 'working', message: 'Working', timestamp: 7 });
+    expect(chatDetailedStatus(running, thinking, { state: 'idle', turnStartedAt: null }))
+      .toEqual({ state: 'idle', message: 'Idle', timestamp: 5 });
+    expect(agentDot(running, chatDetailedStatus(running, undefined, { state: 'waiting_permission', turnStartedAt: 1 }))).toBe('needs');
+  });
+
+  it('defers to hook and agent status when the chat state can\'t say', () => {
+    for (const state of [null, 'sleeping', 'error'] as const) {
+      expect(chatDetailedStatus(running, thinking, { state, turnStartedAt: null })).toBe(thinking);
+    }
+    expect(chatDetailedStatus({ status: 'sleeping' }, undefined, { state: 'running', turnStartedAt: 1 })).toBeUndefined();
   });
 });
