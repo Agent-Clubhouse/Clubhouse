@@ -36,7 +36,7 @@ vi.mock('../clubhouse-mcp/injection', () => ({
   injectClubhouseMcp: vi.fn(async () => {}),
   buildClubhouseMcpDef: vi.fn(() => ({ type: 'http', url: 'http://127.0.0.1:4321/mcp' })),
 }));
-vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => false) }));
+vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => true) }));
 vi.mock('../materialization-service', () => ({ resolveProjectMcpServers: vi.fn(async () => ({})) }));
 const agentConfig = vi.hoisted(() => ({ touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}) }));
 vi.mock('../agent-config', () => agentConfig);
@@ -70,6 +70,7 @@ import { IPC } from '../../../shared/ipc-channels';
 import type { OrchestratorProvider } from '../../orchestrators';
 import { getShellEnvironment } from '../../util/shell';
 import { injectClubhouseMcp, buildClubhouseMcpDef } from '../clubhouse-mcp/injection';
+import { isMcpEnabled } from '../mcp-settings';
 import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
 import * as codexFixture from '../../orchestrators/adapters/codex-protocol/__fixtures__/app-server-session';
 
@@ -256,6 +257,29 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
   });
 
   it.each([
+    // [agent's mcpOverride, what project/global say, bridge expected]
+    [false, true, false],
+    [true, false, true],
+    [undefined, true, true],
+    [undefined, false, false],
+  ] as const)('agent mcpOverride=%s with project/global=%s: Clubhouse MCP bridge %s (#2223)', async (override, inherited, expected) => {
+    vi.mocked(isMcpEnabled).mockImplementation((_p?: string, agentOverride?: boolean) => agentOverride ?? inherited);
+    try {
+      const driver = new FakeChatDriver();
+      registerChatDriver(driver);
+      const config = { id: 'agent-1', name: 'a', color: 'red', createdAt: '', ...(override === undefined ? {} : { mcpOverride: override }) } as DurableAgentConfig;
+      expect(await tryStartChatAgent(params, provider, undefined, undefined, config)).toBe('chat');
+
+      expect(vi.mocked(isMcpEnabled)).toHaveBeenCalledWith('/p', override);
+      expect(vi.mocked(injectClubhouseMcp)).toHaveBeenCalledWith('/p/wt', 'agent-1', 4321, provider.conventions, { projectPath: '/p', agentOverride: override });
+      if (expected) expect(driver.last.startOptions!.mcpServers).toHaveProperty('clubhouse');
+      else expect(driver.last.startOptions!.mcpServers ?? {}).not.toHaveProperty('clubhouse');
+    } finally {
+      vi.mocked(isMcpEnabled).mockImplementation(() => true);
+    }
+  });
+
+  it.each([
     ['claude-code', 'claude_agent_sdk'],
     ['claude-code', 'claude_stream_json'],
     ['codex-cli', 'codex_app_server'],
@@ -271,7 +295,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     const opts = driver.last.startOptions!;
     expect(opts.env).toMatchObject({ CLUBHOUSE_HOOK_NONCE: nonce, CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_MCP_PORT: '4321' });
     // Neither the worktree config nor the session's MCP definitions get it.
-    expect(vi.mocked(injectClubhouseMcp)).toHaveBeenCalledWith('/p/wt', 'agent-1', 4321, p.conventions);
+    expect(vi.mocked(injectClubhouseMcp)).toHaveBeenCalledWith('/p/wt', 'agent-1', 4321, p.conventions, { projectPath: '/p', agentOverride: undefined });
     expect(vi.mocked(buildClubhouseMcpDef)).toHaveBeenCalledWith(4321, 'agent-1');
     expect(JSON.stringify(opts.mcpServers)).not.toContain(nonce);
   });

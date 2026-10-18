@@ -20,6 +20,9 @@ export const saveSettings = store.save;
 /**
  * Determine whether the Clubhouse MCP bridge is enabled, following the
  * fallback chain: agent override → project override → global → clubhouse mode.
+ * The first one that is set decides: an agent turned off never gets the
+ * bridge even when its project or the global toggle is on, and an agent
+ * turned on gets it even when both are off.
  */
 export function isMcpEnabled(projectPath?: string, agentOverride?: boolean): boolean {
   // Agent-level override takes highest priority

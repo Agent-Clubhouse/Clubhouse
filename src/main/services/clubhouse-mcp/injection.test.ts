@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
 
 const mockIsMcpEnabled = vi.fn();
 vi.mock('../mcp-settings', () => ({
-  isMcpEnabled: () => mockIsMcpEnabled(),
+  isMcpEnabled: (...args: unknown[]) => mockIsMcpEnabled(...args),
 }));
 
 vi.mock('../log-service', () => ({
@@ -69,6 +69,52 @@ describe('MCP Injection', () => {
       // The nonce is named, never stored (#2222).
       expect(content.mcpServers.clubhouse.env).not.toHaveProperty('CLUBHOUSE_HOOK_NONCE');
       expect(content.mcpServers.clubhouse.env_vars).toEqual(['CLUBHOUSE_AGENT_ID', 'CLUBHOUSE_HOOK_NONCE', 'CLUBHOUSE_MCP_PORT']);
+    });
+
+    it('passes the project path and the agent\'s own setting to the enablement check (#2223)', async () => {
+      mockIsMcpEnabled.mockReturnValueOnce(true);
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, undefined, { projectPath: '/projects/on', agentOverride: false });
+      expect(mockIsMcpEnabled).toHaveBeenLastCalledWith('/projects/on', false);
+    });
+
+    // Real precedence (agent > project > global) for each combination that
+    // decides the outcome. Mirrors isMcpEnabled in mcp-settings.ts.
+    describe('precedence: agent > project > global (#2223)', () => {
+      function precedence(global: boolean, projectOverrides: Record<string, boolean>) {
+        return (projectPath?: string, agentOverride?: boolean) => {
+          if (agentOverride !== undefined) return agentOverride;
+          if (projectPath && projectOverrides[projectPath] !== undefined) return projectOverrides[projectPath];
+          return global;
+        };
+      }
+      async function injected(): Promise<boolean> {
+        try { await fsp.access(path.join(tmpDir, '.mcp.json')); return true; } catch { return false; }
+      }
+
+      it.each([
+        // [case, global, project override, agent override, injected]
+        ['global on, nothing else', true, undefined, undefined, true],
+        ['global off, nothing else', false, undefined, undefined, false],
+        ['project on beats global off', false, true, undefined, true],
+        ['project off beats global on', true, false, undefined, false],
+        ['agent off beats global on', true, undefined, false, false],
+        ['agent off beats project on', false, true, false, false],
+        ['agent off beats global and project on', true, true, false, false],
+        ['agent on beats global off', false, undefined, true, true],
+        ['agent on beats project off', true, false, true, true],
+        ['agent on beats global and project off', false, false, true, true],
+      ] as const)('%s', async (_case, global, project, agent, expected) => {
+        const projectPath = '/projects/p';
+        mockIsMcpEnabled.mockImplementationOnce(precedence(global, project === undefined ? {} : { [projectPath]: project }));
+        await injectClubhouseMcp(tmpDir, 'agent-1', 12345, undefined, { projectPath, agentOverride: agent });
+        expect(await injected()).toBe(expected);
+      });
+
+      it('a different project\'s override does not count', async () => {
+        mockIsMcpEnabled.mockImplementationOnce(precedence(false, { '/projects/other': true }));
+        await injectClubhouseMcp(tmpDir, 'agent-1', 12345, undefined, { projectPath: '/projects/p' });
+        expect(await injected()).toBe(false);
+      });
     });
 
     describe('keeps the nonce out of the worktree (#2222)', () => {

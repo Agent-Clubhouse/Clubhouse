@@ -3,11 +3,9 @@ import { IPC } from '../../shared/ipc-channels';
 import * as agentSettings from '../services/agent-settings-service';
 import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
-import { getDurableConfig, updateDurableConfig } from '../services/agent-config';
-import { extractAgentPersona, getAgentWildcards, listAvailablePersonas, materializeAgent, previewMaterialization, readLayeredPersonaRaw, readPersonaForEdit, resetProjectAgentDefaults, writeResolvedPersonaInstructions } from '../services/materialization-service';
-import { isClubhouseModeEnabled } from '../services/clubhouse-mode-settings';
-import { parsePersonaFile } from '../../shared/persona-pattern';
-import type { DurableConfigUpdates } from '../../shared/types';
+import { getDurableConfig } from '../services/agent-config';
+import { extractAgentPersona, getAgentWildcards, listAvailablePersonas, materializeAgent, previewMaterialization, readPersonaForEdit, resetProjectAgentDefaults } from '../services/materialization-service';
+import { applyPersonaToAgent } from '../services/persona-application';
 import { computeConfigDiff, propagateChanges } from '../services/config-diff-service';
 import { getProjectConfigBreakdown, removePluginInjectionItem } from '../services/config-provenance-service';
 import { appLog } from '../services/log-service';
@@ -344,29 +342,7 @@ export function registerAgentSettingsHandlers(): void {
   ipcMain.handle(IPC.AGENT.APPLY_PERSONA_TO_AGENT, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],
     async (_event, projectPath, agentId, personaId) => {
-      const agent = await getDurableConfig(projectPath, agentId);
-      if (!agent) return;
-
-      // Settings ride along in the persona file's front-matter (if any).
-      const raw = await readLayeredPersonaRaw(projectPath, personaId);
-      const { settings } = raw ? parsePersonaFile(raw) : { settings: {} };
-
-      const updates: DurableConfigUpdates = {
-        persona: personaId,
-        ...(settings as DurableConfigUpdates),
-      };
-      await updateDurableConfig(projectPath, agentId, updates);
-
-      const updated = await getDurableConfig(projectPath, agentId);
-      if (!updated) return;
-      const provider = await resolveOrchestrator(projectPath, updated.orchestrator);
-      if (isClubhouseModeEnabled(projectPath)) {
-        // Clubhouse mode rebuilds instructions from project defaults + persona.
-        await materializeAgent({ projectPath, agent: updated, provider });
-      } else {
-        // Otherwise write the resolved persona body straight to the instructions.
-        await writeResolvedPersonaInstructions({ projectPath, agent: updated, provider });
-      }
+      await applyPersonaToAgent(projectPath, agentId, personaId);
     },
   ));
 

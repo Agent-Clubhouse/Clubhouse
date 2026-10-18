@@ -14,6 +14,7 @@ import { appLog } from '../services/log-service';
 import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
 import { refreshClubhouseModeReadme } from '../services/materialization-service';
+import { applyPersonaToAgent } from '../services/persona-application';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as permissionQueue from '../services/annex-permission-queue';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
@@ -68,21 +69,14 @@ async function createDurableAgent(
     throw tagError(err, 'write_failed');
   }
 
-  // Inject persona instructions into the agent's worktree
-  const worktreePath = config.worktreePath;
-  if (persona && worktreePath) {
+  // Apply the persona (layered project > user > built-in lookup, plus any
+  // front-matter settings) the same way "Apply persona" does, keeping the
+  // project-default instructions the worktree was just seeded with.
+  if (persona && config.worktreePath) {
     try {
-      await tel.step('clubhouse.agent.persona_inject', async () => {
-        const { getPersonaTemplate } = await import('../../renderer/features/personas');
-        const template = getPersonaTemplate(persona);
-        if (template) {
-          const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator as OrchestratorId | undefined);
-          let existing = '';
-          try { existing = await provider.readInstructions(worktreePath); } catch { /* no existing */ }
-          const combined = existing ? `${existing}\n\n${template.content}` : template.content;
-          await provider.writeInstructions(worktreePath, combined);
-        }
-      });
+      await tel.step('clubhouse.agent.persona_inject', () =>
+        applyPersonaToAgent(projectPath, config.id, persona, { appendToExisting: true }));
+      config = (await agentConfig.getDurableConfig(projectPath, config.id)) ?? config;
     } catch (err) {
       appLog('agents', 'warn', 'Failed to inject persona instructions on create', {
         meta: { agentName: name, persona, error: err instanceof Error ? err.message : String(err) },

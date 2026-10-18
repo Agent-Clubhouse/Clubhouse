@@ -68,11 +68,8 @@ vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
 
-vi.mock('../../renderer/features/personas', () => ({
-  getPersonaTemplate: vi.fn((id: string) => {
-    if (id === 'qa') return { id: 'qa', name: 'Quality Assurance', description: 'QA agent', content: '# QA Agent\nReview code.' };
-    return undefined;
-  }),
+vi.mock('../services/persona-application', () => ({
+  applyPersonaToAgent: vi.fn(async () => undefined),
 }));
 
 vi.mock('../services/materialization-service', () => ({
@@ -92,6 +89,7 @@ import * as headlessManager from '../services/headless-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
 import { appLog } from '../services/log-service';
 import { refreshClubhouseModeReadme } from '../services/materialization-service';
+import { applyPersonaToAgent } from '../services/persona-application';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import { agentRegistry } from '../services/agent-registry';
 import * as permissionQueue from '../services/annex-permission-queue';
@@ -500,31 +498,25 @@ describe('agent-handlers', () => {
     expect(() => handler({}, 'a1', 1.5, 10)).toThrow('must be an integer');
   });
 
-  // --- Persona injection on CREATE_DURABLE ---
+  // --- Persona on CREATE_DURABLE (#2223) ---
 
-  it('CREATE_DURABLE with persona injects instructions when worktree exists', async () => {
-    const mockWriteInstructions = vi.fn();
-    const mockReadInstructions = vi.fn().mockResolvedValue('Existing instructions');
-    vi.mocked(agentSystem.resolveOrchestrator).mockResolvedValueOnce({
-      id: 'claude-code', displayName: 'Claude Code',
-      writeInstructions: mockWriteInstructions,
-      readInstructions: mockReadInstructions,
-      getModelOptions: vi.fn(() => []),
-      toolVerb: vi.fn(() => null),
-    } as any);
+  it('CREATE_DURABLE with persona applies it via the shared layered lookup, keeping project defaults', async () => {
     vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
       id: 'agent-qa', name: 'qa-bot', color: 'red', worktreePath: '/wt/qa',
     } as any);
+    // Front-matter settings applied by the persona show up in the returned config.
+    vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({
+      id: 'agent-qa', name: 'qa-bot', color: 'red', worktreePath: '/wt/qa', persona: 'reviewer', model: 'opus',
+    } as any);
 
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, 'qa');
+    const result = await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, 'reviewer');
 
-    expect(mockReadInstructions).toHaveBeenCalledWith('/wt/qa');
-    expect(mockWriteInstructions).toHaveBeenCalledWith('/wt/qa', expect.stringContaining('Existing instructions'));
-    expect(mockWriteInstructions).toHaveBeenCalledWith('/wt/qa', expect.stringContaining('# QA Agent'));
+    expect(applyPersonaToAgent).toHaveBeenCalledWith('/project', 'agent-qa', 'reviewer', { appendToExisting: true });
+    expect(result).toEqual(expect.objectContaining({ id: 'agent-qa', persona: 'reviewer', model: 'opus' }));
   });
 
-  it('CREATE_DURABLE with persona skips injection when no worktree', async () => {
+  it('CREATE_DURABLE with persona skips it when no worktree', async () => {
     vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
       id: 'agent-pm', name: 'pm-bot', color: 'indigo',
     } as any);
@@ -532,43 +524,31 @@ describe('agent-handlers', () => {
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
     await handler({}, '/project', 'pm-bot', 'indigo', undefined, false, undefined, false, undefined, undefined, 'qa');
 
-    // Should not call resolveOrchestrator since no worktreePath
-    expect(agentSystem.resolveOrchestrator).not.toHaveBeenCalled();
+    expect(applyPersonaToAgent).not.toHaveBeenCalled();
   });
 
-  it('CREATE_DURABLE with invalid persona skips injection gracefully', async () => {
+  it('CREATE_DURABLE without persona does not apply one', async () => {
     vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
       id: 'agent-x', name: 'x-bot', color: 'blue', worktreePath: '/wt/x',
     } as any);
 
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    const result = await handler({}, '/project', 'x-bot', 'blue', undefined, true, undefined, false, undefined, undefined, 'nonexistent');
+    await handler({}, '/project', 'x-bot', 'blue', undefined, true, undefined, false, undefined, undefined, undefined);
 
-    // Should succeed (agent created) but no instructions written
-    expect(result).toEqual(expect.objectContaining({ id: 'agent-x' }));
-    // resolveOrchestrator should not be called since template is undefined
-    // (the getPersonaTemplate mock returns undefined for nonexistent)
+    expect(applyPersonaToAgent).not.toHaveBeenCalled();
   });
 
-  it('CREATE_DURABLE with persona handles read failure gracefully', async () => {
-    const mockWriteInstructions = vi.fn();
-    const mockReadInstructions = vi.fn().mockRejectedValue(new Error('ENOENT'));
-    vi.mocked(agentSystem.resolveOrchestrator).mockResolvedValueOnce({
-      id: 'claude-code', displayName: 'Claude Code',
-      writeInstructions: mockWriteInstructions,
-      readInstructions: mockReadInstructions,
-      getModelOptions: vi.fn(() => []),
-      toolVerb: vi.fn(() => null),
-    } as any);
+  it('CREATE_DURABLE still returns the agent when applying the persona fails', async () => {
     vi.mocked(agentConfig.createDurable).mockResolvedValueOnce({
       id: 'agent-qa2', name: 'qa-bot', color: 'red', worktreePath: '/wt/qa2',
     } as any);
+    vi.mocked(applyPersonaToAgent).mockRejectedValueOnce(new Error('EACCES'));
 
     const handler = handlers.get(IPC.AGENT.CREATE_DURABLE)!;
-    await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, 'qa');
+    const result = await handler({}, '/project', 'qa-bot', 'red', undefined, true, 'claude-code', false, undefined, undefined, 'qa');
 
-    // Should write persona content standalone (no existing instructions)
-    expect(mockWriteInstructions).toHaveBeenCalledWith('/wt/qa2', '# QA Agent\nReview code.');
+    expect(result).toEqual(expect.objectContaining({ id: 'agent-qa2' }));
+    expect(appLog).toHaveBeenCalledWith('agents', 'warn', 'Failed to inject persona instructions on create', expect.anything());
   });
 
   // ── Durable permission queue (issue #1553) ─────────────────────────
