@@ -131,9 +131,22 @@ export function toolOpenByDefault(status: ToolCallItem['status']): boolean {
   return status === 'failed' || status === 'pending';
 }
 
-/** Server and tool of an MCP call, from the `mcp__<server>__<tool>` name every driver reports. */
-export function mcpTool(tool: ToolCallItem): { server: string; tool: string } | null {
-  const m = /^mcp__(.+?)__(.+)$/.exec(tool.toolName ?? '');
+/**
+ * Server and tool of an MCP call, from the `mcp__<server>__<tool>` name every
+ * driver reports. Tool names can contain `__` (Clubhouse's own
+ * `group__<project>__post_bulletin`), so the longest known server name wins,
+ * and without one the name splits at the first `__` after the prefix.
+ */
+export function mcpTool(tool: ToolCallItem, servers?: ReadonlyArray<{ name: string }> | null): { server: string; tool: string } | null {
+  const name = tool.toolName ?? '';
+  if (!name.startsWith('mcp__')) return null;
+  const rest = name.slice('mcp__'.length);
+  const known = (servers ?? [])
+    .map((s) => s.name)
+    .filter((n) => n && rest.startsWith(`${n}__`) && rest.length > n.length + 2)
+    .sort((a, b) => b.length - a.length)[0];
+  if (known) return { server: known, tool: rest.slice(known.length + 2) };
+  const m = /^(.+?)__(.+)$/.exec(rest);
   return m ? { server: m[1], tool: m[2] } : null;
 }
 

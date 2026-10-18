@@ -93,6 +93,11 @@ describe('tool calls in the transcript (#2110)', () => {
     expect(screen.getByTestId('chat-tool-result')).toHaveTextContent('{"posted":true}');
   });
 
+  it("labels an MCP call by the session's known server when the server name has `__`", () => {
+    render(<ToolCallView tool={mcp({ toolName: 'mcp__my__server__do_thing' })} mcpServers={[{ name: 'my__server', status: 'connected' }]} />);
+    expect(screen.getByTestId('chat-tool-card')).toHaveTextContent('my__server · do_thing');
+  });
+
   it('falls back to the raw output for an MCP result with no text (Codex)', () => {
     render(<ToolCallView tool={mcp({ content: [], rawOutput: { content: [{ type: 'text', text: 'ok' }] } })} />);
     fireEvent.click(expandButton(screen.getByTestId('chat-tool-card')));

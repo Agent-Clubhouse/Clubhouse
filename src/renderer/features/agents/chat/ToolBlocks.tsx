@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import type { ToolCallContent, ToolKind } from '../../../../shared/chat';
+import type { ChatMcpServer, ToolCallContent, ToolKind } from '../../../../shared/chat';
 import type { ToolCallItem } from '../../../stores/chatStore';
 import type { SubagentBlock } from './view-model';
 import {
@@ -230,8 +230,8 @@ export function CommandCard({ tool }: { tool: ToolCallItem }) {
  * Any other tool call, MCP included: one row with the tool and a short summary;
  * open it for the arguments and what came back.
  */
-export function ToolCard({ tool }: { tool: ToolCallItem }) {
-  const mcp = mcpTool(tool);
+export function ToolCard({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?: ChatMcpServer[] | null }) {
+  const mcp = useMemo(() => mcpTool(tool, mcpServers), [tool, mcpServers]);
   const args = useMemo(() => toolArgs(tool), [tool]);
   const result = useMemo(() => toolResultText(tool), [tool]);
   const [open, toggle] = useToolOpen(tool.status);
@@ -245,7 +245,7 @@ export function ToolCard({ tool }: { tool: ToolCallItem }) {
     <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-tool-card" data-status={tool.status} data-open={expandable && open} data-mcp={mcp ? 'true' : undefined}>
       <CardHeader open={expandable && open} onToggle={expandable ? toggle : undefined} indent label={`${open ? 'Collapse' : 'Expand'} ${label}`}>
         <Ico className="text-ctp-overlay1 flex-shrink-0" />
-        <span className="font-medium text-ctp-subtext1 flex-shrink-0">{label}</span>
+        <span className="font-medium text-ctp-subtext1 flex-shrink-0 max-w-[50%] truncate" title={label}>{label}</span>
         {summary && <span className="font-mono text-[11.5px] text-ctp-subtext0 truncate min-w-0" title={summary}>{summary}</span>}
         <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ctp-overlay0 whitespace-nowrap"><StatusMeta tool={tool} /></span>
       </CardHeader>
@@ -272,7 +272,7 @@ export function ToolCard({ tool }: { tool: ToolCallItem }) {
  * One tool call in the transcript: a diff card per file edit, a command card for
  * commands, a tool card otherwise. All start collapsed to one row (toolOpenByDefault).
  */
-export function ToolCallView({ tool }: { tool: ToolCallItem }) {
+export function ToolCallView({ tool, mcpServers }: { tool: ToolCallItem; mcpServers?: ChatMcpServer[] | null }) {
   const diffs = diffContent(tool);
   if (diffs.length > 0) {
     return (
@@ -283,7 +283,7 @@ export function ToolCallView({ tool }: { tool: ToolCallItem }) {
     );
   }
   if (tool.toolKind === 'execute' || tool.content.some((c) => c.type === 'terminal')) return <CommandCard tool={tool} />;
-  return <ToolCard tool={tool} />;
+  return <ToolCard tool={tool} mcpServers={mcpServers} />;
 }
 
 const SUB_STATUS: Record<SubagentBlock['info']['status'], string> = {

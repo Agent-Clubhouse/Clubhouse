@@ -166,9 +166,18 @@ describe('tool card helpers (#2110)', () => {
 
   it('splits an MCP tool name into server and tool', () => {
     expect(mcpTool(tool({ toolName: 'mcp__clubhouse__read_topic' }))).toEqual({ server: 'clubhouse', tool: 'read_topic' });
-    expect(mcpTool(tool({ toolName: 'mcp__group__Clubhouse_Project__get_project_info' }))).toEqual({ server: 'group', tool: 'Clubhouse_Project__get_project_info' });
+    // Clubhouse's own tool names contain `__`: the first split keeps them whole.
+    expect(mcpTool(tool({ toolName: 'mcp__clubhouse__group__proj_x7q__post_bulletin' }))).toEqual({ server: 'clubhouse', tool: 'group__proj_x7q__post_bulletin' });
     expect(mcpTool(tool({ toolName: 'Bash' }))).toBeNull();
+    expect(mcpTool(tool({ toolName: 'mcp__solo' }))).toBeNull();
     expect(mcpTool(tool({}))).toBeNull();
+  });
+
+  it('prefers the longest known server name when one contains `__`', () => {
+    const servers = [{ name: 'my' }, { name: 'my__server' }];
+    expect(mcpTool(tool({ toolName: 'mcp__my__server__do_thing' }), servers)).toEqual({ server: 'my__server', tool: 'do_thing' });
+    expect(mcpTool(tool({ toolName: 'mcp__my__other' }), servers)).toEqual({ server: 'my', tool: 'other' });
+    expect(mcpTool(tool({ toolName: 'mcp__unknown__x__y' }), servers)).toEqual({ server: 'unknown', tool: 'x__y' });
   });
 
   it('summarizes with the first non-empty string argument on one line', () => {
