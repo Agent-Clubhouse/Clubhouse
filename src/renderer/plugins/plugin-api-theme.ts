@@ -28,10 +28,12 @@ export function createThemeAPI(ctx: PluginContext): ThemeAPI {
     onDidChange(callback: (theme: ThemeInfo) => void): Disposable {
       // Track the applied theme, not the selection: when the selected plugin theme is
       // unregistered the store keeps themeId and only swaps in the fallback theme.
-      let prevId = useThemeStore.getState().theme.id;
+      // The definition, not just its id: a pack update re-registers the same id
+      // with new colours (#2123).
+      let prev = useThemeStore.getState().theme;
       const unsub = useThemeStore.subscribe((state) => {
-        if (state.theme.id !== prevId) {
-          prevId = state.theme.id;
+        if (state.theme !== prev) {
+          prev = state.theme;
           const info: ThemeInfo = {
             id: state.theme.id,
             name: state.theme.name,

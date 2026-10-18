@@ -54,6 +54,19 @@ describe('theme.onDidChange', () => {
     sub.dispose();
   });
 
+  it('re-registering the active theme with new colours updates getCurrent() and fires onDidChange (#2123)', () => {
+    const seen: string[] = [];
+    const sub = api().onDidChange((t) => seen.push(t.colors.base));
+    const updated: ThemeDefinition = { ...packTheme, colors: { ...packTheme.colors, base: '#123456' } };
+    registerTheme(updated);
+    expect(api().getCurrent().colors.base).toBe('#123456');
+    expect(seen).toEqual(['#123456']);
+    // Re-registering the identical definition again changes nothing.
+    registerTheme(updated);
+    expect(seen).toEqual(['#123456']);
+    sub.dispose();
+  });
+
   it('does not fire for unrelated store updates', () => {
     const cb = vi.fn();
     const sub = api().onDidChange(cb);
