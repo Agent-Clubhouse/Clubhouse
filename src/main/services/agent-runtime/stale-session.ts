@@ -30,6 +30,21 @@ export function isSessionNotFound(text: string | undefined | null): boolean {
   return SESSION_NOT_FOUND.some((re) => re.test(plain));
 }
 
+/** The last chat start error per agent, for the terminal fallback to read. */
+const chatStartFailures = new Map<string, string>();
+
+/** Record why a chat start failed, so the terminal fallback can tell a dead session from other errors. */
+export function noteChatStartFailure(agentId: string, error: string): void {
+  chatStartFailures.set(agentId, error);
+}
+
+/** Read and forget the agent's last chat start error. */
+export function takeChatStartFailure(agentId: string): string | undefined {
+  const error = chatStartFailures.get(agentId);
+  chatStartFailures.delete(agentId);
+  return error;
+}
+
 /** Why a resume is given up on: the CLI said the session is gone, or the CLI quit right away. */
 export type StaleResumeReason = 'not_found' | 'exited_early';
 

@@ -26,7 +26,7 @@ import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
 import { tryStartChatAgent } from './agent-runtime/chat-spawn';
-import { clearStaleResume, isSessionNotFound, type StaleResumeReason } from './agent-runtime/stale-session';
+import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
 import { onAgentExit } from './agent-exit-broadcast';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
@@ -244,6 +244,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     // Chat and has a registered driver. Falls through to the terminal otherwise.
     let chatStartMs: number | undefined;
     let startedInChat: boolean;
+    takeChatStartFailure(params.agentId);
     try {
       startedInChat = await withErrorType('chat_start_failed', () => tryStartChatAgent({
         agentId: params.agentId,
@@ -267,6 +268,14 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
       facts.runtime = 'chat';
       broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
       return;
+    }
+
+    // Chat couldn't resume because the session is gone: don't make the
+    // terminal try the same dead id (#2086). Start it fresh instead.
+    const chatFailure = takeChatStartFailure(params.agentId);
+    if (params.kind === 'durable' && params.resume && params.sessionId && isSessionNotFound(chatFailure)) {
+      await clearResume(params.projectPath, params.agentId, params.sessionId, 'not_found');
+      params = { ...params, resume: false, sessionId: undefined };
     }
 
     // Try headless path for quick agents when enabled
@@ -571,6 +580,7 @@ function captureSessionOnExit(
       });
     });
   } catch (err) {
+    // telemetry-exempt: best-effort bookkeeping on exit; logged, and the next wake still works.
     appLog('core:agent', 'warn', 'Failed to capture session ID', {
       meta: { agentId, error: err instanceof Error ? err.message : String(err) },
     });
@@ -582,6 +592,7 @@ async function clearResume(projectPath: string, agentId: string, sessionId: stri
   try {
     await clearStaleResume(projectPath, agentId, sessionId, reason);
   } catch (err) {
+    // telemetry-exempt: best-effort bookkeeping on exit; logged, and the next wake still works.
     appLog('core:agent', 'warn', 'Failed to clear stale resume id', {
       meta: { agentId, sessionId, error: err instanceof Error ? err.message : String(err) },
     });

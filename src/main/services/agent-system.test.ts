@@ -73,6 +73,14 @@ vi.mock('./agent-config', () => ({
   updateSessionId: (...args: unknown[]) => mockUpdateSessionId(...args),
 }));
 
+// Chat start runs for real unless a test stands in for it (to fail a chat resume).
+const { mockTryStartChatAgent } = vi.hoisted(() => ({ mockTryStartChatAgent: vi.fn() }));
+vi.mock('./agent-runtime/chat-spawn', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./agent-runtime/chat-spawn')>();
+  mockTryStartChatAgent.mockImplementation(actual.tryStartChatAgent);
+  return { ...actual, tryStartChatAgent: (...args: Parameters<typeof actual.tryStartChatAgent>) => mockTryStartChatAgent(...args) };
+});
+
 // Mock materialization-service
 const mockMaterializeAgent = vi.fn();
 const mockCleanupStaleJsonInTomlConfigs = vi.fn();
@@ -1019,6 +1027,36 @@ describe('agent-system', () => {
       onExit('agent-1', 0, `No conversation found with session ID: x\n${'.'.repeat(5000)}\nresume ${REAL}`);
       await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
       expect(mockUpdateSessionId).not.toHaveBeenCalled();
+    });
+
+    it('opens the terminal fresh when chat could not resume because the session is gone', async () => {
+      const { noteChatStartFailure } = await import('./agent-runtime/stale-session');
+      const realStart = mockTryStartChatAgent.getMockImplementation()!;
+      mockTryStartChatAgent.mockImplementationOnce(async (params: { agentId: string }) => {
+        noteChatStartFailure(params.agentId, `RPC error: no rollout found for thread id ${DEAD}`);
+        return false;
+      });
+      try {
+        await wake('codex-cli');
+        expect(mockUpdateSessionId).toHaveBeenCalledWith('/project', 'agent-1', null);
+        const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+        expect(spawnArgs.resume).toBe(false);
+        expect(spawnArgs.sessionId).toBeUndefined();
+      } finally {
+        mockTryStartChatAgent.mockImplementation(realStart);
+      }
+    });
+
+    it('keeps resuming in the terminal when chat failed for another reason', async () => {
+      const { noteChatStartFailure } = await import('./agent-runtime/stale-session');
+      mockTryStartChatAgent.mockImplementationOnce(async (params: { agentId: string }) => {
+        noteChatStartFailure(params.agentId, "RPC request 'session/new' timed out after 30000ms");
+        return false;
+      });
+      await wake('codex-cli');
+      expect(mockUpdateSessionId).not.toHaveBeenCalled();
+      const spawnArgs = mockCodexProvider.buildSpawnCommand.mock.calls.at(-1)![0] as { resume?: boolean; sessionId?: string };
+      expect(spawnArgs).toMatchObject({ resume: true, sessionId: DEAD });
     });
 
     it('does not clear an id that a newer run has replaced', async () => {
