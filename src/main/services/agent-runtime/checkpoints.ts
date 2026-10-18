@@ -36,7 +36,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import type { ChangeStatus, ChangedFile, RevertResult } from '../../../shared/chat-checkpoints';
-import { cleanSpawnEnv } from '../../util/shell';
+import { cleanInheritedEnv, cleanSpawnEnv } from '../../util/shell';
 export type { ChangeStatus, ChangedFile, RevertResult };
 
 export const CHECKPOINT_REF_PREFIX = 'refs/clubhouse/checkpoints';
@@ -69,7 +69,7 @@ function git(cwd: string, args: string[], opts: GitOptions = {}): Promise<string
     const child = execFile('git', args, {
       cwd,
       // English messages: some failures are recognised by their text.
-      env: cleanSpawnEnv({ ...process.env, ...opts.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' }),
+      env: cleanSpawnEnv({ ...cleanInheritedEnv({ ...process.env }), ...opts.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' }),
       maxBuffer: 64 * 1024 * 1024,
       encoding: 'utf-8',
       timeout: GIT_TIMEOUT_MS,

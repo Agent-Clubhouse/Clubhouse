@@ -69,6 +69,7 @@ import { noteKillRequest } from './sleep-reason';
 import { IPC } from '../../../shared/ipc-channels';
 import type { OrchestratorProvider } from '../../orchestrators';
 import { getShellEnvironment } from '../../util/shell';
+import { injectClubhouseMcp, buildClubhouseMcpDef } from '../clubhouse-mcp/injection';
 import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
 import * as codexFixture from '../../orchestrators/adapters/codex-protocol/__fixtures__/app-server-session';
 
@@ -252,6 +253,27 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(isChatAgent('agent-1')).toBe(true);
     // Into session history (the Sessions picker), not just lastSessionId.
     expect(agentConfig.touchSessionEntry).toHaveBeenCalledWith('/p', 'agent-1', 'native-1');
+  });
+
+  it.each([
+    ['claude-code', 'claude_agent_sdk'],
+    ['claude-code', 'claude_stream_json'],
+    ['codex-cli', 'codex_app_server'],
+    ['copilot-cli', 'copilot_acp'],
+  ] as const)('%s (%s): the nonce reaches the driver only through the CLI env (#2222)', async (id, driverId) => {
+    const driver = new FakeChatDriver(driverId, id);
+    registerChatDriver(driver);
+    const p = { ...provider, id } as unknown as OrchestratorProvider;
+    expect(await tryStartChatAgent(params, p, undefined, undefined, null)).toBe('chat');
+
+    const nonce = registry.setNonce.mock.calls[0][1] as string;
+    expect(nonce).toMatch(/^[0-9a-f-]{36}$/);
+    const opts = driver.last.startOptions!;
+    expect(opts.env).toMatchObject({ CLUBHOUSE_HOOK_NONCE: nonce, CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_MCP_PORT: '4321' });
+    // Neither the worktree config nor the session's MCP definitions get it.
+    expect(vi.mocked(injectClubhouseMcp)).toHaveBeenCalledWith('/p/wt', 'agent-1', 4321, p.conventions);
+    expect(vi.mocked(buildClubhouseMcpDef)).toHaveBeenCalledWith(4321, 'agent-1');
+    expect(JSON.stringify(opts.mcpServers)).not.toContain(nonce);
   });
 
   it('reads the agent\'s own auto-sleep at start and re-arms when it changes, until the session ends (#2143)', async () => {

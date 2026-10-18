@@ -598,6 +598,12 @@ describe('toCodexMcpServers', () => {
     expect(toCodexMcpServers(undefined)).toEqual({ servers: {}, skipped: [] });
   });
 
+  it('passes env_vars through so Codex forwards the bridge nonce from its own env (#2222)', () => {
+    expect(toCodexMcpServers({
+      clubhouse: { type: 'stdio', command: 'node', args: ['bridge.js'], env_vars: ['CLUBHOUSE_HOOK_NONCE', 7] },
+    }).servers.clubhouse).toEqual({ command: 'node', args: ['bridge.js'], env_vars: ['CLUBHOUSE_HOOK_NONCE'] });
+  });
+
   it('accepts the streamable-http spelling and leaves disabled servers out', () => {
     expect(toCodexMcpServers({
       dashed: { type: 'streamable-http', url: 'https://a.example.test/mcp' },

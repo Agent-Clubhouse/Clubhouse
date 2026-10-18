@@ -7,19 +7,32 @@
  * process via HTTP. SSE events from the main process are relayed back
  * to the agent on stdout.
  *
- * Environment variables:
+ * Environment variables, inherited from the agent CLI (#2222):
  *   CLUBHOUSE_MCP_PORT   — bridge server port
  *   CLUBHOUSE_AGENT_ID   — agent identity
- *   CLUBHOUSE_HOOK_NONCE — auth token
+ *   CLUBHOUSE_HOOK_NONCE — auth token. Never in the MCP config file.
+ * Fallbacks from the config file, used only when the env has none:
+ *   CLUBHOUSE_MCP_FALLBACK_PORT, CLUBHOUSE_MCP_FALLBACK_AGENT_ID
  *
  * No external dependencies — uses only Node.js built-ins.
  */
 
 const http = require('http');
 
-const PORT = process.env.CLUBHOUSE_MCP_PORT;
-const AGENT_ID = process.env.CLUBHOUSE_AGENT_ID;
-const NONCE = process.env.CLUBHOUSE_HOOK_NONCE;
+// A literal `${VAR}`, `$VAR` or `%VAR%` means a CLI passed a reference through
+// unexpanded: that is no value at all, so treat it as unset.
+function envValue(name) {
+  const value = process.env[name];
+  if (!value || /^(?:\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*|%[^%]+%)$/.test(value)) return undefined;
+  return value;
+}
+
+// The agent's own env wins. The file's values are fallbacks under other
+// names: quick agents share a worktree, so a file identity is whichever agent
+// wrote last.
+const PORT = envValue('CLUBHOUSE_MCP_PORT') || envValue('CLUBHOUSE_MCP_FALLBACK_PORT');
+const AGENT_ID = envValue('CLUBHOUSE_AGENT_ID') || envValue('CLUBHOUSE_MCP_FALLBACK_AGENT_ID');
+const NONCE = envValue('CLUBHOUSE_HOOK_NONCE');
 
 if (!PORT || !AGENT_ID || !NONCE) {
   process.stderr.write(

@@ -218,7 +218,7 @@ export class AcpChatDriver implements ChatDriver {
     opts.signal?.addEventListener('abort', onAbort, { once: true });
     try {
       const caps = await session.start();
-      const { servers, skipped } = toAcpMcpServers(opts.mcpServers);
+      const { servers, skipped } = toAcpMcpServers(opts.mcpServers, opts.env);
       if (skipped.length) this.log('warn', 'MCP servers not expressible over ACP', { skipped });
       const setup = { cwd: opts.cwd, mcpServers: servers };
       const startFresh = async (logMessage: string, message: string) => {

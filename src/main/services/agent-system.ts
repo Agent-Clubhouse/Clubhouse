@@ -370,7 +370,21 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
           }
         }
         facts.wrapperApplied = wrapperApplied;
-        const spawnEnv = { ...headlessResult.env, ...profileEnv, ...(wrapperApplied ? wrapperConfig?.env : undefined), CLUBHOUSE_AGENT_ID: params.agentId };
+        // Its own nonce and identity, as a terminal quick agent gets: headless
+        // Claude reads the worktree's MCP config (the parent's, for a quick
+        // agent), and the bridge there takes both from this env (#2222).
+        const nonce = randomUUID();
+        agentRegistry.setNonce(params.agentId, nonce);
+        const mcpPort = await waitMcpBridgeReady().catch(() => 0);
+        const spawnEnv = {
+          ...headlessResult.env,
+          ...profileEnv,
+          ...(wrapperApplied ? wrapperConfig?.env : undefined),
+          CLUBHOUSE_AGENT_ID: params.agentId,
+          CLUBHOUSE_HOOK_NONCE: nonce,
+          ...hookPortEnv(),
+          ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
+        };
         noteSpawnKind(params.agentId, params.kind);
         assertLaunchesOpen();
         await tel.step('clubhouse.headless.spawn', () => headlessManager.spawnHeadless(
@@ -466,7 +480,7 @@ async function spawnPtyAgent(
     })),
     waitMcpBridgeReady().then((port) => tel.step('clubhouse.mcp.inject', async () => {
       mcpPort = port;
-      await injectClubhouseMcp(params.cwd, params.agentId, port, nonce, provider.conventions);
+      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions);
     })).catch((err) => {
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped', {
         meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
@@ -507,7 +521,7 @@ async function spawnPtyAgent(
     args = [...args, ...provider.buildMcpArgs({
       ...projectServers,
       // The bridge is last so a project server of the same name can't shadow it.
-      clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId, nonce),
+      clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId),
     })];
   }
   // trailingArgs (e.g. Codex's bare mission prompt) must come after any
@@ -552,6 +566,8 @@ async function spawnPtyAgent(
     ...profileEnv,
     ...(wrapperApplied ? wrapperConfig?.env : undefined),
     CLUBHOUSE_AGENT_ID: params.agentId,
+    // The only place the nonce goes: hooks and the MCP bridge read it from
+    // this env, never from the worktree's config files (#2222).
     CLUBHOUSE_HOOK_NONCE: nonce,
     ...hookPortEnv(),
     ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),

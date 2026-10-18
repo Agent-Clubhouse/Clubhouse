@@ -98,8 +98,19 @@ function fileLink(target: string, mimeType?: string): ContentBlock {
  * MCP servers keyed by name → ACP's list. Accepts `{ command, args, env }`
  * (stdio) and `{ type?, url, headers }` (SSE when type is 'sse', else HTTP). Anything else is
  * returned in `skipped` so the caller can log it.
+ *
+ * ACP gives a stdio server exactly the env pairs listed, and the spec doesn't
+ * say whether the agent's own environment is inherited. So names in
+ * `env_vars` (the bridge's nonce, agent ID and port, #2222) are resolved
+ * from `cliEnv`, the env the ACP CLI was spawned with. The values travel over
+ * the stdio RPC pipe to a process that already holds them, never in a config
+ * file or argv, and AcpClient redacts them from its request log
+ * (redactAcpParamsForLog).
  */
-export function toAcpMcpServers(servers: Record<string, unknown> | undefined): { servers: McpServer[]; skipped: string[] } {
+export function toAcpMcpServers(
+  servers: Record<string, unknown> | undefined,
+  cliEnv?: Record<string, string | undefined>,
+): { servers: McpServer[]; skipped: string[] } {
   const out: McpServer[] = [];
   const skipped: string[] = [];
   for (const [name, raw] of Object.entries(servers ?? {})) {
@@ -109,7 +120,7 @@ export function toAcpMcpServers(servers: Record<string, unknown> | undefined): {
         name,
         command: s.command,
         args: Array.isArray(s.args) ? s.args.map(String) : [],
-        env: pairs(s.env),
+        env: [...pairs(s.env), ...forwardedPairs(s.env_vars, cliEnv)],
       });
     } else if (s && typeof s.url === 'string') {
       // 'sse' is SSE; anything else with a URL ('http', 'streamable-http', unset) is HTTP.
@@ -119,6 +130,11 @@ export function toAcpMcpServers(servers: Record<string, unknown> | undefined): {
     }
   }
   return { servers: out, skipped };
+}
+
+function forwardedPairs(names: unknown, env: Record<string, string | undefined> | undefined): Array<{ name: string; value: string }> {
+  if (!Array.isArray(names) || !env) return [];
+  return names.flatMap((name) => (typeof name === 'string' && typeof env[name] === 'string' ? [{ name, value: env[name] as string }] : []));
 }
 
 function pairs(v: unknown): Array<{ name: string; value: string }> {

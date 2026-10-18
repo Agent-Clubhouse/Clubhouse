@@ -184,6 +184,49 @@ describe('config-pipeline', () => {
     });
   });
 
+  describe('stored MCP nonce migration on restore (#2222)', () => {
+    const STALE = 'stale-nonce-0000';
+    const bridgeWithNonce = { command: 'node', args: ['/app/clubhouse-mcp-bridge.js'], env: { CLUBHOUSE_AGENT_ID: 'a1', CLUBHOUSE_HOOK_NONCE: STALE } };
+
+    it('restoreAll scrubs a stored nonce from the current .mcp.json', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({ mcpServers: { clubhouse: bridgeWithNonce } }));
+      await snapshotFile('agent-1', '/wt/.mcp.json');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({ mcpServers: { clubhouse: bridgeWithNonce, user: { command: 'u' } } }));
+
+      await restoreAll();
+
+      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
+      expect(written).not.toContain(STALE);
+      expect(JSON.parse(written).mcpServers.user).toEqual({ command: 'u' });
+    });
+
+    it('scrubs the nonce from a pre-#2222 snapshot it writes back when the current file is corrupt', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({ mcpServers: { clubhouse: bridgeWithNonce } }));
+      await snapshotFile('agent-1', '/wt/.mcp.json');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('{ not json');
+
+      await restoreForAgent('agent-1');
+
+      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
+      expect(written).not.toContain(STALE);
+      // A bridge entry's stored agent ID goes too: it would shadow the agent's own env.
+      expect(JSON.parse(written).mcpServers.clubhouse.env).toEqual({});
+    });
+
+    it('scrubs the nonce from a TOML snapshot it writes back when the current file is unreadable', async () => {
+      const original = `[mcp_servers.clubhouse.env]\nCLUBHOUSE_HOOK_NONCE = "${STALE}"\nKEEP = "1"\n`;
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(original);
+      await snapshotFile('agent-1', '/wt/.codex/config.toml');
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('EACCES'));
+
+      await restoreForAgent('agent-1');
+
+      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
+      expect(written).not.toContain(STALE);
+      expect(written).toContain('KEEP = "1"');
+    });
+  });
+
   describe('restoreForAgent', () => {
     it('strips Clubhouse hooks from current file when restoring (file existed before)', async () => {
       // Original file had user content
