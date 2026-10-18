@@ -110,8 +110,10 @@ export const unsubscribeThemeRegistryListener = onRegistryChange(() => {
     // consistent with the CSS variables that were just written to the document.
     applyTheme(currentTheme, { experimentalGradients: store.experimentalGradients });
     syncTitleBarOverlay(currentTheme);
-    if (currentTheme.id !== store.theme.id) {
-      // Previously unavailable theme is now registered — update state to match CSS.
+    if (currentTheme !== store.theme) {
+      // A previously unavailable theme is now registered, or the active one was
+      // re-registered with new colours under the same id (a pack update, #2123):
+      // update state to match the CSS, so getCurrent() and onDidChange follow.
       useThemeStore.setState({ theme: currentTheme });
     }
   }
