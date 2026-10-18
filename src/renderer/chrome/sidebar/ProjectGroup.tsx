@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { getAgentColorHex } from '../../../shared/name-generator';
 import { AgentRow } from './AgentRow';
-import { agentDot, buildProjectTree, descendants, helperRollup, moveWithinGroup, projectRollup, siblingGroups, type AgentNode } from './treeModel';
+import { agentDot, buildProjectTree, countDescendants, helperRollup, moveWithinGroup, projectRollup, siblingGroups, type AgentNode } from './treeModel';
 import type { ProjectFold } from '../chromeStore';
 import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
 import { reportChromeFeature } from '../telemetry';
@@ -168,13 +168,13 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   const armRefocus = useRefocusAfterMove();
   const projectKey = `project:${project.id}`;
   const label = project.displayName || project.name;
-  const tree = buildProjectTree(agents);
+  const tree = useMemo(() => buildProjectTree(agents), [agents]);
   const collapsedAgents = props.collapsedAgentIds ?? NO_COLLAPSED;
   const { onToggleAgentCollapsed } = props;
   const rollup = projectRollup(agents, detailed);
   const isActiveProject = project.id === activeProjectId;
   /** Everyone in the sleeping fold, helpers included. */
-  const sleepingCount = tree.sleeping.reduce((n, node) => n + 1 + descendants(node).length, 0);
+  const sleepingCount = tree.sleeping.reduce((n, node) => n + 1 + countDescendants(node), 0);
   const expanded = !collapsed;
 
   // Reordering durable agents (§4.8): by drag, by Move up / Move down in the
@@ -262,16 +262,19 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
   }, [agentDrag, reorder]);
 
   const renderAgent = (agent: Agent, indent = ROW_INDENT, parentKey = projectKey, depth = 1, node?: AgentNode) => {
-    const helpers = node && node.children.length > 0 ? helperRollup(node, detailed) : undefined;
+    const hasHelpers = !!node && node.children.length > 0;
+    const folded = hasHelpers && collapsedAgents.has(agent.id);
+    // Only a folded parent shows the roll-up, so only it walks its helpers.
+    const rolled = folded ? helperRollup(node!, detailed) : undefined;
     return (
       <AgentRow
         key={agent.id}
         agent={agent}
-        helperCount={helpers?.count}
-        helpersExpanded={helpers ? !collapsedAgents.has(agent.id) : undefined}
-        helperNeeds={helpers?.needs}
-        helperWorking={helpers?.working}
-        onToggleHelpers={helpers ? onToggleAgentCollapsed : undefined}
+        helperCount={rolled ? rolled.count : hasHelpers ? node!.children.length : undefined}
+        helpersExpanded={hasHelpers ? !folded : undefined}
+        helperNeeds={rolled?.needs}
+        helperWorking={rolled?.working}
+        onToggleHelpers={hasHelpers ? onToggleAgentCollapsed : undefined}
         dot={agentDot(agent, detailed[agent.id])}
         detailed={detailed[agent.id]}
         projectPath={project.path}

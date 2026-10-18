@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createLifecycleSlice } from './agentLifecycleSlice';
 import type { AgentState } from './types';
+import { buildProjectTree } from '../../chrome/sidebar/treeModel';
 
 // Minimal state that the lifecycle slice needs
 function createMinimalState(overrides: Partial<AgentState> = {}): AgentState {
@@ -225,6 +226,22 @@ describe('agentLifecycleSlice – spawnDurableAgent', () => {
     await slice.spawnDurableAgent(PROJECT_ID, PROJECT_PATH, DURABLE_CONFIG, false);
 
     expect(state().agents['durable-1']?.model).toBe('claude-3');
+  });
+
+  it('keeps a woken helper nested under its parent (#2231)', async () => {
+    // The spawned Agent replaces the store entry, so the parent link must come along.
+    const { state, slice } = createTestStore({
+      agents: {
+        lead: { id: 'lead', projectId: PROJECT_ID, name: 'lead', kind: 'durable', status: 'running', color: 'blue' },
+        'durable-1': { id: 'durable-1', projectId: PROJECT_ID, name: 'Durable Agent', kind: 'durable', status: 'sleeping', color: 'blue', parentAgentId: 'lead' },
+      } as any,
+    });
+
+    await slice.spawnDurableAgent(PROJECT_ID, PROJECT_PATH, { ...DURABLE_CONFIG, parentAgentId: 'lead' }, false);
+
+    expect(state().agents['durable-1']).toMatchObject({ status: 'running', parentAgentId: 'lead' });
+    const tree = buildProjectTree(Object.values(state().agents));
+    expect(tree.awake.map((n) => [n.agent.id, n.children.map((c) => c.agent.id)])).toEqual([['lead', ['durable-1']]]);
   });
 
   it('passes the configured model to the spawn IPC', async () => {

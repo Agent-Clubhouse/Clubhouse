@@ -110,9 +110,10 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
             parentAgentId: config.parentAgentId,
           };
           // An unfinished creation (#2226) is ground truth for status; a finished
-          // one moves an agent still shown as creating or failed to asleep.
+          // one moves an agent still shown as creating or failed to asleep, and
+          // drops the failed mark.
           const existing = agents[config.id];
-          if (config.creation || existing.status === 'creating') {
+          if (config.creation || existing.status === 'creating' || existing.creationFailed) {
             agents[config.id] = {
               ...existing,
               ...creationStatus(config),
@@ -200,7 +201,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
               projectId,
               name: config.name,
               kind: 'durable',
-              status: 'sleeping',
+              ...creationStatus(config),
               color: config.color,
               icon: config.icon,
               worktreePath: config.worktreePath,
@@ -209,6 +210,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
               orchestrator: config.orchestrator,
               freeAgentMode: config.freeAgentMode,
               mcpIds: config.mcpIds,
+              parentAgentId: config.parentAgentId,
             };
           }
         }

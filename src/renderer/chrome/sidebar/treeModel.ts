@@ -213,7 +213,9 @@ export function buildProjectTree<A extends NestableAgent>(agents: readonly A[]):
   const childrenOf = new Map<string | undefined, A[]>();
   for (const agent of durable) {
     const parent = parentOf.get(agent.id);
-    childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), agent]);
+    const siblings = childrenOf.get(parent);
+    if (siblings) siblings.push(agent);
+    else childrenOf.set(parent, [agent]);
   }
   const node = (agent: A): AgentNode<A> => ({ agent, children: (childrenOf.get(agent.id) ?? []).map(node) });
   const roots = (childrenOf.get(undefined) ?? []).map(node);
@@ -226,8 +228,19 @@ export function buildProjectTree<A extends NestableAgent>(agents: readonly A[]):
 }
 
 /** Every agent under `node`, depth first, not counting the node itself. */
-export function descendants<A extends NestableAgent>(node: AgentNode<A>): A[] {
-  return node.children.flatMap((child) => [child.agent, ...descendants(child)]);
+export function descendants<A extends NestableAgent>(node: AgentNode<A>, into: A[] = []): A[] {
+  for (const child of node.children) {
+    into.push(child.agent);
+    descendants(child, into);
+  }
+  return into;
+}
+
+/** How many agents are under `node`, at any depth. */
+export function countDescendants(node: AgentNode<NestableAgent>): number {
+  let n = 0;
+  for (const child of node.children) n += 1 + countDescendants(child);
+  return n;
 }
 
 /**

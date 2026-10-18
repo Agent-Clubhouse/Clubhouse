@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
+import { useAgentStore } from '../../stores/agentStore';
 import { ProjectTree, type ProjectTreeProps } from './ProjectTree';
 import { useChromeStore } from '../chromeStore';
 import type { Agent, Project } from '../../../shared/types';
@@ -10,8 +11,8 @@ const project = (id: string): Project => ({ id, name: id.toUpperCase(), path: `/
 const agent = (id: string, projectId: string, over: Partial<Agent> = {}): Agent =>
   ({ id, projectId, name: id, kind: 'durable', status: 'running', color: 'blue', ...over }) as Agent;
 
-function setup(over: Partial<ProjectTreeProps> = {}) {
-  const props: ProjectTreeProps = {
+function baseProps(): ProjectTreeProps {
+  return {
     projects: [project('a'), project('b'), project('c'), project('old')],
     projectIcons: {},
     agentsByProject: { a: [agent('a1', 'a'), agent('a2', 'a', { status: 'sleeping' }), agent('a3', 'a')] },
@@ -30,8 +31,11 @@ function setup(over: Partial<ProjectTreeProps> = {}) {
     onClearCompleted: vi.fn(),
     onOpenSettings: vi.fn(),
     onReorderAgents: vi.fn(),
-    ...over,
   };
+}
+
+function setup(over: Partial<ProjectTreeProps> = {}) {
+  const props: ProjectTreeProps = { ...baseProps(), ...over };
   render(<ProjectTree {...props} />);
   return props;
 }
@@ -527,11 +531,70 @@ describe('ProjectTree helpers nested under their parent (#2231)', () => {
     expect(within(row('lead')).queryByTestId('helper-rollup-dot')).toBeNull();
   });
 
-  it('unfolds the parents of a helper selected from elsewhere', () => {
+  /** Renders the tree, then lets a test change its props the way ChromeSidebar would. */
+  function mount(over: Partial<ProjectTreeProps>) {
+    const props = { ...baseProps(), ...over };
+    const view = render(<ProjectTree {...props} />);
+    return { props, update: (next: Partial<ProjectTreeProps>) => view.rerender(<ProjectTree {...props} {...next} />) };
+  }
+  const choose = (id: string) => act(() => useAgentStore.getState().setActiveAgent(id, 'a'));
+
+  it('keeps folds at startup and on a project switch back, even with a folded helper selected', () => {
     useChromeStore.setState({ collapsedAgentIds: ['lead', 'h2', 'other'] });
-    setup({ agentsByProject: team(), activeAgentId: 'h2a' });
+    const { update } = mount({ agentsByProject: team(), activeAgentId: 'h2a' });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['lead', 'h2', 'other']);
+    // Switching away and back restores the project's agent without a fresh choice.
+    act(() => useAgentStore.getState().restoreProjectAgent('a'));
+    update({ activeAgentId: null, activeProjectId: 'b' });
+    update({ activeAgentId: 'h2a', activeProjectId: 'a' });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['lead', 'h2', 'other']);
+  });
+
+  it('unfolds the parents of a helper chosen from elsewhere', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead', 'h2', 'other'] });
+    const { update } = mount({ agentsByProject: team(), activeAgentId: 'other' });
+    choose('h2a');
+    update({ activeAgentId: 'h2a' });
     expect(useChromeStore.getState().collapsedAgentIds).toEqual(['other']);
     expect(order()).toContain('h2a');
+  });
+
+  it('waits for the agents to load before unfolding', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead'] });
+    const { update } = mount({ agentsByProject: {}, activeAgentId: null });
+    choose('h1');
+    update({ activeAgentId: 'h1' });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['lead']);
+    update({ activeAgentId: 'h1', agentsByProject: team() });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual([]);
+    expect(order()).toContain('h1');
+  });
+
+  it('opens the sleeping fold when the chosen helper is inside it', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead'], expandedFolds: [] });
+    const asleep = { status: 'sleeping' as const };
+    const { update } = mount({ agentsByProject: team({ lead: asleep, h1: asleep, h2: asleep, h2a: asleep }), activeAgentId: 'other' });
+    expect(order()).toEqual(['other']);
+    choose('h1');
+    update({ activeAgentId: 'h1' });
+    expect(useChromeStore.getState().expandedFolds).toContain('a:sleeping');
+    expect(order()).toEqual(['other', 'lead', 'h1', 'h2', 'h2a']);
+  });
+
+  it('leaves focus on the row when the caret is clicked', () => {
+    setup({ agentsByProject: team() });
+    const caret = screen.getByTestId('helpers-toggle-lead');
+    // mousedown is cancelled, so the button never takes focus.
+    expect(fireEvent.mouseDown(caret)).toBe(false);
+    fireEvent.click(caret);
+    expect(document.activeElement).toBe(key('agent:lead'));
+  });
+
+  it('announces a folded parent\'s roll-up as the row\'s description', () => {
+    useChromeStore.setState({ collapsedAgentIds: ['lead'] });
+    setup({ agentsByProject: team(), detailed: { h2a: { state: 'needs_permission', message: '', timestamp: 1 } } });
+    const lead = screen.getByRole('treeitem', { name: 'lead' });
+    expect(lead).toHaveAccessibleDescription('3 helpers, 1 needs you');
   });
 
   it('folds with Left and unfolds with Right, then steps into the first helper', () => {

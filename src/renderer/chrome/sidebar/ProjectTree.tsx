@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import type { Agent, AgentDetailedStatus, CompletedQuickAgent, Project } from '../../../shared/types';
 import { useChromeStore, foldKey, type ProjectFold } from '../chromeStore';
 import { ProjectGroup } from './ProjectGroup';
-import { holdOrder, moveProject, orderProjects } from './treeModel';
+import { buildProjectTree, descendants, holdOrder, moveProject, orderProjects } from './treeModel';
+import { useAgentStore } from '../../stores/agentStore';
 import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
 import { useToastStore } from '../../stores/toastStore';
 import { partitionIdle } from '../projectActivity';
@@ -201,23 +202,42 @@ export function ProjectTree(props: ProjectTreeProps) {
     toggleAgentCollapsed(agentId);
     reportChromeFeature('fold_toggle');
   }, [toggleAgentCollapsed]);
-  // Selecting a helper from elsewhere (Needs you, the palette) unfolds the
-  // parents it is folded under, so the selection is never hidden. Runs only
-  // when the selection changes, so folding a selected helper's parent sticks.
-  const agentsRef = useRef(agentsByProject);
-  agentsRef.current = agentsByProject;
+  // Choosing a helper from elsewhere (Needs you, the palette, a notification)
+  // unfolds the parents it is folded under, and the sleeping fold it is in,
+  // so the selection is never hidden. Only a fresh choice counts
+  // (agentSelectionSeq): not the selection at startup, and not a project
+  // switch restoring its last agent, so the user's folds survive both. A
+  // choice made before its agents load waits for them.
+  const selectionSeq = useAgentStore((s) => s.agentSelectionSeq);
+  const seenSeq = useRef(selectionSeq);
+  const pendingReveal = useRef<string | null>(null);
+  if (selectionSeq !== seenSeq.current) {
+    seenSeq.current = selectionSeq;
+    // The chosen agent, from the store: the tree's own prop may catch up a render later.
+    pendingReveal.current = useAgentStore.getState().activeAgentId;
+  }
   useEffect(() => {
-    if (!activeAgentId || !activeProjectId) return;
-    const byId = new Map((agentsRef.current[activeProjectId] ?? []).filter((a) => a.kind === 'durable').map((a) => [a.id, a]));
-    const collapsed = new Set(useChromeStore.getState().collapsedAgentIds);
+    const agentId = pendingReveal.current;
+    if (!agentId || agentId !== activeAgentId || !activeProjectId) return;
+    const list = agentsByProject[activeProjectId] ?? [];
+    const byId = new Map(list.filter((a) => a.kind === 'durable').map((a) => [a.id, a]));
+    const target = byId.get(agentId);
+    // Not loaded yet: try again when the agents arrive.
+    if (!target) return;
+    pendingReveal.current = null;
+    if (!target.parentAgentId || !byId.has(target.parentAgentId)) return;
+    const chrome = useChromeStore.getState();
+    const collapsed = new Set(chrome.collapsedAgentIds);
     const seen = new Set<string>();
-    let parent = byId.get(activeAgentId)?.parentAgentId;
+    let parent: string | undefined = target.parentAgentId;
     while (parent && byId.has(parent) && !seen.has(parent)) {
       seen.add(parent);
       if (collapsed.has(parent)) toggleAgentCollapsed(parent);
       parent = byId.get(parent)!.parentAgentId;
     }
-  }, [activeAgentId, activeProjectId, toggleAgentCollapsed]);
+    const inSleepingFold = buildProjectTree(list).sleeping.some((root) => root.agent.id === agentId || descendants(root).some((a) => a.id === agentId));
+    if (inSleepingFold && !chrome.expandedFolds.includes(foldKey(activeProjectId, 'sleeping'))) toggleFold(activeProjectId, 'sleeping');
+  }, [selectionSeq, activeAgentId, activeProjectId, agentsByProject, toggleAgentCollapsed, toggleFold]);
 
   const runningIds = useMemo(() => new Set(
     Object.entries(agentsByProject).filter(([, list]) => list.some((a) => a.status === 'running')).map(([id]) => id),

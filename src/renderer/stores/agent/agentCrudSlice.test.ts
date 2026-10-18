@@ -134,6 +134,18 @@ describe('agentCrudSlice – loadDurableAgents', () => {
     expect(state().agents['durable-3']).toMatchObject({ status: 'creating' });
     expect(state().agents['durable-3']?.creationFailed).toBeFalsy();
   });
+
+  it('drops the failed mark once the config no longer has a creation (#2231)', async () => {
+    const { state, slice } = createTestStore({
+      agents: { 'durable-1': { id: 'durable-1', projectId: PROJECT_ID, name: 'Durable Agent', kind: 'durable', status: 'error', color: 'blue', creationFailed: true, errorMessage: 'old' } as any },
+    });
+
+    await slice.loadDurableAgents(PROJECT_ID, PROJECT_PATH);
+
+    expect(state().agents['durable-1']).toMatchObject({ status: 'sleeping' });
+    expect(state().agents['durable-1']?.creationFailed).toBeFalsy();
+    expect(state().agents['durable-1']?.errorMessage).toBeUndefined();
+  });
 });
 
 describe('agentCrudSlice – backup recovery', () => {
@@ -172,5 +184,19 @@ describe('agentCrudSlice – backup recovery', () => {
 
     expect(state().agents['durable-2']?.projectId).toBe(PROJECT_ID);
     expect(state().agents['other-agent']?.projectId).toBe('other-proj');
+  });
+
+  it('restores a helper with its parent link and creation state (#2231)', async () => {
+    (window as any).clubhouse.agent.restoreFromBackup = vi.fn().mockResolvedValue({ restoredCount: 2, agents: [] });
+    (window as any).clubhouse.agent.listDurable = vi.fn().mockResolvedValue([
+      { ...RESTORED, parentAgentId: 'lead' },
+      { ...RESTORED, id: 'durable-3', parentAgentId: 'lead', creation: { state: 'failed', startedAt: '2026-10-18T00:00:00Z', reason: 'No disk space' } },
+    ]);
+    const { state, slice } = createTestStore();
+
+    await slice.restoreFromBackup(PROJECT_ID, PROJECT_PATH);
+
+    expect(state().agents['durable-2']).toMatchObject({ parentAgentId: 'lead', status: 'sleeping' });
+    expect(state().agents['durable-3']).toMatchObject({ parentAgentId: 'lead', status: 'error', creationFailed: true, errorMessage: 'No disk space' });
   });
 });

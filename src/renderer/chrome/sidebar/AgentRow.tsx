@@ -1,5 +1,5 @@
 import { useRefocusAfterMove } from './useRefocusAfterMove';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
 import { OrchestratorGlyph } from '../../features/agents/OrchestratorGlyph';
@@ -54,7 +54,10 @@ interface AgentRowProps {
   drag?: AgentDragHandlers;
   /** Shows the drop line above or below the row while a drag is over it. */
   dropEdge?: 'top' | 'bottom';
-  /** Helpers nested under this agent, at any depth (#2231); the row gets a caret when there are any. */
+  /**
+   * Helpers under this agent (#2231); the row gets a caret when there are any.
+   * Folded, it is every helper below, at any depth, for the roll-up.
+   */
   helperCount?: number;
   /** Whether the helpers are shown under the row. */
   helpersExpanded?: boolean;
@@ -80,10 +83,10 @@ export const CARET_OFFSET = 18;
  * helper count, with a small dot when any of them needs you (or errored) or
  * is working. The words for the dot are for screen readers.
  */
-function HelperRollup({ count, needs, working }: { count: number; needs: number; working: number }) {
+function HelperRollup({ id, count, needs, working }: { id: string; count: number; needs: number; working: number }) {
   const tone = needs > 0 ? 'bg-ctp-warning' : working > 0 ? 'bg-ctp-success' : null;
   return (
-    <span data-testid="helper-rollup" className="flex items-center gap-1 text-ctp-overlay1 whitespace-nowrap">
+    <span id={id} data-testid="helper-rollup" className="flex items-center gap-1 text-ctp-overlay1 whitespace-nowrap">
       {tone && <span data-testid="helper-rollup-dot" className={`w-1.5 h-1.5 rounded-full ${tone}`} aria-hidden="true" />}
       {count} helper{count === 1 ? '' : 's'}
       {needs > 0 && <span className="sr-only">, {needs} {needs === 1 ? 'needs' : 'need'} you</span>}
@@ -140,6 +143,11 @@ export const AgentRow = React.memo(function AgentRow({
           : agent.kind === 'quick' ? 'quick' : '';
   const hasHelpers = helperCount > 0;
   const folded = hasHelpers && !helpersExpanded;
+  // The row's name is the agent's; the note and a folded roll-up describe it,
+  // since the name hides the text inside the row from screen readers.
+  const noteId = useId();
+  const rollupId = useId();
+  const describedBy = [note && noteId, folded && rollupId].filter(Boolean).join(' ') || undefined;
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
   const sleeping = agent.status === 'sleeping';
   const activityAt = sleeping ? Date.parse(agent.lastSleep?.at ?? '') : detailed?.timestamp ?? spawnedAt;
@@ -243,6 +251,7 @@ export const AgentRow = React.memo(function AgentRow({
           aria-selected={active}
           aria-expanded={hasHelpers ? helpersExpanded : undefined}
           aria-label={agent.name}
+          aria-describedby={describedBy}
           data-tree-key={`agent:${agent.id}`}
           aria-keyshortcuts={canMove ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
           data-tree-parent={parentKey}
@@ -272,7 +281,13 @@ export const AgentRow = React.memo(function AgentRow({
               data-tree-toggle
               data-testid={`helpers-toggle-${agent.id}`}
               aria-label={helpersExpanded ? `Hide helpers of ${agent.name}` : `Show helpers of ${agent.name}`}
-              onClick={(e) => { e.stopPropagation(); onToggleHelpers?.(agent.id); }}
+              // Keep focus on the row: the caret is part of it, not a stop of its own.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.currentTarget.closest<HTMLElement>('[role="treeitem"]')?.focus();
+                onToggleHelpers?.(agent.id);
+              }}
               style={{ left: indent - CARET_OFFSET }}
               className="absolute top-0 h-full w-4 flex items-center justify-center text-ctp-overlay1 hover:text-ctp-text cursor-pointer"
             >
@@ -294,8 +309,8 @@ export const AgentRow = React.memo(function AgentRow({
           <OrchestratorGlyph orchestrator={agent.orchestrator || 'claude-code'} focusable={false} showTooltip={false} variant="row" />
           {(note || hasActivityTime || folded) && (
             <span className="ml-auto flex-shrink-0 flex items-center gap-2 text-xs group-hover/row:hidden">
-              {note && <span data-testid="agent-row-note" className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}
-              {folded && <HelperRollup count={helperCount} needs={helperNeeds} working={helperWorking} />}
+              {note && <span id={noteId} data-testid="agent-row-note" className={dot === 'needs' ? 'text-ctp-warning' : dot === 'error' ? 'text-ctp-error' : 'text-ctp-overlay1'}>{note}</span>}
+              {folded && <HelperRollup id={rollupId} count={helperCount} needs={helperNeeds} working={helperWorking} />}
               {hasActivityTime && <ActivityTime at={activityAt} label={timeLabel} />}
             </span>
           )}

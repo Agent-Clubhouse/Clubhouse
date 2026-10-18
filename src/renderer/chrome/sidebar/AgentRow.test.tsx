@@ -295,6 +295,12 @@ describe('AgentRow helpers and creation (#2231)', () => {
     expect(screen.getByTestId('agent-hover-card')).toHaveTextContent('Starting');
   });
 
+  it('describes the row with its note and folded roll-up, which the name would hide', () => {
+    const { focusable } = setup(durable({ status: 'creating' }), { dot: 'starting', helperCount: 2, helpersExpanded: false, helperWorking: 1 });
+    expect(focusable).toHaveAccessibleName('snazzy-fox');
+    expect(focusable).toHaveAccessibleDescription('starting 2 helpers, 1 working');
+  });
+
   it('keeps an ordinary error as error', () => {
     setup(durable({ status: 'error', errorMessage: 'Exited with code 1' }), { dot: 'error' });
     expect(screen.getByTestId('agent-row-note')).toHaveTextContent('error');
