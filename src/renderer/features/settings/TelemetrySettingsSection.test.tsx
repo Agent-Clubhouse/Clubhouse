@@ -372,6 +372,18 @@ describe('TelemetrySettingsSection', () => {
       expect(setPage).toHaveBeenCalledWith('feedback');
     });
 
+    it('shows Preview items sent to it under its Settings name (#2097)', async () => {
+      const api = mockApi(makeStatus({ destinations: [destStatus('azure'), destStatus('otlp'), fb({ enabled: true })] }));
+      vi.spyOn(api, 'getPreview').mockResolvedValue([
+        { signal: 'logs', destination: 'framebriar', name: 'clubhouse.test', time: 1, attributes: {} },
+      ] as never);
+      render(<TelemetrySettingsSection />);
+      fireEvent.click(await screen.findByText('Preview data'));
+      const pre = await screen.findByTestId('telemetry-preview');
+      expect(pre.textContent).toContain('"destination": "Clubhouse developer"');
+      expect(pre.textContent).not.toContain('"destination": "framebriar"');
+    });
+
     it('never names the vendor', async () => {
       mockApi(makeStatus({ destinations: [destStatus('azure'), destStatus('otlp'), fb()] }));
       render(<TelemetrySettingsSection />);

@@ -489,7 +489,10 @@ export function TelemetrySettingsSection() {
           </p>
         ) : (
           <pre className="text-xs text-ctp-subtext1 bg-ctp-crust border border-surface-0 rounded-md p-3 max-h-[60vh] overflow-auto" data-testid="telemetry-preview">
-            {JSON.stringify(preview, null, 2)}
+            {/* Where each item went, by its name in Settings (never a service id); the item itself is shown as sent. */}
+            {JSON.stringify(preview?.map((item) => (item.destination
+              ? { ...item, destination: status.destinations.find((d) => d.id === item.destination)?.label ?? item.destination }
+              : item)), null, 2)}
           </pre>
         )}
       </Modal>

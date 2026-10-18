@@ -534,6 +534,19 @@ describe('Framebriar destination follows Feedback', () => {
     expect(state.calls).toEqual(['enable']);
   });
 
+  it('its consent is the same record as the main dialog\'s: Azure later asks only for its host (#2097)', async () => {
+    connect();
+    await control.setEnabled('framebriar', true, { consent: true, host: FB_HOST });
+    expect(state.settings.consentVersion).toBeGreaterThanOrEqual(1);
+    await control.saveAzureConnectionString(CS);
+    expect(await control.setEnabled('azure', true)).toMatchObject({ ok: false, needs: ['destination'] });
+    // A consent version bump (what we collect widened) stops it until the user consents again.
+    state.settings.consentVersion = 0;
+    await control.syncFramebriarDestination();
+    expect(fbEntry().enabled).toBe(false);
+    expect(state.running).toBe(false);
+  });
+
   it('still needs consent: a confirmed host alone does not start it (#2097)', async () => {
     connect();
     setEntry('framebriar', { confirmedHost: FB_HOST });

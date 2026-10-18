@@ -190,7 +190,27 @@ export function migrateTelemetrySettings(raw: Record<string, unknown>): Telemetr
 
   if (typeof settings.consentVersion !== 'number') settings.consentVersion = 0;
   if (typeof settings.sampleRate !== 'number') settings.sampleRate = 1;
+  migrateDeveloperRule(settings as unknown as TelemetrySettings);
   return settings as unknown as TelemetrySettings;
+}
+
+/** The developer-destination rule since #2097: it runs without another destination on. */
+export const DEVELOPER_RULE = 2;
+
+/**
+ * Before #2097 the developer destination only sent while one of the user's
+ * own destinations was on. Someone who confirmed it, but has none of their own
+ * on, sent nothing; without this they would start sending after the update.
+ * They're recorded as switched off, so it starts only when they turn it on.
+ * Runs once: the marker keeps a later opt-in from being undone.
+ */
+function migrateDeveloperRule(settings: TelemetrySettings): void {
+  if ((settings.developerRule ?? 0) >= DEVELOPER_RULE) return;
+  settings.developerRule = DEVELOPER_RULE;
+  const developer = settings.destinations.find((d) => d.kind === 'framebriar');
+  if (!developer?.confirmedHost || developer.framebriar?.userOff) return;
+  const ownOn = settings.destinations.some((d) => d.kind !== 'framebriar' && d.enabled);
+  if (!ownOn) developer.framebriar = { ...developer.framebriar, userOff: true };
 }
 
 const managed = createManagedSettings<TelemetrySettings>(TELEMETRY_SETTINGS as typeof TELEMETRY_SETTINGS & { defaults: TelemetrySettings }, {
