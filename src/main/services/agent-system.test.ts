@@ -1071,9 +1071,31 @@ describe('agent-system', () => {
         const { onExit } = await wake('codex-cli');
         onExit('agent-1', 0, '\x1b[?25h\x1b[?2026l');
         await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalledWith('/project', 'agent-1', expect.objectContaining({ sessionId: REAL })));
-        const [run] = findRunSession.mock.calls[0] as unknown as [{ cwd: string; startedAt: number; endedAt: number }];
+        const [run] = findRunSession.mock.calls[0] as unknown as [{ cwd: string; startedAt: number; endedAt: number; resumedId?: string }];
         expect(run.cwd).toBe('/project');
         expect(run.endedAt).toBeGreaterThanOrEqual(run.startedAt);
+        expect(run.resumedId).toBeUndefined();
+      });
+
+      it('passes the resumed id, and skips the lookup when the resume failed', async () => {
+        const findRunSession = vi.fn(async () => DEAD);
+        (mockCodexProvider as Record<string, unknown>).findRunSession = findRunSession;
+        const first = await wake('codex-cli');
+        first.onExit('agent-1', 0, 'bye');
+        await vi.waitFor(() => expect(mockAddSessionEntry).toHaveBeenCalled());
+        expect(findRunSession.mock.calls[0]).toEqual([expect.objectContaining({ resumedId: DEAD })]);
+
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+          findRunSession.mockClear();
+          const second = await wake('codex-cli');
+          vi.setSystemTime(Date.now() + 60_000);
+          second.onExit('agent-1', 1, 'crash');
+          await settle();
+          expect(findRunSession).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
       });
 
       it('saves nothing when the store has no session for the run', async () => {

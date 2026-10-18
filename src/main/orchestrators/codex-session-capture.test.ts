@@ -50,7 +50,7 @@ beforeEach(() => { home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
 afterEach(() => { fs.rmSync(home, { recursive: true, force: true }); });
 
 describe('CodexCliProvider.findRunSession (#2132)', () => {
-  const find = () => provider.findRunSession({ cwd: CWD, startedAt: RUN_START, endedAt: RUN_END, profileEnv: env() });
+  const find = (resumedId?: string) => provider.findRunSession({ cwd: CWD, startedAt: RUN_START, endedAt: RUN_END, resumedId, profileEnv: env() });
 
   it('finds the rollout this run wrote for its cwd', async () => {
     rollout(ID_A, { cwd: CWD, started: RUN_START + 7_000, lastWrite: RUN_END - 1_000 });
@@ -63,15 +63,29 @@ describe('CodexCliProvider.findRunSession (#2132)', () => {
     expect(await find()).toBeNull();
   });
 
-  it('picks the newest when two runs in the window match', async () => {
+  it('takes the earliest session started during the run when two did: the run\'s own starts first', async () => {
     rollout(ID_A, { cwd: CWD, started: RUN_START + 7_000, lastWrite: RUN_START + 60_000 });
     rollout(ID_B, { cwd: CWD, started: RUN_START + 120_000, lastWrite: RUN_END - 1_000 });
-    expect(await find()).toBe(ID_B);
+    expect(await find()).toBe(ID_A);
   });
 
-  it('finds an older rollout the run resumed and appended to', async () => {
+  it('never takes another session in the same cwd that was already running before the run', async () => {
+    // The user's own codex, or another agent without a worktree, writing the whole time.
+    rollout(ID_OTHER, { cwd: CWD, started: RUN_START - 600_000, lastWrite: RUN_END - 500 });
+    expect(await find()).toBeNull();
+    rollout(ID_A, { cwd: CWD, started: RUN_START + 7_000, lastWrite: RUN_END - 1_000 });
+    expect(await find()).toBe(ID_A);
+  });
+
+  it('takes the rollout the run resumed and appended to', async () => {
     rollout(ID_OLD, { cwd: CWD, started: RUN_START - 86_400_000, lastWrite: RUN_END - 2_000 });
-    expect(await find()).toBe(ID_OLD);
+    rollout(ID_OTHER, { cwd: CWD, started: RUN_START - 600_000, lastWrite: RUN_END - 500 });
+    expect(await find(ID_OLD)).toBe(ID_OLD);
+  });
+
+  it('does not take a resumed rollout the run never wrote to', async () => {
+    rollout(ID_OLD, { cwd: CWD, started: RUN_START - 86_400_000, lastWrite: RUN_START - 3_600_000 });
+    expect(await find(ID_OLD)).toBeNull();
   });
 
   it('reads cwd from a meta line too long to parse from the prefix', async () => {
@@ -110,6 +124,12 @@ describe('CodexCliProvider.extractSessionId (#2132)', () => {
 
   it('takes the last id printed', () => {
     expect(provider.extractSessionId(`Session: ${ID_OLD}\r\n...\r\ncodex resume ${ID_B}\r\n`)).toBe(ID_B);
+  });
+
+  it('reads the looser labels only near the end, the exit hint anywhere', () => {
+    const filler = '.'.repeat(5_000);
+    expect(provider.extractSessionId(`Session: ${ID_OLD}\r\n${filler}`)).toBeNull();
+    expect(provider.extractSessionId(`codex resume ${ID_A}\r\n${filler}`)).toBe(ID_A);
   });
 
   it('returns null when Codex printed no id', () => {

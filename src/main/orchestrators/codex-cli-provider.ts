@@ -66,6 +66,9 @@ const PTY_SESSION_PATTERNS = [
   new RegExp(`resume[:\\s]+(${UUID})`, 'gi'),
 ];
 
+/** How much of the terminal's end the looser id labels are searched in (the exit hint is searched everywhere). */
+const PTY_ID_TAIL = 2_000;
+
 /** How far a rollout's times may sit outside a run's window and still count as that run's (clock and flush skew). */
 const RUN_WINDOW_SLACK_MS = 5_000;
 
@@ -574,18 +577,27 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
   }
 
   /**
-   * The session a terminal run used (#2132): the rollout for `cwd` whose
-   * activity overlaps the run, newest first. A resumed run appends to its old
-   * rollout, so overlap counts rather than the start time alone.
+   * The session a terminal run used (#2132). Other Codex sessions can share
+   * the cwd (the user's own `codex`, other agents without a worktree), so
+   * activity overlap alone isn't enough:
+   * - a resumed run appended to `resumedId`'s rollout: that one, if it was
+   *   written during the run;
+   * - otherwise the run's own new session, which can't predate the run: the
+   *   earliest rollout for this cwd that started inside the run window.
    */
-  async findRunSession(run: { cwd: string; startedAt: number; endedAt: number; profileEnv?: Record<string, string> }): Promise<string | null> {
+  async findRunSession(run: { cwd: string; startedAt: number; endedAt: number; resumedId?: string; profileEnv?: Record<string, string> }): Promise<string | null> {
     const sessions = await this.listSessions(run.cwd, run.profileEnv);
-    const hit = sessions.find((s) => {
-      const started = Date.parse(s.startedAt);
-      const lastActive = Date.parse(s.lastActiveAt);
-      return started <= run.endedAt + RUN_WINDOW_SLACK_MS && lastActive >= run.startedAt - RUN_WINDOW_SLACK_MS;
-    });
-    return hit?.sessionId ?? null;
+    const from = run.startedAt - RUN_WINDOW_SLACK_MS;
+    const to = run.endedAt + RUN_WINDOW_SLACK_MS;
+    if (run.resumedId) {
+      const resumed = sessions.find((s) => s.sessionId.toLowerCase() === run.resumedId!.toLowerCase());
+      if (resumed && Date.parse(resumed.lastActiveAt) >= from) return resumed.sessionId;
+    }
+    const started = sessions
+      .map((s) => ({ id: s.sessionId, at: Date.parse(s.startedAt) }))
+      .filter((s) => s.at >= from && s.at <= to)
+      .sort((a, b) => a.at - b.at);
+    return started[0]?.id ?? null;
   }
 
   /**
@@ -718,8 +730,11 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
    */
   extractSessionId(ptyBuffer: string): string | null {
     const text = stripTerminalEscapes(ptyBuffer);
-    for (const pattern of PTY_SESSION_PATTERNS) {
-      const matches = [...text.matchAll(pattern)];
+    // The exit hint is unambiguous anywhere; the looser labels only near the end,
+    // so an id the conversation itself printed earlier can't be taken for the session's.
+    const tail = text.slice(-PTY_ID_TAIL);
+    for (const [i, pattern] of PTY_SESSION_PATTERNS.entries()) {
+      const matches = [...(i === 0 ? text : tail).matchAll(pattern)];
       if (matches.length) return matches[matches.length - 1][1];
     }
     return null;

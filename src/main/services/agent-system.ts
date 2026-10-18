@@ -579,9 +579,10 @@ async function captureSession(
     }
     let sessionId: string | null = null;
     if (buffer && isSessionCapable(provider)) sessionId = provider.extractSessionId(buffer);
-    if (!sessionId && isSessionCapable(provider) && provider.findRunSession) {
+    // A resume that failed wrote no session of its own, so there's nothing to look up.
+    if (!sessionId && !failedResume && isSessionCapable(provider) && provider.findRunSession) {
       const endedAt = Date.now();
-      sessionId = await provider.findRunSession({ cwd: params.cwd, startedAt: endedAt - runMs, endedAt, profileEnv });
+      sessionId = await provider.findRunSession({ cwd: params.cwd, startedAt: endedAt - runMs, endedAt, resumedId, profileEnv });
     }
     if (!sessionId && resumedId && exitCode === 0) sessionId = resumedId;
     if (!sessionId) {
