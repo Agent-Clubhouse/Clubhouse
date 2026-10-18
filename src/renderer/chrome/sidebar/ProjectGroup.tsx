@@ -8,6 +8,7 @@ import { PopupMenu, type MenuItem } from '../../components/PopupMenu';
 import { reportChromeFeature } from '../telemetry';
 import type { ActionDef } from '../../features/agents/useAgentRowActions';
 import type { AgentDragHandlers } from './AgentRow';
+import { useRefocusAfterMove } from './useRefocusAfterMove';
 import { Tooltip } from '../../components/Tooltip';
 import { TruncatedLabel } from '../../components/TruncatedLabel';
 import { markdownToPlainText } from '../../utils/safe-markdown';
@@ -120,6 +121,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
     onMoveProject, canMoveUp, canMoveDown, onOpenSettings, onReorderAgents, level = 1, parentKey,
   } = props;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const armRefocus = useRefocusAfterMove();
   const projectKey = `project:${project.id}`;
   const label = project.displayName || project.name;
   const groups = groupProjectAgents(agents);
@@ -194,6 +196,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
       reorder.move(dragged, id);
     },
     onDragEnd: () => { agentDragRef.current = null; setAgentDrag(null); },
+    onDragLeave: (_e, id) => setAgentDrag((drag) => (drag && drag.overId === id ? { ...drag, overId: null } : drag)),
   }), [reorder]);
   /** Where the drop line goes: above the target when moving up, below it when moving down. */
   const dropEdge = useCallback((agentId: string): 'top' | 'bottom' | undefined => {
@@ -252,6 +255,7 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
         aria-label={label}
         data-tree-key={projectKey}
         data-tree-parent={parentKey}
+        aria-keyshortcuts={onMoveProject ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectProject(project.id); }
@@ -260,7 +264,10 @@ export const ProjectGroup = React.memo(function ProjectGroup(props: ProjectGroup
             e.preventDefault();
             e.stopPropagation();
             const up = e.key === 'ArrowUp';
-            if (onMoveProject && (up ? canMoveUp : canMoveDown)) onMoveProject(project.id, up ? -1 : 1);
+            if (onMoveProject && (up ? canMoveUp : canMoveDown)) {
+              armRefocus(e.currentTarget);
+              onMoveProject(project.id, up ? -1 : 1);
+            }
           } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
             e.preventDefault();
             const r = e.currentTarget.getBoundingClientRect();

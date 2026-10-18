@@ -295,3 +295,48 @@ describe('ProjectTree agent drag and keyboard reorder (#2115)', () => {
     expect(props.onReorder).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('ProjectTree keeps focus on a moved row (#2115 review)', () => {
+  const rerenderInto = (props: ProjectTreeProps) =>
+    render(<ProjectTree {...props} />, { container: screen.getByTestId('project-tree').closest('section')!.parentElement! });
+
+  it('refocuses an agent row after Alt+Down, when moving its DOM node blurred it', () => {
+    const props = setup();
+    const a1 = key('agent:a1');
+    a1.focus();
+    fireEvent.keyDown(a1, { key: 'ArrowDown', altKey: true });
+    expect(props.onReorderAgents).toHaveBeenCalledWith('a', ['a3', 'a2', 'a1']);
+    // Chromium blurs a focused node React moves; jsdom doesn't, so do it here.
+    a1.blur();
+    expect(document.activeElement).toBe(document.body);
+    rerenderInto({ ...props, agentsByProject: { a: [agent('a3', 'a'), agent('a2', 'a', { status: 'sleeping' }), agent('a1', 'a')] } });
+    expect(document.activeElement).toBe(key('agent:a1'));
+  });
+
+  it('refocuses a project header after Alt+Down', () => {
+    useChromeStore.setState({ projectActivity: { a: Date.now(), b: Date.now(), c: Date.now(), old: Date.now() } });
+    const props = setup();
+    const b = key('project:b');
+    b.focus();
+    fireEvent.keyDown(b, { key: 'ArrowDown', altKey: true });
+    b.blur();
+    rerenderInto({ ...props, projects: [project('a'), project('c'), project('b'), project('old')] });
+    expect(document.activeElement).toBe(key('project:b'));
+  });
+
+  it('marks movable rows with their keyboard shortcut', () => {
+    setup();
+    expect(key('agent:a1').getAttribute('aria-keyshortcuts')).toBe('Alt+ArrowUp Alt+ArrowDown');
+    expect(key('project:a').getAttribute('aria-keyshortcuts')).toBe('Alt+ArrowUp Alt+ArrowDown');
+  });
+
+  it('clears the drop line when the drag leaves the row', () => {
+    setup();
+    const dt = { setData: vi.fn(), getData: vi.fn(), effectAllowed: '', dropEffect: '' };
+    fireEvent.dragStart(screen.getByTestId('agent-item-a1'), { dataTransfer: dt });
+    fireEvent.dragOver(screen.getByTestId('agent-item-a3'), { dataTransfer: dt });
+    expect(screen.getByTestId('agent-drop-indicator')).toBeTruthy();
+    fireEvent.dragLeave(screen.getByTestId('agent-item-a3'), { dataTransfer: dt, relatedTarget: document.body });
+    expect(screen.queryByTestId('agent-drop-indicator')).toBeNull();
+  });
+});

@@ -163,6 +163,10 @@ describe('moveWithinGroup (#2115)', () => {
     expect(next[3]).toBe('s2');
   });
 
+  it('refuses a move that would lose a group member missing from the order', () => {
+    expect(moveWithinGroup(['a1', 'a3'], awake, 'a1', 'a3')).toBeNull();
+  });
+
   it('returns null for a no-op or an agent outside the group', () => {
     expect(moveWithinGroup(order, awake, 'a1', 'a1')).toBeNull();
     expect(moveWithinGroup(order, awake, 's1', 'a1')).toBeNull();

@@ -114,6 +114,8 @@ export function moveWithinGroup(
   const from = group.indexOf(draggedId);
   const to = group.indexOf(targetId);
   if (from === -1 || to === -1 || from === to) return null;
+  // Every group member must have a slot in the order, or one would be lost.
+  if (group.some((id) => !order.includes(id))) return null;
   const reordered = group.filter((id) => id !== draggedId);
   reordered.splice(to, 0, draggedId);
   const next = [...order];

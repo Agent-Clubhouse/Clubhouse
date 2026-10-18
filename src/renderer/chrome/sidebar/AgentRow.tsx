@@ -1,3 +1,4 @@
+import { useRefocusAfterMove } from './useRefocusAfterMove';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
@@ -58,6 +59,8 @@ export interface AgentDragHandlers {
   onDragOver: (e: React.DragEvent, agentId: string) => void;
   onDrop: (e: React.DragEvent, agentId: string) => void;
   onDragEnd: () => void;
+  /** Clears the drop line when the drag leaves the row. */
+  onDragLeave?: (e: React.DragEvent, agentId: string) => void;
 }
 
 /** `text` with the first case-insensitive match of `query` marked, as the sidebar filter shows it. */
@@ -79,6 +82,8 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
   const cardRef = useRef<HTMLDivElement>(null);
   const rowActions = useAgentRowActions(agent);
   const actions = extraActions?.length ? [...rowActions, ...extraActions] : rowActions;
+  const canMove = !!extraActions?.some((a) => a.id === 'move-up' || a.id === 'move-down');
+  const armRefocus = useRefocusAfterMove();
 
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [card, setCard] = useState<DOMRect | null>(null);
@@ -150,6 +155,10 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
         onDragOver={drag ? (e) => drag.onDragOver(e, agent.id) : undefined}
         onDrop={drag ? (e) => drag.onDrop(e, agent.id) : undefined}
         onDragEnd={drag?.onDragEnd}
+        onDragLeave={drag?.onDragLeave ? (e) => {
+          // Moving onto a child of the row isn't leaving it.
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) drag.onDragLeave!(e, agent.id);
+        } : undefined}
         className={`group/row relative w-full h-[30px] flex-shrink-0 rounded-md flex items-center cursor-pointer transition-colors duration-100 ${
           active ? 'bg-surface-0 text-ctp-text' : 'text-ctp-subtext1 hover:bg-surface-0/60 hover:text-ctp-text'
         }`}
@@ -166,6 +175,7 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
           aria-selected={active}
           aria-label={agent.name}
           data-tree-key={`agent:${agent.id}`}
+          aria-keyshortcuts={canMove ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
           data-tree-parent={parentKey}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(agent); }
@@ -173,7 +183,8 @@ export const AgentRow = React.memo(function AgentRow({ agent, dot, detailed, act
               // Alt+Up / Alt+Down: Move up / Move down, the keyboard equivalent of dragging.
               e.preventDefault();
               e.stopPropagation();
-              extraActions?.find((a) => a.id === (e.key === 'ArrowUp' ? 'move-up' : 'move-down'))?.handler();
+              const move = extraActions?.find((a) => a.id === (e.key === 'ArrowUp' ? 'move-up' : 'move-down'));
+              if (move) { armRefocus(e.currentTarget); move.handler(); }
             } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
               e.preventDefault();
               const r = e.currentTarget.getBoundingClientRect();
