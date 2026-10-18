@@ -131,6 +131,16 @@ const heldBySource = new Map<string, Set<string>>();
  */
 const claimedDuringRun = new Map<string, Set<string>>();
 
+/** The pairs a pruning source owns, created on first use. */
+function ownedFor(sourceId: string): Map<string, { agentId: string; targetId: string }> {
+  let owned = ownedBySource.get(sourceId);
+  if (!owned) {
+    owned = new Map();
+    ownedBySource.set(sourceId, owned);
+  }
+  return owned;
+}
+
 /** The user drew or removed this pair: no pruning source may remove it now. */
 function releaseOwnership(key: string): void {
   for (const owned of ownedBySource.values()) owned.delete(key);
@@ -150,6 +160,11 @@ export function markBindingRemovedByUser(agentId: string, targetId: string): voi
   removedByUser.add(pairKey(agentId, targetId));
   restoredPairs.delete(pairKey(agentId, targetId));
   releaseOwnership(pairKey(agentId, targetId));
+}
+
+/** True when the user removed this pair through the renderer this session. */
+export function isBindingRemovedByUser(agentId: string, targetId: string): boolean {
+  return removedByUser.has(pairKey(agentId, targetId));
 }
 
 /** The user drew this wire (renderer bind): rebuilds may restore it again. */
@@ -243,15 +258,15 @@ export function applyPersistedBinding(binding: PersistedBinding): ApplyOutcome {
  *
  * Follows the #2246 ownership rules: the source owns the binding only when
  * this call created it, so a binding a canvas wire, zone or another source
- * made first is never the source's to remove. Clears an earlier user removal
- * of the pair, since this is a new, explicit request for it.
+ * made first is never the source's to remove. A pair the user removed this
+ * session is not bound ('removed'): only the user can draw it again.
  */
-export function claimSourceBinding(sourceId: string, binding: PersistedBinding): 'created' | 'existing' | 'invalid' {
+export function claimSourceBinding(sourceId: string, binding: PersistedBinding): 'created' | 'existing' | 'removed' | 'invalid' {
   if (!binding || !binding.agentId || !binding.targetId || !binding.label || !VALID_TARGET_KINDS.has(binding.targetKind)) {
     return 'invalid';
   }
   const key = pairKey(binding.agentId, binding.targetId);
-  removedByUser.delete(key);
+  if (removedByUser.has(key)) return 'removed';
   const source = sources.get(sourceId);
   if (source?.prune) {
     let held = heldBySource.get(sourceId);
@@ -267,9 +282,12 @@ export function claimSourceBinding(sourceId: string, binding: PersistedBinding):
     }
     claimed.add(key);
   }
-  // Not a restore: the lifecycle must announce this join.
+  const alreadyBound = bindingManager.getBindingsForAgent(binding.agentId).some((b) => b.targetId === binding.targetId);
+  if (alreadyBound) return 'existing';
+  // Not a restore: the lifecycle must announce this join. Only cleared for a
+  // pair that is not bound, so a restore whose join is still pending stays silent.
   restoredPairs.delete(key);
-  const created = bindingManager.bind(binding.agentId, {
+  bindingManager.bind(binding.agentId, {
     targetId: binding.targetId,
     targetKind: binding.targetKind,
     label: binding.label,
@@ -277,15 +295,7 @@ export function claimSourceBinding(sourceId: string, binding: PersistedBinding):
     targetName: binding.targetName,
     projectName: binding.projectName,
   });
-  if (!created) return 'existing';
-  if (source?.prune) {
-    let owned = ownedBySource.get(sourceId);
-    if (!owned) {
-      owned = new Map();
-      ownedBySource.set(sourceId, owned);
-    }
-    owned.set(key, { agentId: binding.agentId, targetId: binding.targetId });
-  }
+  if (source?.prune) ownedFor(sourceId).set(key, { agentId: binding.agentId, targetId: binding.targetId });
   return 'created';
 }
 
@@ -308,12 +318,7 @@ export function releaseSourceBinding(sourceId: string, agentId: string, targetId
   for (const [otherId, pairs] of heldBySource) {
     if (otherId === sourceId || !pairs.has(key) || !sources.get(otherId)?.prune) continue;
     heldElsewhere = true;
-    let otherOwned = ownedBySource.get(otherId);
-    if (!otherOwned) {
-      otherOwned = new Map();
-      ownedBySource.set(otherId, otherOwned);
-    }
-    otherOwned.set(key, { agentId, targetId });
+    ownedFor(otherId).set(key, { agentId, targetId });
   }
   if (heldElsewhere) return 'kept';
   restoredPairs.delete(key);
@@ -388,8 +393,17 @@ function pruneRuns(runs: SourceRun[]): void {
     for (const [key, pair] of owned) {
       if (run.listed!.has(key) || run.unverified.has(key) || claimed?.has(key)) continue;
       owned.delete(key);
-      // Another source lists it: that wire keeps the binding.
-      if (listedAnywhere.has(key)) continue;
+      // Another source lists it: that wire keeps the binding. A pruning
+      // source that lists it takes ownership, so it can remove the binding
+      // once it stops listing it too.
+      if (listedAnywhere.has(key)) {
+        for (const other of runs) {
+          if (other === run || !other.source.prune) continue;
+          if (!other.listed!.has(key) && !other.unverified.has(key)) continue;
+          ownedFor(other.source.id).set(key, pair);
+        }
+        continue;
+      }
       restoredPairs.delete(key);
       if (bindingManager.getBindingsForAgent(pair.agentId).some((b) => b.targetId === pair.targetId)) {
         bindingManager.unbind(pair.agentId, pair.targetId);

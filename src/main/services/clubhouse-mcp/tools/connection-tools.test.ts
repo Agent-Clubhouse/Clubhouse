@@ -73,6 +73,8 @@ import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../o
 import { agentRegistry } from '../../agent-registry';
 import {
   clearBindingRemovedByUser,
+  isBindingRemovedByUser,
+  markBindingRemovedByUser,
   rebuildPersistedBindings,
   registerPersistedBindingSource,
   _resetPersistedBindingSourcesForTesting,
@@ -410,11 +412,182 @@ describe('helper disposal', () => {
 });
 
 describe('store', () => {
-  it('keeps a project\'s bindings when its store cannot be read', async () => {
+  const storeDir = () => path.dirname(connectionsStorePath(projectPath));
+  const asideFiles = () => fs.readdirSync(storeDir()).filter((f) => f.includes('.corrupt-'));
+
+  it('writes atomically and leaves no temp files', async () => {
+    await call('connect_agents', { from: 'lead', to: 'h1', twoWay: true });
+    expect(fs.readdirSync(storeDir())).toEqual(['orchestrator-connections.json']);
+    const stored = JSON.parse(fs.readFileSync(connectionsStorePath(projectPath), 'utf-8'));
+    expect(stored.version).toBe(1);
+  });
+
+  it('saves every connection from concurrent tool calls', async () => {
+    const results = await Promise.all([
+      call('connect_agents', { from: 'lead', to: 'h1' }),
+      call('connect_agents', { from: 'h1', to: 'h2' }),
+      call('connect_agents', { from: 'h2', to: 'lead' }),
+      call('create_group_project', { name: 'Raid', members: ['h1', 'h2'] }),
+      call('connect_agents', { from: 'h1', to: 'lead' }),
+    ]);
+    expect(results.every((r) => !r.isError)).toBe(true);
+    const expected = [
+      'durable_h1->durable_h2', 'durable_h1->durable_lead', 'durable_h1->gp_1',
+      'durable_h2->durable_lead', 'durable_h2->gp_1', 'durable_lead->durable_h1',
+    ];
+    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(expected);
+    expect(boundPairs()).toEqual(expected);
+
+    await Promise.all([
+      call('disconnect_agents', { from: 'lead', to: 'h1' }),
+      call('disconnect_agents', { from: 'h1', to: 'h2' }),
+      call('remove_from_group_project', { project: 'Raid', helper: 'h1' }),
+    ]);
+    const left = ['durable_h1->durable_lead', 'durable_h2->durable_lead', 'durable_h2->gp_1'];
+    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(left);
+    expect(boundPairs()).toEqual(left);
+  });
+
+  it('moves a corrupt file aside, continues empty, and the tools work after it', async () => {
     await call('connect_agents', { from: 'lead', to: 'h1' });
     fs.writeFileSync(connectionsStorePath(projectPath), '{ torn');
+
     const result = await rebuildPersistedBindings();
-    expect(result.sources[0]).toMatchObject({ pruned: 0 });
+    expect(result.sources[0]).toMatchObject({ collected: 0, pruned: 1 });
+    expect(boundPairs()).toEqual([]);
+    expect(asideFiles()).toHaveLength(1);
+    expect(fs.readFileSync(path.join(storeDir(), asideFiles()[0]), 'utf-8')).toBe('{ torn');
+
+    const res = await call('connect_agents', { from: 'h1', to: 'h2' });
+    expect(res.isError).toBe(false);
+    expect((await readConnections(projectPath)).map(pairKey)).toEqual(['durable_h1->durable_h2']);
+    expect(boundPairs()).toEqual(['durable_h1->durable_h2']);
+  });
+
+  it('moves aside a file that parses but is not a connections store', async () => {
+    fs.mkdirSync(storeDir(), { recursive: true });
+    fs.writeFileSync(connectionsStorePath(projectPath), JSON.stringify({ connections: [] }));
+    const res = await call('connect_agents', { from: 'lead', to: 'h1' });
+    expect(res.isError).toBe(false);
+    expect(asideFiles()).toHaveLength(1);
+    expect((await readConnections(projectPath)).map(pairKey)).toEqual(['durable_lead->durable_h1']);
+  });
+
+  it('keeps entries it does not recognize when it rewrites the store', async () => {
+    const future = { ownerId: 'durable_lead', agentId: 'durable_h1', targetId: 'term_1', targetKind: 'terminal' };
+    fs.mkdirSync(storeDir(), { recursive: true });
+    fs.writeFileSync(connectionsStorePath(projectPath), JSON.stringify({ version: 1, connections: [future] }));
+
+    await call('connect_agents', { from: 'lead', to: 'h1' });
+    await call('disconnect_agents', { from: 'lead', to: 'h1' });
+    const stored = JSON.parse(fs.readFileSync(connectionsStorePath(projectPath), 'utf-8'));
+    expect(stored.connections).toEqual([future]);
+  });
+
+  it('reads a store from a newer version but never rewrites it', async () => {
+    const entry = { ownerId: 'durable_lead', agentId: 'durable_lead', targetId: 'durable_h1', targetKind: 'agent', createdAt: '' };
+    const body = JSON.stringify({ version: 2, connections: [entry] });
+    fs.mkdirSync(storeDir(), { recursive: true });
+    fs.writeFileSync(connectionsStorePath(projectPath), body);
+
+    await rebuildPersistedBindings();
     expect(boundPairs()).toEqual(['durable_lead->durable_h1']);
+    const res = await call('connect_agents', { from: 'h1', to: 'h2' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/newer version/);
+    expect(fs.readFileSync(connectionsStorePath(projectPath), 'utf-8')).toBe(body);
+  });
+
+  it('only removes the caller\'s own entries from the store', async () => {
+    // An entry another orchestrator owns for the same pair (left over from a reparent).
+    const foreign = { ownerId: 'durable_other', agentId: 'durable_lead', targetId: 'durable_h1', targetKind: 'agent', createdAt: '' };
+    fs.mkdirSync(storeDir(), { recursive: true });
+    fs.writeFileSync(connectionsStorePath(projectPath), JSON.stringify({ version: 1, connections: [foreign] }));
+    await call('connect_agents', { from: 'lead', to: 'h1' });
+
+    await call('disconnect_agents', { from: 'lead', to: 'h1' });
+    const stored = JSON.parse(fs.readFileSync(connectionsStorePath(projectPath), 'utf-8'));
+    expect(stored.connections).toEqual([foreign]);
+    // The foreign entry is out of its owner's scope, so it binds nothing.
+    expect(boundPairs()).toEqual([]);
+  });
+});
+
+describe('scope over time', () => {
+  const setup = async () => {
+    await call('connect_agents', { from: 'lead', to: 'h1', twoWay: true });
+    await call('connect_agents', { from: 'h1', to: 'h2' });
+    await call('create_group_project', { name: 'Raid', members: ['lead', 'h1', 'h2'] });
+  };
+  const watchAndWait = async (agents: DurableAgentConfig[]) => {
+    const stop = watchOrchestratorConnections(() => rebuildPersistedBindings());
+    setAgents(agents);
+    await new Promise((r) => setTimeout(r, 150));
+    stop();
+  };
+
+  it('drops a reparented helper\'s connections and memberships', async () => {
+    await setup();
+    await watchAndWait(configs.get(projectPath)!.map((a) =>
+      a.id === 'durable_h1' ? { ...a, parentAgentId: 'durable_other' } : a));
+
+    expect(boundPairs()).toEqual(['durable_h2->gp_1', 'durable_lead->gp_1']);
+    expect((await readConnections(projectPath)).map(pairKey).sort()).toEqual(['durable_h2->gp_1', 'durable_lead->gp_1']);
+  });
+
+  it('drops every helper connection when the orchestrator releases its helpers', async () => {
+    await setup();
+    // Orchestration turned off (or the orchestrator deleted) with "keep helpers".
+    await watchAndWait(configs.get(projectPath)!.map((a) =>
+      a.parentAgentId === 'durable_lead' ? { ...a, parentAgentId: undefined } : a));
+
+    expect(boundPairs()).toEqual(['durable_lead->gp_1']);
+    expect((await readConnections(projectPath)).map(pairKey)).toEqual(['durable_lead->gp_1']);
+  });
+
+  it('drops everything an orchestrator owned once it is deleted', async () => {
+    await setup();
+    await watchAndWait(configs.get(projectPath)!.filter((a) => a.id !== 'durable_lead'));
+    expect(boundPairs()).toEqual([]);
+    expect(await readConnections(projectPath)).toEqual([]);
+  });
+
+  it('skips out-of-scope entries at restore, before any agent change', async () => {
+    await setup();
+    configs.set(projectPath, configs.get(projectPath)!.map((a) =>
+      a.id === 'durable_h2' ? { ...a, parentAgentId: undefined } : a));
+    restart();
+    await rebuildPersistedBindings();
+    expect(boundPairs()).toEqual(['durable_h1->durable_lead', 'durable_h1->gp_1', 'durable_lead->durable_h1', 'durable_lead->gp_1']);
+  });
+});
+
+describe('names and user removals', () => {
+  it('refuses an ambiguous name and lists the matching ids', async () => {
+    configs.set(projectPath, [...configs.get(projectPath)!, agent('durable_h1c', { name: 'h1', parentAgentId: 'durable_lead' })]);
+    const res = await call('connect_agents', { from: 'lead', to: 'h1' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/More than one/);
+    expect(res.text).toContain('durable_h1, durable_h1c');
+    expect(await readConnections(projectPath)).toEqual([]);
+
+    // Case-insensitive matches are ambiguous too; an id always works.
+    expect((await call('connect_agents', { from: 'lead', to: 'H1' })).isError).toBe(true);
+    expect((await call('connect_agents', { from: 'lead', to: 'durable_h1c' })).isError).toBe(false);
+  });
+
+  it('refuses a connection the user removed this session, and saves nothing', async () => {
+    await call('connect_agents', { from: 'lead', to: 'h1' });
+    // The user deletes the wire in the UI.
+    bindingManager.unbind('durable_lead', 'durable_h1');
+    markBindingRemovedByUser('durable_lead', 'durable_h1');
+    await call('disconnect_agents', { from: 'lead', to: 'h1' });
+
+    const res = await call('connect_agents', { from: 'lead', to: 'h1' });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/^The user removed this connection\./);
+    expect(boundPairs()).toEqual([]);
+    expect(await readConnections(projectPath)).toEqual([]);
+    expect(isBindingRemovedByUser('durable_lead', 'durable_h1')).toBe(true);
   });
 });

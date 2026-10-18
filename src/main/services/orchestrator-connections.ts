@@ -11,13 +11,19 @@
  * The source prunes, with #2246's rules: it removes only bindings it created
  * (at a restore, or through {@link claimSourceBinding} when a tool connects),
  * so a canvas wire, a zone or a helper wire for the same pair is never
- * removed by it. Entries whose agents were disposed or deleted are dropped
- * from the store when the project's agents change
- * ({@link watchOrchestratorConnections}).
+ * removed by it. Entries are scoped to their owner: once the owner is gone or
+ * an end is no longer the owner or one of its live direct helpers, the entry
+ * is skipped at restore and dropped from the store when the project's agents
+ * change ({@link watchOrchestratorConnections}).
+ *
+ * The store is written atomically (temp file, then rename) and read and
+ * written under a per-project lock. A file that can't be parsed is moved
+ * aside as `.corrupt-<ts>` and the store continues empty.
  */
 
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
 import { groupProjectRegistry } from './group-project-registry';
@@ -40,9 +46,15 @@ export interface OrchestratorConnection {
   createdAt: string;
 }
 
-interface StoreFile {
-  version: 1;
+/** The store format this build writes. */
+export const CONNECTION_STORE_VERSION = 1;
+
+interface StoreState {
   connections: OrchestratorConnection[];
+  /** Entries this build doesn't recognize: kept as they are and written back. */
+  unknown: unknown[];
+  /** False for a store written by a newer Clubhouse: read it, but never rewrite it. */
+  writable: boolean;
 }
 
 export function connectionsStorePath(projectPath: string): string {
@@ -56,28 +68,71 @@ function isConnection(value: unknown): value is OrchestratorConnection {
     && (c.targetKind === 'agent' || c.targetKind === 'group-project');
 }
 
-/** The project's connections; empty when it has none. Throws when the file can't be read or parsed. */
-export async function readConnections(projectPath: string): Promise<OrchestratorConnection[]> {
+/** Move an unreadable store aside so the next write starts clean, and say so in the log. */
+async function quarantine(file: string, reason: string): Promise<void> {
+  const aside = `${file}.corrupt-${Date.now()}`;
+  await fsp.rename(file, aside);
+  appLog('core:mcp', 'warn', 'Orchestrator connections file was unreadable; moved it aside and continued with none', {
+    meta: { file, movedTo: aside, reason },
+  });
+}
+
+/**
+ * Read the store. Call under the project's lock. A missing file is empty; a
+ * file that can't be parsed is moved aside (`.corrupt-<ts>`) and read as
+ * empty. Other read errors throw.
+ */
+async function loadStore(projectPath: string): Promise<StoreState> {
+  const empty: StoreState = { connections: [], unknown: [], writable: true };
+  const file = connectionsStorePath(projectPath);
   let raw: string;
   try {
-    raw = await fsp.readFile(connectionsStorePath(projectPath), 'utf-8');
+    raw = await fsp.readFile(file, 'utf-8');
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return empty;
     throw err;
   }
-  const data = JSON.parse(raw) as Partial<StoreFile>;
-  if (!data || !Array.isArray(data.connections)) throw new Error('Orchestrator connections file is malformed');
-  return data.connections.filter(isConnection);
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    // telemetry-exempt: logged by quarantine; the store continues empty
+    await quarantine(file, err instanceof Error ? err.message : String(err));
+    return empty;
+  }
+  const record = data && typeof data === 'object' ? data as Record<string, unknown> : null;
+  const version = record?.version;
+  if (!record || !Array.isArray(record.connections) || typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
+    await quarantine(file, 'not a connections store');
+    return empty;
+  }
+  const entries = record.connections as unknown[];
+  return {
+    connections: entries.filter(isConnection),
+    unknown: entries.filter((e) => !isConnection(e)),
+    writable: version <= CONNECTION_STORE_VERSION,
+  };
 }
 
-async function writeConnections(projectPath: string, connections: OrchestratorConnection[]): Promise<void> {
+/** Write atomically: a temp file, then a rename, so a crash never leaves a torn store. */
+async function saveStore(projectPath: string, state: StoreState): Promise<void> {
+  if (!state.writable) {
+    throw new Error('The orchestrator connections file was written by a newer version of Clubhouse, so this version leaves it unchanged.');
+  }
   const file = connectionsStorePath(projectPath);
   await fsp.mkdir(path.dirname(file), { recursive: true });
-  const data: StoreFile = { version: 1, connections };
-  await fsp.writeFile(file, JSON.stringify(data, null, 2), 'utf-8');
+  const tmp = `${file}.tmp.${randomUUID().slice(0, 8)}`;
+  const body = JSON.stringify({ version: CONNECTION_STORE_VERSION, connections: [...state.connections, ...state.unknown] }, null, 2);
+  try {
+    await fsp.writeFile(tmp, body, 'utf-8');
+    await fsp.rename(tmp, file);
+  } catch (err) {
+    await fsp.rm(tmp, { force: true }).catch((): void => undefined);
+    throw err;
+  }
 }
 
-/** One read-modify-write at a time per project. */
+/** One read or read-modify-write at a time per project. */
 const locks = new Map<string, Promise<unknown>>();
 
 function withStoreLock<T>(projectPath: string, fn: () => Promise<T>): Promise<T> {
@@ -91,38 +146,68 @@ function withStoreLock<T>(projectPath: string, fn: () => Promise<T>): Promise<T>
   return run;
 }
 
+/** The project's connections, read under the store lock; empty when it has none. */
+export function readConnections(projectPath: string): Promise<OrchestratorConnection[]> {
+  return withStoreLock(projectPath, async () => (await loadStore(projectPath)).connections);
+}
+
 const sameConnection = (a: Pick<OrchestratorConnection, 'agentId' | 'targetId'>, b: Pick<OrchestratorConnection, 'agentId' | 'targetId'>) =>
   a.agentId === b.agentId && a.targetId === b.targetId;
 
 /** Add connections the store doesn't have yet. Returns the ones added. */
 export function addConnections(projectPath: string, entries: OrchestratorConnection[]): Promise<OrchestratorConnection[]> {
   return withStoreLock(projectPath, async () => {
-    const current = await readConnections(projectPath);
+    const state = await loadStore(projectPath);
     const added = entries.filter((e, i) =>
-      !current.some((c) => sameConnection(c, e)) && entries.findIndex((o) => sameConnection(o, e)) === i);
-    if (added.length > 0) await writeConnections(projectPath, [...current, ...added]);
+      !state.connections.some((c) => sameConnection(c, e)) && entries.findIndex((o) => sameConnection(o, e)) === i);
+    if (added.length > 0) await saveStore(projectPath, { ...state, connections: [...state.connections, ...added] });
     return added;
   });
 }
 
-/** Remove the connections `match` selects. Returns the ones removed. */
+/**
+ * Remove `ownerId`'s connections that `match` selects. Returns the ones
+ * removed and the connections left, so a caller can tell whether another
+ * entry still lists a pair.
+ */
 export function removeConnections(
   projectPath: string,
+  ownerId: string,
   match: (c: OrchestratorConnection) => boolean,
-): Promise<OrchestratorConnection[]> {
+): Promise<{ removed: OrchestratorConnection[]; remaining: OrchestratorConnection[] }> {
   return withStoreLock(projectPath, async () => {
-    const current = await readConnections(projectPath);
-    const removed = current.filter(match);
-    if (removed.length > 0) await writeConnections(projectPath, current.filter((c) => !match(c)));
-    return removed;
+    const state = await loadStore(projectPath);
+    const drop = (c: OrchestratorConnection) => c.ownerId === ownerId && match(c);
+    const removed = state.connections.filter(drop);
+    const remaining = state.connections.filter((c) => !drop(c));
+    if (removed.length > 0) await saveStore(projectPath, { ...state, connections: remaining });
+    return { removed, remaining };
   });
 }
 
 /**
- * The bindings for a project's stored connections. Drops entries whose agents
- * are gone or disposed, and memberships of group projects that no longer
- * exist (`groupProjects`: id → name; null when the registry can't be read,
- * which keeps them).
+ * Whether a connection is still within its owner's reach: the owner exists
+ * and is not disposed, and each agent end is the owner or one of its live
+ * direct helpers. A helper that was disposed, deleted, reparented or released
+ * (an orchestrator turned off or deleted with "keep helpers") falls out.
+ */
+export function isConnectionInScope(c: OrchestratorConnection, agentsById: ReadonlyMap<string, DurableAgentConfig>): boolean {
+  const owner = agentsById.get(c.ownerId);
+  if (!owner || isDisposedAgent(owner)) return false;
+  const reachable = (id: string): boolean => {
+    if (id === owner.id) return true;
+    const agent = agentsById.get(id);
+    return !!agent && !isDisposedAgent(agent) && agent.parentAgentId === owner.id;
+  };
+  if (!reachable(c.agentId)) return false;
+  return c.targetKind !== 'agent' || reachable(c.targetId);
+}
+
+/**
+ * The bindings for a project's stored connections. Drops entries that are out
+ * of scope ({@link isConnectionInScope}) and memberships of group projects
+ * that no longer exist (`groupProjects`: id → name; null when the registry
+ * can't be read, which keeps them).
  */
 export function bindingsFromConnections(
   connections: readonly OrchestratorConnection[],
@@ -130,17 +215,16 @@ export function bindingsFromConnections(
   groupProjects: ReadonlyMap<string, string> | null,
   projectName?: string,
 ): PersistedBinding[] {
-  const live = new Map(agents.filter((a) => !isDisposedAgent(a)).map((a) => [a.id, a]));
+  const byId = new Map(agents.map((a) => [a.id, a]));
   const out: PersistedBinding[] = [];
   const seen = new Set<string>();
   for (const c of connections) {
-    const from = live.get(c.agentId);
-    if (!from || c.agentId === c.targetId) continue;
+    if (c.agentId === c.targetId || !isConnectionInScope(c, byId)) continue;
+    const from = byId.get(c.agentId)!;
     const pair = `${c.agentId}\u0000${c.targetId}`;
     if (seen.has(pair)) continue;
     if (c.targetKind === 'agent') {
-      const to = live.get(c.targetId);
-      if (!to) continue;
+      const to = byId.get(c.targetId)!;
       seen.add(pair);
       out.push({
         agentId: from.id, targetId: to.id, targetKind: 'agent', label: to.name,
@@ -203,21 +287,28 @@ export const orchestratorConnectionSource: PersistedBindingSource = {
 };
 
 /**
- * Drop the stored connections of agents that were disposed or deleted. An
- * empty agent list deletes nothing: it is more likely a failed read than a
- * project whose every agent is gone. Returns the connections removed.
+ * Drop the stored connections that fell out of scope
+ * ({@link isConnectionInScope}), group-project memberships included. An empty
+ * agent list deletes nothing: it is more likely a failed read than a project
+ * whose every agent is gone. Returns the connections removed.
  */
-export async function pruneConnectionsOfGoneAgents(projectPath: string): Promise<OrchestratorConnection[]> {
+export async function pruneOutOfScopeConnections(projectPath: string): Promise<OrchestratorConnection[]> {
   const agents = await listDurable(projectPath);
   if (agents.length === 0) return [];
-  const live = new Set(agents.filter((a) => !isDisposedAgent(a)).map((a) => a.id));
-  const gone = (id: string) => !live.has(id);
-  return removeConnections(projectPath, (c) => gone(c.agentId) || (c.targetKind === 'agent' && gone(c.targetId)));
+  const byId = new Map(agents.map((a) => [a.id, a]));
+  return withStoreLock(projectPath, async () => {
+    const state = await loadStore(projectPath);
+    const removed = state.connections.filter((c) => !isConnectionInScope(c, byId));
+    if (removed.length > 0) {
+      await saveStore(projectPath, { ...state, connections: state.connections.filter((c) => isConnectionInScope(c, byId)) });
+    }
+    return removed;
+  });
 }
 
 /**
- * When a project's agents change, drop the connections of helpers that were
- * disposed or deleted and call `onConnectionsChanged` (a rebuild, which
+ * When a project's agents change, drop the connections that fell out of
+ * scope (a helper disposed, deleted, reparented or released) and call `onConnectionsChanged` (a rebuild, which
  * prunes their bindings). Returns an unsubscribe function.
  */
 export function watchOrchestratorConnections(onConnectionsChanged: () => unknown): () => void {
@@ -231,10 +322,10 @@ export function watchOrchestratorConnections(onConnectionsChanged: () => unknown
     let changed = false;
     for (const projectPath of paths) {
       try {
-        const removed = await pruneConnectionsOfGoneAgents(projectPath);
+        const removed = await pruneOutOfScopeConnections(projectPath);
         if (removed.length > 0) {
           changed = true;
-          appLog('core:mcp', 'info', 'Dropped orchestrator connections of disposed or deleted agents', {
+          appLog('core:mcp', 'info', 'Dropped orchestrator connections that fell out of scope', {
             meta: { projectPath, removed: removed.length },
           });
         }

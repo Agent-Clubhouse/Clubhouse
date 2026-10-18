@@ -28,6 +28,7 @@ import { groupProjectRegistry } from '../../group-project-registry';
 import { bootstrapGroupProjectAdmin } from '../../group-project-admin-service';
 import {
   claimSourceBinding,
+  isBindingRemovedByUser,
   rebuildPersistedBindings,
   releaseSourceBinding,
   type PersistedBinding,
@@ -84,15 +85,19 @@ async function callerScope(callerId: string): Promise<CallerScope> {
 /** Find `ref` (an id or a name) among the caller and its helpers. */
 function resolveAgent(scope: CallerScope, ref: string, field: string): DurableAgentConfig {
   const wanted = ref.trim();
-  const match = scope.agents.find((a) => a.id === wanted)
-    ?? scope.agents.find((a) => a.name === wanted)
-    ?? scope.agents.find((a) => a.name.toLowerCase() === wanted.toLowerCase());
-  if (!match) {
+  const byId = scope.agents.find((a) => a.id === wanted);
+  if (byId) return byId;
+  const exact = scope.agents.filter((a) => a.name === wanted);
+  const candidates = exact.length > 0 ? exact : scope.agents.filter((a) => a.name.toLowerCase() === wanted.toLowerCase());
+  if (candidates.length > 1) {
+    throw new ConnectionScopeError(`More than one of you and your helpers is named "${ref}". Use an id: ${candidates.map((a) => a.id).join(', ')}.`);
+  }
+  if (candidates.length === 0) {
     throw new ConnectionScopeError(
       `${field} "${ref}" is not you or one of your helpers. These tools only connect you and your own helpers.`,
     );
   }
-  return match;
+  return candidates[0];
 }
 
 function isMember(agentId: string, groupProjectId: string): boolean {
@@ -146,7 +151,12 @@ function entryFor(callerId: string, binding: PersistedBinding): OrchestratorConn
  * Store the connections, then bind them live. Returns how each binding went.
  * A rebuild runs afterwards, so the source's view matches its store again.
  */
-async function connect(callerId: string, scope: CallerScope, bindings: PersistedBinding[]): Promise<Array<'created' | 'existing' | 'invalid'>> {
+async function connect(callerId: string, scope: CallerScope, bindings: PersistedBinding[]): Promise<Array<'created' | 'existing' | 'removed' | 'invalid'>> {
+  // A pair the user removed this session stays removed: only the user can draw it again.
+  const refused = bindings.find((b) => isBindingRemovedByUser(b.agentId, b.targetId));
+  if (refused) {
+    throw new ConnectionScopeError(`The user removed this connection. ${refused.agentName} → ${refused.targetName} stays disconnected until the user connects it again.`);
+  }
   await addConnections(scope.projectPath, bindings.map((b) => entryFor(callerId, b)));
   const outcomes = bindings.map((b) => {
     const outcome = claimSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, b);
@@ -158,13 +168,23 @@ async function connect(callerId: string, scope: CallerScope, bindings: Persisted
   return outcomes;
 }
 
-/** Remove the stored connections, then their live bindings where this source owns them. */
-async function disconnect(scope: CallerScope, pairs: Array<{ agentId: string; targetId: string }>): Promise<{
+/**
+ * Remove the caller's stored connections, then their live bindings where this
+ * source owns them and no other stored entry still lists the pair.
+ */
+async function disconnect(callerId: string, scope: CallerScope, pairs: Array<{ agentId: string; targetId: string }>): Promise<{
   stored: number;
   outcomes: Array<'unbound' | 'kept' | 'absent'>;
 }> {
-  const removed = await removeConnections(scope.projectPath, (c) => pairs.some((p) => p.agentId === c.agentId && p.targetId === c.targetId));
-  const outcomes = pairs.map((p) => releaseSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, p.agentId, p.targetId));
+  const { removed, remaining } = await removeConnections(
+    scope.projectPath,
+    callerId,
+    (c) => pairs.some((p) => p.agentId === c.agentId && p.targetId === c.targetId),
+  );
+  const outcomes = pairs.map((p) => {
+    if (remaining.some((c) => c.agentId === p.agentId && c.targetId === p.targetId)) return 'kept' as const;
+    return releaseSourceBinding(ORCHESTRATOR_CONNECTION_SOURCE_ID, p.agentId, p.targetId);
+  });
   await rebuildPersistedBindings();
   return { stored: removed.length, outcomes };
 }
@@ -178,9 +198,10 @@ function errorResult(tool: string, callerId: string, err: unknown): McpToolResul
 
 const STAYS_NOTE = 'It stays connected because a canvas wire, zone or helper link also connects it; change that on the canvas.';
 
-function membershipMessage(agent: DurableAgentConfig, project: GroupProject, outcome: 'created' | 'existing' | 'invalid'): string {
+function membershipMessage(agent: DurableAgentConfig, project: GroupProject, outcome: 'created' | 'existing' | 'removed' | 'invalid'): string {
   if (outcome === 'created') return `${agent.name} joined "${project.name}".`;
   if (outcome === 'existing') return `${agent.name} was already in "${project.name}"; the membership is now saved.`;
+  if (outcome === 'removed') return `The user removed this connection: ${agent.name} stays out of "${project.name}".`;
   return `${agent.name} could not join "${project.name}".`;
 }
 
@@ -228,7 +249,7 @@ async function handleAddToGroupProject(callerId: string, args: Record<string, un
     const agent = resolveAgent(scope, helperRef, 'helper');
     const project = await resolveGroupProject(callerId, projectRef);
     const [outcome] = await connect(callerId, scope, [membership(agent, project)]);
-    return text(membershipMessage(agent, project, outcome), outcome === 'invalid');
+    return text(membershipMessage(agent, project, outcome), outcome === 'invalid' || outcome === 'removed');
   } catch (err) {
     // telemetry-exempt: errorResult logs unexpected failures and returns them to the calling agent
     return errorResult('add_to_group_project', callerId, err);
@@ -242,7 +263,7 @@ async function handleRemoveFromGroupProject(callerId: string, args: Record<strin
     const scope = await callerScope(callerId);
     const agent = resolveAgent(scope, helperRef, 'helper');
     const project = await resolveGroupProject(callerId, projectRef);
-    const { stored, outcomes: [outcome] } = await disconnect(scope, [{ agentId: agent.id, targetId: project.id }]);
+    const { stored, outcomes: [outcome] } = await disconnect(callerId, scope, [{ agentId: agent.id, targetId: project.id }]);
     if (outcome === 'unbound') return text(`${agent.name} left "${project.name}".`);
     if (outcome === 'kept') {
       return text(`${stored > 0 ? 'Removed the saved membership. ' : ''}${agent.name} is still in "${project.name}". ${STAYS_NOTE}`);
@@ -271,9 +292,10 @@ async function handleConnectAgents(callerId: string, args: Record<string, unknow
       const label = `${w.agentName} → ${w.targetName}`;
       if (outcomes[i] === 'created') return `Connected ${label}.`;
       if (outcomes[i] === 'existing') return `${label} was already connected; the connection is now saved.`;
+      if (outcomes[i] === 'removed') return `The user removed this connection (${label}).`;
       return `Could not connect ${label}.`;
     });
-    return text(lines.join('\n'), outcomes.includes('invalid'));
+    return text(lines.join('\n'), outcomes.some((o) => o === 'invalid' || o === 'removed'));
   } catch (err) {
     // telemetry-exempt: errorResult logs unexpected failures and returns them to the calling agent
     return errorResult('connect_agents', callerId, err);
@@ -286,7 +308,7 @@ async function handleDisconnectAgents(callerId: string, args: Record<string, unk
     const { from, to, twoWay } = readPair(scope, args);
     const pairs = [{ agentId: from.id, targetId: to.id, label: `${from.name} → ${to.name}` }];
     if (twoWay) pairs.push({ agentId: to.id, targetId: from.id, label: `${to.name} → ${from.name}` });
-    const { outcomes } = await disconnect(scope, pairs);
+    const { outcomes } = await disconnect(callerId, scope, pairs);
     const lines = pairs.map((p, i) => {
       if (outcomes[i] === 'unbound') return `Disconnected ${p.label}.`;
       if (outcomes[i] === 'kept') return `${p.label}: removed the saved connection. ${STAYS_NOTE}`;
