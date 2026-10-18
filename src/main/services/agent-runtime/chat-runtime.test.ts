@@ -316,6 +316,8 @@ describe('ChatAgentRuntime', () => {
     expect(runtime.getSessionId()).not.toBe(firstSession);
     const newSessionEvents = transcript.filter((e) => e.sessionId === runtime.getSessionId());
     expect(newSessionEvents[0].seq).toBe(1);
+    expect((await runtime.readTranscript()).events).toEqual(newSessionEvents);
+    expect((await runtime.readTranscript({ tail: 1 })).events).toEqual(newSessionEvents.slice(-1));
     expect(runtime.isRunning()).toBe(true);
   });
 

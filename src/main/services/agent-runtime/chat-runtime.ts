@@ -562,7 +562,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   async readTranscript(opts?: { tail?: number; afterSeq?: number }): Promise<RuntimeTranscriptSlice> {
     await this.emitChain;
     const events = await readChatTranscript(this.agentId, {
-      ...(opts?.afterSeq !== undefined ? { sessionId: this.sessionId, afterSeq: opts.afterSeq } : {}),
+      sessionId: this.sessionId,
+      afterSeq: opts?.afterSeq,
       tail: opts?.tail,
     });
     return { kind: 'chat', events, lastSeq: events.length ? events[events.length - 1].seq : undefined };
