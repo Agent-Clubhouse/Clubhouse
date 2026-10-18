@@ -1443,3 +1443,128 @@ describe('canvas store: remote then local', () => {
     expect(JSON.stringify(files.get('canvas-instances'))).not.toContain('REMOTE-CANVAS');
   });
 });
+describe('deferred blueprint wires (#2069)', () => {
+  const base = { position: { x: 0, y: 0 }, size: { width: 300, height: 200 }, zIndex: 0 };
+  /** An imported canvas: a bound Lead, an unbound stub Newcomer and a board with no project yet. */
+  function importedCanvas() {
+    return {
+      id: 'IMPORTED', name: 'Imported', viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 3,
+      zoomedViewId: null, selectedViewId: null, minimapAutoHide: true, elkAlgorithm: 'layered' as const, elkDirection: 'RIGHT' as const, layoutCenterId: null,
+      views: [
+        { ...base, id: 'v-lead', type: 'agent', title: 'Lead', displayName: 'Lead', metadata: {}, agentId: 'agent-lead' },
+        { ...base, id: 'v-new', type: 'agent', title: 'Newcomer', displayName: 'Newcomer', metadata: { blueprintStub: 'true' }, agentId: null },
+        { ...base, id: 'v-board', type: 'plugin', title: 'Board', displayName: 'Board', pluginWidgetType: 'plugin:group-project:group-project', pluginId: 'group-project', metadata: {} },
+      ] as never,
+      deferredWires: [
+        { wire: { sourceRef: 'lead', targetRef: 'new', bidirectional: true, disabledTools: ['broadcast'] }, sourceViewId: 'v-lead', targetViewId: 'v-new' },
+        { wire: { sourceRef: 'lead', targetRef: 'board', instructions: { '*': 'Post status' } }, sourceViewId: 'v-lead', targetViewId: 'v-board' },
+      ],
+    };
+  }
+  const wireKeys = (store: ReturnType<typeof createCanvasStore>) =>
+    store.getState().wireDefinitions.map((w) => `${w.agentId}->${w.targetId}:${w.targetKind}`);
+
+  it('creates the wires once the stub gets an agent, both ways and with their options (the issue\'s repro)', () => {
+    const store = createCanvasStore();
+    store.getState().insertCanvas(importedCanvas());
+    store.getState().updateView('v-new', { agentId: 'agent-new' } as never);
+    expect(wireKeys(store)).toEqual(['agent-lead->agent-new:agent', 'agent-new->agent-lead:agent']);
+    expect(store.getState().wireDefinitions[0].disabledTools).toEqual(['broadcast']);
+    // The board's wire is still waiting.
+    expect(store.getState().activeCanvas().deferredWires).toHaveLength(1);
+  });
+
+  it('creates a group-project wire once the widget gets its project', () => {
+    const store = createCanvasStore();
+    store.getState().insertCanvas(importedCanvas());
+    store.getState().updateViewMetadata('v-board', { groupProjectId: 'gp-1' });
+    expect(wireKeys(store)).toEqual(['agent-lead->gp-1:group-project']);
+    expect(store.getState().wireDefinitions[0].instructions).toEqual({ '*': 'Post status' });
+  });
+
+  it('clears the deferred list when every wire has been created', () => {
+    const store = createCanvasStore();
+    store.getState().insertCanvas(importedCanvas());
+    store.getState().updateView('v-new', { agentId: 'agent-new' } as never);
+    store.getState().updateViewMetadata('v-board', { groupProjectId: 'gp-1' });
+    expect(store.getState().activeCanvas().deferredWires).toBeUndefined();
+  });
+
+  it('drops deferred wires for a removed view', () => {
+    const store = createCanvasStore();
+    store.getState().insertCanvas(importedCanvas());
+    store.getState().removeView('v-new');
+    expect(store.getState().activeCanvas().deferredWires?.map((d) => d.targetViewId)).toEqual(['v-board']);
+    store.getState().updateView('v-new', { agentId: 'agent-new' } as never);
+    expect(wireKeys(store)).toEqual([]);
+  });
+
+  it('saves deferred wires with the canvas and restores them on load, dropping ones whose views are gone', async () => {
+    const storage = createMockStorage();
+    const store = createCanvasStore();
+    await store.getState().loadCanvas(storage);
+    await store.getState().loadAndInsertCanvas(importedCanvas(), storage);
+
+    const reloaded = createCanvasStore();
+    await reloaded.getState().loadCanvas(storage);
+    reloaded.getState().setActiveCanvas('IMPORTED');
+    expect(reloaded.getState().activeCanvas().deferredWires).toHaveLength(2);
+    reloaded.getState().updateView('v-new', { agentId: 'agent-new' } as never);
+    expect(wireKeys(reloaded)).toEqual(['agent-lead->agent-new:agent', 'agent-new->agent-lead:agent']);
+
+    // A stored entry pointing at a view that no longer exists is dropped at load.
+    const corrupt = createMockStorage();
+    const s2 = createCanvasStore();
+    await s2.getState().loadCanvas(corrupt);
+    await s2.getState().loadAndInsertCanvas({ ...importedCanvas(), deferredWires: [{ wire: { sourceRef: 'a', targetRef: 'b' }, sourceViewId: 'v-lead', targetViewId: 'v-gone' }] }, corrupt);
+    const s3 = createCanvasStore();
+    await s3.getState().loadCanvas(corrupt);
+    s3.getState().setActiveCanvas('IMPORTED');
+    expect(s3.getState().activeCanvas().deferredWires).toBeUndefined();
+  });
+
+  it('is saved only under the canvas save guards: not before hydration, not while remote', async () => {
+    const storage = createMockStorage();
+    const store = createCanvasStore();
+    // Not hydrated: nothing is written.
+    store.getState().insertCanvas(importedCanvas());
+    await store.getState().saveCanvas(storage);
+    expect(storage.write).not.toHaveBeenCalled();
+
+    // Remote: the satellite's canvas (with deferred wires) is never written locally.
+    const local = createCanvasStore();
+    await local.getState().loadCanvas(storage);
+    local.getState().hydrateFromRemote([{ ...importedCanvas(), id: 'REMOTE' }], 'REMOTE');
+    expect(local.getState().activeCanvas().deferredWires).toHaveLength(2);
+    vi.mocked(storage.write).mockClear();
+    await local.getState().saveCanvas(storage);
+    expect(storage.write).not.toHaveBeenCalled();
+  });
+});
+
+describe('deferred blueprint wires through a real import (#2069 repro)', () => {
+  it('import with an unmatched agent, assign it later, and the wire appears', async () => {
+    const { parseAnyBlueprint } = await import('../../../features/blueprints/parse-blueprint');
+    const manifest = {
+      id: 'bp', name: 'Team', version: '1.0.0', schemaVersion: 1, createdAt: '2026-10-17T00:00:00.000Z',
+      agents: [{ refId: 'lead', name: 'Lead', matchBy: { name: 'Lead' } }, { refId: 'new', name: 'Newcomer', matchBy: { name: 'Newcomer' } }],
+      canvas: {
+        views: [
+          { refId: 'lead', type: 'agent', displayName: 'Lead', agentRef: 'lead', position: { x: 0, y: 0 } },
+          { refId: 'new', type: 'agent', displayName: 'Newcomer', agentRef: 'new', position: { x: 600, y: 0 } },
+        ],
+        wires: [{ sourceRef: 'lead', targetRef: 'new', instructions: { send_message: 'Onboard them' } }],
+      },
+    };
+    const result = parseAnyBlueprint(manifest, { agents: [{ id: 'agent-lead', name: 'Lead' } as never], projects: [] });
+    expect(result.wires.create).toEqual([]);
+
+    const store = createCanvasStore();
+    store.getState().insertCanvas(result.canvas);
+    const stub = store.getState().views.find((v) => v.displayName === 'Newcomer')!;
+    store.getState().updateView(stub.id, { agentId: 'agent-new' } as never);
+    expect(store.getState().wireDefinitions).toEqual([
+      expect.objectContaining({ agentId: 'agent-lead', targetId: 'agent-new', targetKind: 'agent', instructions: { send_message: 'Onboard them' } }),
+    ]);
+  });
+});

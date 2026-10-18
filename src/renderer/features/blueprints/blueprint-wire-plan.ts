@@ -26,7 +26,7 @@
 //   created once.
 
 import type { BlueprintWire } from '../../../shared/blueprint-types';
-import type { AgentCanvasView, CanvasView, PluginCanvasView } from '../../plugins/builtin/canvas/canvas-types';
+import type { AgentCanvasView, CanvasView, DeferredCanvasWire, PluginCanvasView } from '../../plugins/builtin/canvas/canvas-types';
 import type { McpBindingEntry } from '../../stores/mcpBindingStore';
 
 export const BROWSER_WIDGET_TYPE = 'plugin:browser:webview';
@@ -155,4 +155,37 @@ export function planBlueprintWires(
     }
   }
   return plan;
+}
+
+/**
+ * Resolve wires deferred at import against the canvas's current views
+ * (#2069): those whose ends are now bound become wire definitions, those
+ * still waiting stay deferred, and those that can no longer be created (a view
+ * was removed, or a target changed into something that can't be wired) are
+ * dropped. Each entry gets its own refs, so entries from different imports
+ * can't collide.
+ */
+export function resolveDeferredWires(
+  deferred: DeferredCanvasWire[],
+  views: CanvasView[],
+): { create: McpBindingEntry[]; deferred: DeferredCanvasWire[] } {
+  const refIdToViewId = new Map<string, string>();
+  const wires = deferred.map((d, i) => {
+    refIdToViewId.set(`s${i}`, d.sourceViewId);
+    refIdToViewId.set(`t${i}`, d.targetViewId);
+    return { ...d.wire, sourceRef: `s${i}`, targetRef: `t${i}` };
+  });
+  const plan = planBlueprintWires(wires, refIdToViewId, views);
+  return {
+    create: plan.create,
+    deferred: plan.deferred.map((d) => deferred[Number(d.wire.sourceRef.slice(1))]),
+  };
+}
+
+/** Deferred wires with every entry touching one of `viewIds` removed. */
+export function pruneDeferredWires(deferred: DeferredCanvasWire[] | undefined, viewIds: Iterable<string>): DeferredCanvasWire[] | undefined {
+  if (!deferred?.length) return deferred;
+  const removed = new Set(viewIds);
+  const kept = deferred.filter((d) => !removed.has(d.sourceViewId) && !removed.has(d.targetViewId));
+  return kept.length ? kept : undefined;
 }
