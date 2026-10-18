@@ -164,6 +164,12 @@ export interface ChatDriverStartOptions {
    * SDK) ignore them and should log that they did.
    */
   extraArgs?: string[];
+  /**
+   * Aborted when the start is cancelled (the agent was killed or a newer
+   * start replaced this one). Drivers should close their CLI right away; the
+   * runtime stops waiting either way and closes a session that arrives late.
+   */
+  signal?: AbortSignal;
 }
 
 export interface ChatDriverSession {

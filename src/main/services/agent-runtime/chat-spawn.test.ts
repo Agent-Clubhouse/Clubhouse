@@ -89,7 +89,7 @@ describe('chat spawn', () => {
       const driver = new FakeChatDriver();
       const probe = vi.spyOn(driver as ChatDriver, 'probe');
       registerChatDriver(driver);
-      expect(await tryStartChatAgent(params, provider, profile, undefined, null)).toBe(true);
+      expect(await tryStartChatAgent(params, provider, profile, undefined, null)).toBe('chat');
       const expected = { PATH: '/shell/bin', HOME: '/shell/home', SHELL_ONLY: 'preserved', ...profile };
       expect(probe.mock.calls[0][1]).toEqual(expected);
       expect(driver.last.startOptions?.env).toMatchObject({ ...expected, CLUBHOUSE_AGENT_ID: params.agentId });
@@ -120,7 +120,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     const codex = { ...provider, id: 'codex-cli', getBinaryPath: () => shim } as unknown as OrchestratorProvider;
     registerChatDriver(new CodexChatDriver());
     try {
-      expect(await tryStartChatAgent({ ...params, cwd: dir, mission: undefined }, codex, undefined, undefined, null)).toBe(true);
+      expect(await tryStartChatAgent({ ...params, cwd: dir, mission: undefined }, codex, undefined, undefined, null)).toBe('chat');
       const launches = fs.readFileSync(report, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
       expect(launches).toEqual([
         { path: bin, home: dir },
@@ -138,12 +138,12 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     const probe = vi.spyOn(driver, 'probe').mockResolvedValue({ handshakeOk: false, capabilities: driver.capabilities, error: 'missing node' });
     registerChatDriver(driver);
     for (let i = 0; i <= DRIVER_FAILURE_THRESHOLD; i++) {
-      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('terminal');
     }
     expect(probe).toHaveBeenCalledTimes(DRIVER_FAILURE_THRESHOLD);
     vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/fixed/bin' });
     probe.mockResolvedValue({ handshakeOk: true, capabilities: driver.capabilities });
-    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(true);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('chat');
     expect(probe).toHaveBeenCalledTimes(DRIVER_FAILURE_THRESHOLD + 1);
   });
 
@@ -167,11 +167,11 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     registerChatDriver(new FakeChatDriver());
     const onStarting = vi.fn();
     mode.value = { mode: 'terminal' };
-    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe(false);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe('terminal');
     mode.value = { mode: 'chat' };
-    expect(await tryStartChatAgent({ ...params, kind: 'quick' }, provider, undefined, undefined, null, onStarting)).toBe(false);
+    expect(await tryStartChatAgent({ ...params, kind: 'quick' }, provider, undefined, undefined, null, onStarting)).toBe('terminal');
     clearChatDrivers();
-    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe(false);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe('terminal');
     expect(registry.setRuntime).not.toHaveBeenCalled();
     // Never chat: no start began.
     expect(onStarting).not.toHaveBeenCalled();
@@ -180,7 +180,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
   it('falls back to the terminal when the CLI binary cannot be found', async () => {
     registerChatDriver(new FakeChatDriver());
     const missing = { ...provider, getBinaryPath: () => { throw new Error('claude not found'); } } as unknown as OrchestratorProvider;
-    expect(await tryStartChatAgent(params, missing, undefined, undefined, null)).toBe(false);
+    expect(await tryStartChatAgent(params, missing, undefined, undefined, null)).toBe('terminal');
     expect(registry.setRuntime).not.toHaveBeenCalled();
   });
 
@@ -194,7 +194,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     };
     registerChatDriver(driver);
     const onStarting = vi.fn();
-    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe(false);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null, onStarting)).toBe('terminal');
     // A start that began and fell back.
     expect(onStarting).toHaveBeenCalledTimes(1);
     expect(driver.last.closed).toBe(true);
@@ -209,7 +209,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     registerChatDriver(driver);
     const started = await tryStartChatAgent({ ...params, freeAgentMode: true }, provider, { CLAUDE_CONFIG_DIR: '/cfg' }, undefined, null);
 
-    expect(started).toBe(true);
+    expect(started).toBe('chat');
     expect(registry.setRuntime).toHaveBeenCalledWith('agent-1', 'chat');
     const opts = driver.last.startOptions!;
     expect(opts.binaryPath).toBe('/usr/local/bin/claude');
@@ -273,7 +273,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     it('drops from the Agent SDK to stream-json when the SDK handshake fails, and says why', async () => {
       const { sdk, stream } = drivers();
       sdk.probe = async () => ({ handshakeOk: false, capabilities: sdk.capabilities, error: 'initialize timed out' });
-      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(true);
+      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('chat');
       expect(sdk.sessions).toHaveLength(0);
       expect(stream.sessions).toHaveLength(1);
       const expected = 'Using Claude Code (stream-json): Claude Code (Agent SDK) handshake failed: initialize timed out';
@@ -286,7 +286,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       sdk.probe = async () => ({ handshakeOk: true, cliVersion: '2.1.250', capabilities: sdk.capabilities });
       stream.probe = sdk.probe;
       vi.mocked(evaluateCliVersion).mockReturnValue({ status: 'known_bad', version: '2.1.250', message: 'Claude Code 2.1.250 is known to break chat: hangs' });
-      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('terminal');
       expect(registry.setRuntime).not.toHaveBeenCalled();
       expect(toasts()).toEqual([{
         level: 'warn', code: 'fallback',
@@ -297,7 +297,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     it('opens the terminal for a CLI that needs a login, without trying the other drivers', async () => {
       const { sdk, stream } = drivers();
       sdk.probe = async () => ({ handshakeOk: true, needsLogin: true, loginHint: 'run claude, then /login', capabilities: sdk.capabilities });
-      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('terminal');
       expect(sdk.sessions).toHaveLength(0);
       expect(stream.sessions).toHaveLength(0);
       expect(toasts()).toEqual([{
@@ -310,7 +310,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       const { sdk } = drivers();
       const calls: unknown[][] = [];
       sdk.probe = async (...args: unknown[]) => { calls.push(args); return { handshakeOk: true, capabilities: sdk.capabilities }; };
-      expect(await tryStartChatAgent(params, provider, { A: '1' }, 'wsl -e', null)).toBe(true);
+      expect(await tryStartChatAgent(params, provider, { A: '1' }, 'wsl -e', null)).toBe('chat');
       expect(calls[0]).toEqual([expect.any(String), expect.objectContaining({ A: '1', PATH: '/shell/bin' }), { commandPrefix: 'wsl -e' }]);
       expect(sdk.last.startOptions?.commandPrefix).toBe('wsl -e');
     });
@@ -318,7 +318,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     it('keeps chat on a newer-than-tested CLI and notes it in the transcript only', async () => {
       const { sdk } = drivers();
       sdk.probe = async () => ({ handshakeOk: true, cliVersion: '2.1.900', capabilities: sdk.capabilities });
-      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(true);
+      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('chat');
       expect(sdk.sessions).toHaveLength(1);
       expect(toasts()).toEqual([]);
       expect(notices()).toEqual([{ level: 'info', code: 'untested_cli_version', message: 'Claude Code 2.1.900 is newer than the version chat was tested with (2.1.301).' }]);
@@ -330,13 +330,13 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       sdk.probe = async () => { sdkProbes++; return { handshakeOk: true, capabilities: sdk.capabilities }; };
       sdk.start = async () => { throw new Error('SDK spawn failed'); };
       for (let i = 0; i < DRIVER_FAILURE_THRESHOLD; i++) {
-        expect(await tryStartChatAgent({ ...params, agentId: `a${i}` }, provider, undefined, undefined, null)).toBe(true);
+        expect(await tryStartChatAgent({ ...params, agentId: `a${i}` }, provider, undefined, undefined, null)).toBe('chat');
       }
       expect(stream.sessions).toHaveLength(DRIVER_FAILURE_THRESHOLD);
       expect(toasts()[0].message).toBe('Using Claude Code (stream-json): Claude Code (Agent SDK) failed to start: SDK spawn failed');
       // Paused now: the SDK isn't even probed.
       const before = sdkProbes;
-      expect(await tryStartChatAgent({ ...params, agentId: 'a9' }, provider, undefined, undefined, null)).toBe(true);
+      expect(await tryStartChatAgent({ ...params, agentId: 'a9' }, provider, undefined, undefined, null)).toBe('chat');
       expect(sdkProbes).toBe(before);
       expect(toasts().at(-1)?.message).toMatch(/^Using Claude Code \(stream-json\): Claude Code \(Agent SDK\) chat is paused after repeated failures/);
     });
@@ -346,7 +346,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       let streamProbes = 0;
       stream.probe = async () => { streamProbes++; return { handshakeOk: false, capabilities: stream.capabilities, error: 'broken' }; };
       for (let i = 0; i < 3; i++) {
-        expect(await tryStartChatAgent({ ...params, agentId: `ok${i}` }, provider, undefined, undefined, null)).toBe(true);
+        expect(await tryStartChatAgent({ ...params, agentId: `ok${i}` }, provider, undefined, undefined, null)).toBe('chat');
       }
       expect(sdk.sessions).toHaveLength(3);
       expect(streamProbes).toBe(0);
@@ -365,7 +365,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
         return session;
       };
       for (let i = 0; i <= DRIVER_FAILURE_THRESHOLD; i++) {
-        expect(await tryStartChatAgent({ ...params, agentId: `m${i}` }, provider, undefined, undefined, null)).toBe(false);
+        expect(await tryStartChatAgent({ ...params, agentId: `m${i}` }, provider, undefined, undefined, null)).toBe('terminal');
       }
       expect(stream.sessions).toHaveLength(0);
       // A failure after the session started isn't counted against the driver.
@@ -380,7 +380,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       stream.start = sdk.start;
       const resume = { ...params, mission: undefined, resume: true, sessionId: 'stale' };
       for (let i = 0; i <= DRIVER_FAILURE_THRESHOLD; i++) {
-        expect(await tryStartChatAgent({ ...resume, agentId: `r${i}` }, provider, undefined, undefined, null)).toBe(false);
+        expect(await tryStartChatAgent({ ...resume, agentId: `r${i}` }, provider, undefined, undefined, null)).toBe('terminal');
       }
       // Both drivers were tried on every attempt: none was paused.
       expect(sdkStarts).toBe(2 * (DRIVER_FAILURE_THRESHOLD + 1));
@@ -400,7 +400,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       let sdkStarts = 0;
       sdk.start = async () => { sdkStarts++; throw new Error('RPC error -32000: Authentication required'); };
       for (let i = 0; i <= DRIVER_FAILURE_THRESHOLD; i++) {
-        expect(await tryStartChatAgent({ ...params, agentId: `l${i}` }, provider, undefined, undefined, null)).toBe(false);
+        expect(await tryStartChatAgent({ ...params, agentId: `l${i}` }, provider, undefined, undefined, null)).toBe('terminal');
       }
       // Every driver shares the login: the next one isn't tried, and the SDK is never paused.
       expect(stream.sessions).toHaveLength(0);
@@ -413,7 +413,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       const { sdk, stream } = drivers();
       sdk.start = async () => { throw new Error('a'); };
       stream.start = async () => { throw new Error('b'); };
-      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe(false);
+      expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('terminal');
       expect(registry.setRuntime).toHaveBeenLastCalledWith('agent-1', 'pty');
       expect(toasts().at(-1)?.message).toBe('Opened in the terminal: Claude Code (Agent SDK) failed to start: a; Claude Code (stream-json) failed to start: b');
       expect(getAgentRuntime('agent-1')).toBeUndefined();

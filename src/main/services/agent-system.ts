@@ -25,7 +25,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
-import { tryStartChatAgent } from './agent-runtime/chat-spawn';
+import { cancelChatStart, tryStartChatAgent, type ChatStartResult } from './agent-runtime/chat-spawn';
 import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
 import { onAgentExit } from './agent-exit-broadcast';
 import { ATTR } from '../../shared/telemetry/attributes';
@@ -243,10 +243,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     // Chat runtime (experimental): durable agents whose provider is set to
     // Chat and has a registered driver. Falls through to the terminal otherwise.
     let chatStartMs: number | undefined;
-    let startedInChat: boolean;
+    let chatStart: ChatStartResult;
     takeChatStartFailure(params.agentId);
     try {
-      startedInChat = await withErrorType('chat_start_failed', () => tryStartChatAgent({
+      chatStart = await withErrorType('chat_start_failed', () => tryStartChatAgent({
         agentId: params.agentId,
         projectPath: params.projectPath,
         cwd: params.cwd,
@@ -263,6 +263,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
       recordChatStart(chatStartMs, false);
       throw err;
     }
+    // Killed, or replaced by a newer start for this agent: that one owns the
+    // agent now, so this spawn opens nothing (in particular no terminal).
+    if (chatStart === 'cancelled') return;
+    const startedInChat = chatStart === 'chat';
     recordChatStart(chatStartMs, startedInChat);
     if (startedInChat) {
       facts.runtime = 'chat';
@@ -627,6 +631,8 @@ export async function killAgent(
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId, trigger, waitForExit: opts.waitForExit === true } });
   agentKillRequested(agentId, trigger);
   try {
+    // A chat start in progress is cancelled (and its runtime stopped) here.
+    if (await cancelChatStart(agentId)) return;
     const tracked = agentRegistry.get(agentId);
 
     if (tracked?.runtime === 'chat' || isChatAgent(agentId)) {

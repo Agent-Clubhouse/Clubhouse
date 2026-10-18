@@ -64,8 +64,11 @@ export interface ChatAgentRuntimeOptions {
   provider: string;
   driverId: ChatDriverId;
   cwd: string;
-  /** Starts (or resumes) a driver session. Called once at start and again after clearContext(). */
-  startSession: (resumeNativeSessionId?: string) => Promise<ChatDriverSession>;
+  /**
+   * Starts (or resumes) a driver session. Called once at start and again after
+   * clearContext(). `signal` aborts when stop() or abandon() cancels the start.
+   */
+  startSession: (resumeNativeSessionId?: string, signal?: AbortSignal) => Promise<ChatDriverSession>;
   /** Continue this native session on start. */
   resumeNativeSessionId?: string;
   /** Clubhouse chat session to continue (keeps the transcript's sequence going). */
@@ -95,6 +98,14 @@ export interface ChatAgentRuntimeOptions {
   newId?: () => string;
 }
 
+/** A start that stop() or abandon() cancelled before its session was up. */
+export class ChatStartCancelledError extends Error {
+  constructor() {
+    super('Chat start cancelled');
+    this.name = 'ChatStartCancelledError';
+  }
+}
+
 interface PendingPermission {
   chatRequestId: string;
   options: PermissionOption[];
@@ -119,6 +130,9 @@ export class ChatAgentRuntime implements AgentRuntime {
   private readonly questions = new Set<string>();
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private ended = false;
+  private stopRequested = false;
+  /** Aborts the driver start in progress, if any. */
+  private opening: AbortController | undefined;
   private systemPromptApplied = false;
   private startNoticesEmitted = false;
   /** Serializes stamping so seq order matches transcript and bus order. */
@@ -146,9 +160,14 @@ export class ChatAgentRuntime implements AgentRuntime {
     }
   }
 
+  /** True once stop() has been called, even if the session never opened. */
+  get wasStopped(): boolean {
+    return this.stopRequested;
+  }
+
   private async openSession(resumeNativeSessionId: string | undefined): Promise<void> {
     await this.setState('starting');
-    const session = await this.opts.startSession(resumeNativeSessionId);
+    const session = await this.startDriverSession(resumeNativeSessionId);
     this.session = session;
     this.capabilities = session.capabilities;
     this.noteNativeSessionId(session.nativeSessionId ?? resumeNativeSessionId);
@@ -181,6 +200,46 @@ export class ChatAgentRuntime implements AgentRuntime {
     await this.setState('idle');
     this.armIdleTimer();
     void this.pump(session);
+  }
+
+  /**
+   * The driver start, cancellable: stop() or abandon() rejects it at once
+   * instead of waiting for the driver to give up, and a session that still
+   * arrives afterwards is closed, not adopted.
+   */
+  private async startDriverSession(resumeNativeSessionId: string | undefined): Promise<ChatDriverSession> {
+    if (this.ended) throw new ChatStartCancelledError();
+    const opening = new AbortController();
+    this.opening = opening;
+    const pending = this.opts.startSession(resumeNativeSessionId, opening.signal);
+    try {
+      return await new Promise<ChatDriverSession>((resolve, reject) => {
+        const onAbort = () => reject(new ChatStartCancelledError());
+        opening.signal.addEventListener('abort', onAbort, { once: true });
+        pending.then(
+          (session) => {
+            opening.signal.removeEventListener('abort', onAbort);
+            if (opening.signal.aborted) {
+              void session.close().catch((): void => undefined);
+              return;
+            }
+            resolve(session);
+          },
+          (err) => {
+            opening.signal.removeEventListener('abort', onAbort);
+            reject(opening.signal.aborted ? new ChatStartCancelledError() : err);
+          },
+        );
+      });
+    } finally {
+      if (this.opening === opening) this.opening = undefined;
+    }
+  }
+
+  private cancelOpening(): void {
+    const opening = this.opening;
+    this.opening = undefined;
+    opening?.abort();
   }
 
   private async pump(session: ChatDriverSession): Promise<void> {
@@ -382,6 +441,7 @@ export class ChatAgentRuntime implements AgentRuntime {
    * consumers (the renderer, telemetry) don't keep it open.
    */
   async abandon(): Promise<void> {
+    this.cancelOpening();
     if (this.ended) return;
     appLog('core:chat', 'info', 'Abandoning chat start', { meta: { agentId: this.agentId, driver: this.opts.driverId, sessionOpen: !!this.session } });
     this.ended = true;
@@ -401,7 +461,11 @@ export class ChatAgentRuntime implements AgentRuntime {
     appLog('core:chat', 'info', 'Stopping chat session', {
       meta: { agentId: this.agentId, driver: this.opts.driverId, nativeSessionId: this.nativeSessionId ?? null, sessionOpen: !!session },
     });
+    this.stopRequested = true;
     this.session = undefined;
+    // Stopped mid-start: cancel the driver start so it can't open a session
+    // (or time out and fall back) after this runtime has ended.
+    this.cancelOpening();
     if (session) {
       try {
         await session.close();
