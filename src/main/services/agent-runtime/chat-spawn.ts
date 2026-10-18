@@ -20,7 +20,7 @@ import { waitReady as waitMcpBridgeReady } from '../clubhouse-mcp/bridge-server'
 import { injectClubhouseMcp, buildClubhouseMcpDef } from '../clubhouse-mcp/injection';
 import { isMcpEnabled } from '../mcp-settings';
 import { resolveProjectMcpServers } from '../materialization-service';
-import { updateSessionId } from '../agent-config';
+import { touchSessionEntry } from '../agent-config';
 import { broadcastAgentExit } from '../agent-exit-broadcast';
 import { appLog } from '../log-service';
 import { resolveRuntimeMode } from '../chat-runtime-settings';
@@ -431,7 +431,17 @@ async function runChatStart(
     { env, mcpServers, continued }: NonNullable<typeof prepared>,
   ): Promise<{ ok: true } | { ok: false; error: string; sessionStarted: boolean }> {
     let sessionStarted = false;
+    const recordChatSession = (id: string) => {
+      void touchSessionEntry(params.projectPath, params.agentId, id).catch((err) => {
+        appLog('core:chat', 'warn', 'Failed to persist native session id', {
+          meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+        });
+      });
+    };
     const cleanup = (reason: SessionEndReason, exitCode: number) => {
+      // The session's last activity is when it ended.
+      const nativeId = runtime.getNativeSessionId();
+      if (nativeId) recordChatSession(nativeId);
       configPipeline.restoreForAgent(params.agentId);
       unregisterChatRuntime(params.agentId, runtime);
       untrackAgent(params.agentId);
@@ -476,13 +486,9 @@ async function runChatStart(
         return session;
       },
       beforePrompt: () => captureBeforePrompt(params.agentId),
-      onNativeSessionId: (id) => {
-        void updateSessionId(params.projectPath, params.agentId, id).catch((err) => {
-          appLog('core:chat', 'warn', 'Failed to persist native session id', {
-            meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
-          });
-        });
-      },
+      // Into the agent's session history (the Sessions picker), not just
+      // lastSessionId, as a terminal run's exit does.
+      onNativeSessionId: (id) => recordChatSession(id),
       onEnded: cleanup,
     });
 

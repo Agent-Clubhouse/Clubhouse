@@ -83,6 +83,7 @@ import {
   updateDurableConfig,
   updateSessionId,
   addSessionEntry,
+  touchSessionEntry,
   updateSessionName,
   getSessionHistory,
   ensureGitignore as _ensureGitignore,
@@ -1575,6 +1576,38 @@ describe('addSessionEntry', () => {
       lastActiveAt: '2024-06-01T01:00:00Z',
     });
     // Should not throw
+  });
+
+  describe('touchSessionEntry (chat sessions, #2157)', () => {
+    it('adds a session that has no entry yet, started and active now', async () => {
+      setupWritableAgents([{ id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' }]);
+
+      await touchSessionEntry(PROJECT_PATH, 'durable_1', 'chat-1', '2024-06-01T00:00:00Z');
+
+      const config = await getDurableConfig(PROJECT_PATH, 'durable_1');
+      expect(config!.sessionHistory).toEqual([
+        { sessionId: 'chat-1', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-01T00:00:00Z' },
+      ]);
+      expect(config!.lastSessionId).toBe('chat-1');
+    });
+
+    it('moves only lastActiveAt for a known session, keeping when it started and its name', async () => {
+      setupWritableAgents([{
+        id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01',
+        sessionHistory: [
+          { sessionId: 'chat-1', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-01T01:00:00Z', friendlyName: 'Refactor' },
+          { sessionId: 'other', startedAt: '2024-05-01T00:00:00Z', lastActiveAt: '2024-05-01T00:00:00Z' },
+        ],
+      }]);
+
+      await touchSessionEntry(PROJECT_PATH, 'durable_1', 'chat-1', '2024-06-03T00:00:00Z');
+
+      const config = await getDurableConfig(PROJECT_PATH, 'durable_1');
+      expect(config!.sessionHistory).toHaveLength(2);
+      expect(config!.sessionHistory!.find((s) => s.sessionId === 'chat-1')).toEqual({
+        sessionId: 'chat-1', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-03T00:00:00Z', friendlyName: 'Refactor',
+      });
+    });
   });
 });
 

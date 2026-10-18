@@ -67,6 +67,7 @@ export type { TurnInterruptParams } from './generated/v2/TurnInterruptParams';
 export type { TurnPlanStep } from './generated/v2/TurnPlanStep';
 export type { UserInput } from './generated/v2/UserInput';
 export type { ThreadTokenUsage } from './generated/v2/ThreadTokenUsage';
+export type { TokenUsageBreakdown } from './generated/v2/TokenUsageBreakdown';
 export type { RateLimitSnapshot } from './generated/v2/RateLimitSnapshot';
 export type { CodexErrorInfo } from './generated/v2/CodexErrorInfo';
 export type {

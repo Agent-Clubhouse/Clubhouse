@@ -230,10 +230,18 @@ export function parseUnifiedDiff(raw: string): DiffLine[] {
   return out;
 }
 
+/** A text's lines. A final newline ends the last line rather than starting an empty one. */
+function textLines(text: string | undefined): string[] {
+  if (!text) return [];
+  const lines = text.split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  return lines;
+}
+
 /** Line diff of old/new text (LCS). Fine for the edit sizes a single tool call makes. */
 export function diffTexts(oldText: string | undefined, newText: string | undefined, startLine = 1): DiffLine[] {
-  const a = oldText ? oldText.split('\n') : [];
-  const b = newText ? newText.split('\n') : [];
+  const a = textLines(oldText);
+  const b = textLines(newText);
   if (a.length * b.length > 4_000_000) {
     // Too large to diff in the renderer: show it as a replace.
     return [
