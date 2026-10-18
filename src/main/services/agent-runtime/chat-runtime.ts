@@ -264,7 +264,9 @@ export class ChatAgentRuntime implements AgentRuntime {
       for await (const draft of session.events) {
         if (this.session !== session) break;
         await this.observe(draft);
+        if (this.session !== session) break;
         await this.emit(draft);
+        if (this.session !== session) break;
         await this.afterEvent(draft);
       }
     } catch (err) {
@@ -503,6 +505,8 @@ export class ChatAgentRuntime implements AgentRuntime {
     this.queued.length = 0;
     this.turnId = undefined;
     if (old) await old.close();
+    // Finish queued writes under the old id before starting its replacement.
+    await this.emitChain;
     this.sessionId = this.newId();
     this.seq = 0;
     this.systemPromptApplied = false;

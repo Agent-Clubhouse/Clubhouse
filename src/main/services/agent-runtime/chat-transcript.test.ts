@@ -161,6 +161,22 @@ describe('session storage and migration', () => {
     expect(read.mock.calls.some(([file]) => String(file).endsWith('.jsonl'))).toBe(false);
   });
 
+  it('rebuilds malformed index entries from intact session files', async () => {
+    await appendChatEvent(ev(1));
+    fs.writeFileSync(path.join(path.dirname(transcriptPath('agent-1', 's1')), 'index.json'), '{"version":1,"sessions":[null]}');
+    resetTranscriptCache();
+    expect(await readChatTranscript('agent-1')).toEqual([ev(1)]);
+    expect(await lastSeqFor('agent-1', 's1')).toBe(1);
+  });
+
+  it('preserves multibyte text across tail read chunks', async () => {
+    const text = '🍀'.repeat(40_000);
+    const large: ChatEvent = { ...ev(1), type: 'agent_message', data: { messageId: 'large', text } };
+    await appendChatEvent(large);
+    await appendChatEvent(ev(2));
+    expect(await readChatTranscript('agent-1', { sessionId: 's1', tail: 2 })).toEqual([large, ev(2)]);
+  });
+
   it('contains agent and session path segments, including dot and traversal ids', () => {
     for (const id of ['..', '../escape', '/tmp/escape', 'a/b']) {
       const file = transcriptPath(id, id);

@@ -7,7 +7,7 @@ import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
 import { CHAT_ATTACHMENTS_MAX, CHAT_IMAGE_MAX_BYTES, PERMISSION_LEVELS } from '../../shared/chat';
-import { getAgentRuntime, isChatAgent, readChatTranscript, onChatEvent, resolveChatDriver } from '../services/agent-runtime';
+import { getAgentRuntime, isChatAgent, readChatTranscript, listChatSessions, onChatEvent, resolveChatDriver } from '../services/agent-runtime';
 import { createStatusBridge } from '../services/agent-runtime/chat-status-bridge';
 import { handleChatEventForCheckpoints, listTurns, getChanges, revertTurn, undoRevert, isRevertRunning, type ChangesScope } from '../services/agent-runtime/checkpoint-tracker';
 import * as chatRuntimeSettings from '../services/chat-runtime-settings';
@@ -69,8 +69,12 @@ export function registerChatHandlers(): void {
   });
 
   ipcMain.handle(IPC.CHAT.READ_TRANSCRIPT, withValidatedArgs(
-    [stringArg(), numberArg({ integer: true, min: 1, optional: true })],
-    async (_event, agentId, tail) => readChatTranscript(agentId, tail ? { tail } : {}),
+    [stringArg(), numberArg({ integer: true, min: 1, optional: true }), stringArg({ optional: true })],
+    async (_event, agentId, tail, sessionId) => readChatTranscript(agentId, { tail, sessionId }),
+  ));
+  ipcMain.handle(IPC.CHAT.LIST_SESSIONS, withValidatedArgs(
+    [stringArg()],
+    async (_event, agentId) => listChatSessions(agentId),
   ));
 
   ipcMain.handle(IPC.CHAT.SEND_MESSAGE, withValidatedArgs(
@@ -81,6 +85,13 @@ export function registerChatHandlers(): void {
       const runtime = requireChatRuntime(agentId);
       // The agent would start editing files the revert is restoring.
       if (await isRevertRunning(agentId)) throw new Error('Wait for the revert to finish before sending');
+      // Bare context commands belong to Clubhouse so the transcript and CLI
+      // agree about session boundaries. Arguments and attachments remain messages.
+      if (!attachmentIds?.length && (text.trim() === '/clear' || text.trim() === '/compact')) {
+        if (text.trim() === '/clear') await runtime.clearContext();
+        else await runtime.compact();
+        return { delivery: 'prompt' as const };
+      }
       // Only ids staged through STAGE_ATTACHMENT: the renderer can't name a path here.
       const attached = attachmentIds?.length ? await resolveAttachments(agentId, attachmentIds, runtime.getCapabilities?.()) : [];
       const content: ContentBlock[] = [...(text.trim() ? [{ type: 'text' as const, text }] : []), ...attached];

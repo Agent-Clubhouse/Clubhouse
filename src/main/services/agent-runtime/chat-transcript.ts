@@ -40,8 +40,12 @@ export async function flushTranscript(agentId: string): Promise<void> {
 function parseEvents(raw: string): ChatEvent[] {
   const events: ChatEvent[] = [];
   for (const line of raw.split('\n')) {
-    try { const value: unknown = JSON.parse(line); if (isChatEvent(value)) events.push(value); }
-    catch { /* Preserve valid events around crash-torn or foreign lines. */ }
+    try {
+      const value: unknown = JSON.parse(line);
+      if (isChatEvent(value)) events.push(value);
+    } catch {
+      // telemetry-exempt: recover valid events around crash-torn or foreign lines.
+    }
   }
   return events;
 }
@@ -89,9 +93,13 @@ async function loadIndex(agentId: string): Promise<SessionIndex> {
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as SessionIndex;
-      if (parsed.version !== 1 || !Array.isArray(parsed.sessions)) throw new Error('Invalid chat index');
+      if (parsed.version !== 1 || !Array.isArray(parsed.sessions) || !parsed.sessions.every((s) => s
+        && typeof s.sessionId === 'string' && Number.isFinite(s.bytes) && Number.isFinite(s.lastSeq)
+        && Number.isFinite(s.startedAt) && Number.isFinite(s.lastActiveAt))) throw new Error('Invalid chat index');
       index = parsed;
-    } catch { /* Rebuild a damaged index from the session files below. */ }
+    } catch {
+      // telemetry-exempt: rebuild damaged metadata from the authoritative session files below.
+    }
   }
   // A legacy log is split in a staging directory. Only a verified, complete
   // split is published; the original is never changed or deleted.
@@ -153,7 +161,11 @@ export function appendChatEvent(event: ChatEvent): Promise<void> {
       const handle = await fsp.open(file, 'r');
       try {
         const { size } = await handle.stat();
-        if (size) { const last = Buffer.alloc(1); await handle.read(last, 0, 1, size - 1); if (last[0] !== 10) prefix = '\n'; }
+        if (size) {
+          const last = Buffer.alloc(1);
+          await handle.read(last, 0, 1, size - 1);
+          if (last[0] !== 10) prefix = '\n';
+        }
       } finally { await handle.close(); }
     } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
     await fsp.appendFile(file, prefix + JSON.stringify(event) + '\n', 'utf-8');

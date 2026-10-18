@@ -3,11 +3,14 @@ import { IPC } from '../shared/ipc-channels';
 import type { CheckpointTurn, ChangesResult, RevertResult } from '../shared/chat-checkpoints';
 import type { ChatAgentRuntimeInfo, ChatEvent, ChatQuestionAnswers, ChatRuntimeSettings, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult, StagedChatAttachment } from '../shared/chat';
 import { CHAT_IMAGE_MAX_BYTES } from '../shared/chat';
+import type { ChatSessionSummary } from '../shared/chat';
 
 export const chat = {
   chat: {
-    readTranscript: (agentId: string, tail?: number): Promise<ChatEvent[]> =>
-      ipcRenderer.invoke(IPC.CHAT.READ_TRANSCRIPT, agentId, tail),
+    readTranscript: (agentId: string, tail?: number, sessionId?: string): Promise<ChatEvent[]> =>
+      ipcRenderer.invoke(IPC.CHAT.READ_TRANSCRIPT, agentId, tail, sessionId),
+    listSessions: (agentId: string): Promise<ChatSessionSummary[]> =>
+      ipcRenderer.invoke(IPC.CHAT.LIST_SESSIONS, agentId),
     /** `attachmentIds` come from stageAttachment. */
     sendMessage: (agentId: string, text: string, delivery?: 'auto' | MessageDelivery, attachmentIds?: string[]): Promise<RuntimeSendResult> =>
       ipcRenderer.invoke(IPC.CHAT.SEND_MESSAGE, agentId, text, delivery, attachmentIds),

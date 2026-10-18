@@ -16,6 +16,7 @@ const broadcasts = vi.hoisted(() => ({ calls: [] as unknown[][] }));
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...args: unknown[]) => { broadcasts.calls.push(args); } }));
 
 import { ChatAgentRuntime, ChatStartCancelledError } from './chat-runtime';
+import { appendChatEvent } from './chat-transcript';
 import { FakeChatDriver } from './fake-chat-driver';
 import { onChatEvent, removeAllChatEventListeners } from './chat-event-bus';
 import * as permissionQueue from '../annex-permission-queue';
@@ -319,6 +320,31 @@ describe('ChatAgentRuntime', () => {
     expect((await runtime.readTranscript()).events).toEqual(newSessionEvents);
     expect((await runtime.readTranscript({ tail: 1 })).events).toEqual(newSessionEvents.slice(-1));
     expect(runtime.isRunning()).toBe(true);
+  });
+
+  it('finishes pending old-session writes before clearing context', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver);
+    await runtime.start();
+    const oldId = runtime.getSessionId();
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    vi.mocked(appendChatEvent).mockImplementationOnce(async (event) => {
+      await pending;
+      transcript.push(event);
+    });
+    driver.last.emit({ type: 'agent_message', data: { messageId: 'late', text: 'Old reply' } });
+    await flush(1);
+    const clearing = runtime.clearContext();
+    await flush(1);
+    expect(runtime.getSessionId()).toBe(oldId);
+    release();
+    await clearing;
+    await flush();
+    const oldReply = transcript.find((e) => e.type === 'agent_message');
+    expect(oldReply?.sessionId).toBe(oldId);
+    expect((await runtime.readTranscript()).events?.every((e) => e.sessionId === runtime.getSessionId())).toBe(true);
+    expect((await runtime.readTranscript()).events?.[0].seq).toBe(1);
   });
 
   it('continues an earlier session sequence on resume and reports the native id', async () => {
