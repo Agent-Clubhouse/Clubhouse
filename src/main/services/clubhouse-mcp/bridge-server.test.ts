@@ -16,10 +16,16 @@ vi.mock('electron', () => {
 
 const mockGetAgentNonce = vi.fn<(id: string) => string | undefined>();
 const mockAgentRegistryGet = vi.fn<(id: string) => unknown>();
+const authListeners = new Set<(agentId: string) => void>();
 vi.mock('../agent-registry', () => ({
   getAgentNonce: (id: string) => mockGetAgentNonce(id),
-  agentRegistry: { get: (id: string) => mockAgentRegistryGet(id) },
+  agentRegistry: {
+    get: (id: string) => mockAgentRegistryGet(id),
+    onAuthChange: (l: (agentId: string) => void) => { authListeners.add(l); return () => authListeners.delete(l); },
+  },
 }));
+/** What agent-registry does on setNonce (changed) or untrack. */
+const emitAuthChange = (agentId: string) => { for (const l of authListeners) l(agentId); };
 
 vi.mock('../log-service', () => ({
   appLog: vi.fn(),
@@ -568,6 +574,83 @@ describe('BridgeServer', () => {
       // The session is gone: it is now unknown.
       expect((await rawRequest(port, 'POST', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid }, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).statusCode).toBe(404);
       expect((await rawRequest(port, 'DELETE', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid })).statusCode).toBe(404);
+    });
+
+    it('DELETE then an immediate binding change writes nothing after end', async () => {
+      const proto = http.ServerResponse.prototype;
+      const realWrite = proto.write;
+      const realWriteHead = proto.writeHead;
+      const writesAfterEnd: string[] = [];
+      const writeSpy = vi.spyOn(proto, 'write').mockImplementation(function (this: http.ServerResponse, ...args: unknown[]) {
+        if (this.writableEnded) writesAfterEnd.push(String(args[0]));
+        return (realWrite as (...a: unknown[]) => boolean).apply(this, args);
+      });
+      // Change a binding in the same tick the DELETE is answered, i.e. right after endSession.
+      const headSpy = vi.spyOn(proto, 'writeHead').mockImplementation(function (this: http.ServerResponse, ...args: unknown[]) {
+        const result = (realWriteHead as (...a: unknown[]) => http.ServerResponse).apply(this, args);
+        if (this.req?.method === 'DELETE' && args[0] === 200) {
+          bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'A2' });
+        }
+        return result;
+      });
+      try {
+        const sid = await initialize();
+        const stream = await openStream(port, '/mcp/agent-1', { ...SSE, 'Mcp-Session-Id': sid });
+        await new Promise((r) => setTimeout(r, 20));
+        expect((await rawRequest(port, 'DELETE', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid })).statusCode).toBe(200);
+        await stream.ended;
+        // Same for sessions ended by a nonce change: end, then a change in the same tick.
+        const sid2 = await initialize();
+        const stream2 = await openStream(port, '/mcp/agent-1', { ...SSE, 'Mcp-Session-Id': sid2 });
+        await new Promise((r) => setTimeout(r, 20));
+        emitAuthChange('agent-1');
+        bindingManager.bind('agent-1', { targetId: 'agent-3', targetKind: 'agent', label: 'A3' });
+        await stream2.ended;
+        expect(writesAfterEnd).toEqual([]);
+        expect(stream.chunks.join('') + stream2.chunks.join('')).not.toContain('list_changed');
+      } finally {
+        writeSpy.mockRestore();
+        headSpy.mockRestore();
+      }
+    });
+
+    it('ends an agent\'s sessions and streams when its nonce changes or it is untracked', async () => {
+      const sid = await initialize();
+      const stream = await openStream(port, '/mcp/agent-1', { ...SSE, 'Mcp-Session-Id': sid });
+      await initialize('agent-2');
+      expect(bridgeServer._sessionCountForTesting('agent-1')).toBe(1);
+      emitAuthChange('agent-1');
+      await stream.ended;
+      expect(bridgeServer._sessionCountForTesting('agent-1')).toBe(0);
+      expect(bridgeServer._sessionCountForTesting('agent-2')).toBe(1);
+      expect((await rawRequest(port, 'POST', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid }, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).statusCode).toBe(404);
+    });
+
+    it('treats a session issued under an earlier nonce as unknown', async () => {
+      const sid = await initialize();
+      mockGetAgentNonce.mockReturnValue('new-nonce');
+      const res = await rawRequest(port, 'POST', '/mcp/agent-1', { 'X-Clubhouse-Nonce': 'new-nonce', 'Mcp-Session-Id': sid }, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
+      expect(res.statusCode).toBe(404);
+      expect(bridgeServer._sessionCountForTesting('agent-1')).toBe(0);
+    });
+
+    it(`keeps at most ${bridgeServer.MAX_SESSIONS_PER_AGENT} sessions per agent, evicting the oldest with its stream`, async () => {
+      const first = await initialize();
+      const firstStream = await openStream(port, '/mcp/agent-1', { ...SSE, 'Mcp-Session-Id': first });
+      const ids = [first];
+      for (let i = 0; i < bridgeServer.MAX_SESSIONS_PER_AGENT; i++) ids.push(await initialize());
+      expect(bridgeServer._sessionCountForTesting('agent-1')).toBe(bridgeServer.MAX_SESSIONS_PER_AGENT);
+      await firstStream.ended;
+      const list = (sid: string) => rawRequest(port, 'POST', '/mcp/agent-1', { ...NONCE, 'Mcp-Session-Id': sid }, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
+      expect((await list(ids[0])).statusCode).toBe(404);
+      expect((await list(ids[1])).statusCode).toBe(200);
+      expect((await list(ids.at(-1)!)).statusCode).toBe(200);
+    });
+
+    it('answers a batch (array) body with a JSON-RPC error, not 202', async () => {
+      const res = await rawRequest(port, 'POST', '/mcp/agent-1', NONCE, [{ jsonrpc: '2.0', method: 'notifications/initialized' }]);
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body)).toMatchObject({ jsonrpc: '2.0', id: null, error: { code: -32600 } });
     });
 
     it('keeps /events working for the stdio bridge, with its ping event', async () => {

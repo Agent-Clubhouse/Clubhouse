@@ -6,7 +6,7 @@
 import * as http from 'http';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import { appLog } from '../log-service';
-import { getAgentNonce } from '../agent-registry';
+import { getAgentNonce, agentRegistry } from '../agent-registry';
 import { getScopedToolList, callTool, parseToolName, buildToolKey, isGlobalTool } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { emitAgentMcpConnected } from './connection-events';
@@ -34,7 +34,13 @@ const sseConnections = new Map<string, Set<http.ServerResponse>>();
  * it when done. The stdio bridge script ignores it and uses /events. The
  * session id is never a credential: every request still needs the nonce.
  */
-const mcpSessions = new Map<string, { agentId: string; streams: Set<http.ServerResponse> }>();
+const mcpSessions = new Map<string, { agentId: string; nonce: string; streams: Set<http.ServerResponse> }>();
+
+/**
+ * Sessions kept per agent. The stdio bridge script never sends DELETE, so
+ * the oldest session (and its streams) is evicted past this.
+ */
+export const MAX_SESSIONS_PER_AGENT = 8;
 
 const SESSION_HEADER = 'mcp-session-id';
 
@@ -293,6 +299,8 @@ function notifyToolsChanged(agentId: string): void {
   });
 
   for (const res of connections) {
+    // A stream ended by DELETE or eviction may still be in the set until its close event.
+    if (res.writableEnded || res.destroyed) continue;
     try {
       res.write(`data: ${notification}\n\n`);
     } catch {
@@ -332,7 +340,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   // session of this agent (404 tells the client to initialize again).
   const sessionHeader = req.headers[SESSION_HEADER];
   const sessionId = typeof sessionHeader === 'string' ? sessionHeader : undefined;
-  const session = sessionId ? mcpSessions.get(sessionId) : undefined;
+  let session = sessionId ? mcpSessions.get(sessionId) : undefined;
+  if (session && session.nonce !== getAgentNonce(agentId)) {
+    // Issued under an earlier nonce: the agent restarted.
+    endSession(sessionId!);
+    session = undefined;
+  }
   if (sessionId && session?.agentId !== agentId) {
     res.writeHead(404);
     res.end();
@@ -379,6 +392,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     jsonResponse(res, 200, jsonRpcError(null, -32700, 'Parse error'));
     return;
   }
+  // Batches (arrays) and other non-objects aren't requests this server takes.
+  if (!rpcRequest || typeof rpcRequest !== 'object' || Array.isArray(rpcRequest)) {
+    jsonResponse(res, 200, jsonRpcError(null, -32600, Array.isArray(rpcRequest) ? 'Invalid Request: batches are not supported' : 'Invalid Request'));
+    return;
+  }
 
   const { method, id, params } = rpcRequest;
 
@@ -399,7 +417,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   switch (method) {
     case 'initialize': {
       const newSessionId = randomUUID();
-      mcpSessions.set(newSessionId, { agentId, streams: new Set() });
+      mcpSessions.set(newSessionId, { agentId, nonce: getAgentNonce(agentId)!, streams: new Set() });
+      evictOldSessions(agentId);
       res.setHeader('Mcp-Session-Id', newSessionId);
       response = handleInitialize(id);
       break;
@@ -417,23 +436,50 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   jsonResponse(res, 200, response);
 }
 
-/** Forget a session and close its streams. */
+/**
+ * Forget a session and close its streams. They leave sseConnections now,
+ * not on their close event, so no notification is written after end.
+ */
 function endSession(sessionId: string): void {
   const session = mcpSessions.get(sessionId);
   if (!session) return;
   mcpSessions.delete(sessionId);
+  const conns = sseConnections.get(session.agentId);
   for (const stream of session.streams) {
+    conns?.delete(stream);
     try { stream.end(); } catch { /* telemetry-exempt: the stream is already gone */ }
+  }
+  if (conns && conns.size === 0) sseConnections.delete(session.agentId);
+}
+
+/** End every session of an agent (its nonce changed or it was untracked). */
+function endAgentSessions(agentId: string): void {
+  for (const [id, session] of [...mcpSessions]) {
+    if (session.agentId === agentId) endSession(id);
   }
 }
 
+/** Keep at most MAX_SESSIONS_PER_AGENT for the agent, ending the oldest. */
+function evictOldSessions(agentId: string): void {
+  const ids = [...mcpSessions].filter(([, s]) => s.agentId === agentId).map(([id]) => id);
+  for (const id of ids.slice(0, Math.max(0, ids.length - MAX_SESSIONS_PER_AGENT))) endSession(id);
+}
+
+/** Open Streamable HTTP sessions per agent, for tests. */
+export function _sessionCountForTesting(agentId: string): number {
+  return [...mcpSessions.values()].filter((s) => s.agentId === agentId).length;
+}
+
 let unsubscribeBindingChanges: (() => void) | null = null;
+let unsubscribeAgentAuth: (() => void) | null = null;
 
 export function start(): Promise<number> {
   // Subscribe to binding changes to notify agents
   unsubscribeBindingChanges = bindingManager.onChange((agentId) => {
     notifyToolsChanged(agentId);
   });
+  // A new nonce or an untracked agent invalidates its sessions.
+  unsubscribeAgentAuth = agentRegistry.onAuthChange(endAgentSessions);
 
   readyPromise = new Promise((resolve, reject) => {
     server = http.createServer(handleRequest);
@@ -469,6 +515,8 @@ export function stop(): void {
     unsubscribeBindingChanges();
     unsubscribeBindingChanges = null;
   }
+  unsubscribeAgentAuth?.();
+  unsubscribeAgentAuth = null;
 
   // Close all SSE connections
   for (const connections of sseConnections.values()) {

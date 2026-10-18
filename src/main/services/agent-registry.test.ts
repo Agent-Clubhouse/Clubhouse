@@ -47,6 +47,21 @@ describe('agent-registry', () => {
   });
 
   describe('AgentRegistry', () => {
+    it('tells auth listeners when a nonce changes or an agent is untracked', () => {
+      const seen: string[] = [];
+      const off = agentRegistry.onAuthChange((id) => seen.push(id));
+      agentRegistry.register('agent-1', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'pty' });
+      agentRegistry.setNonce('agent-1', 'n1');
+      agentRegistry.setNonce('agent-1', 'n1'); // unchanged: no event
+      agentRegistry.setNonce('agent-1', 'n2');
+      untrackAgent('agent-1');
+      untrackAgent('agent-1'); // already gone: no event
+      off();
+      agentRegistry.register('agent-2', { projectPath: '/p', orchestrator: 'claude-code', runtime: 'pty' });
+      agentRegistry.setNonce('agent-2', 'n3');
+      expect(seen).toEqual(['agent-1', 'agent-1', 'agent-1']);
+    });
+
     it('registers and retrieves agents', () => {
       agentRegistry.register('agent-1', {
         projectPath: '/project/a',
