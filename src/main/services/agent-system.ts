@@ -26,6 +26,7 @@ import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
 import { getAgentRuntime, isChatAgent } from './agent-runtime';
 import { tryStartChatAgent } from './agent-runtime/chat-spawn';
+import { clearStaleResume, isSessionNotFound, takeChatStartFailure, type StaleResumeReason } from './agent-runtime/stale-session';
 import { onAgentExit } from './agent-exit-broadcast';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
@@ -243,6 +244,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     // Chat and has a registered driver. Falls through to the terminal otherwise.
     let chatStartMs: number | undefined;
     let startedInChat: boolean;
+    takeChatStartFailure(params.agentId);
     try {
       startedInChat = await withErrorType('chat_start_failed', () => tryStartChatAgent({
         agentId: params.agentId,
@@ -266,6 +268,14 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
       facts.runtime = 'chat';
       broadcastToAllWindows(IPC.AGENT.AGENT_AWOKE, params.agentId);
       return;
+    }
+
+    // Chat couldn't resume because the session is gone: don't make the
+    // terminal try the same dead id (#2086). Start it fresh instead.
+    const chatFailure = takeChatStartFailure(params.agentId);
+    if (params.kind === 'durable' && params.resume && params.sessionId && isSessionNotFound(chatFailure)) {
+      await clearResume(params.projectPath, params.agentId, params.sessionId, 'not_found');
+      params = { ...params, resume: false, sessionId: undefined };
     }
 
     // Try headless path for quick agents when enabled
@@ -494,43 +504,99 @@ async function spawnPtyAgent(
   }
 
   noteSpawnKind(params.agentId, params.kind);
-  await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
+  const spawnedAt = Date.now();
+  await tel.step('clubhouse.pty.spawn', () => withErrorType('pty_spawn_failed', () => ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, exitCode, buffer, killed) => {
     configPipeline.restoreForAgent(exitAgentId);
     if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
 
-    // Capture session ID for durable agents — works for all providers
     if (params.kind === 'durable') {
-      try {
-        // Try provider-specific session ID extraction first, then fall back to generated UUID
-        let sessionId: string | null = null;
-        if (buffer && isSessionCapable(provider)) {
-          sessionId = provider.extractSessionId(buffer);
-        }
-        if (!sessionId) {
-          sessionId = randomUUID();
-        }
-        const now = new Date().toISOString();
-        pendingSessionCaptures.set(exitAgentId, addSessionEntry(params.projectPath, exitAgentId, {
-          sessionId,
-          startedAt: now,
-          lastActiveAt: now,
-        }).then(() => {
-          appLog('core:agent', 'info', 'Captured session ID on exit', {
-            meta: { agentId: exitAgentId, sessionId },
-          });
-        }).catch((entryErr) => {
-          appLog('core:agent', 'warn', 'Failed to persist session entry', {
-            meta: { agentId: exitAgentId, sessionId, error: entryErr instanceof Error ? entryErr.message : String(entryErr) },
-          });
-        }));
-      } catch (err) {
-        appLog('core:agent', 'warn', 'Failed to capture session ID', {
-          meta: { agentId: exitAgentId, error: err instanceof Error ? err.message : String(err) },
-        });
-      }
+      const capture = captureSessionOnExit(params, provider, exitAgentId, {
+        exitCode, buffer, killed: killed === true, runMs: Date.now() - spawnedAt,
+      });
+      if (capture) pendingSessionCaptures.set(exitAgentId, capture);
     }
   }, commandPrefix)));
+}
+
+/** A resume that exits non-zero this soon on its own, without printing a session id, never got going. */
+const RESUME_EARLY_EXIT_MS = 10_000;
+/** How much of the exit buffer to search for the CLI's "no such session" error. */
+const RESUME_ERROR_TAIL = 2_000;
+
+/**
+ * Record the CLI session a durable agent's terminal run ended on, so the next
+ * wake can resume it. Only an id the CLI actually reported is saved (#2086):
+ * the one it printed, or the one it was resumed with when it exited cleanly.
+ * A resume that failed (the CLI said the session is gone, or it quit right
+ * away on its own) clears the resume id instead, so the next wake starts fresh.
+ * Returns the config write, if any.
+ */
+function captureSessionOnExit(
+  params: SpawnAgentParams,
+  provider: OrchestratorProvider,
+  agentId: string,
+  { exitCode, buffer, killed, runMs }: { exitCode: number; buffer?: string; killed: boolean; runMs: number },
+): Promise<void> | undefined {
+  const resumedId = params.resume ? params.sessionId : undefined;
+  // Only a resume that quit on its own with an error can have failed to resume.
+  const failedResume = !!resumedId && exitCode !== 0 && !killed;
+  try {
+    // The tail only: a long session's own conversation may mention such errors.
+    if (failedResume && isSessionNotFound(buffer?.slice(-RESUME_ERROR_TAIL))) {
+      appLog('core:agent', 'warn', 'Resume failed: the CLI has no such session', {
+        meta: { agentId, sessionId: resumedId, exitCode },
+      });
+      return clearResume(params.projectPath, agentId, resumedId, 'not_found');
+    }
+    let sessionId: string | null = null;
+    if (buffer && isSessionCapable(provider)) sessionId = provider.extractSessionId(buffer);
+    if (!sessionId && resumedId && exitCode === 0) sessionId = resumedId;
+    if (!sessionId) {
+      if (failedResume && runMs < RESUME_EARLY_EXIT_MS) {
+        appLog('core:agent', 'warn', 'Resume failed: the CLI exited right away', {
+          meta: { agentId, sessionId: resumedId, exitCode, runMs },
+        });
+        return clearResume(params.projectPath, agentId, resumedId, 'exited_early');
+      }
+      appLog('core:agent', 'info', 'No session ID on exit; keeping the previous one', {
+        meta: { agentId, exitCode, resumedSessionId: resumedId ?? null },
+      });
+      return undefined;
+    }
+    const capturedId = sessionId;
+    const now = new Date().toISOString();
+    return addSessionEntry(params.projectPath, agentId, {
+      sessionId: capturedId,
+      startedAt: now,
+      lastActiveAt: now,
+    }).then(() => {
+      appLog('core:agent', 'info', 'Captured session ID on exit', {
+        meta: { agentId, sessionId: capturedId, exitCode },
+      });
+    }).catch((entryErr) => {
+      appLog('core:agent', 'warn', 'Failed to persist session entry', {
+        meta: { agentId, sessionId: capturedId, error: entryErr instanceof Error ? entryErr.message : String(entryErr) },
+      });
+    });
+  } catch (err) {
+    // telemetry-exempt: best-effort bookkeeping on exit; logged, and the next wake still works.
+    appLog('core:agent', 'warn', 'Failed to capture session ID', {
+      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+    });
+    return undefined;
+  }
+}
+
+async function clearResume(projectPath: string, agentId: string, sessionId: string, reason: StaleResumeReason): Promise<void> {
+  try {
+    await clearStaleResume(projectPath, agentId, sessionId, reason);
+  } catch (err) {
+    // telemetry-exempt: best-effort bookkeeping on exit; logged, and the next wake still works.
+    appLog('core:agent', 'warn', 'Failed to clear stale resume id', {
+      meta: { agentId, sessionId, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
 }
 
 /**

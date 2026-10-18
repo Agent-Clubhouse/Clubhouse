@@ -54,7 +54,8 @@ interface ManagedSession {
   termTimer?: ReturnType<typeof setTimeout>;
   killTimer?: ReturnType<typeof setTimeout>;
   /** Stored so stale sweeper and kill-timeout paths can invoke it. */
-  onExitCallback?: (agentId: string, exitCode: number, buffer?: string) => void;
+  /** `killed`: the exit followed a kill request rather than the CLI quitting on its own. */
+  onExitCallback?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void;
 }
 
 const MAX_BUFFER_SIZE = 2 * 1024 * 1024; // 2MB per agent
@@ -287,7 +288,7 @@ function cleanupSession(agentId: string): void {
   sessions.delete(agentId);
 }
 
-export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string) => void, commandPrefix?: string): Promise<void> {
+export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void, commandPrefix?: string): Promise<void> {
   await validateSpawnCwd(cwd);
 
   if (sessions.has(agentId)) {
@@ -385,8 +386,9 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
     if (annexEventBus.isActive()) {
       headlessTerminal.dispose(agentId);
     }
+    const killed = current.killing;
     cleanupSession(agentId);
-    onExit?.(agentId, exitCode, fullBuffer);
+    onExit?.(agentId, exitCode, fullBuffer, killed);
     // Include last PTY output so the renderer can show diagnostics on early exit
     broadcastAgentExit(agentId, exitCode, ptyBuffer);
   });
@@ -572,7 +574,7 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
       cleanupSession(agentId);
       broadcastAgentExit(agentId, 1, '');
       // Invoke onExit so the agent registry is cleaned up (prevents memory leak)
-      onExitCallback?.(agentId, 1, '');
+      onExitCallback?.(agentId, 1, '', true);
     } else {
       cleanupSession(agentId);
     }

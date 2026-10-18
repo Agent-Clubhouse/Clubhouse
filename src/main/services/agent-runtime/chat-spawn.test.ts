@@ -40,6 +40,7 @@ vi.mock('./chat-version-policy', async (importActual) => {
 });
 
 import { levelForFreeAgent, findChatSessionFor, tryStartChatAgent, isLoginRequiredError } from './chat-spawn';
+import { takeChatStartFailure } from './stale-session';
 import { appLog } from '../log-service';
 import { registerChatDriver, clearChatDrivers } from './chat-drivers';
 import { getAgentRuntime, clearChatRuntimes, isChatAgent } from './index';
@@ -383,6 +384,15 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       }
       // Both drivers were tried on every attempt: none was paused.
       expect(sdkStarts).toBe(2 * (DRIVER_FAILURE_THRESHOLD + 1));
+    });
+
+    it('leaves the failure reason for the terminal fallback (#2086)', async () => {
+      const { sdk, stream } = drivers();
+      sdk.start = async () => { throw new Error('No conversation found with session ID: stale'); };
+      stream.start = sdk.start;
+      expect(await tryStartChatAgent({ ...params, agentId: 'rf', mission: undefined, resume: true, sessionId: 'stale' }, provider, undefined, undefined, null)).toBe(false);
+      expect(takeChatStartFailure('rf')).toBe('No conversation found with session ID: stale');
+      expect(takeChatStartFailure('rf')).toBeUndefined();
     });
 
     it('treats an auth error at session start as a login, not a broken driver', async () => {
