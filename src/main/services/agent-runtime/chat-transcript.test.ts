@@ -78,6 +78,25 @@ describe('chat transcript', () => {
 
 
 describe('session storage and migration', () => {
+  it('distinguishes migrated sessions without user messages from attachment-only conversations in the index', async () => {
+    const original: ChatEvent[] = [
+      start(1, 'empty', 1),
+      { ...ev(2, 'empty'), type: 'session_info', data: { nativeSessionId: 'native-empty' } },
+      start(1, 'attachment', 3),
+      { ...ev(2, 'attachment'), type: 'user_message', data: {
+        messageId: 'image', content: [{ type: 'image', mimeType: 'image/png', path: '/image.png' }], source: 'user', delivery: 'prompt',
+      } },
+    ];
+    const legacy = transcriptPath('agent-1');
+    fs.mkdirSync(path.dirname(legacy), { recursive: true });
+    fs.writeFileSync(legacy, original.map((event) => JSON.stringify(event) + '\n').join(''));
+    const migrated = await listChatSessions('agent-1');
+    expect(migrated.find((session) => session.sessionId === 'empty')).not.toHaveProperty('title');
+    expect(migrated.find((session) => session.sessionId === 'attachment')).toHaveProperty('title', '');
+    resetTranscriptCache();
+    expect(await listChatSessions('agent-1')).toEqual(migrated);
+  });
+
   it('writes separate files, lists sessions, and reads only the current session by default', async () => {
     await appendChatEvent(ev(1, 'old'));
     await appendChatEvent(ev(2, 'old'));
