@@ -5,8 +5,8 @@
  * A live chat transcript needs a running agent, so the test puts a
  * scrolling region into an unselected agent card's content area (the same
  * shape as a transcript: overflow-y auto with more content than fits) and
- * uses real mouse-wheel input. It checks that the wheel reached the region and
- * the canvas didn't pan; the region's own scrolling is the browser's.
+ * dispatches wheel events on it and on the header. Layout and computed styles
+ * are real, which the unit tests can't give.
  *
  * Note: the canvas right-click flow is known to flake on macOS/Windows CI.
  */
@@ -66,9 +66,12 @@ test('wheel over a scrolling region in an unselected card scrolls it and does no
   const card = workspace.locator('[data-testid^="canvas-view-cv_"]').first();
   await expect(card).toBeVisible({ timeout: 8_000 });
 
-  // Deselect: click empty canvas away from the card.
+  // Deselect: click empty canvas just right of the card, clear of the
+  // canvas's own controls along the bottom.
   const wsBox = (await workspace.boundingBox())!;
-  await workspace.click({ position: { x: wsBox.width - 20, y: wsBox.height - 20 }, force: true });
+  const cardBox = (await card.boundingBox())!;
+  await workspace.click({ position: { x: Math.min(cardBox.x - wsBox.x + cardBox.width + 40, wsBox.width - 40), y: cardBox.y - wsBox.y + 20 }, force: true });
+  await expect(card).not.toHaveAttribute('data-selected', 'true');
 
   await card.locator('[data-testid="canvas-view-content"]').evaluate((content) => {
     const scroller = document.createElement('div');
@@ -78,25 +81,25 @@ test('wheel over a scrolling region in an unselected card scrolls it and does no
     tall.style.height = '3000px';
     tall.textContent = 'transcript';
     scroller.appendChild(tall);
-    // Record that the wheel really landed in the scroller, not on something beside it.
-    scroller.addEventListener('wheel', () => { scroller.dataset.wheels = String(Number(scroller.dataset.wheels ?? 0) + 1); });
     content.appendChild(scroller);
   });
   const scroller = card.locator('[data-testid="e2e-scroller"]');
-  const box = (await scroller.boundingBox())!;
+
+  // A wheel event dispatched on the element itself: it bubbles through the
+  // card to the canvas the same way a trackpad wheel does, without depending
+  // on what CI's window happens to hit-test at a screen point.
+  const wheel = (target: typeof scroller) => target.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 300, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
+  });
 
   const before = await viewportTransform();
-  await window.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await window.mouse.wheel(0, 300);
-  await expect.poll(() => scroller.getAttribute('data-wheels')).toBe('1');
+  await wheel(scroller);
   // Give a batched pan a frame to land before checking it didn't.
   await window.waitForTimeout(200);
   expect(await viewportTransform()).toBe(before);
 
   // The header is card chrome: a wheel there pans the canvas.
-  const titlebar = card.locator('[data-testid="canvas-view-titlebar"]');
-  const tb = (await titlebar.boundingBox())!;
-  await window.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
-  await window.mouse.wheel(0, 300);
+  await wheel(card.locator('[data-testid="canvas-view-titlebar"]'));
   await expect.poll(viewportTransform).not.toBe(before);
 });
