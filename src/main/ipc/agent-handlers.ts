@@ -23,6 +23,9 @@ import type { DeleteResult } from '../../shared/types';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { orchestratorAttr } from '../telemetry/spawn-telemetry';
 import { assertAgentGitName } from '../../shared/agent-name';
+import type { DurableWorktreeOptions, StartDurableCreationParams } from '../../shared/types';
+import { cancelDurableCreation, onDurableCreationEvent, startDurableCreation } from '../services/agent-creation';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
 type DeleteMode = Parameters<typeof ATTR.deleteMode>[0];
 
@@ -40,6 +43,25 @@ function deleteFlow<T extends DeleteResult | void>(mode: DeleteMode, fn: () => P
 type DurableConfigUpdates = Parameters<typeof agentConfig.updateDurableConfig>[2];
 
 
+/**
+ * Apply the persona (layered project > user > built-in lookup, plus any
+ * front-matter settings) the same way "Apply persona" does, keeping the
+ * project-default instructions the worktree was just seeded with. Failures are
+ * logged, not thrown. Returns true when the persona was applied.
+ */
+async function injectPersona(projectPath: string, agentId: string, persona: string, agentName: string): Promise<boolean> {
+  try {
+    await tel.step('clubhouse.agent.persona_inject', () =>
+      applyPersonaToAgent(projectPath, agentId, persona, { appendToExisting: true }));
+    return true;
+  } catch (err) {
+    appLog('agents', 'warn', 'Failed to inject persona instructions on create', {
+      meta: { agentName, persona, error: err instanceof Error ? err.message : String(err) },
+    });
+    return false;
+  }
+}
+
 async function createDurableAgent(
   projectPath: string,
   name: string,
@@ -51,9 +73,10 @@ async function createDurableAgent(
   mcpIds: string[] | undefined,
   mcpConfigs: Record<string, Record<string, string>> | undefined,
   persona: string | undefined,
+  worktreeOptions: DurableWorktreeOptions | undefined,
 ) {
   // The name becomes a folder and a git branch; refuse a bad one up front (#2221).
-  if (useWorktree !== false) {
+  if (useWorktree !== false && worktreeOptions?.folderName === undefined) {
     try {
       assertAgentGitName(name, 'folder');
     } catch (err) {
@@ -63,29 +86,90 @@ async function createDurableAgent(
 
   let config: Awaited<ReturnType<typeof agentConfig.createDurable>>;
   try {
-    config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, freeAgentMode, mcpIds, mcpConfigs, persona);
+    config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator as OrchestratorId | undefined, freeAgentMode, mcpIds, mcpConfigs, persona, worktreeOptions);
   } catch (err) {
-    // worktree_failed is tagged at its throw site; anything else is a write failure.
+    // worktree_failed and validation are tagged at their throw sites; anything else is a write failure.
     throw tagError(err, 'write_failed');
   }
 
-  // Apply the persona (layered project > user > built-in lookup, plus any
-  // front-matter settings) the same way "Apply persona" does, keeping the
-  // project-default instructions the worktree was just seeded with.
   if (persona && config.worktreePath) {
-    try {
-      await tel.step('clubhouse.agent.persona_inject', () =>
-        applyPersonaToAgent(projectPath, config.id, persona, { appendToExisting: true }));
+    if (await injectPersona(projectPath, config.id, persona, name)) {
       config = (await agentConfig.getDurableConfig(projectPath, config.id)) ?? config;
-    } catch (err) {
-      appLog('agents', 'warn', 'Failed to inject persona instructions on create', {
-        meta: { agentName: name, persona, error: err instanceof Error ? err.message : String(err) },
-      });
     }
   }
 
   broadcastSnapshotRefresh();
   return config;
+}
+
+function optionalString(raw: Record<string, unknown>, key: string): string | undefined {
+  const value = raw[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new Error(`params.${key} must be a string`);
+  return value;
+}
+
+function optionalBoolean(raw: Record<string, unknown>, key: string): boolean | undefined {
+  const value = raw[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') throw new Error(`params.${key} must be a boolean`);
+  return value;
+}
+
+/** Validate the fields of a START_DURABLE_CREATION request; the folder and branch fields are checked again by agent-config (#2221). */
+function parseWorktreeOptions(raw: Record<string, unknown>): DurableWorktreeOptions {
+  const folderName = optionalString(raw, 'folderName');
+  const branchName = optionalString(raw, 'branchName');
+  const branchFrom = optionalString(raw, 'branchFrom');
+  return {
+    ...(folderName !== undefined ? { folderName } : {}),
+    ...(branchName !== undefined ? { branchName } : {}),
+    ...(branchFrom !== undefined ? { branchFrom } : {}),
+  };
+}
+
+export function parseStartCreationParams(raw: Record<string, unknown>): StartDurableCreationParams {
+  const name = raw.name;
+  const color = raw.color;
+  if (typeof name !== 'string' || name.length === 0) throw new Error('params.name must be a non-empty string');
+  if (typeof color !== 'string' || color.length === 0) throw new Error('params.color must be a non-empty string');
+  const mcpIds = raw.mcpIds;
+  if (mcpIds !== undefined && (!Array.isArray(mcpIds) || mcpIds.some((id) => typeof id !== 'string'))) {
+    throw new Error('params.mcpIds must be an array of strings');
+  }
+  const mcpConfigs = raw.mcpConfigs;
+  if (mcpConfigs !== undefined && (typeof mcpConfigs !== 'object' || mcpConfigs === null || Array.isArray(mcpConfigs))) {
+    throw new Error('params.mcpConfigs must be an object');
+  }
+  const model = optionalString(raw, 'model');
+  return {
+    name,
+    color,
+    ...(model !== undefined && model !== 'default' ? { model } : {}),
+    useWorktree: optionalBoolean(raw, 'useWorktree'),
+    orchestrator: optionalString(raw, 'orchestrator') as OrchestratorId | undefined,
+    freeAgentMode: optionalBoolean(raw, 'freeAgentMode'),
+    mcpIds: mcpIds as string[] | undefined,
+    mcpConfigs: mcpConfigs as Record<string, Record<string, string>> | undefined,
+    persona: optionalString(raw, 'persona'),
+    parentAgentId: optionalString(raw, 'parentAgentId'),
+    disposable: optionalBoolean(raw, 'disposable'),
+    ...parseWorktreeOptions(raw),
+  };
+}
+
+let creationEventsForwarded = false;
+
+/** Send every creation stage to the windows, and refresh remote snapshots when one ends (#2226). */
+function forwardCreationEvents(): void {
+  if (creationEventsForwarded) return;
+  creationEventsForwarded = true;
+  onDurableCreationEvent((event) => {
+    broadcastToAllWindows(IPC.AGENT.DURABLE_CREATION_EVENT, event);
+    if (event.stage === 'config_created' || event.stage === 'ready' || event.stage === 'failed' || event.stage === 'cancelled') {
+      broadcastSnapshotRefresh();
+    }
+  });
 }
 
 export function registerAgentHandlers(): void {
@@ -122,14 +206,40 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
     withValidatedArgs(
-      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), stringArg({ optional: true })],
-      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona) => tel.flow(
+      [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true }), objectArg({ optional: true }), stringArg({ optional: true }), objectArg<Record<string, unknown>>({ optional: true })],
+      async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona, worktreeOptions) => tel.flow(
         'clubhouse.agent.create',
         { attrs: [ATTR.usesWorktree(useWorktree !== false), ATTR.orchestrator(orchestratorAttr(orchestrator))] },
-        () => createDurableAgent(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs as Record<string, Record<string, string>> | undefined, persona),
+        () => createDurableAgent(
+          projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds,
+          mcpConfigs as Record<string, Record<string, string>> | undefined, persona,
+          worktreeOptions ? parseWorktreeOptions(worktreeOptions) : undefined,
+        ),
       ),
     ),
   );
+
+  // Asynchronous create (#2226): the id comes back at once, in the 'creating'
+  // state; stages, including ready or failed, arrive on DURABLE_CREATION_EVENT.
+  forwardCreationEvents();
+  ipcMain.handle(IPC.AGENT.START_DURABLE_CREATION, withValidatedArgs(
+    [stringArg(), objectArg<Record<string, unknown>>()],
+    async (_event, projectPath, rawParams) => {
+      const params = parseStartCreationParams(rawParams);
+      const { persona, name } = params;
+      const { agentId, config } = await startDurableCreation(projectPath, params, {
+        inject: persona
+          ? async (created) => { if (created.worktreePath) await injectPersona(projectPath, created.id, persona, name); }
+          : undefined,
+      });
+      return { agentId, config };
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.CANCEL_DURABLE_CREATION, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath, agentId) => cancelDurableCreation(projectPath, agentId),
+  ));
 
   ipcMain.handle(IPC.AGENT.DELETE_DURABLE, withValidatedArgs(
     [stringArg(), stringArg()],

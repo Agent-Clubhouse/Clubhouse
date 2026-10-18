@@ -17,7 +17,7 @@ import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materializati
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps, readMcpConfigs } from './agent-settings-service';
 import { applyLaunchWrapper, validateWrapperConfig } from '../orchestrators/shared';
-import type { LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
+import type { DurableAgentConfig, LaunchWrapperConfig, FreeAgentPermissionMode } from '../../shared/types';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
@@ -148,6 +148,21 @@ async function spawnAgentTracked(params: SpawnAgentParams): Promise<void> {
 
 async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): Promise<void> {
   let params = inParams;
+  // An agent still being created has no worktree yet, and a failed one never
+  // will (#2226): refuse before anything touches its folder.
+  if (params.kind === 'durable') {
+    let creation: DurableAgentConfig['creation'];
+    try {
+      creation = (await getDurableConfig(params.projectPath, params.agentId))?.creation;
+    } catch {
+      // telemetry-exempt: config not available; the spawn proceeds as before.
+    }
+    if (creation) {
+      throw tagError(new Error(creation.state === 'creating'
+        ? 'This agent is still being created. Start it once it is ready.'
+        : `This agent could not be created: ${creation.reason ?? 'unknown reason'} Delete it and create it again.`), 'cwd_invalid');
+    }
+  }
   const provider = await tel.step('clubhouse.provider.resolve', () =>
     withErrorType('orchestrator_unknown', () => resolveOrchestrator(params.projectPath, params.orchestrator)),
   );

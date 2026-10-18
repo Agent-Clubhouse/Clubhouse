@@ -1366,9 +1366,27 @@ describe('agent-system', () => {
     });
   });
 
+  describe('unfinished creation (#2226)', () => {
+    afterEach(() => mockGetDurableConfig.mockImplementation(() => null));
+
+    it('refuses to start an agent that is still being created', async () => {
+      mockGetDurableConfig.mockImplementation((async () => ({ id: 'agent-1', creation: { state: 'creating', startedAt: '2026-10-18T00:00:00.000Z' } })) as never);
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' })).rejects.toThrow(/still being created/);
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+
+    it('refuses to start an agent whose creation failed, with the reason', async () => {
+      mockGetDurableConfig.mockImplementation((async () => ({ id: 'agent-1', creation: { state: 'failed', startedAt: '2026-10-18T00:00:00.000Z', reason: 'git said no.' } })) as never);
+      await expect(spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' })).rejects.toThrow(/could not be created: git said no\./);
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+  });
+
   describe('sleep reason on PTY exit (#2104)', () => {
     it("drops the last sleep's reason when the agent wakes again", async () => {
-      mockGetDurableConfig.mockResolvedValueOnce({ id: 'agent-1', lastSleep: { reason: 'agent', at: '2026-10-17T00:00:00.000Z', by: 'PM' } } as never);
+      const slept = { id: 'agent-1', lastSleep: { reason: 'agent', at: '2026-10-17T00:00:00.000Z', by: 'PM' } };
+      // The first read is the unfinished-creation check (#2226), the second the config the spawn uses.
+      mockGetDurableConfig.mockResolvedValueOnce(slept as never).mockResolvedValueOnce(slept as never);
       await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable' });
       expect(mockUpdateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { lastSleep: null });
       mockUpdateDurableConfig.mockClear();

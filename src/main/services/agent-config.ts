@@ -5,6 +5,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { app } from 'electron';
 import { DurableAgentConfig, DurableConfigUpdates, OrchestratorId, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, HelperCascadeResult, HelperDeleteChoice, HelperDisposeBlock, HelperDisposeChecks } from '../../shared/types';
+import type { DurableAgentCreation, DurableCreationEvent, DurableCreationStage, DurableWorktreeOptions, StartDurableCreationParams } from '../../shared/types';
 import { isDisposedAgent, parentLinkError } from '../../shared/agent-helpers';
 import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
@@ -23,9 +24,9 @@ import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-nam
  * Always an argument list, never a shell string: names that reach git here
  * can come from another agent (#2221).
  */
-function execGitFileAsync(args: string[], cwd: string, maxBuffer?: number): Promise<string> {
+function execGitFileAsync(args: string[], cwd: string, maxBuffer?: number, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd, encoding: 'utf-8', maxBuffer }, (error, stdout) => {
+    execFile('git', args, { cwd, encoding: 'utf-8', maxBuffer, ...(signal ? { signal } : {}) }, (error, stdout) => {
       if (error) reject(error);
       else resolve(stdout);
     });
@@ -829,6 +830,8 @@ async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
     appLog('core:agent-config', 'info', `Cache initialized with ${agents.length} agent(s)`, {
       meta: { projectPath, agentIds: agents.map((a) => a.id) },
     });
+    // A creation left 'creating' by an earlier run was interrupted by a quit (#2226).
+    scheduleCreationRecovery(projectPath, agents);
     if (reassignment) {
       // Mark dirty before awaiting so the agents.json watcher cannot drop the
       // reassignment from the cache before it is persisted.
@@ -923,6 +926,7 @@ export function clearAgentConfigCache(projectPath?: string): void {
   } else {
     configCache.clear();
     agentIdOwners.clear();
+    creationRecoveries.clear();
     for (const [watchedProjectPath, watcher] of configWatchers) {
       watcher.close();
       configWatchers.delete(watchedProjectPath);
@@ -931,6 +935,9 @@ export function clearAgentConfigCache(projectPath?: string): void {
 }
 
 export async function listDurable(projectPath: string): Promise<DurableAgentConfig[]> {
+  await readAgents(projectPath);
+  // Interrupted creations are settled (cleaned up and marked failed) before the first list (#2226).
+  await creationRecoveries.get(projectPath);
   return readAgents(projectPath);
 }
 
@@ -1241,6 +1248,766 @@ export async function getSessionHistory(projectPath: string, agentId: string): P
   );
 }
 
+// ---------------------------------------------------------------------------
+// Durable creation (#2226)
+//
+// beginDurableCreation checks the request, reserves the folder and branch,
+// writes the agent's record in a 'creating' state (flushed to disk before any
+// git work) and starts the slow part at once: resolving the base commit,
+// `git branch`, `git worktree add` (which can take a minute on a big repo) and
+// the instruction/config injection. It returns once the record exists, with a
+// `done` promise for the rest. createDurable awaits `done`; the asynchronous
+// API (agent-creation.ts) returns the id straight away.
+//
+// Ownership: Clubhouse only ever deletes a folder it made itself (claimed with
+// a non-recursive mkdir before `worktree add`, recorded as folderOwned), and a
+// branch it created itself (recorded for good on the agent as branchOwned +
+// branchStartSha, and deleted only while it still points at that commit and
+// is not checked out). A creation interrupted by a quit is found on the
+// next launch (once per project) and cleaned up, unless another live Clubhouse
+// instance owns it.
+// ---------------------------------------------------------------------------
+
+/** Thrown by a creation's `done` when it was cancelled; the agent's record and partial worktree are gone. */
+export class DurableCreationCancelledError extends Error {
+  constructor() {
+    super('Agent creation was cancelled.');
+    this.name = 'DurableCreationCancelledError';
+  }
+}
+
+/** Identifies this Clubhouse process in the creations it owns. */
+const INSTANCE_ID = randomUUID();
+/** How often a running creation refreshes its heartbeat. */
+const CREATION_HEARTBEAT_MS = 30_000;
+/** A creation whose owner has not beaten for this long is treated as interrupted. */
+const CREATION_LEASE_MS = 2 * 60_000;
+
+export type DurableCreationListener = (event: DurableCreationEvent) => void;
+const creationListeners = new Set<DurableCreationListener>();
+
+/** Listen to the stages of asynchronous creations, and to interrupted ones found at launch. Returns the unsubscribe function. */
+export function onDurableCreationEvent(listener: DurableCreationListener): () => void {
+  creationListeners.add(listener);
+  return () => { creationListeners.delete(listener); };
+}
+
+function emitCreationEvent(
+  projectPath: string,
+  agentId: string,
+  stage: DurableCreationStage,
+  startMs: number,
+  config?: DurableAgentConfig,
+  reason?: string,
+): void {
+  const event: DurableCreationEvent = {
+    projectPath,
+    agentId,
+    stage,
+    at: new Date().toISOString(),
+    elapsedMs: Math.max(0, Date.now() - startMs),
+    ...(reason !== undefined ? { reason } : {}),
+    ...(config ? { config } : {}),
+  };
+  for (const listener of creationListeners) {
+    try {
+      listener(event);
+    } catch {
+      // telemetry-exempt: one listener never breaks the others or the creation.
+    }
+  }
+}
+
+interface ActiveCreation {
+  /** The project path the creation was started with (the cache key). */
+  projectPath: string;
+  controller: AbortController;
+  /** Settles once the creation has finished, including its cleanup. */
+  settled: Promise<void>;
+}
+
+/** Creations in progress in this process, by agent id. */
+const activeCreations = new Map<string, ActiveCreation>();
+/** Agent folders (resolved paths) claimed by creations in progress. */
+const reservedFolders = new Set<string>();
+/** Branches claimed by creations in progress, as `<resolved project>\0<branch>`. */
+const reservedBranches = new Set<string>();
+
+function branchKey(projectPath: string, branch: string): string {
+  return `${path.resolve(projectPath)}\0${branch}`;
+}
+
+/** True while an agent's creation is still running in this process. */
+export function isDurableCreationActive(agentId: string): boolean {
+  return activeCreations.has(agentId);
+}
+
+/** What the worktree of a new agent will be. */
+interface WorktreePlan {
+  folder: string;
+  wtPath: string;
+  branch: string;
+  /** True when the caller named the branch; an existing branch is then refused. */
+  branchNamed: boolean;
+  branchFrom?: string;
+}
+
+/**
+ * Why `ref` cannot be used as the place a new branch starts from, or null.
+ * Looser than a branch name (tags, remote branches and commit ids are fine),
+ * but never empty, option-like, or containing whitespace or control characters.
+ * git resolves it to a commit before anything is created.
+ */
+export function branchFromProblem(ref: unknown): string | null {
+  if (typeof ref !== 'string' || ref.length === 0) return 'Enter the branch or commit to start from.';
+  if (ref.length > 256) return 'Keep the branch to start from to 256 characters or fewer.';
+  if (ref.startsWith('-')) return 'The branch to start from cannot start with -.';
+  // eslint-disable-next-line no-control-regex
+  if (/[\s\u0000-\u001f\u007f]/.test(ref)) return 'The branch to start from cannot contain spaces or control characters.';
+  return null;
+}
+
+/**
+ * Validate the folder and branch (#2221 rules) and the branch-from of a new
+ * agent's worktree. Throws (tagged `validation`) on the first bad one.
+ */
+function planDurableWorktree(projectPath: string, name: string, options: DurableWorktreeOptions): WorktreePlan {
+  try {
+    const folder = options.folderName ?? name;
+    const wtPath = resolveAgentWorktreePath(projectPath, folder);
+    const branch = options.branchName ?? `${folder}/standby`;
+    assertAgentGitName(branch, 'branch');
+    if (options.branchFrom !== undefined) {
+      const problem = branchFromProblem(options.branchFrom);
+      if (problem) throw new Error(problem);
+    }
+    return {
+      folder, wtPath, branch,
+      branchNamed: options.branchName !== undefined,
+      ...(options.branchFrom !== undefined ? { branchFrom: options.branchFrom } : {}),
+    };
+  } catch (err) {
+    throw tagError(err, 'validation');
+  }
+}
+
+export interface DurableCreationRunOptions {
+  /** Send the stages to onDurableCreationEvent listeners (the asynchronous API does). */
+  emitEvents?: boolean;
+  /**
+   * Keep a failed agent's record, marked failed with the reason, instead of
+   * removing it. The asynchronous API keeps it so the failure stays visible;
+   * createDurable removes it because its caller gets the error instead.
+   */
+  keepFailedRecord?: boolean;
+  /** Extra injection into the new worktree after the project defaults (e.g. a persona). Failures are logged, not fatal. */
+  inject?: (config: DurableAgentConfig) => Promise<void>;
+}
+
+export interface DurableCreationHandle {
+  /** The new agent's record, in the 'creating' state. */
+  config: DurableAgentConfig;
+  /** Resolves with the ready config; rejects with the failure, or DurableCreationCancelledError. */
+  done: Promise<DurableAgentConfig>;
+}
+
+function cloneAgent(agent: DurableAgentConfig): DurableAgentConfig {
+  return JSON.parse(JSON.stringify(agent)) as DurableAgentConfig;
+}
+
+/** Apply `fn` to an agent's record and save it. Returns a copy of the result, or null when the record is gone. */
+async function mutateAgentRecord(
+  projectPath: string,
+  agentId: string,
+  fn: (agent: DurableAgentConfig) => void,
+  { flush = false }: { flush?: boolean } = {},
+): Promise<DurableAgentConfig | null> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  const agent = agentsById.get(agentId);
+  if (!agent) return null;
+  fn(agent);
+  await writeAgents(projectPath, agents);
+  if (flush) await flushAgentConfig(projectPath);
+  return cloneAgent(agent);
+}
+
+async function removeAgentRecord(projectPath: string, agentId: string): Promise<void> {
+  const { agents, agentsById } = await readAgentsEntry(projectPath);
+  if (!agentsById.has(agentId)) return;
+  await writeAgents(projectPath, agents.filter((a) => a.id !== agentId));
+  await flushAgentConfig(projectPath);
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Whether deleting this agent may delete its branch: only a branch Clubhouse
+ * created. Records from before #2226 have no `branchOwned`; their branch counts
+ * as owned only when it is the default `<folder>/standby`.
+ */
+export function ownsAgentBranch(agent: Pick<DurableAgentConfig, 'branch' | 'branchOwned' | 'worktreePath'>): boolean {
+  if (!agent.branch) return false;
+  if (agent.branchOwned !== undefined) return agent.branchOwned;
+  return !!agent.worktreePath && agent.branch === `${path.basename(agent.worktreePath)}/standby`;
+}
+
+const SHA_PATTERN = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/i;
+
+/**
+ * Delete an agent's branch if Clubhouse owns it (see ownsAgentBranch), and
+ * only while it still points at the commit it was created at, so work on it
+ * is never lost. The delete is `git branch -D`, which refuses a branch that is
+ * checked out anywhere (a user may have checked out an agent's branch);
+ * then the branch is kept. Records from before #2226 have no start commit and
+ * use `git branch -d`, which also refuses unmerged work. A recorded start
+ * commit that is not a full SHA is not trusted. Returns true when the branch
+ * was deleted. Never throws.
+ */
+export async function deleteAgentBranch(
+  projectPath: string,
+  agent: Pick<DurableAgentConfig, 'id' | 'branch' | 'branchOwned' | 'branchStartSha' | 'worktreePath'>,
+): Promise<boolean> {
+  const branch = agent.branch;
+  const keep = (why: string, error?: unknown) => {
+    appLog('core:agent-config', error ? 'warn' : 'info', `Kept the agent branch: ${why}`, {
+      meta: { agentId: agent.id, branch, ...(error ? { error: errorMessage(error) } : {}) },
+    });
+    return false;
+  };
+  if (!branch) return false;
+  if (!ownsAgentBranch(agent)) return keep('Clubhouse did not create it');
+  if (agent.branchStartSha !== undefined && !SHA_PATTERN.test(agent.branchStartSha)) return keep('its recorded start commit is not a commit id');
+  try {
+    if (agent.branchStartSha) {
+      let tip = '';
+      try {
+        tip = (await execGitFileAsync(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], projectPath)).trim();
+      } catch {
+        // telemetry-exempt: a branch that no longer exists has nothing to delete.
+        return false;
+      }
+      if (tip.toLowerCase() !== agent.branchStartSha.toLowerCase()) return keep('it has moved since the agent was created');
+      await execGitFileAsync(['branch', '-D', '--', branch], projectPath);
+    } else {
+      await execGitFileAsync(['branch', '-d', '--', branch], projectPath);
+    }
+    return true;
+  } catch (err) {
+    // telemetry-exempt: a kept branch is the safe outcome; logged for diagnosis.
+    return keep('git refused (checked out, or unmerged)', err);
+  }
+}
+
+/**
+ * Remove what a creation made: the worktree registration and folder (only
+ * when `ownsFolder`), and the branch (only when owned). Best effort; failures
+ * are logged. Never runs a repository-wide prune.
+ */
+async function cleanupPartialWorktree(
+  projectPath: string,
+  part: Pick<DurableAgentConfig, 'id' | 'branch' | 'branchOwned' | 'branchStartSha'> & { wtPath?: string; ownsFolder: boolean },
+): Promise<void> {
+  const hasGit = await isInsideGitRepo(projectPath).catch(() => false);
+  if (part.wtPath && part.ownsFolder) {
+    if (hasGit) {
+      try {
+        await execGitFileAsync(['worktree', 'remove', '--force', '--', part.wtPath], projectPath);
+      } catch {
+        // telemetry-exempt: usually not registered yet; the folder removal below covers it.
+      }
+    }
+    try {
+      await fsp.rm(part.wtPath, { recursive: true, force: true });
+    } catch {
+      // telemetry-exempt: best-effort cleanup; the creation's own failure is what gets reported.
+    }
+  }
+  if (hasGit && part.branchOwned && part.branchStartSha && SHA_PATTERN.test(part.branchStartSha)) {
+    await deleteAgentBranch(projectPath, { id: part.id, branch: part.branch, branchOwned: true, branchStartSha: part.branchStartSha });
+  }
+}
+
+/** True when `wtPath` is exactly an agent folder of this project, so cleanup may delete it. */
+function isOwnAgentFolder(projectPath: string, wtPath: string): boolean {
+  try {
+    return path.resolve(resolveAgentWorktreePath(projectPath, path.basename(wtPath))) === path.resolve(wtPath);
+  } catch {
+    // telemetry-exempt: an invalid folder is simply not ours to delete.
+    return false;
+  }
+}
+
+/** A folder name close to `folder` that no agent and no creation in progress uses. */
+function suggestFolderName(projectPath: string, folder: string, agents: DurableAgentConfig[]): string {
+  const used = new Set(agents.map((a) => a.worktreePath && path.resolve(a.worktreePath)).filter(Boolean));
+  for (let n = 2; n < 100; n++) {
+    const candidate = `${folder}-${n}`;
+    if (validateAgentGitName(candidate, 'folder')) break;
+    const resolved = path.resolve(agentsDir(projectPath), candidate);
+    if (!used.has(resolved) && !reservedFolders.has(resolved)) return candidate;
+  }
+  return `${folder.slice(0, 50)}-${Date.now().toString(36).slice(-6)}`;
+}
+
+/**
+ * Check a new agent's request, reserve its folder and branch, write its record
+ * in the 'creating' state, and start the git work. Resolves once the record
+ * exists. Throws (tagged `validation`) for a bad name, folder, branch or base,
+ * or a folder or branch already in use.
+ */
+export async function beginDurableCreation(
+  projectPath: string,
+  params: StartDurableCreationParams,
+  options: DurableCreationRunOptions = {},
+): Promise<DurableCreationHandle> {
+  const { name, color, model, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona } = params;
+  const useWorktree = params.useWorktree !== false;
+  // The folder and branch come from the request; refuse bad ones before anything touches disk.
+  const plan = useWorktree ? planDurableWorktree(projectPath, name, params) : undefined;
+
+  await ensureDir(clubhouseDir(projectPath));
+  await ensureGitignore(projectPath);
+
+  // Inherit freeAgentMode from project defaults if not explicitly set
+  const projectDefaults = await readProjectAgentDefaults(projectPath);
+  const effectiveFreeAgent = freeAgentMode ?? (projectDefaults.freeAgentMode || undefined);
+  const folderOnDisk = plan ? await pathExists(plan.wtPath) : false;
+  const agents = await readAgents(projectPath);
+
+  // From here until the record is in the cache there is no await, so two
+  // creations in this process cannot both claim the same folder or branch.
+  const parentAgentId = params.parentAgentId;
+  if (parentAgentId !== undefined) {
+    const parent = agents.find((a) => a.id === parentAgentId);
+    if (!parent) throw tagError(new Error('Parent agent not found'), 'validation');
+    if (isDisposedAgent(parent)) throw tagError(new Error('A disposed agent cannot be a parent'), 'validation');
+  }
+  let folderKey: string | undefined;
+  let branchReservation: string | undefined;
+  if (plan) {
+    const target = path.resolve(plan.wtPath);
+    const where = `.clubhouse/agents/${plan.folder}`;
+    const usedByAgent = agents.some((a) => a.worktreePath && path.resolve(a.worktreePath) === target);
+    let problem: string | null = null;
+    if (reservedFolders.has(target)) problem = `Another agent is being created in ${where}.`;
+    else if (usedByAgent) problem = `Another agent already uses ${where}.`;
+    else if (folderOnDisk) problem = `The folder ${where} is left over from a removed agent. Delete it, or`;
+    if (problem) {
+      const suggestion = suggestFolderName(projectPath, plan.folder, agents);
+      throw tagError(new Error(problem.endsWith(', or')
+        ? `${problem} use another folder name such as "${suggestion}".`
+        : `${problem} Use another folder name such as "${suggestion}".`), 'validation');
+    }
+    const key = branchKey(projectPath, plan.branch);
+    if (reservedBranches.has(key) || agents.some((a) => a.branch === plan.branch && !!a.worktreePath)) {
+      throw tagError(new Error(`Another agent already uses the branch "${plan.branch}". Choose another branch name.`), 'validation');
+    }
+    reservedFolders.add(target);
+    reservedBranches.add(key);
+    folderKey = target;
+    branchReservation = key;
+  }
+
+  let id = generateDurableId();
+  while (agentIdOwners.has(id)) id = generateDurableId();
+  const startedAt = new Date().toISOString();
+  const config: DurableAgentConfig = {
+    id,
+    name,
+    color,
+    ...(plan ? { branch: plan.branch, worktreePath: plan.wtPath, branchOwned: false } : {}),
+    createdAt: startedAt,
+    ...(model && model !== 'default' ? { model } : {}),
+    ...(orchestrator ? { orchestrator } : {}),
+    ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
+    ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
+    ...(mcpConfigs && Object.keys(mcpConfigs).length > 0 ? { mcpConfigs } : {}),
+    ...(persona ? { persona } : {}),
+    // Helpers (#2224): a new agent can start life as a helper of another.
+    ...(parentAgentId !== undefined ? { parentAgentId } : {}),
+    ...(parentAgentId !== undefined && params.disposable ? { disposable: true } : {}),
+    creation: {
+      state: 'creating',
+      startedAt,
+      stage: 'config_created',
+      owner: { pid: process.pid, instanceId: INSTANCE_ID },
+      heartbeatAt: startedAt,
+    },
+  };
+
+  let markSettled!: () => void;
+  const active: ActiveCreation = {
+    projectPath,
+    controller: new AbortController(),
+    settled: new Promise<void>((resolve) => { markSettled = resolve; }),
+  };
+  const release = () => {
+    activeCreations.delete(id);
+    if (folderKey) reservedFolders.delete(folderKey);
+    if (branchReservation) reservedBranches.delete(branchReservation);
+    markSettled();
+  };
+  activeCreations.set(id, active);
+  agents.push(config);
+  try {
+    await writeAgents(projectPath, agents);
+    // With a worktree to make, the record must be on disk before git starts,
+    // so a quit mid-create is found on the next launch. Without one there is
+    // nothing to clean up, so the usual debounced write is enough.
+    if (plan) await flushAgentConfig(projectPath);
+  } catch (err) {
+    await removeAgentRecord(projectPath, id).catch(() => { /* telemetry-exempt: the original error is rethrown */ });
+    release();
+    throw err;
+  }
+
+  const snapshot = cloneAgent(config);
+  // Started here, never left to the caller, so a reservation cannot leak.
+  const done = runDurableCreation(projectPath, snapshot, plan, active, options).finally(release);
+  // A caller that only wants the id need not handle `done`; failures are logged and reported as events.
+  done.catch(() => { /* telemetry-exempt: reported by the creation itself */ });
+  return { config: snapshot, done };
+}
+
+/**
+ * Claim a new agent's folder with a non-recursive mkdir, which fails if the
+ * folder exists: that is atomic across processes, so a folder another process
+ * made is never ours (and never cleaned up). `git worktree add` accepts the
+ * empty folder. Returns true, or throws when the folder is taken.
+ */
+async function claimAgentFolder(wtPath: string, folder: string): Promise<true> {
+  await ensureDir(path.dirname(wtPath));
+  try {
+    await fsp.mkdir(wtPath);
+  } catch (err) {
+    // telemetry-exempt: rethrown below, typed for telemetry.
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw tagError(new Error(`The folder .clubhouse/agents/${folder} appeared while the agent was being created. Use another folder name.`), 'worktree_failed');
+    }
+    throw err;
+  }
+  return true;
+}
+
+async function runDurableCreation(
+  projectPath: string,
+  initial: DurableAgentConfig,
+  plan: WorktreePlan | undefined,
+  active: ActiveCreation,
+  options: DurableCreationRunOptions,
+): Promise<DurableAgentConfig> {
+  const id = initial.id;
+  const startMs = Date.parse(initial.createdAt) || Date.now();
+  const { signal } = active.controller;
+  const emit = (stage: DurableCreationStage, config?: DurableAgentConfig, reason?: string) => {
+    if (options.emitEvents) emitCreationEvent(projectPath, id, stage, startMs, config, reason);
+  };
+  const checkCancelled = () => {
+    if (signal.aborted) throw new DurableCreationCancelledError();
+  };
+  /** Update the record; a missing record means it was removed mid-create. */
+  const update = async (fn: (agent: DurableAgentConfig) => void, flush = false) => {
+    const updated = await mutateAgentRecord(projectPath, id, fn, { flush });
+    if (!updated) throw new DurableCreationCancelledError();
+    return updated;
+  };
+  const reachStage = (stage: DurableCreationStage) => update((agent) => {
+    if (agent.creation) agent.creation = { ...agent.creation, stage };
+  });
+
+  // Heartbeat, so another Clubhouse instance can tell this creation is alive.
+  const heartbeat = setInterval(() => {
+    void mutateAgentRecord(projectPath, id, (agent) => {
+      if (agent.creation?.state === 'creating') agent.creation.heartbeatAt = new Date().toISOString();
+    }, { flush: true }).catch(() => { /* telemetry-exempt: a missed beat only shortens the lease */ });
+  }, CREATION_HEARTBEAT_MS);
+  heartbeat.unref?.();
+
+  let ownsFolder = false;
+  let branchOwned = false;
+  let branchStartSha: string | undefined;
+  emit('config_created', cloneAgent(initial));
+
+  try {
+    if (plan) {
+      checkCancelled();
+      const { wtPath, branch, branchFrom } = plan;
+      const hasGit = await isInsideGitRepo(projectPath);
+      if (hasGit) {
+        // Ensure repo has at least one commit (required for branching/worktrees)
+        try {
+          await execGitFileAsync(['rev-parse', 'HEAD'], projectPath);
+        } catch {
+          // Empty repo with no commits — bootstrap with an initial commit
+          // Include .gitignore which ensureGitignore() has already created/updated
+          appLog('core:agent-config', 'info', 'Empty repository detected, creating initial commit for worktree support', {
+            meta: { agentName: initial.name, projectPath },
+          });
+          try {
+            const gitignorePath = path.join(projectPath, '.gitignore');
+            if (await pathExists(gitignorePath)) {
+              await execGitFileAsync(['add', '--', '.gitignore'], projectPath);
+            }
+            await execGitFileAsync(['commit', '--allow-empty', '-m', 'Clubhouse - Initial Commit'], projectPath);
+          } catch (commitErr) {
+            appLog('core:agent-config', 'warn', 'Failed to create initial commit in empty repository', {
+              meta: { agentName: initial.name, projectPath, error: errorMessage(commitErr) },
+            });
+          }
+        }
+        checkCancelled();
+
+        // Resolve the base to a commit first, so the branch starts exactly there.
+        const base = branchFrom ?? 'HEAD';
+        let sha = '';
+        try {
+          sha = (await execGitFileAsync(['rev-parse', '--verify', '--quiet', `${base}^{commit}`], projectPath, undefined, signal)).trim();
+        } catch {
+          // telemetry-exempt: an unresolvable base is reported just below, typed for telemetry.
+          checkCancelled();
+        }
+        if (!/^[0-9a-f]{40,64}$/i.test(sha)) {
+          throw tagError(new Error(branchFrom !== undefined
+            ? `Could not find "${branchFrom}" to start the branch from.`
+            : 'Could not find the current commit to start the branch from.'), branchFrom !== undefined ? 'validation' : 'worktree_failed');
+        }
+
+        try {
+          await execGitFileAsync(['branch', '--no-track', '--', branch, sha], projectPath, undefined, signal);
+          branchOwned = true;
+          branchStartSha = sha;
+        } catch (err) {
+          checkCancelled();
+          if (plan.branchNamed || branchFrom !== undefined) {
+            // Until there is an explicit adopt mode, a named or based branch must be new.
+            throw tagError(new Error(`Could not create the branch "${branch}": ${errorMessage(err).trim()}. Choose a branch name that does not exist yet.`), 'validation');
+          }
+          // The default <folder>/standby branch may already exist; the worktree reuses it, but it is not ours to delete.
+        }
+        // Record ownership for good before the slow step, so cleanup after a quit (and any later delete) knows.
+        await update((agent) => {
+          agent.branchOwned = branchOwned;
+          if (branchStartSha) agent.branchStartSha = branchStartSha;
+          else delete agent.branchStartSha;
+        }, true);
+        checkCancelled();
+
+        ownsFolder = await claimAgentFolder(wtPath, plan.folder);
+        // Saved before the slow step, so recovery after a quit removes only a folder this creation made.
+        await update((agent) => { if (agent.creation) agent.creation.folderOwned = true; }, true);
+        checkCancelled();
+        try {
+          // Only spanned under an active agent create flow (Phase 4), never orphaned.
+          await stepUnderFlow('clubhouse.git.worktree_add', () => execGitFileAsync(['worktree', 'add', '--', wtPath, branch], projectPath, undefined, signal));
+        } catch (err) {
+          checkCancelled();
+          const errMsg = errorMessage(err);
+          appLog('core:agent-config', 'error', 'Git worktree creation failed', {
+            meta: { agentName: initial.name, branch, worktreePath: wtPath, error: errMsg },
+          });
+          throw tagError(new Error(
+            `Failed to create git worktree for "${plan.folder}": ${errMsg}. ` +
+            `The branch "${branch}" may already be checked out elsewhere, or the path may conflict with an existing worktree. ` +
+            'Run `git worktree list` and `git worktree prune` to investigate.'
+          ), 'worktree_failed');
+        }
+      } else {
+        ownsFolder = await claimAgentFolder(wtPath, plan.folder);
+      }
+      checkCancelled();
+      emit('worktree_added', await reachStage('worktree_added'));
+    }
+
+    // Apply project-level defaults as snapshots into the new worktree
+    checkCancelled();
+    if (initial.worktreePath) {
+      const worktreePath = initial.worktreePath;
+      try {
+        const provider = await resolveOrchestrator(projectPath, initial.orchestrator);
+        await applyAgentDefaults(
+          worktreePath,
+          projectPath,
+          (wt, content) => provider.writeInstructions(wt, content),
+          provider.conventions,
+        );
+      } catch (err) {
+        appLog('core:agent-config', 'warn', 'Failed to apply project agent defaults', {
+          meta: { agentName: initial.name, error: errorMessage(err) },
+        });
+      }
+    }
+    if (options.inject) {
+      try {
+        await options.inject(cloneAgent(initial));
+      } catch (err) {
+        // telemetry-exempt: injection is best effort, like the project defaults above; logged.
+        appLog('core:agent-config', 'warn', 'Failed to inject config into the new agent', {
+          meta: { agentName: initial.name, error: errorMessage(err) },
+        });
+      }
+    }
+    checkCancelled();
+    emit('config_injected', await reachStage('config_injected'));
+
+    checkCancelled();
+    // Flushed when a worktree was made, so a quit right after ready is not mistaken for an interrupted creation.
+    const ready = await update((agent) => { delete agent.creation; }, !!plan);
+    emit('ready', ready);
+    return ready;
+  } catch (err) {
+    const cancelled = signal.aborted || err instanceof DurableCreationCancelledError;
+    if (plan) {
+      await cleanupPartialWorktree(projectPath, { id, wtPath: plan.wtPath, ownsFolder, branch: plan.branch, branchOwned, branchStartSha });
+    }
+    if (cancelled) {
+      await removeAgentRecord(projectPath, id);
+      appLog('core:agent-config', 'info', 'Agent creation cancelled and cleaned up', { meta: { agentId: id } });
+      emit('cancelled');
+      throw new DurableCreationCancelledError();
+    }
+    const reason = errorMessage(err);
+    if (options.keepFailedRecord) {
+      const failed = await mutateAgentRecord(projectPath, id, (agent) => {
+        // The worktree and any branch Clubhouse made are gone; a later delete must not touch anything.
+        delete agent.worktreePath;
+        delete agent.branch;
+        delete agent.branchOwned;
+        delete agent.branchStartSha;
+        const { owner: _owner, heartbeatAt: _beat, folderOwned: _folder, ...rest } = agent.creation ?? { startedAt: initial.createdAt, state: 'failed' as const };
+        agent.creation = { ...rest, state: 'failed', stage: 'failed', reason };
+      }, { flush: true });
+      emit('failed', failed ?? undefined, reason);
+    } else {
+      await removeAgentRecord(projectPath, id);
+      emit('failed', undefined, reason);
+    }
+    throw err;
+  } finally {
+    clearInterval(heartbeat);
+  }
+}
+
+/**
+ * Stop a creation in progress and wait until it has cleaned up. Returns false
+ * when the agent is not being created in this process.
+ */
+async function stopDurableCreation(projectPath: string, agentId: string): Promise<boolean> {
+  const active = activeCreations.get(agentId);
+  if (!active || path.resolve(active.projectPath) !== path.resolve(projectPath)) return false;
+  active.controller.abort();
+  await active.settled;
+  return true;
+}
+
+/**
+ * Cancel a creation in progress: stops git, removes the partial worktree and
+ * any branch Clubhouse made, and removes the agent's record. If the creation
+ * finished (ready or failed) just before the cancel took effect, the agent is
+ * deleted the normal way instead. Resolves false when the agent is not being
+ * created.
+ */
+export async function cancelDurableCreation(projectPath: string, agentId: string): Promise<boolean> {
+  const active = activeCreations.get(agentId);
+  if (!(await stopDurableCreation(projectPath, agentId))) return false;
+  if ((await readAgentsEntry(active!.projectPath)).agentsById.has(agentId)) {
+    await deleteDurable(active!.projectPath, agentId);
+  }
+  return true;
+}
+
+export const INTERRUPTED_CREATION_REASON = 'Creation was interrupted because Clubhouse closed before the worktree was ready.';
+
+function isPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // telemetry-exempt: EPERM means the process exists but belongs to someone else.
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/** True when another live Clubhouse instance is running this creation, so it must be left alone. */
+function isCreationOwnedElsewhere(creation: DurableAgentCreation): boolean {
+  const owner = creation.owner;
+  if (!owner || owner.instanceId === INSTANCE_ID) return false;
+  // This process is not running it (it is not in activeCreations), whatever instance id it carries.
+  if (owner.pid === process.pid || !isPidAlive(owner.pid)) return false;
+  const beat = Date.parse(creation.heartbeatAt ?? creation.startedAt);
+  return Number.isFinite(beat) && Date.now() - beat < CREATION_LEASE_MS;
+}
+
+function isInterruptedCreation(agent: DurableAgentConfig): boolean {
+  return agent.creation?.state === 'creating' && !activeCreations.has(agent.id) && !isCreationOwnedElsewhere(agent.creation);
+}
+
+/**
+ * Clean up creations a previous run of the app left in the 'creating' state
+ * (it quit mid-create): remove the partial worktree and the branch if
+ * Clubhouse made it, mark the agent failed and report a 'failed' event.
+ * Creations running in this process, or in another live Clubhouse instance,
+ * are left alone. Returns the ids it marked failed.
+ */
+export async function recoverInterruptedCreations(projectPath: string): Promise<string[]> {
+  const agents = await readAgents(projectPath);
+  const stale = agents.filter(isInterruptedCreation);
+  const recovered: string[] = [];
+  for (const agent of stale) {
+    const { id, worktreePath, branch } = agent;
+    appLog('core:agent-config', 'warn', 'Cleaning up an agent creation interrupted by a quit', {
+      meta: { projectPath, agentId: id, worktreePath, branch },
+    });
+    await cleanupPartialWorktree(projectPath, {
+      id,
+      wtPath: worktreePath,
+      ownsFolder: agent.creation?.folderOwned === true && !!worktreePath && isOwnAgentFolder(projectPath, worktreePath),
+      branch,
+      branchOwned: agent.branchOwned === true,
+      branchStartSha: agent.branchStartSha,
+    });
+    const updated = await mutateAgentRecord(projectPath, id, (record) => {
+      if (!isInterruptedCreation(record) || !record.creation) return;
+      delete record.worktreePath;
+      delete record.branch;
+      delete record.branchOwned;
+      delete record.branchStartSha;
+      const { owner: _owner, heartbeatAt: _beat, folderOwned: _folder, ...rest } = record.creation;
+      record.creation = { ...rest, state: 'failed', stage: 'failed', reason: INTERRUPTED_CREATION_REASON };
+    }, { flush: true });
+    if (updated?.creation?.state === 'failed' && updated.creation.reason === INTERRUPTED_CREATION_REASON) {
+      recovered.push(id);
+      emitCreationEvent(projectPath, id, 'failed', Date.parse(updated.createdAt) || Date.now(), updated, INTERRUPTED_CREATION_REASON);
+    }
+  }
+  return recovered;
+}
+
+/** Recovery of interrupted creations, run once per project per launch (not on every cache reload). */
+const creationRecoveries = new Map<string, Promise<void>>();
+
+function scheduleCreationRecovery(projectPath: string, agents: DurableAgentConfig[]): void {
+  if (creationRecoveries.has(projectPath)) return;
+  if (!agents.some((a) => a.creation?.state === 'creating')) {
+    creationRecoveries.set(projectPath, Promise.resolve());
+    return;
+  }
+  creationRecoveries.set(projectPath, recoverInterruptedCreations(projectPath).then((): void => undefined, (err: unknown): void => {
+    appLog('core:agent-config', 'error', 'Failed to clean up an interrupted agent creation', {
+      meta: { projectPath, error: errorMessage(err) },
+    });
+  }));
+}
+
+/** Refuse an operation that needs a finished agent while its creation runs. */
+function creationInProgressResult(agentId: string): DeleteResult | null {
+  return activeCreations.has(agentId)
+    ? { ok: false, message: 'This agent is still being created. Cancel it, or wait until it is ready.' }
+    : null;
+}
+
 export async function createDurable(
   projectPath: string,
   name: string,
@@ -1252,135 +2019,14 @@ export async function createDurable(
   mcpIds?: string[],
   mcpConfigs?: Record<string, Record<string, string>>,
   persona?: string,
+  worktreeOptions: DurableWorktreeOptions = {},
 ): Promise<DurableAgentConfig> {
-  // The name becomes a folder and a branch only with a worktree; refuse a
-  // bad one before anything touches disk.
-  if (useWorktree) {
-    try {
-      resolveAgentWorktreePath(projectPath, name);
-    } catch (err) {
-      throw tagError(err, 'validation');
-    }
-  }
-
-  await ensureDir(clubhouseDir(projectPath));
-  await ensureGitignore(projectPath);
-
-  let id = generateDurableId();
-  while (agentIdOwners.has(id)) id = generateDurableId();
-
-  let branch: string | undefined;
-  let worktreePath: string | undefined;
-
-  if (useWorktree) {
-    const wtPath = resolveAgentWorktreePath(projectPath, name);
-    const standby = `${name}/standby`;
-    assertAgentGitName(standby, 'branch');
-    worktreePath = wtPath;
-    branch = standby;
-
-    // Create the branch (from current HEAD)
-    const hasGit = await isInsideGitRepo(projectPath);
-    if (hasGit) {
-      // Ensure repo has at least one commit (required for branching/worktrees)
-      try {
-        await execGitFileAsync(['rev-parse', 'HEAD'], projectPath);
-      } catch {
-        // Empty repo with no commits — bootstrap with an initial commit
-        // Include .gitignore which ensureGitignore() has already created/updated
-        appLog('core:agent-config', 'info', 'Empty repository detected, creating initial commit for worktree support', {
-          meta: { agentName: name, projectPath },
-        });
-        try {
-          const gitignorePath = path.join(projectPath, '.gitignore');
-          if (await pathExists(gitignorePath)) {
-            await execGitFileAsync(['add', '--', '.gitignore'], projectPath);
-          }
-          await execGitFileAsync(['commit', '--allow-empty', '-m', 'Clubhouse - Initial Commit'], projectPath);
-        } catch (commitErr) {
-          appLog('core:agent-config', 'warn', 'Failed to create initial commit in empty repository', {
-            meta: {
-              agentName: name,
-              projectPath,
-              error: commitErr instanceof Error ? commitErr.message : String(commitErr),
-            },
-          });
-        }
-      }
-
-      try {
-        await execGitFileAsync(['branch', '--', standby], projectPath);
-      } catch {
-        // Branch may already exist
-      }
-
-      try {
-        await ensureDir(path.dirname(wtPath));
-        // Only spanned under an active agent create flow (Phase 4), never orphaned.
-        await stepUnderFlow('clubhouse.git.worktree_add', () => execGitFileAsync(['worktree', 'add', '--', wtPath, standby], projectPath));
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        appLog('core:agent-config', 'error', 'Git worktree creation failed', {
-          meta: { agentName: name, branch, worktreePath, error: errMsg },
-        });
-        // Clean up any partial state: remove the directory git may have created
-        // before failing, so a retry with the same name starts from a clean slate.
-        try { await fsp.rm(wtPath, { recursive: true, force: true }); } catch { /* best-effort */ }
-        throw tagError(new Error(
-          `Failed to create git worktree for "${name}": ${errMsg}. ` +
-          `The branch "${branch}" may already be checked out elsewhere, or the path may conflict with an existing worktree. ` +
-          `Run \`git worktree list\` and \`git worktree prune\` to investigate.`
-        ), 'worktree_failed');
-      }
-    } else {
-      await ensureDir(wtPath);
-    }
-  }
-
-  // Inherit freeAgentMode from project defaults if not explicitly set
-  const projectDefaults = await readProjectAgentDefaults(projectPath);
-  const effectiveFreeAgent = freeAgentMode ?? (projectDefaults.freeAgentMode || undefined);
-
-  const config: DurableAgentConfig = {
-    id,
-    name,
-    color,
-    ...(branch ? { branch } : {}),
-    ...(worktreePath ? { worktreePath } : {}),
-    createdAt: new Date().toISOString(),
-    ...(model && model !== 'default' ? { model } : {}),
-    ...(orchestrator ? { orchestrator } : {}),
-    ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
-    ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
-    ...(mcpConfigs && Object.keys(mcpConfigs).length > 0 ? { mcpConfigs } : {}),
-    ...(persona ? { persona } : {}),
-  };
-
-  const agents = await readAgents(projectPath);
-  agents.push(config);
-  await writeAgents(projectPath, agents);
-
-  // Apply project-level defaults as snapshots into the new worktree
-  if (worktreePath) {
-    try {
-      const provider = await resolveOrchestrator(projectPath, orchestrator);
-      await applyAgentDefaults(
-        worktreePath,
-        projectPath,
-        (wt, content) => provider.writeInstructions(wt, content),
-        provider.conventions,
-      );
-    } catch (err) {
-      appLog('core:agent-config', 'warn', 'Failed to apply project agent defaults', {
-        meta: {
-          agentName: name,
-          error: err instanceof Error ? err.message : String(err),
-        },
-      });
-    }
-  }
-
-  return config;
+  const handle = await beginDurableCreation(projectPath, {
+    ...worktreeOptions,
+    name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds, mcpConfigs, persona,
+  }, { keepFailedRecord: false });
+  // The caller gets the error, so a failed agent leaves no record behind.
+  return handle.done;
 }
 
 export async function reorderDurable(projectPath: string, orderedIds: string[]): Promise<DurableAgentConfig[]> {
@@ -1440,6 +2086,10 @@ export async function updateDurable(
 }
 
 export async function deleteDurable(projectPath: string, agentId: string): Promise<void> {
+  // Deleting an agent that is still being created stops the creation, which
+  // cleans up after itself. If it finished just before the stop took effect,
+  // the record is still there and is deleted below like any other (#2226).
+  await stopDurableCreation(projectPath, agentId);
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return;
@@ -1476,14 +2126,10 @@ async function removeAgentWorktree(projectPath: string, agent: DurableAgentConfi
     await fsp.rm(worktreePath, { recursive: true, force: true });
   }
 
+  // Delete the branch only if Clubhouse created it, it has not moved and it is
+  // not checked out anywhere (#2226). Never throws; a kept branch is logged.
   if (hasGit && agent.branch) {
-    try {
-      await execGitFileAsync(['branch', '-D', '--', agent.branch], projectPath);
-    } catch (err) {
-      appLog('core:agent-config', 'warn', 'Git branch deletion failed', {
-        meta: { agentId, branch: agent.branch, error: err instanceof Error ? err.message : String(err) },
-      });
-    }
+    await deleteAgentBranch(projectPath, agent);
   }
 }
 
@@ -1617,6 +2263,11 @@ async function saveWorktreeBeforeDelete(
 }
 
 export async function deleteCommitAndPush(projectPath: string, agentId: string): Promise<DeleteResult> {
+  // Mid-create there is no finished worktree to save; deleting cancels the creation (#2226).
+  if (isDurableCreationActive(agentId)) {
+    await deleteDurable(projectPath, agentId);
+    return { ok: true, message: 'Creation cancelled' };
+  }
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
@@ -1656,6 +2307,11 @@ export function cleanupBranchFor(agent: Pick<DurableAgentConfig, 'id' | 'name' |
 }
 
 export async function deleteWithCleanupBranch(projectPath: string, agentId: string): Promise<DeleteResult> {
+  // Mid-create there is no finished worktree to save; deleting cancels the creation (#2226).
+  if (isDurableCreationActive(agentId)) {
+    await deleteDurable(projectPath, agentId);
+    return { ok: true, message: 'Creation cancelled' };
+  }
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
@@ -1693,6 +2349,11 @@ export async function deleteWithCleanupBranch(projectPath: string, agentId: stri
 }
 
 export async function deleteSaveAsPatch(projectPath: string, agentId: string, savePath: string): Promise<DeleteResult> {
+  // Mid-create there is no finished worktree to save; deleting cancels the creation (#2226).
+  if (isDurableCreationActive(agentId)) {
+    await deleteDurable(projectPath, agentId);
+    return { ok: true, message: 'Creation cancelled' };
+  }
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
@@ -1777,6 +2438,9 @@ export async function deleteForce(projectPath: string, agentId: string): Promise
 }
 
 export async function deleteUnregister(projectPath: string, agentId: string): Promise<DeleteResult> {
+  // "Remove from list" keeps the files, which a creation in progress cannot promise (#2226).
+  const creating = creationInProgressResult(agentId);
+  if (creating) return creating;
   const agents = await readAgents(projectPath);
   const filtered = agents.filter((a) => a.id !== agentId);
   await writeAgents(projectPath, releaseHelpersOf(filtered, agentId));
@@ -1896,15 +2560,15 @@ async function findLocalBase(cwd: string): Promise<string | null> {
 }
 
 /**
- * Hook for async creation (#2226, PR #2242): a helper whose creation is still
- * running must not be disposed under it. Reads `creation.state` structurally
- * until that field is typed on DurableAgentConfig; whichever of #2241 and
- * #2242 lands second should switch this to the typed field (or cancel the
- * creation first). Returns the reason to block, or null.
+ * Why a helper's creation stops it being disposed, or null. A creation running
+ * in this process does not block: disposeAgent cancels it and lets it settle
+ * first. One still marked 'creating' that this process is not running (another
+ * Clubhouse instance owns it) blocks, since its worktree is not ours to touch.
  */
 export function helperCreationBlock(agent: DurableAgentConfig): string | null {
-  const creation = (agent as DurableAgentConfig & { creation?: { state?: unknown } }).creation;
-  return creation?.state === 'creating' ? 'it is still being created' : null;
+  return agent.creation?.state === 'creating' && !isDurableCreationActive(agent.id)
+    ? 'it is still being created in another Clubhouse window'
+    : null;
 }
 
 function errorText(err: unknown): string {
@@ -1928,6 +2592,8 @@ export async function getDisposeChecks(
   const creating = helperCreationBlock(agent);
   if (creating) return { dirty: 0, unpushed: 0, unmerged: null, error: creating };
   if (isDisposedAgent(agent)) return { dirty: 0, unpushed: 0, unmerged: 0 };
+  // A creation running here has made nothing anyone worked in; disposing cancels it.
+  if (isDurableCreationActive(agentId)) return { dirty: 0, unpushed: 0, unmerged: 0 };
   try {
     return await runDisposeChecks(projectPath, agent, agentsById, options.alsoDisposed ?? []);
   } catch (err) {
@@ -2048,6 +2714,11 @@ function hasWorkAtRisk(checks: HelperDisposeChecks): boolean {
 
 /** Remove a helper's worktree and branch and mark it disposed, keeping its row. */
 async function disposeAgent(projectPath: string, agentId: string): Promise<void> {
+  // A creation still running is cancelled and settled first (#2226): a
+  // cancelled creation removes its partial worktree, owned branch and row, so
+  // nothing is left to dispose. One that finished just before the cancel took
+  // effect is disposed below like any other.
+  await stopDurableCreation(projectPath, agentId);
   const { agentsById } = await readAgentsEntry(projectPath);
   const agent = agentsById.get(agentId);
   if (!agent || isDisposedAgent(agent)) return;

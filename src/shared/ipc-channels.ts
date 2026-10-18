@@ -39,6 +39,10 @@ export const IPC = {
   },
   AGENT: {
     CREATE_DURABLE: 'agent:create-durable',
+    /** Asynchronous create (#2226): returns the id at once; stages arrive on DURABLE_CREATION_EVENT. */
+    START_DURABLE_CREATION: 'agent:start-durable-creation',
+    CANCEL_DURABLE_CREATION: 'agent:cancel-durable-creation',
+    DURABLE_CREATION_EVENT: 'agent:durable-creation-event',
     LIST_DURABLE: 'agent:list-durable',
     GET_RUNNING_STATUSES: 'agent:get-running-statuses',
     DELETE_DURABLE: 'agent:delete-durable',

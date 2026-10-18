@@ -101,6 +101,7 @@ vi.stubGlobal('clubhouse', {
     readTranscript: async () => null,
     isHeadlessAgent: async () => false,
     onHookEvent: () => noop,
+    onDurableCreationEvent: () => noop,
     onAgentWaking: () => noop,
     onAgentAwoke: () => noop,
     onAgentWakeFailed: () => noop,

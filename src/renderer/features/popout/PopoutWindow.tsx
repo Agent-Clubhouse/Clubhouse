@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useAgentStore } from '../../stores/agentStore';
+import { applyDurableCreationEvent } from '../agents/durable-creation-events';
 import { initChatEventListener } from '../../stores/chatStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { PopoutAgentView } from './PopoutAgentView';
@@ -97,6 +98,9 @@ function useAgentStateSync() {
       },
     );
 
+    // 4b. Asynchronous agent creations (#2226), for this window and its canvas view.
+    const removeCreationListener = window.clubhouse.agent.onDurableCreationEvent(applyDurableCreationEvent);
+
     // 5. Chat events, for agents running in the chat runtime.
     const removeChatListener = initChatEventListener();
 
@@ -135,6 +139,7 @@ function useAgentStateSync() {
       removeHookListener();
       removeExitListener();
       removeStateListener();
+      removeCreationListener();
       removeDataListener();
     };
   }, []);

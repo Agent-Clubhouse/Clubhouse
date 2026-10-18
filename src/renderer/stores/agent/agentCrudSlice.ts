@@ -4,6 +4,13 @@ import { AgentCrudSlice, GetAgentState, SetAgentState } from './types';
 import { removeAgentsFromState } from './agentUtils';
 import { clearPendingActivityTimer } from './activityTimers';
 
+/** A loaded durable agent's status: creating or failed while its creation is unfinished (#2226), else asleep. */
+function creationStatus(config: DurableAgentConfig): Pick<Agent, 'status' | 'errorMessage'> {
+  if (config.creation?.state === 'creating') return { status: 'creating' };
+  if (config.creation?.state === 'failed') return { status: 'error', errorMessage: config.creation.reason };
+  return { status: 'sleeping' };
+}
+
 export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCrudSlice {
   return {
     agents: {},
@@ -76,7 +83,7 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
             projectId,
             name: config.name,
             kind: 'durable',
-            status: 'sleeping',
+            ...creationStatus(config),
             color: config.color,
             icon: config.icon,
             worktreePath: config.worktreePath,
@@ -97,6 +104,18 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
           // and a store entry that lost the value (e.g. rebuilt on spawn) would
           // otherwise stay stale for the lifetime of the window.
           agents[config.id] = { ...agents[config.id], projectId, model: config.model, lastSleep: agents[config.id].lastSleep ?? config.lastSleep };
+          // An unfinished creation (#2226) is ground truth for status; a finished
+          // one moves an agent still shown as creating or failed to asleep.
+          const existing = agents[config.id];
+          if (config.creation || existing.status === 'creating') {
+            agents[config.id] = {
+              ...existing,
+              ...creationStatus(config),
+              ...(config.creation ? {} : { errorMessage: undefined }),
+              worktreePath: config.worktreePath,
+              branch: config.branch,
+            };
+          }
         }
       }
 

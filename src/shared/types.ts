@@ -298,6 +298,20 @@ export interface DurableAgentConfig {
    * its row and session history but has no worktree and never spawns.
    */
   disposedAt?: string;
+  /**
+   * True when Clubhouse created `branch` for this agent, so deleting the agent
+   * may delete the branch (#2226). False for a branch that already existed.
+   * Unset on records from before #2226: those count as owned only when the
+   * branch is `<folder>/standby`.
+   */
+  branchOwned?: boolean;
+  /** The commit `branch` was created at. An owned branch is deleted only while it still points here. */
+  branchStartSha?: string;
+  /**
+   * Present only while the agent is being created, or after its creation
+   * failed (#2226). A ready agent has no `creation` field.
+   */
+  creation?: DurableAgentCreation;
 }
 
 /** What to do with an orchestrator's helpers when it is deleted (#2224). */
@@ -338,6 +352,72 @@ export interface HelperCascadeResult {
   helperIds?: string[];
   /** Helpers whose disposal failed part way; the ones in `helperIds` were disposed. */
   failed?: Array<{ agentId: string; name: string; reason: string }>;
+}
+
+/** Persisted creation state of a durable agent (#2226). */
+export interface DurableAgentCreation {
+  /** 'creating' while the worktree is set up; 'failed' once it gave up (see `reason`). */
+  state: 'creating' | 'failed';
+  startedAt: string;
+  /** The last stage reached. */
+  stage?: DurableCreationStage;
+  /** Why creation failed, as a sentence for the user. */
+  reason?: string;
+  /** True once this creation made the agent's folder itself, so cleanup after a quit may delete it. */
+  folderOwned?: boolean;
+  /** The Clubhouse process running the creation, so another instance leaves it alone. */
+  owner?: { pid: number; instanceId: string };
+  /** Refreshed while the creation runs; a creation whose owner stopped beating is treated as interrupted. */
+  heartbeatAt?: string;
+}
+
+/**
+ * Progress of an asynchronous durable-agent creation (#2226), in order:
+ * config_created, worktree_added, config_injected, then ready. It ends early
+ * with failed (plus a reason) or cancelled.
+ */
+export type DurableCreationStage = 'config_created' | 'worktree_added' | 'config_injected' | 'ready' | 'failed' | 'cancelled';
+
+/** Event sent on IPC.AGENT.DURABLE_CREATION_EVENT for each creation stage (#2226). */
+export interface DurableCreationEvent {
+  projectPath: string;
+  agentId: string;
+  stage: DurableCreationStage;
+  /** ISO time the stage was reached. */
+  at: string;
+  /** Milliseconds since the creation started. */
+  elapsedMs: number;
+  /** Only on 'failed'. */
+  reason?: string;
+  /** The agent's config at this stage; absent on 'cancelled' (the record is gone). */
+  config?: DurableAgentConfig;
+}
+
+/** Where a durable agent's worktree goes and which branch it uses (#2226). All optional. */
+export interface DurableWorktreeOptions {
+  /** Folder under `.clubhouse/agents/`; defaults to the agent name. Validated as an agent folder name. */
+  folderName?: string;
+  /** Branch to check out in the worktree; defaults to `<folder>/standby`. Validated as a branch name. */
+  branchName?: string;
+  /** Ref the new branch starts from; defaults to HEAD. Validated as a branch name or commit id. */
+  branchFrom?: string;
+}
+
+/** Everything the asynchronous create API takes (#2226). */
+export interface StartDurableCreationParams extends DurableWorktreeOptions {
+  name: string;
+  color: string;
+  model?: string;
+  useWorktree?: boolean;
+  orchestrator?: OrchestratorId;
+  freeAgentMode?: boolean;
+  mcpIds?: string[];
+  mcpConfigs?: Record<string, Record<string, string>>;
+  persona?: string;
+  /** Helpers (#2224): make the new agent a helper of this durable agent. */
+  parentAgentId?: string;
+  /** Helpers (#2224): the parent may dispose the new agent when its work is done. */
+  disposable?: boolean;
 }
 
 /** Maps an orchestrator ID to its wrapper subcommand */

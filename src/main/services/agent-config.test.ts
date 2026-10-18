@@ -106,8 +106,20 @@ import {
 const PROJECT_PATH = '/test/project';
 
 /** Route git calls (now always execFile with an argument list) through a handler that sees `git <args...>`. */
+const FAKE_SHA = 'a'.repeat(40);
+
 function mockGitCmd(impl: (cmd: string, cb: (...args: unknown[]) => void) => unknown): void {
   vi.mocked(execFile).mockImplementation(((_file: string, args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+    // Base commits resolve to a fixed SHA unless a test handles them (#2226).
+    if (args[0] === 'rev-parse' && args[1] === '--verify') {
+      let handled = false;
+      impl(['git', ...args].join(' '), (err: unknown, out: unknown, ...rest: unknown[]) => {
+        handled = true;
+        cb(err, err ? out : (out || `${FAKE_SHA}\n`), ...rest);
+      });
+      if (!handled) cb(null, `${FAKE_SHA}\n`, '');
+      return {} as any;
+    }
     impl(['git', ...args].join(' '), cb);
     return {} as any;
   }) as any);
@@ -594,7 +606,8 @@ describe('createDurable', () => {
     const expectedPath = path.join(PROJECT_PATH, '.clubhouse', 'agents', 'swift-otter_2');
     expect(config.worktreePath).toBe(expectedPath);
     expect(config.branch).toBe('swift-otter_2/standby');
-    expect(gitArgv()).toContainEqual(['branch', '--', 'swift-otter_2/standby']);
+    expect(gitArgv()).toContainEqual(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
+    expect(gitArgv()).toContainEqual(['branch', '--no-track', '--', 'swift-otter_2/standby', FAKE_SHA]);
     expect(gitArgv()).toContainEqual(['worktree', 'add', '--', expectedPath, 'swift-otter_2/standby']);
     for (const call of vi.mocked(execFile).mock.calls) expect(call[0]).toBe('git');
   });
@@ -703,8 +716,8 @@ describe('deleteDurable', () => {
     expect(result[0].id).toBe('durable_keep');
   });
 
-  it('calls git worktree remove + branch -D via async exec', async () => {
-    const agents = [{ id: 'durable_git', name: 'git', color: 'indigo', branch: 'git/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
+  it('calls git worktree remove + branch -d via async exec for a pre-#2226 <folder>/standby branch', async () => {
+    const agents = [{ id: 'durable_git', name: 'git', color: 'indigo', branch: 'git/standby', worktreePath: '/test/git', createdAt: '2024-01-01' }];
     vi.mocked(pathExists).mockImplementation(async (p: any) => {
       const s = String(p);
       if (s.endsWith('agents.json')) return true;
@@ -722,7 +735,68 @@ describe('deleteDurable', () => {
     await deleteDurable(PROJECT_PATH, 'durable_git');
     const calls = vi.mocked(execFile).mock.calls.map((c) => c[1].join(' '));
     expect(calls.some((c) => c.includes('worktree remove'))).toBe(true);
-    expect(calls.some((c) => c.includes('branch -D'))).toBe(true);
+    expect(calls.some((c) => c.includes('branch -d -- git/standby'))).toBe(true);
+  });
+
+  describe('branch ownership (#2226)', () => {
+    const OTHER_SHA = 'b'.repeat(40);
+    function setup(agent: Record<string, unknown>, impl?: (args: string[]) => { err?: Error; out?: string } | void) {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => String(p).endsWith('agents.json') || String(p).endsWith('.git'));
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify([agent]));
+      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+      vi.mocked(execFile).mockImplementation((_file: any, args: any, _opts: any, cb: any) => {
+        const r = impl?.(args) ?? {};
+        cb(r.err ?? null, r.out ?? (args[0] === 'rev-parse' ? `${FAKE_SHA}\n` : ''), '');
+        return {} as any;
+      });
+    }
+    const base = { id: 'durable_own', name: 'own', color: 'indigo', worktreePath: '/test/own', createdAt: '2024-01-01' };
+    const deletes = () => gitArgv().filter((a) => a[0] === 'update-ref' || (a[0] === 'branch' && (a[1] === '-D' || a[1] === '-d')));
+
+    it('deletes an owned branch with branch -D only while it still points at its start commit', async () => {
+      setup({ ...base, branch: 'helpers/own', branchOwned: true, branchStartSha: FAKE_SHA });
+      await deleteDurable(PROJECT_PATH, 'durable_own');
+      expect(gitArgv()).toContainEqual(['rev-parse', '--verify', '--quiet', 'refs/heads/helpers/own']);
+      expect(deletes()).toEqual([['branch', '-D', '--', 'helpers/own']]);
+    });
+
+    it('keeps an owned branch that moved since creation, and still deletes the agent', async () => {
+      setup({ ...base, branch: 'helpers/own', branchOwned: true, branchStartSha: FAKE_SHA },
+        (args) => (args[0] === 'rev-parse' ? { out: `${OTHER_SHA}\n` } : undefined));
+      await deleteDurable(PROJECT_PATH, 'durable_own');
+      expect(deletes()).toEqual([]);
+      expect(await listDurable(PROJECT_PATH)).toEqual([]);
+    });
+
+    it('keeps a branch when git refuses to delete it (checked out), and still deletes the agent', async () => {
+      setup({ ...base, branch: 'helpers/own', branchOwned: true, branchStartSha: FAKE_SHA },
+        (args) => (args[0] === 'branch' ? { err: new Error("error: cannot delete branch 'helpers/own' used by worktree") } : undefined));
+      await expect(deleteDurable(PROJECT_PATH, 'durable_own')).resolves.toBeUndefined();
+      expect(await listDurable(PROJECT_PATH)).toEqual([]);
+    });
+
+    it('does not trust a start commit that is not a full commit id', async () => {
+      setup({ ...base, branch: 'helpers/own', branchOwned: true, branchStartSha: 'HEAD' });
+      await deleteDurable(PROJECT_PATH, 'durable_own');
+      expect(deletes()).toEqual([]);
+    });
+
+    it('never deletes a branch Clubhouse did not create', async () => {
+      setup({ ...base, branch: 'user/feature', branchOwned: false });
+      await deleteDurable(PROJECT_PATH, 'durable_own');
+      expect(deletes()).toEqual([]);
+    });
+
+    it('treats a pre-#2226 record as owning only <folder>/standby, deleted with the safe -d', async () => {
+      setup({ ...base, branch: 'main' });
+      await deleteDurable(PROJECT_PATH, 'durable_own');
+      expect(deletes()).toEqual([]);
+      clearAgentConfigCache();
+      vi.mocked(execFile).mockClear();
+      setup({ ...base, branch: 'own/standby' });
+      await deleteDurable(PROJECT_PATH, 'durable_own');
+      expect(deletes()).toEqual([['branch', '-d', '--', 'own/standby']]);
+    });
   });
 
   it('continues if git commands fail', async () => {
