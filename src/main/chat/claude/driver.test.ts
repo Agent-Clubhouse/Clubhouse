@@ -169,7 +169,9 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
 
     await s.respondPermission(req.data.requestId, 'allow_always');
     expect((await drafts.waitFor('permission_resolved')).data).toEqual({ requestId: req.data.requestId, optionId: 'allow_always', decision: 'allow', by: 'user' });
-    const update = await drafts.waitFor('tool_call_update');
+    // Approved: it runs now (#2183 review), then completes.
+    expect((await drafts.waitFor('tool_call_update')).data).toEqual({ toolCallId: 'toolu_1', status: 'in_progress' });
+    const update = await drafts.waitFor('tool_call_update', (d) => d.data.status === 'completed');
     expect(update.data).toMatchObject({ toolCallId: 'toolu_1', status: 'completed', content: [{ type: 'terminal', command: 'ls', output: 'file.txt' }] });
     await drafts.waitFor('agent_message', (d) => d.data.text === `allowed:{"command":"ls"}:${JSON.stringify([{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'ls' }], behavior: 'allow', destination: 'localSettings' }])}`);
     await drafts.waitFor('turn_ended');
@@ -829,6 +831,23 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     await session.respondPermission('p1', 'deny', { message: 'no' });
     await drafts.waitFor('permission_resolved');
     expect(drafts.of('plan_document')).toHaveLength(1);
+  });
+
+  it('marks an approved tool call in progress, and leaves a denied one alone', async () => {
+    const { session, transport, drafts } = await scripted();
+    await session.send([{ type: 'text', text: 'run' }], 'prompt');
+    transport.emit({ kind: 'tool_call', toolCallId: 'toolu_ok', name: 'Bash', input: { command: 'ls' } });
+    transport.emit({ kind: 'permission_request', requestId: 'p1', toolName: 'Bash', toolCallId: 'toolu_ok', input: { command: 'ls' }, suggestions: [] });
+    await drafts.waitFor('permission_request');
+    await session.respondPermission('p1', 'allow');
+    transport.emit({ kind: 'tool_call', toolCallId: 'toolu_no', name: 'Bash', input: { command: 'rm -rf /' } });
+    transport.emit({ kind: 'permission_request', requestId: 'p2', toolName: 'Bash', toolCallId: 'toolu_no', input: { command: 'rm -rf /' }, suggestions: [] });
+    await drafts.waitFor('permission_request', (d) => d.data.requestId === 'p2');
+    await session.respondPermission('p2', 'deny', { message: 'no' });
+    const running = drafts.of('tool_call_update').filter((d) => d.data.status === 'in_progress').map((d) => d.data.toolCallId);
+    expect(running).toEqual(['toolu_ok']);
+    const types = drafts.types();
+    expect(types.indexOf('tool_call_update')).toBeGreaterThan(types.indexOf('permission_resolved'));
   });
 });
 

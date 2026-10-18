@@ -12,7 +12,13 @@ import type { ChatItem, ChatViewState, PendingPermission, PlanDocumentItem, Suba
 
 // ── Stream blocks ───────────────────────────────────────────────────────────
 
-export interface ItemBlock { type: 'item'; key: string; item: ChatItem }
+export interface ItemBlock {
+  type: 'item';
+  key: string;
+  item: ChatItem;
+  /** The hidden tool call a question row or plan card stands for, so its error still shows. */
+  tool?: ToolCallItem;
+}
 /** A run of consecutive read-only tool calls, shown as one "Explored" row. */
 export interface ExploreBlock { type: 'explore'; key: string; tools: ToolCallItem[] }
 /** A subagent with its own work folded underneath. */
@@ -63,9 +69,14 @@ export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagent
   for (const item of items) {
     if ((item.kind === 'question' || item.kind === 'plan_document') && item.toolCallId) shownElsewhere.add(item.toolCallId);
   }
+  // ...but its outcome (a denial message, an error) shows on the row that stands for it.
+  const standIns = new Map<string, ToolCallItem>();
 
   for (const item of items) {
-    if (item.kind === 'tool_call' && shownElsewhere.has(item.toolCallId)) continue;
+    if (item.kind === 'tool_call' && shownElsewhere.has(item.toolCallId)) {
+      standIns.set(item.toolCallId, item);
+      continue;
+    }
     const subId = 'subagentId' in item ? item.subagentId : undefined;
     if (nestSubagents && subId && childrenOf.has(subId)) {
       childrenOf.get(subId)!.push(item);
@@ -100,7 +111,8 @@ export function buildStreamBlocks(state: Pick<ChatViewState, 'items' | 'subagent
       continue;
     }
     flush();
-    blocks.push({ type: 'item', key: item.id, item });
+    const tool = (item.kind === 'question' || item.kind === 'plan_document') && item.toolCallId ? standIns.get(item.toolCallId) : undefined;
+    blocks.push(tool ? { type: 'item', key: item.id, item, tool } : { type: 'item', key: item.id, item });
   }
   flush();
   return blocks;
@@ -190,14 +202,17 @@ export function toolResultText(tool: ToolCallItem): string {
 
 /**
  * The tool's error for display, unless `shown` (what the card already shows)
- * contains it: drivers often send a failure's message as both (#2182).
+ * is that same message: drivers often send a failure's message as both the
+ * result and the error (#2182). Only the same text, whitespace aside, counts:
+ * a result that merely mentions the error's words doesn't hide it.
  */
 export function toolErrorText(tool: ToolCallItem, shown = ''): string | undefined {
   if (!tool.error) return undefined;
   const error = stripToolUseError(tool.error);
   const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
-  if (!squash(error)) return undefined;
-  return squash(shown).includes(squash(error)) ? undefined : error;
+  const message = squash(error);
+  if (!message) return undefined;
+  return squash(stripToolUseError(shown)) === message ? undefined : error;
 }
 
 export function diffContent(tool: ToolCallItem): Array<Extract<ToolCallContent, { type: 'diff' }>> {
@@ -382,6 +397,35 @@ export function diffsForRequest(items: ChatItem[], req: PendingPermission): Arra
   return [];
 }
 
+/** A command from a tool input: a string, or an argv array (Codex). */
+function inputCommand(input: unknown): string | undefined {
+  if (typeof input !== 'object' || input === null) return undefined;
+  const cmd = (input as { command?: unknown }).command;
+  if (typeof cmd === 'string' && cmd.trim()) return cmd;
+  if (Array.isArray(cmd) && cmd.length > 0 && cmd.every((c) => typeof c === 'string')) return cmd.join(' ');
+  return undefined;
+}
+
+/**
+ * The command a permission request would run, so the card never asks to
+ * approve one blind: from the request's input (Claude's Bash), else from its
+ * execute tool call (Codex, ACP). Undefined when the request's own content
+ * already shows it, or when it isn't a command.
+ */
+export function commandForRequest(items: ChatItem[], req: PendingPermission): string | undefined {
+  if (req.content?.some((c) => c.type === 'text' || c.type === 'terminal')) return undefined;
+  const fromInput = inputCommand(req.rawInput);
+  if (fromInput) return fromInput;
+  if (!req.toolCallId) return undefined;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind !== 'tool_call' || it.toolCallId !== req.toolCallId) continue;
+    if (it.toolKind !== 'execute' && !it.content.some((c) => c.type === 'terminal')) return undefined;
+    return terminalContent(it)?.command || inputCommand(it.rawInput);
+  }
+  return undefined;
+}
+
 /** The plan document a permission request approves, if it's a plan approval. */
 export function planForRequest(items: ChatItem[], req: PendingPermission): PlanDocumentItem | undefined {
   if (!req.toolCallId) return undefined;
@@ -431,14 +475,27 @@ export function looksPreformatted(text: string): boolean {
   return lines.some((l) => /\S {2,}\S/.test(l));
 }
 
-/** Ids of agent messages that are a slash command's own laid-out output. */
+/**
+ * Ids of agent messages that are a slash command's own laid-out output: only
+ * the first reply after the command, in the same turn and with no tool call
+ * in between. Anything later is the agent talking, which stays markdown.
+ */
 export function commandOutputIds(items: ChatItem[], commands: ReadonlyArray<{ name: string }>): Set<string> {
   const ids = new Set<string>();
   let afterCommand = false;
   for (const item of items) {
-    if (item.kind === 'user_message') afterCommand = slashCommandOf(item.text, commands) !== null;
-    else if (item.kind === 'session_divider') afterCommand = false;
-    else if (afterCommand && item.kind === 'agent_message' && !item.subagentId && looksPreformatted(item.text)) ids.add(item.id);
+    if (item.kind === 'user_message') {
+      afterCommand = slashCommandOf(item.text, commands) !== null;
+      continue;
+    }
+    if (!afterCommand || ('subagentId' in item && item.subagentId)) continue;
+    if (item.kind === 'agent_message') {
+      if (looksPreformatted(item.text)) ids.add(item.id);
+      afterCommand = false;
+    } else if (item.kind !== 'thought') {
+      // A tool call, turn end, divider, notice...: the command's reply is over.
+      afterCommand = false;
+    }
   }
   return ids;
 }

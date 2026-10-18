@@ -672,6 +672,8 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       type: 'permission_resolved',
       data: { requestId, optionId, decision: optionId === CLAUDE_OPTION_DENY ? 'deny' : 'allow', by: 'user' },
     }, true);
+    // An approved call runs now; Claude reports nothing more until its result.
+    if (optionId !== CLAUDE_OPTION_DENY && toolCallId) this.markRunning(toolCallId);
   }
 
   async answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void> {
@@ -1163,8 +1165,12 @@ export class ClaudeChatDriverSession implements ChatDriverSession {
       }, true);
       return;
     }
-    const id = ev.toolCallId;
-    if (!id || !this.tools.has(id) || this.runningTools.has(id) || this.finishedTools.has(id)) return;
+    if (ev.toolCallId) this.markRunning(ev.toolCallId);
+  }
+
+  /** Mark a known tool call in progress, once, unless it already finished. */
+  private markRunning(id: string): void {
+    if (!this.tools.has(id) || this.runningTools.has(id) || this.finishedTools.has(id)) return;
     this.runningTools.add(id);
     this.push({ type: 'tool_call_update', data: { toolCallId: id, status: 'in_progress' } }, true);
   }

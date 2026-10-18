@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ChatCapabilities, ChatMcpServer } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
-import { buildStreamBlocks, commandOutputIds, type StreamBlock } from './view-model';
+import { buildStreamBlocks, commandOutputIds, toolErrorText, type StreamBlock } from './view-model';
 import { scrollWithin } from './scroll';
 import {
   AgentMessage,
@@ -18,6 +18,7 @@ import {
   AwaitingApprovalContext,
   createTranscriptExpansionStore,
   ExploreGroup,
+  LiveTurnContext,
   SubagentCard,
   ToolCallView,
   TranscriptExpansionProvider,
@@ -80,7 +81,7 @@ function sameBlock(prev: BlockProps, next: BlockProps): boolean {
   if (prev.inlineSubagentId !== next.inlineSubagentId || prev.onOpenSubagent !== next.onOpenSubagent || prev.preformatted !== next.preformatted) return false;
   const a = prev.block;
   const b = next.block;
-  if (a.type === 'item' && b.type === 'item') return a.item === b.item;
+  if (a.type === 'item' && b.type === 'item') return a.item === b.item && a.tool === b.tool;
   if (a.type === 'explore' && b.type === 'explore') return sameItems(a.tools, b.tools);
   if (a.type === 'subagent' && b.type === 'subagent') return a.info === b.info && a.tool === b.tool && sameItems(a.children, b.children);
   return false;
@@ -111,8 +112,8 @@ function BlockBody({ block, turnNumber, capabilities, mcpServers, preformatted }
     case 'agent_message': return <AgentMessage item={item} preformatted={preformatted} />;
     case 'thought': return <ThoughtRow item={item} />;
     case 'tool_call': return <ToolCallView tool={item} mcpServers={mcpServers} expansionKey={`${block.key}:tool`} />;
-    case 'plan_document': return <PlanDocumentCard item={item} />;
-    case 'question': return <QuestionRow item={item} />;
+    case 'plan_document': return <PlanDocumentCard item={item} error={block.tool && toolErrorText(block.tool)} />;
+    case 'question': return <QuestionRow item={item} error={block.tool && toolErrorText(block.tool)} />;
     case 'notice': return <NoticeRow item={item} />;
     case 'error': return <ErrorRow item={item} />;
     case 'turn_end': return <TurnFooter item={item} turnNumber={turnNumber} capabilities={capabilities} />;
@@ -333,6 +334,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
   const awaiting = useMemo(() => new Set(awaitingKey.split('\n').filter(Boolean)), [awaitingKey]);
 
   return (
+    <LiveTurnContext.Provider value={state.turnId}>
     <AwaitingApprovalContext.Provider value={awaiting}>
     <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-7 pt-5 pb-2.5" data-testid="chat-stream">
       <div className="mx-auto w-full max-w-[740px] flex flex-col gap-2.5 min-h-full justify-end">
@@ -398,5 +400,6 @@ const ChatStreamInner = memo(function ChatStreamInner({
       </div>
     </div>
     </AwaitingApprovalContext.Provider>
+    </LiveTurnContext.Provider>
   );
 });

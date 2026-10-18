@@ -256,12 +256,14 @@ export function effortWord(effort: string): string {
 }
 
 /** Reasoning effort for the current model (#2091); absent when the model has none. */
-function EffortPill({ efforts, model, effort, effortIsDefault, capabilities, onChange }: {
+function EffortPill({ efforts, model, effort, effortIsDefault, effortReported = true, capabilities, onChange }: {
   efforts: string[];
   model: string | null;
   effort: string | null;
   /** `effort` is the provider's default level, not one chosen in the session. */
   effortIsDefault?: boolean;
+  /** False while the session hasn't reported its effort yet. */
+  effortReported?: boolean;
   capabilities: ChatCapabilities | null;
   /** null returns the effort to the provider's default. */
   onChange: (modelId: string, effort: string | null) => void;
@@ -271,6 +273,8 @@ function EffortPill({ efforts, model, effort, effortIsDefault, capabilities, onC
   useCloseOnMouseDown(open, close);
   const effortSwitch = capabilities?.effortSwitch ?? 'none';
   if (!efforts.length && !effort) return null;
+  // Not reported yet: "Default effort" now would flash before the real level.
+  if (!effortReported && effort === null) return null;
   const canChange = !!model && efforts.length > 0 && effortSwitch !== 'none';
   const note = switchNote('none', effortSwitch);
   // On the default the level still shows, since that's what applies.
@@ -368,6 +372,11 @@ export interface ComposerProps {
   effort: string | null;
   /** `effort` is the provider's default level rather than one chosen in the session. */
   effortIsDefault?: boolean;
+  /**
+   * False until the session reports its effort (model_changed): the effort
+   * chip waits rather than showing "Default effort" first. Omitted: known.
+   */
+  effortReported?: boolean;
   /** Model choices from the driver; empty means the menu isn't offered. */
   models?: ChatModelOption[];
   /** Effort choices for the current model. */
@@ -652,6 +661,7 @@ export function Composer(props: ComposerProps) {
         model={props.model}
         effort={props.effort}
         effortIsDefault={props.effortIsDefault}
+        effortReported={props.effortReported}
         capabilities={capabilities}
         onChange={(m, e) => props.onModelChange?.(m, e)}
       />

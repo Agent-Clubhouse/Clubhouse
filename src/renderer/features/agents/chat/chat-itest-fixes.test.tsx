@@ -208,7 +208,9 @@ describe('"waiting for approval" needs an open request (#2171)', () => {
     expect(within(stream).getByTestId('chat-diff-card')).toHaveTextContent('waiting for approval');
     const cmd = within(stream).getByTestId('chat-command-card');
     expect(cmd).not.toHaveTextContent('waiting for approval');
-    expect(cmd).toHaveTextContent('starting');
+    // Claude reports nothing between the call and its result: it's running (#2183 review).
+    expect(cmd).toHaveTextContent('running');
+    expect(cmd).not.toHaveTextContent('starting');
   });
 
   it('drops the label once the request is answered', () => {
@@ -216,5 +218,73 @@ describe('"waiting for approval" needs an open request (#2171)', () => {
     f.emit('permission_resolved', { requestId: 'p2', optionId: 'allow', decision: 'allow', by: 'user' });
     renderState(fold(f.events));
     expect(within(screen.getByTestId('chat-stream')).getByTestId('chat-diff-card')).not.toHaveTextContent('waiting for approval');
+  });
+});
+
+describe('restart and failure states (#2183 review)', () => {
+  it('a call left unfinished when its turn ended says stopped, not running', () => {
+    const f = claude();
+    f.emit('tool_call', { toolCallId: 'toolu_bash', kind: 'execute', title: 'sleep 99', status: 'in_progress', toolName: 'Bash', rawInput: { command: 'sleep 99' } }, { turnId: 't1' });
+    f.end('t1', { stopReason: 'cancelled' });
+    renderState(fold(f.events));
+    const cmd = screen.getByTestId('chat-command-card');
+    expect(cmd).toHaveTextContent('stopped');
+    expect(cmd).not.toHaveTextContent('running');
+  });
+
+  it('a question whose turn ended unanswered says Not answered, not waiting', () => {
+    const f = askUserQuestion(claude());
+    f.end('t1', { stopReason: 'cancelled' });
+    renderState(fold(f.events));
+    const row = screen.getByTestId('chat-question-row');
+    expect(row).toHaveAttribute('data-state', 'expired');
+    expect(row).toHaveTextContent('Not answered');
+    expect(row).not.toHaveTextContent('waiting');
+    expect(screen.queryByTestId('chat-question')).not.toBeInTheDocument();
+  });
+
+  it('a restored question from a run that died with the app expires when the agent starts again', () => {
+    const f = askUserQuestion(claude());
+    // No turn_ended or session_ended: the app quit. The next run is a new session.
+    f.sessionId = 'chat-session-2';
+    f.start(PROFILES.claude.driver, PROFILES.claude.provider, PROFILES.claude.capabilities);
+    renderState(fold(f.events));
+    expect(screen.getByTestId('chat-question-row')).toHaveAttribute('data-state', 'expired');
+    expect(screen.queryByTestId('chat-question')).not.toBeInTheDocument();
+  });
+
+  it('keeps the feedback sent with a denied plan visible on the plan card', () => {
+    const f = exitPlanMode(claude());
+    f.emit('permission_resolved', { requestId: 'p1', optionId: 'deny', decision: 'deny', by: 'user' });
+    f.emit('tool_call_update', { toolCallId: 'toolu_plan', status: 'failed', error: 'Do it on Monday instead' }, { turnId: 't1' });
+    renderState(fold(f.events));
+    const card = screen.getByTestId('chat-plan-document');
+    expect(within(card).getByTestId('chat-tool-error')).toHaveTextContent('Do it on Monday instead');
+    expect(screen.queryByTestId('chat-tool-card')).not.toBeInTheDocument();
+  });
+
+  it('keeps a hidden question call\'s error visible on the question row', () => {
+    const f = askUserQuestion(claude());
+    f.emit('question_resolved', { requestId: 'q1', answers: {}, cancelled: true }, { turnId: 't1' });
+    f.emit('tool_call_update', { toolCallId: 'toolu_ask', status: 'failed', error: '<tool_use_error>The user dismissed the question</tool_use_error>' }, { turnId: 't1' });
+    renderState(fold(f.events));
+    const row = screen.getByTestId('chat-question-row');
+    expect(within(row).getByTestId('chat-tool-error').textContent).toBe('The user dismissed the question');
+  });
+});
+
+describe('command approvals show the command (#2183 review)', () => {
+  it('shows a Bash request\'s command once, with its repeated title said once', () => {
+    const said = 'Show worktree status and how far main moved';
+    const f = claude();
+    f.emit('tool_call', { toolCallId: 'toolu_sh', kind: 'execute', title: said, status: 'pending', toolName: 'Bash', rawInput: { command: 'git status --short' } }, { turnId: 't1' });
+    f.emit('permission_request', {
+      requestId: 'p3', title: said, description: said, toolCallId: 'toolu_sh', toolName: 'Bash', rawInput: { command: 'git status --short' },
+      options: [{ optionId: 'allow', kind: 'allow_once', label: 'Allow' }, { optionId: 'deny', kind: 'reject_once', label: 'Deny' }],
+    }, { turnId: 't1' });
+    renderState(fold(f.events));
+    const card = screen.getByTestId('chat-permission');
+    expect(within(card).getAllByText(said)).toHaveLength(1);
+    expect(within(card).getByTestId('chat-permission-text')).toHaveTextContent('git status --short');
   });
 });

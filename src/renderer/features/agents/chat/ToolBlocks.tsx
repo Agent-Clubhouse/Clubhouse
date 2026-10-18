@@ -117,10 +117,30 @@ function useAwaitingApproval(tool: ToolCallItem): boolean {
   return tool.status === 'pending' && awaiting.has(tool.toolCallId);
 }
 
+/**
+ * The running turn's id (null when idle). ChatStream provides it; elsewhere
+ * (agent map, tests) it's unknown, and unfinished calls count as running.
+ */
+export const LiveTurnContext = createContext<string | null | undefined>(undefined);
+
+/**
+ * A call that hasn't finished and isn't waiting for approval is running:
+ * Claude reports nothing between the call and its result, so `pending` alone
+ * means it's under way. Once its turn is over it isn't, and says so.
+ */
+function useUnfinished(tool: ToolCallItem): 'running' | 'stopped' | null {
+  const liveTurn = useContext(LiveTurnContext);
+  if (tool.status !== 'pending' && tool.status !== 'in_progress') return null;
+  if (liveTurn === undefined) return 'running';
+  return liveTurn !== null && (tool.turnId === undefined || tool.turnId === liveTurn) ? 'running' : 'stopped';
+}
+
 function StatusMeta({ tool }: { tool: ToolCallItem }) {
   const awaiting = useAwaitingApproval(tool);
-  if (tool.status === 'pending') return awaiting ? <span className="text-ctp-warning">waiting for approval</span> : <span>starting</span>;
-  if (tool.status === 'in_progress') return <><Spin /> running</>;
+  const unfinished = useUnfinished(tool);
+  if (awaiting) return <span className="text-ctp-warning">waiting for approval</span>;
+  if (unfinished === 'running') return <><Spin /> running</>;
+  if (unfinished === 'stopped') return <span>stopped</span>;
   if (tool.status === 'failed') return <span className="text-ctp-error">failed</span>;
   if (tool.status === 'cancelled') return <span>cancelled</span>;
   return tool.durationMs !== undefined ? <span>{formatDuration(tool.durationMs)}</span> : null;
@@ -290,7 +310,7 @@ export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expans
   const command = useMemo(() => commandOf(tool), [tool]);
   const [open, toggle] = useToolOpen(tool.status, expansionKey);
   const awaiting = useAwaitingApproval(tool);
-  const running = tool.status === 'in_progress';
+  const running = useUnfinished(tool) === 'running' && !awaiting;
   const exit = term?.exitCode;
   const error = toolErrorText(tool, term?.output);
   return (
@@ -310,7 +330,8 @@ export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expans
           {term.output.replace(/\n$/, '')}
         </pre>
       )}
-      {open && error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0" data-testid="chat-tool-error">{error}</div>}
+      {/* The error stays visible on a collapsed card: it's the outcome, not detail. */}
+      {error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0 break-words" data-testid="chat-tool-error">{error}</div>}
     </div>
   );
 }
@@ -330,7 +351,7 @@ export function ToolCard({ tool, mcpServers, expansionKey }: { tool: ToolCallIte
   const summary = mcp ? argSummary(tool) : toolTarget(tool);
   // Built-in tools show their input only when it isn't already the summary (e.g. a path).
   const showArgs = args !== null && (mcp !== null || tool.toolKind === 'other');
-  const expandable = showArgs || result !== '' || !!error;
+  const expandable = showArgs || result !== '';
   return (
     <div className="border border-surface-0 rounded-lg overflow-hidden bg-ctp-mantle" data-testid="chat-tool-card" data-status={tool.status} data-open={expandable && open} data-mcp={mcp ? 'true' : undefined}>
       <CardHeader open={expandable && open} onToggle={expandable ? toggle : undefined} indent label={`${open ? 'Collapse' : 'Expand'} ${label}`}>
@@ -351,9 +372,10 @@ export function ToolCard({ tool, mcpServers, expansionKey }: { tool: ToolCallIte
               {result.replace(/\n$/, '')}
             </pre>
           )}
-          {error && <div className={`px-3 py-1.5 text-[12px] text-ctp-error ${showArgs || result ? 'border-t border-surface-0' : ''}`} data-testid="chat-tool-error">{error}</div>}
         </div>
       )}
+      {/* The error stays visible on a collapsed card: it's the outcome, not detail. */}
+      {error && <div className="px-3 py-1.5 text-[12px] text-ctp-error border-t border-surface-0 break-words" data-testid="chat-tool-error">{error}</div>}
     </div>
   );
 }
@@ -369,7 +391,7 @@ export function ToolCallView({ tool, mcpServers, expansionKey }: { tool: ToolCal
     return (
       <>
         {diffs.map((d, i) => <TranscriptDiffCard key={`${d.path}:${i}`} diff={d} line={tool.locations?.[0]?.line} tool={tool} expansionKey={expansionKey && `${expansionKey}:diff:${i}`} />)}
-        {error && <div className="text-[12px] text-ctp-error">{error}</div>}
+        {error && <div className="text-[12px] text-ctp-error break-words" data-testid="chat-tool-error">{error}</div>}
       </>
     );
   }

@@ -135,7 +135,7 @@ function planState(item: PlanDocumentItem): { label: string; tone: string } {
   return { label: item.status === 'ready' ? 'Ready for review' : 'Writing…', tone: 'text-ctp-subtext0' };
 }
 
-export function PlanDocumentCard({ item }: { item: PlanDocumentItem }) {
+export function PlanDocumentCard({ item, error }: { item: PlanDocumentItem; error?: string }) {
   const state = planState(item);
   return (
     <div className="border border-surface-1 rounded-lg bg-ctp-mantle" data-testid="chat-plan-document" data-decision={item.decision ?? 'pending'}>
@@ -147,6 +147,8 @@ export function PlanDocumentCard({ item }: { item: PlanDocumentItem }) {
       <div className="px-4 py-3 text-[13px]">
         <Markdown text={item.markdown} streaming={item.status === 'streaming'} />
       </div>
+      {/* e.g. the feedback sent with "Not approved": the ExitPlanMode call it rode on is hidden. */}
+      {error && <div className="px-4 py-2 border-t border-surface-0 text-[12px] text-ctp-error break-words" data-testid="chat-tool-error">{error}</div>}
     </div>
   );
 }
@@ -245,9 +247,12 @@ function answerText(item: QuestionItem, questionId: string): string | null {
  * A question the agent asked, as one line per question: "Asked" while it
  * waits (the card in the composer dock takes the answer), then "Answered".
  */
-export function QuestionRow({ item }: { item: QuestionItem }) {
+export function QuestionRow({ item, error }: { item: QuestionItem; error?: string }) {
+  // Cancelled, or expired with its turn: either way nobody answered it.
+  const unanswered = !!item.cancelled || (!item.answers && !!item.expired);
+  const state = item.cancelled ? 'cancelled' : item.answers ? 'answered' : item.expired ? 'expired' : 'asked';
   return (
-    <div className="flex flex-col gap-0.5" data-testid="chat-question-row" data-state={item.cancelled ? 'cancelled' : item.answers ? 'answered' : 'asked'}>
+    <div className="flex flex-col gap-0.5" data-testid="chat-question-row" data-state={state}>
       {item.questions.map((q) => {
         const answer = answerText(item, q.id);
         return (
@@ -256,9 +261,9 @@ export function QuestionRow({ item }: { item: QuestionItem }) {
               <QuestionIcon size={13} className="text-ctp-overlay1 self-center" />
               <span className="font-medium text-ctp-subtext1 flex-shrink-0">Asked</span>
               <span className="text-ctp-subtext0 min-w-0 break-words">{q.prompt}</span>
-              {!item.answers && !item.cancelled && <span className="ml-auto text-[11.5px] text-ctp-warning whitespace-nowrap">waiting for your answer</span>}
+              {state === 'asked' && <span className="ml-auto text-[11.5px] text-ctp-warning whitespace-nowrap">waiting for your answer</span>}
             </div>
-            {item.cancelled ? (
+            {unanswered ? (
               <div className="pl-[21px] text-[12px] text-ctp-overlay0">Not answered</div>
             ) : answer !== null && (
               <div className="pl-[21px] flex items-baseline gap-2 min-w-0">
@@ -269,6 +274,7 @@ export function QuestionRow({ item }: { item: QuestionItem }) {
           </div>
         );
       })}
+      {error && <div className="pl-[21px] text-[12px] text-ctp-error break-words" data-testid="chat-tool-error">{error}</div>}
     </div>
   );
 }

@@ -62,11 +62,13 @@ interface PermissionCardProps {
   busy?: boolean;
   /** File changes the request's tool call would make; shown only when the request carries no content of its own. */
   diffs?: DiffContent[];
+  /** The command the request would run (commandForRequest), shown when the request carries no content of its own. */
+  command?: string;
 }
 
 type DiffContent = Extract<ToolCallContent, { type: 'diff' }>;
 
-export function PermissionCard({ request, plan, queueSize, agentName, extras, onRespond, busy, diffs }: PermissionCardProps) {
+export function PermissionCard({ request, plan, queueSize, agentName, extras, onRespond, busy, diffs, command }: PermissionCardProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [answeredHere, setAnswered] = useState(false);
   const answered = answeredHere || !!busy;
@@ -88,10 +90,12 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
     () => (hasContent ? request.content!.filter((c): c is DiffContent => c.type === 'diff') : plan ? [] : diffs ?? []),
     [hasContent, request.content, plan, diffs],
   );
-  const previewTexts = useMemo(
-    () => (hasContent ? request.content!.flatMap((c) => (c.type === 'text' ? [c.text] : [])) : []),
-    [hasContent, request.content],
-  );
+  const previewTexts = useMemo(() => {
+    if (!hasContent) return command ? [command] : [];
+    return request.content!.flatMap((c) => (c.type === 'text' ? [c.text] : c.type === 'terminal' && c.command ? [c.command] : []));
+  }, [hasContent, request.content, command]);
+  // Claude often sends the same sentence as title and description: say it once.
+  const description = request.description && request.description.trim() !== request.title.trim() ? request.description : undefined;
 
   useEffect(() => {
     if (editing) editor.current?.focus();
@@ -151,12 +155,12 @@ export function PermissionCard({ request, plan, queueSize, agentName, extras, on
         {queueSize > 1 && <span className="ml-auto text-[11.5px] font-normal text-ctp-overlay1 whitespace-nowrap">1 of {queueSize}</span>}
       </div>
       {/* Paths read best in monospace; the prose reasons Claude and Codex send don't. A request with a preview lists paths. */}
-      {request.description && <div className={`text-[12.5px] text-ctp-subtext0 pl-6 break-words ${hasContent ? 'font-mono' : ''}`} data-testid="chat-permission-description">{request.description}</div>}
+      {description && <div className={`text-[12.5px] text-ctp-subtext0 pl-6 break-words ${hasContent ? 'font-mono' : ''}`} data-testid="chat-permission-description">{description}</div>}
       {(previewDiffs.length > 0 || previewTexts.length > 0) && (
         <div className="pl-6 flex flex-col gap-1.5" data-testid="chat-permission-preview">
           <ApprovalDiffPreview diffs={previewDiffs} />
           {previewTexts.map((text, i) => (
-            <pre key={i} className="max-h-40 overflow-auto rounded-md bg-ctp-crust px-2.5 py-2 font-mono text-[11.5px] text-ctp-subtext1 whitespace-pre-wrap break-words">{text}</pre>
+            <pre key={i} className="max-h-40 overflow-auto rounded-md bg-ctp-crust px-2.5 py-2 font-mono text-[11.5px] text-ctp-subtext1 whitespace-pre-wrap break-words" data-testid="chat-permission-text">{text}</pre>
           ))}
         </div>
       )}

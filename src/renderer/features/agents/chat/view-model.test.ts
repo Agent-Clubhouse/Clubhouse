@@ -6,6 +6,7 @@ import type { ToolCallItem } from '../../../stores/chatStore';
 import {
   argSummary,
   buildStreamBlocks,
+  commandForRequest,
   commandOutputIds,
   composerModes,
   diffStats,
@@ -21,6 +22,7 @@ import {
   parseUnifiedDiff,
   slashCommandOf,
   toolArgs,
+  toolErrorText,
   toolOpenByDefault,
   toolResultText,
 } from './view-model';
@@ -252,5 +254,53 @@ describe('slash command output (#2179)', () => {
       user('u3', '/mission tidy up'), reply('a3', 'Plan:\n\n- one\n- two'),
     ];
     expect([...commandOutputIds(items, COMMANDS)]).toEqual(['a1']);
+  });
+
+  it('marks only the first reply after a command: not one after a tool call or a later reply (#2188 review)', () => {
+    const toolCall = { ...base, id: 't1', kind: 'tool_call' as const, toolCallId: 't1', toolKind: 'read' as const, title: 'Read', status: 'completed' as const, content: [] };
+    const turnEnd = { ...base, id: 'e1', kind: 'turn_end' as const, stopReason: 'end_turn' as const };
+    expect([...commandOutputIds([user('u1', '/context'), reply('a1', CONTEXT), reply('a2', CONTEXT)], COMMANDS)]).toEqual(['a1']);
+    expect([...commandOutputIds([user('u1', '/mission go'), toolCall, reply('a1', CONTEXT)], COMMANDS)]).toEqual([]);
+    expect([...commandOutputIds([user('u1', '/context'), turnEnd, reply('a1', CONTEXT)], COMMANDS)]).toEqual([]);
+  });
+});
+
+describe('toolErrorText (#2188 review)', () => {
+  const failed = (error: string) => ({ sessionId: 's', seq: 0, ts: 0, id: 't', kind: 'tool_call' as const, toolCallId: 't', toolKind: 'other' as const, title: 'T', status: 'failed' as const, content: [], error });
+
+  it('hides an error only when what is shown is the same message', () => {
+    expect(toolErrorText(failed('<tool_use_error>Timed out</tool_use_error>'), 'Timed  out\n')).toBeUndefined();
+    expect(toolErrorText(failed('Timed out'), '<tool_use_error>Timed out</tool_use_error>')).toBeUndefined();
+  });
+
+  it('keeps an error the shown text merely contains', () => {
+    expect(toolErrorText(failed('failed'), 'Step 3 failed, retrying\nok')).toBe('failed');
+    expect(toolErrorText(failed('Exit code 1'), 'Exit code 1\nnpm ERR! missing script')).toBe('Exit code 1');
+  });
+
+  it('ignores an empty error', () => {
+    expect(toolErrorText(failed('<tool_use_error> </tool_use_error>'))).toBeUndefined();
+  });
+});
+
+describe('commandForRequest (#2183 review)', () => {
+  const base = { sessionId: 's', seq: 0, ts: 0 };
+  const req = (over: Record<string, unknown> = {}) => ({ requestId: 'r', title: 'Run', options: [], ts: 0, ...over });
+  const execTool = (over: Record<string, unknown> = {}) => ({ ...base, id: 'tc', kind: 'tool_call' as const, toolCallId: 'tc', toolKind: 'execute' as const, title: 'Run', status: 'pending' as const, content: [], ...over });
+
+  it("reads Claude's Bash input, and an argv array", () => {
+    expect(commandForRequest([], req({ toolName: 'Bash', rawInput: { command: 'git status --short' } }))).toBe('git status --short');
+    expect(commandForRequest([], req({ rawInput: { command: ['npm', 'test'] } }))).toBe('npm test');
+  });
+
+  it('falls back to the execute tool call the request is for', () => {
+    expect(commandForRequest([execTool({ content: [{ type: 'terminal', terminalId: 't', command: 'make build', output: '' }] })], req({ toolCallId: 'tc' }))).toBe('make build');
+    expect(commandForRequest([execTool({ rawInput: { command: ['ls', '-la'] } })], req({ toolCallId: 'tc' }))).toBe('ls -la');
+    expect(commandForRequest([execTool({ toolKind: 'edit', rawInput: { command: 'x' } })], req({ toolCallId: 'tc' }))).toBeUndefined();
+  });
+
+  it("leaves it to the request's own content when that already shows it", () => {
+    expect(commandForRequest([], req({ rawInput: { command: 'rm -rf build' }, content: [{ type: 'text', text: 'rm -rf build' }] }))).toBeUndefined();
+    expect(commandForRequest([], req({ rawInput: { path: '/a' } }))).toBeUndefined();
   });
 });

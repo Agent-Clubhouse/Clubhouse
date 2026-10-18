@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ToolCallItem } from '../../../stores/chatStore';
-import { ApprovalDiffPreview, AwaitingApprovalContext, DiffCard, ToolCallView } from './ToolBlocks';
+import { ApprovalDiffPreview, AwaitingApprovalContext, DiffCard, LiveTurnContext, ToolCallView } from './ToolBlocks';
 
 function tool(over: Partial<ToolCallItem>): ToolCallItem {
   return {
@@ -165,6 +165,35 @@ describe('tool calls in the transcript (#2110)', () => {
       expect(screen.getByTestId('chat-command-card')).toHaveTextContent('waiting for approval');
     });
 
+    it('shows an unfinished call as running while its turn runs, and stopped after (#2183 review)', () => {
+      const pending = command({ status: 'pending', turnId: 'turn-1', durationMs: undefined, content: [{ type: 'terminal', terminalId: 'term-1', command: 'npm test', output: '' }] });
+      const { unmount } = render(<LiveTurnContext.Provider value="turn-1"><ToolCallView tool={pending} /></LiveTurnContext.Provider>);
+      expect(screen.getByTestId('chat-command-card')).toHaveTextContent('running');
+      expect(screen.getByLabelText('Running')).toBeInTheDocument();
+      unmount();
+      const r2 = render(<LiveTurnContext.Provider value={null}><ToolCallView tool={pending} /></LiveTurnContext.Provider>);
+      expect(screen.getByTestId('chat-command-card')).toHaveTextContent('stopped');
+      expect(screen.queryByLabelText('Running')).toBeNull();
+      r2.unmount();
+      render(<LiveTurnContext.Provider value="turn-2"><ToolCallView tool={tool({ status: 'in_progress', turnId: 'turn-1' })} /></LiveTurnContext.Provider>);
+      expect(screen.getByTestId('chat-tool-card')).toHaveTextContent('stopped');
+    });
+
+    it('keeps a failed call\'s error visible after the card is collapsed (#2183 review)', () => {
+      render(
+        <>
+          <ToolCallView tool={command({ status: 'failed', error: 'Permission denied: rm', content: [{ type: 'terminal', terminalId: 'term-1', command: 'rm x', output: 'partial' }] })} />
+          <ToolCallView tool={mcp({ id: 't-2', status: 'failed', rawInput: { q: 'x' }, error: 'User denied the call: not now' })} />
+        </>,
+      );
+      fireEvent.click(screen.getByRole('button', { name: /Collapse command/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Collapse / }));
+      expect(screen.getByTestId('chat-command-card')).toHaveAttribute('data-open', 'false');
+      expect(screen.getByTestId('chat-tool-card')).toHaveAttribute('data-open', 'false');
+      const errors = screen.getAllByTestId('chat-tool-error').map((e) => e.textContent);
+      expect(errors).toEqual(['Permission denied: rm', 'User denied the call: not now']);
+    });
+
     it('opens a running call when it fails', () => {
       const running = command({ status: 'in_progress', content: [{ type: 'terminal', terminalId: 'term-1', command: 'npm test', output: '' }] });
       const { rerender } = render(<ToolCallView tool={running} />);
@@ -202,7 +231,7 @@ describe('DiffCard outside the transcript', () => {
 
   it("shows a Codex-added one-line file as Created, +1 −0 (#2160)", () => {
     // What the Codex mapper now sends for an `add` change: the content as newText.
-    render(<DiffCard diff={{ type: 'diff', path: 'itest-codex.txt', newText: 'hello\n' }} status="pending" />);
+    render(<DiffCard diff={{ type: 'diff', path: 'itest-codex.txt', newText: 'hello\n' }} status="pending" awaitingApproval />);
     const card = screen.getByTestId('chat-diff-card');
     expect(card).toHaveTextContent('Created');
     expect(card).toHaveTextContent('+1');
