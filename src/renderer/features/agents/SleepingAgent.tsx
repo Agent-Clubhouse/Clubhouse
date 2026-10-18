@@ -84,9 +84,8 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   const last = useLastSession(agent, agentProject?.path, isDurable && !isRemote);
   const hasLastSession = !!last?.sessionId;
 
-  // One greeting per visit to this agent, picked once when the visit starts
-  const [greeting, setGreeting] = useState('');
-  useEffect(() => { setGreeting(pickGreeting(agent.name, new Date().getHours())); }, [agent.id, agent.name]);
+  // The agent's own greeting (#2102): the same line for this agent on every render.
+  const greeting = useMemo(() => pickGreeting(agent.id, agent.name, new Date().getHours()), [agent.id, agent.name]);
 
   // Wake resumes the last session when there is one (#2019), so it waits until
   // that's known rather than starting a fresh session by mistake.
