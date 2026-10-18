@@ -20,6 +20,7 @@ import { CanvasMinimap } from './CanvasMinimap';
 import { useWiring, type ZoneWireCallback } from './useWiring';
 import type { ZoneWireDefinition } from './zone-wire-store';
 import { expandZoneWires, diffZoneBindings, type ExpandedBinding } from './zone-wire-expansion';
+import { MCP_UNBIND_CANVAS_CLEANUP } from '../../../../shared/mcp-unbind';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import { useAnnexClientStore } from '../../../stores/annexClientStore';
@@ -294,7 +295,8 @@ export function CanvasWorkspace({
       });
     }
     for (const b of toRemove) {
-      void useMcpBindingStore.getState().unbind(b.agentId, b.targetId);
+      // A member leaving a zone is cleanup: main keeps helper wires (#2225).
+      void useMcpBindingStore.getState().unbind(b.agentId, b.targetId, MCP_UNBIND_CANVAS_CLEANUP);
     }
   }, [zoneWireDefinitions, views, mcpEnabled, mcpBind]);
 

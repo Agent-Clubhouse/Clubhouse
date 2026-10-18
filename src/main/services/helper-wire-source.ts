@@ -10,13 +10,14 @@
  * Each live parent/helper pair gets an agent-to-agent wire in both
  * directions, shaped like a bidirectional canvas wire, so a canvas showing the
  * same pair binds nothing twice. The source prunes: once a helper is disposed,
- * deleted or reparented, the wires it created go, unless a canvas still has
- * them or the user drew them.
+ * deleted or reparented, the wires it created go, unless a canvas or zone
+ * still has them or the user drew them. A project whose agents can't be read
+ * keeps its wires as they are for that run.
  */
 
 import * as projectStore from './project-store';
 import { listDurable, onAgentConfigChanged } from './agent-config';
-import type { PersistedBinding, PersistedBindingSource } from './persisted-bindings';
+import type { CollectedBindings, PersistedBinding, PersistedBindingSource } from './persisted-bindings';
 import { isDisposedAgent } from '../../shared/agent-helpers';
 import type { DurableAgentConfig } from '../../shared/types';
 import { appLog } from './log-service';
@@ -52,54 +53,81 @@ function wireSignature(agents: readonly DurableAgentConfig[]): string {
     .join(',');
 }
 
-/** projectPath → signature of the wires last collected or seen for it. */
-const signatures = new Map<string, string>();
+/**
+ * projectPath → signature of the wires the bindings are known to reflect,
+ * committed only after a rebuild in which every source collected.
+ */
+const committed = new Map<string, string>();
+/** Signatures read by the current rebuild's collect, committed by afterRebuild. */
+const collected = new Map<string, string>();
+/** projectPath → pairs from the last successful read, kept unverified when a read fails. */
+const lastPairs = new Map<string, Array<{ agentId: string; targetId: string }>>();
+/** Never equal to a real signature: forces the next change check to rebuild. */
+const STALE = '\u0000stale';
 
 export const helperWireBindingSource: PersistedBindingSource = {
   id: HELPER_WIRE_SOURCE_ID,
   prune: true,
-  async collect() {
+  async collect(): Promise<CollectedBindings> {
     const projects = await projectStore.list();
-    const out: PersistedBinding[] = [];
+    const bindings: PersistedBinding[] = [];
+    const unverified: Array<{ agentId: string; targetId: string }> = [];
     for (const project of projects) {
       let agents: DurableAgentConfig[];
       try {
         agents = await listDurable(project.path);
       } catch (err) {
-        // telemetry-exempt: logged; failing the collect keeps every helper wire until the next run
-        appLog('core:mcp', 'warn', 'Could not read agents for helper wires', {
+        // telemetry-exempt: logged; the project's wires are kept unverified until a read succeeds
+        appLog('core:mcp', 'warn', 'Could not read agents for helper wires; keeping that project\'s wires as they are', {
           meta: { projectPath: project.path, error: err instanceof Error ? err.message : String(err) },
         });
-        throw err;
+        unverified.push(...(lastPairs.get(project.path) ?? []));
+        continue;
       }
-      signatures.set(project.path, wireSignature(agents));
-      out.push(...bindingsFromHelperAgents(agents, project.displayName || project.name));
+      const projectBindings = bindingsFromHelperAgents(agents, project.displayName || project.name);
+      collected.set(project.path, wireSignature(agents));
+      lastPairs.set(project.path, projectBindings.map((b) => ({ agentId: b.agentId, targetId: b.targetId })));
+      bindings.push(...projectBindings);
     }
-    return out;
+    return { bindings, unverified };
+  },
+  afterRebuild(complete) {
+    // An incomplete run skipped pruning, so the bindings may still hold wires
+    // these signatures no longer list: mark them stale so the next check rebuilds.
+    for (const [projectPath, signature] of collected) committed.set(projectPath, complete ? signature : STALE);
+    collected.clear();
   },
 };
+
+/** Retry delays after a rebuild that did not bring a project's wires up to date. */
+const RETRY_DELAYS_MS = [1_000, 5_000, 15_000, 60_000];
 
 /**
  * Call `onWiresChanged` when a project's helper wires change (a helper is
  * created, disposed, deleted or reparented). Writes that leave the wires as
- * they were are ignored. Returns an unsubscribe function.
+ * they were are ignored. A change counts as handled only once a rebuild
+ * commits it; until then the check is retried a few times, and the next
+ * config write retries it again. Returns an unsubscribe function.
  */
-export function watchHelperWires(onWiresChanged: () => void): () => void {
-  let pending: ReturnType<typeof setTimeout> | null = null;
+export function watchHelperWires(onWiresChanged: () => unknown): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
+  let attempt = 0;
   const dirtyProjects = new Set<string>();
 
+  const schedule = (delayMs: number): void => {
+    if (stopped || timer) return;
+    timer = setTimeout(() => { timer = null; void check(); }, delayMs);
+  };
+
   const check = async (): Promise<void> => {
-    pending = null;
     const paths = [...dirtyProjects];
     dirtyProjects.clear();
-    let changed = false;
+    const wanted = new Map<string, string>();
     for (const projectPath of paths) {
       try {
         const signature = wireSignature(await listDurable(projectPath));
-        if (signature !== (signatures.get(projectPath) ?? '')) {
-          signatures.set(projectPath, signature);
-          changed = true;
-        }
+        if (signature !== (committed.get(projectPath) ?? '')) wanted.set(projectPath, signature);
       } catch (err) {
         // telemetry-exempt: logged; the next change or rebuild retries
         appLog('core:mcp', 'warn', 'Could not read agents after a config change', {
@@ -107,23 +135,54 @@ export function watchHelperWires(onWiresChanged: () => void): () => void {
         });
       }
     }
-    if (changed) onWiresChanged();
+    if (wanted.size === 0) {
+      attempt = 0;
+      return;
+    }
+    try {
+      await onWiresChanged();
+    } catch (err) {
+      // telemetry-exempt: logged; retried below
+      appLog('core:mcp', 'warn', 'Helper wire rebuild failed', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    const missed = [...wanted].filter(([projectPath, signature]) => committed.get(projectPath) !== signature);
+    if (missed.length === 0 || stopped) {
+      attempt = 0;
+      return;
+    }
+    if (attempt >= RETRY_DELAYS_MS.length) {
+      appLog('core:mcp', 'warn', 'Helper wires still out of date after retries; the next agent change retries', {
+        meta: { projects: missed.map(([projectPath]) => projectPath) },
+      });
+      attempt = 0;
+      return;
+    }
+    for (const [projectPath] of missed) dirtyProjects.add(projectPath);
+    schedule(RETRY_DELAYS_MS[attempt++]);
   };
 
   const unsubscribe = onAgentConfigChanged((projectPath) => {
     dirtyProjects.add(projectPath);
-    // Coalesce a burst of writes (and the watcher echo of our own flush), and
-    // stay out of the writer's call stack.
-    if (!pending) pending = setTimeout(() => { void check(); }, 50);
+    attempt = 0;
+    // A new write supersedes a pending retry. Coalesce a burst of writes (and
+    // the watcher echo of our own flush), and stay out of the writer's call stack.
+    if (timer) clearTimeout(timer);
+    timer = null;
+    schedule(50);
   });
   return () => {
+    stopped = true;
     unsubscribe();
-    if (pending) clearTimeout(pending);
-    pending = null;
+    if (timer) clearTimeout(timer);
+    timer = null;
   };
 }
 
 /** For testing: forget the signatures seen so far. */
 export function _resetHelperWireSourceForTesting(): void {
-  signatures.clear();
+  committed.clear();
+  collected.clear();
+  lastPairs.clear();
 }

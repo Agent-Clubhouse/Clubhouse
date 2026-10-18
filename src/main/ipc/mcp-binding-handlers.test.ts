@@ -56,6 +56,7 @@ vi.mock('../services/persisted-bindings', () => ({
   rebuildPersistedBindings: vi.fn(async () => ({ sources: [] })),
   markBindingRemovedByUser: vi.fn(),
   clearBindingRemovedByUser: vi.fn(),
+  keepHeldBinding: vi.fn(() => false),
 }));
 
 vi.mock('../services/canvas-wire-source', () => ({
@@ -79,6 +80,7 @@ import {
   rebuildPersistedBindings,
   markBindingRemovedByUser,
   clearBindingRemovedByUser,
+  keepHeldBinding,
 } from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
@@ -497,5 +499,27 @@ describe('user removals and later restores', () => {
     expect(markBindingRemovedByUser).toHaveBeenCalledWith('agent-1', 'agent-2');
     await handlers.get(IPC.MCP_BINDING.BIND)!(fakeEvent, 'agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'x' });
     expect(clearBindingRemovedByUser).toHaveBeenCalledWith('agent-1', 'agent-2');
+  });
+
+  it('UNBIND on canvas cleanup keeps a pair a persisted source holds (#2225)', async () => {
+    vi.mocked(keepHeldBinding).mockReturnValueOnce(true);
+    const result = await handlers.get(IPC.MCP_BINDING.UNBIND)!(fakeEvent, 'lead', 'helper', 'canvas-cleanup');
+    expect(result).toEqual({ kept: true });
+    expect(keepHeldBinding).toHaveBeenCalledWith('lead', 'helper');
+    expect(bindingManager.unbind).not.toHaveBeenCalled();
+    expect(markBindingRemovedByUser).not.toHaveBeenCalled();
+  });
+
+  it('UNBIND on canvas cleanup unbinds a pair no source holds', async () => {
+    const result = await handlers.get(IPC.MCP_BINDING.UNBIND)!(fakeEvent, 'a', 'b', 'canvas-cleanup');
+    expect(result).toEqual({ kept: false });
+    expect(bindingManager.unbind).toHaveBeenCalledWith('a', 'b');
+  });
+
+  it('UNBIND without a cause (the user deleted the wire) never asks to keep it', async () => {
+    await handlers.get(IPC.MCP_BINDING.UNBIND)!(fakeEvent, 'lead', 'helper');
+    expect(keepHeldBinding).not.toHaveBeenCalled();
+    expect(bindingManager.unbind).toHaveBeenCalledWith('lead', 'helper');
+    expect(markBindingRemovedByUser).toHaveBeenCalledWith('lead', 'helper');
   });
 });

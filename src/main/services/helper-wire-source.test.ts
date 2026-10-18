@@ -37,6 +37,7 @@ vi.mock('./group-project-bulletin', () => ({
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import {
   clearBindingRemovedByUser,
+  keepHeldBinding,
   rebuildPersistedBindings,
   registerPersistedBindingSource,
   _resetPersistedBindingSourcesForTesting,
@@ -259,11 +260,15 @@ describe('helper wire rebuild', () => {
 });
 
 describe('watchHelperWires', () => {
-  it('reports a change when a helper is created, disposed or reparented, and ignores other writes', async () => {
+  const rebuild = () => rebuildPersistedBindings();
+  const dispose = (p: string, id: string) =>
+    configs.get(p)!.map((a) => (a.id === id ? { ...a, disposedAt: '2026-10-18T03:00:00.000Z' } : a));
+
+  it('rebuilds when a helper is created, disposed or reparented, and ignores other writes', async () => {
     vi.useFakeTimers();
     registerPersistedBindingSource(helperWireBindingSource);
-    await rebuildPersistedBindings(); // records what is wired now
-    const onChange = vi.fn();
+    await rebuildPersistedBindings(); // commits what is wired now
+    const onChange = vi.fn(rebuild);
     const stop = watchHelperWires(onChange);
     const flush = () => vi.advanceTimersByTimeAsync(100);
 
@@ -272,22 +277,25 @@ describe('watchHelperWires', () => {
     await flush();
     expect(onChange).not.toHaveBeenCalled();
 
-    // A helper is created; a burst of writes reports once.
+    // A helper is created; a burst of writes rebuilds once.
     const created = [...configs.get(projectPath)!, agent('durable_h3', { parentAgentId: 'durable_lead' })];
     setAgents(projectPath, created);
     setAgents(projectPath, created);
     await flush();
     expect(onChange).toHaveBeenCalledTimes(1);
+    expect(boundPairs()).toContain('durable_lead->durable_h3');
 
     // Disposed.
-    setAgents(projectPath, created.map((a) => (a.id === 'durable_h3' ? { ...a, disposedAt: '2026-10-18T03:00:00.000Z' } : a)));
+    setAgents(projectPath, dispose(projectPath, 'durable_h3'));
     await flush();
     expect(onChange).toHaveBeenCalledTimes(2);
+    expect(boundPairs()).not.toContain('durable_lead->durable_h3');
 
-    // Reparented.
+    // Reparented away (o2 becomes a top-level agent).
     setAgents(otherProjectPath, [agent('durable_o1'), agent('durable_o2')]);
     await flush();
     expect(onChange).toHaveBeenCalledTimes(3);
+    expect(boundPairs()).not.toContain('durable_o1->durable_o2');
 
     stop();
     setAgents(otherProjectPath, [agent('durable_o1'), agent('durable_o2', { parentAgentId: 'durable_o1' })]);
@@ -295,18 +303,136 @@ describe('watchHelperWires', () => {
     expect(onChange).toHaveBeenCalledTimes(3);
   });
 
-  it('end to end: a disposed helper loses its wire after the config change', async () => {
+  it('keeps a change pending until a rebuild commits it, and retries', async () => {
+    vi.useFakeTimers();
+    let canvasFails = false;
+    registerPersistedBindingSource({ id: 'canvas-wires', collect: async () => { if (canvasFails) throw new Error('torn'); return []; } });
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings();
+    const onChange = vi.fn(rebuild);
+    watchHelperWires(onChange);
+
+    // The rebuild after the dispose fails elsewhere, so nothing is pruned yet.
+    canvasFails = true;
+    setAgents(projectPath, dispose(projectPath, 'durable_h1'));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(boundPairs()).toContain('durable_lead->durable_h1');
+
+    // The retry after the store recovers prunes it, with no further config write.
+    canvasFails = false;
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(boundPairs()).not.toContain('durable_lead->durable_h1');
+
+    // Committed: nothing more runs.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('rebuilds on the next write after a startup rebuild that was incomplete', async () => {
+    vi.useFakeTimers();
+    let canvasFails = true;
+    registerPersistedBindingSource({ id: 'canvas-wires', collect: async () => { if (canvasFails) throw new Error('torn'); return []; } });
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings(); // helper wires created, nothing committed
+    canvasFails = false;
+    const onChange = vi.fn(rebuild);
+    watchHelperWires(onChange);
+
+    // The disposal leaves the signature where an incomplete run can't vouch for it.
+    setAgents(projectPath, dispose(projectPath, 'durable_h1'));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(boundPairs()).not.toContain('durable_lead->durable_h1');
+  });
+
+  it('end to end: an agents.json change reaches the rebuild through onAgentConfigChanged', async () => {
     vi.useFakeTimers();
     registerPersistedBindingSource(helperWireBindingSource);
     await rebuildPersistedBindings();
-    watchHelperWires(() => { void rebuildPersistedBindings(); });
+    watchHelperWires(rebuild);
+    expect(configListeners.size).toBe(1);
 
-    setAgents(projectPath, configs.get(projectPath)!.map((a) =>
-      a.id === 'durable_h2' ? { ...a, disposedAt: '2026-10-18T02:00:00.000Z' } : a));
+    setAgents(projectPath, dispose(projectPath, 'durable_h2'));
     await vi.advanceTimersByTimeAsync(100);
     await vi.waitFor(() => expect(boundPairs()).not.toContain('durable_lead->durable_h2'));
     expect(boundPairs()).not.toContain('durable_h2->durable_lead');
     expect(boundPairs()).toContain('durable_lead->durable_h1');
+  });
+});
+
+describe('a project whose agents cannot be read', () => {
+  it('skips that project and keeps its wires, while other projects still update', async () => {
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings();
+
+    const { listDurable } = await import('./agent-config');
+    vi.mocked(listDurable).mockImplementation(async (p: string) => {
+      if (p === projectPath) throw new Error('EACCES');
+      return configs.get(p) ?? [];
+    });
+    configs.set(otherProjectPath, [agent('durable_o1'), agent('durable_o2')]);
+    try {
+      const result = await rebuildPersistedBindings();
+      expect(result.sources[0]).toMatchObject({ collected: 0, pruned: 2 });
+      expect(result.sources[0].error).toBeUndefined();
+      // Wardfall's wires stay; the other project's reparented helper loses its own.
+      expect(boundPairs()).toEqual([
+        'durable_h1->durable_lead',
+        'durable_h2->durable_lead',
+        'durable_lead->durable_h1',
+        'durable_lead->durable_h2',
+      ]);
+      // Still held while unverified: closing a card keeps them.
+      expect(keepHeldBinding('durable_lead', 'durable_h1')).toBe(true);
+    } finally {
+      vi.mocked(listDurable).mockImplementation(async (p: string) => configs.get(p) ?? []);
+    }
+  });
+});
+
+describe('canvas cleanup and zone wires', () => {
+  it('keeps a helper wire when its card or canvas tab is closed, and hands it to the helper source', async () => {
+    const canvasWires: PersistedBinding[] = [
+      { agentId: 'durable_lead', targetId: 'durable_h1', targetKind: 'agent', label: 'h1' },
+    ];
+    registerPersistedBindingSource({ id: 'canvas-wires', collect: async () => canvasWires });
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings(); // lead -> h1 came from the canvas: not the helper source's
+
+    // The card closes: canvas cleanup asks; main keeps it for the helper.
+    expect(keepHeldBinding('durable_lead', 'durable_h1')).toBe(true);
+    canvasWires.length = 0;
+    // A pair no helper lists is cleaned up as usual.
+    expect(keepHeldBinding('durable_lead', 'durable_solo')).toBe(false);
+
+    // Now the helper's, so disposing the helper removes it.
+    configs.set(projectPath, configs.get(projectPath)!.map((a) =>
+      a.id === 'durable_h1' ? { ...a, disposedAt: '2026-10-18T02:00:00.000Z' } : a));
+    await rebuildPersistedBindings();
+    expect(boundPairs()).not.toContain('durable_lead->durable_h1');
+    expect(keepHeldBinding('durable_lead', 'durable_h1')).toBe(false);
+  });
+
+  it('a zone that binds a helper pair keeps it after the helper is disposed', async () => {
+    registerPersistedBindingSource(helperWireBindingSource);
+    await rebuildPersistedBindings(); // the helper source created lead <-> h1
+
+    // A zone wire expands to lead -> h1 and h1 -> lead. The pairs are already
+    // bound, but the zone reconcile still sends BIND for every pair it newly
+    // wants (diffZoneBindings), and BIND releases the helper source's claim.
+    for (const [a, t] of [['durable_lead', 'durable_h1'], ['durable_h1', 'durable_lead']]) {
+      clearBindingRemovedByUser(a, t);
+      expect(bindingManager.bind(a, { targetId: t, targetKind: 'agent', label: t })).toBe(false);
+    }
+
+    configs.set(projectPath, configs.get(projectPath)!.map((a) =>
+      a.id === 'durable_h1' ? { ...a, disposedAt: '2026-10-18T02:00:00.000Z' } : a));
+    const result = await rebuildPersistedBindings();
+    expect(result.sources[0]).toMatchObject({ pruned: 0 });
+    expect(boundPairs()).toContain('durable_lead->durable_h1');
+    expect(boundPairs()).toContain('durable_h1->durable_lead');
   });
 });
 

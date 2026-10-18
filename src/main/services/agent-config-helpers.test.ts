@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
+import { watch } from 'fs';
 
 // In-memory filesystem plus a scriptable git, so the helper cascade (#2224)
 // can be exercised against dirty, unpushed, unmerged and broken worktrees.
@@ -359,6 +360,25 @@ describe('setParentAgent', () => {
     listener.mockClear();
     await setParentAgent(PROJECT_PATH, 'durable_2_b', null);
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('notifies listeners when the agents.json watcher sees an external edit (#2225)', async () => {
+    await listDurable(PROJECT_PATH); // loads the cache and starts the watcher
+    const call = vi.mocked(watch).mock.calls.filter((c) => c[0] === path.join(PROJECT_PATH, '.clubhouse')).at(-1);
+    expect(call).toBeDefined();
+    const watcherCallback = call![1] as unknown as (eventType: string, filename: string) => void;
+    const listener = vi.fn();
+    const stop = onAgentConfigChanged(listener);
+
+    // Another process makes durable_2_b a helper of durable_1_a.
+    seed([agent('durable_1_a'), agent('durable_2_b', { parentAgentId: 'durable_1_a' }), agent('durable_3_c'), agent('durable_4_d', { disposedAt: DISPOSED_AT })]);
+    watcherCallback('change', 'other-file.json');
+    expect(listener).not.toHaveBeenCalled();
+    watcherCallback('change', 'agents.json');
+    expect(listener).toHaveBeenCalledWith(PROJECT_PATH);
+    // The listener reads the edit, not the stale cache.
+    expect((await getParentAgent(PROJECT_PATH, 'durable_2_b'))?.id).toBe('durable_1_a');
+    stop();
   });
 
   it('rejects self-parenting', async () => {

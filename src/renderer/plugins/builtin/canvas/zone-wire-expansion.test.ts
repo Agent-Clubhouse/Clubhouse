@@ -205,11 +205,27 @@ describe('diffZoneBindings (containment auto-update)', () => {
     expect(toRemove).toEqual([{ agentId: 'durable_1', targetId: 'durable_t' }]);
   });
 
-  it('does not re-add a binding already present in current', () => {
-    const prev: ExpandedBinding[] = [];
+  it('does not re-add a binding the zone already wanted and that is still bound', () => {
+    const prev = [eb('durable_1', 'durable_t')];
     const next = [eb('durable_1', 'durable_t')];
     const current = new Set(['durable_1:durable_t']);
     const { toAdd } = diffZoneBindings(prev, next, current);
     expect(toAdd).toHaveLength(0);
+  });
+
+  it('binds a newly wanted pair even when it is already bound, so main knows the zone needs it (#2225)', () => {
+    // e.g. a helper wire between the two agents already exists; on hydrate prev is empty.
+    const prev: ExpandedBinding[] = [];
+    const next = [eb('durable_1', 'durable_t')];
+    const current = new Set(['durable_1:durable_t']);
+    const { toAdd } = diffZoneBindings(prev, next, current);
+    expect(toAdd.map((b) => `${b.agentId}:${b.targetId}`)).toEqual(['durable_1:durable_t']);
+  });
+
+  it('re-binds a pair the zone still wants if it went missing', () => {
+    const prev = [eb('durable_1', 'durable_t')];
+    const next = [eb('durable_1', 'durable_t')];
+    const { toAdd } = diffZoneBindings(prev, next, new Set());
+    expect(toAdd).toHaveLength(1);
   });
 });

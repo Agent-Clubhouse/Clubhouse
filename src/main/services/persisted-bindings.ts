@@ -29,8 +29,11 @@
  * A source that derives its wires from live state (helpers, #2225: the agent
  * config's `parentAgentId`) sets `prune`. A binding such a source created is
  * removed once the source stops listing it, unless another source still lists
- * it or the user drew it since. Bindings a pruning source found already there
- * are never its to remove.
+ * it or the user drew it since (a BIND, which zone wires send too). Bindings a
+ * pruning source found already there are never its to remove. While such a
+ * source lists a pair, canvas cleanup (closing a card or a canvas tab, a zone
+ * member leaving) does not unbind it: {@link keepHeldBinding} hands the pair to
+ * the source instead.
  */
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
@@ -62,13 +65,29 @@ export interface PersistedBindingSource {
    * The bindings to restore. Read-only: must not write the source's store.
    * Stale entries (endpoints that no longer exist) should already be dropped.
    */
-  collect(): Promise<PersistedBinding[]>;
+  collect(): Promise<PersistedBinding[] | CollectedBindings>;
   /**
    * Remove a binding this source created once it no longer lists it. Skipped
    * for a pair another source lists, for a pair the user drew or removed
-   * since, and for any run in which a source failed to collect.
+   * since, for a pair the source could not check this run, and for any run in
+   * which a source failed to collect.
    */
   prune?: boolean;
+  /**
+   * Called after each rebuild. `complete` is false when any source failed to
+   * collect, so the bindings may not match what this source listed.
+   */
+  afterRebuild?(complete: boolean): void;
+}
+
+/** A collect that could only check part of its store. */
+export interface CollectedBindings {
+  bindings: PersistedBinding[];
+  /**
+   * Pairs the source could not check this run (e.g. one project's config was
+   * unreadable). They are neither applied nor pruned, and still count as held.
+   */
+  unverified?: Array<{ agentId: string; targetId: string }>;
 }
 
 export type ApplyOutcome = 'created' | 'existing' | 'removed' | 'invalid';
@@ -103,6 +122,8 @@ const restoredPairs = new Set<string>();
 const removedByUser = new Set<string>();
 /** Pruning source id → the pairs it created and may remove again. */
 const ownedBySource = new Map<string, Map<string, { agentId: string; targetId: string }>>();
+/** Pruning source id → the pairs it listed (or could not check) on its last successful collect. */
+const heldBySource = new Map<string, Set<string>>();
 
 /** The user drew or removed this pair: no pruning source may remove it now. */
 function releaseOwnership(key: string): void {
@@ -129,6 +150,29 @@ export function markBindingRemovedByUser(agentId: string, targetId: string): voi
 export function clearBindingRemovedByUser(agentId: string, targetId: string): void {
   removedByUser.delete(pairKey(agentId, targetId));
   releaseOwnership(pairKey(agentId, targetId));
+}
+
+/**
+ * Canvas cleanup wants to unbind this pair (a card or canvas tab closed, a
+ * zone member left), not the user deleting the wire. When a pruning source
+ * still lists the pair, returns true and makes the binding that source's, so
+ * it stays while the source lists it and goes when it stops. Otherwise false:
+ * unbind as usual.
+ */
+export function keepHeldBinding(agentId: string, targetId: string): boolean {
+  const key = pairKey(agentId, targetId);
+  let held = false;
+  for (const [sourceId, pairs] of heldBySource) {
+    if (!pairs.has(key) || !sources.get(sourceId)?.prune) continue;
+    held = true;
+    let owned = ownedBySource.get(sourceId);
+    if (!owned) {
+      owned = new Map();
+      ownedBySource.set(sourceId, owned);
+    }
+    owned.set(key, { agentId, targetId });
+  }
+  return held;
 }
 
 /**
@@ -186,21 +230,30 @@ interface SourceRun {
   result: SourceRebuildResult;
   /** Pairs the source listed this run; null when its collect failed. */
   listed: Set<string> | null;
+  /** Pairs the source could not check this run. */
+  unverified: Set<string>;
 }
 
 async function rebuildSource(source: PersistedBindingSource): Promise<SourceRun> {
   const result: SourceRebuildResult = { id: source.id, collected: 0, created: 0, existing: 0, removed: 0, invalid: 0 };
   if (source.prune) result.pruned = 0;
   let bindings: PersistedBinding[];
+  const unverified = new Set<string>();
   try {
-    bindings = await source.collect();
+    const collected = await source.collect();
+    if (Array.isArray(collected)) {
+      bindings = collected;
+    } else {
+      bindings = collected.bindings;
+      for (const pair of collected.unverified ?? []) unverified.add(pairKey(pair.agentId, pair.targetId));
+    }
   } catch (err) {
     // telemetry-exempt: logged and returned in the rebuild result
     result.error = err instanceof Error ? err.message : String(err);
     appLog('core:mcp', 'warn', 'Persisted binding source failed; its bindings wait for the renderer', {
       meta: { source: source.id, error: result.error },
     });
-    return { source, result, listed: null };
+    return { source, result, listed: null, unverified };
   }
   result.collected = bindings.length;
   const listed = new Set<string>();
@@ -217,7 +270,8 @@ async function rebuildSource(source: PersistedBindingSource): Promise<SourceRun>
     listed.add(key);
     if (outcome === 'created' && owned) owned.set(key, { agentId: binding.agentId, targetId: binding.targetId });
   }
-  return { source, result, listed };
+  if (source.prune) heldBySource.set(source.id, new Set([...listed, ...unverified]));
+  return { source, result, listed, unverified };
 }
 
 /**
@@ -227,13 +281,13 @@ async function rebuildSource(source: PersistedBindingSource): Promise<SourceRun>
 function pruneRuns(runs: SourceRun[]): void {
   if (runs.some((run) => run.listed === null)) return;
   const listedAnywhere = new Set<string>();
-  for (const run of runs) for (const key of run.listed!) listedAnywhere.add(key);
+  for (const run of runs) for (const key of [...run.listed!, ...run.unverified]) listedAnywhere.add(key);
   for (const run of runs) {
     if (!run.source.prune) continue;
     const owned = ownedBySource.get(run.source.id);
     if (!owned) continue;
     for (const [key, pair] of owned) {
-      if (run.listed!.has(key)) continue;
+      if (run.listed!.has(key) || run.unverified.has(key)) continue;
       owned.delete(key);
       // Another source lists it: that wire keeps the binding.
       if (listedAnywhere.has(key)) continue;
@@ -252,6 +306,17 @@ async function runRebuild(): Promise<RebuildResult> {
     runs.push(await rebuildSource(source));
   }
   pruneRuns(runs);
+  const complete = runs.every((run) => run.listed !== null);
+  for (const run of runs) {
+    try {
+      run.source.afterRebuild?.(complete);
+    } catch (err) {
+      // telemetry-exempt: logged; one source's hook must not fail the rebuild
+      appLog('core:mcp', 'warn', 'Persisted binding source afterRebuild failed', {
+        meta: { source: run.source.id, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
   const results = runs.map((run) => run.result);
   appLog('core:mcp', 'info', 'Persisted bindings rebuilt', {
     meta: { sources: results },
@@ -287,5 +352,6 @@ export function _resetPersistedBindingSourcesForTesting(): void {
   queued = null;
   restoredPairs.clear();
   ownedBySource.clear();
+  heldBySource.clear();
   removedByUser.clear();
 }

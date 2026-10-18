@@ -14,6 +14,7 @@ import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remote
 import { useUIStore } from '../../../stores/uiStore';
 import { useChromeFlagStore } from '../../../chrome/chromeFlag';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
+import { MCP_UNBIND_CANVAS_CLEANUP } from '../../../../shared/mcp-unbind';
 import { usePluginStore } from '../../plugin-store';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
@@ -451,7 +452,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
           const key = `${b.agentId}:${b.targetId}`;
           if (!seen.has(key)) {
             seen.add(key);
-            unbind(b.agentId, b.targetId);
+            // Cleanup, not a wire deletion: main keeps helper wires (#2225).
+            unbind(b.agentId, b.targetId, MCP_UNBIND_CANVAS_CLEANUP);
             removeWireDefinition(b.agentId, b.targetId);
           }
         }
@@ -501,7 +503,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       const unbind = useMcpBindingStore.getState().unbind;
       const { removeWireDefinition } = store.getState();
       for (const b of stale) {
-        unbind(b.agentId, b.targetId);
+        // Cleanup, not a wire deletion: main keeps helper wires (#2225).
+        unbind(b.agentId, b.targetId, MCP_UNBIND_CANVAS_CLEANUP);
         removeWireDefinition(b.agentId, b.targetId);
       }
     }
@@ -636,7 +639,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
           if (view) {
             const stale = findBindingsForView(view, bindingsRef.current);
             for (const b of stale) {
-              unbind(b.agentId, b.targetId);
+              // Cleanup, not a wire deletion: main keeps helper wires (#2225).
+              unbind(b.agentId, b.targetId, MCP_UNBIND_CANVAS_CLEANUP);
               removeWireDefinition(b.agentId, b.targetId);
             }
           }
