@@ -49,7 +49,6 @@ vi.mock('../util/shell', async () => {
   return {
     ...actual,
     getShellEnvironment: vi.fn(() => ({ PATH: '/usr/local/bin' })),
-    cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
   };
 });
 
@@ -100,6 +99,7 @@ vi.mock('child_process', () => ({
 
 import { IPC } from '../../shared/ipc-channels';
 import { appLog } from './log-service';
+import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../util/__fixtures__/host-session-env';
 import {
   spawnHeadless,
   isHeadless,
@@ -1670,6 +1670,14 @@ describe('headless-manager _internal helpers', () => {
       expect(result).toHaveProperty('PATH', '/usr/local/bin');
       expect(result).toHaveProperty('API_KEY', 'secret');
       expect(result).not.toHaveProperty('CLAUDECODE');
+    });
+
+    it('strips inherited Claude Code host-session vars and keeps user Claude config', async () => {
+      const shell = await import('../util/shell');
+      vi.mocked(shell.getShellEnvironment).mockReturnValueOnce({ PATH: '/usr/local/bin', ...HOST_SESSION_ENV_FIXTURE });
+      const result = _internal.prepareSpawnEnv({ ...USER_CLAUDE_CONFIG_FIXTURE, CLAUDE_CODE_MESSAGING_SOCKET: '/tmp/host.sock' });
+      for (const key of Object.keys(HOST_SESSION_ENV_FIXTURE)) expect(result).not.toHaveProperty(key);
+      expect(result).toMatchObject({ PATH: '/usr/local/bin', ...USER_CLAUDE_CONFIG_FIXTURE });
     });
 
     it('works without extra env', () => {

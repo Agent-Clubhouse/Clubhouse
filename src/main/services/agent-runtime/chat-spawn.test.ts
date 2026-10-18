@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { ChatDriver, ChatDriverSession, ChatDriverStartOptions, ChatEvent } from '../../../shared/chat';
 import { CHAT_CONTRACT_VERSION } from '../../../shared/chat';
+import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../../util/__fixtures__/host-session-env';
 
 const mode = vi.hoisted(() => ({ value: { mode: 'chat' } as { mode: 'chat' | 'terminal'; driver?: string } }));
 vi.mock('../../util/shell', async (importActual) => ({
@@ -111,6 +112,18 @@ describe('chat spawn', () => {
       expect(getShellEnvironment()).toHaveProperty('CLAUDECODE', '1');
     },
   );
+
+  it('strips inherited Claude Code host-session vars from probe and start env, keeping user Claude config', async () => {
+    vi.mocked(getShellEnvironment).mockReturnValue({ PATH: '/shell/bin', HOME: '/shell/home', ...HOST_SESSION_ENV_FIXTURE });
+    const driver = new FakeChatDriver();
+    const probe = vi.spyOn(driver as ChatDriver, 'probe');
+    registerChatDriver(driver);
+    expect(await tryStartChatAgent(params, provider, { ...USER_CLAUDE_CONFIG_FIXTURE }, undefined, null)).toBe('chat');
+    for (const env of [probe.mock.calls[0][1], driver.last.startOptions?.env]) {
+      for (const key of Object.keys(HOST_SESSION_ENV_FIXTURE)) expect(env).not.toHaveProperty(key);
+      expect(env).toMatchObject({ PATH: '/shell/bin', ...USER_CLAUDE_CONFIG_FIXTURE });
+    }
+  });
 
   it.skipIf(process.platform === 'win32')('launches an env-node Codex shim for probe and session with a minimal app PATH', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-launch-env-'));

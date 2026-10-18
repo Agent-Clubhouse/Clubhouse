@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { killStructuredChild } from './structured-spawn';
+import { cleanSpawnEnv } from '../../util/shell';
 
 /** Rejection for requests still pending when the agent process exits. */
 export class ProcessExitedError extends Error {
@@ -109,7 +110,10 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
     this.proc = spawn(this.opts.binary, this.opts.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: this.opts.cwd,
-      env: this.opts.env,
+      // Codex app-server and Copilot ACP: never hand them the host Claude
+      // Code session's markers or messaging socket, even if a caller's env
+      // (or process.env, when none is given) carries them.
+      env: cleanSpawnEnv({ ...(this.opts.env ?? process.env) }),
       ...(this.opts.windowsVerbatimArguments && { windowsVerbatimArguments: true }),
     });
 
