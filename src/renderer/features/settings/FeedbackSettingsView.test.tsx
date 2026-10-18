@@ -26,7 +26,7 @@ describe('FeedbackSettingsView', () => {
     vi.mocked(window.clubhouse.feedback.connect).mockReturnValue(new Promise((r) => { resolve = r; }) as never);
     render(<FeedbackSettingsView />);
     expect(screen.getByTestId('feedback-settings').textContent).toContain('Connecting lets you send feedback and screenshots to the developer.');
-    expect(screen.getByTestId('feedback-settings').textContent).toContain('If telemetry export is on (Settings, Logging), Clubhouse then asks whether to share user activity and errors with the developer too');
+    expect(screen.getByTestId('feedback-settings').textContent).toContain('After you connect, Clubhouse asks whether to share user activity and errors with the developer too.');
     const input = screen.getByLabelText('Invitation') as HTMLInputElement;
     expect(input.type).toBe('password');
     fireEvent.change(input, { target: { value: '  the-invitation  ' } });
@@ -121,6 +121,11 @@ describe('FeedbackSettingsView telemetry prompt', () => {
   const realTelemetry = window.clubhouse.telemetrySettings;
   let setEnabled: ReturnType<typeof vi.fn>;
 
+  const dest = (id: string, o: Record<string, unknown> = {}) => ({
+    id, kind: id, label: id === 'framebriar' ? 'Clubhouse developer' : id, enabled: false, level: 'standard', preset: 'user_activity',
+    configured: true, active: false, health: { state: 'off' }, offlineQueue: false, ...o,
+  });
+
   beforeEach(() => {
     setEnabled = vi.fn(async (_id: string, on: boolean, ack?: { host?: string }) =>
       (on && !ack?.host ? { ok: false, needs: ['destination'], host: HOST, hosts: [OTHER, HOST] } : { ok: true }));
@@ -128,9 +133,11 @@ describe('FeedbackSettingsView telemetry prompt', () => {
       ...realTelemetry,
       getStatus: vi.fn(async () => ({
         available: true, consentAccepted: true,
-        destinations: [{ id: 'azure', enabled: true }, { id: 'framebriar', enabled: false }],
+        destinations: [dest('azure', { enabled: true }), dest('framebriar')],
       })),
       setEnabled,
+      setFilter: vi.fn(async () => ({ ok: true })),
+      sendTest: vi.fn(async () => ({ ok: true, message: 'Sent.' })),
     } as never;
   });
   afterEach(() => { window.clubhouse.telemetrySettings = realTelemetry; });
@@ -164,19 +171,43 @@ describe('FeedbackSettingsView telemetry prompt', () => {
 
   it('does not ask again after "Not now"', async () => {
     vi.mocked(window.clubhouse.telemetrySettings.getStatus).mockResolvedValue({
-      available: true, consentAccepted: true, destinations: [{ id: 'azure', enabled: true }, { id: 'framebriar', enabled: false, userOff: true }],
+      available: true, consentAccepted: true, destinations: [dest('azure', { enabled: true }), dest('framebriar', { userOff: true })],
     } as never);
     await connect();
     expect(screen.queryByTestId('feedback-telemetry-prompt')).toBeNull();
     expect(setEnabled).not.toHaveBeenCalled();
   });
 
-  it('does not ask when no other destination exports', async () => {
+  it('asks even with no other destination on, and the prompt is the consent then (#2097)', async () => {
     vi.mocked(window.clubhouse.telemetrySettings.getStatus).mockResolvedValue({
-      available: true, consentAccepted: true, destinations: [{ id: 'azure', enabled: false }, { id: 'framebriar', enabled: false }],
+      available: true, consentAccepted: false, destinations: [dest('azure'), dest('framebriar')],
     } as never);
+    setEnabled.mockImplementation(async (_id: string, on: boolean, ack?: { host?: string }) =>
+      (on && !ack?.host ? { ok: false, needs: ['consent', 'destination'], host: HOST, hosts: [HOST] } : { ok: true }));
     await connect();
-    expect(screen.queryByTestId('feedback-telemetry-prompt')).toBeNull();
-    expect(setEnabled).not.toHaveBeenCalled();
+    expect(screen.getByTestId('feedback-telemetry-hosts').textContent).toBe(HOST);
+    expect(screen.getByTestId('feedback-telemetry-never-sent')).toHaveTextContent('File paths, repository URLs and branch names');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Share' })); });
+    expect(setEnabled).toHaveBeenLastCalledWith('framebriar', true, { host: HOST, consent: true });
+  });
+
+  it('has the developer switch on the Feedback page, which asks before it shares (#2097)', async () => {
+    setFeedback(true);
+    render(<FeedbackSettingsView />);
+    const section = await screen.findByTestId('developer-telemetry');
+    expect(section).toHaveTextContent('Telemetry for the developer');
+    expect(section.textContent).not.toMatch(/framebriar/i);
+    await act(async () => { fireEvent.click(screen.getByLabelText('Send telemetry to the Clubhouse developer')); });
+    expect(screen.getByTestId('feedback-telemetry-hosts').textContent).toBe(OTHER + HOST);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Share' })); });
+    expect(setEnabled).toHaveBeenLastCalledWith('framebriar', true, { host: HOST });
+  });
+
+  it('hides the developer switch while telemetry is unavailable (#2097)', async () => {
+    vi.mocked(window.clubhouse.telemetrySettings.getStatus).mockResolvedValue({ available: false, destinations: [] } as never);
+    setFeedback(true);
+    render(<FeedbackSettingsView />);
+    await act(async () => {});
+    expect(screen.queryByTestId('developer-telemetry')).toBeNull();
   });
 });

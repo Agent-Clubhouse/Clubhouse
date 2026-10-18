@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { TelemetrySettingsSection, WORKBOOK_DOCS_URL } from './TelemetrySettingsSection';
+import { useUIStore } from '../../stores/uiStore';
 import type { TelemetryDestinationStatus, TelemetryStatus } from '../../../shared/telemetry/settings-types';
 
 function destStatus(id: 'azure' | 'otlp', overrides: Partial<TelemetryDestinationStatus> = {}): TelemetryDestinationStatus {
@@ -38,6 +39,12 @@ function makeStatus(
   };
 }
 
+/** Open every destination panel that starts closed (#2097: closed unless on or failing). */
+async function expandAll() {
+  const section = await screen.findByTestId('telemetry-settings');
+  for (const header of within(section).queryAllByRole('button', { expanded: false })) fireEvent.click(header);
+}
+
 function mockApi(status: TelemetryStatus) {
   const api = window.clubhouse.telemetrySettings;
   vi.spyOn(api, 'getStatus').mockResolvedValue(status);
@@ -55,6 +62,7 @@ describe('TelemetrySettingsSection', () => {
   it('leads with the App Insights panel and keeps OTLP in its own panel', async () => {
     mockApi(makeStatus());
     render(<TelemetrySettingsSection />);
+    await expandAll();
     const azure = await screen.findByRole('region', { name: 'Azure Application Insights' });
     expect(within(azure).getByLabelText('Connection string')).toBeInTheDocument();
     expect(within(azure).queryByLabelText('Endpoint')).toBeNull();
@@ -70,6 +78,7 @@ describe('TelemetrySettingsSection', () => {
       status: makeStatus({ azure: { configured: true, ikeyLast4: 'abcd', host: 'westus2-1.in.applicationinsights.azure.com' } }),
     });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     const input = await screen.findByLabelText('Connection string');
     fireEvent.change(input, { target: { value: 'InstrumentationKey=x;IngestionEndpoint=https://y' } });
     fireEvent.click(within(screen.getByRole('region', { name: 'Azure Application Insights' })).getByText('Save'));
@@ -84,6 +93,7 @@ describe('TelemetrySettingsSection', () => {
       ok: false, reason: 'bare_instrumentation_key', message: 'Paste the full connection string.', status: makeStatus(),
     });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     fireEvent.change(await screen.findByLabelText('Connection string'), { target: { value: 'abc' } });
     fireEvent.click(within(screen.getByRole('region', { name: 'Azure Application Insights' })).getByText('Save'));
     expect(await screen.findByRole('alert')).toHaveTextContent('Paste the full connection string.');
@@ -99,6 +109,7 @@ describe('TelemetrySettingsSection', () => {
         status: makeStatus({ azure: configured.azure, enabled: true, running: true, consentAccepted: true }, { azure: { enabled: true, active: true, configured: true } }),
       });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     fireEvent.click(await screen.findByLabelText('Send telemetry to Application Insights'));
     const dialog = await screen.findByTestId('telemetry-confirm');
     expect(dialog).toHaveTextContent('never sends');
@@ -116,6 +127,7 @@ describe('TelemetrySettingsSection', () => {
       .mockResolvedValueOnce({ ok: false, reason: 'needs_confirmation', needs: ['destination'], host: 'localhost:4318', status })
       .mockResolvedValueOnce({ ok: true, status });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     fireEvent.click(await screen.findByLabelText('Send telemetry to OTLP'));
     const dialog = await screen.findByTestId('telemetry-confirm');
     expect(dialog).toHaveTextContent('Telemetry will be sent to a collector on this computer (localhost:4318).');
@@ -128,6 +140,7 @@ describe('TelemetrySettingsSection', () => {
     const api = mockApi(status);
     const saveOtlp = vi.spyOn(api, 'saveOtlp').mockResolvedValue({ ok: true, status });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     const value = await screen.findByLabelText('Header 1 value');
     expect(value).toHaveAttribute('placeholder', '••••1234');
     expect(value).toHaveValue('');
@@ -144,6 +157,7 @@ describe('TelemetrySettingsSection', () => {
     ));
     const sendTest = vi.spyOn(api, 'sendTest').mockResolvedValue({ ok: false, httpStatus: 400, latencyMs: 412, message: 'Rejected (HTTP 400). Check the instrumentation key in the connection string.' });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     // OTLP isn't exporting, so only App Insights can be tested.
     expect(within(await screen.findByRole('region', { name: 'Other destinations' })).getByText('Send test event')).toBeDisabled();
     fireEvent.click(within(screen.getByRole('region', { name: 'Azure Application Insights' })).getByText('Send test event'));
@@ -159,6 +173,7 @@ describe('TelemetrySettingsSection', () => {
       .mockResolvedValueOnce({ ok: true, status: makeStatus({}, { azure: { level: 'errors' }, otlp: { preset: 'user_activity' } }) });
     vi.spyOn(api, 'getPreview').mockResolvedValue([{ signal: 'logs', destination: 'azure', name: 'clubhouse.telemetry.test', time: 1, attributes: { 'clubhouse.telemetry.destination': 'azure' } }]);
     render(<TelemetrySettingsSection />);
+    await expandAll();
     fireEvent.change(await screen.findByLabelText('Azure Application Insights level'), { target: { value: 'errors' } });
     await waitFor(() => expect(setFilter).toHaveBeenCalledWith('azure', 'errors', 'all'));
     expect(await screen.findByLabelText('Azure Application Insights level')).toHaveValue('errors');
@@ -175,6 +190,7 @@ describe('TelemetrySettingsSection', () => {
     const api = mockApi(status);
     const resetId = vi.spyOn(api, 'resetId').mockResolvedValue({ ok: true, status: { ...status, installId: '22222222-2222-4222-8222-222222222222' } });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     fireEvent.click(await screen.findByText('Reset telemetry ID'));
     expect(resetId).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
@@ -190,6 +206,7 @@ describe('TelemetrySettingsSection', () => {
       hosts: ['westus2-1.in.applicationinsights.azure.com', 'otlp.example.com'], status,
     });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     fireEvent.click(await screen.findByLabelText('Send telemetry to OTLP'));
     const hosts = await screen.findByTestId('telemetry-confirm-hosts');
     expect(within(hosts).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
@@ -198,7 +215,7 @@ describe('TelemetrySettingsSection', () => {
     expect(screen.getByTestId('telemetry-confirm')).toHaveTextContent("Clubhouse can't see or control what these services do with it.");
   });
 
-  it('confirms the Framebriar host the dialog listed, and only that one', async () => {
+  it('confirms the developer host the dialog listed, and only that one', async () => {
     const status = makeStatus({ azure: { configured: true, ikeyLast4: 'abcd', host: 'h.applicationinsights.azure.com' } });
     const api = mockApi(status);
     const setEnabled = vi.spyOn(api, 'setEnabled')
@@ -208,6 +225,7 @@ describe('TelemetrySettingsSection', () => {
       })
       .mockResolvedValueOnce({ ok: true, status });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     fireEvent.click(await screen.findByLabelText('Send telemetry to Application Insights'));
     const dialog = await screen.findByTestId('telemetry-confirm');
     fireEvent.click(within(dialog).getByText('Continue'));
@@ -222,6 +240,7 @@ describe('TelemetrySettingsSection', () => {
       otlp: { enabled: true, active: true, configured: true, health: { state: 'failing', message: 'Connection refused. Is the collector running?' } },
     }));
     render(<TelemetrySettingsSection />);
+    await expandAll();
     expect(await screen.findByTestId('telemetry-health-azure')).toHaveTextContent('Sending · last export');
     expect(screen.getByTestId('telemetry-health-otlp')).toHaveTextContent('Failing: Connection refused. Is the collector running?');
     expect(screen.getByLabelText('Send telemetry to Application Insights')).toHaveAttribute('aria-checked', 'true');
@@ -235,6 +254,7 @@ describe('TelemetrySettingsSection', () => {
       .mockResolvedValueOnce({ ok: false, reason: 'needs_confirmation', needs: ['weak_storage'], status: makeStatus({ secureStorage: 'weak' }) })
       .mockResolvedValueOnce({ ok: true, status: saved });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     fireEvent.change(await screen.findByLabelText('Connection string'), { target: { value: 'InstrumentationKey=x;IngestionEndpoint=https://y' } });
     fireEvent.click(within(screen.getByRole('region', { name: 'Azure Application Insights' })).getByText('Save'));
     const dialog = await screen.findByTestId('telemetry-confirm');
@@ -251,6 +271,7 @@ describe('TelemetrySettingsSection', () => {
     const api = mockApi(status);
     vi.spyOn(api, 'setFilter').mockResolvedValue({ ok: true, status: makeStatus({}, { azure: { level: 'detailed' } }) });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     expect(await screen.findByLabelText('Send telemetry to OTLP')).toBeDisabled();
     expect(screen.getByLabelText('Send telemetry to OTLP')).toHaveAttribute('aria-disabled', 'true');
     fireEvent.change(screen.getByLabelText('Endpoint'), { target: { value: 'https://draft.example.com' } });
@@ -266,6 +287,7 @@ describe('TelemetrySettingsSection', () => {
     }));
     const setAdvanced = vi.spyOn(api, 'setAdvanced').mockResolvedValue({ ok: true, status: makeStatus() });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     const otlp = await screen.findByRole('region', { name: 'Other destinations' });
     expect(within(otlp).getByTestId('telemetry-health-otlp')).toHaveTextContent('Not sending: The endpoint is not a valid URL.');
     expect(within(screen.getByRole('region', { name: 'Azure Application Insights' })).queryByText(/not a valid URL/)).toBeNull();
@@ -278,6 +300,7 @@ describe('TelemetrySettingsSection', () => {
     const api = mockApi(status);
     const clearOffline = vi.spyOn(api, 'clearOffline').mockResolvedValue({ ok: true, status: { ...status, offlineItems: 0 } });
     render(<TelemetrySettingsSection />);
+    await expandAll();
     expect(await screen.findByText(/Offline queue \(Application Insights only\): 4 items/)).toBeInTheDocument();
     fireEvent.click(within(screen.getByText(/Offline queue/)).getByText('Clear'));
     expect(clearOffline).not.toHaveBeenCalled();
@@ -291,6 +314,7 @@ describe('TelemetrySettingsSection', () => {
     mockApi(makeStatus({}, { azure: { enabled: true } }));
     const open = vi.spyOn(window.clubhouse.app, 'openExternalUrl').mockResolvedValue(undefined as never);
     render(<TelemetrySettingsSection />);
+    await expandAll();
     fireEvent.click(await screen.findByText('Get the Clubhouse Workbook'));
     expect(open).toHaveBeenCalledWith(WORKBOOK_DOCS_URL);
   });
@@ -298,40 +322,61 @@ describe('TelemetrySettingsSection', () => {
   it('hides the Workbook link when only OTLP is on', async () => {
     mockApi(makeStatus({}, { otlp: { enabled: true } }));
     render(<TelemetrySettingsSection />);
+    await expandAll();
     await screen.findByText('Preview data');
     expect(screen.queryByText('Get the Clubhouse Workbook')).toBeNull();
   });
 
-  describe('Clubhouse developer (Framebriar) panel', () => {
+  describe('collapsible panels (#2097)', () => {
+    it('starts a panel closed unless its destination is on or failing, with its state in the header', async () => {
+      mockApi(makeStatus({ azure: { configured: true, ikeyLast4: 'abcd', host: 'h' } }, {
+        otlp: { enabled: true, active: true, configured: true, health: { state: 'ok', lastSuccessAt: Date.now() } },
+      }));
+      render(<TelemetrySettingsSection />);
+      const azure = await screen.findByRole('region', { name: 'Azure Application Insights' });
+      const otlp = screen.getByRole('region', { name: 'Other destinations' });
+      expect(within(azure).getByRole('button', { name: /Azure Application Insights/ })).toHaveAttribute('aria-expanded', 'false');
+      expect(within(azure).queryByLabelText('Send telemetry to Application Insights')).toBeNull();
+      expect(screen.getByTestId('telemetry-panel-summary-azure')).toHaveTextContent('Off');
+      expect(within(otlp).getByRole('button', { name: /Other destinations/ })).toHaveAttribute('aria-expanded', 'true');
+      expect(within(otlp).getByLabelText('Send telemetry to OTLP')).toBeInTheDocument();
+      expect(screen.getByTestId('telemetry-panel-summary-otlp')).toHaveTextContent('On');
+      fireEvent.click(within(azure).getByRole('button', { name: /Azure Application Insights/ }));
+      expect(within(azure).getByLabelText('Send telemetry to Application Insights')).toBeInTheDocument();
+    });
+
+    it('says when an enabled destination is not sending, and opens it', async () => {
+      mockApi(makeStatus({}, { azure: { enabled: true, configured: true, health: { state: 'error', message: 'bad key' } } }));
+      render(<TelemetrySettingsSection />);
+      expect(await screen.findByTestId('telemetry-panel-summary-azure')).toHaveTextContent('On, not sending');
+      expect(screen.getByTestId('telemetry-health-azure')).toHaveTextContent('Not sending: bad key');
+      expect(screen.getByTestId('telemetry-panel-summary-otlp')).toHaveTextContent('Not set up');
+    });
+  });
+
+  describe('the developer destination (#2097)', () => {
     const fb = (o: Partial<TelemetryDestinationStatus> = {}): TelemetryDestinationStatus => ({
-      id: 'framebriar', kind: 'framebriar', label: 'Clubhouse developer (Framebriar)', enabled: false, level: 'standard',
+      id: 'framebriar', kind: 'framebriar', label: 'Clubhouse developer', enabled: false, level: 'standard',
       preset: 'user_activity', configured: false, active: false, health: { state: 'off' }, offlineQueue: false, ...o,
     });
 
-    it('needs Feedback connected before it can be switched on', async () => {
+    it('is no longer a panel here: a line says its state and links to Settings, Feedback', async () => {
+      mockApi(makeStatus({ destinations: [destStatus('azure'), destStatus('otlp'), fb({ enabled: true })] }));
+      const setPage = vi.fn();
+      useUIStore.setState({ setSettingsSubPage: setPage } as never);
+      render(<TelemetrySettingsSection />);
+      const pointer = await screen.findByTestId('telemetry-developer-pointer');
+      expect(pointer).toHaveTextContent('Telemetry for the Clubhouse developer is on.');
+      expect(screen.queryByLabelText('Send telemetry to the Clubhouse developer')).toBeNull();
+      fireEvent.click(within(pointer).getByText('Settings, Feedback'));
+      expect(setPage).toHaveBeenCalledWith('feedback');
+    });
+
+    it('never names the vendor', async () => {
       mockApi(makeStatus({ destinations: [destStatus('azure'), destStatus('otlp'), fb()] }));
       render(<TelemetrySettingsSection />);
-      const panel = await screen.findByRole('region', { name: 'Clubhouse developer (Framebriar)' });
-      expect(within(panel).getByTestId('telemetry-framebriar-needs-feedback').textContent).toBe('Connect Feedback in Settings, Feedback first.');
-      expect(within(panel).getByLabelText('Send telemetry to the Clubhouse developer')).toBeDisabled();
-      expect(within(panel).getByLabelText('Clubhouse developer (Framebriar) filter')).toHaveValue('user_activity');
-    });
-
-    it('turns it off through its own destination id', async () => {
-      const api = mockApi(makeStatus({ destinations: [destStatus('azure'), destStatus('otlp'), fb({ configured: true, enabled: true, active: true, host: 'framebriar.example.net' })] }));
-      const setEnabled = vi.spyOn(api, 'setEnabled').mockResolvedValue({ ok: true, status: makeStatus() } as never);
-      render(<TelemetrySettingsSection />);
-      const panel = await screen.findByRole('region', { name: 'Clubhouse developer (Framebriar)' });
-      fireEvent.click(within(panel).getByLabelText('Send telemetry to the Clubhouse developer'));
-      await waitFor(() => expect(setEnabled).toHaveBeenCalledWith('framebriar', false, {}));
-      expect(within(panel).getByText('Send test event')).not.toBeDisabled();
-    });
-
-    it('is absent when the status has no Framebriar destination', async () => {
-      mockApi(makeStatus());
-      render(<TelemetrySettingsSection />);
-      await screen.findByRole('region', { name: 'Azure Application Insights' });
-      expect(screen.queryByTestId('telemetry-panel-framebriar')).toBeNull();
+      await expandAll();
+      expect(screen.getByTestId('telemetry-settings').textContent).not.toMatch(/framebriar/i);
     });
   });
 });

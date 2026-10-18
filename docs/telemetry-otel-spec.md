@@ -11,7 +11,7 @@
 
 Clubhouse gets an **opt-in, user-configured telemetry export**. Telemetry is off by default.
 
-A user creates their own Azure Application Insights resource and pastes its **connection string** into Settings → Logging → Telemetry export. Clubhouse then sends traces, metrics and sanitized error records to that resource, to an OpenTelemetry (OTLP) backend, or to both at once (§6.11). No ingestion key ships in the binary. The one developer-run destination is opt-in and narrow: with Feedback connected and its host confirmed, a copy of **user activity and errors only** can go to the Clubhouse developer's Framebriar service, so feedback reports have context. It runs only alongside one of the user's own destinations, never alone (§6.11). Ingestion with only an instrumentation key was retired in 2025, so the connection string is the only supported input.
+A user creates their own Azure Application Insights resource and pastes its **connection string** into Settings → Logging → Telemetry export. Clubhouse then sends traces, metrics and sanitized error records to that resource, to an OpenTelemetry (OTLP) backend, or to both at once (§6.11). No ingestion key ships in the binary. The one developer-run destination is opt-in and narrow: with Feedback connected and its host confirmed, a copy of **user activity and errors only** can go to the Clubhouse developer's Framebriar service, so feedback reports have context. It is set up on Settings → Feedback and works on its own once the user consents and confirms its host (§6.11, #2097). Ingestion with only an instrumentation key was retired in 2025, so the connection string is the only supported input.
 
 App Insights is the default and simplest destination: one field. For the minority who run another backend, the same Settings section offers **Other (OTLP)**: an HTTPS endpoint plus headers, sent as OTLP over HTTP/JSON (§6.8).
 
@@ -57,7 +57,7 @@ The data-classification ideas from that design are carried forward: the never-co
 
 ### Non-goals (v1)
 
-- Maintainer-run aggregate telemetry collected without the user's opt-in. The only developer-run destination is Framebriar (§6.11): it receives user activity and errors only, and only while Feedback is connected, its host is confirmed, and one of the user's own destinations is on.
+- Maintainer-run aggregate telemetry collected without the user's opt-in. The only developer-run destination is Framebriar (§6.11): it receives user activity and errors only, and only while Feedback is connected, the user has consented and its host is confirmed. It doesn't need one of the user's own destinations on (#2097).
 - Auto-instrumentation of `http`, `fs` or `child_process`.
 - Session replay, UI click tracking or per-keystroke anything.
 - Microsoft Entra ID (AAD) ingestion auth. Resources with `DisableLocalAuth=true` reject connection-string ingestion; see §10 for the follow-up.
@@ -948,6 +948,8 @@ Telemetry export                                ← new (v1 layout; see §6.11 f
       Delete local telemetry data
 ```
 
+**Collapsible panels (#2097).** The Azure, Other destinations and Advanced panels fold away. A destination panel starts open when it is on or has an error, otherwise closed, and its header always shows the state (On, Off, Not set up, On, not sending). The developer destination has no panel here: a line states whether it is on and links to Settings → Feedback, where its switch, level and filter live next to the connection it depends on. Collapsing was chosen over splitting telemetry into its own page because it keeps the one privacy page (local logs and export together) without adding a nav item, and a returning user sees only what's on.
+
 **Layout** (decisions 2026-10-16: keep App Insights easy and simple; put other options in their own panel).
 
 - **The App Insights panel leads and holds only three things:** the on/off toggle, the connection string and **Send test event**. Turning the toggle on with a valid connection string starts telemetry at the Standard level. The Level row, Preview and the Workbook link sit just below the panel, outside the setup path.
@@ -1165,8 +1167,8 @@ Fan-out, filters, consent, health and the test event are shared.
 **The Framebriar destination** ([#2006](https://github.com/Agent-Clubhouse/Clubhouse/pull/2006)). This is the one developer-run destination: the Clubhouse developer's Framebriar service, which also receives Feedback reports. It exists so that a feedback report comes with context about what the user was doing. It has no URL or key fields; it rides on Feedback's enrollment.
 
 - **What it gets:** its default preset is "User activity and errors" at Standard, so never prompts, terminal output, paths or Detailed high-volume spans (§5, the preset table above). Its exporter is OTLP with delta temporality. It sets `session.id` to the Feedback session on a per-destination view of the resource, which is how reports and telemetry correlate. It copies `clubhouse.install.id`, `clubhouse.ui.chrome` and `clubhouse.channel` onto items, because Framebriar keeps few resource attributes.
-- **When it runs:** it is derived, not a sticky switch. It is on exactly while Feedback is connected, at least one of the user's own destinations is exporting, its host is the one the user confirmed, and the user hasn't switched it off. It never exports alone. Before every batch it re-reads Feedback's state, and with Feedback disconnected, switched off, in another session, or without a token, nothing is sent.
-- **Consent:** its host is listed in the export consent dialog when Feedback is connected. After connecting Feedback while export is on, the Feedback page asks "Share telemetry with the developer?", naming every host; Not now records it as off. Its Settings panel ("Clubhouse developer (Framebriar)") has the same switch, level, preset, health and test event as the others.
+- **When it runs:** it is derived, not a sticky switch. It is on exactly while Feedback is connected, telemetry is allowed (the experiment and consent), its host is the one the user confirmed, and the user hasn't switched it off. It doesn't need any of the user's own destinations on (#2097: with that rule, feedback reports came with no telemetry), and turning those off or clearing them leaves it on. Before every batch it re-reads Feedback's state, and with Feedback disconnected, switched off, in another session, or without a token, nothing is sent.
+- **Consent:** its host is listed in the export consent dialog when Feedback is connected. After connecting Feedback, the Feedback page asks "Share telemetry with the developer?", naming every host; when no consent was given yet, the prompt is the consent and lists what is never sent. Not now records it as off. Settings → Feedback → "Telemetry for the developer" has its switch, level, preset, health and test event; user-facing text calls it "Clubhouse developer", never by the service's name.
 
 ## 7. Annex satellites and controllers
 
