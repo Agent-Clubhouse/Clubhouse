@@ -704,6 +704,12 @@ interface ChatStoreState {
   loading: Record<string, boolean>;
   /** Agents whose state came from a tail of the transcript; earlier events weren't read. */
   partial: Record<string, boolean>;
+  /**
+   * Agents whose transcript has been read in this window. Live events alone
+   * create an agent's state too (a running agent in a freshly opened window),
+   * so having state doesn't mean the history is there (#2150).
+   */
+  loaded: Record<string, boolean>;
   /** Permission or question answers in flight, keyed `${agentId}:${requestId}`, so every view disables the card. */
   answering: Record<string, true>;
 
@@ -754,6 +760,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     agents: {},
     loading: {},
     partial: {},
+    loaded: {},
     answering: {},
 
     loadTranscript: async (agentId, tail) => {
@@ -768,7 +775,10 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       const buffered = pendingLive.get(agentId) ?? [];
       pendingLive.delete(agentId);
       // The transcript is authoritative, so rebuild from it rather than merging
-      // into whatever live state existed before the load started.
+      // into whatever live state existed before the load started. That state
+      // came from events main had already written to the transcript (it
+      // appends before it broadcasts), so nothing seen live is lost, and seq
+      // dedupe drops the buffered events the transcript already holds.
       const fromTranscript = foldChatEvents(undefined, agentId, events);
       const next = foldChatEvents(fromTranscript, agentId, buffered);
       // A tail that came back full may have cut earlier events off.
@@ -776,7 +786,12 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       set((s) => {
         const loading = { ...s.loading };
         delete loading[agentId];
-        return { agents: { ...s.agents, [agentId]: next }, loading, partial: { ...s.partial, [agentId]: cut } };
+        return {
+          agents: { ...s.agents, [agentId]: next },
+          loading,
+          partial: { ...s.partial, [agentId]: cut },
+          loaded: { ...s.loaded, [agentId]: true },
+        };
       });
     },
 
@@ -798,10 +813,12 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
         const agents = { ...s.agents };
         const loading = { ...s.loading };
         const partial = { ...s.partial };
+        const loaded = { ...s.loaded };
         delete agents[agentId];
         delete loading[agentId];
         delete partial[agentId];
-        return { agents, loading, partial };
+        delete loaded[agentId];
+        return { agents, loading, partial, loaded };
       });
     },
 

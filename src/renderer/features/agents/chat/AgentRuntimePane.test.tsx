@@ -33,7 +33,7 @@ function setRuntime(chat: boolean, chatAvailable: boolean) {
 describe('AgentRuntimePane', () => {
   beforeEach(() => {
     resetChatFlagCache();
-    useChatStore.setState({ agents: {}, loading: {} });
+    useChatStore.setState({ agents: {}, loading: {}, loaded: {} });
     api.chat.readTranscript = vi.fn(async () => []);
     useProjectStore.setState({ projects: [{ id: 'proj-1', name: 'Clubhouse', path: '/work/clubhouse' }] } as never);
   });

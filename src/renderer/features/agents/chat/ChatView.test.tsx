@@ -574,7 +574,7 @@ describe('ChatView failures', () => {
 
 describe('ChatView (store-bound)', () => {
   beforeEach(() => {
-    useChatStore.setState({ agents: {}, loading: {}, partial: {}, answering: {} });
+    useChatStore.setState({ agents: {}, loading: {}, partial: {}, loaded: {}, answering: {} });
   });
 
   it('reuses loaded state when a view remounts, as a canvas card does when zooming', async () => {
@@ -588,6 +588,18 @@ describe('ChatView (store-bound)', () => {
     expect(screen.getByTestId('chat-turn-footer')).toBeInTheDocument();
     expect(screen.queryByText('Loading the conversation…')).not.toBeInTheDocument();
     expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads history in a freshly opened window even when live events got there first (#2150)', async () => {
+    const events = chatFixture('claude', 'conversation');
+    const read = vi.fn(async () => events);
+    vi.mocked(window.clubhouse.chat).readTranscript = read;
+    // The agent is running: its latest event reaches this window before any view mounts.
+    act(() => { useChatStore.getState().applyEvent(events[events.length - 1]); });
+    render(<ChatView agent={agent} />);
+    await waitFor(() => expect(read).toHaveBeenCalledWith(FIXTURE_AGENT_ID, undefined));
+    await screen.findByTestId('chat-turn-footer');
+    expect(useChatStore.getState().agents[FIXTURE_AGENT_ID].items.length).toBe(foldChatEvents(undefined, FIXTURE_AGENT_ID, events).items.length);
   });
 
   it('marks the view context, and keeps canvas cards out of the screen-reader live region', async () => {
