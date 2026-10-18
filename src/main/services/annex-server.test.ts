@@ -216,6 +216,7 @@ import { generateQuickName } from '../../shared/name-generator';
 import * as agentIdModule from '../../shared/agent-id';
 import { appLog } from './log-service';
 import Bonjour from 'bonjour-service';
+import { registerChatRuntime, clearChatRuntimes } from './agent-runtime';
 
 function request(port: number, method: string, path: string, body?: object, headers?: Record<string, string>): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
@@ -2951,5 +2952,68 @@ describe('annex-server', () => {
       // Verify recordFailedAttempt was called 6 times (not 7, because 7th is blocked before that)
       expect(vi.mocked(annexPeers.recordFailedAttempt)).toHaveBeenCalledTimes(6);
     });
+  });
+});
+
+// #2208: a chat agent's hook status goes stale mid-turn; the snapshot follows its chat session.
+describe('annex-server getDetailedStatus for chat agents', () => {
+  const { detailedStatusCache, getDetailedStatus } = annexServer._testing;
+  const NOW = 1_800_000_000_000;
+
+  function chatRuntime(agentId: string, state: string) {
+    registerChatRuntime({ agentId, kind: 'chat', isRunning: () => true, getState: () => state } as unknown as Parameters<typeof registerChatRuntime>[0]);
+  }
+
+  beforeEach(() => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    detailedStatusCache.clear();
+    clearChatRuntimes();
+  });
+
+  afterEach(() => {
+    vi.mocked(Date.now).mockRestore();
+    detailedStatusCache.clear();
+    clearChatRuntimes();
+  });
+
+  it('reads Working 31s after the last tool event while the chat turn runs', () => {
+    detailedStatusCache.set('chat_a', { state: 'idle', message: 'Thinking', timestamp: NOW - 31_000 });
+    chatRuntime('chat_a', 'running');
+    expect(getDetailedStatus('chat_a')).toMatchObject({ state: 'working' });
+  });
+
+  it('reads Working for a turn that has had no tool event yet', () => {
+    chatRuntime('chat_a', 'running');
+    expect(getDetailedStatus('chat_a')).toMatchObject({ state: 'working' });
+  });
+
+  it('keeps a fresh tool verb while the turn runs', () => {
+    const fresh = { state: 'working' as const, message: 'Editing App.tsx', toolName: 'Edit', timestamp: NOW - 2_000 };
+    detailedStatusCache.set('chat_a', fresh);
+    chatRuntime('chat_a', 'running');
+    expect(getDetailedStatus('chat_a')).toEqual(fresh);
+  });
+
+  it('reads Needs you while the chat session waits for input', () => {
+    chatRuntime('chat_a', 'waiting_input');
+    expect(getDetailedStatus('chat_a')).toMatchObject({ state: 'needs_permission' });
+  });
+
+  it('reads Done once the chat turn has ended', () => {
+    detailedStatusCache.set('chat_a', { state: 'working', message: 'Bash', timestamp: NOW - 1_000 });
+    chatRuntime('chat_a', 'idle');
+    expect(getDetailedStatus('chat_a')).toMatchObject({ state: 'idle' });
+  });
+
+  it('still drops a terminal agent status older than 30s', () => {
+    detailedStatusCache.set('pty_a', { state: 'working', message: 'Bash', timestamp: NOW - 31_000 });
+    expect(getDetailedStatus('pty_a')).toBeNull();
+    expect(detailedStatusCache.has('pty_a')).toBe(false);
+  });
+
+  it('keeps a fresh terminal agent status', () => {
+    const fresh = { state: 'working' as const, message: 'Bash', timestamp: NOW - 5_000 };
+    detailedStatusCache.set('pty_a', fresh);
+    expect(getDetailedStatus('pty_a')).toEqual(fresh);
   });
 });

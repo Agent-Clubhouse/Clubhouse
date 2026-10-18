@@ -12,12 +12,12 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Agent } from '../../../../shared/types';
-import { useAgentStore } from '../../../stores/agentStore';
 import { Tooltip } from '../../../components/Tooltip';
 import { holdChromeSurface, reportChromeFeature } from '../../../chrome/telemetry';
 import { OrchestratorGlyph } from '../OrchestratorGlyph';
 import { AgentContextMenu, useAgentRowActions } from '../useAgentRowActions';
 import { agentDot, DOT_LABEL, StatusDot, type AgentDot } from '../agent-status';
+import { useAgentStatus } from '../agent-status-store';
 import { useNarrow } from './useNarrow';
 
 export type RuntimeView = 'chat' | 'terminal';
@@ -256,7 +256,7 @@ export function AgentPaneToolbar({ agent, orchestrator, dot, activity, model, de
  * same bar the chat runtime shows, so switching runtimes keeps it in place.
  */
 export function TerminalPaneToolbar({ agent, runtime, review, detailsToggle, showMenu, showName }: Pick<AgentPaneToolbarProps, 'agent' | 'runtime' | 'review' | 'detailsToggle' | 'showMenu' | 'showName'>) {
-  const detailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
+  const detailed = useAgentStatus(agent);
   const dot = agentDot(agent, detailed);
   // "Idle" after a stop only repeats the Done the status word already says.
   const activity = agent.status === 'running' ? (dot === 'idle' && detailed?.message === 'Idle' ? undefined : detailed?.message)

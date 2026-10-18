@@ -97,11 +97,11 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor, i
 }
 
 import { agentDot, statusRingColor } from './agent-status';
+import { useAgentStatus } from './agent-status-store';
 export { STATUS_RING_COLORS as STATUS_RING_COLOR } from './status-colors';
 
 export function AgentAvatarWithRing({ agent }: { agent: Agent }) {
-  const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
-  const detailed = detailedStatus[agent.id];
+  const detailed = useAgentStatus(agent);
   const isWorking = agentDot(agent, detailed) === 'working';
   const ringColor = statusRingColor(agent, detailed);
 

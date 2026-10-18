@@ -17,6 +17,7 @@ interface Props {
 }
 
 import { agentDot, STATUS_TONE, statusRingColor, statusText } from './agent-status';
+import { useAgentStatus } from './agent-status-store';
 
 // Button width: 12px icon + 2*4px padding + gap ≈ 26px each
 const ACTION_BUTTON_WIDTH = 26;
@@ -27,7 +28,7 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
   // Fine-grained selectors: subscribe only to the specific state/actions needed
   const isRemote = isRemoteAgentId(agent.id);
 
-  const localDetailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
+  const localDetailed = useAgentStatus(agent);
   const remoteDetailed = useRemoteProjectStore((s) => s.remoteAgentDetailedStatus[agent.id]);
   const detailed = isRemote ? remoteDetailed : localDetailed;
   const localIconDataUrl = useAgentStore((s) => s.agentIcons[agent.id]);

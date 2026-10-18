@@ -63,14 +63,14 @@ function formatCost(usd: number): string {
 }
 
 import { agentDot, DOT_LABEL, StatusDot, statusCounts, STATUS_TONE, statusRingColor, statusText } from '../agents/agent-status';
+import { useAgentStatus, useAgentStatuses } from '../agents/agent-status-store';
 
 /* ─── Agent Avatar (compact) — delegates to shared component ─── */
 
 const DASHBOARD_SIZE_MAP = { sm: 'xs', md: 'sm' } as const;
 
 function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' }) {
-  const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
-  const detailed = detailedStatus[agent.id];
+  const detailed = useAgentStatus(agent);
   const isWorking = agentDot(agent, detailed) === 'working';
   const ringColor = statusRingColor(agent, detailed);
 
@@ -110,7 +110,7 @@ function StatCard({ label, value, icon, color, bgColor }: {
 
 function StatsOverview() {
   const agents = useAgentStore((s) => s.agents);
-  const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
+  const detailedStatus = useAgentStatuses();
   const projects = useProjectStore((s) => s.projects);
   const completedAgents = useQuickAgentStore((s) => s.completedAgents);
 
@@ -198,7 +198,7 @@ function StatsOverview() {
 
 function NeedsAttentionBox() {
   const agents = useAgentStore((s) => s.agents);
-  const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
+  const detailedStatus = useAgentStatuses();
   const projects = useProjectStore((s) => s.projects);
   const navigateToAgent = useNavigateToAgent();
 
@@ -278,7 +278,7 @@ function ProjectCardIcon({ project }: { project: Project }) {
 
 function ProjectCard({ project }: { project: Project }) {
   const allAgents = useAgentStore((s) => s.agents);
-  const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
+  const detailedStatus = useAgentStatuses();
   const navigate = useNavigateToProject();
   const navigateToAgent = useNavigateToAgent();
 
@@ -439,10 +439,9 @@ function AgentRow({ agent, project, navigateToAgent }: {
   project: Project;
   navigateToAgent: (projectId: string, agentId: string) => void;
 }) {
-  const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
+  const detailed = useAgentStatus(agent);
   const killAgent = useAgentStore((s) => s.killAgent);
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
-  const detailed = detailedStatus[agent.id];
 
   const statusLabel = statusText(agent, detailed);
   const isDurable = agent.kind === 'durable';

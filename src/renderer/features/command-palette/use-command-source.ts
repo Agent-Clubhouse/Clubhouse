@@ -18,6 +18,7 @@ import { isNewChromeEnabled } from '../../chrome/chromeFlag';
 import { useChromeStore } from '../../chrome/chromeStore';
 import { agentDot, groupProjectAgents } from '../../chrome/sidebar/treeModel';
 import { DOT_LABEL } from '../agents/agent-status';
+import { useAgentStatuses } from '../agents/agent-status-store';
 import { switchHost } from '../../chrome/hosts';
 import { reportChromeFeature } from '../../chrome/telemetry';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
@@ -46,7 +47,7 @@ export function useCommandSource(): CommandItem[] {
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const removeProject = useProjectStore((s) => s.removeProject);
   const agents = useAgentStore((s) => s.agents);
-  const detailed = useAgentStore((s) => s.agentDetailedStatus);
+  const detailed = useAgentStatuses();
   const projectIcons = useProjectStore((s) => s.projectIcons);
   const openProjectSettings = useUIStore((s) => s.openProjectSettings);
   const setActiveAgent = useAgentStore((s) => s.setActiveAgent);

@@ -11,6 +11,7 @@ import type {
 } from '../../shared/plugin-types';
 import { hasPermission } from './plugin-api-shared';
 import { useAgentStore } from '../stores/agentStore';
+import { getAgentStatus, onChatStatusChange } from '../features/agents/agent-status-store';
 import { useProjectStore } from '../stores/projectStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
@@ -184,7 +185,8 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
     },
 
     getDetailedStatus(agentId: string): PluginAgentDetailedStatus | null {
-      const status = useAgentStore.getState().agentDetailedStatus[agentId]
+      // Chat agents report their chat session's state, as the chat header does (#2208).
+      const status = getAgentStatus(agentId)
         || useRemoteProjectStore.getState().remoteAgentDetailedStatus[agentId];
       if (!status) return null;
       return {
@@ -272,7 +274,9 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
     onAnyChange(callback: () => void): Disposable {
       const unsub1 = useAgentStore.subscribe(callback);
       const unsub2 = useRemoteProjectStore.subscribe(callback);
-      return { dispose: () => { unsub1(); unsub2(); } };
+      // A chat turn starting or ending changes getDetailedStatus too.
+      const unsub3 = onChatStatusChange(callback);
+      return { dispose: () => { unsub1(); unsub2(); unsub3(); } };
     },
 
     async listSessions(agentId: string) {

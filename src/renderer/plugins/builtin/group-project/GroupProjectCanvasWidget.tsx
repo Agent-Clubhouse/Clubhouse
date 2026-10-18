@@ -22,6 +22,7 @@ import { Toggle } from '../../../components/Toggle';
 import { Tooltip } from '../../../components/Tooltip';
 import { AgentAvatar } from '../../../features/agents/AgentAvatar';
 import { DOT_LABEL, StatusDot, agentDot } from '../../../features/agents/agent-status';
+import { useAgentStatus } from '../../../features/agents/agent-status-store';
 import {
   GROUP_PROJECT_DEFAULT_DISABLED_TOOLS_VERSION,
   GROUP_PROJECT_CORE_TOOL_SUFFIXES,
@@ -399,7 +400,7 @@ function PollingSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) 
 /** One member: 18px avatar, name, "Lead" for a project lead, and the agent's status as a dot and a word. */
 function MemberRow({ member, lead, onToggleLead }: { member: GroupProjectMember; lead: boolean; onToggleLead: () => void }) {
   const agent = useAgentStore((s) => s.agents[member.agentId]);
-  const detailed = useAgentStore((s) => s.agentDetailedStatus[member.agentId]);
+  const detailed = useAgentStatus(agent ?? { id: member.agentId, status: 'sleeping' });
   const dot = agent ? agentDot(agent, detailed) : null;
   const name = member.agentName || member.agentId;
   return (
