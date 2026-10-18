@@ -480,7 +480,7 @@ async function spawnPtyAgent(
     })),
     waitMcpBridgeReady().then((port) => tel.step('clubhouse.mcp.inject', async () => {
       mcpPort = port;
-      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions, params.projectPath);
+      await injectClubhouseMcp(params.cwd, params.agentId, port, provider.conventions, { projectPath: params.projectPath, agentOverride: agentMcpOverride });
     })).catch((err) => {
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped', {
         meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
@@ -506,7 +506,9 @@ async function spawnPtyAgent(
   // Inject MCP args for providers that need CLI-based MCP config (e.g. Copilot CLI)
   let { binary, args } = spawnCmd;
   const { env } = spawnCmd;
-  if (mcpPort > 0 && provider.buildMcpArgs) {
+  // Only when MCP is on for this agent (agent > project > global): an agent
+  // with it turned off gets neither the bridge nor project servers (#2223).
+  if (mcpEnabledForSpawn && mcpPort > 0 && provider.buildMcpArgs) {
     const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
     const { resolveProjectMcpServers } = await import('./materialization-service');
 
@@ -514,9 +516,7 @@ async function spawnPtyAgent(
     // project MCP file materialised into the worktree never reaches them.
     // Launch flags are the only path — hand over the project's servers here
     // alongside the Clubhouse bridge.
-    const projectServers = mcpEnabledForSpawn
-      ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined)
-      : {};
+    const projectServers = await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined);
 
     args = [...args, ...provider.buildMcpArgs({
       ...projectServers,

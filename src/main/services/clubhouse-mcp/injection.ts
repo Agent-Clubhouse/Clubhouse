@@ -194,20 +194,32 @@ function withInjectionLock<T>(fn: () => Promise<T>): Promise<T> {
   });
 }
 
+/** What decides whether the Clubhouse MCP entry is injected for a spawn. */
+export interface McpEnablementScope {
+  projectPath?: string;
+  /** The agent's own MCP setting; when set it wins over project and global. */
+  agentOverride?: boolean;
+}
+
 /**
  * Inject the Clubhouse MCP server entry into the agent's MCP config.
  * The bridge script path is resolved relative to the app bundle.
- * Pass `projectPath` so MCP enabled only for that project counts (#2223).
+ *
+ * Whether it injects follows isMcpEnabled's precedence: the agent's own
+ * setting (`agentOverride`, from DurableAgentConfig.mcpOverride) wins, then
+ * the project override for `projectPath`, then the global toggle, then
+ * Clubhouse mode. Callers pass both so project-only enablement injects and an
+ * agent with MCP turned off never gets the entry (#2223).
  */
 export function injectClubhouseMcp(
   cwd: string,
   agentId: string,
   mcpPort: number,
   conventions?: Partial<SettingsConventions>,
-  projectPath?: string,
+  scope?: McpEnablementScope,
 ): Promise<void> {
   return withInjectionLock(() =>
-    injectClubhouseMcpImpl(cwd, agentId, mcpPort, conventions, projectPath),
+    injectClubhouseMcpImpl(cwd, agentId, mcpPort, conventions, scope),
   );
 }
 
@@ -216,9 +228,9 @@ async function injectClubhouseMcpImpl(
   agentId: string,
   mcpPort: number,
   conventions?: Partial<SettingsConventions>,
-  projectPath?: string,
+  scope?: McpEnablementScope,
 ): Promise<void> {
-  if (!isMcpEnabled(projectPath)) {
+  if (!isMcpEnabled(scope?.projectPath, scope?.agentOverride)) {
     return; // Feature not enabled
   }
 

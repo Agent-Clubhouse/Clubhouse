@@ -413,7 +413,7 @@ async function runChatStart(
       mcpPort = await waitMcpBridgeReady();
       // A newer start has its own nonce: don't overwrite its MCP config with this one.
       checkpoint();
-      await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions, params.projectPath);
+      await injectClubhouseMcp(params.cwd, params.agentId, mcpPort, provider.conventions, { projectPath: params.projectPath, agentOverride: durableConfig?.mcpOverride });
     } catch (err) {
       if (err instanceof ChatStartCancelledError) throw err;
       appLog('core:mcp', 'warn', 'MCP bridge injection skipped for chat agent', {
@@ -422,7 +422,8 @@ async function runChatStart(
     }
     const mcpServers = {
       ...(mcpEnabled ? await resolveProjectMcpServers(params.projectPath, durableConfig ?? undefined) : {}),
-      ...(mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
+      // The bridge too follows the agent > project > global setting (#2223).
+      ...(mcpEnabled && mcpPort > 0 ? { clubhouse: buildClubhouseMcpDef(mcpPort, params.agentId) } : {}),
     };
     const env: Record<string, string> = {
       ...launchEnv,

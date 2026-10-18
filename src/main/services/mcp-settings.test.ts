@@ -62,6 +62,32 @@ describe('mcp-settings', () => {
       expect(isMcpEnabled()).toBe(true);
     });
 
+    // Precedence: agent > project > global (> Clubhouse mode). #2223
+    it.each([
+      // [case, global, project override, agent override, expected]
+      ['global on', true, undefined, undefined, true],
+      ['global off', false, undefined, undefined, false],
+      ['project on beats global off', false, true, undefined, true],
+      ['project off beats global on', true, false, undefined, false],
+      ['agent off beats global on', true, undefined, false, false],
+      ['agent off beats project on', false, true, false, false],
+      ['agent off beats global and project on', true, true, false, false],
+      ['agent on beats global off', false, undefined, true, true],
+      ['agent on beats project off', true, false, true, true],
+      ['agent on beats global and project off', false, false, true, true],
+    ] as const)('precedence: %s', async (_case, enabled, project, agent, expected) => {
+      vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);
+      await saveSettings({ enabled, ...(project === undefined ? {} : { projectOverrides: { '/project': project } }) });
+      expect(isMcpEnabled('/project', agent)).toBe(expected);
+    });
+
+    it('an agent turned off stays off even when Clubhouse mode is on', async () => {
+      await saveSettings({ enabled: false });
+      vi.mocked(isClubhouseModeEnabled).mockReturnValue(true);
+      expect(isMcpEnabled('/project', false)).toBe(false);
+      expect(isMcpEnabled('/project')).toBe(true);
+    });
+
     it('clubhouse mode fallback receives project path', async () => {
       await saveSettings({ enabled: false });
       vi.mocked(isClubhouseModeEnabled).mockReturnValue(false);

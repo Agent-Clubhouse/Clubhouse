@@ -744,6 +744,7 @@ describe('agent-system', () => {
       ['claude-code', undefined],
       ['codex-cli', 'codex-cli'],
     ] as const)('%s PTY: the nonce is in the spawn env, not in the config or argv', async (_label, orchestrator) => {
+      mockIsMcpEnabled.mockReturnValue(true);
       mockMcpWaitReady.mockResolvedValueOnce(23456);
       await spawnAgent({
         agentId: 'agent-1',
@@ -757,12 +758,12 @@ describe('agent-system', () => {
       const [, , , args, env] = mockPtySpawn.mock.calls[0] as unknown as [string, string, string, string[], Record<string, string>];
       expect(env).toMatchObject({ CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: nonce, CLUBHOUSE_MCP_PORT: '23456' });
       expect(args.join(' ')).not.toContain(nonce);
-      // injectClubhouseMcp(cwd, agentId, port, conventions, projectPath): no nonce argument.
+      // injectClubhouseMcp(cwd, agentId, port, conventions, scope): no nonce argument.
       expect(mockInjectClubhouseMcp).toHaveBeenCalledTimes(1);
       const injectArgs = (mockInjectClubhouseMcp.mock.calls[0] as unknown[]);
       expect(injectArgs.slice(0, 3)).toEqual(['/project/worktree', 'agent-1', 23456]);
       // The project path rides along so project-only MCP enablement counts (#2223).
-      expect(injectArgs[4]).toBe('/project');
+      expect(injectArgs[4]).toEqual({ projectPath: '/project', agentOverride: undefined });
       expect(JSON.stringify(injectArgs)).not.toContain(nonce);
       // Codex takes MCP servers as `-c` launch flags built from this definition.
       if (orchestrator === 'codex-cli') expect(mockBuildClubhouseMcpDef).toHaveBeenCalled();
@@ -773,6 +774,8 @@ describe('agent-system', () => {
   });
 
   describe('MCP arg injection ordering (spawnPtyAgent)', () => {
+    beforeEach(() => { mockIsMcpEnabled.mockReturnValue(true); });
+
     it('inserts buildMcpArgs output before trailingArgs so a positional mission stays last', async () => {
       mockMcpWaitReady.mockResolvedValueOnce(23456);
       (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -825,6 +828,33 @@ describe('agent-system', () => {
         expect.any(Function),
         undefined,
       );
+    });
+  });
+
+  describe('per-agent MCP setting (#2223)', () => {
+    it.each([
+      [false, false],
+      [true, true],
+    ] as const)('mcpOverride=%s reaches the injection check and decides the launch flags', async (override, flagged) => {
+      mockGetDurableConfig.mockImplementation((async () => ({ id: 'agent-1', mcpOverride: override })) as never);
+      mockIsMcpEnabled.mockImplementation(((_p: string, agentOverride?: boolean) => agentOverride ?? !override) as never);
+      mockMcpWaitReady.mockResolvedValueOnce(23456);
+      (mockCodexProvider.buildSpawnCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        binary: '/usr/local/bin/codex',
+        args: ['--full-auto'],
+      });
+      try {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'codex-cli' });
+
+        expect(mockIsMcpEnabled).toHaveBeenCalledWith('/project', override);
+        expect(mockInjectClubhouseMcp.mock.calls[0][4]).toEqual({ projectPath: '/project', agentOverride: override });
+        const args = (mockPtySpawn.mock.calls[0] as unknown as unknown[])[3];
+        expect(args).toEqual(flagged ? ['--full-auto', '-c', 'mcp_servers.clubhouse.command=node'] : ['--full-auto']);
+      } finally {
+        mockGetDurableConfig.mockReset();
+        mockGetDurableConfig.mockImplementation(() => null);
+        mockIsMcpEnabled.mockReset();
+      }
     });
   });
 
