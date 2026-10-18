@@ -179,4 +179,14 @@ describe('DiffCard outside the transcript', () => {
     expect(card.querySelector('[data-diff="add"]')).toHaveTextContent('b');
     expect(within(card).queryByRole('button')).toBeNull();
   });
+
+  it("shows a Codex-added one-line file as Created, +1 −0 (#2160)", () => {
+    // What the Codex mapper now sends for an `add` change: the content as newText.
+    render(<DiffCard diff={{ type: 'diff', path: 'itest-codex.txt', newText: 'hello\n' }} status="pending" />);
+    const card = screen.getByTestId('chat-diff-card');
+    expect(card).toHaveTextContent('Created');
+    expect(card).toHaveTextContent('+1');
+    expect(card).toHaveTextContent('−0');
+    expect(card).toHaveTextContent('waiting for approval');
+  });
 });

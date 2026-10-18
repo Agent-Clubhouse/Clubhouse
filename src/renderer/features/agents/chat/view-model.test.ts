@@ -9,6 +9,7 @@ import {
   composerModes,
   diffStats,
   diffTexts,
+  diffLines,
   exploreLabel,
   formatDuration,
   formatTokens,
@@ -93,6 +94,15 @@ describe('diffs', () => {
 
   it('treats a missing old text as a new file', () => {
     expect(diffStats(diffTexts(undefined, 'x\ny'))).toEqual({ added: 2, removed: 0 });
+  });
+
+  it("counts a file's final newline as ending its last line, not as another line (#2160)", () => {
+    // Codex's added one-line file: the TUI says +1 -0.
+    expect(diffStats(diffLines({ type: 'diff', path: 'itest-codex.txt', newText: 'hello\n' }))).toEqual({ added: 1, removed: 0 });
+    expect(diffStats(diffLines({ type: 'diff', path: 'gone.txt', oldText: 'a\nb\n' }))).toEqual({ added: 0, removed: 2 });
+    expect(diffTexts('a\n', 'a\nb\n').map((l) => `${l.type}:${l.text}`)).toEqual(['ctx:a', 'add:b']);
+    // A blank last line before the newline is still a line.
+    expect(diffStats(diffTexts(undefined, 'x\n\n'))).toEqual({ added: 2, removed: 0 });
   });
 
   it('gives the same stats for the unified and old/new shapes of one edit', () => {

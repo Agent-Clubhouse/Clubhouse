@@ -27,7 +27,7 @@ vi.mock('../clubhouse-mcp/injection', () => ({
 }));
 vi.mock('../mcp-settings', () => ({ isMcpEnabled: vi.fn(() => false) }));
 vi.mock('../materialization-service', () => ({ resolveProjectMcpServers: vi.fn(async () => ({})) }));
-const agentConfig = vi.hoisted(() => ({ updateSessionId: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}) }));
+const agentConfig = vi.hoisted(() => ({ touchSessionEntry: vi.fn(async () => {}), updateDurableConfig: vi.fn(async () => {}) }));
 vi.mock('../agent-config', () => agentConfig);
 const exitBroadcast = vi.hoisted(() => ({ broadcastAgentExit: vi.fn() }));
 vi.mock('../agent-exit-broadcast', () => exitBroadcast);
@@ -221,7 +221,19 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     expect(driver.last.sent[0].content).toEqual([{ type: 'text', text: 'hello' }]);
     expect(getAgentRuntime('agent-1')?.kind).toBe('chat');
     expect(isChatAgent('agent-1')).toBe(true);
-    expect(agentConfig.updateSessionId).toHaveBeenCalledWith('/p', 'agent-1', 'native-1');
+    // Into session history (the Sessions picker), not just lastSessionId.
+    expect(agentConfig.touchSessionEntry).toHaveBeenCalledWith('/p', 'agent-1', 'native-1');
+  });
+
+  it('records the chat session in session history when it ends, as its last activity (#2157)', async () => {
+    const driver = new FakeChatDriver();
+    registerChatDriver(driver);
+    expect(await tryStartChatAgent(params, provider, undefined, undefined, null)).toBe('chat');
+    agentConfig.touchSessionEntry.mockClear();
+
+    await getAgentRuntime('agent-1')?.stop();
+
+    await vi.waitFor(() => expect(agentConfig.touchSessionEntry).toHaveBeenCalledWith('/p', 'agent-1', 'native-1'));
   });
 
   it('resumes the native session and continues the chat session sequence', async () => {
