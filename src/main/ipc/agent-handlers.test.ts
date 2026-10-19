@@ -33,6 +33,8 @@ vi.mock('../services/agent-config', () => ({
   deleteSaveAsPatch: vi.fn(() => ({ ok: true, filePath: '/tmp/agent.patch' })),
   deleteForce: vi.fn(() => ({ ok: true })),
   deleteUnregister: vi.fn(() => ({ ok: true })),
+  getDisposeChecks: vi.fn(async () => ({ dirty: 0, unpushed: 0, unmerged: 0 })),
+  disposeHelper: vi.fn(async () => ({ ok: true, message: 'Disposed' })),
 }));
 
 vi.mock('../services/agent-creation', () => ({
@@ -56,6 +58,11 @@ vi.mock('../services/agent-system', () => ({
   getAvailableOrchestrators: vi.fn(() => ['claude-code', 'aider']),
   isHeadlessAgent: vi.fn(() => false),
   getRunningAgentIds: vi.fn((ids: string[]) => ids.filter((id) => id === 'running_one')),
+  isAgentRunning: vi.fn(() => false),
+}));
+
+vi.mock('../services/agent-runtime', () => ({
+  getAgentRuntime: vi.fn(() => undefined),
 }));
 
 vi.mock('../services/headless-manager', () => ({
@@ -89,6 +96,7 @@ vi.mock('../services/orchestration-policy', () => ({
   getHelperSummary: vi.fn(async () => ({ hasHelpers: false, helperIds: [] })),
   resolveHelperLaunchSettings: vi.fn(async () => ({ freeAgentMode: false, level: 'standard', ceiling: 'standard', clamped: false })),
   checkHelperLimitFor: vi.fn(async () => ({ ok: true })),
+  withAgentLock: vi.fn(async (_p: string, _id: string, fn: () => Promise<unknown>) => fn()),
 }));
 
 vi.mock('../services/clubhouse-mode-settings', () => ({
@@ -108,6 +116,8 @@ import { refreshClubhouseModeReadme } from '../services/materialization-service'
 import { applyPersonaToAgent } from '../services/persona-application';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as orchestrationPolicy from '../services/orchestration-policy';
+import { getAgentRuntime } from '../services/agent-runtime';
+import { _resetDisposeRequestsForTesting, recordDisposeRequest } from '../services/helper-dispose-requests';
 import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { agentRegistry } from '../services/agent-registry';
 import * as permissionQueue from '../services/annex-permission-queue';
@@ -321,6 +331,174 @@ describe('agent-handlers', () => {
     const handler = handlers.get(IPC.AGENT.UPDATE_DURABLE_CONFIG)!;
     await handler({}, '/project', 'agent-1', { model: 'opus' });
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { model: 'opus' });
+  });
+
+  describe('disposing helpers from the UI (#2232)', () => {
+    const helper = { id: 'h1', name: 'impl-ipc', parentAgentId: 'agent-1' };
+    const clean = { dirty: 0, unpushed: 0, unmerged: 0 };
+    let order: string[];
+
+    beforeEach(() => {
+      order = [];
+      vi.mocked(agentConfig.getDurableConfig).mockResolvedValue(helper as never);
+      vi.mocked(agentConfig.getDisposeChecks).mockImplementation(async () => { order.push('check'); return clean; });
+      vi.mocked(agentSystem.killAgent).mockImplementation(async () => { order.push('kill'); });
+      vi.mocked(agentConfig.disposeHelper).mockImplementation(async () => { order.push('dispose'); return { ok: true, message: 'Disposed', checks: clean }; });
+      vi.mocked(agentSystem.isAgentRunning).mockReturnValue(false);
+    });
+
+    const dispose = (...args: unknown[]) => handlers.get(IPC.AGENT.DISPOSE_HELPER)!({}, '/project', 'h1', ...args);
+
+    it('returns the dispose checks', async () => {
+      const result = await handlers.get(IPC.AGENT.GET_DISPOSE_CHECKS)!({}, '/project', 'h1');
+      expect(agentConfig.getDisposeChecks).toHaveBeenCalledWith('/project', 'h1');
+      expect(result).toEqual(clean);
+    });
+
+    it('checks, then disposes a helper main has asleep, under the orchestrator\'s lock', async () => {
+      const result = await dispose();
+      expect(order).toEqual(['check', 'dispose']);
+      expect(orchestrationPolicy.withAgentLock).toHaveBeenCalledWith('/project', 'agent-1', expect.any(Function));
+      expect(agentConfig.disposeHelper).toHaveBeenCalledWith('/project', 'h1', { force: false, expectedParentId: 'agent-1' });
+      expect(agentSystem.killAgent).not.toHaveBeenCalled();
+      expect(result.ok).toBe(true);
+      expect(broadcastSnapshotRefresh).toHaveBeenCalled();
+    });
+
+    it('stops a helper main has running and waits for the exit, then checks again before disposing', async () => {
+      vi.mocked(agentSystem.isAgentRunning).mockReturnValue(true);
+      const result = await dispose();
+      expect(order).toEqual(['check', 'kill', 'check', 'dispose']);
+      expect(agentSystem.killAgent).toHaveBeenCalledWith('h1', '/project', undefined, 'user', { waitForExit: true });
+      expect(result).toMatchObject({ ok: true, stopped: true });
+    });
+
+    it('refuses a check that couldn\'t run, even with force, without stopping anything', async () => {
+      vi.mocked(agentSystem.isAgentRunning).mockReturnValue(true);
+      vi.mocked(agentConfig.getDisposeChecks).mockResolvedValue({ dirty: 0, unpushed: 0, unmerged: null, error: 'its remote has never been fetched' });
+      const result = await dispose(true);
+      expect(result.ok).toBe(false);
+      expect(result.message).toContain('its remote has never been fetched');
+      expect(agentSystem.killAgent).not.toHaveBeenCalled();
+      expect(agentConfig.disposeHelper).not.toHaveBeenCalled();
+    });
+
+    it('refuses work at risk without force, without stopping anything', async () => {
+      vi.mocked(agentSystem.isAgentRunning).mockReturnValue(true);
+      vi.mocked(agentConfig.getDisposeChecks).mockResolvedValue({ dirty: 2, unpushed: 0, unmerged: 0 });
+      const result = await dispose();
+      expect(result).toMatchObject({ ok: false, checks: { dirty: 2 } });
+      expect(result.changed).toBeUndefined();
+      expect(agentSystem.killAgent).not.toHaveBeenCalled();
+      expect(agentConfig.disposeHelper).not.toHaveBeenCalled();
+    });
+
+    it('forces past the work the user saw', async () => {
+      vi.mocked(agentConfig.getDisposeChecks).mockResolvedValue({ dirty: 2, unpushed: 1, unmerged: 0 });
+      const result = await dispose(true, { dirty: 2, unpushed: 1, unmerged: 0 });
+      expect(result.ok).toBe(true);
+      expect(agentConfig.disposeHelper).toHaveBeenCalledWith('/project', 'h1', { force: true, expectedParentId: 'agent-1' });
+    });
+
+    it('asks again when there is more at risk than the user saw, before stopping', async () => {
+      vi.mocked(agentSystem.isAgentRunning).mockReturnValue(true);
+      vi.mocked(agentConfig.getDisposeChecks).mockResolvedValue({ dirty: 4, unpushed: 1, unmerged: 0 });
+      const result = await dispose(true, { dirty: 2, unpushed: 1, unmerged: 0 });
+      expect(result).toMatchObject({ ok: false, changed: true, checks: { dirty: 4 } });
+      expect(agentSystem.killAgent).not.toHaveBeenCalled();
+      expect(agentConfig.disposeHelper).not.toHaveBeenCalled();
+    });
+
+    it('asks again when the helper saved more work while it stopped', async () => {
+      vi.mocked(agentSystem.isAgentRunning).mockReturnValue(true);
+      let calls = 0;
+      vi.mocked(agentConfig.getDisposeChecks).mockImplementation(async () => (++calls === 1
+        ? { dirty: 1, unpushed: 0, unmerged: 0 }
+        : { dirty: 1, unpushed: 3, unmerged: 3 }));
+      const result = await dispose(true, { dirty: 1, unpushed: 0, unmerged: 0 });
+      expect(result).toMatchObject({ ok: false, changed: true, stopped: true, checks: { unpushed: 3 } });
+      expect(agentConfig.disposeHelper).not.toHaveBeenCalled();
+      expect(broadcastSnapshotRefresh).not.toHaveBeenCalled();
+    });
+
+    it('rejects a malformed seen argument', async () => {
+      await expect(async () => dispose(true, { dirty: 'lots' })).rejects.toThrow(/whole-number/);
+    });
+
+    it('refuses an agent that isn\'t a helper', async () => {
+      vi.mocked(agentConfig.getDurableConfig).mockResolvedValue({ id: 'a1', name: 'lead' } as never);
+      const result = await dispose();
+      expect(result).toEqual({ ok: false, message: 'lead isn\'t a helper' });
+      expect(agentConfig.getDisposeChecks).not.toHaveBeenCalled();
+    });
+
+    it('removes a disposed row and refuses a live one', async () => {
+      vi.mocked(agentConfig.getDurableConfig).mockResolvedValueOnce({ ...helper, disposedAt: '2026-10-18T10:00:00Z' } as never);
+      const removed = await handlers.get(IPC.AGENT.REMOVE_DISPOSED)!({}, '/project', 'h1');
+      expect(agentConfig.deleteUnregister).toHaveBeenCalledWith('/project', 'h1');
+      expect(removed.ok).toBe(true);
+
+      vi.mocked(agentConfig.deleteUnregister).mockClear();
+      const refused = await handlers.get(IPC.AGENT.REMOVE_DISPOSED)!({}, '/project', 'h1');
+      expect(refused).toEqual({ ok: false, message: 'impl-ipc isn\'t disposed' });
+      expect(agentConfig.deleteUnregister).not.toHaveBeenCalled();
+    });
+
+    describe('reporting the user\'s dispose decision', () => {
+      const report = (...args: unknown[]) => handlers.get(IPC.AGENT.REPORT_DISPOSE_DECISION)!({}, ...args);
+      let sendMessage: ReturnType<typeof vi.fn>;
+
+      beforeEach(() => {
+        _resetDisposeRequestsForTesting();
+        sendMessage = vi.fn(async () => {});
+        vi.mocked(getAgentRuntime).mockReturnValue({ sendMessage } as never);
+      });
+
+      it('reports once to the parent main sent the request for, using the stored name', async () => {
+        recordDisposeRequest('/project', 'h1', 'agent-1');
+        const first = await report('/project', 'h1', 'declined');
+        expect(first).toEqual({ ok: true, delivered: true, message: 'Reported' });
+        expect(getAgentRuntime).toHaveBeenCalledWith('agent-1');
+        expect(sendMessage).toHaveBeenCalledWith(
+          '[Clubhouse] The user declined your request to dispose of impl-ipc. Nothing was changed.',
+          expect.objectContaining({ source: 'mcp' }),
+        );
+        // Used up: a second report for the same request is refused.
+        const second = await report('/project', 'h1', 'disposed');
+        expect(second).toMatchObject({ ok: false, delivered: false });
+        expect(sendMessage).toHaveBeenCalledTimes(1);
+      });
+
+      it('refuses without a pending request', async () => {
+        const result = await report('/project', 'h1', 'disposed');
+        expect(result).toEqual({ ok: false, delivered: false, message: 'No dispose request for impl-ipc is waiting on the user' });
+        expect(sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('refuses a request recorded for another orchestrator', async () => {
+        recordDisposeRequest('/project', 'h1', 'someone-else');
+        expect(await report('/project', 'h1', 'declined')).toMatchObject({ ok: false });
+        expect(sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('refuses a non-helper', async () => {
+        vi.mocked(agentConfig.getDurableConfig).mockResolvedValue({ id: 'a1', name: 'lead' } as never);
+        recordDisposeRequest('/project', 'a1', 'agent-1');
+        expect(await report('/project', 'a1', 'declined')).toEqual({ ok: false, delivered: false, message: 'lead isn\'t a helper' });
+        expect(sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('uses up the request even when the orchestrator isn\'t running', async () => {
+        vi.mocked(getAgentRuntime).mockReturnValue(undefined);
+        recordDisposeRequest('/project', 'h1', 'agent-1');
+        expect(await report('/project', 'h1', 'disposed')).toMatchObject({ ok: true, delivered: false });
+        expect(await report('/project', 'h1', 'disposed')).toMatchObject({ ok: false });
+      });
+
+      it('rejects an unknown decision', async () => {
+        await expect(report('/project', 'h1', 'maybe')).rejects.toThrow(/Unknown decision/);
+      });
+    });
   });
 
   describe('orchestration policy (#2228)', () => {

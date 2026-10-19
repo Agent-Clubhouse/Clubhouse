@@ -360,8 +360,8 @@ export interface HelperHandoff {
 
 /**
  * A dispose_helper call the user has to decide (#2229): the orchestrator's
- * control level is "ask-everything". Sent main → renderer, which opens the
- * helper's delete dialog. TODO(#2232): a dedicated dispose confirmation.
+ * control level is "ask-everything". Sent main → renderer, which lists it
+ * under Needs you; selecting it opens the dispose confirmation (#2232).
  */
 export interface HelperDisposeRequest {
   projectPath: string;
@@ -400,6 +400,23 @@ export interface HelperDisposeBlock {
   name: string;
   checks: HelperDisposeChecks;
 }
+
+/**
+ * The result of disposing a helper from the UI (#2232). `changed` means the
+ * checks after stopping it found more at risk than `seen`, the checks the
+ * user confirmed; nothing was disposed and `checks` holds the new ones.
+ */
+export interface HelperDisposeResult {
+  ok: boolean;
+  message: string;
+  checks?: HelperDisposeChecks;
+  changed?: boolean;
+  /** The helper was running and was stopped, whatever the outcome. */
+  stopped?: boolean;
+}
+
+/** What the user decided about an orchestrator's dispose request (#2232). */
+export type HelperDisposeDecision = 'disposed' | 'declined';
 
 /** Result of resolving an orchestrator's helpers before it is deleted (#2224). */
 export interface HelperCascadeResult {
@@ -815,7 +832,7 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback';
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp' | 'goobers' | 'feedback' | 'helpers';
 
 // --- Chat idle settings ---
 

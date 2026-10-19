@@ -5,7 +5,7 @@ import { useId, type ReactNode } from 'react';
  * name and a one-line summary that already answers its question. Every card
  * starts collapsed; clicking the header opens it in place.
  */
-export function DetailsCard({ id, title, summary, open, onToggle, right, children }: {
+export function DetailsCard({ id, title, summary, open, onToggle, right, action, children }: {
   id: string;
   title: string;
   /** The answer on one line, shown open or closed ("6 files +94 −51"). */
@@ -14,9 +14,33 @@ export function DetailsCard({ id, title, summary, open, onToggle, right, childre
   onToggle: () => void;
   /** Small trailing content in the header, such as a meter. */
   right?: ReactNode;
+  /**
+   * A control at the end of the header, outside the toggle button so it can
+   * be interactive itself (the Orchestrate card's switch).
+   */
+  action?: ReactNode;
   children?: ReactNode;
 }) {
   const bodyId = useId();
+  const toggle = (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      aria-controls={bodyId}
+      className={`${action ? 'flex-1 min-w-0' : 'w-[calc(100%-8px)] mx-1'} h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0`}
+      data-testid={`details-card-${id}-toggle`}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-shrink-0 text-ctp-overlay0">
+        <path d={open ? 'M6 9l6 6 6-6' : 'M9 6l6 6-6 6'} />
+      </svg>
+      <span className="text-[13px] font-semibold text-ctp-text whitespace-nowrap">{title}</span>
+      {summary !== undefined && summary !== '' && (
+        <span className="min-w-0 truncate text-xs text-ctp-overlay1" data-testid={`details-card-${id}-summary`}>{summary}</span>
+      )}
+      {right && <span className="ml-auto flex-shrink-0 flex items-center gap-1">{right}</span>}
+    </button>
+  );
   return (
     <section
       className="flex-shrink-0 rounded-lg border border-surface-1 bg-ctp-mantle py-0.5 overflow-hidden"
@@ -24,23 +48,12 @@ export function DetailsCard({ id, title, summary, open, onToggle, right, childre
       data-open={open || undefined}
       aria-label={title}
     >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-controls={bodyId}
-        className="w-[calc(100%-8px)] mx-1 h-[30px] flex items-center gap-[7px] px-2.5 rounded-md text-left hover:bg-surface-0"
-        data-testid={`details-card-${id}-toggle`}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-shrink-0 text-ctp-overlay0">
-          <path d={open ? 'M6 9l6 6 6-6' : 'M9 6l6 6-6 6'} />
-        </svg>
-        <span className="text-[13px] font-semibold text-ctp-text whitespace-nowrap">{title}</span>
-        {summary !== undefined && summary !== '' && (
-          <span className="min-w-0 truncate text-xs text-ctp-overlay1" data-testid={`details-card-${id}-summary`}>{summary}</span>
-        )}
-        {right && <span className="ml-auto flex-shrink-0 flex items-center gap-1">{right}</span>}
-      </button>
+      {action ? (
+        <div className="mx-1 flex items-center gap-1">
+          {toggle}
+          <span className="flex-shrink-0 flex items-center pr-2">{action}</span>
+        </div>
+      ) : toggle}
       {open && <div id={bodyId} className="pb-1.5">{children}</div>}
     </section>
   );

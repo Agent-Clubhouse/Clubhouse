@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, HelperCascadeResult, HelperDeleteChoice, HelperDisposeRequest, StartDurableCreationParams } from '../shared/types';
+import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, StartDurableCreationParams } from '../shared/types';
 import type { HelperAccessResolution, HelperLimitCheck, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
@@ -63,6 +63,25 @@ export const agent = {
     ipcRenderer.on(IPC.AGENT.HELPER_DISPOSE_REQUEST, listener);
     return () => { ipcRenderer.removeListener(IPC.AGENT.HELPER_DISPOSE_REQUEST, listener); };
   },
+  /** What disposing a helper would lose: dirty files, unpushed and unmerged commits (#2232). */
+  getDisposeChecks: (projectPath: string, agentId: string): Promise<HelperDisposeChecks> =>
+    ipcRenderer.invoke(IPC.AGENT.GET_DISPOSE_CHECKS, projectPath, agentId),
+  /**
+   * Dispose one helper (#2232). Main checks, stops it if running, checks again
+   * and disposes. `force` overrides work at risk only. `seen` is what the user
+   * confirmed: more at risk after the stop returns `changed` and disposes nothing.
+   */
+  disposeHelper: (projectPath: string, agentId: string, force?: boolean, seen?: HelperDisposeChecks): Promise<HelperDisposeResult> =>
+    ipcRenderer.invoke(IPC.AGENT.DISPOSE_HELPER, projectPath, agentId, force, seen),
+  /**
+   * Tell a helper's orchestrator what the user decided about its dispose
+   * request. Main refuses unless that request is pending, and answers it once.
+   */
+  reportDisposeDecision: (projectPath: string, helperId: string, decision: HelperDisposeDecision): Promise<{ ok: boolean; delivered: boolean; message: string }> =>
+    ipcRenderer.invoke(IPC.AGENT.REPORT_DISPOSE_DECISION, projectPath, helperId, decision),
+  /** Remove a disposed helper's row for good. Refuses an agent that isn't disposed. */
+  removeDisposed: (projectPath: string, agentId: string): Promise<DeleteResult> =>
+    ipcRenderer.invoke(IPC.AGENT.REMOVE_DISPOSED, projectPath, agentId),
   /** An agent's resolved orchestration policy (#2228), or null for an unknown agent. */
   getOrchestrationPolicy: (projectPath: string, agentId: string): Promise<ResolvedOrchestrationPolicy | null> =>
     ipcRenderer.invoke(IPC.AGENT.GET_ORCHESTRATION_POLICY, projectPath, agentId),

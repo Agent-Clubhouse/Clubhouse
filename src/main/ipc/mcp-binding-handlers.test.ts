@@ -61,6 +61,7 @@ vi.mock('../services/persisted-bindings', () => ({
   markBindingRemovedByUser: vi.fn(),
   clearBindingRemovedByUser: vi.fn(),
   keepHeldBinding: vi.fn(() => false),
+  listSoleOwnedPairs: vi.fn(() => [{ agentId: 'h1', targetId: 'h2' }]),
 }));
 
 vi.mock('../services/canvas-wire-source', () => ({
@@ -73,6 +74,7 @@ vi.mock('../services/helper-wire-source', () => ({
 }));
 
 vi.mock('../services/orchestrator-connections', () => ({
+  ORCHESTRATOR_CONNECTION_SOURCE_ID: 'orchestrator-connections',
   orchestratorConnectionSource: { id: 'orchestrator-connections', prune: true, collect: vi.fn(async () => []) },
   watchOrchestratorConnections: vi.fn(() => () => undefined),
 }));
@@ -90,6 +92,7 @@ import {
   markBindingRemovedByUser,
   clearBindingRemovedByUser,
   keepHeldBinding,
+  listSoleOwnedPairs,
 } from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
@@ -147,6 +150,7 @@ describe('mcp-binding-handlers registration', () => {
       IPC.MCP_BINDING.SET_INSTRUCTIONS,
       IPC.MCP_BINDING.SET_DISABLED_TOOLS,
       IPC.MCP_BINDING.GET_AGENT_CONNECTION,
+      IPC.MCP_BINDING.GET_TOOL_CONNECTIONS,
       IPC.MCP_BINDING.REGISTER_WEBVIEW,
       IPC.MCP_BINDING.UNREGISTER_WEBVIEW,
     ];
@@ -266,6 +270,19 @@ describe('SEC-06: MCP binding IPC authorization', () => {
       const target = { targetId: 'w1', targetKind: 'browser', label: 'Widget' };
       expect(() => handler(fakeEvent, 'agent-1', target)).toThrow('unauthorized caller');
       expect(bindingManager.bind).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET_TOOL_CONNECTIONS (#2232)', () => {
+    it('lists the wires the connection tools alone own', () => {
+      const handler = getHandler(IPC.MCP_BINDING.GET_TOOL_CONNECTIONS);
+      expect(handler(fakeEvent)).toEqual([{ agentId: 'h1', targetId: 'h2' }]);
+      expect(listSoleOwnedPairs).toHaveBeenCalledWith('orchestrator-connections');
+    });
+
+    it('rejects a sender that isn\'t an app window', () => {
+      mockFromWebContents.mockReturnValue(null);
+      expect(() => getHandler(IPC.MCP_BINDING.GET_TOOL_CONNECTIONS)(fakeEvent)).toThrow();
     });
   });
 

@@ -15,6 +15,7 @@ import { pickGreeting } from './states/greetings';
 import { Markdown } from './chat/MessageBlocks';
 import { useLastSession, type LastSessionInfo } from './states/useLastSession';
 import { describeSleep, formatAgo, formatShortDuration, formatUsd, plural, relativeTo } from './states/format';
+import { HelperHeader } from './helpers/HelperHeader';
 import {
   BranchIcon, FileRow, Kbd, ModelLabel, SectionHead, StateToolbar, ToolbarSeparator,
 } from './states/parts';
@@ -215,6 +216,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
           </>
         )}
       />
+      {isDurable && <HelperHeader agent={agent} />}
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div

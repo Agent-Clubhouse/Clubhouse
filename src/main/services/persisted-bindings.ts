@@ -227,6 +227,26 @@ export function keepHeldBinding(agentId: string, targetId: string): boolean {
 }
 
 /**
+ * The pairs `sourceId` created and still owns, that no other pruning source
+ * lists (#2232). A pair a canvas, a zone, the user or another source made, or
+ * also lists, is not here: removing it is not only that source's business.
+ */
+export function listSoleOwnedPairs(sourceId: string): Array<{ agentId: string; targetId: string }> {
+  const owned = ownedBySource.get(sourceId);
+  if (!owned) return [];
+  const out: Array<{ agentId: string; targetId: string }> = [];
+  for (const [key, pair] of owned) {
+    if (removedByUser.has(key)) continue;
+    let heldElsewhere = false;
+    for (const [otherId, pairs] of heldBySource) {
+      if (otherId !== sourceId && pairs.has(key)) { heldElsewhere = true; break; }
+    }
+    if (!heldElsewhere) out.push({ ...pair });
+  }
+  return out;
+}
+
+/**
  * Register a source. A source with the same id replaces the earlier one.
  * Returns a function that unregisters it.
  */

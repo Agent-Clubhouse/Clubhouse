@@ -11,7 +11,7 @@ function pending(checks: HelperDisposeChecks, forceRequested = false): PendingHe
 }
 
 describe('helperDisposeRequestStore (#2229)', () => {
-  beforeEach(() => useHelperDisposeRequestStore.setState({ requests: {} }));
+  beforeEach(() => useHelperDisposeRequestStore.setState({ requests: {}, reviewing: null }));
 
   it('keeps one request per helper and dismisses it', () => {
     const store = useHelperDisposeRequestStore.getState();
@@ -21,6 +21,17 @@ describe('helperDisposeRequestStore (#2229)', () => {
     expect(useHelperDisposeRequestStore.getState().requests.h).toMatchObject({ at: 9, request: { checks: { dirty: 2 } } });
     store.dismiss('h');
     expect(useHelperDisposeRequestStore.getState().requests).toEqual({});
+  });
+
+  it('opens a pending request for review and closes it when dismissed (#2232)', () => {
+    const store = useHelperDisposeRequestStore.getState();
+    store.review('h');
+    expect(useHelperDisposeRequestStore.getState().reviewing).toBeNull();
+    store.add(pending({ dirty: 0, unpushed: 0, unmerged: 0 }).request, 'Orch', 5);
+    store.review('h');
+    expect(useHelperDisposeRequestStore.getState().reviewing).toBe('h');
+    store.dismiss('h');
+    expect(useHelperDisposeRequestStore.getState()).toMatchObject({ requests: {}, reviewing: null });
   });
 
   it('describes who asked and what the checks found', () => {

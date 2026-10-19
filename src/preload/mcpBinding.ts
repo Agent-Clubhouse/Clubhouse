@@ -21,6 +21,9 @@ export const mcpBinding = {
     ipcRenderer.invoke(IPC.MCP_BINDING.SET_INSTRUCTIONS, agentId, targetId, instructions),
   setDisabledTools: (agentId: string, targetId: string, disabledTools: string[]) =>
     ipcRenderer.invoke(IPC.MCP_BINDING.SET_DISABLED_TOOLS, agentId, targetId, disabledTools),
+  /** Wires the orchestrator connection tools made and alone own; the user may remove these (#2232). */
+  getToolConnections: (): Promise<Array<{ agentId: string; targetId: string }>> =>
+    ipcRenderer.invoke(IPC.MCP_BINDING.GET_TOOL_CONNECTIONS),
   getAgentConnection: (agentId: string): Promise<AgentMcpConnection | null> =>
     ipcRenderer.invoke(IPC.MCP_BINDING.GET_AGENT_CONNECTION, agentId),
   onAgentConnectionChanged: (callback: (agentId: string) => void) => {

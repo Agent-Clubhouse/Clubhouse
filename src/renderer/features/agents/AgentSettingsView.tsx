@@ -33,9 +33,12 @@ import {
   useAgentSettingsPages,
   type AgentSettingsPage,
   requestCloseAgentSettings,
+  hiddenAgentSettingsPages,
   type SaveHandle,
 } from './agentSettingsPages';
+import { isRemoteProjectId } from '../../stores/remoteProjectStore';
 import { Field, FieldLabel, inputClass, PageTitle, SectionHeading, selectClass, textareaClass } from './agentSettingsUi';
+import { AgentHelpersSettings } from './helpers/AgentHelpersSettings';
 
 interface Props {
   agent: Agent;
@@ -180,6 +183,17 @@ export function AgentSettingsView({ agent }: Props) {
   useEffect(() => {
     resetPages();
   }, [agent.id, resetPages]);
+
+  // Helpers (#2232): not for a helper or an agent on another machine, like the Orchestrate card.
+  const setHiddenPages = useAgentSettingsPages((s) => s.setHiddenPages);
+  const hiddenPages = useMemo(
+    () => hiddenAgentSettingsPages(agent, isRemoteProjectId(agent.projectId)),
+    [agent.parentAgentId, agent.projectId],
+  );
+  useEffect(() => {
+    setHiddenPages(hiddenPages);
+  }, [agent.id, hiddenPages, setHiddenPages]);
+  const showHelpers = !hiddenPages.includes('helpers');
 
   // Shell in worktree: the sidebar row (new chrome) or the row under the page
   // (classic) opens it. It stays mounted once opened.
@@ -1427,6 +1441,9 @@ export function AgentSettingsView({ agent }: Props) {
     </>
   );
 
+  // Orchestration (#2232): saved by its own controls, like the Orchestrate card.
+  const helpersSettings = showHelpers ? <AgentHelpersSettings agent={agent} projectPath={projectPath} /> : null;
+
   const managedNote = (
     <p data-testid="agent-settings-managed" className="mt-3 text-[13px] text-ctp-subtext1">
       Clubhouse Mode manages this from project defaults.{' '}
@@ -1448,6 +1465,7 @@ export function AgentSettingsView({ agent }: Props) {
       definitions: undefined,
       mcp: undefined,
       permissions: <span className="font-mono">{permissionsPathLabel}</span>,
+      helpers: `How ${agent.name} starts, runs and disposes of helper agents. The same switches are in its Orchestrate card beside the chat.`,
       quick: `Defaults for quick agents ${agent.name} starts`,
     };
     const content: Record<AgentSettingsPage, React.ReactNode> = {
@@ -1457,12 +1475,14 @@ export function AgentSettingsView({ agent }: Props) {
       definitions: definitionsSection,
       mcp: mcpSections,
       permissions: permissionsEditor,
+      helpers: helpersSettings,
       quick: quickDefaults,
     };
     // Every page stays mounted and only the selected one shows, so edits held
     // inside a page (an open skill editor, .mcp.json) survive a page switch.
-    body = AGENT_SETTINGS_PAGES.map(({ page: p, label }) => {
-      const managed = isManagedByClubhouse && p !== 'general' && p !== 'quick';
+    body = AGENT_SETTINGS_PAGES.filter(({ page: p }) => !hiddenPages.includes(p)).map(({ page: p, label }) => {
+      // Clubhouse Mode manages files in the worktree; the orchestration policy isn't one.
+      const managed = isManagedByClubhouse && p !== 'general' && p !== 'quick' && p !== 'helpers';
       return (
         <div key={p} data-testid={`agent-settings-page-${p}`} hidden={p !== page}>
           <PageTitle title={label} sub={sub[p]} right={p === page ? reloadButton : undefined} />
@@ -1485,6 +1505,7 @@ export function AgentSettingsView({ agent }: Props) {
             {permissionsEditor}
           </>
         )}
+        {helpersSettings}
         <SectionHeading title="Quick agents" sub={`Defaults for quick agents ${agent.name} starts`} />
         {quickDefaults}
       </>

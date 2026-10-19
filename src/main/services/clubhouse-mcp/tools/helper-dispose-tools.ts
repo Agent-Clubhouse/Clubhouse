@@ -25,6 +25,7 @@ import { agentRegistry } from '../../agent-registry';
 import * as agentConfig from '../../agent-config';
 import { getOrchestrationPolicy, withAgentLock } from '../../orchestration-policy';
 import { isAgentRunning, killAgent } from '../../agent-system';
+import { recordDisposeRequest } from '../../helper-dispose-requests';
 import * as projectStore from '../../project-store';
 import { appLog } from '../../log-service';
 import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
@@ -118,13 +119,15 @@ function workAtRisk(checks: HelperDisposeChecks): boolean {
 
 /**
  * Put the dispose in front of the user: the main window shows it under Needs
- * you with the check facts. Returns false when there is no main window.
- * TODO(#2232): a real dispose confirmation the user can accept or decline.
+ * you with the check facts, and selecting it opens the dispose confirmation
+ * (#2232). Returns false when there is no main window.
  */
 function requestUserDispose(request: HelperDisposeRequest): boolean {
   const main = findMainWindow();
   if (!main) return false;
   main.webContents.send(IPC.AGENT.HELPER_DISPOSE_REQUEST, request);
+  // So the user's answer can be reported to this orchestrator, once (#2232).
+  recordDisposeRequest(request.projectPath, request.helperId, request.orchestratorId);
   return true;
 }
 

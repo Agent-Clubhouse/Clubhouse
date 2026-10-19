@@ -18,13 +18,14 @@ export function AgentSettingsNav() {
   const page = useAgentSettingsPages((s) => s.page);
   const dirtyPages = useAgentSettingsPages((s) => s.dirtyPages);
   const counts = useAgentSettingsPages((s) => s.counts);
+  const hiddenPages = useAgentSettingsPages((s) => s.hiddenPages);
   const shellOpen = useAgentSettingsPages((s) => s.shellOpen);
   const setPage = useAgentSettingsPages((s) => s.setPage);
   const setShellOpen = useAgentSettingsPages((s) => s.setShellOpen);
 
   return (
     <nav aria-label="Agent settings" data-testid="agent-settings-nav" className="flex-1 min-h-0 overflow-y-auto pb-2 flex flex-col gap-px px-1.5">
-      {AGENT_SETTINGS_PAGES.map(({ page: p, label }) => {
+      {AGENT_SETTINGS_PAGES.filter(({ page: p }) => !hiddenPages.includes(p)).map(({ page: p, label }) => {
         const active = page === p;
         const dirty = (dirtyPages as string[]).includes(p);
         const count = counts[p];

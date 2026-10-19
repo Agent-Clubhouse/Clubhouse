@@ -509,9 +509,9 @@ export function ChromeSidebar() {
   const selectNeedsYou = useCallback((agent: Agent) => {
     // needs_you_remote_select: the agent runs on a satellite, whichever host is shown.
     const remote = hostOf(agent.projectId) !== null;
-    // Selecting a helper's dispose request shows the helper; the request has
-    // been seen. TODO(#2232): accept or decline it from a real confirmation.
-    useHelperDisposeRequestStore.getState().dismiss(agent.id);
+    // Selecting a helper's dispose request shows the helper and opens the
+    // dispose confirmation, where the user disposes or declines (#2232).
+    useHelperDisposeRequestStore.getState().review(agent.id);
     openAgent(agent, false);
     reportChromeFeature(remote ? 'needs_you_remote_select' : 'needs_you_select');
   }, [openAgent]);

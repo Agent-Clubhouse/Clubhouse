@@ -40,6 +40,7 @@ export function useSettingsCategories(): { app: SettingsCategory[]; project: Set
   const app: SettingsCategory[] = [
     { label: 'About', page: 'about' },
     { label: 'Orchestrators & agents', page: 'orchestrators' },
+    { label: 'Helpers', page: 'helpers' },
     { label: 'Profiles', page: 'profiles' },
     { label: 'Display & UI', page: 'display' },
     { label: 'External editor', page: 'editor' },

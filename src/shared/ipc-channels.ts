@@ -61,6 +61,10 @@ export const IPC = {
     RESOLVE_HELPERS_FOR_DELETE: 'agent:resolve-helpers-for-delete',
     /** Main → renderer (#2229): a helper dispose the user has to decide (control "ask-everything"). */
     HELPER_DISPOSE_REQUEST: 'agent:helper-dispose-request',
+    GET_DISPOSE_CHECKS: 'agent:get-dispose-checks',
+    DISPOSE_HELPER: 'agent:dispose-helper',
+    REMOVE_DISPOSED: 'agent:remove-disposed',
+    REPORT_DISPOSE_DECISION: 'agent:report-dispose-decision',
     GET_ORCHESTRATION_POLICY: 'agent:get-orchestration-policy',
     SET_ORCHESTRATION_POLICY: 'agent:set-orchestration-policy',
     TURN_OFF_ORCHESTRATION: 'agent:turn-off-orchestration',
@@ -478,6 +482,8 @@ export const IPC = {
     SET_DISABLED_TOOLS: 'mcp-binding:set-disabled-tools',
     /** Renderer→main: the agent's Clubhouse MCP connection (AgentMcpConnection | null). */
     GET_AGENT_CONNECTION: 'mcp-binding:get-agent-connection',
+    /** Renderer→main: the wires an orchestrator's connection tools made and alone own (#2232). */
+    GET_TOOL_CONNECTIONS: 'mcp-binding:get-tool-connections',
     /** Main→renderer: the agent id whose connection or tool count changed. */
     AGENT_CONNECTION_CHANGED: 'mcp-binding:agent-connection-changed',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
