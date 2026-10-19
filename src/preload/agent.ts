@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, StartDurableCreationParams } from '../shared/types';
+import type { AgentHookEvent, AgentSleepInfo, DurableAgentConfig, DurableConfigUpdates, DurableCreationEvent, DurableWorktreeOptions, DeleteResult, HelperCascadeResult, HelperDeleteChoice, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeRequest, HelperDisposeResult, HelperStartDecisionResult, HelperStartRequest, StartDurableCreationParams } from '../shared/types';
 import type { HelperAccessResolution, HelperLimitCheck, OrchestrationOffChoice, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy, SetOrchestrationPolicyResult, TurnOffOrchestrationResult } from '../shared/orchestration-policy';
 import type { PendingPermissionInfo, PermissionSettledInfo, PermissionResolveOutcome } from '../shared/permission-types';
 
@@ -79,6 +79,27 @@ export const agent = {
    */
   reportDisposeDecision: (projectPath: string, helperId: string, decision: HelperDisposeDecision): Promise<{ ok: boolean; delivered: boolean; message: string }> =>
     ipcRenderer.invoke(IPC.AGENT.REPORT_DISPOSE_DECISION, projectPath, helperId, decision),
+  /** A helper start waiting on the user's approval (#2234). Sent to the main window only. */
+  onHelperStartRequest: (callback: (request: HelperStartRequest) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, request: HelperStartRequest) => callback(request);
+    ipcRenderer.on(IPC.AGENT.HELPER_START_REQUEST, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.HELPER_START_REQUEST, listener); };
+  },
+  /** Start requests that were answered, expired or dropped (#2234). */
+  onHelperStartRequestsClosed: (callback: (requestIds: string[]) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, requestIds: string[]) => callback(requestIds);
+    ipcRenderer.on(IPC.AGENT.HELPER_START_REQUESTS_CLOSED, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.HELPER_START_REQUESTS_CLOSED, listener); };
+  },
+  /** Every helper start waiting on the user, oldest first. */
+  listHelperStartRequests: (): Promise<HelperStartRequest[]> =>
+    ipcRenderer.invoke(IPC.AGENT.LIST_HELPER_START_REQUESTS),
+  /** Approve a waiting helper start. Main runs every start check but the control level, once. */
+  approveHelperStart: (projectPath: string, requestId: string): Promise<HelperStartDecisionResult> =>
+    ipcRenderer.invoke(IPC.AGENT.APPROVE_HELPER_START, projectPath, requestId),
+  /** Decline a waiting helper start. Main tells the orchestrator. */
+  declineHelperStart: (projectPath: string, requestId: string): Promise<HelperStartDecisionResult> =>
+    ipcRenderer.invoke(IPC.AGENT.DECLINE_HELPER_START, projectPath, requestId),
   /** Remove a disposed helper's row for good. Refuses an agent that isn't disposed. */
   removeDisposed: (projectPath: string, agentId: string): Promise<DeleteResult> =>
     ipcRenderer.invoke(IPC.AGENT.REMOVE_DISPOSED, projectPath, agentId),

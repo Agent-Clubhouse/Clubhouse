@@ -29,7 +29,7 @@ export function NeedsYou({ items, projectNames, activeAgentId, onSelect, onRevie
       <div className="flex flex-col gap-px px-1.5">
         {items.map(({ agent, reason, message, hostLabel }) => {
           const active = agent.id === activeAgentId;
-          const waiting = reason === 'permission' || reason === 'dispose_request';
+          const waiting = reason === 'permission' || reason === 'dispose_request' || reason === 'start_request';
           return (
             <button
               key={agent.id}

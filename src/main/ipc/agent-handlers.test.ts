@@ -106,6 +106,7 @@ vi.mock('../services/clubhouse-mode-settings', () => ({
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAgentHandlers } from './agent-handlers';
+import { recordStartRequest, _resetStartRequestsForTesting } from '../services/helper-start-requests';
 import * as agentConfig from '../services/agent-config';
 import * as agentCreation from '../services/agent-creation';
 import * as agentSystem from '../services/agent-system';
@@ -442,6 +443,47 @@ describe('agent-handlers', () => {
       const refused = await handlers.get(IPC.AGENT.REMOVE_DISPOSED)!({}, '/project', 'h1');
       expect(refused).toEqual({ ok: false, message: 'impl-ipc isn\'t disposed' });
       expect(agentConfig.deleteUnregister).not.toHaveBeenCalled();
+    });
+
+    describe('answering a held helper start (#2234)', () => {
+      const approve = (...args: unknown[]) => handlers.get(IPC.AGENT.APPROVE_HELPER_START)!({}, ...args);
+      const decline = (...args: unknown[]) => handlers.get(IPC.AGENT.DECLINE_HELPER_START)!({}, ...args);
+      let sendMessage: ReturnType<typeof vi.fn>;
+
+      beforeEach(() => {
+        _resetStartRequestsForTesting();
+        sendMessage = vi.fn(async () => {});
+        vi.mocked(getAgentRuntime).mockReturnValue({ sendMessage } as never);
+      });
+
+      it('validates the arguments in main', async () => {
+        await expect(async () => approve('/project', 42)).rejects.toThrow();
+        await expect(async () => decline(undefined, 'hstart_1')).rejects.toThrow();
+      });
+
+      it('refuses an unknown request', async () => {
+        expect(await approve('/project', 'hstart_nope')).toMatchObject({ ok: false });
+        expect(sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('declines once, telling the orchestrator from main\'s stored data', async () => {
+        const recorded = recordStartRequest('/project', 'agent-1', 'lead', { name: 'impl-api', task: 'Build it' });
+        if (!recorded.ok) throw new Error('unexpected refusal');
+        const id = recorded.request.requestId;
+        expect(await decline('/project', id)).toEqual({ ok: true, message: 'Declined' });
+        expect(sendMessage).toHaveBeenCalledWith(
+          `[Clubhouse] The user declined your request to start helper "impl-api" (request ${id}). Nothing was created.`,
+          expect.objectContaining({ source: 'mcp' }),
+        );
+        expect(await decline('/project', id)).toMatchObject({ ok: false });
+        expect(await approve('/project', id)).toMatchObject({ ok: false });
+      });
+
+      it('lists the waiting requests', async () => {
+        recordStartRequest('/project', 'agent-1', 'lead', { name: 'impl-api', task: 'Build it' });
+        const list = await handlers.get(IPC.AGENT.LIST_HELPER_START_REQUESTS)!({});
+        expect(list).toEqual([expect.objectContaining({ orchestratorId: 'agent-1', args: { name: 'impl-api', task: 'Build it' } })]);
+      });
     });
 
     describe('reporting the user\'s dispose decision', () => {

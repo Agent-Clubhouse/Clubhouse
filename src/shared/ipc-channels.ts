@@ -65,6 +65,13 @@ export const IPC = {
     DISPOSE_HELPER: 'agent:dispose-helper',
     REMOVE_DISPOSED: 'agent:remove-disposed',
     REPORT_DISPOSE_DECISION: 'agent:report-dispose-decision',
+    /** Main → renderer (#2234): a helper start waiting on the user's approval. */
+    HELPER_START_REQUEST: 'agent:helper-start-request',
+    /** Main → renderer (#2234): start requests that were answered, expired or dropped. */
+    HELPER_START_REQUESTS_CLOSED: 'agent:helper-start-requests-closed',
+    LIST_HELPER_START_REQUESTS: 'agent:list-helper-start-requests',
+    APPROVE_HELPER_START: 'agent:approve-helper-start',
+    DECLINE_HELPER_START: 'agent:decline-helper-start',
     GET_ORCHESTRATION_POLICY: 'agent:get-orchestration-policy',
     SET_ORCHESTRATION_POLICY: 'agent:set-orchestration-policy',
     TURN_OFF_ORCHESTRATION: 'agent:turn-off-orchestration',

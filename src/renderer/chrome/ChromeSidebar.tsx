@@ -29,6 +29,8 @@ import { SCOPE_FOLLOWING_TABS } from './scope';
 import { useChromeDialogStore } from './sidebar/ChromeAgentDialogs';
 import { selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './sidebar/treeModel';
 import { useHelperDisposeRequestStore, describeHelperDispose } from '../stores/helperDisposeRequestStore';
+import { useHelperStartRequestStore, startRequestsByOrchestrator, describeHelperStarts } from '../stores/helperStartRequestStore';
+import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
 import { HostSwitcher, LOCAL_HOST } from './sidebar/HostSwitcher';
 import { useClickOutside } from './sidebar/useClickOutside';
 import { hostOf, switchHost } from './hosts';
@@ -405,11 +407,20 @@ export function ChromeSidebar() {
     }
     return out;
   }, [pendingDisposes]);
+  // Orchestrators waiting for approval to start a helper (#2234).
+  const pendingStarts = useHelperStartRequestStore((s) => s.requests);
+  const startRequests = useMemo(() => {
+    const out: Record<string, { message: string; at: number }> = {};
+    for (const [orchestratorId, list] of Object.entries(startRequestsByOrchestrator(pendingStarts))) {
+      out[orchestratorId] = { message: describeHelperStarts(list), at: Date.parse(list[0].createdAt) || 0 };
+    }
+    return out;
+  }, [pendingStarts]);
   // Needs you covers every host, so a blocked agent anywhere is one click away.
   const needs = useMemo(() => mergeNeedsAttention(
-    selectNeedsAttention(agents, detailed, localProjectIds, disposeRequests),
+    selectNeedsAttention(agents, detailed, localProjectIds, disposeRequests, startRequests),
     selectRemoteNeedsAttention(satellites, satelliteProjects, remoteAgents, remoteDetailed),
-  ), [agents, detailed, localProjectIds, disposeRequests, satellites, satelliteProjects, remoteAgents, remoteDetailed]);
+  ), [agents, detailed, localProjectIds, disposeRequests, startRequests, satellites, satelliteProjects, remoteAgents, remoteDetailed]);
   const needsByHost = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const item of needs) counts[item.hostId ?? LOCAL_HOST] = (counts[item.hostId ?? LOCAL_HOST] ?? 0) + 1;
@@ -513,6 +524,12 @@ export function ChromeSidebar() {
     // dispose confirmation, where the user disposes or declines (#2232).
     useHelperDisposeRequestStore.getState().review(agent.id);
     openAgent(agent, false);
+    // An orchestrator waiting to start a helper opens its Helpers card,
+    // where the user approves or declines (#2234).
+    const starts = useHelperStartRequestStore.getState().requests;
+    if (Object.values(starts).some((r) => r.orchestratorId === agent.id)) {
+      useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'helpers' });
+    }
     reportChromeFeature(remote ? 'needs_you_remote_select' : 'needs_you_select');
   }, [openAgent]);
 

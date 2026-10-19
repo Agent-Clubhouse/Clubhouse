@@ -7,8 +7,13 @@ import { resolveHelperAccess, type AgentLaunchAccess } from '../../../../shared/
 // ── Mocks: no CLI, git or disk is touched ──────────────────────────────────
 
 const agents = new Map<string, DurableAgentConfig>();
+const configListeners = new Set<(projectPath: string) => void>();
 
 vi.mock('../../agent-config', () => ({
+  onAgentConfigChanged: vi.fn((listener: (projectPath: string) => void) => {
+    configListeners.add(listener);
+    return () => { configListeners.delete(listener); };
+  }),
   getDurableConfig: vi.fn(async (_projectPath: string, id: string) => agents.get(id) ?? null),
   listHelpers: vi.fn(async (_projectPath: string, id: string) =>
     [...agents.values()].filter((a) => a.parentAgentId === id && !a.disposedAt)),
@@ -79,7 +84,15 @@ const mockBroadcast = vi.fn();
 vi.mock('../../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...args: unknown[]) => mockBroadcast(...args) }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 
-import { registerHelperTools, _resetHelperToolsForTesting, _settleHelperStartsForTesting } from './helper-tools';
+import {
+  approveHelperStart,
+  declineHelperStart,
+  registerHelperTools,
+  watchHelperStartRequests,
+  _resetHelperToolsForTesting,
+  _settleHelperStartsForTesting,
+} from './helper-tools';
+import { listStartRequests, START_REQUEST_TTL_MS, _resetStartRequestsForTesting } from '../../helper-start-requests';
 import { callTool, getScopedToolList, _resetForTesting } from '../tool-registry';
 import { agentRegistry } from '../../agent-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from '../orchestration-gate';
@@ -154,6 +167,8 @@ beforeEach(() => {
   _resetForTesting();
   _resetOrchestrationGateForTesting();
   _resetHelperToolsForTesting();
+  _resetStartRequestsForTesting();
+  configListeners.clear();
   registerHelperTools();
 
   mockCheckLimit.mockResolvedValue({ ok: true, helperCount: 0, totalHelperCount: 0, maxHelpers: 5, globalCap: 20 });
@@ -458,6 +473,200 @@ describe('start_helper re-checks at spawn time', () => {
     await callTool('orch', 'start_helper', { name: 'b', task: 't' });
     const attention = mockBroadcast.mock.calls.filter((c) => c[0] === IPC.APP.AGENT_ATTENTION);
     expect(attention).toHaveLength(1);
+  });
+});
+
+// ── Start approvals (#2234) ────────────────────────────────────────────────
+
+describe('start approvals', () => {
+  const OTHER_PROJECT = path.join(path.sep, 'tmp', 'other-project');
+
+  beforeEach(() => {
+    mockGetPolicy.mockResolvedValue({ orchestrate: true, access: 'same', control: 'ask-before-start', maxHelpers: 5 });
+  });
+
+  async function ask(args: Record<string, unknown> = { name: 'impl-api', task: 'Build the API' }): Promise<string> {
+    const result = await callTool('orch', 'start_helper', args);
+    const body = parse(result);
+    expect(body.state).toBe('needs_approval');
+    return body.requestId as string;
+  }
+
+  it('holds the start with a request id and says requests are kept in memory and expire', async () => {
+    const result = await callTool('orch', 'start_helper', {
+      name: 'impl-api', task: 'Build the API', persona: 'qa', cli: 'codex-cli', model: 'm', access: 'auto', branchFrom: 'main', folder: 'api',
+    });
+    const body = parse(result);
+    expect(body).toMatchObject({ state: 'needs_approval', control: 'ask-before-start', requestId: expect.stringMatching(/^hstart_/) });
+    expect(body.message).toContain('24 hours');
+    expect(body.message).toContain('quits');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+    expect(listStartRequests()).toEqual([expect.objectContaining({
+      requestId: body.requestId, projectPath: PROJECT, orchestratorId: 'orch', orchestratorName: 'Orch',
+      args: { name: 'impl-api', task: 'Build the API', persona: 'qa', cli: 'codex-cli', model: 'm', access: 'auto', branchFrom: 'main', folder: 'api' },
+    })]);
+    // The desktop notice stays.
+    expect(mockBroadcast).toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, 'orch', expect.anything());
+  });
+
+  it('reuses the waiting request for the same start, and caps how many wait', async () => {
+    const first = await ask();
+    const again = parse(await callTool('orch', 'start_helper', { name: 'impl-api', task: 'Build the API' }));
+    expect(again).toMatchObject({ requestId: first, reused: true });
+    await ask({ name: 'b', task: 't' });
+    await ask({ name: 'c', task: 't' });
+    const over = await callTool('orch', 'start_helper', { name: 'd', task: 't' });
+    expect(over.isError).toBe(true);
+    expect(over.content[0].text).toContain('3 helper starts waiting');
+    expect(listStartRequests()).toHaveLength(3);
+  });
+
+  it('approve runs exactly one start, with the limit and access checks, and tells the orchestrator', async () => {
+    const id = await ask({ name: 'impl-api', task: 'Build the API', access: 'standard' });
+    const creation = controllableCreation();
+    const result = await approveHelperStart(PROJECT, id);
+    expect(result).toMatchObject({ ok: true, helperId: 'helper_impl-api' });
+    expect(mockStartDurableCreation).toHaveBeenCalledTimes(1);
+    expect(mockStartDurableCreation.mock.calls[0][1]).toMatchObject({ name: 'impl-api', parentAgentId: 'orch', freeAgentMode: false });
+    expect(mockCheckLimit).toHaveBeenCalledWith(PROJECT, 'orch');
+    expect(sent.get('orch')).toEqual([expect.stringContaining(`The user approved starting helper "impl-api" (request ${id}). It is being created as helper_impl-api with standard access.`)]);
+    // The control level is not asked again: the approved start is not held a second time.
+    expect(listStartRequests()).toEqual([]);
+
+    creation.ready('helper_impl-api');
+    await _settleHelperStartsForTesting();
+    expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
+    expect(mockSpawnAgent.mock.calls[0][0]).toMatchObject({ agentId: 'helper_impl-api', freeAgentMode: false });
+  });
+
+  it('an approved request cannot be approved again, even twice at once', async () => {
+    const id = await ask();
+    controllableCreation();
+    const [a, b] = await Promise.all([approveHelperStart(PROJECT, id), approveHelperStart(PROJECT, id)]);
+    expect([a.ok, b.ok].sort()).toEqual([false, true]);
+    const again = await approveHelperStart(PROJECT, id);
+    expect(again.ok).toBe(false);
+    expect(mockStartDurableCreation).toHaveBeenCalledTimes(1);
+  });
+
+  it('an approved start still respects the helper limit', async () => {
+    const id = await ask();
+    mockCheckLimit.mockResolvedValue({ ok: false, reason: 'agent-limit', message: 'This agent already has 5 of 5 helpers.', helperCount: 5, totalHelperCount: 5, maxHelpers: 5, globalCap: 20 });
+    const result = await approveHelperStart(PROJECT, id);
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('5 of 5');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+    expect(sent.get('orch')?.[0]).toContain('but it was not started: This agent already has 5 of 5 helpers.');
+  });
+
+  it('an approved start still applies the name and folder rules of the creation', async () => {
+    const id = await ask({ name: 'bad name', task: 't' });
+    mockStartDurableCreation.mockRejectedValue(new Error('Invalid folder name'));
+    const result = await approveHelperStart(PROJECT, id);
+    expect(result).toMatchObject({ ok: false });
+    expect(result.message).toContain('Invalid folder name');
+  });
+
+  it('approve is refused once orchestration is off, and when the orchestrator stopped', async () => {
+    const id = await ask();
+    setOrchestrationEnabled('orch', false);
+    const off = await approveHelperStart(PROJECT, id);
+    expect(off).toMatchObject({ ok: false });
+    expect(off.message).toContain('orchestration is off');
+
+    setOrchestrationEnabled('orch', true);
+    const id2 = await ask({ name: 'b', task: 't' });
+    agentRegistry.untrack('orch');
+    const stopped = await approveHelperStart(PROJECT, id2);
+    expect(stopped.message).toContain('not running');
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('decline uses the request up and tells the orchestrator', async () => {
+    const id = await ask();
+    expect(await declineHelperStart(PROJECT, id)).toEqual({ ok: true, message: 'Declined' });
+    expect(sent.get('orch')).toEqual([`[Clubhouse] The user declined your request to start helper "impl-api" (request ${id}). Nothing was created.`]);
+    expect((await declineHelperStart(PROJECT, id)).ok).toBe(false);
+    expect((await approveHelperStart(PROJECT, id)).ok).toBe(false);
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unknown request and one from another project', async () => {
+    expect((await approveHelperStart(PROJECT, 'hstart_nope')).ok).toBe(false);
+    expect((await declineHelperStart(PROJECT, 'hstart_nope')).ok).toBe(false);
+    const id = await ask();
+    expect((await approveHelperStart(OTHER_PROJECT, id)).ok).toBe(false);
+    expect((await declineHelperStart(OTHER_PROJECT, id)).ok).toBe(false);
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+    // Still waiting in its own project.
+    expect(listStartRequests().map((r) => r.requestId)).toEqual([id]);
+  });
+
+  it('refuses an expired request', async () => {
+    const id = await ask();
+    const now = Date.now();
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(now + START_REQUEST_TTL_MS + 1);
+    try {
+      expect((await approveHelperStart(PROJECT, id)).ok).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  describe('watching', () => {
+    const send = vi.fn();
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+    const changeConfig = () => { for (const l of configListeners) l(PROJECT); };
+
+    beforeEach(() => {
+      send.mockReset();
+      watchHelperStartRequests(send);
+    });
+
+    it('sends added and closed requests to the main window', async () => {
+      const id = await ask();
+      expect(send).toHaveBeenCalledWith(IPC.AGENT.HELPER_START_REQUEST, expect.objectContaining({ requestId: id }));
+      await declineHelperStart(PROJECT, id);
+      expect(send).toHaveBeenCalledWith(IPC.AGENT.HELPER_START_REQUESTS_CLOSED, [id]);
+    });
+
+    it('drops an orchestrator\'s requests when orchestration is turned off', async () => {
+      const id = await ask();
+      mockGetPolicy.mockResolvedValue({ orchestrate: false, access: 'same', control: 'ask-before-start', maxHelpers: 5 });
+      changeConfig();
+      await flush();
+      expect(listStartRequests()).toEqual([]);
+      expect(send).toHaveBeenCalledWith(IPC.AGENT.HELPER_START_REQUESTS_CLOSED, [id]);
+    });
+
+    it('drops them when the orchestrator is disposed or deleted', async () => {
+      await ask();
+      agents.set('orch', { ...agents.get('orch')!, disposedAt: '2026-10-18T12:00:00.000Z' });
+      changeConfig();
+      await flush();
+      expect(listStartRequests()).toEqual([]);
+
+      agents.set('orch', { ...agents.get('orch')!, disposedAt: undefined });
+      await ask({ name: 'b', task: 't' });
+      agents.delete('orch');
+      changeConfig();
+      await flush();
+      expect(listStartRequests()).toEqual([]);
+    });
+
+    it('keeps them when the gate closes because the orchestrator went to sleep', async () => {
+      await ask();
+      setOrchestrationEnabled('orch', false);
+      await flush();
+      expect(listStartRequests()).toHaveLength(1);
+
+      mockGetPolicy.mockResolvedValue({ orchestrate: false, access: 'same', control: 'ask-before-start', maxHelpers: 5 });
+      setOrchestrationEnabled('orch', true);
+      setOrchestrationEnabled('orch', false);
+      await flush();
+      expect(listStartRequests()).toEqual([]);
+    });
   });
 });
 

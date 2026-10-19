@@ -5,8 +5,9 @@
  * until removed; they're under "Disposed" at the end, collapsed.
  *
  * Hooks for the orchestration tools:
- * - `approvals` (#2250, in review): approve or decline a helper waiting to
- *   start;
+ * - `approvals` (#2234): the starts the orchestrator is waiting on the user
+ *   for. Each shows as a pending row, Waiting for approval, with Approve and
+ *   Decline; main runs the start and tells the orchestrator;
  * - a helper with a `handoff` (#2229) reads as handed off, with a Review
  *   line that opens the dispose dialog.
  * An orchestrator's dispose request (#2229) opens the same dialog from
@@ -14,7 +15,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import type { Agent, DurableAgentConfig, HelperDisposeChecks } from '../../../../shared/types';
+import type { Agent, DurableAgentConfig, HelperDisposeChecks, HelperStartDecisionResult, HelperStartRequest } from '../../../../shared/types';
 import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useAgentStatuses } from '../agent-status-store';
@@ -26,15 +27,19 @@ import { openAgent } from './orchestration-hooks';
 import { DisposeHelperDialog, type DisposeHelperTarget } from './DisposeHelperDialog';
 
 export interface HelperApprovals {
-  onApprove: (helperId: string) => void | Promise<void>;
-  onDecline: (helperId: string) => void | Promise<void>;
+  /** Helper starts waiting on the user, oldest first. */
+  pending: readonly HelperStartRequest[];
+  onApprove: (requestId: string) => Promise<HelperStartDecisionResult | void> | void;
+  onDecline: (requestId: string) => Promise<HelperStartDecisionResult | void> | void;
 }
 
-/** The card's one-line answer: live helpers against the limit, and what's starting. */
-export function helpersSummary(live: number, maxHelpers: number | undefined, starting: number): string {
-  if (live === 0) return 'none';
-  const base = maxHelpers ? `${live} of ${maxHelpers}` : String(live);
-  return starting > 0 ? `${base} · ${starting} starting` : base;
+/** The card's one-line answer: live helpers against the limit, what's starting and what waits for approval. */
+export function helpersSummary(live: number, maxHelpers: number | undefined, starting: number, waiting = 0): string {
+  const parts: string[] = [];
+  if (live > 0) parts.push(maxHelpers ? `${live} of ${maxHelpers}` : String(live));
+  if (live > 0 && starting > 0) parts.push(`${starting} starting`);
+  if (waiting > 0) parts.push(`${waiting} waiting`);
+  return parts.length > 0 ? parts.join(' · ') : 'none';
 }
 
 function formatWhen(iso: string | undefined): string {
@@ -71,6 +76,7 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
 
   const states = useMemo(() => new Map(live.map((h) => [h.id, helperState(h, rail[h.id])] as const)), [live, rail]);
   const starting = [...states.values()].filter((s) => s === 'starting').length;
+  const waiting = approvals?.pending ?? [];
 
   // What each helper's folder holds that isn't saved, read while the card is open.
   const checkable = live.filter((h) => { const s = states.get(h.id); return s !== 'starting' && s !== 'failed' && s !== 'awaiting-approval'; });
@@ -117,6 +123,21 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
     onRemoved();
   };
 
+  const decide = async (request: HelperStartRequest, approve: boolean) => {
+    if (!approvals) return;
+    setBusy(request.requestId);
+    setError(null);
+    try {
+      const result = await (approve ? approvals.onApprove : approvals.onDecline)(request.requestId);
+      if (result && !result.ok) setError(result.message);
+    } catch (err) {
+      // telemetry-exempt: shown in the card.
+      setError(`Couldn’t ${approve ? 'approve' : 'decline'} ${request.args.name}. ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const handedOff = live.filter((h) => states.get(h.id) === 'handed-off');
   const target = (h: DurableAgentConfig): DisposeHelperTarget => ({
     id: h.id, name: h.name, projectId: agent.projectId, worktreePath: h.worktreePath, status: rail[h.id]?.status,
@@ -127,19 +148,35 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
       <DetailsCard
         id="helpers"
         title="Helpers"
-        summary={helpersSummary(live.length, orchestrating ? maxHelpers : undefined, starting)}
+        summary={helpersSummary(live.length, orchestrating ? maxHelpers : undefined, starting, waiting.length)}
         open={open}
         onToggle={onToggle}
       >
-        {live.length === 0 && (
+        {live.length === 0 && waiting.length === 0 && (
           <CardNote>
             {orchestrating
               ? `No helpers yet. ${agent.name} starts them with its Clubhouse MCP tools.`
               : `Orchestration is off, so ${agent.name} can’t start helpers.`}
           </CardNote>
         )}
-        {live.length > 0 && (
+        {(live.length > 0 || waiting.length > 0) && (
           <ul className="flex flex-col" data-testid="helpers-list">
+            {waiting.map((r) => (
+              <li key={r.requestId} className="mx-1 pl-[22px] pr-2.5 py-1 rounded-md hover:bg-surface-0" data-testid={`helper-request-${r.requestId}`} data-state="awaiting-approval">
+                <div className="flex items-center gap-2 min-h-[22px]">
+                  <StatusDot dot={helperDot('awaiting-approval', undefined)} />
+                  <span className="min-w-0 truncate text-[12.5px] font-medium text-ctp-text">{r.args.name}</span>
+                  <span className="ml-auto flex-shrink-0 text-xs text-ctp-overlay1" data-testid="helper-state">{HELPER_STATE_LABEL['awaiting-approval']}</span>
+                </div>
+                <div className="flex items-center gap-2 min-h-[20px] text-xs text-ctp-overlay1">
+                  <span className="min-w-0 truncate" title={r.args.task} data-testid="helper-request-task">{r.args.task}</span>
+                  <span className="ml-auto flex-shrink-0 flex items-center gap-2.5">
+                    <button type="button" className={LINK} disabled={busy === r.requestId} onClick={() => void decide(r, false)} data-testid="helper-decline">Decline</button>
+                    <button type="button" className="text-xs text-ctp-accent hover:underline disabled:opacity-50 cursor-pointer" disabled={busy === r.requestId} onClick={() => void decide(r, true)} data-testid="helper-approve">Approve</button>
+                  </span>
+                </div>
+              </li>
+            ))}
             {live.map((h) => {
               const state = states.get(h.id) ?? 'sleeping';
               const railAgent = rail[h.id];
@@ -171,12 +208,6 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
                       {work && <span data-testid="helper-work">{work}</span>}
                     </span>
                     <span className="ml-auto flex-shrink-0 flex items-center gap-2.5">
-                      {state === 'awaiting-approval' && approvals && (
-                        <>
-                          <button type="button" className={LINK} onClick={() => void approvals.onDecline(h.id)} data-testid="helper-decline">Decline</button>
-                          <button type="button" className="text-xs text-ctp-accent hover:underline cursor-pointer" onClick={() => void approvals.onApprove(h.id)} data-testid="helper-approve">Approve</button>
-                        </>
-                      )}
                       {canRun && railAgent && (
                         <button type="button" className={LINK} disabled={busy === h.id} onClick={() => void sleepOrWake(h, isRunning ? 'running' : 'sleeping')} data-testid="helper-sleep-wake">
                           {isRunning ? 'Sleep' : 'Wake'}

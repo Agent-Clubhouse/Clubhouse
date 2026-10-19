@@ -16,6 +16,7 @@ import { applyDurableCreationEvent } from './features/agents/durable-creation-ev
 import { useUIStore } from './stores/uiStore';
 import { useNotificationStore } from './stores/notificationStore';
 import { useHelperDisposeRequestStore, describeHelperDispose } from './stores/helperDisposeRequestStore';
+import { useHelperStartRequestStore } from './stores/helperStartRequestStore';
 import { useToastStore } from './stores/toastStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useClubhouseModeStore } from './stores/clubhouseModeStore';
@@ -365,6 +366,26 @@ function initHelperDisposeRequestListener(): () => void {
   // Main sends these to the main window only; a pop-out never subscribes.
   if (window.clubhouse.window.isPopout()) return () => {};
   return window.clubhouse.agent.onHelperDisposeRequest(handleHelperDisposeRequest);
+}
+
+/**
+ * Helper starts waiting on the user (#2234). Main sends each new request and
+ * the ids of closed ones to the main window; the list is loaded once so a
+ * reloaded window still shows what is waiting. Main already raised the
+ * desktop notice for the request.
+ */
+export function initHelperStartRequestListener(): () => void {
+  if (window.clubhouse.window.isPopout()) return () => {};
+  const store = useHelperStartRequestStore.getState();
+  // Subscribed before the load, so nothing sent meanwhile is missed; the load only adds.
+  const offAdded = window.clubhouse.agent.onHelperStartRequest((request) => store.add(request));
+  const offClosed = window.clubhouse.agent.onHelperStartRequestsClosed((ids) => store.remove(ids));
+  Promise.resolve().then(() => window.clubhouse.agent.listHelperStartRequests()).then(
+    (list) => { for (const request of list ?? []) useHelperStartRequestStore.getState().add(request); },
+    // telemetry-exempt: requests sent from now on still arrive.
+    () => {},
+  );
+  return () => { offAdded(); offClosed(); };
 }
 
 /** Notices that explain a start that didn't go as asked; a launch error card shows them. */
@@ -792,6 +813,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initAgentWakingListener());
   cleanups.push(initCreationEventListener());
   cleanups.push(initHelperDisposeRequestListener());
+  cleanups.push(initHelperStartRequestListener());
   cleanups.push(initChatRuntimeNoticeListener());
   cleanups.push(initHookEventListener());
   cleanups.push(initPermissionQueueListener());

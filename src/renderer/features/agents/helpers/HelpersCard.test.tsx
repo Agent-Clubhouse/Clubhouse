@@ -7,7 +7,9 @@ import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useUIStore } from '../../../stores/uiStore';
 import { HelpersCard, helpersSummary } from './HelpersCard';
-import { useProjectAgentConfigs } from './orchestration-hooks';
+import { useHelperStartApprovals, useProjectAgentConfigs } from './orchestration-hooks';
+import { useHelperStartRequestStore } from '../../../stores/helperStartRequestStore';
+import type { HelperStartRequest } from '../../../../shared/types';
 
 const PROJECT = path.join('/work', 'proj');
 const folder = (name: string) => path.join(PROJECT, '.clubhouse', 'agents', name);
@@ -64,12 +66,14 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  useHelperStartRequestStore.setState({ requests: {} });
   useAgentStore.setState({ agents: {} } as never);
   useProjectStore.setState({ projects: [] });
 });
 
 function Harness({ orchestrating = true }: { orchestrating?: boolean }) {
   const { configs: list, reload } = useProjectAgentConfigs(PROJECT, 'p1');
+  const approvals = useHelperStartApprovals('lead', PROJECT, reload);
   const [open, setOpen] = useState(true);
   if (!list) return null;
   return (
@@ -81,6 +85,7 @@ function Harness({ orchestrating = true }: { orchestrating?: boolean }) {
       orchestrating={orchestrating}
       open={open}
       onToggle={() => setOpen((o) => !o)}
+      approvals={approvals}
       onRemoved={reload}
     />
   );
@@ -97,6 +102,8 @@ describe('helpersSummary', () => {
     expect(helpersSummary(4, 5, 0)).toBe('4 of 5');
     expect(helpersSummary(4, 5, 1)).toBe('4 of 5 · 1 starting');
     expect(helpersSummary(2, undefined, 0)).toBe('2');
+    expect(helpersSummary(4, 5, 1, 2)).toBe('4 of 5 · 1 starting · 2 waiting');
+    expect(helpersSummary(0, 5, 0, 1)).toBe('1 waiting');
   });
 });
 
@@ -204,5 +211,62 @@ describe('Helpers card (#2232)', () => {
     expect(ready).toHaveTextContent('qa-settings is handed off and ready to dispose');
     fireEvent.click(within(ready).getByRole('button', { name: 'Review' }));
     expect(await screen.findByTestId('dispose-helper-dialog')).toHaveTextContent('Dispose of qa-settings?');
+  });
+});
+
+function startRequest(id: string, name: string, orchestratorId = 'lead'): HelperStartRequest {
+  return {
+    requestId: id, projectPath: PROJECT, orchestratorId, orchestratorName: 'epic-lead',
+    args: { name, task: `Do the ${name} work` },
+    createdAt: '2026-10-18T10:00:00.000Z', expiresAt: '2026-10-19T10:00:00.000Z',
+  };
+}
+
+describe('Helpers card start approvals (#2234)', () => {
+  beforeEach(() => {
+    useHelperStartRequestStore.getState().replaceAll([startRequest('hstart_a', 'impl-api'), startRequest('hstart_x', 'other', 'someone-else')]);
+  });
+
+  it('shows the orchestrator\'s waiting starts as pending rows with Approve and Decline', async () => {
+    await renderCard();
+    expect(screen.getByTestId('details-card-helpers-summary')).toHaveTextContent('4 of 5 · 1 starting · 1 waiting');
+    const row = screen.getByTestId('helper-request-hstart_a');
+    expect(within(row).getByTestId('helper-state')).toHaveTextContent('Waiting for approval');
+    expect(row).toHaveTextContent('impl-api');
+    expect(row).toHaveTextContent('Do the impl-api work');
+    expect(within(row).getByTestId('helper-approve')).toBeInTheDocument();
+    expect(within(row).getByTestId('helper-decline')).toBeInTheDocument();
+    expect(screen.queryByTestId('helper-request-hstart_x')).not.toBeInTheDocument();
+  });
+
+  it('approves through main with only the project and request id, then drops the row', async () => {
+    window.clubhouse.agent.approveHelperStart = vi.fn(async () => ({ ok: true, message: 'Starting impl-api', helperId: 'h9' }));
+    await renderCard();
+    fireEvent.click(within(screen.getByTestId('helper-request-hstart_a')).getByTestId('helper-approve'));
+    await waitFor(() => expect(screen.queryByTestId('helper-request-hstart_a')).not.toBeInTheDocument());
+    expect(window.clubhouse.agent.approveHelperStart).toHaveBeenCalledWith(PROJECT, 'hstart_a');
+    expect(useHelperStartRequestStore.getState().requests.hstart_a).toBeUndefined();
+  });
+
+  it('declines through main', async () => {
+    window.clubhouse.agent.declineHelperStart = vi.fn(async () => ({ ok: true, message: 'Declined' }));
+    await renderCard();
+    fireEvent.click(within(screen.getByTestId('helper-request-hstart_a')).getByTestId('helper-decline'));
+    await waitFor(() => expect(screen.queryByTestId('helper-request-hstart_a')).not.toBeInTheDocument());
+    expect(window.clubhouse.agent.declineHelperStart).toHaveBeenCalledWith(PROJECT, 'hstart_a');
+  });
+
+  it('shows why an approved start was refused', async () => {
+    window.clubhouse.agent.approveHelperStart = vi.fn(async () => ({ ok: false, message: 'impl-api wasn\'t started: This agent already has 5 of 5 helpers.' }));
+    await renderCard();
+    fireEvent.click(within(screen.getByTestId('helper-request-hstart_a')).getByTestId('helper-approve'));
+    expect(await screen.findByTestId('helpers-error')).toHaveTextContent('5 of 5 helpers');
+  });
+
+  it('lists waiting starts even before the first helper', async () => {
+    configs = configs.filter((c) => c.parentAgentId !== 'lead');
+    await renderCard();
+    expect(screen.getByTestId('helper-request-hstart_a')).toBeInTheDocument();
+    expect(screen.getByTestId('details-card-helpers')).not.toHaveTextContent('No helpers yet');
   });
 });

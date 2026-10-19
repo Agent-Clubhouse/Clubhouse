@@ -418,6 +418,44 @@ export interface HelperDisposeResult {
 /** What the user decided about an orchestrator's dispose request (#2232). */
 export type HelperDisposeDecision = 'disposed' | 'declined';
 
+/** start_helper's arguments, validated (#2227). */
+export interface HelperStartArgs {
+  name: string;
+  task: string;
+  persona?: string;
+  cli?: string;
+  model?: string;
+  /** `same` or an access level; never more than the orchestrator runs with. */
+  access?: string;
+  branchFrom?: string;
+  folder?: string;
+}
+
+/**
+ * A start_helper call waiting on the user (#2234): the orchestrator's control
+ * level asks before starting. Main keeps it in memory until it is approved,
+ * declined, expires or its orchestrator stops orchestrating; it is sent
+ * main → renderer for Needs you and the orchestrator's Helpers card.
+ */
+export interface HelperStartRequest {
+  requestId: string;
+  projectPath: string;
+  orchestratorId: string;
+  orchestratorName: string;
+  args: HelperStartArgs;
+  /** ISO times. */
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** The result of approving or declining a helper start request. */
+export interface HelperStartDecisionResult {
+  ok: boolean;
+  message: string;
+  /** The new helper, when an approved start began creating it. */
+  helperId?: string;
+}
+
 /** Result of resolving an orchestrator's helpers before it is deleted (#2224). */
 export interface HelperCascadeResult {
   ok: boolean;

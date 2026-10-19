@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Agent, DurableAgentConfig } from '../../../../shared/types';
+import type { Agent, DurableAgentConfig, HelperStartDecisionResult, HelperStartRequest } from '../../../../shared/types';
 import {
   DEFAULT_GLOBAL_HELPER_CAP,
   MAX_HELPER_LIMIT,
@@ -18,6 +18,7 @@ import {
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
 import { useUIStore } from '../../../stores/uiStore';
+import { startRequestsFor, useHelperStartRequestStore } from '../../../stores/helperStartRequestStore';
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -220,6 +221,41 @@ export function useOrchestration(projectPath: string | undefined, agent: Pick<Ag
   return useMemo(() => ({
     policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, finishTurnOff, reload,
   }), [policy, access, globalCap, saving, error, note, turnOff, setPolicy, setOrchestrate, finishTurnOff, reload]);
+}
+
+// ── Start approvals (#2234) ─────────────────────────────────────────────
+
+export interface StartApprovals {
+  /** The orchestrator's helper starts waiting on the user, oldest first. */
+  pending: HelperStartRequest[];
+  onApprove: (requestId: string) => Promise<HelperStartDecisionResult>;
+  onDecline: (requestId: string) => Promise<HelperStartDecisionResult>;
+}
+
+/**
+ * An orchestrator's waiting helper starts, and approve or decline for each.
+ * Main uses a request up whatever the answer, so it leaves the list once
+ * main replies; `onStarted` runs after an approved start began.
+ */
+export function useHelperStartApprovals(orchestratorId: string, projectPath: string | undefined, onStarted: () => void): StartApprovals {
+  const requests = useHelperStartRequestStore((s) => s.requests);
+  const pending = useMemo(() => startRequestsFor(requests, orchestratorId), [requests, orchestratorId]);
+  const onStartedRef = useRef(onStarted);
+  onStartedRef.current = onStarted;
+
+  const decide = useCallback(async (requestId: string, approve: boolean): Promise<HelperStartDecisionResult> => {
+    if (!projectPath) return { ok: false, message: 'This agent’s project isn’t open.' };
+    const result = approve
+      ? await window.clubhouse.agent.approveHelperStart(projectPath, requestId)
+      : await window.clubhouse.agent.declineHelperStart(projectPath, requestId);
+    useHelperStartRequestStore.getState().remove([requestId]);
+    if (approve && result.ok) onStartedRef.current();
+    return result;
+  }, [projectPath]);
+
+  const onApprove = useCallback((requestId: string) => decide(requestId, true), [decide]);
+  const onDecline = useCallback((requestId: string) => decide(requestId, false), [decide]);
+  return useMemo(() => ({ pending, onApprove, onDecline }), [pending, onApprove, onDecline]);
 }
 
 // ── Navigation ──────────────────────────────────────────────────────────
