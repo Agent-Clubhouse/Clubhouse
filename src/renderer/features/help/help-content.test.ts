@@ -3,18 +3,18 @@ import { HELP_SECTIONS, CHROME_HELP_SECTIONS, getHelpSections } from './help-con
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 
 describe('help-content', () => {
-  it('has 8 sections', () => {
-    expect(HELP_SECTIONS).toHaveLength(8);
+  it('has 7 sections', () => {
+    expect(HELP_SECTIONS).toHaveLength(7);
   });
 
   it('has the expected section IDs in order', () => {
     const ids = HELP_SECTIONS.map((s) => s.id);
-    expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting', 'personas', 'cookbooks']);
+    expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting', 'personas']);
   });
 
-  it('has 41 total topics', () => {
+  it('has 36 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(41);
+    expect(total).toBe(36);
   });
 
   it('each section has at least 1 topic', () => {
@@ -143,8 +143,8 @@ describe('help-content in the new shell', () => {
   afterEach(() => useChromeFlagStore.setState({ enabled: false }));
 
   const topics = () => CHROME_HELP_SECTIONS.flatMap((s) => s.topics);
-  // Personas and cookbooks are prompts and patterns, not descriptions of the app.
-  const articles = () => CHROME_HELP_SECTIONS.filter((s) => !['personas', 'cookbooks'].includes(s.id)).flatMap((s) => s.topics);
+  // Personas are prompts, not descriptions of the app.
+  const articles = () => CHROME_HELP_SECTIONS.filter((s) => !['personas'].includes(s.id)).flatMap((s) => s.topics);
   // Articles written for the classic layout that the new shell replaces.
   const RETIRED = /Project Rail|Explorer Rail|Accessory Panel|Dashboard|Home icon|Cmd\+Shift\+H|ghost card/i;
 

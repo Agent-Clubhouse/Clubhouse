@@ -54,11 +54,6 @@ import personaResearcher from '../personas/researcher.md';
 import personaOrchestrator from '../personas/orchestrator.md';
 import personaWorkhorse from '../personas/workhorse.md';
 import { stripPersonaFrontMatter } from '../../../shared/persona-pattern';
-import cookbookLongRunningJob from './content/cookbooks/long-running-job.md';
-import cookbookUiWork from './content/cookbooks/ui-work.md';
-import cookbookGroupProject from './content/cookbooks/group-project.md';
-import cookbookSquad from './content/cookbooks/squad.md';
-import cookbookBakeOff from './content/cookbooks/bake-off.md';
 
 export interface HelpTopic {
   id: string;
@@ -154,17 +149,6 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'persona-workhorse', title: 'Workhorse', content: stripPersonaFrontMatter(personaWorkhorse) },
     ],
   },
-  {
-    id: 'cookbooks',
-    title: 'Cookbooks & Project Patterns',
-    topics: [
-      { id: 'cookbook-long-running-job', title: 'Long-Running Job', content: cookbookLongRunningJob },
-      { id: 'cookbook-ui-work', title: 'UI Work', content: cookbookUiWork },
-      { id: 'cookbook-group-project', title: 'Group Project (Multi-App)', content: cookbookGroupProject },
-      { id: 'cookbook-squad', title: 'Squad', content: cookbookSquad },
-      { id: 'cookbook-bake-off', title: 'Bake-Off (A|B Testing)', content: cookbookBakeOff },
-    ],
-  },
 ];
 
 const section = (id: string) => HELP_SECTIONS.find((s) => s.id === id)!;
@@ -178,12 +162,6 @@ const PERSONA_TITLES: Record<string, string> = {
   'persona-executor-pr-only': 'Executor (PR only)',
   'persona-executor-merge': 'Executor (full merge)',
   'persona-doc-updater': 'Documentation updater',
-};
-const COOKBOOK_TITLES: Record<string, string> = {
-  'cookbook-long-running-job': 'Long-running job',
-  'cookbook-ui-work': 'UI work',
-  'cookbook-group-project': 'Group project (multi-app)',
-  'cookbook-bake-off': 'Bake-off (A/B testing)',
 };
 
 /**
@@ -254,7 +232,6 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
     ],
   },
   { ...section('personas'), title: 'Agent personas', topics: retitle(section('personas').topics, PERSONA_TITLES) },
-  { ...section('cookbooks'), title: 'Cookbooks', topics: retitle(section('cookbooks').topics, COOKBOOK_TITLES) },
 ];
 
 /** Annex lives in Settings only on builds that show the Annex pages (preview-eligible). */
