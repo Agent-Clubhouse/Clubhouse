@@ -2645,6 +2645,20 @@ describe('helper launch ceiling on the normal spawn path', () => {
     expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
   });
 
+  it('starts at standard when the agent\'s config can\'t be read, whatever the caller passed', async () => {
+    mockGetDurableConfig.mockImplementation((async () => { throw new Error('agents.json is corrupt'); }) as never);
+    await wake({ freeAgentMode: true, permissionMode: 'skip-all' });
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+  });
+
+  it('hands the chat runtime the capped values', async () => {
+    mockGetDurableConfig.mockImplementation((async () => helper()) as never);
+    await wake({ freeAgentMode: true, permissionMode: 'skip-all' });
+    expect(mockTryStartChatAgent).toHaveBeenCalled();
+    expect(mockTryStartChatAgent.mock.calls.at(-1)![0]).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
+  });
+
   it('leaves a durable agent that isn\'t a helper at the project setting', async () => {
     mockGetDurableConfig.mockImplementation((async () => ({ id: 'helper-1', name: 'plain', freeAgentMode: true })) as never);
     await wake();

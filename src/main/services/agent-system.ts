@@ -130,8 +130,10 @@ export async function whenSpawnsSettled(): Promise<void> {
  *
  * The ceiling is the orchestrator's live level. An orchestrator that isn't
  * running (or can't be read) counts as standard, so a helper the user wakes
- * while its orchestrator sleeps starts at standard. That is deliberate: the
- * user can raise it afterwards from the chat level menu (setUserLaunchAccess).
+ * while its orchestrator sleeps starts at standard. That is deliberate. A
+ * user can raise a chat helper afterwards from the chat level menu
+ * (setUserLaunchAccess); a terminal (PTY) helper has no such path and stays
+ * at its cap until it is restarted.
  */
 async function capHelperLaunch(
   projectPath: string,
@@ -325,7 +327,18 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
           if (params.agentFile === undefined && durableConfig.agentFile) params = { ...params, agentFile: durableConfig.agentFile };
           if (params.agentSource === undefined && durableConfig.agentSource) params = { ...params, agentSource: durableConfig.agentSource };
         }
-      } catch { /* config not available — use caller-provided values */ }
+      } catch (err) {
+        // telemetry-exempt: fails safe to standard and is logged; the spawn goes on.
+        // Unreadable config: we can't tell whether this is a helper (or a
+        // disposed one), so start at standard rather than trust the caller.
+        // A missing row (null) isn't an error and keeps the caller's values.
+        appLog('core:agent', 'warn', 'Could not read the agent\'s config; starting it at standard access', {
+          meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+        });
+        const standard = launchAccessFor('standard');
+        params = { ...params, freeAgentMode: standard.freeAgentMode, permissionMode: standard.permissionMode };
+        permissionMode = standard.permissionMode;
+      }
     }
     // A disposed helper keeps its row but has no worktree to run in (#2224).
     if (isDisposedAgent(durableConfig)) {
