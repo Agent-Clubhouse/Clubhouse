@@ -25,6 +25,8 @@ const mockRemovers = {
   onAgentSleepReason: vi.fn(),
   onDurableCreationEvent: vi.fn(),
   onHelperDisposeRequest: vi.fn(),
+  onHelperStartRequest: vi.fn(),
+  onHelperStartRequestsClosed: vi.fn(),
   onAgentSpawned: vi.fn(),
   onEditCommand: vi.fn(),
   onStatusChanged: vi.fn(),
@@ -75,6 +77,9 @@ vi.stubGlobal('window', {
       onAgentSleepReason: vi.fn(() => mockRemovers.onAgentSleepReason),
       onDurableCreationEvent: vi.fn(() => mockRemovers.onDurableCreationEvent),
       onHelperDisposeRequest: vi.fn(() => mockRemovers.onHelperDisposeRequest),
+      onHelperStartRequest: vi.fn(() => mockRemovers.onHelperStartRequest),
+      onHelperStartRequestsClosed: vi.fn(() => mockRemovers.onHelperStartRequestsClosed),
+      listHelperStartRequests: vi.fn(async () => []),
       readTranscript: vi.fn(),
       readQuickSummary: vi.fn(),
       killAgent: vi.fn(),
@@ -323,6 +328,7 @@ vi.mock('./stores/soundStore', () => ({
   ),
 }));
 
+import { useHelperStartRequestStore } from './stores/helperStartRequestStore';
 import { useHelperDisposeRequestStore } from './stores/helperDisposeRequestStore';
 import { initAppEventBridge, handleProtocolAction } from './app-event-bridge';
 import { useAgentStore } from './stores/agentStore';
@@ -794,6 +800,20 @@ describe('initAppEventBridge', () => {
     });
     expect(useHelperDisposeRequestStore.getState().requests).toEqual({});
     expect(mockCheckAndNotify).not.toHaveBeenCalled();
+  });
+
+  it('adds and closes helper start requests from main, and loads the waiting ones (#2234)', async () => {
+    const request = {
+      requestId: 'hstart_1', projectPath: '/p', orchestratorId: 'orch', orchestratorName: 'Orch',
+      args: { name: 'impl-ipc', task: 'Wire the IPC' }, createdAt: '2026-10-18T10:00:00.000Z', expiresAt: '2026-10-19T10:00:00.000Z',
+    };
+    const added = vi.mocked(window.clubhouse.agent.onHelperStartRequest).mock.calls[0][0];
+    const closed = vi.mocked(window.clubhouse.agent.onHelperStartRequestsClosed).mock.calls[0][0];
+    added(request);
+    expect(useHelperStartRequestStore.getState().requests.hstart_1).toEqual(request);
+    closed(['hstart_1']);
+    expect(useHelperStartRequestStore.getState().requests).toEqual({});
+    expect(window.clubhouse.agent.listHelperStartRequests).toHaveBeenCalled();
   });
 
   it('registers the protocol action listener and pulls any pending action', () => {

@@ -28,7 +28,7 @@ Agents using the **Orchestrator** persona start with the switch on. The persona 
 
 The orchestrator calls `start_helper` with a name, a task and, if it wants, a persona, a CLI, a model and a branch to start from. A helper runs on the same CLI as its orchestrator unless the orchestrator picks another.
 
-Creating a worktree can take up to a minute on a large repository, so `start_helper` returns at once with the helper starting. When it's ready, Clubhouse starts it with its task and tells the orchestrator. If it fails, the orchestrator is told why. If the helper was made but its task couldn't be delivered, the task is saved, and `wake_helper` delivers it.
+Creating a worktree can take up to a minute on a large repository, so `start_helper` returns at once with the helper starting. If the orchestrator's control level asks before starting, it waits for you first, as **Control levels** describes. When it's ready, Clubhouse starts it with its task and tells the orchestrator. If it fails, the orchestrator is told why. If the helper was made but its task couldn't be delivered, the task is saved, and `wake_helper` delivers it.
 
 The orchestrator keeps track of its helpers with `list_helpers`, which shows each one's status, branch and uncommitted work. It can pause a helper with `sleep_helper` and resume it with `wake_helper`, with an optional message.
 
@@ -57,7 +57,7 @@ When the orchestrator wakes a helper with `wake_helper`, Clubhouse checks the ce
 
 At any level the orchestrator can still ask you when it judges a choice is yours, such as when the scope is unclear or work could be lost.
 
-Under **Ask before starting** and **Ask for everything**, `start_helper` creates nothing for now. It tells the orchestrator that approval is needed, and you get a desktop notification, if those are on. To let it go ahead, start the helper yourself, or set its control to **Hands-off** and ask it again.
+Under **Ask before starting** and **Ask for everything**, `start_helper` creates nothing until you answer. The request shows under **Needs you** on the orchestrator, and as a row marked **Waiting for approval** in its **Helpers** card. You also get a desktop notification, if those are on. Select **Approve** to start the helper with the same checks as any other start, including the helper limits and the access ceiling. If the orchestrator is asleep, wake it first, and the request keeps waiting until then. Select **Decline** to drop it. Either way the orchestrator gets a message. Each orchestrator can have up to 3 requests waiting. A request that waits 24 hours expires. Waiting requests are also cleared when Clubhouse quits, and when you turn off orchestration for the agent or dispose or delete it.
 
 ## Limits
 

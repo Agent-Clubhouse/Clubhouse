@@ -14,7 +14,6 @@ describe('helperState', () => {
     expect(helperState(row('a', { creation: { state: 'creating', startedAt: '' } }), { status: 'sleeping' })).toBe('starting');
     expect(helperState(row('a'), { status: 'creating' })).toBe('starting');
     expect(helperState(row('a', { creation: { state: 'failed', startedAt: '', reason: 'x' } }), { status: 'error' })).toBe('failed');
-    expect(helperState(row('a', { creation: { state: 'needs_approval' as never, startedAt: '' } }))).toBe('awaiting-approval');
     expect(helperState({ ...row('a'), handoff: { how: 'pushed', note: '', at: '2026-10-18T11:00:00Z' } }, { status: 'running' })).toBe('handed-off');
     expect(helperState(row('a'), { status: 'running' })).toBe('running');
     expect(helperState(row('a'), { status: 'waking' })).toBe('running');

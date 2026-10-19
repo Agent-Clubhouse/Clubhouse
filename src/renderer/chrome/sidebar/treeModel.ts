@@ -12,8 +12,11 @@ export { agentDot, type AgentDot } from '../../features/agents/agent-status';
 
 export interface NeedsAttentionItem {
   agent: Agent;
-  /** `dispose_request`: an orchestrator asked the user to approve disposing this helper (#2229). */
-  reason: 'permission' | 'tool_error' | 'error' | 'dispose_request';
+  /**
+   * `dispose_request`: an orchestrator asked the user to approve disposing this helper (#2229).
+   * `start_request`: this orchestrator is waiting for approval to start a helper (#2234).
+   */
+  reason: 'permission' | 'tool_error' | 'error' | 'dispose_request' | 'start_request';
   message: string;
   /** When the agent started waiting, for ordering across hosts. */
   at: number;
@@ -26,13 +29,16 @@ export interface NeedsAttentionItem {
  * Agents waiting on the user, across every given project. Mirrors the old Home
  * "Needs attention" rule: a permission prompt, a failed tool, or an errored agent.
  * `disposeRequests` (keyed by helper id) adds helpers an orchestrator asked to
- * dispose (#2229); an agent already listed for another reason keeps that one.
+ * dispose (#2229), and `startRequests` (keyed by orchestrator id) adds
+ * orchestrators waiting for approval to start a helper (#2234); an agent
+ * already listed for another reason keeps that one.
  */
 export function selectNeedsAttention(
   agents: Record<string, Agent>,
   detailed: Record<string, AgentDetailedStatus>,
   projectIds: ReadonlySet<string>,
   disposeRequests: Readonly<Record<string, { message: string; at: number }>> = {},
+  startRequests: Readonly<Record<string, { message: string; at: number }>> = {},
 ): NeedsAttentionItem[] {
   const items: NeedsAttentionItem[] = [];
   for (const agent of Object.values(agents)) {
@@ -48,6 +54,9 @@ export function selectNeedsAttention(
     } else if (disposeRequests[agent.id]) {
       const { message, at: requestedAt } = disposeRequests[agent.id];
       items.push({ agent, at: requestedAt, reason: 'dispose_request', message });
+    } else if (startRequests[agent.id]) {
+      const { message, at: requestedAt } = startRequests[agent.id];
+      items.push({ agent, at: requestedAt, reason: 'start_request', message });
     }
   }
   // Oldest request first, so the queue reads in the order things happened.

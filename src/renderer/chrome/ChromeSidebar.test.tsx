@@ -35,6 +35,8 @@ import type { Agent } from '../../shared/types';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { useKeyboardShortcutsStore } from '../stores/keyboardShortcutsStore';
 import { useChromeFlagStore } from './chromeFlag';
+import { useHelperStartRequestStore } from '../stores/helperStartRequestStore';
+import { useAgentDetailsStore } from '../features/agents/details/detailsStore';
 
 function registerAppPlugin(id: string, label: string, position: 'top' | 'bottom' = 'top') {
   usePluginStore.getState().registerPlugin(
@@ -138,6 +140,25 @@ describe('ChromeSidebar', () => {
     expect(row.textContent).toContain('Goobers');
     fireEvent.click(row);
     expect(useAgentStore.getState().activeAgentId).toBe('b1');
+  });
+
+  it('lists an orchestrator waiting to start a helper and opens its Helpers card (#2234)', () => {
+    useHelperStartRequestStore.getState().add({
+      requestId: 'hstart_1', projectPath: '/tmp/ch', orchestratorId: 'a1', orchestratorName: 'a1',
+      args: { name: 'impl-api', task: 'Build the API' },
+      createdAt: '2026-10-18T10:00:00.000Z', expiresAt: '2026-10-19T10:00:00.000Z',
+    });
+    useAgentStore.setState({ activeAgentId: 'b1' });
+    try {
+      render(<ChromeSidebar />);
+      const row = screen.getByTestId('needs-you-row-a1');
+      expect(row.textContent).toContain('Wants to start the helper impl-api');
+      fireEvent.click(row);
+      expect(useAgentStore.getState().activeAgentId).toBe('a1');
+      expect(useAgentDetailsStore.getState().focus).toMatchObject({ agentId: 'a1', card: 'helpers' });
+    } finally {
+      useHelperStartRequestStore.setState({ requests: {} });
+    }
   });
 
   it('hides Needs you when nothing is waiting', () => {

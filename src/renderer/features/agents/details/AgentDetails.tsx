@@ -38,7 +38,7 @@ import { OrchestrateCard } from '../helpers/OrchestrateCard';
 import { HelpersCard } from '../helpers/HelpersCard';
 import { ConnectionsCard, type Connection } from '../helpers/ConnectionsCard';
 import { splitHelpers } from '../helpers/helper-model';
-import { useOrchestration, useProjectAgentConfigs } from '../helpers/orchestration-hooks';
+import { useHelperStartApprovals, useOrchestration, useProjectAgentConfigs } from '../helpers/orchestration-hooks';
 
 export type CardId = 'changes' | 'subagents' | 'canvases' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'session';
 
@@ -214,7 +214,9 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === agent.id || (b.targetKind === 'agent' && b.targetId === agent.id)));
   const orchestrating = !!orch.policy?.orchestrate;
   const showOrchestrate = !!orchestrationPath && !!orch.policy && !!ownConfig && !isHelper;
-  const showHelpers = !!orchestrationPath && (orchestrating || helpers.live.length > 0 || helpers.disposed.length > 0);
+  const approvals = useHelperStartApprovals(agent.id, orchestrationPath, reloadConfigs);
+  const showHelpers = !!orchestrationPath
+    && (orchestrating || helpers.live.length > 0 || helpers.disposed.length > 0 || approvals.pending.length > 0);
   const showConnections = !!orchestrationPath && (orchestrating || hasWires);
   // A tool-made wire removed here is a user removal: the usual unbind, with no cause (#2230).
   const disconnectToolWire = useCallback(async (c: Connection) => {
@@ -344,6 +346,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           orchestrating={orchestrating}
           open={open('helpers')}
           onToggle={() => toggleCard('helpers')}
+          approvals={approvals}
           onRemoved={reloadConfigs}
         />
       )}

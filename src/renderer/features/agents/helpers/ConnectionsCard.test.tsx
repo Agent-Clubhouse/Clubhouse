@@ -124,7 +124,9 @@ describe('Connections card (#2232)', () => {
     expect(unbind.mock.calls[0]).toHaveLength(2);
     await waitFor(() => expect(useMcpBindingStore.getState().bindings.some((b) => b.agentId === 'lead' && b.targetId === 'rev')).toBe(false));
     useProjectStore.setState({ projects: [] });
-  });
+    // The dynamic import of AgentDetails transforms its whole card tree on a
+    // cold run, which can take longer than the default 5s on its own.
+  }, 30_000);
 
   it('says where wires come from when there are none', () => {
     useMcpBindingStore.setState({ bindings: [] });

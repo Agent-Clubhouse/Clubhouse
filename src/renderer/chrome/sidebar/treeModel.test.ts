@@ -60,6 +60,22 @@ describe('selectNeedsAttention', () => {
       ['h', 'dispose_request', 'Orch asked to dispose this helper. 1 uncommitted file.', 30],
     ]);
   });
+
+  it('lists orchestrators waiting for approval to start a helper (#2234)', () => {
+    const agents = { o: agent('o'), h: agent('h'), p: agent('p') };
+    const items = selectNeedsAttention(
+      agents,
+      { p: detail('needs_permission', 'Wants to run: ls', 5) },
+      new Set(['p1']),
+      { h: { message: 'Orch asked to dispose this helper. Nothing would be lost.', at: 30 } },
+      { o: { message: 'Wants to start the helper impl-api', at: 10 }, p: { message: 'ignored: a permission prompt comes first', at: 1 } },
+    );
+    expect(items.map((i) => [i.agent.id, i.reason, i.message])).toEqual([
+      ['p', 'permission', 'Wants to run: ls'],
+      ['o', 'start_request', 'Wants to start the helper impl-api'],
+      ['h', 'dispose_request', 'Orch asked to dispose this helper. Nothing would be lost.'],
+    ]);
+  });
 });
 
 describe('orderProjects', () => {

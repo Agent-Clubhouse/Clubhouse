@@ -12,7 +12,8 @@ import { registerBrowserTools, registerWebview, unregisterWebview } from '../ser
 import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
 import { registerNotifyTools } from '../services/clubhouse-mcp/tools/notify-tools';
 import { registerHelperDisposeTools } from '../services/clubhouse-mcp/tools/helper-dispose-tools';
-import { registerHelperTools } from '../services/clubhouse-mcp/tools/helper-tools';
+import { findMainWindow } from './window-handlers';
+import { registerHelperTools, watchHelperStartRequests } from '../services/clubhouse-mcp/tools/helper-tools';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
 import { agentRegistry } from '../services/agent-registry';
 import { bootstrapGroupProjectAdmin } from '../services/group-project-admin-service';
@@ -77,6 +78,10 @@ export function registerMcpBindingHandlers(): void {
   registerNotifyTools();
   registerHelperDisposeTools();
   registerHelperTools();
+  // Held helper starts (#2234) go to the main window only, for Needs you.
+  watchHelperStartRequests((channel, payload) => {
+    findMainWindow()?.webContents.send(channel, payload);
+  });
   registerConnectionTools();
 
   appLog('core:mcp', 'info', 'MCP binding handlers registered');

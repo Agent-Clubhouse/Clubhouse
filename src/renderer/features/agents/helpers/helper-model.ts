@@ -63,13 +63,12 @@ export const HELPER_STATE_LABEL: Readonly<Record<HelperState, string>> = {
 
 /**
  * A helper's state from its config and, when the rail has it, its live agent.
- * An unfinished creation wins; then a held start (#2250's `needs_approval`),
- * a hand-off (#2229), then running or asleep.
+ * An unfinished creation wins; then a hand-off (#2229), then running or
+ * asleep. `awaiting-approval` is never a config's state: a held start has no
+ * helper yet, and the Helpers card shows it from the start request (#2234).
  */
 export function helperState(config: DurableAgentConfig, agent?: Pick<Agent, 'status'>): HelperState {
-  const creation = config.creation?.state as string | undefined;
-  // TODO(#2250): `needs_approval` is a creation state once start approvals land.
-  if (creation === 'needs_approval') return 'awaiting-approval';
+  const creation = config.creation?.state;
   if (creation === 'creating' || agent?.status === 'creating') return 'starting';
   if (creation === 'failed') return 'failed';
   if (config.handoff) return 'handed-off';

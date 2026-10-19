@@ -23,6 +23,8 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import type { DeleteResult, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeResult } from '../../shared/types';
 import { getAgentRuntime } from '../services/agent-runtime';
 import { takeDisposeRequest } from '../services/helper-dispose-requests';
+import { listStartRequests } from '../services/helper-start-requests';
+import { approveHelperStart, declineHelperStart } from '../services/clubhouse-mcp/tools/helper-tools';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { orchestratorAttr } from '../telemetry/spawn-telemetry';
 import { assertAgentGitName } from '../../shared/agent-name';
@@ -548,6 +550,26 @@ export function registerAgentHandlers(): void {
       if (decision !== 'disposed' && decision !== 'declined') throw new Error(`Unknown decision: ${decision}`);
       return reportDisposeDecision(projectPath, helperId, decision);
     },
+  ));
+
+  // --- Helper starts waiting on the user (#2234) ---
+
+  ipcMain.handle(IPC.AGENT.LIST_HELPER_START_REQUESTS, () => listStartRequests());
+
+  // Main looks the request up by id within the project and uses it up once;
+  // nothing but the two ids comes from the renderer.
+  ipcMain.handle(IPC.AGENT.APPROVE_HELPER_START, withValidatedArgs(
+    [stringArg({ maxLength: 4096 }), stringArg({ maxLength: 200 })],
+    async (_event, projectPath, requestId) => {
+      const result = await approveHelperStart(projectPath, requestId);
+      if (result.ok) broadcastSnapshotRefresh();
+      return result;
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.DECLINE_HELPER_START, withValidatedArgs(
+    [stringArg({ maxLength: 4096 }), stringArg({ maxLength: 200 })],
+    async (_event, projectPath, requestId) => declineHelperStart(projectPath, requestId),
   ));
 
 
