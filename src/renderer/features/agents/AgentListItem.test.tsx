@@ -400,3 +400,22 @@ describe('AgentListItem fine-grained selectors', () => {
     expect(renderCount.mock.calls.length).toBe(initialRenderCount + 1);
   });
 });
+
+describe('AgentListItem indent', () => {
+  it('pads a row by the given indent instead of the nested or top-level padding', () => {
+    renderItem();
+    const plain = screen.getByTestId('agent-item-agent-1');
+    expect(plain.className).toContain('px-3');
+    expect(plain.style.paddingLeft).toBe('');
+  });
+
+  it('uses the indent for a deeper row', () => {
+    const agent = { ...baseAgent };
+    resetStores();
+    render(<AgentListItem agent={agent} isActive={false} isThinking={false} onSelect={vi.fn()} indent={40} />);
+    const row = screen.getByTestId('agent-item-agent-1');
+    expect(row.style.paddingLeft).toBe('40px');
+    expect(row.className).not.toContain('px-3');
+    expect(row.className).not.toContain('pl-7');
+  });
+});

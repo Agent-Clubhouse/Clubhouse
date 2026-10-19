@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
-import { agentDot, buildProjectTree, descendants, filterTree, groupProjectAgents, helperRollup, siblingGroups, moveProject, moveWithinGroup, orderProjects, sortByRecent, holdOrder, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
+import { agentDot, buildAgentForest, buildProjectTree, descendants, forestSiblingGroups, filterTree, groupProjectAgents, helperRollup, siblingGroups, moveProject, moveWithinGroup, orderProjects, sortByRecent, holdOrder, projectRollup, selectNeedsAttention, selectRemoteNeedsAttention, mergeNeedsAttention } from './treeModel';
 
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   id, projectId: 'p1', name: id, kind: 'durable', status: 'running', color: 'blue', ...over,
@@ -273,5 +273,26 @@ describe('helperRollup (#2231)', () => {
     ]);
     const detailed = { h1: detail('working'), h2a: detail('needs_permission'), lead: detail('needs_permission') };
     expect(helperRollup(tree.awake[0], detailed)).toEqual({ count: 4, needs: 2, working: 1 });
+  });
+});
+
+describe('buildAgentForest', () => {
+  const ids = (nodes: { agent: { id: string }; children: unknown[] }[]): unknown =>
+    nodes.map((n) => (n.children.length ? { [n.agent.id]: ids(n.children as never) } : n.agent.id));
+
+  it('keeps awake and sleeping roots together, in the given order, with helpers nested', () => {
+    const forest = buildAgentForest([
+      agent('a', { status: 'sleeping' }), agent('h', { parentAgentId: 'b' }), agent('b'),
+      agent('c', { status: 'sleeping' }), agent('q', { kind: 'quick', parentAgentId: 'b' }),
+    ]);
+    expect(ids(forest)).toEqual(['a', { b: ['h'] }, 'c']);
+  });
+
+  it('gives the reorder groups: the roots, then each agent\'s helpers', () => {
+    const forest = buildAgentForest([
+      agent('a'), agent('h1', { parentAgentId: 'a' }), agent('b', { status: 'sleeping' }),
+      agent('h2', { parentAgentId: 'a' }), agent('h1a', { parentAgentId: 'h1' }),
+    ]);
+    expect(forestSiblingGroups(forest)).toEqual([['a', 'b'], ['h1', 'h2'], ['h1a']]);
   });
 });

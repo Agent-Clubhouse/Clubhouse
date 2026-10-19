@@ -203,14 +203,13 @@ export interface ProjectAgentTree<A extends NestableAgent = Agent> {
 }
 
 /**
- * A project's agents as the sidebar tree shows them (#2231). Durable helpers
- * nest under their parent, at any depth, keeping the given order among
- * siblings. A helper stays under its parent whether it is awake or asleep;
- * a top-level agent goes in the sleeping fold only when it and every helper
- * under it are asleep, so nothing working hides in the fold. A helper whose
- * parent isn't in the list (or a parent link that loops) shows at the top level.
+ * A project's durable agents as a forest (#2231): helpers nest under their
+ * parent, at any depth, keeping the given order among siblings. A helper whose
+ * parent isn't in the list (or a parent link that loops) is a root. Roots come
+ * back in the given order, awake and asleep together, as the legacy agent list
+ * shows them; buildProjectTree splits them for the new sidebar.
  */
-export function buildProjectTree<A extends NestableAgent>(agents: readonly A[]): ProjectAgentTree<A> {
+export function buildAgentForest<A extends NestableAgent>(agents: readonly A[]): AgentNode<A>[] {
   const durable = agents.filter((a) => a.kind === 'durable');
   const byId = new Map(durable.map((a) => [a.id, a]));
   // The parent each agent nests under, or undefined at the top level.
@@ -234,7 +233,17 @@ export function buildProjectTree<A extends NestableAgent>(agents: readonly A[]):
     else childrenOf.set(parent, [agent]);
   }
   const node = (agent: A): AgentNode<A> => ({ agent, children: (childrenOf.get(agent.id) ?? []).map(node) });
-  const roots = (childrenOf.get(undefined) ?? []).map(node);
+  return (childrenOf.get(undefined) ?? []).map(node);
+}
+
+/**
+ * A project's agents as the sidebar tree shows them (#2231): the forest from
+ * buildAgentForest, split so a top-level agent goes in the sleeping fold only
+ * when it and every helper under it are asleep, so nothing working hides in
+ * the fold. A helper stays under its parent whether it is awake or asleep.
+ */
+export function buildProjectTree<A extends NestableAgent>(agents: readonly A[]): ProjectAgentTree<A> {
+  const roots = buildAgentForest(agents);
   const allAsleep = (n: AgentNode<A>): boolean => n.agent.status === 'sleeping' && n.children.every(allAsleep);
   return {
     awake: roots.filter((n) => !allAsleep(n)),
@@ -265,13 +274,17 @@ export function countDescendants(node: AgentNode<NestableAgent>): number {
  * or Move up / Move down never moves a helper to another parent.
  */
 export function siblingGroups<A extends NestableAgent>(tree: ProjectAgentTree<A>): string[][] {
+  return [...forestSiblingGroups(tree.awake), ...forestSiblingGroups(tree.sleeping)];
+}
+
+/** The reorder groups of a forest: its roots, then each agent's own helpers. */
+export function forestSiblingGroups<A extends NestableAgent>(roots: readonly AgentNode<A>[]): string[][] {
   const groups: string[][] = [];
-  const walk = (nodes: AgentNode<A>[]) => {
+  const walk = (nodes: readonly AgentNode<A>[]) => {
     if (nodes.length > 0) groups.push(nodes.map((n) => n.agent.id));
     nodes.forEach((n) => walk(n.children));
   };
-  walk(tree.awake);
-  walk(tree.sleeping);
+  walk(roots);
   return groups;
 }
 
