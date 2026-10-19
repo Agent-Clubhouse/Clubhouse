@@ -5,6 +5,8 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import { IPC } from '../../shared/ipc-channels';
 import { setRuntime } from '../telemetry/facade';
 import type { TelemetryRuntime } from '../telemetry/types';
+import type { FreeAgentPermissionMode } from '../../shared/types';
+import { launchAccessFor, providerAccessLevel, resolveHelperAccess, type AgentLaunchAccess } from '../../shared/orchestration-policy';
 
 // Mock config-pipeline
 const mockSnapshotFile = vi.fn();
@@ -212,6 +214,17 @@ const mockCodexProvider = {
   buildMcpArgs: vi.fn(() => ['-c', 'mcp_servers.clubhouse.command=node']),
 };
 
+const mockCopilotProvider = {
+  ...mockProvider,
+  id: 'copilot-cli',
+  displayName: 'GitHub Copilot CLI',
+  shortName: 'GH',
+  getCapabilities: vi.fn(() => ({
+    headless: false, structuredOutput: false, hooks: false,
+    sessionResume: false, permissions: true,
+  })),
+};
+
 // Mocks for the MCP bridge/injection path exercised when mcpPort > 0.
 // Default to the real module's "not started" rejection so existing tests
 // (which don't care about MCP injection) keep seeing mcpPort stay 0.
@@ -238,6 +251,7 @@ vi.mock('../orchestrators', () => ({
   getProvider: vi.fn((id: string) => {
     if (id === 'claude-code') return mockProvider;
     if (id === 'codex-cli') return mockCodexProvider;
+    if (id === 'copilot-cli') return mockCopilotProvider;
     return undefined;
   }),
   getAllProviders: vi.fn(() => [mockProvider, mockCodexProvider]),
@@ -252,6 +266,24 @@ vi.mock('../orchestrators', () => ({
 const mockIsHookServerEnabled = vi.fn(() => true);
 vi.mock('./orchestrator-settings', () => ({
   isHookServerEnabled: (...args: unknown[]) => mockIsHookServerEnabled(...(args as [])),
+}));
+
+// The project's free-agent permission mode: skip-all, the shipped default.
+const mockGetPermissionMode = vi.fn((): FreeAgentPermissionMode => 'skip-all');
+vi.mock('./free-agent-settings', () => ({
+  getPermissionMode: (...args: unknown[]) => mockGetPermissionMode(...(args as [])),
+}));
+
+// A helper's ceiling: the real ranking against `orchestratorLive` (undefined
+// when the orchestrator isn't running), as resolveHelperLaunchSettings does.
+let orchestratorLive: AgentLaunchAccess | undefined;
+const mockResolveHelperLaunchSettings = vi.fn(
+  async (_projectPath: string, _orchestratorId: string, options: { helperProvider?: string } = {}) =>
+    resolveHelperAccess(orchestratorLive, 'same', options.helperProvider),
+);
+vi.mock('./orchestration-policy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./orchestration-policy')>()),
+  resolveHelperLaunchSettings: (...args: Parameters<typeof mockResolveHelperLaunchSettings>) => mockResolveHelperLaunchSettings(...args),
 }));
 
 import {
@@ -272,6 +304,7 @@ import {
 } from './agent-system';
 import * as os from 'os';
 import { broadcastAgentExit } from './agent-exit-broadcast';
+import { agentRegistry } from './agent-registry';
 
 /** Give a mock provider the SessionCapable surface, with the real CLIs' "resume <uuid>" pattern. */
 function sessionCapable(provider: Record<string, unknown>): void {
@@ -2520,5 +2553,123 @@ describe('listSessions: saved ids the CLI store lacks (#2156)', () => {
     (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => true);
     await listSessions('/project', 'durable_cp', 'codex-cli');
     expect(mockRemoveSessionEntries).not.toHaveBeenCalled();
+  });
+});
+
+describe('helper launch ceiling on the normal spawn path', () => {
+  const getAgentLaunchAccess = (id: string) => agentRegistry.get(id)?.launchAccess;
+  const projectPath = path.join(path.sep, 'project');
+  const helper = (extra: Record<string, unknown> = {}) => ({
+    id: 'helper-1',
+    name: 'helper',
+    parentAgentId: 'orch-1',
+    freeAgentMode: true,
+    ...extra,
+  });
+  const lastBuild = () => (mockProvider.buildSpawnCommand.mock.calls.at(-1) as unknown as [{ freeAgentMode?: boolean; permissionMode?: string }])[0];
+  const wake = (extra: Record<string, unknown> = {}) =>
+    spawnAgent({ agentId: 'helper-1', projectPath, cwd: projectPath, kind: 'durable', ...extra });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsMcpEnabled.mockReturnValue(false);
+    mockGetPermissionMode.mockReturnValue('skip-all');
+    orchestratorLive = launchAccessFor('auto');
+  });
+
+  afterEach(() => {
+    untrackAgent('helper-1');
+    mockGetDurableConfig.mockReset();
+    mockGetDurableConfig.mockImplementation(() => null);
+  });
+
+  it('a helper woken with no mode gets its Auto orchestrator\'s level, not the project\'s skip-all', async () => {
+    mockGetDurableConfig.mockImplementation((async () => helper()) as never);
+    await wake();
+    expect(mockResolveHelperLaunchSettings).toHaveBeenCalledWith(projectPath, 'orch-1', { helperProvider: 'claude-code' });
+    expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'auto' });
+  });
+
+  it('also lowers an explicit skip-all a caller passes', async () => {
+    mockGetDurableConfig.mockImplementation((async () => helper()) as never);
+    await wake({ freeAgentMode: true, permissionMode: 'skip-all' });
+    expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
+  });
+
+  it('starts at standard when the orchestrator isn\'t running', async () => {
+    orchestratorLive = undefined;
+    mockGetDurableConfig.mockImplementation((async () => helper()) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+  });
+
+  it('starts at standard when the orchestrator can\'t be read', async () => {
+    mockResolveHelperLaunchSettings.mockRejectedValueOnce(new Error('Orchestrator not found'));
+    mockGetDurableConfig.mockImplementation((async () => helper()) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
+  });
+
+  it('holds the helper to the lower access start_helper asked for', async () => {
+    orchestratorLive = launchAccessFor('bypass');
+    mockGetDurableConfig.mockImplementation((async () => helper({ requestedAccess: 'auto' })) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
+  });
+
+  it('keeps a lower level the caller passed', async () => {
+    orchestratorLive = launchAccessFor('bypass');
+    mockGetDurableConfig.mockImplementation((async () => helper({ freeAgentMode: false })) as never);
+    await wake();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'skip-all' });
+  });
+
+  it('a Copilot helper under an Auto orchestrator never gets --yolo', async () => {
+    mockGetDurableConfig.mockImplementation((async () => helper({ orchestrator: 'copilot-cli' })) as never);
+    await wake({ orchestrator: 'copilot-cli' });
+    expect(mockResolveHelperLaunchSettings).toHaveBeenCalledWith(projectPath, 'orch-1', { helperProvider: 'copilot-cli' });
+    // Any Free Agent Mode adds --yolo on Copilot, and Auto launch settings
+    // carry it, so the ranking drops to standard: no --yolo, no --allow-all-tools.
+    const launch = lastBuild();
+    expect(launch).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
+    expect(providerAccessLevel('copilot-cli', launch as AgentLaunchAccess)).toBe('standard');
+    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+  });
+
+  it('a Copilot helper with its orchestrator asleep starts at standard', async () => {
+    orchestratorLive = undefined;
+    mockGetDurableConfig.mockImplementation((async () => helper({ orchestrator: 'copilot-cli' })) as never);
+    await wake({ orchestrator: 'copilot-cli' });
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
+  });
+
+  it('starts at standard when the agent\'s config can\'t be read, whatever the caller passed', async () => {
+    mockGetDurableConfig.mockImplementation((async () => { throw new Error('agents.json is corrupt'); }) as never);
+    await wake({ freeAgentMode: true, permissionMode: 'skip-all' });
+    expect(lastBuild()).toMatchObject({ freeAgentMode: false, permissionMode: 'auto' });
+    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: false, permissionMode: 'auto' });
+  });
+
+  it('hands the chat runtime the capped values', async () => {
+    mockGetDurableConfig.mockImplementation((async () => helper()) as never);
+    await wake({ freeAgentMode: true, permissionMode: 'skip-all' });
+    expect(mockTryStartChatAgent).toHaveBeenCalled();
+    expect(mockTryStartChatAgent.mock.calls.at(-1)![0]).toMatchObject({ freeAgentMode: true, permissionMode: 'auto' });
+  });
+
+  it('leaves a durable agent that isn\'t a helper at the project setting', async () => {
+    mockGetDurableConfig.mockImplementation((async () => ({ id: 'helper-1', name: 'plain', freeAgentMode: true })) as never);
+    await wake();
+    expect(mockResolveHelperLaunchSettings).not.toHaveBeenCalled();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'skip-all' });
+    expect(getAgentLaunchAccess('helper-1')).toEqual({ freeAgentMode: true, permissionMode: 'skip-all' });
+  });
+
+  it('leaves quick agents alone', async () => {
+    await spawnAgent({ agentId: 'helper-1', projectPath, cwd: projectPath, kind: 'quick', freeAgentMode: true });
+    expect(mockResolveHelperLaunchSettings).not.toHaveBeenCalled();
+    expect(lastBuild()).toMatchObject({ freeAgentMode: true, permissionMode: 'skip-all' });
   });
 });

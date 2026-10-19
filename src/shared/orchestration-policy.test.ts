@@ -8,6 +8,7 @@ import {
   launchAccessFor,
   launchAccessForChatLevel,
   providerAccessLevel,
+  rankHelperLaunch,
   normalizeOrchestrationConfig,
   resolveHelperAccess,
   resolveOrchestrationPolicy,
@@ -196,5 +197,27 @@ describe('orchestration policy', () => {
       const result = checkHelperLimit({ helperCount: 1, totalHelperCount: 20, maxHelpers: 5, globalCap: 20 });
       expect(result).toMatchObject({ ok: false, reason: 'global-cap' });
     });
+  });
+});
+
+describe('rankHelperLaunch', () => {
+  it('lowers to the requested access when it asks for less', () => {
+    const launch = rankHelperLaunch(resolveHelperAccess(launchAccessFor('bypass'), 'same', 'claude-code'), 'auto', 'claude-code');
+    expect(launch).toEqual({ freeAgentMode: true, permissionMode: 'auto', level: 'auto', clamped: false });
+  });
+
+  it('never raises above the policy resolution', () => {
+    const launch = rankHelperLaunch(resolveHelperAccess(launchAccessFor('auto'), 'same', 'claude-code'), 'bypass', 'claude-code');
+    expect(launch).toMatchObject({ freeAgentMode: true, permissionMode: 'auto', level: 'auto', clamped: true });
+  });
+
+  it('ignores an unknown requested level', () => {
+    const launch = rankHelperLaunch(resolveHelperAccess(launchAccessFor('auto'), 'same', 'codex-cli'), 'root', 'codex-cli');
+    expect(launch).toMatchObject({ level: 'auto', clamped: false });
+  });
+
+  it('ranks for the provider: Copilot under an Auto ceiling gets standard', () => {
+    const launch = rankHelperLaunch(resolveHelperAccess(launchAccessFor('auto'), 'same', 'copilot-cli'), undefined, 'copilot-cli');
+    expect(launch).toMatchObject({ freeAgentMode: false, permissionMode: 'auto', level: 'standard' });
   });
 });
