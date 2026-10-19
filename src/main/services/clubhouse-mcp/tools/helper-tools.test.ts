@@ -67,6 +67,8 @@ function beginStop(id: string, onExit?: () => void) {
 }
 
 const sent = new Map<string, string[]>();
+/** Terminal agents whose runtime refuses input because they are shutting down. */
+const refusing = new Set<string>();
 vi.mock('../../agent-runtime', () => ({
   getAgentRuntime: (id: string) => (running.has(id)
     ? {
@@ -75,6 +77,7 @@ vi.mock('../../agent-runtime', () => ({
       isRunning: () => true,
       getState: () => 'idle',
       sendMessage: async (text: string) => {
+        if (refusing.has(id)) throw new AgentStoppingError(id);
         sent.set(id, [...(sent.get(id) ?? []), text]);
         return { delivered: true };
       },
@@ -106,6 +109,7 @@ const mockBroadcast = vi.fn();
 vi.mock('../../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...args: unknown[]) => mockBroadcast(...args) }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 
+import { AgentStoppingError } from '../../agent-runtime/agent-stopping';
 import {
   approveHelperStart,
   declineHelperStart,
@@ -185,6 +189,7 @@ beforeEach(() => {
   agents.clear();
   running.clear();
   stopping.clear();
+  refusing.clear();
   sent.clear();
   for (const id of [...agentRegistry.getAllRegistrations().keys()]) agentRegistry.untrack(id);
   _resetForTesting();
@@ -927,6 +932,14 @@ describe('sleep_helper and wake_helper', () => {
     expect(running.has('mine')).toBe(true);
   });
 
+  it('reports no delivery when the running helper\'s terminal refuses the message', async () => {
+    running.add('mine');
+    refusing.add('mine');
+    const result = parse(await callTool('orch', 'wake_helper', { helper: 'mine', message: 'x' }));
+    expect(result).toMatchObject({ status: 'stopping', messageDelivered: false });
+    expect(mockSpawnAgent).not.toHaveBeenCalled();
+  });
+
   it('reports a sleeping helper as already sleeping', async () => {
     expect(parse(await callTool('orch', 'sleep_helper', { helper: 'mine' }))).toMatchObject({ status: 'already_sleeping' });
     expect(mockKillAgent).not.toHaveBeenCalled();
@@ -950,6 +963,15 @@ describe('message_parent', () => {
     const result = await callTool('plain', 'message_parent', { text: 'hi' });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('no parent');
+  });
+
+  it('says a parent that is shutting down did not get the message', async () => {
+    addAgent({ id: 'mine', name: 'Mine', parentAgentId: 'orch' });
+    runAgent('mine', false);
+    refusing.add('orch');
+    const result = await callTool('mine', 'message_parent', { text: 'hi' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe('Orch is shutting down, so the message was not delivered.');
   });
 
   it('reports a sleeping parent', async () => {

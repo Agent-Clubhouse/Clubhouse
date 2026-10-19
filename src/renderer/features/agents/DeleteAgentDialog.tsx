@@ -269,6 +269,8 @@ export function DeleteAgentDialog() {
 
   const isDirty = status?.isValid &&
     (status.uncommittedFiles.length > 0 || status.unpushedCommits.length > 0);
+  // The check could not run, so the worktree is not known to be clean.
+  const checkFailed = !!status?.isValid && !!status.checkError;
 
   const handleSimpleDelete = () => handleExecute('force');
   const handleLeaveFiles = () => handleExecute('unregister');
@@ -291,7 +293,9 @@ export function DeleteAgentDialog() {
               Delete {agent.name}?
             </h2>
             <p className="text-sm text-ctp-subtext0 mb-4">
-              {status?.isValid
+              {checkFailed
+                ? `Couldn't check ${agent.name}'s worktree for unsaved work (${status!.checkError}). Deleting it could lose changes.`
+                : status?.isValid
                 ? 'This will remove the worktree and branch. No uncommitted changes detected.'
                 : 'This agent\'s worktree could not be inspected. It may have already been removed.'}
             </p>
@@ -326,7 +330,7 @@ export function DeleteAgentDialog() {
                   hover:bg-ctp-error cursor-pointer font-medium disabled:opacity-50 flex items-center gap-1.5"
               >
                 {executing && <Spinner size="xs" />}
-                Delete
+                {checkFailed ? 'Delete anyway' : 'Delete'}
               </button>
             </div>
           </>

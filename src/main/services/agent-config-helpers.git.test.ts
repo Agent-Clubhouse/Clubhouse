@@ -19,6 +19,7 @@ import {
   clearAgentConfigCache,
   flushAllAgentConfigs,
   getDisposeChecks,
+  getWorktreeStatus,
   resolveHelpersForDelete,
 } from './agent-config';
 import type { DurableAgentConfig } from '../../shared/types';
@@ -147,5 +148,17 @@ describe('dispose checks and Clubhouse\'s own config', () => {
     const edited = { mcpServers: { ...bridge.mcpServers, mine: { command: 'my-server' } } };
     fs.writeFileSync(path.join(worktree('helper-b'), '.mcp.json'), JSON.stringify(edited, null, 2));
     expect((await getDisposeChecks(project, 'durable_3_b')).dirty).toBe(1);
+  });
+});
+
+describe('worktree status when git fails', () => {
+  it('reports that it could not check, never a clean worktree', async () => {
+    fs.writeFileSync(path.join(worktree('helper-b'), 'notes.txt'), 'draft\n');
+    // Point the worktree at a git dir that isn't there, so git status fails.
+    fs.writeFileSync(path.join(worktree('helper-b'), '.git'), `gitdir: ${path.join(root, 'missing')}\n`);
+    const status = await getWorktreeStatus(project, 'durable_3_b');
+    expect(status.checkError).toMatch(/couldn't read its uncommitted files/);
+    expect(status.uncommittedFiles).toEqual([]);
+    expect((await getDisposeChecks(project, 'durable_3_b')).error).toBeTruthy();
   });
 });

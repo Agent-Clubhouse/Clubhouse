@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -34,6 +35,7 @@ vi.mock('./pty-manager', () => ({
   write: (...args: unknown[]) => mockPtyWrite(...args),
   getBuffer: vi.fn(() => ''),
   isRunning: (...args: unknown[]) => mockIsRunning(...args),
+  isStopping: (...args: unknown[]) => mockIsStopping(...args),
 }));
 
 import { agentRegistry } from './agent-registry';

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -32,6 +33,7 @@ const mockIsRunning = vi.fn().mockReturnValue(false);
 vi.mock('./pty-manager', () => ({
   write: (...args: unknown[]) => mockPtyWrite(...args),
   isRunning: (...args: unknown[]) => mockIsRunning(...args),
+  isStopping: (...args: unknown[]) => mockIsStopping(...args),
 }));
 
 const mockGetAgentOrchestrator = vi.fn<(id: string) => string | undefined>(() => undefined);
@@ -59,6 +61,7 @@ import { agentRegistry } from './agent-registry';
 import { applyPersistedBinding, _resetPersistedBindingSourcesForTesting } from './persisted-bindings';
 import {
   initGroupProjectLifecycle,
+  injectPtyMessage,
   _resetLifecycleForTesting,
   _recentLeavesForTesting,
 } from './group-project-lifecycle';
@@ -74,6 +77,16 @@ describe('GroupProjectLifecycle', () => {
     _resetAllBoardsForTesting();
     _resetLifecycleForTesting();
     _resetPersistedBindingSourcesForTesting();
+  });
+
+  it('does not write a group-project message into a terminal that is shutting down', () => {
+    mockIsStopping.mockReturnValue(true);
+    try {
+      injectPtyMessage('agent-1', 'start polling');
+      expect(mockPtyWrite).not.toHaveBeenCalled();
+    } finally {
+      mockIsStopping.mockReturnValue(false);
+    }
   });
 
   it('posts join event when agent binds to group project', async () => {

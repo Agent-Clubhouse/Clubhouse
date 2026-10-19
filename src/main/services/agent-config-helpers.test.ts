@@ -91,7 +91,7 @@ function gitOutput(args: string[], cwd: string): string {
     return `refs/heads/${repo.branch}\n`;
   }
   if (!repo) return '';
-  if (cmd === 'status --porcelain --untracked-files=all') return Array.from({ length: repo.dirty }, (_, i) => ` M file${i}.ts`).join('\n');
+  if (cmd === 'status --porcelain') return Array.from({ length: repo.dirty }, (_, i) => ` M file${i}.ts`).join('\n');
   if (args[0] === 'rev-list' && args[1] === '--count') {
     if (args.includes('--remotes')) return `${repo.unpushed}\n`;
     if (args.includes('--branches')) return `${repo.localOnly ?? repo.unpushed}\n`;

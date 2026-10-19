@@ -47,6 +47,11 @@ export function injectPtyMessage(agentId: string, message: string): void {
     });
     return;
   }
+  if (ptyManager.isStopping(agentId)) {
+    // The process is exiting and would swallow the message.
+    appLog('core:group-project', 'info', 'PTY injection skipped: the agent is shutting down', { meta: { agentId } });
+    return;
+  }
   try {
     ptyManager.write(agentId, `\x1b[200~${message}\x1b[201~`);
     setTimeout(() => ptyManager.write(agentId, '\r'), getPasteDelayMs(agentId));
