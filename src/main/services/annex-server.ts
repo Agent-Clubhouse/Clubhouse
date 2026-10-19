@@ -35,6 +35,7 @@ import { getAgentRuntime, isChatAgent, onChatEvent } from './agent-runtime';
 import { chatDetailedStatus } from '../../shared/chat-agent-status';
 import type { ChatEvent, ChatSessionState } from '../../shared/chat';
 import { injectPtyText } from './agent-runtime/pty-input';
+import { AgentStoppingError } from './agent-runtime/agent-stopping';
 import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
 
@@ -324,7 +325,16 @@ export function getAgentExecutionMode(agentId: string): AgentExecutionMode {
 
 const CLIPBOARD_IMAGE_CLEANUP_MS = 30 * 60 * 1000; // 30 minutes
 
-function handleClipboardImage(agentId: string, base64: string, mimeType: string): void {
+/**
+ * Save a pasted image and paste its path into the agent's terminal. Returns
+ * the error to send back when the terminal is shutting down (nothing is
+ * written then), else undefined.
+ */
+export function handleClipboardImage(agentId: string, base64: string, mimeType: string): { code: string; message: string } | undefined {
+  if (ptyManager.isStopping(agentId)) {
+    // The process is exiting and would swallow the pasted path.
+    return { code: 'agent_stopping', message: new AgentStoppingError(agentId).message };
+  }
   const ext = mimeType === 'image/png' ? '.png'
     : mimeType === 'image/jpeg' ? '.jpg'
     : mimeType === 'image/gif' ? '.gif'
@@ -1715,6 +1725,10 @@ async function handleAgentMessageRoute(ctx: AnnexRouteContext, match: RegExpMatc
       const runtime = getAgentRuntime(agentId);
       if (runtime?.kind === 'chat') {
         await runtime.sendMessage(message, { source: 'annex' });
+      } else if (mode === 'pty' && ptyManager.isStopping(agentId)) {
+        // The process is exiting and would swallow the text.
+        sendJson(ctx.res, 409, { error: 'agent_stopping', message: new AgentStoppingError(agentId).message });
+        return;
       } else if (mode === 'pty' && ptyManager.isRunning(agentId)) {
         ptyManager.write(agentId, message);
       } else {
@@ -2302,7 +2316,8 @@ function handleWsMessage(ws: WebSocket, data: string): void {
         safeSend(ws, JSON.stringify({ type: 'error', payload: { message: 'clipboard:image data exceeds 10MB limit' } }));
         break;
       }
-      handleClipboardImage(agentId, base64, mimeType);
+      const refused = handleClipboardImage(agentId, base64, mimeType);
+      if (refused) safeSend(ws, JSON.stringify({ type: 'error', payload: refused }));
       break;
     }
 

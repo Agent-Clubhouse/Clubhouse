@@ -43,6 +43,7 @@ vi.mock('./agent-config', () => ({
 vi.mock('./pty-manager', () => ({
   getBuffer: vi.fn().mockReturnValue(''),
   isRunning: vi.fn().mockReturnValue(false),
+  isStopping: vi.fn().mockReturnValue(false),
   write: vi.fn(),
 }));
 
@@ -2068,6 +2069,35 @@ describe('annex-server', () => {
       expect(body.ok).toBe(true);
       expect(body.mode).toBe('pty');
       expect(ptyManagerModule.write).toHaveBeenCalledWith('agent-1', 'hello\n');
+    });
+
+    it('refuses a PTY agent that is shutting down, writing nothing', async () => {
+      const { port, token } = await startAndPair();
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(true);
+      vi.mocked(ptyManagerModule.isStopping).mockReturnValue(true);
+      vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
+      vi.mocked(ptyManagerModule.write).mockClear();
+      try {
+        const res = await request(port, 'POST', '/api/v1/agents/agent-1/message', { message: 'hello' }, authHeaders(token));
+        expect(res.status).toBe(409);
+        expect(JSON.parse(res.body)).toEqual({ error: 'agent_stopping', message: 'The agent is shutting down, so the message was not delivered.' });
+        expect(ptyManagerModule.write).not.toHaveBeenCalled();
+      } finally {
+        vi.mocked(ptyManagerModule.isStopping).mockReturnValue(false);
+      }
+    });
+
+    it('refuses a pasted image for a PTY agent that is shutting down, writing nothing', () => {
+      vi.mocked(ptyManagerModule.isStopping).mockReturnValue(true);
+      vi.mocked(ptyManagerModule.write).mockClear();
+      try {
+        expect(annexServer.handleClipboardImage('agent-1', 'aGk=', 'image/png')).toEqual({
+          code: 'agent_stopping', message: 'The agent is shutting down, so the message was not delivered.',
+        });
+        expect(ptyManagerModule.write).not.toHaveBeenCalled();
+      } finally {
+        vi.mocked(ptyManagerModule.isStopping).mockReturnValue(false);
+      }
     });
 
     it('returns 400 when message is missing', async () => {

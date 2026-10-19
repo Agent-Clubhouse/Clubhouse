@@ -333,6 +333,9 @@ let stateLoaded = false;
 export const useChromeStore = create<ChromeState>((set, get) => {
   stateLoaded = isNewChromeEnabled();
   const schedulePersist = () => {
+    // Never write a store that skipped the saved state at startup: load it
+    // first (keeping changes made since), so defaults can't overwrite it.
+    ensureChromeStateLoaded();
     if (persistTimer) clearTimeout(persistTimer);
     persistTimer = setTimeout(() => {
       persistTimer = null;
@@ -611,7 +614,17 @@ export function syncProjectActivityWithAgents(): () => void {
 export function ensureChromeStateLoaded(): void {
   if (stateLoaded) return;
   stateLoaded = true;
-  useChromeStore.setState(loadChromeState());
+  const saved = loadChromeState();
+  // A field already changed from its default in this session (by an action
+  // that didn't load first) keeps that change; every other field takes the
+  // saved value.
+  const current = useChromeStore.getState();
+  const changed = Object.fromEntries(
+    (Object.keys(DEFAULTS) as (keyof PersistedFields)[])
+      .filter((key) => JSON.stringify(current[key]) !== JSON.stringify(DEFAULTS[key]))
+      .map((key) => [key, current[key]]),
+  ) as Partial<PersistedFields>;
+  useChromeStore.setState({ ...saved, ...changed });
 }
 
 /**

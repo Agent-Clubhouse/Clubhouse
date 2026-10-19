@@ -164,6 +164,23 @@ describe('chromeStore', () => {
       vi.useRealTimers();
     });
 
+    it('loads the saved state before any persist, keeping the change that triggered it', async () => {
+      vi.resetModules();
+      (window.clubhouse as { newChromeLayout?: boolean }).newChromeLayout = undefined;
+      localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 2, sidebarWidth: 400, pinnedProjectIds: ['p1'] }));
+      const mod = await import('./chromeStore');
+      vi.useFakeTimers();
+      try {
+        // An action that doesn't load first: the persist path loads.
+        mod.useChromeStore.getState().setProjectSort('recent');
+        expect(mod.useChromeStore.getState()).toMatchObject({ projectSort: 'recent', sidebarWidth: 400, pinnedProjectIds: ['p1'] });
+        vi.advanceTimersByTime(400);
+        expect(mod.loadChromeState()).toMatchObject({ projectSort: 'recent', sidebarWidth: 400, pinnedProjectIds: ['p1'] });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('loads persisted state at startup when the new layout is on', async () => {
       vi.resetModules();
       (window.clubhouse as { newChromeLayout?: boolean }).newChromeLayout = true;

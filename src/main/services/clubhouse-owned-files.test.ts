@@ -10,6 +10,7 @@ vi.mock('../util/shell', () => ({ getShellEnvironment: vi.fn(() => ({ PATH: proc
 
 import { CLUBHOUSE_WRITTEN_FILES, uncommittedPorcelain, isClubhouseHookCommand } from './clubhouse-owned-files';
 import { buildHookCurlCommand } from '../orchestrators/shared';
+import { mcpServerToToml } from './toml-utils';
 import { ClaudeCodeProvider } from '../orchestrators/claude-code-provider';
 import { CodexCliProvider } from '../orchestrators/codex-cli-provider';
 import { CopilotCliProvider } from '../orchestrators/copilot-cli-provider';
@@ -81,6 +82,41 @@ describe('withoutClubhouseOwnedChanges', () => {
     write('.codex/hooks.json', { hooks: { Notification: [{ matcher: '', hooks: [OUR_HOOK] }] } });
     write('.codex/config.toml', '[mcp_servers.clubhouse]\ncommand = "node"\nargs = ["clubhouse-mcp-bridge.js"]\n');
     expect(await remaining()).toEqual([]);
+  });
+
+  describe('Codex TOML', () => {
+    // Exactly what Clubhouse writes: the bridge section and its env subsection.
+    const ours = mcpServerToToml('clubhouse', {
+      command: 'node',
+      args: ['/Applications/Clubhouse.app/Contents/Resources/bridge/clubhouse-mcp-bridge.js'],
+      env: { CLUBHOUSE_MCP_FALLBACK_PORT: '41234', CLUBHOUSE_MCP_FALLBACK_AGENT_ID: 'durable_17_h1' },
+      env_vars: ['CLUBHOUSE_AGENT_ID', 'CLUBHOUSE_MCP_PORT', 'CLUBHOUSE_HOOK_NONCE'],
+    });
+
+    it('drops a config holding only Clubhouse\'s section, alone or added to a committed one', async () => {
+      write('.codex/config.toml', ours + '\n');
+      expect(await remaining()).toEqual([]);
+      write('.codex/config.toml', 'model = "o3"\n');
+      commitAll();
+      write('.codex/config.toml', 'model = "o3"\n\n' + ours + '\n');
+      expect(await remaining()).toEqual([]);
+    });
+
+    it('keeps a user key inside Clubhouse\'s section', async () => {
+      const withKey = ours.replace('command = "node"', 'command = "node"\nstartup_timeout_sec = 30');
+      write('.codex/config.toml', withKey + '\n');
+      expect(await remaining()).toEqual(['.codex/config.toml']);
+    });
+
+    it('keeps user lines appended after Clubhouse\'s section', async () => {
+      write('.codex/config.toml', ours + '\nmodel_reasoning_effort = "high"\n');
+      expect(await remaining()).toEqual(['.codex/config.toml']);
+    });
+
+    it('keeps a changed bridge line', async () => {
+      write('.codex/config.toml', ours.replace('"node"', '"bun"') + '\n');
+      expect(await remaining()).toEqual(['.codex/config.toml']);
+    });
   });
 
   it('keeps an untracked config file with anything of the user\'s in it', async () => {

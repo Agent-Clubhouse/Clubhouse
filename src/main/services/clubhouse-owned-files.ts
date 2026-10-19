@@ -35,7 +35,6 @@ import * as path from 'path';
 import {
   CLUBHOUSE_FALLBACK_AGENT_ID_ENV,
   CLUBHOUSE_FALLBACK_PORT_ENV,
-  stripClubhouseMcpToml,
 } from './clubhouse-mcp/injection';
 
 /**
@@ -213,12 +212,67 @@ function userJson(text: string, committed: boolean): string | null {
 }
 
 /** A TOML config without Clubhouse's MCP section, blank lines and trailing spaces ignored. */
+// ── Strict TOML matching (Codex) ─────────────────────────────────────────
+
+const TOML_STRING = String.raw`"((?:[^"\\]|\\.)*)"`;
+const TOML_HEADER = /^\s*\[([^\]]+)\]\s*$/;
+const BRIDGE_SECTION = 'mcp_servers.clubhouse';
+const BRIDGE_ENV_SECTION = 'mcp_servers.clubhouse.env';
+
+function unescapeToml(value: string): string {
+  return value.replace(/\\(.)/g, (_m, ch: string) => ({ n: '\n', r: '\r', t: '\t' } as Record<string, string>)[ch] ?? ch);
+}
+
+/** The lines mcpServerToToml writes for the bridge's main section. */
+function isBridgeLine(line: string): boolean {
+  if (line === 'command = "node"') return true;
+  const args = line.match(new RegExp(String.raw`^args = \[${TOML_STRING}\]$`));
+  if (args) return /(^|[\\/])clubhouse-mcp-bridge\.js$/.test(unescapeToml(args[1]));
+  const vars = line.match(/^env_vars = \[(.*)\]$/);
+  if (vars) {
+    const items = vars[1].split(',').map((v) => v.trim());
+    return items.length > 0 && items.every((v) => /^"CLUBHOUSE_[A-Z_]+"$/.test(v));
+  }
+  return false;
+}
+
+/** The lines mcpServerToToml writes for the bridge's env subsection. */
+function isBridgeEnvLine(line: string): boolean {
+  return new RegExp(String.raw`^${CLUBHOUSE_FALLBACK_PORT_ENV} = "\d{1,5}"$`).test(line)
+    || new RegExp(String.raw`^${CLUBHOUSE_FALLBACK_AGENT_ID_ENV} = "[A-Za-z0-9_.\-]+"$`).test(line);
+}
+
+/**
+ * A Codex TOML config without exactly the lines Clubhouse writes for its
+ * bridge: the [mcp_servers.clubhouse] and [mcp_servers.clubhouse.env]
+ * headers and their known keys. Any other line, including a user's key inside
+ * those sections or text after them, is kept, so it counts as work. (The
+ * config pipeline's stripMcpServerSection drops whole sections; too loose for
+ * deciding what a dispose may delete.)
+ */
+export function stripClubhouseMcpTomlStrict(text: string): string[] {
+  const kept: string[] = [];
+  let section: 'bridge' | 'env' | null = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    if (line.length === 0) continue;
+    const header = line.match(TOML_HEADER);
+    if (header) {
+      const key = header[1].trim();
+      section = key === BRIDGE_SECTION ? 'bridge' : key === BRIDGE_ENV_SECTION ? 'env' : null;
+      if (section) continue;
+      kept.push(line);
+      continue;
+    }
+    if (section === 'bridge' && isBridgeLine(line)) continue;
+    if (section === 'env' && isBridgeEnvLine(line)) continue;
+    kept.push(line);
+  }
+  return kept;
+}
+
 function userToml(text: string): string {
-  return stripClubhouseMcpToml(text)
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
-    .filter((line) => line.length > 0)
-    .join('\n');
+  return stripClubhouseMcpTomlStrict(text).join('\n');
 }
 
 /** Whether every difference between the committed `rel` and the one on disk is Clubhouse's own entries. */
