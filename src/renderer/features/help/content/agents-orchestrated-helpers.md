@@ -22,7 +22,7 @@ If you turn it off while the agent has helpers, Clubhouse asks what to do with t
 - **Dispose helpers** runs the dispose checks for each one. If a helper would lose work, the dialog lists it, and **Dispose anyway** appears only when every blocked helper has work at risk. If a check couldn't run, only keeping or cancelling is offered.
 - **Cancel** changes nothing.
 
-Agents using the **Orchestrator** persona start with the switch on. The persona also tells the agent how to plan, start helpers, hand off and dispose. Give helpers the **Generalist** persona (id `workhorse`) when no other role fits.
+Agents using the **Orchestrator** persona start with the switch on. The persona also tells the agent how to plan, start helpers, hand off and dispose. Give helpers the **Generalist** persona (id `workhorse`) when no other role fits. The Orchestrator persona doesn't offer the **Group Project Lead** to its helpers, because it coordinates them itself and a second coordinator under it would split the decisions. To have a board run for you, add a Group Project Lead to a group project yourself.
 
 ## Starting helpers
 

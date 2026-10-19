@@ -15,10 +15,10 @@ describe('built-in blueprints', () => {
   describe('Small Squad', () => {
     const bp = createSmallSquadBlueprint();
 
-    it('has Group PM + 3 Developers + 1 QA (5 agents)', () => {
+    it('has Group Project Lead + 3 Developers + 1 QA (5 agents)', () => {
       expect(bp.agents).toHaveLength(5);
       const names = bp.agents!.map((a) => a.name);
-      expect(names).toEqual(['Group PM', 'Developer 1', 'Developer 2', 'Developer 3', 'QA 1']);
+      expect(names).toEqual(['Group Project Lead', 'Developer 1', 'Developer 2', 'Developer 3', 'QA 1']);
     });
 
     it('has one agent view per agent', () => {
@@ -26,7 +26,7 @@ describe('built-in blueprints', () => {
       expect(bp.canvas.views.every((v) => v.type === 'agent')).toBe(true);
     });
 
-    it('wires the Group PM to every other agent bidirectionally', () => {
+    it('wires the Group Project Lead to every other agent bidirectionally', () => {
       expect(bp.canvas.wires).toHaveLength(4);
       expect(bp.canvas.wires.every((w) => w.sourceRef === 'agent_gp')).toBe(true);
       expect(bp.canvas.wires.every((w) => w.bidirectional === true)).toBe(true);
@@ -40,7 +40,7 @@ describe('built-in blueprints', () => {
   describe('Large Squad', () => {
     const bp = createLargeSquadBlueprint();
 
-    it('has Group PM + 6 Developers + 2 QA (9 agents)', () => {
+    it('has Group Project Lead + 6 Developers + 2 QA (9 agents)', () => {
       expect(bp.agents).toHaveLength(9);
       const devs = bp.agents!.filter((a) => a.name.startsWith('Developer'));
       const qas = bp.agents!.filter((a) => a.name.startsWith('QA'));
@@ -48,7 +48,7 @@ describe('built-in blueprints', () => {
       expect(qas).toHaveLength(2);
     });
 
-    it('has 9 agent views and 8 PM fan-out wires', () => {
+    it('has 9 agent views and 8 lead fan-out wires', () => {
       expect(bp.canvas.views).toHaveLength(9);
       expect(bp.canvas.wires).toHaveLength(8);
     });
@@ -124,7 +124,7 @@ describe('built-in blueprints', () => {
       expect(small.viewCount).toBe(5);
       expect(small.agentCount).toBe(5);
       expect(small.wireCount).toBe(4);
-      expect(small.agentNames).toContain('Group PM');
+      expect(small.agentNames).toContain('Group Project Lead');
 
       const large = summaries.find((s) => s.name === 'Large Squad')!;
       expect(large.agentCount).toBe(9);

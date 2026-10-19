@@ -257,11 +257,11 @@ describe('materialization-service', () => {
   describe('resolvePersonaId', () => {
     it('returns per-agent persona when set', () => {
       const agent = { ...testAgent, persona: 'qa' };
-      expect(resolvePersonaId(agent, { persona: 'project-manager' })).toBe('qa');
+      expect(resolvePersonaId(agent, { persona: 'group-project-pm' })).toBe('qa');
     });
 
     it('falls back to project default when agent persona unset', () => {
-      expect(resolvePersonaId(testAgent, { persona: 'project-manager' })).toBe('project-manager');
+      expect(resolvePersonaId(testAgent, { persona: 'group-project-pm' })).toBe('group-project-pm');
     });
 
     it('returns undefined when neither is set', () => {
@@ -801,7 +801,7 @@ describe('materialization-service', () => {
     });
 
     it('writes only persona instructions when no project defaults exist', async () => {
-      const agentWithPersona = { ...testAgent, persona: 'project-manager' };
+      const agentWithPersona = { ...testAgent, persona: 'group-project-pm' };
       mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
@@ -811,8 +811,21 @@ describe('materialization-service', () => {
 
       expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
       const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
-      expect(written).toContain('Project Manager');
+      expect(written).toContain('Group Project Lead');
       expect(written).toContain('mission');
+    });
+
+    it('writes the Group Project Lead for an agent on the retired project-manager id', async () => {
+      const agentWithPersona = { ...testAgent, persona: 'project-manager' };
+      mockSettingsFile(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+      }));
+
+      await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
+
+      const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
+      expect(written).toContain('# Group Project Lead');
     });
 
     it('skips persona injection for unknown persona ID', async () => {
@@ -909,7 +922,7 @@ describe('materialization-service', () => {
     });
 
     it('per-agent persona overrides project-default persona', async () => {
-      const agentWithPersona = { ...testAgent, persona: 'project-manager' };
+      const agentWithPersona = { ...testAgent, persona: 'group-project-pm' };
       mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
@@ -922,8 +935,8 @@ describe('materialization-service', () => {
       await materializeAgent({ projectPath: '/project', agent: agentWithPersona, provider: mockProvider });
 
       const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
-      expect(written).toContain('Project Manager');
-      expect(written).not.toContain('PR Reviewer');
+      expect(written).toContain('# Group Project Lead');
+      expect(written).not.toContain('# PR Reviewer');
     });
 
     it('substitutes @@Mission with project default mission file content', async () => {

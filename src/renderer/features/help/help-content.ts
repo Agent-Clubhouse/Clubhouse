@@ -42,14 +42,13 @@ import settingsAnnexChrome from './content/settings-annex.chrome.md';
 import troubleshootingCommonChrome from './content/troubleshooting-common.chrome.md';
 import troubleshootingSafeModeChrome from './content/troubleshooting-safe-mode.chrome.md';
 import { isNewChromeEnabled } from '../../chrome/chromeFlag';
-import personaProjectManager from '../personas/project-manager.md';
+import personaGroupProjectPm from '../personas/group-project-pm.md';
 import personaQa from '../personas/qa.md';
 import personaUiLead from '../personas/ui-lead.md';
 import personaQualityAuditor from '../personas/quality-auditor.md';
 import personaExecutorPrOnly from '../personas/executor-pr-only.md';
 import personaExecutorMerge from '../personas/executor-merge.md';
 import personaDocUpdater from '../personas/doc-updater.md';
-import personaJudge from '../personas/judge.md';
 import personaResearcher from '../personas/researcher.md';
 import personaOrchestrator from '../personas/orchestrator.md';
 import personaWorkhorse from '../personas/workhorse.md';
@@ -140,14 +139,13 @@ export const HELP_SECTIONS: HelpSection[] = [
     id: 'personas',
     title: 'Agent Personas & Team Roles',
     topics: [
-      { id: 'persona-project-manager', title: 'Project Manager', content: personaProjectManager },
+      { id: 'persona-group-project-pm', title: 'Group Project Lead', content: personaGroupProjectPm },
       { id: 'persona-qa', title: 'PR Reviewer', content: personaQa },
       { id: 'persona-ui-lead', title: 'Design Lead', content: personaUiLead },
       { id: 'persona-quality-auditor', title: 'AI Slop Detector', content: personaQualityAuditor },
       { id: 'persona-executor-pr-only', title: 'Developer', content: personaExecutorPrOnly },
       { id: 'persona-executor-merge', title: 'Developer (merges)', content: personaExecutorMerge },
       { id: 'persona-doc-updater', title: 'Docs Writer', content: personaDocUpdater },
-      { id: 'persona-judge', title: 'Solution Judge', content: personaJudge },
       { id: 'persona-researcher', title: 'Researcher', content: personaResearcher },
       // Persona files can carry settings front-matter; help shows only the body.
       { id: 'persona-orchestrator', title: 'Orchestrator', content: stripPersonaFrontMatter(personaOrchestrator) },
@@ -172,12 +170,11 @@ const retitle = (topics: HelpTopic[], titles: Record<string, string>) => topics.
 
 // The new shell titles articles in sentence case (#2017), persona names included.
 const PERSONA_TITLES: Record<string, string> = {
-  'persona-project-manager': 'Project manager',
+  'persona-group-project-pm': 'Group project lead',
   'persona-qa': 'PR reviewer',
   'persona-ui-lead': 'Design lead',
   'persona-quality-auditor': 'AI slop detector',
   'persona-doc-updater': 'Docs writer',
-  'persona-judge': 'Solution judge',
 };
 const COOKBOOK_TITLES: Record<string, string> = {
   'cookbook-long-running-job': 'Long-running job',

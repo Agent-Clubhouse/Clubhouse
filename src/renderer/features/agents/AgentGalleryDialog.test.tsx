@@ -29,7 +29,7 @@ describe('AgentGalleryDialog', () => {
 
   it('renders all persona templates', () => {
     render(<AgentGalleryDialog {...defaultProps} />);
-    expect(screen.getByText('Project Manager')).toBeTruthy();
+    expect(screen.getByText('Group Project Lead')).toBeTruthy();
     expect(screen.getByText('PR Reviewer')).toBeTruthy();
     expect(screen.getByText('Design Lead')).toBeTruthy();
     expect(screen.getByText('AI Slop Detector')).toBeTruthy();
@@ -51,7 +51,7 @@ describe('AgentGalleryDialog', () => {
 
   it('Create Agent button is enabled after selecting a persona', () => {
     render(<AgentGalleryDialog {...defaultProps} />);
-    fireEvent.click(screen.getByText('Project Manager'));
+    fireEvent.click(screen.getByText('Group Project Lead'));
     const createBtn = screen.getByText('Create Agent');
     expect(createBtn).not.toBeDisabled();
   });
@@ -83,7 +83,7 @@ describe('AgentGalleryDialog', () => {
 
   it('shows persona descriptions', () => {
     render(<AgentGalleryDialog {...defaultProps} />);
-    expect(screen.getByText(/Plans missions and hands them out/)).toBeTruthy();
+    expect(screen.getByText(/Runs a group project board, hands out missions/)).toBeTruthy();
     expect(screen.getByText(/Reviews pull requests and ends with/)).toBeTruthy();
   });
 });

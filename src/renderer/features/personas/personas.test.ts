@@ -3,20 +3,25 @@ import { PERSONA_TEMPLATES, canonicalPersonaId, getPersonaTemplate, getPersonaId
 import { PATTERN_SETTING_KEYS, parsePersonaFile, stripPersonaFrontMatter } from '../../../shared/persona-pattern';
 
 const EXPECTED_NAMES: Record<string, string> = {
-  'project-manager': 'Project Manager',
+  'group-project-pm': 'Group Project Lead',
   qa: 'PR Reviewer',
   'ui-lead': 'Design Lead',
   'quality-auditor': 'AI Slop Detector',
   'executor-pr-only': 'Developer',
   'executor-merge': 'Developer (merges)',
   'doc-updater': 'Docs Writer',
-  judge: 'Solution Judge',
   researcher: 'Researcher',
   orchestrator: 'Orchestrator',
   workhorse: 'Generalist',
 };
 
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
+// Group Project Lead runs the whole board: orientation, channels, briefs,
+// wake and sleep, polling on every CLI, taps, hygiene, project info, the merge
+// gate and the no-board and PR-only cases. Folding it into a 600-word Project
+// Manager cut that depth and users missed it, so it gets more room than the rest.
+const WORD_CAP: Record<string, number> = { 'group-project-pm': 800 };
 
 describe('persona templates', () => {
   it('lists every persona under its display name, ids unchanged', () => {
@@ -31,7 +36,7 @@ describe('persona templates', () => {
       const body = stripPersonaFrontMatter(persona.content);
       expect(body.startsWith(`# ${persona.name}`), persona.id).toBe(true);
       expect(words(body), persona.id).toBeGreaterThanOrEqual(250);
-      expect(words(body), persona.id).toBeLessThanOrEqual(600);
+      expect(words(body), persona.id).toBeLessThanOrEqual(WORD_CAP[persona.id] ?? 600);
       // One sentence that fits the gallery's two-line clamp and the Settings help slot.
       expect(persona.description.length, persona.id).toBeGreaterThan(40);
       expect(persona.description.length, persona.id).toBeLessThanOrEqual(80);
@@ -81,9 +86,12 @@ describe('persona templates', () => {
   it('lists the built-in persona ids for start_helper in the Orchestrator', () => {
     const body = getPersonaTemplate('orchestrator')!.content;
     expect(body).toContain('persona id, not its display name');
-    for (const id of getPersonaIds().filter((id) => !['orchestrator', 'project-manager'].includes(id))) {
+    // An orchestrator coordinates its own helpers, so a Group Project Lead
+    // under it would be a second coordinator. It isn't offered.
+    for (const id of getPersonaIds().filter((id) => !['orchestrator', 'group-project-pm'].includes(id))) {
       expect(body, id).toContain(`\`${id}\``);
     }
+    expect(body).not.toContain('`group-project-pm`');
   });
 
   it('getPersonaTemplate returns undefined for unknown ID', () => {
@@ -92,24 +100,76 @@ describe('persona templates', () => {
     expect(personaDescription('')).toBeUndefined();
   });
 
-  describe('merged Project Manager', () => {
-    it('resolves the retired group-project-pm id to the Project Manager, unlisted', () => {
-      expect(getPersonaIds()).not.toContain('group-project-pm');
-      expect(PERSONA_TEMPLATES.some((p) => p.id === 'group-project-pm')).toBe(false);
-      expect(canonicalPersonaId('group-project-pm')).toBe('project-manager');
-      expect(getPersonaTemplate('group-project-pm')).toBe(getPersonaTemplate('project-manager'));
-      expect(personaDescription('group-project-pm')).toBe(getPersonaTemplate('project-manager')!.description);
+  describe('retired personas', () => {
+    it('resolves the retired judge id to the PR Reviewer, unlisted', () => {
+      expect(getPersonaIds()).not.toContain('judge');
+      expect(canonicalPersonaId('judge')).toBe('qa');
+      expect(getPersonaTemplate('judge')).toBe(getPersonaTemplate('qa'));
     });
 
+    it('resolves the retired project-manager id to the Group Project Lead, unlisted', () => {
+      expect(getPersonaIds()).not.toContain('project-manager');
+      expect(PERSONA_TEMPLATES.some((p) => p.id === 'project-manager')).toBe(false);
+      expect(canonicalPersonaId('project-manager')).toBe('group-project-pm');
+      expect(getPersonaTemplate('project-manager')).toBe(getPersonaTemplate('group-project-pm'));
+      expect(personaDescription('project-manager')).toBe(getPersonaTemplate('group-project-pm')!.description);
+    });
+
+    it('lists group-project-pm under its own id again', () => {
+      expect(getPersonaIds()).toContain('group-project-pm');
+      expect(canonicalPersonaId('group-project-pm')).toBe('group-project-pm');
+    });
+  });
+
+  describe('Group Project Lead', () => {
+    const body = () => getPersonaTemplate('group-project-pm')!.content;
+
     it('ties admin tools to the admin role and gives a fallback without them', () => {
-      const body = getPersonaTemplate('project-manager')!.content;
-      expect(parsePersonaFile(body).body).toBe(body);
-      expect(body).toContain('admin role');
-      expect(body).toContain('first agent to join');
-      expect(body).toContain('`notify_user`');
-      for (const tool of ['wake_agent', 'sleep_agent', 'shoulder_tap', 'set_project_info']) {
-        expect(body, tool).toContain(`\`${tool}\``);
+      expect(parsePersonaFile(body()).body).toBe(body());
+      expect(body()).toContain('admin role');
+      expect(body()).toContain('first agent to join');
+      expect(body()).toContain('group project card');
+      expect(body()).toContain('`notify_user`');
+    });
+
+    it('covers orientation and every board-operating tool', () => {
+      for (const tool of [
+        'get_project_info', 'list_members', 'read_bulletin', 'read_topic',
+        'wake_agent', 'sleep_agent', 'toggle_polling', 'nudge_polling', 'shoulder_tap', 'broadcast',
+        'clear_topic', 'delete_messages', 'compact_agent', 'clear_agent', 'set_project_info',
+      ]) {
+        expect(body(), tool).toContain(`\`${tool}\``);
       }
+      for (const channel of ['general', 'control']) expect(body(), channel).toContain(`\`${channel}\``);
+    });
+
+    it('leaves the merge to the developer on an approval of the current head and green CI', () => {
+      const gate = body().split('## Merge gate')[1].split('\n## ')[0];
+      expect(gate).toContain('Developer (merges)');
+      expect(gate).toContain('PR Reviewer');
+      expect(gate).toContain('current head');
+      expect(gate).toContain('CI is green');
+      expect(gate).toContain('no separate go');
+      expect(gate).toContain('a mission closes at an approved PR, and merging belongs to whoever the brief names');
+    });
+
+    it('covers polling on every CLI, resuming, and having no board', () => {
+      expect(body()).toContain('`/loop 60s`');
+      expect(body()).toContain('On other CLIs, read the board between your own steps.');
+      expect(body()).toContain('`resume: true`');
+      expect(body()).toContain("coordinate through the user and any agents you're wired to");
+    });
+
+    it('ties merge approvals to the current head in the reviewer and the merging developer', () => {
+      expect(getPersonaTemplate('qa')!.content).toContain('the head commit you reviewed');
+      const merge = getPersonaTemplate('executor-merge')!.content;
+      expect(merge).toContain('name the current head');
+      expect(merge).toContain('auto-merge only once the written approval for the current head is in');
+    });
+
+    it('has a done-means section and an example brief', () => {
+      expect(body()).toContain('## Done means');
+      expect(body()).toContain('## Example brief');
     });
   });
 

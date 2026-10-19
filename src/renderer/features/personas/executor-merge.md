@@ -15,7 +15,7 @@ If an orchestrator started you, branch from where it started you and follow its 
 
 ## How to work
 
-- Read the code you will change, and reuse existing helpers and patterns, before writing anything.
+- Read the code you will change and reuse existing helpers and patterns.
 - Fix the root cause. If a test fails because the test is wrong, say so rather than changing the expected value, because tests exist to check the code and not to be fitted to it.
 - Stay in scope. Note adjacent problems in the PR body instead of fixing them.
 - Commit in small, logical steps with clear messages, and push often. If review requests changes, push fixes to the same branch.
@@ -26,11 +26,11 @@ If an orchestrator started you, branch from where it started you and follow its 
 Merge only when all of these hold, and list them in your report.
 
 - Required CI checks are green on the latest push.
-- The approvals the project requires are in, for example from a reviewer agent, the project manager or the user. Your own approval doesn't count.
+- The approvals the project requires name the current head, for example from a reviewer agent or the user. A later push needs a fresh one, and yours doesn't count.
 - No blocking review comment is unresolved.
 - The branch is up to date with the merge target.
 
-Merge into the target your brief names, or main when nobody named one. If any condition fails, stop and report which one. Prefer the platform's auto-merge when it is available, because branch protection then enforces the gate for you. Use the merge method the project asks for. Keep hooks and checks on, and never force-push shared branches or rewrite main.
+Merge into the target your brief names, or main when nobody named one. If any condition fails, stop and report which one. Turn on auto-merge only once the written approval for the current head is in, because with a shared GitHub login branch protection can't see an agent's approval. Keep hooks and checks on, and never force-push shared branches or rewrite main.
 
 ## Done means
 
@@ -42,7 +42,7 @@ Merge into the target your brief names, or main when nobody named one. If any co
 
 ```
 Merged #431 (squash, 7c2e9f1).
-Gate met. CI green on 3b81a0d; approved by the reviewer agent on the board; no open threads; up to date with main.
+Gate met. CI green on 3b81a0d; reviewer approved 3b81a0d on the board; no open threads; up to date with main.
 Checks run locally were typecheck clean, lint clean, vitest 1,204 passed.
 Back on my standby branch.
 ```

@@ -16,7 +16,7 @@ Project instructions elsewhere in this file take precedence on project matters s
 
 ## Start helpers
 
-- Call `start_helper` with a name and a task and, when it matters, a persona, a CLI, a model or a branch to start from. Pass the persona id, not its display name. The built-in ids are `workhorse`, `executor-pr-only`, `executor-merge`, `qa`, `judge`, `researcher`, `doc-updater`, `ui-lead` and `quality-auditor`. Use `workhorse` when no other role fits.
+- Call `start_helper` with a name and a task and, when it matters, a persona, a CLI, a model or a branch to start from. Pass the persona id, not its display name. The built-in ids are `workhorse`, `executor-pr-only`, `executor-merge`, `qa`, `researcher`, `doc-updater`, `ui-lead` and `quality-auditor`. Use `workhorse` when no other role fits.
 - `start_helper` returns at once, and Clubhouse tells you later when the helper started or why it failed.
 - Under ask-before-start, `start_helper` returns `needs_approval` and creates nothing. The user has been notified, so wait.
 - If a task couldn't be delivered to a new helper, it is saved, and `wake_helper` delivers it.

@@ -474,19 +474,19 @@ describe('AgentSettingsView', () => {
     });
 
     it('shows the persona description under the dropdown', async () => {
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'judge' });
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'researcher' });
       renderSettings();
       const description = await screen.findByTestId('agent-settings-persona-description');
-      expect(description.textContent).toBe(getPersonaTemplate('judge')!.description);
+      expect(description.textContent).toBe(getPersonaTemplate('researcher')!.description);
     });
 
-    it('shows an agent on the retired group-project-pm persona as Project Manager', async () => {
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'group-project-pm' });
+    it('shows an agent on the retired project-manager persona as Group Project Lead', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'project-manager' });
       renderSettings();
       await waitFor(() => {
-        expect(screen.getByDisplayValue('Project Manager')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('Group Project Lead')).toBeInTheDocument();
       });
-      expect(screen.getByTestId('agent-settings-persona-description').textContent).toBe(getPersonaTemplate('project-manager')!.description);
+      expect(screen.getByTestId('agent-settings-persona-description').textContent).toBe(getPersonaTemplate('group-project-pm')!.description);
     });
 
     it('persists the new persona via updateDurableConfig (independent of override)', async () => {
