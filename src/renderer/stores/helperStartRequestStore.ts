@@ -14,8 +14,6 @@ interface HelperStartRequestState {
   requests: Record<string, HelperStartRequest>;
   add: (request: HelperStartRequest) => void;
   remove: (requestIds: readonly string[]) => void;
-  /** Replace everything with main's list (on load). */
-  replaceAll: (requests: readonly HelperStartRequest[]) => void;
 }
 
 export const useHelperStartRequestStore = create<HelperStartRequestState>((set) => ({
@@ -27,7 +25,6 @@ export const useHelperStartRequestStore = create<HelperStartRequestState>((set) 
     for (const id of requestIds) delete requests[id];
     return { requests };
   }),
-  replaceAll: (list) => set({ requests: Object.fromEntries(list.map((r) => [r.requestId, r])) }),
 }));
 
 /** One orchestrator's waiting starts, oldest first. */

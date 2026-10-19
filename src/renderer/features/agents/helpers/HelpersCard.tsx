@@ -7,7 +7,8 @@
  * Hooks for the orchestration tools:
  * - `approvals` (#2234): the starts the orchestrator is waiting on the user
  *   for. Each shows as a pending row, Waiting for approval, with Approve and
- *   Decline; main runs the start and tells the orchestrator;
+ *   Decline; main runs the start and tells the orchestrator. Approve waits
+ *   until the orchestrator is running;
  * - a helper with a `handoff` (#2229) reads as handed off, with a Review
  *   line that opens the dispose dialog.
  * An orchestrator's dispose request (#2229) opens the same dialog from
@@ -77,6 +78,8 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
   const states = useMemo(() => new Map(live.map((h) => [h.id, helperState(h, rail[h.id])] as const)), [live, rail]);
   const starting = [...states.values()].filter((s) => s === 'starting').length;
   const waiting = approvals?.pending ?? [];
+  // Main approves a start only while the orchestrator runs; until then the request keeps waiting.
+  const orchestratorRunning = agent.status === 'running';
 
   // What each helper's folder holds that isn't saved, read while the card is open.
   const checkable = live.filter((h) => { const s = states.get(h.id); return s !== 'starting' && s !== 'failed' && s !== 'awaiting-approval'; });
@@ -171,8 +174,18 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
                 <div className="flex items-center gap-2 min-h-[20px] text-xs text-ctp-overlay1">
                   <span className="min-w-0 truncate" title={r.args.task} data-testid="helper-request-task">{r.args.task}</span>
                   <span className="ml-auto flex-shrink-0 flex items-center gap-2.5">
+                    {!orchestratorRunning && <span data-testid="helper-approve-blocked">Wake {agent.name} to approve</span>}
                     <button type="button" className={LINK} disabled={busy === r.requestId} onClick={() => void decide(r, false)} data-testid="helper-decline">Decline</button>
-                    <button type="button" className="text-xs text-ctp-accent hover:underline disabled:opacity-50 cursor-pointer" disabled={busy === r.requestId} onClick={() => void decide(r, true)} data-testid="helper-approve">Approve</button>
+                    <button
+                      type="button"
+                      className="text-xs text-ctp-accent hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-default cursor-pointer"
+                      disabled={busy === r.requestId || !orchestratorRunning}
+                      title={orchestratorRunning ? undefined : `Wake ${agent.name} to approve`}
+                      onClick={() => void decide(r, true)}
+                      data-testid="helper-approve"
+                    >
+                      Approve
+                    </button>
                   </span>
                 </div>
               </li>

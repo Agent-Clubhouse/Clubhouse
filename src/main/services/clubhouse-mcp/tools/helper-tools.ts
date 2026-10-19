@@ -68,6 +68,7 @@ import {
   dropStartRequestsFor,
   onStartRequestsChanged,
   orchestratorsWithRequests,
+  peekStartRequest,
   recordStartRequest,
   takeStartRequest,
 } from '../../helper-start-requests';
@@ -384,10 +385,21 @@ function parseStartArgs(args: Record<string, unknown>): HelperStartArgs {
 }
 
 type StartOutcome =
-  | { kind: 'refused'; message: string }
+  /** `message` for the orchestrator's tool result; `reason` to follow "because" in an approval's answer. */
+  | { kind: 'refused'; message: string; reason: string }
   | { kind: 'too_many'; waiting: number }
   | { kind: 'needs_approval'; control: OrchestrationControl; request: HelperStartRequest; reused: boolean }
   | { kind: 'starting'; helperId: string; name: string; branch?: string; launch: HelperLaunch };
+
+/** A sentence as the tail of "…because <reason>": its first letter lowered unless it starts an acronym or name. */
+function asReason(text: string): string {
+  const trimmed = text.trim();
+  return /^[A-Z][a-z]/.test(trimmed) ? trimmed[0].toLowerCase() + trimmed.slice(1) : trimmed;
+}
+
+function refused(message: string): StartOutcome {
+  return { kind: 'refused', message, reason: asReason(message) };
+}
 
 /** Raise the desktop notice for a held start, at most once a minute per orchestrator. */
 function noticeApprovalNeeded(orchestrator: DurableAgentConfig, args: HelperStartArgs): void {
@@ -414,22 +426,22 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
   if (approvedIn !== undefined) {
     const registration = agentRegistry.get(orchestratorId);
     if (!registration || !samePath(registration.projectPath, approvedIn)) {
-      return { kind: 'refused', message: 'its orchestrator is not running in this project.' };
+      return refused('its orchestrator is not running in this project.');
     }
   }
-  if (!isOrchestrationEnabled(orchestratorId)) return { kind: 'refused', message: 'orchestration is off for its orchestrator.' };
+  if (!isOrchestrationEnabled(orchestratorId)) return refused('orchestration is off for its orchestrator.');
   const { projectPath, config: orchestrator } = await resolveCaller(orchestratorId);
   const { name, task, persona, cli, model, access, branchFrom, folder } = args;
 
   return withStartLock(async (): Promise<StartOutcome> => {
     // Read again under the lock: a turn-off may have run while this waited.
-    if (!isOrchestrationEnabled(orchestratorId)) return { kind: 'refused', message: 'orchestration is off for its orchestrator.' };
+    if (!isOrchestrationEnabled(orchestratorId)) return refused('orchestration is off for its orchestrator.');
     const limit = await checkHelperLimitFor(projectPath, orchestratorId);
     if (limit.ok === false) {
       appLog('core:mcp', 'info', 'start_helper refused by the helper limit', {
         meta: { agentId: orchestratorId, reason: limit.reason, helperCount: limit.helperCount, maxHelpers: limit.maxHelpers },
       });
-      return { kind: 'refused', message: limit.message };
+      return refused(limit.message);
     }
 
     if (approvedIn === undefined) {
@@ -479,7 +491,7 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     } catch (err) {
       // telemetry-exempt: the refusal reaches the calling agent as the tool result
       // Refused up front: a bad or taken name, folder, branch or base.
-      return { kind: 'refused', message: `Could not start helper "${name}": ${errorText(err)}` };
+      return { kind: 'refused', message: `Could not start helper "${name}": ${errorText(err)}`, reason: asReason(errorText(err)) };
     }
 
     const { agentId: helperId, config, done } = started;
@@ -547,12 +559,35 @@ async function startHelper(agentId: string, args: Record<string, unknown>): Prom
 const NOT_WAITING = 'That helper start is no longer waiting in this project. It was answered, expired or dropped.';
 
 /**
- * The user approved a held start. The request is used up first, so it can
- * run once; then the normal start path runs with every check but the
- * control level. The orchestrator is told the outcome in a fixed message
- * built from what main recorded.
+ * Why an approval can't run yet, checked without awaiting anything: the
+ * orchestrator must be running in the request's project with orchestration
+ * on. A refusal here leaves the request waiting, so the user can wake the
+ * orchestrator and approve again.
+ */
+function approvalBlocker(request: HelperStartRequest): string | null {
+  const registration = agentRegistry.get(request.orchestratorId);
+  if (!registration || !samePath(registration.projectPath, request.projectPath)) {
+    return `Wake ${request.orchestratorName} to approve this start. It isn't running, so the request is still waiting.`;
+  }
+  if (!isOrchestrationEnabled(request.orchestratorId)) {
+    return `Orchestration is off for ${request.orchestratorName}, so this start can't be approved.`;
+  }
+  return null;
+}
+
+/**
+ * The user approved a held start. The orchestrator must be running with
+ * orchestration on, else the request stays waiting. Then the request is used
+ * up (nothing is awaited between the check and the take), so it runs once,
+ * and the normal start path runs with every check but the control level. The
+ * orchestrator is told the outcome in a fixed message built from what main
+ * recorded.
  */
 export async function approveHelperStart(projectPath: string, requestId: string): Promise<HelperStartDecisionResult> {
+  const waiting = peekStartRequest(projectPath, requestId);
+  if (!waiting) return { ok: false, message: NOT_WAITING };
+  const blocker = approvalBlocker(waiting);
+  if (blocker) return { ok: false, message: blocker };
   const request = takeStartRequest(projectPath, requestId);
   if (!request) return { ok: false, message: NOT_WAITING };
   const { orchestratorId, args } = request;
@@ -561,7 +596,7 @@ export async function approveHelperStart(projectPath: string, requestId: string)
     outcome = await runHelperStart(orchestratorId, args, request.projectPath);
   } catch (err) {
     // telemetry-exempt: the reason reaches the user and the orchestrator
-    outcome = { kind: 'refused', message: errorText(err) };
+    outcome = refused(errorText(err));
   }
   const what = `helper "${args.name}" (request ${request.requestId})`;
   if (outcome.kind === 'starting') {
@@ -570,10 +605,10 @@ export async function approveHelperStart(projectPath: string, requestId: string)
       `${outcome.launch.level} access. You will get a message when it has started its task, or why it failed.`);
     return { ok: true, message: `Starting ${outcome.name}`, helperId: outcome.helperId };
   }
-  const reason = outcome.kind === 'refused' ? outcome.message : 'it could not be started.';
+  const reason = outcome.kind === 'refused' ? outcome.reason : 'it could not be started.';
   appLog('core:mcp', 'info', 'Approved helper start refused', { meta: { orchestratorId, requestId, reason } });
-  await notifyOrchestrator(orchestratorId, `The user approved starting ${what}, but it was not started: ${reason}`);
-  return { ok: false, message: `${args.name} wasn't started: ${reason}` };
+  await notifyOrchestrator(orchestratorId, `The user approved starting ${what}, but it was not started because ${reason}`);
+  return { ok: false, message: `Couldn’t start ${args.name} because ${reason}` };
 }
 
 /** The user declined a held start. Used up once; the orchestrator is told. */

@@ -57,7 +57,7 @@ When the orchestrator wakes a helper with `wake_helper`, Clubhouse checks the ce
 
 At any level the orchestrator can still ask you when it judges a choice is yours, such as when the scope is unclear or work could be lost.
 
-Under **Ask before starting** and **Ask for everything**, `start_helper` creates nothing until you answer. The request shows under **Needs you** on the orchestrator, and as a row marked **Waiting for approval** in its **Helpers** card. You also get a desktop notification, if those are on. Select **Approve** to start the helper with the same checks as any other start, including the helper limits and the access ceiling. Select **Decline** to drop it. Either way the orchestrator gets a message. Each orchestrator can have up to 3 requests waiting. A request that waits 24 hours expires. Waiting requests are also cleared when Clubhouse quits, and when you turn off orchestration for the agent or dispose or delete it.
+Under **Ask before starting** and **Ask for everything**, `start_helper` creates nothing until you answer. The request shows under **Needs you** on the orchestrator, and as a row marked **Waiting for approval** in its **Helpers** card. You also get a desktop notification, if those are on. Select **Approve** to start the helper with the same checks as any other start, including the helper limits and the access ceiling. If the orchestrator is asleep, wake it first, and the request keeps waiting until then. Select **Decline** to drop it. Either way the orchestrator gets a message. Each orchestrator can have up to 3 requests waiting. A request that waits 24 hours expires. Waiting requests are also cleared when Clubhouse quits, and when you turn off orchestration for the agent or dispose or delete it.
 
 ## Limits
 

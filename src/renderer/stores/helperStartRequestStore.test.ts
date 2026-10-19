@@ -20,15 +20,13 @@ function request(id: string, orchestratorId: string, name: string, createdAt: st
 describe('helperStartRequestStore (#2234)', () => {
   beforeEach(() => useHelperStartRequestStore.setState({ requests: {} }));
 
-  it('adds, removes and replaces requests by id', () => {
+  it('adds and removes requests by id', () => {
     const store = useHelperStartRequestStore.getState();
     store.add(request('r1', 'o', 'a', '2026-10-18T10:00:00.000Z'));
     store.add(request('r2', 'o', 'b', '2026-10-18T09:00:00.000Z'));
     expect(Object.keys(useHelperStartRequestStore.getState().requests).sort()).toEqual(['r1', 'r2']);
     store.remove(['r1', 'unknown']);
     expect(Object.keys(useHelperStartRequestStore.getState().requests)).toEqual(['r2']);
-    store.replaceAll([request('r3', 'o', 'c', '2026-10-18T11:00:00.000Z')]);
-    expect(Object.keys(useHelperStartRequestStore.getState().requests)).toEqual(['r3']);
   });
 
   it('groups by orchestrator, oldest first, and describes them for Needs you', () => {

@@ -143,11 +143,11 @@ describe('ChromeSidebar', () => {
   });
 
   it('lists an orchestrator waiting to start a helper and opens its Helpers card (#2234)', () => {
-    useHelperStartRequestStore.getState().replaceAll([{
+    useHelperStartRequestStore.getState().add({
       requestId: 'hstart_1', projectPath: '/tmp/ch', orchestratorId: 'a1', orchestratorName: 'a1',
       args: { name: 'impl-api', task: 'Build the API' },
       createdAt: '2026-10-18T10:00:00.000Z', expiresAt: '2026-10-19T10:00:00.000Z',
-    }]);
+    });
     useAgentStore.setState({ activeAgentId: 'b1' });
     try {
       render(<ChromeSidebar />);

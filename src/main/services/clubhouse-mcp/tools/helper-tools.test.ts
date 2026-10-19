@@ -554,32 +554,50 @@ describe('start approvals', () => {
     mockCheckLimit.mockResolvedValue({ ok: false, reason: 'agent-limit', message: 'This agent already has 5 of 5 helpers.', helperCount: 5, totalHelperCount: 5, maxHelpers: 5, globalCap: 20 });
     const result = await approveHelperStart(PROJECT, id);
     expect(result.ok).toBe(false);
-    expect(result.message).toContain('5 of 5');
+    expect(result.message).toBe('Couldn’t start impl-api because this agent already has 5 of 5 helpers.');
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
-    expect(sent.get('orch')?.[0]).toContain('but it was not started: This agent already has 5 of 5 helpers.');
+    expect(sent.get('orch')?.[0]).toContain('but it was not started because this agent already has 5 of 5 helpers.');
   });
 
   it('an approved start still applies the name and folder rules of the creation', async () => {
     const id = await ask({ name: 'bad name', task: 't' });
     mockStartDurableCreation.mockRejectedValue(new Error('Invalid folder name'));
     const result = await approveHelperStart(PROJECT, id);
-    expect(result).toMatchObject({ ok: false });
-    expect(result.message).toContain('Invalid folder name');
+    expect(result).toEqual({ ok: false, message: 'Couldn’t start bad name because invalid folder name' });
   });
 
-  it('approve is refused once orchestration is off, and when the orchestrator stopped', async () => {
+  it('approve is refused once orchestration is off, and the request keeps waiting', async () => {
     const id = await ask();
     setOrchestrationEnabled('orch', false);
     const off = await approveHelperStart(PROJECT, id);
-    expect(off).toMatchObject({ ok: false });
-    expect(off.message).toContain('orchestration is off');
-
-    setOrchestrationEnabled('orch', true);
-    const id2 = await ask({ name: 'b', task: 't' });
-    agentRegistry.untrack('orch');
-    const stopped = await approveHelperStart(PROJECT, id2);
-    expect(stopped.message).toContain('not running');
+    expect(off).toEqual({ ok: false, message: 'Orchestration is off for Orch, so this start can\'t be approved.' });
+    expect(listStartRequests().map((r) => r.requestId)).toEqual([id]);
+    expect(sent.get('orch')).toBeUndefined();
     expect(mockStartDurableCreation).not.toHaveBeenCalled();
+  });
+
+  it('approve while the orchestrator is asleep leaves the request waiting, and works once it runs again', async () => {
+    const id = await ask();
+    agentRegistry.untrack('orch');
+    const asleep = await approveHelperStart(PROJECT, id);
+    expect(asleep.ok).toBe(false);
+    expect(asleep.message).toContain('Wake Orch to approve');
+    expect(listStartRequests().map((r) => r.requestId)).toEqual([id]);
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
+
+    runAgent('orch', true);
+    controllableCreation();
+    expect(await approveHelperStart(PROJECT, id)).toMatchObject({ ok: true, helperId: 'helper_impl-api' });
+    expect(listStartRequests()).toEqual([]);
+  });
+
+  it('approve refuses an orchestrator running in another project', async () => {
+    const id = await ask();
+    agentRegistry.untrack('orch');
+    agentRegistry.register('orch', { projectPath: OTHER_PROJECT, orchestrator: 'claude-code', runtime: 'chat' });
+    setOrchestrationEnabled('orch', true);
+    expect((await approveHelperStart(PROJECT, id)).ok).toBe(false);
+    expect(listStartRequests().map((r) => r.requestId)).toEqual([id]);
   });
 
   it('decline uses the request up and tells the orchestrator', async () => {

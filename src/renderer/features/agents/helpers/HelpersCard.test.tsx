@@ -71,14 +71,14 @@ afterEach(() => {
   useProjectStore.setState({ projects: [] });
 });
 
-function Harness({ orchestrating = true }: { orchestrating?: boolean }) {
+function Harness({ orchestrating = true, agentOverride }: { orchestrating?: boolean; agentOverride?: Agent }) {
   const { configs: list, reload } = useProjectAgentConfigs(PROJECT, 'p1');
   const approvals = useHelperStartApprovals('lead', PROJECT, reload);
   const [open, setOpen] = useState(true);
   if (!list) return null;
   return (
     <HelpersCard
-      agent={lead}
+      agent={agentOverride ?? lead}
       projectPath={PROJECT}
       configs={list}
       maxHelpers={5}
@@ -224,7 +224,8 @@ function startRequest(id: string, name: string, orchestratorId = 'lead'): Helper
 
 describe('Helpers card start approvals (#2234)', () => {
   beforeEach(() => {
-    useHelperStartRequestStore.getState().replaceAll([startRequest('hstart_a', 'impl-api'), startRequest('hstart_x', 'other', 'someone-else')]);
+    useHelperStartRequestStore.getState().add(startRequest('hstart_a', 'impl-api'));
+    useHelperStartRequestStore.getState().add(startRequest('hstart_x', 'other', 'someone-else'));
   });
 
   it('shows the orchestrator\'s waiting starts as pending rows with Approve and Decline', async () => {
@@ -257,10 +258,21 @@ describe('Helpers card start approvals (#2234)', () => {
   });
 
   it('shows why an approved start was refused', async () => {
-    window.clubhouse.agent.approveHelperStart = vi.fn(async () => ({ ok: false, message: 'impl-api wasn\'t started: This agent already has 5 of 5 helpers.' }));
+    window.clubhouse.agent.approveHelperStart = vi.fn(async () => ({ ok: false, message: 'Couldn’t start impl-api because this agent already has 5 of 5 helpers.' }));
     await renderCard();
     fireEvent.click(within(screen.getByTestId('helper-request-hstart_a')).getByTestId('helper-approve'));
     expect(await screen.findByTestId('helpers-error')).toHaveTextContent('5 of 5 helpers');
+  });
+
+  it('keeps Approve off until the orchestrator is running', async () => {
+    window.clubhouse.agent.approveHelperStart = vi.fn(async () => ({ ok: true, message: 'Starting' }));
+    render(<Harness agentOverride={{ ...lead, status: 'sleeping' }} />);
+    const row = await screen.findByTestId('helper-request-hstart_a');
+    expect(within(row).getByTestId('helper-approve-blocked')).toHaveTextContent('Wake epic-lead to approve');
+    expect(within(row).getByTestId('helper-approve')).toBeDisabled();
+    fireEvent.click(within(row).getByTestId('helper-approve'));
+    expect(window.clubhouse.agent.approveHelperStart).not.toHaveBeenCalled();
+    expect(within(row).getByTestId('helper-decline')).not.toBeDisabled();
   });
 
   it('lists waiting starts even before the first helper', async () => {

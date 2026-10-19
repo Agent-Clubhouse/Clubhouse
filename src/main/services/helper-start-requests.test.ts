@@ -5,6 +5,7 @@ import {
   listStartRequests,
   MAX_PENDING_STARTS_PER_ORCHESTRATOR,
   onStartRequestsChanged,
+  peekStartRequest,
   recordStartRequest,
   START_REQUEST_TTL_MS,
   takeStartRequest,
@@ -66,7 +67,10 @@ describe('helper start requests (#2234)', () => {
     if (!recorded.ok) throw new Error('unexpected refusal');
     const id = recorded.request.requestId;
     expect(takeStartRequest(OTHER, id)).toBeNull();
+    expect(peekStartRequest(OTHER, id)).toBeNull();
+    expect(peekStartRequest(PROJECT, id)?.requestId).toBe(id);
     expect(takeStartRequest(PROJECT, id)?.requestId).toBe(id);
+    expect(peekStartRequest(PROJECT, id)).toBeNull();
     expect(takeStartRequest(PROJECT, id)).toBeNull();
     expect(takeStartRequest(PROJECT, 'hstart_unknown')).toBeNull();
     expect(changes.at(-1)).toEqual({ kind: 'closed', requestIds: [id] });

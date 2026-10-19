@@ -122,6 +122,13 @@ export function takeStartRequest(projectPath: string, requestId: string, now = D
   return request;
 }
 
+/** A waiting request in this project, without using it up; null for an unknown, expired or other-project id. */
+export function peekStartRequest(projectPath: string, requestId: string, now = Date.now()): HelperStartRequest | null {
+  sweep(now);
+  const request = pending.get(requestId);
+  return request && norm(request.projectPath) === norm(projectPath) ? request : null;
+}
+
 /** Every waiting request, oldest first. */
 export function listStartRequests(now = Date.now()): HelperStartRequest[] {
   sweep(now);
