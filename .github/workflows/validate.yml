@@ -288,7 +288,7 @@ jobs:
         run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
         shell: pwsh
       # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cache/electron
@@ -296,7 +296,7 @@ jobs:
             ~/AppData/Local/electron/Cache
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: webpack-${{ matrix.os }}
           path: .webpack/
@@ -338,7 +338,7 @@ jobs:
         run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
         shell: pwsh
       # The Electron binary npm ci downloads (~100 MB), in its default cache dir per OS.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cache/electron
@@ -346,7 +346,7 @@ jobs:
             ~/AppData/Local/electron/Cache
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: webpack-${{ matrix.os }}
           path: .webpack/
@@ -440,7 +440,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/Library/Caches/electron
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
