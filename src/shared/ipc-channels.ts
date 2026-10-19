@@ -482,6 +482,8 @@ export const IPC = {
     SET_DISABLED_TOOLS: 'mcp-binding:set-disabled-tools',
     /** Renderer→main: the agent's Clubhouse MCP connection (AgentMcpConnection | null). */
     GET_AGENT_CONNECTION: 'mcp-binding:get-agent-connection',
+    /** Renderer→main: the wires an orchestrator's connection tools made and alone own (#2232). */
+    GET_TOOL_CONNECTIONS: 'mcp-binding:get-tool-connections',
     /** Main→renderer: the agent id whose connection or tool count changed. */
     AGENT_CONNECTION_CHANGED: 'mcp-binding:agent-connection-changed',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */

@@ -5,11 +5,15 @@
  * bidirectional canvas wire does; the orchestrator ↔ helper wires (#2225)
  * read "helper, two-way".
  *
- * Read-only until the connection tools land (#2230, #2253). `onDisconnect`
- * is the hook for them: given, each wire gets a Disconnect action.
+ * Wires the orchestrator's connection tools made (#2230) can be removed
+ * here, as a user removal: `onDisconnect` unbinds them the way deleting a
+ * canvas wire does, so the tools can't make them again. Canvas wires, helper
+ * wires and anything another source also lists stay read-only; main says
+ * which wires the tools alone own.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { ConfirmDestructiveAction } from '../../../components/ConfirmDestructiveAction';
 import type { Agent } from '../../../../shared/types';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useAgentStore } from '../../../stores/agentStore';
@@ -26,7 +30,13 @@ export interface Connection {
   direction: ConnectionDirection;
   /** The other end is one of this agent's helpers, or its orchestrator. */
   family: 'helper' | 'parent' | null;
+  /** The bindings behind the row, one per direction. */
+  pairs: Array<{ agentId: string; targetId: string }>;
+  /** Every binding behind the row was made by the connection tools, and only they list it. */
+  toolMade: boolean;
 }
+
+const pairKey = (agentId: string, targetId: string) => `${agentId}\u0000${targetId}`;
 
 const KIND_WORD: Record<McpBindingEntry['targetKind'], string> = {
   agent: 'agent',
@@ -43,6 +53,7 @@ export function agentConnections(
   bindings: readonly McpBindingEntry[],
   agentId: string,
   family: { helperIds: ReadonlySet<string>; parentId?: string },
+  toolPairs: ReadonlySet<string> = new Set(),
 ): Connection[] {
   const rows = new Map<string, Connection>();
   const familyOf = (id: string): Connection['family'] => (family.helperIds.has(id) ? 'helper' : id === family.parentId ? 'parent' : null);
@@ -51,9 +62,12 @@ export function agentConnections(
       const existing = rows.get(b.targetId);
       if (existing) {
         if (existing.direction === 'from') existing.direction = 'two-way';
+        existing.pairs.push({ agentId: b.agentId, targetId: b.targetId });
         continue;
       }
       rows.set(b.targetId, {
+        pairs: [{ agentId: b.agentId, targetId: b.targetId }],
+        toolMade: false,
         id: b.targetId,
         name: b.targetKind === 'group-project' ? (b.projectName || b.targetName || b.label) : (b.targetName || b.label),
         kind: b.targetKind,
@@ -64,10 +78,17 @@ export function agentConnections(
       const existing = rows.get(b.agentId);
       if (existing) {
         if (existing.direction === 'to') existing.direction = 'two-way';
+        existing.pairs.push({ agentId: b.agentId, targetId: b.targetId });
         continue;
       }
-      rows.set(b.agentId, { id: b.agentId, name: b.agentName || b.agentId, kind: 'agent', direction: 'from', family: familyOf(b.agentId) });
+      rows.set(b.agentId, {
+        id: b.agentId, name: b.agentName || b.agentId, kind: 'agent', direction: 'from', family: familyOf(b.agentId),
+        pairs: [{ agentId: b.agentId, targetId: b.targetId }], toolMade: false,
+      });
     }
+  }
+  for (const row of rows.values()) {
+    row.toolMade = row.family === null && row.pairs.every((p) => toolPairs.has(pairKey(p.agentId, p.targetId)));
   }
   // Family first (parent, then helpers), then group projects, then the rest by name.
   const rank = (c: Connection) => (c.family === 'parent' ? 0 : c.family === 'helper' ? 1 : c.kind === 'group-project' ? 2 : 3);
@@ -89,17 +110,20 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
   parentId?: string;
   open: boolean;
   onToggle: () => void;
-  /** #2253: remove a wire. Without it the card is read-only. */
-  onDisconnect?: (connection: Connection) => void;
+  /** Remove a tool-made wire as the user (#2230). Without it the card is read-only. */
+  onDisconnect?: (connection: Connection) => void | Promise<void>;
 }) {
   const bindings = useMcpBindingStore((s) => s.bindings);
   const rail = useAgentStore((s) => s.agents);
+  const toolPairs = useToolConnectionPairs(open && !!onDisconnect, bindings);
   const connections = useMemo(
-    () => agentConnections(bindings, agent.id, { helperIds, parentId }),
-    [bindings, agent.id, helperIds, parentId],
+    () => agentConnections(bindings, agent.id, { helperIds, parentId }, toolPairs),
+    [bindings, agent.id, helperIds, parentId, toolPairs],
   );
+  const [confirming, setConfirming] = useState<Connection | null>(null);
 
   return (
+    <>
     <DetailsCard
       id="connections"
       title="Connections"
@@ -119,8 +143,8 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
                   <span className="text-[12.5px] text-ctp-text truncate">{c.name}</span>
                   <span className="text-xs text-ctp-overlay1 whitespace-nowrap" data-testid="connection-meta">{connectionMeta(c)}</span>
                   <span className="ml-auto flex items-center gap-2.5">
-                    {onDisconnect && (
-                      <button type="button" onClick={() => onDisconnect(c)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="connection-disconnect">
+                    {onDisconnect && c.toolMade && (
+                      <button type="button" onClick={() => setConfirming(c)} className="text-xs text-ctp-overlay1 hover:text-ctp-text cursor-pointer" data-testid="connection-disconnect">
                         Disconnect
                       </button>
                     )}
@@ -137,5 +161,37 @@ export function ConnectionsCard({ agent, helperIds, parentId, open, onToggle, on
         </ul>
       )}
     </DetailsCard>
+    <ConfirmDestructiveAction
+      open={confirming !== null}
+      title={`Disconnect ${confirming?.name ?? ''}?`}
+      description={`${agent.name} made this connection with its tools. Removing it here counts as your removal, so ${agent.name} can’t connect them again this session.`}
+      confirmLabel="Disconnect"
+      onCancel={() => setConfirming(null)}
+      onConfirm={() => {
+        const c = confirming;
+        setConfirming(null);
+        if (c && onDisconnect) void onDisconnect(c);
+      }}
+    />
+    </>
   );
+}
+
+/**
+ * The pairs the connection tools alone own, re-read while the card is open
+ * and the bindings change. Empty when nothing can be disconnected.
+ */
+function useToolConnectionPairs(active: boolean, bindings: readonly McpBindingEntry[]): ReadonlySet<string> {
+  const [pairs, setPairs] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    if (!active) { setPairs(new Set()); return; }
+    let alive = true;
+    Promise.resolve().then(() => window.clubhouse.mcpBinding.getToolConnections()).then(
+      (list) => { if (alive) setPairs(new Set((list ?? []).map((p) => pairKey(p.agentId, p.targetId)))); },
+      // telemetry-exempt: the card stays read-only.
+      () => { if (alive) setPairs(new Set()); },
+    );
+    return () => { alive = false; };
+  }, [active, bindings]);
+  return pairs;
 }

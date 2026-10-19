@@ -36,7 +36,7 @@ import { useAgentDetailsStore } from './detailsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { OrchestrateCard } from '../helpers/OrchestrateCard';
 import { HelpersCard } from '../helpers/HelpersCard';
-import { ConnectionsCard } from '../helpers/ConnectionsCard';
+import { ConnectionsCard, type Connection } from '../helpers/ConnectionsCard';
 import { splitHelpers } from '../helpers/helper-model';
 import { useOrchestration, useProjectAgentConfigs } from '../helpers/orchestration-hooks';
 
@@ -216,6 +216,11 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const showOrchestrate = !!orchestrationPath && !!orch.policy && !!ownConfig && !isHelper;
   const showHelpers = !!orchestrationPath && (orchestrating || helpers.live.length > 0 || helpers.disposed.length > 0);
   const showConnections = !!orchestrationPath && (orchestrating || hasWires);
+  // A tool-made wire removed here is a user removal: the usual unbind, with no cause (#2230).
+  const disconnectToolWire = useCallback(async (c: Connection) => {
+    const unbind = useMcpBindingStore.getState().unbind;
+    for (const pair of c.pairs) await unbind(pair.agentId, pair.targetId);
+  }, []);
   const now = useNow(running && !!spawnedAt);
 
   const open = (id: CardId) => openCards.has(id);
@@ -350,6 +355,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
           parentId={ownConfig?.parentAgentId}
           open={open('connections')}
           onToggle={() => toggleCard('connections')}
+          onDisconnect={disconnectToolWire}
         />
       )}
 

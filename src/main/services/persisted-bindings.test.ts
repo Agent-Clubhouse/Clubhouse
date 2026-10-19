@@ -15,6 +15,7 @@ import {
   rebuildPersistedBindings,
   registerPersistedBindingSource,
   releaseSourceBinding,
+  listSoleOwnedPairs,
   _resetPersistedBindingSourcesForTesting,
   type PersistedBinding,
 } from './persisted-bindings';
@@ -181,5 +182,34 @@ describe('pruning handoff to a claim made during the run (#2230)', () => {
     second.length = 0;
     await rebuildPersistedBindings();
     expect(pairs()).toEqual([]);
+  });
+});
+
+describe('listSoleOwnedPairs (#2232)', () => {
+  it('lists only pairs the source created and no other source lists', async () => {
+    const mine = listSource('mine');
+    const helpers = listSource('helpers');
+    const canvas = listSource('canvas', false);
+    canvas.push(wire('c', 'd'));
+    await rebuildPersistedBindings();
+
+    mine.push(wire('a', 'b'), wire('c', 'd'), wire('e', 'f'));
+    expect(claimSourceBinding('mine', wire('a', 'b'))).toBe('created');
+    // Made by the canvas first: never the tool's alone.
+    expect(claimSourceBinding('mine', wire('c', 'd'))).toBe('existing');
+    expect(claimSourceBinding('mine', wire('e', 'f'))).toBe('created');
+    // Another pruning source (helper wires) lists e->f too.
+    helpers.push(wire('e', 'f'));
+    await rebuildPersistedBindings();
+
+    expect(listSoleOwnedPairs('mine')).toEqual([{ agentId: 'a', targetId: 'b' }]);
+    expect(listSoleOwnedPairs('nobody')).toEqual([]);
+  });
+
+  it('drops a pair once the user removes it', () => {
+    listSource('mine');
+    claimSourceBinding('mine', wire('a', 'b'));
+    markBindingRemovedByUser('a', 'b');
+    expect(listSoleOwnedPairs('mine')).toEqual([]);
   });
 });

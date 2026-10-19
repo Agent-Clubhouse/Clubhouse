@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Agent } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
@@ -74,11 +74,56 @@ describe('Connections card (#2232)', () => {
     expect(useAgentStore.getState().activeAgentId).toBe('h1');
   });
 
-  it('offers Disconnect once the connection tools hand it a callback (#2253)', () => {
+  it('offers Disconnect only for wires the connection tools alone made, and confirms first (#2253)', async () => {
+    // reviewer (one way) and docs-bot (one way in) are tool-made; the helper wire and the browser aren't.
+    window.clubhouse.mcpBinding.getToolConnections = vi.fn(async () => [
+      { agentId: 'lead', targetId: 'rev' },
+      { agentId: 'docs', targetId: 'lead' },
+      // A tool also claimed one direction of the helper wire: it stays read-only.
+      { agentId: 'lead', targetId: 'h1' },
+    ]);
     const onDisconnect = vi.fn();
     render(<ConnectionsCard agent={lead} helperIds={new Set(['h1'])} open onToggle={() => {}} onDisconnect={onDisconnect} />);
-    fireEvent.click(screen.getAllByTestId('connection-disconnect')[0]);
-    expect(onDisconnect).toHaveBeenCalledWith(expect.objectContaining({ id: 'h1', direction: 'two-way', family: 'helper' }));
+    await waitFor(() => expect(screen.getAllByTestId('connection-disconnect')).toHaveLength(2));
+    const rows = screen.getAllByTestId('connection-row');
+    expect(within(rows[0]).queryByTestId('connection-disconnect')).not.toBeInTheDocument(); // impl-ipc, helper
+    expect(within(rows[1]).queryByTestId('connection-disconnect')).not.toBeInTheDocument(); // group project
+    expect(within(rows[2]).queryByTestId('connection-disconnect')).not.toBeInTheDocument(); // browser
+
+    fireEvent.click(within(rows[4]).getByTestId('connection-disconnect'));
+    expect(screen.getByText('Disconnect reviewer?')).toBeInTheDocument();
+    expect(onDisconnect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
+    expect(onDisconnect).toHaveBeenCalledWith(expect.objectContaining({ id: 'rev', toolMade: true, pairs: [{ agentId: 'lead', targetId: 'rev' }] }));
+  });
+
+  it('stays read-only for a two-way wire when only one direction is tool-made', async () => {
+    useMcpBindingStore.setState({ bindings: [wire('lead', 'rev', ['epic-lead', 'reviewer']), wire('rev', 'lead', ['reviewer', 'epic-lead'])] });
+    window.clubhouse.mcpBinding.getToolConnections = vi.fn(async () => [{ agentId: 'lead', targetId: 'rev' }]);
+    render(<ConnectionsCard agent={lead} helperIds={new Set()} open onToggle={() => {}} onDisconnect={vi.fn()} />);
+    await waitFor(() => expect(window.clubhouse.mcpBinding.getToolConnections).toHaveBeenCalled());
+    expect(screen.queryByTestId('connection-disconnect')).not.toBeInTheDocument();
+  });
+
+  it('disconnects in Agent details through the plain unbind, with no cause', async () => {
+    const { AgentDetails } = await import('../details/AgentDetails');
+    const { useProjectStore } = await import('../../../stores/projectStore');
+    const { useAgentDetailsStore } = await import('../details/detailsStore');
+    useProjectStore.setState({ projects: [{ id: 'p1', name: 'proj', path: '/work/proj' }] } as never);
+    useAgentDetailsStore.setState({ open: true, focus: null });
+    window.clubhouse.git.branchChanges = vi.fn(async () => ({ available: false, files: [] }));
+    window.clubhouse.agent.listDurable = vi.fn(async () => [{ id: 'lead', name: 'epic-lead', color: 'teal', createdAt: '' }]) as never;
+    window.clubhouse.mcpBinding.getToolConnections = vi.fn(async () => [{ agentId: 'lead', targetId: 'rev' }]);
+    const unbind = vi.fn(async () => ({ kept: false }));
+    window.clubhouse.mcpBinding.unbind = unbind as never;
+    render(<AgentDetails agent={lead} />);
+    fireEvent.click(await screen.findByTestId('details-card-connections-toggle'));
+    fireEvent.click(await screen.findByTestId('connection-disconnect'));
+    fireEvent.click(screen.getByTestId('confirm-destructive-confirm'));
+    await waitFor(() => expect(unbind).toHaveBeenCalledWith('lead', 'rev'));
+    expect(unbind.mock.calls[0]).toHaveLength(2);
+    await waitFor(() => expect(useMcpBindingStore.getState().bindings.some((b) => b.agentId === 'lead' && b.targetId === 'rev')).toBe(false));
+    useProjectStore.setState({ projects: [] });
   });
 
   it('says where wires come from when there are none', () => {

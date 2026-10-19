@@ -23,11 +23,12 @@ import {
   markBindingRemovedByUser,
   clearBindingRemovedByUser,
   keepHeldBinding,
+  listSoleOwnedPairs,
 } from '../services/persisted-bindings';
 import { canvasWireBindingSource } from '../services/canvas-wire-source';
 import { MCP_UNBIND_CANVAS_CLEANUP } from '../../shared/mcp-unbind';
 import { helperWireBindingSource, watchHelperWires } from '../services/helper-wire-source';
-import { orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
+import { ORCHESTRATOR_CONNECTION_SOURCE_ID, orchestratorConnectionSource, watchOrchestratorConnections } from '../services/orchestrator-connections';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
@@ -152,6 +153,11 @@ export function registerMcpBindingHandlers(): void {
       return { kept: false };
     },
   ));
+
+  ipcMain.handle(IPC.MCP_BINDING.GET_TOOL_CONNECTIONS, (event) => {
+    assertCallerIsAppWindow(event);
+    return listSoleOwnedPairs(ORCHESTRATOR_CONNECTION_SOURCE_ID);
+  });
 
   ipcMain.handle(IPC.MCP_BINDING.SET_INSTRUCTIONS, withValidatedArgs(
     [stringArg(), stringArg(), objectArg<Record<string, string>>()],
