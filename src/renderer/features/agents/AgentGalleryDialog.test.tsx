@@ -30,12 +30,12 @@ describe('AgentGalleryDialog', () => {
   it('renders all persona templates', () => {
     render(<AgentGalleryDialog {...defaultProps} />);
     expect(screen.getByText('Project Manager')).toBeTruthy();
-    expect(screen.getByText('Quality Assurance')).toBeTruthy();
-    expect(screen.getByText('UI/Design Lead')).toBeTruthy();
-    expect(screen.getByText('Quality Auditor')).toBeTruthy();
-    expect(screen.getByText('Executor (PR Only)')).toBeTruthy();
-    expect(screen.getByText('Executor (Full Merge)')).toBeTruthy();
-    expect(screen.getByText('Documentation Updater')).toBeTruthy();
+    expect(screen.getByText('PR Reviewer')).toBeTruthy();
+    expect(screen.getByText('Design Lead')).toBeTruthy();
+    expect(screen.getByText('AI Slop Detector')).toBeTruthy();
+    expect(screen.getByText('Developer')).toBeTruthy();
+    expect(screen.getByText('Developer (merges)')).toBeTruthy();
+    expect(screen.getByText('Docs Writer')).toBeTruthy();
   });
 
   it('renders dialog title', () => {
@@ -58,12 +58,12 @@ describe('AgentGalleryDialog', () => {
 
   it('calls onCreate with selected persona and color', () => {
     render(<AgentGalleryDialog {...defaultProps} />);
-    fireEvent.click(screen.getByText('Quality Assurance'));
+    fireEvent.click(screen.getByText('PR Reviewer'));
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledTimes(1);
     const [persona, color] = defaultProps.onCreate.mock.calls[0];
     expect(persona.id).toBe('qa');
-    expect(persona.name).toBe('Quality Assurance');
+    expect(persona.name).toBe('PR Reviewer');
     expect(typeof color).toBe('string');
   });
 
@@ -83,7 +83,7 @@ describe('AgentGalleryDialog', () => {
 
   it('shows persona descriptions', () => {
     render(<AgentGalleryDialog {...defaultProps} />);
-    expect(screen.getByText(/Delegator and planner/)).toBeTruthy();
-    expect(screen.getByText(/Skeptical reviewer/)).toBeTruthy();
+    expect(screen.getByText(/Plans missions and hands them out/)).toBeTruthy();
+    expect(screen.getByText(/Reviews pull requests and ends with/)).toBeTruthy();
   });
 });

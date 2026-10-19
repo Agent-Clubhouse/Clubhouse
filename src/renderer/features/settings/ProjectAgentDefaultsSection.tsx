@@ -6,7 +6,7 @@ import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
 import { useProfileStore } from '../../stores/profileStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { usePluginStore } from '../../plugins/plugin-store';
-import { PERSONA_TEMPLATES } from '../personas';
+import { PERSONA_TEMPLATES, canonicalPersonaId, personaDescription } from '../personas';
 import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
 import {
@@ -566,6 +566,9 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           label="Default persona"
           help={
             <>
+              {personaDescription(persona) && (
+                <span data-testid="project-defaults-persona-description" className="block">{personaDescription(persona)}</span>
+              )}
               Used by every agent in this project that has no persona of its own. Override it in agent settings or in{' '}
               <Code>.clubhouse/agents.json</Code> (see <Code>.clubhouse/clubhouse-mode.md</Code>). Resolves
               to <Code>@@Persona</Code>, and is appended to CLAUDE.md when the template lacks that token.
@@ -575,7 +578,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         >
           <select
             id={`${idBase}-persona`}
-            value={persona}
+            value={canonicalPersonaId(persona)}
             onChange={(e) => { setPersona(e.target.value); markDirty(); }}
             className={SELECT_CLASS}
           >

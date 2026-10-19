@@ -140,18 +140,18 @@ export const HELP_SECTIONS: HelpSection[] = [
     id: 'personas',
     title: 'Agent Personas & Team Roles',
     topics: [
-      { id: 'persona-project-manager', title: 'Project Manager / Coordinator', content: personaProjectManager },
-      { id: 'persona-qa', title: 'QA / Quality Control', content: personaQa },
-      { id: 'persona-ui-lead', title: 'UI / Design Lead', content: personaUiLead },
-      { id: 'persona-quality-auditor', title: 'Quality Auditor', content: personaQualityAuditor },
-      { id: 'persona-executor-pr-only', title: 'Executor (PR Only)', content: personaExecutorPrOnly },
-      { id: 'persona-executor-merge', title: 'Executor (Full Merge)', content: personaExecutorMerge },
-      { id: 'persona-doc-updater', title: 'Documentation Updater', content: personaDocUpdater },
-      { id: 'persona-judge', title: 'Judge', content: personaJudge },
+      { id: 'persona-project-manager', title: 'Project Manager', content: personaProjectManager },
+      { id: 'persona-qa', title: 'PR Reviewer', content: personaQa },
+      { id: 'persona-ui-lead', title: 'Design Lead', content: personaUiLead },
+      { id: 'persona-quality-auditor', title: 'AI Slop Detector', content: personaQualityAuditor },
+      { id: 'persona-executor-pr-only', title: 'Developer', content: personaExecutorPrOnly },
+      { id: 'persona-executor-merge', title: 'Developer (merges)', content: personaExecutorMerge },
+      { id: 'persona-doc-updater', title: 'Docs Writer', content: personaDocUpdater },
+      { id: 'persona-judge', title: 'Solution Judge', content: personaJudge },
       { id: 'persona-researcher', title: 'Researcher', content: personaResearcher },
       // Persona files can carry settings front-matter; help shows only the body.
       { id: 'persona-orchestrator', title: 'Orchestrator', content: stripPersonaFrontMatter(personaOrchestrator) },
-      { id: 'persona-workhorse', title: 'Workhorse', content: stripPersonaFrontMatter(personaWorkhorse) },
+      { id: 'persona-workhorse', title: 'Generalist', content: stripPersonaFrontMatter(personaWorkhorse) },
     ],
   },
   {
@@ -170,14 +170,14 @@ export const HELP_SECTIONS: HelpSection[] = [
 const section = (id: string) => HELP_SECTIONS.find((s) => s.id === id)!;
 const retitle = (topics: HelpTopic[], titles: Record<string, string>) => topics.map((t) => ({ ...t, title: titles[t.id] ?? t.title }));
 
+// The new shell titles articles in sentence case (#2017), persona names included.
 const PERSONA_TITLES: Record<string, string> = {
-  'persona-project-manager': 'Project manager or coordinator',
-  'persona-qa': 'QA and quality control',
-  'persona-ui-lead': 'UI and design lead',
-  'persona-quality-auditor': 'Quality auditor',
-  'persona-executor-pr-only': 'Executor (PR only)',
-  'persona-executor-merge': 'Executor (full merge)',
-  'persona-doc-updater': 'Documentation updater',
+  'persona-project-manager': 'Project manager',
+  'persona-qa': 'PR reviewer',
+  'persona-ui-lead': 'Design lead',
+  'persona-quality-auditor': 'AI slop detector',
+  'persona-doc-updater': 'Docs writer',
+  'persona-judge': 'Solution judge',
 };
 const COOKBOOK_TITLES: Record<string, string> = {
   'cookbook-long-running-job': 'Long-running job',

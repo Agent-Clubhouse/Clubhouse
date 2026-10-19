@@ -121,7 +121,7 @@ describe('applyPersonaToAgent', () => {
     expect(written).toContain('`start_helper`');
   });
 
-  it('applies the built-in Workhorse', async () => {
+  it('applies the built-in Generalist (workhorse)', async () => {
     await applyPersonaToAgent(projectPath, 'agent-1', 'workhorse');
 
     expect(store.get('agent-1')).toMatchObject({ persona: 'workhorse', model: 'sonnet' });
