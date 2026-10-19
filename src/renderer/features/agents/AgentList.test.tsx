@@ -6,6 +6,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useChromeStore, ensureChromeStateLoaded } from '../../chrome/chromeStore';
 import { AgentList, useProjectAgentBuckets, activityTimestamps } from './AgentList';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
@@ -19,7 +20,7 @@ vi.mock('./AgentListItem', () => {
     isThinkingCaptures.push(props.isThinking);
     itemRenderCounts[props.agent.id] = (itemRenderCounts[props.agent.id] ?? 0) + 1;
     return (
-      <div data-testid={`agent-item-${props.agent.id}`} data-thinking={props.isThinking}>{props.agent.name}</div>
+      <div data-testid={`agent-item-${props.agent.id}`} data-thinking={props.isThinking} data-indent={props.indent} data-nested={props.isNested ? 'true' : undefined}>{props.agent.name}</div>
     );
   };
   const MemoizedAgentListItem = memo(renderItem);
@@ -986,5 +987,170 @@ describe('AgentList drag-reorder re-render', () => {
     fireEvent.dragOver(tgt, { dataTransfer });
     fireEvent.drop(tgt, { dataTransfer });
     expect(reorderAgents).toHaveBeenCalledWith('/project', ['b', 'c', 'a']);
+  });
+});
+
+describe('AgentList helper nesting (legacy layout)', () => {
+  const durable = (id: string, extra: Partial<Agent> = {}): Agent => ({
+    id, projectId: 'proj-1', name: id, kind: 'durable', status: 'sleeping', color: 'indigo', ...extra,
+  });
+  const dataTransferStub = () => {
+    const store: Record<string, string> = {};
+    return {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: (k: string, v: string) => { store[k] = v; },
+      getData: (k: string) => store[k] ?? '',
+    } as unknown as DataTransfer;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+    ensureChromeStateLoaded(); // so a later load can't replace the state set below
+    useChromeStore.setState({ collapsedAgentIds: [] });
+    window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
+  });
+
+  function seed(extra: Record<string, Agent> = {}) {
+    const reorderAgents = vi.fn();
+    const agents: Record<string, Agent> = {
+      orch: durable('orch'),
+      h1: durable('h1', { parentAgentId: 'orch' }),
+      other: durable('other'),
+      h2: durable('h2', { parentAgentId: 'orch' }),
+      ...extra,
+    };
+    useAgentStore.setState({ agents, reorderAgents, activeAgentId: 'other' });
+    return { reorderAgents };
+  }
+
+  it('nests helpers under their orchestrator, indented, on a guide line', () => {
+    seed();
+    render(<AgentList />);
+
+    const orchRow = screen.getByTestId('durable-drag-0');
+    expect(orchRow).toHaveAttribute('data-agent-id', 'orch');
+    expect(screen.getByTestId('durable-drag-1')).toHaveAttribute('data-agent-id', 'other');
+    expect(screen.queryByTestId('durable-drag-2')).toBeNull();
+
+    // Each helper sits inside its parent's block, after the parent's row, in saved order.
+    const parentBlock = orchRow.parentElement!;
+    const h1 = screen.getByTestId('helper-drag-h1');
+    const h2 = screen.getByTestId('helper-drag-h2');
+    expect(parentBlock).toContainElement(h1);
+    expect(parentBlock).toContainElement(h2);
+    expect(h1.compareDocumentPosition(h2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(h1).toHaveAttribute('data-depth', '1');
+    expect(screen.getByTestId('agent-item-h1')).toHaveAttribute('data-indent', '40');
+    // The top-level row keeps its own padding.
+    expect(screen.getByTestId('agent-item-orch')).not.toHaveAttribute('data-indent');
+    expect(within(parentBlock).getAllByTestId('helper-guide-line').length).toBeGreaterThan(0);
+    expect(within(screen.getByTestId('durable-drag-1').parentElement!).queryByTestId('helper-guide-line')).toBeNull();
+  });
+
+  it('folds and unfolds helpers with the caret, in the fold state both layouts share', () => {
+    seed();
+    const { unmount } = render(<AgentList />);
+    const caret = screen.getByTestId('helpers-toggle-orch');
+    expect(caret).toHaveAttribute('aria-expanded', 'true');
+    expect(caret).toHaveAccessibleName('Hide helpers of orch');
+    expect(screen.queryByTestId('helpers-toggle-other')).toBeNull();
+
+    fireEvent.click(caret);
+    expect(screen.queryByTestId('agent-item-h1')).toBeNull();
+    expect(screen.queryByTestId('agent-item-h2')).toBeNull();
+    expect(caret).toHaveAttribute('aria-expanded', 'false');
+    expect(caret).toHaveAccessibleName('Show 2 helpers of orch');
+    // The caret does not select the row.
+    expect(useAgentStore.getState().setActiveAgent).not.toHaveBeenCalled();
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['orch']);
+
+    unmount();
+    render(<AgentList />);
+    expect(screen.queryByTestId('agent-item-h1')).toBeNull();
+    fireEvent.click(screen.getByTestId('helpers-toggle-orch'));
+    expect(screen.getByTestId('agent-item-h1')).toBeInTheDocument();
+  });
+
+  it('unfolds a parent when one of its helpers becomes the active agent', () => {
+    seed();
+    useChromeStore.setState({ collapsedAgentIds: ['orch'] });
+    render(<AgentList />);
+    expect(screen.queryByTestId('agent-item-h1')).toBeNull();
+    act(() => { useAgentStore.setState({ activeAgentId: 'h1' }); });
+    expect(screen.getByTestId('agent-item-h1')).toBeInTheDocument();
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual([]);
+  });
+
+  it('lets a parent be folded while one of its helpers is selected, and keeps it folded', () => {
+    seed();
+    act(() => { useAgentStore.setState({ activeAgentId: 'h1' }); });
+    render(<AgentList />);
+    fireEvent.click(screen.getByTestId('helpers-toggle-orch'));
+    expect(screen.queryByTestId('agent-item-h1')).toBeNull();
+    // Store updates that are not a new selection don't unfold it.
+    act(() => { useAgentStore.setState((s) => ({ agents: { ...s.agents, h1: { ...s.agents.h1, status: 'running' } } })); });
+    expect(screen.queryByTestId('agent-item-h1')).toBeNull();
+    expect(screen.getByTestId('helpers-toggle-orch')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('forgets the fold of an agent that is removed', () => {
+    seed();
+    useChromeStore.setState({ collapsedAgentIds: ['orch', 'somewhere-else'] });
+    render(<AgentList />);
+    act(() => { useAgentStore.getState().removeAgent('orch'); });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['somewhere-else']);
+  });
+
+  it('reorders helpers among their siblings, keeping everyone else in place', () => {
+    const { reorderAgents } = seed();
+    render(<AgentList />);
+    const dataTransfer = dataTransferStub();
+    fireEvent.dragStart(screen.getByTestId('helper-drag-h1'), { dataTransfer });
+    fireEvent.dragOver(screen.getByTestId('helper-drag-h2'), { dataTransfer });
+    expect(within(screen.getByTestId('helper-drag-h2')).getByTestId('drag-indicator')).toBeInTheDocument();
+    fireEvent.drop(screen.getByTestId('helper-drag-h2'), { dataTransfer });
+    expect(reorderAgents).toHaveBeenCalledWith('/project', ['orch', 'h2', 'other', 'h1']);
+  });
+
+  it('will not drop a helper among top-level agents', () => {
+    const { reorderAgents } = seed();
+    render(<AgentList />);
+    const dataTransfer = dataTransferStub();
+    fireEvent.dragStart(screen.getByTestId('helper-drag-h1'), { dataTransfer });
+    fireEvent.dragOver(screen.getByTestId('durable-drag-1'), { dataTransfer });
+    expect(screen.queryByTestId('drag-indicator')).toBeNull();
+    fireEvent.drop(screen.getByTestId('durable-drag-1'), { dataTransfer });
+    expect(reorderAgents).not.toHaveBeenCalled();
+  });
+
+  it('still reorders top-level agents, carrying nothing else along', () => {
+    const { reorderAgents } = seed();
+    render(<AgentList />);
+    const dataTransfer = dataTransferStub();
+    fireEvent.dragStart(screen.getByTestId('durable-drag-1'), { dataTransfer });
+    fireEvent.dragOver(screen.getByTestId('durable-drag-0'), { dataTransfer });
+    fireEvent.drop(screen.getByTestId('durable-drag-0'), { dataTransfer });
+    // other moves above orch; the helpers keep their slots in the saved order.
+    expect(reorderAgents).toHaveBeenCalledWith('/project', ['other', 'h1', 'orch', 'h2']);
+  });
+
+  it('keeps quick agents nested under their durable parent, helper or not', () => {
+    seed({
+      q1: { ...durable('q1', { parentAgentId: 'orch' }), kind: 'quick', status: 'running' },
+      q2: { ...durable('q2', { parentAgentId: 'h1' }), kind: 'quick', status: 'running' },
+    });
+    render(<AgentList />);
+    expect(within(screen.getByTestId('durable-drag-0')).getByTestId('agent-item-q1')).toHaveAttribute('data-nested', 'true');
+    expect(screen.getByTestId('agent-item-q1')).not.toHaveAttribute('data-indent');
+    const q2 = within(screen.getByTestId('helper-drag-h1')).getByTestId('agent-item-q2');
+    expect(q2).toHaveAttribute('data-indent', '56');
+  });
+
+  it('shows a helper whose parent is gone at the top level', () => {
+    useAgentStore.setState({ agents: { lone: durable('lone', { parentAgentId: 'missing' }) } });
+    render(<AgentList />);
+    expect(screen.getByTestId('durable-drag-0')).toHaveAttribute('data-agent-id', 'lone');
   });
 });

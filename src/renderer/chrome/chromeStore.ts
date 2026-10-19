@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { reportChromeActionFailed } from './telemetry';
-import { isNewChromeEnabled } from './chromeFlag';
 import { CHROME_STORAGE_KEY } from './storageKey';
+import { isNewChromeEnabled } from './chromeFlag';
 import { useAgentStore } from '../stores/agentStore';
 import { touchMru } from './titlebar/overflow';
 import { ACTIVITY_WRITE_INTERVAL_MS, DEFAULT_IDLE_DAYS } from './projectActivity';
@@ -171,8 +171,12 @@ export interface ChromeState {
   inactiveProjectIds: string[];
   agentActivity: Record<string, number>;
   collapsedAgentIds: string[];
-  /** Fold or unfold the helpers nested under an agent (#2231). */
+  /** Fold or unfold the helpers nested under an agent (#2231). Shared by both sidebar layouts. */
   toggleAgentCollapsed: (agentId: string) => void;
+  /** Unfold these agents' helpers, e.g. to reveal a selected helper. */
+  expandAgents: (agentIds: string[]) => void;
+  /** Drop per-agent state for agents that no longer exist. */
+  forgetAgents: (agentIds: string[]) => void;
   setProjectSort: (sort: SidebarSort) => void;
   setAgentSort: (sort: SidebarSort) => void;
   /** Move a project to the idle section now, until it is marked active. Pinned projects can't be (unpin first). */
@@ -318,8 +322,16 @@ function persistChromeState(state: PersistedFields): void {
 }
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
+/**
+ * Whether the store holds the saved state. With the new layout off it starts
+ * from defaults without reading storage; the legacy agent list loads it on
+ * first use (it shares collapsedAgentIds), and every change it makes loads
+ * first, so a persist never overwrites the saved state with defaults.
+ */
+let stateLoaded = false;
 
 export const useChromeStore = create<ChromeState>((set, get) => {
+  stateLoaded = isNewChromeEnabled();
   const schedulePersist = () => {
     if (persistTimer) clearTimeout(persistTimer);
     persistTimer = setTimeout(() => {
@@ -329,8 +341,8 @@ export const useChromeStore = create<ChromeState>((set, get) => {
   };
 
   return {
-    // With the flag off the legacy shell runs and this store is never used, so
-    // don't touch localStorage at startup.
+    // With the flag off the legacy shell runs and only the agent list's fold
+    // state is used (ensureChromeStateLoaded), so don't touch localStorage at startup.
     ...(isNewChromeEnabled() ? loadChromeState() : DEFAULTS),
     projectScopeId: null,
 
@@ -503,8 +515,32 @@ export const useChromeStore = create<ChromeState>((set, get) => {
     },
 
     toggleAgentCollapsed: (agentId) => {
+      ensureChromeStateLoaded();
       const current = get().collapsedAgentIds;
       set({ collapsedAgentIds: current.includes(agentId) ? current.filter((id) => id !== agentId) : [...current, agentId] });
+      schedulePersist();
+    },
+
+    expandAgents: (agentIds) => {
+      ensureChromeStateLoaded();
+      const open = new Set(agentIds);
+      const current = get().collapsedAgentIds;
+      if (!current.some((id) => open.has(id))) return;
+      set({ collapsedAgentIds: current.filter((id) => !open.has(id)) });
+      schedulePersist();
+    },
+
+    forgetAgents: (agentIds) => {
+      ensureChromeStateLoaded();
+      const gone = new Set(agentIds);
+      const s = get();
+      const collapsedAgentIds = s.collapsedAgentIds.filter((id) => !gone.has(id));
+      const hadActivity = agentIds.some((id) => id in s.agentActivity);
+      if (collapsedAgentIds.length === s.collapsedAgentIds.length && !hadActivity) return;
+      set({
+        collapsedAgentIds,
+        agentActivity: hadActivity ? Object.fromEntries(Object.entries(s.agentActivity).filter(([id]) => !gone.has(id))) : s.agentActivity,
+      });
       schedulePersist();
     },
 
@@ -568,6 +604,28 @@ export function syncProjectActivityWithAgents(): () => void {
         if (status.state === 'working' && prev.agentDetailedStatus[id]?.state !== 'working') chrome.markAgentActivity(id);
       }
     }
+  });
+}
+
+/** Load the saved state into the store once, if startup skipped it (new layout off). */
+export function ensureChromeStateLoaded(): void {
+  if (stateLoaded) return;
+  stateLoaded = true;
+  useChromeStore.setState(loadChromeState());
+}
+
+/**
+ * Forget the fold state of agents that leave the agent store (deleted,
+ * disposed, or gone from their project on reload), so stale ids don't pile up
+ * in saved state. Started by both sidebars. Returns the unsubscribe.
+ */
+export function syncCollapsedAgentsWithAgents(): () => void {
+  return useAgentStore.subscribe((state, prev) => {
+    if (state.agents === prev.agents) return;
+    const { collapsedAgentIds } = useChromeStore.getState();
+    if (collapsedAgentIds.length === 0) return;
+    const gone = collapsedAgentIds.filter((id) => prev.agents[id] && !state.agents[id]);
+    if (gone.length > 0) useChromeStore.getState().forgetAgents(gone);
   });
 }
 

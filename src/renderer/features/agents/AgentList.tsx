@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useOrderedShallow } from '../../hooks/useOrderedShallow';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -23,9 +23,36 @@ import type { PersonaTemplate } from '../personas';
 import { EmptyState } from '../../components/EmptyState';
 import { requestLeaveAgentSettings } from './agentSettingsPages';
 import { createDurableAgent, createDurableAgentFromTemplate } from './create-agent';
+import { buildAgentForest, forestSiblingGroups, moveWithinGroup, type AgentNode } from '../../chrome/sidebar/treeModel';
+import { useChromeStore, syncCollapsedAgentsWithAgents, ensureChromeStateLoaded } from '../../chrome/chromeStore';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 const EMPTY_AGENTS: Agent[] = [];
+
+/** Left padding of a top-level row (px-3). */
+const ROW_PAD = 12;
+/** How much further in each level of helpers sits. */
+const HELPER_INDENT = 28;
+/** Extra indent of a quick agent under its durable parent (pl-7 against px-3). */
+const QUICK_INDENT = 16;
+/** Half the width of a row's avatar: the guide line runs under the parent's avatar centre. */
+const AVATAR_HALF = 18;
+/** How far the first guide stroke reaches up into the parent row, to just under its avatar. */
+const GUIDE_REACH = 14;
+const HelperCaret = ({ open }: { open: boolean }) => (
+  <svg
+    width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    className={`transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+  >
+    <polyline points="9 18 15 12 9 6" />
+  </svg>
+);
+
+/** A thin neutral stroke of the helper guide line; decoration only. */
+function GuideStroke({ style, testId }: { style: React.CSSProperties; testId?: string }) {
+  return <span aria-hidden="true" data-testid={testId} className="absolute bg-surface-2 pointer-events-none" style={style} />;
+}
 
 // Module-level activity map — bypasses Zustand to avoid store updates on
 // every PTY chunk. Re-renders are driven by a boolean idle→active transition
@@ -122,10 +149,11 @@ function AgentListInner() {
   const isTickActiveRef = useRef(false);
   const [isTickActive, setIsTickActive] = useState(false);
 
-  // Drag-to-reorder state for durable agents
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const isDragging = dragIndex !== null;
+  // Drag-to-reorder state for durable agents. A row moves only among its
+  // siblings: the top-level agents, or the helpers of one parent.
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const isDragging = dragId !== null;
   // Mirrors `isDragging` for long-lived callbacks (the pty.onData
   // subscription) that must not re-subscribe on every drag.
   const isDraggingRef = useRef(false);
@@ -139,6 +167,15 @@ function AgentListInner() {
       return false;
     }
   });
+
+  // Parents whose helpers are folded away: the same saved state the new
+  // sidebar uses, so a fold carries across layouts.
+  const collapsedAgentIds = useChromeStore((s) => s.collapsedAgentIds);
+  const toggleHelpers = useChromeStore((s) => s.toggleAgentCollapsed);
+  const collapsedHelpers = useMemo(() => new Set(collapsedAgentIds), [collapsedAgentIds]);
+  // With the new layout off the shared state isn't loaded at startup; load it before paint.
+  useLayoutEffect(() => { ensureChromeStateLoaded(); }, []);
+  useEffect(() => syncCollapsedAgentsWithAgents(), []);
 
   const toggleCompletedCollapsed = useCallback(() => {
     setCompletedCollapsed((prev) => {
@@ -242,6 +279,37 @@ function AgentListInner() {
     return map;
   }, [quickAgents]);
 
+  // Helpers nest under their orchestrator, as in the new sidebar (#2231).
+  const forest = useMemo(() => buildAgentForest(durableAgents), [durableAgents]);
+  const reorderGroupOf = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const group of forestSiblingGroups(forest)) {
+      for (const id of group) map.set(id, group);
+    }
+    return map;
+  }, [forest]);
+
+  // Selecting a helper inside a folded parent unfolds it, so the active row is
+  // visible. Only a change of selection does this: folding a parent while one
+  // of its helpers is selected must stay folded, so the agents and the fold
+  // state are read through a ref and the store, not as dependencies.
+  const agentsRef = useRef(agents);
+  agentsRef.current = agents;
+  useEffect(() => {
+    if (!activeAgentId) return;
+    const all = agentsRef.current;
+    const collapsed = new Set(useChromeStore.getState().collapsedAgentIds);
+    const folded: string[] = [];
+    const seen = new Set<string>();
+    let parentId = all[activeAgentId]?.parentAgentId;
+    while (parentId && !seen.has(parentId) && all[parentId]?.kind === 'durable') {
+      seen.add(parentId);
+      if (collapsed.has(parentId)) folded.push(parentId);
+      parentId = all[parentId]?.parentAgentId;
+    }
+    if (folded.length > 0) useChromeStore.getState().expandAgents(folded);
+  }, [activeAgentId]);
+
 
   useEffect(() => {
     if (showMissionInput && missionInputRef.current) {
@@ -325,7 +393,7 @@ function AgentListInner() {
   }, []);
 
   // Drag-to-reorder handlers for durable agents
-  const handleDragStart = useCallback((e: React.DragEvent, index: number, agentId: string) => {
+  const handleDragStart = useCallback((e: React.DragEvent, agentId: string) => {
     // Select the dragged agent up-front so reorder never depends on a prior
     // click (GH #1521). On the native macOS HTML5-DnD loop a drag begun on a
     // non-active row does not complete a reorder — the only path that works is
@@ -335,9 +403,9 @@ function AgentListInner() {
     // change, and is a no-op when the row is already active.
     selectCompleted(null);
     setActiveAgent(agentId, activeProjectId ?? undefined);
-    setDragIndex(index);
+    setDragId(agentId);
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(index));
+    e.dataTransfer.setData('text/plain', agentId);
     if (e.currentTarget instanceof HTMLElement) {
       e.currentTarget.style.opacity = '0.5';
     }
@@ -347,27 +415,36 @@ function AgentListInner() {
     if (e.currentTarget instanceof HTMLElement) {
       e.currentTarget.style.opacity = '1';
     }
-    setDragIndex(null);
-    setDragOverIndex(null);
+    setDragId(null);
+    setDragOverId(null);
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+  /** Whether the dragged row may land on `targetId`: only among its own siblings. */
+  const isSiblingTarget = useCallback((targetId: string) => (
+    dragId !== null && reorderGroupOf.get(dragId) === reorderGroupOf.get(targetId)
+  ), [dragId, reorderGroupOf]);
+
+  const handleDragOver = useCallback((e: React.DragEvent, targetId: string) => {
+    if (!isSiblingTarget(targetId)) return; // not a drop target: no preventDefault
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    setDragOverIndex(index);
-  }, []);
+    setDragOverId(targetId);
+  }, [isSiblingTarget]);
 
-  const handleDrop = useCallback((e: React.DragEvent, dropIndex: number) => {
+  const handleDrop = useCallback((e: React.DragEvent, targetId: string) => {
     e.preventDefault();
-    if (dragIndex === null || dragIndex === dropIndex) {
-      setDragIndex(null);
-      setDragOverIndex(null);
+    const group = dragId !== null && isSiblingTarget(targetId) ? reorderGroupOf.get(dragId) : undefined;
+    // Moving down lands after the target and moving up before it, as in the new sidebar.
+    const nextIds = group && dragId !== null
+      ? moveWithinGroup(durableAgents.map((a) => a.id), group, dragId, targetId)
+      : null;
+    if (!nextIds) {
+      setDragId(null);
+      setDragOverId(null);
       return;
     }
-
-    const newOrder = [...durableAgents];
-    const [moved] = newOrder.splice(dragIndex, 1);
-    newOrder.splice(dropIndex, 0, moved);
+    const byId = new Map(durableAgents.map((a) => [a.id, a]));
+    const newOrder = nextIds.map((id) => byId.get(id)!);
 
     if (activeProject) {
       if (isRemote && activeProjectId) {
@@ -385,14 +462,14 @@ function AgentListInner() {
       }
     }
 
-    setDragIndex(null);
-    setDragOverIndex(null);
-  }, [dragIndex, durableAgents, activeProject, isRemote, activeProjectId, reorderAgents, sendAgentReorder]);
+    setDragId(null);
+    setDragOverId(null);
+  }, [dragId, isSiblingTarget, reorderGroupOf, durableAgents, activeProject, isRemote, activeProjectId, reorderAgents, sendAgentReorder]);
 
   // Get the parent durable agent name for the mission input label
   const targetParentAgent = quickTargetParentId ? agents[quickTargetParentId] : null;
 
-  const renderMissionInput = (isNested: boolean) => {
+  const renderMissionInput = (isNested: boolean, indent?: number) => {
     // Resolve orchestrator for capabilities check
     const resolvedOrchId = isNested
       ? targetParentAgent?.orchestrator || enabledOrchestrators[0]?.id
@@ -401,7 +478,10 @@ function AgentListInner() {
     const supportsPermissions = resolvedOrch?.capabilities?.permissions ?? false;
 
     return (
-      <div className={`py-3 border-b border-surface-0/50 space-y-2 ${isNested ? 'pl-7 pr-3' : 'px-3'}`}>
+      <div
+        className={`py-3 border-b border-surface-0/50 space-y-2 ${indent !== undefined ? 'pr-3' : isNested ? 'pl-7 pr-3' : 'px-3'}`}
+        style={indent !== undefined ? { paddingLeft: indent } : undefined}
+      >
         {targetParentAgent && (
           <div className="text-xs text-ctp-overlay0">
             Quick agent in {targetParentAgent.name}'s worktree
@@ -480,6 +560,114 @@ function AgentListInner() {
             Cancel
           </button>
         </div>
+      </div>
+    );
+  };
+
+  /**
+   * A durable agent's row with its quick agents, then, unless folded, its
+   * helpers a level deeper on a thin guide line. Each row is its own drag
+   * source, so a helper drags without its parent and only among its siblings.
+   */
+  const renderDurable = (node: AgentNode, depth: number, index: number, siblingCount: number, reachUp = false): React.ReactNode => {
+    const durable = node.agent;
+    const indent = ROW_PAD + depth * HELPER_INDENT;
+    const guideX = indent - HELPER_INDENT + AVATAR_HALF; // under the parent's avatar
+    const first = index === 0;
+    const last = index === siblingCount - 1;
+    const guideTop = first && reachUp ? -GUIDE_REACH : 0;
+    const childQuick = childQuickByParent.get(durable.id) ?? [];
+    const isMissionTarget = showMissionInput && quickTargetParentId === durable.id;
+    const helperCount = node.children.length;
+    const helpersOpen = helperCount > 0 && !collapsedHelpers.has(durable.id);
+    const group = reorderGroupOf.get(durable.id) ?? [];
+    const showDropLine = dragOverId === durable.id && dragId !== null && dragId !== durable.id;
+    const dropBelow = showDropLine && group.indexOf(dragId!) < group.indexOf(durable.id);
+    // The helpers' guide line reaches up into this row only when nothing sits between them.
+    const helpersReachUp = childQuick.length === 0 && !isMissionTarget;
+
+    return (
+      <div key={durable.id} className="relative" data-testid={depth > 0 ? `helper-subtree-${durable.id}` : undefined}>
+        {depth > 0 && !last && (
+          // Continues past this helper's subtree to the next sibling.
+          <GuideStroke testId="helper-guide-line" style={{ left: guideX, width: 1, top: guideTop, bottom: 0 }} />
+        )}
+        <div
+          draggable
+          onDragStart={(e) => handleDragStart(e, durable.id)}
+          onDragEnd={handleDragEnd}
+          onDragOver={(e) => handleDragOver(e, durable.id)}
+          onDrop={(e) => handleDrop(e, durable.id)}
+          className="relative"
+          data-testid={depth === 0 ? `durable-drag-${index}` : `helper-drag-${durable.id}`}
+          data-agent-id={durable.id}
+          data-depth={depth}
+        >
+          {showDropLine && (
+            <div
+              data-testid="drag-indicator"
+              className={`absolute ${dropBelow ? '-bottom-px' : '-top-px'} right-3 h-0.5 bg-ctp-accent rounded-full z-10`}
+              style={{ left: indent }}
+            />
+          )}
+          <div className="relative">
+            {depth > 0 && (
+              <>
+                {last && <GuideStroke testId="helper-guide-line" style={{ left: guideX, width: 1, top: guideTop, height: `calc(50% + ${-guideTop}px)` }} />}
+                <GuideStroke style={{ left: guideX, top: '50%', height: 1, width: indent - guideX - 4 }} />
+              </>
+            )}
+            {helperCount > 0 && (
+              <button
+                type="button"
+                draggable={false}
+                data-testid={`helpers-toggle-${durable.id}`}
+                aria-expanded={helpersOpen}
+                aria-label={helpersOpen
+                  ? `Hide helpers of ${durable.name}`
+                  : `Show ${helperCount} ${helperCount === 1 ? 'helper' : 'helpers'} of ${durable.name}`}
+                title={helpersOpen ? 'Hide helpers' : `Show ${helperCount} ${helperCount === 1 ? 'helper' : 'helpers'}`}
+                onClick={(e) => { e.stopPropagation(); toggleHelpers(durable.id); }}
+                className="absolute top-0 bottom-0 z-10 w-3 flex items-center justify-center text-ctp-overlay0 hover:text-ctp-text cursor-pointer"
+                style={{ left: indent - 12 }}
+              >
+                <HelperCaret open={helpersOpen} />
+              </button>
+            )}
+            <AgentListItem
+              agent={durable}
+              isActive={durable.id === activeAgentId}
+              isThinking={isThinking(durable.id)}
+              onSelect={handleSelectAgent}
+              onSpawnQuickChild={handleSpawnQuickChild}
+              {...(depth > 0 && { indent })}
+            />
+            {activeProfile && durable.orchestrator && !isOrchestratorInProfile(durable.orchestrator) && (
+              <span
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-yellow-500"
+                title={`${durable.orchestrator} is not configured in the "${activeProfile.name}" profile`}
+              >
+                ⚠
+              </span>
+            )}
+          </div>
+          {/* Inline mission input targeting this durable */}
+          {isMissionTarget && renderMissionInput(true, depth > 0 ? indent + QUICK_INDENT : undefined)}
+          {/* Child quick agents (indented). Completed children are not
+              nested here — they move to the Completed footer below. */}
+          {childQuick.map((child) => (
+            <AgentListItem
+              key={child.id}
+              agent={child}
+              isActive={child.id === activeAgentId}
+              isThinking={isThinking(child.id)}
+              onSelect={handleSelectAgent}
+              isNested
+              {...(depth > 0 && { indent: indent + QUICK_INDENT })}
+            />
+          ))}
+        </div>
+        {helpersOpen && node.children.map((child, k) => renderDurable(child, depth + 1, k, helperCount, helpersReachUp))}
       </div>
     );
   };
@@ -572,59 +760,7 @@ function AgentListInner() {
             <div className="px-3 py-1.5 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0/50">
               All
             </div>
-            {durableAgents.map((durable, i) => {
-              const childQuick = childQuickByParent.get(durable.id) ?? [];
-              const isMissionTarget = showMissionInput && quickTargetParentId === durable.id;
-
-              return (
-                <div
-                  key={durable.id}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, i, durable.id)}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={(e) => handleDragOver(e, i)}
-                  onDrop={(e) => handleDrop(e, i)}
-                  className="relative"
-                  data-testid={`durable-drag-${i}`}
-                  data-agent-id={durable.id}
-                >
-                  {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
-                    <div data-testid="drag-indicator" className="absolute -top-px left-3 right-3 h-0.5 bg-ctp-accent rounded-full z-10" />
-                  )}
-                  <div className="relative">
-                    <AgentListItem
-                      agent={durable}
-                      isActive={durable.id === activeAgentId}
-                      isThinking={isThinking(durable.id)}
-                      onSelect={handleSelectAgent}
-                      onSpawnQuickChild={handleSpawnQuickChild}
-                    />
-                    {activeProfile && durable.orchestrator && !isOrchestratorInProfile(durable.orchestrator) && (
-                      <span
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-yellow-500"
-                        title={`${durable.orchestrator} is not configured in the "${activeProfile.name}" profile`}
-                      >
-                        ⚠
-                      </span>
-                    )}
-                  </div>
-                  {/* Inline mission input targeting this durable */}
-                  {isMissionTarget && renderMissionInput(true)}
-                  {/* Child quick agents (indented). Completed children are not
-                      nested here — they move to the Completed footer below. */}
-                  {childQuick.map((child) => (
-                    <AgentListItem
-                      key={child.id}
-                      agent={child}
-                      isActive={child.id === activeAgentId}
-                      isThinking={isThinking(child.id)}
-                      onSelect={handleSelectAgent}
-                      isNested
-                    />
-                  ))}
-                </div>
-              );
-            })}
+            {forest.map((node, i) => renderDurable(node, 0, i, forest.length))}
           </div>
         )}
 

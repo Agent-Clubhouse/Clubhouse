@@ -14,6 +14,8 @@ interface Props {
   onSelect: (agentId: string) => void;
   onSpawnQuickChild?: (agentId: string) => void;
   isNested?: boolean;
+  /** Left padding in px, for rows nested deeper than one level (helpers and their quick agents). */
+  indent?: number;
 }
 
 import { agentDot, STATUS_TONE, statusRingColor, statusText } from './agent-status';
@@ -24,7 +26,7 @@ const ACTION_BUTTON_WIDTH = 26;
 
 // ── Main component ─────────────────────────────────────────────────
 
-function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested }: Props) {
+function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested, indent }: Props) {
   // Fine-grained selectors: subscribe only to the specific state/actions needed
   const isRemote = isRemoteAgentId(agent.id);
 
@@ -96,9 +98,10 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
         data-testid={`agent-item-${agent.id}`}
         data-agent-name={agent.name}
         data-active={isActive}
+        style={indent !== undefined ? { paddingLeft: indent } : undefined}
         className={`
           flex items-center gap-3 py-3.5 cursor-pointer transition-colors
-          ${isNested ? 'pl-7 pr-3' : 'px-3'}
+          ${indent !== undefined ? 'pr-3' : isNested ? 'pl-7 pr-3' : 'px-3'}
           ${isActive ? 'bg-surface-1' : 'hover:bg-surface-0'}
         `}
       >
