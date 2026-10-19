@@ -12,6 +12,7 @@ import agentsDurable from './content/agents-durable.md';
 import agentsQuick from './content/agents-quick.md';
 import agentsClubhouseMode from './content/agents-clubhouse-mode.md';
 import agentsTerminal from './content/agents-terminal.md';
+import agentsOrchestratedHelpers from './content/agents-orchestrated-helpers.md';
 import settingsOrchestrators from './content/settings-orchestrators.md';
 import pluginsOverview from './content/plugins-overview.md';
 import pluginsPermissions from './content/plugins-permissions.md';
@@ -50,6 +51,9 @@ import personaExecutorMerge from '../personas/executor-merge.md';
 import personaDocUpdater from '../personas/doc-updater.md';
 import personaJudge from '../personas/judge.md';
 import personaResearcher from '../personas/researcher.md';
+import personaOrchestrator from '../personas/orchestrator.md';
+import personaWorkhorse from '../personas/workhorse.md';
+import { stripPersonaFrontMatter } from '../../../shared/persona-pattern';
 import cookbookLongRunningJob from './content/cookbooks/long-running-job.md';
 import cookbookUiWork from './content/cookbooks/ui-work.md';
 import cookbookGroupProject from './content/cookbooks/group-project.md';
@@ -100,6 +104,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-quick', title: 'Quick Agents', content: agentsQuick },
       { id: 'agents-clubhouse-mode', title: 'Clubhouse Mode', content: agentsClubhouseMode },
       { id: 'agents-terminal', title: 'Terminal & Transcripts', content: agentsTerminal },
+      { id: 'agents-orchestrated-helpers', title: 'Orchestrated Helpers', content: agentsOrchestratedHelpers },
       { id: 'orchestrators', title: 'Orchestrators', content: settingsOrchestrators },
     ],
   },
@@ -144,6 +149,9 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'persona-doc-updater', title: 'Documentation Updater', content: personaDocUpdater },
       { id: 'persona-judge', title: 'Judge', content: personaJudge },
       { id: 'persona-researcher', title: 'Researcher', content: personaResearcher },
+      // Persona files can carry settings front-matter; help shows only the body.
+      { id: 'persona-orchestrator', title: 'Orchestrator', content: stripPersonaFrontMatter(personaOrchestrator) },
+      { id: 'persona-workhorse', title: 'Workhorse', content: stripPersonaFrontMatter(personaWorkhorse) },
     ],
   },
   {
@@ -214,6 +222,7 @@ export const CHROME_HELP_SECTIONS: HelpSection[] = [
       { id: 'agents-quick', title: 'Quick agents', content: agentsQuickChrome },
       { id: 'agents-clubhouse-mode', title: 'Clubhouse mode', content: agentsClubhouseMode },
       { id: 'agents-terminal', title: 'Terminal and transcripts', content: agentsTerminalChrome },
+      { id: 'agents-orchestrated-helpers', title: 'Orchestrated helpers', content: agentsOrchestratedHelpers },
       { id: 'orchestrators', title: 'Orchestrators', content: settingsOrchestrators },
     ],
   },

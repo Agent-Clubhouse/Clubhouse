@@ -110,6 +110,24 @@ describe('applyPersonaToAgent', () => {
     expect(instructions.get(worktreePath)).toContain(builtin.split('\n')[0]);
   });
 
+  it('applies the built-in Orchestrator without copying its orchestration front-matter', async () => {
+    await applyPersonaToAgent(projectPath, 'agent-1', 'orchestrator');
+
+    expect(updateDurableConfig).toHaveBeenCalledWith(projectPath, 'agent-1', { persona: 'orchestrator' });
+    expect(store.get('agent-1')).not.toHaveProperty('orchestration');
+    const written = instructions.get(worktreePath)!;
+    expect(written.startsWith('# Orchestrator')).toBe(true);
+    expect(written).not.toContain('orchestration:');
+    expect(written).toContain('`start_helper`');
+  });
+
+  it('applies the built-in Workhorse', async () => {
+    await applyPersonaToAgent(projectPath, 'agent-1', 'workhorse');
+
+    expect(store.get('agent-1')).toMatchObject({ persona: 'workhorse', model: 'sonnet' });
+    expect(instructions.get(worktreePath)).toContain('`message_parent`');
+  });
+
   it('replaces the instructions by default (Apply persona on an existing agent)', async () => {
     await writePersona(projectPersonas(), 'reviewer', '# Reviewer\n');
     instructions.set(worktreePath, 'Old instructions');

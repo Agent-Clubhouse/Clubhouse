@@ -2,6 +2,8 @@
 
 An orchestrator is the CLI backend powering your agents. It handles AI communication, tool calls, file operations, and output streaming. Each agent's **Runs on** setting picks the CLI it uses.
 
+An orchestrator agent is a different thing. It's an agent that starts and manages helper agents. See **Orchestrated helpers**.
+
 ## Available orchestrators
 
 | Orchestrator | Description | Status |

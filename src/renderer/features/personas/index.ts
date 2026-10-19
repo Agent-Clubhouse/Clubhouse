@@ -8,6 +8,8 @@ import executorMerge from './executor-merge.md';
 import docUpdater from './doc-updater.md';
 import judge from './judge.md';
 import researcher from './researcher.md';
+import orchestrator from './orchestrator.md';
+import workhorse from './workhorse.md';
 import { SkillDefinition } from '../../../shared/persona-pattern';
 
 export interface PersonaTemplate {
@@ -17,7 +19,7 @@ export interface PersonaTemplate {
   content: string;
   /** Tools relevant to this persona's role (consumed by provisioning — Mission 1d). */
   tools?: string[];
-  /** Preferred agent orchestrator for this persona. */
+  /** Preferred CLI ("Runs on") for this persona. Unset means any CLI. */
   orchestrator?: 'claude' | 'copilot';
   /** Skills bundled with this persona (name + optional cadence). */
   skills?: SkillDefinition[];
@@ -113,6 +115,28 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
     tools: ['read_bulletin', 'read_topic', 'web-search', 'web-fetch'],
     orchestrator: 'claude',
     skills: [{ name: 'deep-research' }],
+  },
+  {
+    // The front-matter carries the default orchestration policy (#2228). It
+    // isn't a pattern setting, so applying the persona copies nothing onto
+    // the agent; the policy reads it when it resolves.
+    id: 'orchestrator',
+    name: 'Orchestrator',
+    description: 'Breaks an epic into tasks, starts helper agents to do them, accepts their work and disposes of them.',
+    content: orchestrator,
+    tools: [
+      'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'hand_off', 'dispose_helper',
+      'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
+    ],
+    skills: [],
+  },
+  {
+    id: 'workhorse',
+    name: 'Workhorse',
+    description: 'General-purpose helper. Does the task it was given, pushes the work and reports to its orchestrator.',
+    content: workhorse,
+    tools: ['message_parent', 'git'],
+    skills: [],
   },
 ];
 
