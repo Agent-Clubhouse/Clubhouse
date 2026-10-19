@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mock electron app
+const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -38,6 +39,7 @@ const mockGetBuffer = vi.fn(() => '');
 vi.mock('./pty-manager', () => ({
   write: (...args: unknown[]) => mockPtyWrite(...args),
   getBuffer: (...args: unknown[]) => mockGetBuffer(...args),
+  isStopping: (...args: unknown[]) => mockIsStopping(...args),
 }));
 
 import { agentRegistry } from './agent-registry';
@@ -122,6 +124,22 @@ describe('executeShoulderTap', () => {
 
     // Cleanup
     agentRegistry.untrack('agent-1');
+  });
+
+  it('reports a terminal agent that is shutting down as not running, writing nothing', async () => {
+    const project = await groupProjectRegistry.create('StoppingProj');
+    agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
+    bindingManager.bind('agent-1', { targetId: project.id, targetKind: 'group-project', label: 'StoppingProj', agentName: 'robin', targetName: 'StoppingProj' });
+    mockIsStopping.mockReturnValue(true);
+    try {
+      const result = await executeShoulderTap({ projectId: project.id, senderLabel: 'user', targetAgentId: 'agent-1', message: 'hi' });
+      expect(result.delivered).toHaveLength(0);
+      expect(result.failed).toEqual([expect.objectContaining({ agentId: 'agent-1', status: 'not-running' })]);
+      expect(mockPtyWrite).not.toHaveBeenCalled();
+    } finally {
+      mockIsStopping.mockReturnValue(false);
+      agentRegistry.untrack('agent-1');
+    }
   });
 
   it('reports unsupported-runtime for headless agents', async () => {

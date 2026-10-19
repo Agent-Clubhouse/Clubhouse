@@ -19,6 +19,7 @@ import {
   clearAgentConfigCache,
   flushAllAgentConfigs,
   getDisposeChecks,
+  getWorktreeStatus,
   resolveHelpersForDelete,
 } from './agent-config';
 import type { DurableAgentConfig } from '../../shared/types';
@@ -126,5 +127,42 @@ describe('dispose checks against a real repository (no remote)', () => {
     expect(result.blocked).toEqual([
       { agentId: 'durable_3_b', name: 'helper-b', checks: { dirty: 1, unpushed: 0, unmerged: 0 } },
     ]);
+  });
+});
+
+describe('dispose checks and Clubhouse\'s own config', () => {
+  const bridge = { mcpServers: { clubhouse: { command: 'node', args: ['/app/bridge/clubhouse-mcp-bridge.js'] } } };
+
+  it('disposes a fresh helper whose only change is the .mcp.json Clubhouse wrote', async () => {
+    fs.writeFileSync(path.join(worktree('helper-b'), '.mcp.json'), JSON.stringify(bridge, null, 2));
+    expect(await getDisposeChecks(project, 'durable_3_b')).toEqual({ dirty: 0, unpushed: 0, unmerged: 0 });
+  });
+
+  it('still holds for a real edit, counting it alone', async () => {
+    fs.writeFileSync(path.join(worktree('helper-b'), '.mcp.json'), JSON.stringify(bridge, null, 2));
+    fs.writeFileSync(path.join(worktree('helper-b'), 'notes.txt'), 'draft\n');
+    expect((await getDisposeChecks(project, 'durable_3_b')).dirty).toBe(1);
+  });
+
+  it('still holds when the user added a server to Clubhouse\'s .mcp.json', async () => {
+    const edited = { mcpServers: { ...bridge.mcpServers, mine: { command: 'my-server' } } };
+    fs.writeFileSync(path.join(worktree('helper-b'), '.mcp.json'), JSON.stringify(edited, null, 2));
+    expect((await getDisposeChecks(project, 'durable_3_b')).dirty).toBe(1);
+  });
+});
+
+describe('worktree status when git fails', () => {
+  it('reports that it could not check, never a clean worktree', async () => {
+    fs.writeFileSync(path.join(worktree('helper-b'), 'notes.txt'), 'draft\n');
+    // Point the worktree at a git dir that isn't there, so git status fails.
+    // Remove the .git file first: git marks it hidden on Windows, and
+    // overwriting a hidden file there fails with EPERM.
+    const gitFile = path.join(worktree('helper-b'), '.git');
+    fs.rmSync(gitFile, { force: true });
+    fs.writeFileSync(gitFile, `gitdir: ${path.join(root, 'missing')}\n`);
+    const status = await getWorktreeStatus(project, 'durable_3_b');
+    expect(status.checkError).toMatch(/couldn't read its uncommitted files/);
+    expect(status.uncommittedFiles).toEqual([]);
+    expect((await getDisposeChecks(project, 'durable_3_b')).error).toBeTruthy();
   });
 });

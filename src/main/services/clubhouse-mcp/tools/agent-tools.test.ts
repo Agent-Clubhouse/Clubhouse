@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/clubhouse-test' },
   BrowserWindow: { getAllWindows: () => [] },
@@ -27,6 +28,7 @@ const mockPtyGetBuffer = vi.fn();
 vi.mock('../../pty-manager', () => ({
   write: (...args: unknown[]) => mockPtyWrite(...args),
   getBuffer: (id: string) => mockPtyGetBuffer(id),
+  isStopping: (...args: unknown[]) => mockIsStopping(...args),
 }));
 
 vi.mock('../../log-service', () => ({
@@ -157,6 +159,19 @@ describe('AgentTools', () => {
       const secondWrite = mockPtyWrite.mock.calls[1];
       expect(secondWrite[0]).toBe('agent-2');
       expect(secondWrite[1]).toBe('\r');
+    });
+
+    it('refuses a target whose terminal is shutting down, writing nothing', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
+      mockIsStopping.mockReturnValue(true);
+      try {
+        const result = await sendMessage('agent-1', sendToolName, { message: 'hello', task_id: 't-stop' });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('is shutting down, so the message was not delivered');
+        expect(mockPtyWrite).not.toHaveBeenCalled();
+      } finally {
+        mockIsStopping.mockReturnValue(false);
+      }
     });
 
     it('wraps multi-line message in chunked bracketed paste', async () => {

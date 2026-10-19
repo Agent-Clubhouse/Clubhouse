@@ -16,6 +16,7 @@ import { getAgentRuntime } from '../../agent-runtime';
 import { chatEventsToText } from '../../agent-runtime/chat-text';
 import { writeLineThenEnter } from '../../agent-runtime/pty-input';
 import { DEFAULT_PASTE_TIMING } from '../../agent-runtime/pty-runtime';
+import { isAgentStoppingError } from '../../agent-runtime/agent-stopping';
 import { getProvider } from '../../../orchestrators';
 
 // PTY input helpers moved to agent-runtime/pty-input; re-exported for existing importers.
@@ -152,6 +153,10 @@ export function registerAgentTools(): void {
 
         return { content: [{ type: 'text', text: resultText }] };
       } catch (err) {
+        if (isAgentStoppingError(err)) {
+          appLog('core:mcp', 'info', 'send_message: target is shutting down', { meta: { sourceAgent: agentId, targetAgent: targetId, taskId } });
+          return { content: [{ type: 'text', text: `${targetName} is shutting down, so the message was not delivered.` }], isError: true };
+        }
         appLog('core:mcp', 'error', 'Failed to send message to agent', {
           meta: { sourceAgent: agentId, targetAgent: targetId, error: err instanceof Error ? err.message : String(err) },
         });
@@ -403,6 +408,10 @@ export function registerAgentTools(): void {
           }],
         };
       } catch (err) {
+        if (isAgentStoppingError(err)) {
+          appLog('core:mcp', 'info', 'send_file: target is shutting down', { meta: { sourceAgent: agentId, targetAgent: targetId, taskId } });
+          return { content: [{ type: 'text', text: `${targetName} is shutting down, so the file notice was not delivered.` }], isError: true };
+        }
         appLog('core:mcp', 'error', 'send_file failed', {
           meta: { sourceAgent: agentId, targetAgent: targetId, error: err instanceof Error ? err.message : String(err) },
         });

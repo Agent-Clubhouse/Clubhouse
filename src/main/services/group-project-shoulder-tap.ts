@@ -13,6 +13,7 @@ import { groupProjectRegistry } from './group-project-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { buildToolName } from './clubhouse-mcp/tool-registry';
 import { getAgentRuntime } from './agent-runtime';
+import { isAgentStoppingError } from './agent-runtime/agent-stopping';
 import { appLog } from './log-service';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel } from '../telemetry/facade';
@@ -160,7 +161,9 @@ async function deliverShoulderTap(params: ShoulderTapParams): Promise<ShoulderTa
         recordDelivery('unsupported-runtime', undefined);
       }
     } catch (err) {
-      appLog('core:group-project', 'error', 'Shoulder tap delivery failed', {
+      // A terminal agent that is shutting down refuses the tap; for delivery it is not running.
+      const stopping = isAgentStoppingError(err);
+      appLog('core:group-project', stopping ? 'info' : 'error', stopping ? 'Shoulder tap not delivered: the agent is shutting down' : 'Shoulder tap delivery failed', {
         meta: { agentId: binding.agentId, taskId, error: err instanceof Error ? err.message : String(err) },
       });
       failed.push({ agentId: binding.agentId, agentName, status: 'not-running' });

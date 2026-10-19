@@ -51,6 +51,7 @@ export function clearChatRuntimes(): void {
 }
 
 export { PtyAgentRuntime } from './pty-runtime';
+export { AgentStoppingError, isAgentStoppingError } from './agent-stopping';
 export { ChatAgentRuntime } from './chat-runtime';
 export { onChatEvent, publishChatEvent } from './chat-event-bus';
 export { readChatTranscript, listChatSessions } from './chat-transcript';

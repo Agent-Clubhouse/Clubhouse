@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const pty = vi.hoisted(() => ({
-  write: vi.fn(), kill: vi.fn(), gracefulKill: vi.fn(), isRunning: vi.fn(() => true), getBuffer: vi.fn(() => 'one\ntwo\nthree'),
+  write: vi.fn(), kill: vi.fn(), gracefulKill: vi.fn(), isRunning: vi.fn(() => true), isStopping: vi.fn(() => false), getBuffer: vi.fn(() => 'one\ntwo\nthree'),
 }));
 vi.mock('../pty-manager', () => pty);
 const input = vi.hoisted(() => ({ writeChunkedBracketedPaste: vi.fn(async () => {}), submitAfterPaste: vi.fn(async () => {}), sleep: vi.fn(async () => {}) }));
@@ -30,6 +30,13 @@ describe('PtyAgentRuntime', () => {
   it('pastes multi-line text with chunking and the post-paste delay', async () => {
     await rt.sendMessage('line 1\nline 2', { source: 'shoulder_tap' });
     expect(input.writeChunkedBracketedPaste).toHaveBeenCalledWith('a1', 'line 1\nline 2', 256, 40, 200);
+  });
+
+  it('refuses to write into a terminal that is shutting down', async () => {
+    pty.isStopping.mockReturnValueOnce(true);
+    await expect(rt.sendMessage('hello', { source: 'mcp' })).rejects.toMatchObject({ code: 'agent_stopping' });
+    expect(pty.write).not.toHaveBeenCalled();
+    expect(input.submitAfterPaste).not.toHaveBeenCalled();
   });
 
   it('leaves text unsubmitted when submit is false', async () => {

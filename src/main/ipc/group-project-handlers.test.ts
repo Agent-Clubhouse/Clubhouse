@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+const mockIsStopping = vi.hoisted(() => vi.fn((_id?: unknown) => false));
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
   app: { getPath: () => '/tmp/clubhouse-test' },
@@ -53,6 +54,7 @@ const mockPtyWrite = vi.fn();
 vi.mock('../services/pty-manager', () => ({
   write: (...args: unknown[]) => mockPtyWrite(...args),
   getBuffer: vi.fn(() => ''),
+  isStopping: (...args: unknown[]) => mockIsStopping(...args),
 }));
 
 const mockWriteChunkedBracketedPaste = vi.fn(async () => undefined);

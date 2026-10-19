@@ -62,6 +62,22 @@ describe('DeleteAgentDialog', () => {
     expect(screen.getByText(/No uncommitted changes detected/)).toBeInTheDocument();
   });
 
+  it('says it could not check, instead of calling the worktree clean, when git failed', async () => {
+    window.clubhouse.agent.getWorktreeStatus = vi.fn().mockResolvedValue({
+      isValid: true,
+      uncommittedFiles: [],
+      unpushedCommits: [],
+      hasRemote: true,
+      checkError: "couldn't read its uncommitted files: fatal: not a git repository",
+    });
+    render(<DeleteAgentDialog />);
+    await waitFor(() => {
+      expect(screen.getByText(/Couldn't check bold-falcon's worktree for unsaved work/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/No uncommitted changes detected/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete anyway' })).toBeInTheDocument();
+  });
+
   it('shows simple dialog for non-worktree agent', async () => {
     resetStores({
       agents: {

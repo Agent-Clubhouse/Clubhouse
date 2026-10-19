@@ -20,6 +20,7 @@ import { setAgentIdleSleep } from './chat-idle-settings';
 import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-name';
 import { ACCESS_LEVELS, type AgentAccessLevel, type OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
 import { notifyPersonaChanged } from './persona-change-hook';
+import { uncommittedPorcelain } from './clubhouse-owned-files';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -2252,16 +2253,20 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
   }
 
   // Run git status, base branch detection, and remote check in parallel
+  // Clubhouse's own config in the worktree is not the agent's work. A status
+  // that can't be read is reported as such, never as a clean worktree.
   const [statusResult, base, remoteResult] = await Promise.all([
-    execGitFileAsync(['status', '--porcelain'], wt).catch(() => ''),
+    uncommittedPorcelain(wt).then(
+      (lines) => ({ lines, error: undefined as string | undefined }),
+      (err: unknown) => ({ lines: [] as string[], error: errorText(err) }),
+    ),
     detectBaseBranch(projectPath),
     execGitFileAsync(['remote'], wt).catch(() => ''),
   ]);
-
-  // Parse uncommitted files (use trimEnd to preserve leading status chars like " M")
-  const uncommittedFiles = statusResult.trimEnd()
-    ? statusResult.trimEnd().split('\n').filter(Boolean).map(parseStatusLine)
-    : [];
+  if (statusResult.error) {
+    appLog('core:agent-config', 'warn', 'Could not read worktree status', { meta: { agentId, error: statusResult.error } });
+  }
+  const uncommittedFiles = statusResult.lines.map(parseStatusLine);
 
   // Get unpushed commits (depends on base branch result)
   let unpushedCommits: GitLogEntry[] = [];
@@ -2283,6 +2288,7 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
     uncommittedFiles,
     unpushedCommits,
     hasRemote: remoteResult.trim().length > 0,
+    ...(statusResult.error && { checkError: `couldn't read its uncommitted files: ${statusResult.error}` }),
   };
 }
 
@@ -2807,8 +2813,8 @@ async function runDisposeChecks(
   let dirty = 0;
   if (wtExists) {
     refs.push('HEAD');
-    const status = await execGitFileAsync(['status', '--porcelain'], cwd);
-    dirty = status.split('\n').filter((line) => line.trim()).length;
+    // Without Clubhouse's own config (clubhouse-owned-files.ts); throws, and so blocks, if git fails.
+    dirty = (await uncommittedPorcelain(cwd)).length;
     try {
       const head = (await execGitFileAsync(['symbolic-ref', '--quiet', 'HEAD'], cwd)).trim();
       if (head.startsWith('refs/heads/')) own.push(head.slice('refs/heads/'.length));

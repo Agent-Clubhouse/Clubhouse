@@ -1429,6 +1429,11 @@ export interface WorktreeStatus {
   uncommittedFiles: GitStatusFile[];
   unpushedCommits: GitLogEntry[];
   hasRemote: boolean;
+  /**
+   * Set when a check could not run: the worktree is not known to be clean,
+   * and the delete dialog says so instead of offering a plain delete.
+   */
+  checkError?: string;
 }
 
 export interface DeleteResult {

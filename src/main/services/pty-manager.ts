@@ -279,6 +279,11 @@ export function isRunning(agentId: string): boolean {
   return sessions.has(agentId);
 }
 
+/** Whether an agent's PTY is still alive after a graceful kill began. */
+export function isStopping(agentId: string): boolean {
+  return sessions.get(agentId)?.killing === true;
+}
+
 function cleanupSession(agentId: string): void {
   const session = sessions.get(agentId);
   if (session) {

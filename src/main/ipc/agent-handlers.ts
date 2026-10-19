@@ -22,6 +22,7 @@ import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanAr
 import { ATTR } from '../../shared/telemetry/attributes';
 import type { DeleteResult, HelperDisposeChecks, HelperDisposeDecision, HelperDisposeResult } from '../../shared/types';
 import { getAgentRuntime } from '../services/agent-runtime';
+import { isAgentStoppingError } from '../services/agent-runtime/agent-stopping';
 import { takeDisposeRequest } from '../services/helper-dispose-requests';
 import { listStartRequests } from '../services/helper-start-requests';
 import { approveHelperStart, declineHelperStart } from '../services/clubhouse-mcp/tools/helper-tools';
@@ -128,7 +129,9 @@ export async function reportDisposeDecision(
     return { ok: true, delivered: true, message: 'Reported' };
   } catch (err) {
     // telemetry-exempt: logged; the user's decision already stands
-    const message = err instanceof Error ? err.message : String(err);
+    const message = isAgentStoppingError(err)
+      ? 'The orchestrator is shutting down, so it was not told.'
+      : err instanceof Error ? err.message : String(err);
     appLog('core:orchestration', 'warn', 'Dispose decision not delivered', { meta: { orchestratorId: parentId, error: message } });
     return { ok: true, delivered: false, message };
   }

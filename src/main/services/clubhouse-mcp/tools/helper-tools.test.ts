@@ -36,15 +36,39 @@ vi.mock('../../agent-creation', () => ({
 }));
 
 const running = new Set<string>();
+/** Helpers told to stop whose process has not exited: id → the exit the test triggers. */
+const stopping = new Map<string, { exited: Promise<void>; exit: () => void }>();
 const mockSpawnAgent = vi.fn();
 const mockKillAgent = vi.fn();
 vi.mock('../../agent-system', () => ({
   spawnAgent: (...args: unknown[]) => mockSpawnAgent(...args),
   killAgent: (...args: unknown[]) => mockKillAgent(...args),
   isAgentRunning: (id: string) => running.has(id),
+  isAgentStopping: (id: string) => stopping.has(id),
+  waitForAgentStopped: async (id: string) => {
+    await stopping.get(id)?.exited;
+    return !running.has(id);
+  },
 }));
 
+/** Begin a stop the way gracefulKill does: still running until `exit()`. */
+function beginStop(id: string, onExit?: () => void) {
+  let exit!: () => void;
+  const exited = new Promise<void>((resolve) => {
+    exit = () => {
+      stopping.delete(id);
+      running.delete(id);
+      onExit?.();
+      resolve();
+    };
+  });
+  stopping.set(id, { exited, exit });
+  return stopping.get(id)!;
+}
+
 const sent = new Map<string, string[]>();
+/** Terminal agents whose runtime refuses input because they are shutting down. */
+const refusing = new Set<string>();
 vi.mock('../../agent-runtime', () => ({
   getAgentRuntime: (id: string) => (running.has(id)
     ? {
@@ -53,6 +77,7 @@ vi.mock('../../agent-runtime', () => ({
       isRunning: () => true,
       getState: () => 'idle',
       sendMessage: async (text: string) => {
+        if (refusing.has(id)) throw new AgentStoppingError(id);
         sent.set(id, [...(sent.get(id) ?? []), text]);
         return { delivered: true };
       },
@@ -84,6 +109,7 @@ const mockBroadcast = vi.fn();
 vi.mock('../../../util/ipc-broadcast', () => ({ broadcastToAllWindows: (...args: unknown[]) => mockBroadcast(...args) }));
 vi.mock('../../log-service', () => ({ appLog: vi.fn() }));
 
+import { AgentStoppingError } from '../../agent-runtime/agent-stopping';
 import {
   approveHelperStart,
   declineHelperStart,
@@ -162,6 +188,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   agents.clear();
   running.clear();
+  stopping.clear();
+  refusing.clear();
   sent.clear();
   for (const id of [...agentRegistry.getAllRegistrations().keys()]) agentRegistry.untrack(id);
   _resetForTesting();
@@ -178,6 +206,8 @@ beforeEach(() => {
   mockResolveLaunch.mockImplementation(async (_p: string, _o: string, options: { helperProvider?: string } = {}) =>
     resolveHelperAccess(live, 'same', options.helperProvider));
   mockSpawnAgent.mockImplementation(async (params: { agentId: string }) => { running.add(params.agentId); });
+  // With waitForExit, killAgent resolves once the process is gone.
+  mockKillAgent.mockImplementation(async (id: string) => { running.delete(id); });
   mockGetGitInfo.mockResolvedValue({
     hasGit: true, branch: 'x/standby', ahead: 2, behind: 1,
     status: [{ path: 'a.ts', status: 'M', staged: false }],
@@ -739,9 +769,10 @@ describe('sleep_helper and wake_helper', () => {
     running.add('mine');
     const result = await callTool('orch', 'sleep_helper', { helper: 'mine' });
     expect(parse(result)).toMatchObject({ helperId: 'mine', status: 'sleeping' });
-    expect(mockKillAgent).toHaveBeenCalledWith('mine', PROJECT, 'codex-cli', 'agent_tool', { by: 'Orch' });
+    expect(mockKillAgent).toHaveBeenCalledWith('mine', PROJECT, 'codex-cli', 'agent_tool', { by: 'Orch', waitForExit: true });
 
     mockKillAgent.mockClear();
+    running.add('mine');
     await callTool('orch', 'sleep_helper', { helper: 'MINE' });
     expect(mockKillAgent).toHaveBeenCalledTimes(1);
   });
@@ -820,6 +851,95 @@ describe('sleep_helper and wake_helper', () => {
     expect(mockSpawnAgent).not.toHaveBeenCalled();
   });
 
+  it('returns from sleep only after the helper has exited, showing it stopping until then', async () => {
+    running.add('mine');
+    let stop!: ReturnType<typeof beginStop>;
+    mockKillAgent.mockImplementation(async (id: string) => {
+      stop = beginStop(id);
+      await stop.exited;
+    });
+    const sleep = callTool('orch', 'sleep_helper', { helper: 'mine' });
+    await vi.waitFor(() => expect(mockKillAgent).toHaveBeenCalled());
+
+    const listed = parse(await callTool('orch', 'list_helpers', {})).helpers as Array<Record<string, unknown>>;
+    expect(listed.find((h) => h.helperId === 'mine')).toMatchObject({ status: 'stopping' });
+    let settled = false;
+    void sleep.then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    stop.exit();
+    expect(parse(await sleep)).toMatchObject({ status: 'sleeping' });
+    expect(mockBroadcast).toHaveBeenCalledWith(IPC.AGENT.AGENT_SLEEPING, 'mine');
+    const after = parse(await callTool('orch', 'list_helpers', {})).helpers as Array<Record<string, unknown>>;
+    expect(after.find((h) => h.helperId === 'mine')).toMatchObject({ status: 'sleeping' });
+  });
+
+  it('reports stopping, not sleeping, when the helper outlives the kill', async () => {
+    running.add('mine');
+    mockKillAgent.mockImplementation(async () => { /* the exit never came */ });
+    expect(parse(await callTool('orch', 'sleep_helper', { helper: 'mine' }))).toMatchObject({ status: 'stopping' });
+    expect(mockBroadcast).not.toHaveBeenCalledWith(IPC.AGENT.AGENT_SLEEPING, 'mine');
+  });
+
+  it('wakes for real after a sleep that is still exiting, delivering the message to the new session', async () => {
+    running.add('mine');
+    // The exit saves the session id the wake must resume.
+    const stop = beginStop('mine', () => { agents.set('mine', { ...agents.get('mine')!, lastSessionId: 'sess-2' }); });
+    const wake = callTool('orch', 'wake_helper', { helper: 'mine', message: 'welcome back' });
+    await Promise.resolve();
+    expect(sent.get('mine')).toBeUndefined();
+    expect(mockSpawnAgent).not.toHaveBeenCalled();
+
+    stop.exit();
+    expect(parse(await wake)).toMatchObject({ status: 'running', resumed: true });
+    expect(sent.get('mine')).toBeUndefined();
+    expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: 'mine', resume: true, sessionId: 'sess-2', mission: expect.stringContaining('welcome back'),
+    }));
+  });
+
+  it('never reports a delivery into a helper that is still exiting', async () => {
+    running.add('mine');
+    stopping.set('mine', { exited: Promise.resolve(), exit: () => {} }); // still alive after the wait
+    const result = parse(await callTool('orch', 'wake_helper', { helper: 'mine', message: 'x' }));
+    expect(result).toMatchObject({ status: 'stopping', messageDelivered: false });
+    expect(sent.get('mine')).toBeUndefined();
+    expect(mockSpawnAgent).not.toHaveBeenCalled();
+  });
+
+  it('handles sleep then an immediate wake: the wake waits, then starts a session with the message', async () => {
+    running.add('mine');
+    let stop!: ReturnType<typeof beginStop>;
+    mockKillAgent.mockImplementation(async (id: string) => {
+      stop = beginStop(id);
+      await stop.exited;
+    });
+    const sleep = callTool('orch', 'sleep_helper', { helper: 'mine' });
+    await vi.waitFor(() => expect(mockKillAgent).toHaveBeenCalled());
+    const wake = callTool('orch', 'wake_helper', { helper: 'mine', message: 'x' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sent.get('mine')).toBeUndefined();
+
+    stop.exit();
+    expect(parse(await sleep)).toMatchObject({ status: 'sleeping' });
+    const woke = parse(await wake);
+    expect(woke).toMatchObject({ status: 'running' });
+    expect(woke).not.toHaveProperty('messageDelivered', true);
+    expect(sent.get('mine')).toBeUndefined();
+    expect(mockSpawnAgent).toHaveBeenCalledTimes(1);
+    expect(mockSpawnAgent.mock.calls[0][0].mission).toContain('x');
+    expect(running.has('mine')).toBe(true);
+  });
+
+  it('reports no delivery when the running helper\'s terminal refuses the message', async () => {
+    running.add('mine');
+    refusing.add('mine');
+    const result = parse(await callTool('orch', 'wake_helper', { helper: 'mine', message: 'x' }));
+    expect(result).toMatchObject({ status: 'stopping', messageDelivered: false });
+    expect(mockSpawnAgent).not.toHaveBeenCalled();
+  });
+
   it('reports a sleeping helper as already sleeping', async () => {
     expect(parse(await callTool('orch', 'sleep_helper', { helper: 'mine' }))).toMatchObject({ status: 'already_sleeping' });
     expect(mockKillAgent).not.toHaveBeenCalled();
@@ -843,6 +963,15 @@ describe('message_parent', () => {
     const result = await callTool('plain', 'message_parent', { text: 'hi' });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('no parent');
+  });
+
+  it('says a parent that is shutting down did not get the message', async () => {
+    addAgent({ id: 'mine', name: 'Mine', parentAgentId: 'orch' });
+    runAgent('mine', false);
+    refusing.add('orch');
+    const result = await callTool('mine', 'message_parent', { text: 'hi' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe('Orch is shutting down, so the message was not delivered.');
   });
 
   it('reports a sleeping parent', async () => {

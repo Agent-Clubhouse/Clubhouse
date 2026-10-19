@@ -118,6 +118,7 @@ import { applyPersonaToAgent } from '../services/persona-application';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as orchestrationPolicy from '../services/orchestration-policy';
 import { getAgentRuntime } from '../services/agent-runtime';
+import { AgentStoppingError } from '../services/agent-runtime/agent-stopping';
 import { _resetDisposeRequestsForTesting, recordDisposeRequest } from '../services/helper-dispose-requests';
 import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { agentRegistry } from '../services/agent-registry';
@@ -535,6 +536,14 @@ describe('agent-handlers', () => {
         recordDisposeRequest('/project', 'h1', 'agent-1');
         expect(await report('/project', 'h1', 'disposed')).toMatchObject({ ok: true, delivered: false });
         expect(await report('/project', 'h1', 'disposed')).toMatchObject({ ok: false });
+      });
+
+      it('reports no delivery when the orchestrator is shutting down', async () => {
+        sendMessage.mockRejectedValue(new AgentStoppingError('agent-1'));
+        recordDisposeRequest('/project', 'h1', 'agent-1');
+        expect(await report('/project', 'h1', 'disposed')).toEqual({
+          ok: true, delivered: false, message: 'The orchestrator is shutting down, so it was not told.',
+        });
       });
 
       it('rejects an unknown decision', async () => {

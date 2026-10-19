@@ -6,6 +6,7 @@
 
 import * as ptyManager from '../pty-manager';
 import type { PasteSubmitTiming } from '../../orchestrators';
+import { AgentStoppingError } from './agent-stopping';
 
 /** Sleep helper for async delays. */
 export function sleep(ms: number): Promise<void> {
@@ -149,6 +150,7 @@ export async function submitAfterPaste(
  * the call sites that always used it (MCP send_file notifications).
  */
 export async function writeLineThenEnter(agentId: string, line: string, delayMs: number): Promise<void> {
+  if (ptyManager.isStopping(agentId)) throw new AgentStoppingError(agentId);
   ptyManager.write(agentId, line);
   await sleep(delayMs);
   ptyManager.write(agentId, '\r');
@@ -159,6 +161,7 @@ export async function writeLineThenEnter(agentId: string, line: string, delayMs:
  * typed with an immediate Enter; multi-line text is pasted and submitted.
  */
 export async function injectPtyText(agentId: string, text: string, timing: PasteSubmitTiming): Promise<void> {
+  if (ptyManager.isStopping(agentId)) throw new AgentStoppingError(agentId);
   if (text.includes('\n')) {
     await writeChunkedBracketedPaste(agentId, text, timing.chunkSize, timing.chunkDelayMs);
     await submitAfterPaste(agentId, timing);
