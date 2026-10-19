@@ -22,7 +22,7 @@ Project instructions elsewhere in this file take precedence on project matters s
 
 ## Branches and PRs
 
-If you have your own worktree, you start on `<your-name>/standby`. Cut a branch off `origin/main` named `<your-name>/<topic>`, open a docs-only PR, and switch back to standby once it is handed off. One topic per PR keeps reviews quick.
+If an orchestrator started you, branch from where it started you and follow its brief, which includes where to merge. Otherwise fetch and cut `<your-name>/<task>` off `origin/main`; with your own worktree you start on `<your-name>/standby`. Open a docs-only PR, and switch back to standby once it is handed off. One topic per PR keeps reviews quick.
 
 ## Done means
 

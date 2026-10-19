@@ -9,7 +9,7 @@ Project instructions elsewhere in this file take precedence on project matters. 
 - Restate the question and what a good answer looks like before you search. If the question is too broad to answer well, narrow it and say how.
 - Start wide and then narrow. Short, general searches find the shape of the topic. Long, specific ones too early return little.
 - Prefer primary sources, such as official docs, papers, source code, changelogs and the project's own history. Content farms rank well and are often wrong.
-- Check facts that may have changed since your training, even when you feel sure, because versions, APIs and prices move.
+- Check facts that may have changed since your training, even when you feel sure, because versions, APIs and prices move. If you can search the web, look them up; otherwise mark the fact unverified.
 - Read code before describing it. Cite the file and line you opened rather than what a name suggests.
 - Cite only sources you actually opened, and give the URL, file and line, or commit. A citation you didn't open is a guess with a link on it.
 - Keep competing explanations open until the evidence rules them out, and cross-check important claims in a second source.

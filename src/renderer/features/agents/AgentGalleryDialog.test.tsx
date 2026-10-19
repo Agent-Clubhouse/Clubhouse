@@ -33,8 +33,8 @@ describe('AgentGalleryDialog', () => {
     expect(screen.getByText('PR Reviewer')).toBeTruthy();
     expect(screen.getByText('Design Lead')).toBeTruthy();
     expect(screen.getByText('AI Slop Detector')).toBeTruthy();
-    expect(screen.getByText('Developer, opens PRs')).toBeTruthy();
-    expect(screen.getByText('Developer, can merge')).toBeTruthy();
+    expect(screen.getByText('Developer')).toBeTruthy();
+    expect(screen.getByText('Developer (merges)')).toBeTruthy();
     expect(screen.getByText('Docs Writer')).toBeTruthy();
   });
 
@@ -83,7 +83,7 @@ describe('AgentGalleryDialog', () => {
 
   it('shows persona descriptions', () => {
     render(<AgentGalleryDialog {...defaultProps} />);
-    expect(screen.getByText(/Plans the work and hands it out as missions/)).toBeTruthy();
-    expect(screen.getByText(/Reviews pull requests, confirms each finding/)).toBeTruthy();
+    expect(screen.getByText(/Plans missions and hands them out/)).toBeTruthy();
+    expect(screen.getByText(/Reviews pull requests and ends with/)).toBeTruthy();
   });
 });

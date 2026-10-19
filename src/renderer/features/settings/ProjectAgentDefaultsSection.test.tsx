@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
+import { getPersonaTemplate } from '../personas';
 
 function renderSection(overrides: Partial<React.ComponentProps<typeof ProjectAgentDefaultsSection>> = {}) {
   return render(
@@ -247,6 +248,7 @@ describe('ProjectAgentDefaultsSection', () => {
       await waitFor(() => {
         expect(screen.getByDisplayValue('PR Reviewer')).toBeInTheDocument();
       });
+      expect(screen.getByTestId('project-defaults-persona-description').textContent).toBe(getPersonaTemplate('qa')!.description);
     });
 
     it('saves persona when set', async () => {

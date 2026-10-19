@@ -478,7 +478,6 @@ describe('AgentSettingsView', () => {
       renderSettings();
       const description = await screen.findByTestId('agent-settings-persona-description');
       expect(description.textContent).toBe(getPersonaTemplate('judge')!.description);
-      expect(description.previousElementSibling?.id).toBe('agent-settings-persona');
     });
 
     it('shows an agent on the retired group-project-pm persona as Project Manager', async () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { HELP_SECTIONS, CHROME_HELP_SECTIONS, getHelpSections } from './help-content';
+import { PERSONA_TEMPLATES } from '../personas';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 
 describe('help-content', () => {
@@ -74,28 +75,25 @@ describe('help-content', () => {
   it('titles persona topics with the current persona names in both shells', () => {
     const titles = (sections: typeof HELP_SECTIONS) =>
       Object.fromEntries(sections.find((s) => s.id === 'personas')!.topics.map((t) => [t.id, t.title]));
-    expect(titles(HELP_SECTIONS)).toMatchObject({
-      'persona-project-manager': 'Project Manager',
-      'persona-qa': 'PR Reviewer',
-      'persona-ui-lead': 'Design Lead',
-      'persona-quality-auditor': 'AI Slop Detector',
-      'persona-executor-pr-only': 'Developer, opens PRs',
-      'persona-executor-merge': 'Developer, can merge',
-      'persona-doc-updater': 'Docs Writer',
-      'persona-judge': 'Solution Judge',
-    });
-    expect(titles(CHROME_HELP_SECTIONS)).toMatchObject({
-      'persona-qa': 'PR reviewer',
-      'persona-quality-auditor': 'AI slop detector',
-      'persona-executor-pr-only': 'Developer, opens PRs',
-      'persona-judge': 'Solution judge',
-    });
-    const oldNames = /Quality Assurance|Quality Auditor|Executor|Documentation Updater|UI\/Design Lead|Group Project PM/;
+    // The classic shell uses the personas' own names; the new shell lowers them to sentence case.
+    const expected = Object.fromEntries(PERSONA_TEMPLATES.map((p) => [`persona-${p.id}`, p.name]));
+    expect(titles(HELP_SECTIONS)).toEqual(expected);
+    const chrome = titles(CHROME_HELP_SECTIONS);
+    for (const [id, name] of Object.entries(expected)) {
+      expect(chrome[id].toLowerCase(), id).toBe(name.toLowerCase());
+    }
+    expect(chrome['persona-quality-auditor']).toBe('AI slop detector');
+    const oldNames = /Quality Assurance|Quality Auditor|Executor|Documentation Updater|UI\/Design Lead|Group Project PM|Workhorse|Developer, (opens PRs|can merge)/;
     for (const sections of [HELP_SECTIONS, CHROME_HELP_SECTIONS]) {
       for (const topic of sections.flatMap((s) => s.topics).filter((t) => t.id.startsWith('persona-') || t.id.startsWith('cookbook-'))) {
         expect(topic.title, topic.id).not.toMatch(oldNames);
         expect(topic.content, topic.id).not.toMatch(oldNames);
         expect(topic.content, topic.id).not.toMatch(/[\u2013\u2014]/);
+        // Cookbooks name the reviewer role by its persona name and skip bold roster labels.
+        if (topic.id.startsWith('cookbook-')) {
+          expect(topic.content, topic.id).not.toMatch(/\bQA\b/);
+          expect(topic.content, topic.id).not.toMatch(/^- \*\*/m);
+        }
       }
     }
   });
@@ -146,7 +144,7 @@ describe('help-content', () => {
         const orchestrator = find(sections, 'persona-orchestrator').content;
         expect(orchestrator.startsWith('# Orchestrator')).toBe(true);
         expect(orchestrator).not.toContain('orchestration:');
-        expect(find(sections, 'persona-workhorse').content.startsWith('# Workhorse')).toBe(true);
+        expect(find(sections, 'persona-workhorse').content.startsWith('# Generalist')).toBe(true);
       }
     });
 

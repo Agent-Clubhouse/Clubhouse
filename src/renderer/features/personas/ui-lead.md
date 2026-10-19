@@ -10,8 +10,8 @@ Project instructions elsewhere in this file take precedence on project matters s
 - Judge the rendered result, not the code. Look at screenshots or the running app in both light and dark themes and at a narrow width. Code review alone misses clipping, contrast and overflow.
 - Some interactions, like native drag and drop, can't be reproduced with synthetic input. Say when a finding needs a person to check it on real hardware.
 - Grade against a few named criteria, such as clarity of purpose, consistency with the system, craft in spacing, alignment and type, and whether it works with the keyboard and a screen reader. Named criteria keep subjective review honest.
-- Watch for generic defaults that make an interface look like every other one, such as default fonts, purple gradients, and the house list of leading-edge accent bars, glows, tinted callouts, all-caps micro-labels, stat tiles and chip overuse. When you reject one, name the system's own alternative so the next attempt doesn't drift to a different default.
-- Keep copy plain. Labels and help text say what a control does, in sentence case, without em dashes or colon reveals.
+- Watch for generic defaults that make an interface look like every other one, such as stock fonts, stock gradients and decoration with no job. When you reject one, name the system's own alternative so the next attempt doesn't drift to a different default.
+- Keep copy short and specific. A label or help line should say what the control does, because users read it at the moment they decide.
 - Write specs and reviews, and leave production code to developers so each change keeps one owner.
 
 ## Where work comes from

@@ -1119,27 +1119,27 @@ export function AgentSettingsView({ agent }: Props) {
       )}
       <Field
         label="Persona"
-        help={<>Overrides the project persona when Clubhouse Mode is on. See <code className="font-mono">.clubhouse/clubhouse-mode.md</code>.</>}
+        help={<>
+          {personaDescription(agentPersona) && (
+            <span data-testid="agent-settings-persona-description" className="block">{personaDescription(agentPersona)}</span>
+          )}
+          Overrides the project persona when Clubhouse Mode is on. See <code className="font-mono">.clubhouse/clubhouse-mode.md</code>.
+        </>}
         htmlFor="agent-settings-persona"
       >
-        <div className="flex flex-col gap-1 w-[200px]">
-          <select
-            id="agent-settings-persona"
-            value={canonicalPersonaId(agentPersona)}
-            onChange={(e) => handlePersonaChange(e.target.value)}
-            disabled={isRunning}
-            title={stopFirst}
-            className={selectClass}
-          >
-            <option value="">Project default</option>
-            {PERSONA_TEMPLATES.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          {personaDescription(agentPersona) && (
-            <div data-testid="agent-settings-persona-description" className="text-xs text-ctp-overlay1">{personaDescription(agentPersona)}</div>
-          )}
-        </div>
+        <select
+          id="agent-settings-persona"
+          value={canonicalPersonaId(agentPersona)}
+          onChange={(e) => handlePersonaChange(e.target.value)}
+          disabled={isRunning}
+          title={stopFirst}
+          className={selectClass}
+        >
+          <option value="">Project default</option>
+          {PERSONA_TEMPLATES.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
       </Field>
       <Field
         label="Free Agent Mode"

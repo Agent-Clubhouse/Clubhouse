@@ -7,13 +7,13 @@ const EXPECTED_NAMES: Record<string, string> = {
   qa: 'PR Reviewer',
   'ui-lead': 'Design Lead',
   'quality-auditor': 'AI Slop Detector',
-  'executor-pr-only': 'Developer, opens PRs',
-  'executor-merge': 'Developer, can merge',
+  'executor-pr-only': 'Developer',
+  'executor-merge': 'Developer (merges)',
   'doc-updater': 'Docs Writer',
   judge: 'Solution Judge',
   researcher: 'Researcher',
   orchestrator: 'Orchestrator',
-  workhorse: 'Workhorse',
+  workhorse: 'Generalist',
 };
 
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
@@ -31,9 +31,11 @@ describe('persona templates', () => {
       const body = stripPersonaFrontMatter(persona.content);
       expect(body.startsWith(`# ${persona.name}`), persona.id).toBe(true);
       expect(words(body), persona.id).toBeGreaterThanOrEqual(250);
-      expect(words(body), persona.id).toBeLessThanOrEqual(650);
+      expect(words(body), persona.id).toBeLessThanOrEqual(600);
+      // One sentence that fits the gallery's two-line clamp and the Settings help slot.
       expect(persona.description.length, persona.id).toBeGreaterThan(40);
-      expect(persona.description, persona.id).not.toContain('\n');
+      expect(persona.description.length, persona.id).toBeLessThanOrEqual(80);
+      expect(persona.description.match(/[.!?](\s|$)/g), persona.id).toHaveLength(1);
       expect(personaDescription(persona.id)).toBe(persona.description);
     }
   });
@@ -65,6 +67,22 @@ describe('persona templates', () => {
       // No all-caps emphasis or bold labels.
       expect(body, persona.id).not.toMatch(/\b(NOT|NEVER|MUST|ALWAYS|ONLY|CRITICAL)\b/);
       expect(body, persona.id).not.toContain('**');
+    }
+  });
+
+  it('derives sane default agent names from the display names', () => {
+    // TemplateConfigDialog slugs persona.name into the default agent name.
+    const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
+    for (const persona of PERSONA_TEMPLATES) expect(slug(persona.name), persona.id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+    expect(slug(getPersonaTemplate('executor-merge')!.name)).toBe('developer-merges');
+    expect(slug(getPersonaTemplate('quality-auditor')!.name)).toBe('ai-slop-detector');
+  });
+
+  it('lists the built-in persona ids for start_helper in the Orchestrator', () => {
+    const body = getPersonaTemplate('orchestrator')!.content;
+    expect(body).toContain('persona id, not its display name');
+    for (const id of getPersonaIds().filter((id) => !['orchestrator', 'project-manager'].includes(id))) {
+      expect(body, id).toContain(`\`${id}\``);
     }
   });
 

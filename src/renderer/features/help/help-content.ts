@@ -144,14 +144,14 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'persona-qa', title: 'PR Reviewer', content: personaQa },
       { id: 'persona-ui-lead', title: 'Design Lead', content: personaUiLead },
       { id: 'persona-quality-auditor', title: 'AI Slop Detector', content: personaQualityAuditor },
-      { id: 'persona-executor-pr-only', title: 'Developer, opens PRs', content: personaExecutorPrOnly },
-      { id: 'persona-executor-merge', title: 'Developer, can merge', content: personaExecutorMerge },
+      { id: 'persona-executor-pr-only', title: 'Developer', content: personaExecutorPrOnly },
+      { id: 'persona-executor-merge', title: 'Developer (merges)', content: personaExecutorMerge },
       { id: 'persona-doc-updater', title: 'Docs Writer', content: personaDocUpdater },
       { id: 'persona-judge', title: 'Solution Judge', content: personaJudge },
       { id: 'persona-researcher', title: 'Researcher', content: personaResearcher },
       // Persona files can carry settings front-matter; help shows only the body.
       { id: 'persona-orchestrator', title: 'Orchestrator', content: stripPersonaFrontMatter(personaOrchestrator) },
-      { id: 'persona-workhorse', title: 'Workhorse', content: stripPersonaFrontMatter(personaWorkhorse) },
+      { id: 'persona-workhorse', title: 'Generalist', content: stripPersonaFrontMatter(personaWorkhorse) },
     ],
   },
   {
@@ -170,6 +170,7 @@ export const HELP_SECTIONS: HelpSection[] = [
 const section = (id: string) => HELP_SECTIONS.find((s) => s.id === id)!;
 const retitle = (topics: HelpTopic[], titles: Record<string, string>) => topics.map((t) => ({ ...t, title: titles[t.id] ?? t.title }));
 
+// The new shell titles articles in sentence case (#2017), persona names included.
 const PERSONA_TITLES: Record<string, string> = {
   'persona-project-manager': 'Project manager',
   'persona-qa': 'PR reviewer',

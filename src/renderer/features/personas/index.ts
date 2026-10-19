@@ -13,7 +13,7 @@ import workhorse from './workhorse.md';
 export interface PersonaTemplate {
   id: string;
   name: string;
-  /** One line on what the persona does and when to pick it. Shown under the persona pickers. */
+  /** One sentence (about 80 characters) on what the persona does. Shown with the persona pickers. */
   description: string;
   content: string;
 }
@@ -23,55 +23,55 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
   {
     id: 'project-manager',
     name: 'Project Manager',
-    description: 'Plans the work and hands it out as missions without writing code. Pick it to coordinate several agents, often on a group project board.',
+    description: 'Plans missions and hands them out to other agents, without writing code.',
     content: projectManager,
   },
   {
     id: 'qa',
     name: 'PR Reviewer',
-    description: 'Reviews pull requests, confirms each finding and ends with approve or request changes. Pick it as the independent check before a merge.',
+    description: 'Reviews pull requests and ends with a clear approve or request changes.',
     content: qa,
   },
   {
     id: 'ui-lead',
     name: 'Design Lead',
-    description: 'Reviews the rendered UI and writes design specs rather than production code. Pick it to keep new screens consistent with the app.',
+    description: 'Reviews the rendered UI and writes design specs for developers to build.',
     content: uiLead,
   },
   {
     id: 'quality-auditor',
     name: 'AI Slop Detector',
-    description: 'Flags padded, generic or hollow code, copy and UI, and proposes the fix. Pick it for a cleanup pass on a diff or a page.',
+    description: 'Flags padded or generic code, copy and UI, and proposes the fix.',
     content: qualityAuditor,
   },
   {
     id: 'executor-pr-only',
-    name: 'Developer, opens PRs',
-    description: 'Implements a task on its own branch, runs the checks and opens a PR for someone else to merge. Pick it when another agent or person reviews and merges.',
+    name: 'Developer',
+    description: 'Implements a task on its own branch and opens a PR for someone to merge.',
     content: executorPrOnly,
   },
   {
     id: 'executor-merge',
-    name: 'Developer, can merge',
-    description: 'Implements a task, opens a PR and merges it once checks and approvals pass. Pick it when the agent should see its own work through to main.',
+    name: 'Developer (merges)',
+    description: 'Implements a task, opens a PR and merges it once checks and approvals pass.',
     content: executorMerge,
   },
   {
     id: 'doc-updater',
     name: 'Docs Writer',
-    description: 'Keeps documentation true to the code and changes only docs. Pick it to update guides and references after changes land.',
+    description: 'Keeps documentation true to the code after changes land, editing docs only.',
     content: docUpdater,
   },
   {
     id: 'judge',
     name: 'Solution Judge',
-    description: 'Compares competing solutions against fixed criteria and picks one, with evidence. Pick it to settle a bake-off or a choice between proposals.',
+    description: 'Compares competing solutions against fixed criteria and picks one.',
     content: judge,
   },
   {
     id: 'researcher',
     name: 'Researcher',
-    description: 'Answers a question with sourced findings and says what is still unknown. Pick it when you need facts before deciding or building.',
+    description: 'Answers a question with sourced findings and says what is still unknown.',
     content: researcher,
   },
   {
@@ -80,13 +80,13 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
     // the agent; the policy reads it when it resolves.
     id: 'orchestrator',
     name: 'Orchestrator',
-    description: 'Splits an epic into tasks, starts helper agents to do them, then checks and accepts their work. Pick it for work big enough to run in parallel.',
+    description: 'Splits an epic into tasks for helper agents, then checks and accepts the work.',
     content: orchestrator,
   },
   {
     id: 'workhorse',
-    name: 'Workhorse',
-    description: 'Does the one task it is given, pushes the work and reports back. Pick it for helpers an orchestrator starts, or when no other role fits.',
+    name: 'Generalist',
+    description: 'A general helper that does the one task it is given and reports back.',
     content: workhorse,
   },
 ];

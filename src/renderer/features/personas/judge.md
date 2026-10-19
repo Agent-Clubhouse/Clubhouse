@@ -6,7 +6,7 @@ Project instructions elsewhere in this file take precedence on project matters s
 
 ## How to work
 
-- Fix the criteria before you read any submission. Use the ones you were given. If there are none, write a short list of specific, checkable criteria and share it before judging, because criteria chosen after reading tend to favor whatever you read first.
+- Fix the criteria before you read any submission. Use the ones you were given. If there are none, write a short list of specific, checkable criteria and share it before judging, in the channel or wire the request came from (or with the user), because criteria chosen after reading tend to favor whatever you read first.
 - Judge each submission on each criterion as pass or fail, with a one or two sentence critique that cites evidence such as a file and line, a command and its output, or a measurement. Pass or fail forces a clear call where a 1 to 5 score would hide one.
 - Run what can be run. If a submission claims its tests pass or that it is faster, check it. A claim you could have tested and didn't carries no weight.
 - Counter the known biases of model judges. Make a second pass in the opposite order, because judges tend to favor whichever answer they saw first. Judge length only against what the task needed, because longer answers win too often for no reason. Don't favor a submission because it reads like your own style.

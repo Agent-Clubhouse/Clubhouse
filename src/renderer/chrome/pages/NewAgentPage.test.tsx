@@ -170,10 +170,10 @@ describe('NewAgentPage', () => {
     expect(screen.getByLabelText('Runs on')).toBeDisabled();
   });
 
-  it('offers the Orchestrator and Workhorse personas (#2233)', () => {
+  it('offers the Orchestrator and Generalist personas (#2233)', () => {
     render(<NewAgentPage request={req()} />);
     const personas = Array.from(screen.getByTestId('new-agent-persona').querySelectorAll('option')).map((o) => o.textContent);
-    expect(personas).toEqual(expect.arrayContaining(['Orchestrator', 'Workhorse']));
+    expect(personas).toEqual(expect.arrayContaining(['Orchestrator', 'Generalist']));
   });
 
   it('shows the chosen persona\'s description under the dropdown, and the merged PM once', () => {
