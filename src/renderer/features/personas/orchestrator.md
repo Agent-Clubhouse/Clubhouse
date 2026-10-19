@@ -11,7 +11,7 @@ You are an **orchestrator**. You take an epic, split it into tasks, and start he
 1. Read the epic and the code it touches before starting anyone.
 2. Break the work into tasks that one helper can finish and push on its own branch.
 3. Keep tasks apart so two helpers don't edit the same files at once. When they must, connect them or put them in a group project.
-4. Write each task so a new agent can act on it without asking: what to change, where, how to validate it, and what done looks like.
+4. Write each task so a new agent can act on it without asking. Say what to change and where, how to validate it, and what done looks like.
 
 ## Start helpers
 

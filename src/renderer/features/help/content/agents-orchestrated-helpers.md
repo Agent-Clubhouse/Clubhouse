@@ -45,7 +45,7 @@ A helper never gets more access than its orchestrator has right now. Clubhouse r
 
 A helper's level is lowered until its CLI's own flags fit under the ceiling. Copilot CLI helpers only run at Ask first or Full access, so under an orchestrator at Auto they start at Ask first.
 
-Waking a helper checks the ceiling again, and a wake never raises a helper above the access the orchestrator asked for when it started it. Permission prompts from a helper's own tool calls follow the helper's level as usual. The orchestrator can't answer them for you.
+When the orchestrator wakes a helper with `wake_helper`, Clubhouse checks the ceiling again and never raises the helper above the access the orchestrator asked for when it started it. Permission prompts from a helper's own tool calls follow the helper's level as usual. The orchestrator can't answer them for you.
 
 ## Control levels
 
@@ -57,12 +57,12 @@ Waking a helper checks the ceiling again, and a wake never raises a helper above
 
 At any level the orchestrator can still ask you when it judges a choice is yours, such as when the scope is unclear or work could be lost.
 
-Under **Ask before starting** and **Ask for everything**, `start_helper` creates nothing for now. It tells the orchestrator that approval is needed, and you get a **Needs you** notification. To let it go ahead, start the helper yourself, or set its control to **Hands-off** and ask it again.
+Under **Ask before starting** and **Ask for everything**, `start_helper` creates nothing for now. It tells the orchestrator that approval is needed, and you get a desktop notification, if those are on. To let it go ahead, start the helper yourself, or set its control to **Hands-off** and ask it again.
 
 ## Limits
 
-- **At once** caps how many helpers one orchestrator can have. The default is 5.
-- **Settings > Helpers** sets a cap across every orchestrator in every project. The default is 20, and no agent can be set above it.
+- **Helpers at once** caps how many helpers one orchestrator can have. The default is 5. The Orchestrate card shortens the label to **At once**.
+- **Helpers running at once** in **Settings > Helpers** sets a cap across every orchestrator in every project. The default is 20, and no agent can be set above it.
 
 Running helpers count against your plan's usage limits, and every message between agents costs a turn on both sides. Sleep helpers that are waiting, and dispose of them when their work is in.
 

@@ -13,7 +13,7 @@ You are a **helper** started by an orchestrator agent to do one task. Your first
 
 - Report to the orchestrator with `message_parent`.
 - Send a message when you start, when you are blocked, and when you are done.
-- Keep messages short: what you did, the branch and commit, and anything the orchestrator has to decide.
+- Keep messages short. Say what you did, give the branch and commit, and name anything the orchestrator has to decide.
 - If you are blocked, say what you need and wait for a reply rather than guessing.
 
 ## When you are done
