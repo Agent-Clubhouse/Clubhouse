@@ -149,6 +149,21 @@ describe('chromeStore', () => {
       getItem.mockRestore();
     });
 
+    it('loads the saved state on first use by the legacy agent list, and only then persists', async () => {
+      vi.resetModules();
+      (window.clubhouse as { newChromeLayout?: boolean }).newChromeLayout = undefined;
+      localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 2, sidebarWidth: 400, pinnedProjectIds: ['p1'], collapsedAgentIds: ['lead'] }));
+      const mod = await import('./chromeStore');
+      expect(mod.useChromeStore.getState().collapsedAgentIds).toEqual([]);
+      vi.useFakeTimers();
+      // A fold change loads first, so the persist keeps what was saved.
+      mod.useChromeStore.getState().toggleAgentCollapsed('other');
+      expect(mod.useChromeStore.getState().collapsedAgentIds).toEqual(['lead', 'other']);
+      vi.advanceTimersByTime(400);
+      expect(mod.loadChromeState()).toMatchObject({ sidebarWidth: 400, pinnedProjectIds: ['p1'], collapsedAgentIds: ['lead', 'other'] });
+      vi.useRealTimers();
+    });
+
     it('loads persisted state at startup when the new layout is on', async () => {
       vi.resetModules();
       (window.clubhouse as { newChromeLayout?: boolean }).newChromeLayout = true;
@@ -271,6 +286,18 @@ describe('chromeStore', () => {
 
       localStorage.setItem(CHROME_STORAGE_KEY, JSON.stringify({ version: 2, collapsedAgentIds: 'lead' }));
       expect(loadChromeState().collapsedAgentIds).toEqual([]);
+    });
+
+    it('unfolds given agents and forgets removed ones, leaving the rest', () => {
+      vi.useFakeTimers();
+      useChromeStore.setState({ collapsedAgentIds: ['lead', 'other', 'gone'], agentActivity: { gone: 1, lead: 2 } });
+      const s = useChromeStore.getState();
+      s.expandAgents(['other']);
+      s.forgetAgents(['gone']);
+      expect(useChromeStore.getState().collapsedAgentIds).toEqual(['lead']);
+      expect(useChromeStore.getState().agentActivity).toEqual({ lead: 2 });
+      vi.advanceTimersByTime(400);
+      expect(loadChromeState().collapsedAgentIds).toEqual(['lead']);
     });
 
     it('marks a project inactive, but not a pinned one, and Mark active clears it and counts as activity now', () => {

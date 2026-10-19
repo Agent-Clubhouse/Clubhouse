@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useOrderedShallow } from '../../hooks/useOrderedShallow';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -24,6 +24,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { requestLeaveAgentSettings } from './agentSettingsPages';
 import { createDurableAgent, createDurableAgentFromTemplate } from './create-agent';
 import { buildAgentForest, forestSiblingGroups, moveWithinGroup, type AgentNode } from '../../chrome/sidebar/treeModel';
+import { useChromeStore, syncCollapsedAgentsWithAgents, ensureChromeStateLoaded } from '../../chrome/chromeStore';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 const EMPTY_AGENTS: Agent[] = [];
@@ -38,26 +39,6 @@ const QUICK_INDENT = 16;
 const AVATAR_HALF = 18;
 /** How far the first guide stroke reaches up into the parent row, to just under its avatar. */
 const GUIDE_REACH = 14;
-const COLLAPSED_HELPERS_KEY = 'clubhouse_collapsed_helper_parents';
-
-function readCollapsedHelpers(): Set<string> {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(COLLAPSED_HELPERS_KEY) ?? '[]');
-    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []);
-  } catch {
-    // telemetry-exempt: unreadable storage only means nothing is folded
-    return new Set();
-  }
-}
-
-function writeCollapsedHelpers(ids: Set<string>): void {
-  try {
-    localStorage.setItem(COLLAPSED_HELPERS_KEY, JSON.stringify([...ids]));
-  } catch {
-    // telemetry-exempt: the fold still works for this session; it just isn't remembered
-  }
-}
-
 const HelperCaret = ({ open }: { open: boolean }) => (
   <svg
     width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -187,17 +168,14 @@ function AgentListInner() {
     }
   });
 
-  // Parents whose helpers are folded away (persisted in localStorage)
-  const [collapsedHelpers, setCollapsedHelpers] = useState<Set<string>>(readCollapsedHelpers);
-  const toggleHelpers = useCallback((agentId: string) => {
-    setCollapsedHelpers((prev) => {
-      const next = new Set(prev);
-      if (next.has(agentId)) next.delete(agentId);
-      else next.add(agentId);
-      writeCollapsedHelpers(next);
-      return next;
-    });
-  }, []);
+  // Parents whose helpers are folded away: the same saved state the new
+  // sidebar uses, so a fold carries across layouts.
+  const collapsedAgentIds = useChromeStore((s) => s.collapsedAgentIds);
+  const toggleHelpers = useChromeStore((s) => s.toggleAgentCollapsed);
+  const collapsedHelpers = useMemo(() => new Set(collapsedAgentIds), [collapsedAgentIds]);
+  // With the new layout off the shared state isn't loaded at startup; load it before paint.
+  useLayoutEffect(() => { ensureChromeStateLoaded(); }, []);
+  useEffect(() => syncCollapsedAgentsWithAgents(), []);
 
   const toggleCompletedCollapsed = useCallback(() => {
     setCompletedCollapsed((prev) => {
@@ -311,25 +289,26 @@ function AgentListInner() {
     return map;
   }, [forest]);
 
-  // Selecting a helper inside a folded parent unfolds it, so the active row is visible.
+  // Selecting a helper inside a folded parent unfolds it, so the active row is
+  // visible. Only a change of selection does this: folding a parent while one
+  // of its helpers is selected must stay folded, so the agents and the fold
+  // state are read through a ref and the store, not as dependencies.
+  const agentsRef = useRef(agents);
+  agentsRef.current = agents;
   useEffect(() => {
     if (!activeAgentId) return;
+    const all = agentsRef.current;
+    const collapsed = new Set(useChromeStore.getState().collapsedAgentIds);
     const folded: string[] = [];
     const seen = new Set<string>();
-    let parentId = agents[activeAgentId]?.parentAgentId;
-    while (parentId && !seen.has(parentId) && agents[parentId]?.kind === 'durable') {
+    let parentId = all[activeAgentId]?.parentAgentId;
+    while (parentId && !seen.has(parentId) && all[parentId]?.kind === 'durable') {
       seen.add(parentId);
-      if (collapsedHelpers.has(parentId)) folded.push(parentId);
-      parentId = agents[parentId]?.parentAgentId;
+      if (collapsed.has(parentId)) folded.push(parentId);
+      parentId = all[parentId]?.parentAgentId;
     }
-    if (folded.length === 0) return;
-    setCollapsedHelpers((prev) => {
-      const next = new Set(prev);
-      folded.forEach((id) => next.delete(id));
-      writeCollapsedHelpers(next);
-      return next;
-    });
-  }, [activeAgentId, agents, collapsedHelpers]);
+    if (folded.length > 0) useChromeStore.getState().expandAgents(folded);
+  }, [activeAgentId]);
 
 
   useEffect(() => {

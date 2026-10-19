@@ -8,7 +8,7 @@ import { PluginContentView } from '../panels/PluginContentView';
 import { AnnexDisabledView } from '../panels/AnnexDisabledView';
 import { HelpView } from '../features/help/HelpView';
 import { ChromeSidebar } from './ChromeSidebar';
-import { useChromeStore, syncProjectScopeWithActiveAgent, syncProjectActivityWithAgents } from './chromeStore';
+import { useChromeStore, syncProjectScopeWithActiveAgent, syncProjectActivityWithAgents, syncCollapsedAgentsWithAgents } from './chromeStore';
 import { useSidebarMode, type SidebarMode } from './listTabs';
 import { useChromeScope } from './scope';
 import { hostOf } from './hosts';
@@ -98,6 +98,7 @@ export function ChromeBody() {
   }, [newAgent, knownIds, explorerTab, activeProjectId, activeAgentId, activeHostId]);
   const showNewAgent = !!newAgent && !activeHostId;
   useEffect(() => syncProjectActivityWithAgents(), []);
+  useEffect(() => syncCollapsedAgentsWithAgents(), []);
 
   // The active project decides the host: opening a local agent from the palette
   // or a notification while a satellite is shown brings the sidebar back to

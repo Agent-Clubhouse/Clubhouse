@@ -6,6 +6,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useChromeStore, ensureChromeStateLoaded } from '../../chrome/chromeStore';
 import { AgentList, useProjectAgentBuckets, activityTimestamps } from './AgentList';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
@@ -1006,7 +1007,8 @@ describe('AgentList helper nesting (legacy layout)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
-    localStorage.removeItem('clubhouse_collapsed_helper_parents');
+    ensureChromeStateLoaded(); // so a later load can't replace the state set below
+    useChromeStore.setState({ collapsedAgentIds: [] });
     window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
   });
 
@@ -1047,7 +1049,7 @@ describe('AgentList helper nesting (legacy layout)', () => {
     expect(within(screen.getByTestId('durable-drag-1').parentElement!).queryByTestId('helper-guide-line')).toBeNull();
   });
 
-  it('folds and unfolds helpers with the caret, and remembers it', () => {
+  it('folds and unfolds helpers with the caret, in the fold state both layouts share', () => {
     seed();
     const { unmount } = render(<AgentList />);
     const caret = screen.getByTestId('helpers-toggle-orch');
@@ -1062,6 +1064,7 @@ describe('AgentList helper nesting (legacy layout)', () => {
     expect(caret).toHaveAccessibleName('Show 2 helpers of orch');
     // The caret does not select the row.
     expect(useAgentStore.getState().setActiveAgent).not.toHaveBeenCalled();
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['orch']);
 
     unmount();
     render(<AgentList />);
@@ -1072,11 +1075,32 @@ describe('AgentList helper nesting (legacy layout)', () => {
 
   it('unfolds a parent when one of its helpers becomes the active agent', () => {
     seed();
-    localStorage.setItem('clubhouse_collapsed_helper_parents', JSON.stringify(['orch']));
+    useChromeStore.setState({ collapsedAgentIds: ['orch'] });
     render(<AgentList />);
     expect(screen.queryByTestId('agent-item-h1')).toBeNull();
     act(() => { useAgentStore.setState({ activeAgentId: 'h1' }); });
     expect(screen.getByTestId('agent-item-h1')).toBeInTheDocument();
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual([]);
+  });
+
+  it('lets a parent be folded while one of its helpers is selected, and keeps it folded', () => {
+    seed();
+    act(() => { useAgentStore.setState({ activeAgentId: 'h1' }); });
+    render(<AgentList />);
+    fireEvent.click(screen.getByTestId('helpers-toggle-orch'));
+    expect(screen.queryByTestId('agent-item-h1')).toBeNull();
+    // Store updates that are not a new selection don't unfold it.
+    act(() => { useAgentStore.setState((s) => ({ agents: { ...s.agents, h1: { ...s.agents.h1, status: 'running' } } })); });
+    expect(screen.queryByTestId('agent-item-h1')).toBeNull();
+    expect(screen.getByTestId('helpers-toggle-orch')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('forgets the fold of an agent that is removed', () => {
+    seed();
+    useChromeStore.setState({ collapsedAgentIds: ['orch', 'somewhere-else'] });
+    render(<AgentList />);
+    act(() => { useAgentStore.getState().removeAgent('orch'); });
+    expect(useChromeStore.getState().collapsedAgentIds).toEqual(['somewhere-else']);
   });
 
   it('reorders helpers among their siblings, keeping everyone else in place', () => {
