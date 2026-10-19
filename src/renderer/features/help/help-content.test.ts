@@ -83,7 +83,8 @@ describe('help-content', () => {
       expect(chrome[id].toLowerCase(), id).toBe(name.toLowerCase());
     }
     expect(chrome['persona-quality-auditor']).toBe('AI slop detector');
-    const oldNames = /Quality Assurance|Quality Auditor|Executor|Documentation Updater|UI\/Design Lead|Group Project PM|Workhorse|Developer, (opens PRs|can merge)/;
+    expect(chrome['persona-group-project-pm']).toBe('Group project lead');
+    const oldNames = /Quality Assurance|Quality Auditor|Executor|Documentation Updater|UI\/Design Lead|Group Project PM|Project Manager|Workhorse|Developer, (opens PRs|can merge)/;
     for (const sections of [HELP_SECTIONS, CHROME_HELP_SECTIONS]) {
       for (const topic of sections.flatMap((s) => s.topics).filter((t) => t.id.startsWith('persona-') || t.id.startsWith('cookbook-'))) {
         expect(topic.title, topic.id).not.toMatch(oldNames);
@@ -100,7 +101,8 @@ describe('help-content', () => {
 
   it('includes all persona topics', () => {
     const allTopicIds = HELP_SECTIONS.flatMap((s) => s.topics.map((t) => t.id));
-    expect(allTopicIds).toContain('persona-project-manager');
+    expect(allTopicIds).toContain('persona-group-project-pm');
+    expect(allTopicIds).not.toContain('persona-project-manager');
     expect(allTopicIds).toContain('persona-qa');
     expect(allTopicIds).toContain('persona-quality-auditor');
     expect(allTopicIds).toContain('persona-executor-merge');

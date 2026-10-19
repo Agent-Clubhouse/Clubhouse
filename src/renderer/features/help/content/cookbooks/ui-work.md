@@ -36,4 +36,4 @@ PR Reviewer and the Design Lead operate independently and don't review each othe
 ```
 
 ## Coordination
-PRs need approval from both PR Reviewer (code quality) and the Design Lead (design consistency) before merge. The Design Lead delivers design specs as markdown docs and leaves production code to the developer.
+PRs need approval from both PR Reviewer (code quality) and the Design Lead (design consistency) before merge. The Design Lead delivers design specs as markdown docs and leaves production code to the developer. For UI work split across several developers, use the Squad cookbook with a Group Project Lead and add the Design Lead to its group project.

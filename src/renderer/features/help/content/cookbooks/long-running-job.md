@@ -30,4 +30,4 @@ A single task that needs doing and reviewing, such as a bug fix, a feature or do
 ```
 
 ## Coordination
-Two agents self-coordinate via direct wire. The developer sends progress and PR links. PR Reviewer reviews. No coordinator needed.
+Two agents self-coordinate via direct wire. The developer sends progress and PR links. PR Reviewer reviews. No lead is needed. When the work grows to several tasks in parallel, add a group project card and a Group Project Lead, as in the Squad cookbook.

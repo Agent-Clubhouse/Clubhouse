@@ -2,8 +2,8 @@
 //
 // Ships preconfigured squad blueprints that appear in the Blueprint Gallery
 // alongside user/project blueprints. Selecting one creates a canvas with
-// agent stub cards (Group PM + developers + QA) wired to the PM, which the
-// user then binds to existing agents or creates fresh.
+// agent stub cards (Group Project Lead + developers + QA) wired to the lead,
+// which the user then binds to existing agents or creates fresh.
 //
 // These are in-memory manifests (not file-backed). They are surfaced to the
 // gallery via listBuiltinBlueprintSummaries() and identified by a synthetic
@@ -32,10 +32,10 @@ const AGENT_VIEW_SIZE = { width: 280, height: 220 };
 
 // ── Agent def builders ──────────────────────────────────────────────
 
-function groupPMAgent(): BlueprintAgentDef {
+function groupLeadAgent(): BlueprintAgentDef {
   return {
     refId: 'agent_gp',
-    name: 'Group PM',
+    name: 'Group Project Lead',
     orchestrator: 'claude',
     skills: [],
   };
@@ -85,10 +85,10 @@ function agentView(def: BlueprintAgentDef, position: { x: number; y: number }): 
   };
 }
 
-/** Bidirectional wires from the Group PM to every other agent. */
-function pmFanoutWires(pmRefId: string, otherRefIds: string[]): BlueprintWire[] {
+/** Bidirectional wires from the Group Project Lead to every other agent. */
+function leadFanoutWires(leadRefId: string, otherRefIds: string[]): BlueprintWire[] {
   return otherRefIds.map((targetRef) => ({
-    sourceRef: pmRefId,
+    sourceRef: leadRefId,
     targetRef,
     bidirectional: true,
   }));
@@ -104,8 +104,8 @@ function buildSquadManifest(
 ): BlueprintManifest {
   const positions = gridPositions(agents.length);
   const views = agents.map((def, i) => agentView(def, positions[i]));
-  const [pm, ...rest] = agents;
-  const wires = pmFanoutWires(pm.refId, rest.map((a) => a.refId));
+  const [lead, ...rest] = agents;
+  const wires = leadFanoutWires(lead.refId, rest.map((a) => a.refId));
 
   return {
     id: `blueprint_${id}`,
@@ -125,12 +125,12 @@ function buildSquadManifest(
 }
 
 /**
- * Small Squad — Group PM + 3 Developers + 1 QA (5 agents).
+ * Small Squad has a Group Project Lead, 3 Developers and 1 QA (5 agents).
  * Ideal for focused feature work.
  */
 export function createSmallSquadBlueprint(): BlueprintManifest {
   const agents = [
-    groupPMAgent(),
+    groupLeadAgent(),
     devAgent(1),
     devAgent(2),
     devAgent(3),
@@ -139,18 +139,18 @@ export function createSmallSquadBlueprint(): BlueprintManifest {
   return buildSquadManifest(
     'small-squad',
     'Small Squad',
-    'Group PM + 3 Developers + 1 QA. Ideal for focused feature work.',
+    'Group Project Lead + 3 Developers + 1 QA. Ideal for focused feature work.',
     agents,
   );
 }
 
 /**
- * Large Squad — Group PM + 6 Developers + 2 QA (9 agents).
+ * Large Squad has a Group Project Lead, 6 Developers and 2 QA (9 agents).
  * Ideal for larger projects with parallel workstreams.
  */
 export function createLargeSquadBlueprint(): BlueprintManifest {
   const agents = [
-    groupPMAgent(),
+    groupLeadAgent(),
     devAgent(1),
     devAgent(2),
     devAgent(3),
@@ -163,7 +163,7 @@ export function createLargeSquadBlueprint(): BlueprintManifest {
   return buildSquadManifest(
     'large-squad',
     'Large Squad',
-    'Group PM + 6 Developers + 2 QA. Ideal for larger projects and parallel workstreams.',
+    'Group Project Lead + 6 Developers + 2 QA. Ideal for larger projects and parallel workstreams.',
     agents,
   );
 }

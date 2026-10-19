@@ -176,11 +176,12 @@ describe('NewAgentPage', () => {
     expect(personas).toEqual(expect.arrayContaining(['Orchestrator', 'Generalist']));
   });
 
-  it('shows the chosen persona\'s description under the dropdown, and the merged PM once', () => {
+  it('shows the chosen persona\'s description under the dropdown, and the Group Project Lead once', () => {
     render(<NewAgentPage request={req()} />);
     const select = screen.getByTestId('new-agent-persona') as HTMLSelectElement;
     const names = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
-    expect(names.filter((n) => n === 'Project Manager')).toHaveLength(1);
+    expect(names.filter((n) => n === 'Group Project Lead')).toHaveLength(1);
+    expect(names).not.toContain('Project Manager');
     expect(names).not.toContain('Group Project PM');
     const reviewer = getPersonaTemplate('qa')!;
     expect(screen.queryByText(reviewer.description)).toBeNull();

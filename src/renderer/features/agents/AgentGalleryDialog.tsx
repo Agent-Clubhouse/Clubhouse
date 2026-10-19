@@ -4,7 +4,7 @@ import { getAgentColorHex } from '../../../shared/name-generator';
 
 /** SVG icons for each persona — simple role-suggestive shapes */
 const PERSONA_ICONS: Record<string, ReactNode> = {
-  'project-manager': (
+  'group-project-pm': (
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="7" height="7" rx="1" />
       <rect x="14" y="3" width="7" height="7" rx="1" />
@@ -59,7 +59,7 @@ const PERSONA_ICONS: Record<string, ReactNode> = {
 
 /** Default color assignments for each persona */
 const PERSONA_COLORS: Record<string, string> = {
-  'project-manager': 'indigo',
+  'group-project-pm': 'indigo',
   'qa': 'red',
   'ui-lead': 'pink',
   'quality-auditor': 'amber',

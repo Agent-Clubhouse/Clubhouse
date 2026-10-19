@@ -193,7 +193,7 @@ export async function listAvailablePersonas(
   for (const p of PERSONA_TEMPLATES) {
     byId.set(p.id, { id: p.id, name: p.name, source: 'builtin' });
   }
-  // Name only listed built-ins: a file for a retired id (such as group-project-pm)
+  // Name only listed built-ins: a file for a retired id (such as project-manager)
   // is its own persona, so it keeps its id rather than its replacement's name.
   const builtinName = (id: string) => PERSONA_TEMPLATES.find((p) => p.id === id)?.name ?? id;
   for (const f of userFiles) {

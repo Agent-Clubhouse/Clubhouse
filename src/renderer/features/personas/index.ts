@@ -1,4 +1,4 @@
-import projectManager from './project-manager.md';
+import groupProjectPm from './group-project-pm.md';
 import qa from './qa.md';
 import uiLead from './ui-lead.md';
 import qualityAuditor from './quality-auditor.md';
@@ -20,10 +20,10 @@ export interface PersonaTemplate {
 /** The built-in personas offered in the pickers. Ids are stored on agents, so they never change. */
 export const PERSONA_TEMPLATES: PersonaTemplate[] = [
   {
-    id: 'project-manager',
-    name: 'Project Manager',
-    description: 'Plans missions and hands them out to other agents, without writing code.',
-    content: projectManager,
+    id: 'group-project-pm',
+    name: 'Group Project Lead',
+    description: 'Runs a group project board, hands out missions and gates merges on review.',
+    content: groupProjectPm,
   },
   {
     id: 'qa',
@@ -89,8 +89,8 @@ export const PERSONA_TEMPLATES: PersonaTemplate[] = [
  * listed persona that replaced them. They resolve but stay out of the pickers.
  */
 const PERSONA_ALIASES: Record<string, string> = {
-  // Merged into Project Manager; admin tools now depend on the project's admin role.
-  'group-project-pm': 'project-manager',
+  // Folded back into Group Project Lead, the board-operating persona it briefly replaced.
+  'project-manager': 'group-project-pm',
   // Retired; an agent that stored it gets the PR Reviewer, the closest evaluator still listed.
   judge: 'qa',
 };

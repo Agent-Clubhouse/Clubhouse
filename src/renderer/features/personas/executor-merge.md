@@ -26,7 +26,7 @@ If an orchestrator started you, branch from where it started you and follow its 
 Merge only when all of these hold, and list them in your report.
 
 - Required CI checks are green on the latest push.
-- The approvals the project requires are in, for example from a reviewer agent, the project manager or the user. Your own approval doesn't count.
+- The approvals the project requires are in, for example from a reviewer agent, the group project lead or the user. Your own approval doesn't count.
 - No blocking review comment is unresolved.
 - The branch is up to date with the merge target.
 
