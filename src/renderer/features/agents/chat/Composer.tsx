@@ -180,6 +180,9 @@ function useCloseOnMouseDown(open: boolean, close: () => void) {
 // max-w-full keeps the button inside its shrinking wrapper, so the label truncates
 // instead of spilling over the send buttons in a narrow composer (#2260).
 const chipClass = 'h-[26px] min-w-0 max-w-full overflow-hidden flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] whitespace-nowrap disabled:opacity-100 disabled:cursor-default';
+// A pill never shrinks below a readable stub ("Hai…" and its chevron); the
+// footer wraps the send buttons to their own row before anything overlaps.
+const PILL_WRAP = 'relative min-w-[72px] max-w-[180px]';
 const menuClass = 'absolute left-0 bottom-9 bg-ctp-crust border border-surface-1 rounded-lg shadow-xl p-1.5 z-dropdown flex flex-col gap-px';
 
 function Radio({ on }: { on: boolean }) {
@@ -210,7 +213,7 @@ function ModelPill({ models, efforts, model, effort, effortIsDefault, capabiliti
   const note = switchNote(modelSwitch, 'none');
 
   return (
-    <div className="relative min-w-0 max-w-[180px]">
+    <div className={PILL_WRAP}>
       <button
         type="button"
         disabled={!canChange}
@@ -289,7 +292,7 @@ function EffortPill({ efforts, model, effort, effortIsDefault, effortReported = 
   const label = effort ? `${effortWord(effort)} effort${effortIsDefault ? ' (default)' : ''}` : 'Default effort';
 
   return (
-    <div className="relative min-w-0 max-w-[180px]">
+    <div className={PILL_WRAP}>
       <button
         type="button"
         disabled={!canChange}
@@ -800,7 +803,7 @@ export function Composer(props: ComposerProps) {
           <>
             {textarea}
             {attachErrorNote}
-            <div className="flex items-center gap-1.5 px-2 pb-2 pt-1.5">
+            <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2 pt-1.5" data-testid="chat-composer-footer">
               {tools}
               {sendButtons}
             </div>

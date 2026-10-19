@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
@@ -6,6 +6,9 @@ import { useRemoteProjectStore, isRemoteAgentId } from '../../stores/remoteProje
 import { getOrchestratorColor, getModelColor, getOrchestratorLabel, formatModelLabel } from './orchestrator-colors';
 import { AgentAvatar } from './AgentAvatar';
 import { useAgentRowActions, AgentContextMenu, OverflowIcon } from './useAgentRowActions';
+import { describeHelperDispose, useHelperDisposeRequestStore } from '../../stores/helperDisposeRequestStore';
+import { describeHelperStarts, startRequestsFor, useHelperStartRequestStore } from '../../stores/helperStartRequestStore';
+import { useAgentDetailsStore } from './details/detailsStore';
 
 interface Props {
   agent: Agent;
@@ -16,6 +19,35 @@ interface Props {
   isNested?: boolean;
   /** Left padding in px, for rows nested deeper than one level (helpers and their quick agents). */
   indent?: number;
+  /** A parent whose helpers are folded away: how many there are and how many need you or are working. */
+  helperRollup?: { count: number; needs: number; working: number };
+}
+
+/**
+ * The helper request waiting on the user for this agent, as the new chrome's
+ * Needs you shows it: an orchestrator's held starts (#2234), or a helper's
+ * dispose its orchestrator asked about (#2229).
+ */
+export function useHelperRequest(agentId: string, enabled: boolean): { kind: 'dispose' | 'start'; message: string } | null {
+  const dispose = useHelperDisposeRequestStore((s) => (enabled ? s.requests[agentId] : undefined));
+  const allStarts = useHelperStartRequestStore((s) => s.requests);
+  const starts = useMemo(() => (enabled ? startRequestsFor(allStarts, agentId) : []), [allStarts, agentId, enabled]);
+  if (dispose) return { kind: 'dispose', message: describeHelperDispose(dispose) };
+  if (starts.length > 0) return { kind: 'start', message: describeHelperStarts(starts) };
+  return null;
+}
+
+/** "2 helpers", with a dot only when one needs you or is working, as the new chrome's sidebar shows it. */
+function HelperRollup({ id, count, needs, working }: { id: string; count: number; needs: number; working: number }) {
+  const tone = needs > 0 ? 'bg-ctp-warning' : working > 0 ? 'bg-ctp-success' : null;
+  return (
+    <span id={id} data-testid="helper-rollup" className="flex-shrink-0 flex items-center gap-1 text-xs text-ctp-overlay1 whitespace-nowrap">
+      {tone && <span data-testid="helper-rollup-dot" className={`w-1.5 h-1.5 rounded-full ${tone}`} aria-hidden="true" />}
+      {count} helper{count === 1 ? '' : 's'}
+      {needs > 0 && <span className="sr-only">, {needs} {needs === 1 ? 'needs' : 'need'} you</span>}
+      {working > 0 && <span className="sr-only">, {working} working</span>}
+    </span>
+  );
 }
 
 import { agentDot, STATUS_TONE, statusRingColor, statusText } from './agent-status';
@@ -26,7 +58,7 @@ const ACTION_BUTTON_WIDTH = 26;
 
 // ── Main component ─────────────────────────────────────────────────
 
-function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested, indent }: Props) {
+function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested, indent, helperRollup }: Props) {
   // Fine-grained selectors: subscribe only to the specific state/actions needed
   const isRemote = isRemoteAgentId(agent.id);
 
@@ -45,6 +77,15 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
   const dot = baseDot === 'idle' && !detailed && isThinking ? 'working' : baseDot;
   const isWorking = dot === 'working' || dot === 'starting';
   const statusLabel = statusText(agent, detailed, dot);
+  // The legacy layout's Needs you: a waiting helper request takes the status line.
+  const request = useHelperRequest(agent.id, !isRemote);
+  const rollupId = useId();
+  const reviewRequest = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSelect(agent.id);
+    if (request?.kind === 'dispose') useHelperDisposeRequestStore.getState().review(agent.id);
+    else useAgentDetailsStore.getState().reveal({ agentId: agent.id, card: 'helpers' });
+  }, [onSelect, agent.id, request?.kind]);
 
   const actions = useAgentRowActions(agent, { onSpawnQuickChild });
 
@@ -98,6 +139,7 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
         data-testid={`agent-item-${agent.id}`}
         data-agent-name={agent.name}
         data-active={isActive}
+        aria-describedby={helperRollup ? rollupId : undefined}
         style={indent !== undefined ? { paddingLeft: indent } : undefined}
         className={`
           flex items-center gap-3 py-3.5 cursor-pointer transition-colors
@@ -121,8 +163,11 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
 
         {/* Info */}
         <div className="flex-1 min-w-0">
-          <span className="text-sm text-ctp-text truncate font-medium block">{agent.name}</span>
-          <div className="flex items-center gap-1 mt-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm text-ctp-text truncate font-medium block min-w-0" title={agent.name}>{agent.name}</span>
+            {helperRollup && <HelperRollup id={rollupId} {...helperRollup} />}
+          </div>
+          <div className="flex flex-wrap items-center gap-1 mt-1">
             {(() => {
               const orchId = agent.orchestrator || 'claude-code';
               const c = getOrchestratorColor(orchId);
@@ -159,11 +204,21 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
               </span>
             )}
           </div>
-          <span className={`text-xs truncate block mt-0.5 ${
-            STATUS_TONE[dot]
-          }`}>
-            {statusLabel}
-          </span>
+          {request ? (
+            <button
+              type="button"
+              onClick={reviewRequest}
+              title={request.message}
+              className={`text-xs truncate block max-w-full mt-0.5 text-left hover:underline cursor-pointer ${STATUS_TONE.needs}`}
+              data-testid="agent-helper-request"
+            >
+              {request.message}
+            </button>
+          ) : (
+            <span className={`text-xs truncate block mt-0.5 ${STATUS_TONE[dot]}`} title={statusLabel}>
+              {statusLabel}
+            </span>
+          )}
         </div>
 
         {/* Actions — responsive */}

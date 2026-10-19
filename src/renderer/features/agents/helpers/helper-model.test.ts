@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { DurableAgentConfig } from '../../../../shared/types';
 import {
-  accessLabel, checkLines, checksFailed, hasWorkAtRisk, helperDot, helperState, orphanedDisposed, splitHelpers, workSummary,
+  accessLabel, checkFailureReason, checkLines, checksFailed, hasWorkAtRisk, helperDot, helperState, orphanedDisposed, plainFailure, splitHelpers, workSummary,
 } from './helper-model';
 import { maxHelpersCeiling, parseHelperCount } from './orchestration-hooks';
 
@@ -89,5 +89,29 @@ describe('labels and limits', () => {
     expect(parseHelperCount('', 20)).toHaveProperty('error');
     expect(maxHelpersCeiling(500)).toBe(100);
     expect(maxHelpersCeiling(8)).toBe(8);
+  });
+});
+
+describe('failure text', () => {
+  const RAW = "Command failed: git show-ref --verify refs/heads/h1\nfatal: not a git repository (or any of the parent directories): .git";
+
+  it('keeps raw git output out of a failed check line, and in its detail', () => {
+    const [line] = checkLines({ dirty: 0, unpushed: 0, unmerged: null, error: `couldn't check, ${RAW}` });
+    expect(line).toEqual({ kind: 'failed', text: 'Couldn’t be checked because git couldn’t read its folder', detail: RAW });
+    // No doubled "couldn't check" inside "Couldn't be checked".
+    expect(line.text).not.toMatch(/check.*couldn.t check/i);
+  });
+
+  it('uses a reason that already reads as words', () => {
+    expect(checkLines({ dirty: 0, unpushed: 0, unmerged: null, error: 'it is still being created in another Clubhouse window' })[0].text)
+      .toBe('Couldn’t be checked because it is still being created in another Clubhouse window');
+    expect(checkFailureReason('couldn’t check, its remote has never been fetched.')).toEqual({ text: 'its remote has never been fetched' });
+  });
+
+  it('tells raw output from sentences', () => {
+    expect(plainFailure(RAW, 'fallback')).toEqual({ text: 'fallback', detail: RAW });
+    expect(plainFailure('spawn claude ENOENT', 'fallback')).toEqual({ text: 'fallback', detail: 'spawn claude ENOENT' });
+    expect(plainFailure('The branch impl-docs/work already exists', 'fallback')).toEqual({ text: 'The branch impl-docs/work already exists' });
+    expect(plainFailure(undefined, 'fallback')).toEqual({ text: 'fallback' });
   });
 });

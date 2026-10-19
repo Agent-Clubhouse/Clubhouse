@@ -9,6 +9,7 @@ import { useProjectStore } from '../../../stores/projectStore';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { AgentDetails } from '../details/AgentDetails';
 import { OrchestrateCard, orchestrateSummary } from './OrchestrateCard';
+import { blockedSummary } from './TurnOffOrchestrationDialog';
 import { useOrchestration } from './orchestration-hooks';
 
 const PROJECT = path.join('/work', 'proj');
@@ -77,6 +78,13 @@ describe('orchestrateSummary', () => {
 });
 
 describe('Orchestrate card (#2232)', () => {
+  it('shows its whole summary on hover, since it truncates beside the switch', async () => {
+    stored = { ...stored, orchestrate: true, control: 'ask-everything', maxHelpers: 3 };
+    await renderCard();
+    await waitFor(() => expect(screen.getByTestId('details-card-orchestrate-summary')).toHaveAttribute('title', 'ask for everything · up to 3'));
+  });
+
+
   it('turns orchestration on for a sleeping agent and says when the tools appear', async () => {
     const toggle = await renderCard();
     expect(toggle).toHaveAttribute('aria-checked', 'false');
@@ -276,7 +284,11 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     await openDialog();
     fireEvent.click(screen.getByTestId('turn-off-dispose'));
     const list = await screen.findByTestId('turn-off-blocked');
-    expect(list).toHaveTextContent('Couldn’t be checked (couldn\'t check, its remote has never been fetched)');
+    expect(list).toHaveTextContent('Couldn’t be checked because its remote has never been fetched');
+    // Each kind is counted and worded on its own.
+    expect(screen.getByTestId('turn-off-blocked-summary')).toHaveTextContent(
+      'impl-ipc has work that disposing would lose and merge-1 couldn’t be checked, so nothing was disposed and orchestration is still on.',
+    );
     expect(screen.queryByTestId('turn-off-force')).not.toBeInTheDocument();
     expect(screen.getByTestId('turn-off-blocked-note')).toHaveTextContent('A helper that couldn’t be checked can’t be disposed');
     // Keep is still there.
@@ -349,5 +361,20 @@ describe('Orchestration cards in Agent details', () => {
     expect(screen.queryByTestId('details-card-orchestrate')).not.toBeInTheDocument();
     expect(screen.queryByTestId('details-card-helpers')).not.toBeInTheDocument();
     expect(screen.queryByTestId('details-card-connections')).not.toBeInTheDocument();
+  });
+});
+
+describe('blockedSummary', () => {
+  const risk = (name: string) => ({ agentId: name, name, checks: { dirty: 1, unpushed: 0, unmerged: 0 } });
+  const unread = (name: string) => ({ agentId: name, name, checks: { dirty: 0, unpushed: 0, unmerged: null, error: 'couldn\'t check, fatal: not a git repository' } });
+  const tail = ', so nothing was disposed and orchestration is still on.';
+
+  it('words work at risk and failed checks apart, with names or a count', () => {
+    expect(blockedSummary([risk('a')])).toBe(`a has work that disposing would lose${tail}`);
+    expect(blockedSummary([risk('a'), risk('b')])).toBe(`a and b have work that disposing would lose${tail}`);
+    expect(blockedSummary([risk('a'), risk('b'), risk('c')])).toBe(`3 helpers have work that disposing would lose${tail}`);
+    expect(blockedSummary([unread('a')])).toBe(`a couldn’t be checked${tail}`);
+    expect(blockedSummary([unread('a'), unread('b')])).toBe(`a and b couldn’t be checked${tail}`);
+    expect(blockedSummary([risk('a'), unread('b')])).toBe(`a has work that disposing would lose and b couldn’t be checked${tail}`);
   });
 });

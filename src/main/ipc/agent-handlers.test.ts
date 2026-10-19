@@ -12,10 +12,14 @@ vi.mock('electron', () => ({
   },
   BrowserWindow: {
     getFocusedWindow: vi.fn(() => ({ id: 1 })),
+    getAllWindows: vi.fn(() => []),
   },
 }));
 
+const configChange = vi.hoisted(() => ({ listener: null as ((projectPath: string) => void) | null }));
+
 vi.mock('../services/agent-config', () => ({
+  onAgentConfigChanged: (listener: (projectPath: string) => void) => { configChange.listener = listener; return () => {}; },
   listDurable: vi.fn(() => [{ id: 'a1', name: 'Bot' }]),
   createDurable: vi.fn(async () => ({ id: 'agent-1', name: 'Test' })),
   deleteDurable: vi.fn(),
@@ -105,7 +109,7 @@ vi.mock('../services/clubhouse-mode-settings', () => ({
 
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { registerAgentHandlers } from './agent-handlers';
+import { CONFIG_CHANGE_DEBOUNCE_MS, registerAgentHandlers } from './agent-handlers';
 import { recordStartRequest, _resetStartRequestsForTesting } from '../services/helper-start-requests';
 import * as agentConfig from '../services/agent-config';
 import * as agentCreation from '../services/agent-creation';
@@ -1020,6 +1024,26 @@ describe('agent-handlers', () => {
       expect(await handler({}, 'agent-1', requestId, 'allow')).toEqual({ status: 'rejected', reason: 'not_found' });
 
       await expect(decision).resolves.toBe('deny');
+    });
+  });
+
+  describe('config change events', () => {
+    it('tells the windows once per burst of config writes to a project', async () => {
+      vi.useFakeTimers();
+      try {
+        const send = vi.fn();
+        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ isDestroyed: () => false, webContents: { isDestroyed: () => false, send } }] as never);
+        expect(configChange.listener).toBeTypeOf('function');
+        configChange.listener!('/project');
+        configChange.listener!('/project');
+        configChange.listener!('/other');
+        expect(send).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(CONFIG_CHANGE_DEBOUNCE_MS);
+        const sent = send.mock.calls.filter(([channel]) => channel === IPC.AGENT.CONFIGS_CHANGED);
+        expect(sent).toEqual([[IPC.AGENT.CONFIGS_CHANGED, '/project'], [IPC.AGENT.CONFIGS_CHANGED, '/other']]);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

@@ -113,7 +113,11 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
             </CardRow>
           </>
         )}
-        {orch.note && <CardNote><span data-testid="orchestrate-note">{orch.note}</span></CardNote>}
+        {orch.note
+          ? <CardNote><span data-testid="orchestrate-note">{orch.note}</span></CardNote>
+          : policy?.orchestrate && !running && (
+            <CardNote><span data-testid="orchestrate-note">The helper tools appear the next time {agent.name} starts.</span></CardNote>
+          )}
         {orch.error && <p className="pr-3.5 pl-[33px] pb-1.5 text-xs text-ctp-error" role="alert" data-testid="orchestrate-error">{orch.error}</p>}
       </DetailsCard>
       {orch.turnOff && (

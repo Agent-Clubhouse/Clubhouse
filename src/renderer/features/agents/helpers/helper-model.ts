@@ -33,7 +33,7 @@ export function controlHelp(control: OrchestrationControl, orchestratorName: str
     case 'hands-off':
       return `Helpers start and are disposed without asking you. ${orchestratorName} can still ask when it judges it should.`;
     case 'ask-before-start':
-      return 'New helpers wait for your approval in Needs you.';
+      return `New helpers wait for your approval in ${orchestratorName}’s Helpers card. The sidebar shows when one is waiting.`;
     case 'ask-everything':
       return 'Starting a helper and every dispose come to you.';
   }
@@ -131,6 +131,39 @@ export function checksFailed(checks: HelperDisposeChecks): boolean {
   return !!checks.error;
 }
 
+// ── Failure text ────────────────────────────────────────────────────────
+
+/** Output from a failed command (git's stderr, a node error code), which the UI keeps out of sentences. */
+const RAW_OUTPUT = /Command failed|fatal:|\berror:|usage: git|\bgit (?:-C |rev-parse|show-ref|status|worktree|log|branch|for-each-ref)/i;
+/** A node error code such as ENOENT or EBUSY (case matters: "exists" is a word). */
+const ERROR_CODE = /\bE[A-Z]{3,}\b/;
+
+/** True when `text` is a command's raw output rather than a sentence for people. */
+export function isRawOutput(text: string): boolean {
+  return RAW_OUTPUT.test(text) || ERROR_CODE.test(text);
+}
+
+/**
+ * A failure for a sentence: `text` itself when it reads as one, else
+ * `fallback`, with the raw output kept in `detail` for a tooltip or the log.
+ */
+export function plainFailure(text: string | null | undefined, fallback: string): { text: string; detail?: string } {
+  const trimmed = text?.trim();
+  if (!trimmed) return { text: fallback };
+  return isRawOutput(trimmed) ? { text: fallback, detail: trimmed } : { text: trimmed };
+}
+
+/**
+ * Why a helper's checks couldn't run, as the end of "couldn't be checked
+ * because …". Main prefixes git's failures with "couldn't check, ", which the
+ * sentence already says.
+ */
+export function checkFailureReason(error: string): { text: string; detail?: string } {
+  const bare = error.replace(/^couldn[’']t check,\s*/i, '');
+  const plain = plainFailure(bare, 'git couldn’t read its folder');
+  return { text: plain.text.replace(/[.\s]+$/, ''), detail: plain.detail };
+}
+
 /** A short line for a helper row: what its folder holds that isn't saved. */
 export function workSummary(checks: HelperDisposeChecks | undefined): string | null {
   if (!checks) return null;
@@ -145,11 +178,16 @@ export interface CheckLine {
   /** `ok`, `risk` (work would be lost), `info` (doesn't block) or `failed` (couldn't run). */
   kind: 'ok' | 'risk' | 'info' | 'failed';
   text: string;
+  /** The raw failure (git's output), for a tooltip. */
+  detail?: string;
 }
 
 /** The checks as lines for a dispose dialog, worst first. */
 export function checkLines(checks: HelperDisposeChecks): CheckLine[] {
-  if (checks.error) return [{ kind: 'failed', text: `Couldn’t be checked (${checks.error})` }];
+  if (checks.error) {
+    const reason = checkFailureReason(checks.error);
+    return [{ kind: 'failed', text: `Couldn’t be checked because ${reason.text}`, ...(reason.detail && { detail: reason.detail }) }];
+  }
   const lines: CheckLine[] = [
     checks.dirty > 0
       ? { kind: 'risk', text: `${plural(checks.dirty, 'file', 'files')} not committed` }

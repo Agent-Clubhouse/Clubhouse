@@ -76,6 +76,10 @@ describe('DeleteAgentDialog', () => {
     });
     expect(screen.queryByText(/No uncommitted changes detected/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete anyway' })).toBeInTheDocument();
+    // Git's own output is in the tooltip, not the sentence.
+    const note = screen.getByTestId('delete-check-note');
+    expect(note).not.toHaveTextContent('fatal');
+    expect(note).toHaveAttribute('title', "couldn't read its uncommitted files: fatal: not a git repository");
   });
 
   it('shows simple dialog for non-worktree agent', async () => {

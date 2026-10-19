@@ -66,6 +66,7 @@ import type { TelemetryRuntime } from '../telemetry/types';
 import {
   INTERRUPTED_CREATION_REASON,
   branchFromProblem,
+  checkDurableCreation,
   clearAgentConfigCache,
   createDurable,
   deleteDurable,
@@ -279,6 +280,29 @@ describe('concurrent creations (#2226 B1)', () => {
     gitImpl = defaultGit;
     const again = await startDurableCreation(PROJECT_PATH, { name: 'retry', color: 'indigo' });
     expect(await again.done).toBe('ready');
+  });
+});
+
+describe('checkDurableCreation', () => {
+  it('passes a creation that would start, and changes nothing', async () => {
+    await expect(checkDurableCreation(PROJECT_PATH, { name: 'fresh', color: 'indigo', branchFrom: 'main' })).resolves.toBeUndefined();
+    expect(execFile).not.toHaveBeenCalled();
+    expect(await listDurable(PROJECT_PATH)).toEqual([]);
+    // Nothing was reserved: the real creation still goes through.
+    const started = await startDurableCreation(PROJECT_PATH, { name: 'fresh', color: 'indigo' });
+    expect(await started.done).toBe('ready');
+  });
+
+  it('refuses what the creation would refuse: a bad name, a taken folder or branch, a leftover folder', async () => {
+    await expect(checkDurableCreation(PROJECT_PATH, { name: 'x', color: 'indigo', folderName: '..' })).rejects.toThrow(/agent name/);
+    const first = await startDurableCreation(PROJECT_PATH, { name: 'one', color: 'indigo', branchName: 'shared/work' });
+    expect(await first.done).toBe('ready');
+    await expect(checkDurableCreation(PROJECT_PATH, { name: 'one', color: 'indigo' })).rejects.toThrow(/Another agent already uses \.clubhouse\/agents\/one/);
+    await expect(checkDurableCreation(PROJECT_PATH, { name: 'two', color: 'indigo', branchName: 'shared/work' }))
+      .rejects.toThrow(/already uses the branch "shared\/work"/);
+    dirs.add(agentPath('bad'));
+    await expect(checkDurableCreation(PROJECT_PATH, { name: 'bad', color: 'indigo' })).rejects.toThrow(/left over from a removed agent/);
+    await expect(checkDurableCreation(PROJECT_PATH, { name: 'kid', color: 'indigo', parentAgentId: 'nobody' })).rejects.toThrow(/Parent agent not found/);
   });
 });
 

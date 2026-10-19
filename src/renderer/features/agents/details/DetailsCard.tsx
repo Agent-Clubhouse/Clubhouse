@@ -36,7 +36,7 @@ export function DetailsCard({ id, title, summary, open, onToggle, right, action,
       </svg>
       <span className="text-[13px] font-semibold text-ctp-text whitespace-nowrap">{title}</span>
       {summary !== undefined && summary !== '' && (
-        <span className="min-w-0 truncate text-xs text-ctp-overlay1" data-testid={`details-card-${id}-summary`}>{summary}</span>
+        <span className="min-w-0 truncate text-xs text-ctp-overlay1" title={typeof summary === 'string' ? summary : undefined} data-testid={`details-card-${id}-summary`}>{summary}</span>
       )}
       {right && <span className="ml-auto flex-shrink-0 flex items-center gap-1">{right}</span>}
     </button>

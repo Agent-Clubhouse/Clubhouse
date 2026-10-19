@@ -292,9 +292,10 @@ export function DeleteAgentDialog() {
             <h2 className="text-base font-semibold text-ctp-text mb-2">
               Delete {agent.name}?
             </h2>
-            <p className="text-sm text-ctp-subtext0 mb-4">
+            {/* Git's own output stays in the tooltip. */}
+            <p className="text-sm text-ctp-subtext0 mb-4" title={checkFailed ? status!.checkError : undefined} data-testid="delete-check-note">
               {checkFailed
-                ? `Couldn't check ${agent.name}'s worktree for unsaved work (${status!.checkError}). Deleting it could lose changes.`
+                ? `Couldn't check ${agent.name}'s worktree for unsaved work, because git couldn't read it. Deleting it could lose changes.`
                 : status?.isValid
                 ? 'This will remove the worktree and branch. No uncommitted changes detected.'
                 : 'This agent\'s worktree could not be inspected. It may have already been removed.'}

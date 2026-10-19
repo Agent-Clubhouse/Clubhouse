@@ -280,7 +280,30 @@ function forwardCreationEvents(): void {
   });
 }
 
+/** How long config changes for one project are gathered into one renderer event. */
+export const CONFIG_CHANGE_DEBOUNCE_MS = 150;
+let configChangesForwarded = false;
+
+/**
+ * Tell the windows when a project's agent configs change (any in-app write,
+ * or an external edit to agents.json), so views built on them, such as the
+ * Helpers card, re-read. Bursts of writes become one event per project.
+ */
+function forwardConfigChanges(): void {
+  if (configChangesForwarded) return;
+  configChangesForwarded = true;
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  agentConfig.onAgentConfigChanged((projectPath) => {
+    if (timers.has(projectPath)) return;
+    timers.set(projectPath, setTimeout(() => {
+      timers.delete(projectPath);
+      broadcastToAllWindows(IPC.AGENT.CONFIGS_CHANGED, projectPath);
+    }, CONFIG_CHANGE_DEBOUNCE_MS));
+  });
+}
+
 export function registerAgentHandlers(): void {
+  forwardConfigChanges();
   ipcMain.handle(IPC.AGENT.LIST_DURABLE, withValidatedArgs(
     [stringArg()],
     async (_event, projectPath) => {

@@ -79,6 +79,15 @@ export const agent = {
    */
   reportDisposeDecision: (projectPath: string, helperId: string, decision: HelperDisposeDecision): Promise<{ ok: boolean; delivered: boolean; message: string }> =>
     ipcRenderer.invoke(IPC.AGENT.REPORT_DISPOSE_DECISION, projectPath, helperId, decision),
+  /**
+   * A project's agent configs changed: a parent link, a creation, a disposal
+   * or a handoff. Called with the project path, at most every 150ms per project.
+   */
+  onConfigsChanged: (callback: (projectPath: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, projectPath: string) => callback(projectPath);
+    ipcRenderer.on(IPC.AGENT.CONFIGS_CHANGED, listener);
+    return () => { ipcRenderer.removeListener(IPC.AGENT.CONFIGS_CHANGED, listener); };
+  },
   /** A helper start waiting on the user's approval (#2234). Sent to the main window only. */
   onHelperStartRequest: (callback: (request: HelperStartRequest) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, request: HelperStartRequest) => callback(request);

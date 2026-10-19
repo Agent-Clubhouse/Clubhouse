@@ -34,11 +34,8 @@ import { AutoSleepRow } from './AutoSleepRow';
 import { McpCard } from './McpCard';
 import { useAgentDetailsStore } from './detailsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
-import { OrchestrateCard } from '../helpers/OrchestrateCard';
-import { HelpersCard } from '../helpers/HelpersCard';
 import { ConnectionsCard, type Connection } from '../helpers/ConnectionsCard';
-import { splitHelpers } from '../helpers/helper-model';
-import { useHelperStartApprovals, useOrchestration, useProjectAgentConfigs } from '../helpers/orchestration-hooks';
+import { OrchestrationCardPair, useOrchestrationCards } from '../helpers/OrchestrationCards';
 
 export type CardId = 'changes' | 'subagents' | 'canvases' | 'orchestrate' | 'helpers' | 'connections' | 'context' | 'mcp' | 'session';
 
@@ -204,19 +201,9 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const running = agent.status === 'running';
 
   // Orchestration (#2232): local durable agents only; a satellite keeps its own config.
-  const orchestrationPath = agent.kind === 'durable' && !isRemoteProjectId(agent.projectId) ? projectPath : undefined;
-  const orch = useOrchestration(orchestrationPath, agent);
-  const { configs, reload: reloadConfigs } = useProjectAgentConfigs(orchestrationPath, agent.projectId);
-  const ownConfig = configs?.find((c) => c.id === agent.id);
-  const isHelper = !!(ownConfig?.parentAgentId ?? agent.parentAgentId);
-  const helpers = useMemo(() => (configs ? splitHelpers(configs, agent.id) : { live: [], disposed: [] }), [configs, agent.id]);
-  const helperIds = useMemo(() => new Set(helpers.live.map((h) => h.id)), [helpers.live]);
+  const orchestration = useOrchestrationCards(agent, projectPath);
+  const { orchestrationPath, ownConfig, helperIds, orchestrating } = orchestration;
   const hasWires = useMcpBindingStore((s) => s.bindings.some((b) => b.agentId === agent.id || (b.targetKind === 'agent' && b.targetId === agent.id)));
-  const orchestrating = !!orch.policy?.orchestrate;
-  const showOrchestrate = !!orchestrationPath && !!orch.policy && !!ownConfig && !isHelper;
-  const approvals = useHelperStartApprovals(agent.id, orchestrationPath, reloadConfigs);
-  const showHelpers = !!orchestrationPath
-    && (orchestrating || helpers.live.length > 0 || helpers.disposed.length > 0 || approvals.pending.length > 0);
   const showConnections = !!orchestrationPath && (orchestrating || hasWires);
   // A tool-made wire removed here is a user removal: the usual unbind, with no cause (#2230).
   const disconnectToolWire = useCallback(async (c: Connection) => {
@@ -333,23 +320,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         )}
       </DetailsCard>
 
-      {showOrchestrate && orchestrationPath && (
-        <OrchestrateCard agent={agent} projectPath={orchestrationPath} orch={orch} open={open('orchestrate')} onToggle={() => toggleCard('orchestrate')} />
-      )}
-
-      {showHelpers && orchestrationPath && configs && (
-        <HelpersCard
-          agent={agent}
-          projectPath={orchestrationPath}
-          configs={configs}
-          maxHelpers={orch.policy?.maxHelpers}
-          orchestrating={orchestrating}
-          open={open('helpers')}
-          onToggle={() => toggleCard('helpers')}
-          approvals={approvals}
-          onRemoved={reloadConfigs}
-        />
-      )}
+      <OrchestrationCardPair agent={agent} model={orchestration} isOpen={open} onToggle={toggleCard} />
 
       {showConnections && (
         <ConnectionsCard

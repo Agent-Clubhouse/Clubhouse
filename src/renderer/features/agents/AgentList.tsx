@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo, type ComponentProps } from 'react';
 import { useOrderedShallow } from '../../hooks/useOrderedShallow';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -23,7 +23,8 @@ import type { PersonaTemplate } from '../personas';
 import { EmptyState } from '../../components/EmptyState';
 import { requestLeaveAgentSettings } from './agentSettingsPages';
 import { createDurableAgent, createDurableAgentFromTemplate } from './create-agent';
-import { buildAgentForest, forestSiblingGroups, moveWithinGroup, type AgentNode } from '../../chrome/sidebar/treeModel';
+import { buildAgentForest, forestSiblingGroups, helperRollup, moveWithinGroup, type AgentNode } from '../../chrome/sidebar/treeModel';
+import { useAgentStatuses } from './agent-status-store';
 import { useChromeStore, syncCollapsedAgentsWithAgents, ensureChromeStateLoaded } from '../../chrome/chromeStore';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
@@ -580,6 +581,8 @@ function AgentListInner() {
     const isMissionTarget = showMissionInput && quickTargetParentId === durable.id;
     const helperCount = node.children.length;
     const helpersOpen = helperCount > 0 && !collapsedHelpers.has(durable.id);
+    // Folded, the row says how many helpers it hides, as the new chrome does.
+    const folded = helperCount > 0 && !helpersOpen;
     const group = reorderGroupOf.get(durable.id) ?? [];
     const showDropLine = dragOverId === durable.id && dragId !== null && dragId !== durable.id;
     const dropBelow = showDropLine && group.indexOf(dragId!) < group.indexOf(durable.id);
@@ -634,14 +637,26 @@ function AgentListInner() {
                 <HelperCaret open={helpersOpen} />
               </button>
             )}
-            <AgentListItem
-              agent={durable}
-              isActive={durable.id === activeAgentId}
-              isThinking={isThinking(durable.id)}
-              onSelect={handleSelectAgent}
-              onSpawnQuickChild={handleSpawnQuickChild}
-              {...(depth > 0 && { indent })}
-            />
+            {folded ? (
+              <FoldedParentItem
+                node={node}
+                agent={durable}
+                isActive={durable.id === activeAgentId}
+                isThinking={isThinking(durable.id)}
+                onSelect={handleSelectAgent}
+                onSpawnQuickChild={handleSpawnQuickChild}
+                {...(depth > 0 && { indent })}
+              />
+            ) : (
+              <AgentListItem
+                agent={durable}
+                isActive={durable.id === activeAgentId}
+                isThinking={isThinking(durable.id)}
+                onSelect={handleSelectAgent}
+                onSpawnQuickChild={handleSpawnQuickChild}
+                {...(depth > 0 && { indent })}
+              />
+            )}
             {activeProfile && durable.orchestrator && !isOrchestratorInProfile(durable.orchestrator) && (
               <span
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-yellow-500"
@@ -874,3 +889,15 @@ function AgentListInner() {
 }
 
 export const AgentList = memo(AgentListInner);
+
+/**
+ * A parent whose helpers are folded away, with their roll-up. Only folded
+ * rows follow every helper's status, so the list itself doesn't re-render on
+ * each status tick.
+ */
+function FoldedParentItem({ node, ...props }: ComponentProps<typeof AgentListItem> & { node: AgentNode }) {
+  const statuses = useAgentStatuses();
+  const { count, needs, working } = helperRollup(node, statuses);
+  const rollup = useMemo(() => ({ count, needs, working }), [count, needs, working]);
+  return <AgentListItem {...props} helperRollup={rollup} />;
+}

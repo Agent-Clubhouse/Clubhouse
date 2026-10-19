@@ -16,6 +16,7 @@ import { Markdown } from './chat/MessageBlocks';
 import { useLastSession, type LastSessionInfo } from './states/useLastSession';
 import { describeSleep, formatAgo, formatShortDuration, formatUsd, plural, relativeTo } from './states/format';
 import { HelperHeader } from './helpers/HelperHeader';
+import { SleepingOrchestration } from './helpers/OrchestrationCards';
 import {
   BranchIcon, FileRow, Kbd, ModelLabel, SectionHead, StateToolbar, ToolbarSeparator,
 } from './states/parts';
@@ -296,6 +297,9 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
           {wakeError && (
             <p role="alert" className="w-full mt-2 text-left text-xs text-ctp-error" data-testid="wake-error">{wakeError}</p>
           )}
+
+          {/* No details column while asleep, so an orchestrator's cards sit here (#2232). */}
+          {!compact && isDurable && !isRemote && agentProject && <SleepingOrchestration agent={agent} projectPath={agentProject.path} />}
 
           {!compact && last && (last.summary || last.filesModified.length > 0 || agent.branch) && (
             <LastSession

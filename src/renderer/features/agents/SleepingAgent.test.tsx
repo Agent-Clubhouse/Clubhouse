@@ -263,8 +263,10 @@ describe('SleepingAgent', () => {
       window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'other-agent', name: 'other' }]);
       renderComponent();
       await waitForReady();
+      // The view reads the configs too (orchestration cards); the wake adds one read.
+      const before = vi.mocked(window.clubhouse.agent.listDurable).mock.calls.length;
       fireEvent.click(screen.getByTestId('wake-button'));
-      await waitFor(() => expect(window.clubhouse.agent.listDurable).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(window.clubhouse.agent.listDurable).toHaveBeenCalledTimes(before + 1));
       expect(mockSpawnDurableAgent).not.toHaveBeenCalled();
     });
 
