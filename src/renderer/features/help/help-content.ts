@@ -49,7 +49,6 @@ import personaQualityAuditor from '../personas/quality-auditor.md';
 import personaExecutorPrOnly from '../personas/executor-pr-only.md';
 import personaExecutorMerge from '../personas/executor-merge.md';
 import personaDocUpdater from '../personas/doc-updater.md';
-import personaJudge from '../personas/judge.md';
 import personaResearcher from '../personas/researcher.md';
 import personaOrchestrator from '../personas/orchestrator.md';
 import personaWorkhorse from '../personas/workhorse.md';
@@ -147,7 +146,6 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'persona-executor-pr-only', title: 'Developer', content: personaExecutorPrOnly },
       { id: 'persona-executor-merge', title: 'Developer (merges)', content: personaExecutorMerge },
       { id: 'persona-doc-updater', title: 'Docs Writer', content: personaDocUpdater },
-      { id: 'persona-judge', title: 'Solution Judge', content: personaJudge },
       { id: 'persona-researcher', title: 'Researcher', content: personaResearcher },
       // Persona files can carry settings front-matter; help shows only the body.
       { id: 'persona-orchestrator', title: 'Orchestrator', content: stripPersonaFrontMatter(personaOrchestrator) },
@@ -177,7 +175,6 @@ const PERSONA_TITLES: Record<string, string> = {
   'persona-ui-lead': 'Design lead',
   'persona-quality-auditor': 'AI slop detector',
   'persona-doc-updater': 'Docs writer',
-  'persona-judge': 'Solution judge',
 };
 const COOKBOOK_TITLES: Record<string, string> = {
   'cookbook-long-running-job': 'Long-running job',

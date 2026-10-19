@@ -349,7 +349,7 @@ the rest of materialization still succeeds.
 
 ## Personas (\`.clubhouse/personas/\`)
 
-A **persona** layers a role (e.g. \`qa\`, \`researcher\`, \`judge\`) onto an
+A **persona** layers a role (e.g. \`qa\`, \`researcher\`, \`ui-lead\`) onto an
 agent. The content is substituted for the \`@@Persona\` wildcard, or appended to
 the instructions when the template doesn't reference the token.
 

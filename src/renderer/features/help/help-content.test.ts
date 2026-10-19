@@ -13,9 +13,9 @@ describe('help-content', () => {
     expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting', 'personas', 'cookbooks']);
   });
 
-  it('has 41 total topics', () => {
+  it('has 40 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(41);
+    expect(total).toBe(40);
   });
 
   it('each section has at least 1 topic', () => {
@@ -67,9 +67,9 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('orchestrators');
   });
 
-  it('Agent Personas section has 11 topics', () => {
+  it('Agent Personas section has 10 topics', () => {
     const personas = HELP_SECTIONS.find((s) => s.id === 'personas');
-    expect(personas?.topics).toHaveLength(11);
+    expect(personas?.topics).toHaveLength(10);
   });
 
   it('titles persona topics with the current persona names in both shells', () => {
@@ -105,7 +105,7 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('persona-quality-auditor');
     expect(allTopicIds).toContain('persona-executor-merge');
     expect(allTopicIds).toContain('persona-doc-updater');
-    expect(allTopicIds).toContain('persona-judge');
+    expect(allTopicIds).not.toContain('persona-judge');
     expect(allTopicIds).toContain('persona-researcher');
     expect(allTopicIds).toContain('persona-orchestrator');
     expect(allTopicIds).toContain('persona-workhorse');

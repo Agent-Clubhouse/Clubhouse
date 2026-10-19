@@ -474,10 +474,10 @@ describe('AgentSettingsView', () => {
     });
 
     it('shows the persona description under the dropdown', async () => {
-      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'judge' });
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'researcher' });
       renderSettings();
       const description = await screen.findByTestId('agent-settings-persona-description');
-      expect(description.textContent).toBe(getPersonaTemplate('judge')!.description);
+      expect(description.textContent).toBe(getPersonaTemplate('researcher')!.description);
     });
 
     it('shows an agent on the retired group-project-pm persona as Project Manager', async () => {

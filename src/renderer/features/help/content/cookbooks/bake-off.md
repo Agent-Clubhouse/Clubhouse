@@ -7,7 +7,7 @@ A|B testing of two competing approaches. Two teams work independently, then judg
 - 1 central coordinator using the Project Manager persona, who defines the challenge and declares the winner
 - Team Alpha, with a lead (Project Manager), a PR Reviewer and N workers (Developer)
 - Team Beta, with the same roles as Team Alpha
-- 1 judge using the Solution Judge persona, who evaluates both teams' output
+- 1 judge using the PR Reviewer persona, who reviews both teams' output against the same criteria
 - 3 group projects, one per team and one for judging
 - 3 zones, Alpha (cyan), Beta (rose) and Judging (violet)
 
@@ -44,7 +44,7 @@ Use `create_canvas_from_blueprint` for atomic creation:
     { "id": "beta-w1", "type": "agent", "name": "Beta Worker-1", "persona": "executor-pr-only", "zone": "z-beta" },
     { "id": "gp-judging", "type": "group-project", "name": "Judging GP", "zone": "z-judge" },
     { "id": "coordinator", "type": "agent", "name": "Central Coordinator", "persona": "project-manager", "zone": "z-judge" },
-    { "id": "judge", "type": "agent", "name": "Judge", "persona": "judge", "zone": "z-judge" }
+    { "id": "judge", "type": "agent", "name": "Judge", "persona": "qa", "zone": "z-judge" }
   ],
   "wires": [
     { "from": "alpha-lead", "to": "gp-alpha", "bidirectional": true },
@@ -64,7 +64,7 @@ Use `create_canvas_from_blueprint` for atomic creation:
 ## GP Instructions
 - Alpha Team GP says "Alpha team builds a competing implementation. The lead dispatches, workers implement, the PR Reviewer reviews. Post progress and PRs."
 - Beta Team GP says the same for the Beta team.
-- Judging GP says "Evaluate Alpha vs Beta output. Judge gives a pass or fail per criterion and picks one. Coordinator declares winner and merges."
+- Judging GP says "Evaluate Alpha vs Beta output. Judge reviews each team's PR against the same criteria and recommends one. Coordinator declares winner and merges."
 
 ## Coordination
 Central Coordinator posts the challenge spec to both leads. Teams work independently and don't talk to each other. When both submit, Judge evaluates via the Judging GP. Coordinator merges the winner's branch.

@@ -10,7 +10,6 @@ const EXPECTED_NAMES: Record<string, string> = {
   'executor-pr-only': 'Developer',
   'executor-merge': 'Developer (merges)',
   'doc-updater': 'Docs Writer',
-  judge: 'Solution Judge',
   researcher: 'Researcher',
   orchestrator: 'Orchestrator',
   workhorse: 'Generalist',
@@ -93,6 +92,12 @@ describe('persona templates', () => {
   });
 
   describe('merged Project Manager', () => {
+    it('resolves the retired judge id to the PR Reviewer, unlisted', () => {
+      expect(getPersonaIds()).not.toContain('judge');
+      expect(canonicalPersonaId('judge')).toBe('qa');
+      expect(getPersonaTemplate('judge')).toBe(getPersonaTemplate('qa'));
+    });
+
     it('resolves the retired group-project-pm id to the Project Manager, unlisted', () => {
       expect(getPersonaIds()).not.toContain('group-project-pm');
       expect(PERSONA_TEMPLATES.some((p) => p.id === 'group-project-pm')).toBe(false);
