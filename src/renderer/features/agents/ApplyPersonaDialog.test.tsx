@@ -31,7 +31,7 @@ describe('ApplyPersonaDialog', () => {
     vi.clearAllMocks();
     resetStores();
     window.clubhouse.agentSettings.listSourcePersonas = vi.fn().mockResolvedValue([
-      { id: 'qa', name: 'PR Reviewer', source: 'builtin' },
+      { id: 'qa', name: 'Quality Assurance', source: 'builtin' },
       { id: 'my-pattern', name: 'My Pattern', source: 'user' },
     ]);
     window.clubhouse.agentSettings.readSourcePersonaContent = vi.fn().mockResolvedValue(
@@ -49,7 +49,7 @@ describe('ApplyPersonaDialog', () => {
   it('lists available personas', async () => {
     render(<ApplyPersonaDialog />);
     await waitFor(() => {
-      expect(screen.getByText('PR Reviewer')).toBeInTheDocument();
+      expect(screen.getByText('Quality Assurance')).toBeInTheDocument();
       expect(screen.getByText('My Pattern · user')).toBeInTheDocument();
     });
   });
@@ -66,7 +66,7 @@ describe('ApplyPersonaDialog', () => {
 
   it('applies the selected persona and closes', async () => {
     render(<ApplyPersonaDialog />);
-    await screen.findByText('PR Reviewer');
+    await screen.findByText('Quality Assurance');
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'qa' } });
     fireEvent.click(screen.getByText('Apply persona'));
     await waitFor(() => {

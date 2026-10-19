@@ -178,7 +178,7 @@ describe('AddAgentDialog', () => {
 
     it('lists the known persona templates as options', () => {
       render(<AddAgentDialog {...defaultProps} />);
-      expect(screen.getByText('PR Reviewer')).toBeInTheDocument();
+      expect(screen.getByText('Quality Assurance')).toBeInTheDocument();
       expect(screen.getByText('Researcher')).toBeInTheDocument();
     });
 

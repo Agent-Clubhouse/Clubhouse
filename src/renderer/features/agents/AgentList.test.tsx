@@ -48,7 +48,7 @@ vi.mock('./AddAgentDialog', () => ({
 vi.mock('./AgentGalleryDialog', () => ({
   AgentGalleryDialog: ({ onClose, onCreate }: any) => (
     <div data-testid="agent-gallery-dialog">
-      <button onClick={() => onCreate({ id: 'qa', name: 'PR Reviewer', description: 'QA persona', content: '# QA' }, 'red')}>Create QA</button>
+      <button onClick={() => onCreate({ id: 'qa', name: 'Quality Assurance', description: 'QA persona', content: '# QA' }, 'red')}>Create QA</button>
       <button onClick={onClose}>Close Gallery</button>
     </div>
   ),
@@ -212,12 +212,12 @@ describe('AgentList dropdown', () => {
     // Gallery closes, config dialog opens
     expect(screen.queryByTestId('agent-gallery-dialog')).not.toBeInTheDocument();
     expect(screen.getByTestId('template-config-dialog')).toBeInTheDocument();
-    expect(screen.getByText('Configure PR Reviewer')).toBeInTheDocument();
+    expect(screen.getByText('Configure Quality Assurance')).toBeInTheDocument();
   });
 
   it('calls createDurable with persona param after template config', async () => {
     const createDurableSpy = vi.fn().mockResolvedValue({
-      id: 'agent-qa', name: 'pr-reviewer', color: 'red', worktreePath: '/wt/qa',
+      id: 'agent-qa', name: 'quality-assurance', color: 'red', worktreePath: '/wt/qa',
     });
     window.clubhouse.agent.createDurable = createDurableSpy;
 
@@ -237,7 +237,7 @@ describe('AgentList dropdown', () => {
 
     expect(createDurableSpy).toHaveBeenCalledWith(
       '/project',           // projectPath
-      'pr-reviewer',        // slugified name
+      'quality-assurance',  // slugified name
       'red',                // color
       undefined,            // model (default → undefined)
       true,                 // useWorktree
