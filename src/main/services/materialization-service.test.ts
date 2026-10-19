@@ -424,7 +424,7 @@ describe('materialization-service', () => {
     it('falls back to the built-in template when no disk file exists', async () => {
       vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
       const content = await resolvePersonaContent('/project', 'qa');
-      expect(content).toContain('PR Reviewer');
+      expect(content).toContain('Quality Assurance');
     });
 
     it('returns undefined for an unknown persona with no disk file', async () => {
@@ -797,7 +797,7 @@ describe('materialization-service', () => {
       const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
       // Should contain both project defaults (with wildcards resolved) and persona content
       expect(written).toContain('Agent bold-falcon at .clubhouse/agents/bold-falcon/');
-      expect(written).toContain('PR Reviewer');
+      expect(written).toContain('Quality Assurance');
     });
 
     it('writes only persona instructions when no project defaults exist', async () => {
@@ -812,7 +812,7 @@ describe('materialization-service', () => {
       expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
       const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
       expect(written).toContain('Project Manager');
-      expect(written).toContain('mission');
+      expect(written).toContain('delegator');
     });
 
     it('skips persona injection for unknown persona ID', async () => {
@@ -831,7 +831,7 @@ describe('materialization-service', () => {
       expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
       const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
       expect(written).toContain('Agent bold-falcon');
-      expect(written).not.toContain('PR Reviewer');
+      expect(written).not.toContain('Quality Assurance');
     });
 
     it('does not write persona instructions when agent has no persona', async () => {
@@ -860,7 +860,7 @@ describe('materialization-service', () => {
       expect(mockProvider.writeInstructions).toHaveBeenCalledTimes(1);
       const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
       // Persona content appears after the ## Role section header (inline substitution)...
-      const personaMarker = written.indexOf('PR Reviewer');
+      const personaMarker = written.indexOf('Quality Assurance');
       const roleMarker = written.indexOf('## Role');
       const doneMarker = written.lastIndexOf('## Done');
       expect(personaMarker).toBeGreaterThan(roleMarker);
@@ -869,7 +869,7 @@ describe('materialization-service', () => {
       // The trailing ## Done section is preserved at the end.
       expect(written.endsWith('## Done')).toBe(true);
       // Persona body should appear exactly once — no double injection.
-      expect(written.match(/PR Reviewer/g)?.length).toBe(1);
+      expect(written.match(/Quality Assurance/g)?.length).toBe(1);
     });
 
     it('still auto-appends persona when @@Persona is NOT in the template (backwards compat)', async () => {
@@ -887,7 +887,7 @@ describe('materialization-service', () => {
 
       const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
       expect(written.startsWith('Agent bold-falcon at .clubhouse/agents/bold-falcon/')).toBe(true);
-      expect(written).toContain('PR Reviewer'); // appended at the end
+      expect(written).toContain('Quality Assurance'); // appended at the end
     });
 
     it('applies project-default persona when the agent has none of its own', async () => {
@@ -905,7 +905,7 @@ describe('materialization-service', () => {
 
       const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
       expect(written).toContain('Agent bold-falcon');
-      expect(written).toContain('PR Reviewer');
+      expect(written).toContain('Quality Assurance');
     });
 
     it('per-agent persona overrides project-default persona', async () => {
@@ -923,7 +923,7 @@ describe('materialization-service', () => {
 
       const written = vi.mocked(mockProvider.writeInstructions).mock.calls[0][1] as string;
       expect(written).toContain('Project Manager');
-      expect(written).not.toContain('PR Reviewer');
+      expect(written).not.toContain('Quality Assurance');
     });
 
     it('substitutes @@Mission with project default mission file content', async () => {
@@ -1073,7 +1073,7 @@ describe('materialization-service', () => {
       });
 
       expect(preview.instructions).toContain('Agent bold-falcon');
-      expect(preview.instructions).toContain('AI Slop Detector');
+      expect(preview.instructions).toContain('Quality Auditor');
     });
   });
 

@@ -20,7 +20,7 @@ import { TemplateConfigDialog, type TemplateConfig } from './TemplateConfigDialo
 import type { RegisteredPluginAgentTemplate } from '../../plugins/plugin-agent-template-registry';
 import { exportAgentAsTemplate } from '../blueprints/agent-template-export';
 import { serializeManifest } from '../blueprints/blueprint-export';
-import { PERSONA_TEMPLATES, canonicalPersonaId, personaDescription } from '../personas';
+import { PERSONA_TEMPLATES } from '../personas';
 import type { AgentRuntimeMode } from '../../../shared/chat';
 import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
@@ -1119,17 +1119,12 @@ export function AgentSettingsView({ agent }: Props) {
       )}
       <Field
         label="Persona"
-        help={<>
-          {personaDescription(agentPersona) && (
-            <span data-testid="agent-settings-persona-description" className="block">{personaDescription(agentPersona)}</span>
-          )}
-          Overrides the project persona when Clubhouse Mode is on. See <code className="font-mono">.clubhouse/clubhouse-mode.md</code>.
-        </>}
+        help={<>Overrides the project persona when Clubhouse Mode is on. See <code className="font-mono">.clubhouse/clubhouse-mode.md</code>.</>}
         htmlFor="agent-settings-persona"
       >
         <select
           id="agent-settings-persona"
-          value={canonicalPersonaId(agentPersona)}
+          value={agentPersona}
           onChange={(e) => handlePersonaChange(e.target.value)}
           disabled={isRunning}
           title={stopFirst}
