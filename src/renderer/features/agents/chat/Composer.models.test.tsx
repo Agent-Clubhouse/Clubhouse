@@ -68,6 +68,12 @@ describe('Composer model and effort chips (#2091)', () => {
     }
   });
 
+  it('wraps the line layout\'s tool row so 72px pills never overflow a short, narrow popout', () => {
+    renderComposer({ layout: 'line' });
+    fireEvent.click(screen.getByTestId('chat-composer-plus'));
+    expect(screen.getByTestId('chat-composer-more').className).toMatch(/\bflex-wrap\b/);
+  });
+
   it('wraps the footer so Steer, Queue and Stop move to their own row instead of covering a pill', () => {
     renderComposer({ layout: 'narrow', running: true, text: 'steer this' });
     const footer = screen.getByTestId('chat-composer-footer');

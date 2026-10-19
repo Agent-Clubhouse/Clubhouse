@@ -781,7 +781,7 @@ export function Composer(props: ComposerProps) {
         {attachments.length > 0 && <AttachmentChips attachments={attachments} onRemove={removeAttachment} />}
         {line ? (
           <>
-            {moreOpen && <div className="flex items-center gap-1.5 px-2 pt-2" data-testid="chat-composer-more">{tools}</div>}
+            {moreOpen && <div className="flex flex-wrap items-center gap-1.5 px-2 pt-2" data-testid="chat-composer-more">{tools}</div>}
             <div className="flex items-center gap-1 pl-1 pr-1.5 py-1">
               <button
                 type="button"

@@ -302,7 +302,7 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     });
     await openDialog();
     fireEvent.click(screen.getByTestId('turn-off-dispose'));
-    expect(await screen.findByTestId('turn-off-error')).toHaveTextContent('Disposed 1 of 2 helpers. impl-ipc (EBUSY) couldn’t be disposed.');
+    expect(await screen.findByTestId('turn-off-error')).toHaveTextContent('Disposed 1 of 2 helpers. impl-ipc (an error, details in the log) couldn’t be disposed.');
     // The one that went leaves the rail; the other stays.
     expect(useAgentStore.getState().agents.h2).toBeUndefined();
     expect(useAgentStore.getState().agents.h1).toBeDefined();
@@ -321,7 +321,7 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     const { toggle } = await openDialog();
     fireEvent.click(screen.getByTestId('turn-off-dispose'));
     expect(await screen.findByTestId('turn-off-partial')).toHaveTextContent(
-      'Orchestration is off, but impl-ipc (EBUSY) couldn’t be settled and stays as it was.',
+      'Orchestration is off, but impl-ipc (an error, details in the log) couldn’t be settled and stays as it was.',
     );
     fireEvent.click(screen.getByTestId('turn-off-close'));
     await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
@@ -361,6 +361,20 @@ describe('Orchestration cards in Agent details', () => {
     expect(screen.queryByTestId('details-card-orchestrate')).not.toBeInTheDocument();
     expect(screen.queryByTestId('details-card-helpers')).not.toBeInTheDocument();
     expect(screen.queryByTestId('details-card-connections')).not.toBeInTheDocument();
+  });
+});
+
+describe('turn-off failure reasons', () => {
+  it('keeps a reason that reads as words', async () => {
+    window.clubhouse.agent.setOrchestrationPolicy = vi.fn(async () => ({ ok: true, message: 'Choose', needsHelperChoice: { helperIds: ['h1'] } })) as never;
+    window.clubhouse.agent.turnOffOrchestration = vi.fn(async () => ({
+      ok: false, message: 'Disposed 0 of 1 helpers', failed: [{ agentId: 'h1', name: 'impl-ipc', reason: 'it is still being created in another Clubhouse window' }],
+    }));
+    stored = { ...stored, orchestrate: true };
+    const toggle = await renderCard();
+    fireEvent.click(toggle);
+    fireEvent.click(await screen.findByTestId('turn-off-dispose'));
+    expect(await screen.findByTestId('turn-off-error')).toHaveTextContent('impl-ipc (it is still being created in another Clubhouse window) couldn’t be disposed.');
   });
 });
 

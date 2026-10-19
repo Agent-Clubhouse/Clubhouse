@@ -12,7 +12,7 @@ import type { OrchestrationOffChoice, ResolvedOrchestrationPolicy, TurnOffOrches
 import { Modal } from '../../../components/Modal';
 import { Button } from '../../../components/Button';
 import { useAgentStore } from '../../../stores/agentStore';
-import { HELPER_STATE_LABEL, checkLines, helperState, joinNames, plural } from './helper-model';
+import { HELPER_STATE_LABEL, checkLines, helperState, joinNames, plainFailure, plural } from './helper-model';
 import { reloadProjectAgents } from './orchestration-hooks';
 import { CheckList } from './CheckList';
 
@@ -31,6 +31,11 @@ type Phase =
   | { kind: 'failed'; message: string }
   /** Orchestration went off, but some helpers couldn't be settled. */
   | { kind: 'partial'; policy: ResolvedOrchestrationPolicy; message: string };
+
+/** Main's reason for one helper in words; raw git or file-system output stays in the log. */
+function failureReason(reason: string): string {
+  return plainFailure(reason, 'an error, details in the log').text;
+}
 
 /** "a has", "a and b have", "3 helpers have": names up to two, a count past that. */
 function subject(names: string[], one: string, many: string): string {
@@ -101,7 +106,7 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
     // Off even so: main turned orchestration off and only some helpers failed.
     if (result.policy && !result.policy.orchestrate) {
       if (choice !== 'dispose' || !result.helperIds?.length) await reloadProjectAgents(agent.projectId, projectPath);
-      const names = result.failed?.map((f) => `${f.name} (${f.reason})`);
+      const names = result.failed?.map((f) => `${f.name} (${failureReason(f.reason)})`);
       setPhase({
         kind: 'partial',
         policy: result.policy,
@@ -117,7 +122,7 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
     if (result.blocked && result.blocked.length > 0) {
       setPhase({ kind: 'blocked', blocked: result.blocked, message: result.message });
     } else {
-      const failed = result.failed?.map((f) => `${f.name} (${f.reason})`).join(', ');
+      const failed = result.failed?.map((f) => `${f.name} (${failureReason(f.reason)})`).join(', ');
       setPhase({ kind: 'failed', message: failed ? `${result.message}. ${failed} couldn’t be disposed.` : result.message });
     }
   };
