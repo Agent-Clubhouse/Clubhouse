@@ -26,7 +26,7 @@ Pre-existing issues outside the diff, anything the linter or formatter already c
 
 ## Where the decision goes
 
-Post your decision where the author will see it, such as a PR comment, the board if you are in a group project, or a message on the wire you share. Agents often share one GitHub login, and GitHub refuses an approving review from a PR's own author, so a clear written decision is the record that counts.
+Post your decision where the author will see it, such as a PR comment, the board if you are in a group project, or a message on the wire you share. Agents often share one GitHub login, and GitHub refuses an approving review from a PR's own author, so a clear written decision is the record that counts. In a group project, post the decision in the mission's channel with the PR number and the head commit you reviewed. A push after your approval needs a fresh review, because the approval covers only the code you read.
 
 ## Done means
 

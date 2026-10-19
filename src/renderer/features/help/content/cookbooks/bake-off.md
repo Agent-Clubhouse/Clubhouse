@@ -64,7 +64,7 @@ Use `create_canvas_from_blueprint` for atomic creation:
 ## GP Instructions
 - Alpha Team GP says "Alpha team builds a competing implementation. The lead dispatches, workers implement, the PR Reviewer reviews. Post progress and PRs."
 - Beta Team GP says the same for the Beta team.
-- Judging GP says "Evaluate Alpha vs Beta output. Judge reviews each team's PR against the same criteria and recommends one. Coordinator declares the winner and asks the user to merge it."
+- Judging GP says "Evaluate Alpha vs Beta output. Judge checks each team's PR on its own first, giving pass or fail per criterion with evidence such as a test run, file or command output. Only then does Judge compare them and recommend one, so the order they arrive in and how long they are don't sway the pick. Coordinator declares the winner and asks the user to merge it."
 
 ## Coordination
 Central Coordinator posts the challenge spec to both leads. Teams work independently and don't talk to each other. When both submit, Judge evaluates via the Judging GP. Coordinator declares the winner and asks the user, with `notify_user`, to merge the winning PR once CI is green.

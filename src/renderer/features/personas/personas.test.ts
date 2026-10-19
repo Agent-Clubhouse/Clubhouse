@@ -18,10 +18,10 @@ const EXPECTED_NAMES: Record<string, string> = {
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
 // Group Project Lead runs the whole board: orientation, channels, briefs,
-// wake and sleep, polling, taps, hygiene, project info and the merge gate.
-// Folding it into a 600-word Project Manager cut that depth and users missed
-// it, so it gets more room than the rest.
-const WORD_CAP: Record<string, number> = { 'group-project-pm': 750 };
+// wake and sleep, polling on every CLI, taps, hygiene, project info, the merge
+// gate and the no-board and PR-only cases. Folding it into a 600-word Project
+// Manager cut that depth and users missed it, so it gets more room than the rest.
+const WORD_CAP: Record<string, number> = { 'group-project-pm': 800 };
 
 describe('persona templates', () => {
   it('lists every persona under its display name, ids unchanged', () => {
@@ -143,11 +143,28 @@ describe('persona templates', () => {
       for (const channel of ['general', 'control']) expect(body(), channel).toContain(`\`${channel}\``);
     });
 
-    it('gates merges on the PR Reviewer and green CI', () => {
+    it('leaves the merge to the developer on an approval of the current head and green CI', () => {
       const gate = body().split('## Merge gate')[1].split('\n## ')[0];
       expect(gate).toContain('Developer (merges)');
       expect(gate).toContain('PR Reviewer');
+      expect(gate).toContain('current head');
       expect(gate).toContain('CI is green');
+      expect(gate).toContain('no separate go');
+      expect(gate).toContain('a mission closes at an approved PR, and merging belongs to whoever the brief names');
+    });
+
+    it('covers polling on every CLI, resuming, and having no board', () => {
+      expect(body()).toContain('`/loop 60s`');
+      expect(body()).toContain('On other CLIs, read the board between your own steps.');
+      expect(body()).toContain('`resume: true`');
+      expect(body()).toContain("coordinate through the user and any agents you're wired to");
+    });
+
+    it('ties merge approvals to the current head in the reviewer and the merging developer', () => {
+      expect(getPersonaTemplate('qa')!.content).toContain('the head commit you reviewed');
+      const merge = getPersonaTemplate('executor-merge')!.content;
+      expect(merge).toContain('name the current head');
+      expect(merge).toContain('auto-merge only once the written approval for the current head is in');
     });
 
     it('has a done-means section and an example brief', () => {
