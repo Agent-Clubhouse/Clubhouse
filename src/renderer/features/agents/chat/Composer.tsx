@@ -177,7 +177,9 @@ function useCloseOnMouseDown(open: boolean, close: () => void) {
 }
 
 // One line whatever the width (#2112): long names end in an ellipsis, with the full name in the tooltip.
-const chipClass = 'h-[26px] min-w-0 max-w-[180px] flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] whitespace-nowrap disabled:opacity-100 disabled:cursor-default';
+// max-w-full keeps the button inside its shrinking wrapper, so the label truncates
+// instead of spilling over the send buttons in a narrow composer (#2260).
+const chipClass = 'h-[26px] min-w-0 max-w-full overflow-hidden flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] whitespace-nowrap disabled:opacity-100 disabled:cursor-default';
 const menuClass = 'absolute left-0 bottom-9 bg-ctp-crust border border-surface-1 rounded-lg shadow-xl p-1.5 z-dropdown flex flex-col gap-px';
 
 function Radio({ on }: { on: boolean }) {
@@ -208,7 +210,7 @@ function ModelPill({ models, efforts, model, effort, effortIsDefault, capabiliti
   const note = switchNote(modelSwitch, 'none');
 
   return (
-    <div className="relative min-w-0">
+    <div className="relative min-w-0 max-w-[180px]">
       <button
         type="button"
         disabled={!canChange}
@@ -287,7 +289,7 @@ function EffortPill({ efforts, model, effort, effortIsDefault, effortReported = 
   const label = effort ? `${effortWord(effort)} effort${effortIsDefault ? ' (default)' : ''}` : 'Default effort';
 
   return (
-    <div className="relative min-w-0">
+    <div className="relative min-w-0 max-w-[180px]">
       <button
         type="button"
         disabled={!canChange}
@@ -672,7 +674,7 @@ export function Composer(props: ComposerProps) {
   );
 
   const sendButtons = (
-    <span className={`${line ? 'flex-shrink-0' : 'ml-auto'} flex items-center gap-1.5`}>
+    <span className={`${line ? '' : 'ml-auto'} flex-shrink-0 flex items-center gap-1.5`}>
       {running ? (
         <>
           <button
