@@ -37,6 +37,7 @@ import { startDurableCreation } from '../../agent-creation';
 import * as agentSystem from '../../agent-system';
 import { getAgentRuntime } from '../../agent-runtime';
 import { getGitInfo } from '../../git-service';
+import { withoutClubhouseOwnedChanges } from '../../clubhouse-owned-files';
 import { applyPersonaToAgent } from '../../persona-application';
 import {
   checkHelperLimitFor,
@@ -144,6 +145,8 @@ async function resolveOwnHelper(caller: Caller, ref: string): Promise<DurableAge
  * does. Returns false when the agent isn't running.
  */
 async function deliverToAgent(targetId: string, text: string): Promise<boolean> {
+  // A process that is exiting would swallow the message.
+  if (agentSystem.isAgentStopping(targetId)) return false;
   const runtime = getAgentRuntime(targetId);
   if (!runtime) return false;
   await runtime.sendMessage(text, { source: 'mcp', taskId: `helper_${Date.now().toString(36)}` });
@@ -670,13 +673,15 @@ export function watchHelperStartRequests(send: (channel: string, payload: unknow
 
 // ── list_helpers ─────────────────────────────────────────────────────────
 
-type HelperStatus = 'creating' | 'starting' | 'failed' | 'sleeping' | 'idle' | 'running'
+type HelperStatus = 'creating' | 'starting' | 'failed' | 'stopping' | 'sleeping' | 'idle' | 'running'
   | 'waiting_permission' | 'waiting_input' | 'error';
 
 function helperStatus(helper: DurableAgentConfig): { status: HelperStatus; reason?: string } {
   if (helper.creation?.state === 'creating') return { status: 'creating' };
   if (helper.creation?.state === 'failed') return { status: 'failed', reason: helper.creation.reason };
   if (spawning.has(helper.id)) return { status: 'starting' };
+  // Told to sleep and not exited yet: neither running nor asleep.
+  if (agentSystem.isAgentStopping(helper.id)) return { status: 'stopping' };
   if (agentSystem.isAgentRunning(helper.id)) {
     // Only a chat runtime knows its turn state; a terminal is just running.
     const runtime = getAgentRuntime(helper.id);
@@ -724,7 +729,8 @@ async function describeHelper(helper: DurableAgentConfig): Promise<Record<string
         // Against the branch's remote: commits not pushed, and not pulled.
         out.ahead = git.ahead;
         out.behind = git.behind;
-        out.dirty = git.status.length;
+        // Clubhouse's own config in the worktree is not the helper's work.
+        out.dirty = (await withoutClubhouseOwnedChanges(helper.worktreePath, git.status)).length;
         if (git.log[0]) out.lastCommit = { subject: git.log[0].subject, when: git.log[0].date };
       }
     } catch (err) {
@@ -756,17 +762,46 @@ async function sleepHelper(agentId: string, args: Record<string, unknown>): Prom
   if (!agentSystem.isAgentRunning(helper.id)) {
     return jsonResult({ helperId: helper.id, name: helper.name, status: 'already_sleeping' });
   }
-  await agentSystem.killAgent(helper.id, caller.projectPath, helper.orchestrator, 'agent_tool', { by: caller.config.name });
+  // Returns once the process has exited, so list_helpers and wake_helper see
+  // it asleep. A sleep already under way (from here or the app) is waited on.
+  if (agentSystem.isAgentStopping(helper.id)) {
+    await agentSystem.waitForAgentStopped(helper.id);
+  } else {
+    await agentSystem.killAgent(helper.id, caller.projectPath, helper.orchestrator, 'agent_tool', { by: caller.config.name, waitForExit: true });
+  }
+  if (agentSystem.isAgentRunning(helper.id)) {
+    appLog('core:mcp', 'warn', 'sleep_helper: helper has not exited', { meta: { agentId, helperId: helper.id } });
+    return jsonResult({
+      helperId: helper.id, name: helper.name, status: 'stopping',
+      note: 'It was told to stop but has not exited yet. Check list_helpers before waking it.',
+    });
+  }
   broadcastToAllWindows(IPC.AGENT.AGENT_SLEEPING, helper.id);
   appLog('core:mcp', 'info', 'sleep_helper: helper put to sleep', { meta: { agentId, helperId: helper.id } });
   return jsonResult({ helperId: helper.id, name: helper.name, status: 'sleeping' });
+}
+
+/** The wake result for a helper that is still exiting: nothing was sent and nothing started. */
+function stillStopping(helper: DurableAgentConfig, message: string | undefined): McpToolResult {
+  return jsonResult({
+    helperId: helper.id, name: helper.name, status: 'stopping',
+    ...(message && { messageDelivered: false }),
+    note: 'It is still shutting down. Call wake_helper again once list_helpers shows it sleeping.',
+  });
 }
 
 async function wakeHelper(agentId: string, args: Record<string, unknown>): Promise<McpToolResult> {
   const ref = requireText(args, 'helper');
   const message = optionalText(args, 'message');
   const caller = await resolveCaller(agentId);
-  const helper = await resolveOwnHelper(caller, ref);
+  let helper = await resolveOwnHelper(caller, ref);
+  if (agentSystem.isAgentStopping(helper.id)) {
+    // Asleep in a moment: wait for the exit, then wake it for real, so the
+    // message goes to a new session instead of the one that is exiting.
+    if (!(await agentSystem.waitForAgentStopped(helper.id))) return stillStopping(helper, message);
+    // Re-read: the exit just saved the session id the wake resumes.
+    helper = await resolveOwnHelper(caller, helper.id);
+  }
   if (helper.creation) {
     throw new HelperToolError(helper.creation.state === 'creating'
       ? `${helper.name} is still being created. You will get a message when it has started.`
@@ -779,6 +814,8 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
     });
   }
   if (agentSystem.isAgentRunning(helper.id)) {
+    // A sleep that began while the helper was re-read.
+    if (agentSystem.isAgentStopping(helper.id)) return stillStopping(helper, message);
     const delivered = message ? await deliverToAgent(helper.id, `[FROM:${caller.config.name}] ${message}`) : false;
     return jsonResult({ helperId: helper.id, name: helper.name, status: 'already_running', ...(message && { messageDelivered: delivered }) });
   }
@@ -887,7 +924,7 @@ export function registerHelperTools(): void {
     'list_helpers',
     {
       description:
-        'List your helpers: status (creating, starting, running, idle, waiting, sleeping or failed), ' +
+        'List your helpers: status (creating, starting, running, idle, waiting, stopping, sleeping or failed), ' +
         'branch, commits ahead of and behind its remote branch, uncommitted files, last commit and last activity.',
       inputSchema: { type: 'object', properties: {} },
     },
@@ -898,7 +935,7 @@ export function registerHelperTools(): void {
   registerGlobalTool(
     'sleep_helper',
     {
-      description: 'Put one of your helpers to sleep. Its worktree and session stay; wake_helper resumes it.',
+      description: 'Put one of your helpers to sleep. Returns once it has stopped. Its worktree and session stay; wake_helper resumes it.',
       inputSchema: {
         type: 'object',
         properties: { helper: { type: 'string', description: 'The helper\'s id or name.' } },

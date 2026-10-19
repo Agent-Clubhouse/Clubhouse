@@ -128,3 +128,24 @@ describe('dispose checks against a real repository (no remote)', () => {
     ]);
   });
 });
+
+describe('dispose checks and Clubhouse\'s own config', () => {
+  const bridge = { mcpServers: { clubhouse: { command: 'node', args: ['/app/bridge/clubhouse-mcp-bridge.js'] } } };
+
+  it('disposes a fresh helper whose only change is the .mcp.json Clubhouse wrote', async () => {
+    fs.writeFileSync(path.join(worktree('helper-b'), '.mcp.json'), JSON.stringify(bridge, null, 2));
+    expect(await getDisposeChecks(project, 'durable_3_b')).toEqual({ dirty: 0, unpushed: 0, unmerged: 0 });
+  });
+
+  it('still holds for a real edit, counting it alone', async () => {
+    fs.writeFileSync(path.join(worktree('helper-b'), '.mcp.json'), JSON.stringify(bridge, null, 2));
+    fs.writeFileSync(path.join(worktree('helper-b'), 'notes.txt'), 'draft\n');
+    expect((await getDisposeChecks(project, 'durable_3_b')).dirty).toBe(1);
+  });
+
+  it('still holds when the user added a server to Clubhouse\'s .mcp.json', async () => {
+    const edited = { mcpServers: { ...bridge.mcpServers, mine: { command: 'my-server' } } };
+    fs.writeFileSync(path.join(worktree('helper-b'), '.mcp.json'), JSON.stringify(edited, null, 2));
+    expect((await getDisposeChecks(project, 'durable_3_b')).dirty).toBe(1);
+  });
+});

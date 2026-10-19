@@ -20,6 +20,7 @@ import { setAgentIdleSleep } from './chat-idle-settings';
 import { assertAgentGitName, validateAgentGitName } from '../../shared/agent-name';
 import { ACCESS_LEVELS, type AgentAccessLevel, type OrchestrationPolicyConfig } from '../../shared/orchestration-policy';
 import { notifyPersonaChanged } from './persona-change-hook';
+import { parsePorcelain, withoutClubhouseOwnedChanges } from './clubhouse-owned-files';
 
 /**
  * Non-blocking git command execution. Prevents UI freezes in large repos.
@@ -2253,15 +2254,16 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
 
   // Run git status, base branch detection, and remote check in parallel
   const [statusResult, base, remoteResult] = await Promise.all([
-    execGitFileAsync(['status', '--porcelain'], wt).catch(() => ''),
+    execGitFileAsync(['status', '--porcelain', '--untracked-files=all'], wt).catch(() => ''),
     detectBaseBranch(projectPath),
     execGitFileAsync(['remote'], wt).catch(() => ''),
   ]);
 
   // Parse uncommitted files (use trimEnd to preserve leading status chars like " M")
-  const uncommittedFiles = statusResult.trimEnd()
+  // Clubhouse's own config in the worktree is not the agent's work.
+  const uncommittedFiles = await withoutClubhouseOwnedChanges(wt, statusResult.trimEnd()
     ? statusResult.trimEnd().split('\n').filter(Boolean).map(parseStatusLine)
-    : [];
+    : []);
 
   // Get unpushed commits (depends on base branch result)
   let unpushedCommits: GitLogEntry[] = [];
@@ -2807,8 +2809,10 @@ async function runDisposeChecks(
   let dirty = 0;
   if (wtExists) {
     refs.push('HEAD');
-    const status = await execGitFileAsync(['status', '--porcelain'], cwd);
-    dirty = status.split('\n').filter((line) => line.trim()).length;
+    // File by file, so Clubhouse's own config (clubhouse-owned-files.ts)
+    // can be told apart from the agent's work in the same folder.
+    const status = await execGitFileAsync(['status', '--porcelain', '--untracked-files=all'], cwd);
+    dirty = (await withoutClubhouseOwnedChanges(cwd, parsePorcelain(status))).length;
     try {
       const head = (await execGitFileAsync(['symbolic-ref', '--quiet', 'HEAD'], cwd)).trim();
       if (head.startsWith('refs/heads/')) own.push(head.slice('refs/heads/'.length));

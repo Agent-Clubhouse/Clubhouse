@@ -101,6 +101,33 @@ export function isAgentRunning(agentId: string): boolean {
 }
 
 /**
+ * Whether an agent was told to stop and its PTY has not exited yet. Such an
+ * agent still counts as running, but anything written to it is lost.
+ */
+export function isAgentStopping(agentId: string): boolean {
+  return ptyManager.isStopping(agentId);
+}
+
+/**
+ * Wait for an agent that is stopping to exit, and for the session id its exit
+ * captures, so a wake right after resumes the right session. Resolves true
+ * once the agent has no live session, false if it is still alive after the
+ * kill timeout.
+ */
+export async function waitForAgentStopped(agentId: string): Promise<boolean> {
+  if (ptyManager.isRunning(agentId)) {
+    // Registered before the check below can yield, so the exit can't slip past.
+    const exited = waitForAgentExit(agentId);
+    await settleKill(agentId, exited);
+  } else {
+    // Exited already; its session capture may still be in flight.
+    const capture = sessionCaptureFor(agentId);
+    if (capture) await capture;
+  }
+  return !isAgentRunning(agentId);
+}
+
+/**
  * Given a set of candidate agent IDs, return those with a live session. Used by
  * the renderer to reconcile durable-agent status on window reopen so genuinely
  * running agents don't briefly show as 'sleeping' until the next poll tick.
