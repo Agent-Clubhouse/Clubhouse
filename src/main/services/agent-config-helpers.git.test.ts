@@ -155,7 +155,11 @@ describe('worktree status when git fails', () => {
   it('reports that it could not check, never a clean worktree', async () => {
     fs.writeFileSync(path.join(worktree('helper-b'), 'notes.txt'), 'draft\n');
     // Point the worktree at a git dir that isn't there, so git status fails.
-    fs.writeFileSync(path.join(worktree('helper-b'), '.git'), `gitdir: ${path.join(root, 'missing')}\n`);
+    // Remove the .git file first: git marks it hidden on Windows, and
+    // overwriting a hidden file there fails with EPERM.
+    const gitFile = path.join(worktree('helper-b'), '.git');
+    fs.rmSync(gitFile, { force: true });
+    fs.writeFileSync(gitFile, `gitdir: ${path.join(root, 'missing')}\n`);
     const status = await getWorktreeStatus(project, 'durable_3_b');
     expect(status.checkError).toMatch(/couldn't read its uncommitted files/);
     expect(status.uncommittedFiles).toEqual([]);
