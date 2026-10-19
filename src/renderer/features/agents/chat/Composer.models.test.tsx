@@ -55,6 +55,18 @@ function renderComposerWithRerender(initial: Partial<ComposerProps>) {
 }
 
 describe('Composer model and effort chips (#2091)', () => {
+  it('keeps each chip inside its box so a narrow composer truncates instead of overlapping (#2260)', () => {
+    renderComposer({ layout: 'narrow' });
+    // jsdom can't measure layout, so check the classes that make a chip shrink with its wrapper.
+    for (const id of ['chat-model-pill', 'chat-effort-pill']) {
+      const pill = screen.getByTestId(id);
+      expect(pill.className).toMatch(/\bmax-w-full\b/);
+      expect(pill.className).toMatch(/\boverflow-hidden\b/);
+      expect(pill.className).toMatch(/\bmin-w-0\b/);
+      expect(pill.parentElement?.className).toMatch(/\bmin-w-0\b/);
+    }
+  });
+
   it('shows the model label, and switches model keeping an effort still on offer', () => {
     const { onModelChange } = renderComposer();
     const pill = screen.getByTestId('chat-model-pill');
@@ -206,7 +218,7 @@ describe('Composer model and effort chips (#2091)', () => {
     renderComposer({ model: 'claude-opus-5-5[1m]' });
     const pill = screen.getByTestId('chat-model-pill');
     expect(pill.className).toContain('whitespace-nowrap');
-    expect(pill.className).toContain('max-w-[180px]');
+    expect(pill.parentElement?.className).toContain('max-w-[180px]');
     expect(pill.querySelector('span.truncate')).toHaveTextContent('Opus 5.5 · 1M');
     expect(pill).toHaveAttribute('title', 'Opus 5.5 · 1M (claude-opus-5-5[1m])');
   });
