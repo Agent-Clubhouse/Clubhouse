@@ -5,9 +5,11 @@ import { ResizeDivider } from './ResizeDivider';
 import { usePanelStore } from '../stores/panelStore';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
+import { HelperDisposeRequestDialog } from '../features/agents/helpers/HelperDisposeRequestDialog';
 
 /**
- * The three-panel project layout (explorer │ accessory │ main content).
+ * The three-panel project layout (explorer │ accessory │ main content) of the
+ * default (legacy) layout.
  * Subscribes to panel sizing state so that continuous resize-drag events
  * only re-render this subtree, not the entire App component tree.
  */
@@ -55,6 +57,8 @@ export function ProjectPanelLayout() {
       <div className="flex-1 min-w-0 min-h-0">
         <MainContentView />
       </div>
+      {/* An orchestrator's dispose request, opened from the helper's row (#2229). The new chrome mounts its own. */}
+      <HelperDisposeRequestDialog />
     </div>
   );
 }

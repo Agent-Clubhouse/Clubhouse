@@ -18,7 +18,7 @@ export function CheckList({ lines, testId }: { lines: CheckLine[]; testId?: stri
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" role="img" aria-label={icon.label} className={`flex-shrink-0 mt-px ${icon.className}`}>
               <path d={icon.path} />
             </svg>
-            <span className="min-w-0">{line.text}</span>
+            <span className="min-w-0" title={line.detail}>{line.text}</span>
           </li>
         );
       })}

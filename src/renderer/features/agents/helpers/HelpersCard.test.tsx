@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
 import { useState } from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Agent, DurableAgentConfig, HelperDisposeChecks } from '../../../../shared/types';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
@@ -280,5 +280,68 @@ describe('Helpers card start approvals (#2234)', () => {
     await renderCard();
     expect(screen.getByTestId('helper-request-hstart_a')).toBeInTheDocument();
     expect(screen.getByTestId('details-card-helpers')).not.toHaveTextContent('No helpers yet');
+  });
+});
+
+describe('HelpersCard row text', () => {
+  it('puts the whole work line in a tooltip, since it truncates', async () => {
+    await renderCard();
+    const h1 = screen.getByTestId('helper-row-h1');
+    await waitFor(() => expect(within(h1).getByTestId('helper-work-line')).toHaveAttribute('title', 'impl-ipc/work · 3 uncommitted, 2 unpushed'));
+  });
+
+  it('says why a helper couldn’t start in words, with git’s output in the tooltip', async () => {
+    const raw = "Command failed: git worktree add\nfatal: 'impl-docs/work' is already checked out";
+    useAgentStore.setState((s) => ({ agents: { ...s.agents, h4: { ...s.agents.h4, errorMessage: raw } } }));
+    await renderCard();
+    const line = within(screen.getByTestId('helper-row-h4')).getByTestId('helper-work-line');
+    expect(line).toHaveTextContent('couldn’t make its folder');
+    expect(line).not.toHaveTextContent('fatal');
+    expect(line.getAttribute('title')).toContain(raw);
+  });
+});
+
+describe('HelpersCard stays current when the configs change', () => {
+  let configListener: ((projectPath: string) => void) | null;
+
+  beforeEach(() => {
+    configListener = null;
+    window.clubhouse.agent.onConfigsChanged = vi.fn((cb: (projectPath: string) => void) => {
+      configListener = cb;
+      return () => { configListener = null; };
+    }) as never;
+  });
+
+  it('drops kept helpers once "Keep helpers as normal agents" clears their parent link', async () => {
+    useAgentStore.setState((s) => ({
+      agents: Object.fromEntries(Object.entries(s.agents).map(([id, a]) => [id, id === 'lead' ? a : { ...a, parentAgentId: 'lead' }])),
+    }));
+    await renderCard();
+    expect(screen.getByTestId('helper-row-h1')).toBeInTheDocument();
+    // Keep clears parentAgentId in agents.json; the rail reloads with it gone and no status change.
+    configs = configs.map((c) => (c.parentAgentId === 'lead' ? { ...c, parentAgentId: undefined } : c));
+    act(() => {
+      useAgentStore.setState((s) => ({
+        agents: Object.fromEntries(Object.entries(s.agents).map(([id, a]) => [id, { ...a, parentAgentId: undefined }])),
+      }));
+    });
+    await waitFor(() => expect(screen.queryByTestId('helper-row-h1')).not.toBeInTheDocument());
+    expect(screen.queryByTestId('helper-row-h2')).not.toBeInTheDocument();
+  });
+
+  it('re-reads when main says the project configs changed, such as a handoff', async () => {
+    await renderCard();
+    expect(screen.getByTestId('helper-row-h2')).toHaveAttribute('data-state', 'sleeping');
+    configs = configs.map((c) => (c.id === 'h2' ? { ...c, handoff: { how: 'pushed', note: '', at: '2026-10-18T12:00:00Z' } } : c));
+    act(() => configListener?.(`${PROJECT}${path.sep}`));
+    await waitFor(() => expect(screen.getByTestId('helper-row-h2')).toHaveAttribute('data-state', 'handed-off'));
+  });
+
+  it('ignores changes to another project', async () => {
+    await renderCard();
+    const reads = vi.mocked(window.clubhouse.agent.listDurable).mock.calls.length;
+    act(() => configListener?.(path.join('/work', 'other')));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(vi.mocked(window.clubhouse.agent.listDurable).mock.calls.length).toBe(reads);
   });
 });

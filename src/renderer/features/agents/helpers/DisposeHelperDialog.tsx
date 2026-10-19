@@ -18,7 +18,7 @@ import type { Agent, HelperDisposeChecks } from '../../../../shared/types';
 import { Modal } from '../../../components/Modal';
 import { Button } from '../../../components/Button';
 import { useAgentStore } from '../../../stores/agentStore';
-import { checkLines, checksFailed, hasWorkAtRisk } from './helper-model';
+import { checkLines, checksFailed, hasWorkAtRisk, plainFailure } from './helper-model';
 import { CheckList } from './CheckList';
 import { relativeFolder } from '../details/AgentDetails';
 
@@ -94,12 +94,16 @@ export function DisposeHelperDialog({ helper, projectPath, requestedBy, onClose,
       }
       if (result.checks) setChecks(result.checks);
       const stopped = result.stopped ? ` ${helper.name} is stopped and nothing was deleted.` : ' Nothing was deleted.';
+      // A failed check's git output is in the check line's tooltip, not the sentence.
+      const message = result.checks?.error
+        ? `${helper.name} wasn’t disposed because it couldn’t be checked`
+        : plainFailure(result.message, `${helper.name} wasn’t disposed`).text.replace(/\.$/, '');
       setError(result.changed
-        ? `${result.message}. Review what would be lost and confirm again.${result.stopped ? ` ${helper.name} is stopped.` : ''}`
-        : `${result.message}.${stopped}`);
+        ? `${message}. Review what would be lost and confirm again.${result.stopped ? ` ${helper.name} is stopped.` : ''}`
+        : `${message}.${stopped}`);
     } catch (err) {
       // telemetry-exempt: shown in the dialog.
-      setError(err instanceof Error ? err.message : String(err));
+      setError(plainFailure(err instanceof Error ? err.message : String(err), `Couldn’t dispose of ${helper.name}. Nothing was deleted.`).text);
     }
     setPhase('ready');
   };

@@ -23,7 +23,7 @@ import { useAgentStatuses } from '../agent-status-store';
 import { agentDot, StatusDot } from '../agent-status';
 import { wakeDurableAgent } from '../wake-durable-agent';
 import { CardNote, DetailsCard } from '../details/DetailsCard';
-import { HELPER_STATE_LABEL, helperDot, helperState, splitHelpers, workSummary, type HelperState } from './helper-model';
+import { HELPER_STATE_LABEL, checkFailureReason, helperDot, helperState, plainFailure, splitHelpers, workSummary, type HelperState } from './helper-model';
 import { openAgent } from './orchestration-hooks';
 import { DisposeHelperDialog, type DisposeHelperTarget } from './DisposeHelperDialog';
 
@@ -195,7 +195,15 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
               const railAgent = rail[h.id];
               const dot = helperDot(state, railAgent ? agentDot(railAgent, statuses[h.id]) : undefined);
               const word = state === 'running' && dot === 'needs' ? 'Needs you' : HELPER_STATE_LABEL[state];
-              const work = state === 'failed' ? (railAgent?.errorMessage ?? h.creation?.reason ?? null) : workSummary(checks[h.id]);
+              // Raw git or CLI output stays in the tooltip; the row says it in words.
+              const failure = state === 'failed'
+                ? plainFailure(railAgent?.errorMessage ?? h.creation?.reason, h.creation?.state === 'failed' ? 'couldn’t make its folder' : 'its CLI didn’t start')
+                : null;
+              const checkError = checks[h.id]?.error;
+              const checkReason = checkError ? checkFailureReason(checkError) : null;
+              const work = failure ? failure.text : workSummary(checks[h.id]);
+              const workDetail = failure?.detail ?? (checkReason ? checkReason.detail ?? checkReason.text : undefined);
+              const workLine = [h.branch, work].filter(Boolean).join(' · ');
               const canRun = state === 'running' || state === 'sleeping' || state === 'handed-off';
               const isRunning = railAgent?.status === 'running';
               return (
@@ -215,7 +223,7 @@ export function HelpersCard({ agent, projectPath, configs, maxHelpers, orchestra
                     <span className={`ml-auto flex-shrink-0 text-xs ${state === 'failed' ? 'text-ctp-error' : 'text-ctp-overlay1'}`} data-testid="helper-state">{word}</span>
                   </div>
                   <div className="flex items-center gap-2 min-h-[20px] text-xs text-ctp-overlay1">
-                    <span className="min-w-0 truncate">
+                    <span className="min-w-0 truncate" title={workDetail ? `${workLine}\n${workDetail}` : workLine || undefined} data-testid="helper-work-line">
                       {h.branch && <span className="font-mono text-[11.5px]">{h.branch}</span>}
                       {h.branch && work ? ' · ' : ''}
                       {work && <span data-testid="helper-work">{work}</span>}

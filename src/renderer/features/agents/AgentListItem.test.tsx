@@ -5,6 +5,9 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import type { Agent } from '../../../shared/types';
+import { useHelperStartRequestStore } from '../../stores/helperStartRequestStore';
+import { useHelperDisposeRequestStore } from '../../stores/helperDisposeRequestStore';
+import { useAgentDetailsStore } from './details/detailsStore';
 
 const baseAgent: Agent = {
   id: 'agent-1',
@@ -417,5 +420,78 @@ describe('AgentListItem indent', () => {
     expect(row.style.paddingLeft).toBe('40px');
     expect(row.className).not.toContain('px-3');
     expect(row.className).not.toContain('pl-7');
+  });
+});
+
+describe('AgentListItem helper roll-up and requests (legacy layout)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    useHelperStartRequestStore.setState({ requests: {} });
+    useHelperDisposeRequestStore.setState({ requests: {}, reviewing: null });
+    useAgentDetailsStore.setState({ focus: null });
+  });
+
+  it('shows how many helpers a folded parent hides, described for screen readers', () => {
+    resetStores();
+    render(<AgentListItem agent={baseAgent} isActive={false} isThinking={false} onSelect={vi.fn()} helperRollup={{ count: 2, needs: 0, working: 0 }} />);
+    const rollup = screen.getByTestId('helper-rollup');
+    expect(rollup).toHaveTextContent('2 helpers');
+    // Quiet: no dot while nothing needs you or works.
+    expect(screen.queryByTestId('helper-rollup-dot')).toBeNull();
+    expect(screen.getByTestId('agent-item-agent-1')).toHaveAttribute('aria-describedby', rollup.id);
+  });
+
+  it('adds a dot when a folded helper needs you, and says so to screen readers', () => {
+    resetStores();
+    render(<AgentListItem agent={baseAgent} isActive={false} isThinking={false} onSelect={vi.fn()} helperRollup={{ count: 1, needs: 1, working: 0 }} />);
+    expect(screen.getByTestId('helper-rollup')).toHaveTextContent('1 helper, 1 needs you');
+    expect(screen.getByTestId('helper-rollup-dot').className).toContain('bg-ctp-warning');
+  });
+
+  it('wraps its chips to a second line instead of clipping them on an indented helper row', () => {
+    resetStores();
+    render(<AgentListItem agent={baseAgent} isActive={false} isThinking={false} onSelect={vi.fn()} indent={40} />);
+    const chips = screen.getByText('Claude Code').parentElement!;
+    expect(chips.className).toMatch(/\bflex-wrap\b/);
+    expect(screen.getByText('bold-falcon')).toHaveAttribute('title', 'bold-falcon');
+  });
+
+  it('shows no roll-up for an unfolded or helperless row', () => {
+    renderItem();
+    expect(screen.queryByTestId('helper-rollup')).toBeNull();
+    expect(screen.getByTestId('agent-item-agent-1')).not.toHaveAttribute('aria-describedby');
+  });
+
+  it('shows an orchestrator’s waiting starts and opens its Helpers card', () => {
+    const onSelect = vi.fn();
+    resetStores();
+    useHelperStartRequestStore.setState({
+      requests: {
+        r1: { requestId: 'r1', orchestratorId: 'agent-1', orchestratorName: 'bold-falcon', projectPath: '/project', args: { name: 'impl-api', task: 't' }, createdAt: '2026-10-18T10:00:00Z', expiresAt: '2026-10-19T10:00:00Z' },
+      },
+    });
+    render(<AgentListItem agent={baseAgent} isActive={false} isThinking={false} onSelect={onSelect} />);
+    const line = screen.getByTestId('agent-helper-request');
+    expect(line).toHaveTextContent('Wants to start the helper impl-api');
+    fireEvent.click(line);
+    expect(onSelect).toHaveBeenCalledWith('agent-1');
+    expect(useAgentDetailsStore.getState().focus).toMatchObject({ agentId: 'agent-1', card: 'helpers' });
+  });
+
+  it('shows a helper’s dispose request and opens the dispose dialog for it', () => {
+    const onSelect = vi.fn();
+    resetStores();
+    useHelperDisposeRequestStore.getState().add({
+      helperId: 'agent-1', helperName: 'bold-falcon', orchestratorId: 'orch', projectPath: '/project',
+      checks: { dirty: 0, unpushed: 0, unmerged: 0 }, forceRequested: false,
+    } as never, 'orch');
+    render(<AgentListItem agent={baseAgent} isActive={false} isThinking={false} onSelect={onSelect} />);
+    const line = screen.getByTestId('agent-helper-request');
+    expect(line).toHaveTextContent('orch asked to dispose this helper');
+    fireEvent.click(line);
+    expect(onSelect).toHaveBeenCalledWith('agent-1');
+    expect(useHelperDisposeRequestStore.getState().reviewing).toBe('agent-1');
   });
 });

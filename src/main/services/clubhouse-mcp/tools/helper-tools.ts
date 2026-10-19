@@ -452,6 +452,22 @@ async function runHelperStart(orchestratorId: string, args: HelperStartArgs, app
     if (approvedIn === undefined) {
       const policy = await getOrchestrationPolicy(projectPath, orchestratorId);
       if (policy && policy.control !== 'hands-off') {
+        // Refuse now what the start would refuse after approval (a bad or taken
+        // name, folder or branch), so the user is never asked about one that
+        // can't start. Approving runs every check again.
+        try {
+          await agentConfig.checkDurableCreation(projectPath, {
+            name,
+            color: pickColor(limit.helperCount),
+            parentAgentId: orchestratorId,
+            disposable: true,
+            ...(folder && { folderName: folder }),
+            ...(branchFrom && { branchFrom }),
+          });
+        } catch (err) {
+          // telemetry-exempt: the refusal reaches the calling agent as the tool result
+          return { kind: 'refused', message: `Could not start helper "${name}": ${errorText(err)}`, reason: asReason(errorText(err)) };
+        }
         const recorded = recordStartRequest(projectPath, orchestratorId, orchestrator.name, args);
         if (recorded.ok === false) return { kind: 'too_many', waiting: recorded.waiting };
         noticeApprovalNeeded(orchestrator, args);

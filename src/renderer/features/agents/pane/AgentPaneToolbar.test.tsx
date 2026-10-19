@@ -110,6 +110,9 @@ describe('AgentPaneToolbar', () => {
     expect(screen.queryByTestId('pane-agent-name')).not.toBeInTheDocument();
     rerender(<AgentPaneToolbar agent={agent} dot="idle" showName />);
     expect(screen.getByTestId('pane-agent-name')).toHaveTextContent('gallant-swift');
+    // In a narrow pane the activity gives way first; the name keeps up to 40% and shows whole on hover.
+    expect(screen.getByTestId('pane-agent-name').className).toMatch(/\bflex-shrink-0\b/);
+    expect(screen.getByTestId('pane-agent-name')).toHaveAttribute('title', 'gallant-swift');
   });
 
   it('shows a focusable meter: blue context, amber limit, red when one runs out', () => {

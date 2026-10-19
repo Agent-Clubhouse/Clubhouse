@@ -111,7 +111,7 @@ describe('Dispose helper dialog (#2232)', () => {
     checks = { dirty: 0, unpushed: 0, unmerged: null, error: 'couldn\'t check, its remote has never been fetched' };
     renderDialog();
     const list = await screen.findByTestId('dispose-checks');
-    expect(list).toHaveTextContent('Couldn’t be checked (couldn\'t check, its remote has never been fetched)');
+    expect(list).toHaveTextContent('Couldn’t be checked because its remote has never been fetched');
     expect(screen.queryByTestId('dispose-confirm')).not.toBeInTheDocument();
     expect(screen.getByTestId('dispose-blocked-note')).toBeInTheDocument();
 
@@ -120,6 +120,29 @@ describe('Dispose helper dialog (#2232)', () => {
     fireEvent.click(screen.getByTestId('dispose-recheck'));
     await waitFor(() => expect(screen.getByTestId('dispose-confirm')).toHaveTextContent(/^Dispose$/));
     expect(window.clubhouse.agent.getDisposeChecks).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps git\'s output out of the dialog text and in the tooltip', async () => {
+    const raw = 'Command failed: git show-ref --verify refs/heads/impl-ipc/work\nfatal: not a git repository';
+    checks = { dirty: 0, unpushed: 0, unmerged: null, error: `couldn't check, ${raw}` };
+    renderDialog();
+    const list = await screen.findByTestId('dispose-checks');
+    expect(list).toHaveTextContent('Couldn’t be checked because git couldn’t read its folder');
+    expect(list).not.toHaveTextContent('fatal');
+    expect(within(list).getByText('Couldn’t be checked because git couldn’t read its folder')).toHaveAttribute('title', raw);
+  });
+
+  it('says a refused dispose couldn\'t be checked without repeating git\'s output', async () => {
+    const raw = 'Command failed: git status\nfatal: not a git repository';
+    window.clubhouse.agent.disposeHelper = vi.fn(async () => ({
+      ok: false, message: `impl-ipc wasn't disposed (couldn't check, ${raw})`, checks: { dirty: 0, unpushed: 0, unmerged: null, error: `couldn't check, ${raw}` },
+    }));
+    renderDialog();
+    await screen.findByTestId('dispose-checks');
+    fireEvent.click(screen.getByTestId('dispose-confirm'));
+    const error = await screen.findByTestId('dispose-error');
+    expect(error).toHaveTextContent('impl-ipc wasn’t disposed because it couldn’t be checked. Nothing was deleted.');
+    expect(error).not.toHaveTextContent('fatal');
   });
 
   it('keeps the dialog open with main\'s reason when main refuses', async () => {

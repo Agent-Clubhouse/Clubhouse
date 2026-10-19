@@ -9,7 +9,9 @@ import { resolveHelperAccess, type AgentLaunchAccess } from '../../../../shared/
 const agents = new Map<string, DurableAgentConfig>();
 const configListeners = new Set<(projectPath: string) => void>();
 
+const mockCheckDurableCreation = vi.fn(async (_projectPath: string, _params: Record<string, unknown>) => {});
 vi.mock('../../agent-config', () => ({
+  checkDurableCreation: (projectPath: string, params: Record<string, unknown>) => mockCheckDurableCreation(projectPath, params),
   onAgentConfigChanged: vi.fn((listener: (projectPath: string) => void) => {
     configListeners.add(listener);
     return () => { configListeners.delete(listener); };
@@ -537,6 +539,23 @@ describe('start approvals', () => {
     })]);
     // The desktop notice stays.
     expect(mockBroadcast).toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, 'orch', expect.anything());
+  });
+
+  it('checks the name, folder and branch before asking, with what the start would use', async () => {
+    await ask({ name: 'impl-api', task: 'Build the API', folder: 'api', branchFrom: 'main' });
+    expect(mockCheckDurableCreation).toHaveBeenCalledWith(PROJECT, expect.objectContaining({
+      name: 'impl-api', parentAgentId: 'orch', disposable: true, folderName: 'api', branchFrom: 'main',
+    }));
+  });
+
+  it('refuses at once a start that could never run, and records no request', async () => {
+    mockCheckDurableCreation.mockRejectedValueOnce(new Error('Another agent already uses .clubhouse/agents/h1. Use another folder name such as "h1-2".'));
+    const result = await callTool('orch', 'start_helper', { name: 'h1', task: 'Again' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Could not start helper "h1": Another agent already uses .clubhouse/agents/h1');
+    expect(listStartRequests()).toEqual([]);
+    expect(mockBroadcast).not.toHaveBeenCalledWith(IPC.APP.AGENT_ATTENTION, 'orch', expect.anything());
+    expect(mockStartDurableCreation).not.toHaveBeenCalled();
   });
 
   it('reuses the waiting request for the same start, and caps how many wait', async () => {

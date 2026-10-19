@@ -3,7 +3,7 @@
  * access ceiling, the app-wide helper cap, and the project's agent configs
  * (the source for helpers, disposed rows and parent links). Main owns all of
  * it; these hooks read it, write through the preload API and re-read when the
- * rail's agents change.
+ * project's agent configs change.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -58,22 +58,39 @@ export function parseHelperCount(raw: string, ceiling: number): { value: number 
 
 // ── Project agent configs ───────────────────────────────────────────────
 
+/** Two spellings of one project folder: trailing separators and, on Windows, case don't matter. */
+export function sameProjectPath(a: string, b: string): boolean {
+  const norm = (p: string) => {
+    const trimmed = p.replace(/[\\/]+$/, '');
+    return window.clubhouse?.platform === 'win32' ? trimmed.replace(/\\/g, '/').toLowerCase() : trimmed;
+  };
+  return norm(a) === norm(b);
+}
+
 /**
- * Every durable config in a project, disposed ones included, re-read when the
- * rail's agents in that project change (a helper starts, wakes, sleeps or
- * goes) and on `reload`.
+ * Every durable config in a project, disposed ones included. Re-read when
+ * main says the project's configs changed (a parent link, creation, disposal
+ * or handoff, from any window or an external edit), when the rail's agents in
+ * that project change (a helper starts, wakes, sleeps, goes or is kept as a
+ * normal agent), and on `reload`.
  */
 export function useProjectAgentConfigs(projectPath: string | undefined, projectId: string | undefined): {
   configs: DurableAgentConfig[] | null;
   reload: () => void;
 } {
-  // A string, so the hook re-reads only when an id or status changes.
+  // A string, so the hook re-reads only when an id, status or parent link changes.
   const railKey = useAgentStore((s) => Object.values(s.agents)
     .filter((a) => a.projectId === projectId && a.kind === 'durable')
-    .map((a) => `${a.id}:${a.status}`)
+    .map((a) => `${a.id}:${a.status}:${a.parentAgentId ?? ''}:${a.creationFailed ? 'f' : ''}`)
     .join(','));
   const [configs, setConfigs] = useState<DurableAgentConfig[] | null>(null);
   const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    if (!projectPath) return;
+    return window.clubhouse.agent.onConfigsChanged?.((changed) => {
+      if (sameProjectPath(changed, projectPath)) setNonce((n) => n + 1);
+    });
+  }, [projectPath]);
   useEffect(() => {
     if (!projectPath) { setConfigs(null); return; }
     let alive = true;

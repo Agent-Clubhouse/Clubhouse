@@ -12,7 +12,7 @@ import type { OrchestrationOffChoice, ResolvedOrchestrationPolicy, TurnOffOrches
 import { Modal } from '../../../components/Modal';
 import { Button } from '../../../components/Button';
 import { useAgentStore } from '../../../stores/agentStore';
-import { HELPER_STATE_LABEL, checkLines, helperState, plural } from './helper-model';
+import { HELPER_STATE_LABEL, checkLines, helperState, joinNames, plainFailure, plural } from './helper-model';
 import { reloadProjectAgents } from './orchestration-hooks';
 import { CheckList } from './CheckList';
 
@@ -31,6 +31,30 @@ type Phase =
   | { kind: 'failed'; message: string }
   /** Orchestration went off, but some helpers couldn't be settled. */
   | { kind: 'partial'; policy: ResolvedOrchestrationPolicy; message: string };
+
+/** Main's reason for one helper in words; raw git or file-system output stays in the log. */
+function failureReason(reason: string): string {
+  return plainFailure(reason, 'an error, details in the log').text;
+}
+
+/** "a has", "a and b have", "3 helpers have": names up to two, a count past that. */
+function subject(names: string[], one: string, many: string): string {
+  if (names.length <= 2) return `${joinNames(names)} ${names.length === 1 ? one : many}`;
+  return `${names.length} helpers ${many}`;
+}
+
+/**
+ * Why nothing was disposed, counting work at risk and checks that couldn't
+ * run separately, since only the first can be forced.
+ */
+export function blockedSummary(blocked: readonly HelperDisposeBlock[]): string {
+  const unchecked = blocked.filter((b) => !!b.checks.error).map((b) => b.name);
+  const atRisk = blocked.filter((b) => !b.checks.error).map((b) => b.name);
+  const parts: string[] = [];
+  if (atRisk.length > 0) parts.push(`${subject(atRisk, 'has', 'have')} work that disposing would lose`);
+  if (unchecked.length > 0) parts.push(`${subject(unchecked, 'couldn’t be checked', 'couldn’t be checked')}`);
+  return `${parts.join(' and ')}, so nothing was disposed and orchestration is still on.`;
+}
 
 export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDone }: Props) {
   const rail = useAgentStore((s) => s.agents);
@@ -82,7 +106,7 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
     // Off even so: main turned orchestration off and only some helpers failed.
     if (result.policy && !result.policy.orchestrate) {
       if (choice !== 'dispose' || !result.helperIds?.length) await reloadProjectAgents(agent.projectId, projectPath);
-      const names = result.failed?.map((f) => `${f.name} (${f.reason})`);
+      const names = result.failed?.map((f) => `${f.name} (${failureReason(f.reason)})`);
       setPhase({
         kind: 'partial',
         policy: result.policy,
@@ -98,7 +122,7 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
     if (result.blocked && result.blocked.length > 0) {
       setPhase({ kind: 'blocked', blocked: result.blocked, message: result.message });
     } else {
-      const failed = result.failed?.map((f) => `${f.name} (${f.reason})`).join(', ');
+      const failed = result.failed?.map((f) => `${f.name} (${failureReason(f.reason)})`).join(', ');
       setPhase({ kind: 'failed', message: failed ? `${result.message}. ${failed} couldn’t be disposed.` : result.message });
     }
   };
@@ -138,11 +162,7 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
         <p className="text-[13px] text-ctp-subtext1 leading-normal" role="alert" data-testid="turn-off-partial">{phase.message}</p>
       ) : phase.kind === 'blocked' ? (
         <div className="flex flex-col gap-3 text-[13px] text-ctp-subtext1 leading-normal">
-          <p>
-            {blocked.length === 1
-              ? `${blocked[0].name} has work that disposing would lose, so nothing was disposed and orchestration is still on.`
-              : `${plural(blocked.length, 'helper has', 'helpers have')} work that disposing would lose, so nothing was disposed and orchestration is still on.`}
-          </p>
+          <p data-testid="turn-off-blocked-summary">{blockedSummary(blocked)}</p>
           <ul className="flex flex-col gap-2" data-testid="turn-off-blocked">
             {blocked.map((b) => (
               <li key={b.agentId}>
@@ -174,8 +194,8 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
             </ul>
           )}
           <p className="text-xs text-ctp-overlay1">
-            Keeping clears the parent link and leaves them running. Disposing stops them and deletes their folders,
-            after checking that no work would be lost.
+            Keeping clears the parent link and leaves {count === 1 ? 'it running or asleep as it is' : 'them running or asleep as they are'}.
+            Disposing stops them and deletes their folders, after checking that no work would be lost.
           </p>
           {phase.kind === 'failed' && <p className="text-xs text-ctp-error" role="alert" data-testid="turn-off-error">{phase.message}</p>}
         </div>

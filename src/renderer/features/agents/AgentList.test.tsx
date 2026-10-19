@@ -20,7 +20,7 @@ vi.mock('./AgentListItem', () => {
     isThinkingCaptures.push(props.isThinking);
     itemRenderCounts[props.agent.id] = (itemRenderCounts[props.agent.id] ?? 0) + 1;
     return (
-      <div data-testid={`agent-item-${props.agent.id}`} data-thinking={props.isThinking} data-indent={props.indent} data-nested={props.isNested ? 'true' : undefined}>{props.agent.name}</div>
+      <div data-testid={`agent-item-${props.agent.id}`} data-thinking={props.isThinking} data-indent={props.indent} data-nested={props.isNested ? 'true' : undefined} data-rollup={props.helperRollup ? JSON.stringify(props.helperRollup) : undefined}>{props.agent.name}</div>
     );
   };
   const MemoizedAgentListItem = memo(renderItem);
@@ -1071,6 +1071,16 @@ describe('AgentList helper nesting (legacy layout)', () => {
     expect(screen.queryByTestId('agent-item-h1')).toBeNull();
     fireEvent.click(screen.getByTestId('helpers-toggle-orch'));
     expect(screen.getByTestId('agent-item-h1')).toBeInTheDocument();
+  });
+
+  it('gives a folded parent the roll-up of its helpers, counting those that need you or work', () => {
+    seed({ h1: durable('h1', { parentAgentId: 'orch', status: 'running' }) });
+    useAgentStore.setState({ agentDetailedStatus: { h1: { state: 'needs_permission', message: 'Wants Bash', timestamp: 1 } } } as never);
+    render(<AgentList />);
+    expect(screen.getByTestId('agent-item-orch')).not.toHaveAttribute('data-rollup');
+    fireEvent.click(screen.getByTestId('helpers-toggle-orch'));
+    expect(JSON.parse(screen.getByTestId('agent-item-orch').getAttribute('data-rollup')!)).toEqual({ count: 2, needs: 1, working: 0 });
+    expect(screen.getByTestId('agent-item-other')).not.toHaveAttribute('data-rollup');
   });
 
   it('unfolds a parent when one of its helpers becomes the active agent', () => {

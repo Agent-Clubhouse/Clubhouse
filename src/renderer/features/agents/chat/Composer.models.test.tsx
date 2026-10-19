@@ -63,8 +63,26 @@ describe('Composer model and effort chips (#2091)', () => {
       expect(pill.className).toMatch(/\bmax-w-full\b/);
       expect(pill.className).toMatch(/\boverflow-hidden\b/);
       expect(pill.className).toMatch(/\bmin-w-0\b/);
-      expect(pill.parentElement?.className).toMatch(/\bmin-w-0\b/);
+      // Never narrower than a readable stub (#2261 click test: 20px at a 340px pane).
+      expect(pill.parentElement?.className).toMatch(/\bmin-w-\[72px\]/);
     }
+  });
+
+  it('wraps the line layout\'s tool row so 72px pills never overflow a short, narrow popout', () => {
+    renderComposer({ layout: 'line' });
+    fireEvent.click(screen.getByTestId('chat-composer-plus'));
+    expect(screen.getByTestId('chat-composer-more').className).toMatch(/\bflex-wrap\b/);
+  });
+
+  it('wraps the footer so Steer, Queue and Stop move to their own row instead of covering a pill', () => {
+    renderComposer({ layout: 'narrow', running: true, text: 'steer this' });
+    const footer = screen.getByTestId('chat-composer-footer');
+    expect(footer.className).toMatch(/\bflex-wrap\b/);
+    // The send buttons stay one group pushed to the end, never shrunk under a pill.
+    const send = screen.getByTestId('chat-send-primary').parentElement!;
+    expect(send.parentElement).toBe(footer);
+    expect(send.className).toMatch(/\bml-auto\b/);
+    expect(send.className).toMatch(/\bflex-shrink-0\b/);
   });
 
   it('shows the model label, and switches model keeping an effort still on offer', () => {

@@ -1617,6 +1617,58 @@ function suggestFolderName(projectPath: string, folder: string, agents: DurableA
 }
 
 /**
+ * Why a creation would be refused up front, or null: a missing or disposed
+ * parent, or a folder or branch another agent (or creation) already has.
+ * Synchronous, so a caller can check and reserve with no await between.
+ */
+function creationProblem(
+  projectPath: string,
+  plan: WorktreePlan | undefined,
+  agents: DurableAgentConfig[],
+  folderOnDisk: boolean,
+  parentAgentId: string | undefined,
+): Error | null {
+  if (parentAgentId !== undefined) {
+    const parent = agents.find((a) => a.id === parentAgentId);
+    if (!parent) return tagError(new Error('Parent agent not found'), 'validation');
+    if (isDisposedAgent(parent)) return tagError(new Error('A disposed agent cannot be a parent'), 'validation');
+  }
+  if (!plan) return null;
+  const target = path.resolve(plan.wtPath);
+  const where = `.clubhouse/agents/${plan.folder}`;
+  const usedByAgent = agents.some((a) => a.worktreePath && path.resolve(a.worktreePath) === target);
+  let problem: string | null = null;
+  if (reservedFolders.has(target)) problem = `Another agent is being created in ${where}.`;
+  else if (usedByAgent) problem = `Another agent already uses ${where}.`;
+  else if (folderOnDisk) problem = `The folder ${where} is left over from a removed agent. Delete it, or`;
+  if (problem) {
+    const suggestion = suggestFolderName(projectPath, plan.folder, agents);
+    return tagError(new Error(problem.endsWith(', or')
+      ? `${problem} use another folder name such as "${suggestion}".`
+      : `${problem} Use another folder name such as "${suggestion}".`), 'validation');
+  }
+  const key = branchKey(projectPath, plan.branch);
+  if (reservedBranches.has(key) || agents.some((a) => a.branch === plan.branch && !!a.worktreePath)) {
+    return tagError(new Error(`Another agent already uses the branch "${plan.branch}". Choose another branch name.`), 'validation');
+  }
+  return null;
+}
+
+/**
+ * Run a creation's up-front checks without creating anything: the name,
+ * folder, branch and base rules, and whether the parent, folder or branch is
+ * free right now. Throws (tagged `validation`) with the message the creation
+ * itself would refuse with. A later creation checks everything again.
+ */
+export async function checkDurableCreation(projectPath: string, params: StartDurableCreationParams): Promise<void> {
+  const plan = params.useWorktree !== false ? planDurableWorktree(projectPath, params.name, params) : undefined;
+  const folderOnDisk = plan ? await pathExists(plan.wtPath) : false;
+  const agents = await readAgents(projectPath);
+  const problem = creationProblem(projectPath, plan, agents, folderOnDisk, params.parentAgentId);
+  if (problem) throw problem;
+}
+
+/**
  * Check a new agent's request, reserve its folder and branch, write its record
  * in the 'creating' state, and start the git work. Resolves once the record
  * exists. Throws (tagged `validation`) for a bad name, folder, branch or base,
@@ -1644,31 +1696,13 @@ export async function beginDurableCreation(
   // From here until the record is in the cache there is no await, so two
   // creations in this process cannot both claim the same folder or branch.
   const parentAgentId = params.parentAgentId;
-  if (parentAgentId !== undefined) {
-    const parent = agents.find((a) => a.id === parentAgentId);
-    if (!parent) throw tagError(new Error('Parent agent not found'), 'validation');
-    if (isDisposedAgent(parent)) throw tagError(new Error('A disposed agent cannot be a parent'), 'validation');
-  }
+  const problem = creationProblem(projectPath, plan, agents, folderOnDisk, parentAgentId);
+  if (problem) throw problem;
   let folderKey: string | undefined;
   let branchReservation: string | undefined;
   if (plan) {
     const target = path.resolve(plan.wtPath);
-    const where = `.clubhouse/agents/${plan.folder}`;
-    const usedByAgent = agents.some((a) => a.worktreePath && path.resolve(a.worktreePath) === target);
-    let problem: string | null = null;
-    if (reservedFolders.has(target)) problem = `Another agent is being created in ${where}.`;
-    else if (usedByAgent) problem = `Another agent already uses ${where}.`;
-    else if (folderOnDisk) problem = `The folder ${where} is left over from a removed agent. Delete it, or`;
-    if (problem) {
-      const suggestion = suggestFolderName(projectPath, plan.folder, agents);
-      throw tagError(new Error(problem.endsWith(', or')
-        ? `${problem} use another folder name such as "${suggestion}".`
-        : `${problem} Use another folder name such as "${suggestion}".`), 'validation');
-    }
     const key = branchKey(projectPath, plan.branch);
-    if (reservedBranches.has(key) || agents.some((a) => a.branch === plan.branch && !!a.worktreePath)) {
-      throw tagError(new Error(`Another agent already uses the branch "${plan.branch}". Choose another branch name.`), 'validation');
-    }
     reservedFolders.add(target);
     reservedBranches.add(key);
     folderKey = target;

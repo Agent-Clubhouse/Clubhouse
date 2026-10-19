@@ -263,6 +263,13 @@
   overflow-y: auto !important;
 }
 
+/* xterm 6 paints the theme background on its scrollable element, but its own
+   stylesheet leaves the viewport black; the rows that don't fill the pane
+   showed it as a black strip under the terminal in every theme. */
+.xterm .xterm-viewport {
+  background-color: transparent;
+}
+
 /* When gradient background is active, make xterm backgrounds transparent */
 .theme-gradient-bg .xterm-viewport,
 .theme-gradient-bg .xterm-screen {
