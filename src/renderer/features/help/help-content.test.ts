@@ -12,9 +12,9 @@ describe('help-content', () => {
     expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting', 'personas', 'cookbooks']);
   });
 
-  it('has 38 total topics', () => {
+  it('has 41 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(38);
+    expect(total).toBe(41);
   });
 
   it('each section has at least 1 topic', () => {
@@ -46,9 +46,9 @@ describe('help-content', () => {
     expect(general?.topics).toHaveLength(6);
   });
 
-  it('Agents & Orchestrators section has 6 topics', () => {
+  it('Agents & Orchestrators section has 7 topics', () => {
     const agents = HELP_SECTIONS.find((s) => s.id === 'agents');
-    expect(agents?.topics).toHaveLength(6);
+    expect(agents?.topics).toHaveLength(7);
   });
 
   it('Settings section has 4 topics', () => {
@@ -66,9 +66,9 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('orchestrators');
   });
 
-  it('Agent Personas section has 9 topics', () => {
+  it('Agent Personas section has 11 topics', () => {
     const personas = HELP_SECTIONS.find((s) => s.id === 'personas');
-    expect(personas?.topics).toHaveLength(9);
+    expect(personas?.topics).toHaveLength(11);
   });
 
   it('includes all persona topics', () => {
@@ -80,13 +80,59 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('persona-doc-updater');
     expect(allTopicIds).toContain('persona-judge');
     expect(allTopicIds).toContain('persona-researcher');
+    expect(allTopicIds).toContain('persona-orchestrator');
+    expect(allTopicIds).toContain('persona-workhorse');
+  });
+
+  describe('orchestrated helpers (#2233)', () => {
+    const find = (sections: typeof HELP_SECTIONS, id: string) => sections.flatMap((s) => s.topics).find((t) => t.id === id)!;
+
+    it('has the article after Terminal in both shells', () => {
+      for (const [sections, title] of [[HELP_SECTIONS, 'Orchestrated Helpers'], [CHROME_HELP_SECTIONS, 'Orchestrated helpers']] as const) {
+        const agents = sections.find((s) => s.id === 'agents')!.topics.map((t) => t.id);
+        expect(agents.indexOf('agents-orchestrated-helpers')).toBe(agents.indexOf('agents-terminal') + 1);
+        expect(find(sections, 'agents-orchestrated-helpers').title).toBe(title);
+      }
+    });
+
+    it('covers the cards, access, control, limits, disposing and connections', () => {
+      const content = find(HELP_SECTIONS, 'agents-orchestrated-helpers').content;
+      expect(content).toContain('**Let this agent orchestrate**');
+      for (const name of ['**Orchestrate**', '**Helpers**', '**Connections**', '**Settings > Helpers**', '**Dispose anyway**', '**Needs you**']) {
+        expect(content, name).toContain(name);
+      }
+      for (const heading of ['## Access', '## Control levels', '## Limits', '## Disposing', '## Connections']) {
+        expect(content).toContain(heading);
+      }
+      for (const tool of [
+        'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent', 'hand_off', 'dispose_helper',
+        'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
+      ]) {
+        expect(content, tool).toContain(`\`${tool}\``);
+      }
+    });
+
+    it('shows persona bodies without their settings front-matter', () => {
+      for (const sections of [HELP_SECTIONS, CHROME_HELP_SECTIONS]) {
+        const orchestrator = find(sections, 'persona-orchestrator').content;
+        expect(orchestrator.startsWith('# Orchestrator')).toBe(true);
+        expect(orchestrator).not.toContain('orchestration:');
+        expect(find(sections, 'persona-workhorse').content.startsWith('# Workhorse')).toBe(true);
+      }
+    });
+
+    it('keeps the new copy free of em dashes', () => {
+      for (const id of ['agents-orchestrated-helpers', 'persona-orchestrator', 'persona-workhorse']) {
+        expect(find(HELP_SECTIONS, id).content, id).not.toContain('\u2014');
+      }
+    });
   });
 
   it('calls the CLI field "Runs on" where help names it (#2233)', () => {
     const find = (id: string) => CHROME_HELP_SECTIONS.flatMap((s) => s.topics).find((t) => t.id === id)!;
-    // "Orchestrator" will name a persona, so articles no longer use it for the CLI field.
+    // "Orchestrator" names a persona, so articles use it in bold only for that.
     const articles = HELP_SECTIONS.concat(CHROME_HELP_SECTIONS).filter((s) => s.id !== 'personas').flatMap((s) => s.topics);
-    for (const t of articles) expect(t.content, t.id).not.toMatch(/\*\*(Default )?Orchestrator\*\*/);
+    for (const t of articles) expect(t.content, t.id).not.toMatch(/\*\*(Default )?Orchestrator\*\*(?! persona)/);
     expect(find('agents-durable').content).toContain('**Runs on**');
     expect(find('agents-quick').content).toContain('**Runs on**');
     expect(find('projects-settings').content).toContain('**Agents run on**');
@@ -138,7 +184,7 @@ describe('help-content in the new shell', () => {
   });
 
   it('points only at settings pages that exist', () => {
-    const pages = ['About', 'Orchestrators & agents', 'Profiles', 'Display & UI', 'External editor', 'Keyboard shortcuts',
+    const pages = ['About', 'Orchestrators & agents', 'Helpers', 'Profiles', 'Display & UI', 'External editor', 'Keyboard shortcuts',
       'Notifications & alerts', 'Plugins', 'Annex', 'Annex control', 'Clubhouse MCP', 'Updates', 'Logging', 'Feedback', "What's new"];
     for (const t of articles()) {
       for (const m of t.content.matchAll(/\*\*Settings > ([^*]+)\*\*/g)) {

@@ -155,6 +155,16 @@ describe('getOrchestrationPolicy', () => {
     expect(await getOrchestrationPolicy(PROJECT, 'dev')).toMatchObject({ orchestrate: false, maxHelpers: 2 });
   });
 
+  it('turns orchestration on for agents using the built-in Orchestrator persona, and only them (#2233)', async () => {
+    const { getPersonaTemplate } = await import('../../renderer/features/personas');
+    state.personas.set('orchestrator', getPersonaTemplate('orchestrator')!.content);
+    state.personas.set('workhorse', getPersonaTemplate('workhorse')!.content);
+    setAgents(PROJECT, [agent('orch', { persona: 'orchestrator' }), agent('helper', { persona: 'workhorse' })]);
+    expect(await getOrchestrationPolicy(PROJECT, 'orch')).toMatchObject({ orchestrate: true, access: 'same', control: 'hands-off', maxHelpers: 5 });
+    expect((await getOrchestrationPolicy(PROJECT, 'orch'))?.sources.orchestrate).toBe('persona');
+    expect((await getOrchestrationPolicy(PROJECT, 'helper'))?.orchestrate).toBe(false);
+  });
+
   it('follows the project default persona when the agent has none', async () => {
     state.projectDefaults = { persona: 'lead' };
     state.personas.set('lead', persona({ orchestrate: true }));

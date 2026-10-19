@@ -169,6 +169,12 @@ describe('NewAgentPage', () => {
     expect(screen.getByLabelText('Runs on')).toBeDisabled();
   });
 
+  it('offers the Orchestrator and Workhorse personas (#2233)', () => {
+    render(<NewAgentPage request={req()} />);
+    const personas = Array.from(screen.getByTestId('new-agent-persona').querySelectorAll('option')).map((o) => o.textContent);
+    expect(personas).toEqual(expect.arrayContaining(['Orchestrator', 'Workhorse']));
+  });
+
   it('the picker searches every project', () => {
     render(<NewAgentPage request={req()} />);
     fireEvent.click(screen.getByTestId('new-agent-project'));
