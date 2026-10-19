@@ -1,120 +1,103 @@
 import { describe, it, expect } from 'vitest';
-import { PERSONA_TEMPLATES, getPersonaTemplate, getPersonaIds } from './index';
+import { PERSONA_TEMPLATES, canonicalPersonaId, getPersonaTemplate, getPersonaIds, personaDescription } from './index';
 import { PATTERN_SETTING_KEYS, parsePersonaFile, stripPersonaFrontMatter } from '../../../shared/persona-pattern';
 
+const EXPECTED_NAMES: Record<string, string> = {
+  'project-manager': 'Project Manager',
+  qa: 'PR Reviewer',
+  'ui-lead': 'Design Lead',
+  'quality-auditor': 'AI Slop Detector',
+  'executor-pr-only': 'Developer, opens PRs',
+  'executor-merge': 'Developer, can merge',
+  'doc-updater': 'Docs Writer',
+  judge: 'Solution Judge',
+  researcher: 'Researcher',
+  orchestrator: 'Orchestrator',
+  workhorse: 'Workhorse',
+};
+
+const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
 describe('persona templates', () => {
-  it('exports 12 persona templates', () => {
-    expect(PERSONA_TEMPLATES).toHaveLength(12);
-  });
-
-  it('each template has required fields', () => {
-    for (const persona of PERSONA_TEMPLATES) {
-      expect(persona.id).toBeTruthy();
-      expect(persona.name).toBeTruthy();
-      expect(persona.description).toBeTruthy();
-      expect(persona.content).toBeTruthy();
-      expect(persona.content.length).toBeGreaterThan(100);
+  it('lists every persona under its display name, ids unchanged', () => {
+    expect(getPersonaIds()).toEqual(Object.keys(EXPECTED_NAMES));
+    for (const [id, name] of Object.entries(EXPECTED_NAMES)) {
+      expect(getPersonaTemplate(id)?.name, id).toBe(name);
     }
   });
 
-  it('each template has focused tooling and skills', () => {
-    // Helpers run on whatever CLI their orchestrator picks, so the helper
-    // personas name none. Every other persona prefers Claude.
-    const anyCli = new Set(['orchestrator', 'workhorse']);
+  it('loads a body and a one-line description for every listed persona', () => {
     for (const persona of PERSONA_TEMPLATES) {
-      expect(persona.tools).toBeDefined();
-      expect(Array.isArray(persona.tools)).toBe(true);
-      expect(persona.orchestrator, persona.id).toBe(anyCli.has(persona.id) ? undefined : 'claude');
-      expect(Array.isArray(persona.skills)).toBe(true);
+      const body = stripPersonaFrontMatter(persona.content);
+      expect(body.startsWith(`# ${persona.name}`), persona.id).toBe(true);
+      expect(words(body), persona.id).toBeGreaterThanOrEqual(250);
+      expect(words(body), persona.id).toBeLessThanOrEqual(650);
+      expect(persona.description.length, persona.id).toBeGreaterThan(40);
+      expect(persona.description, persona.id).not.toContain('\n');
+      expect(personaDescription(persona.id)).toBe(persona.description);
     }
   });
 
-  it('group-project-pm has only board management tools', () => {
-    const pm = getPersonaTemplate('group-project-pm');
-    expect(pm!.tools).toContain('read_bulletin');
-    expect(pm!.tools).toContain('post_bulletin');
-    expect(pm!.tools).toContain('wake_agent');
-    expect(pm!.tools).not.toContain('build');
-    expect(pm!.tools).not.toContain('test');
-    expect(pm!.tools).not.toContain('create-pr');
+  it('carries only id, name, description and content', () => {
+    for (const persona of PERSONA_TEMPLATES) {
+      expect(Object.keys(persona).sort(), persona.id).toEqual(['content', 'description', 'id', 'name']);
+    }
   });
 
-  it('executors have only implementation tools', () => {
-    const executor = getPersonaTemplate('executor-pr-only');
-    expect(executor!.tools).toContain('build');
-    expect(executor!.tools).toContain('test');
-    expect(executor!.tools).toContain('create-pr');
-    expect(executor!.tools).not.toContain('read_bulletin');
-    expect(executor!.tools).not.toContain('wake_agent');
+  it('keeps the copy free of em and en dashes', () => {
+    for (const persona of PERSONA_TEMPLATES) {
+      for (const text of [persona.content, persona.description, persona.name]) {
+        expect(text, persona.id).not.toMatch(/[–—]/);
+      }
+    }
   });
 
-  it('qa has testing and review tools', () => {
-    const qa = getPersonaTemplate('qa');
-    expect(qa!.tools).toContain('test');
-    expect(qa!.tools).toContain('code-review');
-    expect(qa!.skills!.map((s) => s.name)).toContain('validate-changes');
-  });
-
-  it('researcher has web search and investigation tools', () => {
-    const researcher = getPersonaTemplate('researcher');
-    expect(researcher!.tools).toContain('web-search');
-    expect(researcher!.tools).toContain('web-fetch');
-    expect(researcher!.skills!.map((s) => s.name)).toContain('deep-research');
-  });
-
-  it('getPersonaTemplate returns correct template by ID', () => {
-    const qa = getPersonaTemplate('qa');
-    expect(qa).toBeDefined();
-    expect(qa!.name).toBe('Quality Assurance');
-    expect(qa!.content).toContain('QA reviewer');
+  it('keeps the copy free of unsupported conventions', () => {
+    for (const persona of PERSONA_TEMPLATES) {
+      const body = persona.content;
+      // @@ wildcards aren't substituted into an appended persona.
+      expect(body, persona.id).not.toContain('@@');
+      expect(body, persona.id).not.toMatch(/\bdriver\b/i);
+      // Only general, control and inbox channels exist by default.
+      expect(body, persona.id).not.toMatch(/`(progress|decisions|blockers|missions-[^`]*)`/);
+      // Skills that don't ship to user projects.
+      expect(body, persona.id).not.toMatch(/group-pm-polling|deep-research/);
+      // No all-caps emphasis or bold labels.
+      expect(body, persona.id).not.toMatch(/\b(NOT|NEVER|MUST|ALWAYS|ONLY|CRITICAL)\b/);
+      expect(body, persona.id).not.toContain('**');
+    }
   });
 
   it('getPersonaTemplate returns undefined for unknown ID', () => {
     expect(getPersonaTemplate('nonexistent')).toBeUndefined();
+    expect(personaDescription('nonexistent')).toBeUndefined();
+    expect(personaDescription('')).toBeUndefined();
   });
 
-  it('getPersonaIds returns all 12 IDs', () => {
-    const ids = getPersonaIds();
-    expect(ids).toHaveLength(12);
-    expect(ids).toContain('project-manager');
-    expect(ids).toContain('group-project-pm');
-    expect(ids).toContain('qa');
-    expect(ids).toContain('ui-lead');
-    expect(ids).toContain('quality-auditor');
-    expect(ids).toContain('executor-pr-only');
-    expect(ids).toContain('executor-merge');
-    expect(ids).toContain('doc-updater');
-    expect(ids).toContain('judge');
-    expect(ids).toContain('researcher');
-    expect(ids).toContain('orchestrator');
-    expect(ids).toContain('workhorse');
-  });
+  describe('merged Project Manager', () => {
+    it('resolves the retired group-project-pm id to the Project Manager, unlisted', () => {
+      expect(getPersonaIds()).not.toContain('group-project-pm');
+      expect(PERSONA_TEMPLATES.some((p) => p.id === 'group-project-pm')).toBe(false);
+      expect(canonicalPersonaId('group-project-pm')).toBe('project-manager');
+      expect(getPersonaTemplate('group-project-pm')).toBe(getPersonaTemplate('project-manager'));
+      expect(personaDescription('group-project-pm')).toBe(getPersonaTemplate('project-manager')!.description);
+    });
 
-  it('all templates have unique IDs', () => {
-    const ids = PERSONA_TEMPLATES.map((p) => p.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it('group-project-pm persona includes skills bundling', () => {
-    const pm = getPersonaTemplate('group-project-pm');
-    expect(pm).toBeDefined();
-    expect(pm!.skills).toBeDefined();
-    expect(pm!.skills).toHaveLength(1);
-    expect(pm!.skills![0].name).toBe('group-pm-polling');
-    expect(pm!.skills![0].cadence).toBe('15m');
+    it('ties admin tools to the admin role and gives a fallback without them', () => {
+      const body = getPersonaTemplate('project-manager')!.content;
+      expect(parsePersonaFile(body).body).toBe(body);
+      expect(body).toContain('admin role');
+      expect(body).toContain('first agent to join');
+      expect(body).toContain('`notify_user`');
+      for (const tool of ['wake_agent', 'sleep_agent', 'shoulder_tap', 'set_project_info']) {
+        expect(body, tool).toContain(`\`${tool}\``);
+      }
+    });
   });
 
   describe('orchestrated helpers (#2233)', () => {
     const orchestrator = () => getPersonaTemplate('orchestrator')!;
     const workhorse = () => getPersonaTemplate('workhorse')!;
-
-    it('loads the Orchestrator and Workhorse personas', () => {
-      expect(orchestrator().name).toBe('Orchestrator');
-      expect(workhorse().name).toBe('Workhorse');
-      // Neither is tied to one CLI: helpers run on whatever the orchestrator picks.
-      expect(orchestrator().orchestrator).toBeUndefined();
-      expect(workhorse().orchestrator).toBeUndefined();
-    });
 
     it('carries the orchestration policy in the Orchestrator front-matter', () => {
       const match = orchestrator().content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
@@ -134,6 +117,12 @@ describe('persona templates', () => {
       expect(body).not.toContain('orchestration:');
     });
 
+    it('carries no front-matter on any other persona', () => {
+      for (const persona of PERSONA_TEMPLATES.filter((p) => p.id !== 'orchestrator')) {
+        expect(parsePersonaFile(persona.content).body, persona.id).toBe(persona.content);
+      }
+    });
+
     it('describes every orchestration tool by name', () => {
       const body = stripPersonaFrontMatter(orchestrator().content);
       for (const tool of [
@@ -146,13 +135,8 @@ describe('persona templates', () => {
 
     it('tells helpers to push their work and report through message_parent', () => {
       const body = workhorse().content;
-      expect(parsePersonaFile(body).body).toBe(body);
       expect(body).toContain('`message_parent`');
       expect(body).toMatch(/push/i);
-    });
-
-    it('keeps the copy free of em dashes', () => {
-      for (const p of [orchestrator(), workhorse()]) expect(p.content, p.id).not.toContain('\u2014');
     });
   });
 });

@@ -1,15 +1,15 @@
 # Cookbook: Squad
 
 ## When to use
-A focused team working on a single project — feature sprints, large refactors, new product development. The most common pattern for multi-agent work.
+A focused team working on a single project, such as a feature sprint, a large refactor or new product development. The most common pattern for multi-agent work.
 
 ## Team
-- **1 Coordinator** (project-manager persona)
-- **1 QA** (qa persona)
-- **Optional: 1 UI Lead** (ui-lead persona)
-- **Optional: 1 Quality Auditor** (quality-auditor persona)
-- **N Workers** (executor-merge persona)
-- **1 Group Project** card — coordination hub
+- **1 Coordinator** (Project Manager persona)
+- **1 QA** (PR Reviewer persona)
+- **Optional: 1 Design Lead** (Design Lead persona)
+- **Optional: 1 Slop Detector** (AI Slop Detector persona)
+- **N Workers** (Developer, can merge persona)
+- **1 Group Project** card as the coordination hub
 
 Scale N based on task parallelism. 3-5 workers is typical.
 
@@ -18,7 +18,7 @@ Scale N based on task parallelism. 3-5 workers is typical.
 - 1 group-project card: coordination hub (center)
 - 1 agent card per role
 - All agents connect to the group project card
-- Layout: `hub_spoke` — group project at center
+- Layout: `hub_spoke`, with the group project at the center
 
 ## Blueprint JSON
 
@@ -46,10 +46,10 @@ Use `create_canvas_from_blueprint` for atomic creation:
 }
 ```
 
-Optional agents (UI Lead, Quality Auditor) follow the same pattern — add card + wire to GP.
+Optional agents (Design Lead, AI Slop Detector) follow the same pattern. Add a card and wire it to the GP.
 
 ## GP Instructions
-Default: "Coordinate squad work. Coordinator posts missions, workers report progress, QA reviews PRs. Topics: missions, progress, blockers, decisions."
+Default: "Coordinate squad work. Coordinator posts missions, workers report progress, QA reviews PRs. Use a work channel per mission and post decisions where the work happens."
 
 ## Coordination
-All agents communicate via the group project bulletin board. Coordinator posts mission briefs to `missions`, tracks `progress`, resolves `blockers`. QA has veto power on merges. Workers: branch, implement, test, PR, standby.
+All agents communicate via the group project bulletin board. A board starts with `general`, `control` and an inbox per member, and other channels appear when someone first posts to them. The coordinator announces work channels on `control`, posts a brief for each mission and tracks progress there. QA has veto power on merges. Workers: branch, implement, test, PR, standby.

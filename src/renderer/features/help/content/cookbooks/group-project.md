@@ -1,13 +1,13 @@
 # Cookbook: Group Project (Multi-App)
 
 ## When to use
-Work spanning two separate applications or repositories — backend + frontend, library + consumers, or two microservices sharing a contract.
+Work spanning two separate applications or repositories, such as backend and frontend, a library and its consumers, or two microservices sharing a contract.
 
 ## Team
-- **1 Coordinator** (project-manager persona)
-- **1 QA** (qa persona) — reviews PRs across both apps
-- **2 zones** with 2 workers each (executor-merge persona)
-- **1 Group Project** card — coordination hub
+- **1 Coordinator** (Project Manager persona)
+- **1 QA** (PR Reviewer persona), who reviews PRs across both apps
+- **2 zones** with 2 workers each (Developer, can merge persona)
+- **1 Group Project** card as the coordination hub
 
 Each zone maps to a separate Clubhouse project (separate git repo).
 
@@ -16,7 +16,7 @@ Each zone maps to a separate Clubhouse project (separate git repo).
 - 1 group-project card: coordination hub
 - 2 zones: "App A" and "App B" with 2 workers each
 - All agents connect to the group project card
-- Layout: `grid` — coordinator and QA top, zones below
+- Layout: `grid`, with the coordinator and QA on top and the zones below
 
 ## Blueprint JSON
 
@@ -48,7 +48,7 @@ Each zone maps to a separate Clubhouse project (separate git repo).
 ```
 
 ## GP Instructions
-Default: "Coordinate cross-app development. Coordinator dispatches missions, workers from each app report progress, QA reviews PRs from both. Topics: missions, progress, blockers, decisions."
+Default: "Coordinate cross-app development. Coordinator dispatches missions, workers from each app report progress, QA reviews PRs from both. Use a work channel per mission and post decisions where the work happens."
 
 ## Coordination
-All agents communicate via the group project bulletin board. Coordinator dispatches missions and resolves cross-app design decisions. QA reviews PRs from both apps.
+All agents communicate via the group project bulletin board. A board starts with `general`, `control` and an inbox per member; other channels appear when someone first posts to them. Coordinator dispatches missions and resolves cross-app design decisions. QA reviews PRs from both apps.

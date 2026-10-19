@@ -20,7 +20,7 @@ import { TemplateConfigDialog, type TemplateConfig } from './TemplateConfigDialo
 import type { RegisteredPluginAgentTemplate } from '../../plugins/plugin-agent-template-registry';
 import { exportAgentAsTemplate } from '../blueprints/agent-template-export';
 import { serializeManifest } from '../blueprints/blueprint-export';
-import { PERSONA_TEMPLATES } from '../personas';
+import { PERSONA_TEMPLATES, canonicalPersonaId, personaDescription } from '../personas';
 import type { AgentRuntimeMode } from '../../../shared/chat';
 import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
@@ -1122,19 +1122,24 @@ export function AgentSettingsView({ agent }: Props) {
         help={<>Overrides the project persona when Clubhouse Mode is on. See <code className="font-mono">.clubhouse/clubhouse-mode.md</code>.</>}
         htmlFor="agent-settings-persona"
       >
-        <select
-          id="agent-settings-persona"
-          value={agentPersona}
-          onChange={(e) => handlePersonaChange(e.target.value)}
-          disabled={isRunning}
-          title={stopFirst}
-          className={selectClass}
-        >
-          <option value="">Project default</option>
-          {PERSONA_TEMPLATES.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
+        <div className="flex flex-col gap-1 w-[200px]">
+          <select
+            id="agent-settings-persona"
+            value={canonicalPersonaId(agentPersona)}
+            onChange={(e) => handlePersonaChange(e.target.value)}
+            disabled={isRunning}
+            title={stopFirst}
+            className={selectClass}
+          >
+            <option value="">Project default</option>
+            {PERSONA_TEMPLATES.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          {personaDescription(agentPersona) && (
+            <div data-testid="agent-settings-persona-description" className="text-xs text-ctp-overlay1">{personaDescription(agentPersona)}</div>
+          )}
+        </div>
       </Field>
       <Field
         label="Free Agent Mode"

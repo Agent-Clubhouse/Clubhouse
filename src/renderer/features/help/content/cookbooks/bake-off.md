@@ -4,14 +4,14 @@
 A|B testing of two competing approaches. Two teams work independently, then judges evaluate. Useful when the best approach is unclear.
 
 ## Team
-- **1 Central Coordinator** (project-manager persona) — defines challenge, declares winner
-- **Team Alpha**: 1 Lead + 1 QA + N Workers (executor-pr-only, no merge)
-- **Team Beta**: 1 Lead + 1 QA + N Workers (executor-pr-only, no merge)
-- **1 Judge** (judge persona) — evaluates both teams' output
+- **1 Central Coordinator** (Project Manager persona), who defines the challenge and declares the winner
+- **Team Alpha**: 1 Lead (Project Manager), 1 reviewer (PR Reviewer) and N workers (Developer, opens PRs)
+- **Team Beta**: 1 Lead (Project Manager), 1 reviewer (PR Reviewer) and N workers (Developer, opens PRs)
+- **1 Judge** (Solution Judge persona), who evaluates both teams' output
 - **3 Group Projects**: Alpha Team GP, Beta Team GP, Judging GP
 - **3 Zones**: Alpha (cyan), Beta (rose), Judging (violet)
 
-Workers use executor-pr-only so competing approaches stay on branches until a winner is chosen.
+Workers use the Developer, opens PRs persona (`executor-pr-only`) so competing approaches stay on branches until a winner is chosen.
 
 ## Canvas Layout
 
@@ -19,7 +19,7 @@ Workers use executor-pr-only so competing approaches stay on branches until a wi
 - Central Coordinator direct-connects to Alpha Lead + Beta Lead
 - Each team communicates via its own GP
 - Judge + Coordinator share the Judging GP
-- Layout: `grid` — judging zone top, team zones side by side below
+- Layout: `grid`, with the judging zone on top and the team zones side by side below
 
 ## Blueprint JSON
 
@@ -64,7 +64,7 @@ Use `create_canvas_from_blueprint` for atomic creation:
 ## GP Instructions
 - **Alpha Team GP**: "Alpha team builds competing implementation. Lead dispatches, workers implement, QA reviews. Post progress and PRs."
 - **Beta Team GP**: "Beta team builds competing implementation. Lead dispatches, workers implement, QA reviews. Post progress and PRs."
-- **Judging GP**: "Evaluate Alpha vs Beta output. Judge scores against criteria. Coordinator declares winner and merges."
+- **Judging GP**: "Evaluate Alpha vs Beta output. Judge gives a pass or fail per criterion and picks one. Coordinator declares winner and merges."
 
 ## Coordination
-Central Coordinator posts the challenge spec to both leads. Teams work independently — no cross-team communication. When both submit, Judge evaluates via the Judging GP. Coordinator merges the winner's branch.
+Central Coordinator posts the challenge spec to both leads. Teams work independently and don't talk to each other. When both submit, Judge evaluates via the Judging GP. Coordinator merges the winner's branch.

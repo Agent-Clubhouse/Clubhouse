@@ -15,6 +15,7 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useChromeStore, type NewAgentRequest } from '../chromeStore';
 import { useChromeDialogStore } from '../sidebar/ChromeAgentDialogs';
+import { getPersonaTemplate } from '../../features/personas';
 
 const projects = [
   { id: 'p1', name: 'Clubhouse', path: '/tmp/ch' },
@@ -173,6 +174,18 @@ describe('NewAgentPage', () => {
     render(<NewAgentPage request={req()} />);
     const personas = Array.from(screen.getByTestId('new-agent-persona').querySelectorAll('option')).map((o) => o.textContent);
     expect(personas).toEqual(expect.arrayContaining(['Orchestrator', 'Workhorse']));
+  });
+
+  it('shows the chosen persona\'s description under the dropdown, and the merged PM once', () => {
+    render(<NewAgentPage request={req()} />);
+    const select = screen.getByTestId('new-agent-persona') as HTMLSelectElement;
+    const names = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
+    expect(names.filter((n) => n === 'Project Manager')).toHaveLength(1);
+    expect(names).not.toContain('Group Project PM');
+    const reviewer = getPersonaTemplate('qa')!;
+    expect(screen.queryByText(reviewer.description)).toBeNull();
+    fireEvent.change(select, { target: { value: 'qa' } });
+    expect(screen.getByText(reviewer.description)).toBeTruthy();
   });
 
   it('the picker searches every project', () => {

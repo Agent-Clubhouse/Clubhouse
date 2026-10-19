@@ -245,7 +245,7 @@ describe('ProjectAgentDefaultsSection', () => {
       });
       renderSection();
       await waitFor(() => {
-        expect(screen.getByDisplayValue('Quality Assurance')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('PR Reviewer')).toBeInTheDocument();
       });
     });
 

@@ -9,6 +9,7 @@ import { useAgentSettingsPages, requestCloseAgentSettings, requestLeaveAgentSett
 import { useToastStore } from '../../stores/toastStore';
 import { useChromeFlagStore } from '../../chrome/chromeFlag';
 import type { Agent, MaterializationPreview } from '../../../shared/types';
+import { getPersonaTemplate } from '../personas';
 
 // Mock heavy child components
 vi.mock('../../components/SettingsMonacoEditor', () => ({
@@ -468,8 +469,25 @@ describe('AgentSettingsView', () => {
       (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'qa' });
       renderSettings();
       await waitFor(() => {
-        expect(screen.getByDisplayValue('Quality Assurance')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('PR Reviewer')).toBeInTheDocument();
       });
+    });
+
+    it('shows the persona description under the dropdown', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'judge' });
+      renderSettings();
+      const description = await screen.findByTestId('agent-settings-persona-description');
+      expect(description.textContent).toBe(getPersonaTemplate('judge')!.description);
+      expect(description.previousElementSibling?.id).toBe('agent-settings-persona');
+    });
+
+    it('shows an agent on the retired group-project-pm persona as Project Manager', async () => {
+      (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'group-project-pm' });
+      renderSettings();
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Project Manager')).toBeInTheDocument();
+      });
+      expect(screen.getByTestId('agent-settings-persona-description').textContent).toBe(getPersonaTemplate('project-manager')!.description);
     });
 
     it('persists the new persona via updateDurableConfig (independent of override)', async () => {
@@ -491,7 +509,7 @@ describe('AgentSettingsView', () => {
       (window.clubhouse.agent as any).updateDurableConfig = updateMock;
       (window.clubhouse.agent as any).getDurableConfig = vi.fn().mockResolvedValue({ persona: 'qa' });
       renderSettings();
-      const select = await screen.findByDisplayValue('Quality Assurance') as HTMLSelectElement;
+      const select = await screen.findByDisplayValue('PR Reviewer') as HTMLSelectElement;
       fireEvent.change(select, { target: { value: '' } });
 
       await waitFor(() => {

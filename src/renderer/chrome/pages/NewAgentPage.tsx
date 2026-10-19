@@ -8,7 +8,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import { useModelOptions } from '../../hooks/useModelOptions';
-import { PERSONA_TEMPLATES } from '../../features/personas';
+import { PERSONA_TEMPLATES, personaDescription } from '../../features/personas';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
 import { Toggle } from '../../components/Toggle';
 import { Button } from '../../components/Button';
@@ -405,7 +405,7 @@ export function NewAgentPage({ request }: { request: NewAgentRequest }) {
         </Row>
 
         {durable && (
-          <Row label="Persona" htmlFor="new-agent-persona">
+          <Row label="Persona" htmlFor="new-agent-persona" help={personaDescription(persona)}>
             <select id="new-agent-persona" data-testid="new-agent-persona" value={persona} onChange={(e) => setPersona(e.target.value)} className={`${selectClass} w-[288px]`}>
               <option value="">Project default</option>
               {PERSONA_TEMPLATES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}

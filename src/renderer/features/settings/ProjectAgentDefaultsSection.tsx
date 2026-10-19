@@ -6,7 +6,7 @@ import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
 import { useProfileStore } from '../../stores/profileStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { usePluginStore } from '../../plugins/plugin-store';
-import { PERSONA_TEMPLATES } from '../personas';
+import { PERSONA_TEMPLATES, canonicalPersonaId } from '../personas';
 import { Toggle } from '../../components/Toggle';
 import { Modal } from '../../components/Modal';
 import {
@@ -575,7 +575,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         >
           <select
             id={`${idBase}-persona`}
-            value={persona}
+            value={canonicalPersonaId(persona)}
             onChange={(e) => { setPersona(e.target.value); markDirty(); }}
             className={SELECT_CLASS}
           >
