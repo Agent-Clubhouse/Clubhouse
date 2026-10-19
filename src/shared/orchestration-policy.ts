@@ -292,6 +292,44 @@ export function resolveHelperAccess(
   };
 }
 
+export function isAccessLevel(value: unknown): value is AgentAccessLevel {
+  return (ACCESS_LEVELS as readonly unknown[]).includes(value);
+}
+
+/** True when `a` is a lower access level than `b`. */
+export function isLowerAccess(a: AgentAccessLevel, b: AgentAccessLevel): boolean {
+  return rank(a) < rank(b);
+}
+
+export interface HelperLaunch extends AgentLaunchAccess {
+  /** What the helper's CLI really gets with these settings. */
+  level: AgentAccessLevel;
+  /** True when the helper got less than the policy or the request asked for. */
+  clamped: boolean;
+}
+
+/**
+ * The launch settings for a helper on `provider`: the policy's resolution
+ * (already under the orchestrator's live ceiling), lowered to `requested`
+ * (the access start_helper asked for) when that asks for less, then ranked
+ * for the provider's real flags so the helper never gets more than the lower
+ * of the two. `level` is the level those flags give.
+ */
+export function rankHelperLaunch(
+  resolved: HelperAccessResolution,
+  requested: string | undefined,
+  provider: string | undefined,
+): HelperLaunch {
+  let target = resolved.level;
+  const asked = isAccessLevel(requested) ? requested : undefined;
+  if (asked && rank(asked) < rank(target)) target = asked;
+  const ranked = resolveHelperAccess(launchAccessFor(target), 'same', provider);
+  const launch = { freeAgentMode: ranked.freeAgentMode, permissionMode: ranked.permissionMode };
+  const level = providerAccessLevel(provider, launch);
+  const wanted = asked ?? resolved.level;
+  return { ...launch, level, clamped: resolved.clamped || rank(level) < rank(wanted) };
+}
+
 // ── Limits ───────────────────────────────────────────────────────────────
 
 export type HelperLimitCheck =

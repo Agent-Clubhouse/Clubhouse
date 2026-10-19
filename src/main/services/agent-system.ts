@@ -23,7 +23,15 @@ import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { isMcpEnabled } from './mcp-settings';
-import { syncOrchestrationGate } from './orchestration-policy';
+import { resolveHelperLaunchSettings, syncOrchestrationGate } from './orchestration-policy';
+import {
+  isLowerAccess,
+  launchAccessFor,
+  providerAccessLevel,
+  rankHelperLaunch,
+  type AgentLaunchAccess,
+  type HelperLaunch,
+} from '../../shared/orchestration-policy';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import * as os from 'os';
@@ -107,6 +115,48 @@ const inflightSpawns = new Set<Promise<void>>();
 /** Resolves once every spawn in progress, including ones started meanwhile, has settled. */
 export async function whenSpawnsSettled(): Promise<void> {
   while (inflightSpawns.size) await Promise.allSettled([...inflightSpawns]);
+}
+
+/**
+ * The launch access a helper may start with: `asked` (what the caller passed,
+ * or the project's free-agent setting filled in for it), lowered to its
+ * orchestrator's ceiling and the access start_helper asked for, ranked for
+ * the CLI it really runs. Only ever lowers: a caller asking for less keeps it.
+ *
+ * Every wake goes through here, not only wake_helper: the sidebar, the
+ * sleeping-agent view, the Helpers card, review, the plugin API and resume
+ * pass no permission mode, so without this a helper started at Auto would
+ * come back at the project's setting (possibly skip-all).
+ *
+ * The ceiling is the orchestrator's live level. An orchestrator that isn't
+ * running (or can't be read) counts as standard, so a helper the user wakes
+ * while its orchestrator sleeps starts at standard. That is deliberate: the
+ * user can raise it afterwards from the chat level menu (setUserLaunchAccess).
+ */
+async function capHelperLaunch(
+  projectPath: string,
+  agentId: string,
+  helper: { parentAgentId: string; requestedAccess?: string },
+  providerId: string,
+  asked: AgentLaunchAccess,
+): Promise<AgentLaunchAccess> {
+  let cap: Pick<HelperLaunch, 'freeAgentMode' | 'permissionMode' | 'level'>;
+  try {
+    const resolved = await resolveHelperLaunchSettings(projectPath, helper.parentAgentId, { helperProvider: providerId });
+    cap = rankHelperLaunch(resolved, helper.requestedAccess, providerId);
+  } catch (err) {
+    // telemetry-exempt: fails safe to standard and is logged; the spawn goes on.
+    appLog('core:orchestration', 'warn', 'Could not resolve a helper\'s ceiling; starting it at standard', {
+      meta: { agentId, orchestratorId: helper.parentAgentId, error: err instanceof Error ? err.message : String(err) },
+    });
+    cap = { ...launchAccessFor('standard'), level: 'standard' };
+  }
+  const askedLevel = providerAccessLevel(providerId, asked);
+  if (!isLowerAccess(cap.level, askedLevel)) return asked;
+  appLog('core:orchestration', 'info', 'Lowered a helper\'s launch access to its orchestrator\'s ceiling', {
+    meta: { agentId, orchestratorId: helper.parentAgentId, asked: askedLevel, level: cap.level },
+  });
+  return { freeAgentMode: cap.freeAgentMode, permissionMode: cap.permissionMode };
 }
 
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
@@ -259,7 +309,7 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
 
     // Resolve the free-agent permission mode (auto vs skip-all) from settings,
     // but honour an explicit override (e.g. from session resume)
-    const permissionMode = params.permissionMode ?? freeAgentSettings.getPermissionMode(params.projectPath);
+    let permissionMode = params.permissionMode ?? freeAgentSettings.getPermissionMode(params.projectPath);
 
     // For durable agents, fall back to stored config for flags that callers may
     // not pass (e.g. session resume after app update only carries a subset of
@@ -280,6 +330,15 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     // A disposed helper keeps its row but has no worktree to run in (#2224).
     if (isDisposedAgent(durableConfig)) {
       throw tagError(new Error(`${durableConfig?.name ?? 'This agent'} was disposed and can't be started`), 'preflight_failed');
+    }
+    // A helper never starts above its orchestrator's ceiling, whoever wakes it.
+    if (params.kind === 'durable' && durableConfig?.parentAgentId) {
+      const capped = await capHelperLaunch(params.projectPath, params.agentId, { parentAgentId: durableConfig.parentAgentId, requestedAccess: durableConfig.requestedAccess }, provider.id, {
+        freeAgentMode: params.freeAgentMode === true,
+        permissionMode,
+      });
+      params = { ...params, freeAgentMode: capped.freeAgentMode, permissionMode: capped.permissionMode };
+      permissionMode = capped.permissionMode;
     }
     // The final launch access, the ceiling for this agent's helpers (#2228).
     // Every runtime below starts with exactly these values.

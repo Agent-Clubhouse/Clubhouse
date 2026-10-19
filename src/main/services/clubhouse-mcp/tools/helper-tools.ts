@@ -45,12 +45,9 @@ import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { isDisposedAgent } from '../../../../shared/agent-helpers';
 import {
   ACCESS_LEVELS,
-  launchAccessFor,
-  providerAccessLevel,
-  resolveHelperAccess,
-  type AgentAccessLevel,
-  type AgentLaunchAccess,
-  type HelperAccessResolution,
+  isAccessLevel,
+  rankHelperLaunch,
+  type HelperLaunch,
 } from '../../../../shared/orchestration-policy';
 import type { DurableAgentConfig } from '../../../../shared/types';
 import { McpArgError, optionalString } from './validation';
@@ -183,43 +180,6 @@ async function withStartLock<T>(fn: () => Promise<T>): Promise<T> {
 const APPROVAL_NOTICE_INTERVAL_MS = 60_000;
 const lastApprovalNotice = new Map<string, number>();
 
-function isAccessLevel(value: string): value is AgentAccessLevel {
-  return (ACCESS_LEVELS as readonly string[]).includes(value);
-}
-
-function rankOf(level: AgentAccessLevel): number {
-  return ACCESS_LEVELS.indexOf(level);
-}
-
-interface HelperLaunch extends AgentLaunchAccess {
-  /** What the helper's CLI really gets with these settings. */
-  level: AgentAccessLevel;
-  /** True when the helper got less than the policy or the request asked for. */
-  clamped: boolean;
-}
-
-/**
- * The launch settings for a helper on `provider`: the policy's resolution
- * (already under the orchestrator's live ceiling), lowered to `requested`
- * when that asks for less, then ranked for the provider's real flags so the
- * helper never gets more than the lower of the two. `level` is the level
- * those flags give.
- */
-function rankedLaunch(
-  resolved: HelperAccessResolution,
-  requested: string | undefined,
-  provider: string | undefined,
-): HelperLaunch {
-  let target = resolved.level;
-  const asked = requested && isAccessLevel(requested) ? requested : undefined;
-  if (asked && rankOf(asked) < rankOf(target)) target = asked;
-  const ranked = resolveHelperAccess(launchAccessFor(target), 'same', provider);
-  const launch = { freeAgentMode: ranked.freeAgentMode, permissionMode: ranked.permissionMode };
-  const level = providerAccessLevel(provider, launch);
-  const wanted = asked ?? resolved.level;
-  return { ...launch, level, clamped: resolved.clamped || rankOf(level) < rankOf(wanted) };
-}
-
 /** Resolve a helper's launch settings now, for the CLI it will run. */
 async function resolveLaunchFor(
   projectPath: string,
@@ -228,7 +188,7 @@ async function resolveLaunchFor(
   requested: string | undefined,
 ): Promise<HelperLaunch> {
   const resolved = await resolveHelperLaunchSettings(projectPath, orchestratorId, provider ? { helperProvider: provider } : {});
-  return rankedLaunch(resolved, requested, provider);
+  return rankHelperLaunch(resolved, requested, provider);
 }
 
 function samePath(a: string, b: string): boolean {
