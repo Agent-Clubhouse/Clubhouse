@@ -33,7 +33,7 @@ import { throwIfStartAborted, untilStartAborted } from './start-abort';
 import { ProcessExitedError } from './ndjson-rpc-base';
 import { RpcError } from './acp-client';
 
-type LogFn = (level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
+type LogFn = (level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 
 /** What the Codex app-server driver supports live, on the pinned v2 stable surface. */
 const codexCapabilities: ChatCapabilities = {

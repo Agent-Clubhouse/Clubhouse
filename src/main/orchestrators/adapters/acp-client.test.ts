@@ -7,7 +7,7 @@ vi.mock('child_process', () => ({
 }));
 
 import { spawn } from 'child_process';
-import { AcpClient, RpcError, redactAcpParamsForLog } from './acp-client';
+import { AcpClient, RpcError } from './acp-client';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../../util/__fixtures__/host-session-env';
 
 const mockSpawn = vi.mocked(spawn);
@@ -215,21 +215,12 @@ describe('AcpClient', () => {
     };
     void client.request('session/new', params).catch(() => {});
 
-    // The request itself carries the values: only the log is redacted.
+    // The request itself carries the values: the log never sees params.
     expect(String(mockProc.stdin.write.mock.calls.at(-1)?.[0])).toContain(nonce);
-    const logged = JSON.stringify(onLog.mock.calls.filter(([, message]) => String(message).includes('session/new')));
-    expect(logged).toContain('CLUBHOUSE_HOOK_NONCE');
+    const logged = JSON.stringify(onLog.mock.calls);
     expect(logged).not.toContain(nonce);
     expect(logged).not.toContain('secret-token');
-    expect(logged).toContain('X-Clubhouse-Nonce');
     expect(logged).not.toContain('header-nonce');
-  });
-
-  it('redactAcpParamsForLog keeps names and leaves other params untouched', () => {
-    expect(redactAcpParamsForLog({ mcpServers: [{ name: 's', env: [{ name: 'K', value: 'v' }] }] }))
-      .toEqual({ mcpServers: [{ name: 's', env: [{ name: 'K', value: '[redacted]' }] }] });
-    const plain = { sessionId: 'x' };
-    expect(redactAcpParamsForLog(plain)).toBe(plain);
   });
 
   it('rejects request on JSON-RPC error response', async () => {
@@ -579,7 +570,7 @@ describe('AcpClient', () => {
     expect(onLog).toHaveBeenCalledWith('info', 'ACP init handshake complete', undefined);
   });
 
-  it('calls onLog for RPC requests', async () => {
+  it('logs RPC requests at debug with method and id only (#2300)', async () => {
     autoHandshake(mockProc);
     const onLog = vi.fn();
     const client = new AcpClient({ binary: 'copilot', args: [], onLog });
@@ -587,13 +578,8 @@ describe('AcpClient', () => {
 
     client.request('session/new', { cwd: '/tmp' });
 
-    expect(onLog).toHaveBeenCalledWith(
-      'info',
-      'RPC request → session/new',
-      expect.objectContaining({
-        method: 'session/new',
-      }),
-    );
+    expect(onLog).toHaveBeenCalledWith('debug', 'RPC request → session/new', { id: expect.any(Number), method: 'session/new' });
+    expect(onLog.mock.calls.some(([level, message]) => level === 'info' && String(message).startsWith('RPC '))).toBe(false);
   });
 
   it('calls onLog for RPC errors', async () => {

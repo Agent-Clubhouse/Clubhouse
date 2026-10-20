@@ -43,11 +43,11 @@ vi.mock('../../util/ipc-broadcast', () => ({
 }));
 
 import * as bridgeServer from './bridge-server';
+import { appLog } from '../log-service';
 import { bindingManager } from './binding-manager';
 import { registerToolTemplate, registerGlobalTool, buildToolName, _resetForTesting as resetTools } from './tool-registry';
 import { setOrchestrationEnabled, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import { IPC } from '../../../shared/ipc-channels';
-import { appLog } from '../log-service';
 
 function makeRequest(port: number, method: string, path: string, body?: unknown, nonce?: string, rawBody?: string): Promise<{ statusCode: number; body: any }> {
   return new Promise((resolve, reject) => {
@@ -233,6 +233,7 @@ describe('BridgeServer', () => {
       'send_message',
     );
 
+    vi.mocked(appLog).mockClear();
     const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', {
       jsonrpc: '2.0',
       id: 4,
@@ -242,6 +243,39 @@ describe('BridgeServer', () => {
 
     expect(body.result.content[0].text).toBe('sent');
     expect(handler).toHaveBeenCalled();
+    // The mcp.tool_call span covers calls; no per-call log lines (#2300).
+    expect(vi.mocked(appLog).mock.calls.filter(([ns]) => ns === 'core:mcp')).toEqual([]);
+  });
+
+  it('logs a tool error result at warn without the args', async () => {
+    registerToolTemplate('agent', 'err_tool', {
+      description: 'Errors',
+      inputSchema: { type: 'object' },
+    }, vi.fn().mockResolvedValue({ isError: true, content: [{ type: 'text', text: 'target is gone' }] }));
+
+    bindingManager.bind('agent-1', {
+      targetId: 'agent-2', targetKind: 'agent', label: 'A2',
+      targetName: 'robin', projectName: 'app',
+    });
+
+    const toolName = buildToolName(
+      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' },
+      'err_tool',
+    );
+
+    vi.mocked(appLog).mockClear();
+    await makeRequest(port, 'POST', '/mcp/agent-1', {
+      jsonrpc: '2.0',
+      id: 22,
+      method: 'tools/call',
+      params: { name: toolName, arguments: { message: 'secret prompt' } },
+    }, 'test-nonce');
+
+    const mcpLogs = vi.mocked(appLog).mock.calls.filter(([ns]) => ns === 'core:mcp');
+    expect(mcpLogs).toEqual([['core:mcp', 'warn', 'Tool call returned error', {
+      meta: { agentId: 'agent-1', toolName, errorDetail: 'target is gone' },
+    }]]);
+    expect(JSON.stringify(mcpLogs)).not.toContain('secret prompt');
   });
 
   it('rejects requests with invalid nonce', async () => {
@@ -447,7 +481,6 @@ describe('BridgeServer', () => {
       await call(44, 'not-a-scoped-tool');
       const logged = JSON.stringify(vi.mocked(appLog).mock.calls);
       expect(logged).not.toContain(secret);
-      expect(vi.mocked(appLog)).toHaveBeenCalledWith('core:mcp', 'info', 'Tool call', { meta: expect.objectContaining({ argKeys: ['message'] }) });
       expect(JSON.stringify(mockRecordMcpToolCall.mock.calls)).not.toContain(secret);
     });
   });

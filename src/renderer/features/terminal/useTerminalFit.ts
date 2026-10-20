@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
-import { rendererLog } from '../../plugins/renderer-logger';
 import { claimSizeOwner, isSizeOwner, registerSizeOwner } from './pty-size-owner';
 import { resizeTerminal } from './inline-frame';
-
-const SCROLL_LOG_NS = 'ui:terminal:scroll';
 
 /** Delay (ms) after wake-from-sleep before re-fitting the terminal.
  *  Gives the browser layout engine time to recalculate dimensions and
@@ -36,16 +33,10 @@ export function isTerminalAtBottom(term: Terminal): boolean {
  * leave a viewport that was following live output short of the new bottom.
  * Record whether we were at the bottom before `fit()` and re-pin after.
  */
-export function fitPreservingScroll(term: Terminal, fitAddon: FitAddon, sessionId?: string): void {
+export function fitPreservingScroll(term: Terminal, fitAddon: FitAddon): void {
   const wasAtBottom = isTerminalAtBottom(term);
-  const savedViewportY = term.buffer.active.viewportY;
   fitAddon.fit();
-  if (wasAtBottom && !isTerminalAtBottom(term)) {
-    term.scrollToBottom();
-    rendererLog(SCROLL_LOG_NS, 'debug', 'Viewport re-pinned to bottom after fit', {
-      meta: { sessionId, savedViewportY, baseY: term.buffer.active.baseY },
-    });
-  }
+  if (wasAtBottom && !isTerminalAtBottom(term)) term.scrollToBottom();
 }
 
 /**
@@ -141,20 +132,8 @@ export function useTerminalFit(
         const fitAddon = fitAddonRef.current;
         if (!fitAddon || !term) return;
         if (readyRef && !readyRef.current) return;
-        const el = containerRef.current;
-        if (!hasMeasurableSize(el)) return;
+        if (!hasMeasurableSize(containerRef.current)) return;
         const drive = sendResize && isSizeOwner(sessionId, token);
-        rendererLog(SCROLL_LOG_NS, 'debug', 'fitAndResize', {
-          meta: {
-            sessionId,
-            trigger,
-            sendResize: drive,
-            viewportY: term.buffer.active.viewportY,
-            atBottom: isTerminalAtBottom(term),
-            containerWidth: el.clientWidth,
-            containerHeight: el.clientHeight,
-          },
-        });
         // With a known PTY size the xterm only ever takes the PTY's size, on
         // PTY.RESIZED (syncToPty), so output is always parsed at the width it
         // was produced for; the owner just proposes its container's size.
@@ -169,7 +148,7 @@ export function useTerminalFit(
           // Already the PTY's size: main would skip it, so adopt it here.
           if (proposed.cols === ptySize!.cols && proposed.rows === ptySize!.rows) followPtySize(term, ptySize);
         } else if (drive || !followPtySize(term, ptySize)) {
-          fitPreservingScroll(term, fitAddon, sessionId);
+          fitPreservingScroll(term, fitAddon);
         }
         if (drive) {
           const size = proposed ?? { cols: term.cols, rows: term.rows };

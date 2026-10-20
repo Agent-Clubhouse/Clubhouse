@@ -16,7 +16,7 @@ import type { InitializeResponse } from './acp-schema';
 import { resolveStructuredSpawn, type StructuredSpawnCommand } from './structured-spawn';
 import { COPILOT_ACP_TESTED_RANGE, copilotVersionStatus, resolveCopilotAcpSpawn, selectAcpProfile } from './copilot-acp';
 
-type Log = (level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
+type Log = (level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 
 /** What differs between ACP agents at launch; everything else is the generic driver. */
 export interface AcpLaunchSpec {

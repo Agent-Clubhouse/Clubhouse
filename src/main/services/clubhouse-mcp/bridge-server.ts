@@ -182,9 +182,6 @@ function handleToolsList(agentId: string, id: number | string | null): JsonRpcRe
   recordToolsList(tools.length);
   const conn = agentConnections.get(agentId);
   setAgentConnection(agentId, { connectedAt: conn?.connectedAt ?? Date.now(), toolCount: tools.length });
-  appLog('core:mcp', 'info', 'Tools list requested', {
-    meta: { agentId, toolCount: tools.length, toolNames: tools.map(t => t.name) },
-  });
   return jsonRpcSuccess(id, { tools });
 }
 
@@ -201,11 +198,6 @@ async function handleToolsCall(
     return jsonRpcError(id, -32602, 'Missing tool name');
   }
 
-  // Argument names only: values carry message bodies and never go in any log tier (#2308).
-  appLog('core:mcp', 'info', 'Tool call', {
-    meta: { agentId, toolName, argKeys: Object.keys(args) },
-  });
-
   const callStartMs = Date.now();
   const isGlobal = isGlobalTool(toolName);
   try {
@@ -214,16 +206,13 @@ async function handleToolsCall(
       agentId,
       refusal: refusalReasonOf(result),
     });
-    const errorText = result.isError
-      ? result.content?.find(c => c.type === 'text')?.text
-      : undefined;
-    appLog('core:mcp', result.isError ? 'warn' : 'info', `Tool call ${result.isError ? 'returned error' : 'completed'}`, {
-      meta: {
-        agentId,
-        toolName,
-        ...(errorText ? { errorDetail: errorText } : {}),
-      },
-    });
+    // Success is covered by the mcp.tool_call span; only errors are logged.
+    if (result.isError) {
+      const errorText = result.content?.find(c => c.type === 'text')?.text;
+      appLog('core:mcp', 'warn', 'Tool call returned error', {
+        meta: { agentId, toolName, ...(errorText ? { errorDetail: errorText } : {}) },
+      });
+    }
 
     // Broadcast tool activity for wire animation (even on error — the agent tried)
     const parsed = parseToolName(toolName);
