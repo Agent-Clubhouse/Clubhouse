@@ -949,3 +949,115 @@ describe('ChatAgentRuntime stop during start (#2087)', () => {
     });
   });
 });
+
+describe('ChatAgentRuntime helper questions (#2366)', () => {
+  const QUESTION = { requestId: 'q1', questions: [{ id: 'a', prompt: 'Which branch?', multiSelect: false, allowFreeText: true }] };
+
+  it('keeps a question routed to the parent out of waiting_input and records where it went', async () => {
+    const driver = new FakeChatDriver();
+    const routeQuestion = vi.fn(async () => ({ agentId: 'orch', name: 'Orch' }));
+    const { runtime } = makeRuntime(driver, { routeQuestion });
+    await runtime.start();
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    driver.last.emit({ type: 'question', data: { ...QUESTION } });
+    await flush();
+
+    expect(routeQuestion).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'q1' }));
+    const asked = transcript.find((e) => e.type === 'question');
+    expect(asked?.type === 'question' && asked.data.routedTo).toEqual({ agentId: 'orch', name: 'Orch' });
+    expect(runtime.getState()).toBe('running');
+    expect(runtime.hasPendingQuestion('q1')).toBe(true);
+
+    // The parent's answer goes through the usual path.
+    await runtime.answerQuestion('q1', { a: 'main' });
+    await flush();
+    expect(driver.last.answers).toEqual([{ requestId: 'q1', answers: { a: 'main' } }]);
+    expect(runtime.hasPendingQuestion('q1')).toBe(false);
+  });
+
+  it('asks the user when the question is not routed, or routing fails', async () => {
+    for (const routeQuestion of [vi.fn(async () => null), vi.fn(async () => { throw new Error('boom'); })]) {
+      transcript.length = 0;
+      const driver = new FakeChatDriver();
+      const { runtime } = makeRuntime(driver, { routeQuestion });
+      await runtime.start();
+      driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+      driver.last.emit({ type: 'question', data: { ...QUESTION } });
+      await flush();
+
+      const asked = transcript.find((e) => e.type === 'question');
+      expect(asked?.type === 'question' && asked.data.routedTo).toBeUndefined();
+      expect(runtime.getState()).toBe('waiting_input');
+    }
+  });
+
+  it('escalates a routed question to the user: a notice, the question again without routedTo, waiting_input', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver, { routeQuestion: async () => ({ agentId: 'orch', name: 'Orch' }) });
+    await runtime.start();
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    driver.last.emit({ type: 'question', data: { ...QUESTION } });
+    await flush();
+
+    expect(await runtime.escalateQuestion('q1', 'Orch passed this question to you.')).toBe(true);
+    await flush();
+    expect(runtime.getState()).toBe('waiting_input');
+    const notice = transcript.find((e) => e.type === 'notice');
+    expect(notice?.type === 'notice' && notice.data.message).toBe('Orch passed this question to you.');
+    const asked = transcript.filter((e) => e.type === 'question');
+    expect(asked).toHaveLength(2);
+    expect(asked[1].type === 'question' && asked[1].data.routedTo).toBeUndefined();
+    expect(asked[1].turnId).toBe(asked[0].turnId);
+
+    // Once it is the user's, it can't be escalated again; an unknown request never could.
+    expect(await runtime.escalateQuestion('q1', 'Orch')).toBe(false);
+    expect(await runtime.escalateQuestion('nope', 'Orch')).toBe(false);
+  });
+
+  it('stays out of waiting_input when the parent answers while the question is being routed', async () => {
+    const driver = new FakeChatDriver();
+    let runtimeRef!: ChatAgentRuntime;
+    const routeQuestion = vi.fn(async () => {
+      await runtimeRef.answerQuestion('q1', { a: 'main' });
+      return { agentId: 'orch', name: 'Orch' };
+    });
+    const { runtime } = makeRuntime(driver, { routeQuestion });
+    runtimeRef = runtime;
+    await runtime.start();
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    driver.last.emit({ type: 'question', data: { ...QUESTION } });
+    await flush();
+
+    expect(driver.last.answers).toEqual([{ requestId: 'q1', answers: { a: 'main' } }]);
+    expect(runtime.hasPendingQuestion('q1')).toBe(false);
+    expect(runtime.getState()).toBe('running');
+    expect(await runtime.escalateQuestion('q1', 'x')).toBe(false);
+  });
+
+  it('does not re-ask a question the user answered while it was being escalated', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver, { routeQuestion: async () => ({ agentId: 'orch', name: 'Orch' }) });
+    await runtime.start();
+    driver.last.emit({ type: 'turn_started', data: { trigger: 'prompt' } });
+    driver.last.emit({ type: 'question', data: { ...QUESTION } });
+    await flush();
+
+    const escalating = runtime.escalateQuestion('q1', 'Orch passed this question to you.');
+    await runtime.answerQuestion('q1', { a: 'main' });
+    await escalating;
+    await flush();
+    expect(transcript.filter((e) => e.type === 'question')).toHaveLength(1);
+    expect(runtime.getState()).not.toBe('waiting_input');
+  });
+
+  it('does not escalate a question the user already answered', async () => {
+    const driver = new FakeChatDriver();
+    const { runtime } = makeRuntime(driver, { routeQuestion: async () => ({ agentId: 'orch', name: 'Orch' }) });
+    await runtime.start();
+    driver.last.emit({ type: 'question', data: { ...QUESTION } });
+    await flush();
+    await runtime.answerQuestion('q1', { a: 'main' });
+
+    expect(await runtime.escalateQuestion('q1', 'Orch')).toBe(false);
+  });
+});

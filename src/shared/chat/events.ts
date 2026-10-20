@@ -387,6 +387,12 @@ export interface ChatEventDataMap {
     questions: ChatQuestion[];
     toolCallId?: string;
     subagentId?: string;
+    /**
+     * Set by the runtime when a helper's question went to its parent
+     * orchestrator instead of the user (hands-off control, #2366). The user
+     * can still answer it. Re-sent without it when the parent escalates.
+     */
+    routedTo?: { agentId: string; name: string };
   };
   question_resolved: { requestId: string; answers: ChatQuestionAnswers; cancelled?: boolean };
 
