@@ -173,6 +173,24 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     expect(settings().getByText(LOCKED_HINT)).toBeInTheDocument();
   });
 
+  // #2375: a change before the provider lists its models used to save model: '' and drop the saved model.
+  it('saves nothing from the Model select until its options have loaded', async () => {
+    saved.model = 'opus';
+    let list!: (v: unknown) => void;
+    window.clubhouse.agent.getModelOptions = vi.fn(() => new Promise((r) => { list = r; })) as never;
+    render(<AgentDetails agent={sleeping} />);
+    const model = await settings().findByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
+    expect(model).toBeDisabled();
+    fireEvent.change(model, { target: { value: 'sonnet' } });
+    fireEvent.change(model, { target: { value: 'default' } });
+    expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    expect(saved.model).toBe('opus');
+
+    list([{ id: 'default', label: 'Default' }, { id: 'sonnet', label: 'Sonnet' }, { id: 'opus', label: 'Opus' }]);
+    await loadedModelSelect('sonnet');
+    expect(model.value).toBe('opus');
+  });
+
   it('shows the terminal and no Runs in control with the Chat flag off', async () => {
     chatFlag = false;
     render(<AgentDetails agent={sleeping} />);
