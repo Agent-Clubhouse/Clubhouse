@@ -28,6 +28,8 @@ import {
 } from './driver';
 import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import type { ClaudeChatEvent, ClaudeChatEventBody } from './events';
+import { evaluateCliVersion, type CliVersionPolicy } from '../../services/agent-runtime/chat-version-policy';
+import { clearClaudeCliVersionCache, lookupClaudeCliVersion, type ClaudeVersionLookup } from './cli-version';
 import { ClaudeNormalizer } from './normalizer';
 import { ClaudeSdkTransport } from './sdk-transport';
 import { spawnClaude } from './spawn';
@@ -38,6 +40,10 @@ vi.mock('../../util/shell', async (importActual) => {
   const actual = await importActual<typeof import('../../util/shell')>();
   return { ...actual, getShellEnvironment: () => ({ ...process.env }) as Record<string, string> };
 });
+
+vi.mock('../../services/settings-store', () => ({
+  createSettingsStore: () => ({ get: () => ({ entries: [] }), save: async () => {} }),
+}));
 
 const FAKE_CLAUDE = path.join(__dirname, '__fixtures__', 'fake-claude.mjs');
 
@@ -107,6 +113,63 @@ describe.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('C
   it('probes with the zero-token handshake', async () => {
     const probe = await driver.probe(FAKE_CLAUDE);
     expect(probe).toMatchObject({ handshakeOk: true, cliVersion: '2.1.300-fake' });
+  });
+
+  describe('probe version when initialize omits claude_code_version (#2275)', () => {
+    const OMIT = { FAKE_CLAUDE_OMIT_INIT_VERSION: '1' };
+    let versionSpawns: number;
+    /** The real cached `--version` lookup, running the fake through node. */
+    const lookupVersion = vi.fn<ClaudeVersionLookup>((binary, opts) => lookupClaudeCliVersion(binary, opts, {
+      spawn: (o) => {
+        versionSpawns++;
+        return spawnClaude({ ...o, binary: process.execPath, args: [FAKE_CLAUDE, ...o.args] });
+      },
+    }));
+    const fallbackDriver = new ClaudeChatDriver(id, { createTransport: transportFactory, lookupVersion });
+    const policy = (over: Partial<CliVersionPolicy> = {}): CliVersionPolicy => ({ tested: {}, denylist: [], ...over });
+
+    beforeEach(() => {
+      clearClaudeCliVersionCache();
+      lookupVersion.mockClear();
+      versionSpawns = 0;
+    });
+
+    it('uses the initialize field when present, without a lookup', async () => {
+      const probe = await fallbackDriver.probe(FAKE_CLAUDE);
+      expect(probe).toMatchObject({ handshakeOk: true, cliVersion: '2.1.300-fake' });
+      expect(lookupVersion).not.toHaveBeenCalled();
+    });
+
+    it('falls back to `claude --version` for the same executable and env', async () => {
+      const probe = await fallbackDriver.probe(FAKE_CLAUDE, { ...OMIT, FAKE_CLAUDE_VERSION: '2.1.150 (Claude Code)' });
+      expect(probe).toMatchObject({ handshakeOk: true, cliVersion: '2.1.150' });
+      expect(lookupVersion).toHaveBeenCalledWith(FAKE_CLAUDE, { env: { ...OMIT, FAKE_CLAUDE_VERSION: '2.1.150 (Claude Code)' }, commandPrefix: undefined });
+    });
+
+    it('applies the denylist and minimum version to the fallback version', async () => {
+      const probe = await fallbackDriver.probe(FAKE_CLAUDE, { ...OMIT, FAKE_CLAUDE_VERSION: '2.1.150' });
+      expect(evaluateCliVersion(id, 'claude-code', probe.cliVersion, policy({
+        denylist: [{ driver: id, versions: ['2.1.150'], reason: 'test entry' }],
+      }))).toMatchObject({ status: 'known_bad', version: '2.1.150' });
+      expect(evaluateCliVersion(id, 'claude-code', probe.cliVersion, policy({
+        tested: { [id]: { minVersion: '2.1.200' } },
+      }))).toMatchObject({ status: 'below_min', version: '2.1.150' });
+    });
+
+    it('is unknown only when both sources fail', async () => {
+      const probe = await fallbackDriver.probe(FAKE_CLAUDE, { ...OMIT, FAKE_CLAUDE_VERSION: 'no version here' });
+      expect(probe).toMatchObject({ handshakeOk: true, versionTransient: true });
+      expect(probe.cliVersion).toBeUndefined();
+      expect(evaluateCliVersion(id, 'claude-code', probe.cliVersion, policy())).toEqual({ status: 'unknown' });
+    });
+
+    it('caches the fallback per executable across probes', async () => {
+      await fallbackDriver.probe(FAKE_CLAUDE, OMIT);
+      const again = await fallbackDriver.probe(FAKE_CLAUDE, OMIT);
+      expect(again.cliVersion).toBe('2.1.300-fake');
+      expect(lookupVersion).toHaveBeenCalledTimes(2);
+      expect(versionSpawns).toBe(1);
+    });
   });
 
   it('reports a failed probe without throwing', async () => {

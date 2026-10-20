@@ -31,6 +31,7 @@ import type {
 import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import { throwIfStartAborted, untilStartAborted } from '../../orchestrators/adapters/start-abort';
 import type { ClaudeChatEvent, ClaudeCommand, ClaudePermissionMode, ClaudePermissionUpdate, ClaudeUsage } from './events';
+import { lookupClaudeCliVersion, type ClaudeVersionLookup } from './cli-version';
 import { ClaudeSdkTransport } from './sdk-transport';
 import { ClaudeStreamTransport } from './stream-transport';
 import { CLAUDE_EFFORTS, ClaudeStartupTimeoutError, type ClaudeEffort, type ClaudeImageInput, type ClaudeTransport, type ClaudeTransportLog, type ClaudeTransportOptions } from './transport';
@@ -1259,16 +1260,28 @@ export function claudeTransportOptions(opts: ChatDriverStartOptions, log?: Claud
   };
 }
 
+export interface ClaudeChatDriverDeps {
+  createTransport?: ClaudeTransportFactory;
+  log?: ClaudeTransportLog;
+  /** The probe's version source when initialize omits `claude_code_version`. */
+  lookupVersion?: ClaudeVersionLookup;
+}
+
 /** `ChatDriver` for Claude Code: `claude_agent_sdk` (default) or `claude_stream_json`. */
 export class ClaudeChatDriver implements ChatDriver {
   readonly provider = PROVIDER;
 
   constructor(
     readonly id: ClaudeChatDriverId,
-    private readonly deps: { createTransport?: ClaudeTransportFactory; log?: ClaudeTransportLog } = {},
+    private readonly deps: ClaudeChatDriverDeps = {},
   ) {}
 
-  /** Zero-token check: spawn, complete `initialize`, close. Sends no prompt. */
+  /**
+   * Zero-token check: spawn, complete `initialize`, close. Sends no prompt.
+   * `claude_code_version` is optional in the initialize response; without
+   * it, the version comes from `claude --version` (cached per install), so
+   * the version policy still applies.
+   */
   async probe(binaryPath: string, env?: Record<string, string>, opts?: { commandPrefix?: string }): Promise<ChatDriverProbe> {
     const capabilities = claudeCapabilities('ask');
     const transport = this.createTransport({
@@ -1288,7 +1301,9 @@ export class ClaudeChatDriver implements ChatDriver {
     })();
     try {
       await transport.start();
-      return { handshakeOk: true, cliVersion, capabilities };
+      // The collector reads `initialized` a few microtasks after start()
+      // resolves; let it, so a reported version never costs a lookup.
+      if (cliVersion === undefined) await new Promise<void>((resolve) => setImmediate(resolve));
     } catch (err) {
       return {
         handshakeOk: false, cliVersion, capabilities,
@@ -1299,6 +1314,9 @@ export class ClaudeChatDriver implements ChatDriver {
       await transport.close().catch((): undefined => undefined);
       await collect.catch((): undefined => undefined);
     }
+    if (cliVersion !== undefined) return { handshakeOk: true, cliVersion, capabilities };
+    const fallback = await (this.deps.lookupVersion ?? lookupClaudeCliVersion)(binaryPath, { env, commandPrefix: opts?.commandPrefix });
+    return { handshakeOk: true, cliVersion: fallback, capabilities, ...(fallback === undefined && { versionTransient: true }) };
   }
 
   async start(opts: ChatDriverStartOptions): Promise<ClaudeChatDriverSession> {
@@ -1331,7 +1349,7 @@ export class ClaudeChatDriver implements ChatDriver {
  */
 export function registerClaudeChatDrivers(
   register: (driver: ChatDriver) => () => void,
-  deps: { createTransport?: ClaudeTransportFactory; log?: ClaudeTransportLog } = {},
+  deps: ClaudeChatDriverDeps = {},
 ): () => void {
   const unregister = [
     register(new ClaudeChatDriver('claude_agent_sdk', deps)),

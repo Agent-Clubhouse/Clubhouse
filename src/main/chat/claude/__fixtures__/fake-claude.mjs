@@ -9,6 +9,8 @@
 //   FAKE_CLAUDE_PID_FILE   write process.pid here on start
 //   FAKE_CLAUDE_HANG_INIT  never answer initialize and ignore stdin EOF, so only
 //                          a kill ends the process (startup cancellation tests)
+//   FAKE_CLAUDE_OMIT_INIT_VERSION  leave claude_code_version out of the initialize response, as older CLIs do
+//   FAKE_CLAUDE_VERSION  what `--version` prints (default "2.1.300-fake (Claude Code)")
 //
 // Scripted turns (user text):
 //   hello  partial deltas, then the assistant text, then a success result
@@ -31,6 +33,11 @@ import { writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 const argv = process.argv.slice(2);
+// Before the argv/pid files, so a version lookup can't overwrite a session's.
+if (argv[0] === '--version') {
+  process.stdout.write(`${process.env.FAKE_CLAUDE_VERSION ?? '2.1.300-fake (Claude Code)'}\n`);
+  process.exit(0);
+}
 if (process.env.FAKE_CLAUDE_ARGV_FILE) writeFileSync(process.env.FAKE_CLAUDE_ARGV_FILE, JSON.stringify(argv));
 if (process.env.FAKE_CLAUDE_PID_FILE) writeFileSync(process.env.FAKE_CLAUDE_PID_FILE, String(process.pid));
 
@@ -233,7 +240,7 @@ function onControlRequest(msg) {
           { value: 'haiku', displayName: 'Haiku', resolvedModel: 'claude-haiku-fake' },
         ],
         agents: [],
-        claude_code_version: '2.1.300-fake',
+        ...(!process.env.FAKE_CLAUDE_OMIT_INIT_VERSION && { claude_code_version: '2.1.300-fake' }),
         current_permission_mode: permissionMode,
         pid: process.pid,
       });
