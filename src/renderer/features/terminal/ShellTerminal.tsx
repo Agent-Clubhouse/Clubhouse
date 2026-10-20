@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useFileDrop } from './useFileDrop';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type IWindowsPty } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { localWindowsPtyOptions } from './windows-pty';
 import { useThemeStore } from '../../stores/themeStore';
@@ -9,6 +9,7 @@ import { attachClipboardHandlers } from './clipboard';
 import { useTerminalFit, hasMeasurableSize, type PtySize, type TerminalFitControls } from './useTerminalFit';
 import { unseenPtySuffix, isAsciiBinary, writeAsync } from './pty-stream';
 import { writePtySnapshot, type PtyBufferSnapshot } from '../../../shared/pty-snapshot';
+import type { WindowsPtyInfo } from '../../../shared/windows-pty';
 
 /**
  * Abstraction over terminal I/O operations, allowing ShellTerminal to work
@@ -51,9 +52,14 @@ interface Props {
   sessionId: string;
   focused?: boolean;
   io?: TerminalIO;
+  /**
+   * With `io`: xterm's `windowsPty` hint for the remote PTY, when its machine
+   * is Windows (#2352).
+   */
+  remoteWindowsPty?: WindowsPtyInfo;
 }
 
-export function ShellTerminal({ sessionId, focused, io }: Props) {
+export function ShellTerminal({ sessionId, focused, io, remoteWindowsPty }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // xterm mounts into this unpadded child of the padded container: FitAddon
   // measures the xterm element's parent, so mounting directly into the padded
@@ -204,18 +210,29 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
     };
   }, [sessionId]);
 
+  // The local PTY's backend is fixed; a remote (canvas satellite) PTY's comes
+  // from the caller (#2320, #2352). Set after creation because `io` and the
+  // satellite's report can change while the terminal stays mounted.
+  const remoteBackend = remoteWindowsPty?.backend;
+  const remoteBuild = remoteWindowsPty?.buildNumber;
+  useEffect(() => {
+    const term = terminalRef.current;
+    if (!term) return;
+    const windowsPty: IWindowsPty = io
+      ? (remoteBackend ? { backend: remoteBackend, ...(remoteBuild && { buildNumber: remoteBuild }) } : {})
+      : (localWindowsPtyOptions().windowsPty ?? {});
+    const current = term.options.windowsPty;
+    if (windowsPty.backend !== current?.backend || windowsPty.buildNumber !== current?.buildNumber) {
+      term.options.windowsPty = windowsPty;
+    }
+  }, [sessionId, io, remoteBackend, remoteBuild]);
+
   // ── IO event listeners — re-registered when io changes ───────────
   // Separated from terminal creation so that an IO change (e.g. satellite
   // reconnect) only re-subscribes listeners without destroying the terminal.
   useEffect(() => {
     const term = terminalRef.current;
     if (!term) return;
-
-    // Only a local PTY can be ConPTY. A remote (canvas satellite) PTY's
-    // platform is unknown, so it gets no hint (#2320). Set here rather than at
-    // creation because `io` can change while the terminal stays mounted.
-    const windowsPty = io ? {} : (localWindowsPtyOptions().windowsPty ?? {});
-    if (windowsPty.backend !== term.options.windowsPty?.backend) term.options.windowsPty = windowsPty;
 
     const pty = ptyRef.current;
 

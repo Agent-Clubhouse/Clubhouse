@@ -78,7 +78,8 @@ vi.mock('../../plugins/renderer-logger', () => ({
 g.__annexMockState = {
   sendPtyInput: vi.fn(),
   sendClipboardImage: vi.fn(),
-  requestPtyBuffer: vi.fn().mockResolvedValue(''),
+  requestPtyBufferSnapshot: vi.fn().mockResolvedValue({ data: '', seq: 0 }),
+  satellites: [],
   sendPtyResize: vi.fn(),
 };
 
@@ -146,7 +147,8 @@ describe('AgentTerminal write batching', () => {
     g.__annexMockState = {
       sendPtyInput: vi.fn(),
       sendClipboardImage: vi.fn(),
-      requestPtyBuffer: vi.fn().mockResolvedValue(''),
+      requestPtyBufferSnapshot: vi.fn().mockResolvedValue({ data: '', seq: 0 }),
+      satellites: [],
       sendPtyResize: vi.fn(),
     };
     mockOnDataCallback = null;
@@ -303,9 +305,9 @@ describe('AgentTerminal write batching', () => {
 
   describe('satellite/remote PTY path', () => {
     async function mountRemoteAndInit() {
-      g.__annexMockState.requestPtyBuffer = vi.fn().mockResolvedValue('');
+      g.__annexMockState.requestPtyBufferSnapshot = vi.fn().mockResolvedValue({ data: '', seq: 0 });
       render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
-      // Flush mount rAF → requestPtyBuffer().then() → bufferReplayed = true
+      // Flush mount rAF → requestPtyBufferSnapshot().then() → bufferReplayed = true
       await act(async () => { flushRAF(); });
       term().write.mockClear();
       rafQueue.length = 0;
@@ -394,8 +396,8 @@ describe('AgentTerminal write batching', () => {
 
     it('satellite: queues live data during buffer fetch, drains in order after replay', async () => {
       let resolveBuffer!: (s: string) => void;
-      g.__annexMockState.requestPtyBuffer = vi.fn().mockImplementation(
-        () => new Promise<string>((r) => { resolveBuffer = r; }),
+      g.__annexMockState.requestPtyBufferSnapshot = vi.fn().mockImplementation(
+        () => new Promise((r) => { resolveBuffer = (s: string) => r({ data: s, seq: 0 }); }),
       );
 
       render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
@@ -414,6 +416,45 @@ describe('AgentTerminal write batching', () => {
 
       expect(term().write).toHaveBeenNthCalledWith(1, 'REMOTE-BUF', expect.any(Function));
       expect(term().write).toHaveBeenNthCalledWith(2, 'live-r1live-r2', expect.any(Function));
+    });
+
+    it('satellite: draws chunks queued during the fetch once when the snapshot already has them (#2324)', async () => {
+      let resolveBuffer!: (snap: { data: string; seq: number }) => void;
+      g.__annexMockState.requestPtyBufferSnapshot = vi.fn().mockImplementation(
+        () => new Promise((r) => { resolveBuffer = r; }),
+      );
+
+      render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      await act(async () => { flushRAF(); });
+
+      // Controller seqs: "AA" ends at 12, "BB" at 14, "CC" at 16.
+      act(() => {
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'AA', 12);
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'BB', 14);
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'CC', 16);
+      });
+
+      // The snapshot was taken after "AA" and the first half of "BB".
+      await act(async () => { resolveBuffer({ data: 'history-AA-B', seq: 13 }); });
+
+      expect(term().write.mock.calls.map((c: unknown[]) => c[0])).toEqual(['history-AA-B', 'BCC']);
+    });
+
+    it('satellite: drops live chunks the snapshot already had after replay', async () => {
+      g.__annexMockState.requestPtyBufferSnapshot = vi.fn().mockResolvedValue({ data: 'snap', seq: 20 });
+      render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      await act(async () => { flushRAF(); });
+      term().write.mockClear();
+
+      // Still in flight in the store's 100 ms batch when the snapshot was taken.
+      act(() => {
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'old', 20);
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'new', 23);
+      });
+      act(() => { flushRAF(); });
+
+      expect(term().write).toHaveBeenCalledTimes(1);
+      expect(term().write).toHaveBeenCalledWith('new');
     });
 
     it('resumes batched writes after replay completes', async () => {

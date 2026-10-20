@@ -493,6 +493,36 @@ describe('ShellTerminal', () => {
     });
   });
 
+  describe('windowsPty for a remote io (#2352)', () => {
+    const remoteIO = () => ({
+      write: vi.fn(),
+      resize: vi.fn(),
+      getBuffer: vi.fn().mockResolvedValue(''),
+      onData: vi.fn().mockReturnValue(vi.fn()),
+      onExit: vi.fn().mockReturnValue(vi.fn()),
+    });
+
+    it("applies a Windows satellite's backend", () => {
+      render(<ShellTerminal sessionId="shell-1" io={remoteIO()} remoteWindowsPty={{ backend: 'conpty', buildNumber: 22631 }} />);
+      expect(term().options.windowsPty).toEqual({ backend: 'conpty', buildNumber: 22631 });
+    });
+
+    it('picks up a backend reported after mount, on the same io', () => {
+      const io = remoteIO();
+      const { rerender } = render(<ShellTerminal sessionId="shell-1" io={io} />);
+      expect(term().options.windowsPty?.backend).toBeUndefined();
+      rerender(<ShellTerminal sessionId="shell-1" io={io} remoteWindowsPty={{ backend: 'conpty' }} />);
+      expect(term().options.windowsPty).toEqual({ backend: 'conpty' });
+    });
+
+    it('clears the hint when the satellite has none', () => {
+      const io = remoteIO();
+      const { rerender } = render(<ShellTerminal sessionId="shell-1" io={io} remoteWindowsPty={{ backend: 'conpty' }} />);
+      rerender(<ShellTerminal sessionId="shell-1" io={io} />);
+      expect(term().options.windowsPty).toEqual({});
+    });
+  });
+
   describe('container rendering', () => {
     it('renders a container div with padding', () => {
       const { getByTestId } = render(<ShellTerminal sessionId="shell-1" />);

@@ -114,6 +114,14 @@ export function registerAnnexClientHandlers(): void {
     },
   ));
 
+  // The same buffer with the seq it includes, for seq-ordered replay (#2324)
+  ipcMain.handle(IPC.ANNEX_CLIENT.PTY_GET_BUFFER_SNAPSHOT, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, satelliteId, agentId) => {
+      return annexClient.requestPtyBufferSnapshot(satelliteId, agentId);
+    },
+  ));
+
   // Permanently forget a satellite (disconnect + remove peer + clear state)
   ipcMain.handle(IPC.ANNEX_CLIENT.FORGET_SATELLITE, withValidatedArgs(
     [stringArg()],

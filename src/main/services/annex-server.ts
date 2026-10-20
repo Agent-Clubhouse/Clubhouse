@@ -72,6 +72,8 @@ import {
 } from '../telemetry/annex-telemetry';
 import { noteKillRequest } from './agent-runtime/sleep-reason';
 import { validateAgentGitName } from '../../shared/agent-name';
+import { ANNEX_BUFFER_HEADERS, annexPtyHost } from '../../shared/annex-pty';
+import { detectWindowsPty } from '../util/windows-pty';
 import type {
   AnnexStatus,
   AgentHookEvent,
@@ -740,6 +742,7 @@ async function buildSnapshotData(): Promise<object> {
     groupProjects,
     bulletinDigests,
     groupProjectMembers,
+    ptyHost: annexPtyHost(process.platform, detectWindowsPty()),
   };
 }
 
@@ -1372,10 +1375,16 @@ async function handleProjectAgentsRoute(ctx: AnnexRouteContext, match: RegExpMat
 
 async function handleAgentBufferRoute(ctx: AnnexRouteContext, match: RegExpMatchArray): Promise<void> {
   const agentId = decodeURIComponent(match[1]);
-  const buffer = ptyManager.getSerializedBuffer(agentId);
+  const { data: buffer, seq, cols, rows } = await ptyManager.getSerializedBufferSnapshot(agentId);
   ctx.res.writeHead(200, {
     'Content-Type': 'text/plain; charset=utf-8',
     'Content-Length': Buffer.byteLength(buffer),
+    // Headers rather than a JSON body, so older controllers still read the buffer.
+    [ANNEX_BUFFER_HEADERS.seq]: String(seq),
+    ...(cols !== undefined && rows !== undefined && {
+      [ANNEX_BUFFER_HEADERS.cols]: String(cols),
+      [ANNEX_BUFFER_HEADERS.rows]: String(rows),
+    }),
   });
   ctx.res.end(buffer);
 }
@@ -2751,8 +2760,9 @@ export function start(): void {
   unsubscribeEventBus();
   annexEventBus.setActive(true);
 
-  unsubPtyData = annexEventBus.onPtyData((agentId, data) => {
-    broadcastAndBuffer('pty:data', { agentId, data });
+  unsubPtyData = annexEventBus.onPtyData((agentId, data, outputSeq) => {
+    // `outputSeq` lets a controller stitch this onto a /buffer snapshot (#2324).
+    broadcastAndBuffer('pty:data', { agentId, data, ...(outputSeq !== undefined && { outputSeq }) });
   });
 
   unsubChatEvent = onChatEvent((event) => {
@@ -3380,4 +3390,5 @@ export const _testing = {
   getDetailedStatus,
   pushChatStatus,
   lastChatStatusPush,
+  buildSnapshot,
 };

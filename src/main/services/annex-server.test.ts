@@ -42,6 +42,7 @@ vi.mock('./agent-config', () => ({
 // Mock pty-manager
 vi.mock('./pty-manager', () => ({
   getBuffer: vi.fn().mockReturnValue(''),
+  getSerializedBufferSnapshot: vi.fn().mockResolvedValue({ data: '', seq: 0 }),
   isRunning: vi.fn().mockReturnValue(false),
   isStopping: vi.fn().mockReturnValue(false),
   write: vi.fn(),
@@ -2360,6 +2361,73 @@ describe('annex-server', () => {
   // -------------------------------------------------------------------------
   // Mission 30: Canvas wire inclusion in snapshot
   // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // Remote terminal replay metadata (#2324, #2325, #2352)
+  // -------------------------------------------------------------------------
+
+  describe('remote terminal replay metadata', () => {
+    function getWithHeaders(port: number, path: string, headers: Record<string, string>) {
+      return new Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+        const req = http.request({ hostname: '127.0.0.1', port, path, method: 'GET', headers }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => resolve({ status: res.statusCode || 0, body: data, headers: res.headers }));
+        });
+        req.on('error', reject);
+        req.end();
+      });
+    }
+
+    it('serves the buffer body unchanged, with its seq and the PTY size in headers', async () => {
+      vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockResolvedValue({ data: 'héllo', seq: 42, cols: 80, rows: 24 });
+      const { port, token } = await startAndPair();
+
+      const res = await getWithHeaders(port, '/api/v1/agents/agent_1/buffer', authHeaders(token));
+      expect(res.status).toBe(200);
+      expect(res.body).toBe('héllo');
+      expect(res.headers['x-clubhouse-output-seq']).toBe('42');
+      expect(res.headers['x-clubhouse-pty-cols']).toBe('80');
+      expect(res.headers['x-clubhouse-pty-rows']).toBe('24');
+    });
+
+    it('omits the size headers when the PTY is gone', async () => {
+      vi.mocked(ptyManagerModule.getSerializedBufferSnapshot).mockResolvedValue({ data: '', seq: 7 });
+      const { port, token } = await startAndPair();
+
+      const res = await getWithHeaders(port, '/api/v1/agents/agent_1/buffer', authHeaders(token));
+      expect(res.headers['x-clubhouse-output-seq']).toBe('7');
+      expect(res.headers['x-clubhouse-pty-cols']).toBeUndefined();
+    });
+
+    it('sends the PTY output seq with each pty:data event', async () => {
+      await startAndPair();
+      const listener = vi.mocked(annexEventBus.onPtyData).mock.calls.at(-1)![0];
+      const before = _eventReplay.getLastSeq();
+
+      listener('agent_1', 'out', 99);
+
+      const events = _eventReplay.getEventsSince(before) ?? [];
+      expect(events.at(-1)?.payload).toEqual({ agentId: 'agent_1', data: 'out', outputSeq: 99 });
+    });
+
+    it('reports its platform and pty backend in the snapshot', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([]);
+      vi.mocked(pluginManifestRegistry.listAllManifests).mockReturnValue([]);
+      const { groupProjectRegistry } = await import('./group-project-registry');
+      vi.mocked(groupProjectRegistry.list).mockResolvedValue([]);
+      const themeService = await import('./theme-service');
+      vi.mocked(themeService.getSettings).mockReturnValue({ themeId: 'catppuccin-mocha' } as any);
+      const snapshot = await annexServer._testing.buildSnapshot() as { ptyHost?: unknown };
+      // This test runs on macOS/Linux/Windows CI; only Windows has a backend.
+      expect(snapshot.ptyHost).toMatchObject({ platform: process.platform });
+      if (process.platform === 'win32') {
+        expect(snapshot.ptyHost).toMatchObject({ ptyBackend: expect.stringMatching(/^(conpty|winpty)$/) });
+      } else {
+        expect(snapshot.ptyHost).toEqual({ platform: process.platform, ptyBackend: null });
+      }
+    });
+  });
 
   describe('snapshot includes canvas wires', () => {
     it('buildSnapshot reads canvas-wires key for each project', async () => {

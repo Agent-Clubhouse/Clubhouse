@@ -22,6 +22,9 @@ import { IPC } from '../../shared/ipc-channels';
 import type { DigestSince } from '../../shared/group-project-types';
 import { encodeDigestSince } from '../../shared/digest-since';
 import { ANNEX_PROTOCOL_VERSION } from '../../shared/types';
+import { ANNEX_BUFFER_HEADERS, windowsPtyForHost } from '../../shared/annex-pty';
+import { unseenPtySuffix } from '../../shared/pty-seq';
+import type { WindowsPtyInfo } from '../../shared/windows-pty';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { currentTraceparent, tel } from '../telemetry/facade';
 import {
@@ -75,6 +78,8 @@ export interface SatelliteSnapshot {
   groupProjects?: unknown[];
   bulletinDigests?: Record<string, unknown[]>;
   groupProjectMembers?: Record<string, Array<{ agentId: string; agentName: string; status: string }>>;
+  /** Unvalidated; read through `windowsPtyForHost`. */
+  ptyHost?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,12 +147,81 @@ function remoteBufferKey(satelliteId: string, agentId: string): string {
 /** Track which remote agents have had their local cache seeded from the satellite. */
 const seededBuffers = new Set<string>();
 
+/** A remote agent's buffer as the renderer replays it (#2324). */
+export interface RemoteBufferSnapshot {
+  data: string;
+  /**
+   * Controller-side output seq `data` includes. Every forwarded `pty:data`
+   * carries the same counter as `seq`, so the renderer can drop live chunks
+   * already in the snapshot, as it does for local PTYs.
+   */
+  seq: number;
+}
+
+interface RemoteStreamState {
+  /** Running count of UTF-16 code units received for this agent. */
+  seq: number;
+  /** Chunks received while a seed fetch is in flight, else null. */
+  seeding: Array<{ data: string; outputSeq?: number }> | null;
+  /**
+   * Highest satellite output seq in the cache, once seeded from a satellite
+   * that sends seqs. WebSocket and HTTPS are separate connections, so a chunk
+   * the /buffer response already holds can still arrive after it; this lets
+   * that chunk be dropped (#2324). Cleared on disconnect, since a restarted
+   * satellite counts from zero again.
+   */
+  satelliteSeq?: number;
+}
+
+/**
+ * Keyed like `seededBuffers`. Kept across disconnects so the seq never goes
+ * backwards for a renderer holding an older snapshot.
+ */
+const remoteStreams = new Map<string, RemoteStreamState>();
+const seedsInFlight = new Map<string, Promise<void>>();
+/** Bumped on every disconnect, so a seed that straddles one is discarded. */
+const connectionEpochs = new Map<string, number>();
+
+function remoteStream(key: string): RemoteStreamState {
+  let state = remoteStreams.get(key);
+  if (!state) {
+    state = { seq: 0, seeding: null };
+    remoteStreams.set(key, state);
+  }
+  return state;
+}
+
+/** xterm's `windowsPty` hint for a satellite's PTYs, from its snapshot (#2352). */
+function satelliteWindowsPty(satelliteId: string): WindowsPtyInfo | undefined {
+  return windowsPtyForHost(satellites.get(satelliteId)?.snapshot?.ptyHost);
+}
+
 /**
  * Cache incoming PTY data for a remote agent in a local headless terminal.
- * Called whenever a pty:data event arrives via WebSocket.
+ * Called whenever a pty:data event arrives via WebSocket. `outputSeq` is the
+ * satellite's seq for the chunk, when it sends one. Returns the part of the
+ * chunk not already cached (empty if all of it was) and the controller-side
+ * seq at its end.
  */
-export function cacheRemotePtyData(satelliteId: string, agentId: string, data: string): void {
-  headlessTerminal.feedData(remoteBufferKey(satelliteId, agentId), data);
+export function cacheRemotePtyData(
+  satelliteId: string, agentId: string, data: string, outputSeq?: number,
+): { data: string; seq: number } {
+  const key = `${satelliteId}:${agentId}`;
+  const state = remoteStream(key);
+  if (state.satelliteSeq !== undefined && outputSeq !== undefined) {
+    data = unseenPtySuffix(data, outputSeq, state.satelliteSeq);
+    state.satelliteSeq = Math.max(state.satelliteSeq, outputSeq);
+    if (!data) return { data, seq: state.seq };
+  }
+  state.seq += data.length;
+  state.seeding?.push({ data, outputSeq });
+  const bufferKey = remoteBufferKey(satelliteId, agentId);
+  // A new cache (first output, or the old one was disposed) has no history.
+  if (headlessTerminal.ensure(bufferKey, { windowsPty: satelliteWindowsPty(satelliteId) })) {
+    seededBuffers.delete(key);
+  }
+  headlessTerminal.feedData(bufferKey, data, state.seq);
+  return { data, seq: state.seq };
 }
 
 /**
@@ -178,67 +252,141 @@ function disposeRemoteBuffers(satelliteId: string): void {
       seededBuffers.delete(key);
     }
   }
+  for (const [key, state] of remoteStreams) {
+    if (key.startsWith(`${satelliteId}:`)) state.satelliteSeq = undefined;
+  }
+  connectionEpochs.set(satelliteId, (connectionEpochs.get(satelliteId) ?? 0) + 1);
+}
+
+interface SatelliteBuffer {
+  data: string;
+  /** Satellite output seq the buffer includes; absent from older satellites. */
+  seq?: number;
+  cols?: number;
+  rows?: number;
+}
+
+function headerInt(res: http.IncomingMessage, name: string): number | undefined {
+  const raw = res.headers[name];
+  const value = typeof raw === 'string' ? Number(raw) : NaN;
+  return Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+function fetchSatelliteBuffer(sat: SatelliteConnectionInternal, agentId: string): Promise<SatelliteBuffer | null> {
+  const identity = annexIdentity.getOrCreateIdentity();
+  const tlsOptions = annexTls.createTlsClientOptions(identity);
+  const satelliteId = sat.id;
+
+  return new Promise<SatelliteBuffer | null>((resolve) => {
+    let resolved = false;
+    const once = (val: SatelliteBuffer | null) => { if (!resolved) { resolved = true; resolve(val); } };
+    const url = `https://${bracketHost(sat.host)}:${sat.mainPort}/api/v1/agents/${encodeURIComponent(agentId)}/buffer`;
+    const req = https.get(url, { ...tlsOptions, timeout: 5000 }, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        once(null);
+        return;
+      }
+      const cols = headerInt(res, ANNEX_BUFFER_HEADERS.cols);
+      const rows = headerInt(res, ANNEX_BUFFER_HEADERS.rows);
+      const meta = {
+        seq: headerInt(res, ANNEX_BUFFER_HEADERS.seq),
+        ...(cols && rows && { cols, rows }),
+      };
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => once({ data: Buffer.concat(chunks).toString('utf-8'), ...meta }));
+      // A connection reset mid-body ends with 'close' and no 'end'. Without
+      // this the shared seed would never settle.
+      res.on('error', () => once(null));
+      res.on('close', () => once(null));
+    });
+    req.on('error', (err) => {
+      appLog('core:annex-client', 'warn', 'Agent buffer fetch failed', { meta: { satelliteId, agentId, error: err.message } });
+      once(null);
+    });
+    req.on('timeout', () => { req.destroy(); once(null); });
+  });
 }
 
 /**
- * Seed the local cache from the satellite's buffer (one-time on first access).
- * Returns the seeded data, or the existing local cache if already seeded.
+ * Replace the local cache with the satellite's buffer plus the live chunks
+ * that arrived during the fetch and are not in it.
+ *
+ * Replacing rather than appending matters: chunks cached before or during
+ * the fetch are already in the satellite's buffer, so feeding the buffer on
+ * top would hold them twice (#2324).
  */
-async function seedAndGetBuffer(satelliteId: string, agentId: string): Promise<string> {
+async function seedFromSatellite(satelliteId: string, agentId: string): Promise<void> {
   const key = `${satelliteId}:${agentId}`;
-  const localBuffer = getLocalRemoteBuffer(satelliteId, agentId);
-
-  // If already seeded, return local cache
-  if (seededBuffers.has(key)) {
-    return localBuffer;
-  }
-
-  // Try to fetch from satellite to seed the local cache
   const sat = satellites.get(satelliteId);
-  if (!sat || sat.state !== 'connected') {
-    // Can't reach satellite — return whatever local cache we have
-    seededBuffers.add(key);
-    return localBuffer;
-  }
+  // Can't reach satellite: serve whatever local cache we have, and seed on
+  // a later request once connected.
+  if (!sat || sat.state !== 'connected') return;
 
+  const state = remoteStream(key);
+  const epoch = connectionEpochs.get(satelliteId) ?? 0;
+  state.seeding = [];
+  let fetched: SatelliteBuffer | null = null;
   try {
-    const identity = annexIdentity.getOrCreateIdentity();
-    const tlsOptions = annexTls.createTlsClientOptions(identity);
-
-    const satelliteBuffer = await new Promise<string>((resolve) => {
-      let resolved = false;
-      const once = (val: string) => { if (!resolved) { resolved = true; resolve(val); } };
-      const url = `https://${bracketHost(sat.host)}:${sat.mainPort}/api/v1/agents/${encodeURIComponent(agentId)}/buffer`;
-      const req = https.get(url, { ...tlsOptions, timeout: 5000 }, (res) => {
-        if (res.statusCode !== 200) {
-          res.resume();
-          once('');
-          return;
-        }
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('end', () => once(Buffer.concat(chunks).toString('utf-8')));
-      });
-      req.on('error', (err) => {
-        appLog('core:annex-client', 'warn', 'Agent buffer fetch failed', { meta: { satelliteId, agentId, error: err.message } });
-        once('');
-      });
-      req.on('timeout', () => { req.destroy(); once(''); });
+    fetched = await fetchSatelliteBuffer(sat, agentId);
+  } catch (err) {
+    // telemetry-exempt: logged; the cache keeps serving the live stream
+    appLog('core:annex-client', 'warn', 'Agent buffer seed failed', {
+      meta: { satelliteId, agentId, error: err instanceof Error ? err.message : String(err) },
     });
-
-    if (satelliteBuffer && !localBuffer) {
-      // Seed the local headless terminal with the satellite's full buffer.
-      // This only happens once — subsequent pty:data events build on top.
-      headlessTerminal.feedData(remoteBufferKey(satelliteId, agentId), satelliteBuffer);
-    }
-
-    seededBuffers.add(key);
-    // Return the richer of the two buffers
-    return satelliteBuffer || localBuffer;
-  } catch {
-    seededBuffers.add(key);
-    return localBuffer;
   }
+  const during = state.seeding ?? [];
+  state.seeding = null;
+  // Disconnected during the fetch: output may be missing from both the
+  // buffer and the cache, so seed again on a later request.
+  if ((connectionEpochs.get(satelliteId) ?? 0) !== epoch) return;
+  seededBuffers.add(key);
+  const bufferKey = remoteBufferKey(satelliteId, agentId);
+  if (!fetched?.data) {
+    // Nothing to seed. An empty cache marks the agent seeded, so the next
+    // request does not fetch again.
+    headlessTerminal.ensure(bufferKey, { windowsPty: satelliteWindowsPty(satelliteId) });
+    return;
+  }
+
+  let replay = fetched.data;
+  if (fetched.seq !== undefined) {
+    let satelliteSeq = fetched.seq;
+    for (const chunk of during) {
+      replay += unseenPtySuffix(chunk.data, chunk.outputSeq, fetched.seq);
+      if (chunk.outputSeq !== undefined) satelliteSeq = Math.max(satelliteSeq, chunk.outputSeq);
+    }
+    state.satelliteSeq = satelliteSeq;
+  }
+  // An older satellite's buffer has no seq. Chunks that arrived during the
+  // fetch are then most likely in it already; they are dropped, since a
+  // duplicated TUI frame stays on screen while a gap is redrawn over.
+  headlessTerminal.reset(bufferKey, {
+    ...(fetched.cols && fetched.rows && { cols: fetched.cols, rows: fetched.rows }),
+    windowsPty: satelliteWindowsPty(satelliteId),
+  });
+  headlessTerminal.feedData(bufferKey, replay, state.seq);
+}
+
+/**
+ * The cached buffer for a remote agent, seeded from the satellite on first
+ * access. Concurrent callers share one seed fetch.
+ */
+async function getRemoteBufferSnapshot(satelliteId: string, agentId: string): Promise<RemoteBufferSnapshot> {
+  const key = `${satelliteId}:${agentId}`;
+  const bufferKey = remoteBufferKey(satelliteId, agentId);
+  // A seeded key whose cache has gone is seeded again.
+  if (!seededBuffers.has(key) || !headlessTerminal.getSize(bufferKey)) {
+    let seed = seedsInFlight.get(key);
+    if (!seed) {
+      seed = seedFromSatellite(satelliteId, agentId).finally(() => seedsInFlight.delete(key));
+      seedsInFlight.set(key, seed);
+    }
+    await seed;
+  }
+  const snap = await headlessTerminal.snapshot(bufferKey);
+  return { data: snap?.data ?? '', seq: snap?.seq ?? remoteStream(key).seq };
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +427,9 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
 function setState(sat: SatelliteConnectionInternal, state: SatelliteState, error?: string): void {
   const prev = sat.state;
   sat.state = state;
+  // Output sent while disconnected is in neither cache, and a restarted
+  // satellite's seqs start over, so caches are seeded again on reconnect.
+  if (prev === 'connected' && state !== 'connected') disposeRemoteBuffers(sat.id);
   if (state === 'disconnected') {
     // The reason text stays local; it only picks the registry enum.
     if (prev === 'connected') recordDisconnect(disconnectReasonFor(error));
@@ -608,11 +759,14 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
 
     case 'pty:data': {
       // Cache remotely-received PTY data locally for instant buffer replay
-      const ptyPayload = msg.payload as { agentId?: string; data?: string };
+      const ptyPayload = msg.payload as { agentId?: string; data?: string; outputSeq?: unknown };
       if (ptyPayload?.agentId && ptyPayload?.data) {
-        cacheRemotePtyData(sat.id, ptyPayload.agentId, ptyPayload.data);
+        const outputSeq = typeof ptyPayload.outputSeq === 'number' ? ptyPayload.outputSeq : undefined;
+        const fresh = cacheRemotePtyData(sat.id, ptyPayload.agentId, ptyPayload.data, outputSeq);
+        if (fresh.data) broadcastSatelliteEvent(sat.id, type, { ...ptyPayload, data: fresh.data, seq: fresh.seq });
+      } else {
+        broadcastSatelliteEvent(sat.id, type, msg.payload);
       }
-      broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
     }
 
@@ -1013,8 +1167,16 @@ function sendToSatelliteNow(fingerprint: string, message: Record<string, unknown
  * buffer restoration when switching tabs, even if the satellite is
  * temporarily unreachable.
  */
-export function requestPtyBuffer(fingerprint: string, agentId: string): Promise<string> {
-  return seedAndGetBuffer(fingerprint, agentId);
+export async function requestPtyBuffer(fingerprint: string, agentId: string): Promise<string> {
+  return (await getRemoteBufferSnapshot(fingerprint, agentId)).data;
+}
+
+/**
+ * `requestPtyBuffer` with the seq the buffer includes, matching the `seq` on
+ * forwarded `pty:data` events (#2324).
+ */
+export function requestPtyBufferSnapshot(fingerprint: string, agentId: string): Promise<RemoteBufferSnapshot> {
+  return getRemoteBufferSnapshot(fingerprint, agentId);
 }
 
 /**
@@ -1695,4 +1857,40 @@ export function _setSatelliteTokenStateForTesting(fingerprint: string, token: st
     sat.bearerToken = token;
     sat.bearerTokenIssuedAt = issuedAt;
   }
+}
+
+/** For testing only: register a connected satellite without a socket. */
+export function _addConnectedSatelliteForTesting(fingerprint: string, snapshot: SatelliteSnapshot | null = null): void {
+  satellites.set(fingerprint, {
+    id: fingerprint,
+    alias: fingerprint,
+    icon: '',
+    color: '',
+    fingerprint,
+    state: 'connected',
+    host: '127.0.0.1',
+    mainPort: 1,
+    pairingPort: 1,
+    snapshot,
+    lastError: null,
+    ws: null,
+    reconnectTimer: null,
+    reconnectAttempt: 0,
+    bearerToken: null,
+    bearerTokenIssuedAt: null,
+    heartbeatInterval: null,
+    pongTimeout: null,
+  });
+}
+
+/** For testing only: handle a message as if it arrived on a satellite's socket. */
+export function _receiveSatelliteMessageForTesting(fingerprint: string, msg: Record<string, unknown>): void {
+  const sat = satellites.get(fingerprint);
+  if (sat) handleSatelliteMessage(sat, msg);
+}
+
+/** For testing only: mark a connected satellite disconnected. */
+export function _receiveSatelliteDisconnectForTesting(fingerprint: string): void {
+  const sat = satellites.get(fingerprint);
+  if (sat) setState(sat, 'disconnected');
 }
