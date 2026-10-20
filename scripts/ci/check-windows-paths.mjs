@@ -12,7 +12,7 @@ import { execFileSync } from 'node:child_process';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$/i;
+const RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$|clock\$)(\..*)?$/i;
 // eslint-disable-next-line no-control-regex -- control characters are what we reject
 const INVALID_CHARS = /[<>:"|?*\\\u0000-\u001f]/;
 

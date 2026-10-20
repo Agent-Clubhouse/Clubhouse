@@ -18,6 +18,7 @@ describe('windowsNameProblem', () => {
     ['CON', 'is a reserved device name'],
     ['nul.txt', 'is a reserved device name'],
     ['Lpt9.log', 'is a reserved device name'],
+    ['CONOUT$', 'is a reserved device name'],
     ['trailing.', 'ends with a dot or space'],
     ['trailing ', 'ends with a dot or space'],
   ])('rejects %j', (name, why) => {
@@ -44,7 +45,7 @@ describe.skipIf(process.platform === 'win32')('checkWindowsPaths on a real repo'
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'check-windows-paths-'));
     execFileSync('git', ['init', '-q'], { cwd: dir });
     fs.writeFileSync(path.join(dir, 'ok.txt'), '');
-    fs.writeFileSync(path.join(dir, '.gitignore'), '/undefined*\n');
+    fs.writeFileSync(path.join(dir, '.gitignore'), 'undefined\\\\temp/\n');
     return dir;
   };
 
@@ -57,7 +58,7 @@ describe.skipIf(process.platform === 'win32')('checkWindowsPaths on a real repo'
     }
   });
 
-  it('finds tracked bad paths, and ignored ones only with untracked', () => {
+  it('finds tracked bad paths always, and untracked or ignored ones with untracked', () => {
     const dir = makeRepo();
     try {
       fs.mkdirSync(path.join(dir, 'undefined\\temp'));

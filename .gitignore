@@ -126,4 +126,4 @@ e2e/.run-state/
 
 # Node compile cache written by a process whose os.tmpdir() resolved to
 # `undefined\temp` (#2347). Windows can't check that path out.
-/undefined*
+undefined\\temp/
