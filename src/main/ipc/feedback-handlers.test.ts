@@ -15,7 +15,7 @@ const win = vi.hoisted(() => ({
   popouts: [] as Array<{ window: FakeWindow; label: string }>,
 }));
 vi.mock('electron', () => ({
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn(), on: vi.fn() },
   BrowserWindow: { fromWebContents: vi.fn(() => win.current), getFocusedWindow: vi.fn(() => win.focused) },
 }));
 vi.mock('./window-handlers', () => ({
@@ -52,6 +52,7 @@ import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { captureFromShortcut, captureSources, registerFeedbackHandlers, validateSendInput } from './feedback-handlers';
 import { recordFeedbackRefused } from '../telemetry/feedback-telemetry';
+import { _resetBreadcrumbsForTests, recentBreadcrumbs } from '../services/breadcrumbs';
 
 type HandlerFn = (event: unknown, ...args: unknown[]) => unknown;
 const handlers = new Map<string, HandlerFn>();
@@ -67,6 +68,8 @@ beforeEach(() => {
   win.main = null;
   win.popouts = [];
   vi.mocked(ipcMain.handle).mockImplementation((channel: string, handler: HandlerFn) => { handlers.set(channel, handler); });
+  vi.mocked(ipcMain.on).mockImplementation(((channel: string, handler: HandlerFn) => { handlers.set(channel, handler); }) as never);
+  _resetBreadcrumbsForTests(() => 1_000);
   registerFeedbackHandlers();
 });
 
@@ -74,7 +77,26 @@ describe('feedback IPC', () => {
   it('registers every request channel', () => {
     expect([...handlers.keys()].sort()).toEqual([
       IPC.FEEDBACK.CANCEL, IPC.FEEDBACK.CAPTURE, IPC.FEEDBACK.CONNECT, IPC.FEEDBACK.DISCONNECT, IPC.FEEDBACK.GET_STATUS, IPC.FEEDBACK.SEND,
+      IPC.FEEDBACK.RECORD_BREADCRUMB,
     ].sort());
+  });
+
+  it("records an app window's breadcrumbs, even with feedback stopped (#2303)", () => {
+    svc.enabled = false;
+    call(IPC.FEEDBACK.RECORD_BREADCRUMB, { kind: 'event', code: 'view.canvas' });
+    call(IPC.FEEDBACK.RECORD_BREADCRUMB, { kind: 'performance', code: 'ui.long_frame', value: 640 });
+    expect(recentBreadcrumbs().map((b) => [b.kind, b.code, b.value])).toEqual([
+      ['performance', 'ui.long_frame', 640],
+      ['event', 'view.canvas', undefined],
+    ]);
+  });
+
+  it('drops breadcrumbs from callers that are not application windows, and main-only codes', () => {
+    call(IPC.FEEDBACK.RECORD_BREADCRUMB, { kind: 'error', code: 'chat.start_failed.claude' });
+    win.current = null;
+    call(IPC.FEEDBACK.RECORD_BREADCRUMB, { kind: 'event', code: 'view.canvas' });
+    expect(() => call(IPC.FEEDBACK.RECORD_BREADCRUMB, 'view.canvas')).toThrow();
+    expect(recentBreadcrumbs()).toEqual([]);
   });
 
   it('reports a stopped service and refuses actions once quit begins', async () => {

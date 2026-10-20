@@ -515,6 +515,7 @@ vi.stubGlobal('clubhouse', {
     capture: async () => ({ draftId: 'draft', preview: null, shots: [] }),
     send: async () => ({ id: 'report', status: 'saved-local' }),
     cancel: asyncNoop,
+    recordBreadcrumb: noop,
     onStatusChanged: () => noop,
     onCaptured: () => noop,
   },

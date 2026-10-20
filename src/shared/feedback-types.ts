@@ -79,3 +79,14 @@ export interface FeedbackSendResult {
   /** Saved locally; "Received" arrives later in FeedbackStatus.received. */
   status: 'saved-local';
 }
+
+/**
+ * A feedback breadcrumb from an app window (#2303): a view change, a runtime
+ * switch or a long-frame burst. Main checks the code against the few the
+ * renderer may add (breadcrumbs.ts) and drops anything else.
+ */
+export interface RendererBreadcrumb {
+  kind: 'error' | 'performance' | 'event';
+  code: string;
+  value?: number;
+}

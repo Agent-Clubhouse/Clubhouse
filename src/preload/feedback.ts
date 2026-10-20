@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
-import type { FeedbackCaptureResult, FeedbackSendInput, FeedbackSendResult, FeedbackStatus } from '../shared/feedback-types';
+import type { FeedbackCaptureResult, FeedbackSendInput, FeedbackSendResult, FeedbackStatus, RendererBreadcrumb } from '../shared/feedback-types';
 
 /** Framebriar screenshot feedback. Tokens and the invitation never come back over this bridge. */
 export const feedback = {
@@ -18,6 +18,9 @@ export const feedback = {
       ipcRenderer.invoke(IPC.FEEDBACK.SEND, input),
     cancel: (draftId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.FEEDBACK.CANCEL, draftId),
+    /** Note a breadcrumb for feedback reports (#2303), whatever the logging and feedback settings are. */
+    recordBreadcrumb: (crumb: RendererBreadcrumb) =>
+      ipcRenderer.send(IPC.FEEDBACK.RECORD_BREADCRUMB, crumb),
     /** A draft captured with the keyboard shortcut (#2101), to open in the review dialog. */
     onCaptured: (callback: (draft: FeedbackCaptureResult) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, draft: FeedbackCaptureResult) => callback(draft);

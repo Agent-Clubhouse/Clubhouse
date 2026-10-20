@@ -49,11 +49,31 @@ export function recordBreadcrumb(kind: BreadcrumbKind, code: string, value?: num
   return true;
 }
 
-/** Validate and record a breadcrumb that arrived as untyped data (a renderer log entry's meta). */
+/** Validate and record a breadcrumb that arrived as untyped data. */
 export function recordBreadcrumbFrom(raw: unknown): boolean {
   if (!raw || typeof raw !== 'object') return false;
   const { kind, code, value } = raw as { kind?: unknown; code?: unknown; value?: unknown };
   return recordBreadcrumb(kind as BreadcrumbKind, code as string, typeof value === 'number' ? value : undefined);
+}
+
+/**
+ * The codes a renderer may add (#2303), each with its kind: view changes,
+ * runtime switches and long-frame bursts. Everything else (chat, PTY, a
+ * window that stopped responding) is main's own, so a page can't forge it.
+ */
+const RENDERER_CODES: ReadonlyArray<readonly [RegExp, BreadcrumbKind]> = [
+  [/^view\.[a-z0-9_-]{1,30}$/, 'event'],
+  [/^runtime\.switch\.[a-z0-9_-]{1,30}$/, 'event'],
+  [/^runtime\.switch_failed\.[a-z0-9_-]{1,30}$/, 'error'],
+  [/^ui\.(?:long_frame|slow_interaction)$/, 'performance'],
+];
+
+/** Validate and record a breadcrumb sent by an app window over `feedback:record-breadcrumb`. */
+export function recordRendererBreadcrumb(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false;
+  const { kind, code } = raw as { kind?: unknown; code?: unknown };
+  if (typeof code !== 'string' || !RENDERER_CODES.some(([pattern, k]) => k === kind && pattern.test(code))) return false;
+  return recordBreadcrumbFrom(raw);
 }
 
 /** The latest breadcrumbs across kinds, newest first, at most MAX_BREADCRUMBS. */

@@ -7,9 +7,10 @@
  */
 import { BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { FEEDBACK_MAX_PNG_BYTES, type FeedbackSendInput } from '../../shared/feedback-types';
+import { FEEDBACK_MAX_PNG_BYTES, type FeedbackSendInput, type RendererBreadcrumb } from '../../shared/feedback-types';
 import { getFeedbackService, isFeedbackEnabled } from '../services/framebriar';
 import { stoppedFeedbackStatus } from '../services/framebriar/feedback-service';
+import { recordRendererBreadcrumb } from '../services/breadcrumbs';
 import { appLog } from '../services/log-service';
 import { recordFeedbackRefused } from '../telemetry/feedback-telemetry';
 import { objectArg, stringArg, withValidatedArgs } from './validation';
@@ -129,6 +130,13 @@ export function registerFeedbackHandlers(): void {
   ipcMain.handle(IPC.FEEDBACK.SEND, withValidatedArgs([objectArg<FeedbackSendInput>({ validate: validateSendInput })], async (event, input) => {
     requireEnabled(event);
     return getFeedbackService().send(input);
+  }));
+
+  // Breadcrumbs (#2303) are noted whether or not feedback is set up or logging is on,
+  // so a report sent later has them. App windows only; main checks the code.
+  ipcMain.on(IPC.FEEDBACK.RECORD_BREADCRUMB, withValidatedArgs([objectArg<RendererBreadcrumb>()], (event, crumb) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) recordRendererBreadcrumb(crumb);
   }));
 
   ipcMain.handle(IPC.FEEDBACK.CANCEL, withValidatedArgs([stringArg({ maxLength: 64 })], (event, draftId) => {

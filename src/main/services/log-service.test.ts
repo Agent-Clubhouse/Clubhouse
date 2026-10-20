@@ -123,25 +123,10 @@ describe('log-service', () => {
   describe('feedback breadcrumbs', () => {
     beforeEach(() => { _resetBreadcrumbsForTests(() => 1_000); });
 
-    it('turns ui:perf lines into performance breadcrumbs, even with logging off', () => {
-      vi.mocked(logSettings.getSettings).mockReturnValue({ enabled: false, namespaces: {}, retention: 'medium', minLogLevel: 'error' });
+    it('are not taken from log lines; producers record them directly (#2303)', () => {
       log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Long frames: 640ms in agent', meta: { kind: 'long_frame', maxMs: 640, count: 2 } });
-      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Slow interaction: 320ms in agent', meta: { kind: 'slow_interaction', maxMs: 320 } });
-      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Window unresponsive', meta: { windowKind: 'main' } });
-      log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Window responsive again', meta: { windowKind: 'main', durationMs: 2500 } });
-      expect(recentBreadcrumbs().map((b) => [b.kind, b.code, b.value])).toEqual(expect.arrayContaining([
-        ['performance', 'ui.long_frame', 640],
-        ['performance', 'ui.slow_interaction', 320],
-        ['performance', 'window.unresponsive', 2500],
-      ]));
-      expect(recentBreadcrumbs()).toHaveLength(3);
-    });
-
-    it('takes a meta.breadcrumb from app namespaces, never from plugins', () => {
       log({ ts: 't', ns: 'ui:chat:switch', level: 'info', msg: 'Runtime switch requested', meta: { breadcrumb: { kind: 'event', code: 'runtime.switch.chat' } } });
-      log({ ts: 't', ns: 'plugin:evil', level: 'info', msg: 'x', meta: { breadcrumb: { kind: 'error', code: 'plugin.fake' } } });
-      log({ ts: 't', ns: 'ui:nav', level: 'debug', msg: 'x', meta: { breadcrumb: { kind: 'event', code: 'Has User Text!' } } });
-      expect(recentBreadcrumbs().map((b) => b.code)).toEqual(['runtime.switch.chat']);
+      expect(recentBreadcrumbs()).toEqual([]);
     });
   });
 

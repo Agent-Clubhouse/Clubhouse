@@ -32,6 +32,7 @@ import type { ChatViewContext } from './ChatView';
 import { isRunningState } from './view-model';
 import { noteExplicitTerminalChoice } from './chat-default-tip';
 import { rendererLog } from '../../../plugins/renderer-logger';
+import { recordBreadcrumb } from '../../../telemetry/breadcrumbs';
 import { loadChatFlag, resetChatFlag, useChatFlag } from './chat-flag';
 
 const ChatView = lazy(() => import('./ChatView'));
@@ -137,8 +138,9 @@ export function useAgentRuntimeInfo(agent: Agent, enabled: boolean): ChatAgentRu
 /** Restart a durable agent in the other runtime, resuming its CLI session. */
 export async function switchAgentRuntime(agent: Agent, mode: AgentRuntimeMode): Promise<void> {
   const meta = { agentId: agent.id, to: mode };
-  // `breadcrumb` lands on feedback reports (#2098): the mode only, never ids.
-  rendererLog(SWITCH_LOG_NS, 'info', 'Runtime switch requested', { meta: { ...meta, breadcrumb: { kind: 'event', code: `runtime.switch.${mode}` } } });
+  // Breadcrumbs land on feedback reports (#2098): the mode only, never ids.
+  recordBreadcrumb('event', `runtime.switch.${mode}`);
+  rendererLog(SWITCH_LOG_NS, 'info', 'Runtime switch requested', { meta });
   try {
     const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
     if (!project) throw new Error('Project not found');
@@ -154,8 +156,9 @@ export async function switchAgentRuntime(agent: Agent, mode: AgentRuntimeMode): 
     rendererLog(SWITCH_LOG_NS, 'info', 'Runtime switch: respawning', { meta: { ...meta, resumeSessionId: config.lastSessionId ?? null } });
     await store.spawnDurableAgent(project.id, project.path, config, !!config.lastSessionId);
   } catch (err) {
+    recordBreadcrumb('error', `runtime.switch_failed.${mode}`);
     rendererLog(SWITCH_LOG_NS, 'error', 'Runtime switch failed', {
-      meta: { ...meta, error: err instanceof Error ? err.message : String(err), breadcrumb: { kind: 'error', code: `runtime.switch_failed.${mode}` } },
+      meta: { ...meta, error: err instanceof Error ? err.message : String(err) },
     });
     throw err;
   }

@@ -63,7 +63,6 @@ export const KNOWN_LOG_NAMESPACES: readonly string[] = [
   'store:ui',
   'telemetry:control',
   'ui:chat:switch',
-  'ui:nav',
   'ui:perf',
   'ui:terminal:scroll',
   'update:apply',

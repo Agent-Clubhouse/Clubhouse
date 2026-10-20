@@ -7,6 +7,7 @@ import {
   recentBreadcrumbs,
   recordBreadcrumb,
   recordBreadcrumbFrom,
+  recordRendererBreadcrumb,
 } from './breadcrumbs';
 
 let now = 0;
@@ -72,6 +73,35 @@ describe('breadcrumbs', () => {
     recordBreadcrumb('event', 'view.agent');
     recentBreadcrumbs()[0].code = 'changed';
     expect(recentBreadcrumbs()[0].code).toBe('view.agent');
+  });
+});
+
+describe('breadcrumbs from a renderer (#2303)', () => {
+  it('takes view changes, runtime switches and long-frame bursts', () => {
+    expect(recordRendererBreadcrumb({ kind: 'event', code: 'view.canvas' })).toBe(true);
+    expect(recordRendererBreadcrumb({ kind: 'event', code: 'runtime.switch.chat' })).toBe(true);
+    expect(recordRendererBreadcrumb({ kind: 'error', code: 'runtime.switch_failed.terminal' })).toBe(true);
+    expect(recordRendererBreadcrumb({ kind: 'performance', code: 'ui.long_frame', value: 640 })).toBe(true);
+    expect(recordRendererBreadcrumb({ kind: 'performance', code: 'ui.slow_interaction', value: 320 })).toBe(true);
+    expect(recentBreadcrumbs()).toHaveLength(5);
+  });
+
+  it("refuses main's own codes, a mismatched kind and anything malformed", () => {
+    for (const raw of [
+      { kind: 'error', code: 'chat.start_failed.claude' },
+      { kind: 'error', code: 'pty.exit_error' },
+      { kind: 'performance', code: 'window.unresponsive', value: 9_000 },
+      { kind: 'error', code: 'view.canvas' },
+      { kind: 'event', code: 'ui.long_frame' },
+      { kind: 'event', code: 'view.Has User Text' },
+      { kind: 'event', code: 'view.' },
+      { kind: 'event' },
+      'view.canvas',
+      null,
+    ]) {
+      expect(recordRendererBreadcrumb(raw)).toBe(false);
+    }
+    expect(recentBreadcrumbs()).toEqual([]);
   });
 });
 
