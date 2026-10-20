@@ -986,6 +986,12 @@ describe('model before the session resolves it (#2293)', () => {
     expect(state).toMatchObject({ model: 'gpt-5.6-sol', modelUnknown: false });
   });
 
+  it('a new run starts without the unknown mark', () => {
+    const ev = makeEmitter();
+    const state = fold([sessionStarted(ev), ev('session_info', { model: null }), sessionStarted(ev, 's1', { resumed: true })]);
+    expect(state.modelUnknown).toBe(false);
+  });
+
   it('a reported model ends the unknown state', () => {
     const ev = makeEmitter();
     const state = fold([sessionStarted(ev), ev('session_info', { model: null }), ev('session_info', { model: 'opus' })]);

@@ -768,8 +768,8 @@ export class AcpChatEventMapper {
   private configChanges(state: Readonly<AcpSessionState>, nativeMode?: string, resolve = false): ChatEventDraft[] {
     const out: ChatEventDraft[] = [];
     const model = this.currentModel(state);
-    // Still the placeholder outside a turn (an effort or mode change before the first prompt) proves nothing.
-    if (this.placeholderModel !== undefined && (resolve || this.turnId !== undefined || model !== this.placeholderModel)) {
+    // An update still naming the placeholder (an effort, mode or allow-all change) proves nothing; the turn's end confirms it.
+    if (this.placeholderModel !== undefined && (resolve || model !== this.placeholderModel)) {
       this.placeholderModel = undefined;
     }
     if (this.placeholderModel === undefined) {

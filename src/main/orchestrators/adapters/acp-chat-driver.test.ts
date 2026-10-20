@@ -450,12 +450,17 @@ describe('ACP → chat contract mapping', () => {
     // An effort chosen before the prompt: the agent's update still carries the placeholder.
     expect(mapper.pinEffort(at('sonnet', 'low'))).toEqual([]);
     expect(mapper.map(update(at('sonnet', 'low')), at('sonnet', 'low'))).toEqual([]);
-    // The first turn resolves it, even to the same model.
+    // Inside the first turn too: an update for something else (Copilot flips allow_all) still names the placeholder.
     mapper.map({ type: 'turn_started', sessionId: 's1', trigger: 'prompt' }, at('sonnet', 'low'));
-    expect(mapper.map(update(at('sonnet', 'low')), at('sonnet', 'low'))).toEqual([
-      { type: 'model_changed', data: { modelId: 'sonnet', effort: 'low' } },
-      { type: 'session_info', data: { efforts: ['low', 'medium'] } },
-    ]);
+    expect(mapper.map(update(at('sonnet', 'low')), at('sonnet', 'low'))).toEqual([]);
+    // A failed turn doesn't confirm it.
+    expect(mapper.map({ type: 'turn_ended', sessionId: 's1', stopReason: 'error', error: 'boom' }, at('sonnet', 'low')).map((d) => d.type)).toEqual(['error', 'turn_ended']);
+    // The end of a turn that ran confirms it, even unchanged.
+    mapper.map({ type: 'turn_started', sessionId: 's1', trigger: 'prompt' }, at('sonnet', 'low'));
+    const ended = mapper.map({ type: 'turn_ended', sessionId: 's1', stopReason: 'end_turn' }, at('sonnet', 'low'));
+    expect(ended.map((d) => d.type)).toEqual(['model_changed', 'session_info', 'turn_ended']);
+    expect(ended[0]).toEqual({ type: 'model_changed', data: { modelId: 'sonnet', effort: 'low' } });
+    expect(ended[1]).toEqual({ type: 'session_info', data: { efforts: ['low', 'medium'] } });
 
     // A model the agent switched to on its own (another model than the placeholder) is news at once.
     const switched = new AcpChatEventMapper('copilot_acp', { modelUnresolved: true });

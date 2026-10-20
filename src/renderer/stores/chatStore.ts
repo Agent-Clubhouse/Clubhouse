@@ -496,6 +496,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         cliVersion: d.cliVersion ?? state.cliVersion,
         nativeSessionId: d.nativeSessionId ?? state.nativeSessionId,
         model: d.model ?? state.model,
+        // A new run says again whether its model is known.
+        modelUnknown: false,
         level: d.level ?? state.level,
         // A new session (or another driver) sends its own picker lists in session_info.
         models: [],
