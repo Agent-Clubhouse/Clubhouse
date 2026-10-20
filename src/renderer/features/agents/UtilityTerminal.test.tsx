@@ -9,7 +9,8 @@ const g = globalThis as any;
 g.__testTerminal = null;
 
 vi.mock('@xterm/xterm', () => {
-  const TerminalClass = function (this: any) {
+  const TerminalClass = function (this: any, opts?: any) {
+    (globalThis as any).__testTerminalOpts = opts;
     this.open = () => {};
     this.write = () => {};
     this.dispose = () => {};
@@ -63,6 +64,21 @@ describe('UtilityTerminal', () => {
       <UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />,
     );
     expect(container.querySelector('div')).toBeInTheDocument();
+  });
+
+  it('tells xterm the Windows pty backend when preload reports one', () => {
+    window.clubhouse.windowsPty = { backend: 'winpty', buildNumber: 17763 };
+    try {
+      render(<UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />);
+      expect(g.__testTerminalOpts.windowsPty).toEqual({ backend: 'winpty', buildNumber: 17763 });
+    } finally {
+      window.clubhouse.windowsPty = undefined;
+    }
+  });
+
+  it('leaves windowsPty unset off Windows', () => {
+    render(<UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />);
+    expect(g.__testTerminalOpts).not.toHaveProperty('windowsPty');
   });
 
   it('kills previous PTY before spawning new shell', () => {

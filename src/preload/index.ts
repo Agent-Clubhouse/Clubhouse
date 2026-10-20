@@ -26,12 +26,15 @@ import { telemetrySettings } from './telemetrySettings';
 import { feedback } from './feedback';
 import { telemetry } from './telemetry';
 import { NEW_CHROME_ARG } from '../shared/chrome-flag';
+import { parseWindowsPtyArg } from '../shared/windows-pty';
 import { chat } from './chat';
 
 export const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
   /** True when main started this window with the new chrome layout (fixed for the session). */
   newChromeLayout: process.argv.includes(NEW_CHROME_ARG),
+  /** Windows only: the local pty backend, for xterm's `windowsPty` option. */
+  windowsPty: parseWindowsPtyArg(process.argv),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   /**
    * Generic settings bridge — routes get/save by definition key.

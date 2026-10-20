@@ -8,6 +8,7 @@ import { applyWindowSecurityGuards } from '../window-security-guards';
 import { withValidatedArgs, stringArg, numberArg, objectArg } from './validation';
 import { newChromeEnabled, titleBarOptions } from '../window-chrome';
 import { NEW_CHROME_ARG } from '../../shared/chrome-flag';
+import { windowsPtyLaunchArgs } from '../util/windows-pty';
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -178,6 +179,7 @@ export function registerWindowHandlers(): void {
     if (params.title) additionalArguments.push(`--popout-title=${encodeURIComponent(params.title)}`);
     // Popouts get the same layout as the main window, for their bare title bar.
     if (newChromeEnabled()) additionalArguments.push(NEW_CHROME_ARG);
+    additionalArguments.push(...windowsPtyLaunchArgs());
 
     const win = new BrowserWindow({
       width: 800,

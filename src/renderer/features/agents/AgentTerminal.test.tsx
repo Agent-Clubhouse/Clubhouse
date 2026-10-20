@@ -45,6 +45,7 @@ vi.mock('@xterm/xterm', () => {
     rows = 24;
     constructor(opts?: any) {
       (globalThis as any).__testTerminal = this;
+      (globalThis as any).__testTerminalOpts = opts;
       if (opts?.theme) this.options.theme = opts.theme;
     }
   }
@@ -183,6 +184,31 @@ describe('AgentTerminal', () => {
       render(<AgentTerminal agentId="agent-1" />);
       expect(fitAddon()).toBeDefined();
       expect(term().loadAddon).toHaveBeenCalled();
+    });
+
+    it('tells xterm the Windows pty backend for a local agent', () => {
+      window.clubhouse.windowsPty = { backend: 'conpty', buildNumber: 22631 };
+      try {
+        render(<AgentTerminal agentId="agent-1" />);
+        expect(g.__testTerminalOpts.windowsPty).toEqual({ backend: 'conpty', buildNumber: 22631 });
+      } finally {
+        window.clubhouse.windowsPty = undefined;
+      }
+    });
+
+    it('leaves windowsPty unset for a remote agent, whose PTY is on the satellite', () => {
+      window.clubhouse.windowsPty = { backend: 'conpty', buildNumber: 22631 };
+      try {
+        render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+        expect(g.__testTerminalOpts).not.toHaveProperty('windowsPty');
+      } finally {
+        window.clubhouse.windowsPty = undefined;
+      }
+    });
+
+    it('leaves windowsPty unset off Windows', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(g.__testTerminalOpts).not.toHaveProperty('windowsPty');
     });
 
     it('opens terminal on the container element', () => {

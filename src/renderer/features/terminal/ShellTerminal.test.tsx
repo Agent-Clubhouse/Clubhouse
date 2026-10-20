@@ -121,6 +121,34 @@ describe('ShellTerminal', () => {
       expect(term().loadAddon).toHaveBeenCalled();
     });
 
+    it('tells xterm the Windows pty backend when preload reports one', () => {
+      window.clubhouse.windowsPty = { backend: 'conpty', buildNumber: 22631 };
+      try {
+        render(<ShellTerminal sessionId="shell-1" />);
+        expect(term().options.windowsPty).toEqual({ backend: 'conpty', buildNumber: 22631 });
+      } finally {
+        window.clubhouse.windowsPty = undefined;
+      }
+    });
+
+    it('leaves windowsPty unset off Windows', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      expect(term().options).not.toHaveProperty('windowsPty');
+    });
+
+    it('drops the local Windows pty hint when the terminal switches to a remote IO', () => {
+      window.clubhouse.windowsPty = { backend: 'conpty', buildNumber: 22631 };
+      try {
+        const { rerender } = render(<ShellTerminal sessionId="shell-1" />);
+        expect(term().options.windowsPty).toEqual({ backend: 'conpty', buildNumber: 22631 });
+        const remoteIO = { ...window.clubhouse.pty };
+        rerender(<ShellTerminal sessionId="shell-1" io={remoteIO} />);
+        expect(term().options.windowsPty).toEqual({});
+      } finally {
+        window.clubhouse.windowsPty = undefined;
+      }
+    });
+
     it('opens terminal on the container element', () => {
       render(<ShellTerminal sessionId="shell-1" />);
       expect(term().open).toHaveBeenCalled();

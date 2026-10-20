@@ -11,6 +11,7 @@
  */
 import { Terminal } from '@xterm/headless';
 import { SerializeAddon } from '@xterm/addon-serialize';
+import { detectWindowsPty } from '../util/windows-pty';
 
 interface HeadlessSession {
   terminal: Terminal;
@@ -34,11 +35,15 @@ function getOrCreate(agentId: string): HeadlessSession {
   let session = sessions.get(agentId);
   if (session) return session;
 
+  const windowsPty = detectWindowsPty();
+
   const terminal = new Terminal({
     cols: DEFAULT_COLS,
     rows: DEFAULT_ROWS,
     scrollback: SCROLLBACK_LINES,
     allowProposedApi: true,
+    // Mirrors a local PTY, so it must resize like the renderer's xterm (#2320).
+    ...(windowsPty && { windowsPty }),
   });
 
   const serializer = new SerializeAddon();
