@@ -26,6 +26,7 @@ vi.mock('electron', () => ({
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
   flush: vi.fn(),
+  flushSync: vi.fn(),
 }));
 
 vi.mock('child_process', () => ({

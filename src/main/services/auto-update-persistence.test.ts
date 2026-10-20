@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
   flush: vi.fn(),
+  flushSync: vi.fn(),
 }));
 
 vi.mock('fs', async () => {
