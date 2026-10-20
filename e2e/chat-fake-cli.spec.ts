@@ -164,7 +164,7 @@ for (const p of PROVIDERS) {
         // reply, and an unbroken token in the user's bubble.
         const token = `sha256-${'a1b2c3d4'.repeat(60)}`;
         await window.evaluate((t) => {
-          const cells = (cell: string) => Array.from({ length: 14 }, () => `<td>${cell}</td>`).join('');
+          const cells = (cell: string) => Array.from({ length: 20 }, () => `<td>${cell}</td>`).join('');
           const md = document.querySelector('[data-testid="chat-agent-message"] .chat-markdown');
           md?.insertAdjacentHTML('beforeend', `<p>${t}</p><p><code>${t}</code></p><table><tr>${cells('a fairly long cell value')}</tr></table>`);
           const bubble = document.querySelector('[data-testid="chat-user-message"]')?.lastElementChild;
@@ -181,9 +181,13 @@ for (const p of PROVIDERS) {
           };
         });
         expect(layout).toEqual({ overflow: 0, clippedLeft: 0, clippedRight: 0 });
+        // The wide table scrolls inside its own box instead.
+        const table = await window.locator('[data-testid="chat-agent-message"] table').evaluate((t) => t.scrollWidth > t.clientWidth);
+        expect(table).toBe(true);
 
-        // Nothing can leave the stream scrolled sideways.
+        // Even with something wide enough to scroll, nothing leaves the stream scrolled sideways.
         const scrollLeft = await window.locator('[data-testid="chat-stream"]').evaluate(async (stream) => {
+          stream.firstElementChild?.insertAdjacentHTML('beforeend', '<div style="width:3000px;flex-shrink:0;height:1px"></div>');
           stream.scrollLeft = 200;
           stream.dispatchEvent(new Event('scroll'));
           await new Promise((r) => requestAnimationFrame(r));

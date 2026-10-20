@@ -85,5 +85,6 @@ describe('ChatStream: restored text stays inside the pane (#2292)', () => {
     expect(table).toMatch(/display:\s*block/);
     expect(table).toMatch(/max-width:\s*100%/);
     expect(table).toMatch(/overflow-x:\s*auto/);
+    expect(cssRule('.chat-markdown td')).toMatch(/overflow-wrap:\s*normal/);
   });
 });
