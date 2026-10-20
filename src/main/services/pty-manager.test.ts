@@ -18,8 +18,8 @@ vi.mock('node-pty', () => ({
 
 // Mock electron (aliased via vitest.config.ts)
 
-// Mock shell utility, but keep the real winQuoteArg so Windows percent-escaping
-// is exercised in PTY command construction without changing other behavior.
+// Mock shell utility; the real Windows cmd.exe escaping (windows-launcher) is
+// exercised in PTY command construction.
 vi.mock('../util/shell', async () => {
   const actual = await vi.importActual<typeof import('../util/shell')>('../util/shell');
   return {
@@ -861,7 +861,7 @@ describe('pty-manager', () => {
         // On Windows, cmd.exe is spawned interactively (pendingCommand mechanism)
         expect(pty.spawn).toHaveBeenCalledWith(
           'cmd.exe',
-          [],
+          ['/v:off'],
           expect.objectContaining({
             env: expect.objectContaining({ CUSTOM_VAR: 'value' }),
           })
@@ -890,7 +890,7 @@ describe('pty-manager', () => {
       // Windows now uses interactive cmd.exe (no /c) with pendingCommand
       expect(pty.spawn).toHaveBeenCalledWith(
         'cmd.exe',
-        [],
+        ['/v:off'],
         expect.objectContaining({
           cwd: '/test',
           cols: 120,
@@ -957,7 +957,7 @@ describe('pty-manager', () => {
           (c: string[]) => typeof c[0] === 'string' && c[0].includes('& exit')
         );
         expect(writtenCmd).toBeDefined();
-        expect(writtenCmd![0]).toContain('"Fix the login bug"');
+        expect(writtenCmd![0]).toContain('^"Fix the login bug^"');
       }
     });
   });
@@ -1661,9 +1661,9 @@ describe('pty-manager', () => {
     });
   });
 
-  // ── winQuoteArg edge cases (via spawn on Windows) ────────────────────
+  // ── cmd.exe escaping edge cases (via spawn on Windows) ───────────────
 
-  describe('winQuoteArg', () => {
+  describe('Windows cmd.exe escaping', () => {
     it('handles empty string argument', async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'win32' });
@@ -1675,13 +1675,13 @@ describe('pty-manager', () => {
           (c: string[]) => typeof c[0] === 'string' && c[0].includes('& exit')
         );
         expect(writeCall).toBeDefined();
-        expect(writeCall![0]).toContain('""');
+        expect(writeCall![0]).toContain('^"^"');
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
       }
     });
 
-    it('preserves %USERNAME% by escaping percent signs in Windows PTY args', async () => {
+    it('preserves %USERNAME% by caret-escaping percent signs in Windows PTY args', async () => {
       const originalPlatform = process.platform;
       const originalUsername = process.env.USERNAME;
       Object.defineProperty(process, 'platform', { value: 'win32' });
@@ -1692,10 +1692,11 @@ describe('pty-manager', () => {
         resize('agent_winquote_percent', 120, 30);
 
         const writeCall = mockProcess.write.mock.calls.find(
-          (c: string[]) => typeof c[0] === 'string' && c[0].includes('%%USERNAME%%')
+          (c: string[]) => typeof c[0] === 'string' && c[0].includes('& exit')
         );
         expect(writeCall).toBeDefined();
-        expect(writeCall![0]).toContain('%%USERNAME%%');
+        // ^%USERNAME^% looks up `USERNAME^`, which is undefined, so it stays literal.
+        expect(writeCall![0]).toContain('^"^%USERNAME^%^"');
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
         if (originalUsername === undefined) {

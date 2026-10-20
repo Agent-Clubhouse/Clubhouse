@@ -5,7 +5,7 @@ vi.mock('child_process', () => ({
   execFile: vi.fn(),
 }));
 
-import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, buildCliSpawnEnv, summarizeSpawnEnv, winQuoteArg, HOST_SESSION_ENV_VARS, isHostSessionEnvVar, cleanInheritedEnv, INHERITED_AGENT_ENV_VARS } from './shell';
+import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, buildCliSpawnEnv, summarizeSpawnEnv, HOST_SESSION_ENV_VARS, isHostSessionEnvVar, cleanInheritedEnv, INHERITED_AGENT_ENV_VARS } from './shell';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from './__fixtures__/host-session-env';
 import { execSync, execFile } from 'child_process';
 
@@ -339,43 +339,6 @@ describe('summarizeSpawnEnv', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     expect(summarizeSpawnEnv({ Path: 'C:\\Windows', USERPROFILE: 'C:\\Users\\u' })).toEqual({ keyCount: 2, missing: [] });
     expect(summarizeSpawnEnv({}).missing).toEqual(['PATH', 'USERPROFILE']);
-  });
-});
-
-describe('winQuoteArg', () => {
-  it('returns empty quoted string for empty input', () => {
-    expect(winQuoteArg('')).toBe('""');
-  });
-
-  it('wraps a simple argument in double quotes', () => {
-    expect(winQuoteArg('hello')).toBe('"hello"');
-  });
-
-  it('wraps an argument with spaces in double quotes', () => {
-    expect(winQuoteArg('hello world')).toBe('"hello world"');
-  });
-
-  it('escapes embedded double quotes by doubling them', () => {
-    expect(winQuoteArg('say "hi"')).toBe('"say ""hi"""');
-  });
-
-  it('handles argument with only a double quote', () => {
-    expect(winQuoteArg('"')).toBe('""""');
-  });
-
-  it('handles special shell characters', () => {
-    expect(winQuoteArg('a&b|c')).toBe('"a&b|c"');
-  });
-
-  it('doubles percent signs so %VAR% is not expanded by cmd.exe', () => {
-    expect(winQuoteArg('%PATH%')).toBe('"%%PATH%%"');
-    expect(winQuoteArg('prefix %USERNAME% suffix')).toBe('"prefix %%USERNAME%% suffix"');
-  });
-
-  it('handles a long mission-text-like argument', () => {
-    const longArg = 'Fix the bug in src/main/services/foo.ts where the "parser" fails';
-    const result = winQuoteArg(longArg);
-    expect(result).toBe('"Fix the bug in src/main/services/foo.ts where the ""parser"" fails"');
   });
 });
 

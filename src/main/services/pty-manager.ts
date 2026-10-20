@@ -3,7 +3,8 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as pty from 'node-pty';
 import { IPC } from '../../shared/ipc-channels';
-import { getShellEnvironment, getDefaultShell, cleanSpawnEnv, winQuoteArg } from '../util/shell';
+import { getShellEnvironment, getDefaultShell, cleanSpawnEnv } from '../util/shell';
+import { buildWindowsCmdLine } from '../util/windows-launcher';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
@@ -320,10 +321,10 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
       // mechanism (like macOS/Linux) to write the command on first resize.
       // This avoids cmd.exe /c argument-quoting issues that cause the mission
       // text to be mangled or lost when passed directly in the args array.
-      const shellCmd = [binary, ...args].map(a => winQuoteArg(a)).join(' ');
+      const shellCmd = buildWindowsCmdLine(binary, args);
       pendingCommand = commandPrefix ? `${validateCommandPrefix(commandPrefix)} & ${shellCmd}` : shellCmd;
 
-      proc = pty.spawn('cmd.exe', [], {
+      proc = pty.spawn('cmd.exe', ['/v:off'], {
         name: 'xterm-256color',
         cwd,
         env: spawnEnv,
