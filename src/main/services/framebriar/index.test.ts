@@ -8,6 +8,7 @@ vi.mock('electron', () => ({
 }));
 const menu = vi.hoisted(() => ({ current: null as null | { getMenuItemById: (id: string) => { enabled: boolean } | null } }));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../../telemetry/diag', () => ({ diag: vi.fn() }));
 const broadcast = vi.hoisted(() => vi.fn());
 vi.mock('../../util/ipc-broadcast', () => ({ broadcastToAllWindows: broadcast }));
 
@@ -21,7 +22,7 @@ vi.mock('./feedback-service', () => ({
     listeners: Array<(s: unknown) => void> = [];
     shutdown = vi.fn(async () => {});
     start = vi.fn(async () => {});
-    constructor() { created.push(this as never); }
+    constructor(public deps: { log: (...a: unknown[]) => void; diag: (...a: unknown[]) => void }) { created.push(this as never); }
     get telemetryConnected() { return fake.connected; }
     telemetryExport() { return fake.connected ? fake.exportValue : null; }
     onChange(fn: (s: unknown) => void) { this.listeners.push(fn); return () => {}; }
@@ -29,6 +30,8 @@ vi.mock('./feedback-service', () => ({
 }));
 
 import { IPC } from '../../../shared/ipc-channels';
+import { appLog } from '../log-service';
+import { diag } from '../../telemetry/diag';
 import { getFeedbackService, isFeedbackEnabled, resetFeedbackService, shutdownFeedback, startFeedback } from './index';
 import { getFramebriarTelemetrySource, onFramebriarConnectionChanged, setFramebriarTelemetrySource } from '../../telemetry/destinations/framebriar-source';
 
@@ -49,6 +52,16 @@ describe('feedback wiring', () => {
     startFeedback();
     expect(created).toHaveLength(1);
     expect((created[0] as unknown as { start: ReturnType<typeof vi.fn> }).start).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends report-id lines to the local-only diag tier and the rest to the legacy log (#2309)', () => {
+    getFeedbackService();
+    const { deps } = created[0] as unknown as { deps: { log: (...a: unknown[]) => void; diag: (...a: unknown[]) => void } };
+    deps.diag('info', 'Feedback saved for delivery', { id: 'rep-1' });
+    deps.log('info', 'Feedback started', { state: 'connected' });
+    expect(diag).toHaveBeenCalledWith('core:feedback', 'info', 'Feedback saved for delivery', { id: 'rep-1' });
+    expect(appLog).toHaveBeenCalledWith('core:feedback', 'info', 'Feedback started', { meta: { state: 'connected' } });
+    expect(appLog).not.toHaveBeenCalledWith('core:feedback', 'info', 'Feedback saved for delivery', expect.anything());
   });
 
   it('broadcasts status changes to every window', () => {

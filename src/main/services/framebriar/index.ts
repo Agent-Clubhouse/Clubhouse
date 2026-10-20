@@ -8,6 +8,7 @@ import * as path from 'path';
 import { app, Menu, net, safeStorage } from 'electron';
 import { IPC } from '../../../shared/ipc-channels';
 import { appLog } from '../log-service';
+import { diag } from '../../telemetry/diag';
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { FeedbackService } from './feedback-service';
 import { buildSha } from '../../build-info';
@@ -42,6 +43,8 @@ export function getFeedbackService(): FeedbackService {
       breadcrumbs: recentBreadcrumbs,
       isOnline: () => net.isOnline(),
       log: (level, msg, meta) => appLog('core:feedback', level, msg, meta ? { meta } : undefined),
+      // Report-id lines: local-only, never exported (#2299, #2309).
+      diag: (level, msg, meta) => diag('core:feedback', level, msg, meta),
     });
     // The button, notices and Settings follow main's status in every window.
     s.onChange((status) => broadcastToAllWindows(IPC.FEEDBACK.STATUS_CHANGED, status));

@@ -605,7 +605,7 @@ Event records only. Booleans, counts, states and codes: never notes, screenshots
 | `c.feedback.access` | settled access transitions only (not `checking`/`connecting`/`disconnecting`): `c.feedback.access.state`, `.from`, `c.feedback.notice` | S |
 | `c.feedback.request_refused` | `c.feedback.refusal` (`not-configured`/`no-main-window`/`unauthorized-caller`) | S |
 
-**Report id.** Maintainers match a Framebriar report to the user's local record by its id. The id is not an attribute, so it stays in the local `core:feedback` log lines (`Feedback saved for delivery`, `Feedback delivered`) until the local-only diag tier ([#2299](https://github.com/Agent-Clubhouse/Clubhouse/issues/2299)) can carry it.
+**Report id.** Maintainers match a Framebriar report to the user's local record by its id. The id is not an attribute. It is in the `core:feedback` diag lines `Feedback saved for delivery` and `Feedback delivered` (`t:"diag"` in `telemetry-*.jsonl`, local only, [#2299](https://github.com/Agent-Clubhouse/Clubhouse/issues/2299)), matched by id and timestamp.
 
 ### 4.15 Process health, renderer performance and pipeline health (added in revision 2)
 

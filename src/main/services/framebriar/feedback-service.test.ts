@@ -7,6 +7,7 @@ import type { Framebriar, FramebriarAccessView, FramebriarOutboxView } from '../
 import { ATTR } from '../../../shared/telemetry/attributes';
 import { setProducingRuntime } from '../../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../../telemetry/types';
+import { createDiagRedactor } from '../../telemetry/diag-redaction';
 import { connectFailureClass, connectFailureReason, FeedbackService, pngSize, sdkVersion, toFeedbackStatus } from './feedback-service';
 
 const ACCESS: FramebriarAccessView = { state: 'connected', connected: true, enrolled: true, canCapture: true, notice: null, expiresAt: '2026-11-15T00:00:00.000Z' };
@@ -597,6 +598,53 @@ describe('FeedbackService (fake SDK)', () => {
       const all = JSON.stringify(events());
       for (const secret of [NOTES, INVITE, 'rep-1', ink, PNG.toString('latin1'), draft.draftId, 'data:image']) expect(all).not.toContain(secret);
       for (const [, attrs] of events()) for (const a of attrs as Array<{ kind: string }>) expect(['enum', 'int', 'bool']).toContain(a.kind);
+    });
+  });
+
+  describe('report-id correlation (#2309)', () => {
+    type Entry = [string, string, Record<string, unknown> | undefined];
+    function sinks(create: ReturnType<typeof fakeSdk>['create']) {
+      const log: Entry[] = [];
+      const diag: Entry[] = [];
+      const s = new FeedbackService({
+        safeStorage, dataDir: '/data', appVersion: '0.42.0', isOnline: () => true, create: create as never,
+        log: (...e) => log.push(e), diag: (...e) => diag.push(e),
+      });
+      return { s, log, diag };
+    }
+
+    it('writes the saved and delivered lines, with the report id, to diag only', async () => {
+      const { create, opts } = fakeSdk();
+      const { s, log, diag } = sinks(create);
+      await s.send({ notes: 'private words', includeScreenshot: false });
+      opts().onReceipt!({ id: 'rep-1', status: 'accepted' });
+      expect(diag.map(([l, m, meta]) => [l, m, meta?.id])).toEqual([
+        ['info', 'Feedback saved for delivery', 'rep-1'],
+        ['info', 'Feedback delivered', 'rep-1'],
+      ]);
+      expect(JSON.stringify(log)).not.toContain('rep-1');
+      expect(JSON.stringify(diag)).not.toContain('private words');
+    });
+
+    it('keeps failures and the rest of the lifecycle in the legacy log', async () => {
+      const { create, fb } = fakeSdk();
+      const { s, log, diag } = sinks(create);
+      fb.feedback.submit.mockRejectedValueOnce(Object.assign(new Error('Local feedback storage is full'), { code: 'storage-full' }));
+      await expect(s.send({ notes: 'x', includeScreenshot: false })).rejects.toThrow();
+      expect(diag).toEqual([]);
+      expect(log.map(([, m]) => m)).toEqual(expect.arrayContaining(['Feedback started', 'Feedback send failed']));
+    });
+
+    it('keeps the report id through diag redaction', async () => {
+      const { create } = fakeSdk();
+      const { s, diag } = sinks(create);
+      const id = '3f2b8c1e-9a4d-4e6f-b2c7-0d1e2f3a4b5c';
+      await s.start();
+      const fb = create.mock.results[0].value as unknown as { feedback: { submit: ReturnType<typeof vi.fn> } };
+      fb.feedback.submit.mockResolvedValueOnce({ id, gameId: 'clubhouse', status: 'saved-local', sent: false, diagnostics: 'unavailable' });
+      await s.send({ notes: 'x', includeScreenshot: false });
+      const redactor = createDiagRedactor({ homeDir: '/Users/someone' });
+      expect(redactor.meta(diag[0][2]!).id).toBe(id);
     });
   });
 
