@@ -6,6 +6,7 @@ import { execSync, execFileSync } from 'child_process';
 import { app } from 'electron';
 import { getShellEnvironment } from '../util/shell';
 import type { LaunchWrapperConfig } from '../../shared/types';
+import type { TranscriptReadOptions } from './types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { recordBinaryLookup } from '../telemetry/agent-signals';
 
@@ -329,22 +330,74 @@ export async function readQuickSummary(agentId: string): Promise<{ summary: stri
   }
 }
 
+function parseJsonlText(content: string, events: StreamJsonEvent[]): void {
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      events.push(JSON.parse(trimmed));
+    } catch {
+      // Skip malformed JSONL lines — expected in truncated sessions
+    }
+  }
+}
+
+/** Share of a capped read spent on the head (start time, model); the rest is the tail (latest result). */
+const CAPPED_HEAD_SHARE = 0.25;
+
 /**
  * Parse a JSONL file line-by-line, returning events or null if unreadable/empty.
  * Used by all three provider SessionCapable implementations — identical across them.
+ *
+ * With `maxBytes`, a larger file is read as its head and tail only (whole lines
+ * from each), so a summary of a huge transcript stays cheap. `stats` gets the
+ * file size, bytes read and whether it was truncated.
  */
-export async function parseJsonlFile(filePath: string): Promise<StreamJsonEvent[] | null> {
+export async function parseJsonlFile(
+  filePath: string,
+  opts: TranscriptReadOptions = {},
+): Promise<StreamJsonEvent[] | null> {
+  const { maxBytes, stats } = opts;
   try {
-    const content = await fsp.readFile(filePath, 'utf-8');
     const events: StreamJsonEvent[] = [];
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        events.push(JSON.parse(trimmed));
-      } catch {
-        // Skip malformed JSONL lines — expected in truncated sessions
+    if (!maxBytes) {
+      const content = await fsp.readFile(filePath, 'utf-8');
+      if (stats) stats.bytesRead = Buffer.byteLength(content);
+      parseJsonlText(content, events);
+      return events.length > 0 ? events : null;
+    }
+    const fh = await fsp.open(filePath, 'r');
+    try {
+      const size = (await fh.stat()).size;
+      if (stats) stats.fileBytes = size;
+      if (size <= maxBytes) {
+        const buf = Buffer.alloc(size);
+        const { bytesRead } = await fh.read(buf, 0, size, 0);
+        if (stats) stats.bytesRead = bytesRead;
+        parseJsonlText(buf.toString('utf-8', 0, bytesRead), events);
+      } else {
+        const headLen = Math.floor(maxBytes * CAPPED_HEAD_SHARE);
+        const tailLen = maxBytes - headLen;
+        const head = Buffer.alloc(headLen);
+        const tail = Buffer.alloc(tailLen);
+        const h = await fh.read(head, 0, headLen, 0);
+        const t = await fh.read(tail, 0, tailLen, size - tailLen);
+        // Cut at newlines: '\n' never occurs inside a UTF-8 multibyte sequence
+        const headEnd = head.lastIndexOf(0x0a, h.bytesRead - 1);
+        const tailStart = tail.indexOf(0x0a);
+        if (headEnd >= 0) parseJsonlText(head.toString('utf-8', 0, headEnd), events);
+        const fromHead = events.length;
+        if (tailStart >= 0) parseJsonlText(tail.toString('utf-8', tailStart + 1, t.bytesRead), events);
+        if (stats) {
+          stats.bytesRead = h.bytesRead + t.bytesRead;
+          stats.truncated = true;
+        }
+        // No whole line in the tail (one huge last event): the head alone would
+        // pass the session's start off as where it left off
+        if (events.length === fromHead) return null;
       }
+    } finally {
+      await fh.close();
     }
     return events.length > 0 ? events : null;
   } catch {

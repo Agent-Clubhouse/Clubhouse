@@ -3,13 +3,13 @@ import * as path from 'path';
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { SpawnAgentParams } from '../../shared/types';
-import { isSessionCapable, type OrchestratorId } from '../orchestrators';
+import { isSessionCapable, type OrchestratorId, type TranscriptReadStats } from '../orchestrators';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
 import { agentRegistry } from '../services/agent-registry';
 import * as headlessManager from '../services/headless-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
-import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from '../services/session-reader';
+import { normalizeSessionEvents, buildSessionSummary, paginateEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from '../services/session-reader';
 import { appLog } from '../services/log-service';
 import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
@@ -35,6 +35,15 @@ import { cancelDurableCreation, onDurableCreationEvent, startDurableCreation } f
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
 type DeleteMode = Parameters<typeof ATTR.deleteMode>[0];
+
+/** Transcript read stats for the timing log, with durations in whole ms. */
+function roundStats(stats: TranscriptReadStats): TranscriptReadStats {
+  return {
+    ...stats,
+    ...(stats.lookupMs !== undefined && { lookupMs: Math.round(stats.lookupMs) }),
+    ...(stats.readMs !== undefined && { readMs: Math.round(stats.readMs) }),
+  };
+}
 
 /** Work disposing would lose. A check that couldn't run is handled on its own: force never overrides it. */
 function workAtRisk(checks: HelperDisposeChecks): boolean {
@@ -822,22 +831,39 @@ export function registerAgentHandlers(): void {
     withValidatedArgs(
       [stringArg(), stringArg(), stringArg(), stringArg({ optional: true })],
       async (_event, projectPath, agentId, sessionId, orchestrator) => {
+        // Local per-stage timing (#2277): counts and durations only, never content or paths
+        const timing: Record<string, unknown> = {};
+        const start = performance.now();
+        let mark = start;
+        const lap = () => { const now = performance.now(); const ms = Math.round(now - mark); mark = now; return ms; };
         try {
           const config = await agentConfig.getDurableConfig(projectPath, agentId);
           const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator || config?.orchestrator);
+          timing.provider = provider?.id;
           if (!isSessionCapable(provider)) return null;
           const cwd = config?.worktreePath || projectPath;
           // Pass profileEnv so the provider resolves the correct config directory
           const profileEnv = await agentSystem.resolveProfileEnv(projectPath, provider.id);
-          const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
+          timing.resolveMs = lap();
+          const stats: TranscriptReadStats = {};
+          const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES, stats });
+          timing.transcriptMs = lap();
+          Object.assign(timing, roundStats(stats));
           if (!rawEvents) return null;
+          timing.rawEvents = rawEvents.length;
           const events = normalizeSessionEvents(rawEvents);
-          return buildSessionSummary(events, provider.id);
+          const summary = buildSessionSummary(events, provider.id);
+          timing.summarizeMs = lap();
+          return summary;
         } catch (err) {
+          timing.failed = true;
           appLog('core:ipc', 'warn', 'Failed to get session summary', {
             meta: { agentId, sessionId, error: err instanceof Error ? err.message : String(err) },
           });
           return null;
+        } finally {
+          timing.totalMs = Math.round(performance.now() - start);
+          appLog('core:ipc', 'debug', 'Session summary timing', { meta: timing });
         }
       },
     ),

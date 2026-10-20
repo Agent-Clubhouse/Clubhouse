@@ -301,7 +301,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
           {/* No details column while asleep, so an orchestrator's cards sit here (#2232). */}
           {!compact && isDurable && !isRemote && agentProject && <SleepingOrchestration agent={agent} projectPath={agentProject.path} />}
 
-          {!compact && last && (last.summary || last.filesModified.length > 0 || agent.branch) && (
+          {!compact && last && ((last.loading && last.sessionId) || last.summary || last.filesModified.length > 0 || agent.branch) && (
             <LastSession
               info={last}
               branch={agent.branch}
@@ -372,6 +372,9 @@ function LastSession({ info, branch, baseDir, onBrowse }: {
     <section className="w-full mt-[30px] text-left" aria-label="Last session" data-testid="last-session">
       <SectionHead title="Last session" right={meta || undefined} />
       {info.summary && <Markdown text={info.summary} className="pt-0.5 pb-2.5 text-[13px] leading-[1.55] text-ctp-subtext1 break-words line-clamp-4" />}
+      {!info.summary && info.loading && info.sessionId && (
+        <p className="pt-0.5 pb-2.5 text-[13px] text-ctp-overlay1" aria-live="polite" data-testid="last-session-loading">Loading the last session…</p>
+      )}
       {branch && (
         <div className="h-[30px] flex items-center gap-2 px-2 -mx-2 min-w-0" data-testid="last-session-branch">
           <span className="flex-shrink-0 text-ctp-overlay1 flex"><BranchIcon /></span>

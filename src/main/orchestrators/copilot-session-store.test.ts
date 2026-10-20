@@ -1,9 +1,25 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Real fs, with every *Sync function and readdir spied on, so lookups can be
+// checked for blocking calls and full-store scans (#2277).
+vi.mock('fs', async (orig) => {
+  const actual = await orig<typeof import('fs')>();
+  const wrapped: Record<string, unknown> = { ...actual };
+  for (const [k, v] of Object.entries(actual)) if (k.endsWith('Sync') && typeof v === 'function') wrapped[k] = vi.fn(v);
+  return { ...wrapped, default: wrapped };
+});
+vi.mock('fs/promises', async (orig) => {
+  const actual = await orig<typeof import('fs/promises')>();
+  const wrapped = { ...actual, readdir: vi.fn(actual.readdir), stat: vi.fn(actual.stat) };
+  return { ...wrapped, default: wrapped };
+});
+
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  copilotSessionInCwd, cwdKey, findCopilotRunSession, hasCopilotSession, listCopilotSessions, parseWorkspaceYaml,
+  copilotSessionInCwd, cwdKey, findCopilotRunSession, findCopilotTranscript, hasCopilotSession, listCopilotSessions, parseWorkspaceYaml,
 } from './copilot-session-store';
 
 let root: string;
@@ -196,5 +212,64 @@ describe('copilotSessionInCwd', () => {
     fs.mkdirSync(path.join(store, C));
     fs.writeFileSync(path.join(store, C, 'workspace.yaml'), `id: ${C}\n`);
     expect(await copilotSessionInCwd(store, C, cwd)).toBeUndefined();
+  });
+});
+
+describe('findCopilotTranscript (#2277)', () => {
+  /** Calls to any synchronous fs function since the last clear. */
+  const syncCalls = () => Object.entries(fs)
+    .filter(([k, v]) => k.endsWith('Sync') && vi.isMockFunction(v) && (v as ReturnType<typeof vi.fn>).mock.calls.length > 0)
+    .map(([k]) => k);
+
+  it('finds a session among thousands with a few direct probes, no store scan and no sync fs', async () => {
+    for (let i = 0; i < 3000; i++) fs.mkdirSync(path.join(store, `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`));
+    session(A, { cwd, created: T0 });
+    expect(syncCalls()).toContain('mkdirSync'); // the spies see sync calls
+    vi.clearAllMocks();
+
+    const counter = { probes: 0 };
+    const found = await findCopilotTranscript(store, A, cwd, counter);
+
+    expect(found).toBe(path.join(store, A, 'events.jsonl'));
+    expect(counter.probes).toBe(1);
+    expect(syncCalls()).toEqual([]);
+    expect(fsp.readdir).not.toHaveBeenCalled();
+  });
+
+  it('misses in a bounded number of probes regardless of store size', async () => {
+    for (let i = 0; i < 3000; i++) fs.mkdirSync(path.join(store, `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`));
+    vi.clearAllMocks();
+
+    const counter = { probes: 0 };
+    expect(await findCopilotTranscript(store, B, cwd, counter)).toBeNull();
+    expect(counter.probes).toBeLessThanOrEqual(8);
+    expect(vi.mocked(fsp.stat).mock.calls.length + vi.mocked(fsp.readdir).mock.calls.length).toBe(counter.probes);
+    expect(vi.mocked(fsp.readdir).mock.calls.map((c) => String(c[0]))).not.toContain(store);
+    expect(syncCalls()).toEqual([]);
+  });
+
+  it('finds legacy flat transcripts, at the root or under the dash-encoded cwd', async () => {
+    fs.writeFileSync(path.join(store, `${A}.jsonl`), '{}\n');
+    expect(await findCopilotTranscript(store, A, cwd)).toBe(path.join(store, `${A}.jsonl`));
+
+    // A Windows cwd encodes to `C:-…`, which can't be a directory name there
+    if (process.platform === 'win32') return;
+    const encoded = path.resolve(cwd).replace(/[/\\]/g, '-');
+    fs.mkdirSync(path.join(store, encoded));
+    fs.writeFileSync(path.join(store, encoded, `${B}.json`), '{}\n');
+    expect(await findCopilotTranscript(store, B, cwd)).toBe(path.join(store, encoded, `${B}.json`));
+  });
+
+  it('falls back to another .jsonl in the session directory', async () => {
+    fs.mkdirSync(path.join(store, C));
+    fs.writeFileSync(path.join(store, C, 'transcript.jsonl'), '{}\n');
+    expect(await findCopilotTranscript(store, C, cwd)).toBe(path.join(store, C, 'transcript.jsonl'));
+  });
+
+  it('rejects ids that are not a single path segment', async () => {
+    fs.writeFileSync(path.join(root, 'outside.jsonl'), '{}\n');
+    expect(await findCopilotTranscript(store, '../outside', cwd)).toBeNull();
+    expect(await findCopilotTranscript(store, '..', cwd)).toBeNull();
+    expect(await findCopilotTranscript(store, '', cwd)).toBeNull();
   });
 });

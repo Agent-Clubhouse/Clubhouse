@@ -58,6 +58,7 @@ vi.mock('./copilot-session-store', () => ({
   findCopilotRunSession: vi.fn(async () => null),
   hasCopilotSession: vi.fn(async () => undefined),
   copilotSessionInCwd: vi.fn(async () => undefined),
+  findCopilotTranscript: vi.fn(async () => null),
 }));
 
 vi.mock('../util/shell', () => ({
@@ -66,10 +67,11 @@ vi.mock('../util/shell', () => ({
 
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import type { TranscriptReadStats } from './types';
 import * as childProcess from 'child_process';
 import { getShellEnvironment } from '../util/shell';
 import { CopilotCliProvider } from './copilot-cli-provider';
-import { copilotSessionInCwd, findCopilotRunSession, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
+import { copilotSessionInCwd, findCopilotRunSession, findCopilotTranscript, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
 import { findBinaryInPath } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 
@@ -1059,9 +1061,6 @@ describe('CopilotCliProvider', () => {
   });
 
   describe('SessionCapable', () => {
-    /** Normalize path separators for cross-platform test matching */
-    const norm = (p: string | fs.PathLike) => String(p).replace(/\\/g, '/');
-
     // The store itself is tested against real fixture directories in copilot-session-store.test.ts.
     describe('session store (listSessions, findRunSession, hasSession)', () => {
       const store = path.join('/home/user/.copilot', 'session-state');
@@ -1138,102 +1137,55 @@ describe('CopilotCliProvider', () => {
     });
 
     describe('readSessionTranscript', () => {
-      it('returns null when session directory does not exist', async () => {
-        vi.mocked(fs.existsSync).mockReturnValue(false);
-        const result = await provider.readSessionTranscript('some-id', '/project');
-        expect(result).toBeNull();
+      const store = path.join('/home/user/.copilot', 'session-state');
+      const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+      const file = path.join(store, sessionId, 'events.jsonl');
+      const readsAs = (text: string) => vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p) === file) return text;
+        throw new Error('ENOENT');
       });
 
-      it('reads and parses JSONL session file', async () => {
-        const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
-        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          const s = norm(p);
-          return s.endsWith('/session-state') || s.endsWith(`${sessionId}.jsonl`);
-        });
-        vi.mocked(fsp.readdir).mockResolvedValue([]);
-        vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-          if (String(p).endsWith('.jsonl')) {
-            return '{"type":"assistant","content_block":{"type":"text","text":"Hello"}}\n{"type":"result","result":"done"}\n';
-          }
-          throw new Error('ENOENT');
-        });
+      it('looks the session up by id in <COPILOT_HOME>/session-state (#2277)', async () => {
+        vi.mocked(findCopilotTranscript).mockResolvedValue(null);
+        expect(await provider.readSessionTranscript(sessionId, '/project')).toBeNull();
+        expect(findCopilotTranscript).toHaveBeenCalledWith(store, sessionId, '/project', expect.anything());
+        expect(fsp.readdir).not.toHaveBeenCalled();
+        expect(fs.existsSync).not.toHaveBeenCalled();
+      });
 
+      it('reads and parses the JSONL transcript', async () => {
+        vi.mocked(findCopilotTranscript).mockResolvedValue(file);
+        readsAs('{"type":"assistant","content_block":{"type":"text","text":"Hello"}}\n{"type":"result","result":"done"}\n');
         const events = await provider.readSessionTranscript(sessionId, '/project');
-        expect(events).not.toBeNull();
         expect(events).toHaveLength(2);
         expect(events![0].type).toBe('assistant');
         expect(events![1].type).toBe('result');
       });
 
       it('skips malformed JSONL lines gracefully', async () => {
-        const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
-        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          const s = norm(p);
-          return s.endsWith('/session-state') || s.endsWith(`${sessionId}.jsonl`);
-        });
-        vi.mocked(fsp.readdir).mockResolvedValue([]);
-        vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-          if (String(p).endsWith('.jsonl')) {
-            return '{"type":"assistant"}\nINVALID JSON LINE\n{"type":"result"}\n';
-          }
-          throw new Error('ENOENT');
-        });
-
-        const events = await provider.readSessionTranscript(sessionId, '/project');
-        expect(events).not.toBeNull();
-        expect(events).toHaveLength(2);
+        vi.mocked(findCopilotTranscript).mockResolvedValue(file);
+        readsAs('{"type":"assistant"}\nINVALID JSON LINE\n{"type":"result"}\n');
+        expect(await provider.readSessionTranscript(sessionId, '/project')).toHaveLength(2);
       });
 
-      it('returns null when no session file found', async () => {
-        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          return norm(p).endsWith('/session-state');
-        });
-        vi.mocked(fsp.readdir).mockResolvedValue([]);
-
-        const result = await provider.readSessionTranscript('nonexistent-id', '/project');
-        expect(result).toBeNull();
+      it('returns null for an empty session file', async () => {
+        vi.mocked(findCopilotTranscript).mockResolvedValue(file);
+        readsAs('\n\n');
+        expect(await provider.readSessionTranscript(sessionId, '/project')).toBeNull();
       });
 
-      it('returns null for empty session file', async () => {
-        const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
-        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          const s = norm(p);
-          return s.endsWith('/session-state') || s.endsWith(`${sessionId}.jsonl`);
+      it('fills in lookup stats: probes and timings, no paths', async () => {
+        vi.mocked(findCopilotTranscript).mockImplementation(async (_d, _id, _cwd, counter) => {
+          counter!.probes += 3;
+          return file;
         });
-        vi.mocked(fsp.readdir).mockResolvedValue([]);
-        vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-          if (String(p).endsWith('.jsonl')) return '\n\n';
-          throw new Error('ENOENT');
-        });
-
-        const events = await provider.readSessionTranscript(sessionId, '/project');
-        expect(events).toBeNull();
-      });
-
-      it('checks directory-style sessions when no file match', async () => {
-        const sessionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
-        vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-          const s = norm(p);
-          return s.endsWith('/session-state') || s.endsWith(sessionId);
-        });
-        vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => true } as any);
-        vi.mocked(fsp.readdir).mockImplementation(async (dir: any) => {
-          const d = String(dir);
-          if (norm(d).endsWith(sessionId)) {
-            return ['transcript.jsonl'] as any;
-          }
-          return [];
-        });
-        vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
-          if (String(p).endsWith('transcript.jsonl')) {
-            return '{"type":"assistant","content_block":{"type":"text","text":"Hi"}}\n';
-          }
-          throw new Error('ENOENT');
-        });
-
-        const events = await provider.readSessionTranscript(sessionId, '/project');
-        expect(events).not.toBeNull();
-        expect(events).toHaveLength(1);
+        readsAs('{"type":"result"}\n');
+        const stats: TranscriptReadStats = {};
+        await provider.readSessionTranscript(sessionId, '/project', undefined, { stats });
+        expect(stats).toMatchObject({ probes: 3, found: true, bytesRead: 18 });
+        expect(typeof stats.lookupMs).toBe('number');
+        expect(typeof stats.readMs).toBe('number');
+        expect(JSON.stringify(stats)).not.toContain(sessionId);
       });
     });
 

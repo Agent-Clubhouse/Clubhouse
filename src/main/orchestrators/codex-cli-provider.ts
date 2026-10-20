@@ -14,6 +14,7 @@ import {
   SessionCapable,
   NormalizedHookEvent,
   PERMISSION_HOOK_TIMEOUT_SEC,
+  TranscriptReadOptions,
 } from './types';
 import type { McpServerDef } from '../../shared/types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
@@ -702,6 +703,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
     sessionId: string,
     _cwd: string,
     profileEnv?: Record<string, string>,
+    opts?: TranscriptReadOptions,
   ): Promise<StreamJsonEvent[] | null> {
     const sessionsDir = path.join(this.resolveCodexHome(profileEnv), 'sessions');
 
@@ -719,7 +721,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
 
     if (!filePath) return null;
 
-    const events = await parseJsonlFile(filePath);
+    const events = await parseJsonlFile(filePath, opts);
     if (!events) {
       appLog('core:orchestrator', 'warn', 'Failed to read session transcript', {
         meta: { filePath },

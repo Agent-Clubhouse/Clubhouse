@@ -1,4 +1,4 @@
-import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { SleepingAgent } from './SleepingAgent';
@@ -207,6 +207,72 @@ describe('SleepingAgent', () => {
       renderComponent();
       await waitFor(() => expect(window.clubhouse.agent.listDurable).toHaveBeenCalled());
       expect(screen.queryByTestId('last-session')).toBeNull();
+    });
+  });
+
+  describe('last session loading (#2277)', () => {
+    const durableConfig = { id: 'agent-1', name: 'bold-falcon', lastSessionId: 'sess-1' };
+    const pending = () => new Promise<never>(() => {});
+
+    it('enables Wake and resumes before the summary or branch state arrive', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
+      window.clubhouse.agent.getSessionSummary = vi.fn().mockReturnValue(pending());
+      window.clubhouse.git.info = vi.fn().mockReturnValue(pending());
+      renderComponent({ branch: 'bold-falcon/standby' });
+      await waitForReady();
+      expect(await screen.findByTestId('last-session-loading')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('wake-button'));
+      await waitFor(() => {
+        expect(mockSpawnDurableAgent).toHaveBeenCalledWith('proj-1', '/projects/test', durableConfig, true, undefined);
+      });
+    });
+
+    it('offers resume in the wake menu while the summary loads', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
+      window.clubhouse.agent.getSessionSummary = vi.fn().mockReturnValue(pending());
+      renderComponent();
+      await waitForReady();
+      fireEvent.click(screen.getByTestId('wake-dropdown-toggle'));
+      const menu = await screen.findByTestId('wake-dropdown-menu');
+      expect(within(menu).getByText('Wake and resume last session').closest('button')).not.toBeDisabled();
+    });
+
+    it('a failed summary still resumes, and drops the loading line', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
+      window.clubhouse.agent.getSessionSummary = vi.fn().mockRejectedValue(new Error('boom'));
+      renderComponent();
+      await waitForReady();
+      await waitFor(() => expect(screen.queryByTestId('last-session-loading')).toBeNull());
+      fireEvent.click(screen.getByTestId('wake-button'));
+      await waitFor(() => {
+        expect(mockSpawnDurableAgent).toHaveBeenCalledWith('proj-1', '/projects/test', durableConfig, true, undefined);
+      });
+    });
+
+    it('shows the branch state before a slow summary', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
+      window.clubhouse.agent.getSessionSummary = vi.fn().mockReturnValue(pending());
+      window.clubhouse.git.info = vi.fn().mockResolvedValue({ hasGit: true, ahead: 1, remote: 'origin', status: [] });
+      renderComponent({ branch: 'bold-falcon/standby' });
+      await waitFor(() => expect(screen.getByTestId('last-session-branch')).toHaveTextContent('1 commit ahead of origin'));
+      expect(screen.getByTestId('last-session-loading')).toBeInTheDocument();
+    });
+
+    it('logs per-stage timing at debug level without session content', async () => {
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
+      window.clubhouse.agent.getSessionSummary = vi.fn().mockResolvedValue({
+        summary: 'SECRET summary text', filesModified: ['/secret/file.ts'], totalDurationMs: 0, totalCostUsd: 0,
+      });
+      const write = vi.spyOn(window.clubhouse.log, 'write');
+      renderComponent({ orchestrator: 'copilot-cli' });
+      await waitFor(() => expect(write.mock.calls.some(([e]) => e.msg === 'Last session timing')).toBe(true));
+      const entry = write.mock.calls.find(([e]) => e.msg === 'Last session timing')![0];
+      expect(entry.level).toBe('debug');
+      expect(entry.meta).toMatchObject({ provider: 'copilot-cli', hasSession: true, summaryFound: true });
+      for (const k of ['configMs', 'summaryMs', 'gitMs', 'totalMs']) expect(typeof entry.meta![k]).toBe('number');
+      const logged = JSON.stringify(entry);
+      expect(logged).not.toContain('SECRET');
+      expect(logged).not.toContain('sess-1');
     });
   });
 

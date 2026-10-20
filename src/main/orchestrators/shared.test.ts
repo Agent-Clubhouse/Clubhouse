@@ -18,6 +18,7 @@ vi.mock('child_process', () => ({
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
+  open: vi.fn(async () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
 }));
 
 vi.mock('../util/shell', () => ({
@@ -30,6 +31,7 @@ import { execSync, execFileSync } from 'child_process';
 import { app } from 'electron';
 import { findBinaryInPath, testBinaryOverride, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile, validateWrapperConfig, clearBinaryCache } from './shared';
 import type { LaunchWrapperConfig } from '../../shared/types';
+import type { TranscriptReadStats } from './types';
 
 describe('shared orchestrator utilities', () => {
   beforeEach(() => {
@@ -646,6 +648,63 @@ Options:
     it('returns null when all lines are malformed', async () => {
       vi.mocked(fsp.readFile).mockResolvedValue('not-json\nalso-not-json\n');
       expect(await parseJsonlFile('/bad.jsonl')).toBeNull();
+    });
+
+    describe('with maxBytes (summaries, #2277)', () => {
+      /** A file handle over `text` that records the bytes it hands out. */
+      function fileOf(text: string) {
+        const data = Buffer.from(text, 'utf-8');
+        const handle = {
+          bytesRead: 0,
+          stat: async () => ({ size: data.length }),
+          read: async (buf: Buffer, off: number, len: number, pos: number) => {
+            const n = data.copy(buf, off, pos, Math.min(pos + len, data.length));
+            handle.bytesRead += n;
+            return { bytesRead: n, buffer: buf };
+          },
+          close: vi.fn(async () => undefined),
+        };
+        vi.mocked(fsp.open).mockResolvedValue(handle as never);
+        return handle;
+      }
+      const line = (i: number) => JSON.stringify({ type: 'message', i, pad: 'x'.repeat(80) });
+
+      it('reads a small file whole', async () => {
+        fileOf(`${line(1)}\n${line(2)}\n`);
+        const stats: TranscriptReadStats = {};
+        expect(await parseJsonlFile('/s.jsonl', { maxBytes: 10_000, stats })).toHaveLength(2);
+        expect(stats.truncated).toBeUndefined();
+        expect(fsp.readFile).not.toHaveBeenCalled();
+      });
+
+      it('reads only the head and tail of a large file, as whole lines', async () => {
+        const lines = Array.from({ length: 5000 }, (_, i) => line(i));
+        const handle = fileOf(`${lines.join('\n')}\n`);
+        const stats: TranscriptReadStats = {};
+        const events = await parseJsonlFile('/big.jsonl', { maxBytes: 8192, stats });
+
+        expect(handle.bytesRead).toBeLessThanOrEqual(8192);
+        expect(stats).toMatchObject({ truncated: true, bytesRead: handle.bytesRead });
+        expect(stats.fileBytes).toBeGreaterThan(400_000);
+        const ids = events!.map((e) => (e as unknown as { i: number }).i);
+        expect(ids[0]).toBe(0);
+        expect(ids[ids.length - 1]).toBe(4999);
+        expect(ids.length).toBeLessThan(100);
+        expect(handle.close).toHaveBeenCalled();
+      });
+
+      it('returns null rather than the head alone when the last line outgrows the tail', async () => {
+        fileOf(`${line(0)}\n${line(1)}\n${JSON.stringify({ type: 'result', pad: 'y'.repeat(20_000) })}\n`);
+        expect(await parseJsonlFile('/huge-tail.jsonl', { maxBytes: 8192 })).toBeNull();
+      });
+
+      it('cuts cleanly around multibyte text', async () => {
+        const lines = Array.from({ length: 2000 }, (_, i) => JSON.stringify({ type: 'message', i, text: 'é漢🙂'.repeat(20) }));
+        fileOf(`${lines.join('\n')}\n`);
+        const events = await parseJsonlFile('/utf8.jsonl', { maxBytes: 8192 });
+        expect(events!.every((e) => (e as unknown as { text: string }).text === 'é漢🙂'.repeat(20))).toBe(true);
+        expect((events![events!.length - 1] as unknown as { i: number }).i).toBe(1999);
+      });
     });
   });
 
