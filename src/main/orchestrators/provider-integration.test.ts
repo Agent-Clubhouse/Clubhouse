@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
+import * as os from 'os';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
@@ -1028,20 +1029,21 @@ describe('Provider integration tests', () => {
       // Make existsSync return false for all paths (binary not at well-known location)
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      // But shell `which` finds it
+      // But shell `where`/`which` finds it. Windows only accepts a launcher.
+      const found = path.join(os.tmpdir(), 'custom path', process.platform === 'win32' ? 'claude.cmd' : 'claude');
       if (process.platform === 'win32') {
-        vi.mocked(execSync).mockReturnValue('/custom/path/claude\n');
+        vi.mocked(execSync).mockReturnValue(`${found}\r\n`);
       } else {
-        vi.mocked(execFileSync).mockReturnValue('/custom/path/claude\n');
+        vi.mocked(execFileSync).mockReturnValue(`${found}\n`);
       }
       // existsSync needs to return true for the which result
       vi.mocked(fs.existsSync).mockImplementation((p) => {
-        return String(p) === '/custom/path/claude';
+        return String(p) === found;
       });
 
       const provider = new ClaudeCodeProvider();
       const { binary } = await provider.buildSpawnCommand({ cwd: '/p' });
-      expect(binary).toBe('/custom/path/claude');
+      expect(binary).toBe(found);
     });
   });
 
