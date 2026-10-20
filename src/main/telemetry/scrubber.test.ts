@@ -58,6 +58,14 @@ describe('scrubber', () => {
     expect(live(`cwd=${home}`)).toBe('cwd=<home>');
   });
 
+  it('scrubs the rest of a Windows path after the home directory', () => {
+    const s = createScrubber({ homeDir: 'C:\\Users\\alice', username: 'alice', hostname: 'DESKTOP-ABC123' });
+    expect(s('failed to read C:\\Users\\alice\\projects\\secret-repo\\src\\index.ts')).toBe('failed to read <home><path>');
+    expect(s('c:\\users\\ALICE\\projects\\secret-repo')).toBe('<home><path>');
+    const linux = createScrubber({ homeDir: '/home/alice', username: 'alice' });
+    expect(linux('failed to read /home/alice/projects/secret-repo')).toBe('failed to read <home><path>');
+  });
+
   it('does not scrub very short usernames out of ordinary words', () => {
     const s = createScrubber({ username: 'al', homeDir: '/home/al' });
     expect(s('totally normal')).toBe('totally normal');

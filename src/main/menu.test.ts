@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { MenuItemConstructorOptions } from 'electron';
 
 // ── Mock electron ───────────────────────────────────────────────────────────
@@ -75,4 +75,23 @@ describe('buildMenu', () => {
     click({}, win);
     expect(captureFromShortcut).toHaveBeenLastCalledWith(win);
   });
+});
+
+describe('Window menu', () => {
+  const originalPlatform = process.platform;
+  afterEach(() => Object.defineProperty(process, 'platform', { value: originalPlatform }));
+
+  // Role 'windowMenu' with no submenu adds Close (Ctrl+W) off macOS; closing the
+  // main window there quits the app.
+  for (const platform of ['win32', 'linux', 'darwin'] as const) {
+    it(`${platform}: has an explicit submenu with no Close item`, () => {
+      Object.defineProperty(process, 'platform', { value: platform });
+      buildMenu();
+      const windowMenu = capturedTemplate.find((i) => i.role === 'windowMenu')!;
+      const submenu = windowMenu.submenu as MenuItemConstructorOptions[];
+      expect(Array.isArray(submenu)).toBe(true);
+      expect(submenu.some((i) => i.role === 'close')).toBe(false);
+      expect(submenu.some((i) => i.role === 'front')).toBe(platform === 'darwin');
+    });
+  }
 });

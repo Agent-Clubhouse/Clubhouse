@@ -483,7 +483,9 @@ export function resolveEncodedPathDir(baseDir: string, cwd: string): string | nu
 
   const absCwd = path.resolve(cwd);
   const encodedPath = absCwd.replace(/[/\\]/g, '-');
-  const candidates = [encodedPath, encodedPath.replace(/^-/, '')];
+  // Claude Code maps every non-alphanumeric to '-' (C:\repo -> C--repo, /.clubhouse -> --clubhouse).
+  const claudeEncoded = absCwd.replace(/[^a-zA-Z0-9]/g, '-');
+  const candidates = [encodedPath, encodedPath.replace(/^-/, ''), claudeEncoded];
 
   for (const candidate of candidates) {
     const dir = path.join(baseDir, candidate);
