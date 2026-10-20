@@ -123,3 +123,7 @@ e2e/.run-state/
 
 # Git worktrees
 .worktrees/
+
+# Node compile cache written by a process whose os.tmpdir() resolved to
+# `undefined\temp` (#2347). Windows can't check that path out.
+undefined\\temp/

@@ -48,6 +48,7 @@ export default defineConfig({
   plugins: [rawMarkdown()],
   test: {
     ...sharedTestConfig,
+    globalSetup: ['./test/global-setup.ts'],
     coverage: {
       thresholds: {
         lines: 60,
