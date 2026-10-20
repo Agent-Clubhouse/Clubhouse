@@ -189,10 +189,11 @@ function Radio({ on }: { on: boolean }) {
   return <span className={`w-3 h-3 rounded-full flex-shrink-0 ${on ? 'border-[3.5px] border-ctp-accent' : 'border-[1.5px] border-surface-2'}`} />;
 }
 
-function ModelPill({ models, efforts, model, effort, effortIsDefault, capabilities, onChange }: {
+function ModelPill({ models, efforts, model, modelUnknown, effort, effortIsDefault, capabilities, onChange }: {
   models: ChatModelOption[];
   efforts: string[];
   model: string | null;
+  modelUnknown?: boolean;
   effort: string | null;
   effortIsDefault?: boolean;
   capabilities: ChatCapabilities | null;
@@ -204,7 +205,7 @@ function ModelPill({ models, efforts, model, effort, effortIsDefault, capabiliti
   const modelSwitch = capabilities?.modelSwitch ?? 'none';
   const canChange = models.length > 0 && modelSwitch !== 'none';
   const current = models.find((m) => m.id === model);
-  const label = model ? modelLabel(model, models) : model;
+  const label = model ? modelLabel(model, models) : modelUnknown ? 'Default model' : model;
   if (!label) return null;
   // The exact id stays in the tooltip when the label is a friendlier name for it.
   const fullName = model && label !== model ? `${label} (${model})` : label;
@@ -377,6 +378,8 @@ export interface ComposerProps {
   disabledReason?: string;
   level: PermissionLevel | null;
   model: string | null;
+  /** The session runs the provider's default model and hasn't said which yet (#2293). */
+  modelUnknown?: boolean;
   effort: string | null;
   /** `effort` is the provider's default level rather than one chosen in the session. */
   effortIsDefault?: boolean;
@@ -659,6 +662,7 @@ export function Composer(props: ComposerProps) {
         models={props.onModelChange ? props.models ?? [] : []}
         efforts={props.efforts ?? []}
         model={props.model}
+        modelUnknown={props.modelUnknown}
         effort={props.effort}
         effortIsDefault={props.effortIsDefault}
         capabilities={capabilities}

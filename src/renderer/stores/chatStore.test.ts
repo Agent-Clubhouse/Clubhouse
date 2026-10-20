@@ -971,6 +971,28 @@ describe('picker lists on session_info', () => {
   });
 });
 
+describe('model before the session resolves it (#2293)', () => {
+  it('a null model clears the last run\'s and reads as unknown until model_changed names it', () => {
+    const ev = makeEmitter();
+    let state = fold([sessionStarted(ev), ev('session_info', { model: 'gpt-5.6-sol' })]);
+    expect(state).toMatchObject({ model: 'gpt-5.6-sol', modelUnknown: false });
+    // A wake that continues the same chat session in a new native one.
+    state = fold([sessionStarted(ev, 's1', { resumed: true }), ev('session_info', { model: null })], state);
+    expect(state).toMatchObject({ model: null, modelUnknown: true });
+    // Absent leaves it unknown.
+    state = fold([ev('session_info', { cliVersion: '1.0.98' })], state);
+    expect(state).toMatchObject({ model: null, modelUnknown: true });
+    state = fold([ev('model_changed', { modelId: 'gpt-5.6-sol', effort: 'medium', effortIsDefault: true })], state);
+    expect(state).toMatchObject({ model: 'gpt-5.6-sol', modelUnknown: false });
+  });
+
+  it('a reported model ends the unknown state', () => {
+    const ev = makeEmitter();
+    const state = fold([sessionStarted(ev), ev('session_info', { model: null }), ev('session_info', { model: 'opus' })]);
+    expect(state).toMatchObject({ model: 'opus', modelUnknown: false });
+  });
+});
+
 describe('MCP servers on session_info', () => {
   it('is unknown until reported, replaced when present, and cleared by a new session', () => {
     const ev = makeEmitter();

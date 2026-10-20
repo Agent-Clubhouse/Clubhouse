@@ -556,6 +556,8 @@ export const COPILOT_ACP_PROFILE: AcpAgentProfile = {
   contextWindow: 'input',
   nativeSessionExists: copilotNativeSessionExists,
   modelCostHint: copilotModelCostHint,
+  // session/new answers with Copilot's built-in default; settings.json's model applies at the first prompt (#2293).
+  newSessionModelUnresolved: true,
   capabilities: copilotAcpCapabilities,
   normalizeConfigOptions: dedupeCopilotConfigOptions,
   normalizeLegacyModels: dedupeCopilotLegacyModels,

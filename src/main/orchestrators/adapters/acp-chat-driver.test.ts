@@ -225,6 +225,93 @@ describe('Copilot ACP chat driver', () => {
   });
 });
 
+describe('Copilot model label before the first turn (#2293)', () => {
+  const NATIVE_ID = '5af70548-c3ac-4e25-b105-bec13faa1f20';
+  const recorded = loadAcpFixture(COPILOT, 'one-prompt.jsonl');
+  // Copilot's answer to set_config_option(model=gpt-5-mini): the options once the model is resolved.
+  const resolvedOptions = (recorded.find((r) => r.dir === 'in' && r.msg.id === 3)!.msg.result as { configOptions: unknown }).configOptions;
+
+  /**
+   * An unpinned session: session/new answers with Copilot's built-in default
+   * (claude-sonnet-5.5). Copilot applies the user's configured model only when
+   * the prompt starts and says so with config_option_update, as 1.0.82 did
+   * with settings.json's model in a real wake.
+   */
+  function unpinned(resolveAtPrompt: boolean): AcpFixtureRecord[] {
+    const records = withoutRequest(recorded, 'session/set_config_option');
+    if (!resolveAtPrompt) return records;
+    const prompt = records.findIndex((r) => r.dir === 'out' && r.msg.method === 'session/prompt');
+    const update: AcpFixtureRecord = {
+      dir: 'in',
+      msg: { jsonrpc: '2.0', method: 'session/update', params: { sessionId: NATIVE_ID, update: { sessionUpdate: 'config_option_update', configOptions: resolvedOptions } } },
+    };
+    return [...records.slice(0, prompt + 1), update, ...records.slice(prompt + 1)];
+  }
+
+  it('a wake that falls back to session/new reports the model as unknown, then the one Copilot resolves at the prompt', async () => {
+    const { driver, replayer } = setup(unpinned(true));
+    // The old native session is gone, so the wake starts a new one.
+    const session = await driver.start(startOpts({ resumeNativeSessionId: 'gone', env: copilotHomeWith() }));
+    await session.send([{ type: 'text', text: PROMPT }], 'prompt');
+    const drafts = await collect(session, (d) => d.type === 'turn_ended');
+
+    const info = drafts.find((d) => d.type === 'session_info' && d.data.nativeSessionId);
+    // Not the placeholder: null says "the provider's default, not known yet".
+    expect(info).toMatchObject({ type: 'session_info', data: { nativeSessionId: NATIVE_ID, model: null } });
+    // The placeholder model's effort list isn't offered either.
+    expect(info?.type === 'session_info' && info.data.efforts).toBeUndefined();
+    expect(info?.type === 'session_info' && info.data.models?.length).toBeGreaterThan(10);
+
+    const changes = drafts.filter((d) => d.type === 'model_changed');
+    expect(changes).toEqual([expect.objectContaining({ type: 'model_changed', data: { modelId: 'gpt-5-mini', effort: 'medium', effortIsDefault: true } })]);
+    expect(drafts.findIndex((d) => d.type === 'model_changed')).toBeLessThan(drafts.findIndex((d) => d.type === 'turn_ended'));
+    expect(drafts.find((d) => d.type === 'session_info' && d.data.efforts)).toMatchObject({ data: { efforts: ['low', 'medium', 'high'] } });
+    expect(replayer.errors).toEqual([]);
+  });
+
+  it('confirms the reported model at the end of the first turn when Copilot sends no update', async () => {
+    const { driver, replayer } = setup(unpinned(false));
+    const session = await driver.start(startOpts());
+    await session.send([{ type: 'text', text: PROMPT }], 'prompt');
+    const drafts = await collect(session, (d) => d.type === 'turn_ended');
+
+    expect(drafts[0]).toMatchObject({ type: 'session_info', data: { model: null } });
+    const changes = drafts.filter((d) => d.type === 'model_changed');
+    expect(changes).toEqual([expect.objectContaining({ data: { modelId: 'claude-sonnet-5.5', effort: 'medium', effortIsDefault: true } })]);
+    expect(drafts.findIndex((d) => d.type === 'model_changed')).toBeLessThan(drafts.findIndex((d) => d.type === 'turn_ended'));
+    expect(replayer.errors).toEqual([]);
+  });
+
+  it('a session/load reports the loaded session\'s model right away', async () => {
+    const load = loadAcpFixture(COPILOT, 'load-replay.jsonl');
+    const { driver, proc } = setup([...load, ...levelResend(load, 3)]);
+    const session = await driver.start(startOpts({ resumeNativeSessionId: NATIVE_ID, env: copilotHomeWith(NATIVE_ID) }));
+    proc.emit('exit', 0, null);
+    const drafts: ChatEventDraft[] = [];
+    for await (const d of session.events) drafts.push(d);
+    expect(drafts[0]).toMatchObject({ type: 'session_info', data: { model: 'gpt-5-mini', efforts: ['low', 'medium', 'high'] } });
+  });
+
+  it('a model chosen before the first prompt resolves the label', async () => {
+    const records = withoutRequest(recorded, 'session/set_config_option');
+    // Put the recorded set_config_option back after the handshake, as a composer pick would send it.
+    const setAt = recorded.findIndex((r) => r.dir === 'out' && r.msg.method === 'session/set_config_option');
+    const picked = recorded.slice(setAt, recorded.findIndex((r, i) => i > setAt && r.dir === 'out'));
+    const prompt = records.findIndex((r) => r.dir === 'out' && r.msg.method === 'session/prompt');
+    const { driver, replayer } = setup([...records.slice(0, prompt), ...picked, ...records.slice(prompt)]);
+    const session = await driver.start(startOpts());
+    await session.setModel('gpt-5-mini');
+    await session.send([{ type: 'text', text: PROMPT }], 'prompt');
+    const drafts = await collect(session, (d) => d.type === 'turn_ended');
+
+    expect(drafts[0]).toMatchObject({ type: 'session_info', data: { model: null } });
+    expect(drafts.filter((d) => d.type === 'model_changed')).toEqual([
+      expect.objectContaining({ data: { modelId: 'gpt-5-mini', effort: 'medium', effortIsDefault: true } }),
+    ]);
+    expect(replayer.errors).toEqual([]);
+  });
+});
+
 describe('ACP → chat contract mapping', () => {
   const state = (over: Partial<AcpSessionState> = {}): AcpSessionState => ({
     sessionId: 's1', modes: null, configOptions: [], legacyModels: null, availableCommands: [], title: null, context: null, turnInFlight: false, ...over,
@@ -349,6 +436,31 @@ describe('ACP → chat contract mapping', () => {
     const pinned = new AcpChatEventMapper('copilot_acp', { effortPinned: true });
     pinned.prime(state({ configOptions: [model] }));
     expect(pinned.map(update(at('low')), at('low'))[0]).toEqual({ type: 'model_changed', data: { modelId: 'gpt', effort: 'low' } });
+  });
+
+  it('keeps a placeholder model unknown through updates before the first prompt (#2293)', () => {
+    const effort = (current: string) => ({ type: 'select' as const, id: 'reasoning_effort', name: 'Effort', category: 'thought_level', currentValue: current, options: ['low', 'medium'].map((v) => ({ value: v, name: v })) });
+    const model = (current: string) => ({ type: 'select' as const, id: 'model', name: 'Model', category: 'model', currentValue: current, options: ['sonnet', 'gpt'].map((v) => ({ value: v, name: v })) });
+    const at = (m: string, e: string) => state({ configOptions: [model(m), effort(e)] });
+    const update = (s: AcpSessionState) => ({ type: 'update' as const, sessionId: 's1', replay: false, update: { sessionUpdate: 'config_option_update' as const, configOptions: s.configOptions } });
+
+    const mapper = new AcpChatEventMapper('copilot_acp', { modelUnresolved: true });
+    expect(mapper.initialInfo(at('sonnet', 'medium'))).toEqual({ type: 'session_info', data: { nativeSessionId: 's1', model: null, models: [{ id: 'sonnet', label: 'sonnet' }, { id: 'gpt', label: 'gpt' }] } });
+    mapper.prime(at('sonnet', 'medium'));
+    // An effort chosen before the prompt: the agent's update still carries the placeholder.
+    expect(mapper.pinEffort(at('sonnet', 'low'))).toEqual([]);
+    expect(mapper.map(update(at('sonnet', 'low')), at('sonnet', 'low'))).toEqual([]);
+    // The first turn resolves it, even to the same model.
+    mapper.map({ type: 'turn_started', sessionId: 's1', trigger: 'prompt' }, at('sonnet', 'low'));
+    expect(mapper.map(update(at('sonnet', 'low')), at('sonnet', 'low'))).toEqual([
+      { type: 'model_changed', data: { modelId: 'sonnet', effort: 'low' } },
+      { type: 'session_info', data: { efforts: ['low', 'medium'] } },
+    ]);
+
+    // A model the agent switched to on its own (another model than the placeholder) is news at once.
+    const switched = new AcpChatEventMapper('copilot_acp', { modelUnresolved: true });
+    switched.prime(at('sonnet', 'medium'));
+    expect(switched.map(update(at('gpt', 'medium')), at('gpt', 'medium'))[0]).toEqual({ type: 'model_changed', data: { modelId: 'gpt', effort: 'medium', effortIsDefault: true } });
   });
 
   it('reports an unchanged command list only once', () => {
