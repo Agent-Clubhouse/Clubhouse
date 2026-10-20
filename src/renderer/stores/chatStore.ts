@@ -206,6 +206,12 @@ export interface ChatViewState {
   cliVersion: string | null;
   level: PermissionLevel | null;
   model: string | null;
+  /**
+   * The session said it runs the provider's default but doesn't know which
+   * model that is yet (session_info `model: null`, #2293). Shown as "Default
+   * model" until model_changed names it.
+   */
+  modelUnknown: boolean;
   effort: string | null;
   /** The effort is the provider's default rather than one chosen in the session (model_changed). */
   effortIsDefault: boolean;
@@ -263,6 +269,7 @@ export function createChatViewState(agentId: string): ChatViewState {
     cliVersion: null,
     level: null,
     model: null,
+    modelUnknown: false,
     effort: null,
     effortIsDefault: false,
     effortReported: false,
@@ -489,6 +496,8 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
         cliVersion: d.cliVersion ?? state.cliVersion,
         nativeSessionId: d.nativeSessionId ?? state.nativeSessionId,
         model: d.model ?? state.model,
+        // A new run says again whether its model is known.
+        modelUnknown: false,
         level: d.level ?? state.level,
         // A new session (or another driver) sends its own picker lists in session_info.
         models: [],
@@ -513,7 +522,9 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
       return {
         ...state,
         nativeSessionId: d.nativeSessionId ?? state.nativeSessionId,
-        model: d.model ?? state.model,
+        // null: not known yet, so the last run's model doesn't stand in for it.
+        model: d.model !== undefined ? d.model : state.model,
+        modelUnknown: d.model !== undefined ? d.model === null : state.modelUnknown,
         cliVersion: d.cliVersion ?? state.cliVersion,
         // Picker lists: present replaces (empty clears), absent leaves unchanged.
         models: d.models ?? state.models,
@@ -789,7 +800,7 @@ export function reduceChatEvent(prev: ChatViewState | undefined, event: ChatEven
     case 'mode_changed':
       return { ...state, level: event.data.level };
     case 'model_changed':
-      return { ...state, model: event.data.modelId, effort: event.data.effort ?? null, effortIsDefault: event.data.effortIsDefault === true, effortReported: true };
+      return { ...state, model: event.data.modelId, modelUnknown: false, effort: event.data.effort ?? null, effortIsDefault: event.data.effortIsDefault === true, effortReported: true };
     case 'commands_available':
       return { ...state, commands: event.data.commands };
 

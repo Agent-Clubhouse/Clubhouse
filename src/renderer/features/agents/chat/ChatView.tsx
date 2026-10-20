@@ -247,6 +247,7 @@ export function ChatViewBody({ agent, state, actions, loading, onSwitchToTermina
           disabledReason={loading ? 'Loading the conversation…' : 'This session has ended. Wake the agent to continue.'}
           level={state.level}
           model={state.model}
+          modelUnknown={state.modelUnknown}
           effort={state.effort}
           effortIsDefault={state.effortIsDefault}
           effortReported={state.effortReported}

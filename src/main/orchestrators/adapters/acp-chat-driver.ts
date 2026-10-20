@@ -36,6 +36,8 @@ class AcpChatDriverSession implements ChatDriverSession {
   private readonly exitWaiters: Array<() => void> = [];
   /** Called after an effort is chosen in the session (set once mapping starts). */
   onEffortChosen: (() => void) | undefined;
+  /** Called after a model is chosen in the session (set once mapping starts). */
+  onModelChosen: (() => void) | undefined;
 
   constructor(
     private readonly session: AcpSession,
@@ -90,6 +92,7 @@ class AcpChatDriverSession implements ChatDriverSession {
     // ACP config options have no "unset", so there's no default to return to (no effortDefault).
     if (effort === null) throw new Error("This agent can't return effort to its default");
     await this.session.setModel(modelId);
+    this.onModelChosen?.();
     if (effort) await this.setEffort(effort);
   }
 
@@ -296,7 +299,13 @@ export class AcpChatDriver implements ChatDriver {
         this.log('warn', 'Permission level not available over ACP; keeping the agent default', { level: opts.level });
       }
 
-      mapper = new AcpChatEventMapper(this.id, { profile: session.agentProfile, effortPinned: !!opts.effort, env: { ...process.env, ...opts.env } });
+      mapper = new AcpChatEventMapper(this.id, {
+        profile: session.agentProfile,
+        effortPinned: !!opts.effort,
+        // A new session runs the agent's own default until the first prompt resolves it (#2293).
+        modelUnresolved: !resumed && !opts.model && !!session.agentProfile.newSessionModelUnresolved,
+        env: { ...process.env, ...opts.env },
+      });
       const state = session.getState();
       queue.push(mapper.initialInfo(state, session.initializeResponse?.agentInfo?.version));
       // Session-scoped state that arrived during setup. Replayed copies count:
@@ -312,6 +321,7 @@ export class AcpChatDriver implements ChatDriver {
       mapper.prime(session.getState());
       const primed = mapper;
       driverSession.onEffortChosen = () => { for (const draft of primed.pinEffort(session.getState())) queue.push(draft); };
+      driverSession.onModelChosen = () => { for (const draft of primed.modelChosen(session.getState())) queue.push(draft); };
       if (opts.signal?.aborted) throw new Error('Chat start cancelled');
       return driverSession;
     } catch (err) {

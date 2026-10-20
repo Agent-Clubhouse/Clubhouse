@@ -164,6 +164,12 @@ export interface AcpAgentProfile {
   contextWindow?: 'input' | 'total';
   /** A cost hint for a model option, from the agent's private `_meta`. */
   modelCostHint?(meta: Meta | undefined): string | undefined;
+  /**
+   * session/new reports a placeholder model: the agent resolves the user's
+   * configured one when the first prompt starts (Copilot, #2293). Until then
+   * a new session's model is unknown, unless the client chose one.
+   */
+  newSessionModelUnresolved?: boolean;
 }
 
 const KNOWN_CLIENT_METHODS: ReadonlySet<string> = new Set(Object.values(ACP_CLIENT_METHODS));

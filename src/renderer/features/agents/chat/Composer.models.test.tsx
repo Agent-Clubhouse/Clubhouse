@@ -55,6 +55,20 @@ function renderComposerWithRerender(initial: Partial<ComposerProps>) {
 }
 
 describe('Composer model and effort chips (#2091)', () => {
+  it('names an unknown model "Default model", not a guess, and still offers the menu (#2293)', () => {
+    const { onModelChange } = renderComposer({ model: null, modelUnknown: true, effort: null, efforts: [] });
+    const pill = screen.getByTestId('chat-model-pill');
+    expect(pill.textContent).toBe('Default model');
+    fireEvent.click(pill);
+    fireEvent.click(screen.getByText('Sonnet 5.5'));
+    expect(onModelChange).toHaveBeenCalledWith('sonnet', undefined);
+  });
+
+  it('shows no model chip while nothing about the model is known', () => {
+    renderComposer({ model: null });
+    expect(screen.queryByTestId('chat-model-pill')).toBeNull();
+  });
+
   it('keeps each chip inside its box so a narrow composer truncates instead of overlapping (#2260)', () => {
     renderComposer({ layout: 'narrow' });
     // jsdom can't measure layout, so check the classes that make a chip shrink with its wrapper.

@@ -82,6 +82,8 @@ describe('settings helpers', () => {
   it('names models, access and instructions in sentence case', () => {
     expect(modelLabel('default')).toBe('Default model');
     expect(modelLabel(undefined)).toBe('Default model');
+    // A live session that hasn't resolved its model yet (#2293) reads the same as the composer chip.
+    expect(modelLabel(null, { models: [{ id: 'claude-sonnet-5.5', label: 'Sonnet 5.5' }] })).toBe('Default model');
     expect(modelLabel('sonnet', { models: [] })).toBe('sonnet');
     expect(modelLabel('claude-opus-5-5', { models: [{ id: 'claude-opus-5-5', label: 'Opus 5.5' }] })).toBe('Opus 5.5');
     expect(accessLabel({ level: 'auto', levelNames: { auto: 'Agent' } }, false, true)).toBe('Agent');

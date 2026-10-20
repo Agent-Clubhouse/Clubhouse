@@ -370,6 +370,10 @@ export function sessionChoices(
   return { ...(models.length && { models }), ...(efforts.length && { efforts }) };
 }
 
+function withoutEfforts({ efforts: _efforts, ...rest }: ReturnType<typeof sessionChoices>): ReturnType<typeof sessionChoices> {
+  return rest;
+}
+
 function modelChanged(modelId: string, effort: string | undefined, isDefault: boolean): ChatEventDraft {
   return { type: 'model_changed', data: { modelId, ...(effort && { effort }), ...(isDefault && { effortIsDefault: true }) } };
 }
@@ -412,6 +416,13 @@ export class AcpChatEventMapper {
   /** ACP has no "default" effort: the session's starting level counts as it until one is chosen. */
   private effortPinned: boolean;
   private reportedDefault: boolean | undefined;
+  /**
+   * The model a new session reported before the agent resolved its own
+   * (newSessionModelUnresolved, #2293). While set, the model and its effort
+   * list are reported as unknown.
+   */
+  private placeholderModel: string | undefined;
+  private readonly modelUnresolved: boolean;
   /** The last turn's reported usage, to spot a repeat (see turn_ended). */
   private lastUsageKey: string | undefined;
   private level: PermissionLevel | undefined;
@@ -439,9 +450,12 @@ export class AcpChatEventMapper {
       now?: () => number;
       /** The session was started with a chosen effort, so it isn't the agent's default. */
       effortPinned?: boolean;
+      /** The session's reported model is a placeholder until the first turn (newSessionModelUnresolved). */
+      modelUnresolved?: boolean;
     } = {},
   ) {
     this.effortPinned = opts.effortPinned ?? false;
+    this.modelUnresolved = opts.modelUnresolved ?? false;
     this.levels = opts.profile?.permissionLevels;
     this.modelCostHint = opts.profile?.modelCostHint;
     this.profile = opts.profile;
@@ -458,26 +472,38 @@ export class AcpChatEventMapper {
     return this.configChanges(state);
   }
 
-  /** Seed model/effort/level/choices from the session state so only changes are reported. */
+  /** A model was chosen in the session, so the session's model is known now. */
+  modelChosen(state: Readonly<AcpSessionState>): ChatEventDraft[] {
+    return this.configChanges(state, undefined, true);
+  }
+
+  /**
+   * Seed model/effort/level/choices from the session state so only changes are
+   * reported. An unresolved model is left unreported, so resolving it reports it.
+   */
   prime(state: Readonly<AcpSessionState>): void {
-    this.model = this.currentModel(state);
-    this.effort = selectValue(state.configOptions, (o) => o.category === 'thought_level');
-    this.reportedDefault = !!this.effort && !this.effortPinned;
+    this.placeholderModel = this.modelUnresolved ? this.currentModel(state) : undefined;
+    const known = this.placeholderModel === undefined;
+    this.model = known ? this.currentModel(state) : undefined;
+    this.effort = known ? selectValue(state.configOptions, (o) => o.category === 'thought_level') : undefined;
+    this.reportedDefault = known ? !!this.effort && !this.effortPinned : undefined;
     this.level = this.levels?.current(state);
-    this.choicesKey = JSON.stringify(sessionChoices(state, this.modelCostHint));
+    this.choicesKey = JSON.stringify(this.choices(state));
   }
 
   /** The session facts the driver reports once setup is done. */
   initialInfo(state: Readonly<AcpSessionState>, cliVersion?: string): ChatEventDraft {
     const model = this.currentModel(state);
+    const unresolved = this.modelUnresolved && model !== undefined;
     return {
       type: 'session_info',
       data: {
         ...(state.sessionId && { nativeSessionId: state.sessionId }),
         ...(cliVersion && { cliVersion }),
         ...(state.title && { title: state.title }),
-        ...(model && { model }),
-        ...sessionChoices(state, this.modelCostHint),
+        // null: the agent's default, not known yet. The placeholder's efforts aren't offered either.
+        ...(unresolved ? { model: null } : model && { model }),
+        ...(unresolved ? withoutEfforts(sessionChoices(state, this.modelCostHint)) : sessionChoices(state, this.modelCostHint)),
         ...(this.levels?.names && { levelNames: this.levels.names }),
       },
     };
@@ -521,6 +547,8 @@ export class AcpChatEventMapper {
           }));
         }
         if (tokens) out.push(this.scoped({ type: 'usage', data: { scope: 'turn', tokens } }));
+        // The agent resolved its model when the prompt started; no update since means the reported one was right.
+        if (this.placeholderModel !== undefined && event.stopReason !== 'error') out.push(...this.configChanges(state, undefined, true));
         out.push(this.scoped({
           type: 'turn_ended',
           data: { stopReason, durationMs: this.now() - this.turnStartedAt, ...(tokens && { usage: tokens }) },
@@ -737,19 +765,25 @@ export class AcpChatEventMapper {
     }
   }
 
-  private configChanges(state: Readonly<AcpSessionState>, nativeMode?: string): ChatEventDraft[] {
+  private configChanges(state: Readonly<AcpSessionState>, nativeMode?: string, resolve = false): ChatEventDraft[] {
     const out: ChatEventDraft[] = [];
     const model = this.currentModel(state);
-    const effort = selectValue(state.configOptions, (o) => o.category === 'thought_level');
-    const isDefault = !!effort && !this.effortPinned;
-    if (model && (model !== this.model || effort !== this.effort || isDefault !== this.reportedDefault)) {
-      out.push(modelChanged(model, effort, isDefault));
-      this.reportedDefault = isDefault;
+    // An update still naming the placeholder (an effort, mode or allow-all change) proves nothing; the turn's end confirms it.
+    if (this.placeholderModel !== undefined && (resolve || model !== this.placeholderModel)) {
+      this.placeholderModel = undefined;
     }
-    this.model = model;
-    this.effort = effort;
+    if (this.placeholderModel === undefined) {
+      const effort = selectValue(state.configOptions, (o) => o.category === 'thought_level');
+      const isDefault = !!effort && !this.effortPinned;
+      if (model && (model !== this.model || effort !== this.effort || isDefault !== this.reportedDefault)) {
+        out.push(modelChanged(model, effort, isDefault));
+        this.reportedDefault = isDefault;
+      }
+      this.model = model;
+      this.effort = effort;
+    }
 
-    const choices = sessionChoices(state, this.modelCostHint);
+    const choices = this.choices(state);
     const choicesKey = JSON.stringify(choices);
     if (choicesKey !== this.choicesKey) {
       // Absent means unchanged, so a list that went away is sent as [] to clear it.
@@ -772,6 +806,12 @@ export class AcpChatEventMapper {
     }
     this.level = level;
     return out;
+  }
+
+  /** The picker lists to report: no effort list while the model is a placeholder. */
+  private choices(state: Readonly<AcpSessionState>): ReturnType<typeof sessionChoices> {
+    const choices = sessionChoices(state, this.modelCostHint);
+    return this.placeholderModel === undefined ? choices : withoutEfforts(choices);
   }
 
   private currentModel(state: Readonly<AcpSessionState>): string | undefined {

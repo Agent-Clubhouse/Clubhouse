@@ -449,10 +449,12 @@ describe('copilot_acp ChatDriver against Copilot 1.0.82', () => {
       agentId: 'agent-1', provider: 'copilot-cli', cwd: dir, binaryPath: binary, level: 'ask',
     });
     const drafts = EventLog.fromAsyncIterable(session.events);
-    const info = (await drafts.waitFor({ type: 'session_info' })).data as { models?: unknown[]; efforts?: string[] };
+    const info = (await drafts.waitFor({ type: 'session_info' })).data as { model?: string | null; models?: unknown[]; efforts?: string[] };
     expect(info).toMatchObject({ cliVersion: '1.0.82', levelNames: { plan: 'Plan', ask: 'Agent', full_access: 'Agent, allow all' } });
     expect(info.models).toHaveLength(23);
-    expect(info.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    // No model was chosen, so session/new's model is Copilot's placeholder until the first prompt (#2293).
+    expect(info.model).toBeNull();
+    expect(info.efforts).toBeUndefined();
     expect(session.capabilities).toMatchObject({ resume: 'replay', modelSwitch: 'live', effortSwitch: 'live', liveLevels: ['plan', 'ask', 'full_access'] });
 
     // Check the replay before closing. The recording ends with the CLI's exit

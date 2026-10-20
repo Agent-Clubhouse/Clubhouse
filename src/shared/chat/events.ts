@@ -293,7 +293,12 @@ export interface ChatEventDataMap {
     title?: string;
     capabilities?: Partial<ChatCapabilities>;
     cliVersion?: string;
-    model?: string;
+    /**
+     * The session's model. `null`: it runs the provider's default and the
+     * exact model isn't known yet (a new Copilot session before its first
+     * turn, #2293); a later model_changed names it.
+     */
+    model?: string | null;
     /**
      * Models the session can switch to (deduped). Replaces any earlier list;
      * an empty array clears it (no model choice), absent leaves it unchanged.
