@@ -16,6 +16,7 @@ import { agentKillRequested, agentKillStage, agentOutput, agentRunKilled, agentR
 import { diag, redactDiagText } from '../telemetry/diag';
 import { tagError, type ErrorType } from '../telemetry/types';
 import { stripTerminalEscapes } from '../../shared/terminal-text';
+import * as renderDiag from './pty-render-diagnostics';
 import { altScreenAfter, resyncOffset, type PtyBufferSnapshot, type PtySnapshotSize } from '../../shared/pty-snapshot';
 
 /** Pattern matching common API key environment variable names. */
@@ -346,6 +347,7 @@ export function getBufferSnapshot(agentId: string): PtyBufferSnapshot {
     sizes.push({ offset, cols: entry.cols, rows: entry.rows });
   }
   const data = skip > 0 || prefix ? prefix + raw.slice(skip) : raw;
+  renderDiag.recordSnapshot(agentId, data.length, session.outputSeq, session.evictedChars, sizes.length);
   return { data, seq: session.outputSeq, sizes };
 }
 
@@ -433,6 +435,7 @@ function cleanupSession(agentId: string): void {
     if (session.killTimer) clearTimeout(session.killTimer);
   }
   sessions.delete(agentId);
+  renderDiag.forget(agentId);
 }
 
 export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string, killed?: boolean) => void, commandPrefix?: string): Promise<void> {
@@ -497,6 +500,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
   // A respawn under the same id starts at the spawn size; views still
   // following the previous PTY's size must hear about it.
   broadcastToAllWindows(IPC.PTY.RESIZED, agentId, SPAWN_COLS, SPAWN_ROWS);
+  renderDiag.recordSpawn(agentId, 'agent', SPAWN_COLS, SPAWN_ROWS);
   agentRunStarted(agentId, 'pty');
   const expectedGeneration = session.generation;
 
@@ -513,6 +517,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
 
     current.lastActivity = Date.now();
     appendToBuffer(current, data);
+    renderDiag.recordOutput(agentId, data.length);
     agentOutput(agentId, data.length);
     if (annexEventBus.isActive()) {
       mirrorOutput(current, data);
@@ -577,6 +582,7 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
   const session = createSession(proc, id);
   sessions.set(id, session);
   broadcastToAllWindows(IPC.PTY.RESIZED, id, SPAWN_COLS, SPAWN_ROWS);
+  renderDiag.recordSpawn(id, 'shell', SPAWN_COLS, SPAWN_ROWS);
   const expectedGeneration = session.generation;
 
   proc.onData((data: string) => {
@@ -585,6 +591,7 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
 
     current.lastActivity = Date.now();
     appendToBuffer(current, data);
+    renderDiag.recordOutput(id, data.length);
     if (annexEventBus.isActive()) {
       mirrorOutput(current, data);
     }
@@ -680,6 +687,8 @@ function logSize(session: ManagedSession, cols: number, rows: number): void {
 
 export function resize(agentId: string, cols: number, rows: number): void {
   const session = sessions.get(agentId);
+  // Before the same-size check, so repeated requests are counted.
+  if (session) renderDiag.recordResize(agentId, cols, rows);
   if (session && (session.cols !== cols || session.rows !== rows)) {
     // Every real change makes the child repaint (SIGWINCH, or a ConPTY
     // reflow), so same-size requests from extra fits stop here (#2322).

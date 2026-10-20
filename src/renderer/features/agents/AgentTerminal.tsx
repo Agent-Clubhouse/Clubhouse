@@ -11,6 +11,7 @@ import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectSt
 import { attachClipboardHandlers, type ClipboardImageData } from '../terminal/clipboard';
 import { useFileDrop } from '../terminal/useFileDrop';
 import { useTerminalFit, isTerminalAtBottom, hasMeasurableSize, type PtySize, type TerminalFitControls } from '../terminal/useTerminalFit';
+import { createTerminalRenderDiagnostics, type TerminalRenderDiagnostics } from '../terminal/render-diagnostics';
 import { unseenPtySuffix, isAsciiBinary, writeAsync } from '../terminal/pty-stream';
 import { writePtySnapshot, type PtyBufferSnapshot } from '../../../shared/pty-snapshot';
 import { attachInlineFrameGuard, beginErase, detachInlineFrameGuard, endErase, inlineFrameReplayHooks } from '../terminal/inline-frame';
@@ -54,6 +55,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   const xtermHostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const diagRef = useRef<TerminalRenderDiagnostics | null>(null);
   // False while a mount replays the buffer snapshot: fit triggers must not
   // resize the terminal mid-replay or send a size before the replay is drawn.
   const readyRef = useRef(false);
@@ -150,6 +152,9 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     // Inline TUIs (Copilot, Claude Code) must not leave a stale frame copy
     // when the terminal narrows (#2359).
     attachInlineFrameGuard(term);
+    const diag = createTerminalRenderDiagnostics({ sessionId: agentId, surface: 'agent', remote: isRemote });
+    diag.attach(term, fitAddon);
+    diagRef.current = diag;
 
     // Blur watchdog — the "can scroll but can't type" recovery path.
     //
@@ -191,7 +196,10 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       while (pendingData.length > 0) {
         const chunks = pendingData.splice(0);
         let batch = '';
-        for (const chunk of chunks) batch += takeUnseen(chunk.data, chunk.seq);
+        for (const chunk of chunks) {
+          diag.replayChunk(chunk.data.length, chunk.seq, appliedSeq);
+          batch += takeUnseen(chunk.data, chunk.seq);
+        }
         if (batch) await writeAsync(term, batch).catch((): void => undefined); // telemetry-exempt: xterm drops writes past its buffer cap; the replay must still finish
       }
     };
@@ -219,12 +227,15 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       // Without recorded sizes (a satellite's serialized screen) the best
       // guess is this pane's own size, so fit first (the PTY is sized later).
       if (!snapshot.sizes?.length && hasMeasurableSize(containerRef.current)) fitAddon.fit();
+      diag.beginReplay(isRemote ? 'remote' : 'local', snapshot.data.length, snapshot.seq >= 0 ? snapshot.seq : undefined);
       await writePtySnapshot(term, snapshot, inlineFrameReplayHooks(term));
       if (terminalRef.current !== term) return;
+      diag.snapshotParsed();
       appliedSeq = snapshot.seq;
       const last = snapshot.sizes?.[snapshot.sizes.length - 1];
       if (last && !isRemote) ptySizeRef.current = { cols: last.cols, rows: last.rows };
       await drainPending();
+      diag.endReplay();
       if (resizedDuringReplay) ptySizeRef.current = resizedDuringReplay;
       finishReplay();
     };
@@ -233,7 +244,9 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         meta: { agentId, error: err instanceof Error ? err.message : String(err) },
       });
       if (terminalRef.current !== term) return;
+      diag.beginReplay(source === 'local' ? 'local' : 'remote', 0);
       await drainPending();
+      diag.endReplay(true);
       finishReplay();
     };
 
@@ -372,6 +385,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         (id: string, data: string, seq?: number) => {
           if (id !== agentId) return;
           if (bufferReplayed) {
+            diag.liveChunk(data.length, seq, appliedSeq);
             // Chunks merged in main before the snapshot was taken can still
             // arrive after it — trim anything the snapshot already contained.
             const fresh = takeUnseen(data, seq);
@@ -409,6 +423,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       removeExitListener = window.clubhouse.pty.onExit(
         (id: string, _exitCode: number) => {
           if (id === agentId && terminalRef.current) {
+            diag.ptyExited();
             rendererLog(SCROLL_LOG_NS, 'info', 'PTY exited, resetting terminal state', {
               meta: { agentId, isRemote: false },
             });
@@ -428,6 +443,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         (incomingSatId: string, incomingAgentId: string, data: string, seq?: number) => {
           if (incomingSatId !== satId || incomingAgentId !== origAgentId) return;
           if (bufferReplayed) {
+            diag.liveChunk(data.length, seq, appliedSeq);
             const fresh = takeUnseen(data, seq);
             if (fresh) enqueueWrite(fresh);
           } else {
@@ -448,6 +464,8 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       ptySizeRef.current = null;
       helperTextarea?.removeEventListener('blur', onHelperBlur);
       detachInlineFrameGuard(term);
+      diag.dispose();
+      if (diagRef.current === diag) diagRef.current = null;
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -469,7 +487,10 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
   // Pass ptyResize so remote agents route resize through the Annex client, not local IPC
-  fitControlsRef.current = useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused, ptyResize, { readyRef, ptySizeRef });
+  const onFitted = useCallback((trigger: string, cols: number, rows: number, sent: boolean) => {
+    diagRef.current?.resize(trigger, cols, rows, sent);
+  }, []);
+  fitControlsRef.current = useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused, ptyResize, { readyRef, ptySizeRef, onFitted });
 
   // ── Scroll-to-bottom tracking ───────────────────────────────────
   // xterm 6 scrolls virtually: `.xterm-viewport` never scrolls (scrollTop

@@ -948,7 +948,7 @@ describe('AgentTerminal', () => {
 
       term().buffer.active.viewportY = 0;
       term().buffer.active.baseY = 0;
-      const onBufferChangeCb = term().buffer.onBufferChange.mock.calls[0][0];
+      const onBufferChangeCb = term().buffer.onBufferChange.mock.calls.at(-1)[0];
       act(() => { onBufferChangeCb(); });
       expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
     });

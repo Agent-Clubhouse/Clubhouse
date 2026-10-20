@@ -69,6 +69,12 @@ vi.mock('./pty-headless-terminal', () => ({
   disposeAll: vi.fn(),
 }));
 
+// Keep the real log-service but observe appLog (render diagnostics lines).
+vi.mock('./log-service', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./log-service')>();
+  return { ...actual, appLog: vi.fn() };
+});
+
 // Mock fs/promises for validateSpawnCwd — default to making all paths look like valid directories
 const mockRealpath = vi.fn((p: string) => Promise.resolve(p));
 const mockStat = vi.fn(() => Promise.resolve({ isDirectory: () => true }));
@@ -90,6 +96,8 @@ import { getBuffer, getBufferSnapshot, getSerializedBuffer, getSerializedBufferS
 import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as headlessTerminal from './pty-headless-terminal';
+import { appLog } from './log-service';
+import { PTY_RENDER_LOG_NS, _resetForTests as resetRenderDiag } from './pty-render-diagnostics';
 import { HOST_SESSION_ENV_FIXTURE, USER_CLAUDE_CONFIG_FIXTURE } from '../util/__fixtures__/host-session-env';
 
 // Helper: spawn and immediately fire resize to clear pendingCommands
@@ -1743,6 +1751,39 @@ describe('pty-manager', () => {
       const buf = getBuffer('agent_compact');
       expect(buf.length).toBeGreaterThan(0);
       expect(buf.length).toBeLessThanOrEqual(2 * 1024 * 1024 + chunkSize); // MAX_BUFFER_SIZE + last chunk tolerance
+    });
+  });
+
+  describe('render diagnostics', () => {
+    const renderLines = (msg: string) =>
+      vi.mocked(appLog).mock.calls.filter((c) => c[0] === PTY_RENDER_LOG_NS && c[2] === msg);
+
+    beforeEach(() => resetRenderDiag());
+
+    it('logs the spawn size and only the resizes that change it', async () => {
+      await spawnShell('shell_diag', '/project');
+      expect(renderLines('PTY session started')[0][3]?.meta).toMatchObject({ sessionId: 'shell_diag', kind: 'shell', cols: 120, rows: 30 });
+      resize('shell_diag', 120, 30);
+      resize('shell_diag', 90, 25);
+      const lines = renderLines('PTY resize');
+      expect(lines).toHaveLength(1);
+      expect(lines[0][3]?.meta).toMatchObject({ cols: 90, rows: 25, prevCols: 120, prevRows: 30, unchangedResizes: 1 });
+    });
+
+    it('reports evicted output on snapshots taken after the buffer cap', async () => {
+      await spawnShell('shell_evict', '/project');
+      const onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
+      getBufferSnapshot('shell_evict');
+      expect(renderLines('PTY buffer snapshot served')[0][3]?.meta).toMatchObject({ evictedChars: 0 });
+
+      const chunk = 'x'.repeat(1024 * 1024);
+      onDataCb(chunk);
+      onDataCb(chunk);
+      onDataCb(chunk);
+      const snap = getBufferSnapshot('shell_evict');
+      const meta = renderLines('PTY buffer snapshot served')[1][3]?.meta;
+      expect(meta).toMatchObject({ length: snap.data.length, seq: snap.seq, evictedChars: 1024 * 1024 });
+      expect(JSON.stringify(meta)).not.toContain('xxx');
     });
   });
 
