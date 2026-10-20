@@ -725,6 +725,8 @@
 }
 
 /* Chat message markdown (features/agents/chat) */
+/* Long paths, URLs and hashes break rather than widen the stream (#2292). */
+.chat-markdown { overflow-wrap: anywhere; }
 .chat-markdown > :first-child { margin-top: 0; }
 .chat-markdown > :last-child { margin-bottom: 0; }
 .chat-markdown p { margin: 0 0 0.5rem; }
@@ -765,6 +767,7 @@
 .chat-markdown a { color: rgb(var(--ctp-accent)); text-decoration: underline; }
 .chat-markdown strong { color: rgb(var(--ctp-text)); font-weight: 600; }
 .chat-markdown blockquote { border-left: 2px solid rgb(var(--ctp-surface1)); padding-left: 0.75rem; color: rgb(var(--ctp-subtext0)); margin: 0 0 0.5rem; }
-.chat-markdown table { border-collapse: collapse; margin: 0 0 0.5rem; font-size: 0.8125rem; }
+.chat-markdown table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0 0 0.5rem; font-size: 0.8125rem; }
+/* Cells keep whole words: a wide table scrolls in its own box rather than squeezing to letters. */
 .chat-markdown th,
-.chat-markdown td { border: 1px solid rgb(var(--ctp-surface1)); padding: 0.25rem 0.5rem; text-align: left; }
+.chat-markdown td { border: 1px solid rgb(var(--ctp-surface1)); padding: 0.25rem 0.5rem; text-align: left; overflow-wrap: normal; }
