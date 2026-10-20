@@ -32,7 +32,7 @@ import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
 import type { ClaudeChatEvent, ClaudeCommand, ClaudePermissionMode, ClaudePermissionUpdate, ClaudeUsage } from './events';
 import { ClaudeSdkTransport } from './sdk-transport';
 import { ClaudeStreamTransport } from './stream-transport';
-import { CLAUDE_EFFORTS, type ClaudeEffort, type ClaudeImageInput, type ClaudeTransport, type ClaudeTransportLog, type ClaudeTransportOptions } from './transport';
+import { CLAUDE_EFFORTS, ClaudeStartupTimeoutError, type ClaudeEffort, type ClaudeImageInput, type ClaudeTransport, type ClaudeTransportLog, type ClaudeTransportOptions } from './transport';
 
 export type ClaudeChatDriverId = Extract<ChatDriverId, 'claude_agent_sdk' | 'claude_stream_json'>;
 
@@ -1288,7 +1288,11 @@ export class ClaudeChatDriver implements ChatDriver {
       await transport.start();
       return { handshakeOk: true, cliVersion, capabilities };
     } catch (err) {
-      return { handshakeOk: false, cliVersion, capabilities, error: err instanceof Error ? err.message : String(err) };
+      return {
+        handshakeOk: false, cliVersion, capabilities,
+        error: err instanceof Error ? err.message : String(err),
+        ...(err instanceof ClaudeStartupTimeoutError ? { errorCode: err.code } : {}),
+      };
     } finally {
       await transport.close().catch((): undefined => undefined);
       await collect.catch((): undefined => undefined);

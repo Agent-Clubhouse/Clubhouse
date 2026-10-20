@@ -14,6 +14,7 @@ import { killStructuredChild } from '../../orchestrators/adapters/structured-spa
 import { buildClaudeEnv, spawnClaude } from './spawn';
 import {
   appliedSettingsFromWire,
+  ClaudeStartupTimeoutError,
   ClaudeTransportBase,
   toWireUserMessage,
   type ClaudeAppliedSettings,
@@ -27,6 +28,17 @@ type ClaudeAgentSdk = Awaited<ReturnType<typeof loadClaudeAgentSdk>>;
 
 /** How long close() waits for the CLI to exit on its own after stdin ends. */
 const CLOSE_GRACE_MS = 5_000;
+
+/**
+ * Clubhouse's own budget for the SDK's `initialize` handshake
+ * (`query.initializationResult()`), independent of anything the SDK enforces.
+ * The same as stream-json's control timeout for the same request: it covers
+ * real starts too (resume, MCP servers, a command prefix), not just the probe.
+ * Past it, start() closes the query (which kills the CLI) and throws
+ * ClaudeStartupTimeoutError, so preflight fails and the fallback chain moves
+ * on to stream-json, then the terminal. Model turns have no such deadline.
+ */
+export const SDK_INIT_TIMEOUT_MS = 30_000;
 
 /**
  * Default Claude chat transport: the Claude Agent SDK's `query()` with
@@ -106,8 +118,41 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
     const query = sdk.query({ prompt: this.input, options });
     this.query = query;
     this.pump = this.drain(query);
-    const init = await query.initializationResult();
+    const init = await this.initialized(query);
     this.pushEvent(initializedFromWire(init as unknown as Record<string, unknown>));
+  }
+
+  /** `initializationResult()` under SDK_INIT_TIMEOUT_MS; on timeout, closes the query and its CLI first. */
+  private async initialized(query: Query): ReturnType<Query['initializationResult']> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new ClaudeStartupTimeoutError(SDK_INIT_TIMEOUT_MS)), SDK_INIT_TIMEOUT_MS);
+    });
+    try {
+      return await Promise.race([query.initializationResult(), deadline]);
+    } catch (err) {
+      if (err instanceof ClaudeStartupTimeoutError) {
+        this.log('warn', 'Claude SDK initialization timed out; closing query', { timeoutMs: SDK_INIT_TIMEOUT_MS });
+        this.abandonStartup(query);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Close a start that won't complete. query.close() ends stdin and kills only
+   * after a delay (and, on Windows, not a .cmd shim's tree), so kill the CLI's
+   * tree directly first.
+   */
+  private abandonStartup(query: Query): void {
+    if (this.child) void killStructuredChild(this.child, { endStdin: false });
+    try {
+      query.close();
+    } catch (err) {
+      this.log('warn', 'Claude SDK query close failed', { error: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   private async drain(query: Query): Promise<void> {
@@ -183,7 +228,11 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
     if (!exited) {
       this.log('warn', 'Claude did not exit after stdin closed; closing query');
       this.query.close();
-      await this.pump;
+      // Bounded too: a query that doesn't end on close must not hang close() (#2274).
+      await Promise.race([
+        this.pump,
+        new Promise<void>((r) => setTimeout(r, CLOSE_GRACE_MS).unref?.()),
+      ]);
     }
   }
 

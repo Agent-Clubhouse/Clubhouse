@@ -28,6 +28,15 @@ import { ATTR } from '../../../shared/telemetry/attributes';
 export const DRIVER_FAILURE_THRESHOLD = 3;
 /** How long a paused key is skipped before it gets another try. */
 export const DRIVER_PAUSE_MS = 30 * 60_000;
+/**
+ * Outer bound on one probe, for every driver: concurrent callers share the
+ * in-flight probe, so a probe that never settles would hold all of them and
+ * keep the key from being probed again. Each driver's own handshake deadline
+ * (e.g. the Claude SDK's SDK_INIT_TIMEOUT_MS, plus its close grace) should
+ * fire before this; it is the backstop. A probe past it counts as a
+ * failed handshake, and its late result is dropped.
+ */
+export const PROBE_DEADLINE_MS = 60_000;
 
 interface Health {
   consecutiveFailures: number;
@@ -103,18 +112,28 @@ function binaryIdentity(binaryPath: string): string | undefined {
 }
 
 async function runProbe(driver: ChatDriver, binaryPath: string, env: Record<string, string> | undefined, commandPrefix: string | undefined): Promise<ChatDriverProbe> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<ChatDriverProbe>((resolve) => {
+    timer = setTimeout(() => resolve({
+      handshakeOk: false, capabilities: MINIMAL_CHAT_CAPABILITIES,
+      error: `probe did not finish within ${PROBE_DEADLINE_MS}ms`, errorCode: 'rpc_timeout',
+    }), PROBE_DEADLINE_MS);
+  });
   try {
     // Launched the way start() will be, through the profile's command prefix.
-    return await driver.probe(binaryPath, env, commandPrefix ? { commandPrefix } : undefined);
+    return await Promise.race([driver.probe(binaryPath, env, commandPrefix ? { commandPrefix } : undefined), deadline]);
   } catch (err) { // telemetry-exempt: a throwing probe is a failed handshake, recorded by the caller and reported by chat-spawn
     return { handshakeOk: false, capabilities: MINIMAL_CHAT_CAPABILITIES, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 /**
  * The driver's handshake probe, cached while the binary is unchanged.
  * Concurrent calls for one key share a probe; a failed probe is not cached
- * and counts one failure for the key.
+ * and counts one failure for the key. A probe past PROBE_DEADLINE_MS fails
+ * for every caller sharing it and leaves nothing in flight or cached.
  */
 export function probeDriver(driver: ChatDriver, binaryPath: string, env?: Record<string, string>, commandPrefix?: string): Promise<ChatDriverProbe> {
   const key = driverHealthKey(driver, binaryPath, env, commandPrefix);

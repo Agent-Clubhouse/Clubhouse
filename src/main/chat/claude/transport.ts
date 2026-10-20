@@ -142,6 +142,18 @@ interface PendingPermission {
 }
 
 /**
+ * The CLI didn't finish `initialize` within Clubhouse's startup budget. The
+ * transport has already closed the session; the probe reports it as `rpc_timeout`.
+ */
+export class ClaudeStartupTimeoutError extends Error {
+  readonly code = 'rpc_timeout' as const;
+  constructor(readonly timeoutMs: number) {
+    super(`Claude did not finish initializing within ${timeoutMs}ms`);
+    this.name = 'ClaudeStartupTimeoutError';
+  }
+}
+
+/**
  * Shared plumbing: one normalizer, one event queue and the pending-permission
  * table. Subclasses own the process and the control protocol.
  */
