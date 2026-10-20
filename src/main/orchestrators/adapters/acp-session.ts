@@ -987,7 +987,7 @@ export class AcpSession {
     this.opts.onEvent?.(event);
   }
 
-  private log(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
+  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
     this.opts.onLog?.(level, message, meta);
   }
 }

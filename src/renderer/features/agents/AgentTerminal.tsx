@@ -38,9 +38,6 @@ export const FOCUS_ACTIVE_TERMINAL_EVENT = 'clubhouse:focus-active-terminal';
  */
 const JUMP_MIN_LINES = 3;
 
-/** Throttle interval (ms) for periodic scroll-state debug logging. */
-const SCROLL_LOG_THROTTLE_MS = 2000;
-
 interface Props {
   agentId: string;
   focused?: boolean;
@@ -208,15 +205,10 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       // this pane is still the focused one.
       if (focusedRef.current) term.focus();
     };
-    const restore = async (snapshot: PtyBufferSnapshot, source: 'local' | 'remote/annex') => {
+    const restore = async (snapshot: PtyBufferSnapshot) => {
       if (terminalRef.current !== term) return;
       // Resizes from here on happened after main built the snapshot.
       snapshotApplied = true;
-      if (snapshot.data) {
-        rendererLog(SCROLL_LOG_NS, 'debug', `Buffer replay (${source})`, {
-          meta: { agentId, bufLen: snapshot.data.length, seq: snapshot.seq, sizes: snapshot.sizes?.length ?? 0 },
-        });
-      }
       // Each part of the history is written at the PTY size it was drawn at,
       // leaving the terminal at the PTY's current size for queued live data.
       // Without recorded sizes (a satellite's serialized screen) the best
@@ -243,22 +235,18 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     requestAnimationFrame(() => {
       term.focus();
 
-      rendererLog(SCROLL_LOG_NS, 'debug', 'Terminal initialized', {
-        meta: { agentId, isRemote, cols: term.cols, rows: term.rows },
-      });
-
       if (!isRemote) {
         // Replay buffered output so switching agents restores the terminal.
         // The snapshot reports the output seq it includes; live chunks queued
         // (or still in flight) for that range are trimmed so data that landed
         // in both the snapshot and the live stream is written only once.
         window.clubhouse.pty.getBufferSnapshot(agentId)
-          .then((snapshot) => restore(snapshot, 'local'))
+          .then(restore)
           .catch((err: unknown) => replayFailed(err, 'local'));
       } else if (remoteParts) {
         // Remote agents: fetch the satellite's processed screen via HTTPS REST
         requestPtyBufferRef.current(remoteParts.satelliteId, remoteParts.agentId)
-          .then((buf: string) => restore({ data: buf, seq: -1 }, 'remote/annex'))
+          .then((buf: string) => restore({ data: buf, seq: -1 }))
           .catch((err: unknown) => replayFailed(err, 'remote/annex'));
       }
     });
@@ -303,30 +291,6 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       if (seq !== undefined && seq > appliedSeq) appliedSeq = seq;
       return fresh;
     };
-    let dataWriteCount = 0;
-    let lastDataLogTime = 0;
-
-    /** Log scroll state around data writes at a throttled rate. */
-    const logDataWrite = (source: 'local' | 'annex', dataLen: number) => {
-      dataWriteCount++;
-      const now = Date.now();
-      if (now - lastDataLogTime < SCROLL_LOG_THROTTLE_MS) return;
-      lastDataLogTime = now;
-
-      const { viewportY, baseY } = term.buffer.active;
-      rendererLog(SCROLL_LOG_NS, 'debug', `PTY data write (${source})`, {
-        meta: {
-          agentId,
-          dataLen,
-          writeCount: dataWriteCount,
-          viewportY,
-          baseY,
-          scrollPct: baseY > 0 ? Math.round((viewportY / baseY) * 100) : 100,
-          atBottom: viewportY >= baseY,
-        },
-      });
-    };
-
     /**
      * Adopt `ptySizeRef` once the output written so far is parsed.  When
      * narrowing over an inline TUI frame, erase it first (#2359).  Output
@@ -387,8 +351,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       term.write(batch);
     };
 
-    const enqueueWrite = (source: 'local' | 'annex', data: string) => {
-      logDataWrite(source, data.length);
+    const enqueueWrite = (data: string) => {
       batchedData += data;
       if (!flushScheduled && !resizing) {
         flushScheduled = true;
@@ -405,7 +368,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
             // Chunks merged in main before the snapshot was taken can still
             // arrive after it — trim anything the snapshot already contained.
             const fresh = takeUnseen(data, seq);
-            if (fresh) enqueueWrite('local', fresh);
+            if (fresh) enqueueWrite(fresh);
           } else {
             pendingData.push({ data, seq });
           }
@@ -458,7 +421,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         (incomingSatId: string, incomingAgentId: string, data: string) => {
           if (incomingSatId !== satId || incomingAgentId !== origAgentId) return;
           if (bufferReplayed) {
-            enqueueWrite('annex', data);
+            enqueueWrite(data);
           } else {
             pendingData.push({ data });
           }
@@ -491,11 +454,10 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   // xterm 6 scrolls virtually: `.xterm-viewport` never scrolls (scrollTop
   // stays 0), so scroll state is read from the buffer via the public API.
   // Tracks whether the user is scrolled up so we can show a "scroll to
-  // bottom" button, and emits throttled scroll-state logs for diagnosing
-  // snap-to-top reports.
+  // bottom" button, and logs a jump to the top for diagnosing snap-to-top
+  // reports.
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const lastKnownViewportYRef = useRef<number>(0);
-  const lastScrollLogRef = useRef<number>(0);
 
   useEffect(() => {
     const term = terminalRef.current;
@@ -507,15 +469,6 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       const { viewportY, baseY } = term.buffer.active;
       const atBottom = isTerminalAtBottom(term);
       const lastKnown = lastKnownViewportYRef.current;
-      const scrollPct = baseY > 0 ? Math.round((viewportY / baseY) * 100) : 100;
-
-      const now = Date.now();
-      if (now - lastScrollLogRef.current > SCROLL_LOG_THROTTLE_MS) {
-        lastScrollLogRef.current = now;
-        rendererLog(SCROLL_LOG_NS, 'debug', 'Scroll state', {
-          meta: { ...logMeta, viewportY, baseY, scrollPct, atBottom, lastKnown },
-        });
-      }
 
       if (viewportY === 0 && lastKnown >= JUMP_MIN_LINES && baseY > 0) {
         rendererLog(SCROLL_LOG_NS, 'info', 'Viewport jumped to top', {

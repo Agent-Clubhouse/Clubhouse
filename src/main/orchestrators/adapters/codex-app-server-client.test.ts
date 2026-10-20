@@ -9,7 +9,6 @@ vi.mock('child_process', () => ({
 import { spawn } from 'child_process';
 import {
   CodexAppServerClient,
-  redactForLog,
   CODEX_RPC_INTERNAL_ERROR,
   CODEX_RPC_METHOD_NOT_FOUND,
   textInput,
@@ -404,17 +403,10 @@ describe('CodexAppServerClient', () => {
       expect(logged).not.toContain('s3cr3t-token');
       expect(logged).not.toContain('MY_TOKEN_VAR');
       expect(logged).not.toContain('k3y-value');
-      expect(onLog).toHaveBeenCalledWith('info', 'RPC request → thread/start', expect.objectContaining({
-        params: { cwd: 'workspace', config: { redacted: ['mcp_servers'] } },
-      }));
+      // Method and id only, at debug (#2300).
+      expect(onLog).toHaveBeenCalledWith('debug', 'RPC request → thread/start', { id: expect.any(Number), method: 'thread/start' });
       // The request itself still carries the config.
       expect(lastSent(mockProc)).toMatchObject({ params: { config: { mcp_servers: { remote: { http_headers: { Authorization: 'Bearer s3cr3t-token' } } } } } });
-    });
-
-    it('redactForLog leaves params without config untouched', () => {
-      const params = { threadId: 't', input: [] };
-      expect(redactForLog(params)).toBe(params);
-      expect(redactForLog(undefined)).toBeUndefined();
     });
 
     it('threadList defaults to empty params', async () => {
@@ -566,7 +558,7 @@ describe('CodexAppServerClient', () => {
 
       expect(onCodexNotification.mock.calls.map(([n]) => n)).toEqual(fx.completedTurnNotifications);
       expect(onUnrecognizedMessage).not.toHaveBeenCalled();
-      expect(onLog.mock.calls.filter(([level]) => level !== 'info')).toEqual([]);
+      expect(onLog.mock.calls.filter(([level]) => level === 'warn' || level === 'error')).toEqual([]);
     });
 
     it('covers deltas, item lifecycle, plan, usage, rate limits, errors and completion', () => {

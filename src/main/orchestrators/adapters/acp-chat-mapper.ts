@@ -106,8 +106,7 @@ function fileLink(target: string, mimeType?: string): ContentBlock {
  * `env_vars` (the bridge's nonce, agent ID and port, #2222) are resolved
  * from `cliEnv`, the env the ACP CLI was spawned with. The values travel over
  * the stdio RPC pipe to a process that already holds them, never in a config
- * file or argv, and AcpClient redacts them from its request log
- * (redactAcpParamsForLog).
+ * file or argv, and AcpClient never logs request params.
  *
  * When the agent takes HTTP servers (`opts.transports.http`), a stdio entry
  * with an endpoint in `opts.httpEndpoints` is sent as that `http` server

@@ -3,10 +3,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useTerminalFit, isTerminalAtBottom, RESIZE_DEBOUNCE_MS } from './useTerminalFit';
 import { _resetSizeOwnersForTests } from './pty-size-owner';
 
-vi.mock('../../plugins/renderer-logger', () => ({
-  rendererLog: vi.fn(),
-}));
-
 // Track listener registrations so tests can fire events manually
 let visibilityListeners: Array<() => void> = [];
 let focusListeners: Array<() => void> = [];

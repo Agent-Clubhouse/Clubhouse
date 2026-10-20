@@ -40,7 +40,7 @@ export interface BaseRpcOpts {
   /** Called when the process exits */
   onExit?: (code: number | null, signal: string | null) => void;
   /** Optional logger for diagnostic messages */
-  onLog?: (level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
+  onLog?: (level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) => void;
 }
 
 /**
@@ -87,7 +87,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
     this.opts = opts;
   }
 
-  protected log(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
+  protected log(level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
     this.opts.onLog?.(level, message, meta);
   }
 

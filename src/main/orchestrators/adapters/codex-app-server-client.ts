@@ -54,18 +54,6 @@ export interface CodexAppServerClientOpts
   onUnrecognizedMessage?: (message: CodexUnrecognizedMessage) => void;
 }
 
-/**
- * Params as they may be logged. `config` (thread/start, thread/resume) holds
- * the MCP servers' env, HTTP headers and token variable names, so it never
- * reaches the app log; its keys are kept so the log still shows what was set.
- */
-export function redactForLog(params: unknown): unknown {
-  if (!params || typeof params !== 'object' || Array.isArray(params)) return params;
-  const p = params as Record<string, unknown>;
-  if (!p.config || typeof p.config !== 'object') return params;
-  return { ...p, config: { redacted: Object.keys(p.config as Record<string, unknown>) } };
-}
-
 /** A text `UserInput` for turn/start and turn/steer. */
 export function textInput(text: string): UserInput {
   return { type: 'text', text, text_elements: [] };
@@ -221,7 +209,8 @@ export class CodexAppServerClient extends NdjsonRpcBase<CodexAppServerClientOpts
       ? (this.opts.rpcTimeoutMs ?? DEFAULT_RPC_TIMEOUT_MS)
       : options.timeoutMs;
 
-    this.log('info', `RPC request → ${method}`, { id, method, params: redactForLog(params) });
+    // Method and id only: params carry prompt text and MCP config secrets (#1919).
+    this.log('debug', `RPC request → ${method}`, { id, method });
 
     return new Promise((resolve, reject) => {
       const timer = timeoutMs === null ? null : setTimeout(() => {
@@ -418,7 +407,7 @@ export class CodexAppServerClient extends NdjsonRpcBase<CodexAppServerClientOpts
       });
       pending.reject(new RpcError(err.code ?? -1, err.message ?? 'unknown error', err.data));
     } else {
-      this.log('info', `RPC response ← id=${id}`, { resultType: typeof msg.result });
+      this.log('debug', `RPC response ← id=${id}`, { id });
       pending.resolve(msg.result);
     }
   }
