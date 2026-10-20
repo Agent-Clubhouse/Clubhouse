@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as fsp from 'fs/promises';
 import { LogEntry, LOG_RETENTION_TIERS, LOG_LEVEL_PRIORITY } from '../../shared/types';
@@ -67,6 +68,24 @@ export async function flush(): Promise<void> {
   } catch (err) {
     // If we can't write, drop the entries rather than crashing.
     // Log to stderr as a last resort since our own logging path failed.
+    console.error('[log-service] Failed to write log entries:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Write the buffer now, synchronously: an OS shutdown, restart or logoff may
+ * end the process before an async write lands (#2335). Skips rotation; the
+ * next async flush rotates if the file is over the limit.
+ */
+export function flushSync(): void {
+  if (buffer.length === 0 || !currentFilePath) return;
+  const data = buffer.join('\n') + '\n';
+  buffer = [];
+  try {
+    fs.appendFileSync(currentFilePath, data, 'utf-8');
+    currentFileSize += Buffer.byteLength(data, 'utf-8');
+  } catch (err) {
+    // telemetry-exempt: logging's own write failed; drop the entries, stderr is the last resort
     console.error('[log-service] Failed to write log entries:', err instanceof Error ? err.message : err);
   }
 }

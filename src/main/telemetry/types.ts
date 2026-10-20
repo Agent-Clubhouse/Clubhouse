@@ -131,6 +131,8 @@ export interface LocalTelemetrySink {
   replayTree(tree: ReplayTree): void;
   activeTraceIds(): TraceIds | undefined;
   flush(): Promise<void>;
+  /** Write what is queued synchronously, for an OS shutdown that won't wait (#2335). */
+  flushSync?(): void;
 }
 
 export const NOOP_SPAN: SpanHandle = { set: () => {} };

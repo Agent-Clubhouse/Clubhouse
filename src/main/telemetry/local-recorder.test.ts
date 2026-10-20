@@ -50,6 +50,29 @@ afterEach(async () => {
 const ok = (attrs: TelAttr[] = []) => ({ set: vi.fn(), attrs });
 
 describe('local telemetry recorder', () => {
+  it('flushSync writes queued lines, metrics and drops synchronously (#2335)', async () => {
+    const synced = new Map<string, string>();
+    const h = harness({
+      maxPendingLines: 3,
+      appendFileSync: (file, data) => {
+        synced.set(file, (synced.get(file) ?? '') + data);
+      },
+      mkdirSync: () => {},
+    });
+    h.rec.count('clubhouse.app.startup.duration', 1.5, [ATTR.startupKind('cold')]);
+    for (let i = 0; i < 5; i++) h.rec.event('clubhouse.app.config_snapshot', []);
+    h.rec.flushSync();
+    // Let the async path run: it must find nothing left to write.
+    await h.rec.flush();
+    const records = [...synced.values()].join('').trim().split('\n').map((l) => JSON.parse(l));
+    expect(records.map((r) => r.t)).toEqual(expect.arrayContaining(['session', 'event', 'metric', 'dropped']));
+    expect([...synced.keys()]).toEqual([path.join('/logs', 'telemetry-run.jsonl')]);
+    expect(records.filter((r) => r.t === 'session')).toHaveLength(1);
+    expect(records.filter((r) => r.t === 'event')).toHaveLength(2); // The session line takes one of the 3 slots.
+    expect(h.rec.files()).toEqual([path.join('/logs', 'telemetry-run.jsonl')]);
+    expect(h.records().filter((r) => ['session', 'event', 'metric'].includes(r.t))).toEqual([]);
+  });
+
   it('starts each file with a versioned session line', async () => {
     const h = harness();
     await h.rec.flush();

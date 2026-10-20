@@ -47,6 +47,7 @@ import { configuredRecordingLevel } from './telemetry/bootstrap';
 import { installAgentTelemetry } from './telemetry/agent-telemetry';
 import { installChatTelemetry } from './telemetry/chat-telemetry';
 import { installIpcTelemetry } from './telemetry/ipc-telemetry';
+import { installOsSessionEndFlush } from './os-session-end';
 import { getAgentOrchestrator } from './services/agent-registry';
 import { NEW_CHROME_ARG } from '../shared/chrome-flag';
 import { windowsPtyLaunchArgs } from './util/windows-pty';
@@ -87,6 +88,8 @@ registerTelemetryRendererHandlers({
 });
 installCrashTelemetry();
 installLifecycleTelemetry();
+// OS shutdown, restart and logoff skip before-quit on Windows: flush synchronously then.
+installOsSessionEndFlush();
 installAgentTelemetry(getAgentOrchestrator);
 installChatTelemetry();
 // Before registerAllHandlers, so every app invoke handler is timed at the

@@ -9,6 +9,7 @@ import {
   EXPORT_WITHOUT_LOCAL_RECORDING,
   abortPending,
   currentTraceIds,
+  flushForOsSessionEnd,
   forceFlushTelemetry,
   isTelemetryActive,
   onRuntimeChange,
@@ -173,6 +174,43 @@ describe('facade with local recording and telemetry off', () => {
     expect(withErrorType('timeout', () => 2)).toBe(2);
     await forceFlushTelemetry();
     expect(written).toBe('');
+  });
+});
+
+describe('OS session end (#2335)', () => {
+  it('writes the local recording synchronously and starts the export flush', () => {
+    let synced = '';
+    recorder = createLocalRecorder({
+      dir: '/logs',
+      fileBase: 'run',
+      level: 'standard',
+      hashSalt: Buffer.alloc(32, 1),
+      scrub: createScrubber({ homeDir: '/Users/sam-tester' }),
+      session: { appVersion: '1.0.0', platform: 'win32', arch: 'x64' },
+      flushIntervalMs: 60_000,
+      appendFile: async () => {},
+      mkdir: async () => {},
+      appendFileSync: (_f, data) => {
+        synced += data;
+      },
+      mkdirSync: () => {},
+    });
+    setLocalSink(recorder);
+    const rt = fakeRuntime();
+    setRuntime(rt);
+    tel.event('clubhouse.telemetry.test', []);
+    flushForOsSessionEnd(50);
+    expect(synced).toContain('"clubhouse.telemetry.test"');
+    expect(rt.forceFlush).toHaveBeenCalledWith(50);
+  });
+
+  it('never throws, even when the runtime flush does', () => {
+    const rt = fakeRuntime();
+    rt.forceFlush = vi.fn(() => {
+      throw new Error('boom');
+    });
+    setRuntime(rt);
+    expect(() => flushForOsSessionEnd()).not.toThrow();
   });
 });
 

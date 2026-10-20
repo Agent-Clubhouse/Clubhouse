@@ -210,7 +210,7 @@ Each subsection lists the **spans** (with boundaries in code), **metrics**, **er
 | `c.window.relay.timeouts` | counter | `c.relay.kind` (`agent_state`/`canvas`; the Hub relay went with the Hub plugin in #1915) | S |
 | `c.window.popouts` | counter | `c.popout.type` (`agent`/`canvas`) | S |
 
-**Detecting unclean exits.** Write `telemetry/last-session.json` at startup containing `{session_id, started_at}`. Mark it clean in `c.app.shutdown`. If it is still unmarked at the next startup, emit `c.app.unclean_exit`. This is cheap crash detection without `crashReporter`.
+**Detecting unclean exits.** Write `telemetry/last-session.json` at startup containing `{session_id, started_at}`. Mark it clean in `c.app.shutdown`. If it is still unmarked at the next startup, emit `c.app.unclean_exit`. This is cheap crash detection without `crashReporter`. An OS shutdown, restart or logoff is marked clean too, with `exit: "os_shutdown"` instead of `"quit"`. Windows sends no `before-quit` then and may end the process right after `session-end`, so that path writes the marker, the local recording and the log buffer synchronously (#2335).
 
 **Events**
 
@@ -963,7 +963,7 @@ Telemetry export                                ← new (v1 layout; see §6.11 f
   - It is parsed locally. `InstrumentationKey` must be a GUID and `IngestionEndpoint` must be an `https:` URL whose host ends in `.applicationinsights.azure.com` or a sovereign-cloud equivalent. The allowlist lives in code. Any other host requires the Other (OTLP) destination.
   - Bare instrumentation keys are rejected with a message that IKey-only ingestion was retired in 2025.
   - It is stored with **`safeStorage.encryptString`** in `userData/telemetry-secret.bin`, mode 0600. This is the first use of `safeStorage` in the codebase.
-  - On Linux, if `safeStorage.getSelectedStorageBackend()` returns `basic_text`, the UI warns that the string will be stored with weak protection, and asks the user to confirm.
+  - On Linux, if `safeStorage.getSelectedStorageBackend()` returns `basic_text`, the UI warns that the string will be stored with weak protection, and asks the user to confirm. Electron reports encryption as unavailable on `basic_text` until the app calls `safeStorage.setUsePlainTextEncryption(true)`, so the backend is checked first and the app opts in before reading or writing (#2336).
   - After saving, **the renderer only ever receives a masked form** (the last 4 characters of the IKey plus the ingestion host). The full string never crosses back into the renderer.
   - The connection string is not truly secret: it is an ingestion-only credential and cannot read data. It is still treated as one, because it lets anyone write into the user's resource and bill them.
 - **OTLP endpoint and headers handling:**
