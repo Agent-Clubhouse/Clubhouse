@@ -3,6 +3,7 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import {
   FLUSH_AT_ITEMS,
   FLUSH_INTERVAL_MS,
+  MAX_EARLY_DIAG_ITEMS,
   MAX_QUEUED_ITEMS,
   _resetRendererTelemetryForTests,
   _setStateForTests,
@@ -139,6 +140,46 @@ describe('renderer telemetry facade', () => {
     markRendererReady();
     markRendererReady();
     expect(bridge.rendererReady).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('renderer diag before the first state (#2302)', () => {
+  it('holds startup lines until main replies, then sends them', async () => {
+    _resetRendererTelemetryForTests();
+    diag('store:ui', 'warn', 'before init');
+    const b = fakeBridge();
+    b.getState.mockResolvedValue({ enabled: false, level: null, diag: true } as never);
+    initRendererTelemetry(b);
+    diag('store:ui', 'warn', 'before reply');
+    await Promise.resolve();
+    await Promise.resolve();
+    flushTelemetry();
+    expect(b.emit.mock.calls[0][0].items.map((i: { msg: string }) => i.msg)).toEqual(['before init', 'before reply']);
+  });
+
+  it('drops held lines when main says diag is off', async () => {
+    _resetRendererTelemetryForTests();
+    for (let i = 0; i < MAX_EARLY_DIAG_ITEMS + 10; i++) diag('store:ui', 'info', `m${i}`);
+    const b = fakeBridge();
+    initRendererTelemetry(b);
+    await Promise.resolve();
+    await Promise.resolve();
+    flushTelemetry();
+    expect(b.emit).not.toHaveBeenCalled();
+    b.push({ enabled: false, level: null, diag: true });
+    diag('store:ui', 'info', 'after');
+    flushTelemetry();
+    expect(b.emit.mock.calls[0][0].items.map((i: { msg: string }) => i.msg)).toEqual(['after']);
+  });
+
+  it('caps held lines', () => {
+    _resetRendererTelemetryForTests();
+    for (let i = 0; i < MAX_EARLY_DIAG_ITEMS + 10; i++) diag('store:ui', 'info', `m${i}`);
+    const b = fakeBridge();
+    initRendererTelemetry(b);
+    b.push({ enabled: false, level: null, diag: true });
+    flushTelemetry();
+    expect(b.emit.mock.calls.flatMap((c) => c[0].items)).toHaveLength(MAX_EARLY_DIAG_ITEMS);
   });
 });
 

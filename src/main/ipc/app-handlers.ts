@@ -38,6 +38,7 @@ import { consumePendingProtocolAction } from '../services/protocol-service';
 import { flushBeforeExit } from '../telemetry/facade';
 import { syncLocalRecording } from '../telemetry/local-control';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
+import { isDiagLevel, isDiagNamespace } from '../../shared/telemetry/diag';
 import { newChromeEnabled, usesTitleBarOverlay } from '../window-chrome';
 
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
@@ -361,10 +362,14 @@ export function registerAppHandlers(): void {
   });
 
   // --- Logging ---
+  // Deprecated (#2302): renderer lines reach the diag tier over telemetry:emit.
+  // This feeds only the legacy session log and the breadcrumb tap until #2313.
   ipcMain.on(IPC.LOG.LOG_WRITE, withValidatedArgs(
     [objectArg<LogEntry>()],
     (_event, entry) => {
-      logService.log(entry);
+      if (!isDiagNamespace(entry.ns) || !isDiagLevel(entry.level)) return;
+      // Untyped plugin code may pass an Error or a number as the message.
+      logService.log(typeof entry.msg === 'string' ? entry : { ...entry, msg: String(entry.msg) });
     },
   ));
 

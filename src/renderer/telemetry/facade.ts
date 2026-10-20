@@ -40,6 +40,8 @@ export const FLUSH_INTERVAL_MS = 2000;
 export const FLUSH_AT_ITEMS = 50;
 /** Hard cap on queued items between flushes; extra items are dropped. */
 export const MAX_QUEUED_ITEMS = 500;
+/** Diag lines held until main's first state reply (startup); extra lines are dropped. */
+export const MAX_EARLY_DIAG_ITEMS = 200;
 
 export interface SpanHandle {
   set(...attrs: TelAttr[]): void;
@@ -78,6 +80,9 @@ let queue: RendererItem[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
 let unsubscribe: (() => void) | null = null;
 let readySent = false;
+/** False until the first state arrives; diag lines before that wait in `earlyDiag` (#2302). */
+let stateKnown = false;
+let earlyDiag: RendererItem[] = [];
 
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof (value as { then?: unknown }).then === 'function';
@@ -129,6 +134,12 @@ function producersOn(s: TelemetryState): boolean {
 function setState(next: TelemetryState): void {
   const was = producersOn(state);
   state = next;
+  if (!stateKnown) {
+    stateKnown = true;
+    const early = earlyDiag;
+    earlyDiag = [];
+    for (const item of early) enqueue(item);
+  }
   const now = producersOn(state);
   if (was !== now) {
     for (const l of stateListeners) {
@@ -288,12 +299,14 @@ function plainMeta(meta: Record<string, unknown>): Record<string, unknown> | und
  * paths under home, secrets and prompt content before writing. Never throws.
  */
 export function diag(ns: string, level: DiagLevel, msg: string, meta?: Record<string, unknown>): void {
-  if (!state.diag) return;
+  // Before main's first state reply (stores log at import time), lines wait; the reply sends or drops them.
+  if (stateKnown ? !state.diag : earlyDiag.length >= MAX_EARLY_DIAG_ITEMS) return;
   try {
     const item: RendererItem = { t: 'diag', ns, level, msg: String(msg).slice(0, DIAG_MAX_STRING_CHARS * 2) };
     const plain = meta ? plainMeta(meta) : undefined;
     if (plain) item.meta = plain;
-    enqueue(item);
+    if (stateKnown) enqueue(item);
+    else earlyDiag.push(item);
   } catch {
     // Never throw into app code.
   }
@@ -347,6 +360,8 @@ export function _resetRendererTelemetryForTests(): void {
   timer = null;
   unsubscribe = null;
   readySent = false;
+  stateKnown = false;
+  earlyDiag = [];
   stateListeners.clear();
 }
 
