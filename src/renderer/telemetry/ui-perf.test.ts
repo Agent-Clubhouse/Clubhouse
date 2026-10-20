@@ -48,6 +48,23 @@ afterEach(() => {
   _resetRendererTelemetryForTests();
 });
 
+describe('hang log default sink (#2302)', () => {
+  it('writes a ui:perf warn diag line and the legacy log line', () => {
+    vi.useFakeTimers();
+    const write = vi.fn();
+    vi.stubGlobal('clubhouse', { log: { write } });
+    _setUiPerfSinkForTests(null);
+    _setStateForTests({ enabled: false, level: null, diag: true });
+    handleLongFrame({ duration: 640 });
+    vi.advanceTimersByTime(COALESCE_MS);
+    flushTelemetry();
+    const diags = emit.mock.calls.flatMap((c) => c[0].items).filter((i: { t: string }) => i.t === 'diag');
+    expect(diags).toHaveLength(1);
+    expect(diags[0]).toMatchObject({ t: 'diag', ns: 'ui:perf', level: 'warn', meta: { kind: 'long_frame', maxMs: 640 } });
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ ns: 'ui:perf', level: 'warn', msg: diags[0].msg }));
+  });
+});
+
 describe('hang log with telemetry off', () => {
   it('turns a burst of long frames into exactly one line, with no telemetry', () => {
     vi.useFakeTimers();

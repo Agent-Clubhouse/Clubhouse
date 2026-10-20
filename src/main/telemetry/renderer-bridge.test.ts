@@ -160,6 +160,38 @@ describe('renderer diag items (#2299)', () => {
   });
 });
 
+describe('renderer and plugin log lines (#2302)', () => {
+  const emit = (sender: { sender: { id: number } }, items: unknown[]) =>
+    handlers.on.get(IPC.TELEMETRY.EMIT)!(sender, { v: RENDERER_PROTOCOL_VERSION, items });
+
+  it('keeps plugin:<id> namespaces, levels and projectId, and applies the namespace filter', () => {
+    logSettings.getSettings.mockReturnValue({ enabled: true, namespaces: { 'plugin:muted': false }, retention: 'medium', minLogLevel: 'debug' });
+    const sink = fakeDiagSink();
+    setDiagSink(sink);
+    emit(mainSender, [
+      { t: 'diag', ns: 'plugin:my-plugin', level: 'fatal', msg: 'boom', meta: { code: 500, projectId: 'proj-1' } },
+      { t: 'diag', ns: 'plugin:my-plugin', level: 'debug', msg: 'detail' },
+      { t: 'diag', ns: 'plugin:muted', level: 'error', msg: 'filtered' },
+    ]);
+    expect(sink.lines).toEqual([
+      { ns: 'plugin:my-plugin', level: 'fatal', msg: 'boom', meta: { code: 500, projectId: 'proj-1' }, window: 'main' },
+      { ns: 'plugin:my-plugin', level: 'debug', msg: 'detail', window: 'main' },
+    ]);
+  });
+
+  it('shares the per-window rate limit between plugin and app lines', () => {
+    vi.useFakeTimers();
+    const sink = fakeDiagSink();
+    setDiagSink(sink);
+    const lines = (ns: string, n: number) => Array.from({ length: n }, (_, i) => ({ t: 'diag', ns, level: 'info', msg: `m${i}` }));
+    for (let i = 0; i < DIAG_RATE_MAX / 100; i++) emit(mainSender, lines('plugin:chatty', 100));
+    emit(mainSender, lines('app:plugins', 5));
+    expect(sink.lines).toHaveLength(DIAG_RATE_MAX);
+    expect(sink.lines.every((l) => l.ns === 'plugin:chatty')).toBe(true);
+    expect(sink.noteDiagDropped).toHaveBeenCalledWith(5);
+  });
+});
+
 describe('renderer bridge', () => {
   it('stays disabled for an exporter alone: export only sends what local recording produces', () => {
     expect(getTelemetryState()).toEqual({ enabled: false, level: null });

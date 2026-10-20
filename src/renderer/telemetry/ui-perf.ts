@@ -23,7 +23,7 @@
  * that store a small object per input.
  */
 import { ATTR } from '../../shared/telemetry/attributes';
-import { tel, isTelemetryEnabled } from './facade';
+import { tel, diag, isTelemetryEnabled } from './facade';
 import { getTelemetrySurface, getTelemetryView, recordLongFrame, surfaceAttrs, type TelemetrySurface, type TelemetryView } from './long-frames';
 
 export const UI_PERF_NS = 'ui:perf';
@@ -86,7 +86,9 @@ export interface UiPerfLine {
 
 type Sink = (line: UiPerfLine) => void;
 
+// The diag tier (#2302), plus the legacy log for its writer and the feedback breadcrumb tap (#2303).
 const defaultSink: Sink = (line) => {
+  diag(UI_PERF_NS, 'warn', line.msg, line.meta);
   try {
     window.clubhouse?.log?.write({ ts: new Date().toISOString(), ns: UI_PERF_NS, level: 'warn', msg: line.msg, meta: line.meta });
   } catch {
