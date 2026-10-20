@@ -475,6 +475,50 @@ describe('useTerminalFit', () => {
     });
   });
 
+  describe('onFitted callback', () => {
+    it('reports the trigger, size and whether it was sent to the PTY', () => {
+      const onFitted = vi.fn();
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      const { rerender } = renderHook(
+        ({ focused }) => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, focused, undefined, { onFitted }),
+        { initialProps: { focused: false } },
+      );
+
+      resizeObserverCallbacks[0]();
+      expect(onFitted).toHaveBeenLastCalledWith('resize-observer', 80, 24, false);
+
+      focusListeners[0]();
+      expect(onFitted).toHaveBeenLastCalledWith('window-focus', 80, 24, true);
+
+      rerender({ focused: true });
+      expect(onFitted).toHaveBeenLastCalledWith('pane-focus', 80, 24, true);
+    });
+
+    it('reports a non-owner view following the PTY size as pty-follow', () => {
+      const onFitted = vi.fn();
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      renderHook(() => useTerminalFit('follow', terminalRef, fitAddonRef, containerRef, false));
+      const follower = {
+        current: { ...terminalRef.current, cols: 80, rows: 24, resize: vi.fn(function (this: { cols: number; rows: number }, c: number, r: number) { this.cols = c; this.rows = r; }) } as any,
+      };
+      const ptySizeRef = { current: { cols: 100, rows: 40 } };
+      const { result } = renderHook(() =>
+        useTerminalFit('follow', follower, fitAddonRef, containerRef, false, undefined, { ptySizeRef, onFitted }),
+      );
+      result.current.syncToPty();
+      expect(follower.current.resize).toHaveBeenCalledWith(100, 40);
+      expect(onFitted).toHaveBeenLastCalledWith('pty-follow', 100, 40, false);
+    });
+
+    it('is not called when the zero-size guard skips the fit', () => {
+      const onFitted = vi.fn();
+      Object.defineProperty(containerEl, 'clientWidth', { value: 0, configurable: true });
+      renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, false, undefined, { onFitted }));
+      focusListeners[0]();
+      expect(onFitted).not.toHaveBeenCalled();
+    });
+  });
+
   describe('zero-dimension guard', () => {
     it('skips fit and resize when container has zero width', () => {
       const zeroWidthEl = document.createElement('div');

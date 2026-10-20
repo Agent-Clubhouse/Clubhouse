@@ -67,6 +67,11 @@ export interface TerminalFitOptions {
    * its container, so live output lines up (#2322).
    */
   ptySizeRef?: RefObject<PtySize | null>;
+  /**
+   * Runs after every fit or PTY-size follow with the trigger, the terminal's
+   * size and whether this terminal drives the PTY size (render diagnostics).
+   */
+  onFitted?: (trigger: string, cols: number, rows: number, sent: boolean) => void;
 }
 
 export interface TerminalFitControls {
@@ -112,6 +117,9 @@ export function useTerminalFit(
   options: TerminalFitOptions = {},
 ): TerminalFitControls {
   const { readyRef, ptySizeRef } = options;
+  // Read through a ref so a new callback identity doesn't re-run the effects.
+  const onFittedRef = useRef(options.onFitted);
+  onFittedRef.current = options.onFitted;
   const tokenRef = useRef<symbol | null>(null);
   if (!tokenRef.current) tokenRef.current = Symbol('terminal-size-owner');
   const fitRef = useRef<((sendResize: boolean, trigger: string, after?: () => void) => void) | null>(null);
@@ -168,6 +176,7 @@ export function useTerminalFit(
             doResize(sessionId, size.cols, size.rows);
           }
         }
+        onFittedRef.current?.(trigger, term.cols, term.rows, drive);
         after?.();
       });
     };
@@ -251,7 +260,7 @@ export function useTerminalFit(
   const syncToPty = useCallback(() => {
     const term = terminalRef.current;
     if (!term) return;
-    followPtySize(term, ptySizeRef?.current);
+    if (followPtySize(term, ptySizeRef?.current)) onFittedRef.current?.('pty-follow', term.cols, term.rows, false);
   }, []);
 
   return { refit, syncToPty };

@@ -8,6 +8,7 @@ import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { attachClipboardHandlers } from './clipboard';
 import { useTerminalFit, hasMeasurableSize, type PtySize, type TerminalFitControls } from './useTerminalFit';
 import { unseenPtySuffix, isAsciiBinary, writeAsync } from './pty-stream';
+import { createTerminalRenderDiagnostics, type TerminalRenderDiagnostics } from './render-diagnostics';
 import { writePtySnapshot, type PtyBufferSnapshot } from '../../../shared/pty-snapshot';
 import type { WindowsPtyInfo } from '../../../shared/windows-pty';
 
@@ -67,6 +68,7 @@ export function ShellTerminal({ sessionId, focused, io, remoteWindowsPty }: Prop
   const xtermHostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const diagRef = useRef<TerminalRenderDiagnostics | null>(null);
 
   // Use a ref for the IO layer so that changes to `io` don't trigger a full
   // terminal destruction/recreation cycle.  The terminal instance is expensive
@@ -119,6 +121,9 @@ export function ShellTerminal({ sessionId, focused, io, remoteWindowsPty }: Prop
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(xtermHostRef.current);
+    const diag = createTerminalRenderDiagnostics({ sessionId, surface: 'shell', remote: io !== undefined });
+    diag.attach(term, fitAddon);
+    diagRef.current = diag;
 
     const replay: ReplayState = { replayed: false, appliedSeq: -1, pending: [], snapshotApplied: false, resizedDuringReplay: null };
     replayRef.current = replay;
@@ -128,16 +133,18 @@ export function ShellTerminal({ sessionId, focused, io, remoteWindowsPty }: Prop
     // at the PTY's current size), then fit and size the PTY.  Fitting after
     // the replay keeps the shell's repaint for the new size on top of the
     // restored screen (#2321).
-    const flushPending = async () => {
+    const flushPending = async (failed = false) => {
       while (replay.pending.length > 0) {
         let batch = '';
         for (const chunk of replay.pending.splice(0)) {
+          diag.replayChunk(chunk.data.length, chunk.seq, replay.appliedSeq);
           batch += unseenPtySuffix(chunk.data, chunk.seq, replay.appliedSeq);
           if (chunk.seq !== undefined && chunk.seq > replay.appliedSeq) replay.appliedSeq = chunk.seq;
         }
         if (batch) await writeAsync(term, batch).catch((): void => undefined); // telemetry-exempt: xterm drops writes past its buffer cap; the replay must still finish
       }
       if (terminalRef.current !== term) return;
+      diag.endReplay(failed);
       if (replay.resizedDuringReplay) ptySizeRef.current = replay.resizedDuringReplay;
       replay.replayed = true;
       readyRef.current = true;
@@ -159,15 +166,19 @@ export function ShellTerminal({ sessionId, focused, io, remoteWindowsPty }: Prop
         replay.snapshotApplied = true;
         // Unsized history (older or remote IO): write at this pane's size.
         if (!snap.sizes?.length && hasMeasurableSize(containerRef.current)) fitAddon.fit();
+        // A seq of -1 means the transport has none (remote shells).
+        diag.beginReplay(pty.getBufferSnapshot ? 'local' : 'remote', snap.data.length, snap.seq >= 0 ? snap.seq : undefined);
         await writePtySnapshot(term, snap);
         if (terminalRef.current !== term) return;
+        diag.snapshotParsed();
         replay.appliedSeq = snap.seq;
         const last = snap.sizes?.[snap.sizes.length - 1];
         if (last) ptySizeRef.current = { cols: last.cols, rows: last.rows };
         await flushPending();
       }).catch(() => {
         if (terminalRef.current !== term) return;
-        void flushPending();
+        diag.beginReplay(pty.getBufferSnapshot ? 'local' : 'remote', 0);
+        void flushPending(true);
       });
     });
 
@@ -204,6 +215,8 @@ export function ShellTerminal({ sessionId, focused, io, remoteWindowsPty }: Prop
     return () => {
       inputDisposable.dispose();
       binaryDisposable.dispose();
+      diag.dispose();
+      if (diagRef.current === diag) diagRef.current = null;
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -256,6 +269,7 @@ export function ShellTerminal({ sessionId, focused, io, remoteWindowsPty }: Prop
             replay.pending.push({ data: incoming, seq });
             return;
           }
+          diagRef.current?.liveChunk(incoming.length, seq, replay.appliedSeq);
           const data = unseenPtySuffix(incoming, seq, replay.appliedSeq);
           if (seq !== undefined && seq > replay.appliedSeq) replay.appliedSeq = seq;
           if (!data) return;
@@ -291,6 +305,7 @@ export function ShellTerminal({ sessionId, focused, io, remoteWindowsPty }: Prop
     const removeExitListener = pty.onExit(
       (id: string, _exitCode: number) => {
         if (id === sessionId && terminalRef.current) {
+          diagRef.current?.ptyExited();
           terminalRef.current.write(
             '\x1b[?1049l' + // exit alternate screen buffer
             '\x1b[?25h' +   // show cursor
@@ -313,8 +328,11 @@ export function ShellTerminal({ sessionId, focused, io, remoteWindowsPty }: Prop
     (sid: string, cols: number, rows: number) => ptyRef.current.resize(sid, cols, rows),
     [],
   );
+  const onFitted = useCallback((trigger: string, cols: number, rows: number, sent: boolean) => {
+    diagRef.current?.resize(trigger, cols, rows, sent);
+  }, []);
   fitControlsRef.current = useTerminalFit(
-    sessionId, terminalRef, fitAddonRef, containerRef, focused, resizeCallback, { readyRef, ptySizeRef },
+    sessionId, terminalRef, fitAddonRef, containerRef, focused, resizeCallback, { readyRef, ptySizeRef, onFitted },
   );
 
   // Attach clipboard handlers only when clipboard compatibility is enabled

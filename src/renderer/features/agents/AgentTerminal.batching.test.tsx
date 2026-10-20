@@ -115,6 +115,8 @@ vi.mock('../../stores/remoteProjectStore', () => ({
 }));
 
 import { AgentTerminal } from './AgentTerminal';
+import { rendererLog } from '../../plugins/renderer-logger';
+import { _resetRenderDiagnosticsForTests } from '../terminal/render-diagnostics';
 
 let mockOnDataCallback: ((id: string, data: string) => void) | null = null;
 const mockRemoveDataListener = vi.fn();
@@ -129,6 +131,7 @@ describe('AgentTerminal write batching', () => {
   let widthSpy: ReturnType<typeof vi.spyOn>;
   let heightSpy: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
+    _resetRenderDiagnosticsForTests();
     widthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
     heightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
     // The app window has focus unless a test says otherwise.
@@ -455,6 +458,46 @@ describe('AgentTerminal write batching', () => {
 
       expect(term().write).toHaveBeenCalledTimes(1);
       expect(term().write).toHaveBeenCalledWith('new');
+    });
+
+    const replayLine = () => vi.mocked(rendererLog).mock.calls.find((c) => c[0] === 'ui:terminal:render' && c[2] === 'Terminal buffer replay');
+
+    it('local: logs a render-diagnostics replay summary after the queued chunks', async () => {
+      let resolveSnapshot!: (v: { data: string; seq: number }) => void;
+      window.clubhouse.pty.getBufferSnapshot = vi.fn().mockImplementation(
+        () => new Promise((r) => { resolveSnapshot = r; }),
+      );
+      render(<AgentTerminal agentId="agent-1" />);
+      await act(async () => { flushRAF(); });
+
+      // Queued during the fetch: one chunk straddles the snapshot end (seq 100).
+      act(() => { mockOnDataCallback!('agent-1', 'abcdefghij', 105); });
+      await act(async () => { resolveSnapshot({ data: 'SNAP', seq: 100 }); });
+
+      expect(replayLine()?.[3]?.meta).toMatchObject({
+        sessionId: 'agent-1', source: 'local', snapshotLength: 4, snapshotSeq: 100,
+        pendingChunks: 1, overlaps: 1, overlapChars: 5, duplicates: 0,
+      });
+      expect(JSON.stringify(replayLine())).not.toContain('SNAP');
+    });
+
+    it('satellite: classifies queued chunks against the remote snapshot seq', async () => {
+      let resolveBuffer!: (snap: { data: string; seq: number }) => void;
+      g.__annexMockState.requestPtyBufferSnapshot = vi.fn().mockImplementation(
+        () => new Promise((r) => { resolveBuffer = r; }),
+      );
+      render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      await act(async () => { flushRAF(); });
+      act(() => {
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'AA', 12);
+        g.__satelliteBusListener!('sat-1', 'agent-1', 'BB', 14);
+      });
+      await act(async () => { resolveBuffer({ data: 'history-AA-B', seq: 13 }); });
+
+      expect(replayLine()?.[1]).toBe('info');
+      expect(replayLine()?.[3]?.meta).toMatchObject({
+        source: 'remote', remote: true, snapshotSeq: 13, pendingChunks: 2, covered: 1, overlaps: 1, overlapChars: 1, unsequenced: 0,
+      });
     });
 
     it('resumes batched writes after replay completes', async () => {
