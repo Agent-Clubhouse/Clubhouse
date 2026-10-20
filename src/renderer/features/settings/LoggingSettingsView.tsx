@@ -90,6 +90,18 @@ export function LoggingSettingsView() {
           <Toggle aria-label="Write logs" checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
         </SettingsField>
 
+        <SettingsField
+          label="Record telemetry locally"
+          help="Write flow timings, error types and metric totals to telemetry files in the log folder, anonymized the same way as export. Nothing is sent. Export is set up separately below."
+        >
+          <Toggle
+            aria-label="Record telemetry locally"
+            checked={settings.enabled && settings.telemetryRecording !== false}
+            onChange={(v) => saveSettings({ telemetryRecording: v })}
+            disabled={!settings.enabled}
+          />
+        </SettingsField>
+
         <SettingsField label="Retention" help={retentionTier?.desc}>
           <Segmented
             aria-label="Retention"

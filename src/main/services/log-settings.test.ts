@@ -29,7 +29,7 @@ describe('log-settings', () => {
         throw new Error('ENOENT');
       });
       const result = getSettings();
-      expect(result).toEqual({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info' });
+      expect(result).toEqual({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info', telemetryRecording: true });
     });
 
     it('returns saved settings from file', async () => {
@@ -44,7 +44,7 @@ describe('log-settings', () => {
     it('returns defaults on corrupt JSON', async () => {
       vi.mocked(fs.readFileSync).mockReturnValue('{{invalid');
       const result = getSettings();
-      expect(result).toEqual({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info' });
+      expect(result).toEqual({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info', telemetryRecording: true });
     });
 
     it('merges partial settings with defaults', async () => {

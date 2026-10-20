@@ -23,7 +23,8 @@ import {
   type TelemetryState,
 } from '../../shared/telemetry/renderer-protocol';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { getRuntime, isPending, onRuntimeChange, replaySpan, tel } from './facade';
+import { getLocalSink, getRuntime, isPending, onRuntimeChange, replaySpan, tel } from './facade';
+import { recordingLevel } from './filters';
 import { ForwardedError } from './types';
 
 export type WindowKind = 'main' | 'popout';
@@ -45,14 +46,21 @@ export function windowKindFor(sender: Pick<WebContents, 'id'>): WindowKind {
   return deps && sender.id === deps.getMainWebContentsId() ? 'main' : 'popout';
 }
 
+/**
+ * What renderers record: the most verbose level among the SDK (running or
+ * starting) and the local recorder. Each consumer filters by its own level.
+ */
 export function getTelemetryState(): TelemetryState {
+  const levels: Array<NonNullable<TelemetryState['level']>> = [];
   const rt = getRuntime();
-  if (rt) return { enabled: true, level: rt.level };
-  if (isPending()) {
+  if (rt) levels.push(rt.level);
+  else if (isPending()) {
     const level = deps?.getConfiguredLevel() ?? null;
-    return level ? { enabled: true, level } : DISABLED_STATE;
+    if (level) levels.push(level);
   }
-  return DISABLED_STATE;
+  const local = getLocalSink();
+  if (local) levels.push(local.level);
+  return levels.length > 0 ? { enabled: true, level: recordingLevel(levels) } : DISABLED_STATE;
 }
 
 export function broadcastTelemetryState(): void {
@@ -111,7 +119,7 @@ export function getRendererReadyAt(): number | null {
 /** Handle one `telemetry:emit` batch from a renderer. */
 export function handleRendererEmit(sender: Pick<WebContents, 'id'>, raw: unknown): void {
   // Cheap exit while disabled: renderers shouldn't send, but never trust that.
-  if (!getRuntime() && !isPending()) return;
+  if (!getRuntime() && !isPending() && !getLocalSink()) return;
   dispatchRendererItems(parseRendererBatch(raw), windowKindFor(sender));
 }
 

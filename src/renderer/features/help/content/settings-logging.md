@@ -48,6 +48,14 @@ Oldest entries are pruned automatically when limits are reached.
 
 The full path to your log directory is shown in Settings with a direct **Open in Finder** link.
 
+## Local telemetry recording
+
+**Record telemetry locally** (on by default, and only while **Write logs** is on) writes the app's telemetry signals to `telemetry-<start time>.jsonl` files in the same log folder: how long each flow took, how it ended, error types, and per-minute metric totals. Nothing in these files is sent anywhere.
+
+The files hold the same anonymized data that telemetry export would send. They never contain prompts, terminal output, file paths, names or error messages, and ids are hashed. Each run writes at most 10 MB in 2 MB files, and the files share the retention tier above with the session logs.
+
+Exporting telemetry to a service is a separate switch under **Telemetry export** on the same page.
+
 ## Common diagnostic scenarios
 
 | Problem | Configuration |

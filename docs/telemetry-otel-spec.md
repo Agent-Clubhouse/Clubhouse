@@ -1170,6 +1170,33 @@ Fan-out, filters, consent, health and the test event are shared.
 - **When it runs:** it is derived, not a sticky switch. It is on exactly while Feedback is connected, telemetry is allowed (the experiment and consent), its host is the one the user confirmed, and the user hasn't switched it off. It doesn't need any of the user's own destinations on (#2097: with that rule, feedback reports came with no telemetry), and turning those off or clearing them leaves it on. **Upgrade:** a one-time migration (`developerRule: 2` in the settings file) records it as switched off for anyone who had confirmed its host while none of their own destinations was on, since under the old rule it sent nothing for them; it starts only when they turn it on. Users whose own export was on keep it. Delete local data also records it as switched off, so reconnecting Feedback doesn't bring it back. Before every batch it re-reads Feedback's state, and with Feedback disconnected, switched off, in another session, or without a token, nothing is sent.
 - **Consent:** its host is listed in the export consent dialog when Feedback is connected. After connecting Feedback, the Feedback page asks "Share telemetry with the developer?", naming every host; when no consent was given yet, the prompt is the consent and lists what is never sent. Not now records it as off. Settings → Feedback → "Telemetry for the developer" has its switch, level, preset, health and test event; user-facing text calls it "Clubhouse developer", never by the service's name.
 
+### 6.12 Local recording without an exporter ([#2278](https://github.com/Agent-Clubhouse/Clubhouse/issues/2278))
+
+The `tel.*` signals are also written to local files, so flow timings and classified failures are available for local diagnosis without turning on export. Local recording and export are independent: each has its own switch, and either can run without the other.
+
+- **Setting.** Settings → Logging → **Record telemetry locally**, stored as `telemetryRecording` in `logging-settings.json`. On by default (a file without the key counts as on). It only runs while **Write logs** (`enabled`) is on; turning either off stops recording at once, flushing what was queued. The namespace and minimum-level filters do not apply: those are for log lines.
+- **No SDK, no network.** `local-recorder.ts` is part of the main bundle and imports no OpenTelemetry. `local-control.ts` installs it in the facade synchronously from `initTelemetry()`, so startup signals are recorded too. It never creates an install id or writes `telemetry-settings.json`: it uses the install's hash salt when one exists (local hashes then match exported ones) and a per-run random salt otherwise.
+- **Same protections as export.** Attributes go through `sanitizeAttribute` (registry keys only, enum/int/bool/hash/version formats, the scrubber, the 128-character cap), `hash` attributes through `hashId`, exception types through the same identifier check, and stacks through `sanitizeStack`. Exception messages, log messages and `meta` are never written. Metric dimensions are limited to each metric's declared attributes, as the SDK's views do.
+- **Level.** Standard (`LOCAL_RECORDING_LEVEL`). Detailed-only spans (per-IPC, tool calls) are never recorded locally. With an exporter running, the facade's level and the renderers' level are the more verbose of the two, and each consumer filters by its own level, so what an exporter receives is unchanged.
+- **Facade.** The recorder is a second consumer next to the SDK runtime (`setLocalSink`). Flows and steps are wrapped inside the SDK's span, so the SDK sees the same callback result and its span handle still receives every attribute. `isTelemetryActive()` is true while recording, so the existing producers (§4) run, and the unclean-exit check keeps its `telemetry-session.json`. Exceptions: the main-thread watchdog and event-loop sampler (`health.ts`, a 500 ms timer) run only while exporting (`isExportActive()`), so default installs get no new idle wakeups; and `lastVersion` in `telemetry-settings.json` is only updated while exporting, so a local-only `c.app.sessions` reports `cold` rather than `after_update`. A sink that throws is caught in the facade and never stops the SDK call after it. `currentTraceIds()` returns the SDK's ids while it runs and the local ones otherwise, so local log lines carry `traceId`/`spanId` that match the telemetry file.
+- **Renderers.** No new IPC: renderers record while main reports the state as enabled (§6.2) and keep batching (every 2 s or 50 items). `telemetry:emit` batches are accepted while the recorder runs and go through the same re-validation.
+- **Correlation.** Spans carry random `traceId` (32 hex) and `spanId` (16 hex) and, for children, `parentSpanId`. A registered root span starts a new trace; anything else joins the active span through an `AsyncLocalStorage` context. Events and exceptions carry the active span's ids. Renderer spans arrive replayed and start their own traces, as in export.
+- **Volume.** Metrics are aggregated in memory and written once a minute (and on every exit flush) as one line per attribute set, at most 200 sets per metric plus an overflow line. The per-session caps of §6.4 apply (50,000 spans, 10,000 events and exceptions). At most 1,000 lines wait in memory; lines are flushed every 2 s or at 100 lines. Files rotate at 2 MB and a run stops at 10 MB with a `capped` line. Metric aggregates and drop summaries skip the pending limit. A `dropped` line at each exit flush and at stop reports what the caps dropped since the last one.
+- **Retention.** Files are `~/.clubhouse/logs/telemetry-<recorder start, ms precision>.jsonl`, then `.1.jsonl`, `.2.jsonl` for later chunks. Turning recording off and on starts a new file. "Delete local telemetry data" restarts the recorder so it drops the deleted salt; existing files stay until retention prunes them. The log retention tier's age and total-size limits (`LOG_RETENTION_TIERS`) prune them together with the `session-*.jsonl` logs at startup.
+- **Exit.** `flushBeforeExit` and `forceFlushTelemetry` flush the recorder alongside the SDK, within the same timeout.
+
+**File format** (JSON Lines, one record per line; `ts` is ISO 8601, `*Ms` fields are epoch or elapsed milliseconds):
+
+| `t` | Fields |
+|---|---|
+| `session` | `v` (format version, 1), `ts`, `appVersion`, `platform`, `arch`, `level`. First line of the first file. |
+| `span` | `ts` (end), `name`, `traceId`, `spanId`, `parentSpanId?`, `startMs`, `durationMs`, `outcome` (`ok`/`error`/`cancelled`/...), `errorType?`, `attrs` |
+| `event` | `ts`, `name`, `severity` (`info`/`warn`/`error`/`fatal`), `traceId?`, `spanId?`, `attrs` |
+| `exception` | `ts`, `type` (class name only), `stack` (sanitized frames), `traceId?`, `spanId?`, `attrs` (origin, handled, extras) |
+| `metric` | `ts` (window end), `name`, `kind`, `unit?`, `startMs`, `durationMs`, `attrs`, `overflow?`; counters `sum`; histograms `count`, `sum`, `min`, `max`; gauges `value` (last) |
+| `capped` | `ts`, `maxBytes`. The run's size cap was reached; nothing more is written. |
+| `dropped` | `ts`, `traces`, `logs`, `lines`: counts dropped since the previous `dropped` line. Written at exit flushes and at stop, only when non-zero. |
+
 ## 7. Annex satellites and controllers
 
 **The facts** (from the survey):
@@ -1200,6 +1227,7 @@ Fan-out, filters, consent, health and the test event are shared.
 | Path | Budget | How |
 |---|---|---|
 | Telemetry disabled | 0 module loads, no allocations on hot paths | SDK chunk not imported; facade is a constant-false branch |
+| Local recording (§6.12) | no SDK load, no IPC per item, no write per metric call | in-memory aggregates; one append every 2 s; renderers keep batching |
 | PTY `onData` (`pty-manager.ts:350`) | **no telemetry code inside**; a single `bytes += data.length` on a per-session counter that already exists in spirit (`appendToBuffer`) | totals attached at exit |
 | Hook server request | ≤ 1 counter increment (two with tool bucketing); no span below Detailed | `Counter.add` is about 100 ns |
 | Chat/headless event loops | no telemetry per delta; first-token event fires once per turn via a flag | |

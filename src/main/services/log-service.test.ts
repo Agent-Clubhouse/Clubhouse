@@ -384,6 +384,27 @@ describe('log-service', () => {
       );
     });
 
+    it('applies the same retention to local telemetry recordings (#2278)', async () => {
+      const now = Date.now();
+      const eightDaysAgo = now - 8 * 24 * 60 * 60 * 1000;
+
+      vi.mocked(fsp.readdir).mockResolvedValue([
+        { name: 'telemetry-old.jsonl', isFile: () => true } as unknown as any,
+        { name: 'telemetry-new.1.jsonl', isFile: () => true } as unknown as any,
+      ]);
+      vi.mocked(fsp.stat).mockImplementation(async (filePath) => {
+        const fp = filePath as string;
+        if (fp.includes('telemetry-old')) return { size: 100, mtimeMs: eightDaysAgo } as any;
+        if (fp.includes('telemetry-new')) return { size: 100, mtimeMs: now } as any;
+        throw new Error('ENOENT');
+      });
+
+      await init();
+
+      expect(vi.mocked(fsp.unlink)).toHaveBeenCalledWith(expect.stringContaining('telemetry-old.jsonl'));
+      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(expect.stringContaining('telemetry-new.1.jsonl'));
+    });
+
     it('deletes files older than 3 days with low retention', async () => {
       const now = Date.now();
       const fourDaysAgo = now - 4 * 24 * 60 * 60 * 1000;

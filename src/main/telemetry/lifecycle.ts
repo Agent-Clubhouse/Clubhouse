@@ -132,7 +132,8 @@ let sessionWritten = false;
 
 /**
  * Compare against the previous session's record, then write this one. Only
- * runs while telemetry is on, so a disabled install never gets the file.
+ * runs while telemetry is on (export or local recording), so an install with
+ * both off never gets the file.
  * `crashLoop` comes from the safe-mode check at the same startup.
  */
 export function checkPreviousSession(crashLoop: boolean): void {

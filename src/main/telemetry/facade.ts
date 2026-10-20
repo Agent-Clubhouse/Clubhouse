@@ -5,6 +5,9 @@
  * While telemetry is disabled every `tel.*` call is one property read and a
  * branch: flows run `fn` directly. While the SDK chunk is loading at startup,
  * calls are buffered (max 500) and replayed once the runtime is ready.
+ *
+ * The local recorder (spec §6.12) is a second, independent consumer: when it
+ * is installed every call also goes to it, with or without an SDK runtime.
  */
 import type { EventName, MetricName, SpanName, TelAttr, TelemetryLevel } from '../../shared/telemetry/attributes';
 import {
@@ -21,6 +24,7 @@ import {
   type SpanHandle,
   type TelemetryRuntime,
   type EventOptions,
+  type LocalTelemetrySink,
   type TraceIds,
 } from './types';
 
@@ -31,6 +35,7 @@ type Pending = (rt: TelemetryRuntime) => void;
 
 let runtime: TelemetryRuntime | null = null;
 let pending: Pending[] | null = null;
+let local: LocalTelemetrySink | null = null;
 
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof (value as { then?: unknown }).then === 'function';
@@ -109,12 +114,15 @@ function trackFlow<T>(name: SpanName, fn: (span: SpanHandle) => T): (span: SpanH
   };
 }
 
-/** The active span's trace and span ids, when telemetry is running. */
+/**
+ * The active span's trace and span ids: the exported trace's while the SDK
+ * is running, else the local recording's.
+ */
 export function currentTraceIds(): TraceIds | undefined {
   // Called from appLog on every line; a logger must never throw, and runtimes
   // built before activeTraceIds existed (test fakes) may not have it.
   try {
-    return runtime?.activeTraceIds?.();
+    return runtime?.activeTraceIds?.() ?? local?.activeTraceIds();
   } catch {
     return undefined;
   }
@@ -133,7 +141,7 @@ export { tagError } from './types';
  * synchronous result is never wrapped in a promise.
  */
 export function withErrorType<T>(type: ErrorType, fn: () => T): T {
-  if (!runtime && !pending) return fn();
+  if (!runtime && !pending && !local) return fn();
   let result: T;
   try {
     result = fn();
@@ -151,24 +159,30 @@ export function withErrorType<T>(type: ErrorType, fn: () => T): T {
 export const tel = {
   /** A root user-flow span. Thrown errors are recorded and rethrown unchanged. */
   flow<T>(name: SpanName, opts: FlowOptions, fn: (span: SpanHandle) => T, extras?: FlowExtras<T>): T {
-    if (runtime) return runtime.flow(name, opts, trackFlow(name, fn), extras);
-    if (!pending) return fn(NOOP_SPAN);
-    return bufferedSpan(name, opts, trackFlow(name, fn), extras);
+    // The local wrapper runs inside the SDK span, so it sees the same body and result.
+    const body = local ? local.wrap(name, opts, fn, extras) : fn;
+    if (runtime) return runtime.flow(name, opts, trackFlow(name, body), extras);
+    if (pending) return bufferedSpan(name, opts, trackFlow(name, body), extras);
+    if (local) return trackFlow(name, body)(NOOP_SPAN);
+    return fn(NOOP_SPAN);
   },
 
   /** A child span of the active flow. */
   step<T>(name: SpanName, fn: (span: SpanHandle) => T, opts: FlowOptions = {}): T {
-    if (runtime) return runtime.step(name, fn, opts);
-    if (!pending) return fn(NOOP_SPAN);
-    return bufferedSpan(name, opts, fn);
+    const body = local ? local.wrap(name, opts, fn) : fn;
+    if (runtime) return runtime.step(name, body, opts);
+    if (pending) return bufferedSpan(name, opts, body);
+    return body(NOOP_SPAN);
   },
 
   count(name: MetricName, value = 1, attrs?: TelAttr[]): void {
+    toLocal((l) => l.count(name, value, attrs));
     if (runtime) runtime.count(name, value, attrs);
     else if (pending) buffer((rt) => rt.count(name, value, attrs));
   },
 
   event(name: EventName, attrs?: TelAttr[], opts?: EventOptions): void {
+    toLocal((l) => l.event(name, attrs, opts));
     // Options only when given, so plain events keep their two-argument call shape.
     const emit = (rt: TelemetryRuntime): void => (opts ? rt.event(name, attrs, opts) : rt.event(name, attrs));
     if (runtime) emit(runtime);
@@ -176,6 +190,7 @@ export const tel = {
   },
 
   exception(error: unknown, opts: ExceptionOptions): void {
+    toLocal((l) => l.exception(error, opts));
     if (runtime) runtime.exception(error, opts);
     else if (pending) buffer((rt) => rt.exception(error, opts));
   },
@@ -186,12 +201,14 @@ export const tel = {
  * times. Buffered like any other call while the SDK chunk loads.
  */
 export function replaySpan(span: ReplaySpan): void {
+  toLocal((l) => l.replaySpan(span));
   if (runtime) runtime.replaySpan(span);
   else if (pending) buffer((rt) => rt.replaySpan(span));
 }
 
 /** Record a root span and its children with explicit times (startup, shutdown). */
 export function replaySpanTree(tree: ReplayTree): void {
+  toLocal((l) => l.replayTree(tree));
   if (runtime) runtime.replayTree(tree);
   else if (pending) buffer((rt) => rt.replayTree(tree));
 }
@@ -214,14 +231,32 @@ export function withRemoteParent<T>(traceparent: string | undefined, fn: () => T
   return runtime.withRemoteParent(traceparent, fn);
 }
 
-/** The running level, or null while telemetry is off or still starting. */
+/**
+ * The running level, or null while telemetry is off or still starting. The
+ * SDK's level when it runs, else the local recording's.
+ */
 export function telemetryLevel(): TelemetryLevel | null {
-  return runtime?.level ?? null;
+  return runtime?.level ?? local?.level ?? null;
 }
 
-/** True while telemetry is running or starting. */
+/** True while telemetry is running or starting, or signals are recorded locally. */
 export function isTelemetryActive(): boolean {
+  return runtime !== null || pending !== null || local !== null;
+}
+
+/** True while an exporter is running or starting; local recording alone doesn't count. */
+export function isExportActive(): boolean {
   return runtime !== null || pending !== null;
+}
+
+/** The local sink must never break feature code or the export call after it. */
+function toLocal(call: (sink: LocalTelemetrySink) => void): void {
+  if (!local) return;
+  try {
+    call(local);
+  } catch {
+    // dropped: local recording is best effort
+  }
 }
 
 // --- Runtime change notifications ------------------------------------------
@@ -285,6 +320,17 @@ export function getRuntime(): TelemetryRuntime | null {
   return runtime;
 }
 
+/** Install or remove the local recorder (local-control.ts). */
+export function setLocalSink(sink: LocalTelemetrySink | null): void {
+  if (sink === local) return;
+  local = sink;
+  notifyRuntimeChange();
+}
+
+export function getLocalSink(): LocalTelemetrySink | null {
+  return local;
+}
+
 export function isPending(): boolean {
   return pending !== null;
 }
@@ -327,11 +373,12 @@ export function onIntentionalExit(listener: () => void): () => void {
  */
 export async function forceFlushTelemetry(timeoutMs = DEFAULT_FLUSH_TIMEOUT_MS): Promise<void> {
   const rt = runtime;
-  if (!rt) return;
+  const sink = local;
+  if (!rt && !sink) return;
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
-      rt.forceFlush(timeoutMs),
+      Promise.all([rt?.forceFlush(timeoutMs), sink?.flush().catch(() => {})]),
       new Promise<void>((resolve) => {
         timer = setTimeout(resolve, timeoutMs);
       }),

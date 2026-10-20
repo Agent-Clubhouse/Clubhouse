@@ -19,10 +19,12 @@ import {
   beginPending,
   DEFAULT_FLUSH_TIMEOUT_MS,
   getRuntime,
-  isPending,
+  isExportActive,
+  isTelemetryActive,
   setRuntime,
   tel,
 } from './facade';
+import { restartLocalRecording, syncLocalRecording } from './local-control';
 import { createIdentity, isValidIdentity, type TelemetryIdentity } from './ids';
 import { deleteOfflineData, getOfflineDir, OFFLINE_PRUNE_INTERVAL_MS, pruneOfflineDir } from './offline';
 import { buildResourceAttributes, type ResourceInputs } from './resource';
@@ -340,6 +342,9 @@ export async function migrateLegacySecretsOnReady(): Promise<void> {
 }
 
 export function initTelemetry(): void {
+  // Local recording (spec §6.12) has its own switch and starts synchronously,
+  // so startup signals are recorded even with no export destination.
+  void syncLocalRecording();
   try {
     if (getTelemetrySettings().legacyDestination) void migrateLegacySecretsOnReady();
     if (!isTelemetryConfigured()) return;
@@ -358,18 +363,22 @@ export function initTelemetry(): void {
  * facade if the SDK is still loading.
  */
 export function recordAppSession(): void {
-  if (!getRuntime() && !isPending()) return;
+  if (!isTelemetryActive()) return;
   const settings = getTelemetrySettings();
   const version = app.getVersion();
+  // lastVersion is only kept current while exporting, so local recording
+  // alone can't tell an update from a cold start.
+  const exporting = isExportActive();
   const kind =
     process.env.CLUBHOUSE_SAFE_MODE === '1'
       ? 'safe_mode'
-      : settings.lastVersion && settings.lastVersion !== version
+      : exporting && settings.lastVersion && settings.lastVersion !== version
         ? 'after_update'
         : 'cold';
   setStartupKind(kind);
   tel.count('clubhouse.app.sessions', 1, [ATTR.startupKind(kind)]);
-  if (settings.lastVersion !== version) {
+  // Local recording alone never writes telemetry-settings.json (spec §6.12).
+  if (exporting && settings.lastVersion !== version) {
     updateTelemetrySettings((s) => ({ ...s, lastVersion: version })).catch(() => {});
   }
 }
@@ -440,6 +449,8 @@ export async function disableTelemetry({ deleteLocalData = false } = {}): Promis
       delete next.hashSalt;
       return next;
     });
+    // The running local recorder still holds the deleted salt.
+    await restartLocalRecording();
   }
 }
 

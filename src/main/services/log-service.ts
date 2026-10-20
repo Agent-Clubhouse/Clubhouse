@@ -58,10 +58,12 @@ async function cleanup(): Promise<void> {
     return;
   }
 
-  // Collect session log files with their stats
+  // Collect session log files and local telemetry recordings (spec §6.12)
+  // with their stats: both share the retention tier's age and size limits.
   const files: { filePath: string; mtimeMs: number; size: number }[] = [];
   for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.startsWith('session-') || !entry.name.endsWith('.jsonl')) {
+    const prefixed = entry.name.startsWith('session-') || entry.name.startsWith('telemetry-');
+    if (!entry.isFile() || !prefixed || !entry.name.endsWith('.jsonl')) {
       continue;
     }
     const filePath = path.join(logDir, entry.name);

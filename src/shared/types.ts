@@ -1164,6 +1164,12 @@ export interface LoggingSettings {
   namespaces: Record<string, boolean>;
   retention: LogRetention;
   minLogLevel: LogLevel;
+  /**
+   * Record telemetry signals (spans, events, exceptions, metric aggregates)
+   * to local `telemetry-*.jsonl` files while `enabled` is on. Never exported.
+   * Missing in files from before #2278; treated as on.
+   */
+  telemetryRecording?: boolean;
 }
 
 /** Built-in theme IDs. Plugin themes use arbitrary string IDs prefixed with `plugin:`. */

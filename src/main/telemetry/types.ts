@@ -116,6 +116,23 @@ export interface TelemetryRuntime {
   shutdown(timeoutMs: number): Promise<void>;
 }
 
+/**
+ * The local recorder (local-recorder.ts) as the facade sees it. It runs next
+ * to any SDK runtime and needs no OpenTelemetry.
+ */
+export interface LocalTelemetrySink {
+  readonly level: TelemetryLevel;
+  /** Wrap a span body so it is timed and recorded locally; the handle passed in still receives every attribute. */
+  wrap<T>(name: SpanName, opts: FlowOptions, fn: (span: SpanHandle) => T, extras?: FlowExtras<T>): (span: SpanHandle) => T;
+  count(name: MetricName, value: number, attrs?: TelAttr[]): void;
+  event(name: EventName, attrs?: TelAttr[], opts?: EventOptions): void;
+  exception(error: unknown, opts: ExceptionOptions): void;
+  replaySpan(span: ReplaySpan): void;
+  replayTree(tree: ReplayTree): void;
+  activeTraceIds(): TraceIds | undefined;
+  flush(): Promise<void>;
+}
+
 export const NOOP_SPAN: SpanHandle = { set: () => {} };
 
 const ERROR_TYPE_TAG = Symbol.for('clubhouse.telemetry.error_type');
@@ -159,4 +176,16 @@ export class ForwardedError extends Error {
     this.name = forwardedType;
     this.stack = stack;
   }
+}
+
+/** The exported `exception.type`: a constructor name, never the message. */
+export function errorTypeName(error: unknown): string {
+  if (error instanceof ForwardedError) {
+    return /^[A-Za-z_$][\w$.]{0,63}$/.test(error.forwardedType) ? error.forwardedType : 'Error';
+  }
+  if (error instanceof Error) {
+    const name = error.constructor?.name || error.name;
+    return /^[A-Za-z_$][\w$.]{0,63}$/.test(name) ? name : 'Error';
+  }
+  return typeof error === 'object' && error !== null ? 'Object' : typeof error;
 }

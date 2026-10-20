@@ -14,7 +14,8 @@ vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: broadcast }));
 import { IPC } from '../../shared/ipc-channels';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { RENDERER_PROTOCOL_VERSION } from '../../shared/telemetry/renderer-protocol';
-import { beginPending, setRuntime } from './facade';
+import { beginPending, setLocalSink, setRuntime } from './facade';
+import type { LocalTelemetrySink } from './types';
 import {
   _resetRendererBridgeForTests,
   dispatchRendererItems,
@@ -50,7 +51,22 @@ beforeEach(() => {
   registerTelemetryRendererHandlers({ getMainWebContentsId: () => MAIN_ID, getConfiguredLevel: () => 'standard' });
 });
 
+function fakeLocalSink(): LocalTelemetrySink {
+  return {
+    level: 'standard',
+    wrap: (_n, _o, fn) => fn,
+    count: vi.fn(),
+    event: vi.fn(),
+    exception: vi.fn(),
+    replaySpan: vi.fn(),
+    replayTree: vi.fn(),
+    activeTraceIds: () => undefined,
+    flush: vi.fn(async () => {}),
+  };
+}
+
 afterEach(() => {
+  setLocalSink(null);
   setRuntime(null);
   _resetRendererBridgeForTests();
 });
@@ -60,6 +76,34 @@ describe('renderer bridge', () => {
     expect(getTelemetryState()).toEqual({ enabled: false, level: null });
     setRuntime(fakeRuntime());
     expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard' });
+  });
+
+  it('tells renderers to record for local recording alone (#2278)', () => {
+    setLocalSink(fakeLocalSink());
+    expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard' });
+    expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, { enabled: true, level: 'standard' });
+    // The SDK's more verbose level wins, so its export is unchanged.
+    const rt = fakeRuntime();
+    (rt as { level: string }).level = 'detailed';
+    setRuntime(rt);
+    expect(getTelemetryState()).toEqual({ enabled: true, level: 'detailed' });
+    setRuntime(null);
+    setLocalSink(null);
+    expect(getTelemetryState()).toEqual({ enabled: false, level: null });
+  });
+
+  it('feeds renderer batches into the local recorder with no SDK runtime', () => {
+    const sink = fakeLocalSink();
+    setLocalSink(sink);
+    handlers.on.get(IPC.TELEMETRY.EMIT)!(mainSender, {
+      v: RENDERER_PROTOCOL_VERSION,
+      items: [
+        { t: 'event', name: 'clubhouse.renderer.gone', attrs: [] },
+        { t: 'span', name: 'clubhouse.agent.spawn', startMs: 1, endMs: 3, attrs: [], outcome: 'ok' },
+      ],
+    });
+    expect(sink.event).toHaveBeenCalledWith('clubhouse.renderer.gone', [ATTR.process('renderer'), ATTR.windowKind('main')], undefined);
+    expect(sink.replaySpan).toHaveBeenCalledWith(expect.objectContaining({ name: 'clubhouse.agent.spawn', attrs: [ATTR.process('renderer'), ATTR.windowKind('main')] }));
   });
 
   it('reports the configured level while the SDK is still loading', () => {
