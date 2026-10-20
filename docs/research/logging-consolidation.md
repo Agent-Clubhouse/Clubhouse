@@ -4,6 +4,7 @@ Research for the goal set by the maintainer: before v0.42 stable, remove the leg
 
 - Code read at PR #2289 head `e266abc9` (branch `feat/2278-local-otel`, still open on 2026-10-19). File:line references are from that commit.
 - Volume figures come from one maintainer install: 36 `session-*.jsonl` files, 67,819 lines, 2026-10-07 to 2026-10-20, `minLogLevel: debug`. Only counts were taken, no message content.
+- Tracking epic: #2295.
 - The full list of call sites (757 rows, grouped by namespace) is in [logging-consolidation-callsites.md](logging-consolidation-callsites.md).
 
 ## Summary
@@ -188,7 +189,7 @@ Telemetry can't carry text, and investigations need it. So the recorder gets a t
   - `meta` strings capped at 2,000 characters, and `meta` total at 8 KB;
   - bearer tokens and keys, matched by key name (`token`, `secret`, `authorization`, `apiKey`).
 - **Budget.** Diag lines get their own byte budget per run and a level floor when under pressure: drop debug first, then info. Signals and diag lines can't starve each other.
-- **Breadcrumbs.** The `tapBreadcrumb` logic moves to the diag entry point, or its producers call `recordBreadcrumb` directly (4.2, item F). Breadcrumbs keep being recorded whatever the settings are, as today.
+- **Breadcrumbs.** The `tapBreadcrumb` logic moves to the diag entry point, or its producers call `recordBreadcrumb` directly (#2303). Breadcrumbs keep being recorded whatever the settings are, as today.
 
 ### 4.2 Structured telemetry for high-value gaps
 
@@ -196,12 +197,12 @@ These keep the information available at Standard level and on export, not just i
 
 | Item | Signal |
 |---|---|
-| A. Chat start, fallback and cancel | Add attributes to `chat.start`: `chat.driver`, `orchestrator`, `chat.start.result` (enum: `ok`, `fallback_no_driver`, `fallback_binary_missing`, `fallback_check_failed`, `fallback_login_required`, `cancelled`, `abandoned`, `failed`), `chat.check.reason` (closed enum of check reasons), `agent.resume` and `chat.resume_honored` (bool). Add a `clubhouse.chat.fallback` event (S) instead of silently discarding the run (`chat-telemetry.ts:203`). Add the unmapped message's type, subtype or method to diag (open-ended, so diag only), and keep the counter. |
-| B. Session capture | `clubhouse.agent.session_capture` event (S): `orchestrator`, `agent.id_hash`, `session.capture.result` (enum: `captured`, `kept_previous`, `ignored_not_in_store`, `ignored_foreign`, `resume_failed_no_session`, `resume_failed_early_exit`, `persist_failed`, `capture_failed`), `process.exit.code`. The raw session id goes in a diag line at info. |
-| C. PTY exit | `lastOutput` goes in a diag line only (raw text, redacted and capped), and only for exits that aren't completed or killed. The `agent.run` exit class stays the signal. Add `pty.write_rejected` and `pty.stale_swept` counters. |
-| D. Slow interactions | `clubhouse.ui.slow_interaction` event (S), symmetric with `ui.hang`: view, surface, duration, interaction type. The blame target (`data-testid`) goes in diag. |
-| E. MCP tool calls | Add `agent.id_hash` to `mcp.tool_call`. Add `mcp.refusal.reason` (enum: `group_off`, `unparseable`, `no_binding`) for registry refusals. The error text goes in diag. Args are never recorded. |
-| F. Feedback | `clubhouse.feedback.submitted` event (S): `feedback.result` (enum: `delivered`, `queued`, `failed`, `not_configured`). The report id goes in a diag line at info, so maintainers can still match a report to the log. |
+| A. Chat start, fallback and cancel (#2304) | Add attributes to `chat.start`: `chat.driver`, `orchestrator`, `chat.start.result` (enum: `ok`, `fallback_no_driver`, `fallback_binary_missing`, `fallback_check_failed`, `fallback_login_required`, `cancelled`, `abandoned`, `failed`), `chat.check.reason` (closed enum of check reasons), `agent.resume` and `chat.resume_honored` (bool). Add a `clubhouse.chat.fallback` event (S) instead of silently discarding the run (`chat-telemetry.ts:203`). Add the unmapped message's type, subtype or method to diag (open-ended, so diag only), and keep the counter. |
+| B. Session capture (#2305) | `clubhouse.agent.session_capture` event (S): `orchestrator`, `agent.id_hash`, `session.capture.result` (enum: `captured`, `kept_previous`, `ignored_not_in_store`, `ignored_foreign`, `resume_failed_no_session`, `resume_failed_early_exit`, `persist_failed`, `capture_failed`), `process.exit.code`. The raw session id goes in a diag line at info. |
+| C. PTY exit (#2306) | `lastOutput` goes in a diag line only (raw text, redacted and capped), and only for exits that aren't completed or killed. The `agent.run` exit class stays the signal. Add `pty.write_rejected` and `pty.stale_swept` counters. |
+| D. Slow interactions (#2307) | `clubhouse.ui.slow_interaction` event (S), symmetric with `ui.hang`: view, surface, duration, interaction type. The blame target (`data-testid`) goes in diag. |
+| E. MCP tool calls (#2308) | Add `agent.id_hash` to `mcp.tool_call`. Add `mcp.refusal.reason` (enum: `group_off`, `unparseable`, `no_binding`) for registry refusals. The error text goes in diag. Args are never recorded. |
+| F. Feedback (#2309) | `clubhouse.feedback.submitted` event (S): `feedback.result` (enum: `delivered`, `queued`, `failed`, `not_configured`). The report id goes in a diag line at info, so maintainers can still match a report to the log. |
 
 ### 4.3 Settings
 
@@ -228,30 +229,30 @@ No file migration is needed: every key keeps its meaning. One small migration is
 Ordered. Each step lands on its own, and nothing user-visible regresses between steps.
 
 1. **Land #2289.** (Prerequisite; open now.)
-2. **Recorder hardening** (the G and H issues).
+2. **Recorder hardening** (#2297, #2298).
    - Replace the 10 MB hard stop with rolling deletion of the oldest chunk within a run, plus a `capped` line that reports what was evicted.
    - Run retention periodically.
    - Move retention out of log-service into `src/main/telemetry/`.
    - *Risk:* long-running apps lose the tail of a run, which is what investigations need. Today's cap ends recording for days.
-3. **The diag tier** (issue I).
+3. **The diag tier** (#2299).
    - Add a `t:"diag"` line kind with gating, redaction and its own budget.
    - Add the renderer `diag` item kind with validation and a rate limit (today `log:write` has none).
    - Add tests: no diag line reaches the exporter; content redaction.
-4. **Drop the noise** (issue J; #1927, #1919). Do this before the switch, so diag budgets are sized on real signal.
-5. **Point `appLog`, `rendererLog` and `log:write` at the diag tier** (issues K and L).
+4. **Drop the noise** (#2300; also #1927, #1919). Do this before the switch, so diag budgets are sized on real signal.
+5. **Point `appLog`, `rendererLog` and `log:write` at the diag tier** (#2301, #2302).
    - Keep the function names and import paths, so the 99 mocking test files and 757 call sites are untouched.
-   - Move `tapBreadcrumb`, or replace it with direct `recordBreadcrumb` calls (issue M).
+   - Move `tapBreadcrumb`, or replace it with direct `recordBreadcrumb` calls (#2303).
    - Point the plugin `api.logging` at diag. The contract is unchanged; check that the version-contract tests pass.
    - Keep `logService.flush()` semantics for auto-update by delegating to the recorder's flush.
    - Fix startup ordering: the recorder starts synchronously in `initTelemetry`, so the "entries before `init`" loss goes away.
    - *Risk:* behavior shifts for 27 tests that assert on `appLog` arguments. They keep passing if the shim keeps its signature.
-6. **Structured events** A to F (issues N to S). These can run in parallel with step 5; none blocks removal, except F, which carries the feedback correlation.
-7. **Consumers** (issues T and U).
+6. **Structured events** A to F (#2304 to #2309). These can run in parallel with step 5; none blocks removal, except F, which carries the feedback correlation.
+7. **Consumers** (#2310, #2311).
    - The E2E `plugin-mcp-tools.spec.ts` reads `t:"diag"` lines from `telemetry-*.jsonl`.
    - Update the help topics (`settings-logging`, `troubleshooting-*`, `plugins-*`), fixing the `plugins:loader` name.
    - Update spec §6.6 and §6.12 and the "logs never transmitted" banner.
-   - Update the Settings copy and labels (issue V).
-8. **Delete the legacy writer.**
+   - Update the Settings copy and labels (#2312).
+8. **Delete the legacy writer** (#2313).
    - Remove the `session-*.jsonl` file writer, rotation and `getLogPath` from `log-service.ts`. `getNamespaces` moves.
    - Keep pruning the `session-*` prefix in retention for one release, so old files age out instead of being stranded.
    - Remove the `LogEntry.traceId`/`spanId` copy and `traceFieldsForLog`.
