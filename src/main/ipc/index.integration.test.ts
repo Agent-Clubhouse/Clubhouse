@@ -547,6 +547,7 @@ describe('registerAllHandlers — integration', () => {
 
   // ── Log handlers: fire-and-forget ───────────────────────────────────
 
+  // The deprecated legacy-log path; goes with the writer (#2313).
   it('LOG_WRITE handler delegates to logService.log', () => {
     const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
     const entry = { ts: '2026-03-08', ns: 'app:test', level: 'info', msg: 'hello' };
