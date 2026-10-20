@@ -24,6 +24,7 @@
  */
 import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, diag, isTelemetryEnabled } from './facade';
+import { recordBreadcrumb } from './breadcrumbs';
 import { getTelemetrySurface, getTelemetryView, recordLongFrame, surfaceAttrs, type TelemetrySurface, type TelemetryView } from './long-frames';
 
 export const UI_PERF_NS = 'ui:perf';
@@ -234,6 +235,7 @@ function flush(kind: PerfKind, now = performance.now()): void {
   suppressed = 0;
   const what = b.kind === 'long_frame' ? (b.count === 1 ? 'Long frame' : 'Long frames') : (b.count === 1 ? 'Slow interaction' : 'Slow interactions');
   sink({ msg: `${what}: ${Math.round(b.maxMs)}ms in ${b.view}${b.surface ? `/${b.surface}` : ''}`, meta });
+  recordBreadcrumb('performance', `ui.${b.kind}`, Math.round(b.maxMs));
   if (b.kind === 'long_frame') {
     tel.event('clubhouse.ui.hang', [
       ATTR.view(b.view),

@@ -19,6 +19,7 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import { forceFlushTelemetry, replaySpan, tel } from './facade';
 import { windowKindFor } from './renderer-bridge';
 import { appLog } from '../services/log-service';
+import { recordBreadcrumb } from '../services/breadcrumbs';
 
 export const CRASH_FLUSH_TIMEOUT_MS = 2000;
 
@@ -44,7 +45,10 @@ function trackUnresponsive(win: BrowserWindow): void {
     since = null;
     if (win.isDestroyed()) return;
     const kind = windowKindFor(win.webContents);
-    appLog('ui:perf', 'warn', 'Window responsive again', { meta: { windowKind: kind, durationMs: Date.now() - startMs } });
+    const durationMs = Date.now() - startMs;
+    // For feedback reports (#2098), recorded here so it doesn't depend on the log line (#2303).
+    recordBreadcrumb('performance', 'window.unresponsive', durationMs);
+    appLog('ui:perf', 'warn', 'Window responsive again', { meta: { windowKind: kind, durationMs } });
     replaySpan({
       name: 'clubhouse.renderer.unresponsive',
       startMs,

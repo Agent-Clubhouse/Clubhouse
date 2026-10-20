@@ -583,6 +583,8 @@ export const IPC = {
     STATUS_CHANGED: 'feedback:status-changed',
     /** Main → main window: a draft captured from the keyboard shortcut, to review (#2101). */
     CAPTURED: 'feedback:captured',
+    /** Renderer → main, fire and forget: a breadcrumb for feedback reports (#2303). */
+    RECORD_BREADCRUMB: 'feedback:record-breadcrumb',
   },
   GOOBERS: {
     GET_STATE: 'goobers:get-state',

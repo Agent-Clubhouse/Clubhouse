@@ -8,6 +8,7 @@ vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
 
 import { ATTR } from '../../shared/telemetry/attributes';
 import { appLog } from '../services/log-service';
+import { _resetBreadcrumbsForTests, recentBreadcrumbs } from '../services/breadcrumbs';
 import { _resetCrashTelemetryForTests, installCrashTelemetry, reportMainProcessError } from './crash-handlers';
 import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from './types';
@@ -90,6 +91,22 @@ describe('crash telemetry', () => {
       vi.advanceTimersByTime(2_500);
       win.emit('responsive');
       expect(appLog).toHaveBeenLastCalledWith('ui:perf', 'warn', 'Window responsive again', { meta: { windowKind: 'popout', durationMs: 2_500 } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('notes a hang as a feedback breadcrumb itself, not through the log line (#2303)', () => {
+    // appLog is a mock that writes nothing: the legacy log path is gone.
+    _resetBreadcrumbsForTests(() => 1_000);
+    vi.useFakeTimers();
+    try {
+      const win = Object.assign(new EventEmitter(), { isDestroyed: () => false, webContents: { id: 3 } });
+      appEvents.emit('browser-window-created', {}, win);
+      win.emit('unresponsive');
+      vi.advanceTimersByTime(2_500);
+      win.emit('responsive');
+      expect(recentBreadcrumbs()).toEqual([{ kind: 'performance', atMs: 1_000, code: 'window.unresponsive', value: 2_500 }]);
     } finally {
       vi.useRealTimers();
     }

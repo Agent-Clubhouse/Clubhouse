@@ -300,14 +300,13 @@ describe('AgentRuntimePane', () => {
 describe('switchAgentRuntime breadcrumbs (#2098)', () => {
   it('notes the switch and its failure for feedback reports, with the mode only', async () => {
     useProjectStore.setState({ projects: [] } as never);
-    const write = vi.spyOn(window.clubhouse.log, 'write');
+    const record = vi.spyOn(window.clubhouse.feedback, 'recordBreadcrumb');
     await expect(switchAgentRuntime(agent, 'chat')).rejects.toThrow('Project not found');
-    const crumbs = write.mock.calls.map(([e]) => (e.meta as { breadcrumb?: unknown } | undefined)?.breadcrumb).filter(Boolean);
-    expect(crumbs).toEqual([
+    expect(record.mock.calls.map(([c]) => c)).toEqual([
       { kind: 'event', code: 'runtime.switch.chat' },
       { kind: 'error', code: 'runtime.switch_failed.chat' },
     ]);
-    write.mockRestore();
+    record.mockRestore();
   });
 });
 

@@ -5,7 +5,6 @@ import * as fsp from 'fs/promises';
 import { LogEntry, LOG_RETENTION_TIERS, LOG_LEVEL_PRIORITY } from '../../shared/types';
 import * as logSettings from './log-settings';
 import { bridgeLog, traceFieldsForLog, type LogTelemetry } from '../telemetry/log-bridge';
-import { recordBreadcrumb, recordBreadcrumbFrom } from './breadcrumbs';
 import { pruneLogDir } from '../telemetry/local-retention';
 import { diag, getDiagNamespaces, getDiagSink, isDiagActive, type DiagEntry } from '../telemetry/diag';
 import { listLogNamespaces } from '../../shared/log-namespaces';
@@ -128,27 +127,6 @@ export function flushSync(): void {
 }
 
 /**
- * Feedback breadcrumbs from log entries (#2098), taken whatever the local log
- * settings are: hang and lag lines (`ui:perf`, #2126) as performance
- * breadcrumbs, and any entry that carries a `meta.breadcrumb` (the renderer's
- * view changes and runtime switches). Plugins' namespaces can't add any.
- */
-function tapBreadcrumb(entry: LogEntry): void {
-  const meta = entry.meta;
-  if (entry.ns === 'ui:perf') {
-    const kind = meta?.kind;
-    if ((kind === 'long_frame' || kind === 'slow_interaction') && typeof meta?.maxMs === 'number') {
-      recordBreadcrumb('performance', `ui.${kind}`, meta.maxMs);
-    } else if (typeof meta?.durationMs === 'number') {
-      // A window that stopped responding, logged once it recovers.
-      recordBreadcrumb('performance', 'window.unresponsive', meta.durationMs);
-    }
-    return;
-  }
-  if (meta?.breadcrumb && !entry.ns.startsWith('plugin')) recordBreadcrumbFrom(meta.breadcrumb);
-}
-
-/**
  * `telemetry` (spec §6.6) is bridged before the namespace and level
  * filters, which apply only to log lines. Whether the bridged event is
  * recorded or exported follows the telemetry recording settings. Only the
@@ -156,7 +134,6 @@ function tapBreadcrumb(entry: LogEntry): void {
  */
 export function log(entry: LogEntry, telemetry?: LogTelemetry): void {
   if (telemetry) bridgeLog(entry.level, telemetry);
-  tapBreadcrumb(entry);
 
   const settings = logSettings.getSettings();
   if (!settings.enabled) return;

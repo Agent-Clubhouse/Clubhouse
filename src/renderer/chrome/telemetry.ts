@@ -12,11 +12,11 @@
  *   for the whole session, so it is not repeated here.
  *
  * Every function is a cheap no-op while telemetry is off, except that a view
- * change is also noted as a feedback breadcrumb (#2098): one log write per
+ * change is also noted as a feedback breadcrumb (#2098): one IPC send per
  * actual change, carrying only the view name.
  */
 import { ATTR, setTelemetrySurface, setTelemetryView as setTelemetryViewOnly, tel, type TelemetryView } from '../telemetry';
-import { rendererLog } from '../plugins/renderer-logger';
+import { recordBreadcrumb } from '../telemetry/breadcrumbs';
 
 let breadcrumbView: TelemetryView | null = null;
 
@@ -25,11 +25,7 @@ function setTelemetryView(view: TelemetryView): void {
   setTelemetryViewOnly(view);
   if (view === breadcrumbView) return;
   breadcrumbView = view;
-  try {
-    rendererLog('ui:nav', 'debug', 'View changed', { meta: { view, breadcrumb: { kind: 'event', code: `view.${view}` } } });
-  } catch {
-    // telemetry-exempt: no log bridge (tests, early startup); the breadcrumb is optional.
-  }
+  recordBreadcrumb('event', `view.${view}`);
 }
 
 export type ChromeSurface = Parameters<typeof ATTR.uiSurface>[0];
