@@ -55,7 +55,7 @@ To uninstall, delete its folder from `~/.clubhouse/plugins/` or click its uninst
 | **Enabled** | On, ready to start |
 | **Activated** | Running |
 | **Disabled** | Turned off, by you or automatically after a permission violation |
-| **Errored** | Failed to start or crashed. Check the logs. |
+| **Errored** | Failed to start or crashed. Check the `core:plugins` and `plugin:<id>` diagnostic lines. |
 | **Incompatible** | Needs a newer plugin API than this version of Clubhouse has |
 
 ## Badges
