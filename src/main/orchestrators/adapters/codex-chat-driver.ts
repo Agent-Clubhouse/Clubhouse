@@ -199,10 +199,9 @@ export function codexEfforts(model: Pick<Model, 'supportedReasoningEfforts'>): s
  * recognized". A 9009 naming another command (a missing shim) is not this.
  */
 function isMissingNodeExit(code: number | null, stderr: string): boolean {
-  if (process.platform === 'win32') {
-    return /'node'/i.test(stderr) && (code === 9009 || /is not recognized as an internal or external command/i.test(stderr));
-  }
-  return code === 127 && /env:.*\bnode\b.*(?:No such file|not found)/i.test(stderr);
+  if (code === 127 && /env:.*\bnode\b.*(?:No such file|not found)/i.test(stderr)) return true;
+  return process.platform === 'win32' && /'node'/i.test(stderr)
+    && (code === 9009 || /is not recognized as an internal or external command/i.test(stderr));
 }
 
 export class CodexChatDriver implements ChatDriver {

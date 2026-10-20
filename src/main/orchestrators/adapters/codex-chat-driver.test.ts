@@ -1024,6 +1024,8 @@ describe('CodexChatDriver', () => {
       [9009, "Der Befehl 'node' ist entweder falsch geschrieben oder konnte nicht gefunden werden.", 'spawn_failed', 'Node.js was not found on the Codex launch PATH'],
       [1, 'invalid configuration', 'process_exited', 'Process exited with code 1'],
       [9009, "'codex.cmd' is not recognized as an internal or external command,", 'process_exited', 'Process exited with code 9009'],
+      // A POSIX-style launcher (Git Bash, MSYS) still gets the hint on Windows.
+      [127, 'env: node: No such file or directory', 'spawn_failed', 'Node.js was not found on the Codex launch PATH'],
     ])('classifies the npm shim exit %s (%s)', async (code, stderr, errorCode, message) => {
       useServer({ initialize: () => {
         server.proc.stderr.emit('data', stderr);
