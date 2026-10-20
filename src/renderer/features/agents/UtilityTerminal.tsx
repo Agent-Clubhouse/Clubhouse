@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { localWindowsPtyOptions } from '../terminal/windows-pty';
+import { onDevicePixelRatioChange } from '../terminal/dpr-watch';
 import { useThemeStore } from '../../stores/themeStore';
 
 interface Props {
@@ -91,7 +92,7 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
       }
     );
 
-    const resizeObserver = new ResizeObserver(() => {
+    const refit = () => {
       requestAnimationFrame(() => {
         if (fitAddonRef.current) {
           fitAddonRef.current.fit();
@@ -104,8 +105,11 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
           }
         }
       });
-    });
+    };
+    const resizeObserver = new ResizeObserver(refit);
     resizeObserver.observe(containerRef.current);
+    // Cell size changes with the device pixel ratio (#2326).
+    const removeDprListener = onDevicePixelRatioChange(refit);
 
     return () => {
       if (flushScheduled) cancelAnimationFrame(flushId);
@@ -113,6 +117,7 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
       binaryDisposable.dispose();
       removeDataListener();
       resizeObserver.disconnect();
+      removeDprListener();
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;

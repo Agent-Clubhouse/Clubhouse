@@ -3,6 +3,7 @@ import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import { claimSizeOwner, isSizeOwner, registerSizeOwner } from './pty-size-owner';
 import { resizeTerminal } from './inline-frame';
+import { onDevicePixelRatioChange } from './dpr-watch';
 
 /** Delay (ms) after wake-from-sleep before re-fitting the terminal.
  *  Gives the browser layout engine time to recalculate dimensions and
@@ -96,6 +97,8 @@ function followPtySize(term: Terminal, size: PtySize | null | undefined): boolea
  * - Terminal becoming the focused pane (`focused` prop), or taking DOM focus;
  *   both claim ownership
  * - The previous owner unmounting
+ * - Device pixel ratio changes (monitor move, display scaling, zoom), which
+ *   change the cell size without resizing the container (#2326)
  *
  * Hidden and zero-size containers are never measured (#2323).
  */
@@ -206,7 +209,15 @@ export function useTerminalFit(
     };
     container.addEventListener('focusin', onFocusIn);
 
+    // DPR change: xterm re-measures the cell size itself, but cols/rows only
+    // change on fit().  Only the size owner in a focused window sends the PTY
+    // resize; other views follow the PTY size.
+    const removeDprListener = onDevicePixelRatioChange(() => {
+      fitAndResize(document.hasFocus(), 'dpr-change');
+    });
+
     return () => {
+      removeDprListener();
       resizeObserver.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onWindowFocus);

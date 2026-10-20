@@ -3,6 +3,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useTerminalFit, isTerminalAtBottom, RESIZE_DEBOUNCE_MS } from './useTerminalFit';
 import { _resetSizeOwnersForTests } from './pty-size-owner';
 
+// Capture DPR subscriptions; the debounce/re-arm logic is covered in dpr-watch.test.ts
+let dprListeners: Array<(from: number, to: number) => void> = [];
+vi.mock('./dpr-watch', () => ({
+  onDevicePixelRatioChange: (cb: (from: number, to: number) => void) => {
+    dprListeners.push(cb);
+    return () => { dprListeners = dprListeners.filter((l) => l !== cb); };
+  },
+}));
+
 // Track listener registrations so tests can fire events manually
 let visibilityListeners: Array<() => void> = [];
 let focusListeners: Array<() => void> = [];
@@ -68,6 +77,7 @@ describe('useTerminalFit', () => {
     visibilityListeners = [];
     focusListeners = [];
     resizeObserverCallbacks = [];
+    dprListeners = [];
 
     window.clubhouse.pty.resize = mockResize;
 
@@ -242,6 +252,46 @@ describe('useTerminalFit', () => {
       expect(focusListeners).toHaveLength(1);
       unmount();
       expect(focusListeners).toHaveLength(0);
+    });
+  });
+
+  describe('device pixel ratio change', () => {
+    it('refits and resizes once per mounted terminal', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const resizeA = vi.fn();
+      const resizeB = vi.fn();
+      renderHook(() => useTerminalFit('a', terminalRef, fitAddonRef, containerRef, false, resizeA));
+      renderHook(() => useTerminalFit('b', terminalRef, fitAddonRef, containerRef, false, resizeB));
+      expect(dprListeners).toHaveLength(2);
+
+      mockFit.mockClear();
+      for (const l of [...dprListeners]) l(1, 1.5);
+
+      expect(mockFit).toHaveBeenCalledTimes(2);
+      expect(resizeA).toHaveBeenCalledTimes(1);
+      expect(resizeA).toHaveBeenCalledWith('a', 80, 24);
+      expect(resizeB).toHaveBeenCalledTimes(1);
+    });
+
+    it('refits but skips the PTY resize when the window is not focused', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
+      mockFit.mockClear();
+      mockResize.mockClear();
+
+      dprListeners[0](2, 1);
+
+      expect(mockFit).toHaveBeenCalledTimes(1);
+      expect(mockResize).not.toHaveBeenCalled();
+    });
+
+    it('unsubscribes on unmount', () => {
+      const { unmount } = renderHook(() =>
+        useTerminalFit('s1', terminalRef, fitAddonRef, containerRef),
+      );
+      expect(dprListeners).toHaveLength(1);
+      unmount();
+      expect(dprListeners).toHaveLength(0);
     });
   });
 
