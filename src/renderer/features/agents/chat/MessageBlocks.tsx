@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 import { useSafeMarkdownLinks } from '../../../utils/safe-markdown-links';
 import type {
@@ -13,6 +13,7 @@ import type {
 } from '../../../stores/chatStore';
 import type { ChatCapabilities, ContentBlock } from '../../../../shared/chat';
 import { attachmentName } from './attachments';
+import { enrichMarkdownLinks, useRichLinks, useTokenHandlers } from './rich/RichLinks';
 import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, FileIcon, ImageIcon, PlanIcon, QuestionIcon } from './icons';
 import { formatCost, formatDuration, formatTokens } from './view-model';
 
@@ -42,6 +43,21 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   const html = useMemo(() => renderMarkdownSafe(shown), [shown]);
+  // Rich links (#2351) rework the rendered, sanitized DOM; off, the element is exactly as before.
+  const rich = useRichLinks();
+  const richHandlers = useTokenHandlers(rich);
+  const el = useRef<HTMLDivElement>(null);
+  const enriched = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!rich || !el.current) return;
+    // Same HTML, new context (the repo resolved): start again from React's markup.
+    if (enriched.current === html) el.current.innerHTML = html;
+    enrichMarkdownLinks(el.current, rich.repo);
+    enriched.current = html;
+  }, [html, rich]);
+  if (rich) {
+    return <div ref={el} className={`chat-markdown ${className}`} {...richHandlers} dangerouslySetInnerHTML={{ __html: html }} />;
+  }
   return <div className={`chat-markdown ${className}`} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
