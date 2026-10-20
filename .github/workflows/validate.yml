@@ -89,6 +89,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+      # Before any Windows job: a path Windows can't create fails their checkout
+      # with no clear message (#2347).
+      - name: Check paths are valid on Windows
+        run: node scripts/ci/check-windows-paths.mjs
       - name: Classify the change
         id: plan
         env:

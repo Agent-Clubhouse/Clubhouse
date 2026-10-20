@@ -318,6 +318,11 @@ export function QuestionCard({ request, onAnswer, busy }: QuestionCardProps) {
       role="group"
       aria-label="Question"
     >
+      {request.routedTo && (
+        <p className="text-[12px] text-ctp-subtext0" data-testid="chat-question-routed">
+          Sent to {request.routedTo.name} to answer. You can answer here instead.
+        </p>
+      )}
       {request.questions.map((q) => {
         const picked = answers[q.id];
         return (

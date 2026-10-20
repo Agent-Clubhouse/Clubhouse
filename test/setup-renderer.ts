@@ -158,6 +158,8 @@ vi.stubGlobal('clubhouse', {
     commitDiff: async () => ({ original: '', modified: '' }),
     headSha: async () => null,
     diffNumstat: async () => [],
+    githubRepo: async () => null,
+    githubRef: async () => ({ ok: false, reason: 'unavailable' }),
   },
   agentSettings: {
     readInstructions: async () => '',

@@ -6,7 +6,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment, getDefaultShell, cleanSpawnEnv } from '../util/shell';
 import { buildWindowsCmdLine } from '../util/windows-launcher';
 import { appLog } from './log-service';
-import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as headlessTerminal from './pty-headless-terminal';
 import { broadcastAgentExit } from './agent-exit-broadcast';
@@ -62,6 +62,9 @@ interface ManagedSession {
   headAltScreen: boolean;
   /** Last few evicted chars, so a toggle split across chunks is still seen. */
   evictedTail: string;
+  /** Current PTY size, to skip resizes that change nothing. */
+  cols: number;
+  rows: number;
   /** UTF-16 code units evicted from the head of the buffer so far. */
   evictedChars: number;
   pendingCommand?: string;
@@ -222,6 +225,8 @@ function createSession(process: pty.IPty, agentId: string, pendingCommand?: stri
     sizeLog: [{ seq: outputSeqHighWater, cols: SPAWN_COLS, rows: SPAWN_ROWS }],
     headAltScreen: false,
     evictedTail: '',
+    cols: SPAWN_COLS,
+    rows: SPAWN_ROWS,
     evictedChars: 0,
     pendingCommand,
   };
@@ -380,8 +385,8 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
         name: 'xterm-256color',
         cwd,
         env: spawnEnv,
-        cols: 120,
-        rows: 30,
+        cols: SPAWN_COLS,
+        rows: SPAWN_ROWS,
       });
     } else {
       const shellCmd = [binary, ...args].map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
@@ -394,8 +399,8 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
         name: 'xterm-256color',
         cwd,
         env: spawnEnv,
-        cols: 120,
-        rows: 30,
+        cols: SPAWN_COLS,
+        rows: SPAWN_ROWS,
       });
     }
   } catch (err) {
@@ -408,6 +413,9 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
   const session = createSession(proc, agentId, pendingCommand);
   session.onExitCallback = onExit;
   sessions.set(agentId, session);
+  // A respawn under the same id starts at the spawn size; views still
+  // following the previous PTY's size must hear about it.
+  broadcastToAllWindows(IPC.PTY.RESIZED, agentId, SPAWN_COLS, SPAWN_ROWS);
   agentRunStarted(agentId, 'pty');
   const expectedGeneration = session.generation;
 
@@ -474,8 +482,8 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
       name: 'xterm-256color',
       cwd: projectPath,
       env: stripApiKeyEnvVars(getShellEnvironment()),
-      cols: 120,
-      rows: 30,
+      cols: SPAWN_COLS,
+      rows: SPAWN_ROWS,
     });
   } catch (err) {
     appLog('core:pty', 'error', 'Failed to spawn shell PTY', {
@@ -486,6 +494,7 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
 
   const session = createSession(proc, id);
   sessions.set(id, session);
+  broadcastToAllWindows(IPC.PTY.RESIZED, id, SPAWN_COLS, SPAWN_ROWS);
   const expectedGeneration = session.generation;
 
   proc.onData((data: string) => {
@@ -591,12 +600,20 @@ function logSize(session: ManagedSession, cols: number, rows: number): void {
 
 export function resize(agentId: string, cols: number, rows: number): void {
   const session = sessions.get(agentId);
-  if (session) {
+  if (session && (session.cols !== cols || session.rows !== rows)) {
+    // Every real change makes the child repaint (SIGWINCH, or a ConPTY
+    // reflow), so same-size requests from extra fits stop here (#2322).
+    session.cols = cols;
+    session.rows = rows;
     logSize(session, cols, rows);
     session.process.resize(cols, rows);
     if (annexEventBus.isActive()) {
       headlessTerminal.resize(agentId, cols, rows);
     }
+    // Send output produced at the old size first: terminals that follow the
+    // PTY size apply the change between the two (#2322).
+    flushPendingFor(IPC.PTY.DATA, agentId);
+    broadcastToAllWindows(IPC.PTY.RESIZED, agentId, cols, rows);
   }
   // If there's a pending command, the terminal just sent its real size — fire it now.
   if (session) {

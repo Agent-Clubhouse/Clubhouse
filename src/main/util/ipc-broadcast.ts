@@ -173,6 +173,20 @@ export function flushAllPending(): void {
 }
 
 /**
+ * Flush the pending batch a broadcast with these args would join, so an
+ * unthrottled event sent next is ordered after it.
+ */
+export function flushPendingFor(channel: string, ...args: unknown[]): void {
+  const policy = channelPolicies.get(channel);
+  if (!policy) return;
+  const groupKey = policy.keyFn ? `${channel}\0${policy.keyFn(...args)}` : channel;
+  const timer = activeTimers.get(groupKey);
+  if (timer === undefined) return;
+  clearTimeout(timer);
+  flushKey(groupKey);
+}
+
+/**
  * Return the number of currently pending batch keys (for diagnostics/tests).
  */
 export function pendingCount(): number {

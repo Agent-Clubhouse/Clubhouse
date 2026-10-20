@@ -19,6 +19,7 @@ import {
 import type { McpServerDef } from '../../shared/types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { BaseProvider } from './base-provider';
+import { cwdKey } from './copilot-session-store';
 import { createCodexHeadlessNormalizer } from './codex-headless-events';
 import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
@@ -647,7 +648,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
    */
   async listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
     const sessionsDir = path.join(this.resolveCodexHome(profileEnv), 'sessions');
-    const targetCwd = path.resolve(cwd);
+    const targetCwd = cwdKey(cwd);
 
     let files: string[];
     try {
@@ -673,7 +674,8 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, H
 
       // Only surface sessions recorded in this project.  A rollout with no
       // readable cwd is skipped rather than shown against every project.
-      if (!meta.cwd || path.resolve(meta.cwd) !== targetCwd) continue;
+      // cwdKey: on Windows, drive-letter case and separators may differ.
+      if (!meta.cwd || cwdKey(meta.cwd) !== targetCwd) continue;
 
       let lastActiveAt: string;
       try {

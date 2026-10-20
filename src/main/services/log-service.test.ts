@@ -10,14 +10,21 @@ vi.mock('fs/promises', () => ({
   unlink: vi.fn(),
 }));
 
+vi.mock('fs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('fs')>()),
+  appendFileSync: vi.fn(),
+}));
+
 vi.mock('./log-settings', () => ({
   getSettings: vi.fn(),
 }));
 
+import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as logSettings from './log-settings';
-import { init, log, flush, appLog, getLogPath, getNamespaces } from './log-service';
+import { init, log, flush, flushSync, appLog, getLogPath, getNamespaces } from './log-service';
 import { _resetBreadcrumbsForTests, recentBreadcrumbs } from './breadcrumbs';
+import { KNOWN_LOG_NAMESPACES } from '../../shared/log-namespaces';
 
 // The electron mock provides app.getPath('home') → path.join(os.tmpdir(), 'clubhouse-test-home')
 const EXPECTED_LOG_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'logs');
@@ -83,8 +90,8 @@ describe('log-service', () => {
   });
 
   describe('getNamespaces', () => {
-    it('returns empty array initially', () => {
-      expect(getNamespaces()).toEqual([]);
+    it('lists the known namespaces before anything is logged (#2312)', () => {
+      expect(getNamespaces()).toEqual([...KNOWN_LOG_NAMESPACES].sort());
     });
 
     it('returns discovered namespaces after logging', () => {
@@ -95,7 +102,7 @@ describe('log-service', () => {
       const namespaces = getNamespaces();
       expect(namespaces).toContain('app:ipc');
       expect(namespaces).toContain('plugin:terminal');
-      expect(namespaces).toHaveLength(2);
+      expect(namespaces.filter((ns) => ns === 'app:ipc')).toHaveLength(1);
     });
 
     it('returns namespaces in sorted order', () => {
@@ -293,6 +300,33 @@ describe('log-service', () => {
       const filePath = vi.mocked(fsp.appendFile).mock.calls[0][0] as string;
       expect(filePath).toMatch(/session-.*\.jsonl$/);
       expect(filePath).toContain(EXPECTED_LOG_DIR);
+    });
+  });
+
+  describe('flushSync (OS shutdown, #2335)', () => {
+    it('writes the buffer synchronously and clears it', async () => {
+      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'last words' });
+      flushSync();
+
+      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
+      const [file, data] = vi.mocked(fs.appendFileSync).mock.calls[0];
+      expect(file).toMatch(/session-.*\.jsonl$/);
+      expect(JSON.parse((data as string).trim()).msg).toBe('last words');
+
+      await flush();
+      expect(vi.mocked(fsp.appendFile)).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the buffer is empty and never throws', () => {
+      flushSync();
+      expect(vi.mocked(fs.appendFileSync)).not.toHaveBeenCalled();
+      vi.mocked(fs.appendFileSync).mockImplementationOnce(() => {
+        throw new Error('disk full');
+      });
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
+      expect(() => flushSync()).not.toThrow();
+      err.mockRestore();
     });
   });
 

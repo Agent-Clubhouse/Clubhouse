@@ -256,6 +256,12 @@ function ipcChannelNames(): string[] {
   return [...out].sort();
 }
 
+/** Framebriar access states (the SDK's FramebriarAccessState). */
+export const FEEDBACK_ACCESS_STATES = [
+  'disconnected', 'checking', 'connecting', 'connected', 'offline', 'stopped', 'disconnecting',
+  'expired', 'access-required', 'connection-uncertain', 'storage-unavailable', 'migration-required',
+] as const;
+
 export const ATTR = {
   // Cross-cutting (§3.2)
   outcome: enumAttr('clubhouse.outcome', OUTCOMES),
@@ -447,6 +453,8 @@ export const ATTR = {
     'hand_off', 'dispose_helper',
     // helpers (#2227)
     'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent',
+    // helper questions (#2366)
+    'answer_helper_question',
     // orchestration: connection tools (#2230)
     'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
     'other',
@@ -570,6 +578,30 @@ export const ATTR = {
   goobersStreamMode: enumAttr('clubhouse.goobers.stream.mode', ['live', 'reconnecting', 'polling', 'unavailable']),
   goobersModel: enumAttr('clubhouse.goobers.model', ['instance', 'run', 'workflow']),
   sseTerminalReason: enumAttr('clubhouse.sse.terminal_reason', ['auth-required', 'no-read-model', 'schema-changed']),
+  // Feedback (Framebriar screenshot feedback, #2309). States, counts and codes only:
+  // never notes, images, invitations or the report id (that stays in the local log).
+  feedbackStage: enumAttr('clubhouse.feedback.stage', ['start', 'connect', 'capture', 'submit', 'deliver']),
+  feedbackError: enumAttr('clubhouse.feedback.error', [
+    // SDK and outbox codes, in their own spelling
+    'capture-failed', 'invalid-media', 'feedback-unavailable', 'storage-full', 'storage-unavailable', 'invalid-input',
+    'conflict', 'secure-store-unavailable', 'invalid-store', 'network', 'invalid-ack',
+    // Clubhouse's own send checks
+    'screenshot-expired', 'notes-required', 'shot-unavailable', 'not-running',
+    // Why a connect returned false (connectFailureClass)
+    'invitation-malformed', 'busy', 'access-refused', 'timeout', 'connection-uncertain',
+    // A queued report the outbox gave up on
+    'undeliverable',
+    'unknown', 'other',
+  ]),
+  feedbackScreenshot: boolAttr('clubhouse.feedback.screenshot'),
+  feedbackAnnotated: boolAttr('clubhouse.feedback.annotated'),
+  feedbackShots: intAttr('clubhouse.feedback.shots'),
+  feedbackWindows: intAttr('clubhouse.feedback.windows'),
+  feedbackTrigger: enumAttr('clubhouse.feedback.trigger', ['button', 'shortcut']),
+  feedbackAccessState: enumAttr('clubhouse.feedback.access.state', [...FEEDBACK_ACCESS_STATES]),
+  feedbackAccessFrom: enumAttr('clubhouse.feedback.access.from', [...FEEDBACK_ACCESS_STATES, 'none']),
+  feedbackNotice: enumAttr('clubhouse.feedback.notice', ['none', 'expired', 'access-required', 'connection-uncertain', 'migration-required']),
+  feedbackRefusal: enumAttr('clubhouse.feedback.refusal', ['not-configured', 'no-main-window', 'unauthorized-caller']),
   /**
    * IPC channel, from the fixed IPC constants; never a dynamic name. Channels
    * built at runtime (e.g. per-key managed-settings channels) are `other`.
@@ -870,12 +902,12 @@ export const METRICS = {
   },
   'clubhouse.process.eventloop.delay.p99': {
     kind: 'gauge', unit: 's', level: 'standard',
-    description: 'Main-process event-loop delay, 99th percentile over the last minute',
+    description: 'Main-process event-loop delay (lateness past the sampling interval), 99th percentile over the last minute',
     attributes: [],
   },
   'clubhouse.process.eventloop.delay.max': {
     kind: 'gauge', unit: 's', level: 'standard',
-    description: 'Main-process event-loop delay, maximum over the last minute',
+    description: 'Main-process event-loop delay (lateness past the sampling interval), maximum over the last minute',
     attributes: [],
   },
   'clubhouse.process.memory': {
@@ -1243,6 +1275,21 @@ export const EVENTS = {
   'clubhouse.agent.permission.stuck': { level: 'errors' },
   /** Restoring an agent's config file from its snapshot failed. Attributes: `clubhouse.config.format`. */
   'clubhouse.config.restore_failed': { level: 'errors' },
+  // Feedback (#2309). The report id is never an attribute: it stays in the local log.
+  /** Screenshots taken for a review. Attributes: screenshot, shots, windows, trigger. */
+  'clubhouse.feedback.captured': { level: 'standard' },
+  /** Reviewed feedback saved to the outbox. Attributes: screenshot, annotated, shots, access state. */
+  'clubhouse.feedback.submitted': { level: 'standard' },
+  /** The outbox delivered a report (Framebriar's receipt). */
+  'clubhouse.feedback.delivered': { level: 'standard' },
+  /** A feedback step failed. Attributes: `clubhouse.feedback.stage`, `clubhouse.feedback.error`. */
+  'clubhouse.feedback.failed': { level: 'errors' },
+  /** An invitation was accepted. */
+  'clubhouse.feedback.connected': { level: 'standard' },
+  /** Access changed to a settled state (in-between states are left out). Attributes: state, from, notice. */
+  'clubhouse.feedback.access': { level: 'standard' },
+  /** A feedback request was refused before any capture. Attributes: `clubhouse.feedback.refusal`. */
+  'clubhouse.feedback.request_refused': { level: 'standard' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 

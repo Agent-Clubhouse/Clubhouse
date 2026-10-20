@@ -1178,6 +1178,11 @@ export interface LoggingSettings {
   telemetryLevel?: LocalTelemetryLevel;
   /** Set once the one-time level migration from export settings has run (#2289). */
   telemetryLevelMigrated?: boolean;
+  /**
+   * The user dismissed the one-time note that debug diagnostic lines share
+   * the hourly diag budget (#2299). Shown while the minimum level is debug.
+   */
+  diagBudgetNoteDismissed?: boolean;
 }
 
 export type LocalTelemetryLevel = 'standard' | 'detailed';

@@ -116,6 +116,14 @@ export interface AgentRuntime {
   respondPermission(requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void>;
   /** Answer a pending question, keyed by question id. */
   answerQuestion(requestId: string, answers: ChatQuestionAnswers): Promise<void>;
+  /** True while a question is waiting for an answer. Chat runtimes only. */
+  hasPendingQuestion?(requestId: string): boolean;
+  /**
+   * Hand a question that went to the parent orchestrator to the user instead
+   * (#2366), with `notice` saying why. False when it isn't a routed question
+   * that is still open. Chat runtimes only.
+   */
+  escalateQuestion?(requestId: string, notice: string): Promise<boolean>;
 
   /** Read the transcript; `afterSeq` returns only newer chat events of the current session. */
   readTranscript(opts?: { tail?: number; afterSeq?: number }): Promise<RuntimeTranscriptSlice>;

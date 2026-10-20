@@ -41,6 +41,7 @@ import { chatSleepInfo, recordSleep, takeKillRequest } from './sleep-reason';
 import { waitsOnPollingGroupProject } from './idle-policy';
 import { chatIdleTimeoutMs, onAgentIdleSleepChange, setAgentIdleSleep } from '../chat-idle-settings';
 import { codePart, recordBreadcrumb } from '../breadcrumbs';
+import { routeHelperQuestion } from '../clubhouse-mcp/tools/helper-question-tools';
 import { cleanSpawnEnv, getShellEnvironment, summarizeSpawnEnv } from '../../util/shell';
 
 export interface ChatSpawnParams {
@@ -514,6 +515,8 @@ async function runChatStart(
         return session;
       },
       beforePrompt: () => captureBeforePrompt(params.agentId),
+      // A hands-off orchestrator's helper asks its orchestrator, not the user (#2366).
+      routeQuestion: (question) => routeHelperQuestion(params.agentId, question),
       // Into the agent's session history (the Sessions picker), not just
       // lastSessionId, as a terminal run's exit does.
       onNativeSessionId: (id) => recordChatSession(id),

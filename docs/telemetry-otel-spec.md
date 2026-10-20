@@ -210,7 +210,7 @@ Each subsection lists the **spans** (with boundaries in code), **metrics**, **er
 | `c.window.relay.timeouts` | counter | `c.relay.kind` (`agent_state`/`canvas`; the Hub relay went with the Hub plugin in #1915) | S |
 | `c.window.popouts` | counter | `c.popout.type` (`agent`/`canvas`) | S |
 
-**Detecting unclean exits.** Write `telemetry/last-session.json` at startup containing `{session_id, started_at}`. Mark it clean in `c.app.shutdown`. If it is still unmarked at the next startup, emit `c.app.unclean_exit`. This is cheap crash detection without `crashReporter`.
+**Detecting unclean exits.** Write `telemetry/last-session.json` at startup containing `{session_id, started_at}`. Mark it clean in `c.app.shutdown`. If it is still unmarked at the next startup, emit `c.app.unclean_exit`. This is cheap crash detection without `crashReporter`. An OS shutdown, restart or logoff is marked clean too, with `exit: "os_shutdown"` instead of `"quit"`. Windows sends no `before-quit` then and may end the process right after `session-end`, so that path writes the marker, the local recording and the log buffer synchronously (#2335).
 
 **Events**
 
@@ -591,14 +591,39 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 
 **As implemented (Phase 5b, main-process call sites).** `c.settings.changed` carries `c.settings.key` only, from a static list covering the managed settings and the legacy settings handlers, with no field names or values. `c.theme.changed` adds `c.theme.builtin_id=other` for plugin themes. `c.popout.opened` and `c.blueprint.exported` / `c.blueprint.imported` (with `c.outcome`) come from main. Page views, the command palette, onboarding and help topics are renderer call sites, owned by the refresh (§9.1).
 
+### 4.16 Feedback (`framebriar/feedback-service.ts`, [#2309](https://github.com/Agent-Clubhouse/Clubhouse/issues/2309))
+
+Event records only. Booleans, counts, states and codes: never notes, screenshots, invitations, error messages or the report id.
+
+| Event | Attributes | Level |
+|---|---|---|
+| `c.feedback.captured` | `c.feedback.screenshot`, `c.feedback.shots`, `c.feedback.windows`, `c.feedback.trigger` (`button`/`shortcut`) | S |
+| `c.feedback.submitted` | saved to the outbox: `c.feedback.screenshot`, `c.feedback.annotated`, `c.feedback.shots`, `c.feedback.access.state` | S |
+| `c.feedback.delivered` | none (Framebriar's receipt) | S |
+| `c.feedback.failed` | `c.feedback.stage` (`start`/`connect`/`capture`/`submit`/`deliver`), `c.feedback.error` (the SDK or outbox code, a send check, the connect failure class, `undeliverable`, else `unknown`) | E |
+| `c.feedback.connected` | none | S |
+| `c.feedback.access` | settled access transitions only (not `checking`/`connecting`/`disconnecting`): `c.feedback.access.state`, `.from`, `c.feedback.notice` | S |
+| `c.feedback.request_refused` | `c.feedback.refusal` (`not-configured`/`no-main-window`/`unauthorized-caller`) | S |
+
+**Report id.** Maintainers match a Framebriar report to the user's local record by its id. The id is not an attribute, so it stays in the local `core:feedback` log lines (`Feedback saved for delivery`, `Feedback delivered`) until the local-only diag tier ([#2299](https://github.com/Agent-Clubhouse/Clubhouse/issues/2299)) can carry it.
+
 ### 4.15 Process health, renderer performance and pipeline health (added in revision 2)
 
 The first draft left these as gaps. The maintainer set the goal as broad coverage of critical paths, and the regression history (§12) shows main-thread starvation (#1528), canvas render cost (#1693, #1694) and silent stalls. All of the following are in Phase 3.
 
 | Instrument | Source | Attributes | Level |
 |---|---|---|---|
-| `c.process.eventloop.delay.p99`, `.max` (observable gauges, s) | `perf_hooks.monitorEventLoopDelay`, read and reset every 60 s. These are gauges because App Insights histograms have no percentiles (§3.2). | — | S |
-| `c.process.eventloop.blocked` (event) | the 60 s window's max exceeds 2 s | `c.blocked.flow`: the name of the root span active when the stall was sampled, from a 100 ms watchdog timer. That points at the culprit, e.g. `c.agent.spawn` during a `which` lookup. | E |
+| `c.process.eventloop.delay.p99`, `.max` (observable gauges, s) | `perf_hooks.monitorEventLoopDelay`, read and reset every 60 s. These are gauges because App Insights histograms have no percentiles (§3.2). Both are lateness past the histogram's resolution, so an idle loop reads about 0 in either sampler mode (below). | — | S |
+| `c.process.eventloop.blocked` (event) | a stall of 2 s or more: the watchdog timer fired that late, or the histogram recorded it since the watchdog's last tick. At most one a minute. | `c.blocked.flow`: the name of the root span active when the watchdog noticed the stall. That points at the culprit, e.g. `c.agent.spawn` during a `which` lookup. | E |
+
+**Sampler modes** ([#2291](https://github.com/Agent-Clubhouse/Clubhouse/issues/2291)). The health sampler runs for every install with logging on, so it backs off when nobody is looking:
+
+| Mode | When | Histogram resolution | Watchdog (one `setTimeout`, lateness = stall) | Detects |
+|---|---|---|---|---|
+| `active` | a Clubhouse window is focused and `powerMonitor.getSystemIdleState(300)` is `active` (or `unknown`, common on Linux/Wayland, where focus alone decides) | 100 ms | 1 s | every stall of 200 ms or more in the minute's max; every stall of 2.1 s or more as an event |
+| `idle` | otherwise (app in the background, user away 5 min, screen locked) | 500 ms | 2 s | every stall of 1 s or more in the max, shorter ones only when they span a histogram tick by enough to show (measured: about 1 in 4 stalls of 200–250 ms reported at 100 ms or more); every stall of 2.5 s or more as an event |
+
+Window focus, unlock and resume switch to `active` at once; backing off waits for the next watchdog tick, so moving between two Clubhouse windows does not flap. A switch keeps the minute's p99 (the larger segment's) and max; a ramp-up first takes the pending watchdog's lateness, so a click on a hung window doesn't lose the stall. Resume and unlock start a fresh histogram, so a sleep gap is never measured as a stall. `app.getAppMetrics()` stays once a minute in both modes: it costs about 0.2 ms per call. The mode never depends on export.
 | `c.process.memory` (observable gauge, By) | `app.getAppMetrics()` every 60 s: `workingSetSize`, `privateBytes` | `c.process.type` (`browser`/`renderer`/`gpu`/`utility`), `c.window.kind` | S |
 | `c.process.cpu` (observable gauge, %) | `app.getAppMetrics()` `percentCPUUsage` | `c.process.type` | S |
 | `c.renderer.long_frames` (counter) + `c.renderer.long_frame.duration` (histogram, s) | `PerformanceObserver` for `long-animation-frame` (Chromium LoAF), aggregated in the renderer facade and sent once a minute | `c.view` (the active main view: `agent`/`terminal`/`canvas`/`files`/`git`/`settings`/`plugin`/`other`) | S |
@@ -700,7 +725,7 @@ The Windows path patterns are tested on the Windows CI runner with real `C:\User
 | `clubhouse.channel` | `stable` / `preview` |
 | `deployment.environment.name` | `production` / `development` (`app.isPackaged`) |
 | `os.type` | `darwin` / `windows` / `linux` |
-| `os.version` | major.minor only |
+| `os.version` | major.minor only. Windows 11 reports `10.0` like Windows 10, so a Windows build of 22000 or later is sent as `11.0` (this includes Server 2025) |
 | `host.arch` | `arm64` / `amd64` |
 | `process.runtime.version` | Node version |
 | `clubhouse.electron.version` | Electron version |
@@ -963,7 +988,7 @@ Telemetry export                                ← new (v1 layout; see §6.11 f
   - It is parsed locally. `InstrumentationKey` must be a GUID and `IngestionEndpoint` must be an `https:` URL whose host ends in `.applicationinsights.azure.com` or a sovereign-cloud equivalent. The allowlist lives in code. Any other host requires the Other (OTLP) destination.
   - Bare instrumentation keys are rejected with a message that IKey-only ingestion was retired in 2025.
   - It is stored with **`safeStorage.encryptString`** in `userData/telemetry-secret.bin`, mode 0600. This is the first use of `safeStorage` in the codebase.
-  - On Linux, if `safeStorage.getSelectedStorageBackend()` returns `basic_text`, the UI warns that the string will be stored with weak protection, and asks the user to confirm.
+  - On Linux, if `safeStorage.getSelectedStorageBackend()` returns `basic_text`, the UI warns that the string will be stored with weak protection, and asks the user to confirm. Electron reports encryption as unavailable on `basic_text` until the app calls `safeStorage.setUsePlainTextEncryption(true)`, so the backend is checked first and the app opts in before reading or writing (#2336).
   - After saving, **the renderer only ever receives a masked form** (the last 4 characters of the IKey plus the ingestion host). The full string never crosses back into the renderer.
   - The connection string is not truly secret: it is an ingestion-only credential and cannot read data. It is still treated as one, because it lets anyone write into the user's resource and bill them.
 - **OTLP endpoint and headers handling:**
@@ -1177,7 +1202,7 @@ The `tel.*` signals are also written to local files, so flow timings and classif
 
 **Parity rule** (maintainer decisions on [#2289](https://github.com/Agent-Clubhouse/Clubhouse/pull/2289)). Local recording is the only gate on what is produced, measured and exported. Export is a background uploader of exactly what local recording produces, at its level: turning export on or off starts or stops no producer, changes no producer level, and so changes no cost. With local logging or local recording off, no producer runs and a configured exporter sends nothing.
 
-**Behavior change for release notes.** Telemetry export used to run independently of local logging. Now it sends only what local recording produces. With **Write logs** or **Record telemetry locally** off, an enabled destination sends nothing, and a destination's level can no longer exceed the local **Telemetry detail** level. Installs already exporting at Detailed are migrated to local Detailed once, so they keep their data.
+**Behavior change for release notes.** Telemetry export used to run independently of local logging. Now it sends only what local recording produces. With **Record locally** or **Record telemetry signals** off, an enabled destination sends nothing, and a destination's level can no longer exceed the local **Telemetry detail** level. Installs already exporting at Detailed are migrated to local Detailed once, so they keep their data.
 
 - **Producer gates.** `isTelemetryActive()` is true exactly while local recording is on, and `telemetryLevel()` is local recording's level. Neither reads export state. Every producer (§4: health sampler and watchdog, workspace gauges, lifecycle trees, session marker, agent, chat, Annex, Goobers, update and git signals, and the renderer's long-frame and perf observers) gates on them. Renderers get a separate `producers` flag in the telemetry state for the same reason.
 - **Policy switch.** `EXPORT_WITHOUT_LOCAL_RECORDING` in `facade.ts` is the one place that decides what a running exporter gets while local recording is off.
@@ -1190,41 +1215,56 @@ The `tel.*` signals are also written to local files, so flow timings and classif
   - Changing the level restarts the recorder (a new file) at the new level.
 - **Migration.** Runs once per install, on the first start with this build. If export was set up to send Detailed data (the experiment on, consent recorded, and an enabled destination at Detailed), the local level becomes Detailed, so nobody silently loses data. Either way the run is recorded in `telemetryLevelMigrated: true`, so a later choice by the user is never overridden.
 
-- **Setting.** Settings → Logging → **Record telemetry locally**, stored as `telemetryRecording` in `logging-settings.json`. On by default (a file without the key counts as on). It only runs while **Write logs** (`enabled`) is on; turning either off stops recording at once, flushing what was queued. The namespace and minimum-level filters do not apply: those are for log lines.
+- **Setting.** Settings → Logging → **Record telemetry signals** (labelled **Record telemetry locally** before #2312), stored as `telemetryRecording` in `logging-settings.json`. On by default (a file without the key counts as on). It only runs while **Record locally** (`enabled`, labelled **Write logs** before #2312) is on; turning either off stops recording the signals at once, flushing what was queued. The namespace and minimum-level filters do not apply to signals: those are for diag lines. The recorder itself runs while **Record locally** is on, for diag lines (below); with **Record telemetry signals** off it records diag lines only, is not installed in the facade, and its file starts at the first diag line. Switching **Record telemetry signals** restarts the recorder (a new file); a level change restarts it only while it records signals. Since the recorder runs with signals off too, so does the hourly retention pass.
 - **No SDK, no network.** `local-recorder.ts` is part of the main bundle and imports no OpenTelemetry. `local-control.ts` installs it in the facade synchronously from `initTelemetry()`, so startup signals are recorded too. It never creates an install id or `telemetry-settings.json`: it uses the install's hash salt when one exists (local hashes then match exported ones) and a per-run random salt otherwise. `recordAppSession` takes the previous version from the session record (`telemetry-session.json`, written whenever signals are produced), so the startup kind is the same with export on or off.
-- **Same protections as export.** Attributes go through `sanitizeAttribute` (registry keys only, enum/int/bool/hash/version formats, the scrubber, the 128-character cap), `hash` attributes through `hashId`, exception types through the same identifier check, and stacks through `sanitizeStack`. Exception messages, log messages and `meta` are never written. Metric dimensions are limited to each metric's declared attributes, as the SDK's views do.
+- **Same protections as export.** Attributes go through `sanitizeAttribute` (registry keys only, enum/int/bool/hash/version formats, the scrubber, the 128-character cap), `hash` attributes through `hashId`, exception types through the same identifier check, and stacks through `sanitizeStack`. Exception messages, log messages and `meta` are never written in signal lines (diag lines, below, carry redacted text and are never exported). Metric dimensions are limited to each metric's declared attributes, as the SDK's views do.
 - **Level.** Standard by default (`LOCAL_RECORDING_LEVEL`), Detailed opt-in; see Levels above.
 - **Facade.** The recorder is a second consumer next to the SDK runtime (`setLocalSink`). Flows and steps are wrapped inside the SDK's span, so the SDK sees the same callback result and its span handle still receives every attribute. The unclean-exit check keeps its `telemetry-session.json` while recording. A sink that throws is caught in the facade and never stops the SDK call after it. `currentTraceIds()` returns the SDK's ids while it runs and the local ones otherwise, so local log lines carry `traceId`/`spanId` that match the telemetry file.
 - **Renderers.** No new IPC: renderers record while main reports the state as enabled (§6.2) and keep batching (every 2 s or 50 items). Their producers run only while the state's `producers` flag is on. `telemetry:emit` batches are accepted while the state is enabled and go through the same re-validation.
-- **Idle cost** (measured on #2289, each producer alone in Node 24 with Electron stubbed, 180 s idle, 2–3 runs; baseline idle Node 3–11 ms CPU/min). These costs are the same with export on or off.
+- **Idle cost** (measured on #2289, each producer alone in Node 24 with Electron stubbed, 180 s idle, 2–3 runs; baseline idle Node 3–11 ms CPU/min; health sampler re-measured on #2291). These costs are the same with export on or off.
 
   | Producer | Wakeups/min | CPU over baseline | fs ops/min idle |
   |---|---|---|---|
   | Local recorder (2 s flush) | 30 | about 3 ms/min | 0 (an empty queue skips the write) |
   | Workspace gauges | 1 | about 3–5 ms/min with the recorder | 1 append for the metric window |
   | Session marker | 0 | about 0 | 0 (1 read and 1 write at start, 1 write at clean exit) |
-  | Health watchdog (500 ms) | 120 | about 18 ms/min | 0 |
-  | Health event-loop histogram (100 ms resolution) + 1/min sample | sampling | about 30 ms/min, plus one `app.getAppMetrics()`/min (not measured) | 0 |
-  | All together | | about 55 ms/min | 1 |
+  | Health sampler, `idle` mode (500 ms histogram, 2 s watchdog, 1/min sample) | 151 | about 5.5 ms/min in Node, about 25 ms/min in a real Electron 43 main process | 0 |
+  | Health sampler, `active` mode (100 ms histogram, 1 s watchdog, 1/min sample) | 661 | about 18.5 ms/min in Node, about 72 ms/min in Electron | 0 |
 
-  Optimizing these is a follow-up.
+  Before #2291 the sampler always ran a 100 ms histogram and a 500 ms watchdog: about 20 ms/min in Node and about 77 ms/min in Electron. Electron's main process pays more per wakeup than plain Node.
 - **Correlation.** Spans carry random `traceId` (32 hex) and `spanId` (16 hex) and, for children, `parentSpanId`. A registered root span starts a new trace; anything else joins the active span through an `AsyncLocalStorage` context. Events and exceptions carry the active span's ids. Renderer spans arrive replayed and start their own traces, as in export.
 - **Volume.** Metrics are aggregated in memory and written once a minute (and on every exit flush) as one line per attribute set, at most 200 sets per metric plus an overflow line. The §6.4 caps (50,000 spans, 10,000 events and exceptions) apply per hour rather than per run, so a long run keeps recording its tail. At most 1,000 lines wait in memory; lines are flushed every 2 s or at 100 lines. Files rotate at 2 MB.
 - **Rolling eviction** ([#2297](https://github.com/Agent-Clubhouse/Clubhouse/issues/2297)). A run keeps at most its newest 10 MB. Past that budget, recording continues and the run's oldest chunks are deleted, never the one being written, with an `evicted` line reporting what went. The tail of a long run, where hangs and failures show up, is what stays. Metric aggregates and drop summaries skip the pending limit. A `dropped` line at each exit flush and at stop reports what the caps dropped since the last one.
 - **Retention.** Files are `~/.clubhouse/logs/telemetry-<recorder start, ms precision>.jsonl`, then `.1.jsonl`, `.2.jsonl` for later chunks. Turning recording off and on starts a new file. "Delete local telemetry data" restarts the recorder so it drops the deleted salt; existing files stay until retention prunes them. The log retention tier's age and total-size limits (`LOG_RETENTION_TIERS`) prune them together with the legacy `session-*.jsonl` logs ([#2298](https://github.com/Agent-Clubhouse/Clubhouse/issues/2298)). `local-retention.ts` runs at startup (from log-service), hourly while recording, and after every rotation, and never deletes a file being written.
-- **Exit.** `flushBeforeExit` and `forceFlushTelemetry` flush the recorder alongside the SDK, within the same timeout.
+- **Exit.** `flushBeforeExit` and `forceFlushTelemetry` flush the recorder alongside the SDK, within the same timeout, including a diag-only recorder.
+
+**Diagnostic lines** ([#2299](https://github.com/Agent-Clubhouse/Clubhouse/issues/2299), part of [#2295](https://github.com/Agent-Clubhouse/Clubhouse/issues/2295)). A local-only tier for the text that signals can't carry: error messages, paths, raw ids, stderr. `t:"diag"` lines share the file, chunking, rolling eviction and retention with the signals, but are not telemetry.
+
+- **API.** Main: `diag(ns, level, msg, meta?)` from `src/main/telemetry/diag.ts` (also exported from `telemetry/index.ts`). Renderer: `diag(ns, level, msg, meta?)` from `src/renderer/telemetry`, batched with the signals over `telemetry:emit` as a `diag` item. `level` is `debug`, `info`, `warn`, `error` or `fatal`. Neither ever throws. The legacy `appLog`, `rendererLog`, `log:write` and plugin `api.logging` are not pointed at it yet (#2301, #2302).
+- **Local only, by construction.** `diag.ts` and `diag-sink.ts` import nothing from the facade, the SDK runtime or an exporter. Their only sink is the local recorder, installed by `local-control.ts`. Renderer diag items go from the bridge to `diag.ts`, never to the facade. So no diag line reaches an exporter under either `EXPORT_WITHOUT_LOCAL_RECORDING` value, and none is added to feedback reports. `diag.test.ts` (fake runtime, both policy values, signals on and off) and `telemetry-egress.test.ts` (real SDK, mock collector) assert it.
+- **Gating.** Exactly the legacy log's: `enabled`, then `namespaces[ns] !== false`, then `minLogLevel`, read on every call. Independent of `telemetryRecording` and of the telemetry level. Namespaces seen while logging is on are listed in Settings → Logging → Namespaces with the known and legacy ones (`getDiagNamespaces()`).
+- **Redaction, not scrubbing** (`diag-redaction.ts`). Paths, error text, stderr, exit codes and raw ids stay. Removed before the line is queued, in `msg` and at every depth of `meta`:
+  - the home directory, replaced by `<home>` in every spelling (case, slashes, JSON escapes, URL encoding), ending at a path boundary; the rest of the path stays;
+  - secrets: the values of keys named `auth`, `sig` or `signature`, or containing `token`, `secret`, `password`, `apiKey`, `authorization`, `cookie`, `credential`, `privateKey`, `accessKey` or `accountKey` (numbers and booleans, like `maxTokens`, stay); `Bearer`/`Basic` credentials, `key=value` and `"key": "value"` pairs with those names (Azure `AccountKey=` and SAS `sig=` included), `--api-key`/`--token` flags, URL userinfo, and well-known token formats (`sk-…`, GitHub, Slack, AWS and Google keys, JWTs, PEM private keys). Object keys go through the same text redaction;
+  - content ([#1919](https://github.com/Agent-Clubhouse/Clubhouse/issues/1919)): the values of any key containing `prompt`, `mission`, `transcript` or `completion`, and of `instructions`, `messages`, `userMessage`, `assistantMessage`, `messageText`, `content`, `text`, `body`, `data`, `payload`, `chunk`, `input`/`toolInput`, `args`/`argv`/`arguments`, `params`/`parameters`, `query`, `response`, `result`, `reply`, `answer`, `delta`, `stdin` and `stdout`, are replaced by their size (`<redacted: 412 chars>`); `env` keeps its variable names with every value redacted. `stderr` and `lastOutput` stay, redacted and capped: they carry the failure. Two error texts that quote content are cut too: `Command failed: <cmd> …` keeps only the executable, and V8's `"…"... is not valid JSON` loses the quoted input. Free text a call site interpolates into `msg` can't be recognized, so call sites must never put prompt or response text there;
+  - size: `msg` and every string are cut at 2,000 characters, objects at 64 keys, arrays at 64 items, nesting at depth 6, and `meta` at 8 KB of JSON (first keys kept, a `<truncated>` key says what went). Errors keep `name`, `message`, `code` and `stack`, redacted the same way.
+- **Budget.** Diag lines have their own byte budget per hourly cap window (`LOCAL_DIAG_WINDOW_BYTES`, 2 MB): debug lines stop at half of it, info at 80 %, and warn and above use the rest. At most 500 diag lines wait in memory, apart from the 1,000 signal lines, so neither can starve the other. Drops are reported in the `dropped` line's `diag` count. While the minimum level is debug, Settings → Logging → Diagnostic log shows a one-time note that debug lines share this budget and go first; dismissing it sets `diagBudgetNoteDismissed` in `logging-settings.json`.
+- **Renderer items.** Main re-checks each `diag` item: the namespace (`^[\w@][\w.@/-]*(:[\w.@/-]+)*$`, at most 128 characters), the level, `msg` (cut at 4,000 characters, so redaction runs before the final 2,000-character cut and never sees a secret split in two) and `meta` (a plain object, dropped if its JSON is over 32 KB); then it is gated and redacted like a main line, tagged with the window kind main decides. Each window may send 500 diag items per 10 s; the rest are dropped and counted, before any parsing. Renderers send diag items while the telemetry state's `diag` flag is on, which follows diag recording, not `enabled`. The renderer turns `meta` into plain JSON data first, so a value IPC can't clone never fails a batch.
+- **Trace correlation.** A diag line carries the active local span's `traceId` and `spanId` (the recorder's AsyncLocalStorage), so it sits inside its `agent.spawn` or `chat.start` span in the same file. Renderer lines carry none.
+- **Breadcrumbs.** `addDiagTap(tap)` (in `diag.ts`, not the public telemetry index) sees every diag call, whatever the settings, in memory, as the same redacted record the file gets, for the feedback breadcrumb ring ([#2303](https://github.com/Agent-Clubhouse/Clubhouse/issues/2303)). A tap may take structured fields only and must never forward `msg` or `meta` wholesale. Redaction runs only when a tap or the file will see the line.
 
 **File format** (JSON Lines, one record per line; `ts` is ISO 8601, `*Ms` fields are epoch or elapsed milliseconds):
 
 | `t` | Fields |
 |---|---|
-| `session` | `v` (format version, 1), `ts`, `appVersion`, `platform`, `arch`, `level`. First line of the first file. |
+| `session` | `v` (format version, 2), `ts`, `appVersion`, `platform`, `arch`, `level`, `signals?` (`false` when only diag lines are recorded). First line of the first file. |
 | `span` | `ts` (end), `name`, `traceId`, `spanId`, `parentSpanId?`, `startMs`, `durationMs`, `outcome` (`ok`/`error`/`cancelled`/...), `errorType?`, `attrs` |
 | `event` | `ts`, `name`, `severity` (`info`/`warn`/`error`/`fatal`), `traceId?`, `spanId?`, `attrs` |
 | `exception` | `ts`, `type` (class name only), `stack` (sanitized frames), `traceId?`, `spanId?`, `attrs` (origin, handled, extras) |
 | `metric` | `ts` (window end), `name`, `kind`, `unit?`, `startMs`, `durationMs`, `attrs`, `overflow?`; counters `sum`; histograms `count`, `sum`, `min`, `max`; gauges `value` (last) |
+| `diag` | `ts`, `ns`, `level` (`debug`/`info`/`warn`/`error`/`fatal`), `msg`, `meta?`, `window?` (`main`/`popout`, renderer lines only), `traceId?`, `spanId?`. Local only and redacted, see Diagnostic lines. |
 | `evicted` | `ts`, `files`, `bytes`, `maxBytes`. This run's oldest chunks were deleted to stay within its rolling budget; recording continues. |
-| `dropped` | `ts`, `traces`, `logs`, `lines`: counts dropped since the previous `dropped` line. Written when an hourly cap window ends, at exit flushes and at stop, only when non-zero. |
+| `dropped` | `ts`, `traces`, `logs`, `lines`, `diag`: counts dropped since the previous `dropped` line. Written when an hourly cap window ends, at exit flushes and at stop, only when non-zero. |
 
 ## 7. Annex satellites and controllers
 

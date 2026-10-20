@@ -1206,6 +1206,32 @@ describe('CodexCliProvider', () => {
       expect(sessions.map((s) => s.sessionId)).toEqual(['01a0741d-6c83-7720-8fc2-6412909a95ab']);
     });
 
+    it('matches a Windows cwd regardless of drive-letter case, separators or a \\\\?\\ prefix', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      try {
+        const winProject = path.win32.join('C:\\', 'work', 'my-project');
+        mockCodexStore(SESSIONS, datePartitionedTree(), {
+          [F1]: rolloutMeta('c:\\work\\my-project', '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+          [F2]: rolloutMeta('C:/Work/My-Project/', '2026-09-04T09:00:00.000Z', '019cc073-4ae3-79c3-bc68-eef17cd515f9'),
+          [F3]: rolloutMeta('\\\\?\\C:\\work\\my-project', '2026-09-03T08:00:00.000Z', '019d0eff-598f-7ce2-92f2-200d97c54271'),
+        });
+        const sessions = await provider.listSessions(winProject);
+        expect(sessions.map((s) => s.sessionId).sort()).toEqual([
+          '019cc073-4ae3-79c3-bc68-eef17cd515f9',
+          '019d0eff-598f-7ce2-92f2-200d97c54271',
+          '01a0741d-6c83-7720-8fc2-6412909a95ab',
+        ]);
+
+        mockCodexStore(SESSIONS, datePartitionedTree(), {
+          [F1]: rolloutMeta('C:\\work\\my-project2', '2026-09-05T17:28:00.000Z', '01a0741d-6c83-7720-8fc2-6412909a95ab'),
+        });
+        expect(await provider.listSessions(winProject)).toEqual([]);
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
+    });
+
     it('skips a rollout whose metadata has no cwd rather than showing it everywhere', async () => {
       mockCodexStore(SESSIONS, datePartitionedTree(), {
         [F1]: { timestamp: 'x', type: 'session_meta', payload: { id: 'no-cwd' } },

@@ -765,6 +765,15 @@
 }
 .chat-markdown pre code { background: none; padding: 0; color: rgb(var(--ctp-subtext0)); }
 .chat-markdown a { color: rgb(var(--ctp-accent)); text-decoration: underline; }
+/* Rich chat links (#2351): GitHub references read as link text with a small state-colored icon, never a pill. */
+.chat-rich-link { color: rgb(var(--ctp-accent)); text-decoration: underline; }
+.chat-gh-token { color: rgb(var(--ctp-accent)); text-decoration: none; }
+.chat-gh-token:hover { text-decoration: underline; }
+.chat-gh-token svg { display: inline-block; vertical-align: -1px; margin-right: 0.2em; color: rgb(var(--ctp-overlay1)); }
+.chat-gh-token[data-gh-state="open"] svg { color: rgb(var(--ctp-success)); }
+.chat-gh-token[data-gh-state="merged"] svg { color: rgb(var(--ctp-accent2)); }
+.chat-gh-token[data-gh-state="closed"] svg { color: rgb(var(--ctp-error)); }
+.chat-gh-title { margin-left: 0.35em; color: rgb(var(--ctp-subtext1)); }
 .chat-markdown strong { color: rgb(var(--ctp-text)); font-weight: 600; }
 .chat-markdown blockquote { border-left: 2px solid rgb(var(--ctp-surface1)); padding-left: 0.75rem; color: rgb(var(--ctp-subtext0)); margin: 0 0 0.5rem; }
 .chat-markdown table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0 0 0.5rem; font-size: 0.8125rem; }

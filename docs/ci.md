@@ -52,6 +52,12 @@ Over the 67 PRs measured below, macOS build would have run on **12 (18%)**:
 - the Electron bump in #1941;
 - CI changes: 3.
 
+## Paths Windows can't check out
+
+Before it classifies anything, the `changes` job runs `node scripts/ci/check-windows-paths.mjs`. It fails if a tracked path has a segment Windows can't create: a backslash, `:` or another reserved character, a device name like `CON` or `NUL`, or a trailing dot or space. Without it, one such commit makes every Windows job fail at `actions/checkout` with no clear message (#2347).
+
+`npm test` runs the same check after every run with `--untracked`, which adds untracked and ignored paths, so a stray directory fails locally before anyone commits it.
+
 ## The two macOS jobs
 
 **macOS unit**, on every code PR (about 2.5 min). It skips the Electron download, then runs:

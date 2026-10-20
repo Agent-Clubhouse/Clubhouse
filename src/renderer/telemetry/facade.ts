@@ -6,6 +6,11 @@
  * While telemetry is off (the default), every call is one boolean check and
  * flows run `fn` directly. Main tells us the state at startup and whenever it
  * changes.
+ *
+ * `diag()` sends local-only diagnostic lines (#2299) over the same batches.
+ * They follow the state's `diag` flag (local logging on), not `enabled`;
+ * main filters them by namespace and level, redacts them, rate-limits them
+ * and never exports them.
  */
 import {
   EVENTS,
@@ -20,6 +25,7 @@ import {
 } from '../../shared/telemetry/attributes';
 import {
   DISABLED_STATE,
+  MAX_RENDERER_DIAG_META_BYTES,
   MAX_RENDERER_STACK_CHARS,
   RENDERER_PROTOCOL_VERSION,
   parseTelemetryState,
@@ -28,6 +34,7 @@ import {
   type RendererReadyMarks,
   type TelemetryState,
 } from '../../shared/telemetry/renderer-protocol';
+import { DIAG_MAX_STRING_CHARS, type DiagLevel } from '../../shared/telemetry/diag';
 
 export const FLUSH_INTERVAL_MS = 2000;
 export const FLUSH_AT_ITEMS = 50;
@@ -76,8 +83,13 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof (value as { then?: unknown }).then === 'function';
 }
 
+/** Whether the current state takes this item: diag items follow `diag`, the rest `enabled`. */
+function accepts(s: TelemetryState, item: RendererItem): boolean {
+  return item.t === 'diag' ? s.diag === true : s.enabled;
+}
+
 function enqueue(item: RendererItem): void {
-  if (!state.enabled || !bridge) return;
+  if (!bridge || !accepts(state, item)) return;
   if (queue.length >= MAX_QUEUED_ITEMS) return;
   queue.push(item);
   if (queue.length >= FLUSH_AT_ITEMS) flushTelemetry();
@@ -127,8 +139,8 @@ function setState(next: TelemetryState): void {
       }
     }
   }
-  if (!state.enabled) {
-    queue = [];
+  queue = queue.filter((item) => accepts(state, item));
+  if (queue.length === 0) {
     if (timer) {
       clearTimeout(timer);
       timer = null;
@@ -251,6 +263,41 @@ export const tel = {
     });
   },
 };
+
+/**
+ * `meta` as plain JSON data, so a value IPC can't clone (a function, a DOM
+ * node) never fails the whole batch. Errors keep name, message and stack.
+ * Over the size limit it is replaced by a marker.
+ */
+function plainMeta(meta: Record<string, unknown>): Record<string, unknown> | undefined {
+  try {
+    const json = JSON.stringify(meta, (_key, value: unknown) =>
+      value instanceof Error ? { name: value.name, message: value.message, stack: value.stack } : typeof value === 'bigint' ? value.toString() : value);
+    if (json === undefined) return undefined;
+    if (json.length > MAX_RENDERER_DIAG_META_BYTES) return { '<truncated>': 'meta over 32 KB' };
+    const parsed: unknown = JSON.parse(json);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
+  } catch {
+    return { '<truncated>': 'unserializable meta' };
+  }
+}
+
+/**
+ * A local-only diagnostic line (spec §6.12, #2299), batched to main. `meta`
+ * must be plain data; main drops it if its JSON is over 32 KB, and redacts
+ * paths under home, secrets and prompt content before writing. Never throws.
+ */
+export function diag(ns: string, level: DiagLevel, msg: string, meta?: Record<string, unknown>): void {
+  if (!state.diag) return;
+  try {
+    const item: RendererItem = { t: 'diag', ns, level, msg: String(msg).slice(0, DIAG_MAX_STRING_CHARS * 2) };
+    const plain = meta ? plainMeta(meta) : undefined;
+    if (plain) item.meta = plain;
+    enqueue(item);
+  } catch {
+    // Never throw into app code.
+  }
+}
 
 /**
  * True while renderer producers should run (local recording is on). Lets

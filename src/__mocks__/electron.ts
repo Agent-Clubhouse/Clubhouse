@@ -20,6 +20,7 @@ export const app = {
 export const safeStorage = {
   isEncryptionAvailable: () => true,
   getSelectedStorageBackend: () => 'gnome_libsecret',
+  setUsePlainTextEncryption: (_usePlainText: boolean) => {},
   encryptString: (plain: string) => Buffer.from(`test-enc:${plain}`, 'utf8'),
   decryptString: (buf: Buffer) => {
     const text = buf.toString('utf8');

@@ -24,6 +24,7 @@ import {
   type TelAttr,
   type TelemetryLevel,
 } from '../../shared/telemetry/attributes';
+import { getDiagSink } from './diag-sink';
 import {
   NOOP_SPAN,
   errorTypeOf,
@@ -428,6 +429,25 @@ export async function flushBeforeExit(timeoutMs = DEFAULT_FLUSH_TIMEOUT_MS): Pro
   await forceFlushTelemetry(timeoutMs);
 }
 
+/**
+ * OS shutdown, restart or logoff (#2335): write the local recording
+ * synchronously, then start an export flush the OS may not wait for. Doesn't
+ * run the intentional-exit listeners; lifecycle records the exit kind itself.
+ * Never throws.
+ */
+export function flushForOsSessionEnd(timeoutMs = DEFAULT_FLUSH_TIMEOUT_MS): void {
+  try {
+    local?.flushSync?.();
+  } catch {
+    // Telemetry must never block or fail an exit.
+  }
+  try {
+    runtime?.forceFlush(timeoutMs).catch(() => {});
+  } catch {
+    // As above.
+  }
+}
+
 const exitListeners = new Set<() => void>();
 
 /** Run synchronously at the start of every intentional exit. */
@@ -443,11 +463,14 @@ export function onIntentionalExit(listener: () => void): () => void {
 export async function forceFlushTelemetry(timeoutMs = DEFAULT_FLUSH_TIMEOUT_MS): Promise<void> {
   const rt = runtime;
   const sink = local;
-  if (!rt && !sink) return;
+  // Diag lines are flushed too (to the local file only); usually the same recorder.
+  const diagSink = getDiagSink();
+  const diagFlush = diagSink && (diagSink as unknown) !== sink ? diagSink.flush().catch(() => {}) : undefined;
+  if (!rt && !sink && !diagFlush) return;
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
-      Promise.all([rt?.forceFlush(timeoutMs), sink?.flush().catch(() => {})]),
+      Promise.all([rt?.forceFlush(timeoutMs), sink?.flush().catch(() => {}), diagFlush]),
       new Promise<void>((resolve) => {
         timer = setTimeout(resolve, timeoutMs);
       }),

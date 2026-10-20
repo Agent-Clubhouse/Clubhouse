@@ -79,6 +79,22 @@ describe('ChatStream: restored text stays inside the pane (#2292)', () => {
     expect(wrapper).toHaveClass('min-w-0');
   });
 
+  it("pushes user bubbles to the column's right edge, where agent rows end (#2365)", () => {
+    render(<ChatStream state={wokenCopilotState()} announce={false} />);
+    const column = screen.getByTestId('chat-stream').firstElementChild;
+    const userRow = screen.getByTestId('chat-user-message').parentElement!;
+    const agentRow = screen.getByTestId('chat-agent-message').closest('[data-testid="chat-stream-block"]')!;
+    // Both rows are full-width blocks of the same column.
+    expect(userRow).toHaveAttribute('data-testid', 'chat-stream-block');
+    expect(userRow.parentElement).toBe(column);
+    expect(agentRow.parentElement).toBe(column);
+    expect(userRow.className).toBe(agentRow.className);
+    // The row is a plain block, so `self-end` would be ignored; an auto left margin right-aligns it.
+    const wrapper = screen.getByTestId('chat-user-message');
+    expect(wrapper).toHaveClass('ml-auto', 'items-end');
+    expect(wrapper).not.toHaveClass('self-end');
+  });
+
   it('keeps markdown tokens and tables inside the message column', () => {
     expect(cssRule('.chat-markdown')).toMatch(/overflow-wrap:\s*anywhere/);
     const table = cssRule('.chat-markdown table');

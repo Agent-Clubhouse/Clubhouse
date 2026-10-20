@@ -6,6 +6,7 @@ import {
   MAX_QUEUED_ITEMS,
   _resetRendererTelemetryForTests,
   _setStateForTests,
+  diag,
   flushTelemetry,
   initRendererTelemetry,
   isTelemetryEnabled,
@@ -138,5 +139,65 @@ describe('renderer telemetry facade', () => {
     markRendererReady();
     markRendererReady();
     expect(bridge.rendererReady).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('renderer diag (#2299)', () => {
+  it('sends nothing until main says diag recording is on', () => {
+    bridge.push({ enabled: true, level: 'standard' });
+    diag('ui:nav', 'info', 'View changed');
+    flushTelemetry();
+    expect(bridge.emit).not.toHaveBeenCalled();
+  });
+
+  it('batches diag items through telemetry:emit with signals off', () => {
+    bridge.push({ enabled: false, level: null, diag: true });
+    diag('ui:nav', 'info', 'View changed', { view: 'canvas' });
+    tel.event('clubhouse.renderer.gone');
+    expect(bridge.emit).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(FLUSH_INTERVAL_MS);
+    expect(bridge.emit).toHaveBeenCalledTimes(1);
+    expect(bridge.emit.mock.calls[0][0].items).toEqual([{ t: 'diag', ns: 'ui:nav', level: 'info', msg: 'View changed', meta: { view: 'canvas' } }]);
+  });
+
+  it('shares the batch with signals and flushes early at the batch size', () => {
+    bridge.push({ enabled: true, level: 'standard', diag: true });
+    tel.event('clubhouse.renderer.gone');
+    for (let i = 0; i < FLUSH_AT_ITEMS - 1; i++) diag('ui:x', 'debug', `m${i}`);
+    expect(bridge.emit).toHaveBeenCalledTimes(1);
+    const items = bridge.emit.mock.calls[0][0].items;
+    expect(items[0].t).toBe('event');
+    expect(items.filter((i: { t: string }) => i.t === 'diag')).toHaveLength(FLUSH_AT_ITEMS - 1);
+  });
+
+  it('makes meta plain data, so one bad value never fails the batch', () => {
+    bridge.push({ enabled: false, level: null, diag: true });
+    diag('ui:x', 'error', 'failed', { error: new TypeError('bad'), fn: () => 1, n: 10n, big: 'x'.repeat(40_000) });
+    diag('ui:x', 'error', 'cyclic', (() => {
+      const o: Record<string, unknown> = {};
+      o.self = o;
+      return o;
+    })());
+    flushTelemetry();
+    const [failed, cyclic] = bridge.emit.mock.calls[0][0].items;
+    expect(failed.meta).toEqual({ '<truncated>': 'meta over 32 KB' });
+    expect(cyclic.meta).toEqual({ '<truncated>': 'unserializable meta' });
+    diag('ui:x', 'error', 'small', { error: new TypeError('bad'), fn: () => 1, n: 10n });
+    flushTelemetry();
+    expect(bridge.emit.mock.calls[1][0].items[0].meta).toMatchObject({ error: { name: 'TypeError', message: 'bad' }, n: '10' });
+    expect('fn' in bridge.emit.mock.calls[1][0].items[0].meta).toBe(false);
+  });
+
+  it('keeps queued diag items when only signals turn off, and drops them when diag turns off', () => {
+    bridge.push({ enabled: true, level: 'standard', diag: true });
+    tel.event('clubhouse.renderer.gone');
+    diag('ui:x', 'warn', 'kept');
+    bridge.push({ enabled: false, level: null, diag: true });
+    flushTelemetry();
+    expect(bridge.emit.mock.calls[0][0].items).toEqual([{ t: 'diag', ns: 'ui:x', level: 'warn', msg: 'kept' }]);
+    diag('ui:x', 'warn', 'dropped');
+    bridge.push({ enabled: false, level: null });
+    flushTelemetry();
+    expect(bridge.emit).toHaveBeenCalledTimes(1);
   });
 });

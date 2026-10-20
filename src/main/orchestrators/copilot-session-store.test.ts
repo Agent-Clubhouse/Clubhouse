@@ -85,6 +85,7 @@ describe('cwdKey', () => {
     expect(cwdKey('C:/Users/Me/wt', 'win32')).toBe(key);
     expect(cwdKey('C:\\Users\\Me\\other\\..\\wt', 'win32')).toBe(key);
     expect(cwdKey('C:\\Users\\Me\\wt2', 'win32')).not.toBe(key);
+    expect(cwdKey('\\\\?\\C:\\Users\\Me\\wt', 'win32')).toBe(key);
   });
 
   it('elsewhere keeps case and drops a trailing slash', () => {

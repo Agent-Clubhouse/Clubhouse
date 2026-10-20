@@ -31,7 +31,7 @@ function createWorkspaceWatch(
   const fullGlob = `${basePath}/${glob}`;
 
   window.clubhouse.file.watchStart(watchId, fullGlob).catch((err: Error) => {
-    rendererLog(ctx.pluginId, 'error', `Failed to start workspace watch: ${err.message}`);
+    rendererLog(`plugin:${ctx.pluginId}`, 'error', `Failed to start workspace watch: ${err.message}`);
   });
 
   const handler = (_event: unknown, data: { watchId: string; events: import('../../shared/plugin-types').FileEvent[] }) => {

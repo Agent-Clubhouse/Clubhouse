@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as fsp from 'fs/promises';
 import { LogEntry, LOG_RETENTION_TIERS, LOG_LEVEL_PRIORITY } from '../../shared/types';
@@ -6,6 +7,8 @@ import * as logSettings from './log-settings';
 import { bridgeLog, traceFieldsForLog, type LogTelemetry } from '../telemetry/log-bridge';
 import { recordBreadcrumb, recordBreadcrumbFrom } from './breadcrumbs';
 import { pruneLogDir } from '../telemetry/local-retention';
+import { getDiagNamespaces } from '../telemetry/diag';
+import { listLogNamespaces } from '../../shared/log-namespaces';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 const FLUSH_INTERVAL_MS = 1_000;
@@ -72,6 +75,24 @@ export async function flush(): Promise<void> {
 }
 
 /**
+ * Write the buffer now, synchronously: an OS shutdown, restart or logoff may
+ * end the process before an async write lands (#2335). Skips rotation; the
+ * next async flush rotates if the file is over the limit.
+ */
+export function flushSync(): void {
+  if (buffer.length === 0 || !currentFilePath) return;
+  const data = buffer.join('\n') + '\n';
+  buffer = [];
+  try {
+    fs.appendFileSync(currentFilePath, data, 'utf-8');
+    currentFileSize += Buffer.byteLength(data, 'utf-8');
+  } catch (err) {
+    // telemetry-exempt: logging's own write failed; drop the entries, stderr is the last resort
+    console.error('[log-service] Failed to write log entries:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
  * Feedback breadcrumbs from log entries (#2098), taken whatever the local log
  * settings are: hang and lag lines (`ui:perf`, #2126) as performance
  * breadcrumbs, and any entry that carries a `meta.breadcrumb` (the renderer's
@@ -93,9 +114,10 @@ function tapBreadcrumb(entry: LogEntry): void {
 }
 
 /**
- * `telemetry` (opt-in, spec §6.6) is bridged before the local logging
- * filters: turning local logging off does not turn telemetry off, and the
- * reverse. Only the declared event and attributes are exported.
+ * `telemetry` (spec §6.6) is bridged before the namespace and level
+ * filters, which apply only to log lines. Whether the bridged event is
+ * recorded or exported follows the telemetry recording settings. Only the
+ * declared event and attributes are kept.
  */
 export function log(entry: LogEntry, telemetry?: LogTelemetry): void {
   if (telemetry) bridgeLog(entry.level, telemetry);
@@ -146,8 +168,10 @@ export function getLogPath(): string {
   return logDir;
 }
 
+/** Known namespaces plus those seen this run, so Settings can list them at startup (#2312). */
 export function getNamespaces(): string[] {
-  return [...seenNamespaces].sort();
+  // Namespaces written through the diag tier (#2299) are listed too.
+  return listLogNamespaces(new Set([...seenNamespaces, ...getDiagNamespaces()]));
 }
 
 export async function init(): Promise<void> {

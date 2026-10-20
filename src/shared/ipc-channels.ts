@@ -10,6 +10,8 @@ export const IPC = {
     IS_SHELL_BUSY: 'pty:is-shell-busy',
     DATA: 'pty:data',
     EXIT: 'pty:exit',
+    /** Main → Renderer: the PTY's size changed (agentId, cols, rows). */
+    RESIZED: 'pty:resized',
   },
   PROJECT: {
     LIST: 'project:list',
@@ -237,6 +239,10 @@ export const IPC = {
     PULL_REQUEST_INFO: 'git:pull-request-info',
     PUSH_BRANCH: 'git:push-branch',
     OPEN_PULL_REQUEST: 'git:open-pull-request',
+    /** "owner/repo" of a directory's GitHub remote, or null (#2351). */
+    GITHUB_REPO: 'git:github-repo',
+    /** Details of a GitHub pull request, issue or commit, looked up through gh (#2351). */
+    GITHUB_REF: 'git:github-ref',
   },
   APP: {
     OPEN_EXTERNAL_URL: 'app:open-external-url',

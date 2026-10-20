@@ -26,12 +26,19 @@ export function getSecretPath(): string {
 /**
  * `weak` is Linux without a keyring, where Chromium falls back to a
  * hard-coded key (`basic_text`). The UI warns and asks before storing there.
+ *
+ * On `basic_text`, Electron reports encryption as unavailable until the app
+ * opts into the hard-coded key with `setUsePlainTextEncryption(true)` (#2336),
+ * so the backend is checked first. Opting in here only makes reads and writes
+ * possible; control.ts still asks before anything is written.
  */
 export function getSecureStorageState(): SecureStorageState {
   try {
-    if (!safeStorage.isEncryptionAvailable()) return 'unavailable';
-    if (process.platform === 'linux' && safeStorage.getSelectedStorageBackend?.() === 'basic_text') return 'weak';
-    return 'available';
+    if (process.platform === 'linux' && safeStorage.getSelectedStorageBackend?.() === 'basic_text') {
+      safeStorage.setUsePlainTextEncryption?.(true);
+      return safeStorage.isEncryptionAvailable() ? 'weak' : 'unavailable';
+    }
+    return safeStorage.isEncryptionAvailable() ? 'available' : 'unavailable';
   } catch {
     return 'unavailable';
   }
@@ -58,6 +65,8 @@ export async function readSecrets(): Promise<TelemetrySecrets> {
   } catch {
     return {};
   }
+  // On Linux basic_text, opts into the hard-coded key so a weak file can be decrypted.
+  if (getSecureStorageState() === 'unavailable') return {};
   try {
     return clean(JSON.parse(safeStorage.decryptString(buf)) as TelemetrySecrets);
   } catch {

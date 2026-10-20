@@ -109,6 +109,12 @@ export interface ChatAgentRuntimeOptions {
    * (e.g. it waits on a group project that is polling).
    */
   shouldIdleSleep?: () => boolean;
+  /**
+   * Offered each question before the user sees it (#2366): a helper under a
+   * hands-off orchestrator sends it to the orchestrator. Returns who it was
+   * delivered to, or null to ask the user. Never throws past the runtime.
+   */
+  routeQuestion?: (question: ChatEventDataMap['question']) => Promise<QuestionRoute | null>;
   /** Called once when the runtime ends for good (stop, idle timeout or process exit). */
   onEnded?: (reason: SessionEndReason, exitCode: number) => void;
   /** Called whenever the CLI reports a native session id (for resume on the next wake). */
@@ -118,6 +124,9 @@ export interface ChatAgentRuntimeOptions {
   now?: () => number;
   newId?: () => string;
 }
+
+/** Who a routed question went to (the helper's parent). */
+export type QuestionRoute = NonNullable<ChatEventDataMap['question']['routedTo']>;
 
 /** A start that stop() or abandon() cancelled before its session was up. */
 export class ChatStartCancelledError extends Error {
@@ -157,6 +166,8 @@ export class ChatAgentRuntime implements AgentRuntime {
   private readonly permissions = new Map<string, PendingPermission>();
   /** Questions awaiting an answer, so a late or duplicate answer is ignored. */
   private readonly questions = new Set<string>();
+  /** Open questions that went to the parent orchestrator rather than the user, as asked. */
+  private readonly routedQuestions = new Map<string, ChatEventDataMap['question']>();
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private sleptAfterMs: number | undefined;
   private ended = false;
@@ -353,6 +364,9 @@ export class ChatAgentRuntime implements AgentRuntime {
         // The ceiling for this agent's helpers follows its live level (#2228).
         this.recordLevel(draft.data.level, 'report');
         break;
+      case 'question':
+        await this.offerQuestion(draft.data);
+        break;
       case 'session_info':
         if (draft.data.capabilities && this.capabilities) {
           this.capabilities = { ...this.capabilities, ...draft.data.capabilities };
@@ -383,13 +397,41 @@ export class ChatAgentRuntime implements AgentRuntime {
         this.mirrorPermission(draft.data.requestId, draft.data.toolName ?? draft.data.title, draft.data.rawInput, draft.data.title, draft.data.options);
         break;
       case 'question':
-        this.questions.add(draft.data.requestId);
-        await this.setState('waiting_input');
+        // With a router, offerQuestion already opened it, and an answer may
+        // have closed it again while the event was written.
+        if (!this.opts.routeQuestion) this.questions.add(draft.data.requestId);
+        // A routed question waits on the parent, not the user: the turn stays running.
+        if (this.questions.has(draft.data.requestId) && !this.routedQuestions.has(draft.data.requestId)) {
+          await this.setState('waiting_input');
+        }
         break;
       case 'question_resolved':
         this.questions.delete(draft.data.requestId);
+        this.routedQuestions.delete(draft.data.requestId);
         break;
     }
+  }
+
+  /**
+   * Give a new question to routeQuestion before it is written. It is marked
+   * open first, so an answer that comes back at once is taken.
+   */
+  private async offerQuestion(question: ChatEventDataMap['question']): Promise<void> {
+    if (!this.opts.routeQuestion) return;
+    this.questions.add(question.requestId);
+    let route: QuestionRoute | null = null;
+    try {
+      route = await this.opts.routeQuestion(question);
+    } catch (err) {
+      // telemetry-exempt: logged; the question falls back to the user
+      appLog('core:chat', 'warn', 'Question routing failed; asking the user', {
+        meta: { agentId: this.agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    // Gone while routing (answered, or the session ended or was cleared).
+    if (!route || !this.questions.has(question.requestId)) return;
+    this.routedQuestions.set(question.requestId, { ...question });
+    question.routedTo = route;
   }
 
   private async end(reason: SessionEndReason, exitCode: number, message?: string): Promise<void> {
@@ -632,8 +674,26 @@ export class ChatAgentRuntime implements AgentRuntime {
       undo();
       throw err;
     }
+    this.routedQuestions.delete(requestId);
     await this.emitAnswer({ type: 'question_resolved', data: { requestId, answers } });
     if (this.state === 'waiting_input') await this.setState('running');
+  }
+
+  hasPendingQuestion(requestId: string): boolean {
+    return this.questions.has(requestId);
+  }
+
+  async escalateQuestion(requestId: string, notice: string): Promise<boolean> {
+    const question = this.routedQuestions.get(requestId);
+    if (!question || !this.questions.has(requestId)) return false;
+    this.routedQuestions.delete(requestId);
+    await this.emit({ type: 'notice', data: { level: 'info', code: 'question_escalated', message: notice } });
+    // The user may have answered it in the helper's chat meanwhile.
+    if (!this.questions.has(requestId)) return true;
+    // Again without routedTo, so every view shows it as the user's to answer.
+    await this.emit({ type: 'question', ...(this.turnId && { turnId: this.turnId }), data: question });
+    await this.setState('waiting_input');
+    return true;
   }
 
   async setLevel(level: PermissionLevel): Promise<void> {
@@ -859,6 +919,7 @@ export class ChatAgentRuntime implements AgentRuntime {
   private settleAllPermissions(): void {
     for (const id of [...this.permissions.keys()]) this.settlePermission(id);
     this.questions.clear();
+    this.routedQuestions.clear();
   }
 }
 

@@ -47,6 +47,10 @@ const ALLOWED_FILES: Record<string, string> = {
   // first; the review it opens goes to the main window, not a broadcast.
   'ipc/feedback-handlers.ts': 'getFocusedWindow picks the window to capture first for the feedback shortcut',
 
+  // The health sampler (#2291) only asks whether any Clubhouse window has
+  // focus, to pick its sampling mode; it sends nothing to a window.
+  'telemetry/health.ts': 'getFocusedWindow checks whether any window is focused; no IPC',
+
   // getAllWindows()[0] used as dialog parent for user confirmation before
   // executing agent-supplied JavaScript in browser widgets (SEC-04).
   'services/clubhouse-mcp/tools/browser-tools.ts': 'getAllWindows()[0] used as dialog parent for evaluate confirmation',

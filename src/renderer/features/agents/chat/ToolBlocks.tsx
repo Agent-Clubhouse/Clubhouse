@@ -23,6 +23,7 @@ import {
 } from './view-model';
 import { AgentsIcon, BrainIcon, ChevronDown, ChevronRight, EditIcon, FileIcon, GlobeIcon, SearchIcon, TerminalIcon, ToolIcon } from './icons';
 import { AgentMessage, ThoughtRow } from './MessageBlocks';
+import { RichText } from './rich/RichLinks';
 
 const KIND_ICONS: Record<ToolKind, (p: { className?: string }) => ReactNode> = {
   read: FileIcon,
@@ -336,7 +337,7 @@ export function CommandCard({ tool, expansionKey }: { tool: ToolCallItem; expans
       )}
       {open && term && term.output && (
         <pre className={`font-mono text-[11.5px] leading-[1.65] text-ctp-subtext0 px-3 py-2 bg-ctp-crust whitespace-pre-wrap break-words overflow-y-auto ${OUTPUT_MAX_HEIGHT} m-0`}>
-          {term.output.replace(/\n$/, '')}
+          <RichText text={term.output.replace(/\n$/, '')} />
         </pre>
       )}
       {/* The error stays visible on a collapsed card: it's the outcome, not detail. */}
@@ -378,7 +379,7 @@ export function ToolCard({ tool, mcpServers, expansionKey }: { tool: ToolCallIte
           )}
           {result && (
             <pre className={`font-mono text-[11.5px] leading-[1.65] text-ctp-subtext0 px-3 py-2 bg-ctp-crust whitespace-pre-wrap break-words overflow-y-auto ${OUTPUT_MAX_HEIGHT} m-0 ${showArgs ? 'border-t border-surface-0' : ''}`} data-testid="chat-tool-result">
-              {result.replace(/\n$/, '')}
+              <RichText text={result.replace(/\n$/, '')} />
             </pre>
           )}
         </div>

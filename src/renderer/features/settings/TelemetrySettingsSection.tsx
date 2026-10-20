@@ -259,10 +259,10 @@ export function TelemetrySettingsSection() {
     <div data-testid="telemetry-settings">
       <SettingsSection title="Telemetry export" />
       <p className="text-xs text-ctp-overlay1 mb-1">
-        Send anonymized diagnostics to your own Azure Application Insights, an OpenTelemetry backend, or both, each with its own level. Nothing goes to the Clubhouse developer unless you turn that on in Settings, Feedback. Off by default.
+        Send anonymized telemetry to your own Azure Application Insights, an OpenTelemetry backend, or both, each with its own level. Nothing goes to the Clubhouse developer unless you turn that on in Settings, Feedback. Off by default.
       </p>
       <p className="text-xs text-ctp-overlay1">
-        Telemetry is separate from local logging, and each has its own switch.{' '}
+        Export sends the anonymized signals that local telemetry records above. It never sends diagnostic log lines.{' '}
         <button type="button" className={linkClass} onClick={() => setLearnOpen(true)}>Learn what's sent</button>
       </p>
 
@@ -588,7 +588,7 @@ function ConfirmDialog({ confirm, onCancel, onConfirm }: { confirm: PendingConfi
                 <li key={h} className="font-mono">{isLoopbackHost(h) ? `${h} (a collector on this computer)` : h}</li>
               ))}
             </ul>
-            <p className="mb-2">Clubhouse can't see or control what these services do with it. It sends anonymized diagnostics and never sends:</p>
+            <p className="mb-2">Clubhouse can't see or control what these services do with it. It sends anonymized telemetry and never sends:</p>
             <ul className="list-disc pl-5 space-y-0.5">{NEVER_SENT.map((s) => <li key={s}>{s}</li>)}</ul>
           </div>
         )}

@@ -838,6 +838,16 @@ export function githubRepoOf(remoteUrl: string): string | null {
 }
 
 /**
+ * The "owner/repo" of the GitHub remote of the repo at `dirPath` (origin, else
+ * the only remote), or null when it has none on github.com (#2351).
+ */
+export async function getGithubRepo(dirPath: string): Promise<string | null> {
+  const remote = await resolvePushRemote(dirPath).catch((): null => null);
+  const remoteUrl = remote ? await tryGitExec(['remote', 'get-url', '--', remote], dirPath, 'pr_info') : null;
+  return remoteUrl ? githubRepoOf(remoteUrl) : null;
+}
+
+/**
  * Whether `url` is a GitHub pull request or compare page of `repo`
  * ("owner/repo"), the only pages the review opens.
  */
@@ -884,7 +894,8 @@ export async function openPullRequest(dirPath: string, url: string, open: (url: 
   });
 }
 
-function ghExec(cwd: string, args: string[]): Promise<string | null> {
+/** Run `gh`; null when it's missing, signed out or fails. */
+export function ghExec(cwd: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
     nodeExecFile('gh', args, { cwd, encoding: 'utf-8', timeout: 10_000, env: getShellEnvironment() }, (err, stdout) => {
       // telemetry-exempt: gh is optional; without it (or signed out) the review offers the compare page instead.

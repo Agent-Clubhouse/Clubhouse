@@ -1,6 +1,6 @@
 import type { Agent } from '../../../shared/types';
 import { AgentAvatar } from '../../features/agents/AgentAvatar';
-import type { NeedsAttentionItem } from './treeModel';
+import { isWaitingReason, type NeedsAttentionItem } from './treeModel';
 import { StatusDot } from '../../features/agents/agent-status';
 
 /**
@@ -29,7 +29,7 @@ export function NeedsYou({ items, projectNames, activeAgentId, onSelect, onRevie
       <div className="flex flex-col gap-px px-1.5">
         {items.map(({ agent, reason, message, hostLabel }) => {
           const active = agent.id === activeAgentId;
-          const waiting = reason === 'permission' || reason === 'dispose_request' || reason === 'start_request';
+          const waiting = isWaitingReason(reason);
           return (
             <button
               key={agent.id}

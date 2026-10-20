@@ -10,7 +10,7 @@ import { useAnnexClientStore, satellitePtyDataBus } from '../../stores/annexClie
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { attachClipboardHandlers, type ClipboardImageData } from '../terminal/clipboard';
 import { useFileDrop } from '../terminal/useFileDrop';
-import { useTerminalFit, isTerminalAtBottom, fitPreservingScroll, hasMeasurableSize } from '../terminal/useTerminalFit';
+import { useTerminalFit, isTerminalAtBottom, hasMeasurableSize, type PtySize, type TerminalFitControls } from '../terminal/useTerminalFit';
 import { unseenPtySuffix, isAsciiBinary, writeAsync } from '../terminal/pty-stream';
 import { writePtySnapshot, type PtyBufferSnapshot } from '../../../shared/pty-snapshot';
 import { ptyResize } from '../../services/project-proxy';
@@ -58,6 +58,11 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   // False while a mount replays the buffer snapshot: fit triggers must not
   // resize the terminal mid-replay or send a size before the replay is drawn.
   const readyRef = useRef(false);
+  // The PTY size the written output was produced at (local PTYs only); a
+  // terminal that doesn't own the PTY size renders at it (#2322).
+  const ptySizeRef = useRef<PtySize | null>(null);
+  // Set from useTerminalFit below; read by long-lived callbacks.
+  const fitControlsRef = useRef<TerminalFitControls | null>(null);
   const globalTerminalColors = useThemeStore((s) => s.theme.terminal);
   const hasGradientBg = useThemeStore((s) => s.experimentalGradients && !!s.theme.gradients?.background);
   const terminalColors = useMemo(() => {
@@ -109,17 +114,12 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     // Re-fit the terminal to fix rendering glitches from the replay burst.
     // Preserve scroll position — fit() triggers an xterm buffer reflow that
     // can jump the viewport to the top.
+    fitControlsRef.current?.refit('resume-settle');
+    // fit() reflow can blur xterm's helper textarea; re-focus if this
+    // pane is still focused so the user can type immediately after
+    // the resume overlay dismisses.
     requestAnimationFrame(() => {
-      if (!readyRef.current || !hasMeasurableSize(containerRef.current)) return;
-      if (fitAddonRef.current && terminalRef.current) {
-        fitPreservingScroll(terminalRef.current, fitAddonRef.current, agentId);
-
-        ptyResize(agentId, terminalRef.current.cols, terminalRef.current.rows);
-        // fit() reflow can blur xterm's helper textarea; re-focus if this
-        // pane is still focused so the user can type immediately after
-        // the resume overlay dismisses.
-        if (focusedRef.current) terminalRef.current.focus();
-      }
+      if (focusedRef.current) terminalRef.current?.focus();
     });
   }, [agentId, clearResuming]);
 
@@ -193,12 +193,11 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       if (terminalRef.current !== term) return;
       bufferReplayed = true;
       readyRef.current = true;
-      // A hidden or zero-size container would fit to 80x24 or 2x1; leave the
-      // PTY alone and let the ResizeObserver size it once it is laid out.
-      if (hasMeasurableSize(containerRef.current)) {
-        fitPreservingScroll(term, fitAddon, agentId);
-        ptyResize(agentId, term.cols, term.rows);
-      }
+      // The size owner fits and sizes the PTY; other views of this agent stay
+      // at the PTY size the replay left them at.  A hidden or zero-size
+      // container is skipped (it would send 80x24 or 2x1) and is sized by the
+      // ResizeObserver once it is laid out.
+      fitControlsRef.current?.refit('mount');
       // Large writes (buf can approach the 2MB MAX_BUFFER_SIZE cap in
       // pty-manager) can stall the renderer long enough that focus is
       // dropped before the user sees a ready terminal.  Re-focus if
@@ -207,6 +206,8 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     };
     const restore = async (snapshot: PtyBufferSnapshot, source: 'local' | 'remote/annex') => {
       if (terminalRef.current !== term) return;
+      // Resizes from here on happened after main built the snapshot.
+      snapshotApplied = true;
       if (snapshot.data) {
         rendererLog(SCROLL_LOG_NS, 'debug', `Buffer replay (${source})`, {
           meta: { agentId, bufLen: snapshot.data.length, seq: snapshot.seq, sizes: snapshot.sizes?.length ?? 0 },
@@ -220,7 +221,10 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       await writePtySnapshot(term, snapshot);
       if (terminalRef.current !== term) return;
       appliedSeq = snapshot.seq;
+      const last = snapshot.sizes?.[snapshot.sizes.length - 1];
+      if (last && !isRemote) ptySizeRef.current = { cols: last.cols, rows: last.rows };
       await drainPending();
+      if (resizedDuringReplay) ptySizeRef.current = resizedDuringReplay;
       finishReplay();
     };
     const replayFailed = async (err: unknown, source: 'local' | 'remote/annex') => {
@@ -282,6 +286,10 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     // Gate live PTY data until after the buffer snapshot has been replayed;
     // queue data arriving during fetch to avoid silent data loss.
     let bufferReplayed = false;
+    // PTY.RESIZED events that arrive before the snapshot response are already
+    // reflected in it; later ones (while queued data drains) are kept here.
+    let snapshotApplied = false;
+    let resizedDuringReplay: PtySize | null = null;
     const pendingData: Array<{ data: string; seq?: number }> = [];
     // Highest output seq written to the terminal (local PTY only).  -1 until
     // the snapshot arrives, so a failed snapshot fetch drops nothing.
@@ -317,6 +325,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
 
     let removeDataListener: () => void;
     let removeExitListener: () => void;
+    let removeResizedListener: () => void = () => {};
 
     // Batch PTY data writes using rAF to avoid line-wrap glitches during
     // rapid streaming.  Matches the batching strategy in ShellTerminal.
@@ -356,6 +365,25 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         }
       );
 
+      // The PTY was resized (by this or another view): output from here on is
+      // at the new size.  Write what is batched first, then let a terminal
+      // that doesn't drive the size adopt it.
+      removeResizedListener = window.clubhouse.pty.onResized?.((id: string, cols: number, rows: number) => {
+        if (id !== agentId) return;
+        if (!bufferReplayed) {
+          if (snapshotApplied) resizedDuringReplay = { cols, rows };
+          return;
+        }
+        ptySizeRef.current = { cols, rows };
+        if (flushScheduled) {
+          cancelAnimationFrame(flushId);
+          flushBatch();
+        }
+        term.write('', () => {
+          if (terminalRef.current === term) fitControlsRef.current?.syncToPty();
+        });
+      }) ?? (() => {});
+
       removeExitListener = window.clubhouse.pty.onExit(
         (id: string, _exitCode: number) => {
           if (id === agentId && terminalRef.current) {
@@ -393,6 +421,8 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       binaryDisposable.dispose();
       removeDataListener();
       removeExitListener();
+      removeResizedListener();
+      ptySizeRef.current = null;
       helperTextarea?.removeEventListener('blur', onHelperBlur);
       term.dispose();
       terminalRef.current = null;
@@ -402,7 +432,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
   // Pass ptyResize so remote agents route resize through the Annex client, not local IPC
-  useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused, ptyResize, readyRef);
+  fitControlsRef.current = useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused, ptyResize, { readyRef, ptySizeRef });
 
   // ── Scroll-to-bottom tracking ───────────────────────────────────
   // xterm 6 scrolls virtually: `.xterm-viewport` never scrolls (scrollTop

@@ -976,6 +976,22 @@ describe('message_parent', () => {
     expect(sent.get('orch')?.[0]).toContain('[FROM HELPER:Mine (mine)] Done: PR #12');
   });
 
+  it('takes `message` as another name for `text` (#2366)', async () => {
+    addAgent({ id: 'mine', name: 'Mine', parentAgentId: 'orch' });
+    runAgent('mine', false);
+    const result = await callTool('mine', 'message_parent', { message: 'PR opened' });
+    expect(result.isError).toBeFalsy();
+    expect(sent.get('orch')?.[0]).toContain('[FROM HELPER:Mine (mine)] PR opened');
+  });
+
+  it('names the right field when the message is missing (#2366)', async () => {
+    addAgent({ id: 'mine', name: 'Mine', parentAgentId: 'orch' });
+    runAgent('mine', false);
+    const result = await callTool('mine', 'message_parent', { body: 'hi' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe('Missing required argument: text (the message for your parent).');
+  });
+
   it('is refused for an agent with no parent', async () => {
     addAgent({ id: 'plain' });
     runAgent('plain', false);

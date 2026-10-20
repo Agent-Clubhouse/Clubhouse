@@ -24,6 +24,7 @@ vi.mock('./window-handlers', () => ({
 }));
 
 vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
+vi.mock('../telemetry/feedback-telemetry', () => ({ recordFeedbackRefused: vi.fn() }));
 
 const svc = vi.hoisted(() => ({
   enabled: true,
@@ -50,6 +51,7 @@ vi.mock('../services/framebriar', () => ({
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { captureFromShortcut, captureSources, registerFeedbackHandlers, validateSendInput } from './feedback-handlers';
+import { recordFeedbackRefused } from '../telemetry/feedback-telemetry';
 
 type HandlerFn = (event: unknown, ...args: unknown[]) => unknown;
 const handlers = new Map<string, HandlerFn>();
@@ -99,6 +101,8 @@ describe('feedback IPC', () => {
     await expect(call(IPC.FEEDBACK.SEND, { notes: 'x', includeScreenshot: false })).rejects.toThrow(/unauthorized caller/);
     expect(() => call(IPC.FEEDBACK.CANCEL, 'd1')).toThrow(/unauthorized caller/);
     expect(svc.service.connect).not.toHaveBeenCalled();
+    expect(recordFeedbackRefused).toHaveBeenCalledTimes(5);
+    expect(recordFeedbackRefused).toHaveBeenCalledWith('unauthorized-caller');
   });
 
   it('connects and disconnects through the service', async () => {
@@ -174,6 +178,7 @@ describe('captureFromShortcut (#2101)', () => {
     win.focused = pop;
     await captureFromShortcut();
     expect(svc.service.captureDraft).toHaveBeenCalledTimes(1);
+    expect(svc.service.captureDraft).toHaveBeenCalledWith(expect.any(Array), 'shortcut');
     expect(main.restore).toHaveBeenCalled();
     expect(main.focus).toHaveBeenCalled();
     // The minimized main window isn't captured, but it is restored to show the review.
@@ -187,12 +192,15 @@ describe('captureFromShortcut (#2101)', () => {
     svc.enabled = false;
     await captureFromShortcut();
     expect(svc.service.captureDraft).not.toHaveBeenCalled();
+    // Quitting isn't a refusal worth recording; not being set up is.
+    expect(vi.mocked(recordFeedbackRefused).mock.calls).toEqual([['not-configured']]);
   });
 
   it('captures nothing when there is no main window to review in', async () => {
     win.focused = fakeWindow('pop');
     await captureFromShortcut();
     expect(svc.service.captureDraft).not.toHaveBeenCalled();
+    expect(recordFeedbackRefused).toHaveBeenCalledWith('no-main-window');
   });
 
   it('captures from the window the menu fired in when Electron passes one', async () => {

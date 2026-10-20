@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Toggle } from '../../components/Toggle';
 import { SettingsPage, SettingsSection, SettingsField } from './SettingsLayout';
 import { Button } from '../../components/Button';
+import { RICH_CHAT_CONTENT_FLAG, resetRichChatContentFlag } from '../agents/chat/rich/rich-flag';
 
 /** Feature definitions for the experimental settings page. */
 const EXPERIMENTAL_FEATURES: Array<{
@@ -30,9 +31,14 @@ const EXPERIMENTAL_FEATURES: Array<{
     description: 'Talk to Claude Code, Codex and Copilot agents in a native chat view. The terminal stays available for every provider.',
   },
   {
+    id: RICH_CHAT_CONTENT_FLAG,
+    label: 'Rich chat content',
+    description: 'Show links in chat as links, and GitHub pull requests, issues and commits as references with a hover card. Details load from GitHub through the gh CLI only when you hover one.',
+  },
+  {
     id: 'telemetry',
     label: 'Telemetry export',
-    description: 'Send anonymized diagnostics to your own Application Insights resource or OTLP collector (Settings, Logging), or to the Clubhouse developer with your feedback (Settings, Feedback).',
+    description: 'Send anonymized telemetry to your own Application Insights resource or OTLP collector (Settings, Logging), or to the Clubhouse developer with your feedback (Settings, Feedback).',
   },
 ];
 
@@ -51,6 +57,8 @@ export function ExperimentalSettingsView() {
     const updated = { ...settings, [id]: enabled };
     setSettings(updated);
     await window.clubhouse.app.saveExperimentalSettings(updated);
+    // Chat panes opened from now on read the new value.
+    if (id === RICH_CHAT_CONTENT_FLAG) resetRichChatContentFlag();
   };
 
   const handleRestart = () => {

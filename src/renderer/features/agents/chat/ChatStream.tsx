@@ -3,6 +3,7 @@ import type { ChatCapabilities, ChatMcpServer } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { buildStreamBlocks, commandOutputIds, toolErrorText, type StreamBlock } from './view-model';
 import { scrollWithin } from './scroll';
+import { RichLinkProvider } from './rich/RichLinks';
 import { rendererLog } from '../../../plugins/renderer-logger';
 import {
   AgentMessage,
@@ -400,19 +401,21 @@ const ChatStreamInner = memo(function ChatStreamInner({
           <div className="text-center text-[13px] text-ctp-overlay0 py-10">{emptyMessage}</div>
         )}
         <TranscriptExpansionProvider store={expansionStore}>
-          {visibleBlocks.map((b, index) => (
-            <div key={b.key} data-testid="chat-stream-block" data-block-index={start + index}>
-              <Block
-                block={b}
-                turnNumber={b.type === 'item' ? turnNumbers.get(b.item.id) ?? 0 : 0}
-                capabilities={capabilities}
-                mcpServers={state.mcpServers}
-                inlineSubagentId={inlineJumps.get(b.key)}
-                onOpenSubagent={onOpenSubagent}
-                preformatted={b.type === 'item' && commandOutput.has(b.item.id)}
-              />
-            </div>
-          ))}
+          <RichLinkProvider agentId={state.agentId}>
+            {visibleBlocks.map((b, index) => (
+              <div key={b.key} data-testid="chat-stream-block" data-block-index={start + index}>
+                <Block
+                  block={b}
+                  turnNumber={b.type === 'item' ? turnNumbers.get(b.item.id) ?? 0 : 0}
+                  capabilities={capabilities}
+                  mcpServers={state.mcpServers}
+                  inlineSubagentId={inlineJumps.get(b.key)}
+                  onOpenSubagent={onOpenSubagent}
+                  preformatted={b.type === 'item' && commandOutput.has(b.item.id)}
+                />
+              </div>
+            ))}
+          </RichLinkProvider>
         </TranscriptExpansionProvider>
         {!atTail && (
           <div className="self-center flex items-center gap-2">
