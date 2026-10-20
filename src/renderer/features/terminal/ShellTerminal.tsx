@@ -6,8 +6,9 @@ import { localWindowsPtyOptions } from './windows-pty';
 import { useThemeStore } from '../../stores/themeStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { attachClipboardHandlers } from './clipboard';
-import { useTerminalFit } from './useTerminalFit';
-import { unseenPtySuffix, isAsciiBinary } from './pty-stream';
+import { useTerminalFit, fitPreservingScroll, hasMeasurableSize } from './useTerminalFit';
+import { unseenPtySuffix, isAsciiBinary, writeAsync } from './pty-stream';
+import { writePtySnapshot, type PtyBufferSnapshot } from '../../../shared/pty-snapshot';
 
 /**
  * Abstraction over terminal I/O operations, allowing ShellTerminal to work
@@ -26,9 +27,10 @@ export interface TerminalIO {
   /**
    * Buffer plus the output seq it includes.  When provided, live `onData`
    * chunks carrying a seq are trimmed against it so output that landed in both
-   * the snapshot and the live stream is written once.
+   * the snapshot and the live stream is written once.  When it also carries
+   * `sizes`, each part is replayed at the PTY size it was written at.
    */
-  getBufferSnapshot?(sessionId: string): Promise<{ data: string; seq: number }>;
+  getBufferSnapshot?(sessionId: string): Promise<PtyBufferSnapshot>;
   onData(callback: (id: string, data: string, seq?: number) => void): () => void;
   onExit(callback: (id: string, exitCode: number) => void): () => void;
 }
@@ -66,6 +68,9 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
   // is queued until the buffer snapshot has been written, then trimmed
   // against the snapshot's seq.
   const replayRef = useRef<ReplayState>({ replayed: false, appliedSeq: -1, pending: [] });
+  // Mirrors `replayRef.current.replayed` for useTerminalFit, which must not
+  // fit or resize while the snapshot is still being written.
+  const readyRef = useRef(false);
 
   const terminalColors = useThemeStore((s) => s.theme.terminal);
   const hasGradientBg = useThemeStore((s) => s.experimentalGradients && !!s.theme.gradients?.background);
@@ -102,32 +107,48 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
 
     const replay: ReplayState = { replayed: false, appliedSeq: -1, pending: [] };
     replayRef.current = replay;
-    const flushPending = () => {
-      for (const chunk of replay.pending) {
-        const fresh = unseenPtySuffix(chunk.data, chunk.seq, replay.appliedSeq);
-        if (chunk.seq !== undefined && chunk.seq > replay.appliedSeq) replay.appliedSeq = chunk.seq;
-        if (fresh) term.write(fresh);
+    readyRef.current = false;
+    // Write queued live data (parsed before any resize, since it was produced
+    // at the PTY's current size), then fit and size the PTY.  Fitting after
+    // the replay keeps the shell's repaint for the new size on top of the
+    // restored screen (#2321).
+    const flushPending = async () => {
+      while (replay.pending.length > 0) {
+        let batch = '';
+        for (const chunk of replay.pending.splice(0)) {
+          batch += unseenPtySuffix(chunk.data, chunk.seq, replay.appliedSeq);
+          if (chunk.seq !== undefined && chunk.seq > replay.appliedSeq) replay.appliedSeq = chunk.seq;
+        }
+        if (batch) await writeAsync(term, batch).catch((): void => undefined); // telemetry-exempt: xterm drops writes past its buffer cap; the replay must still finish
       }
-      replay.pending.length = 0;
+      if (terminalRef.current !== term) return;
       replay.replayed = true;
+      readyRef.current = true;
+      // Hidden or zero-size containers fit to 80x24 or 2x1 (#2323); the
+      // ResizeObserver sizes the PTY once the container is laid out.
+      if (hasMeasurableSize(containerRef.current)) {
+        fitPreservingScroll(term, fitAddon, sessionId);
+        ptyRef.current.resize(sessionId, term.cols, term.rows);
+      }
     };
 
     requestAnimationFrame(() => {
-      fitAddon.fit();
-      ptyRef.current.resize(sessionId, term.cols, term.rows);
       term.focus();
       const pty = ptyRef.current;
-      const snapshot = pty.getBufferSnapshot
+      const snapshot: Promise<PtyBufferSnapshot> = pty.getBufferSnapshot
         ? pty.getBufferSnapshot(sessionId)
         : pty.getBuffer(sessionId).then((data) => ({ data, seq: -1 }));
-      snapshot.then(({ data: buf, seq }) => {
+      snapshot.then(async (snap) => {
         if (terminalRef.current !== term) return;
-        if (buf) term.write(buf);
-        replay.appliedSeq = seq;
-        flushPending();
+        // Unsized history (older or remote IO): write at this pane's size.
+        if (!snap.sizes?.length && hasMeasurableSize(containerRef.current)) fitAddon.fit();
+        await writePtySnapshot(term, snap);
+        if (terminalRef.current !== term) return;
+        replay.appliedSeq = snap.seq;
+        await flushPending();
       }).catch(() => {
         if (terminalRef.current !== term) return;
-        flushPending();
+        void flushPending();
       });
     });
 
@@ -241,7 +262,7 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
     (sid: string, cols: number, rows: number) => ptyRef.current.resize(sid, cols, rows),
     [],
   );
-  useTerminalFit(sessionId, terminalRef, fitAddonRef, containerRef, focused, resizeCallback);
+  useTerminalFit(sessionId, terminalRef, fitAddonRef, containerRef, focused, resizeCallback, readyRef);
 
   // Attach clipboard handlers only when clipboard compatibility is enabled
   useEffect(() => {

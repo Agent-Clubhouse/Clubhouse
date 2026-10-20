@@ -440,6 +440,43 @@ describe('useTerminalFit', () => {
     });
   });
 
+  describe('replay gate (readyRef)', () => {
+    it('skips every trigger while the mount is still replaying', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const readyRef = { current: false };
+      const { rerender } = renderHook(
+        ({ focused }) => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, focused, undefined, readyRef),
+        { initialProps: { focused: false } },
+      );
+      resizeObserverCallbacks[0]();
+      focusListeners[0]();
+      rerender({ focused: true });
+      expect(mockFit).not.toHaveBeenCalled();
+      expect(mockResize).not.toHaveBeenCalled();
+
+      readyRef.current = true;
+      resizeObserverCallbacks[0]();
+      expect(mockFit).toHaveBeenCalledTimes(1);
+      expect(mockResize).toHaveBeenCalledWith('s1', 80, 24);
+    });
+  });
+
+  describe('hidden container on pane focus (#2323)', () => {
+    it('does not fit or resize the PTY when a focused pane is hidden', () => {
+      Object.defineProperty(containerEl, 'clientWidth', { value: 0, configurable: true });
+      Object.defineProperty(containerEl, 'clientHeight', { value: 0, configurable: true });
+      const { rerender } = renderHook(
+        ({ focused }) => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, focused),
+        { initialProps: { focused: false } },
+      );
+      rerender({ focused: true });
+      expect(mockFit).not.toHaveBeenCalled();
+      expect(mockResize).not.toHaveBeenCalled();
+      // The xterm still takes keyboard focus.
+      expect(mockFocus).toHaveBeenCalled();
+    });
+  });
+
   describe('viewport scroll preservation', () => {
     // xterm 6 scrolls virtually — `.xterm-viewport` scrollTop is always 0 —
     // so scroll state is read from term.buffer.active (viewportY vs baseY).

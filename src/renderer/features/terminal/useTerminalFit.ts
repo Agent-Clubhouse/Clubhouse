@@ -43,6 +43,15 @@ export function fitPreservingScroll(term: Terminal, fitAddon: FitAddon, sessionI
 }
 
 /**
+ * Whether a terminal container can be measured.  A `display: none` container
+ * leaves xterm at its default 80x24 and a zero-size one fits to 2x1; neither
+ * is a size the PTY should ever be given (#2323).
+ */
+export function hasMeasurableSize(el: HTMLElement | null): el is HTMLElement {
+  return !!el && el.clientWidth > 0 && el.clientHeight > 0;
+}
+
+/**
  * Manages terminal fit/resize with focus-awareness for multi-window correctness.
  *
  * Triggers a fit + resize on:
@@ -51,6 +60,10 @@ export function fitPreservingScroll(term: Terminal, fitAddon: FitAddon, sessionI
  * - Page becoming visible (covers wake-from-sleep, virtual desktop switch)
  * - Window gaining focus (active window re-asserts its terminal size)
  * - Terminal becoming the focused pane (`focused` prop)
+ *
+ * While `readyRef.current` is false (the mount is still replaying the buffer
+ * snapshot at its recorded sizes) every trigger is skipped; the mount fits
+ * and resizes once the replay is written.
  */
 export function useTerminalFit(
   sessionId: string,
@@ -59,6 +72,7 @@ export function useTerminalFit(
   containerRef: RefObject<HTMLDivElement | null>,
   focused?: boolean,
   onResize?: (sessionId: string, cols: number, rows: number) => void,
+  readyRef?: RefObject<boolean>,
 ): void {
   // Reactive resize: ResizeObserver + visibility + window focus
   useEffect(() => {
@@ -80,8 +94,9 @@ export function useTerminalFit(
     const fitAndResize = (sendResize: boolean, trigger?: string) => {
       requestAnimationFrame(() => {
         if (!fitAddonRef.current || !terminalRef.current) return;
+        if (readyRef && !readyRef.current) return;
         const el = containerRef.current;
-        if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
+        if (!hasMeasurableSize(el)) return;
         rendererLog(SCROLL_LOG_NS, 'debug', 'fitAndResize', {
           meta: {
             sessionId,
@@ -140,6 +155,9 @@ export function useTerminalFit(
     if (terminalRef.current) terminalRef.current.focus();
     const doResize = onResize ?? window.clubhouse.pty.resize;
     requestAnimationFrame(() => {
+      if (readyRef && !readyRef.current) return;
+      // A focused pane can still be hidden (e.g. behind the review panel).
+      if (!hasMeasurableSize(containerRef.current)) return;
       if (fitAddonRef.current && terminalRef.current) {
         rendererLog(SCROLL_LOG_NS, 'debug', 'fitAndResize', {
           meta: {
