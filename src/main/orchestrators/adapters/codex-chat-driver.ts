@@ -29,6 +29,7 @@ import {
   type TurnStartParams,
 } from './codex-protocol';
 import { resolveStructuredSpawn } from './structured-spawn';
+import { throwIfStartAborted, untilStartAborted } from './start-abort';
 import { ProcessExitedError } from './ndjson-rpc-base';
 import { RpcError } from './acp-client';
 
@@ -231,8 +232,10 @@ export class CodexChatDriver implements ChatDriver {
   }
 
   async start(opts: ChatDriverStartOptions): Promise<ChatDriverSession> {
+    throwIfStartAborted(opts.signal);
     const session = new CodexChatSession(opts, this.deps.onLog);
-    await session.open();
+    // A cancelled start kills app-server; open() then fails and is ignored.
+    await untilStartAborted(session.open(), opts.signal, () => session.abortStart());
     return session;
   }
 }
@@ -338,6 +341,12 @@ class CodexChatSession implements ChatDriverSession {
 
   get events(): AsyncIterable<ChatEventDraft> {
     return this.queue;
+  }
+
+  /** Kill app-server for a cancelled start. Its exit ends the session as stopped. */
+  abortStart(): void {
+    this.closing = true;
+    this.client.kill();
   }
 
   async open(): Promise<void> {

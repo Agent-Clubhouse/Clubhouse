@@ -6,6 +6,9 @@
 //
 // Env:
 //   FAKE_CLAUDE_ARGV_FILE  write process.argv.slice(2) as JSON here on start
+//   FAKE_CLAUDE_PID_FILE   write process.pid here on start
+//   FAKE_CLAUDE_HANG_INIT  never answer initialize and ignore stdin EOF, so only
+//                          a kill ends the process (startup cancellation tests)
 //
 // Scripted turns (user text):
 //   hello  partial deltas, then the assistant text, then a success result
@@ -29,6 +32,7 @@ import { createInterface } from 'node:readline';
 
 const argv = process.argv.slice(2);
 if (process.env.FAKE_CLAUDE_ARGV_FILE) writeFileSync(process.env.FAKE_CLAUDE_ARGV_FILE, JSON.stringify(argv));
+if (process.env.FAKE_CLAUDE_PID_FILE) writeFileSync(process.env.FAKE_CLAUDE_PID_FILE, String(process.pid));
 
 function argValue(name) {
   for (let i = 0; i < argv.length; i++) {
@@ -220,6 +224,7 @@ function onControlRequest(msg) {
   const { request_id: id, request } = msg;
   switch (request.subtype) {
     case 'initialize':
+      if (process.env.FAKE_CLAUDE_HANG_INIT) return;
       respond(id, {
         commands: [{ name: 'review', description: 'Review a PR', argumentHint: '<pr>' }],
         models: [
@@ -309,4 +314,8 @@ rl.on('line', (line) => {
   }
   turnInFlight = runTurn(msg).finally(() => { turnInFlight = null; });
 });
-rl.on('close', () => process.exit(0));
+rl.on('close', () => {
+  // Stays up until killed, but gives up after 30s so a failed test can't leave it behind.
+  if (process.env.FAKE_CLAUDE_HANG_INIT) setTimeout(() => process.exit(0), 30_000);
+  else process.exit(0);
+});

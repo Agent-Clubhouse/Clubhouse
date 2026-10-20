@@ -284,6 +284,49 @@ describe.each<Kind>(['sdk', 'stream-json'])('Claude %s transport (fake claude)',
     expect(ended[0].exitCode).toBe(0);
   });
 
+  describe('startup cancellation (#2273)', () => {
+    const pidFile = () => path.join(tmp, 'pid');
+    const alive = (pid: number): boolean => {
+      try { process.kill(pid, 0); return true; } catch { return false; }
+    };
+
+    it('spawns nothing when the signal is already aborted', async () => {
+      const ac = new AbortController();
+      ac.abort();
+      transport = makeTransport(kind, { binary: FAKE_CLAUDE, cwd: tmp, permissionMode: 'default', env: { FAKE_CLAUDE_PID_FILE: pidFile() }, signal: ac.signal });
+      await expect(transport.start()).rejects.toThrow('Chat start cancelled');
+      await new Promise((r) => setTimeout(r, 300));
+      expect(fs.existsSync(pidFile())).toBe(false);
+    });
+
+    it('kills a CLI that is still initializing and rejects at once', async () => {
+      const ac = new AbortController();
+      transport = makeTransport(kind, {
+        binary: FAKE_CLAUDE, cwd: tmp, permissionMode: 'default', signal: ac.signal,
+        env: { FAKE_CLAUDE_PID_FILE: pidFile(), FAKE_CLAUDE_HANG_INIT: '1' },
+      });
+      collector = new Collector(transport);
+      const started = transport.start();
+      started.catch((): undefined => undefined);
+      await vi.waitFor(() => expect(fs.existsSync(pidFile()) && fs.readFileSync(pidFile(), 'utf8')).toBeTruthy(), { timeout: 3_000 });
+      const pid = Number(fs.readFileSync(pidFile(), 'utf8'));
+      ac.abort();
+      await expect(started).rejects.toThrow('Chat start cancelled');
+      // The fake ignores stdin EOF in this mode, so only the kill ends it.
+      await collector.done;
+      expect(collector.of('session_ended')).toHaveLength(1);
+      await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 3_000 });
+    });
+
+    it('starts normally with a live signal, and a later abort leaves it running', async () => {
+      const ac = new AbortController();
+      const t = await start({ signal: ac.signal });
+      ac.abort();
+      t.send({ text: 'hello' });
+      expect((await collector.waitFor('turn_ended')).result).toBeTruthy();
+    });
+  });
+
   it('reports a CLI crash as session_ended', async () => {
     const t = await start();
     t.send({ text: 'crash' });

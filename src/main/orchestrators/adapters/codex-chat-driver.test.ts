@@ -24,7 +24,8 @@ import { CodexAppServerClient } from './codex-app-server-client';
 
 const mockSpawn = vi.mocked(spawn);
 
-type Handler = (params: unknown) => { result?: unknown; error?: { code: number; message: string } };
+/** Returns null to leave the request unanswered. */
+type Handler = (params: unknown) => { result?: unknown; error?: { code: number; message: string } } | null;
 
 /**
  * A scripted `codex app-server`: answers requests from `handlers` as soon as
@@ -51,7 +52,7 @@ function createFakeServer(handlers: Record<string, Handler>) {
         if (msg.id !== undefined && typeof msg.method === 'string') {
           const handler = handlers[msg.method];
           const reply = handler ? handler(msg.params) : { result: {} };
-          server.send({ id: msg.id, ...reply });
+          if (reply) server.send({ id: msg.id, ...reply });
         }
         return true;
       }),
@@ -131,6 +132,44 @@ describe('CodexChatDriver', () => {
   }
 
   // ── Start and resume ─────────────────────────────────────────────────────
+
+  describe('startup cancellation (#2273)', () => {
+    it('spawns nothing when the signal is already aborted', async () => {
+      const ac = new AbortController();
+      ac.abort();
+      await expect(new CodexChatDriver().start({ ...baseOpts, signal: ac.signal })).rejects.toThrow('Chat start cancelled');
+      expect(mockSpawn).not.toHaveBeenCalled();
+    });
+
+    it('kills app-server when cancelled before initialize answers, and rejects at once', async () => {
+      useServer({ initialize: () => null });
+      const ac = new AbortController();
+      const pending = new CodexChatDriver().start({ ...baseOpts, signal: ac.signal });
+      await vi.waitFor(() => expect(server.requests('initialize')).toHaveLength(1));
+      ac.abort();
+      await expect(pending).rejects.toThrow('Chat start cancelled');
+      expect(server.proc.kill).toHaveBeenCalled();
+    });
+
+    it('kills app-server when cancelled while the thread is starting', async () => {
+      useServer({ 'thread/start': () => null });
+      const ac = new AbortController();
+      const pending = new CodexChatDriver().start({ ...baseOpts, signal: ac.signal });
+      await vi.waitFor(() => expect(server.requests('thread/start')).toHaveLength(1));
+      ac.abort();
+      await expect(pending).rejects.toThrow('Chat start cancelled');
+      expect(server.proc.kill).toHaveBeenCalled();
+    });
+
+    it('starts normally with a live signal, and a later abort leaves the session alone', async () => {
+      const ac = new AbortController();
+      const { session, take } = await startSession({ signal: ac.signal });
+      await skipStart(take);
+      ac.abort();
+      expect(server.proc.kill).not.toHaveBeenCalled();
+      await session.close();
+    });
+  });
 
   it('handshakes, starts a thread and reports session_started first', async () => {
     const { session, next } = await startSession({

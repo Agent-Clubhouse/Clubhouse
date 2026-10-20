@@ -2,6 +2,7 @@ import type { ChildProcess } from 'child_process';
 import type { ClaudePermissionMode } from './events';
 import { initializedFromWire, permissionRequestFromWire, type ClaudeWireMessage } from './normalizer';
 import { killStructuredChild } from '../../orchestrators/adapters/structured-spawn';
+import { throwIfStartAborted, untilStartAborted } from '../../orchestrators/adapters/start-abort';
 import { buildClaudeEnv, spawnClaude } from './spawn';
 import {
   appliedSettingsFromWire,
@@ -83,6 +84,7 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
   async start(): Promise<void> {
     if (this.child) throw new Error('Claude stream transport already started');
     const { opts } = this;
+    throwIfStartAborted(opts.signal);
     const args = buildStreamJsonArgs(opts);
     this.log('info', 'Spawning claude -p stream-json', {
       binary: opts.binary, cwd: opts.cwd, permissionMode: opts.permissionMode, resume: opts.resume,
@@ -120,7 +122,9 @@ export class ClaudeStreamTransport extends ClaudeTransportBase {
     });
     child.stdin?.on('error', (err) => this.log('warn', 'claude stdin error', { error: err.message }));
 
-    const init = await this.control({ subtype: 'initialize' });
+    const init = await untilStartAborted(this.control({ subtype: 'initialize' }), opts.signal, () => {
+      void killStructuredChild(child);
+    });
     this.pushEvent(initializedFromWire(init));
   }
 

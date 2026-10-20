@@ -11,6 +11,7 @@ import type { ClaudePermissionMode } from './events';
 import { initializedFromWire, type ClaudeWireMessage } from './normalizer';
 import { loadClaudeAgentSdk } from './sdk-loader';
 import { killStructuredChild } from '../../orchestrators/adapters/structured-spawn';
+import { throwIfStartAborted, untilStartAborted } from '../../orchestrators/adapters/start-abort';
 import { buildClaudeEnv, spawnClaude } from './spawn';
 import {
   appliedSettingsFromWire,
@@ -66,8 +67,11 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
 
   async start(): Promise<void> {
     if (this.query) throw new Error('Claude SDK transport already started');
-    const sdk = await this.loadSdk();
     const { opts } = this;
+    throwIfStartAborted(opts.signal);
+    const sdk = await this.loadSdk();
+    // Loading the SDK chunk is async, so check again before anything spawns.
+    throwIfStartAborted(opts.signal);
     const options: Options = {
       cwd: opts.cwd,
       pathToClaudeCodeExecutable: opts.binary,
@@ -118,7 +122,7 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
     const query = sdk.query({ prompt: this.input, options });
     this.query = query;
     this.pump = this.drain(query);
-    const init = await this.initialized(query);
+    const init = await untilStartAborted(this.initialized(query), opts.signal, () => this.abandonStartup(query));
     this.pushEvent(initializedFromWire(init as unknown as Record<string, unknown>));
   }
 

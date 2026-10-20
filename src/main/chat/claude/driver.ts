@@ -29,6 +29,7 @@ import type {
   PermissionResponseExtras,
 } from '../../../shared/chat/runtime';
 import { AsyncQueue } from '../../orchestrators/adapters/async-queue';
+import { throwIfStartAborted, untilStartAborted } from '../../orchestrators/adapters/start-abort';
 import type { ClaudeChatEvent, ClaudeCommand, ClaudePermissionMode, ClaudePermissionUpdate, ClaudeUsage } from './events';
 import { ClaudeSdkTransport } from './sdk-transport';
 import { ClaudeStreamTransport } from './stream-transport';
@@ -1254,6 +1255,7 @@ export function claudeTransportOptions(opts: ChatDriverStartOptions, log?: Claud
     resume: opts.resumeNativeSessionId,
     mcpServers: opts.mcpServers as ClaudeTransportOptions['mcpServers'],
     log,
+    signal: opts.signal,
   };
 }
 
@@ -1300,12 +1302,17 @@ export class ClaudeChatDriver implements ChatDriver {
   }
 
   async start(opts: ChatDriverStartOptions): Promise<ClaudeChatDriverSession> {
+    throwIfStartAborted(opts.signal);
     const transport = this.createTransport(claudeTransportOptions(opts, this.deps.log));
     const session = new ClaudeChatDriverSession(this.id, transport, opts, this.deps.log);
     try {
-      await session.start();
+      // The transport kills the CLI if cancelled during init; past init the
+      // abort still settles the start here, and the close below ends the CLI.
+      await untilStartAborted(session.start(), opts.signal, () => {});
     } catch (err) {
-      await transport.close().catch((): undefined => undefined);
+      const closed = transport.close().catch((): undefined => undefined);
+      // A cancelled start settles now; the runtime isn't waiting on the close.
+      if (!opts.signal?.aborted) await closed;
       throw err;
     }
     return session;

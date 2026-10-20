@@ -483,6 +483,49 @@ describe('ClaudeChatDriverSession mapping (scripted transport)', () => {
     expect((await drafts.waitFor('usage', (d) => !!d.data.limits)).data.limits).toEqual([{ window: '5h', status: 'ok' }]);
   });
 
+  describe('startup cancellation (#2273)', () => {
+    const startOpts = (signal: AbortSignal): ChatDriverStartOptions =>
+      ({ agentId: 'a', provider: 'claude-code', cwd: os.tmpdir(), binaryPath: 'claude', level: 'ask', signal });
+
+    it.each<ClaudeChatDriverId>(['claude_agent_sdk', 'claude_stream_json'])('%s: a cancelled start creates no transport', async (id) => {
+      const createTransport = vi.fn(() => new ScriptedTransport());
+      const ac = new AbortController();
+      ac.abort();
+      await expect(new ClaudeChatDriver(id, { createTransport }).start(startOpts(ac.signal))).rejects.toThrow('Chat start cancelled');
+      expect(createTransport).not.toHaveBeenCalled();
+    });
+
+    it('passes the signal to the transport', async () => {
+      const ac = new AbortController();
+      let seen: AbortSignal | undefined;
+      const driver = new ClaudeChatDriver('claude_agent_sdk', { createTransport: (_id, o) => { seen = o.signal; return new ScriptedTransport(); } });
+      await (await driver.start(startOpts(ac.signal))).close();
+      expect(seen).toBe(ac.signal);
+    });
+
+    it('settles a start cancelled mid-initialization and closes the transport', async () => {
+      const transport = new ScriptedTransport();
+      transport.start = () => new Promise<void>(() => {});
+      const close = vi.spyOn(transport, 'close');
+      const ac = new AbortController();
+      const pending = new ClaudeChatDriver('claude_agent_sdk', { createTransport: () => transport }).start(startOpts(ac.signal));
+      await new Promise((r) => setImmediate(r));
+      ac.abort();
+      await expect(pending).rejects.toThrow('Chat start cancelled');
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('a later abort does not touch a started session', async () => {
+      const transport = new ScriptedTransport();
+      const close = vi.spyOn(transport, 'close');
+      const ac = new AbortController();
+      const session = await new ClaudeChatDriver('claude_agent_sdk', { createTransport: () => transport }).start(startOpts(ac.signal));
+      ac.abort();
+      expect(close).not.toHaveBeenCalled();
+      await session.close();
+    });
+  });
+
   it('starts even when get_settings never answers (#2091)', async () => {
     vi.useFakeTimers();
     try {
