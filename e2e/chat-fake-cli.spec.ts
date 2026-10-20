@@ -160,6 +160,14 @@ for (const p of PROVIDERS) {
           win?.setSize(760, 720);
         });
 
+        // The user's bubble ends at the same right edge as the content column (#2365).
+        const bubbleGap = () => window.locator('[data-testid="chat-stream"]').evaluate((stream) => {
+          const column = stream.firstElementChild!.getBoundingClientRect();
+          const bubble = stream.querySelector('[data-testid="chat-user-message"] > :last-child')!.getBoundingClientRect();
+          return Math.round(column.right - bubble.right);
+        });
+        expect(Math.abs(await bubbleGap())).toBeLessThanOrEqual(1);
+
         // Synthetic restored history: an unbroken token and a wide table in the
         // reply, and an unbroken token in the user's bubble.
         const token = `sha256-${'a1b2c3d4'.repeat(60)}`;
@@ -181,6 +189,7 @@ for (const p of PROVIDERS) {
           };
         });
         expect(layout).toEqual({ overflow: 0, clippedLeft: 0, clippedRight: 0 });
+        expect(Math.abs(await bubbleGap())).toBeLessThanOrEqual(1);
         // The wide table scrolls inside its own box instead.
         const table = await window.locator('[data-testid="chat-agent-message"] table').evaluate((t) => t.scrollWidth > t.clientWidth);
         expect(table).toBe(true);
