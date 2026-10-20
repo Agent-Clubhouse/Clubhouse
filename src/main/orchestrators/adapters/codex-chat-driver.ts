@@ -191,6 +191,20 @@ export function codexEfforts(model: Pick<Model, 'supportedReasoningEfforts'>): s
   return model.supportedReasoningEfforts.map((e) => e.reasoningEffort);
 }
 
+/**
+ * Whether the npm launcher for `codex` exited because `node` isn't on PATH.
+ * POSIX: `env` exits 127 with "env: node: No such file or directory".
+ * Windows: the `.cmd` shim's cmd.exe names 'node' and exits 9009 (its
+ * "command not found", whatever the display language) or prints "is not
+ * recognized". A 9009 naming another command (a missing shim) is not this.
+ */
+function isMissingNodeExit(code: number | null, stderr: string): boolean {
+  if (process.platform === 'win32') {
+    return /'node'/i.test(stderr) && (code === 9009 || /is not recognized as an internal or external command/i.test(stderr));
+  }
+  return code === 127 && /env:.*\bnode\b.*(?:No such file|not found)/i.test(stderr);
+}
+
 export class CodexChatDriver implements ChatDriver {
   readonly id = 'codex_app_server' as const;
   readonly provider = 'codex-cli';
@@ -210,8 +224,7 @@ export class CodexChatDriver implements ChatDriver {
       return { handshakeOk: true, cliVersion: parseCodexVersion(info?.userAgent), capabilities: CODEX_CHAT_CAPABILITIES };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const missingNode = err instanceof ProcessExitedError && err.code === 127
-        && /env:.*\bnode\b.*(?:No such file|not found)/i.test(client.getStderr());
+      const missingNode = err instanceof ProcessExitedError && isMissingNodeExit(err.code, client.getStderr());
       const spawnError = err instanceof Error && 'code' in err
         && (err.code === 'ENOENT' || err.code === 'EACCES');
       return {

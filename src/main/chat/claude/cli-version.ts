@@ -10,6 +10,12 @@ const MAX_OUTPUT = 4096;
 /** How long to wait for stdout to close after `claude` exits; a lingering grandchild may hold the pipe. */
 const CLOSE_GRACE_MS = 500;
 const VERSION_RE = /\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/;
+/**
+ * Extensions the Agent SDK runs under `node` rather than spawning directly
+ * (its pathToClaudeCodeExecutable rule). Matching it keeps the version
+ * lookup launching the same way as the session, on every platform.
+ */
+const JS_ENTRY_EXTS = ['.js', '.mjs', '.tsx', '.ts', '.jsx'];
 
 /**
  * The version in `claude --version` output, e.g. "2.1.300 (Claude Code)" →
@@ -54,7 +60,10 @@ function runVersion(binary: string, opts: ClaudeVersionLookupOptions, spawnFn: t
     };
     let child: ReturnType<typeof spawnClaude>;
     try {
-      child = spawnFn({ binary, args: ['--version'], cwd: os.homedir(), env: buildClaudeEnv(opts.env), commandPrefix: opts.commandPrefix });
+      const command = JS_ENTRY_EXTS.some((ext) => binary.endsWith(ext))
+        ? { binary: 'node', args: [binary, '--version'] }
+        : { binary, args: ['--version'] };
+      child = spawnFn({ ...command, cwd: os.homedir(), env: buildClaudeEnv(opts.env), commandPrefix: opts.commandPrefix });
     } catch { // telemetry-exempt: no version is the reported outcome; the caller treats it as unknown
       resolve(undefined);
       return;

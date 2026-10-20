@@ -66,7 +66,31 @@ export function createScrubber(ctx: ScrubberContext = {}): Scrubber {
   };
 }
 
-const FRAME_RE = /^\s*at\s+(?:(.*?)\s+\()?(.*?)(?::(\d+))?(?::(\d+))?\)?\s*$/;
+const FRAME_RE = /^\s*at\s+(.*?)\s*$/;
+const LOCATION_RE = /^(.*?)(?::(\d+))?(?::(\d+))?$/;
+
+/**
+ * Split a frame body into function name and location. The location is the
+ * trailing parenthesized group, matched from the end so a path containing
+ * " (" (`C:\Program Files (x86)\…`) stays in the location; a frame that
+ * doesn't end in ")" is a bare location.
+ */
+function splitFrame(body: string): { fn: string; location: string } {
+  if (body.endsWith(')')) {
+    let depth = 0;
+    for (let i = body.length - 1; i >= 0; i--) {
+      if (body[i] === ')') depth++;
+      else if (body[i] === '(' && --depth === 0) {
+        const fn = body.slice(0, i).trim();
+        // A "name" holding path text means the parens didn't pair up.
+        if (i > 0 && /\s/.test(body[i - 1]) && !/[\\/:]/.test(fn)) return { fn, location: body.slice(i + 1, -1) };
+        return { fn: '', location: body.slice(0, -1) };
+      }
+    }
+    return { fn: '', location: body.slice(0, -1) };
+  }
+  return { fn: '', location: body };
+}
 
 /**
  * Reduce a stack trace to sanitized frames: the first line (which carries the
@@ -80,11 +104,12 @@ export function sanitizeStack(stack: string | undefined, scrub: Scrubber, maxFra
     if (frames.length >= maxFrames) break;
     const m = FRAME_RE.exec(line);
     if (!m || !/^\s*at\s/.test(line)) continue;
-    const fn = m[1] ? m[1].replace(/[^\w$.<>[\] -]/g, '') : '';
-    const location = m[2] ?? '';
-    const base = location.split(/[\\/]/).pop() ?? '';
+    const frame = splitFrame(m[1]);
+    const fn = frame.fn.replace(/[^\w$.<>[\] -]/g, '');
+    const [, location, lineNo, col] = LOCATION_RE.exec(frame.location) ?? [];
+    const base = (location ?? '').split(/[\\/]/).pop() ?? '';
     const file = /^[\w.-]+$/.test(base) ? base : '<anonymous>';
-    const pos = m[3] ? `:${m[3]}${m[4] ? `:${m[4]}` : ''}` : '';
+    const pos = lineNo ? `:${lineNo}${col ? `:${col}` : ''}` : '';
     frames.push(fn ? `at ${fn} (${file}${pos})` : `at ${file}${pos}`);
   }
   if (frames.length === 0) return undefined;

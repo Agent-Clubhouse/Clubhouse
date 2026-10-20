@@ -120,6 +120,30 @@ describe('lookupClaudeCliVersion', () => {
     expect(await lookupClaudeCliVersion(binary, { env: { VERSION_HANG: '1' } }, { spawn, timeoutMs: 200 })).toBeUndefined();
   });
 
+  it.each(['cli.js', 'cli.mjs'])('runs a %s entry point under node, as the Agent SDK does', async (name) => {
+    const entry = path.join(tmp, name);
+    fs.writeFileSync(entry, "process.stdout.write('2.1.296 (Claude Code)\\n');");
+    expect(await lookupClaudeCliVersion(entry)).toBe('2.1.296');
+  });
+
+  it.each(['cli.js', 'cli.mjs'])('on Windows, launches a %s entry point as `node <entry> --version`', async (name) => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      const entry = path.join(tmp, name);
+      fs.writeFileSync(entry, '');
+      const launched: Array<{ binary: string; args: string[] }> = [];
+      const recorder: typeof spawnClaude = (o) => {
+        launched.push({ binary: o.binary, args: o.args });
+        return spawnClaude({ ...o, binary: process.execPath, args: ['-e', SCRIPT] });
+      };
+      expect(await lookupClaudeCliVersion(entry, { env: { VERSION_OUT: '2.1.296' } }, { spawn: recorder })).toBe('2.1.296');
+      expect(launched).toEqual([{ binary: 'node', args: [entry, '--version'] }]);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
+
   it('returns undefined when the binary cannot be spawned', async () => {
     expect(await lookupClaudeCliVersion(path.join(tmp, 'missing-claude'))).toBeUndefined();
   });

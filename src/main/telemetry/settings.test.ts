@@ -107,7 +107,7 @@ describe('identity', () => {
 });
 
 describe('resource attributes', () => {
-  const attrs = buildResourceAttributes({
+  const inputs: Parameters<typeof buildResourceAttributes>[0] = {
     appVersion: '0.43.0-beta.1',
     isPackaged: true,
     platform: 'win32',
@@ -119,7 +119,8 @@ describe('resource attributes', () => {
     instanceId: 'run-1',
     annexRole: 'none',
     uiChrome: 'legacy',
-  });
+  };
+  const attrs = buildResourceAttributes(inputs);
 
   it('sets exactly the documented keys, with service.instance.id explicit', () => {
     expect(Object.keys(attrs).sort()).toEqual([...RESOURCE_KEYS].sort());
@@ -138,10 +139,22 @@ describe('resource attributes', () => {
   });
 
   it('maps platform, arch, channel and OS version', () => {
-    expect(attrs).toMatchObject({ 'os.type': 'windows', 'host.arch': 'amd64', 'os.version': '10.0', 'clubhouse.channel': 'preview', 'deployment.environment.name': 'production' });
+    expect(attrs).toMatchObject({ 'os.type': 'windows', 'host.arch': 'amd64', 'os.version': '11.0', 'clubhouse.channel': 'preview', 'deployment.environment.name': 'production' });
     expect(majorMinor('25.5.0')).toBe('25.5');
     expect(majorMinor('garbage')).toBe('unknown');
     expect(channelForVersion('0.43.0')).toBe('stable');
+  });
+
+  it('tells Windows 11 (build 22000+) from Windows 10, which both report 10.0', () => {
+    const osVersion = (platform: NodeJS.Platform, osRelease: string) =>
+      buildResourceAttributes({ ...inputs, platform, osRelease })['os.version'];
+    expect(osVersion('win32', '10.0.19045')).toBe('10.0');
+    expect(osVersion('win32', '10.0.21999')).toBe('10.0');
+    expect(osVersion('win32', '10.0.22000')).toBe('11.0');
+    expect(osVersion('win32', '10.0.26100')).toBe('11.0');
+    expect(osVersion('win32', '6.3.9600')).toBe('6.3');
+    // Only Windows reuses 10.0 across releases.
+    expect(osVersion('linux', '10.0.22000')).toBe('10.0');
   });
 });
 
