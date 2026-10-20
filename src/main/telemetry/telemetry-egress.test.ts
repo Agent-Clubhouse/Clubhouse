@@ -72,14 +72,22 @@ vi.mock('./secret-store', () => ({
   getSecretPath: () => '/nonexistent/telemetry-secret.bin',
 }));
 
-vi.mock('../services/log-service', () => ({
-  appLog: (_ns: string, level: string, msg: string, opts?: { meta?: unknown }) => {
-    state.logs.push(`${level} ${msg} ${JSON.stringify(opts?.meta ?? {})}`);
-  },
-}));
+// The real appLog runs too, so its diag lines (#2301) are checked for egress.
+vi.mock('../services/log-service', async (importActual) => {
+  const actual = await importActual<typeof import('../services/log-service')>();
+  return {
+    ...actual,
+    appLog: (...args: Parameters<typeof actual.appLog>) => {
+      const [, level, msg, opts] = args;
+      state.logs.push(`${level} ${msg} ${JSON.stringify(opts?.meta ?? {})}`);
+      actual.appLog(...args);
+    },
+  };
+});
 
 import { disableTelemetry, getActiveDestinations, initTelemetry, recordAppSession, sendTestEvent, whenStarted } from './bootstrap';
 import { tel } from './facade';
+import { appLog } from '../services/log-service';
 import { diag, isDiagActive } from './diag';
 import { createAzureExporters, isOneSettingsNeutralized, STATSBEAT_ENV_FLAGS } from './destinations/azure';
 import { createOtlpExporters } from './destinations/otlp';
@@ -202,11 +210,14 @@ function assertOnlyConfiguredHost(): void {
 }
 
 const DIAG_CANARY = 'DIAG-CANARY-2299';
+const APPLOG_CANARY = 'APPLOG-CANARY-2301';
 
 function assertNoMachineIdentifiers(): void {
   const all = received.map((r) => r.body).join('\n');
   // Local-only diag lines (#2299) never reach an exporter.
   expect(all).not.toContain(DIAG_CANARY);
+  // Nor do appLog's, which go through diag (#2301).
+  expect(all).not.toContain(APPLOG_CANARY);
   expect(all).not.toContain(os.hostname());
   expect(all).not.toContain(os.homedir());
   expect(all).not.toContain(JSON.stringify(os.homedir()).slice(1, -1));
@@ -219,6 +230,7 @@ async function exerciseAllSignals(): Promise<void> {
   // Recorded locally while the exporter runs, then flushed with it below.
   expect(isDiagActive()).toBe(true);
   diag('core:test', 'error', `${DIAG_CANARY} failed`, { error: new Error(DIAG_CANARY), lastOutput: DIAG_CANARY });
+  appLog('core:test', 'error', `${APPLOG_CANARY} failed`, { projectId: APPLOG_CANARY, meta: { error: APPLOG_CANARY } });
   tel.exception(new Error(`failed reading ${os.homedir()}/secret on ${os.hostname()}`), { origin: 'main', handled: true });
   for (const id of getActiveDestinations().map((d) => d.id)) {
     const result = await sendTestEvent(id, 10_000);

@@ -21,6 +21,8 @@ export interface DiagSink {
   /** Count diag lines dropped before they reached the sink (renderer rate limit). */
   noteDiagDropped(n: number): void;
   flush(): Promise<void>;
+  /** Write pending lines now, synchronously (an OS session end). */
+  flushSync?(): void;
 }
 
 let sink: DiagSink | null = null;
