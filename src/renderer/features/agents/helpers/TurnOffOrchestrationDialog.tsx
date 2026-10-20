@@ -195,7 +195,7 @@ export function TurnOffOrchestrationDialog({ agent, projectPath, helperIds, onDo
           )}
           <p className="text-xs text-ctp-overlay1">
             Keeping clears the parent link and leaves {count === 1 ? 'it running or asleep as it is' : 'them running or asleep as they are'}.
-            Disposing stops them and deletes their folders, after checking that no work would be lost.
+            Disposing {count === 1 ? 'stops it and deletes its folder' : 'stops them and deletes their folders'}, after checking that no work would be lost.
           </p>
           {phase.kind === 'failed' && <p className="text-xs text-ctp-error" role="alert" data-testid="turn-off-error">{phase.message}</p>}
         </div>

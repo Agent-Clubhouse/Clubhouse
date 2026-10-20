@@ -167,13 +167,14 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
             <span className="text-sm text-ctp-text truncate font-medium block min-w-0" title={agent.name}>{agent.name}</span>
             {helperRollup && <HelperRollup id={rollupId} {...helperRollup} />}
           </div>
-          <div className="flex flex-wrap items-center gap-1 mt-1">
+          <div className="flex items-center gap-1 mt-1 min-w-0">
             {(() => {
               const orchId = agent.orchestrator || 'claude-code';
               const c = getOrchestratorColor(orchId);
               return (
-                <span className="text-xs px-1.5 py-0.5 rounded truncate"
-                  style={{ backgroundColor: c.bg, color: c.text }}>
+                <span className="text-xs px-1.5 py-0.5 rounded truncate min-w-0"
+                  style={{ backgroundColor: c.bg, color: c.text }}
+                  title={getOrchestratorLabel(orchId, allOrchestrators)}>
                   {getOrchestratorLabel(orchId, allOrchestrators)}
                 </span>
               );
@@ -184,20 +185,21 @@ function AgentListItemInner({ agent, isActive, isThinking, onSelect, onSpawnQuic
                 ? getModelColor(agent.model)
                 : { bg: 'rgb(var(--ctp-overlay1) / 0.15)', text: 'rgb(var(--ctp-overlay1))' };
               return (
-                <span className="text-xs px-1.5 py-0.5 rounded truncate font-mono"
-                  style={{ backgroundColor: c.bg, color: c.text }}>
+                <span className="text-xs px-1.5 py-0.5 rounded truncate min-w-0 font-mono"
+                  style={{ backgroundColor: c.bg, color: c.text }}
+                  title={modelLabel}>
                   {modelLabel}
                 </span>
               );
             })()}
             {agent.freeAgentMode && (
-              <span className="text-xs px-1.5 py-0.5 rounded truncate"
+              <span className="text-xs px-1.5 py-0.5 rounded truncate min-w-0"
                 style={{ backgroundColor: 'rgb(var(--ctp-error) / 0.15)', color: 'rgb(var(--ctp-error))' }}>
                 Free
               </span>
             )}
             {agent.mcpIds && agent.mcpIds.length > 0 && (
-              <span className="text-xs px-1.5 py-0.5 rounded truncate"
+              <span className="text-xs px-1.5 py-0.5 rounded truncate min-w-0"
                 style={{ backgroundColor: 'rgb(var(--ctp-accent2) / 0.15)', color: 'rgb(var(--ctp-accent2))' }}
                 title={agent.mcpIds.join(', ')}>
                 {agent.mcpIds.length} MCP{agent.mcpIds.length !== 1 ? 's' : ''}

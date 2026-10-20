@@ -211,6 +211,21 @@ describe('Turning orchestration off with helpers (#2232)', () => {
     expect(toggle).toHaveAttribute('aria-checked', 'true');
   });
 
+  it('words both outcomes in the plural for several helpers', async () => {
+    const { dialog } = await openDialog();
+    expect(dialog).toHaveTextContent('leaves them running or asleep as they are');
+    expect(dialog).toHaveTextContent('Disposing stops them and deletes their folders');
+  });
+
+  it('words both outcomes in the singular for one helper', async () => {
+    helperIds = ['h1'];
+    configs = configs.filter((c) => c.id !== 'h2');
+    const { dialog } = await openDialog();
+    expect(dialog).toHaveTextContent('leaves it running or asleep as it is');
+    expect(dialog).toHaveTextContent('Disposing stops it and deletes its folder');
+    expect(dialog).not.toHaveTextContent('stops them');
+  });
+
   it('cancel leaves everything as it was', async () => {
     const { toggle } = await openDialog();
     fireEvent.click(screen.getByTestId('turn-off-cancel'));
