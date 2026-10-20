@@ -11,6 +11,7 @@ import { deniedGroupProjectTools } from '../../../shared/group-project-admin';
 import { appLog } from '../log-service';
 import { isOrchestrationEnabled, onOrchestrationGateChange } from './orchestration-gate';
 import { ORCHESTRATION_OFF_MESSAGE } from '../../../shared/orchestration-policy';
+import type { McpRefusalReason } from '../../telemetry/agent-signals';
 
 /** Check if a value matches a JSON Schema type (handles array vs object correctly). */
 function matchesJsonSchemaType(value: unknown, schemaType: string): boolean {
@@ -42,8 +43,25 @@ function groupAllows(group: ToolGroup | undefined, agentId: string): boolean {
   return !group || toolGroupGates[group].isEnabled(agentId);
 }
 
+/**
+ * Results the registry refused before any handler ran, and why (#2308). Kept
+ * beside the result rather than on it, so the reason never reaches the client.
+ */
+const refusals = new WeakMap<McpToolResult, McpRefusalReason>();
+
+function refuse(reason: McpRefusalReason, text: string): McpToolResult {
+  const result: McpToolResult = { content: [{ type: 'text', text }], isError: true };
+  refusals.set(result, reason);
+  return result;
+}
+
+/** Why `callTool` refused this result, or undefined when a handler produced it. */
+export function refusalReasonOf(result: McpToolResult): McpRefusalReason | undefined {
+  return refusals.get(result);
+}
+
 function groupRefusal(group: ToolGroup): McpToolResult {
-  return { content: [{ type: 'text', text: toolGroupGates[group].refusal }], isError: true };
+  return refuse('group_off', toolGroupGates[group].refusal);
 }
 
 export interface ToolRegistrationOptions {
@@ -382,13 +400,13 @@ export async function callTool(
       const properties = (schema.properties as Record<string, { type?: string }>) || {};
       for (const field of required) {
         if (args[field] === undefined || args[field] === null) {
-          return { content: [{ type: 'text', text: `Missing required argument: ${field}` }], isError: true };
+          return refuse('invalid_args', `Missing required argument: ${field}`);
         }
       }
       for (const [key, value] of Object.entries(args)) {
         const propSchema = properties[key];
         if (propSchema?.type && !matchesJsonSchemaType(value, propSchema.type)) {
-          return { content: [{ type: 'text', text: `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}` }], isError: true };
+          return refuse('invalid_args', `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}`);
         }
       }
     }
@@ -407,10 +425,7 @@ export async function callTool(
     appLog('core:mcp', 'warn', 'Tool call: failed to parse tool name', {
       meta: { agentId, toolName },
     });
-    return {
-      content: [{ type: 'text', text: `Unknown tool: ${toolName}` }],
-      isError: true,
-    };
+    return refuse('unparseable', `Unknown tool: ${toolName}`);
   }
 
   // Verify the agent has this binding
@@ -429,26 +444,17 @@ export async function callTool(
         availableBindings: bindings.map(b => ({ targetId: b.targetId, toolKey: buildToolKey(b), targetKind: b.targetKind })),
       },
     });
-    return {
-      content: [{ type: 'text', text: `No binding found for target: ${parsed.toolKey}` }],
-      isError: true,
-    };
+    return refuse('no_binding', `No binding found for target: ${parsed.toolKey}`);
   }
 
   const templates = templatesFor(binding);
   if (!templates) {
-    return {
-      content: [{ type: 'text', text: `No tools registered for kind: ${binding.targetKind}` }],
-      isError: true,
-    };
+    return refuse('unknown_tool', `No tools registered for kind: ${binding.targetKind}`);
   }
 
   const template = templates.find(t => t.nameSuffix === parsed.suffix);
   if (!template) {
-    return {
-      content: [{ type: 'text', text: `Unknown tool action: ${parsed.suffix}` }],
-      isError: true,
-    };
+    return refuse('unknown_tool', `Unknown tool action: ${parsed.suffix}`);
   }
 
   if (template.group && !groupAllows(template.group, agentId)) {
@@ -468,10 +474,7 @@ export async function callTool(
     // Check required fields are present
     for (const field of required) {
       if (args[field] === undefined || args[field] === null) {
-        return {
-          content: [{ type: 'text', text: `Missing required argument: ${field}` }],
-          isError: true,
-        };
+        return refuse('invalid_args', `Missing required argument: ${field}`);
       }
     }
 
@@ -479,10 +482,7 @@ export async function callTool(
     for (const [key, value] of Object.entries(args)) {
       const propSchema = properties[key];
       if (propSchema?.type && !matchesJsonSchemaType(value, propSchema.type)) {
-        return {
-          content: [{ type: 'text', text: `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}` }],
-          isError: true,
-        };
+        return refuse('invalid_args', `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}`);
       }
     }
   }
@@ -493,10 +493,7 @@ export async function callTool(
     const project = await groupProjectRegistry.getSync(binding.targetId);
     const denied = deniedGroupProjectTools(project?.metadata, agentId, binding.disabledTools);
     if (denied.has(parsed.suffix)) {
-      return {
-        content: [{ type: 'text', text: 'Only a project admin can invoke this tool.' }],
-        isError: true,
-      };
+      return refuse('tool_denied', 'Only a project admin can invoke this tool.');
     }
   }
 

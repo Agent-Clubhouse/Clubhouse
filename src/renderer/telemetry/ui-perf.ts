@@ -7,7 +7,8 @@
  *   local log as `ui:perf` lines and, with telemetry on, as `clubhouse.ui.hang`.
  * - One Event Timing observer for interactions (input to next paint). With
  *   telemetry on each interaction feeds `clubhouse.ui.interaction.duration`;
- *   slow ones are logged locally like hangs.
+ *   slow ones are logged locally like hangs and, with telemetry on, sent as
+ *   `clubhouse.ui.slow_interaction` (#2307). The target id stays in the local line.
  * - Capture-phase pointerdown / keydown / wheel listeners remember the last
  *   interaction: its type and a stable target id (`data-testid` or
  *   `data-tree-key`), never text. Keys are named only for non-character keys.
@@ -74,6 +75,8 @@ interface Burst {
   interaction: LastInteraction | null;
   scripts: ScriptAttribution[];
   scriptSource: ScriptSource;
+  /** Slow interactions: the Event Timing type of the slowest one in the burst. */
+  interactionType: InteractionType | null;
 }
 
 export interface UiPerfLine {
@@ -238,16 +241,29 @@ function flush(kind: PerfKind, now = performance.now()): void {
       ATTR.uiHangScriptSource(b.scriptSource),
       interactionAttr(blame),
     ]);
+  } else {
+    tel.event('clubhouse.ui.slow_interaction', [
+      ATTR.view(b.view),
+      ...surfaceAttrs(b.surface),
+      ATTR.uiSlowInteractionDurationMs(b.maxMs),
+      ATTR.uiSlowInteractionCount(b.count),
+      ATTR.uiInteractionType(b.interactionType ?? blame?.type ?? 'none'),
+    ]);
   }
 }
 
-function note(kind: PerfKind, ms: number, extra: { scripts?: ScriptAttribution[]; source?: ScriptSource } = {}, now = performance.now()): void {
+function note(
+  kind: PerfKind,
+  ms: number,
+  extra: { scripts?: ScriptAttribution[]; source?: ScriptSource; type?: InteractionType } = {},
+  now = performance.now(),
+): void {
   let b = bursts.get(kind);
   if (!b) {
     b = {
       kind, firstAt: now, count: 0, maxMs: 0, totalMs: 0,
       view: getTelemetryView(), surface: getTelemetrySurface(), interaction: lastInteraction,
-      scripts: [], scriptSource: 'none',
+      scripts: [], scriptSource: 'none', interactionType: null,
     };
     bursts.set(kind, b);
     timers.set(kind, setTimeout(() => flush(kind), COALESCE_MS));
@@ -257,6 +273,7 @@ function note(kind: PerfKind, ms: number, extra: { scripts?: ScriptAttribution[]
   if (ms > b.maxMs) {
     b.maxMs = ms;
     if (extra.source) b.scriptSource = extra.source;
+    if (extra.type) b.interactionType = extra.type;
   }
   if (extra.scripts?.length) {
     b.scripts = [...b.scripts, ...extra.scripts].sort((x, y) => y.ms - x.ms).slice(0, MAX_SCRIPTS);
@@ -294,7 +311,7 @@ export function handleEventEntries(entries: ReadonlyArray<{ name: string; durati
     if (isTelemetryEnabled()) {
       tel.count('clubhouse.ui.interaction.duration', duration / 1000, [ATTR.view(getTelemetryView()), ...surfaceAttrs(), ATTR.uiInteractionType(type)]);
     }
-    if (duration >= threshold) note('slow_interaction', duration);
+    if (duration >= threshold) note('slow_interaction', duration, { type });
   }
 }
 

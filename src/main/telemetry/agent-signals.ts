@@ -132,13 +132,23 @@ export function recordPermission(opts: {
 
 const MCP_KINDS = new Set(['clubhouse', 'browser', 'terminal', 'group', 'plugin']);
 
+export type McpRefusalReason = Parameters<typeof ATTR.mcpRefusalReason>[0];
+
 /**
  * One MCP tool call served by the bridge. `toolName` is only parsed locally,
  * never exported raw: the binding segment is dropped, and the suffix only
  * survives if it is on the registry's fixed list. Plugin tool names are
- * plugin-authored, so they are always `other`.
+ * plugin-authored, so they are always `other`. The calling agent goes on the
+ * span as a hash, and a registry refusal as its reason (#2308); neither goes on
+ * the metrics. Tool arguments are never passed in.
  */
-export function recordMcpToolCall(toolName: string, startMs: number, result: 'ok' | 'tool_error' | 'threw', global: boolean): void {
+export function recordMcpToolCall(
+  toolName: string,
+  startMs: number,
+  result: 'ok' | 'tool_error' | 'threw',
+  global: boolean,
+  extra: { agentId?: string; refusal?: McpRefusalReason } = {},
+): void {
   if (!isTelemetryActive()) return;
   type Kind = Parameters<typeof ATTR.mcpToolKind>[0];
   type Tool = Parameters<typeof ATTR.mcpTool>[0];
@@ -150,7 +160,13 @@ export function recordMcpToolCall(toolName: string, startMs: number, result: 'ok
     name: 'clubhouse.mcp.tool_call',
     startMs,
     endMs,
-    attrs: [ATTR.mcpToolKind(kind), ATTR.mcpTool(tool), ATTR.mcpResult(result)],
+    attrs: [
+      ATTR.mcpToolKind(kind),
+      ATTR.mcpTool(tool),
+      ATTR.mcpResult(result),
+      ...(extra.agentId ? [ATTR.agentIdHash(extra.agentId)] : []),
+      ...(extra.refusal && result === 'tool_error' ? [ATTR.mcpRefusalReason(extra.refusal)] : []),
+    ],
     outcome: result === 'ok' ? 'ok' : 'error',
     errorType: result === 'ok' ? undefined : result === 'threw' ? 'mcp_tool_threw' : 'mcp_tool_error',
   });

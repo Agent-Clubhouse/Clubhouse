@@ -324,6 +324,10 @@ export const ATTR = {
   uiHangFrames: intAttr('clubhouse.ui.hang.frames'),
   /** Whose script the long-animation-frame attribution blamed. Never the URL. */
   uiHangScriptSource: enumAttr('clubhouse.ui.hang.script_source', ['app', 'plugin', 'extension', 'none']),
+  /** Slowest interaction in a coalesced burst, input to next paint in ms (`clubhouse.ui.slow_interaction`, #2307). */
+  uiSlowInteractionDurationMs: intAttr('clubhouse.ui.slow_interaction.duration_ms'),
+  /** Interactions over the threshold in the burst. */
+  uiSlowInteractionCount: intAttr('clubhouse.ui.slow_interaction.count'),
   /** Feature-usage events from the new chrome. */
   uiFeature: enumAttr('clubhouse.ui.feature', [
     'sidebar_toggle', 'sidebar_resize', 'tab_select', 'project_select', 'agent_select', 'app_item_open',
@@ -448,6 +452,11 @@ export const ATTR = {
     'other',
   ]),
   mcpResult: enumAttr('clubhouse.mcp.result', ['ok', 'tool_error', 'threw']),
+  /**
+   * Why the tool registry refused a call before any handler ran (#2308). Only on
+   * `clubhouse.mcp.tool_call` spans whose result is `tool_error`.
+   */
+  mcpRefusalReason: enumAttr('clubhouse.mcp.refusal.reason', ['group_off', 'unparseable', 'no_binding', 'unknown_tool', 'invalid_args', 'tool_denied']),
   binaryLookupTier: enumAttr('clubhouse.binary.lookup_tier', ['cache', 'well_known', 'path_scan', 'login_shell', 'not_found']),
   // Phase 4b: spawn, create, delete, kill, shoulder taps
   agentResume: boolAttr('clubhouse.agent.resume'),
@@ -1179,6 +1188,13 @@ export const EVENTS = {
    * Attributes: view, surface, `clubhouse.ui.hang.duration_ms`, `.frames`, `.script_source`, `clubhouse.ui.interaction.type`.
    */
   'clubhouse.ui.hang': { level: 'standard' },
+  /**
+   * A burst of interactions over the same threshold, input to next paint (#2307). Shares
+   * `clubhouse.ui.hang`'s coalescing and six-a-minute cap. Attributes: view, surface,
+   * `clubhouse.ui.slow_interaction.duration_ms`, `.count`, `clubhouse.ui.interaction.type`.
+   * The target id stays in the local `ui:perf` line.
+   */
+  'clubhouse.ui.slow_interaction': { level: 'standard' },
   /** The previous session ended without a clean shutdown (§4.1). */
   'clubhouse.app.unclean_exit': { level: 'errors' },
   /** Safe-mode decision at startup (§4.1). */

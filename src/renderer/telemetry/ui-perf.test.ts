@@ -165,6 +165,47 @@ describe('hang and interaction telemetry', () => {
     expect(lines[0].meta.scripts).toEqual([{ source: 'clubhouse-plugin://my-plugin/…/main.js', ms: 400 }]);
   });
 
+  it('sends one clubhouse.ui.slow_interaction per burst, keeping the target id local (#2307)', () => {
+    setTelemetryView('agent');
+    setTelemetrySurface('sidebar_agents');
+    const row = document.createElement('div');
+    row.setAttribute('data-testid', 'sidebar-agent-row');
+    row.textContent = 'Secret agent name';
+    document.body.append(row);
+    noteInteraction('click', row);
+    handleEventEntries([
+      { name: 'click', duration: 260, interactionId: 11 },
+      { name: 'keydown', duration: 410, interactionId: 12 },
+    ]);
+    _flushUiPerfForTests();
+    const slow = items().filter((i) => i.name === 'clubhouse.ui.slow_interaction');
+    expect(slow).toEqual([{
+      t: 'event',
+      name: 'clubhouse.ui.slow_interaction',
+      attrs: [
+        ATTR.view('agent'),
+        ATTR.uiSurface('sidebar_agents'),
+        ATTR.uiSlowInteractionDurationMs(410),
+        ATTR.uiSlowInteractionCount(2),
+        // The slowest interaction's own type, not the last input before the burst.
+        ATTR.uiInteractionType('keydown'),
+      ],
+    }]);
+    expect(JSON.stringify(items())).not.toContain('sidebar-agent-row');
+    expect(JSON.stringify(items())).not.toContain('Secret');
+    expect(lines[0].meta.interaction).toMatchObject({ type: 'click', target: 'sidebar-agent-row' });
+  });
+
+  it('shares the six-a-minute cap with clubhouse.ui.hang', () => {
+    for (let i = 0; i < MAX_LINES_PER_MINUTE + 2; i++) {
+      if (i % 2) handleLongFrame({ duration: 300 });
+      else handleEventEntries([{ name: 'click', duration: 300, interactionId: 100 + i }]);
+      _flushUiPerfForTests(1_000 + i);
+    }
+    const events = items().filter((i) => i.name === 'clubhouse.ui.slow_interaction' || i.name === 'clubhouse.ui.hang');
+    expect(events).toHaveLength(MAX_LINES_PER_MINUTE);
+  });
+
   it('measures each interaction once, by its longest entry, per surface', () => {
     setTelemetryView('agent');
     setTelemetrySurface('sidebar_agents');

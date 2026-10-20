@@ -11,7 +11,7 @@ vi.mock('fs/promises', () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
+import { registerToolTemplate, registerGlobalTool, getScopedToolList, callTool, refusalReasonOf, buildToolName, buildToolKey, parseToolName, shortHash, invalidateToolListCache, sanitizeWireInstruction, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { setOrchestrationEnabled, onOrchestrationGateChange, _resetOrchestrationGateForTesting } from './orchestration-gate';
 import { agentRegistry } from '../agent-registry';
@@ -434,6 +434,7 @@ describe('ToolRegistry', () => {
 
       const result = await callTool('agent-1', toolName, { message: 'hello' });
       expect(result.isError).toBeFalsy();
+      expect(refusalReasonOf(result)).toBeUndefined();
       expect(handler).toHaveBeenCalledWith('agent-2', 'agent-1', { message: 'hello' });
       agentRegistry.untrack('agent-2');
     });
@@ -442,6 +443,7 @@ describe('ToolRegistry', () => {
       const result = await callTool('agent-1', 'unknown_tool', {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Unknown tool');
+      expect(refusalReasonOf(result)).toBe('unparseable');
     });
 
     it('returns error when agent has no binding for target', async () => {
@@ -454,6 +456,7 @@ describe('ToolRegistry', () => {
       const result = await callTool('agent-1', 'clubhouse__project_Agent_2_xxxx__send_message', {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('No binding');
+      expect(refusalReasonOf(result)).toBe('no_binding');
     });
 
     it('returns error for unknown action suffix', async () => {
@@ -475,6 +478,7 @@ describe('ToolRegistry', () => {
       const result = await callTool('agent-1', `clubhouse__${key}__nonexistent`, {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Unknown tool action');
+      expect(refusalReasonOf(result)).toBe('unknown_tool');
     });
 
     it('passes original targetId (not sanitized) to handler', async () => {
@@ -572,6 +576,7 @@ describe('ToolRegistry', () => {
       const result = await callTool('agent-1', toolName, {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Missing required argument: message');
+      expect(refusalReasonOf(result)).toBe('invalid_args');
       expect(handler).not.toHaveBeenCalled();
       agentRegistry.untrack('agent-2');
     });
@@ -605,6 +610,7 @@ describe('ToolRegistry', () => {
       const result = await callTool('agent-1', toolName, { message: 123 });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Invalid type');
+      expect(refusalReasonOf(result)).toBe('invalid_args');
       expect(handler).not.toHaveBeenCalled();
       agentRegistry.untrack('agent-2');
     });
@@ -775,6 +781,18 @@ describe('ToolRegistry', () => {
       expect(suffixes).not.toContain('compact_agent');
     });
 
+    it('refuses a disabled or privileged tool at call time with reason tool_denied', async () => {
+      bindingManager.bind('agent-1', {
+        targetId: 'gp_test_4', targetKind: 'group-project', label: 'GP', targetName: 'TestProj',
+      });
+      const toolName = buildToolName(makeBinding({
+        agentId: 'agent-1', targetId: 'gp_test_4', targetKind: 'group-project', targetName: 'TestProj',
+      }), 'shoulder_tap');
+      const result = await callTool('agent-1', toolName, {});
+      expect(result.content[0].text).toBe('Only a project admin can invoke this tool.');
+      expect(refusalReasonOf(result)).toBe('tool_denied');
+    });
+
     it('an admin wire can disable individual tools without affecting others', () => {
       groupProjectRegistry._setForTesting({
         id: 'gp_test_3', name: 'TestProj', description: '', instructions: '',
@@ -857,6 +875,7 @@ describe('ToolRegistry', () => {
       const result = await callTool('agent-1', 'need_args', {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Missing required argument: id');
+      expect(refusalReasonOf(result)).toBe('invalid_args');
     });
 
     it('callTool validates argument types for global tools', async () => {
@@ -871,6 +890,7 @@ describe('ToolRegistry', () => {
       const result = await callTool('agent-1', 'typed_args', { count: 'not_a_number' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Invalid type');
+      expect(refusalReasonOf(result)).toBe('invalid_args');
     });
 
     it('global tools are cleared by _resetForTesting', () => {
@@ -953,6 +973,7 @@ describe('ToolRegistry', () => {
       const handler = registerOrchestrationTool();
       const result = await callTool('agent-1', 'test_start_helper', { name: 'x' });
       expect(result).toEqual({ content: [{ type: 'text', text: OFF }], isError: true });
+      expect(refusalReasonOf(result)).toBe('group_off');
       expect(handler).not.toHaveBeenCalled();
     });
 
@@ -1005,6 +1026,7 @@ describe('ToolRegistry', () => {
       expect(names('agent-1')).toEqual([send]);
       const refused = await callTool('agent-1', connect, {});
       expect(refused.content[0].text).toBe(OFF);
+      expect(refusalReasonOf(refused)).toBe('group_off');
       expect(handler).not.toHaveBeenCalled();
 
       setOrchestrationEnabled('agent-1', true);
