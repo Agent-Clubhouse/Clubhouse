@@ -5,7 +5,7 @@ vi.mock('./log-settings', () => ({ getSettings: vi.fn() }));
 
 import * as fsp from 'fs/promises';
 import * as logSettings from './log-settings';
-import { appLog, flush } from './log-service';
+import { appLog, flush, init } from './log-service';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { abortPending } from '../telemetry/facade';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
@@ -38,6 +38,11 @@ beforeEach(async () => {
   events.length = 0;
   traceIds = undefined;
   vi.mocked(logSettings.getSettings).mockReturnValue({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info' });
+  // The session log is written only once init() has opened its file (#2301).
+  vi.mocked(fsp.stat).mockRejectedValue(new Error('ENOENT'));
+  vi.mocked(fsp.readdir).mockResolvedValue([]);
+  await init();
+  vi.mocked(fsp.appendFile).mockClear();
 });
 afterEach(() => {
   setProducingRuntime(null);

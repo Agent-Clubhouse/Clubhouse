@@ -128,9 +128,8 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-// Catch-all handlers for truly unexpected errors. These fire *after* logService.init()
-// has been called (in registerAllHandlers), so early crashes before `ready` won't log —
-// but those are visible in stderr anyway.
+// Catch-all handlers for truly unexpected errors. Lines logged before the
+// session log and the recorder are ready are held and written once they are (#2301).
 process.on('uncaughtException', (err) => {
   appLog('core:process', 'fatal', 'Uncaught exception', {
     meta: { error: err.message, stack: err.stack },

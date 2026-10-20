@@ -7,12 +7,16 @@ import * as logSettings from './log-settings';
 import { bridgeLog, traceFieldsForLog, type LogTelemetry } from '../telemetry/log-bridge';
 import { recordBreadcrumb, recordBreadcrumbFrom } from './breadcrumbs';
 import { pruneLogDir } from '../telemetry/local-retention';
-import { getDiagNamespaces } from '../telemetry/diag';
+import { diag, getDiagNamespaces, getDiagSink, isDiagActive, type DiagEntry } from '../telemetry/diag';
 import { listLogNamespaces } from '../../shared/log-namespaces';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 const FLUSH_INTERVAL_MS = 1_000;
 const FLUSH_ENTRY_THRESHOLD = 50;
+/** Lines held in memory before the log file or the recorder is ready; the oldest go past this. */
+const MAX_EARLY_ENTRIES = 500;
+/** Startup appLog lines held for diag; well under the recorder's queue (500), so the drain can't overflow it. */
+const MAX_EARLY_DIAG = 200;
 
 let logDir: string;
 let sessionBase: string;
@@ -22,6 +26,13 @@ let currentFileSize = 0;
 let buffer: string[] = [];
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 const seenNamespaces = new Set<string>();
+/**
+ * appLog lines from before the local recorder started (#2301), written to
+ * diag once it has. `null` once startup is over: from then on a line with no
+ * recorder (logging off) is dropped, as diag does.
+ */
+let earlyDiag: DiagEntry[] | null = [];
+let earlyDiagDropped = 0;
 
 async function ensureLogDir(): Promise<void> {
   if (!logDir) {
@@ -57,8 +68,27 @@ async function cleanup(): Promise<void> {
   await pruneLogDir(logDir, tier, { protect: currentFilePath ? [currentFilePath] : [] });
 }
 
+/** Write the held startup lines to diag, if the recorder has started. */
+function drainEarlyDiag(): void {
+  if (!earlyDiag || !isDiagActive()) return;
+  const lines = earlyDiag;
+  earlyDiag = null;
+  if (earlyDiagDropped > 0) {
+    diag('core:startup', 'warn', 'Startup log lines dropped before the recorder started', { dropped: earlyDiagDropped });
+  }
+  earlyDiagDropped = 0;
+  for (const e of lines) diag(e.ns, e.level, e.msg, e.meta);
+}
+
+/** Writes both the session log and the diag lines (the local recorder). */
 export async function flush(): Promise<void> {
-  if (buffer.length === 0) return;
+  drainEarlyDiag();
+  await Promise.all([flushSessionLog(), getDiagSink()?.flush().catch(() => {})]);
+}
+
+async function flushSessionLog(): Promise<void> {
+  // Before init() there is no file yet: keep the lines for init() to write (#2301).
+  if (buffer.length === 0 || !currentFilePath) return;
   const data = buffer.join('\n') + '\n';
   buffer = [];
   try {
@@ -80,6 +110,11 @@ export async function flush(): Promise<void> {
  * next async flush rotates if the file is over the limit.
  */
 export function flushSync(): void {
+  try {
+    getDiagSink()?.flushSync?.();
+  } catch {
+    // telemetry-exempt: the recorder's own write failed; it counts its drops
+  }
   if (buffer.length === 0 || !currentFilePath) return;
   const data = buffer.join('\n') + '\n';
   buffer = [];
@@ -137,9 +172,31 @@ export function log(entry: LogEntry, telemetry?: LogTelemetry): void {
   const line = JSON.stringify(entry);
   buffer.push(line);
 
-  if (buffer.length >= FLUSH_ENTRY_THRESHOLD) {
-    flush();
+  if (!currentFilePath) {
+    if (buffer.length > MAX_EARLY_ENTRIES) buffer.shift();
+  } else if (buffer.length >= FLUSH_ENTRY_THRESHOLD) {
+    void flushSessionLog();
   }
+}
+
+/**
+ * The diag half of appLog (#2301): `projectId` goes in `meta`. Before the
+ * recorder starts the line is held, raw and in memory only; diag gates and
+ * redacts it when it is written.
+ */
+function appDiag(ns: string, level: LogEntry['level'], msg: string, opts?: { projectId?: string; meta?: Record<string, unknown> }): void {
+  const meta = opts?.projectId && opts.meta?.projectId === undefined ? { projectId: opts.projectId, ...opts.meta } : opts?.meta;
+  drainEarlyDiag();
+  if (earlyDiag && !isDiagActive()) {
+    // A copy, so a caller changing its object later doesn't change the line.
+    earlyDiag.push({ ns, level, msg, meta: meta && { ...meta } });
+    if (earlyDiag.length > MAX_EARLY_DIAG) {
+      earlyDiag.shift();
+      earlyDiagDropped++;
+    }
+    return;
+  }
+  diag(ns, level, msg, meta);
 }
 
 export function appLog(
@@ -148,6 +205,13 @@ export function appLog(
   msg: string,
   opts?: { projectId?: string; meta?: Record<string, unknown>; telemetry?: LogTelemetry },
 ): void {
+  // The local-only diag tier (spec §6.12). The session log below is written
+  // too until it is deleted (#2313).
+  try {
+    appDiag(ns, level, msg, opts);
+  } catch {
+    // telemetry-exempt: a logger must never throw, and reporting would recurse
+  }
   log({
     ts: new Date().toISOString(),
     ns,
@@ -181,7 +245,14 @@ export async function init(): Promise<void> {
   await openSessionFile();
   await cleanup();
 
-  flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
+  // Startup is over: the recorder has started if logging is on. Lines held
+  // until now are written, or dropped when it never will start.
+  drainEarlyDiag();
+  earlyDiag = null;
+  earlyDiagDropped = 0;
+  void flushSessionLog();
+
+  flushTimer = setInterval(flushSessionLog, FLUSH_INTERVAL_MS);
 
   app.on('before-quit', () => {
     if (flushTimer) {
@@ -190,4 +261,11 @@ export async function init(): Promise<void> {
     }
     flush();
   });
+}
+
+/** Test-only: back to startup, with nothing held. */
+export function _resetEarlyLogForTests(): void {
+  buffer = [];
+  earlyDiag = [];
+  earlyDiagDropped = 0;
 }
