@@ -56,6 +56,14 @@ export function parseHelperCount(raw: string, ceiling: number): { value: number 
   return { value };
 }
 
+/** Open Settings → Helpers, where the app-wide cap is set. */
+export function openHelpersSettings(): void {
+  const ui = useUIStore.getState();
+  if (ui.explorerTab !== 'settings') ui.toggleSettings();
+  ui.setSettingsContext('app');
+  ui.setSettingsSubPage('helpers');
+}
+
 // ── Project agent configs ───────────────────────────────────────────────
 
 /** Two spellings of one project folder: trailing separators and, on Windows, case don't matter. */

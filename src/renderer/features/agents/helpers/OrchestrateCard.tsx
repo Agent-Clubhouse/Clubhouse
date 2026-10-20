@@ -10,12 +10,13 @@ import type { Agent } from '../../../../shared/types';
 import { Toggle } from '../../../components/Toggle';
 import { CardNote, CardRow, DetailsCard } from '../details/DetailsCard';
 import { CONTROL_LABELS, controlHelp } from './helper-model';
-import { maxHelpersCeiling, type OrchestrationState } from './orchestration-hooks';
+import { maxHelpersCeiling, openHelpersSettings, type OrchestrationState } from './orchestration-hooks';
 import { AccessSelect, ControlSelect, HelperCountInput, accessNote } from './OrchestrationFields';
 import { TurnOffOrchestrationDialog } from './TurnOffOrchestrationDialog';
 
 const SELECT_CLASS = 'h-6 max-w-full px-1.5 rounded-md border border-surface-1 bg-ctp-crust text-xs text-ctp-text focus-ring disabled:opacity-50';
 const NUMBER_CLASS = 'h-6 w-14 px-1.5 rounded-md border border-surface-1 bg-ctp-crust text-xs text-ctp-text focus-ring disabled:opacity-50';
+const LINK_CLASS = 'text-ctp-link hover:underline cursor-pointer focus-ring rounded-sm';
 
 /** The card's one-line answer. */
 export function orchestrateSummary(orch: Pick<OrchestrationState, 'policy'>): string {
@@ -107,7 +108,14 @@ export function OrchestrateCard({ agent, projectPath, orch, open, onToggle }: {
                   testId="orchestrate-max-helpers"
                 />
                 <span className={countError ? 'text-ctp-error' : 'text-ctp-overlay1'} data-testid="orchestrate-max-helpers-note">
-                  {countError ?? `Up to ${ceiling}, the app-wide limit across all orchestrators.`}
+                  {countError ?? (
+                    <>
+                      Up to {ceiling}, your app-wide limit. Change it in{' '}
+                      <button type="button" className={LINK_CLASS} onClick={openHelpersSettings} data-testid="orchestrate-open-helpers-settings">
+                        Settings → Helpers
+                      </button>.
+                    </>
+                  )}
                 </span>
               </span>
             </CardRow>
