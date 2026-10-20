@@ -164,7 +164,9 @@ export function useTerminalFit(
             debounceTimer = setTimeout(() => {
               debounceTimer = null;
               const current = terminalRef.current;
-              if (current && isSizeOwner(sessionId, token)) doResize(sessionId, current.cols, current.rows);
+              if (current && isSizeOwner(sessionId, token) && document.hasFocus()) {
+                doResize(sessionId, current.cols, current.rows);
+              }
             }, RESIZE_DEBOUNCE_MS);
           } else {
             doResize(sessionId, term.cols, term.rows);
@@ -190,7 +192,8 @@ export function useTerminalFit(
     let wakeTimer: ReturnType<typeof setTimeout> | null = null;
     const onVisibility = () => {
       if (!document.hidden) {
-        wakeTimer = setTimeout(() => fitAndResize(true, 'visibility-change'), WAKE_SETTLE_MS);
+        // Several windows can become visible at once; only the focused one sends.
+        wakeTimer = setTimeout(() => fitAndResize(document.hasFocus(), 'visibility-change'), WAKE_SETTLE_MS);
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -199,11 +202,14 @@ export function useTerminalFit(
     const onWindowFocus = () => fitAndResize(true, 'window-focus');
     window.addEventListener('focus', onWindowFocus);
 
-    // Typing into (or clicking) this terminal makes it the size owner.
+    // Typing into (or clicking) this terminal makes it the size owner.  The
+    // mount's own term.focus() doesn't count: it runs before the replay is
+    // ready, and a newly mounted view must not take the size from another.
     const onFocusIn = () => {
+      if (readyRef && !readyRef.current) return;
       if (isSizeOwner(sessionId, token)) return;
       claimSizeOwner(sessionId, token);
-      fitAndResize(true, 'focus-claim');
+      fitAndResize(document.hasFocus(), 'focus-claim');
     };
     container.addEventListener('focusin', onFocusIn);
 

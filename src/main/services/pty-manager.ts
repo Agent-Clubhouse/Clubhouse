@@ -413,6 +413,9 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
   const session = createSession(proc, agentId, pendingCommand);
   session.onExitCallback = onExit;
   sessions.set(agentId, session);
+  // A respawn under the same id starts at the spawn size; views still
+  // following the previous PTY's size must hear about it.
+  broadcastToAllWindows(IPC.PTY.RESIZED, agentId, SPAWN_COLS, SPAWN_ROWS);
   agentRunStarted(agentId, 'pty');
   const expectedGeneration = session.generation;
 
@@ -491,6 +494,7 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
 
   const session = createSession(proc, id);
   sessions.set(id, session);
+  broadcastToAllWindows(IPC.PTY.RESIZED, id, SPAWN_COLS, SPAWN_ROWS);
   const expectedGeneration = session.generation;
 
   proc.onData((data: string) => {

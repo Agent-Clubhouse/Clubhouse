@@ -206,6 +206,8 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     };
     const restore = async (snapshot: PtyBufferSnapshot, source: 'local' | 'remote/annex') => {
       if (terminalRef.current !== term) return;
+      // Resizes from here on happened after main built the snapshot.
+      snapshotApplied = true;
       if (snapshot.data) {
         rendererLog(SCROLL_LOG_NS, 'debug', `Buffer replay (${source})`, {
           meta: { agentId, bufLen: snapshot.data.length, seq: snapshot.seq, sizes: snapshot.sizes?.length ?? 0 },
@@ -221,7 +223,6 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       appliedSeq = snapshot.seq;
       const last = snapshot.sizes?.[snapshot.sizes.length - 1];
       if (last && !isRemote) ptySizeRef.current = { cols: last.cols, rows: last.rows };
-      snapshotApplied = true;
       await drainPending();
       if (resizedDuringReplay) ptySizeRef.current = resizedDuringReplay;
       finishReplay();

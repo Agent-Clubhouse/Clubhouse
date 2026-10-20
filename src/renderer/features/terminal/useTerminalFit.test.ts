@@ -147,6 +147,7 @@ describe('useTerminalFit', () => {
     });
 
     it('calls fit and resize after settle delay when page becomes visible', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
       // Only fake setTimeout — requestAnimationFrame is already stubbed globally
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
@@ -347,6 +348,7 @@ describe('useTerminalFit', () => {
     });
 
     it('uses custom onResize on visibility change', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       const customResize = vi.fn();
       renderHook(() =>
@@ -570,6 +572,33 @@ describe('useTerminalFit', () => {
 
       card.el.dispatchEvent(new FocusEvent('focusin'));
       expect(mockResize).toHaveBeenCalledWith('s1', 50, 12);
+    });
+
+    it('ignores DOM focus from a mount that is still replaying', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const main = makeView(120, 40);
+      const card = makeView(50, 12);
+      const cardReady = { current: false };
+      renderHook(() => useTerminalFit('s1', main.terminalRef, main.fitAddonRef, main.containerRef));
+      renderHook(() => useTerminalFit('s1', card.terminalRef, card.fitAddonRef, card.containerRef, false, undefined, { readyRef: cardReady }));
+      mockResize.mockClear();
+
+      card.el.dispatchEvent(new FocusEvent('focusin')); // the mount's term.focus()
+      cardReady.current = true;
+      fireResizeObserver(0);
+      expect(mockResize).toHaveBeenCalledWith('s1', 120, 40);
+      expect(mockResize).not.toHaveBeenCalledWith('s1', 50, 12);
+    });
+
+    it('does not send from a background window when it becomes visible', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      const main = makeView(120, 40);
+      renderHook(() => useTerminalFit('s1', main.terminalRef, main.fitAddonRef, main.containerRef));
+      mockResize.mockClear();
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+      visibilityListeners.forEach((listener) => listener());
+      vi.advanceTimersByTime(200);
+      expect(mockResize).not.toHaveBeenCalled();
     });
 
     it('hands the size to the remaining view when the owner unmounts', () => {

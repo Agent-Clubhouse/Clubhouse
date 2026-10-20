@@ -494,6 +494,12 @@ describe('pty-manager', () => {
       expect(mockProcess.resize).toHaveBeenCalledTimes(1);
     });
 
+    it('announces the spawn size so views following a previous PTY reset', async () => {
+      vi.mocked(broadcastToAllWindows).mockClear();
+      await spawn('agent_respawn_size', '/test', '/usr/local/bin/claude', []);
+      expect(broadcastToAllWindows).toHaveBeenCalledWith('pty:resized', 'agent_respawn_size', 120, 30);
+    });
+
     it('flushes batched output, then broadcasts the new size', async () => {
       await spawn('agent_bc', '/test', '/usr/local/bin/claude', []);
       const order: string[] = [];

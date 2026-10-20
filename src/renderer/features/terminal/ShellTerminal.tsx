@@ -149,6 +149,8 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
         : pty.getBuffer(sessionId).then((data) => ({ data, seq: -1 }));
       snapshot.then(async (snap) => {
         if (terminalRef.current !== term) return;
+        // Resizes from here on happened after main built the snapshot.
+        replay.snapshotApplied = true;
         // Unsized history (older or remote IO): write at this pane's size.
         if (!snap.sizes?.length && hasMeasurableSize(containerRef.current)) fitAddon.fit();
         await writePtySnapshot(term, snap);
@@ -156,7 +158,6 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
         replay.appliedSeq = snap.seq;
         const last = snap.sizes?.[snap.sizes.length - 1];
         if (last) ptySizeRef.current = { cols: last.cols, rows: last.rows };
-        replay.snapshotApplied = true;
         await flushPending();
       }).catch(() => {
         if (terminalRef.current !== term) return;
