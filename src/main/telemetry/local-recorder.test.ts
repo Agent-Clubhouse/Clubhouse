@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as path from 'path';
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import { createLocalRecorder, LOCAL_FORMAT_VERSION, type LocalRecorder, type LocalRecorderOptions } from './local-recorder';
 import { createScrubber } from './scrubber';
@@ -50,7 +51,7 @@ describe('local telemetry recorder', () => {
     const h = harness();
     await h.rec.flush();
     expect(h.records()[0]).toMatchObject({ t: 'session', v: LOCAL_FORMAT_VERSION, appVersion: '1.2.3', platform: 'darwin', level: 'standard' });
-    expect([...h.files.keys()]).toEqual(['/logs/telemetry-run.jsonl']);
+    expect([...h.files.keys()]).toEqual([path.join('/logs', 'telemetry-run.jsonl')]);
   });
 
   it('records flows and steps with durations, outcomes and parent links', async () => {
@@ -176,8 +177,8 @@ describe('local telemetry recorder', () => {
     for (let i = 0; i < 40; i++) h.rec.event('clubhouse.telemetry.test');
     await h.rec.flush();
     const names = [...h.files.keys()];
-    expect(names[0]).toBe('/logs/telemetry-run.jsonl');
-    expect(names[1]).toBe('/logs/telemetry-run.1.jsonl');
+    expect(names[0]).toBe(path.join('/logs', 'telemetry-run.jsonl'));
+    expect(names[1]).toBe(path.join('/logs', 'telemetry-run.1.jsonl'));
     for (const [, data] of h.files) {
       // A chunk only passes its limit by the capped marker.
       expect(Buffer.byteLength(data.replace(/\{"t":"capped".*\n/, ''))).toBeLessThanOrEqual(400);
