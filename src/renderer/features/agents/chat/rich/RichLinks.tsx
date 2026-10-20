@@ -13,6 +13,11 @@ import { fetchGithubRef, peekGithubRef, resolveGithubRepo } from './github-ref-c
 import { findLinkTokens, githubLabel, parseGithubUrl, type GithubRef, type LinkToken } from './link-tokens';
 import { useRichChatContent } from './rich-flag';
 import { enrichTextNodes, type TextMatcher } from './text-enrich';
+import { fileMatcher, hydrateFileChips, useFileChips } from './FileChips';
+import { findFilePaths } from './file-paths';
+
+/** Tool output longer than this gets links but no file chips. */
+const FILE_CHIP_TEXT_MAX = 200_000;
 
 /**
  * Link tokens in chat (#2351), behind experimental.richChatContent. A
@@ -133,9 +138,10 @@ export function linkMatcher(repo: string | null, shorthand: boolean, relabel = s
 
 /**
  * Enrich rendered markdown in place: existing GitHub links become tokens,
- * and plain-text references outside code become links and tokens.
+ * and plain-text references outside code become links and tokens. `before`
+ * matchers (file paths) run first, so they win where they overlap a link.
  */
-export function enrichMarkdownLinks(root: HTMLElement, repo: string | null): void {
+export function enrichMarkdownLinks(root: HTMLElement, repo: string | null, before: TextMatcher[] = []): void {
   for (const a of Array.from(root.querySelectorAll('a[href]')) as HTMLAnchorElement[]) {
     if (a.dataset.ghToken || a.closest('pre, code')) continue;
     const href = a.getAttribute('href') ?? '';
@@ -145,7 +151,7 @@ export function enrichMarkdownLinks(root: HTMLElement, repo: string | null): voi
     const text = (a.textContent ?? '').trim();
     decorateGithubAnchor(a, ref, repo, { relabel: text === href || text === href.replace(/^https?:\/\//, ''), ambiguous: false });
   }
-  enrichTextNodes(root, [linkMatcher(repo, true)]);
+  enrichTextNodes(root, [...before, linkMatcher(repo, true)]);
 }
 
 // ── Plain text (tool output) ──────────────────────────────────────────────
@@ -157,14 +163,18 @@ export function enrichMarkdownLinks(root: HTMLElement, repo: string | null): voi
  */
 export function RichText({ text }: { text: string }) {
   const rich = useRichLinks();
+  const fileAgent = useFileChips();
   const ref = useRef<HTMLSpanElement>(null);
-  const has = useMemo(() => !!rich && /https?:\/\//i.test(text), [rich, text]);
+  // File chips only for output of a sane size: every path in it is a lookup.
+  const chips = !!fileAgent && text.length <= FILE_CHIP_TEXT_MAX;
+  const has = useMemo(() => !!rich && (/https?:\/\//i.test(text) || (chips && findFilePaths(text).length > 0)), [rich, text, chips]);
   // The span's children are built here, never by React, so React has nothing of its own to reconcile.
   useLayoutEffect(() => {
     if (!has || !ref.current) return;
     ref.current.textContent = text;
-    enrichTextNodes(ref.current, [linkMatcher(rich!.repo, false)]);
-  }, [has, text, rich]);
+    enrichTextNodes(ref.current, [...(chips ? [fileMatcher] : []), linkMatcher(rich!.repo, false)]);
+    if (chips) void hydrateFileChips(ref.current, fileAgent!);
+  }, [has, text, rich, chips, fileAgent]);
   const handlers = useTokenHandlers(rich);
   if (!has) return <>{text}</>;
   return <span ref={ref} {...handlers} />;

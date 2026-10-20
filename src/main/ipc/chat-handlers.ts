@@ -3,6 +3,7 @@
  * the registry, so a request for an agent that isn't running in chat fails
  * cleanly instead of reaching a PTY.
  */
+import * as fsp from 'fs/promises';
 import { BrowserWindow, clipboard, ipcMain, nativeImage, net, shell, type IpcMainInvokeEvent } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { ChatAgentRuntimeInfo, ChatDriverId, ChatQuestionAnswers, ChatRuntimeSettings, ContentBlock, MessageDelivery, PermissionLevel, PermissionResponseExtras } from '../../shared/chat';
@@ -17,6 +18,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg, booleanArg, type ArgValidator } from './validation';
 import { resolveAttachments, stageAttachmentData, stageAttachmentPath } from '../services/agent-runtime/chat-attachments';
 import { fetchRemoteImage, mediaFilePath, readMedia } from '../services/agent-runtime/chat-media';
+import { MAX_STAT_PATHS, readChatFilePreview, resolveChatFile, statChatPaths } from '../services/agent-runtime/chat-files';
 import { getSettings as getExperimentalSettings } from '../services/experimental-settings';
 
 /** An effort: a level, omitted to keep the current one, or null for the provider's default. */
@@ -213,6 +215,43 @@ export function registerChatHandlers(): void {
     async (event, url) => {
       assertRichMedia(event);
       return fetchRemoteImage(url, electronImageFetch);
+    },
+  ));
+
+  // File chips: the renderer names paths it saw in the agent's text; main
+  // answers only for files inside that agent's own folders.
+  ipcMain.handle(IPC.CHAT.STAT_PATHS, withValidatedArgs(
+    [stringArg(), arrayArg(stringArg({ maxLength: 1024 }), { maxLength: MAX_STAT_PATHS })],
+    async (event, agentId, paths) => {
+      assertRichMedia(event);
+      return statChatPaths(agentId, paths);
+    },
+  ));
+
+  ipcMain.handle(IPC.CHAT.READ_FILE_PREVIEW, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 1024 })],
+    async (event, agentId, filePath) => {
+      assertRichMedia(event);
+      return readChatFilePreview(agentId, filePath);
+    },
+  ));
+
+  ipcMain.handle(IPC.CHAT.FILE_ACTION, withValidatedArgs(
+    [stringArg(), stringArg({ maxLength: 1024 }), stringArg()],
+    async (event, agentId, filePath, action) => {
+      assertRichMedia(event);
+      const real = await resolveChatFile(agentId, filePath);
+      if (action === 'reveal') { shell.showItemInFolder(real); return null; }
+      // The renderer opens it the way a clubhouse:// link would.
+      if (action === 'open') {
+        const [{ resolveProtocolCommand }, projectStore] = await Promise.all([import('../protocol-handler'), import('../services/project-store')]);
+        // Match against the projects' real paths too: `real` has symlinks resolved.
+        const projects = await projectStore.list();
+        const realProjects = await Promise.all(projects.map(async (p) => ({ ...p, path: p.path ? await fsp.realpath(p.path).catch(() => p.path) : p.path })));
+        const action = resolveProtocolCommand({ kind: 'open-file', filePath: real }, realProjects);
+        return action.kind === 'open-file-not-found' ? resolveProtocolCommand({ kind: 'open-file', filePath: real }, projects) : action;
+      }
+      throw new Error(`Unknown file action: ${action}`);
     },
   ));
 

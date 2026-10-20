@@ -6,6 +6,7 @@ import { scrollWithin } from './scroll';
 import { RichLinkProvider } from './rich/RichLinks';
 import { useRichChatContent } from './rich/rich-flag';
 import { ChatMediaContext } from './rich/ChatImages';
+import { FileChipProvider } from './rich/FileChips';
 import { rendererLog } from '../../../plugins/renderer-logger';
 import {
   AgentMessage,
@@ -406,6 +407,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
         )}
         <TranscriptExpansionProvider store={expansionStore}>
           <RichLinkProvider agentId={state.agentId}>
+          <FileChipProvider agentId={rich ? state.agentId : null}>
             {visibleBlocks.map((b, index) => (
               <div key={b.key} data-testid="chat-stream-block" data-block-index={start + index}>
                 <Block
@@ -419,6 +421,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
                 />
               </div>
             ))}
+          </FileChipProvider>
           </RichLinkProvider>
         </TranscriptExpansionProvider>
         {!atTail && (

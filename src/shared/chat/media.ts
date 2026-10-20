@@ -112,3 +112,36 @@ export function mediaDimensions(b: Uint8Array, mimeType: string): { width: numbe
   }
   return size && size.width > 0 && size.height > 0 ? size : undefined;
 }
+
+// ── File chips ──────────────────────────────────────────────────────────────
+
+/** Text previews stop after this many bytes. */
+export const CHAT_FILE_PREVIEW_TEXT_MAX_BYTES = 512 * 1024;
+/** Video and audio previews play from a data: URL (the CSP allows no blob: media), so they stop at this size. */
+export const CHAT_FILE_PREVIEW_MEDIA_MAX_BYTES = 16 * 1024 * 1024;
+
+export type ChatFileKind = 'text' | 'image' | 'video' | 'audio' | 'other';
+
+/** What main confirmed about a path an agent mentioned. Unconfirmed paths carry only `exists: false`. */
+export interface ChatFileInfo {
+  /** The path as asked (the agent's text). */
+  path: string;
+  exists: boolean;
+  kind?: ChatFileKind;
+  size?: number;
+  name?: string;
+}
+
+/** A file's preview: text, or bytes for an image or player; otherwise only what it is. */
+export interface ChatFilePreview {
+  kind: ChatFileKind;
+  name: string;
+  size: number;
+  text?: string;
+  /** The text stops before the end of the file. */
+  truncated?: boolean;
+  mimeType?: string;
+  data?: Uint8Array;
+  /** Too large to preview here; open it in Files instead. */
+  tooLarge?: boolean;
+}
