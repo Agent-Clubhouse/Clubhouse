@@ -1,20 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IPC } from '../../shared/ipc-channels';
 import { ATTR, getAttributeSpec } from '../../shared/telemetry/attributes';
-import { setRuntime } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import { _resetIpcTelemetryForTests, installIpcTelemetry } from './ipc-telemetry';
 import type { TelemetryLevel } from '../../shared/telemetry/attributes';
 import type { TelemetryRuntime } from './types';
 
 afterEach(() => {
-  setRuntime(null);
+  setProducingRuntime(null);
   _resetIpcTelemetryForTests();
 });
 
 function runtime(level: TelemetryLevel) {
   const replaySpan = vi.fn();
   const exception = vi.fn();
-  setRuntime({ level, replaySpan, exception } as unknown as TelemetryRuntime);
+  setProducingRuntime({ level, replaySpan, exception } as unknown as TelemetryRuntime);
   return { replaySpan, exception };
 }
 

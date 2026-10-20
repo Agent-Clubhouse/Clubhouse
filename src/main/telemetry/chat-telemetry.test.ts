@@ -15,7 +15,7 @@ import {
   endReasonFor,
   installChatTelemetry,
 } from './chat-telemetry';
-import { setRuntime } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import type { ReplaySpan, TelemetryRuntime } from './types';
 
 function fakeRuntime(): TelemetryRuntime {
@@ -65,12 +65,12 @@ function session(p: FixtureProvider): ChatFixture {
 
 beforeEach(() => {
   rt = fakeRuntime();
-  setRuntime(rt);
+  setProducingRuntime(rt);
   installAgentTelemetry(() => undefined);
   installChatTelemetry();
 });
 afterEach(() => {
-  setRuntime(null);
+  setProducingRuntime(null);
   _resetChatTelemetryForTests();
   _resetAgentTelemetryForTests();
   removeAllChatEventListeners();
@@ -252,7 +252,7 @@ describe('runs, privacy and cost when off', () => {
   });
 
   it('does nothing while telemetry is off', () => {
-    setRuntime(null);
+    setProducingRuntime(null);
     publish(chatFixture('claude', 'conversation'));
     expect(_openTurnsForTests()).toBe(0);
     expect(_activeRunsForTests()).toBe(0);

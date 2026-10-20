@@ -16,7 +16,8 @@ vi.mock('../services/annex-settings', () => ({ getSettings: () => ({ enableServe
 vi.mock('../services/log-settings', () => ({ getSettings: () => ({ enabled: true }) }));
 
 import { ATTR } from '../../shared/telemetry/attributes';
-import { flushBeforeExit, setRuntime } from './facade';
+import { flushBeforeExit } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import {
   PROCESS_START_MS,
   _resetLifecycleForTests,
@@ -54,12 +55,12 @@ let rt: TelemetryRuntime;
 beforeEach(() => {
   userData.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-lifecycle-'));
   rt = fakeRuntime();
-  setRuntime(rt);
+  setProducingRuntime(rt);
   installLifecycleTelemetry();
 });
 
 afterEach(() => {
-  setRuntime(null);
+  setProducingRuntime(null);
   _resetLifecycleForTests();
   fs.rmSync(userData.dir, { recursive: true, force: true });
 });
@@ -164,7 +165,7 @@ describe('unclean exits', () => {
   });
 
   it('never writes the file while telemetry is off', () => {
-    setRuntime(null);
+    setProducingRuntime(null);
     checkPreviousSession(false);
     expect(fs.existsSync(file())).toBe(false);
   });

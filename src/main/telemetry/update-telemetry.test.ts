@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ app: { isPackaged: false } }));
 
 import { ATTR } from '../../shared/telemetry/attributes';
-import { setRuntime } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import { classifyUpdateError, recordApplyVerification, recordUpdateApply, recordUpdateCheck, recordUpdateDownload } from './update-telemetry';
 import type { TelemetryRuntime } from './types';
 
@@ -17,9 +17,9 @@ function fakeRuntime(): TelemetryRuntime {
 let rt: TelemetryRuntime;
 beforeEach(() => {
   rt = fakeRuntime();
-  setRuntime(rt);
+  setProducingRuntime(rt);
 });
-afterEach(() => setRuntime(null));
+afterEach(() => setProducingRuntime(null));
 
 describe('classifyUpdateError', () => {
   it.each([
@@ -58,7 +58,7 @@ describe('update records', () => {
   });
 
   it('skips install-kind detection entirely while telemetry is off', async () => {
-    setRuntime(null);
+    setProducingRuntime(null);
     await recordApplyVerification(true);
     expect(rt.event).not.toHaveBeenCalled();
   });

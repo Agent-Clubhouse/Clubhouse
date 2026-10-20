@@ -54,7 +54,7 @@ The full path to your log directory is shown in Settings with a direct **Open in
 
 The files hold the same anonymized data that telemetry export would send. They never contain prompts, terminal output, file paths, names or error messages, and ids are hashed. Each run writes at most 10 MB in 2 MB files, and the files share the retention tier above with the session logs.
 
-Exporting telemetry to a service is a separate switch under **Telemetry export** on the same page.
+Exporting telemetry to a service is set up under **Telemetry export** on the same page. Export uploads the same signals this setting records, so turning export on or off doesn't change what Clubhouse measures or how much work it does. With **Write logs** or **Record telemetry locally** off, Clubhouse doesn't run its background telemetry measurements at all.
 
 ## Common diagnostic scenarios
 

@@ -8,7 +8,9 @@ import {
   _setStateForTests,
   flushTelemetry,
   initRendererTelemetry,
+  isTelemetryEnabled,
   markRendererReady,
+  onTelemetryEnabledChange,
   tel,
 } from './facade';
 
@@ -49,6 +51,20 @@ describe('renderer telemetry facade', () => {
     vi.advanceTimersByTime(FLUSH_INTERVAL_MS * 2);
     flushTelemetry();
     expect(bridge.emit).not.toHaveBeenCalled();
+  });
+
+  it('keeps producers off while main forwards calls for an exporter alone (#2278 parity)', () => {
+    const changes: boolean[] = [];
+    onTelemetryEnabledChange((on) => changes.push(on));
+    bridge.push({ enabled: true, level: 'standard', producers: false });
+    expect(isTelemetryEnabled()).toBe(false);
+    tel.event('clubhouse.renderer.gone');
+    vi.advanceTimersByTime(FLUSH_INTERVAL_MS);
+    expect(bridge.emit).toHaveBeenCalledTimes(1);
+    bridge.push({ enabled: true, level: 'standard', producers: true });
+    expect(isTelemetryEnabled()).toBe(true);
+    bridge.push({ enabled: false, level: null });
+    expect(changes).toEqual([true, false]);
   });
 
   it('follows state changes pushed from main', () => {

@@ -19,7 +19,6 @@ import {
   beginPending,
   DEFAULT_FLUSH_TIMEOUT_MS,
   getRuntime,
-  isExportActive,
   isTelemetryActive,
   setRuntime,
   tel,
@@ -366,19 +365,17 @@ export function recordAppSession(): void {
   if (!isTelemetryActive()) return;
   const settings = getTelemetrySettings();
   const version = app.getVersion();
-  // lastVersion is only kept current while exporting, so local recording
-  // alone can't tell an update from a cold start.
-  const exporting = isExportActive();
   const kind =
     process.env.CLUBHOUSE_SAFE_MODE === '1'
       ? 'safe_mode'
-      : exporting && settings.lastVersion && settings.lastVersion !== version
+      : settings.lastVersion && settings.lastVersion !== version
         ? 'after_update'
         : 'cold';
   setStartupKind(kind);
   tel.count('clubhouse.app.sessions', 1, [ATTR.startupKind(kind)]);
-  // Local recording alone never writes telemetry-settings.json (spec §6.12).
-  if (exporting && settings.lastVersion !== version) {
+  // Kept current whenever signals are produced, export or not, so the
+  // startup kind is the same either way (spec §6.12 parity).
+  if (settings.lastVersion !== version) {
     updateTelemetrySettings((s) => ({ ...s, lastVersion: version })).catch(() => {});
   }
 }
@@ -476,8 +473,10 @@ export async function sendTestEvent(destinationId: string, timeoutMs = 10_000): 
   // Ids are the kinds today, so the registry's destination enum carries the id.
   const attrs = [ATTR.telemetryDestination(target.id as TelemetryDestinationKind)];
   const t0 = Date.now();
-  tel.flow('clubhouse.telemetry.test', { attrs }, (): void => undefined);
-  tel.event('clubhouse.telemetry.test', attrs);
+  // Straight to the runtime: a destination check must work under either
+  // parity policy, even with local recording off.
+  rt.flow('clubhouse.telemetry.test', { attrs }, (): void => undefined);
+  rt.event('clubhouse.telemetry.test', attrs);
   await rt.forceFlush(timeoutMs);
   const exports = rt.recentExports(t0).filter((r) => r.signal !== 'metrics' && r.destination === destinationId);
   return { ok: exports.length > 0 && exports.every((r) => r.ok), latencyMs: Date.now() - t0, exports };

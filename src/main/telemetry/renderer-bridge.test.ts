@@ -72,21 +72,22 @@ afterEach(() => {
 });
 
 describe('renderer bridge', () => {
-  it('reports disabled until a runtime exists', () => {
+  it('reports disabled until a runtime exists, with producers off for export alone', () => {
     expect(getTelemetryState()).toEqual({ enabled: false, level: null });
     setRuntime(fakeRuntime());
-    expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard' });
+    expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard', producers: false });
   });
 
   it('tells renderers to record for local recording alone (#2278)', () => {
     setLocalSink(fakeLocalSink());
-    expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard' });
-    expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, { enabled: true, level: 'standard' });
-    // The SDK's more verbose level wins, so its export is unchanged.
+    const local = { enabled: true, level: 'standard', producers: true };
+    expect(getTelemetryState()).toEqual(local);
+    expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, local);
+    // Parity: an exporter, even at Detailed, doesn't change what renderers produce.
     const rt = fakeRuntime();
     (rt as { level: string }).level = 'detailed';
     setRuntime(rt);
-    expect(getTelemetryState()).toEqual({ enabled: true, level: 'detailed' });
+    expect(getTelemetryState()).toEqual(local);
     setRuntime(null);
     setLocalSink(null);
     expect(getTelemetryState()).toEqual({ enabled: false, level: null });
@@ -108,12 +109,12 @@ describe('renderer bridge', () => {
 
   it('reports the configured level while the SDK is still loading', () => {
     beginPending();
-    expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard' });
+    expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard', producers: false });
   });
 
   it('broadcasts the new state when telemetry starts or stops', () => {
     setRuntime(fakeRuntime());
-    expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, { enabled: true, level: 'standard' });
+    expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, { enabled: true, level: 'standard', producers: false });
     setRuntime(null);
     expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, { enabled: false, level: null });
   });

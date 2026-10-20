@@ -20,16 +20,16 @@ import {
   routeTemplate,
   wsTraceparent,
 } from './annex-telemetry';
-import { setRuntime } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from './types';
 
 let rt: TelemetryRuntime;
 beforeEach(() => {
   rt = { level: 'standard', count: vi.fn(), replaySpan: vi.fn(), event: vi.fn() } as unknown as TelemetryRuntime;
-  setRuntime(rt);
+  setProducingRuntime(rt);
 });
 afterEach(() => {
-  setRuntime(null);
+  setProducingRuntime(null);
   _resetAnnexTelemetryForTests();
 });
 

@@ -103,19 +103,25 @@ export function flushTelemetry(): void {
 type StateListener = (enabled: boolean) => void;
 const stateListeners = new Set<StateListener>();
 
-/** Called on every enabled ↔ disabled transition. Returns an unsubscribe. */
+/** Called whenever renderer producers turn on or off. Returns an unsubscribe. */
 export function onTelemetryEnabledChange(listener: StateListener): () => void {
   stateListeners.add(listener);
   return () => stateListeners.delete(listener);
 }
 
+/** Renderer producers follow local recording only (spec §6.12 parity). */
+function producersOn(s: TelemetryState): boolean {
+  return s.enabled && (s.producers ?? true);
+}
+
 function setState(next: TelemetryState): void {
-  const was = state.enabled;
+  const was = producersOn(state);
   state = next;
-  if (was !== state.enabled) {
+  const now = producersOn(state);
+  if (was !== now) {
     for (const l of stateListeners) {
       try {
-        l(state.enabled);
+        l(now);
       } catch {
         // A listener must never break the state update.
       }
@@ -246,9 +252,12 @@ export const tel = {
   },
 };
 
-/** True while main says telemetry is on. Lets callers skip expensive setup. */
+/**
+ * True while renderer producers should run (local recording is on). Lets
+ * callers skip expensive setup. Export alone never turns it on.
+ */
 export function isTelemetryEnabled(): boolean {
-  return state.enabled;
+  return producersOn(state);
 }
 
 /**

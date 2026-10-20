@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAttributeSpec } from '../../shared/telemetry/attributes';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { _resetToolCallsForTests, MAX_PENDING_TOOL_CALLS, clearToolCalls, recordBinaryLookup, recordHookEvent, recordMcpToolCall, recordPermission, toolBucket } from './agent-signals';
-import { setRuntime } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from './types';
 
 let rt: TelemetryRuntime;
@@ -14,10 +14,10 @@ beforeEach(() => {
     replaySpan: vi.fn(), replayTree: vi.fn(), recentExports: () => [], preview: () => [],
     forceFlush: vi.fn(async () => {}), shutdown: vi.fn(async () => {}),
   } as unknown as TelemetryRuntime;
-  setRuntime(rt);
+  setProducingRuntime(rt);
 });
 afterEach(() => {
-  setRuntime(null);
+  setProducingRuntime(null);
   _resetToolCallsForTests();
 });
 
@@ -52,7 +52,9 @@ describe('agent signals', () => {
     recordHookEvent('claude-code', 'post_tool', 'Bash', 'a1', 1300);
     expect(rt.replaySpan).not.toHaveBeenCalled(); // Standard level
 
+    // The producer level is local recording's (spec §6.12 parity).
     (rt as { level: string }).level = 'detailed';
+    setProducingRuntime(rt);
     recordHookEvent('claude-code', 'pre_tool', 'Bash', 'a1', 2000);
     recordHookEvent('claude-code', 'pre_tool', 'Edit', 'a1', 2100);
     recordHookEvent('claude-code', 'tool_error', 'Edit', 'a1', 2500);
@@ -123,7 +125,7 @@ describe('agent signals', () => {
   });
 
   it('does nothing while telemetry is off', () => {
-    setRuntime(null);
+    setProducingRuntime(null);
     recordHookEvent('claude-code', 'post_tool', 'Bash');
     recordMcpToolCall('x', Date.now(), 'ok', true);
     expect(rt.count).not.toHaveBeenCalled();

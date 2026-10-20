@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ATTR } from '../../shared/telemetry/attributes';
-import { setRuntime } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import {
   _resetGoobersTelemetryForTests,
   daemonFlow,
@@ -27,10 +27,10 @@ beforeEach(() => {
       return fn({ set: (...a) => f.attrs.push(...a) }).then((r) => { f.outcome = extras?.classify?.(r) ?? 'ok'; return r; });
     },
   } as unknown as TelemetryRuntime;
-  setRuntime(rt);
+  setProducingRuntime(rt);
 });
 afterEach(() => {
-  setRuntime(null);
+  setProducingRuntime(null);
   _resetGoobersTelemetryForTests();
 });
 

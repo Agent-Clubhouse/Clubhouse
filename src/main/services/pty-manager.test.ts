@@ -75,7 +75,7 @@ vi.mock('fs/promises', () => ({
 
 import { ATTR } from '../../shared/telemetry/attributes';
 import { _activeRunsForTests, _resetAgentTelemetryForTests, installAgentTelemetry } from '../telemetry/agent-telemetry';
-import { setRuntime } from '../telemetry/facade';
+import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../telemetry/types';
 
 // We need to import AFTER mocks are set up
@@ -699,7 +699,7 @@ describe('pty-manager', () => {
     it('ends the telemetry run (no exit broadcast follows a hard kill)', async () => {
       const count = vi.fn();
       const replaySpan = vi.fn();
-      setRuntime({ level: 'standard', count, replaySpan, event: vi.fn(), exception: vi.fn() } as unknown as TelemetryRuntime);
+      setProducingRuntime({ level: 'standard', count, replaySpan, event: vi.fn(), exception: vi.fn() } as unknown as TelemetryRuntime);
       installAgentTelemetry(() => 'claude-code');
       try {
         await spawnAndActivate('agent_kill_tel');
@@ -713,7 +713,7 @@ describe('pty-manager', () => {
         const killSpan = replaySpan.mock.calls.map((c) => c[0]).find((sp) => sp.name === 'clubhouse.agent.kill');
         expect(killSpan.attrs).toContainEqual(ATTR.killTrigger('other'));
       } finally {
-        setRuntime(null);
+        setProducingRuntime(null);
         _resetAgentTelemetryForTests();
       }
     });

@@ -14,7 +14,7 @@
 import { monitorEventLoopDelay, performance, type IntervalHistogram } from 'perf_hooks';
 import { app, powerMonitor } from 'electron';
 import { ATTR, blockedFlowAttr } from '../../shared/telemetry/attributes';
-import { currentFlow, isExportActive, onRuntimeChange, tel } from './facade';
+import { currentFlow, isTelemetryActive, onRuntimeChange, tel } from './facade';
 
 export const SAMPLE_INTERVAL_MS = 60_000;
 export const WATCHDOG_INTERVAL_MS = 500;
@@ -119,14 +119,13 @@ function stop(): void {
 let installed = false;
 
 /**
- * Start sampling whenever export is on, stop when it turns off. Local
- * recording alone (spec §6.12) doesn't start it: the 500 ms watchdog and the
- * loop-delay histogram would add idle wakeups to every default install.
+ * Sample while telemetry is active, which is local recording (spec §6.12):
+ * export on or off never starts or stops it.
  */
 export function installHealthTelemetry(): void {
   if (installed) return;
   installed = true;
-  const sync = (): void => (isExportActive() ? start() : stop());
+  const sync = (): void => (isTelemetryActive() ? start() : stop());
   onRuntimeChange(sync);
   sync();
   try {

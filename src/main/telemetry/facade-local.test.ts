@@ -235,8 +235,8 @@ describe('facade export path with local recording on', () => {
     (withLocal.flow as ReturnType<typeof vi.fn>).mockImplementationOnce((_n, _o, fn) => fn({ set: handleSet }));
     tel.flow('clubhouse.agent.spawn', {}, (span) => span.set(ATTR.outcome('ok')));
     expect(handleSet).toHaveBeenCalledWith(ATTR.outcome('ok'));
-    // And the runtime's level still decides Detailed-only producers.
-    expect(telemetryLevel()).toBe('detailed');
+    // Producers run at local recording's level, not the exporter's (parity).
+    expect(telemetryLevel()).toBe('standard');
     await forceFlushTelemetry();
     expect(withLocal.forceFlush).toHaveBeenCalled();
     expect(records().some((r) => r.t === 'span')).toBe(true);

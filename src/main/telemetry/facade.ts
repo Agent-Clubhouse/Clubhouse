@@ -8,6 +8,10 @@
  *
  * The local recorder (spec §6.12) is a second, independent consumer: when it
  * is installed every call also goes to it, with or without an SDK runtime.
+ *
+ * Signal parity (spec §6.12): what is produced follows local recording
+ * alone. Producers gate on isTelemetryActive() and telemetryLevel(), which
+ * never look at export, so turning export on or off starts or stops nothing.
  */
 import type { EventName, MetricName, SpanName, TelAttr, TelemetryLevel } from '../../shared/telemetry/attributes';
 import {
@@ -36,6 +40,31 @@ type Pending = (rt: TelemetryRuntime) => void;
 let runtime: TelemetryRuntime | null = null;
 let pending: Pending[] | null = null;
 let local: LocalTelemetrySink | null = null;
+
+/**
+ * The parity policy's one switch. true: with local recording off, feature
+ * `tel.*` calls still reach a running exporter (producers stay off either
+ * way). false: local recording is the sole gate, and export only uploads
+ * what local recording produces.
+ */
+export const EXPORT_WITHOUT_LOCAL_RECORDING = true;
+
+let exportWithoutLocal = EXPORT_WITHOUT_LOCAL_RECORDING;
+
+/** The parity policy in effect (EXPORT_WITHOUT_LOCAL_RECORDING outside tests). */
+export function exportsWithoutLocalRecording(): boolean {
+  return exportWithoutLocal;
+}
+
+/** The runtime calls are sent to under the parity policy, if any. */
+function exportRuntime(): TelemetryRuntime | null {
+  return exportWithoutLocal || local ? runtime : null;
+}
+
+/** True while startup buffering applies under the parity policy. */
+function exportPending(): boolean {
+  return pending !== null && (exportWithoutLocal || local !== null);
+}
 
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
   return !!value && typeof (value as { then?: unknown }).then === 'function';
@@ -141,7 +170,7 @@ export { tagError } from './types';
  * synchronous result is never wrapped in a promise.
  */
 export function withErrorType<T>(type: ErrorType, fn: () => T): T {
-  if (!runtime && !pending && !local) return fn();
+  if (!exportRuntime() && !exportPending() && !local) return fn();
   let result: T;
   try {
     result = fn();
@@ -161,8 +190,9 @@ export const tel = {
   flow<T>(name: SpanName, opts: FlowOptions, fn: (span: SpanHandle) => T, extras?: FlowExtras<T>): T {
     // The local wrapper runs inside the SDK span, so it sees the same body and result.
     const body = local ? local.wrap(name, opts, fn, extras) : fn;
-    if (runtime) return runtime.flow(name, opts, trackFlow(name, body), extras);
-    if (pending) return bufferedSpan(name, opts, trackFlow(name, body), extras);
+    const rt = exportRuntime();
+    if (rt) return rt.flow(name, opts, trackFlow(name, body), extras);
+    if (exportPending()) return bufferedSpan(name, opts, trackFlow(name, body), extras);
     if (local) return trackFlow(name, body)(NOOP_SPAN);
     return fn(NOOP_SPAN);
   },
@@ -170,29 +200,33 @@ export const tel = {
   /** A child span of the active flow. */
   step<T>(name: SpanName, fn: (span: SpanHandle) => T, opts: FlowOptions = {}): T {
     const body = local ? local.wrap(name, opts, fn) : fn;
-    if (runtime) return runtime.step(name, body, opts);
-    if (pending) return bufferedSpan(name, opts, body);
+    const rt = exportRuntime();
+    if (rt) return rt.step(name, body, opts);
+    if (exportPending()) return bufferedSpan(name, opts, body);
     return body(NOOP_SPAN);
   },
 
   count(name: MetricName, value = 1, attrs?: TelAttr[]): void {
     toLocal((l) => l.count(name, value, attrs));
-    if (runtime) runtime.count(name, value, attrs);
-    else if (pending) buffer((rt) => rt.count(name, value, attrs));
+    const target = exportRuntime();
+    if (target) target.count(name, value, attrs);
+    else if (exportPending()) buffer((rt) => rt.count(name, value, attrs));
   },
 
   event(name: EventName, attrs?: TelAttr[], opts?: EventOptions): void {
     toLocal((l) => l.event(name, attrs, opts));
     // Options only when given, so plain events keep their two-argument call shape.
     const emit = (rt: TelemetryRuntime): void => (opts ? rt.event(name, attrs, opts) : rt.event(name, attrs));
-    if (runtime) emit(runtime);
-    else if (pending) buffer(emit);
+    const target = exportRuntime();
+    if (target) emit(target);
+    else if (exportPending()) buffer(emit);
   },
 
   exception(error: unknown, opts: ExceptionOptions): void {
     toLocal((l) => l.exception(error, opts));
-    if (runtime) runtime.exception(error, opts);
-    else if (pending) buffer((rt) => rt.exception(error, opts));
+    const target = exportRuntime();
+    if (target) target.exception(error, opts);
+    else if (exportPending()) buffer((rt) => rt.exception(error, opts));
   },
 };
 
@@ -202,15 +236,17 @@ export const tel = {
  */
 export function replaySpan(span: ReplaySpan): void {
   toLocal((l) => l.replaySpan(span));
-  if (runtime) runtime.replaySpan(span);
-  else if (pending) buffer((rt) => rt.replaySpan(span));
+  const target = exportRuntime();
+  if (target) target.replaySpan(span);
+  else if (exportPending()) buffer((rt) => rt.replaySpan(span));
 }
 
 /** Record a root span and its children with explicit times (startup, shutdown). */
 export function replaySpanTree(tree: ReplayTree): void {
   toLocal((l) => l.replayTree(tree));
-  if (runtime) runtime.replayTree(tree);
-  else if (pending) buffer((rt) => rt.replayTree(tree));
+  const target = exportRuntime();
+  if (target) target.replayTree(tree);
+  else if (exportPending()) buffer((rt) => rt.replayTree(tree));
 }
 
 /**
@@ -232,21 +268,29 @@ export function withRemoteParent<T>(traceparent: string | undefined, fn: () => T
 }
 
 /**
- * The running level, or null while telemetry is off or still starting. The
- * SDK's level when it runs, else the local recording's.
+ * The level producers record at: local recording's, or null while it is
+ * off. Export never changes it (parity); each exporter only filters down.
  */
 export function telemetryLevel(): TelemetryLevel | null {
-  return runtime?.level ?? local?.level ?? null;
+  return local?.level ?? null;
 }
 
-/** True while telemetry is running or starting, or signals are recorded locally. */
+/**
+ * True while producers should run: exactly while local recording is on,
+ * whatever the export state.
+ */
 export function isTelemetryActive(): boolean {
-  return runtime !== null || pending !== null || local !== null;
+  return local !== null;
 }
 
-/** True while an exporter is running or starting; local recording alone doesn't count. */
+/** True while an exporter is running or starting. Not a producer gate. */
 export function isExportActive(): boolean {
   return runtime !== null || pending !== null;
+}
+
+/** Test-only: exercise the other parity policy. */
+export function _setExportWithoutLocalForTests(value: boolean): void {
+  exportWithoutLocal = value;
 }
 
 /** The local sink must never break feature code or the export call after it. */
