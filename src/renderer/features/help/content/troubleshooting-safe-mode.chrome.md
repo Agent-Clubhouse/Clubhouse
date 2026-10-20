@@ -39,14 +39,14 @@ Click **Close project** at the bottom of the project's settings, or select the p
 
 ## Using logs
 
-1. Open **Settings > Logging** and turn logging on.
+1. Open **Settings > Logging** and make sure **Record locally** is on.
 2. Set the level to **Debug**.
-3. Turn on `core:startup`, `plugins:loader` and `plugins:api`.
+3. Make sure `core:startup`, `core:plugins` and `core:safe-mode` are on, plus `plugin:<id>` for the plugin you suspect.
 4. Reproduce the problem.
-5. Open the log file from the link on that page and look for errors.
+5. Click the log folder path on that page, open the newest `telemetry-*.jsonl` file, and look for `"t":"diag"` lines with level `error` or `warn`.
 
-The log shows which plugin failed, which call threw, and how far startup got.
+The diagnostic lines show which plugin failed, which call threw, and how far startup got.
 
 ## Reporting a problem
 
-If you can't fix it, report it at [github.com/Agent-Clubhouse/Clubhouse/issues](https://github.com/Agent-Clubhouse/Clubhouse/issues) with the steps, the relevant log lines, and your version from **Settings > About**.
+If you can't fix it, report it at [github.com/Agent-Clubhouse/Clubhouse/issues](https://github.com/Agent-Clubhouse/Clubhouse/issues) with the steps, the relevant diagnostic lines (check them for paths first), and your version from **Settings > About**.

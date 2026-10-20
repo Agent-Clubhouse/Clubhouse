@@ -18,7 +18,7 @@ App Insights is the default and simplest destination: one field. For the minorit
 How it works:
 
 - It is built on **OpenTelemetry (OTel)**, set up manually in the **main process only**. The renderer forwards to main over IPC. The exporter is `@azure/monitor-opentelemetry-exporter` by default, or the OTLP/HTTP-JSON exporters when the user picks Other (OTLP). Both ship from Phase 1.
-- Coverage follows **user flows**, not existing log lines. Each important flow (startup, agent spawn → run → exit, permission round trip, project switch, plugin activation, update, Annex connect, …) gets a span tree, a small set of metrics and classified error records. The existing `appLog` stream is not mirrored. It bridges in only where a call site opts in (§6.6).
+- Coverage follows **user flows**, not existing log lines. Each important flow (startup, agent spawn → run → exit, permission round trip, project switch, plugin activation, update, Annex connect, …) gets a span tree, a small set of metrics and classified error records. The existing `appLog` stream is not mirrored to export. It bridges in only where a call site opts in (§6.6). Locally, `appLog` lines are written as diagnostic lines in the local record, which are never exported (§6.12).
 - **Privacy is enforced in code, not by convention.** A typed attribute registry is an allowlist. A redaction processor drops anything outside it before export. Prompts, terminal output, file contents, paths, and repo, branch, project and agent names are never sent. Identifiers are HMAC-hashed with a per-install salt.
 - **Community plugins can send telemetry** through a permissioned `api.telemetry` namespace. It is held to the same allowlist and privacy rules, rate-limited, and switched on per plugin by the user (§6.9).
 - **Coverage is weighted by regression history.** 455 fix and revert commits and about 356 closed issues since 2026-03-01 (the churn peak) cluster into 14 hot spots and 4 cross-cutting patterns. Each hot spot is mapped to the signals that would have caught it, marked P0/P1/P2, and labelled as a current or superseded code path (§12).
@@ -78,7 +78,7 @@ The data-classification ideas from that design are carried forward: the never-co
 
 ## 2. What the local logs tell us
 
-The source is `~/.clubhouse/logs/session-*.jsonl` on the maintainer's machine: 49,730 lines from 2026-10-07 to 2026-10-16, Clubhouse 0.42 beta. This is **one user's usage**. It is used to find hot paths and gaps, not to define coverage.
+The source is `~/.clubhouse/logs/session-*.jsonl` on the maintainer's machine: 49,730 lines from 2026-10-07 to 2026-10-16, Clubhouse 0.42 beta. This is **one user's usage**. It is used to find hot paths and gaps, not to define coverage. That legacy session log is being retired: the local record is now `telemetry-*.jsonl` (§6.12), and [#2313](https://github.com/Agent-Clubhouse/Clubhouse/issues/2313) deletes the `session-*.jsonl` writer.
 
 ### 2.1 Volume by namespace
 
@@ -904,7 +904,7 @@ The user asked for no straight port, so the bridge is **opt-in per call site**:
      telemetry: { event: 'clubhouse.annex.heartbeat_timeout', attrs: [ATTR.attemptBucket(n)] },
    });
    ```
-   Only entries with `telemetry` are exported. The export uses the **event name as the body**, never `msg`, plus the declared attributes, never `meta`. The local JSONL behavior is unchanged.
+   Only entries with `telemetry` are exported. The export uses the **event name as the body**, never `msg`, plus the declared attributes, never `meta`. The local line is written as before; since #2301 that is a diag line in the local record (§6.12).
 2. **Severity mapping** to the OTel `SeverityNumber`:
 
    | `LogLevel` | OTel `SeverityNumber` | App Insights `severityLevel` |
@@ -923,6 +923,8 @@ The user asked for no straight port, so the bridge is **opt-in per call site**:
 5. **Initial opt-in call sites** are the warn/error sites that map to §4 error classes without an existing span: Annex heartbeat timeout, permission stuck, project-store recovery, canvas unreadable, config-pipeline restore failure. Most other appLog errors are superseded by the flow spans' `error.type` and are not bridged.
 
 **As implemented (Phase 7).** `appLog(ns, level, msg, { meta, telemetry: { event, attrs } })`. `event` must be a registered event name and `attrs` registry attributes. The bridge runs in `log()` before the local filters, through `tel.event` with the mapped severity. `debug` is dropped. `meta` and `msg` are never read by the bridge. Local JSONL lines carry `traceId`/`spanId` while a span is active. The opt-in sites are Annex heartbeat timeout (`c.annex.heartbeat_timeout`), stuck permission (`c.agent.permission.stuck`, with `c.agent.id_hash`) and config restore failure (`c.config.restore_failed`, with `c.config.format`). Project-store recovery and canvas unreadable are already exported as `c.persist.recovery` (Phase 3c), so bridging them again would double-count.
+
+**The local line since [#2295](https://github.com/Agent-Clubhouse/Clubhouse/issues/2295).** `appLog` now writes its local line to the diag tier of `telemetry-*.jsonl` (§6.12), gated and redacted there, and the diag line carries the recorder's `traceId`/`spanId`. Until [#2313](https://github.com/Agent-Clubhouse/Clubhouse/issues/2313) it also writes the same entry to the legacy `session-*.jsonl` log, which is where the `LogEntry` `traceId`/`spanId` fields and `traceFieldsForLog()` (point 3) still apply; both go with that writer. The bridge itself is unchanged: it still reads only `telemetry`, never `msg` or `meta`.
 
 ### 6.7 Lifecycle: enable, disable, flush, offline
 
@@ -955,7 +957,7 @@ The existing **Logging** page (`LoggingSettingsView.tsx`) gets a second section,
 ```
 Logging                                         ← existing section unchanged
   ...
-  "Logs are stored on your local disk only and are never transmitted."   ← text stays true
+  "Logs are stored on your local disk only and are never transmitted."   ← text stays true (now: "Clubhouse never sends the log folder anywhere.")
 
 Telemetry export                                ← new (v1 layout; see §6.11 for the current per-destination panels)
   Send anonymized diagnostics to your own Azure Application Insights.
@@ -1024,7 +1026,7 @@ Telemetry export                                ← new (v1 layout; see §6.11 f
 - **Learn what's sent:** a help topic `settings-telemetry` in `features/help/content/`, generated partly from the attribute registry so it cannot drift.
 - **Storage:** `TELEMETRY` is added to `settings-definitions.ts` via `createManagedSettings`, with `{ destination: 'azure' | 'otlp', otlpEndpoint, otlpHeaderNames, otlpTemporality, level, sampleRate, installId, consentVersion, pluginGrants: Record<pluginRef, boolean> }`. Secrets (the connection string and OTLP header values) are kept separately in `telemetry-secret.bin`, as above.
 - **Consent:** choosing a non-Off level for the first time shows a one-time confirmation listing the "never sent" categories. `consentVersion` is bumped if the schema widens materially, which forces re-confirmation.
-- **The local logging banner text stays true:** logs are still never transmitted. Bridged events (§6.6) are telemetry, not logs, and the telemetry section says so explicitly.
+- **The local logging banner text stays true:** nothing in the log folder is sent. The page now says "Clubhouse never sends the log folder anywhere." Export is a separate uploader of the signals local recording produces (§6.12), and bridged events (§6.6) are telemetry signals: the bridged call's own text stays in its diag line. Diag lines are never exported, and the page says they are not anonymized.
 
 ### 6.9 Community plugin telemetry API (decision 2026-10-16)
 
@@ -1214,6 +1216,8 @@ Fan-out, filters, consent, health and the test event are shared.
 
 The `tel.*` signals are also written to local files, so flow timings and classified failures are available for local diagnosis without turning on export.
 
+**The single local record** ([#2295](https://github.com/Agent-Clubhouse/Clubhouse/issues/2295)). `~/.clubhouse/logs/telemetry-*.jsonl` is the one local record. It holds two tiers in the same files: the anonymized telemetry signals, and local-only `t:"diag"` lines (below) that carry the text the signals can't, such as paths, error messages and raw ids. Recording is on by default, whatever the export settings: **Record locally** (`enabled`) gates the file, and **Record telemetry signals** (`telemetryRecording`) gates only the signal tier. Export uploads only signals that local recording produces and never reads diag lines. The diag tier has a 2 MB budget per hourly window, a run keeps its newest 10 MB, and the retention tier prunes the folder while the app runs (below). The help topic `settings-logging` describes this for users, including how to strip diag lines before sharing a file and how feedback reports correlate by report id (§4.16).
+
 **Parity rule** (maintainer decisions on [#2289](https://github.com/Agent-Clubhouse/Clubhouse/pull/2289)). Local recording is the only gate on what is produced, measured and exported. Export is a background uploader of exactly what local recording produces, at its level: turning export on or off starts or stops no producer, changes no producer level, and so changes no cost. With local logging or local recording off, no producer runs and a configured exporter sends nothing.
 
 **Behavior change for release notes.** Telemetry export used to run independently of local logging. Now it sends only what local recording produces. With **Record locally** or **Record telemetry signals** off, an enabled destination sends nothing, and a destination's level can no longer exceed the local **Telemetry detail** level. Installs already exporting at Detailed are migrated to local Detailed once, so they keep their data.
@@ -1251,6 +1255,7 @@ The `tel.*` signals are also written to local files, so flow timings and classif
 - **Rolling eviction** ([#2297](https://github.com/Agent-Clubhouse/Clubhouse/issues/2297)). A run keeps at most its newest 10 MB. Past that budget, recording continues and the run's oldest chunks are deleted, never the one being written, with an `evicted` line reporting what went. The tail of a long run, where hangs and failures show up, is what stays. Metric aggregates and drop summaries skip the pending limit. A `dropped` line at each exit flush and at stop reports what the caps dropped since the last one.
 - **Retention.** Files are `~/.clubhouse/logs/telemetry-<recorder start, ms precision>.jsonl`, then `.1.jsonl`, `.2.jsonl` for later chunks. Turning recording off and on starts a new file. "Delete local telemetry data" restarts the recorder so it drops the deleted salt; existing files stay until retention prunes them. The log retention tier's age and total-size limits (`LOG_RETENTION_TIERS`) prune them together with the legacy `session-*.jsonl` logs ([#2298](https://github.com/Agent-Clubhouse/Clubhouse/issues/2298)). `local-retention.ts` runs at startup (from log-service), hourly while recording, and after every rotation, and never deletes a file being written.
 - **Exit.** `flushBeforeExit` and `forceFlushTelemetry` flush the recorder alongside the SDK, within the same timeout, including a diag-only recorder.
+- **Legacy session log (being retired).** Until [#2313](https://github.com/Agent-Clubhouse/Clubhouse/issues/2313), `appLog` and the renderer's deprecated `log:write` IPC also write `~/.clubhouse/logs/session-<start>.jsonl` (`log-service.ts`), with the same settings gates but without diag redaction. In the app, nothing reads the file; E2E specs still do until [#2310](https://github.com/Agent-Clubhouse/Clubhouse/issues/2310). The feedback breadcrumb tap still sits on its `log()` path until [#2303](https://github.com/Agent-Clubhouse/Clubhouse/issues/2303). Retention keeps pruning the `session-` prefix for one release after the writer is gone, so old files age out.
 
 **Diagnostic lines** ([#2299](https://github.com/Agent-Clubhouse/Clubhouse/issues/2299), part of [#2295](https://github.com/Agent-Clubhouse/Clubhouse/issues/2295)). A local-only tier for the text that signals can't carry: error messages, paths, raw ids, stderr. `t:"diag"` lines share the file, chunking, rolling eviction and retention with the signals, but are not telemetry.
 

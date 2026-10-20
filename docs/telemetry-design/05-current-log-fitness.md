@@ -1,5 +1,7 @@
 # Telemetry Plugin — Current Log Fitness Assessment
 
+> **Superseded (2026-10-16)** by [`docs/telemetry-otel-spec.md`](../telemetry-otel-spec.md). Kept for history. The `session-*.jsonl` log assessed here is being retired: `appLog`, renderer logging and the plugin `api.logging` now write local-only diag lines to `telemetry-*.jsonl` (spec §6.12, [#2295](https://github.com/Agent-Clubhouse/Clubhouse/issues/2295)), and [#2313](https://github.com/Agent-Clubhouse/Clubhouse/issues/2313) deletes the session log writer.
+
 ## What Works Well
 
 ### Structured Format

@@ -21,7 +21,7 @@ To be asked less, use headless mode or Free Agent Mode for quick agents.
 1. **On for the app?** Check **Settings > Plugins**.
 2. **On for this project?** Open the project's settings, pick **Plugins**, and turn it on.
 3. **Where to look.** A project plugin shows up as a tab in the title bar. If the tabs don't fit, look in the **More** menu at the end. An app plugin shows up beside Canvas and Review, in that row's **More** menu, or as an icon in the sidebar footer.
-4. **Compatible?** Look for version errors from `plugins:loader` in the logs.
+4. **Compatible?** Look for version errors in the `core:plugins` diagnostic lines.
 5. **External plugin?** **Allow external plugins** in **Settings > Plugins** has to be on.
 
 ## Git isn't detected
@@ -72,5 +72,5 @@ It means the agent's setup has drifted from the project defaults while Clubhouse
 Report it at [github.com/Agent-Clubhouse/Clubhouse/issues](https://github.com/Agent-Clubhouse/Clubhouse/issues), with:
 
 - the steps that cause it;
-- the log, from **Settings > Logging** with the level set to Debug while you reproduce it;
+- the newest `telemetry-*.jsonl` file from the log folder, recorded with **Settings > Logging** set to Debug while you reproduce it. Check it first: **Logging and diagnostics** explains what it holds and how to remove the diagnostic lines;
 - your Clubhouse version, from **Settings > About**.

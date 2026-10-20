@@ -51,7 +51,7 @@ To uninstall, remove the directory from `~/.clubhouse/plugins/` or use the unins
 | **Enabled** | Turned on at app level, ready to activate |
 | **Activated** | Running, UI available |
 | **Disabled** | Turned off by user or auto-disabled (permission violation) |
-| **Errored** | Failed during activation or runtime — check logs |
+| **Errored** | Failed during activation or runtime. Check the `core:plugins` and `plugin:<id>` diagnostic lines |
 | **Incompatible** | Requires a newer API version than your Clubhouse supports |
 
 ## Badges

@@ -42,17 +42,17 @@ Removes a project from Clubhouse without touching files on disk. The `.clubhouse
 ## Using Logs
 
 When troubleshooting:
-1. **Settings > Logging** — enable logging
+1. In **Settings > Logging**, make sure **Record locally** is on
 2. Set level to **Debug**
-3. Enable `core:startup`, `plugins:loader`, `plugins:api` namespaces
+3. Make sure the `core:startup`, `core:plugins` and `core:safe-mode` namespaces are on, plus `plugin:<id>` for the plugin you suspect
 4. Reproduce the problem
-5. Open the log file (link in Logging settings) and look for errors
+5. Click the log folder path in Logging settings, open the newest `telemetry-*.jsonl` file, and look for `"t":"diag"` lines with level `error` or `warn`
 
-Logs reveal which plugin failed, which API call caused an exception, and where in the startup sequence the crash occurred.
+The diagnostic lines show which plugin failed, which call threw, and where in the startup sequence the crash occurred.
 
 ## Reporting Issues
 
 If you can't resolve the problem, report it at [github.com/Agent-Clubhouse/Clubhouse/issues](https://github.com/Agent-Clubhouse/Clubhouse/issues) with:
 - Steps to reproduce
-- Relevant log output
+- Relevant diagnostic lines (check them for paths and other details before you share)
 - Clubhouse version (**Settings > About**)

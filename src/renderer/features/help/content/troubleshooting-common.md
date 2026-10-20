@@ -19,7 +19,7 @@ To reduce interruptions: enable headless mode or Free Agent mode for quick agent
 
 1. **App-level enabled?** — **Settings > Plugins** — toggle on.
 2. **Project-level enabled?** — **Project Settings > Plugins** — toggle on for this project.
-3. **API version compatible?** — Check `plugins:loader` logs for version mismatch errors.
+3. **API version compatible?** Check the `core:plugins` diagnostic lines for version mismatch errors.
 4. **External plugins enabled?** — **Allow external plugins** in **Settings > Plugins** must be on.
 
 ## Git Not Detected
@@ -70,5 +70,5 @@ The Config Changes dialog appears when an agent's config has drifted from projec
 
 Report issues at [github.com/Agent-Clubhouse/Clubhouse/issues](https://github.com/Agent-Clubhouse/Clubhouse/issues). Include:
 - Steps to reproduce
-- Log output (**Settings > Logging** — enable Debug level, reproduce, share the log file)
+- Log output: in **Settings > Logging**, set the level to Debug and reproduce the problem. Then share the newest `telemetry-*.jsonl` file after checking it. **Logging & Diagnostics** explains how to remove the diagnostic lines.
 - Clubhouse version (**Settings > About**)
