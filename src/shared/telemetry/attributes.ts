@@ -573,7 +573,7 @@ export const ATTR = {
   feedbackError: enumAttr('clubhouse.feedback.error', [
     // SDK and outbox codes, in their own spelling
     'capture-failed', 'invalid-media', 'feedback-unavailable', 'storage-full', 'storage-unavailable', 'invalid-input',
-    'conflict', 'secure-store-unavailable', 'invalid-store',
+    'conflict', 'secure-store-unavailable', 'invalid-store', 'network', 'invalid-ack',
     // Clubhouse's own send checks
     'screenshot-expired', 'notes-required', 'shot-unavailable', 'not-running',
     // Why a connect returned false (connectFailureClass)

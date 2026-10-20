@@ -556,16 +556,32 @@ describe('FeedbackService (fake SDK)', () => {
       expect(named('clubhouse.feedback.failed')).toEqual([[ATTR.feedbackStage('start'), ATTR.feedbackError('busy')]]);
     });
 
+    it('counts a start failure once when a capture or a send started it', async () => {
+      for (const act of [(s: FeedbackService) => s.captureDraft(async () => PNG), (s: FeedbackService) => s.send({ notes: NOTES, includeScreenshot: false })]) {
+        vi.mocked(rt.event).mockClear();
+        const { create, fb } = fakeSdk();
+        fb.start.mockRejectedValueOnce(Object.assign(new Error('locked'), { code: 'busy' }));
+        await expect(act(service(create))).rejects.toThrow();
+        expect(named('clubhouse.feedback.failed')).toEqual([[ATTR.feedbackStage('start'), ATTR.feedbackError('busy')]]);
+      }
+    });
+
     it('records settled access transitions once each', async () => {
       const { create, opts } = fakeSdk();
       await service(create).start();
       const view = (state: string, notice: string | null = null) => ({ ...ACCESS, state, notice }) as FramebriarAccessView;
       opts().onAccessChange!(view('checking'));
+      opts().onAccessChange!(view('disconnected'));
+      opts().onAccessChange!(view('connecting'));
       opts().onAccessChange!(view('connected'));
+      opts().onAccessChange!(view('connected'));
+      opts().onAccessChange!(view('checking'));
       opts().onAccessChange!(view('connected'));
       opts().onAccessChange!(view('expired', 'expired'));
+      // `from` is the previous settled state, never an in-between one.
       expect(named('clubhouse.feedback.access')).toEqual([
-        [ATTR.feedbackAccessState('connected'), ATTR.feedbackAccessFrom('checking'), ATTR.feedbackNotice('none')],
+        [ATTR.feedbackAccessState('disconnected'), ATTR.feedbackAccessFrom('none'), ATTR.feedbackNotice('none')],
+        [ATTR.feedbackAccessState('connected'), ATTR.feedbackAccessFrom('disconnected'), ATTR.feedbackNotice('none')],
         [ATTR.feedbackAccessState('expired'), ATTR.feedbackAccessFrom('connected'), ATTR.feedbackNotice('expired')],
       ]);
     });

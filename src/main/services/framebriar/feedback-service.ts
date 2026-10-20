@@ -182,6 +182,10 @@ export class FeedbackService {
   private readonly log: FeedbackLog;
   private lastAccess: FramebriarAccessView | null = null;
   private lastOutbox: FramebriarOutboxView | null = null;
+  /** The last access state telemetry reported (in-between states are skipped). */
+  private lastSettledAccess: { state: string; notice: string | null } | null = null;
+  /** Start failures already recorded, so a capture or send waiting on start isn't counted again. */
+  private readonly startFailures = new WeakSet<object>();
 
   constructor(private readonly deps: FeedbackServiceDeps) {
     this.now = deps.now ?? Date.now;
@@ -224,6 +228,7 @@ export class FeedbackService {
     })().catch((err) => {
       this.log('warn', 'Feedback start failed', errorMeta(err));
       recordFeedbackFailed('start', feedbackErrorClass(err));
+      if (err && typeof err === 'object') this.startFailures.add(err);
       throw err;
     }).finally(() => { this.starting = null; });
     return this.starting;
@@ -299,7 +304,7 @@ export class FeedbackService {
       return result;
     } catch (err) {
       this.log('warn', 'Feedback capture failed', errorMeta(err));
-      recordFeedbackFailed('capture', feedbackErrorClass(err));
+      if (!this.isStartFailure(err)) recordFeedbackFailed('capture', feedbackErrorClass(err));
       throw err;
     }
   }
@@ -373,7 +378,7 @@ export class FeedbackService {
       return result;
     } catch (err) {
       this.log('warn', 'Feedback send failed', { ...meta, ...errorMeta(err) });
-      recordFeedbackFailed('submit', feedbackErrorClass(err));
+      if (!this.isStartFailure(err)) recordFeedbackFailed('submit', feedbackErrorClass(err));
       throw err;
     }
   }
@@ -469,6 +474,10 @@ export class FeedbackService {
     await fb?.shutdown();
   }
 
+  private isStartFailure(err: unknown): boolean {
+    return !!err && typeof err === 'object' && this.startFailures.has(err);
+  }
+
   private sdk(): Framebriar {
     if (!this.fb) throw Object.assign(new Error('Feedback is not running'), { code: 'not-running' });
     return this.fb;
@@ -483,6 +492,15 @@ export class FeedbackService {
     this.log(level, `Feedback access: ${view.state}`, {
       from: prev?.state ?? null, notice: view.notice, enrolled: view.enrolled, expiresAt: view.expiresAt,
     });
+    this.noteSettledAccess(view);
+  }
+
+  /** Reports settled access changes to telemetry, `from` the previous settled state. */
+  private noteSettledAccess(view: FramebriarAccessView): void {
+    if (ACCESS_TRANSIENT.has(view.state)) return;
+    const prev = this.lastSettledAccess;
+    if (prev && prev.state === view.state && prev.notice === view.notice) return;
+    this.lastSettledAccess = { state: view.state, notice: view.notice };
     recordFeedbackAccess(prev?.state ?? null, view.state, view.notice);
   }
 
