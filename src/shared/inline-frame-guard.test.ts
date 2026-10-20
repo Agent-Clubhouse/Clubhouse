@@ -22,7 +22,11 @@ function write(term: Terminal, data: string): Promise<void> {
 /** A terminal that narrows the way Clubhouse does: guard erase, then resize. */
 async function resize(term: Terminal, guard: InlineFrameGuard | null, cols: number): Promise<void> {
   const erase = guard?.eraseBeforeNarrow(cols);
-  if (erase) await write(term, erase);
+  if (erase) {
+    guard!.setSuppressed(true);
+    await write(term, erase);
+    guard!.setSuppressed(false);
+  }
   term.resize(cols, ROWS);
 }
 
@@ -140,6 +144,43 @@ describe('InlineFrameGuard', () => {
     expect(guard.eraseBeforeNarrow(40)).toBeNull();
   });
 
+  it('leaves output alone when the frame shrank or other output followed it', async () => {
+    // Ink-style: the erase run covers the old frame, then static output and a
+    // smaller frame are printed.  The rows from the old top down are not all
+    // frame, so nothing is erased (static output is never wiped).
+    const term = new Terminal({ cols: 80, rows: ROWS, scrollback: 100, allowProposedApi: true });
+    const guard = new InlineFrameGuard(term);
+    await write(term, 'row a\r\nrow b\r\nrow c');
+    await write(term, '\x1b[2K\x1b[1A\x1b[2K\x1b[1A\x1b[2K\x1b[G' + 'static message\r\n' + 'small frame');
+    expect(guard.eraseBeforeNarrow(40)).toBeNull();
+
+    const shrunk = new Terminal({ cols: 80, rows: ROWS, scrollback: 100, allowProposedApi: true });
+    const shrunkGuard = new InlineFrameGuard(shrunk);
+    await write(shrunk, 'row a\r\nrow b\r\nrow c' + '\r\x1b[2A' + 'one row frame');
+    expect(shrunkGuard.eraseBeforeNarrow(40)).toBeNull();
+  });
+
+  it('erases nothing in origin mode', async () => {
+    const term = new Terminal({ cols: 80, rows: ROWS, allowProposedApi: true });
+    const guard = new InlineFrameGuard(term);
+    const tui = new CopilotTui(80);
+    await write(term, tui.frame(1) + tui.frame(2) + '\x1b[?6h');
+    expect(guard.eraseBeforeNarrow(40)).toBeNull();
+  });
+
+  it('puts the cursor back where it was', async () => {
+    const term = new Terminal({ cols: 80, rows: ROWS, scrollback: 100, allowProposedApi: true });
+    const guard = new InlineFrameGuard(term);
+    const tui = new CopilotTui(80);
+    await write(term, tui.frame(1) + tui.frame(2));
+    const { cursorX, cursorY } = term.buffer.active;
+    const erase = guard.eraseBeforeNarrow(40)!;
+    guard.setSuppressed(true);
+    await write(term, erase);
+    guard.setSuppressed(false);
+    expect([term.buffer.active.cursorX, term.buffer.active.cursorY]).toEqual([cursorX, cursorY]);
+  });
+
   it('makes replay match the guarded live terminal', async () => {
     // Live: Copilot at 80, guarded narrowing to 40, redraw.
     const tui = new CopilotTui(80);
@@ -159,7 +200,14 @@ describe('InlineFrameGuard', () => {
     };
     const replayed = new Terminal({ cols: 100, rows: ROWS, scrollback: 100, allowProposedApi: true });
     const replayGuard = new InlineFrameGuard(replayed);
-    await writePtySnapshot(replayed, snapshot, { beforeResize: (cols) => replayGuard.eraseBeforeNarrow(cols) });
+    await writePtySnapshot(replayed, snapshot, {
+      beforeResize: (cols) => {
+        const erase = replayGuard.eraseBeforeNarrow(cols);
+        if (erase) replayGuard.setSuppressed(true);
+        return erase;
+      },
+      afterPrelude: () => replayGuard.setSuppressed(false),
+    });
     expect(screen(replayed)).toEqual(screen(live));
     expect(count(screen(replayed), 'COPILOT')).toBe(1);
   });

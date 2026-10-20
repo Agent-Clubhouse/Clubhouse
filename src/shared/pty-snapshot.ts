@@ -67,7 +67,11 @@ export function snapshotSegments(snapshot: PtyBufferSnapshot): PtySnapshotSegmen
 export async function writePtySnapshot(
   target: PtyReplayTarget,
   snapshot: PtyBufferSnapshot,
-  options: { beforeResize?: (cols: number, rows: number) => string | null } = {},
+  options: {
+    beforeResize?: (cols: number, rows: number) => string | null;
+    /** Called once a `beforeResize` result has been parsed. */
+    afterPrelude?: () => void;
+  } = {},
 ): Promise<void> {
   for (const segment of snapshotSegments(snapshot)) {
     const { cols, rows } = segment;
@@ -76,6 +80,7 @@ export async function writePtySnapshot(
       // frame erase, #2359) is written here too, so replay matches it.
       const prelude = options.beforeResize?.(cols, rows);
       if (prelude) await new Promise<void>((resolve) => target.write(prelude, resolve));
+      options.afterPrelude?.();
       target.resize(cols, rows);
     }
     if (segment.data) await new Promise<void>((resolve) => target.write(segment.data, resolve));

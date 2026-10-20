@@ -23,19 +23,13 @@ interface Disposable {
 /** The parts of an xterm (or @xterm/headless) Terminal the guard uses. */
 export interface InlineFrameGuardTerminal {
   readonly cols: number;
-  readonly buffer: { readonly active: { readonly type: string; readonly cursorY: number } };
+  readonly buffer: { readonly active: { readonly type: string; readonly cursorX: number; readonly cursorY: number } };
+  readonly modes?: { readonly originMode: boolean };
   readonly parser: {
     registerCsiHandler(id: { final: string }, callback: (params: (number | number[])[]) => boolean): Disposable;
   };
   onLineFeed(listener: () => void): Disposable;
 }
-
-/**
- * Line feeds allowed after a redraw before its region is considered stale:
- * the redrawn frame's own rows plus a little output above it.  Beyond that
- * the program (or a shell after it) has moved on and nothing is erased.
- */
-const SLACK_LINES = 2;
 
 export class InlineFrameGuard {
   /** Height (rows above its bottom) of the last frame redrawn with cursor-up. */
@@ -47,6 +41,8 @@ export class InlineFrameGuard {
   private runTopY = 0;
   /** Net rows moved up since the last line feed (a caret parked in the frame). */
   private upSinceLineFeed = 0;
+  /** True while our own erase is parsed, so its cursor moves aren't counted. */
+  private suppressed = false;
   private readonly disposables: Disposable[];
 
   constructor(private readonly term: InlineFrameGuardTerminal) {
@@ -64,6 +60,7 @@ export class InlineFrameGuard {
   }
 
   private onVerticalMove(delta: number): void {
+    if (this.suppressed) return;
     const { cursorY } = this.term.buffer.active;
     const target = Math.max(0, cursorY + delta);
     if (!this.inRun) {
@@ -77,6 +74,7 @@ export class InlineFrameGuard {
   }
 
   private onLineFeed(): void {
+    if (this.suppressed) return;
     if (this.inRun) {
       // The run is followed by drawing: it was a redraw over a frame this tall.
       this.inRun = false;
@@ -91,20 +89,34 @@ export class InlineFrameGuard {
 
   /**
    * Escape sequence to write (and let parse) before resizing to `cols`, or
-   * null when nothing needs erasing.  It clears from the frame's top row to
-   * the end of the screen and restores the cursor.
+   * null when nothing needs erasing.  Call it once the output before the
+   * resize has been parsed, and write the result before any later output,
+   * with `setSuppressed(true)` until it is parsed.  It erases from the frame's top row to the end
+   * of the screen with relative cursor moves, leaving the cursor (and the
+   * program's saved cursor) where they were.
+   *
+   * Only a frame redrawn at the same height with nothing printed after it
+   * is erased: then every row from its top down is the program's own frame,
+   * which it redraws after the resize.  Anything else (output printed since,
+   * a frame that grew or shrank, a shell after the program exited) is left
+   * alone, as without the guard.
    */
   eraseBeforeNarrow(cols: number): string | null {
     if (cols >= this.term.cols) return null;
     const buffer = this.term.buffer.active;
-    if (buffer.type !== 'normal') return null;
-    if (this.frameRows <= 0) return null;
-    // The frame's own rows, plus a little output above it; beyond that the
-    // program (or a shell after it) has moved on.
-    if (this.lineFeedsSinceFrame > this.frameRows + SLACK_LINES) return null;
+    if (buffer.type !== 'normal' || this.term.modes?.originMode) return null;
+    if (this.frameRows <= 0 || this.lineFeedsSinceFrame !== this.frameRows) return null;
     const bottom = buffer.cursorY + Math.max(0, this.upSinceLineFeed);
     const top = Math.max(0, bottom - this.frameRows);
-    return `\x1b7\x1b[${top + 1};1H\x1b[J\x1b8`;
+    if (top > buffer.cursorY) return null;
+    const up = buffer.cursorY - top;
+    const move = (n: number, final: string) => (n > 0 ? `\x1b[${n}${final}` : '');
+    return `${move(up, 'A')}\r\x1b[J${move(up, 'B')}\x1b[${buffer.cursorX + 1}G`;
+  }
+
+  /** While true, cursor moves and line feeds (our own erase) aren't tracked. */
+  setSuppressed(value: boolean): void {
+    this.suppressed = value;
   }
 
   dispose(): void {
