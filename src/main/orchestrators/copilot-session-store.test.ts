@@ -252,6 +252,8 @@ describe('findCopilotTranscript (#2277)', () => {
     fs.writeFileSync(path.join(store, `${A}.jsonl`), '{}\n');
     expect(await findCopilotTranscript(store, A, cwd)).toBe(path.join(store, `${A}.jsonl`));
 
+    // A Windows cwd encodes to `C:-…`, which can't be a directory name there
+    if (process.platform === 'win32') return;
     const encoded = path.resolve(cwd).replace(/[/\\]/g, '-');
     fs.mkdirSync(path.join(store, encoded));
     fs.writeFileSync(path.join(store, encoded, `${B}.json`), '{}\n');
