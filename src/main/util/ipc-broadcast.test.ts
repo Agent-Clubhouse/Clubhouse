@@ -16,6 +16,7 @@ import {
   clearChannelPolicy,
   clearAllPolicies,
   flushAllPending,
+  flushPendingFor,
   pendingCount,
 } from './ipc-broadcast';
 
@@ -281,6 +282,37 @@ describe('broadcastToAllWindows', () => {
   // -----------------------------------------------------------------------
   // Policy management
   // -----------------------------------------------------------------------
+
+  describe('flushPendingFor', () => {
+    it('flushes only the batch the args would join', () => {
+      const win = createMockWindow();
+      mockGetAllWindows.mockReturnValue([win]);
+      setChannelPolicy('ch-k', {
+        intervalMs: 100,
+        merge: true,
+        keyFn: (id) => String(id),
+        mergeFn: (a, b) => [a[0], String(a[1]) + String(b[1])],
+      });
+      broadcastToAllWindows('ch-k', 'a1', 'x');
+      broadcastToAllWindows('ch-k', 'a1', 'y');
+      broadcastToAllWindows('ch-k', 'a2', 'z');
+
+      flushPendingFor('ch-k', 'a1');
+
+      expect(win.webContents.send).toHaveBeenCalledTimes(1);
+      expect(win.webContents.send).toHaveBeenCalledWith('ch-k', 'a1', 'xy');
+      expect(pendingCount()).toBe(1);
+    });
+
+    it('does nothing without a pending batch or policy', () => {
+      const win = createMockWindow();
+      mockGetAllWindows.mockReturnValue([win]);
+      setChannelPolicy('ch-e', { intervalMs: 100, merge: true });
+      flushPendingFor('ch-e');
+      flushPendingFor('no-policy', 'x');
+      expect(win.webContents.send).not.toHaveBeenCalled();
+    });
+  });
 
   describe('policy management', () => {
     it('clearChannelPolicy removes throttling for a channel', () => {

@@ -120,6 +120,7 @@ import { AgentTerminal, FOCUS_ACTIVE_TERMINAL_EVENT } from './AgentTerminal';
 
 let mockOnDataCallback: ((id: string, data: string) => void) | null = null;
 let mockOnExitCallback: ((id: string, exitCode: number) => void) | null = null;
+let mockOnResizedCallback: ((id: string, cols: number, rows: number) => void) | null = null;
 const mockRemoveDataListener = vi.fn();
 const mockRemoveExitListener = vi.fn();
 const mockDisconnect = vi.fn();
@@ -132,6 +133,8 @@ describe('AgentTerminal', () => {
   beforeEach(() => {
     widthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
     heightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    // The app window has focus unless a test says otherwise.
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
   });
   afterEach(() => {
     widthSpy.mockRestore();
@@ -170,6 +173,11 @@ describe('AgentTerminal', () => {
     window.clubhouse.pty.onData = vi.fn().mockImplementation((cb: any) => {
       mockOnDataCallback = cb;
       return mockRemoveDataListener;
+    });
+    mockOnResizedCallback = null;
+    (window.clubhouse.pty as any).onResized = vi.fn().mockImplementation((cb: any) => {
+      mockOnResizedCallback = cb;
+      return vi.fn();
     });
     window.clubhouse.pty.onExit = vi.fn().mockImplementation((cb: any) => {
       mockOnExitCallback = cb;
@@ -277,6 +285,26 @@ describe('AgentTerminal', () => {
       await act(async () => {});
       expect(fitAddon().fit).not.toHaveBeenCalled();
       expect(window.clubhouse.pty.resize).not.toHaveBeenCalled();
+    });
+
+    it('follows a PTY resize after writing earlier output when it does not drive the size (#2322)', async () => {
+      // A background window: its terminal never sends sizes, it adopts them.
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      (window.clubhouse.pty.getBufferSnapshot as any).mockResolvedValue({
+        data: '', seq: 0, sizes: [{ offset: 0, cols: 120, rows: 30 }],
+      });
+      render(<AgentTerminal agentId="agent-1" />);
+      await act(async () => {});
+      const calls: string[] = [];
+      term().write.mockImplementation((data: string, cb?: () => void) => { calls.push(`write ${data}`); cb?.(); });
+      term().resize.mockImplementation((c: number, r: number) => calls.push(`resize ${c}x${r}`));
+
+      act(() => {
+        mockOnDataCallback!('agent-1', 'old-size output');
+        mockOnResizedCallback!('agent-1', 100, 25);
+        mockOnResizedCallback!('other-agent', 10, 5);
+      });
+      expect(calls).toEqual(['write old-size output', 'write ', 'resize 100x25']);
     });
 
     it('requests buffer content on mount', () => {
