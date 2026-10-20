@@ -46,6 +46,28 @@ describe('selectNeedsAttention', () => {
     ]);
   });
 
+  it('labels questions, permission prompts and tool errors distinctly (#2366)', () => {
+    const agents = { q: agent('q'), t: agent('t'), p: agent('p'), g: agent('g'), e: agent('e'), f: agent('f') };
+    const detailed: Record<string, AgentDetailedStatus> = {
+      // A chat agent's question (chatDetailedStatus) and a terminal agent's AskUserQuestion prompt.
+      q: detail('needs_permission', 'Has a question', 1),
+      t: { state: 'needs_permission', message: 'Needs permission', toolName: 'AskUserQuestion', timestamp: 2 },
+      p: { state: 'needs_permission', message: 'Needs permission', toolName: 'mcp__clubhouse__send_file', timestamp: 3 },
+      g: detail('needs_permission', 'Needs permission', 4),
+      e: { state: 'tool_error', message: 'mcp__clubhouse__message_parent failed', toolName: 'mcp__clubhouse__message_parent', timestamp: 5 },
+      f: detail('tool_error', 'Driver stream failed', 6),
+    };
+    const items = selectNeedsAttention(agents, detailed, new Set(['p1']));
+    expect(items.map((i) => [i.agent.id, i.reason, i.message])).toEqual([
+      ['q', 'question', 'Has a question for you'],
+      ['t', 'question', 'Has a question for you'],
+      ['p', 'permission', 'Needs permission to use send_file'],
+      ['g', 'permission', 'Needs permission'],
+      ['e', 'tool_error', 'Tool call failed (message_parent)'],
+      ['f', 'tool_error', 'Driver stream failed'],
+    ]);
+  });
+
   it('lists helpers an orchestrator asked to dispose, unless already listed or gone (#2229)', () => {
     const agents = { h: agent('h'), p: agent('p'), x: agent('x', { projectId: 'other' }) };
     const requests = {

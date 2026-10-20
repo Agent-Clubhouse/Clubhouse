@@ -12,6 +12,7 @@ import { registerBrowserTools, registerWebview, unregisterWebview } from '../ser
 import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
 import { registerNotifyTools } from '../services/clubhouse-mcp/tools/notify-tools';
 import { registerHelperDisposeTools } from '../services/clubhouse-mcp/tools/helper-dispose-tools';
+import { registerHelperQuestionTools } from '../services/clubhouse-mcp/tools/helper-question-tools';
 import { findMainWindow } from './window-handlers';
 import { registerHelperTools, watchHelperStartRequests } from '../services/clubhouse-mcp/tools/helper-tools';
 import { registerConnectionTools } from '../services/clubhouse-mcp/tools/connection-tools';
@@ -78,6 +79,7 @@ export function registerMcpBindingHandlers(): void {
   registerNotifyTools();
   registerHelperDisposeTools();
   registerHelperTools();
+  registerHelperQuestionTools();
   // Held helper starts (#2234) go to the main window only, for Needs you.
   watchHelperStartRequests((channel, payload) => {
     findMainWindow()?.webContents.send(channel, payload);

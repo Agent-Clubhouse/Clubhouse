@@ -899,7 +899,9 @@ async function wakeHelper(agentId: string, args: Record<string, unknown>): Promi
 // ── message_parent ───────────────────────────────────────────────────────
 
 async function messageParent(agentId: string, args: Record<string, unknown>): Promise<McpToolResult> {
-  const text = requireText(args, 'text');
+  // `message` is what send_message and wake_helper call it; take it too (#2366).
+  const text = optionalText(args, 'text') ?? optionalText(args, 'message');
+  if (!text) throw new McpArgError('Missing required argument: text (the message for your parent).');
   const registration = agentRegistry.get(agentId);
   const self = registration ? await agentConfig.getDurableConfig(registration.projectPath, agentId) : null;
   if (!registration || !self?.parentAgentId) {
@@ -1002,8 +1004,10 @@ export function registerHelperTools(): void {
         'progress, a question or your result. Agents without a parent get an error.',
       inputSchema: {
         type: 'object',
-        properties: { text: { type: 'string', description: 'The message.' } },
-        required: ['text'],
+        properties: {
+          text: { type: 'string', description: 'The message.' },
+          message: { type: 'string', description: 'Same as text, for callers that use that name.' },
+        },
       },
     },
     (agentId, args) => guarded('message_parent', agentId, () => messageParent(agentId, args)),

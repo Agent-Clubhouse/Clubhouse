@@ -137,7 +137,7 @@ describe('persona templates', () => {
     it('describes every orchestration tool by name', () => {
       const body = stripPersonaFrontMatter(orchestrator().content);
       for (const tool of [
-        'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent', 'hand_off', 'dispose_helper',
+        'start_helper', 'list_helpers', 'sleep_helper', 'wake_helper', 'message_parent', 'answer_helper_question', 'hand_off', 'dispose_helper',
         'create_group_project', 'add_to_group_project', 'remove_from_group_project', 'connect_agents', 'disconnect_agents',
       ]) {
         expect(body, tool).toContain(`\`${tool}\``);

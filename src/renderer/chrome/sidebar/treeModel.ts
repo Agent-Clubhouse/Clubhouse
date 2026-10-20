@@ -1,5 +1,6 @@
 import type { Agent, AgentDetailedStatus } from '../../../shared/types';
 import { agentDot } from '../../features/agents/agent-status';
+import { isQuestionStatus } from '../../../shared/chat-agent-status';
 
 /**
  * Pure helpers behind the sidebar tree (docs/chrome-redesign-spec.md §4.2).
@@ -15,8 +16,9 @@ export interface NeedsAttentionItem {
   /**
    * `dispose_request`: an orchestrator asked the user to approve disposing this helper (#2229).
    * `start_request`: this orchestrator is waiting for approval to start a helper (#2234).
+   * `question` and `permission` are told apart so a question isn't read as a permission prompt (#2366).
    */
-  reason: 'permission' | 'tool_error' | 'error' | 'dispose_request' | 'start_request';
+  reason: 'question' | 'permission' | 'tool_error' | 'error' | 'dispose_request' | 'start_request';
   message: string;
   /** When the agent started waiting, for ordering across hosts. */
   at: number;
@@ -25,9 +27,26 @@ export interface NeedsAttentionItem {
   hostLabel?: string;
 }
 
+/** A tool's own name, without an MCP server prefix (`mcp__clubhouse__message_parent` → `message_parent`). */
+export function shortToolName(toolName: string): string {
+  return toolName.startsWith('mcp__') ? toolName.slice(toolName.lastIndexOf('__') + 2) || toolName : toolName;
+}
+
+/** Whether a Needs you item waits on the user's answer (the rest are errors). */
+export function isWaitingReason(reason: NeedsAttentionItem['reason']): boolean {
+  return reason !== 'tool_error' && reason !== 'error';
+}
+
+/** A permission prompt's line: its own description, else the tool it wants. */
+function permissionMessage(d: AgentDetailedStatus): string {
+  if (d.message && d.message !== 'Needs permission') return d.message;
+  return d.toolName ? `Needs permission to use ${shortToolName(d.toolName)}` : 'Needs permission';
+}
+
 /**
  * Agents waiting on the user, across every given project. Mirrors the old Home
- * "Needs attention" rule: a permission prompt, a failed tool, or an errored agent.
+ * "Needs attention" rule: a question, a permission prompt, a failed tool, or an
+ * errored agent, each labeled as what it is (#2366).
  * `disposeRequests` (keyed by helper id) adds helpers an orchestrator asked to
  * dispose (#2229), and `startRequests` (keyed by orchestrator id) adds
  * orchestrators waiting for approval to start a helper (#2234); an agent
@@ -45,10 +64,14 @@ export function selectNeedsAttention(
     if (!projectIds.has(agent.projectId)) continue;
     const d = detailed[agent.id];
     const at = d?.timestamp ?? 0;
-    if (d?.state === 'needs_permission') {
-      items.push({ agent, at, reason: 'permission', message: d.message || (d.toolName ? `Wants to use ${d.toolName}` : 'Waiting for permission') });
+    if (isQuestionStatus(d)) {
+      items.push({ agent, at, reason: 'question', message: 'Has a question for you' });
+    } else if (d?.state === 'needs_permission') {
+      items.push({ agent, at, reason: 'permission', message: permissionMessage(d) });
     } else if (d?.state === 'tool_error') {
-      items.push({ agent, at, reason: 'tool_error', message: d.message || (d.toolName ? `${d.toolName} failed` : 'A tool failed') });
+      // Named as a failure, never just the tool, so it isn't read as a permission prompt.
+      const message = d.toolName ? `Tool call failed (${shortToolName(d.toolName)})` : d.message || 'Tool call failed';
+      items.push({ agent, at, reason: 'tool_error', message });
     } else if (agent.status === 'error') {
       items.push({ agent, at, reason: 'error', message: agent.errorMessage || 'Stopped with an error' });
     } else if (disposeRequests[agent.id]) {

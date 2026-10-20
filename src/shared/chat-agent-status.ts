@@ -17,6 +17,18 @@ export function isMidTurn(detailed: Pick<AgentDetailedStatus, 'state' | 'message
   return detailed?.state === 'idle' && detailed.message === 'Thinking';
 }
 
+/** The detailed-status message of a chat agent waiting on a question. */
+export const QUESTION_STATUS_MESSAGE = 'Has a question';
+
+/** Tools that ask the user a question rather than for permission (terminal agents report them as permission requests). */
+const QUESTION_TOOLS: ReadonlySet<string> = new Set(['AskUserQuestion']);
+
+/** A waiting status that is a question for the user, not a permission prompt (#2366). */
+export function isQuestionStatus(detailed: Pick<AgentDetailedStatus, 'state' | 'message' | 'toolName'> | undefined): boolean {
+  if (detailed?.state !== 'needs_permission') return false;
+  return detailed.message === QUESTION_STATUS_MESSAGE || (!!detailed.toolName && QUESTION_TOOLS.has(detailed.toolName));
+}
+
 /** What is known about an agent's chat session, for status surfaces. */
 export interface ChatStatus {
   state: ChatSessionState | null;
@@ -48,7 +60,7 @@ export function chatDetailedStatus(
       if (detailed?.state === 'needs_permission') return detailed;
       return { state: 'needs_permission', message: 'Needs permission', toolName: detailed?.toolName, timestamp: at };
     case 'waiting_input':
-      return { state: 'needs_permission', message: 'Has a question', timestamp: at };
+      return { state: 'needs_permission', message: QUESTION_STATUS_MESSAGE, timestamp: at };
     case 'idle':
       if (!detailed || (detailed.state === 'idle' && !isMidTurn(detailed))) return detailed;
       return { state: 'idle', message: 'Idle', timestamp: detailed.timestamp };
