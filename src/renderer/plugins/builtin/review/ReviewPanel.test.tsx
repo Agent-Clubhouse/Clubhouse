@@ -176,7 +176,7 @@ describe('MainPanel', () => {
     expect(kill).toHaveBeenCalledWith('a1');
   });
 
-  it('Return hands the keyboard to the agent and ⌘→ (next) returns to browsing', async () => {
+  it('Return hands the keyboard to the agent and ⌥⌘→ (next) returns to browsing', async () => {
     const { api } = makeApi(three());
     render(<MainPanel api={api} />);
     fireEvent.keyDown(panel(), { key: 'Enter' });

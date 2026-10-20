@@ -1,7 +1,11 @@
 /**
  * The composer stays live while a turn runs. Enter steers when the driver can
- * steer, otherwise "Stop and send" (interrupt, then prompt); Shift+Enter
- * queues. Stop (Esc) interrupts the turn and keeps the session.
+ * steer, otherwise "Stop and send" (interrupt, then prompt); Cmd+Enter (Ctrl+Enter
+ * on Windows and Linux) queues. Stop (Esc) interrupts the turn and keeps the session.
+ *
+ * Every other key is the textarea's (#2314). Shift+Enter and Option/Alt+Enter
+ * are soft returns, Up/Down move the caret (there's no history recall), and
+ * the slash menu takes Up/Down/Tab/Enter/Esc only while it's open.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
@@ -18,6 +22,8 @@ const ACTION_LABELS: Record<SendAction, string> = {
   stop_and_send: 'Stop & send',
   queue: 'Queue',
 };
+
+const isMac = () => window.clubhouse?.platform === 'darwin';
 
 function KeyHint({ children }: { children: string }) {
   return <span className="text-[11px] leading-none opacity-70 border border-current rounded px-1 py-0.5">{children}</span>;
@@ -588,16 +594,25 @@ export function Composer(props: ComposerProps) {
     setText(next);
   };
 
+  const insertNewline = (el: HTMLTextAreaElement) => {
+    // insertText keeps the native undo stack; jsdom has no execCommand, so splice the value there.
+    if (document.execCommand?.('insertText', false, '\n')) return;
+    el.setRangeText('\n', el.selectionStart, el.selectionEnd, 'end');
+    trackCaret(el);
+    setText(el.value);
+  };
+
   const trackCaret = (el: HTMLTextAreaElement) => setCaretAt({ text: el.value, at: el.selectionStart ?? el.value.length });
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // While an IME is composing, its keys are its own: Enter commits, Esc cancels. None picks, sends or stops.
-    if (e.nativeEvent.isComposing) return;
+    // keyCode 229 covers the keydown that ends a composition, which some IMEs report with isComposing false.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (slashMatches.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex((i) => (i + 1) % slashMatches.length); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length); return; }
       // Enter picks only once a name is started: "yes and /" sends as typed. Tab always picks.
-      const enterPicks = e.key === 'Enter' && !e.shiftKey && !!slash?.query && slash.query !== slashMatches[cmdIndex].name;
+      const enterPicks = e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !!slash?.query && slash.query !== slashMatches[cmdIndex].name;
       if (e.key === 'Tab' || enterPicks) {
         e.preventDefault();
         pickCommand(slashMatches[cmdIndex]);
@@ -616,15 +631,20 @@ export function Composer(props: ComposerProps) {
       return;
     }
     if (e.key !== 'Enter') return;
-    if (e.shiftKey) {
-      // Shift+Enter queues during a turn; otherwise it's a newline.
-      if (!modes.secondary) return;
+    // Shift+Enter and Option/Alt+Enter are soft returns. The textarea inserts Shift+Enter's newline;
+    // Chromium treats Alt+Enter as a system key on Windows and Linux, so that one is inserted here.
+    if (e.shiftKey) return;
+    if (e.altKey) {
       e.preventDefault();
-      submit(modes.secondary);
+      insertNewline(e.currentTarget);
       return;
     }
+    // Cmd+Enter (Ctrl+Enter off macOS) sends without steering or stopping: it queues during a turn.
+    // On macOS, Ctrl+Enter is left to the textarea.
+    const mod = isMac() ? e.metaKey : e.ctrlKey;
+    if (!mod && (e.metaKey || e.ctrlKey)) return;
     e.preventDefault();
-    submit(modes.primary);
+    submit(mod ? modes.secondary ?? modes.primary : modes.primary);
   };
 
   const empty = !text.trim() && !attachments.length;
@@ -701,7 +721,7 @@ export function Composer(props: ComposerProps) {
               className="h-7 flex items-center gap-1.5 px-2.5 rounded-md bg-surface-0 text-ctp-subtext1 text-[12px] font-medium disabled:opacity-40 whitespace-nowrap"
               data-testid="chat-send-secondary"
             >
-              {ACTION_LABELS[modes.secondary]}{!line && <> <KeyHint>⇧⏎</KeyHint></>}
+              {ACTION_LABELS[modes.secondary]}{!line && <> <KeyHint>{isMac() ? '⌘⏎' : 'Ctrl+⏎'}</KeyHint></>}
             </button>
           )}
           {modes.canStop && (

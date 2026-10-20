@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { CanvasView } from './canvas-types';
 import { Tooltip, formatShortcut } from '../../../components/Tooltip';
+import { keyPlatform } from '../../../editing-keys';
 
 interface CanvasSearchProps {
   views: CanvasView[];
@@ -89,10 +90,11 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [isOpen, focusWorkspace]);
 
-  // Keyboard shortcut: Cmd/Ctrl+F to open search when canvas is focused
+  // Keyboard shortcut: Cmd/Ctrl+F to open search when canvas is focused.
+  // Not Ctrl+F on macOS: that moves the caret forward in a text field (#2314).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+      if ((keyPlatform() === 'darwin' ? e.metaKey : e.ctrlKey) && e.key === 'f') {
         // Intercept if focus is within the canvas panel (workspace + tab bar)
         const panel = document.querySelector('[data-testid="canvas-panel"]');
         if (panel && panel.contains(document.activeElement)) {
