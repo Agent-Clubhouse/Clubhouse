@@ -10,10 +10,11 @@
  * - Framebriar telemetry is off; Clubhouse's OpenTelemetry pipeline stays separate.
  * - Diagnostics go to the local log (`core:feedback`): access and outbox transitions, and
  *   each connect, capture and send with its outcome. Invitations, tokens, notes and
- *   screenshots are never logged; only states, counts, sizes, durations and ids.
+ *   screenshots are never logged; only states, counts, sizes, durations and ids. In the
+ *   app this is appLog, which writes local-only diag lines (#2299, #2384): the saved and
+ *   delivered lines carry the report id maintainers match a Framebriar report by.
  * - The same lifecycle goes to telemetry (feedback-telemetry.ts, #2309) as states, counts
- *   and error classes only. The report id is never an attribute: the lines that carry it
- *   (saved, delivered) go to the local-only diag tier (`deps.diag`, #2299) instead.
+ *   and error classes only. The report id is never an attribute.
  */
 
 import { randomUUID } from 'crypto';
@@ -102,12 +103,6 @@ export interface FeedbackServiceDeps {
   now?: () => number;
   /** Local diagnostics; defaults to none. */
   log?: FeedbackLog;
-  /**
-   * Local-only sink for the lines carrying a report id (saved, delivered), the link
-   * maintainers use between a Framebriar report and the user's local record. The app
-   * passes the diag tier (#2299), which is never exported. Defaults to `log`.
-   */
-  diag?: FeedbackLog;
 }
 
 const DISCONNECTED_ACCESS: FramebriarAccessView = Object.freeze({
@@ -187,7 +182,6 @@ export class FeedbackService {
   private readonly listeners = new Set<(status: FeedbackStatus) => void>();
   private readonly now: () => number;
   private readonly log: FeedbackLog;
-  private readonly diag: FeedbackLog;
   private lastAccess: FramebriarAccessView | null = null;
   private lastOutbox: FramebriarOutboxView | null = null;
   /** The last access state telemetry reported (in-between states are skipped). */
@@ -198,7 +192,6 @@ export class FeedbackService {
   constructor(private readonly deps: FeedbackServiceDeps) {
     this.now = deps.now ?? Date.now;
     this.log = deps.log ?? (() => {});
-    this.diag = deps.diag ?? this.log;
   }
 
   /** Subscribe to status changes (access, outbox, receipts). */
@@ -378,9 +371,9 @@ export class FeedbackService {
     try {
       const result = await this.sendInner(input);
       const state = this.fb?.access.status().state;
-      // The report id links a Framebriar report to this user's local record; telemetry
-      // can't carry it, so it goes to the local-only diag tier.
-      this.diag('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state });
+      // The report id links a Framebriar report to this user's local record (a diag line,
+      // through appLog); telemetry can't carry it. Don't drop it.
+      this.log('info', 'Feedback saved for delivery', { ...meta, id: result.id, status: result.status, state });
       recordFeedbackSubmitted({ screenshot: input.includeScreenshot, annotated: input.includeScreenshot && input.annotatedPng !== undefined, shots, accessState: state ?? 'stopped' });
       return result;
     } catch (err) {
@@ -531,7 +524,8 @@ export class FeedbackService {
 
   private noteReceipt(receipt: FramebriarReceipt): void {
     if (!receipt?.id) return;
-    this.diag('info', 'Feedback delivered', { id: receipt.id, status: receipt.status ?? null });
+    // The report id, as in the saved line above.
+    this.log('info', 'Feedback delivered', { id: receipt.id, status: receipt.status ?? null });
     recordFeedbackDelivered();
     const i = this.received.indexOf(receipt.id);
     if (i >= 0) this.received.splice(i, 1);
