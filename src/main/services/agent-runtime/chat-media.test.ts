@@ -2,12 +2,17 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as fsp from 'fs/promises';
 import { createHash } from 'crypto';
 import type { ChatEventDraft, ChatImage } from '../../../shared/chat';
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-media-'));
 vi.mock('../log-service', () => ({ appLog: vi.fn() }));
 vi.mock('electron', () => ({ app: { getPath: () => path.join(tmpRoot, 'userData') } }));
+vi.mock('fs/promises', async (importActual) => {
+  const actual = await importActual<typeof import('fs/promises')>();
+  return { ...actual, realpath: vi.fn(actual.realpath) };
+});
 
 import {
   ChatMediaPolicy, RAW_IMAGE_PLACEHOLDER, decodeBase64Image, fetchRemoteImage, isPrivateHost,
@@ -83,6 +88,18 @@ describe('resolveAllowedPath', () => {
     fs.symlinkSync(outside, path.join(project, 'linkdir'), 'dir');
     expect(await resolveAllowedPath(path.join(project, 'link.png'), [project])).toBeUndefined();
     expect(await resolveAllowedPath(path.join(project, 'linkdir', 'secret.png'), [project])).toBeUndefined();
+  });
+
+  it('never touches network or device paths, or anything lexically outside the roots', async () => {
+    const realpath = vi.mocked(fsp.realpath);
+    realpath.mockClear();
+    for (const p of ['\\\\attacker.example\\x\\a.png', '//attacker.example/x/a.png', '\\\\?\\C:\\a.png', '\\\\.\\pipe\\x']) {
+      expect(await resolveAllowedPath(p, [project])).toBeUndefined();
+    }
+    expect(await resolveAllowedPath('/net/attacker.example/x/a.png', [project])).toBeUndefined();
+    // Only the roots were resolved; no candidate path reached the filesystem.
+    expect(realpath).toHaveBeenCalled();
+    expect(realpath.mock.calls.map((c) => String(c[0]))).toEqual(realpath.mock.calls.map(() => project));
   });
 
   it('does not treat a sibling with the root as a name prefix as inside', async () => {
