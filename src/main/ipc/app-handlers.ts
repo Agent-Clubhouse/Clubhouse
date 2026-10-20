@@ -367,8 +367,9 @@ export function registerAppHandlers(): void {
   ipcMain.on(IPC.LOG.LOG_WRITE, withValidatedArgs(
     [objectArg<LogEntry>()],
     (_event, entry) => {
-      if (!isDiagNamespace(entry.ns) || !isDiagLevel(entry.level) || typeof entry.msg !== 'string') return;
-      logService.log(entry);
+      if (!isDiagNamespace(entry.ns) || !isDiagLevel(entry.level)) return;
+      // Untyped plugin code may pass an Error or a number as the message.
+      logService.log(typeof entry.msg === 'string' ? entry : { ...entry, msg: String(entry.msg) });
     },
   ));
 

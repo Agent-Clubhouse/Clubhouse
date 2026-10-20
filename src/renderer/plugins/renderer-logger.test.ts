@@ -75,6 +75,7 @@ describe('renderer-logger diag tier (#2302)', () => {
   const diagItems = () => emit.mock.calls.flatMap((c) => c[0].items).filter((i: { t: string }) => i.t === 'diag');
 
   beforeEach(async () => {
+    _resetRendererTelemetryForTests();
     vi.useFakeTimers();
     emit.mockClear();
     (window as any).clubhouse.log.write = vi.fn();

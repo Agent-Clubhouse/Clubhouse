@@ -16,8 +16,8 @@ export function rendererLog(
   msg: string,
   opts?: { projectId?: string; meta?: Record<string, unknown> },
 ): void {
-  // Diag lines have no projectId field; it travels in meta.
-  const meta = opts?.projectId === undefined ? opts?.meta : { ...opts.meta, projectId: opts.projectId };
+  // Diag lines have no projectId field; it travels in meta (a caller's own meta.projectId wins).
+  const meta = opts?.projectId === undefined ? opts?.meta : { projectId: opts.projectId, ...opts.meta };
   diag(ns, level, msg, meta);
   try {
     window.clubhouse?.log?.write({

@@ -788,13 +788,18 @@ describe('app-handlers', () => {
     expect(logService.log).toHaveBeenCalledWith(entry);
   });
 
-  it('LOG_WRITE drops entries with a bad namespace, level or message', () => {
+  it('LOG_WRITE drops entries with a bad namespace or level', () => {
     const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
     handler({}, { ts: '2024-01-01', ns: 'bad ns!', level: 'info', msg: 'test' });
     handler({}, { ts: '2024-01-01', ns: 'app:test', level: 'loud', msg: 'test' });
-    handler({}, { ts: '2024-01-01', ns: 'app:test', level: 'info', msg: { not: 'a string' } });
     handler({}, { ts: '2024-01-01', ns: '', level: 'info', msg: 'test' });
     expect(logService.log).not.toHaveBeenCalled();
+  });
+
+  it('LOG_WRITE turns a non-string message into a string', () => {
+    const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
+    handler({}, { ts: '2024-01-01', ns: 'plugin:p', level: 'error', msg: 42 });
+    expect(logService.log).toHaveBeenCalledWith({ ts: '2024-01-01', ns: 'plugin:p', level: 'error', msg: '42' });
   });
 
   it('LOG_WRITE keeps plugin namespaces', () => {
