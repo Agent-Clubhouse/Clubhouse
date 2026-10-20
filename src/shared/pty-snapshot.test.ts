@@ -137,6 +137,86 @@ describe('writePtySnapshot', () => {
   });
 });
 
+/**
+ * A Copilot CLI-shaped TUI: renders inline on the main screen (no alt
+ * screen), redraws the whole frame each update by moving the cursor up over
+ * the previous frame's rows and erasing each line, and on resize just redraws
+ * the same way at the new width (no screen clear).  Frames taller than the
+ * viewport push their top into scrollback.
+ */
+class CopilotTui {
+  private prevRows = 0;
+  constructor(private width: number, private sync: boolean) {}
+
+  frame(n: number, bodyLines = 3): string {
+    const lines = [`COPILOT frame ${n}`.padEnd(this.width, ' ').slice(0, this.width)];
+    for (let i = 0; i < bodyLines; i++) lines.push(`body ${n}.${i} `.padEnd(this.width, '~'));
+    lines.push('> '.padEnd(this.width, '_'));
+    let out = '';
+    if (this.prevRows > 0) out += `\r\x1b[${this.prevRows - 1}A`;
+    out += lines.map((line) => `\x1b[2K${line}`).join('\r\n');
+    this.prevRows = lines.length;
+    return this.sync ? `\x1b[?2026h${out}\x1b[?2026l` : out;
+  }
+
+  resize(width: number): void {
+    this.width = width;
+  }
+}
+
+describe('Copilot-shaped inline redraws', () => {
+  it.each([
+    ['without sync output', false],
+    ['with ?2026 sync output', true],
+  ])('replays a widen resize %s like the live terminal, with one frame on screen', async (_name, sync) => {
+    const tui = new CopilotTui(40, sync);
+    const parts = [{ data: tui.frame(1) + tui.frame(2), cols: 40 }];
+    tui.resize(80);
+    parts.push({ data: tui.frame(3) + tui.frame(4), cols: 80 });
+    const { live, snapshot } = await record(parts);
+
+    const replayed = new Terminal({ cols: 60, rows: ROWS, allowProposedApi: true });
+    await writePtySnapshot(replayed, snapshot);
+    expect(screen(replayed)).toEqual(screen(live));
+    expect(count(screen(replayed), 'COPILOT')).toBe(1);
+  });
+
+  it.each([
+    ['without sync output', false],
+    ['with ?2026 sync output', true],
+  ])('replays a narrow resize %s exactly as the live terminal drew it', async (_name, sync) => {
+    // Drawn in a wide view, then the PTY moved to a narrow one.  Remounting at
+    // the narrow size used to replay the wide frames there, where each row
+    // wraps in two and the "cursor up" redraws miss half of every frame.
+    const tui = new CopilotTui(80, sync);
+    const parts = [{ data: tui.frame(1) + tui.frame(2) + tui.frame(3), cols: 80 }];
+    tui.resize(40);
+    parts.push({ data: tui.frame(4) + tui.frame(5), cols: 40 });
+    const { live, snapshot } = await record(parts);
+
+    const replayed = new Terminal({ cols: 40, rows: ROWS, allowProposedApi: true });
+    await writePtySnapshot(replayed, snapshot);
+    expect(screen(replayed)).toEqual(screen(live));
+
+    const naive = new Terminal({ cols: 40, rows: ROWS, allowProposedApi: true });
+    await write(naive, snapshot.data);
+    expect(count(screen(naive), 'COPILOT')).toBeGreaterThan(count(screen(live), 'COPILOT'));
+  });
+
+  it('documents the live artifact: an inline redraw after a narrowing reflow leaves stale rows', async () => {
+    // Not a replay problem: xterm reflows the wide frame into more rows than
+    // the TUI's "cursor up" covers, so even the live terminal keeps a stale
+    // copy above the new frame.  Replay reproduces it faithfully; fewer PTY
+    // resizes (#2322) mean fewer of these.
+    const tui = new CopilotTui(80, false);
+    const parts = [{ data: tui.frame(1), cols: 80 }];
+    tui.resize(40);
+    parts.push({ data: tui.frame(2), cols: 40 });
+    const { live } = await record(parts);
+    expect(count(screen(live), 'COPILOT')).toBe(2);
+  });
+});
+
 describe('snapshotSegments', () => {
   it('splits data at each size offset', () => {
     expect(snapshotSegments({
