@@ -7,13 +7,12 @@ import {
   PTY_RENDER_LOG_NS,
   _resetForTests,
   forget,
-  ptyBackend,
   recordOutput,
   recordResize,
   recordSnapshot,
   recordSpawn,
-  windowsBuildNumber,
 } from './pty-render-diagnostics';
+import { detectWindowsPty } from '../util/windows-pty';
 
 function lines(msg: string) {
   return appLog.mock.calls.filter((c) => c[0] === PTY_RENDER_LOG_NS && c[2] === msg);
@@ -27,32 +26,13 @@ describe('pty-render-diagnostics', () => {
     _resetForTests(() => t);
   });
 
-  describe('ptyBackend', () => {
-    it('is unix off Windows', () => {
-      expect(ptyBackend('linux', '6.8.0-45-generic')).toBe('unix');
-      expect(ptyBackend('darwin', '25.5.0')).toBe('unix');
-    });
-
-    it('follows node-pty: ConPTY from build 18309, winpty before', () => {
-      expect(ptyBackend('win32', '10.0.19045')).toBe('conpty');
-      expect(ptyBackend('win32', '10.0.18309')).toBe('conpty');
-      expect(ptyBackend('win32', '10.0.17763')).toBe('winpty');
-      expect(ptyBackend('win32', 'garbage')).toBe('winpty');
-    });
-
-    it('parses the Windows build number', () => {
-      expect(windowsBuildNumber('10.0.22631')).toBe(22631);
-      expect(windowsBuildNumber('6.8.0')).toBeUndefined();
-    });
-  });
-
   it('logs spawn with size, platform and backend, at info', () => {
     recordSpawn('a1', 'agent', 120, 30);
     const [line] = lines('PTY session started');
     expect(line[1]).toBe('info');
     expect(line[3].meta).toMatchObject({
       sessionId: 'a1', kind: 'agent', cols: 120, rows: 30,
-      platform: process.platform, backend: ptyBackend(),
+      platform: process.platform, backend: detectWindowsPty()?.backend ?? 'unix',
     });
   });
 
