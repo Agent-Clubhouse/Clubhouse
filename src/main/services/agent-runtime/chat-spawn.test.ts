@@ -72,6 +72,8 @@ import { appendChatEvent, listChatSessions, readChatTranscript } from './chat-tr
 import { broadcastToAllWindows } from '../../util/ipc-broadcast';
 import { noteKillRequest } from './sleep-reason';
 import { IPC } from '../../../shared/ipc-channels';
+import { setProducingRuntime } from '../../telemetry/__test-utils__/producing-runtime';
+import type { TelemetryRuntime } from '../../telemetry/types';
 import type { OrchestratorProvider } from '../../orchestrators';
 import { getShellEnvironment } from '../../util/shell';
 import { injectClubhouseMcp, buildClubhouseMcpDef } from '../clubhouse-mcp/injection';
@@ -354,6 +356,57 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
     ];
     await tryStartChatAgent({ ...params, mission: undefined, resume: true, sessionId: 'n9' }, provider, undefined, undefined, null);
     expect(driver.last.startOptions?.resumeNativeSessionId).toBe('n9');
+  });
+
+  describe('telemetry (#2305)', () => {
+    let event: ReturnType<typeof vi.fn>;
+    beforeEach(() => {
+      event = vi.fn();
+      setProducingRuntime({ level: 'standard', count: vi.fn(), replaySpan: vi.fn(), event } as unknown as TelemetryRuntime);
+    });
+    afterEach(() => setProducingRuntime(null));
+    const recorded = (name: string) => event.mock.calls
+      .filter(([n]) => n === name)
+      .map(([, attrs]) => Object.fromEntries((attrs as Array<{ key: string; value: unknown }>).map((a) => [a.key, a.value])));
+
+    it.each([
+      [undefined, 'resumed'],
+      ['not_found', 'fresh_not_found'],
+      ['stalled', 'fresh_stalled'],
+    ] as const)('a resume the driver answers with fallback %s is %s', async (fallback, result) => {
+      const driver = new FakeChatDriver();
+      driver.resumeFallback = fallback;
+      registerChatDriver(driver);
+      await tryStartChatAgent({ ...params, mission: undefined, resume: true, sessionId: 'n9' }, provider, undefined, undefined, null);
+      expect(recorded('clubhouse.agent.resume_outcome')).toEqual([{
+        'clubhouse.orchestrator': 'claude-code', 'clubhouse.agent.id_hash': 'agent-1',
+        'clubhouse.agent.runtime': 'chat', 'clubhouse.session.resume.result': result,
+      }]);
+    });
+
+    it('a fresh start records no resume outcome; its end records the provider-reported capture', async () => {
+      registerChatDriver(new FakeChatDriver());
+      await tryStartChatAgent(params, provider, undefined, undefined, null);
+      expect(recorded('clubhouse.agent.resume_outcome')).toEqual([]);
+      // Ids noted while running aren't capture events; only the end is.
+      expect(recorded('clubhouse.agent.session_capture')).toEqual([]);
+      await getAgentRuntime('agent-1')?.stop();
+      await vi.waitFor(() => expect(recorded('clubhouse.agent.session_capture')).toEqual([{
+        'clubhouse.orchestrator': 'claude-code', 'clubhouse.agent.id_hash': 'agent-1', 'clubhouse.agent.runtime': 'chat',
+        'clubhouse.session.capture.result': 'captured', 'clubhouse.session.capture.source': 'provider_reported', 'process.exit.code': 0,
+      }]));
+      expect(JSON.stringify(event.mock.calls)).not.toContain('native-1');
+    });
+
+    it('records persist_failed when the session entry can\'t be written at the end', async () => {
+      registerChatDriver(new FakeChatDriver());
+      await tryStartChatAgent(params, provider, undefined, undefined, null);
+      agentConfig.touchSessionEntry.mockRejectedValueOnce(new Error('EACCES'));
+      await getAgentRuntime('agent-1')?.stop();
+      await vi.waitFor(() => expect(recorded('clubhouse.agent.session_capture')).toEqual([
+        expect.objectContaining({ 'clubhouse.session.capture.result': 'persist_failed', 'clubhouse.session.capture.source': 'provider_reported' }),
+      ]));
+    });
   });
 
   it('recognizes login-required errors from each CLI', () => {

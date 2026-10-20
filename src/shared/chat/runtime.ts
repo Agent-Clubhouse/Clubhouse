@@ -222,6 +222,12 @@ export interface ChatDriverSession {
   /** How long loading the requested native session took, when the driver times it (ACP). */
   readonly resumeTiming?: ChatResumeTiming;
   /**
+   * Set when a resume was asked for and the driver started a fresh session
+   * instead: the session was gone, or it didn't reopen in time. For telemetry
+   * (#2305); a driver that never falls back leaves it unset.
+   */
+  readonly resumeFallback?: 'not_found' | 'stalled';
+  /**
    * Native protocol translated into contract events, in order. The chat
    * runtime stamps envelopes (agentId, sessionId, seq, ts) and may synthesize
    * lifecycle events (session_state, turn_started/turn_ended) when a driver

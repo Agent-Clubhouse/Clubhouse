@@ -37,6 +37,7 @@ import { trackSessionCapture } from '../session-capture-barrier';
 import { listChatSessions } from './chat-transcript';
 import { captureBeforePrompt } from './checkpoint-tracker';
 import { noteChatStartFailure } from './stale-session';
+import { chatResumeResult, recordResumeOutcome, recordSessionCapture } from '../../telemetry/session-telemetry';
 import { chatSleepInfo, recordSleep, takeKillRequest } from './sleep-reason';
 import { waitsOnPollingGroupProject } from './idle-policy';
 import { chatIdleTimeoutMs, onAgentIdleSleepChange, setAgentIdleSleep } from '../chat-idle-settings';
@@ -554,12 +555,18 @@ async function runChatStart(
     { env, mcpServers, mcpHttpEndpoints, continued }: NonNullable<typeof prepared>,
   ): Promise<{ ok: true } | { ok: false; error: string; errorCode?: string; sessionStarted: boolean }> {
     let sessionStarted = false;
-    const recordChatSession = (id: string) => {
+    /** `exitCode` marks the session's end, the one write recorded as its capture (#2305). */
+    const recordChatSession = (id: string, exitCode?: number) => {
+      const captured = (result: 'captured' | 'persist_failed') => {
+        if (exitCode === undefined) return;
+        recordSessionCapture({ orchestrator: provider.id, agentId: params.agentId, runtime: 'chat', result, source: 'provider_reported', exitCode });
+      };
       // Tracked so quit and update wait for it before the final config flush (#2053).
-      trackSessionCapture(params.agentId, touchSessionEntry(params.projectPath, params.agentId, id).catch((err) => {
+      trackSessionCapture(params.agentId, touchSessionEntry(params.projectPath, params.agentId, id).then(() => captured('captured'), (err) => {
         appLog('core:chat', 'warn', 'Failed to persist native session id', {
           meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
         });
+        captured('persist_failed');
       }));
     };
     let stopIdleWatch = () => {};
@@ -567,7 +574,8 @@ async function runChatStart(
       stopIdleWatch();
       // The session's last activity is when it ended.
       const nativeId = runtime.getNativeSessionId();
-      if (nativeId) recordChatSession(nativeId);
+      if (nativeId) recordChatSession(nativeId, exitCode);
+      else recordSessionCapture({ orchestrator: provider.id, agentId: params.agentId, runtime: 'chat', result: 'kept_previous', source: 'none', exitCode });
       configPipeline.restoreForAgent(params.agentId);
       unregisterChatRuntime(params.agentId, runtime);
       untrackAgent(params.agentId);
@@ -610,6 +618,9 @@ async function runChatStart(
         ...(startSignal ? { signal: startSignal } : {}),
         });
         sessionStarted = true;
+        if (resumeId) {
+          recordResumeOutcome(provider.id, params.agentId, chatResumeResult(resumeId, session.nativeSessionId, session.resumeFallback), 'chat');
+        }
         return session;
       },
       beforePrompt: () => captureBeforePrompt(params.agentId),

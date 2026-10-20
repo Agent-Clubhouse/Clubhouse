@@ -186,6 +186,7 @@ describe('Copilot ACP chat driver', () => {
     const commands = drafts[1].type === 'commands_available' ? drafts[1].data.commands : [];
     expect(commands.length).toBeGreaterThan(20);
     expect(replayer.written[1]).toMatchObject({ method: 'session/load' });
+    expect(session.resumeFallback).toBeUndefined();
     expect(replayer.errors).toEqual([]);
   });
 
@@ -678,6 +679,7 @@ describe('ACP chat driver failure paths', () => {
     ]);
     const session = await driver.start(startOpts({ resumeNativeSessionId: 'gone' }));
     expect(session.nativeSessionId).toBe('s-new');
+    expect(session.resumeFallback).toBe('not_found');
     const first: ChatEventDraft[] = [];
     for await (const d of session.events) {
       first.push(d);
@@ -769,6 +771,7 @@ describe('ACP chat driver resume stalls and cancellation (#2087)', () => {
 
     expect(Date.now() - startedAt).toBeLessThan(2_000);
     expect(session.nativeSessionId).toBe('s-fresh');
+    expect(session.resumeFallback).toBe('stalled');
     expect(procs[0].kill).toHaveBeenCalled();
     expect(mockSpawn).toHaveBeenCalledTimes(2);
     const first: ChatEventDraft[] = [];
@@ -897,6 +900,7 @@ describe('Copilot resume and level after a respawn (#2155)', () => {
     expect(replayer.written.some((m) => m.method === 'session/load')).toBe(false);
     // No load ran, so there are no load timings.
     expect(session.resumeTiming).toBeUndefined();
+    expect(session.resumeFallback).toBe('not_found');
     const notice = (await session.events[Symbol.asyncIterator]().next()).value;
     expect(notice).toMatchObject({ type: 'notice', data: { code: 'resume_unavailable', message: expect.stringContaining('previous session was not found') } });
     expect(replayer.errors).toEqual([]);

@@ -380,6 +380,16 @@ Metrics: `c.agent.turn.duration` (s), `c.agent.tokens` counter (unit `{token}`, 
 
 Metrics: `c.agent.permission.wait` histogram (s; already computed as `elapsedMs`), `c.agent.permission.stuck` counter (the 30 s stuck scan, `hook-server.ts:358`).
 
+#### Session-id capture and resume ([#2305](https://github.com/Agent-Clubhouse/Clubhouse/issues/2305))
+
+Durable agents only. Every event carries `orchestrator` and `c.agent.id_hash`. The session id itself is never recorded; the legacy log line at each site keeps it for local cross-reference with the CLI's session store.
+
+| Event | When | Attributes | Level |
+|---|---|---|---|
+| `c.agent.session_capture` | A run ended: the terminal exit handler (`captureSession`, `agent-system.ts`) or a chat session's end | `c.agent.runtime`, `process.exit.code`, `c.session.capture.result` (`captured`, `kept_previous`, `ignored_not_in_store`, `ignored_foreign`, `resume_failed_no_session`, `resume_failed_early_exit`, `persist_failed`, `capture_failed`), `c.session.capture.source` (`assigned`: the id Clubhouse gave the run; `output_scrape`: the CLI's printed id; `run_store`: the CLI's own run files, #2134; `resumed_id`; `provider_reported`: the chat driver; `none`). `ignored_*` means a candidate id was rejected and nothing else was found (the #2086 made-up-id signal). | S |
+| `c.agent.session_stale_cleared` | A saved resume id was cleared (#2113) | `c.session.stale.reason`: `store_missing` (checked at wake), `chat_not_found` (chat start said so), `exit_not_found` (the CLI said so on exit), `exit_early` (the resume quit within 10 s) | E |
+| `c.agent.resume_outcome` | Once per durable wake that had a session: at chat session open, at a terminal resume's exit, or at spawn for a fresh start | `c.agent.runtime` (when chosen), `c.session.resume.result`: `resumed`, `fresh_not_found`, `fresh_stalled` (the chat driver gave up on the load, #2296), `fresh_user` (woken fresh with a session to resume), `fresh_other` (a different native id with no reason given), `failed_not_found`, `failed_early_exit` (terminal resumes that failed) | S |
+
 #### Exit and kill
 
 Exits are classified on the `c.agent.run` span (above), not a separate span. Chat exits must also go through `broadcastAgentExit` (the structured-mode bypass, F1, was fixed in [#1928](https://github.com/Agent-Clubhouse/Clubhouse/pull/1928)).
