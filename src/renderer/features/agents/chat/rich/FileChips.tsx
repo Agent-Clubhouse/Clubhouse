@@ -1,0 +1,292 @@
+/**
+ * File chips in chat (experimental rich chat content, #2350). Paths in agent
+ * messages and tool output are matched in the shared text pass (before URLs),
+ * and an inline code span that is just a path counts too. Each is only a
+ * candidate until main confirms the file exists inside the agent's folders;
+ * then it becomes a chip, otherwise it goes back to plain text. A chip opens a
+ * preview: read-only Monaco for text, the image, a player for video and audio,
+ * and Open in Files / Show in Finder for everything.
+ */
+
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import type { ChatFileInfo, ChatFilePreview } from '../../../../../shared/chat';
+import { LAYER_PORTAL_ATTR } from '../../../../components/layers';
+import { Button } from '../../../../components/Button';
+import { ReadOnlyMonacoEditor } from '../../../../plugins/builtin/canvas/ReadOnlyMonacoEditor';
+import { findFilePaths, wholeFilePath } from './file-paths';
+import { dataUrlOf } from './media';
+import type { TextMatcher } from './text-enrich';
+
+const PATH_ATTR = 'data-chat-path';
+const LINE_ATTR = 'data-chat-line';
+/** Set once main confirmed the file: its kind. */
+const FILE_ATTR = 'data-chat-file';
+
+// ── Candidates ────────────────────────────────────────────────────────────
+
+/** The text-pass matcher: each path becomes a candidate span holding the text as written. */
+export const fileMatcher: TextMatcher = (text) => findFilePaths(text).map((m) => ({
+  start: m.start,
+  end: m.end,
+  make: (doc: Document) => {
+    const span = doc.createElement('span');
+    span.setAttribute(PATH_ATTR, m.path);
+    if (m.line !== undefined) span.setAttribute(LINE_ATTR, String(m.line));
+    span.textContent = text.slice(m.start, m.end);
+    return span;
+  },
+}));
+
+/** Inline code spans (not code blocks) that hold just a path become candidates too. */
+export function markCodePaths(root: Element): void {
+  for (const code of Array.from(root.querySelectorAll('code'))) {
+    // Not in code blocks, and not inside a link: the link already goes somewhere.
+    if (code.closest('pre, a') || code.hasAttribute(PATH_ATTR) || code.children.length) continue;
+    const match = wholeFilePath(code.textContent ?? '');
+    if (!match) continue;
+    code.setAttribute(PATH_ATTR, match.path);
+    if (match.line !== undefined) code.setAttribute(LINE_ATTR, String(match.line));
+  }
+}
+
+// ── Confirming with main ──────────────────────────────────────────────────
+
+const STAT_CACHE_MAX = 2000;
+/** A path with no file is asked again after this long (the agent may be about to create it). */
+const MISS_TTL_MS = 10_000;
+const statCache = new Map<string, Promise<ChatFileInfo>>();
+
+/** Ask main about paths not asked before (one request), cached per agent for the app session. */
+function statPaths(agentId: string, paths: string[]): Map<string, Promise<ChatFileInfo>> {
+  const out = new Map<string, Promise<ChatFileInfo>>();
+  const fresh: string[] = [];
+  for (const p of paths) {
+    const hit = statCache.get(`${agentId}\0${p}`);
+    if (hit) out.set(p, hit); else if (!fresh.includes(p)) fresh.push(p);
+  }
+  if (fresh.length) {
+    const batch = window.clubhouse.chat.statPaths(agentId, fresh.slice(0, 200))
+      // telemetry-exempt: an unconfirmed path stays plain text.
+      .catch((): ChatFileInfo[] => []);
+    fresh.forEach((p, i) => {
+      const one = batch.then((infos) => infos[i] ?? { path: p, exists: false });
+      void one.then((info) => {
+        if (info.exists) return;
+        const key = `${agentId}\0${p}`;
+        setTimeout(() => { if (statCache.get(key) === one) statCache.delete(key); }, MISS_TTL_MS);
+      });
+      statCache.set(`${agentId}\0${p}`, one);
+      out.set(p, one);
+    });
+    while (statCache.size > STAT_CACHE_MAX) statCache.delete(statCache.keys().next().value as string);
+  }
+  return out;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function demote(el: Element): void {
+  if (el.tagName === 'SPAN') el.replaceWith(el.ownerDocument.createTextNode(el.textContent ?? ''));
+  else { el.removeAttribute(PATH_ATTR); el.removeAttribute(LINE_ATTR); }
+}
+
+/**
+ * Turn the candidates under `root` into chips once main confirms them, and
+ * back into plain text otherwise. Safe to call again on the same root.
+ */
+export async function hydrateFileChips(root: Element, agentId: string): Promise<void> {
+  const candidates = Array.from(root.querySelectorAll(`[${PATH_ATTR}]:not([${FILE_ATTR}])`));
+  if (!candidates.length) return;
+  const answers = statPaths(agentId, candidates.map((el) => el.getAttribute(PATH_ATTR) ?? ''));
+  await Promise.all(candidates.map(async (el) => {
+    const info = await answers.get(el.getAttribute(PATH_ATTR) ?? '');
+    if (!el.isConnected) return;
+    if (!info?.exists || !info.kind) { demote(el); return; }
+    el.setAttribute(FILE_ATTR, info.kind);
+    el.classList.add('chat-file-chip');
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-haspopup', 'dialog');
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('title', [info.name, info.size !== undefined ? formatSize(info.size) : null].filter(Boolean).join(' · '));
+  }));
+}
+
+/** For tests. */
+export function clearFileChipCache(): void {
+  statCache.clear();
+}
+
+// ── Preview ───────────────────────────────────────────────────────────────
+
+interface Target { path: string; line?: number; kind: string; anchor: DOMRect }
+
+const FileChipContext = createContext<string | null>(null);
+
+/** The agent whose file chips this transcript shows, or null when they're off. */
+export function useFileChips(): string | null {
+  return useContext(FileChipContext);
+}
+
+function revealLabel(): string {
+  return window.clubhouse?.platform === 'darwin' ? 'Show in Finder' : window.clubhouse?.platform === 'win32' ? 'Show in Explorer' : 'Show in folder';
+}
+
+const POPOVER_W = 560;
+const POPOVER_H = 420;
+
+function PreviewBody({ preview, path }: { preview: ChatFilePreview; path: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!preview.data || !preview.mimeType) return;
+    let cancelled = false;
+    // telemetry-exempt: a preview that won't encode shows the fallback text.
+    void dataUrlOf({ mimeType: preview.mimeType, data: preview.data }).then((v) => { if (!cancelled) setSrc(v); }, (): undefined => undefined);
+    return () => { cancelled = true; };
+  }, [preview]);
+  if (preview.kind === 'text' && preview.text !== undefined) {
+    return (
+      <div className="flex flex-col min-h-0 flex-1">
+        <div className="flex-1 min-h-[200px]" data-testid="chat-file-preview-text"><ReadOnlyMonacoEditor value={preview.text} filePath={path} /></div>
+        {preview.truncated && <div className="px-3 py-1 text-[11.5px] text-ctp-overlay1 border-t border-surface-0">Showing the first {formatSize(preview.text.length)}. Open it in Files to see the rest.</div>}
+      </div>
+    );
+  }
+  if (src && preview.kind === 'image') {
+    return <div className="flex-1 min-h-0 flex items-center justify-center bg-ctp-crust p-2"><img src={src} alt="" className="max-w-full max-h-[340px] object-contain" data-testid="chat-file-preview-image" /></div>;
+  }
+  if (src && preview.kind === 'video') {
+    return <div className="flex-1 min-h-0 flex items-center justify-center bg-ctp-crust"><video src={src} controls className="max-w-full max-h-[340px]" data-testid="chat-file-preview-video" /></div>;
+  }
+  if (src && preview.kind === 'audio') {
+    return <div className="p-4"><audio src={src} controls className="w-full" data-testid="chat-file-preview-audio" /></div>;
+  }
+  if (preview.data) return <div className="p-4 text-[12.5px] text-ctp-overlay1">Loading…</div>;
+  return (
+    <div className="p-4 text-[12.5px] text-ctp-subtext0" data-testid="chat-file-preview-none">
+      {preview.tooLarge ? 'This file is too large to preview here.' : 'No preview for this kind of file.'}
+    </div>
+  );
+}
+
+function FilePreviewPopover({ agentId, target, onClose }: { agentId: string; target: Target; onClose: () => void }) {
+  const el = useRef<HTMLDivElement>(null);
+  // Focus moves into the preview and back to the chip when it closes.
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    el.current?.focus();
+    return () => { if (previous?.isConnected) previous.focus(); };
+  }, []);
+  const [preview, setPreview] = useState<ChatFilePreview | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    window.clubhouse.chat.readFilePreview(agentId, target.path).then(
+      (p) => { if (!cancelled) setPreview(p); },
+      // telemetry-exempt: shown in the popover.
+      () => { if (!cancelled) setPreview(null); },
+    );
+    return () => { cancelled = true; };
+  }, [agentId, target.path]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    const onDown = (e: MouseEvent) => { if (el.current && !el.current.contains(e.target as Node)) onClose(); };
+    // It's placed by the chip: once the transcript scrolls it would point at the wrong line.
+    const onScroll = (e: Event) => { if (el.current && !el.current.contains(e.target as Node)) onClose(); };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('mousedown', onDown, true);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('mousedown', onDown, true);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [onClose]);
+  const act = async (action: 'open' | 'reveal') => {
+    try {
+      const result = await window.clubhouse.chat.fileAction(agentId, target.path, action);
+      if (action === 'open' && result) {
+        if (result.kind === 'open-file-not-found') { setError('That file is not in an open project'); return; }
+        // Loaded on use: the bridge pulls in most of the app's stores.
+        const { handleProtocolAction } = await import('../../../../app-event-bridge');
+        handleProtocolAction(result);
+        onClose();
+      }
+    } catch {
+      // telemetry-exempt: shown in the popover.
+      setError(action === 'open' ? "Couldn't open the file" : "Couldn't show the file");
+    }
+  };
+  const width = Math.min(POPOVER_W, window.innerWidth - 24);
+  const left = Math.max(12, Math.min(target.anchor.left, window.innerWidth - width - 12));
+  const below = target.anchor.bottom + 6 + POPOVER_H <= window.innerHeight;
+  const top = below ? target.anchor.bottom + 6 : Math.max(12, target.anchor.top - 6 - POPOVER_H);
+  const name = preview?.name ?? target.path.split(/[\\/]/).pop() ?? target.path;
+  return createPortal(
+    <div
+      ref={el}
+      role="dialog"
+      tabIndex={-1}
+      aria-label={`Preview of ${name}`}
+      data-testid="chat-file-preview"
+      {...{ [LAYER_PORTAL_ATTR]: '' }}
+      style={{ left, top, width, height: POPOVER_H }}
+      className="fixed z-dropdown flex flex-col rounded-lg border border-surface-1 bg-ctp-mantle shadow-lg overflow-hidden outline-none"
+    >
+      <div className="flex items-center gap-2 h-9 px-3 border-b border-surface-0 text-[12.5px] min-w-0">
+        <span className="font-medium text-ctp-text flex-shrink-0">{name}</span>
+        <span className="font-mono text-[11px] text-ctp-overlay1 truncate min-w-0" title={target.path}>{target.path}{target.line !== undefined ? `:${target.line}` : ''}</span>
+        {preview && <span className="ml-auto text-[11.5px] text-ctp-overlay0 flex-shrink-0">{formatSize(preview.size)}</span>}
+      </div>
+      {preview === undefined && <div className="p-4 text-[12.5px] text-ctp-overlay1 flex-1">Loading…</div>}
+      {preview === null && <div className="p-4 text-[12.5px] text-ctp-subtext0 flex-1">This file is no longer available.</div>}
+      {preview && <PreviewBody preview={preview} path={target.path} />}
+      <div className="flex items-center gap-2 px-3 py-2 border-t border-surface-0">
+        {error && <span className="mr-auto text-[12px] text-ctp-error" role="status">{error}</span>}
+        <span className="ml-auto" />
+        <Button kind="ghost" onClick={() => void act('open')}>Open in Files</Button>
+        <Button kind="ghost" onClick={() => void act('reveal')}>{revealLabel()}</Button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function chipOf(target: EventTarget | null): Element | null {
+  const chip = target instanceof Element ? target.closest(`[${FILE_ATTR}]`) : null;
+  // A chip inside a link is the link's: it doesn't open a preview as well.
+  return chip && !chip.closest('a') ? chip : null;
+}
+
+/**
+ * File chips for a transcript: provides the agent to the text pass and opens
+ * a chip's preview on click or Enter. Without `agentId` (rich content off) it
+ * renders its children and nothing else.
+ */
+export function FileChipProvider({ agentId, children }: { agentId: string | null; children: ReactNode }) {
+  const [target, setTarget] = useState<Target | null>(null);
+  const close = useCallback(() => setTarget(null), []);
+  if (!agentId) return <>{children}</>;
+  const open = (chip: Element) => {
+    const path = chip.getAttribute(PATH_ATTR);
+    if (!path) return;
+    const line = chip.getAttribute(LINE_ATTR);
+    setTarget({ path, kind: chip.getAttribute(FILE_ATTR) ?? 'other', anchor: chip.getBoundingClientRect(), ...(line && { line: Number(line) }) });
+  };
+  return (
+    <FileChipContext.Provider value={agentId}>
+      <div
+        className="contents"
+        onClick={(e) => { const chip = chipOf(e.target); if (chip) { e.preventDefault(); open(chip); } }}
+        onKeyDown={(e) => { const chip = chipOf(e.target); if (chip && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open(chip); } }}
+      >
+        {children}
+      </div>
+      {target && <FilePreviewPopover agentId={agentId} target={target} onClose={close} />}
+    </FileChipContext.Provider>
+  );
+}

@@ -186,6 +186,12 @@ export const IPC = {
     MEDIA_ACTION: 'chat:media-action',
     /** Rich chat content: load a remote image the user clicked. */
     FETCH_REMOTE_IMAGE: 'chat:fetch-remote-image',
+    /** Rich chat content: which mentioned paths are files in the agent's folders. */
+    STAT_PATHS: 'chat:stat-paths',
+    /** Rich chat content: a file chip's preview. */
+    READ_FILE_PREVIEW: 'chat:read-file-preview',
+    /** Rich chat content: reveal a file chip's file, or resolve it for Files. */
+    FILE_ACTION: 'chat:file-action',
     INTERRUPT: 'chat:interrupt',
     RESPOND_PERMISSION: 'chat:respond-permission',
     ANSWER_QUESTION: 'chat:answer-question',

@@ -16,6 +16,7 @@ import { attachmentName } from './attachments';
 import { enrichMarkdownLinks, useRichLinks, useTokenHandlers } from './rich/RichLinks';
 import { useRichChatContent } from './rich/rich-flag';
 import { handleRemoteImageClick, rewriteMarkdownImages } from './rich/markdown-images';
+import { fileMatcher, hydrateFileChips, markCodePaths, useFileChips } from './rich/FileChips';
 import { AlertIcon, BrainIcon, ChevronDown, ChevronRight, FileIcon, ImageIcon, PlanIcon, QuestionIcon } from './icons';
 import { formatCost, formatDuration, formatTokens } from './view-model';
 
@@ -50,15 +51,21 @@ export function Markdown({ text, streaming = false, className = '' }: { text: st
   // Rich links (#2351) rework the rendered, sanitized DOM; off, the element is exactly as before.
   const richLinks = useRichLinks();
   const richHandlers = useTokenHandlers(richLinks);
+  const fileAgent = useFileChips();
   const el = useRef<HTMLDivElement>(null);
   const enriched = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (!richLinks || !el.current) return;
     // Same HTML, new context (the repo resolved): start again from React's markup.
     if (enriched.current === html) el.current.innerHTML = html;
-    enrichMarkdownLinks(el.current, richLinks.repo);
+    enrichMarkdownLinks(el.current, richLinks.repo, fileAgent && !streaming ? [fileMatcher] : []);
+    // Chips wait for the message to finish: a streaming message re-renders every few frames.
+    if (fileAgent && !streaming) {
+      markCodePaths(el.current);
+      void hydrateFileChips(el.current, fileAgent);
+    }
     enriched.current = html;
-  }, [html, richLinks]);
+  }, [html, richLinks, fileAgent, streaming]);
   if (rich || richLinks) {
     const linkClick = richHandlers.onClick ?? onClick;
     const onRichClick = (e: React.MouseEvent<HTMLDivElement>) => { if (!handleRemoteImageClick(e)) linkClick(e); };

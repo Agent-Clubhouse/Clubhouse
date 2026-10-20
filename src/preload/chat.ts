@@ -3,7 +3,8 @@ import { IPC } from '../shared/ipc-channels';
 import type { CheckpointTurn, ChangesResult, RevertResult } from '../shared/chat-checkpoints';
 import type { ChatAgentRuntimeInfo, ChatEvent, ChatQuestionAnswers, ChatRuntimeSettings, MessageDelivery, PermissionLevel, PermissionResponseExtras, RuntimeSendResult, StagedChatAttachment } from '../shared/chat';
 import { CHAT_IMAGE_MAX_BYTES } from '../shared/chat';
-import type { ChatSessionSummary } from '../shared/chat';
+import type { ChatFileInfo, ChatFilePreview, ChatSessionSummary } from '../shared/chat';
+import type { ResolvedProtocolAction } from '../shared/types';
 
 export const chat = {
   chat: {
@@ -38,6 +39,14 @@ export const chat = {
     /** Load a remote image the user clicked; main checks the host and sniffs the bytes. */
     fetchRemoteImage: (url: string): Promise<{ mimeType: string; data: Uint8Array }> =>
       ipcRenderer.invoke(IPC.CHAT.FETCH_REMOTE_IMAGE, url),
+    /** File chips: which of these paths from the agent's text are files in its folders. */
+    statPaths: (agentId: string, paths: string[]): Promise<ChatFileInfo[]> =>
+      ipcRenderer.invoke(IPC.CHAT.STAT_PATHS, agentId, paths),
+    readFilePreview: (agentId: string, filePath: string): Promise<ChatFilePreview> =>
+      ipcRenderer.invoke(IPC.CHAT.READ_FILE_PREVIEW, agentId, filePath),
+    /** 'open' resolves the file to its project for the Files view; 'reveal' shows it in the file manager. */
+    fileAction: (agentId: string, filePath: string, action: 'open' | 'reveal'): Promise<ResolvedProtocolAction | null> =>
+      ipcRenderer.invoke(IPC.CHAT.FILE_ACTION, agentId, filePath, action),
     interrupt: (agentId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.CHAT.INTERRUPT, agentId),
     respondPermission: (agentId: string, requestId: string, optionId: string, extras?: PermissionResponseExtras): Promise<void> =>
