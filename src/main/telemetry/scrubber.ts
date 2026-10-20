@@ -21,7 +21,8 @@ function literalVariants(value: string): string[] {
   return [...variants].sort((a, b) => b.length - a.length);
 }
 
-function literalPattern(value: string, wordBounded: boolean): RegExp {
+/** A case-insensitive pattern for every spelling of a literal (diag-redaction.ts reuses it). */
+export function literalPattern(value: string, wordBounded: boolean): RegExp {
   const body = literalVariants(value).map(escapeRegExp).join('|');
   return wordBounded
     ? new RegExp(`(?<![A-Za-z0-9_.-])(?:${body})(?![A-Za-z0-9_-])`, 'gi')

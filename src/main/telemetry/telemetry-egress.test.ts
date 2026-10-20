@@ -80,6 +80,7 @@ vi.mock('../services/log-service', () => ({
 
 import { disableTelemetry, getActiveDestinations, initTelemetry, recordAppSession, sendTestEvent, whenStarted } from './bootstrap';
 import { tel } from './facade';
+import { diag, isDiagActive } from './diag';
 import { createAzureExporters, isOneSettingsNeutralized, STATSBEAT_ENV_FLAGS } from './destinations/azure';
 import { createOtlpExporters } from './destinations/otlp';
 import { TEST_AZURE_HOST_ENV } from './settings';
@@ -200,8 +201,12 @@ function assertOnlyConfiguredHost(): void {
   for (const h of lookups) expect(['127.0.0.1', 'localhost']).toContain(h);
 }
 
+const DIAG_CANARY = 'DIAG-CANARY-2299';
+
 function assertNoMachineIdentifiers(): void {
   const all = received.map((r) => r.body).join('\n');
+  // Local-only diag lines (#2299) never reach an exporter.
+  expect(all).not.toContain(DIAG_CANARY);
   expect(all).not.toContain(os.hostname());
   expect(all).not.toContain(os.homedir());
   expect(all).not.toContain(JSON.stringify(os.homedir()).slice(1, -1));
@@ -211,6 +216,9 @@ async function exerciseAllSignals(): Promise<void> {
   initTelemetry();
   expect(await whenStarted()).toBe(true);
   recordAppSession();
+  // Recorded locally while the exporter runs, then flushed with it below.
+  expect(isDiagActive()).toBe(true);
+  diag('core:test', 'error', `${DIAG_CANARY} failed`, { error: new Error(DIAG_CANARY), lastOutput: DIAG_CANARY });
   tel.exception(new Error(`failed reading ${os.homedir()}/secret on ${os.hostname()}`), { origin: 'main', handled: true });
   for (const id of getActiveDestinations().map((d) => d.id)) {
     const result = await sendTestEvent(id, 10_000);

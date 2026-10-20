@@ -1,7 +1,9 @@
 /**
  * Starts and stops local telemetry recording (spec §6.12) from the logging
- * settings: it runs while `enabled` and `telemetryRecording` are both on,
- * whatever the export settings say. No OpenTelemetry imports.
+ * settings, whatever the export settings say. The recorder runs while
+ * `enabled` is on and always takes diag lines (#2299); it records the
+ * telemetry signals, and is installed in the facade, only while
+ * `telemetryRecording` is on too. No OpenTelemetry imports.
  */
 import * as os from 'os';
 import * as path from 'path';
@@ -10,6 +12,7 @@ import { app } from 'electron';
 import * as logSettings from '../services/log-settings';
 import { LOG_RETENTION_TIERS, type LocalTelemetryLevel, type LoggingSettings } from '../../shared/types';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
+import { getDiagSink, setDiagSink } from './diag-sink';
 import { getLocalSink, setLocalSink } from './facade';
 import { isValidIdentity } from './ids';
 import { createLocalRecorder, type LocalRecorder } from './local-recorder';
@@ -99,6 +102,11 @@ export function isLocalRecordingWanted(settings: LoggingSettings = logSettings.g
   return settings.enabled !== false && settings.telemetryRecording !== false;
 }
 
+/** Diag lines follow `enabled` only (#2299). */
+export function isDiagRecordingWanted(settings: LoggingSettings = logSettings.getSettings()): boolean {
+  return settings.enabled !== false;
+}
+
 /**
  * The install's hash salt when one exists, so local hashes match exported
  * ones. Otherwise a salt for this run only: local recording never creates
@@ -114,7 +122,7 @@ function hashSalt(): Buffer {
   return randomBytes(32);
 }
 
-function start(level: LocalTelemetryLevel): void {
+function start(level: LocalTelemetryLevel, signals: boolean): void {
   let username: string | undefined;
   try {
     username = os.userInfo().username;
@@ -127,12 +135,14 @@ function start(level: LocalTelemetryLevel): void {
     // Milliseconds kept, so a recorder restarted within a second gets its own file.
     fileBase: now.toISOString().replace(/:/g, '-').replace(/Z$/, ''),
     level,
+    signals,
     hashSalt: hashSalt(),
     scrub: createScrubber({ homeDir: os.homedir(), username, hostname: os.hostname() }),
     session: { appVersion: app.getVersion(), platform: process.platform, arch: process.arch },
     onRotate: () => void runRetention(),
   });
-  setLocalSink(recorder);
+  if (signals) setLocalSink(recorder);
+  setDiagSink(recorder);
   // Hourly while recording, so a run that lasts days is pruned as it goes.
   retentionTimer = setInterval(() => void runRetention(), RETENTION_INTERVAL_MS);
   retentionTimer.unref?.();
@@ -145,6 +155,7 @@ async function stop(): Promise<void> {
   if (retentionTimer) clearInterval(retentionTimer);
   retentionTimer = null;
   if (getLocalSink() === r) setLocalSink(null);
+  if (getDiagSink() === r) setDiagSink(null);
   await r.stop().catch(() => {});
 }
 
@@ -156,16 +167,17 @@ export async function syncLocalRecording(settings?: LoggingSettings): Promise<vo
   try {
     if (stopping) await stopping;
     const current = migrateLocalLevel(settings ?? logSettings.getSettings());
-    const wanted = isLocalRecordingWanted(current);
+    const wanted = isDiagRecordingWanted(current);
+    const signals = isLocalRecordingWanted(current);
     const level = localRecordingLevel(current);
-    // A level change starts a new recorder (and file) at the new level.
-    if (recorder && (!wanted || recorder.level !== level)) {
+    // A level change, or signals turning on or off, starts a new recorder (and file).
+    if (recorder && (!wanted || recorder.level !== level || recorder.signals !== signals)) {
       stopping = stop().finally(() => {
         stopping = null;
       });
       await stopping;
     }
-    if (wanted && !recorder) start(level);
+    if (wanted && !recorder) start(level, signals);
   } catch {
     // Local recording must never break startup or a settings save.
   }

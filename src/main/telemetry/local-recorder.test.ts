@@ -351,3 +351,114 @@ describe('local telemetry recorder', () => {
     expect(h.raw()).toBe(before);
   });
 });
+
+describe('local recorder diag lines (#2299)', () => {
+  const line = (msg: string, level: 'debug' | 'info' | 'warn' | 'error' = 'info') => ({ ns: 'core:pty', level, msg });
+
+  it('writes diag lines to the same file as the signals', async () => {
+    let t = Date.parse('2026-10-19T10:00:00.000Z');
+    const h = harness({ now: () => t });
+    h.rec.event('clubhouse.telemetry.test');
+    t += 5;
+    h.rec.writeDiag({ ...line('PTY exited', 'error'), meta: { exitCode: 1 } });
+    h.rec.writeDiag({ ...line('renderer line'), window: 'popout' });
+    await h.rec.flush();
+    expect([...h.files.keys()]).toEqual([path.join('/logs', 'telemetry-run.jsonl')]);
+    const records = h.records();
+    expect(records.map((r) => r.t)).toEqual(['session', 'event', 'diag', 'diag']);
+    expect(records[2]).toEqual({ t: 'diag', ts: '2026-10-19T10:00:00.005Z', ns: 'core:pty', level: 'error', msg: 'PTY exited', meta: { exitCode: 1 } });
+    expect(records[3]).toMatchObject({ window: 'popout' });
+  });
+
+  it('rotates and evicts diag lines with the signals, under one run budget', async () => {
+    const onRotate = vi.fn();
+    const h = harness({ maxChunkBytes: 400, maxSessionBytes: 1_500, onRotate });
+    for (let round = 0; round < 10; round++) {
+      h.rec.event('clubhouse.telemetry.test');
+      for (let i = 0; i < 4; i++) h.rec.writeDiag(line(`diag ${round}.${i} ${'x'.repeat(40)}`));
+      await h.rec.flush();
+    }
+    expect(onRotate).toHaveBeenCalled();
+    expect(h.rec.files().length).toBeGreaterThan(1);
+    // Every chunk on disk is one of this run's, with mixed lines, and the oldest went.
+    const records = h.records();
+    expect(records.some((r) => r.t === 'evicted')).toBe(true);
+    expect(records.some((r) => r.t === 'event')).toBe(true);
+    expect(records.filter((r) => r.t === 'diag').at(-1)).toMatchObject({ msg: expect.stringContaining('diag 9.3') });
+    expect(records.some((r) => r.t === 'diag' && r.msg.startsWith('diag 0.0'))).toBe(false);
+    const total = [...h.files.values()].reduce((n, d) => n + Buffer.byteLength(d), 0);
+    expect(total).toBeLessThanOrEqual(1_500 + 400 + 200);
+  });
+
+  it('drops debug first, then info, under its byte budget, and reports the drops', async () => {
+    const h = harness({ diagWindowBytes: 1_000 });
+    const msg = 'y'.repeat(40);
+    const writeAll = (level: 'debug' | 'info' | 'warn') => {
+      for (let i = 0; i < 20; i++) h.rec.writeDiag(line(`${level} ${msg}`, level));
+    };
+    writeAll('debug');
+    writeAll('info');
+    writeAll('warn');
+    await h.rec.flush();
+    const diag = h.records().filter((r) => r.t === 'diag');
+    const bytes = (lvl: string) => diag.filter((r) => r.level === lvl).length;
+    // ~90 bytes a line: debug stops near half the budget, info near 80 %, warn uses the rest.
+    expect(bytes('debug')).toBeGreaterThan(0);
+    expect(bytes('debug')).toBeLessThanOrEqual(6);
+    expect(bytes('info')).toBeGreaterThan(0);
+    expect(bytes('warn')).toBeGreaterThan(0);
+    const written = h.records().filter((r) => r.t === 'diag').reduce((n, r) => n + JSON.stringify(r).length + 1, 0);
+    expect(written).toBeLessThanOrEqual(1_000);
+    expect(h.records().find((r) => r.t === 'dropped')).toMatchObject({ diag: 60 - diag.length, lines: 0 });
+  });
+
+  it('resets the diag budget with each cap window', async () => {
+    let t = 0;
+    const h = harness({ diagWindowBytes: 300, now: () => t, capsWindowMs: 1_000, flushIntervalMs: 10 });
+    for (let i = 0; i < 10; i++) h.rec.writeDiag(line(`first window ${i}`, 'error'));
+    t += 2_000;
+    await vi.waitFor(() => expect(h.records().some((r) => r.t === 'dropped')).toBe(true));
+    h.rec.writeDiag(line('second window', 'error'));
+    await h.rec.flush();
+    expect(h.records().some((r) => r.msg === 'second window')).toBe(true);
+  });
+
+  it('keeps separate pending limits, so diag and signals cannot starve each other', async () => {
+    const h = harness({ maxPendingLines: 5, maxPendingDiagLines: 3 });
+    for (let i = 0; i < 10; i++) h.rec.writeDiag(line(`d${i}`));
+    for (let i = 0; i < 10; i++) h.rec.event('clubhouse.telemetry.test');
+    await h.rec.flush();
+    const records = h.records();
+    expect(records.filter((r) => r.t === 'diag')).toHaveLength(3);
+    // The session line counts toward the signal limit.
+    expect(records.filter((r) => r.t === 'event')).toHaveLength(4);
+    expect(records.find((r) => r.t === 'dropped')).toMatchObject({ diag: 7, lines: 6 });
+  });
+
+  it('counts diag lines dropped upstream (renderer rate limit)', async () => {
+    const h = harness();
+    h.rec.noteDiagDropped(4);
+    await h.rec.flush();
+    expect(h.records().find((r) => r.t === 'dropped')).toMatchObject({ diag: 4, traces: 0, logs: 0, lines: 0 });
+  });
+
+  it('with signals off, writes no file until the first diag line, then marks the session', async () => {
+    const h = harness({ signals: false });
+    await h.rec.flush();
+    expect(h.files.size).toBe(0);
+    h.rec.writeDiag(line('only diag'));
+    await h.rec.flush();
+    expect(h.records().map((r) => r.t)).toEqual(['session', 'diag']);
+    expect(h.records()[0]).toMatchObject({ v: LOCAL_FORMAT_VERSION, signals: false });
+    expect(h.rec.signals).toBe(false);
+  });
+
+  it('writes nothing after stop', async () => {
+    const h = harness();
+    await h.rec.stop();
+    const before = h.raw();
+    h.rec.writeDiag(line('late'));
+    await h.rec.flush();
+    expect(h.raw()).toBe(before);
+  });
+});

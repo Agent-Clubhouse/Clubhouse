@@ -24,7 +24,8 @@ vi.mock('./settings', () => ({
 
 import * as path from 'path';
 import { forceFlushTelemetry, getLocalSink, isTelemetryActive, tel, telemetryLevel } from './facade';
-import { _resetLocalRecordingForTests, isLocalRecordingWanted, migrateLocalLevel, runRetention, syncLocalRecording } from './local-control';
+import { diag, getDiagSink, isDiagActive } from './diag';
+import { _resetLocalRecordingForTests, isDiagRecordingWanted, isLocalRecordingWanted, migrateLocalLevel, runRetention, syncLocalRecording } from './local-control';
 import { LOG_RETENTION_TIERS } from '../../shared/types';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 
@@ -82,6 +83,45 @@ describe('local recording control', () => {
     tel.event('clubhouse.telemetry.test');
     await forceFlushTelemetry();
     expect(fsp.appendFile).not.toHaveBeenCalled();
+  });
+
+  it('records diag lines while logging is on, even with telemetry recording off (#2299)', async () => {
+    expect(isDiagRecordingWanted({ ...base, telemetryRecording: false } as never)).toBe(true);
+    expect(isDiagRecordingWanted({ ...base, enabled: false } as never)).toBe(false);
+    logSettings.getSettings.mockReturnValue({ ...base, telemetryRecording: false });
+    await syncLocalRecording();
+    expect(getLocalSink()).toBeNull();
+    expect(isDiagActive()).toBe(true);
+    tel.event('clubhouse.telemetry.test');
+    diag('core:pty', 'error', 'PTY exited');
+    await forceFlushTelemetry();
+    const data = fsp.appendFile.mock.calls.map((c) => (c as unknown as [string, string])[1]).join('');
+    expect(data).toContain('"t":"diag"');
+    expect(data).toContain('"signals":false');
+    expect(data).not.toContain('"t":"event"');
+  });
+
+  it('writes no diag lines while logging is off', async () => {
+    logSettings.getSettings.mockReturnValue({ ...base, enabled: false });
+    await syncLocalRecording();
+    expect(isDiagActive()).toBe(false);
+    diag('core:pty', 'error', 'PTY exited');
+    await forceFlushTelemetry();
+    expect(fsp.appendFile).not.toHaveBeenCalled();
+  });
+
+  it('restarts the recorder when telemetry recording is switched, keeping diag on', async () => {
+    await syncLocalRecording();
+    const first = getDiagSink();
+    expect(getLocalSink()).toBe(first);
+    logSettings.getSettings.mockReturnValue({ ...base, telemetryRecording: false });
+    await syncLocalRecording();
+    expect(getLocalSink()).toBeNull();
+    expect(getDiagSink()).not.toBeNull();
+    expect(getDiagSink()).not.toBe(first);
+    logSettings.getSettings.mockReturnValue({ ...base, enabled: false });
+    await syncLocalRecording();
+    expect(getDiagSink()).toBeNull();
   });
 
   it('stops when logging is turned off at runtime, flushing what it had', async () => {

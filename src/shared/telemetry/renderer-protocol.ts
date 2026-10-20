@@ -20,6 +20,7 @@ import {
   type TelAttr,
   type TelemetryLevel,
 } from './attributes';
+import { DIAG_MAX_STRING_CHARS, isDiagLevel, isDiagNamespace, type DiagLevel } from './diag';
 
 export const RENDERER_PROTOCOL_VERSION = 1;
 /** Items per batch; the renderer flushes at 50, main drops anything past this. */
@@ -27,6 +28,11 @@ export const MAX_BATCH_ITEMS = 100;
 export const MAX_ATTRS_PER_ITEM = 16;
 /** Raw renderer stacks are capped here; main sanitizes them before export. */
 export const MAX_RENDERER_STACK_CHARS = 8000;
+/**
+ * A renderer diag item's `meta` is dropped when its JSON is larger than this.
+ * Main redacts and caps it again (diag.ts); this only bounds the work.
+ */
+export const MAX_RENDERER_DIAG_META_BYTES = 32 * 1024;
 /** A span longer than a day is a clock bug, not a measurement. */
 export const MAX_SPAN_DURATION_MS = 24 * 60 * 60 * 1000;
 
@@ -52,6 +58,14 @@ export type RendererItem =
       origin: 'renderer' | 'plugin';
       handled: boolean;
       attrs: TelAttr[];
+    }
+  | {
+      /** A local-only diagnostic line (spec §6.12). Never exported; main redacts it. */
+      t: 'diag';
+      ns: string;
+      level: DiagLevel;
+      msg: string;
+      meta?: Record<string, unknown>;
     };
 
 export interface RendererBatch {
@@ -70,6 +84,11 @@ export interface TelemetryState {
    * `enabled` is true for an exporter. Absent means the same as `enabled`.
    */
   producers?: boolean;
+  /**
+   * Send `diag` items: local diagnostic recording is on (logging `enabled`).
+   * Independent of `enabled`, which covers the telemetry signals only.
+   */
+  diag?: boolean;
 }
 
 export const DISABLED_STATE: TelemetryState = { enabled: false, level: null };
@@ -102,6 +121,17 @@ const TYPE_NAME = /^[A-Za-z_$][\w$.]{0,63}$/;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** `meta` from a renderer: a plain object whose JSON fits the limit, else dropped. */
+function parseDiagMeta(raw: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(raw)) return undefined;
+  try {
+    const json = JSON.stringify(raw);
+    return json.length <= MAX_RENDERER_DIAG_META_BYTES ? raw : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function finiteNumber(v: unknown): v is number {
@@ -185,6 +215,13 @@ export function parseRendererItem(raw: unknown): RendererItem | undefined {
       const origin = raw.origin === 'plugin' ? 'plugin' : 'renderer';
       return { t: 'exception', errorType, stack, origin, handled: raw.handled === true, attrs };
     }
+    case 'diag': {
+      if (!isDiagNamespace(raw.ns) || !isDiagLevel(raw.level) || typeof raw.msg !== 'string') return undefined;
+      const item: RendererItem = { t: 'diag', ns: raw.ns, level: raw.level, msg: raw.msg.slice(0, DIAG_MAX_STRING_CHARS) };
+      const meta = parseDiagMeta(raw.meta);
+      if (meta) item.meta = meta;
+      return item;
+    }
     default:
       return undefined;
   }
@@ -202,8 +239,11 @@ export function parseRendererBatch(raw: unknown): RendererItem[] {
 }
 
 export function parseTelemetryState(raw: unknown): TelemetryState {
-  if (!isRecord(raw) || raw.enabled !== true) return DISABLED_STATE;
+  if (!isRecord(raw)) return DISABLED_STATE;
+  const diag = raw.diag === true;
   const level = raw.level === 'errors' || raw.level === 'standard' || raw.level === 'detailed' ? raw.level : null;
-  if (!level) return DISABLED_STATE;
-  return typeof raw.producers === 'boolean' ? { enabled: true, level, producers: raw.producers } : { enabled: true, level };
+  if (raw.enabled !== true || !level) return diag ? { ...DISABLED_STATE, diag } : DISABLED_STATE;
+  const state: TelemetryState = typeof raw.producers === 'boolean' ? { enabled: true, level, producers: raw.producers } : { enabled: true, level };
+  if (diag) state.diag = true;
+  return state;
 }

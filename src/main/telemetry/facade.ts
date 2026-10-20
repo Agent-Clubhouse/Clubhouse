@@ -24,6 +24,7 @@ import {
   type TelAttr,
   type TelemetryLevel,
 } from '../../shared/telemetry/attributes';
+import { getDiagSink } from './diag-sink';
 import {
   NOOP_SPAN,
   errorTypeOf,
@@ -462,11 +463,14 @@ export function onIntentionalExit(listener: () => void): () => void {
 export async function forceFlushTelemetry(timeoutMs = DEFAULT_FLUSH_TIMEOUT_MS): Promise<void> {
   const rt = runtime;
   const sink = local;
-  if (!rt && !sink) return;
+  // Diag lines are flushed too (to the local file only); usually the same recorder.
+  const diagSink = getDiagSink();
+  const diagFlush = diagSink && (diagSink as unknown) !== sink ? diagSink.flush().catch(() => {}) : undefined;
+  if (!rt && !sink && !diagFlush) return;
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
-      Promise.all([rt?.forceFlush(timeoutMs), sink?.flush().catch(() => {})]),
+      Promise.all([rt?.forceFlush(timeoutMs), sink?.flush().catch(() => {}), diagFlush]),
       new Promise<void>((resolve) => {
         timer = setTimeout(resolve, timeoutMs);
       }),

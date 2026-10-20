@@ -3,10 +3,15 @@
  * to `~/.clubhouse/logs/telemetry-<start>.jsonl`, with no exporter and no
  * network. Runs whether or not an export destination is on.
  *
- * Everything written goes through the export pipeline's protections: the
+ * Every signal written goes through the export pipeline's protections: the
  * attribute registry and its formats (redaction.ts), hashed ids (ids.ts),
  * the scrubber, message-free exception types and sanitized stacks. Metrics
  * are aggregated per interval, never written per call.
+ *
+ * The recorder is also the only sink of the local-only diagnostic tier
+ * (diag.ts, #2299): `t:"diag"` lines, redacted but not scrubbed, with their
+ * own byte budget. They share the file, rotation, eviction and retention,
+ * and never reach an exporter.
  *
  * No OpenTelemetry imports: part of the main bundle.
  */
@@ -29,6 +34,7 @@ import {
   type TelemetryLevel,
 } from '../../shared/telemetry/attributes';
 import { DEFAULT_SESSION_CAPS, SessionCaps } from './caps';
+import type { DiagRecord, DiagSink } from './diag-sink';
 import { hashId } from './ids';
 import { sanitizeAttribute, type AttrValue } from './redaction';
 import { sanitizeStack, type Scrubber } from './scrubber';
@@ -47,7 +53,8 @@ import {
   type TraceIds,
 } from './types';
 
-export const LOCAL_FORMAT_VERSION = 1;
+/** 2: adds `diag` lines, `dropped.diag` and `session.signals` (#2299). */
+export const LOCAL_FORMAT_VERSION = 2;
 export const LOCAL_FILE_PREFIX = 'telemetry-';
 export const LOCAL_FLUSH_INTERVAL_MS = 2_000;
 export const LOCAL_FLUSH_AT_LINES = 100;
@@ -58,6 +65,14 @@ export const LOCAL_MAX_SESSION_BYTES = 10 * 1024 * 1024;
 /** The §6.4 item caps apply per window, so a long run keeps recording its tail. */
 export const LOCAL_CAPS_WINDOW_MS = 60 * 60 * 1000;
 export const LOCAL_MAX_PENDING_LINES = 1_000;
+/** Diag lines queued at most, apart from the signal lines' limit, so neither starves the other. */
+export const LOCAL_MAX_PENDING_DIAG_LINES = 500;
+/**
+ * Diag bytes per cap window. Under pressure debug lines go first (past half
+ * the budget), then info (past 80 %); warn and above use the rest.
+ */
+export const LOCAL_DIAG_WINDOW_BYTES = 2 * 1024 * 1024;
+const DIAG_FLOOR: Record<DiagRecord['level'], number> = { debug: 0.5, info: 0.8, warn: 1, error: 1, fatal: 1 };
 /** Same per-instrument limit as the SDK's metric views. */
 export const LOCAL_METRIC_CARDINALITY_LIMIT = 200;
 
@@ -66,6 +81,12 @@ export interface LocalRecorderOptions {
   /** Run timestamp shared by this run's chunk files. */
   fileBase: string;
   level: TelemetryLevel;
+  /**
+   * Record the telemetry signals (`telemetryRecording`). False runs the
+   * recorder for diag lines only; it is then never installed as the local
+   * sink, and its file starts at the first diag line.
+   */
+  signals?: boolean;
   hashSalt: Buffer;
   scrub: Scrubber;
   session: { appVersion: string; platform: string; arch: string };
@@ -75,6 +96,8 @@ export interface LocalRecorderOptions {
   maxChunkBytes?: number;
   maxSessionBytes?: number;
   maxPendingLines?: number;
+  maxPendingDiagLines?: number;
+  diagWindowBytes?: number;
   sessionCaps?: { traces: number; logs: number };
   capsWindowMs?: number;
   /** Called after the recorder starts a new chunk (local-control runs retention then). */
@@ -87,7 +110,9 @@ export interface LocalRecorderOptions {
   unlink?: (file: string) => Promise<void>;
 }
 
-export interface LocalRecorder extends LocalTelemetrySink {
+export interface LocalRecorder extends LocalTelemetrySink, DiagSink {
+  /** False when only diag lines are recorded. */
+  readonly signals: boolean;
   /** Write any aggregated metrics and a drop summary, flush, and stop the timer. */
   stop(): Promise<void>;
   /** This run's files still on disk, oldest first; the last is being written. */
@@ -125,6 +150,9 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   const maxChunkBytes = opts.maxChunkBytes ?? LOCAL_MAX_CHUNK_BYTES;
   const maxSessionBytes = opts.maxSessionBytes ?? LOCAL_MAX_SESSION_BYTES;
   const maxPending = opts.maxPendingLines ?? LOCAL_MAX_PENDING_LINES;
+  const maxPendingDiag = opts.maxPendingDiagLines ?? LOCAL_MAX_PENDING_DIAG_LINES;
+  const diagBudget = opts.diagWindowBytes ?? LOCAL_DIAG_WINDOW_BYTES;
+  const signals = opts.signals !== false;
   const metricInterval = opts.metricIntervalMs ?? LOCAL_METRIC_INTERVAL_MS;
   const appendFile = opts.appendFile ?? ((file: string, data: string) => fsp.appendFile(file, data, 'utf-8'));
   const mkdir = opts.mkdir ?? (async (dir: string) => {
@@ -141,7 +169,13 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   const capsWindow = opts.capsWindowMs ?? LOCAL_CAPS_WINDOW_MS;
 
   let pending: string[] = [];
+  /** How many of `pending` are diag lines. */
+  let pendingDiag = 0;
   let droppedLines = 0;
+  let droppedDiag = 0;
+  /** Diag bytes queued in this cap window. */
+  let diagBytes = 0;
+  let headerWritten = false;
   let chunk = 0;
   let chunkBytes = 0;
   let stopped = false;
@@ -151,7 +185,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   /** This run's chunks on disk, oldest first, with the bytes written to each. */
   const runFiles: Array<{ file: string; bytes: number }> = [];
   const runBytes = (): number => runFiles.reduce((sum, f) => sum + f.bytes, 0);
-  const reportedDrops = { traces: 0, logs: 0, lines: 0 };
+  const reportedDrops = { traces: 0, logs: 0, lines: 0, diag: 0 };
 
   let windowStart = now();
   let capsWindowStart = windowStart;
@@ -167,7 +201,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
    */
   function push(record: Record<string, unknown>, force = false): void {
     if (stopped) return;
-    if (!force && pending.length >= maxPending) {
+    if (!force && pending.length - pendingDiag >= maxPending) {
       droppedLines++;
       return;
     }
@@ -228,6 +262,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     if (pending.length === 0) return;
     const lines = pending;
     pending = [];
+    pendingDiag = 0;
     if (!dirReady) dirReady = mkdir(opts.dir);
     try {
       await dirReady;
@@ -460,6 +495,37 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     }, ids));
   }
 
+  // --- Diag lines (local only, #2299) ---
+
+  function writeDiag(r: DiagRecord): void {
+    if (stopped) return;
+    if (pendingDiag >= maxPendingDiag) {
+      droppedDiag++;
+      return;
+    }
+    const record: Record<string, unknown> = { t: 'diag', ts: iso(now()), ns: r.ns, level: r.level, msg: r.msg };
+    if (r.meta) record.meta = r.meta;
+    if (r.window) record.window = r.window;
+    withTrace(record, als.getStore());
+    let line: string;
+    try {
+      line = JSON.stringify(record);
+    } catch {
+      droppedDiag++;
+      return;
+    }
+    const bytes = Buffer.byteLength(line, 'utf-8') + 1;
+    if (diagBytes + bytes > diagBudget * (DIAG_FLOOR[r.level] ?? 1)) {
+      droppedDiag++;
+      return;
+    }
+    writeHeader();
+    diagBytes += bytes;
+    pending.push(line);
+    pendingDiag++;
+    if (pending.length >= LOCAL_FLUSH_AT_LINES && !flushQueued) void flushLines();
+  }
+
   // --- Metrics ---
 
   function recordMetric(name: MetricName, value: number, attrs: readonly TelAttr[] | undefined): void {
@@ -521,13 +587,15 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
 
   /** A `dropped` line with what was dropped since the last one, if anything. */
   function writeDrops(): void {
-    const total = { traces: caps.dropped('traces'), logs: caps.dropped('logs'), lines: droppedLines };
+    const total = { traces: caps.dropped('traces'), logs: caps.dropped('logs'), lines: droppedLines, diag: droppedDiag };
     const delta = {
       traces: total.traces - reportedDrops.traces,
       logs: total.logs - reportedDrops.logs,
       lines: total.lines - reportedDrops.lines,
+      diag: total.diag - reportedDrops.diag,
     };
-    if (!delta.traces && !delta.logs && !delta.lines) return;
+    if (!delta.traces && !delta.logs && !delta.lines && !delta.diag) return;
+    writeHeader();
     Object.assign(reportedDrops, total);
     push({ t: 'dropped', ts: iso(now()), ...delta }, true);
   }
@@ -538,18 +606,28 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     caps = new SessionCaps(opts.sessionCaps ?? DEFAULT_SESSION_CAPS);
     reportedDrops.traces = 0;
     reportedDrops.logs = 0;
+    diagBytes = 0;
     capsWindowStart = now();
   }
 
-  push({
-    t: 'session',
-    v: LOCAL_FORMAT_VERSION,
-    ts: iso(windowStart),
-    appVersion: opts.session.appVersion,
-    platform: opts.session.platform,
-    arch: opts.session.arch,
-    level,
-  });
+  /** The session line, once, before the first record: at start when recording signals, else lazily. */
+  function writeHeader(): void {
+    if (headerWritten) return;
+    headerWritten = true;
+    const record: Record<string, unknown> = {
+      t: 'session',
+      v: LOCAL_FORMAT_VERSION,
+      ts: iso(windowStart),
+      appVersion: opts.session.appVersion,
+      platform: opts.session.platform,
+      arch: opts.session.arch,
+      level,
+    };
+    if (!signals) record.signals = false;
+    push(record, true);
+  }
+
+  if (signals) writeHeader();
 
   const timer = setInterval(() => {
     try {
@@ -564,7 +642,20 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
 
   return {
     level,
+    signals,
     wrap,
+
+    writeDiag(r) {
+      try {
+        writeDiag(r);
+      } catch {
+        // Best effort, like every recorder entry point.
+      }
+    },
+
+    noteDiagDropped(n) {
+      if (!stopped && n > 0) droppedDiag += n;
+    },
 
     count(name, value, attrs) {
       if (stopped) return;
