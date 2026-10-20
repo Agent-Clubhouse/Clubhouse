@@ -61,7 +61,7 @@ export type BrowseAction =
   | { type: 'type' };
 
 /**
- * What a key does while browsing (not typing to the agent). ⌘← and ⌘→ are
+ * What a key does while browsing (not typing to the agent). ⌥⌘← and ⌥⌘→ are
  * global commands in the manifest, so they are not handled here.
  */
 export function browseAction(e: { key: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean }): BrowseAction | null {

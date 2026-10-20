@@ -43,9 +43,9 @@ describe('review manifest', () => {
     const prev = cmds.find((c) => c.id === 'review-prev');
     const next = cmds.find((c) => c.id === 'review-next');
     expect(prev).toBeDefined();
-    expect(prev!.defaultBinding).toBe('Meta+ArrowLeft');
+    expect(prev!.defaultBinding).toBe('Meta+Alt+ArrowLeft');
     expect(next).toBeDefined();
-    expect(next!.defaultBinding).toBe('Meta+ArrowRight');
+    expect(next!.defaultBinding).toBe('Meta+Alt+ArrowRight');
   });
 
   it('contributes include-sleeping boolean setting defaulting to true', () => {

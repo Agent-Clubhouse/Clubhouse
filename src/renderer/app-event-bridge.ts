@@ -20,10 +20,7 @@ import { useHelperStartRequestStore } from './stores/helperStartRequestStore';
 import { useToastStore } from './stores/toastStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useClubhouseModeStore } from './stores/clubhouseModeStore';
-import { useCommandPaletteStore } from './stores/commandPaletteStore';
-import { useKeyboardShortcutsStore, eventToBinding } from './stores/keyboardShortcutsStore';
-import { getCommandActions } from './features/command-palette/command-actions';
-import { pluginHotkeyRegistry } from './plugins/plugin-hotkeys';
+import { handleShortcutKeydown } from './shortcut-dispatch';
 import { pluginEventBus } from './plugins/plugin-events';
 import { useAppCanvasStore, getProjectCanvasStore, hasProjectCanvasStore, getKnownProjectIds } from './plugins/builtin/canvas/main';
 import { applyCanvasMutation } from './plugins/builtin/canvas/canvas-sync';
@@ -671,49 +668,8 @@ function initStaleStatusCleanup(): () => void {
 // ─── Keyboard Shortcut Dispatcher ───────────────────────────────────────────
 
 function initKeyboardShortcuts(): () => void {
-  const handler = (e: KeyboardEvent) => {
-    // Skip if recording a new binding in settings
-    if (useKeyboardShortcutsStore.getState().editingId) return;
-
-    const binding = eventToBinding(e);
-    if (!binding) return;
-
-    const target = e.target as HTMLElement | null;
-    const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' ||
-      target?.isContentEditable || target?.closest?.('[contenteditable]') != null ||
-      target?.closest?.('.monaco-editor') != null;
-
-    // Find matching system shortcut
-    const { shortcuts } = useKeyboardShortcutsStore.getState();
-    const matched = Object.values(shortcuts).find((s) => s.currentBinding === binding);
-
-    if (matched) {
-      const actions = getCommandActions();
-      const action = actions.find((a) => a.id === matched.id);
-      if (!action) return;
-
-      // Guard: skip non-global shortcuts when focus is in a text input
-      if (isTextInput && !action.global) return;
-      // Guard: skip non-palette shortcuts when palette is open
-      if (useCommandPaletteStore.getState().isOpen && matched.id !== 'command-palette') return;
-
-      e.preventDefault();
-      action.execute();
-      return;
-    }
-
-    // Check plugin hotkeys (system shortcuts take priority — first claimer wins)
-    const pluginShortcut = pluginHotkeyRegistry.findByBinding(binding);
-    if (pluginShortcut) {
-      if (isTextInput && !pluginShortcut.global) return;
-      if (useCommandPaletteStore.getState().isOpen) return;
-
-      e.preventDefault();
-      pluginShortcut.handler();
-    }
-  };
-  window.addEventListener('keydown', handler);
-  return () => window.removeEventListener('keydown', handler);
+  window.addEventListener('keydown', handleShortcutKeydown);
+  return () => window.removeEventListener('keydown', handleShortcutKeydown);
 }
 
 // ─── Annex Lock State Listener ──────────────────────────────────────────────

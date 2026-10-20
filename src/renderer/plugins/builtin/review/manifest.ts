@@ -18,9 +18,10 @@ export const manifest: PluginManifest = {
   contributes: {
     tab: { label: 'Review', title: 'Review', icon: TAB_ICON, layout: 'full' },
     railItem: { label: 'Review', title: 'Review', icon: STACK_SWIPE_ICON, position: 'top' },
+    // Not Cmd+Left/Right: those are line start/end in every text field, and these are global (#2314).
     commands: [
-      { id: 'review-prev', title: 'Previous Agent', defaultBinding: 'Meta+ArrowLeft', global: true },
-      { id: 'review-next', title: 'Next Agent', defaultBinding: 'Meta+ArrowRight', global: true },
+      { id: 'review-prev', title: 'Previous Agent', defaultBinding: 'Meta+Alt+ArrowLeft', global: true },
+      { id: 'review-next', title: 'Next Agent', defaultBinding: 'Meta+Alt+ArrowRight', global: true },
     ],
     settings: [
       {
@@ -59,7 +60,7 @@ export const manifest: PluginManifest = {
             '- **Left / Right** or **J / K** move between agents.',
             '- **1** to **9** jump to an agent, and **G** opens the jump list.',
             '- **S** puts the agent to sleep, and **W** wakes a sleeping one.',
-            '- **Return** hands the keyboard to the agent. **Cmd+Left** and **Cmd+Right** move on and go back to browsing, from anywhere in the app.',
+            '- **Return** hands the keyboard to the agent. **Cmd+Option+Left** and **Cmd+Option+Right** (**Ctrl+Alt+Left** and **Ctrl+Alt+Right** on Windows and Linux) move on and go back to browsing, from anywhere in the app, even while typing. Cmd+Left and Cmd+Right stay with the text you are editing.',
             '',
             '### Filters',
             '- **Needs you only** shows agents waiting on you. Opening Review from Needs you turns it on for that visit only.',

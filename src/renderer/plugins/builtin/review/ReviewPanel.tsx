@@ -16,7 +16,7 @@ import { reportChromeActionFailed } from '../../../chrome/telemetry';
 /**
  * Review (#2021): one agent at a time behind a 32px toolbar, with a hint row
  * for the single keys that work while browsing. Return hands the keyboard to
- * the agent; ⌘← and ⌘→ move on and come back to browsing.
+ * the agent; ⌥⌘← and ⌥⌘→ move on and come back to browsing.
  */
 
 /** The last app launch this view applied, so a remount doesn't reapply an old one. */
@@ -190,7 +190,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     setCurrentIndex(index);
   }, [agents.length, browse]);
 
-  // ⌘← / ⌘→ (manifest commands) work from anywhere, including while typing.
+  // ⌥⌘← / ⌥⌘→ (manifest commands) work from anywhere, including while typing.
   useEffect(() => {
     reviewNav.prev = goPrev;
     reviewNav.next = goNext;
@@ -343,7 +343,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const dot = agent ? reviewDot(agent, detailedStatuses.get(agent.id)) : null;
   const navDisabled = agents.length <= 1;
   const isMac = window.clubhouse?.platform === 'darwin';
-  const cmd = isMac ? '⌘' : 'Ctrl+';
+  const cmd = isMac ? '⌥⌘' : 'Ctrl+Alt+';
 
   const toolbar = (
     <div className="h-8 flex-shrink-0 flex items-center gap-0.5 pl-1.5 pr-2.5 border-b border-surface-0 bg-ctp-base min-w-0" data-testid="review-toolbar">

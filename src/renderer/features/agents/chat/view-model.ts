@@ -352,7 +352,7 @@ export type SendAction = 'send' | 'steer' | 'stop_and_send' | 'queue';
 export interface ComposerModes {
   /** What Enter does. */
   primary: SendAction;
-  /** What Shift+Enter does, or null when there's no second action. */
+  /** What Cmd+Enter (Ctrl+Enter off macOS) does, or null when there's no second action. */
   secondary: SendAction | null;
   /** Stop (Esc) cancels the running turn. */
   canStop: boolean;
@@ -360,8 +360,8 @@ export interface ComposerModes {
 
 /**
  * Idle: Enter sends. Running: Enter steers when the driver can, otherwise
- * "Stop and send" when it can interrupt, otherwise it queues. Shift+Enter
- * queues when any queue exists.
+ * "Stop and send" when it can interrupt, otherwise it queues. Cmd+Enter
+ * (Ctrl+Enter off macOS) queues when any queue exists. Shift+Enter is always a newline.
  */
 export function composerModes(caps: ChatCapabilities | null, running: boolean): ComposerModes {
   if (!running) return { primary: 'send', secondary: null, canStop: false };

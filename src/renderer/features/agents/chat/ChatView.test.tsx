@@ -282,7 +282,7 @@ describe('ChatView composer', () => {
     expect(actions.send).not.toHaveBeenCalled();
   });
 
-  it.each(['claude', 'codex'] as const)('steers with Enter and queues with Shift+Enter during a turn (%s)', (p) => {
+  it.each(['claude', 'codex'] as const)('steers with Enter and queues with Cmd/Ctrl+Enter during a turn (%s)', (p) => {
     const { actions } = renderFixture(p, 'steer');
     expect(screen.getByTestId('chat-send-primary')).toHaveTextContent('Steer');
     expect(screen.getByTestId('chat-send-secondary')).toHaveTextContent('Queue');
@@ -290,7 +290,7 @@ describe('ChatView composer', () => {
     fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
     expect(actions.send).toHaveBeenLastCalledWith('Keep the hover delay at 300ms', 'steer');
     type('Then rebase');
-    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter', shiftKey: true });
+    fireEvent.keyDown(screen.getByLabelText('Message'), window.clubhouse.platform === 'darwin' ? { key: 'Enter', metaKey: true } : { key: 'Enter', ctrlKey: true });
     expect(actions.send).toHaveBeenLastCalledWith('Then rebase', 'queued');
   });
 

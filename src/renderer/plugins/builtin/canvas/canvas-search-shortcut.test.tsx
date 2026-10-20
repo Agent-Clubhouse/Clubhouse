@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { CanvasSearch } from './CanvasSearch';
@@ -79,11 +79,16 @@ function renderWithCanvasPanel(onSelectView = vi.fn(), viewList = views) {
   );
 }
 
+const originalPlatform = window.clubhouse.platform;
+const setPlatform = (p: string) => { (window.clubhouse as { platform: string }).platform = p; };
+
 function pressMetaF() {
+  setPlatform('darwin');
   fireEvent.keyDown(document, { key: 'f', metaKey: true });
 }
 
 function pressCtrlF() {
+  setPlatform('win32');
   fireEvent.keyDown(document, { key: 'f', ctrlKey: true });
 }
 
@@ -92,6 +97,15 @@ function pressCtrlF() {
 describe('canvas search — Cmd/Ctrl+F shortcut', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+  afterEach(() => setPlatform(originalPlatform));
+
+  it('leaves Ctrl+F (caret forward) alone on macOS (#2314)', () => {
+    renderWithCanvasPanel();
+    act(() => screen.getByTestId('canvas-workspace').focus());
+    setPlatform('darwin');
+    fireEvent.keyDown(document, { key: 'f', ctrlKey: true });
+    expect(screen.queryByTestId('canvas-search-input')).not.toBeInTheDocument();
   });
 
   it('opens search when Cmd+F is pressed with focus inside the canvas workspace', () => {
