@@ -208,6 +208,27 @@ export interface HeadlessCapable {
   buildHeadlessCommand(opts: HeadlessOpts): Promise<HeadlessCommandResult | null>;
 }
 
+/** How a transcript is read: in full, or capped for a summary. */
+export interface TranscriptReadOptions {
+  /** Read at most this many bytes; a larger file is read as its head and tail. */
+  maxBytes?: number;
+  /** Filled in by the provider for local timing logs. Counts and sizes only, never content or paths. */
+  stats?: TranscriptReadStats;
+}
+
+export interface TranscriptReadStats {
+  /** Time spent finding the transcript file. */
+  lookupMs?: number;
+  /** Time spent reading and parsing it. */
+  readMs?: number;
+  /** Paths checked (stat/readdir) while finding it. */
+  probes?: number;
+  found?: boolean;
+  fileBytes?: number;
+  bytesRead?: number;
+  truncated?: boolean;
+}
+
 /** Providers that support session listing, transcript reading, and ID extraction */
 export interface SessionCapable {
   /** List available CLI sessions for the given project directory */
@@ -219,6 +240,7 @@ export interface SessionCapable {
     sessionId: string,
     cwd: string,
     profileEnv?: Record<string, string>,
+    opts?: TranscriptReadOptions,
   ): Promise<StreamJsonEvent[] | null>;
 
   /** Extract session ID from PTY buffer output, if recognizable */

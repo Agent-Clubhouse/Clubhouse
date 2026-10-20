@@ -29,7 +29,7 @@ import { agentRegistry } from './agent-registry';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import * as fileService from './file-service';
 import * as gitService from './git-service';
-import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './session-reader';
+import { normalizeSessionEvents, buildSessionSummary, paginateEvents, SUMMARY_TRANSCRIPT_MAX_BYTES } from './session-reader';
 import { isSessionCapable, getProvider } from '../orchestrators';
 import { getAgentRuntime, isChatAgent, onChatEvent } from './agent-runtime';
 import { chatDetailedStatus } from '../../shared/chat-agent-status';
@@ -1669,7 +1669,7 @@ async function handleSessionSummaryRoute(ctx: AnnexRouteContext, match: RegExpMa
     if (!isSessionCapable(provider)) { sendJson(ctx.res, 200, null); return; }
     const cwd = config?.worktreePath || project.path;
     const profileEnv = await resolveProfileEnv(project.path, provider.id);
-    const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
+    const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv, { maxBytes: SUMMARY_TRANSCRIPT_MAX_BYTES });
     if (!rawEvents) { sendJson(ctx.res, 200, null); return; }
     const events = normalizeSessionEvents(rawEvents);
     sendJson(ctx.res, 200, buildSessionSummary(events, provider.id));

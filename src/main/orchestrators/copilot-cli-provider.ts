@@ -1,4 +1,3 @@
-import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -18,14 +17,15 @@ import {
   SessionCapable,
   AgentFileCapable,
   PERMISSION_HOOK_TIMEOUT_SEC,
+  TranscriptReadOptions,
 } from './types';
 import type { McpServerDef } from '../../shared/types';
 import { BaseProvider } from './base-provider';
-import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
+import { homePath, parseModelChoicesFromHelp, validateHookUrl, buildHookCurlCommand, mergeHookEntries, parseJsonlFile } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 import { appLog } from '../services/log-service';
 import { getShellEnvironment } from '../util/shell';
-import { copilotSessionInCwd, findCopilotRunSession, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
+import { copilotSessionInCwd, findCopilotRunSession, findCopilotTranscript, hasCopilotSession, listCopilotSessions } from './copilot-session-store';
 
 const execFileAsync = promisify(execFile);
 
@@ -359,19 +359,6 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
   // ── SessionCapable ──────────────────────────────────────────────────────
 
-  /**
-   * Resolve the Copilot CLI session directory for a given working directory.
-   *
-   * GitHub Copilot CLI stores session data under ~/.copilot/session-state/.
-   * Falls back to the flat session-state directory when no project-scoped subdir exists.
-   */
-  private resolveSessionDir(cwd: string, profileEnv?: Record<string, string>): string | null {
-    const sessionDir = this.sessionStateDir(profileEnv);
-    if (!fs.existsSync(sessionDir)) return null;
-    // Return project-scoped subdir if found, else fall back to flat session-state dir
-    return resolveEncodedPathDir(sessionDir, cwd) ?? sessionDir;
-  }
-
   /** `<COPILOT_HOME>/session-state`, where Copilot keeps one directory per session. */
   private sessionStateDir(profileEnv?: Record<string, string>): string {
     return path.join(resolveCopilotHome(profileEnv), 'session-state');
@@ -414,65 +401,30 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
   /**
    * Read a historical session transcript from Copilot CLI's session storage.
    * Returns raw StreamJsonEvent[] or null if session not found.
+   *
+   * Looks the session up by id (#2277): the store holds every Copilot session
+   * on the machine, so scanning it on each read stalled the main process.
    */
   async readSessionTranscript(
     sessionId: string,
     cwd: string,
     profileEnv?: Record<string, string>,
+    opts: TranscriptReadOptions = {},
   ): Promise<import('../services/jsonl-parser').StreamJsonEvent[] | null> {
-    const sessionDir = this.resolveSessionDir(cwd, profileEnv);
-    if (!sessionDir) return null;
-
-    // Search for session file in the session directory and subdirectories
-    const searchPaths = [
-      path.join(sessionDir, `${sessionId}.jsonl`),
-      path.join(sessionDir, `${sessionId}.json`),
-    ];
-
-    // Also check project-scoped subdirectories
-    try {
-      const topEntries = await fsp.readdir(sessionDir, { withFileTypes: true });
-      for (const entry of topEntries) {
-        if (entry.isDirectory()) {
-          searchPaths.push(
-            path.join(sessionDir, entry.name, `${sessionId}.jsonl`),
-            path.join(sessionDir, entry.name, `${sessionId}.json`),
-          );
-        }
-      }
-    } catch {
-      // Can't list subdirectories — just use top-level paths
+    const { stats } = opts;
+    const lookupStart = performance.now();
+    const counter = { probes: 0 };
+    const filePath = await findCopilotTranscript(this.sessionStateDir(profileEnv), sessionId, cwd, counter);
+    if (stats) {
+      stats.lookupMs = performance.now() - lookupStart;
+      stats.probes = counter.probes;
+      stats.found = !!filePath;
     }
-
-    let filePath: string | null = null;
-    for (const p of searchPaths) {
-      if (fs.existsSync(p)) {
-        filePath = p;
-        break;
-      }
-    }
-
-    // Check for directory-style sessions (session ID as folder name)
-    if (!filePath) {
-      const dirPath = path.join(sessionDir, sessionId);
-      if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
-        try {
-          const entries = await fsp.readdir(dirPath);
-          const jsonlFile = entries.find((e) => e.endsWith('.jsonl'));
-          if (jsonlFile) {
-            filePath = path.join(dirPath, jsonlFile);
-          }
-        } catch (err) {
-          appLog('core:orchestrator', 'warn', 'Failed to read GHCP session directory entries', {
-            meta: { dirPath, error: err instanceof Error ? err.message : String(err) },
-          });
-        }
-      }
-    }
-
     if (!filePath) return null;
 
-    const events = await parseJsonlFile(filePath);
+    const readStart = performance.now();
+    const events = await parseJsonlFile(filePath, opts);
+    if (stats) stats.readMs = performance.now() - readStart;
     if (!events) {
       appLog('core:orchestrator', 'warn', 'Failed to read GHCP session transcript', {
         meta: { filePath },

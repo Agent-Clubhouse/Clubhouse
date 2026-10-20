@@ -63,6 +63,7 @@ vi.mock('../services/agent-system', () => ({
   isHeadlessAgent: vi.fn(() => false),
   getRunningAgentIds: vi.fn((ids: string[]) => ids.filter((id) => id === 'running_one')),
   isAgentRunning: vi.fn(() => false),
+  resolveProfileEnv: vi.fn(async () => undefined),
 }));
 
 vi.mock('../services/agent-runtime', () => ({
@@ -1044,6 +1045,47 @@ describe('agent-handlers', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe('GET_SESSION_SUMMARY (#2277)', () => {
+    const SECRET = 'TOP-SECRET-SESSION-CONTENT';
+    const provider = {
+      id: 'copilot-cli',
+      getCapabilities: () => ({ sessionResume: true }),
+      listSessions: vi.fn(async () => []),
+      extractSessionId: vi.fn(() => null),
+      readSessionTranscript: vi.fn(async (_id: string, _cwd: string, _env: unknown, opts?: { stats?: Record<string, unknown> }) => {
+        Object.assign(opts!.stats!, { lookupMs: 1.4, readMs: 2.6, probes: 2, found: true, fileBytes: 10, bytesRead: 10 });
+        return [{ type: 'result', result: SECRET, timestamp: Date.now() }];
+      }),
+    };
+
+    it('caps the transcript read and logs per-stage timing at debug, without content', async () => {
+      vi.mocked(agentSystem.resolveOrchestrator).mockResolvedValueOnce(provider as never);
+      const summary = await handlers.get(IPC.AGENT.GET_SESSION_SUMMARY)!({}, '/project', 'agent-1', 'sess-uuid-1', 'copilot-cli');
+      expect(summary.summary).toBe(SECRET);
+
+      const opts = provider.readSessionTranscript.mock.calls[0][3];
+      expect(opts?.stats).toBeDefined();
+      expect((opts as { maxBytes?: number }).maxBytes).toBeGreaterThan(0);
+
+      const call = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Session summary timing');
+      expect(call?.[1]).toBe('debug');
+      const meta = call![3]!.meta!;
+      expect(meta).toMatchObject({ provider: 'copilot-cli', probes: 2, lookupMs: 1, readMs: 3, rawEvents: 1 });
+      for (const k of ['resolveMs', 'transcriptMs', 'summarizeMs', 'totalMs']) expect(typeof meta[k]).toBe('number');
+      const logged = JSON.stringify(meta);
+      expect(logged).not.toContain(SECRET);
+      expect(logged).not.toContain('sess-uuid-1');
+      expect(logged).not.toContain('/project');
+    });
+
+    it('still logs timing when the session is missing', async () => {
+      vi.mocked(agentSystem.resolveOrchestrator).mockResolvedValueOnce({ ...provider, readSessionTranscript: vi.fn(async () => null) } as never);
+      expect(await handlers.get(IPC.AGENT.GET_SESSION_SUMMARY)!({}, '/project', 'agent-1', 'sess-uuid-1')).toBeNull();
+      const call = vi.mocked(appLog).mock.calls.find((c) => c[2] === 'Session summary timing');
+      expect(call?.[3]?.meta).toMatchObject({ provider: 'copilot-cli' });
     });
   });
 });

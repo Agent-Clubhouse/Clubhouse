@@ -14,6 +14,7 @@ import {
   HeadlessCapable,
   SessionCapable,
   PERMISSION_HOOK_TIMEOUT_SEC,
+  TranscriptReadOptions,
 } from './types';
 import { BaseProvider } from './base-provider';
 import { homePath, validateHookUrl, buildHookCurlCommand, mergeHookEntries, resolveEncodedPathDir, parseJsonlFile } from './shared';
@@ -363,6 +364,7 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
     sessionId: string,
     cwd: string,
     profileEnv?: Record<string, string>,
+    opts?: TranscriptReadOptions,
   ): Promise<import('../services/jsonl-parser').StreamJsonEvent[] | null> {
     const projectDir = this.resolveProjectDir(cwd, profileEnv);
 
@@ -405,7 +407,7 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
 
     if (!jsonlPath) return null;
 
-    const events = await parseJsonlFile(jsonlPath);
+    const events = await parseJsonlFile(jsonlPath, opts);
     if (!events) {
       appLog('core:orchestrator', 'warn', 'Failed to read session transcript', {
         meta: { jsonlPath },

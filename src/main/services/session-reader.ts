@@ -212,6 +212,13 @@ export function normalizeSessionEvents(rawEvents: StreamJsonEvent[]): SessionEve
 }
 
 /**
+ * Most of a transcript read for a summary (#2277). Larger ones are read as
+ * head and tail, so the summary keeps its start, latest result and last reply
+ * but undercounts tools and files from the middle.
+ */
+export const SUMMARY_TRANSCRIPT_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
  * Build an aggregated summary from normalized events.
  */
 export function buildSessionSummary(events: SessionEvent[], orchestrator?: string): SessionSummary {

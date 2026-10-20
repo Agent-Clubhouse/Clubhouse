@@ -246,3 +246,57 @@ export async function copilotSessionInCwd(stateDir: string, sessionId: string, c
   if (!ws?.cwd) return undefined;
   return sameCwd(ws.cwd, cwdForms(cwd));
 }
+
+/** Paths that can hold `sessionId`'s transcript, in the order they're tried. */
+function transcriptCandidates(stateDir: string, sessionId: string, cwd: string): string[] {
+  const encoded = path.resolve(cwd).replace(/[/\\]/g, '-');
+  const out = [
+    // Copilot 1.0.x: one directory per session
+    path.join(stateDir, sessionId, 'events.jsonl'),
+    // Older versions: flat files, at the root or under a dash-encoded cwd
+    path.join(stateDir, `${sessionId}.jsonl`),
+    path.join(stateDir, `${sessionId}.json`),
+  ];
+  for (const sub of new Set([encoded, encoded.replace(/^-/, '')])) {
+    out.push(path.join(stateDir, sub, `${sessionId}.jsonl`), path.join(stateDir, sub, `${sessionId}.json`));
+  }
+  return out;
+}
+
+async function isFile(p: string): Promise<boolean> {
+  try {
+    return (await fsp.stat(p)).isFile();
+  } catch {
+    // telemetry-exempt: not there
+    return false;
+  }
+}
+
+/**
+ * The transcript file for `sessionId`, found by its id rather than by scanning
+ * the store (#2277): a fixed handful of stats, plus one readdir of the
+ * session's own directory when it has no events.jsonl. `probes` counts them.
+ * null when there's none, or the id isn't a single path segment.
+ */
+export async function findCopilotTranscript(
+  stateDir: string,
+  sessionId: string,
+  cwd: string,
+  counter: { probes: number } = { probes: 0 },
+): Promise<string | null> {
+  if (!sessionId || sessionId !== path.basename(sessionId) || sessionId.startsWith('.')) return null;
+  for (const p of transcriptCandidates(stateDir, sessionId, cwd)) {
+    counter.probes++;
+    if (await isFile(p)) return p;
+  }
+  // A session directory whose transcript has another name
+  const dir = path.join(stateDir, sessionId);
+  counter.probes++;
+  try {
+    const jsonl = (await fsp.readdir(dir)).find((e) => e.endsWith('.jsonl'));
+    return jsonl ? path.join(dir, jsonl) : null;
+  } catch {
+    // telemetry-exempt: no such session directory
+    return null;
+  }
+}
