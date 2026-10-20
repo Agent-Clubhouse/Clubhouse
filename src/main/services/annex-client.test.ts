@@ -106,7 +106,7 @@ vi.mock('https', async (importOriginal) => {
 });
 
 import * as annexClient from './annex-client';
-import { setRuntime } from '../telemetry/facade';
+import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../telemetry/types';
 import * as annexPeers from './annex-peers';
 import * as annexIdentity from './annex-identity';
@@ -1401,7 +1401,7 @@ describe('annex-client', () => {
 
       const tc = '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01';
       const flows: string[] = [];
-      setRuntime({
+      setProducingRuntime({
         level: 'standard',
         flow: (name: string, _o: unknown, fn: () => unknown) => { flows.push(name); return fn(); },
         traceparent: () => tc,
@@ -1412,7 +1412,7 @@ describe('annex-client', () => {
         annexClient.sendToSatellite('PP:QQ:RR:SS', { type: 'agent:spawn', payload: { projectId: 'p', prompt: 'x' } });
         annexClient.sendToSatellite('PP:QQ:RR:SS', { type: 'pty:input', payload: { data: 'y' } });
       } finally {
-        setRuntime(null);
+        setProducingRuntime(null);
       }
       annexClient.sendToSatellite('PP:QQ:RR:SS', { type: 'agent:wake', payload: { agentId: 'a' } });
 

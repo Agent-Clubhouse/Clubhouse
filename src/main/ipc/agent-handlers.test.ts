@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ATTR } from '../../shared/telemetry/attributes';
-import { setRuntime } from '../telemetry/facade';
+import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import { errorTypeOf, type Classification, type TelemetryRuntime } from '../telemetry/types';
 
 vi.mock('electron', () => ({
@@ -275,7 +275,7 @@ describe('agent-handlers', () => {
     let flows: Flow[];
     beforeEach(() => {
       flows = [];
-      setRuntime({
+      setProducingRuntime({
         level: 'standard',
         flow: (name: string, opts: { attrs?: unknown[] }, fn: () => unknown, extras?: { classify?: (r: unknown) => Classification }) => {
           const f: Flow = { name, attrs: [...(opts.attrs ?? [])] };
@@ -289,7 +289,7 @@ describe('agent-handlers', () => {
         count: vi.fn(),
       } as unknown as TelemetryRuntime);
     });
-    afterEach(() => setRuntime(null));
+    afterEach(() => setProducingRuntime(null));
 
     it('classifies deletes by result and mode', async () => {
       vi.mocked(agentConfig.deleteForce).mockResolvedValueOnce({ ok: false, message: 'dirty worktree' });

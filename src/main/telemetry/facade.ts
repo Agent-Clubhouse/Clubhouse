@@ -13,7 +13,17 @@
  * alone. Producers gate on isTelemetryActive() and telemetryLevel(), which
  * never look at export, so turning export on or off starts or stops nothing.
  */
-import type { EventName, MetricName, SpanName, TelAttr, TelemetryLevel } from '../../shared/telemetry/attributes';
+import {
+  EVENTS,
+  METRICS,
+  SPANS,
+  levelAllows,
+  type EventName,
+  type MetricName,
+  type SpanName,
+  type TelAttr,
+  type TelemetryLevel,
+} from '../../shared/telemetry/attributes';
 import {
   NOOP_SPAN,
   errorTypeOf,
@@ -42,12 +52,12 @@ let pending: Pending[] | null = null;
 let local: LocalTelemetrySink | null = null;
 
 /**
- * The parity policy's one switch. true: with local recording off, feature
- * `tel.*` calls still reach a running exporter (producers stay off either
- * way). false: local recording is the sole gate, and export only uploads
- * what local recording produces.
+ * The parity policy's one switch. false (maintainer ruling on #2289): local
+ * recording is the sole gate, and export only uploads what local recording
+ * produces, at its level. true: with local recording off, feature `tel.*`
+ * calls still reach a running exporter (producers stay off either way).
  */
-export const EXPORT_WITHOUT_LOCAL_RECORDING = true;
+export const EXPORT_WITHOUT_LOCAL_RECORDING = false;
 
 let exportWithoutLocal = EXPORT_WITHOUT_LOCAL_RECORDING;
 
@@ -56,14 +66,25 @@ export function exportsWithoutLocalRecording(): boolean {
   return exportWithoutLocal;
 }
 
-/** The runtime calls are sent to under the parity policy, if any. */
-function exportRuntime(): TelemetryRuntime | null {
-  return exportWithoutLocal || local ? runtime : null;
+/**
+ * Whether an item at `itemLevel` goes to export: only what local recording
+ * produces, so never above its level (an exporter's own level only filters
+ * down). Spans use the SDK's rule that Errors still records flows.
+ */
+function exported(itemLevel: TelemetryLevel, span = false): boolean {
+  if (!local) return exportWithoutLocal;
+  const level = span && local.level === 'errors' ? 'standard' : local.level;
+  return levelAllows(level, itemLevel);
 }
 
-/** True while startup buffering applies under the parity policy. */
-function exportPending(): boolean {
-  return pending !== null && (exportWithoutLocal || local !== null);
+/** The runtime an item at `itemLevel` is sent to under the parity policy, if any. */
+function exportRuntime(itemLevel: TelemetryLevel, span = false): TelemetryRuntime | null {
+  return runtime && exported(itemLevel, span) ? runtime : null;
+}
+
+/** True while startup buffering applies to an item at `itemLevel`. */
+function exportPending(itemLevel: TelemetryLevel, span = false): boolean {
+  return pending !== null && exported(itemLevel, span);
 }
 
 function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
@@ -170,7 +191,7 @@ export { tagError } from './types';
  * synchronous result is never wrapped in a promise.
  */
 export function withErrorType<T>(type: ErrorType, fn: () => T): T {
-  if (!exportRuntime() && !exportPending() && !local) return fn();
+  if (!local && !(exportWithoutLocal && (runtime || pending))) return fn();
   let result: T;
   try {
     result = fn();
@@ -190,9 +211,9 @@ export const tel = {
   flow<T>(name: SpanName, opts: FlowOptions, fn: (span: SpanHandle) => T, extras?: FlowExtras<T>): T {
     // The local wrapper runs inside the SDK span, so it sees the same body and result.
     const body = local ? local.wrap(name, opts, fn, extras) : fn;
-    const rt = exportRuntime();
+    const rt = exportRuntime(SPANS[name].level, true);
     if (rt) return rt.flow(name, opts, trackFlow(name, body), extras);
-    if (exportPending()) return bufferedSpan(name, opts, trackFlow(name, body), extras);
+    if (exportPending(SPANS[name].level, true)) return bufferedSpan(name, opts, trackFlow(name, body), extras);
     if (local) return trackFlow(name, body)(NOOP_SPAN);
     return fn(NOOP_SPAN);
   },
@@ -200,33 +221,34 @@ export const tel = {
   /** A child span of the active flow. */
   step<T>(name: SpanName, fn: (span: SpanHandle) => T, opts: FlowOptions = {}): T {
     const body = local ? local.wrap(name, opts, fn) : fn;
-    const rt = exportRuntime();
+    const rt = exportRuntime(SPANS[name].level, true);
     if (rt) return rt.step(name, body, opts);
-    if (exportPending()) return bufferedSpan(name, opts, body);
+    if (exportPending(SPANS[name].level, true)) return bufferedSpan(name, opts, body);
     return body(NOOP_SPAN);
   },
 
   count(name: MetricName, value = 1, attrs?: TelAttr[]): void {
     toLocal((l) => l.count(name, value, attrs));
-    const target = exportRuntime();
+    const target = exportRuntime(METRICS[name].level);
     if (target) target.count(name, value, attrs);
-    else if (exportPending()) buffer((rt) => rt.count(name, value, attrs));
+    else if (exportPending(METRICS[name].level)) buffer((rt) => rt.count(name, value, attrs));
   },
 
   event(name: EventName, attrs?: TelAttr[], opts?: EventOptions): void {
     toLocal((l) => l.event(name, attrs, opts));
     // Options only when given, so plain events keep their two-argument call shape.
     const emit = (rt: TelemetryRuntime): void => (opts ? rt.event(name, attrs, opts) : rt.event(name, attrs));
-    const target = exportRuntime();
+    const target = exportRuntime(EVENTS[name].level);
     if (target) emit(target);
-    else if (exportPending()) buffer(emit);
+    else if (exportPending(EVENTS[name].level)) buffer(emit);
   },
 
   exception(error: unknown, opts: ExceptionOptions): void {
     toLocal((l) => l.exception(error, opts));
-    const target = exportRuntime();
+    const exLevel = EVENTS['clubhouse.exception'].level;
+    const target = exportRuntime(exLevel);
     if (target) target.exception(error, opts);
-    else if (exportPending()) buffer((rt) => rt.exception(error, opts));
+    else if (exportPending(exLevel)) buffer((rt) => rt.exception(error, opts));
   },
 };
 
@@ -236,17 +258,20 @@ export const tel = {
  */
 export function replaySpan(span: ReplaySpan): void {
   toLocal((l) => l.replaySpan(span));
-  const target = exportRuntime();
+  const target = exportRuntime(SPANS[span.name].level, true);
   if (target) target.replaySpan(span);
-  else if (exportPending()) buffer((rt) => rt.replaySpan(span));
+  else if (exportPending(SPANS[span.name].level, true)) buffer((rt) => rt.replaySpan(span));
 }
 
 /** Record a root span and its children with explicit times (startup, shutdown). */
 export function replaySpanTree(tree: ReplayTree): void {
   toLocal((l) => l.replayTree(tree));
-  const target = exportRuntime();
-  if (target) target.replayTree(tree);
-  else if (exportPending()) buffer((rt) => rt.replayTree(tree));
+  const target = exportRuntime(SPANS[tree.root.name].level, true);
+  if (!target && !exportPending(SPANS[tree.root.name].level, true)) return;
+  // Children above the local level are not produced, so not exported either.
+  const sent: ReplayTree = { root: tree.root, children: tree.children.filter((c) => exported(SPANS[c.name].level, true)) };
+  if (target) target.replayTree(sent);
+  else buffer((rt) => rt.replayTree(sent));
 }
 
 /**

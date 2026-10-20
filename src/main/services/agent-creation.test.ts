@@ -61,7 +61,7 @@ vi.mock('./agent-system', () => ({
 
 import * as fsp from 'fs/promises';
 import { execFile } from 'child_process';
-import { setRuntime } from '../telemetry/facade';
+import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../telemetry/types';
 import {
   INTERRUPTED_CREATION_REASON,
@@ -141,7 +141,7 @@ beforeEach(() => {
 
 afterEach(() => {
   unsubscribe();
-  setRuntime(null);
+  setProducingRuntime(null);
 });
 
 describe('createDurable worktree options (#2226)', () => {
@@ -457,7 +457,7 @@ describe('startDurableCreation (#2226)', () => {
 
   it('records the worktree creation as a step of the clubhouse.agent.create flow', async () => {
     const spans: string[] = [];
-    setRuntime({
+    setProducingRuntime({
       level: 'standard',
       flow: (name: string, _opts: unknown, fn: (s: unknown) => unknown) => { spans.push(`flow:${name}`); return fn({ set: () => {} }); },
       step: (name: string, fn: (s: unknown) => unknown) => { spans.push(`step:${name}`); return fn({ set: () => {} }); },
@@ -472,7 +472,7 @@ describe('startDurableCreation (#2226)', () => {
 
   it('records a refused request in the clubhouse.agent.create flow, typed validation', async () => {
     const flows: Array<{ name: string; thrown?: unknown }> = [];
-    setRuntime({
+    setProducingRuntime({
       level: 'standard',
       flow: (name: string, _opts: unknown, fn: (s: unknown) => unknown) => {
         const f: { name: string; thrown?: unknown } = { name };

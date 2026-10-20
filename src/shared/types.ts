@@ -1170,7 +1170,17 @@ export interface LoggingSettings {
    * Missing in files from before #2278; treated as on.
    */
   telemetryRecording?: boolean;
+  /**
+   * Detail level of local telemetry recording, which is also the most any
+   * export destination can send (spec §6.12). Detailed adds per-IPC and agent
+   * tool-call spans. Missing means Standard.
+   */
+  telemetryLevel?: LocalTelemetryLevel;
+  /** Set once the one-time level migration from export settings has run (#2289). */
+  telemetryLevelMigrated?: boolean;
 }
+
+export type LocalTelemetryLevel = 'standard' | 'detailed';
 
 /** Built-in theme IDs. Plugin themes use arbitrary string IDs prefixed with `plugin:`. */
 export type BuiltinThemeId =

@@ -7,7 +7,8 @@ import * as fsp from 'fs/promises';
 import * as logSettings from './log-settings';
 import { appLog, flush } from './log-service';
 import { ATTR } from '../../shared/telemetry/attributes';
-import { abortPending, setRuntime } from '../telemetry/facade';
+import { abortPending } from '../telemetry/facade';
+import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import { LOG_LEVEL_SEVERITY } from '../telemetry/log-bridge';
 import type { TelemetryRuntime } from '../telemetry/types';
 
@@ -39,13 +40,13 @@ beforeEach(async () => {
   vi.mocked(logSettings.getSettings).mockReturnValue({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info' });
 });
 afterEach(() => {
-  setRuntime(null);
+  setProducingRuntime(null);
   abortPending();
 });
 
 describe('appLog telemetry bridge', () => {
   it('exports only the declared event and attributes, never the message or meta', () => {
-    setRuntime(runtime());
+    setProducingRuntime(runtime());
     appLog('core:config-pipeline', 'error', 'Failed to restore /Users/alice/repo/.claude/settings.json', {
       meta: { filePath: '/Users/alice/repo/.claude/settings.json', error: 'EACCES' },
       telemetry: { event: 'clubhouse.config.restore_failed', attrs: [ATTR.configFormat('json')] },
@@ -55,13 +56,13 @@ describe('appLog telemetry bridge', () => {
   });
 
   it('does not export appLog calls without a telemetry field', () => {
-    setRuntime(runtime());
+    setProducingRuntime(runtime());
     appLog('core:x', 'error', 'boom', { meta: { a: 1 } });
     expect(events).toEqual([]);
   });
 
   it('maps levels to severity and never exports debug', () => {
-    setRuntime(runtime());
+    setProducingRuntime(runtime());
     for (const level of ['debug', 'info', 'warn', 'error', 'fatal'] as const) {
       appLog('core:x', level, 'm', { telemetry: { event: 'clubhouse.annex.heartbeat_timeout' } });
     }
@@ -70,7 +71,7 @@ describe('appLog telemetry bridge', () => {
   });
 
   it('bridges even when local logging is off, and the local filters are unchanged', async () => {
-    setRuntime(runtime());
+    setProducingRuntime(runtime());
     vi.mocked(logSettings.getSettings).mockReturnValue({ enabled: false, namespaces: {}, retention: 'medium', minLogLevel: 'info' });
     appLog('core:annex-client', 'warn', 'Heartbeat pong timeout', { telemetry: { event: 'clubhouse.annex.heartbeat_timeout' } });
     expect(events).toHaveLength(1);
@@ -78,7 +79,7 @@ describe('appLog telemetry bridge', () => {
   });
 
   it('adds traceId/spanId to the local JSONL line only while a span is active', async () => {
-    setRuntime(runtime());
+    setProducingRuntime(runtime());
     appLog('core:x', 'info', 'no span');
     traceIds = { traceId: '0af7651916cd43dd8448eb211c80319c', spanId: 'b7ad6b7169203331' };
     appLog('core:x', 'info', 'in span');

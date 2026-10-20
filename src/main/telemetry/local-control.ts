@@ -8,16 +8,54 @@ import * as path from 'path';
 import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import * as logSettings from '../services/log-settings';
-import type { LoggingSettings } from '../../shared/types';
-import type { TelemetryLevel } from '../../shared/telemetry/attributes';
+import type { LocalTelemetryLevel, LoggingSettings } from '../../shared/types';
+import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 import { getLocalSink, setLocalSink } from './facade';
 import { isValidIdentity } from './ids';
 import { createLocalRecorder, type LocalRecorder } from './local-recorder';
 import { createScrubber } from './scrubber';
-import { getTelemetrySettings } from './settings';
+import { enabledDestinations, getTelemetrySettings, isExperimentEnabled } from './settings';
 
-/** Local recording keeps flows and errors; Detailed-only signals (per-IPC spans, tool calls) stay off. */
-export const LOCAL_RECORDING_LEVEL: TelemetryLevel = 'standard';
+/** The default level: flows and errors; Detailed-only signals (per-IPC spans, tool calls) stay off. */
+export const LOCAL_RECORDING_LEVEL: LocalTelemetryLevel = 'standard';
+
+/** The configured local level, which every producer and every exporter follows (spec §6.12). */
+export function localRecordingLevel(settings: LoggingSettings = logSettings.getSettings()): LocalTelemetryLevel {
+  return settings.telemetryLevel === 'detailed' ? 'detailed' : LOCAL_RECORDING_LEVEL;
+}
+
+/** True when export was set up to send Detailed data before the local level existed. */
+function exportWasDetailed(): boolean {
+  try {
+    const t = getTelemetrySettings();
+    return (
+      isExperimentEnabled() &&
+      t.consentVersion >= TELEMETRY_CONSENT_VERSION &&
+      enabledDestinations(t).some((d) => d.level === 'detailed')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One-time migration (#2289): export now sends at most the local level, so
+ * an install already exporting at Detailed starts at local Detailed and
+ * loses nothing. Runs once per install (persisted marker), whatever the
+ * outcome, so a later change by the user is never overridden. Returns the
+ * settings to use now; the save is best effort.
+ */
+export function migrateLocalLevel(settings: LoggingSettings): LoggingSettings {
+  if (settings.telemetryLevelMigrated) return settings;
+  const patch: Partial<LoggingSettings> = { telemetryLevelMigrated: true };
+  if (exportWasDetailed()) patch.telemetryLevel = 'detailed';
+  try {
+    logSettings.updateSettings((current) => ({ ...current, ...patch })).catch(() => {});
+  } catch {
+    // Not saved: the migration runs again next start, with the same result.
+  }
+  return { ...settings, ...patch };
+}
 
 let recorder: LocalRecorder | null = null;
 let stopping: Promise<void> | null = null;
@@ -41,7 +79,7 @@ function hashSalt(): Buffer {
   return randomBytes(32);
 }
 
-function start(): void {
+function start(level: LocalTelemetryLevel): void {
   let username: string | undefined;
   try {
     username = os.userInfo().username;
@@ -53,7 +91,7 @@ function start(): void {
     dir: path.join(app.getPath('home'), '.clubhouse', 'logs'),
     // Milliseconds kept, so a recorder restarted within a second gets its own file.
     fileBase: now.toISOString().replace(/:/g, '-').replace(/Z$/, ''),
-    level: LOCAL_RECORDING_LEVEL,
+    level,
     hashSalt: hashSalt(),
     scrub: createScrubber({ homeDir: os.homedir(), username, hostname: os.hostname() }),
     session: { appVersion: app.getVersion(), platform: process.platform, arch: process.arch },
@@ -76,14 +114,17 @@ async function stop(): Promise<void> {
 export async function syncLocalRecording(settings?: LoggingSettings): Promise<void> {
   try {
     if (stopping) await stopping;
-    const wanted = isLocalRecordingWanted(settings);
-    if (wanted && !recorder) start();
-    else if (!wanted && recorder) {
+    const current = migrateLocalLevel(settings ?? logSettings.getSettings());
+    const wanted = isLocalRecordingWanted(current);
+    const level = localRecordingLevel(current);
+    // A level change starts a new recorder (and file) at the new level.
+    if (recorder && (!wanted || recorder.level !== level)) {
       stopping = stop().finally(() => {
         stopping = null;
       });
       await stopping;
     }
+    if (wanted && !recorder) start(level);
   } catch {
     // Local recording must never break startup or a settings save.
   }

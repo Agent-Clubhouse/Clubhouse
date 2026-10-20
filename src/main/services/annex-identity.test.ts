@@ -29,7 +29,7 @@ vi.mock('./log-service', () => ({
 }));
 
 import { getOrCreateIdentity, getIdentity, getPublicIdentity, computeFingerprint, resetForTests, deleteIdentity } from './annex-identity';
-import { setRuntime } from '../telemetry/facade';
+import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../telemetry/types';
 import { appLog } from './log-service';
 import { app } from 'electron';
@@ -117,7 +117,7 @@ describe('annex-identity', () => {
 
     it('emits clubhouse.annex.identity.regenerated for a corrupt file and after a reset, not on first creation', () => {
       const event = vi.fn();
-      setRuntime({ level: 'standard', event } as unknown as TelemetryRuntime);
+      setProducingRuntime({ level: 'standard', event } as unknown as TelemetryRuntime);
       try {
         const filePath = path.join(tmpDir, 'annex-identity.json');
         getOrCreateIdentity(); // first creation: no event
@@ -130,7 +130,7 @@ describe('annex-identity', () => {
         expect(event.mock.calls.map((c) => c[1][0].value)).toEqual(['reset', 'corrupt']);
         expect(event.mock.calls.every((c) => c[0] === 'clubhouse.annex.identity.regenerated')).toBe(true);
       } finally {
-        setRuntime(null);
+        setProducingRuntime(null);
       }
     });
 

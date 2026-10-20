@@ -10,7 +10,9 @@ import {
   setRuntime,
   tel,
   withErrorType,
+  setLocalSink,
 } from './facade';
+import { passThroughSink } from './__test-utils__/producing-runtime';
 import { errorTypeOf, type TelemetryRuntime } from './types';
 
 function fakeRuntime(overrides: Partial<TelemetryRuntime> = {}): TelemetryRuntime {
@@ -31,6 +33,7 @@ function fakeRuntime(overrides: Partial<TelemetryRuntime> = {}): TelemetryRuntim
 
 afterEach(() => {
   setRuntime(null);
+  setLocalSink(null);
   abortPending();
 });
 
@@ -56,6 +59,8 @@ describe('telemetry facade', () => {
 
   it('buffers calls during startup and replays them in order once the runtime is set', async () => {
     beginPending();
+    // Export only receives what local recording produces (spec §6.12).
+    setLocalSink(passThroughSink('detailed'));
     tel.count('clubhouse.app.sessions', 1, [ATTR.startupKind('cold')]);
     tel.flow('clubhouse.telemetry.test', { attrs: [ATTR.process('main')] }, (span) => span.set(ATTR.errorType('timeout')));
     tel.event('clubhouse.telemetry.test');
@@ -80,6 +85,8 @@ describe('telemetry facade', () => {
 
   it('caps the startup buffer at 500 items', () => {
     beginPending();
+    // Export only receives what local recording produces (spec §6.12).
+    setLocalSink(passThroughSink('detailed'));
     for (let i = 0; i < PENDING_BUFFER_CAP + 50; i++) tel.count('clubhouse.app.sessions');
     const rt = fakeRuntime();
     setRuntime(rt);
@@ -88,6 +95,8 @@ describe('telemetry facade', () => {
 
   it('discards the buffer when startup is aborted', () => {
     beginPending();
+    // Export only receives what local recording produces (spec §6.12).
+    setLocalSink(passThroughSink('detailed'));
     tel.event('clubhouse.telemetry.test');
     abortPending();
     const rt = fakeRuntime();
@@ -97,6 +106,8 @@ describe('telemetry facade', () => {
 
   it('records buffered exceptions from failing startup flows', async () => {
     beginPending();
+    // Export only receives what local recording produces (spec §6.12).
+    setLocalSink(passThroughSink('detailed'));
     const err = new Error('nope');
     await expect(tel.flow('clubhouse.telemetry.test', {}, async () => {
       throw err;
@@ -114,6 +125,7 @@ describe('telemetry facade', () => {
     const err = new Error('x');
     expect(() => withErrorType('cwd_invalid', () => { throw err; })).toThrow(err);
     expect(errorTypeOf(err)).toBe('unknown');
+    setLocalSink(passThroughSink());
     setRuntime(fakeRuntime());
     await expect(withErrorType('cwd_invalid', () => Promise.reject(err))).rejects.toBe(err);
     expect(errorTypeOf(err)).toBe('cwd_invalid');
@@ -122,6 +134,8 @@ describe('telemetry facade', () => {
 
   it('keeps the tagged error type on buffered startup flows', async () => {
     beginPending();
+    // Export only receives what local recording produces (spec §6.12).
+    setLocalSink(passThroughSink('detailed'));
     const err = new Error('nope');
     await expect(tel.flow('clubhouse.telemetry.test', {}, () => withErrorType('cwd_invalid', async () => {
       throw err;

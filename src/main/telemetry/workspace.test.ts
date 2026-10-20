@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { classifyFsError, classifyGitFailure, classifySearchError, editorBucket, flowClassifyingThrows, stepUnderFlow } from './workspace';
-import { abortPending, setRuntime, tel } from './facade';
+import { abortPending, tel } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import { sampleWorkspace } from './workspace-gauges';
 import type { TelemetryRuntime } from './types';
 
 afterEach(() => {
-  setRuntime(null);
+  setProducingRuntime(null);
   abortPending();
 });
 
@@ -91,7 +92,7 @@ function fakeRuntime(): TelemetryRuntime & { flows: unknown[]; counts: Array<[st
 describe('flowClassifyingThrows', () => {
   it('records a specific error type and rethrows the original error', async () => {
     const rt = fakeRuntime();
-    setRuntime(rt);
+    setProducingRuntime(rt);
     const boom = Object.assign(new Error('Command failed: rg\nregex parse error'), { code: 2 });
     await expect(flowClassifyingThrows('clubhouse.search.query', {}, async () => {
       throw boom;
@@ -101,7 +102,7 @@ describe('flowClassifyingThrows', () => {
   });
 
   it('passes results through when nothing throws', async () => {
-    setRuntime(fakeRuntime());
+    setProducingRuntime(fakeRuntime());
     await expect(flowClassifyingThrows('clubhouse.search.query', {}, async () => 42, classifySearchError)).resolves.toBe(42);
   });
 });
@@ -109,7 +110,7 @@ describe('flowClassifyingThrows', () => {
 describe('sampleWorkspace', () => {
   it('records both gauges and survives a failing source', async () => {
     const rt = fakeRuntime();
-    setRuntime(rt);
+    setProducingRuntime(rt);
     await sampleWorkspace({ projectCount: async () => 7, activeWatchCount: () => 3 });
     expect(rt.counts).toEqual([['clubhouse.file_watch.active', 3], ['clubhouse.projects.count', 7]]);
     await sampleWorkspace({ projectCount: async () => { throw new Error('unreadable'); }, activeWatchCount: () => 1 });
@@ -125,7 +126,7 @@ describe('stepUnderFlow', () => {
       steps.push(name);
       return fn({ set: () => {} });
     }) as never;
-    setRuntime(rt);
+    setProducingRuntime(rt);
     expect(stepUnderFlow('clubhouse.git.worktree_add', () => 1)).toBe(1);
     expect(steps).toEqual([]);
     await tel.flow('clubhouse.project.add', {}, async () => {

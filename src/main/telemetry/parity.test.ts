@@ -15,6 +15,7 @@ import {
   EXPORT_WITHOUT_LOCAL_RECORDING,
   isTelemetryActive,
   replaySpan,
+  replaySpanTree,
   setLocalSink,
   setRuntime,
   tel,
@@ -124,6 +125,41 @@ describe('signal parity with local recording on', () => {
   });
 });
 
+describe('export level follows the local level', () => {
+  it('never sends a running exporter more detail than local recording produces', () => {
+    setLocalSink(passThroughSink('standard'));
+    const rt = fakeRuntime('detailed');
+    setRuntime(rt);
+    expect(telemetryLevel()).toBe('standard');
+    // A Detailed-only span (per-IPC) is neither produced nor exported at local Standard.
+    expect(tel.flow('clubhouse.ipc.invoke', {}, () => 1)).toBe(1);
+    expect(rt.flow).not.toHaveBeenCalled();
+    tel.flow('clubhouse.agent.spawn', {}, () => 2);
+    expect(rt.flow).toHaveBeenCalledTimes(1);
+
+    setLocalSink(passThroughSink('detailed'));
+    expect(telemetryLevel()).toBe('detailed');
+    expect(getTelemetryState()).toEqual({ enabled: true, level: 'detailed', producers: true });
+    tel.flow('clubhouse.ipc.invoke', {}, () => 3);
+    expect(rt.flow).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops replayed children above the local level', () => {
+    setLocalSink(passThroughSink('standard'));
+    const rt = fakeRuntime('detailed');
+    setRuntime(rt);
+    replaySpanTree({
+      root: { name: 'clubhouse.app.startup', startMs: 0, endMs: 10, attrs: [], outcome: 'ok' },
+      children: [
+        { name: 'clubhouse.app.startup.main_ready', startMs: 0, endMs: 5, attrs: [], outcome: 'ok' },
+        { name: 'clubhouse.ipc.invoke', startMs: 1, endMs: 2, attrs: [], outcome: 'ok' },
+      ],
+    });
+    const sent = (rt.replayTree as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(sent.children.map((c: { name: string }) => c.name)).toEqual(['clubhouse.app.startup.main_ready']);
+  });
+});
+
 describe('with local logging (or telemetry recording) off', () => {
   it('runs no producer, with export off or on', async () => {
     const none = { active: false, level: null, renderer: { producers: false, level: null } };
@@ -144,6 +180,10 @@ describe('with local logging (or telemetry recording) off', () => {
     expect(rt.event).toHaveBeenCalledTimes(1);
     expect(rt.flow).toHaveBeenCalledTimes(1);
     expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard', producers: false });
+  });
+
+  it('ships with local recording as the sole gate (maintainer ruling on #2289)', () => {
+    expect(EXPORT_WITHOUT_LOCAL_RECORDING).toBe(false);
   });
 
   it(`policy EXPORT_WITHOUT_LOCAL_RECORDING=false: nothing is produced, so nothing is exported`, () => {

@@ -5,6 +5,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ATTR } from '../../shared/telemetry/attributes';
 import {
+  _setExportWithoutLocalForTests,
+  EXPORT_WITHOUT_LOCAL_RECORDING,
   abortPending,
   currentTraceIds,
   forceFlushTelemetry,
@@ -216,10 +218,13 @@ describe('facade export path with local recording on', () => {
   }
 
   it('sends the SDK runtime the same calls and results as without it', async () => {
+    // Baseline: the runtime fed directly, as before local recording existed.
+    _setExportWithoutLocalForTests(true);
     const without = fakeRuntime();
     setRuntime(without);
     const outWithout = await exercise();
     setRuntime(null);
+    _setExportWithoutLocalForTests(EXPORT_WITHOUT_LOCAL_RECORDING);
 
     installRecorder();
     const withLocal = fakeRuntime();

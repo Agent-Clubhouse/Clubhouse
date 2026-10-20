@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ app: { getAppMetrics: () => [] } }));
 
 import { ATTR, blockedFlowAttr } from '../../shared/telemetry/attributes';
-import { setRuntime, tel } from './facade';
+import { tel } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import { STALL_EVENT_MIN_GAP_MS, WATCHDOG_INTERVAL_MS, _resetHealthForTests, processTypeOf, sampleHealth, watchdogTick } from './health';
 import type { TelemetryRuntime } from './types';
 
@@ -26,12 +27,12 @@ function fakeRuntime(): TelemetryRuntime {
 let rt: TelemetryRuntime;
 beforeEach(() => {
   rt = fakeRuntime();
-  setRuntime(rt);
+  setProducingRuntime(rt);
   _resetHealthForTests(0);
 });
 afterEach(() => {
   _resetHealthForTests();
-  setRuntime(null);
+  setProducingRuntime(null);
 });
 
 describe('process health', () => {

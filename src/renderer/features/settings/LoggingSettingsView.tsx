@@ -92,13 +92,29 @@ export function LoggingSettingsView() {
 
         <SettingsField
           label="Record telemetry locally"
-          help="Write flow timings, error types and metric totals to telemetry files in the log folder, anonymized the same way as export. Nothing is sent. Export is set up separately below."
+          help="Write flow timings, error types and metric totals to telemetry files in the log folder, anonymized the same way as export. Telemetry export, set up below, sends only what this records, so it sends nothing while this is off."
         >
           <Toggle
             aria-label="Record telemetry locally"
             checked={settings.enabled && settings.telemetryRecording !== false}
             onChange={(v) => saveSettings({ telemetryRecording: v })}
             disabled={!settings.enabled}
+          />
+        </SettingsField>
+
+        <SettingsField
+          label="Telemetry detail"
+          help="Detailed also records each IPC call and agent tool call. Export never sends more detail than this."
+        >
+          <Segmented
+            aria-label="Telemetry detail"
+            value={settings.telemetryLevel === 'detailed' ? 'detailed' : 'standard'}
+            options={[
+              { id: 'standard', label: 'Standard' },
+              { id: 'detailed', label: 'Detailed' },
+            ]}
+            onChange={(v) => saveSettings({ telemetryLevel: v })}
+            disabled={!settings.enabled || settings.telemetryRecording === false}
           />
         </SettingsField>
 

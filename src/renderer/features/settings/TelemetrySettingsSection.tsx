@@ -31,7 +31,7 @@ import { Button } from '../../components/Button';
 const LEVELS: Array<{ id: TelemetryLevel; label: string; desc: string }> = [
   { id: 'errors', label: 'Errors only', desc: 'Crashes and failed operations' },
   { id: 'standard', label: 'Standard', desc: 'Errors plus lifecycle, flows and metrics' },
-  { id: 'detailed', label: 'Detailed', desc: 'Standard plus high-volume detail' },
+  { id: 'detailed', label: 'Detailed', desc: 'Standard plus high-volume detail, when Logging also records at Detailed' },
 ];
 
 const PRESETS: Array<{ id: TelemetryFilterPreset; label: string; desc: string }> = [

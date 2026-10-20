@@ -72,10 +72,10 @@ afterEach(() => {
 });
 
 describe('renderer bridge', () => {
-  it('reports disabled until a runtime exists, with producers off for export alone', () => {
+  it('stays disabled for an exporter alone: export only sends what local recording produces', () => {
     expect(getTelemetryState()).toEqual({ enabled: false, level: null });
     setRuntime(fakeRuntime());
-    expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard', producers: false });
+    expect(getTelemetryState()).toEqual({ enabled: false, level: null });
   });
 
   it('tells renderers to record for local recording alone (#2278)', () => {
@@ -107,15 +107,15 @@ describe('renderer bridge', () => {
     expect(sink.replaySpan).toHaveBeenCalledWith(expect.objectContaining({ name: 'clubhouse.agent.spawn', attrs: [ATTR.process('renderer'), ATTR.windowKind('main')] }));
   });
 
-  it('reports the configured level while the SDK is still loading', () => {
+  it('stays disabled while the SDK loads with local recording off', () => {
     beginPending();
-    expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard', producers: false });
+    expect(getTelemetryState()).toEqual({ enabled: false, level: null });
   });
 
-  it('broadcasts the new state when telemetry starts or stops', () => {
-    setRuntime(fakeRuntime());
-    expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, { enabled: true, level: 'standard', producers: false });
-    setRuntime(null);
+  it('broadcasts the new state when local recording starts or stops', () => {
+    setLocalSink(fakeLocalSink());
+    expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, { enabled: true, level: 'standard', producers: true });
+    setLocalSink(null);
     expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, { enabled: false, level: null });
   });
 
@@ -128,6 +128,7 @@ describe('renderer bridge', () => {
 
   it('tags items with the window kind main decides, not the renderer', () => {
     const rt = fakeRuntime();
+    setLocalSink(fakeLocalSink());
     setRuntime(rt);
     handlers.on.get(IPC.TELEMETRY.EMIT)!(popoutSender, {
       v: RENDERER_PROTOCOL_VERSION,
@@ -140,6 +141,7 @@ describe('renderer bridge', () => {
 
   it('replays renderer spans with their own times', () => {
     const rt = fakeRuntime();
+    setLocalSink(fakeLocalSink());
     setRuntime(rt);
     dispatchRendererItems([{ t: 'span', name: 'clubhouse.renderer.unresponsive', startMs: 10, endMs: 30, attrs: [], outcome: 'ok' }], 'main');
     expect(rt.replaySpan).toHaveBeenCalledWith(expect.objectContaining({ startMs: 10, endMs: 30, outcome: 'ok' }));
@@ -147,6 +149,7 @@ describe('renderer bridge', () => {
 
   it('turns renderer exceptions into ForwardedErrors with no message', () => {
     const rt = fakeRuntime();
+    setLocalSink(fakeLocalSink());
     setRuntime(rt);
     dispatchRendererItems([{ t: 'exception', errorType: 'TypeError', stack: 'TypeError\n at x', origin: 'plugin', handled: true, attrs: [ATTR.errorBoundary('plugin')] }], 'main');
     const [err, opts] = (rt.exception as ReturnType<typeof vi.fn>).mock.calls[0];

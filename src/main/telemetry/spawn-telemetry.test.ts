@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ATTR } from '../../shared/telemetry/attributes';
-import { setRuntime } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import { modelFamily, recordChatStart, recordSpawn, spawnAttrs } from './spawn-telemetry';
 import { tagError, type TelemetryRuntime } from './types';
 
@@ -9,9 +9,9 @@ let replaySpan: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   count = vi.fn();
   replaySpan = vi.fn();
-  setRuntime({ level: 'standard', count, replaySpan } as unknown as TelemetryRuntime);
+  setProducingRuntime({ level: 'standard', count, replaySpan } as unknown as TelemetryRuntime);
 });
-afterEach(() => setRuntime(null));
+afterEach(() => setProducingRuntime(null));
 
 describe('modelFamily', () => {
   it.each([

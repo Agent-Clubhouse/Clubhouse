@@ -9,7 +9,7 @@ vi.mock('../services/log-service', () => ({ appLog: vi.fn() }));
 import { ATTR } from '../../shared/telemetry/attributes';
 import { appLog } from '../services/log-service';
 import { _resetCrashTelemetryForTests, installCrashTelemetry, reportMainProcessError } from './crash-handlers';
-import { setRuntime } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from './types';
 
 function fakeRuntime(): TelemetryRuntime {
@@ -31,12 +31,12 @@ let rt: TelemetryRuntime;
 
 beforeEach(() => {
   rt = fakeRuntime();
-  setRuntime(rt);
+  setProducingRuntime(rt);
   installCrashTelemetry();
 });
 
 afterEach(() => {
-  setRuntime(null);
+  setProducingRuntime(null);
   appEvents.removeAllListeners();
   _resetCrashTelemetryForTests();
 });
@@ -80,7 +80,7 @@ describe('crash telemetry', () => {
   });
 
   it('logs both ends of a hang locally under ui:perf, with the duration, even with telemetry off', () => {
-    setRuntime(null);
+    setProducingRuntime(null);
     vi.useFakeTimers();
     try {
       const win = Object.assign(new EventEmitter(), { isDestroyed: () => false, webContents: { id: 3 } });
