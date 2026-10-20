@@ -35,6 +35,8 @@ export interface BaseRpcOpts {
   onNotification?: (method: string, params: unknown) => void;
   /** Called for server-initiated requests (method + id) */
   onServerRequest?: (id: number | string, method: string, params: unknown) => void;
+  /** Called with the length of each stdout line before it is dispatched (timing logs). */
+  onLine?: (length: number) => void;
   /** Called when the process exits */
   onExit?: (code: number | null, signal: string | null) => void;
   /** Optional logger for diagnostic messages */
@@ -153,6 +155,7 @@ export abstract class NdjsonRpcBase<TOpts extends BaseRpcOpts> {
       const line = buffer.substring(start, idx).trim();
       start = idx + 1;
       if (!line) continue;
+      this.opts.onLine?.(line.length);
       try {
         const parsed = JSON.parse(line);
         this.dispatch(parsed);

@@ -688,6 +688,53 @@ describe('ACP chat driver resume stalls and cancellation (#2087)', () => {
     expect(replayer.errors).toEqual([]);
   });
 
+  it('waits out a first reply slower than the stall window, then resumes on steady replay, and logs the timing (#2296)', async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
+    const replayer = new AcpFixtureReplayer(proc, loadOnly);
+    const log = vi.fn();
+    const driver = createCopilotAcpChatDriver(log);
+    driver.sessionOverrides = { resumeFirstReplyTimeoutMs: 800, resumeStallTimeoutMs: 250 };
+    const started = driver.start(startOpts({ resumeNativeSessionId: 'slow' }));
+
+    const say = (msg: Record<string, unknown>) => proc.stdout.emit('data', JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
+    await vi.waitFor(() => expect(replayer.written[1]).toMatchObject({ method: 'session/load' }), { interval: 5 });
+    // Nothing for 400ms, longer than the stall window, then replay 40ms apart.
+    await new Promise((r) => setTimeout(r, 400));
+    for (let i = 0; i < 4; i++) {
+      say({ method: 'session/update', params: { sessionId: 'slow', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `old ${i}` } } } });
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    say({ id: replayer.written[1].id, result: {} });
+
+    const session = await started;
+    expect(session.nativeSessionId).toBe('slow');
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    const timing = log.mock.calls.find(([, msg]) => msg === 'ACP session/load timing')?.[2];
+    expect(timing).toMatchObject({ sessionId: 'slow', outcome: 'ok', notifications: 4, windowsMs: { firstReply: 800, stall: 250 } });
+    expect(timing.firstActivityMs).toBeGreaterThanOrEqual(350);
+    expect(timing.totalMs).toBeGreaterThanOrEqual(timing.firstActivityMs);
+    expect(timing.inboundChars).toBeGreaterThan(0);
+    expect(timing.initializeToRequestMs).toBeGreaterThanOrEqual(0);
+    // Counts and timings only: no replayed text.
+    expect(JSON.stringify(timing)).not.toContain('old 0');
+    expect(replayer.errors).toEqual([]);
+  });
+
+  it('logs a hang as no_reply with nothing received, once, before falling back', async () => {
+    const log = vi.fn();
+    const { replayers, driver } = setupTwo(loadOnly, freshStart);
+    const logged = createCopilotAcpChatDriver(log);
+    logged.sessionOverrides = driver.sessionOverrides;
+    const session = await logged.start(startOpts({ resumeNativeSessionId: 'gone' }));
+
+    expect(session.nativeSessionId).toBe('s-fresh');
+    const timings = log.mock.calls.filter(([, msg]) => msg === 'ACP session/load timing').map((c) => c[2]);
+    expect(timings).toHaveLength(1);
+    expect(timings[0]).toMatchObject({ sessionId: 'gone', outcome: 'no_reply', notifications: 0, firstActivityMs: null });
+    expect(replayers[1].done).toBe(true);
+  });
+
   it('kills the CLI and rejects when the start is aborted mid-load, without retrying', async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc as unknown as ReturnType<typeof spawn>);

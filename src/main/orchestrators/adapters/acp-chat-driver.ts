@@ -254,6 +254,8 @@ export class AcpChatDriver implements ChatDriver {
       const exists = resumeNativeSessionId
         ? await session.agentProfile.nativeSessionExists?.(resumeNativeSessionId, { ...process.env, ...opts.env })
         : undefined;
+      // undefined: the profile can't tell, or the check itself failed; the load decides.
+      if (resumeNativeSessionId) this.log('info', 'Native session on-disk check', { sessionId: resumeNativeSessionId, onDisk: exists ?? null });
       if (resumeNativeSessionId && exists === false) {
         // Copilot hangs on session/load for a session it doesn't have (#2155):
         // don't send it at all.
