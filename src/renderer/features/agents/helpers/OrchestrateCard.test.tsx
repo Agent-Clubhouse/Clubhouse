@@ -6,6 +6,7 @@ import type { Agent, DurableAgentConfig, HelperCascadeResult } from '../../../..
 import type { OrchestrationPolicy, OrchestrationPolicyPatch, ResolvedOrchestrationPolicy } from '../../../../shared/orchestration-policy';
 import { useAgentStore } from '../../../stores/agentStore';
 import { useProjectStore } from '../../../stores/projectStore';
+import { useUIStore } from '../../../stores/uiStore';
 import { useAgentDetailsStore } from '../details/detailsStore';
 import { AgentDetails } from '../details/AgentDetails';
 import { OrchestrateCard, orchestrateSummary } from './OrchestrateCard';
@@ -56,6 +57,7 @@ beforeEach(() => {
 afterEach(() => {
   useProjectStore.setState({ projects: [] });
   useAgentStore.setState({ agents: {} } as never);
+  useUIStore.setState({ explorerTab: 'agents', previousExplorerTab: null, settingsContext: 'app', settingsSubPage: 'orchestrators' } as never);
 });
 
 function Harness({ agent = lead }: { agent?: Agent }) {
@@ -132,7 +134,7 @@ describe('Orchestrate card (#2232)', () => {
     stored.orchestrate = true;
     await renderCard();
     const input = await screen.findByTestId('orchestrate-max-helpers') as HTMLInputElement;
-    await waitFor(() => expect(screen.getByTestId('orchestrate-max-helpers-note')).toHaveTextContent('Up to 8, the app-wide limit'));
+    await waitFor(() => expect(screen.getByTestId('orchestrate-max-helpers-note')).toHaveTextContent('Up to 8, your app-wide limit. Change it in Settings → Helpers.'));
 
     fireEvent.change(input, { target: { value: '9' } });
     fireEvent.blur(input);
@@ -147,6 +149,14 @@ describe('Orchestrate card (#2232)', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(window.clubhouse.agent.setOrchestrationPolicy).toHaveBeenCalledWith(PROJECT, 'lead', { maxHelpers: 3 }));
     expect(screen.getByTestId('orchestrate-max-helpers-note')).toHaveTextContent('Up to 8');
+  });
+
+  it('links the limit note to Settings → Helpers (#2353)', async () => {
+    stored.orchestrate = true;
+    useUIStore.setState({ explorerTab: 'agents', settingsContext: 'pa', settingsSubPage: 'display' } as never);
+    await renderCard();
+    fireEvent.click(await screen.findByTestId('orchestrate-open-helpers-settings'));
+    expect(useUIStore.getState()).toMatchObject({ explorerTab: 'settings', settingsContext: 'app', settingsSubPage: 'helpers' });
   });
 
   it('shows a failed save and keeps the saved value', async () => {
