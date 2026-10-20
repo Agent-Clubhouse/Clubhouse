@@ -8,14 +8,14 @@ import { StringDecoder } from 'string_decoder';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { JsonlParser, StreamJsonEvent } from './jsonl-parser';
-import { getShellEnvironment, cleanSpawnEnv, winQuoteArg } from '../util/shell';
+import { getShellEnvironment, cleanSpawnEnv } from '../util/shell';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { HeadlessOutputKind } from '../orchestrators/types';
 import { StaleSweeper } from './stale-sweeper';
-import { validateCommandPrefix } from './command-prefix-validation';
+import { resolveStructuredSpawn } from '../orchestrators/adapters/structured-spawn';
 import { validateSpawnCwd } from './pty-manager';
 import { readTranscriptChunk, type TranscriptChunk } from './transcript-cursor';
 import { agentKillRequested, agentKillStage, agentOutput, agentRunStarted, agentSwept } from '../telemetry/agent-telemetry';
@@ -219,15 +219,12 @@ function prepareSpawnEnv(extraEnv?: Record<string, string>): Record<string, stri
 }
 
 /**
- * Spawn the child process with the correct platform-specific strategy.
- *
- * On Windows, .cmd/.ps1 shims need to be run through cmd.exe.
- * Using windowsVerbatimArguments avoids Node.js double-escaping the
- * arguments which can mangle mission text and long system prompts.
- *
- * When a commandPrefix is provided on non-Windows, it is run in a shell
- * so the prefix (e.g. ". ./init.sh") runs first, then exec replaces the
- * shell with the agent binary.
+ * Spawn the child process with the shared structured-spawn rules
+ * (resolveStructuredSpawn): an npm shim runs as node on its script, another
+ * `.cmd`/`.bat` shim or a command prefix runs through cmd.exe with a
+ * pre-escaped line, and anything else is spawned directly. On POSIX a
+ * command prefix runs in `sh` first, then exec replaces the shell with the
+ * agent binary.
  */
 function spawnProcess(
   binary: string,
@@ -236,31 +233,12 @@ function spawnProcess(
   env: Record<string, string>,
   commandPrefix?: string,
 ): ChildProcess {
-  const isWin = process.platform === 'win32';
-
-  if (isWin) {
-    const cmdLine = [binary, ...args].map(a => winQuoteArg(a)).join(' ');
-    const fullCmd = commandPrefix ? `${validateCommandPrefix(commandPrefix)} & ${cmdLine}` : cmdLine;
-    return cpSpawn('cmd.exe', ['/d', '/s', '/c', `"${fullCmd}"`], {
-      cwd,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsVerbatimArguments: true,
-    });
-  }
-
-  if (commandPrefix) {
-    return cpSpawn('sh', ['-c', `${validateCommandPrefix(commandPrefix)} && exec "$@"`, '_', binary, ...args], {
-      cwd,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-  }
-
-  return cpSpawn(binary, args, {
+  const cmd = resolveStructuredSpawn(binary, args, commandPrefix);
+  return cpSpawn(cmd.binary, cmd.args, {
     cwd,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
+    ...(cmd.windowsVerbatimArguments && { windowsVerbatimArguments: true }),
   });
 }
 

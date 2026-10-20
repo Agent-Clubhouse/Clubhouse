@@ -43,7 +43,7 @@ const mockFsPromises = vi.hoisted(() => ({
 }));
 vi.mock('fs/promises', () => mockFsPromises);
 
-// Mock shell environment while exercising the real winQuoteArg escaping logic.
+// Mock shell environment; Windows launches use the real structured-spawn escaping.
 vi.mock('../util/shell', async () => {
   const actual = await vi.importActual<typeof import('../util/shell')>('../util/shell');
   return {
@@ -716,32 +716,18 @@ describe('headless-manager', () => {
         CLUBHOUSE_AGENT_ID: 'test-agent',
       });
 
-      if (process.platform === 'win32') {
-        // On Windows, binary is wrapped through cmd.exe
-        expect(mockCpSpawn).toHaveBeenCalledWith(
-          'cmd.exe',
-          expect.arrayContaining(['/d', '/s', '/c']),
-          expect.objectContaining({
-            cwd: '/project',
-            env: expect.objectContaining({
-              ANTHROPIC_API_KEY: 'sk-test',
-              CLUBHOUSE_AGENT_ID: 'test-agent',
-            }),
-          })
-        );
-      } else {
-        expect(mockCpSpawn).toHaveBeenCalledWith(
-          '/usr/local/bin/claude',
-          ['-p', 'test'],
-          expect.objectContaining({
-            cwd: '/project',
-            env: expect.objectContaining({
-              ANTHROPIC_API_KEY: 'sk-test',
-              CLUBHOUSE_AGENT_ID: 'test-agent',
-            }),
-          })
-        );
-      }
+      // Not a batch shim, so it's spawned directly on every platform.
+      expect(mockCpSpawn).toHaveBeenCalledWith(
+        '/usr/local/bin/claude',
+        ['-p', 'test'],
+        expect.objectContaining({
+          cwd: '/project',
+          env: expect.objectContaining({
+            ANTHROPIC_API_KEY: 'sk-test',
+            CLUBHOUSE_AGENT_ID: 'test-agent',
+          }),
+        })
+      );
 
       // CLAUDECODE and CLAUDE_CODE_ENTRYPOINT should be removed
       const envArg = (mockCpSpawn.mock.calls[0] as any[])[2].env;
@@ -754,7 +740,7 @@ describe('headless-manager', () => {
   // Windows shell wrapping
   // ============================================================
   describe('Windows spawn options', () => {
-    it('uses cmd.exe with windowsVerbatimArguments on Windows', async () => {
+    it('runs a batch shim through cmd.exe with windowsVerbatimArguments on Windows', async () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, 'platform', { value: 'win32' });
       try {
@@ -773,17 +759,15 @@ describe('headless-manager', () => {
       }
     });
 
-    it('non-Windows platforms spawn binary directly without shell', async () => {
+    it('spawns a non-batch binary directly without shell', async () => {
       await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
-      if (process.platform !== 'win32') {
-        const spawnArgs = (mockCpSpawn.mock.calls[0] as any[]);
-        expect(spawnArgs[0]).toBe('/usr/local/bin/claude');
-        expect(spawnArgs[1]).toEqual(['-p', 'test']);
-        const spawnOpts = spawnArgs[2];
-        expect(spawnOpts.shell).toBeUndefined();
-        expect(spawnOpts.windowsVerbatimArguments).toBeUndefined();
-      }
+      const spawnArgs = (mockCpSpawn.mock.calls[0] as any[]);
+      expect(spawnArgs[0]).toBe('/usr/local/bin/claude');
+      expect(spawnArgs[1]).toEqual(['-p', 'test']);
+      const spawnOpts = spawnArgs[2];
+      expect(spawnOpts.shell).toBeUndefined();
+      expect(spawnOpts.windowsVerbatimArguments).toBeUndefined();
     });
 
     it('properly quotes arguments with spaces in Windows command line', async () => {
@@ -793,13 +777,14 @@ describe('headless-manager', () => {
         await spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'Fix the login bug', '--verbose']);
 
         const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][3] as string;
-        expect(cmdLine).toContain('"Fix the login bug"');
+        // Caret-escaped twice: once for cmd.exe /c, once for the shim's %* line.
+        expect(cmdLine).toContain('^^^"Fix^^^ the^^^ login^^^ bug^^^"');
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
       }
     });
 
-    it('doubles percent signs in Windows command strings so %USERNAME% stays literal', async () => {
+    it('caret-escapes percent signs in Windows command strings so %USERNAME% stays literal', async () => {
       const originalPlatform = process.platform;
       const originalUsername = process.env.USERNAME;
       Object.defineProperty(process, 'platform', { value: 'win32' });
@@ -808,8 +793,8 @@ describe('headless-manager', () => {
         await spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['%USERNAME%']);
 
         const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][3] as string;
-        expect(cmdLine).toContain('%%USERNAME%%');
-        expect(cmdLine).not.toContain('"%USERNAME%"');
+        expect(cmdLine).toContain('^^^%USERNAME^^^%');
+        expect(cmdLine).not.toContain('%%');
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform });
         if (originalUsername === undefined) {

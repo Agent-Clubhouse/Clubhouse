@@ -1,8 +1,7 @@
 import * as childProcess from 'child_process';
 import type { ChildProcess } from 'child_process';
-import { winQuoteArg } from '../../util/shell';
 import { validateCommandPrefix } from '../../services/command-prefix-validation';
-import { WINDOWS_BATCH_RE } from '../../util/windows-launcher';
+import { buildWindowsCmdLine, resolveNodeShim, WINDOWS_BATCH_RE } from '../../util/windows-launcher';
 
 export interface StructuredSpawnCommand {
   binary: string;
@@ -16,11 +15,15 @@ export interface StructuredSpawnCommand {
  *
  * - POSIX with a command prefix: `sh -c '<prefix> && exec "$@"'`, so the
  *   prefix runs first and exec hands the process over to the agent binary.
- * - Windows with a `.cmd`/`.bat` shim or a command prefix: route through
- *   `cmd.exe /d /s /c "<line>"`.  Since CVE-2024-27980 Node refuses to spawn
- *   batch files without a shell (EINVAL), and there is no `sh` for the
- *   prefix.  Each argument is quoted with winQuoteArg and passed verbatim,
- *   matching headless-manager's Windows launch.
+ * - Windows with an npm-style `.cmd` shim around a node script and no
+ *   prefix: spawn node on the script directly (resolveNodeShim). cmd.exe
+ *   can't carry every argument (it ends the command at a line break), so it
+ *   is skipped wherever the shim can be read.
+ * - Windows with any other `.cmd`/`.bat` shim or a command prefix: route
+ *   through `cmd.exe /d /s /c "<line>"`.  Since CVE-2024-27980 Node refuses
+ *   to spawn batch files without a shell (EINVAL), and there is no `sh` for
+ *   the prefix.  The line comes from buildWindowsCmdLine and is passed
+ *   verbatim.
  * - Otherwise the binary is spawned directly.
  */
 export function resolveStructuredSpawn(
@@ -32,12 +35,14 @@ export function resolveStructuredSpawn(
     if (!commandPrefix && !WINDOWS_BATCH_RE.test(binary)) {
       return { binary, args };
     }
+    const shim = commandPrefix ? null : resolveNodeShim(binary);
+    if (shim) return { binary: shim.node, args: [shim.script, ...args] };
     // cmd.exe ends the command at a line break even inside quotes, which would
     // silently truncate the launch — fail loudly instead.
     if ([binary, ...args].some((a) => /[\r\n]/.test(a))) {
       throw new Error('Cannot launch a Windows batch shim with an argument containing a line break');
     }
-    const cmdLine = [binary, ...args].map((a) => winQuoteArg(a)).join(' ');
+    const cmdLine = buildWindowsCmdLine(binary, args);
     const fullCmd = commandPrefix ? `${validateCommandPrefix(commandPrefix)} & ${cmdLine}` : cmdLine;
     return {
       binary: 'cmd.exe',

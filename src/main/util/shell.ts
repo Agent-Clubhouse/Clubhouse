@@ -224,19 +224,6 @@ export function summarizeSpawnEnv(env: Record<string, string | undefined>): { ke
   return { keyCount: keys.length, missing: critical.filter((k) => !present.has(k)) };
 }
 
-/**
- * Quote a single argument for use in a Windows cmd.exe command line.
- * Always wraps in double quotes to safely handle spaces, special chars,
- * and long argument values (e.g. mission text, system prompts).
- * Percent signs must be doubled to prevent cmd.exe from expanding
- * %VAR% references inside quoted arguments.
- */
-export function winQuoteArg(arg: string): string {
-  if (arg.length === 0) return '""';
-  const escaped = arg.replace(/%/g, '%%').replace(/"/g, '""');
-  return '"' + escaped + '"';
-}
-
 /** Returns the platform-appropriate default shell. */
 export function getDefaultShell(): string {
   if (process.platform === 'win32') {
