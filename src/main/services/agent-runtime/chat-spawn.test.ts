@@ -77,6 +77,8 @@ import { getShellEnvironment } from '../../util/shell';
 import { injectClubhouseMcp, buildClubhouseMcpDef } from '../clubhouse-mcp/injection';
 import { isMcpEnabled } from '../mcp-settings';
 import { CodexChatDriver } from '../../orchestrators/adapters/codex-chat-driver';
+import { ClaudeChatDriver } from '../../chat/claude/driver';
+import { ClaudeSdkTransport, SDK_INIT_TIMEOUT_MS } from '../../chat/claude/sdk-transport';
 import * as codexFixture from '../../orchestrators/adapters/codex-protocol/__fixtures__/app-server-session';
 
 const provider = {
@@ -399,6 +401,35 @@ require('readline').createInterface({ input: process.stdin }).on('line', line =>
       const expected = 'Using Claude Code (stream-json): Claude Code (Agent SDK) handshake failed: initialize timed out';
       expect(toasts()).toEqual([{ level: 'warn', code: 'fallback', message: expected }]);
       expect(notices()).toEqual([{ level: 'warn', code: 'fallback', message: expected }]);
+    });
+
+    it('drops to stream-json when the Agent SDK initialize never settles (#2274)', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        // A real SDK driver over a fake query whose initialize never answers.
+        const close = vi.fn();
+        const stalled = {
+          [Symbol.asyncIterator]: () => ({
+            next: () => new Promise<IteratorResult<never>>((r) => close.mockImplementation(() => r({ done: true, value: undefined }))),
+          }),
+          initializationResult: () => new Promise<never>(() => {}),
+          close: (...a: unknown[]) => close(...a),
+        };
+        registerChatDriver(new ClaudeChatDriver('claude_agent_sdk', {
+          createTransport: (_id, opts) => new ClaudeSdkTransport(opts, async () => ({ query: (() => stalled) as never })),
+        }));
+        const stream = new FakeChatDriver('claude_stream_json');
+        registerChatDriver(stream);
+        const started = tryStartChatAgent(params, provider, undefined, undefined, null);
+        await vi.advanceTimersByTimeAsync(SDK_INIT_TIMEOUT_MS);
+        expect(await started).toBe('chat');
+        expect(close).toHaveBeenCalled();
+        expect(stream.sessions).toHaveLength(1);
+        expect(toasts()[0].message).toContain(`did not finish initializing within ${SDK_INIT_TIMEOUT_MS}ms`);
+      } finally {
+        vi.useRealTimers();
+      }
+      await getAgentRuntime('agent-1')?.stop();
     });
 
     it('opens in the terminal when every driver is unusable, with the reasons', async () => {
