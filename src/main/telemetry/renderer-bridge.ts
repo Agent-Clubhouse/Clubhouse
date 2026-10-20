@@ -18,6 +18,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';
 import {
   DISABLED_STATE,
+  MAX_BATCH_ITEMS,
   parseRendererBatch,
   parseRendererReadyMarks,
   type RendererReadyMarks,
@@ -155,15 +156,23 @@ export function handleRendererEmit(sender: Pick<WebContents, 'id'>, raw: unknown
   // Cheap exit while disabled: renderers shouldn't send, but never trust that.
   const state = getTelemetryState();
   if (!state.enabled && !state.diag) return;
-  let items = parseRendererBatch(raw);
-  if (items.some((i) => i.t === 'diag')) {
-    const diagCount = state.diag ? items.filter((i) => i.t === 'diag').length : 0;
-    let allowed = takeDiagRate(sender.id, diagCount);
-    noteDiagDropped(diagCount - allowed);
-    // Keep the first `allowed` diag items; drop every diag item while diag is off.
-    items = items.filter((i) => i.t !== 'diag' || allowed-- > 0);
-  }
-  dispatchRendererItems(items, windowKindFor(sender), state.enabled);
+  dispatchRendererItems(parseRendererBatch(limitDiag(sender.id, raw, state.diag === true)), windowKindFor(sender), state.enabled);
+}
+
+const isDiagItem = (i: unknown): boolean => typeof i === 'object' && i !== null && (i as { t?: unknown }).t === 'diag';
+
+/**
+ * Apply the diag rate limit (or drop every diag item while diag is off)
+ * before parsing, so an over-limit batch costs no meta checks.
+ */
+function limitDiag(senderId: number, raw: unknown, diagOn: boolean): unknown {
+  const items = typeof raw === 'object' && raw !== null ? (raw as { items?: unknown }).items : undefined;
+  if (!Array.isArray(items) || !items.some(isDiagItem)) return raw;
+  const capped = items.slice(0, MAX_BATCH_ITEMS);
+  const count = diagOn ? capped.filter(isDiagItem).length : 0;
+  let allowed = takeDiagRate(senderId, count);
+  noteDiagDropped(count - allowed);
+  return { ...(raw as object), items: capped.filter((i) => !isDiagItem(i) || allowed-- > 0) };
 }
 
 /** Handle `telemetry:renderer-ready`: main window only, first one wins. */

@@ -169,6 +169,8 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   const capsWindow = opts.capsWindowMs ?? LOCAL_CAPS_WINDOW_MS;
 
   let pending: string[] = [];
+  /** Which `pending` lines are diag lines, so a failed write counts them as diag drops. */
+  let pendingIsDiag: boolean[] = [];
   /** How many of `pending` are diag lines. */
   let pendingDiag = 0;
   let droppedLines = 0;
@@ -187,7 +189,8 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   const runBytes = (): number => runFiles.reduce((sum, f) => sum + f.bytes, 0);
   const reportedDrops = { traces: 0, logs: 0, lines: 0, diag: 0 };
 
-  let windowStart = now();
+  const startedAt = now();
+  let windowStart = startedAt;
   let capsWindowStart = windowStart;
   let metrics = new Map<MetricName, MetricWindow>();
 
@@ -213,6 +216,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
       return;
     }
     pending.push(line);
+    pendingIsDiag.push(false);
     if (pending.length >= LOCAL_FLUSH_AT_LINES && !flushQueued) void flushLines();
   }
 
@@ -261,28 +265,40 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     flushQueued = false;
     if (pending.length === 0) return;
     const lines = pending;
+    const isDiag = pendingIsDiag;
     pending = [];
+    pendingIsDiag = [];
     pendingDiag = 0;
+    /** Count lines `from..to` that never reached the file. */
+    const lost = (from: number, to: number): void => {
+      for (let i = from; i < to; i++) {
+        if (isDiag[i]) droppedDiag++;
+        else droppedLines++;
+      }
+    };
     if (!dirReady) dirReady = mkdir(opts.dir);
     try {
       await dirReady;
     } catch {
       dirReady = null;
-      droppedLines += lines.length;
+      lost(0, lines.length);
       return;
     }
     // Lines are grouped per chunk so a chunk only passes its limit when a
     // single line is larger than it.
     let batch: string[] = [];
     let batchBytes = 0;
+    let batchStart = 0;
     const writeBatch = async (): Promise<void> => {
       if (batch.length === 0) return;
       const data = batch.join('\n') + '\n';
+      const from = batchStart;
       const n = batch.length;
       const bytes = batchBytes;
+      batchStart += n;
       batch = [];
       batchBytes = 0;
-      if (!(await append(data, bytes))) droppedLines += n;
+      if (!(await append(data, bytes))) lost(from, from + n);
     };
     let rotated = false;
     for (let i = 0; i < lines.length; i++) {
@@ -522,6 +538,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     writeHeader();
     diagBytes += bytes;
     pending.push(line);
+    pendingIsDiag.push(true);
     pendingDiag++;
     if (pending.length >= LOCAL_FLUSH_AT_LINES && !flushQueued) void flushLines();
   }
@@ -617,7 +634,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     const record: Record<string, unknown> = {
       t: 'session',
       v: LOCAL_FORMAT_VERSION,
-      ts: iso(windowStart),
+      ts: iso(startedAt),
       appVersion: opts.session.appVersion,
       platform: opts.session.platform,
       arch: opts.session.arch,

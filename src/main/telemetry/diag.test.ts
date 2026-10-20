@@ -82,7 +82,16 @@ describe('diag gating', () => {
     expect(() => diag('core:x', 'error', 'm')).not.toThrow();
   });
 
-  it('runs taps on every call, before the settings and unredacted, for the breadcrumb ring', () => {
+  it('runs taps on every call, whatever the settings, with the redacted line, for the breadcrumb ring', () => {
+    const msgs: string[] = [];
+    const off = addDiagTap((e) => msgs.push(`${e.msg} ${JSON.stringify(e.meta)}`));
+    logSettings.getSettings.mockReturnValue(settings({ enabled: false }));
+    diag('core:x', 'debug', `in ${HOME}/repo`, { prompt: 'secret', token: 't' });
+    off();
+    expect(msgs).toEqual(['in <home>/repo {"prompt":"<redacted: 6 chars>","token":"<redacted>"}']);
+  });
+
+  it('runs taps in order, and a throwing tap breaks nothing', () => {
     const seen: string[] = [];
     const off = addDiagTap((e) => seen.push(`${e.ns}:${e.level}:${String(e.meta?.maxMs)}`));
     logSettings.getSettings.mockReturnValue(settings({ enabled: false }));

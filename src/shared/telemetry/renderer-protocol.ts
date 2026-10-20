@@ -217,7 +217,8 @@ export function parseRendererItem(raw: unknown): RendererItem | undefined {
     }
     case 'diag': {
       if (!isDiagNamespace(raw.ns) || !isDiagLevel(raw.level) || typeof raw.msg !== 'string') return undefined;
-      const item: RendererItem = { t: 'diag', ns: raw.ns, level: raw.level, msg: raw.msg.slice(0, DIAG_MAX_STRING_CHARS) };
+      // Cut with slack: main redacts first and cuts at DIAG_MAX_STRING_CHARS after, so no secret is split before redaction.
+      const item: RendererItem = { t: 'diag', ns: raw.ns, level: raw.level, msg: raw.msg.slice(0, DIAG_MAX_STRING_CHARS * 2) };
       const meta = parseDiagMeta(raw.meta);
       if (meta) item.meta = meta;
       return item;

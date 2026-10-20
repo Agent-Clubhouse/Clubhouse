@@ -435,6 +435,42 @@ describe('local recorder diag lines (#2299)', () => {
     expect(records.find((r) => r.t === 'dropped')).toMatchObject({ diag: 7, lines: 6 });
   });
 
+  it('counts diag lines lost to a failed write as diag drops, and dates the session at start', async () => {
+    let t = Date.parse('2026-10-19T10:00:00.000Z');
+    let fail = true;
+    let out = '';
+    const h = harness({
+      signals: false,
+      now: () => t,
+      metricIntervalMs: 1,
+      appendFile: async (_f, data) => {
+        if (fail) throw new Error('EACCES');
+        out += data;
+      },
+    });
+    t += 60_000;
+    h.rec.writeDiag(line('lost 1'));
+    h.rec.writeDiag(line('lost 2'));
+    await h.rec.flush();
+    fail = false;
+    h.rec.writeDiag(line('kept'));
+    await h.rec.flush();
+    const records = out.trim().split('\n').map((l) => JSON.parse(l));
+    // The session line was lost with the first write; what reached the file reports it.
+    expect(records.find((r) => r.t === 'dropped')).toMatchObject({ diag: 2, lines: 1 });
+    expect(records.find((r) => r.t === 'diag')).toMatchObject({ msg: 'kept' });
+  });
+
+  it('dates a lazy session line at recorder start, not at the last metric window', async () => {
+    let t = Date.parse('2026-10-19T10:00:00.000Z');
+    const h = harness({ signals: false, now: () => t });
+    t += 120_000;
+    await h.rec.flush();
+    h.rec.writeDiag(line('late first line'));
+    await h.rec.flush();
+    expect(h.records()[0]).toMatchObject({ t: 'session', ts: '2026-10-19T10:00:00.000Z' });
+  });
+
   it('counts diag lines dropped upstream (renderer rate limit)', async () => {
     const h = harness();
     h.rec.noteDiagDropped(4);

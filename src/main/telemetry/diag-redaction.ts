@@ -29,25 +29,32 @@ export interface DiagRedactor {
 /** `apiKey`, `api_key`, `API-Key` all normalize to `apikey`. */
 const norm = (key: string): string => key.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-const SECRET_KEY_PARTS = ['token', 'secret', 'password', 'passwd', 'passphrase', 'apikey', 'authorization', 'cookie', 'credential', 'privatekey', 'accesskey'];
+const SECRET_KEY_PARTS = ['token', 'secret', 'password', 'passwd', 'passphrase', 'apikey', 'authorization', 'cookie', 'credential', 'privatekey', 'accesskey', 'accountkey', 'sharedaccesskey'];
+const SECRET_KEYS = new Set(['auth', 'sig', 'signature']);
 /** Numeric usage counts (`maxTokens`, `inputTokens`) are not secrets; only non-number values are redacted. */
 export function isSecretKey(key: string): boolean {
   const k = norm(key);
-  return SECRET_KEY_PARTS.some((p) => k.includes(p));
+  return SECRET_KEYS.has(k) || SECRET_KEY_PARTS.some((p) => k.includes(p));
 }
 
 const CONTENT_KEYS = new Set([
-  'prompt', 'prompts', 'mission', 'instructions', 'messages', 'content', 'contents', 'text', 'body',
-  'input', 'inputs', 'toolinput', 'args', 'argv', 'arguments', 'params', 'parameters',
-  'env', 'environment', 'response', 'responsebody', 'requestbody', 'completion', 'delta', 'transcript', 'stdin',
+  'instructions', 'messages', 'content', 'contents', 'text', 'body', 'data', 'payload', 'chunk',
+  'input', 'inputs', 'toolinput', 'args', 'argv', 'arguments', 'params', 'parameters', 'query',
+  'env', 'environment', 'response', 'responsebody', 'requestbody', 'result', 'reply', 'answer', 'delta',
+  'stdin', 'stdout', 'usermessage', 'assistantmessage', 'messagetext',
 ]);
-/** Keys whose value is prompt or response content (#1919): `prompt`, `systemPrompt`, `args`, `params`, ... */
+const CONTENT_KEY_PARTS = ['prompt', 'mission', 'transcript', 'completion'];
+/**
+ * Keys whose value is prompt or response content (#1919): `prompt`,
+ * `systemPrompt`, `promptText`, `initialMission`, `args`, `params`, `result`,
+ * `stdout`, ... `stderr` and `lastOutput` stay: they carry the failure.
+ */
 export function isContentKey(key: string): boolean {
   const k = norm(key);
-  return CONTENT_KEYS.has(k) || k.endsWith('prompt') || k.endsWith('prompts');
+  return CONTENT_KEYS.has(k) || CONTENT_KEY_PARTS.some((p) => k.includes(p));
 }
 
-const SECRET_NAME = String.raw`(?:(?:access|refresh|id|auth|session|bearer)[_-]?)?token|(?:client[_-]?)?secret|password|passwd|api[_-]?key|authorization|cookie`;
+const SECRET_NAME = String.raw`(?:(?:access|refresh|id|auth|session|bearer)[_-]?)?token|(?:client[_-]?)?secret|password|passwd|api[_-]?key|authorization|cookie|account[_-]?key|shared[_-]?access[_-]?key|(?<![A-Za-z])(?:sig|auth)(?![A-Za-z])`;
 const SECRET_VALUE_RES: Array<[RegExp, string]> = [
   [/\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{6,}/gi, `$1 ${REDACTED}`],
   // `"apiKey": "x y"`, `token='x'`
@@ -64,6 +71,10 @@ const SECRET_VALUE_RES: Array<[RegExp, string]> = [
   [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, REDACTED],
   [/\bAIza[0-9A-Za-z_-]{35}/g, REDACTED],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, REDACTED],
+  // child_process: `Command failed: claude -p "<mission>"` keeps the executable only.
+  [/\b(Command failed: )("[^"]*"|\S+)[^\n]*/g, `$1$2 ${REDACTED}`],
+  // V8 JSON errors quote the input: `"hello priv"... is not valid JSON`.
+  [/"(?:[^"\\\n]|\\.)*"(?:\.\.\.)? is not valid JSON/g, `${REDACTED} is not valid JSON`],
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, REDACTED],
 ];
 
@@ -78,8 +89,19 @@ function sizeOf(value: unknown): string {
   return REDACTED;
 }
 
+/**
+ * Every spelling of the home directory (case, slashes, JSON escapes, URL
+ * encoding), ending at a path boundary, so `/Users/mason` never eats the
+ * start of `/Users/masonallen`.
+ */
+function homePattern(homeDir: string): RegExp {
+  const spellings = new Set([homeDir, encodeURI(homeDir), encodeURIComponent(homeDir), encodeURI(homeDir.replace(/\\/g, '/'))]);
+  const body = [...spellings].map((h) => literalPattern(h, false).source).join('|');
+  return new RegExp(`(?:${body})(?![A-Za-z0-9_-])`, 'gi');
+}
+
 export function createDiagRedactor(ctx: { homeDir?: string } = {}): DiagRedactor {
-  const home = ctx.homeDir && ctx.homeDir.length > 1 ? literalPattern(ctx.homeDir, false) : null;
+  const home = ctx.homeDir && ctx.homeDir.length > 1 ? homePattern(ctx.homeDir) : null;
 
   function text(input: string): string {
     if (!input) return input;
@@ -154,7 +176,7 @@ export function createDiagRedactor(ctx: { homeDir?: string } = {}): DiagRedactor
       } catch {
         continue;
       }
-      const k = cut(home ? key.replace(home, '<home>') : key, MAX_KEY_CHARS);
+      const k = cut(text(key), MAX_KEY_CHARS);
       if (isContentKey(key)) {
         // Env keys are useful (which variables were set); their values never are.
         const n = norm(key);

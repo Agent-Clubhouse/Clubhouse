@@ -14,6 +14,13 @@ describe('diag redaction', () => {
     expect(r.text('cwd /opt/repo session 3f2a9c1e-7b4d-4e8f-9a6b-2c1d0e9f8a7b')).toBe('cwd /opt/repo session 3f2a9c1e-7b4d-4e8f-9a6b-2c1d0e9f8a7b');
   });
 
+  it('stops the home at a path boundary and catches URL-encoded spellings', () => {
+    const short = createDiagRedactor({ homeDir: '/Users/mason' });
+    expect(short.text('/Users/masonallen/x and /Users/mason/y')).toBe('/Users/masonallen/x and <home>/y');
+    const spaced = createDiagRedactor({ homeDir: 'C:\\Users\\John Doe' });
+    expect(spaced.text('file:///C:/Users/John%20Doe/repo and C%3A%5CUsers%5CJohn%20Doe%5Crepo')).toBe('file:///<home>/repo and <home>%5Crepo');
+  });
+
   it('replaces a Windows home in every spelling', () => {
     const win = createDiagRedactor({ homeDir: 'C:\\Users\\Sam' });
     expect(win.text('C:\\Users\\Sam\\repo and c:/users/sam/repo and C:\\\\Users\\\\Sam\\\\x')).toBe('<home>\\repo and <home>/repo and <home>\\\\x');
@@ -32,11 +39,17 @@ describe('diag redaction', () => {
       ['gh ghp_abcdefghijklmnopqrstuvwxyz0123 ok', `gh ${REDACTED} ok`],
       ['jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U', `jwt ${REDACTED}`],
       ['aws AKIAABCDEFGHIJKLMNOP', `aws ${REDACTED}`],
+      ['DefaultEndpointsProtocol=https;AccountKey=abc/def==;EndpointSuffix=x', `DefaultEndpointsProtocol=https;AccountKey=${REDACTED};EndpointSuffix=x`],
+      ['GET https://acct.blob.core.windows.net/c?sv=1&sig=AbC%2Bd&se=2', `GET https://acct.blob.core.windows.net/c?sv=1&sig=${REDACTED}&se=2`],
+      ["auth: 'user:pass'", `auth: '${REDACTED}'`],
+      ['Command failed: claude -p "write my secret mission" --model opus', `Command failed: claude ${REDACTED}`],
+      ['Unexpected token \'h\', "hello priv"... is not valid JSON', `Unexpected token 'h', ${REDACTED} is not valid JSON`],
       ['-----BEGIN RSA PRIVATE KEY-----\nMIIabc\n-----END RSA PRIVATE KEY-----', REDACTED],
     ];
     for (const [input, expected] of cases) expect(r.text(input), input).toBe(expected);
-    // Ordinary prose about tokens is left alone.
+    // Ordinary prose about tokens, designs and authors is left alone.
     expect(r.text('Failed to refresh the token for this agent')).toBe('Failed to refresh the token for this agent');
+    expect(r.text('design=compact author=sam')).toBe('design=compact author=sam');
   });
 
   it('caps strings at 2,000 characters', () => {
@@ -59,6 +72,13 @@ describe('diag redaction', () => {
       content: mission,
       response: mission,
       env: { ANTHROPIC_API_KEY: 'sk-ant-xxxxxxxxxxxxxxxxxxxxxx', PATH: '/usr/bin' },
+      promptText: mission,
+      initialMission: mission,
+      userMessage: mission,
+      stdout: mission,
+      result: { text: mission },
+      payload: mission,
+      error: new Error(`Command failed: claude -p "${mission}"`),
       method: 'session/prompt',
       id: 7,
     });
@@ -80,14 +100,14 @@ describe('diag redaction', () => {
   it('redacts secret-named keys at any depth, but keeps numeric counts', () => {
     const out = r.meta({
       headers: { Authorization: 'Bearer abc', Cookie: 'a=b', accept: 'json' },
-      auth: { access_token: 'tok', refreshToken: 'tok2', expiresIn: 3600 },
+      session: { access_token: 'tok', refreshToken: 'tok2', expiresIn: 3600 },
       apiKey: 'k',
       usage: { inputTokens: 1200, maxTokens: 4096 },
       hasToken: true,
     });
     expect(out).toEqual({
       headers: { Authorization: REDACTED, Cookie: REDACTED, accept: 'json' },
-      auth: { access_token: REDACTED, refreshToken: REDACTED, expiresIn: 3600 },
+      session: { access_token: REDACTED, refreshToken: REDACTED, expiresIn: 3600 },
       apiKey: REDACTED,
       usage: { inputTokens: 1200, maxTokens: 4096 },
       hasToken: true,
@@ -100,6 +120,10 @@ describe('diag redaction', () => {
     expect(out.error).toMatchObject({ name: 'Error', message: `spawn <home>/bin/claude ENOENT token=${REDACTED}`, code: 'ENOENT' });
     expect(String((out.error as { stack: string }).stack)).not.toContain(HOME);
     expect(out).toMatchObject({ stderr: 'warning in <home>/x', exitCode: 1, lastOutput: 'Error: login required' });
+  });
+
+  it('redacts secrets and home in keys too', () => {
+    expect(r.meta({ [`${HOME}/repo`]: 1, 'token=abc': 2 })).toEqual({ '<home>/repo': 1, [`token=${REDACTED}`]: 2 });
   });
 
   it('handles values JSON cannot', () => {
@@ -134,9 +158,9 @@ describe('diag redaction', () => {
   });
 
   it('classifies keys', () => {
-    for (const k of ['prompt', 'systemPrompt', 'user_prompt', 'args', 'params', 'env', 'toolInput', 'messages']) expect(isContentKey(k), k).toBe(true);
+    for (const k of ['prompt', 'systemPrompt', 'user_prompt', 'promptText', 'initialMission', 'args', 'params', 'env', 'toolInput', 'messages', 'stdout', 'result']) expect(isContentKey(k), k).toBe(true);
     for (const k of ['lastOutput', 'stderr', 'error', 'message', 'method', 'path', 'sessionId']) expect(isContentKey(k), k).toBe(false);
-    for (const k of ['token', 'accessToken', 'api_key', 'Authorization', 'clientSecret', 'password', 'cookie']) expect(isSecretKey(k), k).toBe(true);
+    for (const k of ['token', 'accessToken', 'api_key', 'Authorization', 'clientSecret', 'password', 'cookie', 'auth', 'sig', 'AccountKey']) expect(isSecretKey(k), k).toBe(true);
     for (const k of ['author', 'sessionId', 'path', 'method']) expect(isSecretKey(k), k).toBe(false);
   });
 });

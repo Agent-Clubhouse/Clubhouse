@@ -18,7 +18,7 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import { RENDERER_PROTOCOL_VERSION } from '../../shared/telemetry/renderer-protocol';
 import { beginPending, setLocalSink, setRuntime } from './facade';
 import type { LocalTelemetrySink } from './types';
-import { _resetDiagForTests, setDiagSink, type DiagRecord } from './diag';
+import { _resetDiagForTests, addDiagTap, setDiagSink, type DiagRecord } from './diag';
 import {
   _resetRendererBridgeForTests,
   DIAG_RATE_MAX,
@@ -127,10 +127,19 @@ describe('renderer diag items (#2299)', () => {
   it('drops diag items while diag recording is off', () => {
     const local = fakeLocalSink();
     setLocalSink(local);
+    const tap = vi.fn();
+    addDiagTap(tap);
+    emit(mainSender, [{ t: 'diag', ns: 'ui:perf', level: 'error', msg: 'x' }, { t: 'event', name: 'clubhouse.renderer.gone', attrs: [] }]);
+    expect(tap).not.toHaveBeenCalled();
+    expect(local.event).toHaveBeenCalledTimes(1);
+  });
+
+  it('redacts a renderer secret that straddles the message cap', () => {
     const sink = fakeDiagSink();
-    emit(mainSender, [{ t: 'diag', ns: 'ui:perf', level: 'error', msg: 'x' }]);
     setDiagSink(sink);
-    expect(sink.writeDiag).not.toHaveBeenCalled();
+    emit(mainSender, [{ t: 'diag', ns: 'ui:x', level: 'error', msg: `${'a '.repeat(995)}sk-${'b'.repeat(30)}` }]);
+    expect(sink.lines[0].msg).not.toContain('sk-');
+    expect(sink.lines[0].msg).not.toContain('bbbb');
   });
 
   it('rate-limits diag items per window and counts the drops', () => {

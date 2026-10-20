@@ -4,7 +4,7 @@
  */
 export { tel, flushBeforeExit } from './facade';
 /** Local-only diagnostic lines (#2299); never exported. */
-export { diag, addDiagTap, type DiagTap, type DiagEntry } from './diag';
+export { diag } from './diag';
 export { ATTR } from '../../shared/telemetry/attributes';
 export {
   initTelemetry,

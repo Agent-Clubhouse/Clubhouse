@@ -290,7 +290,7 @@ function plainMeta(meta: Record<string, unknown>): Record<string, unknown> | und
 export function diag(ns: string, level: DiagLevel, msg: string, meta?: Record<string, unknown>): void {
   if (!state.diag) return;
   try {
-    const item: RendererItem = { t: 'diag', ns, level, msg: String(msg).slice(0, DIAG_MAX_STRING_CHARS) };
+    const item: RendererItem = { t: 'diag', ns, level, msg: String(msg).slice(0, DIAG_MAX_STRING_CHARS * 2) };
     const plain = meta ? plainMeta(meta) : undefined;
     if (plain) item.meta = plain;
     enqueue(item);

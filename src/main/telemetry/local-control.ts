@@ -170,8 +170,8 @@ export async function syncLocalRecording(settings?: LoggingSettings): Promise<vo
     const wanted = isDiagRecordingWanted(current);
     const signals = isLocalRecordingWanted(current);
     const level = localRecordingLevel(current);
-    // A level change, or signals turning on or off, starts a new recorder (and file).
-    if (recorder && (!wanted || recorder.level !== level || recorder.signals !== signals)) {
+    // Signals turning on or off, or a level change while recording them, starts a new recorder (and file).
+    if (recorder && (!wanted || recorder.signals !== signals || (signals && recorder.level !== level))) {
       stopping = stop().finally(() => {
         stopping = null;
       });

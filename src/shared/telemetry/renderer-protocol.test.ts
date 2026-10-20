@@ -120,7 +120,8 @@ describe('renderer diag items (#2299)', () => {
       { t: 'diag', ns: 'core:x', level: 'info', msg: 'big', meta: { s: 'x'.repeat(MAX_RENDERER_DIAG_META_BYTES) } },
       { t: 'diag', ns: 'core:x', level: 'info', msg: 'arr', meta: [1, 2] },
     ]));
-    expect((long as { msg: string }).msg).toHaveLength(DIAG_MAX_STRING_CHARS);
+    // Slack for main's redaction, which cuts to DIAG_MAX_STRING_CHARS after.
+    expect((long as { msg: string }).msg).toHaveLength(DIAG_MAX_STRING_CHARS * 2);
     expect(big).toEqual({ t: 'diag', ns: 'core:x', level: 'info', msg: 'big' });
     expect(arr).toEqual({ t: 'diag', ns: 'core:x', level: 'info', msg: 'arr' });
   });

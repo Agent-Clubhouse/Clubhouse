@@ -34,10 +34,11 @@ export interface DiagEntry {
 
 /**
  * Sees every diag call, whatever the logging settings, in memory only (the
- * feedback breadcrumb ring, #2303). A tap must take structured fields only
- * and never keep or forward `msg` or `meta` wholesale: they are not redacted.
+ * feedback breadcrumb ring, #2303). It gets the redacted line, like the file
+ * does; still, a tap must take structured fields only and never forward
+ * `msg` or `meta` wholesale.
  */
-export type DiagTap = (entry: DiagEntry) => void;
+export type DiagTap = (record: Readonly<DiagRecord>) => void;
 
 const MAX_SEEN_NAMESPACES = 500;
 
@@ -74,20 +75,22 @@ function allowed(ns: string, level: DiagLevel): boolean {
 }
 
 function record(entry: DiagEntry, window?: DiagRecord['window']): void {
-  for (const tap of taps) {
-    try {
-      tap(entry);
-    } catch {
-      // A tap must never break the caller.
-    }
-  }
   const target = getDiagSink();
-  if (!target || !allowed(entry.ns, entry.level)) return;
+  const write = !!target && allowed(entry.ns, entry.level);
+  // Redaction runs only when something will see the line.
+  if (!write && taps.size === 0) return;
   const r = getRedactor();
   const out: DiagRecord = { ns: entry.ns, level: entry.level, msg: r.text(String(entry.msg ?? '')) };
   if (entry.meta && typeof entry.meta === 'object') out.meta = r.meta(entry.meta);
   if (window) out.window = window;
-  target.writeDiag(out);
+  for (const tap of taps) {
+    try {
+      tap(out);
+    } catch {
+      // A tap must never break the caller.
+    }
+  }
+  if (write) target!.writeDiag(out);
 }
 
 /**
