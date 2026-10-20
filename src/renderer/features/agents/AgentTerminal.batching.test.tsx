@@ -6,7 +6,7 @@
  * vi.useFakeTimers, which corrupts vi.stubGlobal rAF state via restoreMocks).
  */
 import { render, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useThemeStore } from '../../stores/themeStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
@@ -30,7 +30,12 @@ vi.mock('@xterm/xterm', () => {
       viewport.scrollTop = 0;
       container.appendChild(viewport);
     });
-    write = vi.fn();
+    // Parses synchronously: call the completion callback right away.
+    write = vi.fn((_data: string, callback?: () => void) => { callback?.(); });
+    resize = vi.fn(function (this: { cols: number; rows: number }, cols: number, rows: number) {
+      this.cols = cols;
+      this.rows = rows;
+    });
     focus = vi.fn();
     dispose = vi.fn();
     onData = vi.fn().mockReturnValue({ dispose: vi.fn() });
@@ -117,6 +122,19 @@ const mockDisconnect = vi.fn();
 
 describe('AgentTerminal write batching', () => {
   let rafQueue: Array<() => void>;
+
+  // jsdom lays nothing out; give containers a size so mount fits run.
+  // Tests that need a hidden container override these spies.
+  let widthSpy: ReturnType<typeof vi.spyOn>;
+  let heightSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    widthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+    heightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+  });
+  afterEach(() => {
+    widthSpy.mockRestore();
+    heightSpy.mockRestore();
+  });
 
   beforeEach(() => {
     g.__testTerminal = null;
@@ -368,9 +386,8 @@ describe('AgentTerminal write batching', () => {
       // buffered output first, then each pending chunk as a separate write
       await act(async () => { resolveBuffer('BUF'); });
 
-      expect(term().write).toHaveBeenNthCalledWith(1, 'BUF');
-      expect(term().write).toHaveBeenNthCalledWith(2, 'live-1');
-      expect(term().write).toHaveBeenNthCalledWith(3, 'live-2');
+      expect(term().write).toHaveBeenNthCalledWith(1, 'BUF', expect.any(Function));
+      expect(term().write).toHaveBeenNthCalledWith(2, 'live-1live-2', expect.any(Function));
     });
 
     it('satellite: queues live data during buffer fetch, drains in order after replay', async () => {
@@ -393,9 +410,8 @@ describe('AgentTerminal write batching', () => {
 
       await act(async () => { resolveBuffer('REMOTE-BUF'); });
 
-      expect(term().write).toHaveBeenNthCalledWith(1, 'REMOTE-BUF');
-      expect(term().write).toHaveBeenNthCalledWith(2, 'live-r1');
-      expect(term().write).toHaveBeenNthCalledWith(3, 'live-r2');
+      expect(term().write).toHaveBeenNthCalledWith(1, 'REMOTE-BUF', expect.any(Function));
+      expect(term().write).toHaveBeenNthCalledWith(2, 'live-r1live-r2', expect.any(Function));
     });
 
     it('resumes batched writes after replay completes', async () => {

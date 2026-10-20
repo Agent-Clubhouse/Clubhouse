@@ -29,3 +29,8 @@ export function isAsciiBinary(data: string): boolean {
   // eslint-disable-next-line no-control-regex
   return /^[\x00-\x7f]*$/.test(data);
 }
+
+/** `term.write` that resolves once xterm has parsed `data`. */
+export function writeAsync(term: { write(data: string, callback?: () => void): void }, data: string): Promise<void> {
+  return new Promise((resolve) => term.write(data, resolve));
+}

@@ -1,5 +1,5 @@
 import { render, act, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useThemeStore } from '../../stores/themeStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 
@@ -13,7 +13,12 @@ vi.mock('@xterm/xterm', () => {
   class Terminal {
     loadAddon = vi.fn();
     open = vi.fn();
-    write = vi.fn();
+    // Parses synchronously: call the completion callback right away.
+    write = vi.fn((_data: string, callback?: () => void) => { callback?.(); });
+    resize = vi.fn(function (this: { cols: number; rows: number }, cols: number, rows: number) {
+      this.cols = cols;
+      this.rows = rows;
+    });
     focus = vi.fn();
     dispose = vi.fn();
     onData = vi.fn().mockReturnValue({ dispose: vi.fn() });
@@ -59,6 +64,19 @@ const mockRemoveExitListener = vi.fn();
 const mockDisconnect = vi.fn();
 
 describe('ShellTerminal', () => {
+  // jsdom lays nothing out; give containers a size so mount fits run.
+  // Tests that need a hidden container override these spies.
+  let widthSpy: ReturnType<typeof vi.spyOn>;
+  let heightSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    widthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+    heightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+  });
+  afterEach(() => {
+    widthSpy.mockRestore();
+    heightSpy.mockRestore();
+  });
+
   beforeEach(() => {
     g.__testTerminal = null;
     g.__testFitAddon = null;
@@ -126,10 +144,33 @@ describe('ShellTerminal', () => {
       expect(term().open).toHaveBeenCalled();
     });
 
-    it('calls fit and resize on mount', () => {
+    it('calls fit and resize on mount, after the buffer replay', async () => {
       render(<ShellTerminal sessionId="shell-1" />);
+      expect(fitAddon().fit).not.toHaveBeenCalled();
+      await act(async () => {});
       expect(fitAddon().fit).toHaveBeenCalled();
       expect(window.clubhouse.pty.resize).toHaveBeenCalledWith('shell-1', 80, 24);
+    });
+
+    it('does not fit or resize the PTY when mounted in a hidden container (#2323)', async () => {
+      widthSpy.mockReturnValue(0);
+      heightSpy.mockReturnValue(0);
+      render(<ShellTerminal sessionId="shell-1" />);
+      await act(async () => {});
+      expect(fitAddon().fit).not.toHaveBeenCalled();
+      expect(window.clubhouse.pty.resize).not.toHaveBeenCalled();
+    });
+
+    it('replays the snapshot at its recorded PTY sizes', async () => {
+      (window.clubhouse.pty.getBufferSnapshot as any).mockResolvedValue({
+        data: 'abcdef',
+        seq: 6,
+        sizes: [{ offset: 0, cols: 100, rows: 30 }, { offset: 3, cols: 60, rows: 20 }],
+      });
+      render(<ShellTerminal sessionId="shell-1" />);
+      await act(async () => {});
+      expect(term().resize.mock.calls).toEqual([[100, 30], [60, 20]]);
+      expect(term().write.mock.calls.map((c: unknown[]) => c[0])).toEqual(['abc', 'def']);
     });
 
     it('requests buffer content on mount', () => {
@@ -425,7 +466,7 @@ describe('ShellTerminal', () => {
       render(<ShellTerminal sessionId="shell-1" />);
       // Wait for the async getBuffer promise to resolve
       await vi.waitFor(() => {
-        expect(term().write).toHaveBeenCalledWith('previous output');
+        expect(term().write).toHaveBeenCalledWith('previous output', expect.any(Function));
       });
     });
 
@@ -485,7 +526,7 @@ describe('ShellTerminal', () => {
       render(<ShellTerminal sessionId="shell-1" io={io} />);
       await act(async () => {});
       expect(io.getBuffer).toHaveBeenCalledWith('shell-1');
-      expect(term().write).toHaveBeenCalledWith('remote buffer');
+      expect(term().write).toHaveBeenCalledWith('remote buffer', expect.any(Function));
     });
   });
 

@@ -9,8 +9,9 @@ import { useAnnexClientStore, satellitePtyDataBus } from '../../stores/annexClie
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { attachClipboardHandlers, type ClipboardImageData } from '../terminal/clipboard';
 import { useFileDrop } from '../terminal/useFileDrop';
-import { useTerminalFit, isTerminalAtBottom, fitPreservingScroll } from '../terminal/useTerminalFit';
-import { unseenPtySuffix, isAsciiBinary } from '../terminal/pty-stream';
+import { useTerminalFit, isTerminalAtBottom, fitPreservingScroll, hasMeasurableSize } from '../terminal/useTerminalFit';
+import { unseenPtySuffix, isAsciiBinary, writeAsync } from '../terminal/pty-stream';
+import { writePtySnapshot, type PtyBufferSnapshot } from '../../../shared/pty-snapshot';
 import { ptyResize } from '../../services/project-proxy';
 import { rendererLog } from '../../plugins/renderer-logger';
 import { Spinner } from '../../components/Spinner';
@@ -53,6 +54,9 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   const xtermHostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  // False while a mount replays the buffer snapshot: fit triggers must not
+  // resize the terminal mid-replay or send a size before the replay is drawn.
+  const readyRef = useRef(false);
   const globalTerminalColors = useThemeStore((s) => s.theme.terminal);
   const hasGradientBg = useThemeStore((s) => s.experimentalGradients && !!s.theme.gradients?.background);
   const terminalColors = useMemo(() => {
@@ -105,6 +109,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     // Preserve scroll position — fit() triggers an xterm buffer reflow that
     // can jump the viewport to the top.
     requestAnimationFrame(() => {
+      if (!readyRef.current || !hasMeasurableSize(containerRef.current)) return;
       if (fitAddonRef.current && terminalRef.current) {
         fitPreservingScroll(terminalRef.current, fitAddonRef.current, agentId);
 
@@ -170,10 +175,59 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     };
     helperTextarea?.addEventListener('blur', onHelperBlur);
 
-    // Initial fit, replay buffered output, and focus
+    // Replay buffered output, then fit and size the PTY.  The replay goes
+    // first so the child's repaint for the new size lands on top of the
+    // restored screen instead of being drawn before it (#2321).
+    readyRef.current = false;
+    const drainPending = async () => {
+      while (pendingData.length > 0) {
+        const chunks = pendingData.splice(0);
+        let batch = '';
+        for (const chunk of chunks) batch += takeUnseen(chunk.data, chunk.seq);
+        if (batch) await writeAsync(term, batch);
+      }
+    };
+    const finishReplay = () => {
+      if (terminalRef.current !== term) return;
+      bufferReplayed = true;
+      readyRef.current = true;
+      // A hidden or zero-size container would fit to 80x24 or 2x1; leave the
+      // PTY alone and let the ResizeObserver size it once it is laid out.
+      if (hasMeasurableSize(containerRef.current)) {
+        fitPreservingScroll(term, fitAddon, agentId);
+        ptyResize(agentId, term.cols, term.rows);
+      }
+      // Large writes (buf can approach the 2MB MAX_BUFFER_SIZE cap in
+      // pty-manager) can stall the renderer long enough that focus is
+      // dropped before the user sees a ready terminal.  Re-focus if
+      // this pane is still the focused one.
+      if (focusedRef.current) term.focus();
+    };
+    const restore = async (snapshot: PtyBufferSnapshot, source: 'local' | 'remote/annex') => {
+      if (terminalRef.current !== term) return;
+      if (snapshot.data) {
+        rendererLog(SCROLL_LOG_NS, 'debug', `Buffer replay (${source})`, {
+          meta: { agentId, bufLen: snapshot.data.length, seq: snapshot.seq, sizes: snapshot.sizes?.length ?? 0 },
+        });
+      }
+      // Each part of the history is written at the PTY size it was drawn at,
+      // leaving the terminal at the PTY's current size for queued live data.
+      await writePtySnapshot(term, snapshot);
+      if (terminalRef.current !== term) return;
+      appliedSeq = snapshot.seq;
+      await drainPending();
+      finishReplay();
+    };
+    const replayFailed = async (err: unknown, source: 'local' | 'remote/annex') => {
+      rendererLog(SCROLL_LOG_NS, 'error', `Buffer replay failed (${source})`, {
+        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+      if (terminalRef.current !== term) return;
+      await drainPending();
+      finishReplay();
+    };
+
     requestAnimationFrame(() => {
-      fitAddon.fit();
-      ptyResize(agentId, term.cols, term.rows);
       term.focus();
 
       rendererLog(SCROLL_LOG_NS, 'debug', 'Terminal initialized', {
@@ -185,56 +239,14 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         // The snapshot reports the output seq it includes; live chunks queued
         // (or still in flight) for that range are trimmed so data that landed
         // in both the snapshot and the live stream is written only once.
-        window.clubhouse.pty.getBufferSnapshot(agentId).then(({ data: buf, seq }) => {
-          if (terminalRef.current !== term) return;
-          if (buf) {
-            rendererLog(SCROLL_LOG_NS, 'debug', 'Buffer replay (local)', {
-              meta: { agentId, bufLen: buf.length, seq },
-            });
-            term.write(buf);
-          }
-          appliedSeq = seq;
-          for (const chunk of pendingData) {
-            const fresh = takeUnseen(chunk.data, chunk.seq);
-            if (fresh) term.write(fresh);
-          }
-          pendingData.length = 0;
-          bufferReplayed = true;
-          // Large writes (buf can approach the 2MB MAX_BUFFER_SIZE cap in
-          // pty-manager) can stall the renderer long enough that focus is
-          // dropped before the user sees a ready terminal.  Re-focus if
-          // this pane is still the focused one.
-          if (focusedRef.current) term.focus();
-        }).catch((err: unknown) => {
-          rendererLog(SCROLL_LOG_NS, 'error', 'Buffer replay failed (local)', {
-            meta: { agentId, error: err instanceof Error ? err.message : String(err) },
-          });
-          for (const chunk of pendingData) term.write(chunk.data);
-          pendingData.length = 0;
-          bufferReplayed = true;
-        });
+        window.clubhouse.pty.getBufferSnapshot(agentId)
+          .then((snapshot) => restore(snapshot, 'local'))
+          .catch((err: unknown) => replayFailed(err, 'local'));
       } else if (remoteParts) {
-        // Remote agents: fetch buffer from satellite via HTTPS REST
-        requestPtyBufferRef.current(remoteParts.satelliteId, remoteParts.agentId).then((buf: string) => {
-          if (terminalRef.current !== term) return;
-          if (buf) {
-            rendererLog(SCROLL_LOG_NS, 'debug', 'Buffer replay (remote/annex)', {
-              meta: { agentId, satelliteId: remoteParts.satelliteId, bufLen: buf.length },
-            });
-            term.write(buf);
-          }
-          for (const chunk of pendingData) term.write(chunk.data);
-          pendingData.length = 0;
-          bufferReplayed = true;
-          if (focusedRef.current) term.focus();
-        }).catch((err: unknown) => {
-          rendererLog(SCROLL_LOG_NS, 'error', 'Buffer replay failed (remote/annex)', {
-            meta: { agentId, satelliteId: remoteParts.satelliteId, error: err instanceof Error ? err.message : String(err) },
-          });
-          for (const chunk of pendingData) term.write(chunk.data);
-          pendingData.length = 0;
-          bufferReplayed = true;
-        });
+        // Remote agents: fetch the satellite's processed screen via HTTPS REST
+        requestPtyBufferRef.current(remoteParts.satelliteId, remoteParts.agentId)
+          .then((buf: string) => restore({ data: buf, seq: -1 }, 'remote/annex'))
+          .catch((err: unknown) => replayFailed(err, 'remote/annex'));
       }
     });
 
@@ -385,7 +397,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
   // Pass ptyResize so remote agents route resize through the Annex client, not local IPC
-  useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused, ptyResize);
+  useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused, ptyResize, readyRef);
 
   // ── Scroll-to-bottom tracking ───────────────────────────────────
   // xterm 6 scrolls virtually: `.xterm-viewport` never scrolls (scrollTop

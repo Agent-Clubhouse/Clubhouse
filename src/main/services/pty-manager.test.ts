@@ -1563,6 +1563,78 @@ describe('pty-manager', () => {
     });
   });
 
+  // ── Size-aware snapshots (#2321) ─────────────────────────────────────
+
+  describe('getBufferSnapshot sizes', () => {
+    const shellData = () => mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
+
+    it('starts at the spawn size', async () => {
+      await spawnShell('size_spawn', '/project');
+      shellData()('hello');
+      expect(getBufferSnapshot('size_spawn').sizes).toEqual([{ offset: 0, cols: 120, rows: 30 }]);
+    });
+
+    it('records each size change at the output offset it took effect', async () => {
+      await spawnShell('size_log', '/project');
+      const onData = shellData();
+      onData('wide-');
+      resize('size_log', 80, 24);
+      onData('narrow-');
+      resize('size_log', 100, 30);
+      onData('end');
+
+      expect(getBufferSnapshot('size_log')).toMatchObject({
+        data: 'wide-narrow-end',
+        sizes: [
+          { offset: 0, cols: 120, rows: 30 },
+          { offset: 5, cols: 80, rows: 24 },
+          { offset: 12, cols: 100, rows: 30 },
+        ],
+      });
+    });
+
+    it('collapses resizes with no output between them', async () => {
+      await spawnShell('size_collapse', '/project');
+      const onData = shellData();
+      resize('size_collapse', 2, 1); // replaced before anything was drawn at it
+      resize('size_collapse', 90, 20);
+      onData('a');
+      resize('size_collapse', 50, 10);
+      resize('size_collapse', 90, 20); // back to the size already in effect
+      onData('b');
+      resize('size_collapse', 90, 20); // no-op
+
+      expect(getBufferSnapshot('size_collapse').sizes).toEqual([{ offset: 0, cols: 90, rows: 20 }]);
+    });
+
+    it('keeps the size the kept history starts at after eviction', async () => {
+      await spawnShell('size_evict', '/project');
+      const onData = shellData();
+      const big = 'x'.repeat(1024 * 1024);
+      onData(big);
+      resize('size_evict', 80, 24);
+      onData(big);
+      resize('size_evict', 60, 20);
+      onData('\x1b[mtail'); // evicts the first chunk
+
+      const snapshot = getBufferSnapshot('size_evict');
+      expect(snapshot.sizes![0]).toEqual({ offset: 0, cols: 80, rows: 24 });
+      expect(snapshot.sizes!.at(-1)).toEqual({ offset: snapshot.data.length - 7, cols: 60, rows: 20 });
+    });
+
+    it('skips a cut escape sequence and re-enters the alt screen after eviction', async () => {
+      await spawnShell('size_alt', '/project');
+      const onData = shellData();
+      onData('\x1b[?1049h' + 'y'.repeat(2 * 1024 * 1024 - 8));
+      onData('5;1Hrest\x1b[Hframe'); // the head of a cut "ESC[5;1H"
+      onData('z'.repeat(16)); // pushes the first chunk out
+
+      const snapshot = getBufferSnapshot('size_alt');
+      expect(snapshot.data.startsWith('\x1b[?1049h\x1b[Hframe')).toBe(true);
+      expect(snapshot.sizes).toEqual([{ offset: 0, cols: 120, rows: 30 }]);
+    });
+  });
+
   // ── Buffer compaction ────────────────────────────────────────────────
 
   describe('buffer compaction', () => {

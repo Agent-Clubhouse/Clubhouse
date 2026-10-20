@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import type { PtyBufferSnapshot } from '../shared/pty-snapshot';
 
 export const pty = {
   pty: {
@@ -19,8 +20,11 @@ export const pty = {
   /** True when a shell session is running a command, or when that can't be told (Windows). */
   isShellBusy: (id: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.PTY.IS_SHELL_BUSY, id),
-  /** Buffer plus the output seq it includes; pair with the `seq` passed to `onData`. */
-  getBufferSnapshot: (agentId: string): Promise<{ data: string; seq: number }> =>
+  /**
+   * Buffer plus the output seq it includes (pair with the `seq` passed to
+   * `onData`) and the PTY size each part was written at.
+   */
+  getBufferSnapshot: (agentId: string): Promise<PtyBufferSnapshot> =>
     ipcRenderer.invoke(IPC.PTY.GET_BUFFER_SNAPSHOT, agentId),
   onData: (callback: (agentId: string, data: string, seq?: number) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, agentId: string, data: string, seq?: number) =>

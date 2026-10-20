@@ -1,5 +1,5 @@
 import { render, act, fireEvent, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useThemeStore } from '../../stores/themeStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
@@ -29,7 +29,12 @@ vi.mock('@xterm/xterm', () => {
       textarea.classList.add('xterm-helper-textarea');
       container.appendChild(textarea);
     });
-    write = vi.fn();
+    // Parses synchronously: call the completion callback right away.
+    write = vi.fn((_data: string, callback?: () => void) => { callback?.(); });
+    resize = vi.fn(function (this: { cols: number; rows: number }, cols: number, rows: number) {
+      this.cols = cols;
+      this.rows = rows;
+    });
     focus = vi.fn();
     dispose = vi.fn();
     onData = vi.fn().mockReturnValue({ dispose: vi.fn() });
@@ -119,6 +124,19 @@ const mockRemoveExitListener = vi.fn();
 const mockDisconnect = vi.fn();
 
 describe('AgentTerminal', () => {
+  // jsdom lays nothing out; give containers a size so mount fits run.
+  // Tests that need a hidden container override these spies.
+  let widthSpy: ReturnType<typeof vi.spyOn>;
+  let heightSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    widthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+    heightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+  });
+  afterEach(() => {
+    widthSpy.mockRestore();
+    heightSpy.mockRestore();
+  });
+
   beforeEach(() => {
     g.__testTerminal = null;
     g.__testFitAddon = null;
@@ -190,10 +208,49 @@ describe('AgentTerminal', () => {
       expect(term().open).toHaveBeenCalled();
     });
 
-    it('calls fit and resize on mount', () => {
+    it('calls fit and resize on mount, after the buffer replay', async () => {
       render(<AgentTerminal agentId="agent-1" />);
+      expect(fitAddon().fit).not.toHaveBeenCalled();
+      await act(async () => {});
       expect(fitAddon().fit).toHaveBeenCalled();
       expect(window.clubhouse.pty.resize).toHaveBeenCalledWith('agent-1', 80, 24);
+    });
+
+    it('replays the snapshot at its recorded PTY sizes before sizing the PTY (#2321)', async () => {
+      (window.clubhouse.pty.getBufferSnapshot as any).mockResolvedValue({
+        data: 'wide-narrow',
+        seq: 11,
+        sizes: [{ offset: 0, cols: 100, rows: 30 }, { offset: 5, cols: 60, rows: 20 }],
+      });
+      const calls: string[] = [];
+      render(<AgentTerminal agentId="agent-1" />);
+      term().resize.mockImplementation(function (this: any, cols: number, rows: number) {
+        this.cols = cols;
+        this.rows = rows;
+        calls.push(`term.resize ${cols}x${rows}`);
+      });
+      term().write.mockImplementation((data: string, cb?: () => void) => { calls.push(`write ${data}`); cb?.(); });
+      fitAddon().fit.mockImplementation(() => calls.push('fit'));
+      (window.clubhouse.pty.resize as any).mockImplementation((_id: string, c: number, r: number) => calls.push(`pty.resize ${c}x${r}`));
+
+      await act(async () => {});
+      expect(calls).toEqual([
+        'term.resize 100x30',
+        'write wide-',
+        'term.resize 60x20',
+        'write narrow',
+        'fit',
+        'pty.resize 60x20',
+      ]);
+    });
+
+    it('does not fit or resize the PTY when mounted in a hidden container (#2323)', async () => {
+      widthSpy.mockReturnValue(0);
+      heightSpy.mockReturnValue(0);
+      render(<AgentTerminal agentId="agent-1" />);
+      await act(async () => {});
+      expect(fitAddon().fit).not.toHaveBeenCalled();
+      expect(window.clubhouse.pty.resize).not.toHaveBeenCalled();
     });
 
     it('requests buffer content on mount', () => {
@@ -252,8 +309,8 @@ describe('AgentTerminal', () => {
 
       // Now resolve the buffer — queued data should be replayed after snapshot
       await act(async () => { resolveBuffer!('buffered output'); });
-      expect(term().write).toHaveBeenCalledWith('buffered output');
-      expect(term().write).toHaveBeenCalledWith('live data');
+      expect(term().write).toHaveBeenCalledWith('buffered output', expect.any(Function));
+      expect(term().write).toHaveBeenCalledWith('live data', expect.any(Function));
 
       // Data arriving AFTER buffer replay should pass through
       act(() => { mockOnDataCallback!('agent-1', 'new data'); });
@@ -275,10 +332,10 @@ describe('AgentTerminal', () => {
       act(() => { mockOnDataCallback!('agent-1', 'chunk3'); });
       expect(term().write).not.toHaveBeenCalled();
 
-      // Resolve buffer — snapshot + all queued chunks should be written in order
+      // Resolve buffer — snapshot, then all queued chunks in order (one batch)
       await act(async () => { resolveBuffer!('snapshot'); });
       const writeCalls = term().write.mock.calls.map((c: unknown[]) => c[0]);
-      expect(writeCalls).toEqual(['snapshot', 'chunk1', 'chunk2', 'chunk3']);
+      expect(writeCalls).toEqual(['snapshot', 'chunk1chunk2chunk3']);
     });
 
     it('drops live chunks already contained in the snapshot (seq <= snapshot seq)', async () => {
@@ -919,8 +976,7 @@ describe('AgentTerminal', () => {
       vi.useRealTimers();
     });
 
-    it('triggers a re-fit after resume finishes', () => {
-      vi.useFakeTimers();
+    it('triggers a re-fit after resume finishes', async () => {
       useAgentStore.setState({
         agents: {
           'agent-1': {
@@ -939,6 +995,10 @@ describe('AgentTerminal', () => {
       });
 
       render(<AgentTerminal agentId="agent-1" />);
+      // Let the mount replay finish before faking timers.
+      await act(async () => {});
+      // Fake only timeouts: the stubbed requestAnimationFrame must stay synchronous.
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 
       // Clear fit calls from initialization
       fitAddon().fit.mockClear();

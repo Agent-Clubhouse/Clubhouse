@@ -14,6 +14,7 @@ import { validateCommandPrefix } from './command-prefix-validation';
 import { agentKillRequested, agentKillStage, agentOutput, agentRunKilled, agentRunStarted, agentShellReady, agentSwept } from '../telemetry/agent-telemetry';
 import { tagError } from '../telemetry/types';
 import { stripTerminalEscapes } from '../../shared/terminal-text';
+import { altScreenAfter, resyncOffset, type PtyBufferSnapshot, type PtySnapshotSize } from '../../shared/pty-snapshot';
 
 /** Pattern matching common API key environment variable names. */
 const API_KEY_ENV_PATTERN = /^(ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AZURE_OPENAI_API_KEY|MISTRAL_API_KEY|COHERE_API_KEY|HUGGING_FACE_TOKEN|HF_TOKEN)$/;
@@ -50,6 +51,16 @@ interface ManagedSession {
    * they include, so a renderer can drop live data already in its snapshot.
    */
   outputSeq: number;
+  /**
+   * PTY size changes keyed by the output seq they took effect at, oldest
+   * first.  Entries before the buffer head are pruned except the last one,
+   * which gives the size the kept history starts at.
+   */
+  sizeLog: Array<{ seq: number; cols: number; rows: number }>;
+  /** Whether the alt screen was active at the buffer head (evicted history). */
+  headAltScreen: boolean;
+  /** UTF-16 code units evicted from the head of the buffer so far. */
+  evictedChars: number;
   pendingCommand?: string;
   eofTimer?: ReturnType<typeof setTimeout>;
   termTimer?: ReturnType<typeof setTimeout>;
@@ -60,6 +71,10 @@ interface ManagedSession {
 }
 
 const MAX_BUFFER_SIZE = 2 * 1024 * 1024; // 2MB per agent
+
+/** Size every PTY is spawned at, before a terminal reports its own. */
+const SPAWN_COLS = 120;
+const SPAWN_ROWS = 30;
 
 /**
  * Sensitive directory prefixes that should never be used as a PTY cwd.
@@ -198,6 +213,9 @@ function createSession(process: pty.IPty, agentId: string, pendingCommand?: stri
     bufferCache: '',
     bufferCacheDirty: false,
     outputSeq: outputSeqHighWater,
+    sizeLog: [{ seq: outputSeqHighWater, cols: SPAWN_COLS, rows: SPAWN_ROWS }],
+    headAltScreen: false,
+    evictedChars: 0,
     pendingCommand,
   };
 }
@@ -209,9 +227,18 @@ function appendToBuffer(session: ManagedSession, data: string): void {
   if (session.outputSeq > outputSeqHighWater) outputSeqHighWater = session.outputSeq;
   session.bufferCacheDirty = true;
   // Evict oldest chunks using a head pointer — O(1) per eviction step.
+  let evicted = false;
   while (session.outputSize > MAX_BUFFER_SIZE && session.outputHead < session.outputChunks.length - 1) {
-    session.outputSize -= session.outputChunks[session.outputHead]!.length;
+    const chunk = session.outputChunks[session.outputHead]!;
+    session.headAltScreen = altScreenAfter(chunk, session.headAltScreen);
+    session.outputSize -= chunk.length;
+    session.evictedChars += chunk.length;
     session.outputHead++;
+    evicted = true;
+  }
+  if (evicted) {
+    const headSeq = session.outputSeq - session.outputSize;
+    while (session.sizeLog.length > 1 && session.sizeLog[1]!.seq <= headSeq) session.sizeLog.shift();
   }
   // Periodically compact the array to reclaim memory from the evicted prefix.
   if (session.outputHead >= COMPACT_THRESHOLD) {
@@ -235,13 +262,30 @@ export function getBuffer(agentId: string): string {
 }
 
 /**
- * Get the raw buffer together with the output sequence number it includes.
- * Live PTY.DATA events whose seq is <= `seq` are already in `data`.
+ * Get the raw buffer together with the output sequence number it includes and
+ * the PTY size each part of it was written at.  Live PTY.DATA events whose seq
+ * is <= `seq` are already in `data`.
+ *
+ * Once the head has been evicted, the data starts at a safe point past any cut
+ * escape sequence, and re-enters the alt screen if it was active there.
  */
-export function getBufferSnapshot(agentId: string): { data: string; seq: number } {
+export function getBufferSnapshot(agentId: string): PtyBufferSnapshot {
   const session = sessions.get(agentId);
   if (!session) return { data: '', seq: outputSeqHighWater };
-  return { data: getSessionBuffer(session), seq: session.outputSeq };
+  const raw = getSessionBuffer(session);
+  const startSeq = session.outputSeq - raw.length;
+  const truncated = session.evictedChars > 0;
+  const skip = truncated ? resyncOffset(raw) : 0;
+  const prefix = truncated && session.headAltScreen ? '\x1b[?1049h' : '';
+  const sizes: PtySnapshotSize[] = [];
+  for (const entry of session.sizeLog) {
+    // Sizes set before the replay start all apply at offset 0; the last wins.
+    const offset = entry.seq <= startSeq + skip ? 0 : entry.seq - startSeq - skip + prefix.length;
+    if (sizes.length > 0 && sizes[sizes.length - 1]!.offset === offset) sizes.pop();
+    sizes.push({ offset, cols: entry.cols, rows: entry.rows });
+  }
+  const data = skip > 0 || prefix ? prefix + raw.slice(skip) : raw;
+  return { data, seq: session.outputSeq, sizes };
 }
 
 annexEventBus.onActiveChange((active) => {
@@ -518,9 +562,28 @@ export function writeBinary(agentId: string, data: string): void {
   session.process.write(Buffer.from(data, 'latin1'));
 }
 
+/** Record a PTY size change at the current output position. */
+function logSize(session: ManagedSession, cols: number, rows: number): void {
+  const log = session.sizeLog;
+  const last = log[log.length - 1]!;
+  if (last.cols === cols && last.rows === rows) return;
+  if (last.seq === session.outputSeq) {
+    // No output since the last change, so nothing was drawn at that size.
+    if (log.length === 1) {
+      log[0] = { seq: last.seq, cols, rows };
+      return;
+    }
+    log.pop();
+    const prev = log[log.length - 1]!;
+    if (prev.cols === cols && prev.rows === rows) return;
+  }
+  log.push({ seq: session.outputSeq, cols, rows });
+}
+
 export function resize(agentId: string, cols: number, rows: number): void {
   const session = sessions.get(agentId);
   if (session) {
+    logSize(session, cols, rows);
     session.process.resize(cols, rows);
     if (annexEventBus.isActive()) {
       headlessTerminal.resize(agentId, cols, rows);
