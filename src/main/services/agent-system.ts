@@ -46,6 +46,10 @@ import { ATTR } from '../../shared/telemetry/attributes';
 import { tel, tagError, withErrorType } from '../telemetry/facade';
 import { agentKillRequested, clearSpawnKind, noteSpawnKind } from '../telemetry/agent-telemetry';
 import { recordChatStart, recordSpawn, spawnAttrs, type SpawnFacts } from '../telemetry/spawn-telemetry';
+import {
+  recordResumeOutcome, recordSessionCapture, recordStaleSessionCleared,
+  type SessionCaptureResult, type SessionCaptureSource, type SessionResumeResult, type SessionStaleReason,
+} from '../telemetry/session-telemetry';
 
 /** Expand leading `~` or `~/` to the user's home directory. */
 export function expandHome(p: string): string {
@@ -387,6 +391,10 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     if (params.kind === 'durable') await syncOrchestrationGate(params.projectPath, params.agentId);
     facts.model = params.model;
 
+    // The user woke it fresh although it has a session to resume.
+    if (params.kind === 'durable' && !params.resume && durableConfig?.lastSessionId) {
+      recordResumeOutcome(provider.id, params.agentId, 'fresh_user');
+    }
     // A saved id the CLI's own store doesn't have (Codex agents saved made-up
     // ids before #2113, #2132): start fresh instead of resuming nothing.
     if (params.kind === 'durable' && params.resume && params.sessionId && isSessionCapable(provider) && provider.hasSession) {
@@ -395,7 +403,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
         appLog('core:agent', 'warn', 'Saved session is gone from the CLI store; starting fresh', {
           meta: { agentId: params.agentId, sessionId: params.sessionId },
         });
-        await clearResume(params.projectPath, params.agentId, params.sessionId, 'not_found');
+        await clearResume(params.projectPath, provider.id, params.agentId, params.sessionId, 'store_missing');
+        recordResumeOutcome(provider.id, params.agentId, 'fresh_not_found');
         params = { ...params, resume: false, sessionId: undefined };
       }
     }
@@ -459,7 +468,8 @@ async function spawnAgentInner(inParams: SpawnAgentParams, facts: SpawnFacts): P
     // terminal try the same dead id (#2086). Start it fresh instead.
     const chatFailure = takeChatStartFailure(params.agentId);
     if (params.kind === 'durable' && params.resume && params.sessionId && isSessionNotFound(chatFailure)) {
-      await clearResume(params.projectPath, params.agentId, params.sessionId, 'not_found');
+      await clearResume(params.projectPath, provider.id, params.agentId, params.sessionId, 'chat_not_found');
+      recordResumeOutcome(provider.id, params.agentId, 'fresh_not_found', 'pty');
       params = { ...params, resume: false, sessionId: undefined };
     }
 
@@ -761,22 +771,32 @@ async function captureSession(
   const resumedId = params.resume ? params.sessionId : undefined;
   // Only a resume that quit on its own with an error can have failed to resume.
   const failedResume = !!resumedId && exitCode !== 0 && !killed;
+  // Telemetry (#2305): the run's capture outcome, and its resume outcome if it resumed.
+  let resumeResult: SessionResumeResult = 'resumed';
+  let rejected: SessionCaptureResult | undefined;
+  let source: SessionCaptureSource = 'none';
+  const record = (result: SessionCaptureResult) =>
+    recordSessionCapture({ orchestrator: provider.id, agentId, runtime: 'pty', result, source, exitCode });
   try {
     // The tail only: a long session's own conversation may mention such errors.
     if (failedResume && isSessionNotFound(buffer?.slice(-RESUME_ERROR_TAIL))) {
       appLog('core:agent', 'warn', 'Resume failed: the CLI has no such session', {
         meta: { agentId, sessionId: resumedId, exitCode },
       });
-      return clearResume(params.projectPath, agentId, resumedId, 'not_found');
+      resumeResult = 'failed_not_found';
+      record('resume_failed_no_session');
+      return await clearResume(params.projectPath, provider.id, agentId, resumedId, 'exit_not_found');
     }
     // Never save an id the CLI's own store doesn't have (#2156): a scraped UUID
     // can come from the conversation text, and a clean exit doesn't prove the
     // resumed id existed. undefined (can't tell) keeps the id.
-    const exists = async (id: string | null): Promise<string | null> => {
+    // `assigned`: the run's own id, which the CLI may simply not have created yet; not a bad id.
+    const exists = async (id: string | null, assigned = false): Promise<string | null> => {
       if (!id || !isSessionCapable(provider) || !provider.hasSession) return id;
       const has = await provider.hasSession(id, profileEnv).catch((): undefined => undefined);
       if (has === false) {
         appLog('core:agent', 'warn', 'Ignoring a session id the CLI store does not have', { meta: { agentId, sessionId: id } });
+        if (!assigned) rejected = 'ignored_not_in_store';
         return null;
       }
       return id;
@@ -788,35 +808,48 @@ async function captureSession(
       const ours = await provider.hasSessionForCwd(id, params.cwd, profileEnv).catch((): undefined => undefined);
       if (ours === false) {
         appLog('core:agent', 'warn', 'Ignoring a scraped session id that is not this agent\'s', { meta: { agentId, sessionId: id } });
+        rejected = 'ignored_foreign';
         return null;
       }
       return id;
     };
     // The id Clubhouse gave a fresh session (Copilot's --session-id) is the
     // run's own; it's checked too, as the CLI may have quit before creating it.
-    let sessionId: string | null = assignedId ? await exists(assignedId) : null;
-    if (!sessionId && buffer && isSessionCapable(provider)) sessionId = await scraped(provider.extractSessionId(buffer));
+    let sessionId: string | null = assignedId ? await exists(assignedId, true) : null;
+    if (sessionId) source = 'assigned';
+    if (!sessionId && buffer && isSessionCapable(provider)) {
+      sessionId = await scraped(provider.extractSessionId(buffer));
+      if (sessionId) source = 'output_scrape';
+    }
     // A resume that failed wrote no session of its own, so there's nothing to look up.
     if (!sessionId && !failedResume && isSessionCapable(provider) && provider.findRunSession) {
       const endedAt = Date.now();
       sessionId = await provider.findRunSession({ cwd: params.cwd, startedAt: endedAt - runMs, endedAt, resumedId, profileEnv });
+      if (sessionId) source = 'run_store';
     }
-    if (!sessionId && resumedId && exitCode === 0) sessionId = await exists(resumedId);
+    if (!sessionId && resumedId && exitCode === 0) {
+      sessionId = await exists(resumedId);
+      if (sessionId) source = 'resumed_id';
+    }
     if (!sessionId) {
       if (failedResume && runMs < RESUME_EARLY_EXIT_MS) {
         appLog('core:agent', 'warn', 'Resume failed: the CLI exited right away', {
           meta: { agentId, sessionId: resumedId, exitCode, runMs },
         });
-        return clearResume(params.projectPath, agentId, resumedId, 'exited_early');
+        resumeResult = 'failed_early_exit';
+        record('resume_failed_early_exit');
+        return await clearResume(params.projectPath, provider.id, agentId, resumedId, 'exit_early');
       }
       appLog('core:agent', 'info', 'No session ID on exit; keeping the previous one', {
         meta: { agentId, exitCode, resumedSessionId: resumedId ?? null },
       });
+      // A rejected id is still the previous one kept, but it's the signal of a made-up id (#2086).
+      record(rejected ?? 'kept_previous');
       return undefined;
     }
     const capturedId = sessionId;
     const now = new Date().toISOString();
-    return addSessionEntry(params.projectPath, agentId, {
+    return await addSessionEntry(params.projectPath, agentId, {
       sessionId: capturedId,
       startedAt: now,
       lastActiveAt: now,
@@ -824,23 +857,33 @@ async function captureSession(
       appLog('core:agent', 'info', 'Captured session ID on exit', {
         meta: { agentId, sessionId: capturedId, exitCode },
       });
+      record('captured');
     }).catch((entryErr) => {
       appLog('core:agent', 'warn', 'Failed to persist session entry', {
         meta: { agentId, sessionId: capturedId, error: entryErr instanceof Error ? entryErr.message : String(entryErr) },
       });
+      record('persist_failed');
     });
   } catch (err) {
-    // telemetry-exempt: best-effort bookkeeping on exit; logged, and the next wake still works.
+    // telemetry-exempt: best-effort bookkeeping on exit; logged and recorded as capture_failed.
     appLog('core:agent', 'warn', 'Failed to capture session ID', {
       meta: { agentId, error: err instanceof Error ? err.message : String(err) },
     });
+    record('capture_failed');
     return undefined;
+  } finally {
+    if (resumedId) recordResumeOutcome(provider.id, agentId, resumeResult, 'pty');
   }
 }
 
-async function clearResume(projectPath: string, agentId: string, sessionId: string, reason: StaleResumeReason): Promise<void> {
+/**
+ * Clear a dead resume id (#2113). `reason` is where it was found dead; only a
+ * resume that quit right away is `exited_early` to the user.
+ */
+async function clearResume(projectPath: string, orchestrator: string, agentId: string, sessionId: string, reason: SessionStaleReason): Promise<void> {
+  const userReason: StaleResumeReason = reason === 'exit_early' ? 'exited_early' : 'not_found';
   try {
-    await clearStaleResume(projectPath, agentId, sessionId, reason);
+    if (await clearStaleResume(projectPath, agentId, sessionId, userReason)) recordStaleSessionCleared(orchestrator, agentId, reason);
   } catch (err) {
     // telemetry-exempt: best-effort bookkeeping on exit; logged, and the next wake still works.
     appLog('core:agent', 'warn', 'Failed to clear stale resume id', {

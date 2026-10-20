@@ -40,6 +40,8 @@ class AcpChatDriverSession implements ChatDriverSession {
   onEffortChosen: (() => void) | undefined;
   /** Called after a model is chosen in the session (set once mapping starts). */
   onModelChosen: (() => void) | undefined;
+  /** Why a requested resume started fresh instead (see ChatDriverSession). */
+  resumeFallback: 'not_found' | 'stalled' | undefined;
 
   constructor(
     private readonly session: AcpSession,
@@ -176,7 +178,7 @@ export class AcpChatDriver implements ChatDriver {
     } catch (err) {
       if (!(err instanceof AcpResumeStalledError) || opts.signal?.aborted) throw err;
       this.log('warn', 'Native session resume stalled; starting a new one', { sessionId: err.sessionId, method: err.method, timeoutMs: err.timeoutMs });
-      return this.open(opts, undefined, err.timing, [{
+      const fresh = await this.open(opts, undefined, err.timing, [{
         type: 'notice',
         data: {
           level: 'info',
@@ -184,6 +186,8 @@ export class AcpChatDriver implements ChatDriver {
           message: 'The agent didn\'t reopen this conversation in time, so it continues in a new session without the earlier context.',
         },
       }]);
+      fresh.resumeFallback = 'stalled';
+      return fresh;
     }
   }
 
@@ -193,7 +197,7 @@ export class AcpChatDriver implements ChatDriver {
     resumeNativeSessionId: string | undefined,
     stalledTiming: ChatResumeTiming | undefined,
     notices: ChatEventDraft[],
-  ): Promise<ChatDriverSession> {
+  ): Promise<AcpChatDriverSession> {
     if (opts.signal?.aborted) throw new Error('Chat start cancelled');
     const cmd = this.spec.spawn({ binary: opts.binaryPath, extraArgs: opts.extraArgs, commandPrefix: opts.commandPrefix });
     const queue = new AsyncQueue<ChatEventDraft>();
@@ -254,11 +258,13 @@ export class AcpChatDriver implements ChatDriver {
         servers: servers.map((s) => ({ name: s.name, transport: 'type' in s ? s.type : 'stdio' })),
       });
       const setup = { cwd: opts.cwd, mcpServers: servers };
+      let resumeFallback: 'not_found' | undefined;
       const startFresh = async (logMessage: string, message: string) => {
         this.log('warn', logMessage, { sessionId: resumeNativeSessionId });
         // Drop anything a failed load replayed before it gave up.
         buffered.length = 0;
         queue.push({ type: 'notice', data: { level: 'info', code: 'resume_unavailable', message } });
+        resumeFallback = 'not_found';
         await session.newSession(setup);
       };
       let resumed = false;
@@ -296,6 +302,7 @@ export class AcpChatDriver implements ChatDriver {
       const levels = session.agentProfile.permissionLevels;
       driverSession = new AcpChatDriverSession(session, queue, toChatCapabilities(caps, session.getState(), levels), this.log);
       driverSession.resumeTiming = session.resumeTiming ?? stalledTiming;
+      driverSession.resumeFallback = resumeFallback;
       for (const draft of this.spec.handshakeNotices?.(session.initializeResponse!) ?? []) queue.push(draft);
 
       // Apply requested settings before mapping starts, so they aren't reported as changes.

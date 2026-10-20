@@ -1432,6 +1432,213 @@ describe('agent-system', () => {
       expect(mockUpdateSessionId).not.toHaveBeenCalled();
       expect(config.lastSessionId).toBe(REAL);
     });
+
+    describe('telemetry (#2305)', () => {
+      let event: ReturnType<typeof vi.fn>;
+      beforeEach(() => {
+        event = vi.fn();
+        setProducingRuntime({ level: 'standard', flow: (_n: string, _o: unknown, fn: (s: unknown) => unknown) => fn({ set: () => {} }),
+          step: (_n: string, fn: (s: unknown) => unknown) => fn({ set: () => {} }), count: vi.fn(), replaySpan: vi.fn(), event } as unknown as TelemetryRuntime);
+      });
+      afterEach(() => setProducingRuntime(null));
+
+      /** Each recorded event of `name`, as key → value. */
+      const recorded = (name: string) => event.mock.calls
+        .filter(([n]) => n === name)
+        .map(([, attrs]) => Object.fromEntries((attrs as Array<{ key: string; value: unknown }>).map((a) => [a.key, a.value])));
+      const capture = (name = 'clubhouse.agent.session_capture') => vi.waitFor(() => {
+        expect(recorded(name)).toHaveLength(1);
+        return recorded(name)[0];
+      });
+      /** No exported value is a session id: only enums, the exit code and the (hashed) agent id. */
+      const expectNoSessionIds = () => {
+        for (const [, attrs] of event.mock.calls) {
+          for (const a of attrs as Array<{ value: unknown }>) expect([DEAD, REAL]).not.toContain(a.value);
+        }
+      };
+
+      it('a fresh run that printed its id: captured from the output, no resume outcome', async () => {
+        sessionCapable(mockProvider);
+        config = {};
+        const { onExit } = await wake('claude-code');
+        onExit('agent-1', 0, `resume ${REAL}`);
+        expect(await capture()).toEqual({
+          'clubhouse.orchestrator': 'claude-code', 'clubhouse.agent.id_hash': 'agent-1', 'clubhouse.agent.runtime': 'pty',
+          'clubhouse.session.capture.result': 'captured', 'clubhouse.session.capture.source': 'output_scrape', 'process.exit.code': 0,
+        });
+        expect(recorded('clubhouse.agent.resume_outcome')).toEqual([]);
+        expectNoSessionIds();
+      });
+
+      it('a resume the CLI has no session for: resume_failed_no_session, cleared exit_not_found, failed_not_found', async () => {
+        sessionCapable(mockProvider);
+        const { onExit } = await wake('claude-code');
+        onExit('agent-1', 1, `No conversation found with session ID: ${DEAD}\r\n`);
+        expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'resume_failed_no_session', 'clubhouse.session.capture.source': 'none', 'process.exit.code': 1 });
+        expect(await capture('clubhouse.agent.session_stale_cleared')).toEqual({
+          'clubhouse.orchestrator': 'claude-code', 'clubhouse.agent.id_hash': 'agent-1', 'clubhouse.session.stale.reason': 'exit_not_found',
+        });
+        expect(await capture('clubhouse.agent.resume_outcome')).toMatchObject({ 'clubhouse.agent.runtime': 'pty', 'clubhouse.session.resume.result': 'failed_not_found' });
+        expectNoSessionIds();
+      });
+
+      it('a resume that quits at once: resume_failed_early_exit, cleared exit_early, failed_early_exit', async () => {
+        sessionCapable(mockProvider);
+        const { onExit } = await wake('claude-code');
+        onExit('agent-1', 1, '\x1b[?25h');
+        expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'resume_failed_early_exit' });
+        expect(await capture('clubhouse.agent.session_stale_cleared')).toMatchObject({ 'clubhouse.session.stale.reason': 'exit_early' });
+        expect(await capture('clubhouse.agent.resume_outcome')).toMatchObject({ 'clubhouse.session.resume.result': 'failed_early_exit' });
+      });
+
+      it('no stale-clear event when a newer run already replaced the id', async () => {
+        sessionCapable(mockProvider);
+        const { onExit } = await wake('claude-code');
+        config.lastSessionId = REAL;
+        onExit('agent-1', 1, `No conversation found with session ID: ${DEAD}`);
+        await capture('clubhouse.agent.resume_outcome');
+        expect(recorded('clubhouse.agent.session_stale_cleared')).toEqual([]);
+      });
+
+      it('a killed resume: kept_previous, and the resume counts as resumed', async () => {
+        sessionCapable(mockProvider);
+        const { onExit } = await wake('claude-code');
+        onExit('agent-1', 1, '', true);
+        expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'kept_previous', 'clubhouse.session.capture.source': 'none' });
+        expect(await capture('clubhouse.agent.resume_outcome')).toMatchObject({ 'clubhouse.session.resume.result': 'resumed' });
+      });
+
+      it('a clean resumed exit with no printed id: captured from the resumed id', async () => {
+        sessionCapable(mockProvider);
+        const { onExit } = await wake('claude-code');
+        onExit('agent-1', 0, 'bye');
+        expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'captured', 'clubhouse.session.capture.source': 'resumed_id' });
+      });
+
+      describe('Codex and assigned ids', () => {
+        beforeEach(() => sessionCapable(mockCodexProvider));
+
+        it('captured from the CLI\'s run files', async () => {
+          config = {};
+          (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => REAL);
+          const { onExit } = await wake('codex-cli');
+          onExit('agent-1', 0, 'bye');
+          expect(await capture()).toMatchObject({ 'clubhouse.orchestrator': 'codex-cli', 'clubhouse.session.capture.result': 'captured', 'clubhouse.session.capture.source': 'run_store' });
+        });
+
+        it('captured from the id Clubhouse assigned the run', async () => {
+          config = {};
+          mockCodexProvider.buildSpawnCommand.mockResolvedValueOnce({ binary: 'copilot', args: ['--session-id', REAL], sessionId: REAL } as never);
+          (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => true);
+          const { onExit } = await wake('codex-cli');
+          onExit('agent-1', 0, 'bye');
+          expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'captured', 'clubhouse.session.capture.source': 'assigned' });
+        });
+
+        it('an assigned id the CLI never created is not a rejected id', async () => {
+          config = {};
+          mockCodexProvider.buildSpawnCommand.mockResolvedValueOnce({ binary: 'copilot', args: ['--session-id', REAL], sessionId: REAL } as never);
+          (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);
+          (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => null);
+          const { onExit } = await wake('codex-cli');
+          onExit('agent-1', 0, 'bye');
+          expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'kept_previous', 'clubhouse.session.capture.source': 'none' });
+        });
+
+        it('a made-up scraped id and nothing else: ignored_not_in_store (#2086)', async () => {
+          config = {};
+          (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);
+          (mockCodexProvider.extractSessionId as ReturnType<typeof vi.fn>).mockReturnValueOnce(DEAD);
+          (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => null);
+          const { onExit } = await wake('codex-cli');
+          onExit('agent-1', 0, `session: ${DEAD}`);
+          expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'ignored_not_in_store', 'clubhouse.session.capture.source': 'none' });
+          expectNoSessionIds();
+        });
+
+        it('a scraped id from another cwd and nothing else: ignored_foreign', async () => {
+          config = {};
+          (mockCodexProvider as Record<string, unknown>).hasSessionForCwd = vi.fn(async () => false);
+          (mockCodexProvider.extractSessionId as ReturnType<typeof vi.fn>).mockReturnValueOnce(REAL);
+          (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => null);
+          const { onExit } = await wake('codex-cli');
+          onExit('agent-1', 0, `session: ${REAL}`);
+          expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'ignored_foreign' });
+        });
+
+        it('a rejected id followed by a real one is still captured', async () => {
+          config = {};
+          (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async (id: string) => id !== DEAD);
+          (mockCodexProvider.extractSessionId as ReturnType<typeof vi.fn>).mockReturnValueOnce(DEAD);
+          (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => REAL);
+          const { onExit } = await wake('codex-cli');
+          onExit('agent-1', 0, `session: ${DEAD}`);
+          expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'captured', 'clubhouse.session.capture.source': 'run_store' });
+        });
+
+        it('persist_failed when the session entry can\'t be written', async () => {
+          config = {};
+          (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => REAL);
+          mockAddSessionEntry.mockRejectedValueOnce(new Error('EACCES'));
+          const { onExit } = await wake('codex-cli');
+          onExit('agent-1', 0, 'bye');
+          expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'persist_failed', 'clubhouse.session.capture.source': 'run_store' });
+        });
+
+        it('capture_failed when the lookup throws', async () => {
+          config = {};
+          (mockCodexProvider as Record<string, unknown>).findRunSession = vi.fn(async () => { throw new Error('boom'); });
+          const { onExit } = await wake('codex-cli');
+          onExit('agent-1', 0, 'bye');
+          expect(await capture()).toMatchObject({ 'clubhouse.session.capture.result': 'capture_failed' });
+        });
+
+        it('a saved id the store lacks at wake: cleared store_missing, fresh_not_found', async () => {
+          (mockCodexProvider as Record<string, unknown>).hasSession = vi.fn(async () => false);
+          await wake('codex-cli');
+          expect(recorded('clubhouse.agent.session_stale_cleared')).toEqual([
+            { 'clubhouse.orchestrator': 'codex-cli', 'clubhouse.agent.id_hash': 'agent-1', 'clubhouse.session.stale.reason': 'store_missing' },
+          ]);
+          expect(recorded('clubhouse.agent.resume_outcome')).toEqual([
+            { 'clubhouse.orchestrator': 'codex-cli', 'clubhouse.agent.id_hash': 'agent-1', 'clubhouse.session.resume.result': 'fresh_not_found' },
+          ]);
+        });
+      });
+
+      it('chat could not resume a gone session: cleared chat_not_found, fresh_not_found in the terminal', async () => {
+        const { noteChatStartFailure } = await import('./agent-runtime/stale-session');
+        const realStart = mockTryStartChatAgent.getMockImplementation()!;
+        mockTryStartChatAgent.mockImplementationOnce(async (params: { agentId: string }) => {
+          noteChatStartFailure(params.agentId, `RPC error: no rollout found for thread id ${DEAD}`);
+          return 'terminal';
+        });
+        try {
+          await wake('codex-cli');
+          expect(recorded('clubhouse.agent.session_stale_cleared')).toEqual([expect.objectContaining({ 'clubhouse.session.stale.reason': 'chat_not_found' })]);
+          expect(recorded('clubhouse.agent.resume_outcome')).toEqual([
+            expect.objectContaining({ 'clubhouse.agent.runtime': 'pty', 'clubhouse.session.resume.result': 'fresh_not_found' }),
+          ]);
+        } finally {
+          mockTryStartChatAgent.mockImplementation(realStart);
+        }
+      });
+
+      it('a wake the user started fresh although a session exists: fresh_user', async () => {
+        await spawnAgent({ agentId: 'agent-1', projectPath: '/project', cwd: '/project', kind: 'durable', orchestrator: 'claude-code', resume: false });
+        expect(recorded('clubhouse.agent.resume_outcome')).toEqual([
+          { 'clubhouse.orchestrator': 'claude-code', 'clubhouse.agent.id_hash': 'agent-1', 'clubhouse.session.resume.result': 'fresh_user' },
+        ]);
+      });
+
+      it('records nothing with telemetry off', async () => {
+        setProducingRuntime(null);
+        sessionCapable(mockProvider);
+        const { onExit } = await wake('claude-code');
+        onExit('agent-1', 1, `No conversation found with session ID: ${DEAD}`);
+        await vi.waitFor(() => expect(mockUpdateSessionId).toHaveBeenCalledWith('/project', 'agent-1', null));
+        expect(event).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('unfinished creation (#2226)', () => {

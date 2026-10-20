@@ -32,6 +32,7 @@ export class FakeChatDriverSession implements ChatDriverSession {
   interrupts = 0;
   compactions = 0;
   closed = false;
+  resumeFallback: 'not_found' | 'stalled' | undefined;
 
   constructor(
     public nativeSessionId: string | undefined,
@@ -70,6 +71,8 @@ export class FakeChatDriverSession implements ChatDriverSession {
 
 export class FakeChatDriver implements ChatDriver {
   readonly sessions: FakeChatDriverSession[] = [];
+  /** When set, a resume starts a fresh native session instead, giving this reason. */
+  resumeFallback: 'not_found' | 'stalled' | undefined;
 
   constructor(
     readonly id: ChatDriverId = 'claude_stream_json',
@@ -88,11 +91,13 @@ export class FakeChatDriver implements ChatDriver {
   }
 
   async start(opts: ChatDriverStartOptions): Promise<ChatDriverSession> {
+    const fallback = opts.resumeNativeSessionId ? this.resumeFallback : undefined;
     const session = new FakeChatDriverSession(
-      opts.resumeNativeSessionId ?? `native-${this.sessions.length + 1}`,
+      (fallback ? undefined : opts.resumeNativeSessionId) ?? `native-${this.sessions.length + 1}`,
       this.capabilities,
       opts,
     );
+    session.resumeFallback = fallback;
     this.sessions.push(session);
     return session;
   }

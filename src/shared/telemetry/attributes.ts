@@ -520,6 +520,26 @@ export const ATTR = {
     'standard', 'commit_push', 'cleanup_branch', 'save_patch', 'force', 'unregister',
   ]),
   tapBroadcast: boolAttr('clubhouse.tap.broadcast'),
+  // Session-id capture and resume (#2305). Never the session id itself.
+  /** What a run's end did with the agent's resume id. */
+  sessionCaptureResult: enumAttr('clubhouse.session.capture.result', [
+    'captured', 'kept_previous', 'ignored_not_in_store', 'ignored_foreign',
+    'resume_failed_no_session', 'resume_failed_early_exit', 'persist_failed', 'capture_failed',
+  ]),
+  /**
+   * Where the saved id came from: the id Clubhouse assigned the run, the CLI's
+   * output (regex), the CLI's own run files (Codex rollouts, #2134), the id the
+   * run was resumed with, or the chat driver's report.
+   */
+  sessionCaptureSource: enumAttr('clubhouse.session.capture.source', [
+    'assigned', 'output_scrape', 'run_store', 'resumed_id', 'provider_reported', 'none',
+  ]),
+  /** Why a saved resume id was cleared (#2113): where the dead session was noticed. */
+  sessionStaleReason: enumAttr('clubhouse.session.stale.reason', ['store_missing', 'chat_not_found', 'exit_not_found', 'exit_early']),
+  /** How a durable agent's wake went: resumed, started fresh (and why), or a terminal resume that failed. */
+  sessionResumeResult: enumAttr('clubhouse.session.resume.result', [
+    'resumed', 'fresh_not_found', 'fresh_stalled', 'fresh_user', 'fresh_other', 'failed_not_found', 'failed_early_exit',
+  ]),
   targetsCount: intAttr('clubhouse.targets.count'),
   deliveryResult: enumAttr('clubhouse.delivery.result', ['delivered', 'not_running', 'unsupported_runtime']),
   // Workspace (§4.7–4.10, Phase 5). Counts are bucketed with countBucket().
@@ -1341,6 +1361,21 @@ export const EVENTS = {
   'clubhouse.feedback.access': { level: 'standard' },
   /** A feedback request was refused before any capture. Attributes: `clubhouse.feedback.refusal`. */
   'clubhouse.feedback.request_refused': { level: 'standard' },
+  // Session-id capture and resume (#2305)
+  /**
+   * A durable run ended and its session id was saved, kept or rejected.
+   * Attributes: orchestrator, `clubhouse.agent.id_hash`, `clubhouse.agent.runtime`,
+   * capture result and source, `process.exit.code`.
+   */
+  'clubhouse.agent.session_capture': { level: 'standard' },
+  /** A saved resume id was cleared because its session is gone. Attributes: orchestrator, agent id hash, stale reason. */
+  'clubhouse.agent.session_stale_cleared': { level: 'errors' },
+  /**
+   * The resume outcome of a durable wake, per provider: at chat session open,
+   * or at a terminal run's exit. Attributes: orchestrator, agent id hash,
+   * `clubhouse.agent.runtime`, resume result.
+   */
+  'clubhouse.agent.resume_outcome': { level: 'standard' },
 } as const satisfies Record<string, EventDef>;
 export type EventName = keyof typeof EVENTS;
 
