@@ -5,15 +5,15 @@ import * as pty from 'node-pty';
 import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment, getDefaultShell, cleanSpawnEnv } from '../util/shell';
 import { buildWindowsCmdLine } from '../util/windows-launcher';
-import { appLog } from './log-service';
 import { broadcastToAllWindows, flushPendingFor } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as headlessTerminal from './pty-headless-terminal';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { StaleSweeper } from './stale-sweeper';
 import { validateCommandPrefix } from './command-prefix-validation';
-import { agentKillRequested, agentKillStage, agentOutput, agentRunKilled, agentRunStarted, agentShellReady, agentSwept } from '../telemetry/agent-telemetry';
-import { tagError } from '../telemetry/types';
+import { agentKillRequested, agentKillStage, agentOutput, agentRunKilled, agentRunStarted, agentShellReady, agentSwept, ptyWriteRejected } from '../telemetry/agent-telemetry';
+import { diag, redactDiagText } from '../telemetry/diag';
+import { tagError, type ErrorType } from '../telemetry/types';
 import { stripTerminalEscapes } from '../../shared/terminal-text';
 import { altScreenAfter, resyncOffset, type PtyBufferSnapshot, type PtySnapshotSize } from '../../shared/pty-snapshot';
 
@@ -146,6 +146,54 @@ export async function validateSpawnCwd(cwd: string): Promise<string> {
 
 const sessions = new Map<string, ManagedSession>();
 
+/** Raw output scanned for an exit's last output; wider than the kept tail since escapes are stripped from it. */
+const EXIT_SCAN_CHARS = 4000;
+/** Plain-text characters of output kept with a failed exit (diag line and the renderer's launch error). */
+export const EXIT_TAIL_CHARS = 500;
+
+/** The binary's file name: diag lines name the CLI, not where it is installed. */
+function binaryName(binary: string): string {
+  return binary.split(/[\\/]/).pop() || binary;
+}
+
+/** Plain text redacted for an exit's diag line: under the redactor's own cut, which keeps the head. */
+const EXIT_REDACT_CHARS = EXIT_TAIL_CHARS * 2;
+
+/**
+ * The last output of a failed exit for its diag line: escapes stripped,
+ * redacted, then cut, so a cut never leaves part of a secret the redaction
+ * would have caught. When the redacted window starts mid-output, its first
+ * line may hold a value cut off from its key (`password: x`) and is dropped.
+ */
+function exitTailForDiag(buffer: string): string {
+  let text = stripTerminalEscapes(buffer.slice(-EXIT_SCAN_CHARS));
+  const truncated = buffer.length > EXIT_SCAN_CHARS || text.length > EXIT_REDACT_CHARS;
+  text = text.slice(-EXIT_REDACT_CHARS);
+  if (truncated) text = text.replace(/^[^\n]*\n?/, '');
+  return redactDiagText(text).slice(-EXIT_TAIL_CHARS);
+}
+
+/** Errno codes a PTY spawn can fail with that the registry's error types name. */
+const SPAWN_ERRNO_TYPES: ReadonlySet<string> = new Set<ErrorType>(['ENOENT', 'EACCES', 'EPERM', 'ENOTDIR', 'EISDIR', 'EMFILE', 'ENOSPC']);
+
+/** The errno a spawn error carries, from its `code` or its message. */
+function spawnErrno(err: unknown): string | undefined {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (typeof code === 'string') return code;
+  return err instanceof Error ? /\b(E[A-Z]{3,})\b/.exec(err.message)?.[1] : undefined;
+}
+
+/**
+ * Record a failed `pty.spawn` call: the full message in a diag line, and the
+ * errno, when the registry names it, as the error type of the step it
+ * escapes (else the caller's `pty_spawn_failed`).
+ */
+function reportSpawnFailure(err: unknown, msg: string, meta: Record<string, unknown>): void {
+  const errno = spawnErrno(err);
+  if (errno && SPAWN_ERRNO_TYPES.has(errno)) tagError(err, errno as ErrorType);
+  diag('core:pty', 'error', msg, { ...meta, code: errno, error: err instanceof Error ? err.message : String(err) });
+}
+
 /**
  * Flush a pending command to the PTY. Used in both onData (shell startup) and
  * resize (terminal got its real size) paths.
@@ -178,9 +226,7 @@ const staleSweeper = new StaleSweeper<ManagedSession>(sessions, {
     const capturedGeneration = session.generation;
     const current = sessions.get(agentId);
     if (!current || current.generation !== capturedGeneration) return;
-    appLog('core:pty', 'warn', 'Stale PTY session detected, cleaning up', {
-      meta: { agentId, pid: session.process.pid },
-    });
+    diag('core:pty', 'warn', 'Stale PTY session detected, cleaning up', { agentId, pid: session.process.pid });
     agentSwept(agentId);
     const { onExitCallback } = session;
     cleanupSession(agentId);
@@ -404,9 +450,7 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
       });
     }
   } catch (err) {
-    appLog('core:pty', 'error', 'Failed to spawn PTY process', {
-      meta: { agentId, binary, cwd, error: err instanceof Error ? err.message : String(err) },
-    });
+    reportSpawnFailure(err, 'Failed to spawn PTY process', { agentId, binary: binaryName(binary), cwd });
     throw err;
   }
 
@@ -445,11 +489,14 @@ export async function spawn(agentId: string, cwd: string, binary: string, args: 
     if (!current || current.generation !== expectedGeneration) return;
 
     const fullBuffer = getSessionBuffer(current);
-    // Plain text for the log and the renderer's launch error (#2088); the raw
-    // slice can start mid escape sequence, so strip a wider window first.
-    const ptyBuffer = stripTerminalEscapes(fullBuffer.slice(-4000)).slice(-500);
-    appLog('core:pty', exitCode !== 0 && !current.killing ? 'error' : 'info', `PTY exited`, {
-      meta: { agentId, exitCode, binary, lastOutput: ptyBuffer },
+    // Plain text for the renderer's launch error (#2088); the raw slice can
+    // start mid escape sequence, so strip a wider window first.
+    const ptyBuffer = stripTerminalEscapes(fullBuffer.slice(-EXIT_SCAN_CHARS)).slice(-EXIT_TAIL_CHARS);
+    // The last output is the clue on an exit nobody asked for (#2306), so
+    // only a failed one keeps it; it stays in the local diag line.
+    const failed = exitCode !== 0 && !current.killing;
+    diag('core:pty', failed ? 'error' : 'info', 'PTY exited', {
+      agentId, exitCode, binary: binaryName(binary), ...(failed ? { lastOutput: exitTailForDiag(fullBuffer) } : {}),
     });
 
     if (annexEventBus.isActive()) {
@@ -486,9 +533,7 @@ export async function spawnShell(id: string, projectPath: string): Promise<void>
       rows: SPAWN_ROWS,
     });
   } catch (err) {
-    appLog('core:pty', 'error', 'Failed to spawn shell PTY', {
-      meta: { sessionId: id, cwd: projectPath, error: err instanceof Error ? err.message : String(err) },
-    });
+    reportSpawnFailure(err, 'Failed to spawn shell PTY', { sessionId: id, cwd: projectPath });
     throw err;
   }
 
@@ -551,9 +596,8 @@ export function write(agentId: string, data: string): void {
   if (!session) return;
 
   if (data.length > MAX_WRITE_LENGTH) {
-    appLog('core:pty', 'warn', 'Oversized PTY write rejected', {
-      meta: { agentId, length: data.length, limit: MAX_WRITE_LENGTH },
-    });
+    diag('core:pty', 'warn', 'Oversized PTY write rejected', { agentId, length: data.length, limit: MAX_WRITE_LENGTH });
+    ptyWriteRejected('text');
     return;
   }
 
@@ -571,9 +615,8 @@ export function writeBinary(agentId: string, data: string): void {
   if (!session) return;
 
   if (data.length > MAX_WRITE_LENGTH) {
-    appLog('core:pty', 'warn', 'Oversized PTY binary write rejected', {
-      meta: { agentId, length: data.length, limit: MAX_WRITE_LENGTH },
-    });
+    diag('core:pty', 'warn', 'Oversized PTY binary write rejected', { agentId, length: data.length, limit: MAX_WRITE_LENGTH });
+    ptyWriteRejected('binary');
     return;
   }
 

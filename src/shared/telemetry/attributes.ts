@@ -454,6 +454,8 @@ export const ATTR = {
     'completed', 'failed', 'early_failure', 'killed_user', 'killed_escalated', 'stale_swept', 'replaced',
   ]),
   killStage: enumAttr('clubhouse.kill.stage_reached', ['exit_command', 'eof', 'sigterm', 'sigkill']),
+  /** Which PTY write path refused an oversized write: `write` (text) or `writeBinary`. */
+  ptyWriteKind: enumAttr('clubhouse.pty.write.kind', ['text', 'binary']),
   hookKind: enumAttr('clubhouse.hook.kind', [
     'pre_tool', 'post_tool', 'tool_error', 'stop', 'notification', 'permission_request', 'other',
   ]),
@@ -1028,6 +1030,16 @@ export const METRICS = {
     kind: 'counter', unit: 'By', level: 'standard',
     description: 'Agent output volume, added once per run at exit (never per chunk)',
     attributes: ['clubhouse.agent.runtime', 'clubhouse.orchestrator'],
+  },
+  'clubhouse.pty.write_rejected': {
+    kind: 'counter', unit: '{write}', level: 'errors',
+    description: 'PTY writes refused for exceeding the per-call size ceiling',
+    attributes: ['clubhouse.pty.write.kind'],
+  },
+  'clubhouse.pty.stale_swept': {
+    kind: 'counter', unit: '{session}', level: 'errors',
+    description: 'PTY sessions removed by the stale sweeper because their process was gone',
+    attributes: [],
   },
   'clubhouse.agent.kill.escalations': {
     kind: 'counter', unit: '{kill}', level: 'standard',
