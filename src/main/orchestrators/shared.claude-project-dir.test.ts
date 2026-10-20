@@ -9,11 +9,11 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import * as realFs from 'fs';
 import * as os from 'os';
 
-// Switchable path module: the real (posix on macOS) one by default, win32 for the Windows case.
+// Switchable path module: the native one by default, win32 for the simulated Windows case.
 const h = vi.hoisted(() => ({ win: false, existing: new Set<string>() }));
 vi.mock('path', async () => {
   const actual = await vi.importActual<typeof import('path')>('path');
-  const pick = () => (h.win ? actual.win32 : actual.posix) as unknown as Record<string, unknown>;
+  const pick = () => (h.win ? actual.win32 : actual) as unknown as Record<string, unknown>;
   const mod = new Proxy({} as Record<string, unknown>, { get: (_t, k: string) => pick()[k] });
   return { ...actual, default: mod, join: (...a: string[]) => (pick().join as (...x: string[]) => string)(...a), resolve: (...a: string[]) => (pick().resolve as (...x: string[]) => string)(...a) };
 });
