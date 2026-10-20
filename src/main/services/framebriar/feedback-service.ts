@@ -10,7 +10,7 @@
  * - Framebriar telemetry is off; Clubhouse's OpenTelemetry pipeline stays separate.
  * - Diagnostics go to the local log (`core:feedback`): access and outbox transitions, and
  *   each connect, capture and send with its outcome. Invitations, tokens, notes and
- *   screenshots are never logged; only states, counts, sizes, durations and report ids.
+ *   screenshots are never logged; only states, counts, sizes, durations and ids.
  * - The same lifecycle goes to telemetry (feedback-telemetry.ts, #2309) as states, counts
  *   and error classes only. The report id is never an attribute: the lines that carry it
  *   (saved, delivered) go to the local-only diag tier (`deps.diag`, #2299) instead.
