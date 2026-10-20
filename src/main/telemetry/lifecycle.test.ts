@@ -25,6 +25,7 @@ import {
   checkPreviousSession,
   completeStartup,
   installLifecycleTelemetry,
+  markOsShutdown,
   markStartup,
   recordConfigSnapshot,
   setStartupKind,
@@ -144,15 +145,14 @@ describe('unclean exits', () => {
     expect(rt.event).toHaveBeenCalledWith('clubhouse.app.unclean_exit', [ATTR.previousExit('crash_loop')]);
   });
 
-  it('marks the session clean on OS shutdown or logoff, not only on quit', async () => {
-    const electron = await import('electron');
+  it('records an OS shutdown as clean, and a later quit does not overwrite it', async () => {
     fs.writeFileSync(file(), JSON.stringify({ clean: true }));
     checkPreviousSession(false);
-    await Promise.resolve();
-    const shutdown = (electron.powerMonitor.on as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === 'shutdown')?.[1];
-    expect(shutdown).toBeTypeOf('function');
-    shutdown();
-    expect(JSON.parse(fs.readFileSync(file(), 'utf-8')).clean).toBe(true);
+    markOsShutdown();
+    expect(JSON.parse(fs.readFileSync(file(), 'utf-8'))).toMatchObject({ clean: true, exit: 'os_shutdown' });
+    // macOS quits normally after powerMonitor 'shutdown'.
+    await flushBeforeExit(10);
+    expect(JSON.parse(fs.readFileSync(file(), 'utf-8'))).toMatchObject({ clean: true, exit: 'os_shutdown' });
   });
 
   it('stays quiet after a clean exit and marks the next exit clean', async () => {
@@ -161,7 +161,7 @@ describe('unclean exits', () => {
     expect(rt.event).not.toHaveBeenCalled();
     expect(JSON.parse(fs.readFileSync(file(), 'utf-8')).clean).toBe(false);
     await flushBeforeExit(10);
-    expect(JSON.parse(fs.readFileSync(file(), 'utf-8')).clean).toBe(true);
+    expect(JSON.parse(fs.readFileSync(file(), 'utf-8'))).toMatchObject({ clean: true, exit: 'quit' });
   });
 
   it('never writes the file while telemetry is off', () => {

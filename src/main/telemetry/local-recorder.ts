@@ -12,6 +12,7 @@
  */
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomBytes } from 'crypto';
+import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import {
@@ -81,6 +82,8 @@ export interface LocalRecorderOptions {
   /** Overrides for tests. */
   appendFile?: (file: string, data: string) => Promise<void>;
   mkdir?: (dir: string) => Promise<void>;
+  appendFileSync?: (file: string, data: string) => void;
+  mkdirSync?: (dir: string) => void;
   unlink?: (file: string) => Promise<void>;
 }
 
@@ -128,6 +131,10 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     await fsp.mkdir(dir, { recursive: true });
   });
   const unlink = opts.unlink ?? ((file: string) => fsp.unlink(file));
+  const appendFileSync = opts.appendFileSync ?? ((file: string, data: string) => fs.appendFileSync(file, data, 'utf-8'));
+  const mkdirSync = opts.mkdirSync ?? ((dir: string) => {
+    fs.mkdirSync(dir, { recursive: true });
+  });
 
   const als = new AsyncLocalStorage<TraceIds>();
   let caps = new SessionCaps(opts.sessionCaps ?? DEFAULT_SESSION_CAPS);
@@ -183,11 +190,37 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     } catch {
       return false;
     }
+    track(file, bytes);
+    return true;
+  }
+
+  function track(file: string, bytes: number): void {
     const last = runFiles[runFiles.length - 1];
     if (last?.file === file) last.bytes += bytes;
     else runFiles.push({ file, bytes });
     chunkBytes += bytes;
-    return true;
+  }
+
+  /**
+   * Write everything queued to the current chunk now, synchronously (#2335):
+   * the OS may end the process before an async write lands. Skips rotation
+   * and eviction, so the chunk can pass its limit by one queue's worth. A
+   * write the async chain already has in flight can still be lost.
+   */
+  function writeOutSync(): void {
+    if (pending.length === 0) return;
+    const lines = pending;
+    pending = [];
+    const data = lines.join('\n') + '\n';
+    const file = fileFor(chunk);
+    try {
+      mkdirSync(opts.dir);
+      appendFileSync(file, data);
+    } catch {
+      droppedLines += lines.length;
+      return;
+    }
+    track(file, Buffer.byteLength(data, 'utf-8'));
   }
 
   async function writeOut(): Promise<void> {
@@ -582,6 +615,18 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
         }
       }
       await flushLines();
+    },
+
+    flushSync() {
+      if (!stopped) {
+        try {
+          writeMetrics();
+          writeDrops();
+        } catch {
+          // Write what is queued either way.
+        }
+      }
+      writeOutSync();
     },
 
     async stop() {

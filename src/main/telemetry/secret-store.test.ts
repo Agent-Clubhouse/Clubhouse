@@ -73,4 +73,52 @@ describe('telemetry secret store', () => {
     await expect(writeSecrets({ connectionString: 'cs' })).rejects.toThrow(/unavailable/);
     available.mockRestore();
   });
+
+  describe('Linux basic_text, where encryption is off until the app opts in (#2336)', () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    let plainText: boolean;
+
+    beforeEach(() => {
+      plainText = false;
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      vi.spyOn(safeStorage, 'getSelectedStorageBackend').mockReturnValue('basic_text');
+      // Electron: basic_text is only available after setUsePlainTextEncryption(true).
+      vi.spyOn(safeStorage, 'isEncryptionAvailable').mockImplementation(() => plainText);
+      vi.spyOn(safeStorage, 'setUsePlainTextEncryption').mockImplementation((v: boolean) => {
+        plainText = v;
+      });
+      const encrypt = safeStorage.encryptString;
+      const decrypt = safeStorage.decryptString;
+      vi.spyOn(safeStorage, 'encryptString').mockImplementation((s: string) => {
+        if (!plainText) throw new Error('Encryption is not available.');
+        return encrypt(s);
+      });
+      vi.spyOn(safeStorage, 'decryptString').mockImplementation((b: Buffer) => {
+        if (!plainText) throw new Error('Decryption is not available.');
+        return decrypt(b);
+      });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', platform);
+      vi.restoreAllMocks();
+    });
+
+    it('reports weak, not unavailable, so the consent path is reachable', () => {
+      expect(getSecureStorageState()).toBe('weak');
+      expect(safeStorage.setUsePlainTextEncryption).toHaveBeenCalledWith(true);
+    });
+
+    it('saves and reads secrets back', async () => {
+      await writeSecrets({ connectionString: 'cs' });
+      plainText = false; // A new run starts without the opt-in.
+      expect(await readSecrets()).toEqual({ connectionString: 'cs' });
+    });
+
+    it('stays unavailable when the opt-in does not enable encryption', async () => {
+      vi.spyOn(safeStorage, 'setUsePlainTextEncryption').mockImplementation(() => {});
+      expect(getSecureStorageState()).toBe('unavailable');
+      await expect(writeSecrets({ connectionString: 'cs' })).rejects.toThrow(/unavailable/);
+    });
+  });
 });

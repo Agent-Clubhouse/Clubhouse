@@ -11,7 +11,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { app, powerMonitor } from 'electron';
+import { app } from 'electron';
 import { ATTR, type SpanName, type TelAttr } from '../../shared/telemetry/attributes';
 import type { RendererReadyMarks } from '../../shared/telemetry/renderer-protocol';
 import { isTelemetryActive, onIntentionalExit, onRuntimeChange, replaySpanTree, tel } from './facade';
@@ -118,10 +118,14 @@ export function shutdownCompleted(atMs = Date.now()): void {
 
 // --- Unclean exit detection -------------------------------------------------
 
+/** How a session ended on purpose; a crash leaves `clean: false` and no `exit`. */
+type ExitKind = 'quit' | 'os_shutdown';
+
 interface SessionRecord {
   startedAt: string;
   version: string;
   clean: boolean;
+  exit?: ExitKind;
 }
 
 function sessionFile(): string {
@@ -129,6 +133,7 @@ function sessionFile(): string {
 }
 
 let sessionWritten = false;
+let osShutdown = false;
 
 /**
  * The version the previous session record was written by, if any. Read
@@ -171,8 +176,8 @@ export function checkPreviousSession(crashLoop: boolean): void {
   writeSession(false);
 }
 
-function writeSession(clean: boolean): void {
-  const record: SessionRecord = { startedAt: new Date(PROCESS_START_MS).toISOString(), version: app.getVersion(), clean };
+function writeSession(clean: boolean, exit?: ExitKind): void {
+  const record: SessionRecord = { startedAt: new Date(PROCESS_START_MS).toISOString(), version: app.getVersion(), clean, exit };
   try {
     fs.writeFileSync(sessionFile(), JSON.stringify(record), { encoding: 'utf-8', mode: 0o600 });
   } catch {
@@ -182,8 +187,20 @@ function writeSession(clean: boolean): void {
 
 /** Mark this session as ended on purpose. Synchronous: runs right before exit. */
 export function markCleanExit(): void {
+  // A quit that follows an OS shutdown (macOS sends both) keeps the shutdown.
+  if (!sessionWritten || osShutdown) return;
+  writeSession(true, 'quit');
+}
+
+/**
+ * Mark this session as ended by an OS shutdown, restart or logoff: not a
+ * crash, but not a quit either. Synchronous: Windows may end the process
+ * right after `session-end` (#2335).
+ */
+export function markOsShutdown(): void {
+  osShutdown = true;
   if (!sessionWritten) return;
-  writeSession(true);
+  writeSession(true, 'os_shutdown');
 }
 
 // --- Config snapshot (§5.4) ---------------------------------------------------
@@ -237,20 +254,7 @@ export function installLifecycleTelemetry(): void {
   if (installed) return;
   installed = true;
   onIntentionalExit(markCleanExit);
-  // OS shutdown, restart or logoff ends the app without before-quit. That is
-  // not a crash: mark the session clean (macOS/Linux: powerMonitor 'shutdown';
-  // Windows: each window's 'session-end').
-  // powerMonitor can't be used before app ready, and this runs at module load.
-  void app.whenReady?.().then(() => {
-    try {
-      powerMonitor.on('shutdown', markCleanExit);
-    } catch {
-      // Not available on this platform or in tests.
-    }
-  });
-  app.on?.('browser-window-created', (_event, win) => {
-    win.on('session-end', markCleanExit);
-  });
+  // OS shutdown, restart and logoff are wired in os-session-end.ts (markOsShutdown).
   onRuntimeChange(() => {
     if (!isTelemetryActive() && snapshotTimer) {
       clearInterval(snapshotTimer);
@@ -267,6 +271,7 @@ export function _resetLifecycleForTests(): void {
   shutdownStart = null;
   shutdownSteps.length = 0;
   sessionWritten = false;
+  osShutdown = false;
   if (snapshotTimer) clearInterval(snapshotTimer);
   snapshotTimer = null;
   installed = false;

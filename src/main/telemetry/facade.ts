@@ -428,6 +428,25 @@ export async function flushBeforeExit(timeoutMs = DEFAULT_FLUSH_TIMEOUT_MS): Pro
   await forceFlushTelemetry(timeoutMs);
 }
 
+/**
+ * OS shutdown, restart or logoff (#2335): write the local recording
+ * synchronously, then start an export flush the OS may not wait for. Doesn't
+ * run the intentional-exit listeners; lifecycle records the exit kind itself.
+ * Never throws.
+ */
+export function flushForOsSessionEnd(timeoutMs = DEFAULT_FLUSH_TIMEOUT_MS): void {
+  try {
+    local?.flushSync?.();
+  } catch {
+    // Telemetry must never block or fail an exit.
+  }
+  try {
+    runtime?.forceFlush(timeoutMs).catch(() => {});
+  } catch {
+    // As above.
+  }
+}
+
 const exitListeners = new Set<() => void>();
 
 /** Run synchronously at the start of every intentional exit. */
