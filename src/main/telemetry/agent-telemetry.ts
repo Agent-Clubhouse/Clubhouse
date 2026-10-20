@@ -155,10 +155,16 @@ export function agentRunKilled(agentId: string, stage: KillStage, atMs = Date.no
   endRun(agentId, null, 'killed_user', atMs);
 }
 
-/** The stale sweeper removed this run's process. */
+/** The stale sweeper removed this session's process (agent or shell). */
 export function agentSwept(agentId: string): void {
+  tel.count('clubhouse.pty.stale_swept', 1);
   const run = runs.get(agentId);
   if (run) run.swept = true;
+}
+
+/** A PTY write over the per-call ceiling was refused. */
+export function ptyWriteRejected(kind: 'text' | 'binary'): void {
+  tel.count('clubhouse.pty.write_rejected', 1, [ATTR.ptyWriteKind(kind)]);
 }
 
 /** Classify an exit. Exported for tests. */

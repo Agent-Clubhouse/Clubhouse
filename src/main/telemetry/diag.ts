@@ -115,6 +115,19 @@ export function diagFromRenderer(entry: DiagEntry, window: 'main' | 'popout'): v
   }
 }
 
+/**
+ * Redact text the way a diag line is redacted, for a caller that must cut it
+ * afterwards (a tail of terminal output): cutting first could leave half a
+ * secret the patterns no longer recognize.
+ */
+export function redactDiagText(text: string): string {
+  try {
+    return getRedactor().text(text);
+  } catch {
+    return '';
+  }
+}
+
 /** True while diag lines are recorded (logging on and the recorder running). */
 export function isDiagActive(): boolean {
   return getDiagSink() !== null;

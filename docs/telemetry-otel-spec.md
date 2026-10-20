@@ -311,7 +311,7 @@ Quick agents have no main-process create step. The renderer `spawnQuickAgent` (`
   - `c.model.family` (bucketed from the model string: `opus`/`sonnet`/`haiku`/`gpt-5`/`default`/`other`; the raw model is never sent)
   - `c.clubhouse_mode`, `c.mcp.enabled`, `c.hooks.enabled`, `c.profile.active`, `c.wrapper.applied` (all bool; each only once the spawn reached the step that decides it)
   - Not recorded: `c.agent.runtime.reason` (the fallback decision is implicit in the runtime) and per-agent hashed IDs on spawn spans.
-- **`error.type`:** `orchestrator_unknown`, `preflight_failed` (CLI missing or unauthenticated), `cwd_invalid`, `pty_spawn_failed`, `headless_no_pid` (the span ends `error` though the call returns), `chat_start_failed`; `materialize_failed` on the non-fatal child only. Errors are typed with `tagError` / `withErrorType` at the throw site (§6.5); anything untagged is `unknown`.
+- **`error.type`:** `orchestrator_unknown`, `preflight_failed` (CLI missing or unauthenticated), `cwd_invalid`, `pty_spawn_failed` (or, when the spawn error names one, its errno: `ENOENT`, `EACCES`, `EPERM`, `ENOTDIR`, `EISDIR`, `EMFILE`, `ENOSPC`; #2306), `headless_no_pid` (the span ends `error` though the call returns), `chat_start_failed`; `materialize_failed` on the non-fatal child only. Errors are typed with `tagError` / `withErrorType` at the throw site (§6.5); anything untagged is `unknown`.
 - **Metrics:** `c.agent.spawns` (counter: kind, orchestrator, runtime, outcome, `error.type`) and `c.agent.spawn.duration` (histogram, s, successful spawns only).
 
 #### Run, first output and readiness
@@ -340,6 +340,8 @@ There is no CLI "ready" signal. The proxies below are recorded as **histograms**
 | `c.provider.binary_lookup.duration` | histogram, s; every `findBinaryInPath` call | `c.binary.lookup_tier` (`cache`/`well_known`/`path_scan`/`login_shell`/`not_found`) |
 | `c.agent.active` | UpDownCounter (or observable gauge from `agentRegistry`) | kind, runtime |
 | `c.pty.output.bytes` | counter, By; **incremented at exit from a per-session byte total, never per chunk** | orchestrator, runtime |
+| `c.pty.write_rejected` | counter (errors level); a write over the 64 KB per-call ceiling refused by `pty-manager` (#2306) | `c.pty.write.kind` (`text`/`binary`) |
+| `c.pty.stale_swept` | counter (errors level); a PTY session (agent or shell) the stale sweeper removed because its process was gone (#2306) | none |
 | `c.agent.tool_calls` | counter, fed from hook-server `pre_tool`/`post_tool`/`tool_error` and from chat/headless tool start and end events | orchestrator, `c.tool.bucket`, `c.tool.result` (`ok`/`error`) |
 | `c.agent.hook_events` | counter | orchestrator, `c.hook.kind` (`pre_tool`/`post_tool`/`stop`/`notification`/`tool_error`/`permission_request`) |
 
@@ -632,7 +634,7 @@ Window focus, unlock and resume switch to `active` at once; backing off waits fo
 | `c.ui.interaction.duration` (histogram, s) | Event Timing API: input to next paint per interaction, its longest entry. The browser only reports interactions of 16 ms and over, so faster ones are missing and the percentiles lean slow. | `c.view`, `c.ui.surface`, `c.ui.interaction.type` (`click`/`keydown`/`wheel`) | S |
 | `c.telemetry.export.failures` (counter) | exporter result callbacks | `c.telemetry.signal` (`traces`/`metrics`/`logs`), `c.http.class` | E |
 | `c.telemetry.offline.items` (observable gauge) | offline queue size; exported once connectivity returns | — | E |
-| `c.shell.spawn` (span) | non-agent PTYs (`ShellTerminal`, utility terminals) | `error.type` (`pty_spawn_failed`, `cwd_invalid`, `spawn_helper_not_executable`) | S |
+| `c.shell.spawn` (span) | non-agent PTYs (`ShellTerminal`, utility terminals) | `error.type` (`pty_spawn_failed` or the spawn errno, `cwd_invalid`, `spawn_helper_not_executable`) | S |
 
 **Local hang log (#2126).** Hangs are also written to the local session log under `ui:perf`, whether or not telemetry is on (`src/renderer/telemetry/ui-perf.ts`):
 - **What is logged.** Frames and interactions at or over the hang threshold (200 ms; `localStorage clubhouse.uiPerf.hangMs` overrides it, minimum 50) are coalesced per second into one line. A line has the count, the max and total ms, view and surface, the last interaction (its type, a stable target id from `data-testid` or `data-tree-key`, named keys only, never text), and the top three LoAF scripts with the URL cut to `scheme:basename`.
