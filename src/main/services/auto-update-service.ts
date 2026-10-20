@@ -9,7 +9,7 @@ import { spawn, execFileSync } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry } from '../../shared/types';
 import { createSettingsStore } from './settings-store';
-import { appLog, flush as flushLogs } from './log-service';
+import { appLog, flush as flushLogs, flushSync as flushLogsSync } from './log-service';
 import { applyRemoteCliDenylist } from './agent-runtime/chat-version-policy';
 import { isChatEnabled } from './chat-runtime-settings';
 import { pathExists } from './fs-utils';
@@ -873,7 +873,8 @@ export async function applyMacUpdate(context: ApplyContext, { relaunch, beforeEx
   child.unref();
   if (relaunch) {
     await beforeExit?.();
-    flushLogs();
+    // Synchronously: app.exit doesn't wait for an async write (#2313).
+    flushLogsSync();
     app.exit(0);
   }
   return true;
@@ -905,6 +906,7 @@ export async function applyWindowsUpdate(context: ApplyContext, { relaunch, befo
     await waitForChildSpawn(child);
     child.unref();
     await beforeExit?.();
+    flushLogsSync();
     app.exit(0);
     return true;
   }

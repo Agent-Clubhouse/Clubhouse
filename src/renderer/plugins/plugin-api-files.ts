@@ -2,6 +2,7 @@ import type { PluginContext, PluginManifest, FilesAPI, Disposable } from '../../
 import type { FileNode } from '../../shared/types';
 import { hasPermission } from './plugin-api-shared';
 import { rendererLog } from './renderer-logger';
+import { pluginDiagNamespace } from '../../shared/telemetry/diag';
 import { usePluginStore } from './plugin-store';
 import { isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 
@@ -314,7 +315,7 @@ export function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): F
 
         projectWatchRegistry.set(key, registration);
         window.clubhouse.file.watchStart(watchId, fullGlob).catch((err: Error) => {
-          rendererLog(`plugin:${ctx.pluginId}`, 'error', `Failed to start file watch: ${err.message}`);
+          rendererLog(pluginDiagNamespace(ctx.pluginId), 'error', `Failed to start file watch: ${err.message}`);
         });
         window.clubhouse.file.onWatchEvent(handler);
       }

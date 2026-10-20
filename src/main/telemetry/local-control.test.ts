@@ -25,7 +25,7 @@ vi.mock('./settings', () => ({
 import * as path from 'path';
 import { forceFlushTelemetry, getLocalSink, isTelemetryActive, tel, telemetryLevel } from './facade';
 import { diag, getDiagSink, isDiagActive } from './diag';
-import { _resetLocalRecordingForTests, isDiagRecordingWanted, isLocalRecordingWanted, migrateLocalLevel, runRetention, syncLocalRecording } from './local-control';
+import { _resetLocalRecordingForTests, isDiagRecordingWanted, isLocalRecordingWanted, migrateLocalLevel, runRetention, runStartupRetention, syncLocalRecording } from './local-control';
 import { LOG_RETENTION_TIERS } from '../../shared/types';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 
@@ -154,13 +154,46 @@ describe('local recording control', () => {
 });
 
 describe('retention while recording (#2298)', () => {
+  it('runs retention once when recording starts (#2313)', async () => {
+    logSettings.getSettings.mockReturnValue({ ...base, retention: 'high' });
+    await syncLocalRecording();
+    expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
+    const [dir, tier] = retention.pruneLogDir.mock.calls[0] as unknown as [string, unknown];
+    expect(dir).toBe(path.join('/home/tester', '.clubhouse', 'logs'));
+    expect(tier).toEqual(LOG_RETENTION_TIERS.high);
+    // Already recording: a settings sync that changes nothing doesn't prune again.
+    await syncLocalRecording();
+    expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
+  });
+
+  it('prunes at startup with recording disabled', async () => {
+    logSettings.getSettings.mockReturnValue({ ...base, enabled: false, retention: 'low' });
+    await syncLocalRecording();
+    expect(retention.pruneLogDir).not.toHaveBeenCalled();
+    runStartupRetention();
+    expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
+    const [dir, tier, opts] = retention.pruneLogDir.mock.calls[0] as unknown as [string, unknown, { protect: string[] }];
+    expect(dir).toBe(path.join('/home/tester', '.clubhouse', 'logs'));
+    expect(tier).toEqual(LOG_RETENTION_TIERS.low);
+    expect(opts.protect).toEqual([]);
+    // Once per run.
+    runStartupRetention();
+    expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not prune twice at startup when recording started and already pruned', async () => {
+    await syncLocalRecording();
+    runStartupRetention();
+    expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
+  });
+
   it('prunes by the logging tier and never touches the chunk being written', async () => {
     logSettings.getSettings.mockReturnValue({ ...base, retention: 'low' });
     await syncLocalRecording();
     tel.event('clubhouse.telemetry.test');
     await forceFlushTelemetry();
     await runRetention();
-    const [dir, tier, opts] = retention.pruneLogDir.mock.calls[0] as unknown as [string, unknown, { protect: string[] }];
+    const [dir, tier, opts] = retention.pruneLogDir.mock.calls.at(-1) as unknown as [string, unknown, { protect: string[] }];
     expect(dir).toBe(path.join('/home/tester', '.clubhouse', 'logs'));
     expect(tier).toEqual(LOG_RETENTION_TIERS.low);
     expect(opts.protect).toEqual([(fsp.appendFile.mock.calls[0] as unknown as [string])[0]]);
@@ -170,12 +203,13 @@ describe('retention while recording (#2298)', () => {
     vi.useFakeTimers();
     try {
       await syncLocalRecording();
+      // Once at start, then once an hour later.
       await vi.advanceTimersByTimeAsync(3_600_000);
-      expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
+      expect(retention.pruneLogDir).toHaveBeenCalledTimes(2);
       logSettings.getSettings.mockReturnValue({ ...base, enabled: false });
       await syncLocalRecording();
       await vi.advanceTimersByTimeAsync(3 * 3_600_000);
-      expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
+      expect(retention.pruneLogDir).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }

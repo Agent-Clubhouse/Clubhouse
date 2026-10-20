@@ -23,6 +23,7 @@ const { mockSettings, mockSave } = vi.hoisted(() => ({
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
   flush: vi.fn(),
+  flushSync: vi.fn(),
 }));
 
 vi.mock('./settings-store', () => ({

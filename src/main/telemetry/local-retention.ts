@@ -1,9 +1,10 @@
 /**
  * Retention for the local log folder (spec §6.12, #2298): local telemetry
- * recordings (`telemetry-*.jsonl`) and the legacy session logs
- * (`session-*.jsonl`) share the logging retention tier's age and size
- * limits. Runs at startup, hourly while recording, and after the recorder
- * rotates, so a run that lasts days is pruned while it runs.
+ * recordings (`telemetry-*.jsonl`) and the session logs earlier versions
+ * wrote (`session-*.jsonl`, #2313) share the logging retention tier's age
+ * and size limits. Runs at startup, when recording starts, hourly while
+ * recording, and after the recorder rotates, so a run that lasts days is
+ * pruned while it runs.
  *
  * No OpenTelemetry imports.
  */
@@ -14,7 +15,7 @@ import type { LogRetentionConfig } from '../../shared/types';
 
 export const RETENTION_INTERVAL_MS = 60 * 60 * 1000;
 
-/** File name prefixes retention manages. `session-` stays until the legacy writer is gone and its files aged out. */
+/** File name prefixes retention manages. Nothing writes `session-` files since #2313; they are pruned so old ones age out. */
 export const RETAINED_PREFIXES = ['telemetry-', 'session-'] as const;
 
 export interface PruneOptions {

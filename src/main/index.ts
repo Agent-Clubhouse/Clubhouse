@@ -129,7 +129,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 // Catch-all handlers for truly unexpected errors. Lines logged before the
-// session log and the recorder are ready are held and written once they are (#2301).
+// recorder is ready are held and written once it is (#2301).
 process.on('uncaughtException', (err) => {
   appLog('core:process', 'fatal', 'Uncaught exception', {
     meta: { error: err.message, stack: err.stack },

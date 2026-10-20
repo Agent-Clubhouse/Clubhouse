@@ -169,10 +169,7 @@ vi.mock('../services/session-settings', () => ({
 
 vi.mock('../services/log-service', () => ({
   init: vi.fn(),
-  log: vi.fn(),
   appLog: vi.fn(),
-  getNamespaces: vi.fn(() => ['core:startup']),
-  getLogPath: vi.fn(() => '/tmp/clubhouse.log'),
 }));
 
 vi.mock('../services/log-settings', () => ({
@@ -420,7 +417,6 @@ import { registerAllHandlers } from './index';
 import { execFile } from 'child_process';
 import * as notificationService from '../services/notification-service';
 import * as projectStore from '../services/project-store';
-import * as logService from '../services/log-service';
 import * as profileSettings from '../services/profile-settings';
 import { getAllowedCommands } from '../services/plugin-manifest-registry';
 import { isMcpEnabledForAny } from '../services/mcp-settings';
@@ -452,7 +448,9 @@ describe('registerAllHandlers — integration', () => {
   });
 
   it('registers fire-and-forget handlers via ipcMain.on', () => {
-    expect(onHandlers.has(IPC.LOG.LOG_WRITE)).toBe(true);
+    expect(onHandlers.has(IPC.PTY.WRITE)).toBe(true);
+    // The legacy log:write channel is gone (#2313).
+    expect(onHandlers.has('log:write')).toBe(false);
   });
 
   // ── App handlers: actual invocation ─────────────────────────────────
@@ -545,20 +543,12 @@ describe('registerAllHandlers — integration', () => {
     expect(result).toEqual({ stdout: 'v20.0.0', stderr: '', exitCode: 0 });
   });
 
-  // ── Log handlers: fire-and-forget ───────────────────────────────────
+  // ── Log handlers ────────────────────────────────────────────────────
 
-  // The deprecated legacy-log path; goes with the writer (#2313).
-  it('LOG_WRITE handler delegates to logService.log', () => {
-    const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
-    const entry = { ts: '2026-03-08', ns: 'app:test', level: 'info', msg: 'hello' };
-    handler({}, entry);
-    expect(logService.log).toHaveBeenCalledWith(entry);
-  });
-
-  it('GET_LOG_PATH handler returns the log file path', async () => {
+  it('GET_LOG_PATH handler returns the local log folder', async () => {
     const handler = handleHandlers.get(IPC.LOG.GET_LOG_PATH)!;
     const result = await handler({});
-    expect(result).toBe('/tmp/clubhouse.log');
+    expect(result).toMatch(/[\\/]\.clubhouse[\\/]logs$/);
   });
 
   // ── Profile handlers: actual invocation ─────────────────────────────

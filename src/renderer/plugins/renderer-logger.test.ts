@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { rendererLog } from './renderer-logger';
 import { createLoggingAPI } from './plugin-api-logging';
 import type { PluginContext } from '../../shared/plugin-types';
+import { DIAG_MAX_NS_CHARS } from '../../shared/telemetry/diag';
+import { parseRendererBatch } from '../../shared/telemetry/renderer-protocol';
 import {
   FLUSH_AT_ITEMS,
   FLUSH_INTERVAL_MS,
@@ -109,13 +111,11 @@ describe('renderer-logger diag tier (#2302)', () => {
     try {
       (window as any).clubhouse = undefined;
       expect(() => rendererLog('app:test', 'info', 'x')).not.toThrow();
-      (window as any).clubhouse = { log: { write: () => { throw new Error('ipc gone'); } } };
-      expect(() => rendererLog('app:test', 'info', 'x')).not.toThrow();
     } finally {
       (window as any).clubhouse = saved;
     }
     vi.advanceTimersByTime(FLUSH_INTERVAL_MS);
-    expect(diagItems()).toHaveLength(2);
+    expect(diagItems()).toHaveLength(1);
   });
 
   it('plugin api.logging writes plugin:<id> diag lines at every level', () => {
@@ -136,42 +136,22 @@ describe('renderer-logger diag tier (#2302)', () => {
     expect(diagItems()[1].meta).toEqual({ n: 1, projectId: 'proj-1' });
   });
 
+  it('plugin api.logging keeps the lines of a plugin whose id is too long for the namespace (#2403)', () => {
+    const longId = 'a'.repeat(200);
+    const api = createLoggingAPI({ pluginId: longId, pluginPath: '/p', scope: 'app' } as PluginContext);
+    api.warn('w', { n: 1 });
+    vi.advanceTimersByTime(FLUSH_INTERVAL_MS);
+    const [item] = diagItems();
+    expect(item.ns.length).toBeLessThanOrEqual(DIAG_MAX_NS_CHARS);
+    expect(item.ns).toMatch(/^plugin:a+-[0-9a-f]{8}$/);
+    expect(item.meta).toEqual({ pluginId: longId, n: 1 });
+    // Main accepts it: the line isn't dropped at the IPC boundary.
+    const batches = emit.mock.calls.map((c) => parseRendererBatch(c[0]));
+    expect(batches.flat()).toEqual([expect.objectContaining({ t: 'diag', ns: item.ns, level: 'warn', msg: 'w' })]);
+  });
+
   it('plugin api.logging methods still return undefined', () => {
     const api = createLoggingAPI({ pluginId: 'p', pluginPath: '/p', scope: 'app' } as PluginContext);
     expect(api.info('x')).toBeUndefined();
-  });
-});
-
-/** The deprecated log:write path to the session log. Delete with the writer (#2313). */
-describe('renderer-logger legacy log:write (until #2313)', () => {
-  beforeEach(async () => {
-    vi.useFakeTimers();
-    await connectTelemetry();
-    (window as any).clubhouse.log.write = vi.fn();
-  });
-
-  afterEach(() => {
-    _resetRendererTelemetryForTests();
-    vi.useRealTimers();
-  });
-
-  it('writes the legacy entry with a timestamp, projectId and meta kept apart', () => {
-    rendererLog('plugin:terminal', 'warn', 'Shell exited', { projectId: 'proj-1', meta: { exitCode: 137 } });
-    const entry = (window as any).clubhouse.log.write.mock.calls[0][0];
-    expect(entry).toMatchObject({ ns: 'plugin:terminal', level: 'warn', msg: 'Shell exited', projectId: 'proj-1', meta: { exitCode: 137 } });
-    expect(new Date(entry.ts).toISOString()).toBe(entry.ts);
-  });
-
-  it('still writes the legacy log while diag is off', () => {
-    _setStateForTests({ enabled: false, level: null });
-    rendererLog('app:test', 'error', 'x');
-    expect((window as any).clubhouse.log.write).toHaveBeenCalledTimes(1);
-  });
-
-  it('plugin api.logging keeps the legacy entry shape (plugin API contract)', () => {
-    const api = createLoggingAPI({ pluginId: 'my-plugin', pluginPath: '/p', scope: 'project', projectId: 'proj-1' } as PluginContext);
-    api.info('i', { n: 1 });
-    const legacy = (window as any).clubhouse.log.write.mock.calls[0][0];
-    expect(legacy).toMatchObject({ ns: 'plugin:my-plugin', level: 'info', msg: 'i', projectId: 'proj-1', meta: { n: 1 } });
   });
 });

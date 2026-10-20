@@ -107,10 +107,7 @@ vi.mock('../services/sound-service', () => ({
 }));
 
 vi.mock('../services/log-service', () => ({
-  log: vi.fn(),
   appLog: vi.fn(),
-  getNamespaces: vi.fn(() => ['app:test', 'core:ipc']),
-  getLogPath: vi.fn(() => '/tmp/app.log'),
 }));
 
 vi.mock('../services/log-settings', () => ({
@@ -188,6 +185,9 @@ import { clipboardSettings } from './settings-handlers';
 import * as autoUpdateService from '../services/auto-update-service';
 import * as soundService from '../services/sound-service';
 import * as logService from '../services/log-service';
+import { getDiagNamespaces } from '../telemetry/diag';
+import { getLogDir } from '../telemetry/local-control';
+import { KNOWN_LOG_NAMESPACES, listLogNamespaces } from '../../shared/log-namespaces';
 import * as logSettings from '../services/log-settings';
 import * as annexServer from '../services/annex-server';
 import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
@@ -244,7 +244,8 @@ describe('app-handlers', () => {
     for (const channel of expectedHandleChannels) {
       expect(handleHandlers.has(channel)).toBe(true);
     }
-    expect(onHandlers.has(IPC.LOG.LOG_WRITE)).toBe(true);
+    // The legacy log:write channel is gone (#2313).
+    expect([...onHandlers.keys()]).not.toContain('log:write');
   });
 
   // --- Core ---
@@ -781,35 +782,6 @@ describe('app-handlers', () => {
 
   // --- Logging ---
 
-  // LOG_WRITE is the deprecated path to the legacy session log; these go with the writer (#2313).
-  it('LOG_WRITE delegates to logService.log via on()', () => {
-    const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
-    const entry = { ts: '2024-01-01', ns: 'app:test', level: 'info', msg: 'test' };
-    handler({}, entry);
-    expect(logService.log).toHaveBeenCalledWith(entry);
-  });
-
-  it('LOG_WRITE drops entries with a bad namespace or level', () => {
-    const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
-    handler({}, { ts: '2024-01-01', ns: 'bad ns!', level: 'info', msg: 'test' });
-    handler({}, { ts: '2024-01-01', ns: 'app:test', level: 'loud', msg: 'test' });
-    handler({}, { ts: '2024-01-01', ns: '', level: 'info', msg: 'test' });
-    expect(logService.log).not.toHaveBeenCalled();
-  });
-
-  it('LOG_WRITE turns a non-string message into a string', () => {
-    const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
-    handler({}, { ts: '2024-01-01', ns: 'plugin:p', level: 'error', msg: 42 });
-    expect(logService.log).toHaveBeenCalledWith({ ts: '2024-01-01', ns: 'plugin:p', level: 'error', msg: '42' });
-  });
-
-  it('LOG_WRITE keeps plugin namespaces', () => {
-    const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
-    const entry = { ts: '2024-01-01', ns: 'plugin:my-plugin', level: 'warn', msg: 'test', projectId: 'p1' };
-    handler({}, entry);
-    expect(logService.log).toHaveBeenCalledWith(entry);
-  });
-
   it('GET_LOG_SETTINGS delegates to logSettings', async () => {
     const handler = handleHandlers.get(IPC.LOG.GET_LOG_SETTINGS)!;
     const result = await handler({});
@@ -823,18 +795,18 @@ describe('app-handlers', () => {
     expect(logSettings.saveSettings).toHaveBeenCalledWith({ enabled: false, namespaces: {} });
   });
 
-  it('GET_LOG_NAMESPACES delegates to logService.getNamespaces', async () => {
+  it('GET_LOG_NAMESPACES lists the known namespaces plus those written through diag', async () => {
     const handler = handleHandlers.get(IPC.LOG.GET_LOG_NAMESPACES)!;
     const result = await handler({});
-    expect(logService.getNamespaces).toHaveBeenCalled();
-    expect(result).toEqual(['app:test', 'core:ipc']);
+    expect(result).toEqual(listLogNamespaces(getDiagNamespaces()));
+    expect(result).toEqual(expect.arrayContaining([...KNOWN_LOG_NAMESPACES]));
   });
 
-  it('GET_LOG_PATH delegates to logService.getLogPath', async () => {
+  it('GET_LOG_PATH returns the local log folder, created if missing', async () => {
     const handler = handleHandlers.get(IPC.LOG.GET_LOG_PATH)!;
     const result = await handler({});
-    expect(logService.getLogPath).toHaveBeenCalled();
-    expect(result).toBe('/tmp/app.log');
+    expect(result).toBe(getLogDir());
+    expect(result).toMatch(/[\\/]\.clubhouse[\\/]logs$/);
   });
 
   // --- Clubhouse Mode ---
@@ -921,11 +893,6 @@ describe('app-handlers', () => {
   it('rejects non-string for DELETE_SOUND_PACK', () => {
     const handler = handleHandlers.get(IPC.APP.DELETE_SOUND_PACK)!;
     expect(() => handler({}, null)).toThrow('must be a string');
-  });
-
-  it('rejects non-object for LOG_WRITE', () => {
-    const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
-    expect(() => handler({}, 'not-object')).toThrow('must be an object');
   });
 
   it('SAVE_ORCHESTRATION_SETTINGS saves and broadcasts the new settings (#2228)', async () => {

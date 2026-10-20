@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSettings, ThemeId } from '../../shared/types';
+import { ArchInfo, BadgeSettings, LoggingSettings, NotificationSettings, ThemeId } from '../../shared/types';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
@@ -17,7 +17,7 @@ import * as autoUpdateService from '../services/auto-update-service';
 import * as soundService from '../services/sound-service';
 import { readImageSafe } from '../services/clipboard-guard';
 import * as sessionSettings from '../services/session-settings';
-import * as logService from '../services/log-service';
+import * as fsp from 'fs/promises';
 import * as logSettings from '../services/log-settings';
 import { isPreviewEligible } from '../services/preview-eligible';
 import { ClipboardSettings, ClubhouseModeSettings, ExperimentalSettings, SoundEvent, SoundSettings, UpdateSettings } from '../../shared/types';
@@ -36,9 +36,10 @@ import * as agentSystem from '../services/agent-system';
 import { syncPluginThemes, PluginThemeSummary } from '../services/plugin-theme-store';
 import { consumePendingProtocolAction } from '../services/protocol-service';
 import { flushBeforeExit } from '../telemetry/facade';
-import { syncLocalRecording } from '../telemetry/local-control';
+import { getLogDir, syncLocalRecording } from '../telemetry/local-control';
+import { getDiagNamespaces } from '../telemetry/diag';
+import { listLogNamespaces } from '../../shared/log-namespaces';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
-import { isDiagLevel, isDiagNamespace } from '../../shared/telemetry/diag';
 import { newChromeEnabled, usesTitleBarOverlay } from '../window-chrome';
 
 /** Protocols allowed for shell.openExternal — blocks file://, data:, javascript:, etc. */
@@ -362,17 +363,6 @@ export function registerAppHandlers(): void {
   });
 
   // --- Logging ---
-  // Deprecated (#2302): renderer lines reach the diag tier over telemetry:emit.
-  // This feeds only the legacy session log and the breadcrumb tap until #2313.
-  ipcMain.on(IPC.LOG.LOG_WRITE, withValidatedArgs(
-    [objectArg<LogEntry>()],
-    (_event, entry) => {
-      if (!isDiagNamespace(entry.ns) || !isDiagLevel(entry.level)) return;
-      // Untyped plugin code may pass an Error or a number as the message.
-      logService.log(typeof entry.msg === 'string' ? entry : { ...entry, msg: String(entry.msg) });
-    },
-  ));
-
   ipcMain.handle(IPC.LOG.GET_LOG_SETTINGS, () => {
     return logSettings.getSettings();
   });
@@ -387,11 +377,19 @@ export function registerAppHandlers(): void {
   ));
 
   ipcMain.handle(IPC.LOG.GET_LOG_NAMESPACES, () => {
-    return logService.getNamespaces();
+    // Known namespaces plus those written through diag this run (#2312).
+    return listLogNamespaces(getDiagNamespaces());
   });
 
-  ipcMain.handle(IPC.LOG.GET_LOG_PATH, () => {
-    return logService.getLogPath();
+  ipcMain.handle(IPC.LOG.GET_LOG_PATH, async () => {
+    const dir = getLogDir();
+    try {
+      // So Settings can show the folder before the recorder has written to it.
+      await fsp.mkdir(dir, { recursive: true });
+    } catch {
+      // telemetry-exempt: the path is still right; showing it in the folder may fail
+    }
+    return dir;
   });
 
   // --- Sound Packs ---

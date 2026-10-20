@@ -287,7 +287,6 @@ vi.stubGlobal('clubhouse', {
     saveMarketplaceSettings: vi.fn().mockResolvedValue(undefined),
   },
   log: {
-    write: noop,
     getSettings: async () => ({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info', telemetryRecording: true }),
     saveSettings: asyncNoop,
     getNamespaces: async () => [],

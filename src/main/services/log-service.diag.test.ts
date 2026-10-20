@@ -1,24 +1,15 @@
 /**
  * appLog writes through the diag tier (#2301): startup lines are held until
- * the recorder starts, the logging settings gate them, diag redacts them, and
- * the session log is still written alongside.
+ * the recorder starts, the logging settings gate them and diag redacts them.
+ * Nothing else is written (#2313).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('fs/promises', () => ({
-  mkdir: vi.fn(),
-  stat: vi.fn(),
-  appendFile: vi.fn(),
-  readdir: vi.fn(),
-  unlink: vi.fn(),
-}));
 
 const logSettings = vi.hoisted(() => ({
   getSettings: vi.fn(() => ({}) as Record<string, unknown>),
 }));
 vi.mock('./log-settings', () => logSettings);
 
-import * as fsp from 'fs/promises';
 import { _resetDiagForTests, setDiagSink, type DiagRecord } from '../telemetry/diag';
 import { _resetEarlyLogForTests, appLog, flush, flushSync, init } from './log-service';
 
@@ -41,8 +32,6 @@ beforeEach(() => {
   _resetDiagForTests(HOME);
   _resetEarlyLogForTests();
   logSettings.getSettings.mockReturnValue(settings());
-  vi.mocked(fsp.stat).mockRejectedValue(new Error('ENOENT'));
-  vi.mocked(fsp.readdir).mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -65,17 +54,17 @@ describe('appLog → diag', () => {
     expect(sink.lines[1].meta).toEqual({ error: 'boom' });
   });
 
-  it('writes held lines at init() even when nothing is logged after the recorder starts', async () => {
+  it('writes held lines at init() even when nothing is logged after the recorder starts', () => {
     appLog('core:startup', 'info', 'early');
     const sink = memorySink();
     setDiagSink(sink);
-    await init();
+    init();
     expect(sink.lines.map((l) => l.msg)).toEqual(['early']);
   });
 
-  it('drops held lines at init() when the recorder never started (logging off), and holds no more', async () => {
+  it('drops held lines at init() when the recorder never started (logging off), and holds no more', () => {
     appLog('core:startup', 'info', 'early');
-    await init();
+    init();
     const sink = memorySink();
     setDiagSink(sink);
     appLog('core:startup', 'info', 'later');
@@ -147,6 +136,18 @@ describe('appLog → diag', () => {
     appLog('core:git', 'info', 'pulled', { projectId: 'p1', meta: { branch: 'main' } });
     appLog('core:git', 'info', 'no meta', { projectId: 'p2' });
     expect(sink.lines.map((l) => l.meta)).toEqual([{ projectId: 'p1', branch: 'main' }, { projectId: 'p2' }]);
+  });
+
+  it('keeps the feedback report id, so a report still matches the local record (#2309, #2313)', () => {
+    const sink = memorySink();
+    setDiagSink(sink);
+    const id = '3f2b8c1e-7d4a-4e9b-a1c2-5d6e7f8a9b0c';
+    appLog('core:feedback', 'info', 'Feedback saved for delivery', { meta: { id, status: 'queued', state: 'connected' } });
+    appLog('core:feedback', 'info', 'Feedback delivered', { meta: { id, status: 'accepted' } });
+    expect(sink.lines.map((l) => [l.ns, l.msg, l.meta?.id])).toEqual([
+      ['core:feedback', 'Feedback saved for delivery', id],
+      ['core:feedback', 'Feedback delivered', id],
+    ]);
   });
 
   it('flushes the recorder', async () => {

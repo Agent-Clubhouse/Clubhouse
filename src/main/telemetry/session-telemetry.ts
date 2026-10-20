@@ -3,7 +3,7 @@
  * signals that show a made-up id being saved and resumed in a loop (#2086)
  * or a resume that stalls into a fresh session (#2296). Only enums, the exit
  * code and the hashed agent id are recorded; the session id never is (the
- * legacy log line next to each call keeps it for local cross-reference).
+ * local diag line next to each call keeps it for local cross-reference).
  * Imports only the facade, like agent-signals.
  */
 import { ATTR, type TelAttr } from '../../shared/telemetry/attributes';

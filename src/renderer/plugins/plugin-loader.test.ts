@@ -22,7 +22,6 @@ const mockGit = { info: vi.fn(), diff: vi.fn() };
 const mockAgent = { listDurable: vi.fn(), killAgent: vi.fn() };
 const mockPty = { kill: vi.fn() };
 
-const mockLog = { write: vi.fn() };
 const mockApp = {
   getExperimentalSettings: vi.fn().mockResolvedValue({}),
   saveExperimentalSettings: vi.fn().mockResolvedValue(undefined),
@@ -36,7 +35,6 @@ Object.defineProperty(globalThis, 'window', {
       git: mockGit,
       agent: mockAgent,
       pty: mockPty,
-      log: mockLog,
       app: mockApp,
     },
     confirm: vi.fn(),
@@ -46,6 +44,9 @@ Object.defineProperty(globalThis, 'window', {
 });
 
 // Mock the builtin module
+vi.mock('./renderer-logger', () => ({ rendererLog: vi.fn() }));
+const logLines = () => vi.mocked(rendererLog).mock.calls.map(([ns, level, msg]) => ({ ns, level, msg }));
+
 vi.mock('./builtin', () => ({
   getBuiltinPlugins: vi.fn(() => []),
   getDefaultEnabledIds: vi.fn(() => new Set<string>()),
@@ -97,6 +98,7 @@ import {
 import { dynamicImportModule } from './dynamic-import';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
 import { registerTheme, unregisterTheme } from '../themes';
+import { rendererLog } from './renderer-logger';
 
 function makeManifest(overrides?: Partial<PluginManifest>): PluginManifest {
   return {
@@ -744,24 +746,20 @@ describe('plugin-loader', () => {
 
   describe('activatePlugin()', () => {
     it('does not activate unknown plugin', async () => {
-      mockLog.write.mockClear();
+      vi.mocked(rendererLog).mockClear();
       await activatePlugin('nonexistent');
-      expect(mockLog.write).toHaveBeenCalledWith(
-        expect.objectContaining({ ns: 'core:plugins', level: 'error', msg: expect.stringContaining('Cannot activate unknown plugin') }),
-      );
+      expect(logLines()).toContainEqual(expect.objectContaining({ ns: 'core:plugins', level: 'error', msg: expect.stringContaining('Cannot activate unknown plugin') }));
     });
 
     it('skips activation of incompatible plugin', async () => {
-      mockLog.write.mockClear();
+      vi.mocked(rendererLog).mockClear();
       usePluginStore.getState().registerPlugin(
         makeManifest({ id: 'bad' }), 'community', '/path', 'incompatible', 'bad engine'
       );
 
       await activatePlugin('bad');
 
-      expect(mockLog.write).toHaveBeenCalledWith(
-        expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Skipping activation') }),
-      );
+      expect(logLines()).toContainEqual(expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Skipping activation') }));
       expect(usePluginStore.getState().plugins['bad'].status).toBe('incompatible');
     });
 
@@ -781,16 +779,14 @@ describe('plugin-loader', () => {
     });
 
     it('skips activation of disabled plugin', async () => {
-      mockLog.write.mockClear();
+      vi.mocked(rendererLog).mockClear();
       usePluginStore.getState().registerPlugin(
         makeManifest({ id: 'dis' }), 'community', '/path', 'disabled', 'permission violation'
       );
 
       await activatePlugin('dis');
 
-      expect(mockLog.write).toHaveBeenCalledWith(
-        expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Skipping activation') }),
-      );
+      expect(logLines()).toContainEqual(expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Skipping activation') }));
       expect(usePluginStore.getState().plugins['dis'].status).toBe('disabled');
     });
 
@@ -1520,17 +1516,13 @@ describe('plugin-loader', () => {
     it('does nothing for unknown plugin', async () => {
       await hotReloadPlugin('nonexistent');
       // Should log error and return without crashing
-      expect(mockLog.write).toHaveBeenCalledWith(
-        expect.objectContaining({ ns: 'core:plugins', level: 'error', msg: expect.stringContaining('Cannot hot-reload unknown plugin') }),
-      );
+      expect(logLines()).toContainEqual(expect.objectContaining({ ns: 'core:plugins', level: 'error', msg: expect.stringContaining('Cannot hot-reload unknown plugin') }));
     });
 
     it('refuses to hot-reload builtin plugin', async () => {
       usePluginStore.getState().registerPlugin(makeManifest({ id: 'builtin-p', scope: 'app' }), 'builtin', '', 'registered');
       await hotReloadPlugin('builtin-p');
-      expect(mockLog.write).toHaveBeenCalledWith(
-        expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Cannot hot-reload built-in plugin') }),
-      );
+      expect(logLines()).toContainEqual(expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Cannot hot-reload built-in plugin') }));
     });
 
     it('deactivates and re-activates a community plugin', async () => {
@@ -2673,12 +2665,10 @@ describe('plugin-loader', () => {
       expect(usePluginStore.getState().plugins['broken'].status).toBe('errored');
 
       // And an explicit activation request is skipped once retries are spent.
-      mockLog.write.mockClear();
+      vi.mocked(rendererLog).mockClear();
       await activatePlugin('broken');
       expect(activate).toHaveBeenCalledTimes(MAX_ACTIVATION_ATTEMPTS);
-      expect(mockLog.write).toHaveBeenCalledWith(
-        expect.objectContaining({ msg: expect.stringContaining('retries exhausted') }),
-      );
+      expect(logLines()).toContainEqual(expect.objectContaining({ msg: expect.stringContaining('retries exhausted') }));
     });
 
     it('defers a caller-initiated activation while a retry is already scheduled', async () => {

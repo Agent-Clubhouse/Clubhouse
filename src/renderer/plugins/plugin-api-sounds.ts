@@ -1,5 +1,6 @@
 import type { PluginContext, SoundsAPI } from '../../shared/plugin-types';
 import { rendererLog } from './renderer-logger';
+import { pluginDiagNamespace } from '../../shared/telemetry/diag';
 
 export function createSoundsAPI(ctx: PluginContext): SoundsAPI {
   return {
@@ -7,10 +8,10 @@ export function createSoundsAPI(ctx: PluginContext): SoundsAPI {
       // Registration is handled by the main process sound service
       // The plugin's sounds/ directory is discovered automatically
       // This is a no-op convenience — sounds are picked up from plugin path
-      rendererLog(`plugin:${ctx.pluginId}`, 'info', `Sound pack registered: ${name || ctx.pluginId}`);
+      rendererLog(pluginDiagNamespace(ctx.pluginId), 'info', `Sound pack registered: ${name || ctx.pluginId}`);
     },
     async unregisterPack(): Promise<void> {
-      rendererLog(`plugin:${ctx.pluginId}`, 'info', 'Sound pack unregistered');
+      rendererLog(pluginDiagNamespace(ctx.pluginId), 'info', 'Sound pack unregistered');
     },
     async listPacks(): Promise<Array<{ id: string; name: string; source: 'user' | 'plugin' }>> {
       const packs = await window.clubhouse.app.listSoundPacks();

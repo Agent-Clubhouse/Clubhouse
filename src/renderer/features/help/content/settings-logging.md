@@ -89,15 +89,11 @@ The retention tier sets how long files are kept and how much space they can use 
 | **High** | 30 days | 500 MB |
 | **Unlimited** | No expiry | No cap |
 
-Retention runs at startup, every hour while recording, and each time a file reaches 2 MB and continues in a new one. The oldest files are deleted first, and a file that is being written is never deleted.
+Retention runs at startup (even with **Record locally** off), when recording starts, every hour while recording, and each time a file reaches 2 MB and continues in a new one. The oldest files are deleted first, and a file that is being written is never deleted. It also deletes the `session-*.jsonl` logs that earlier versions wrote to the same folder.
 
 ## Feedback reports
 
 A feedback report never includes the log folder or any part of it. Each report has an id, and Clubhouse writes that id to a `core:feedback` diagnostic line when the report is saved and again when it is delivered. These lines are at the info level, so they are written while **Record locally** is on, the `core:feedback` namespace is on, and **Minimum level** is info or debug. If a maintainer asks for your record of a report, they find the matching lines by its id and the time you sent it.
-
-## Legacy session logs (being retired)
-
-Earlier versions wrote the diagnostic log to `session-*.jsonl` files in the same folder. This version still writes them next to the telemetry files, and a later version stops. They hold the same diagnostic lines without the redaction described above, so they can contain details the telemetry files leave out, such as command arguments. Use the `telemetry-*.jsonl` files instead. Retention deletes old session logs on the same schedule.
 
 ## Common diagnostic scenarios
 
