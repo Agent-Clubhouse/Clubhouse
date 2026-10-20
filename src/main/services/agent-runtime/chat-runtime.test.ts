@@ -560,6 +560,28 @@ describe('ChatAgentRuntime', () => {
     expect(driver.last.startOptions?.resumeNativeSessionId).toBe('native-xyz');
   });
 
+  it('reports the fresh native id when the driver could not resume, so the next wake resumes that (#2296)', async () => {
+    const driver = new FakeChatDriver();
+    const onNativeSessionId = vi.fn();
+    const { runtime } = makeRuntime(driver, {
+      resumeNativeSessionId: 'native-stale',
+      onNativeSessionId,
+      // A driver that fell back to a new session (the old one was missing or stalled).
+      startSession: async (resumeId) => {
+        await driver.start({ agentId: 'agent-1', provider: 'claude-code', cwd: '/repo', binaryPath: '/bin/claude', level: 'ask', resumeNativeSessionId: resumeId });
+        driver.last.nativeSessionId = 'native-fresh';
+        return driver.last;
+      },
+    });
+    await runtime.start();
+    await flush();
+
+    expect(driver.last.startOptions?.resumeNativeSessionId).toBe('native-stale');
+    expect(runtime.getNativeSessionId()).toBe('native-fresh');
+    expect(onNativeSessionId).toHaveBeenCalledWith('native-fresh');
+    expect(onNativeSessionId).not.toHaveBeenCalledWith('native-stale');
+  });
+
   it('reads its transcript incrementally', async () => {
     const driver = new FakeChatDriver();
     const { runtime } = makeRuntime(driver);

@@ -45,6 +45,12 @@ export const SESSION_CLOSE_TIMEOUT_MS = 2_000;
  * - RESUME_STALL_TIMEOUT_MS: once replay has started, how long it may go
  *   quiet. Each replayed update resets this clock, so a long history loads.
  * - RESUME_MAX_MS: a cap on the whole load, however it is going.
+ *
+ * Measured on 1.0.82 (#2296): initialize takes ~0.4s and is never the slow
+ * part; successful loads answered in 1.6-6.3s, each after Copilot connected
+ * the session's MCP servers, while every stall never got that far. The first
+ * window is about twice the slowest load seen. Every resume logs
+ * `ACP <method> timing` so later changes can be made from data.
  */
 export const RESUME_FIRST_REPLY_TIMEOUT_MS = 20_000;
 export const RESUME_STALL_TIMEOUT_MS = 10_000;
@@ -276,6 +282,10 @@ export class AcpSession {
   private loadRequestId: number | null = null;
   /** Resets the resume stall timer; set while `session/load` or `session/resume` is pending. */
   private resumeActivity: (() => void) | null = null;
+  /** What a resume in progress has received so far, for its timing log (#2296). */
+  private resumeStats: { notifications: number; inboundChars: number } | null = null;
+  /** When `initialize` answered, so the resume timing log can show the gap before the load request. */
+  private initializedAt: number | null = null;
   /** Pending while a prompt turn runs; `exit` waits for it so `turn_ended` comes first. */
   private turnSettled: Promise<void> | null = null;
   /** Agents may announce a new session's updates before answering session/new. */
@@ -317,6 +327,9 @@ export class AcpSession {
         clientCapabilities: CLUBHOUSE_ACP_CLIENT_CAPABILITIES,
         clientInfo: opts.clientInfo ?? { name: 'clubhouse', version: '1.0.0' },
       },
+      onLine: (length) => {
+        if (this.resumeStats) this.resumeStats.inboundChars += length;
+      },
       onNotification: (method, params) => this.handleNotification(method, params),
       onServerRequest: (id, method, params) => this.handleServerRequest(id, method, params),
       onExit: (code, signal) => this.handleExit(code, signal),
@@ -331,7 +344,9 @@ export class AcpSession {
 
   /** Spawn the agent and complete `initialize`. Rejects if it speaks another protocol version. */
   async start(): Promise<AcpDriverCapabilities> {
+    const spawnedAt = Date.now();
     const init = await this.client.start();
+    this.initializedAt = Date.now();
     if (init.protocolVersion !== ACP_PROTOCOL_VERSION) {
       this.client.kill();
       throw new Error(`ACP agent negotiated protocol version ${init.protocolVersion}; Clubhouse supports ${ACP_PROTOCOL_VERSION}`);
@@ -347,6 +362,7 @@ export class AcpSession {
       // Advertised whether or not the user is logged in; a later "Authentication required" is the real signal.
       authMethods: (init.authMethods ?? []).map((m) => m.id),
       loadSession: init.agentCapabilities?.loadSession === true,
+      initializeMs: this.initializedAt - spawnedAt,
     });
     return this.caps;
   }
@@ -468,11 +484,36 @@ export class AcpSession {
     const firstMs = this.opts.resumeFirstReplyTimeoutMs ?? RESUME_FIRST_REPLY_TIMEOUT_MS;
     const stallMs = this.opts.resumeStallTimeoutMs ?? RESUME_STALL_TIMEOUT_MS;
     const maxMs = this.opts.resumeMaxMs ?? RESUME_MAX_MS;
+    const requestedAt = Date.now();
+    let firstActivityAt: number | null = null;
+    const stats = { notifications: 0, inboundChars: 0 };
+    this.resumeStats = stats;
+    // Timings and counts only, never content: what a slow resume waited on (#2296).
+    let reported = false;
+    const report = (outcome: string) => {
+      // A timed-out request settles again later, when the caller kills the process.
+      if (reported) return;
+      reported = true;
+      if (this.resumeStats === stats) this.resumeStats = null;
+      this.log(outcome === 'ok' ? 'info' : 'warn', `ACP ${method} timing`, {
+        sessionId,
+        outcome,
+        initializeToRequestMs: this.initializedAt === null ? null : requestedAt - this.initializedAt,
+        firstActivityMs: firstActivityAt === null ? null : firstActivityAt - requestedAt,
+        totalMs: Date.now() - requestedAt,
+        // Notifications received during the load: the replayed history, plus anything else the agent sent.
+        notifications: stats.notifications,
+        // Characters of every stdout line received during the load, the response included.
+        inboundChars: stats.inboundChars,
+        windowsMs: { firstReply: firstMs, stall: stallMs, max: maxMs },
+      });
+    };
     return new Promise<T>((resolve, reject) => {
       let idle: ReturnType<typeof setTimeout>;
       let heard = false;
       const fail = (timeoutMs: number, reason: AcpResumeStalledError['reason']) => {
         settle();
+        report(reason);
         this.log('warn', `ACP ${method} timed out`, { sessionId, timeoutMs, reason });
         reject(new AcpResumeStalledError(method, sessionId, timeoutMs, reason));
       };
@@ -483,6 +524,8 @@ export class AcpSession {
         idle = setTimeout(() => fail(ms, reason), ms);
       };
       const onActivity = () => {
+        stats.notifications++;
+        firstActivityAt ??= Date.now();
         heard = true;
         arm();
       };
@@ -495,8 +538,8 @@ export class AcpSession {
       this.resumeActivity = onActivity;
       arm();
       pending.then(
-        (value) => { settle(); resolve(value); },
-        (err: unknown) => { settle(); reject(err); },
+        (value) => { settle(); report('ok'); resolve(value); },
+        (err: unknown) => { settle(); report('error'); reject(err); },
       );
     });
   }
