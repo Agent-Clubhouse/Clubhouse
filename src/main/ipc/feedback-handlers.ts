@@ -11,6 +11,7 @@ import { FEEDBACK_MAX_PNG_BYTES, type FeedbackSendInput } from '../../shared/fee
 import { getFeedbackService, isFeedbackEnabled } from '../services/framebriar';
 import { stoppedFeedbackStatus } from '../services/framebriar/feedback-service';
 import { appLog } from '../services/log-service';
+import { recordFeedbackRefused } from '../telemetry/feedback-telemetry';
 import { objectArg, stringArg, withValidatedArgs } from './validation';
 import { findMainWindow, listPopoutWindows } from './window-handlers';
 import type { CaptureSource } from '../services/framebriar/feedback-service';
@@ -51,15 +52,17 @@ export async function captureFromShortcut(from?: BrowserWindow | null): Promise<
   await service.start();
   if (!service.status().canCapture) {
     appLog('core:feedback', 'info', 'Feedback shortcut ignored: feedback is not set up');
+    recordFeedbackRefused('not-configured');
     return;
   }
   const main = findMainWindow();
   if (!main || main.isDestroyed()) {
     // The review dialog lives in the main window (macOS keeps running with only a pop-out).
     appLog('core:feedback', 'info', 'Feedback shortcut ignored: no main window to review in');
+    recordFeedbackRefused('no-main-window');
     return;
   }
-  const draft = await service.captureDraft(captureSources(from ?? BrowserWindow.getFocusedWindow()));
+  const draft = await service.captureDraft(captureSources(from ?? BrowserWindow.getFocusedWindow()), 'shortcut');
   if (main.isMinimized()) main.restore();
   main.focus();
   main.webContents.send(IPC.FEEDBACK.CAPTURED, draft);
@@ -70,6 +73,7 @@ function callerWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) {
     appLog('core:feedback', 'warn', 'Rejected feedback request: caller is not an application window');
+    recordFeedbackRefused('unauthorized-caller');
     throw new Error('Feedback request rejected: unauthorized caller');
   }
   return win;

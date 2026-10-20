@@ -591,6 +591,22 @@ These are low-volume **event records** (level S) and land in `customEvents`:
 
 **As implemented (Phase 5b, main-process call sites).** `c.settings.changed` carries `c.settings.key` only, from a static list covering the managed settings and the legacy settings handlers, with no field names or values. `c.theme.changed` adds `c.theme.builtin_id=other` for plugin themes. `c.popout.opened` and `c.blueprint.exported` / `c.blueprint.imported` (with `c.outcome`) come from main. Page views, the command palette, onboarding and help topics are renderer call sites, owned by the refresh (§9.1).
 
+### 4.16 Feedback (`framebriar/feedback-service.ts`, [#2309](https://github.com/Agent-Clubhouse/Clubhouse/issues/2309))
+
+Event records only. Booleans, counts, states and codes: never notes, screenshots, invitations, error messages or the report id.
+
+| Event | Attributes | Level |
+|---|---|---|
+| `c.feedback.captured` | `c.feedback.screenshot`, `c.feedback.shots`, `c.feedback.windows`, `c.feedback.trigger` (`button`/`shortcut`) | S |
+| `c.feedback.submitted` | saved to the outbox: `c.feedback.screenshot`, `c.feedback.annotated`, `c.feedback.shots`, `c.feedback.access.state` | S |
+| `c.feedback.delivered` | none (Framebriar's receipt) | S |
+| `c.feedback.failed` | `c.feedback.stage` (`start`/`connect`/`capture`/`submit`/`deliver`), `c.feedback.error` (the SDK or outbox code, a send check, the connect failure class, `undeliverable`, else `unknown`) | E |
+| `c.feedback.connected` | none | S |
+| `c.feedback.access` | settled access transitions only (not `checking`/`connecting`/`disconnecting`): `c.feedback.access.state`, `.from`, `c.feedback.notice` | S |
+| `c.feedback.request_refused` | `c.feedback.refusal` (`not-configured`/`no-main-window`/`unauthorized-caller`) | S |
+
+**Report id.** Maintainers match a Framebriar report to the user's local record by its id. The id is not an attribute, so it stays in the local `core:feedback` log lines (`Feedback saved for delivery`, `Feedback delivered`) until the local-only diag tier ([#2299](https://github.com/Agent-Clubhouse/Clubhouse/issues/2299)) can carry it.
+
 ### 4.15 Process health, renderer performance and pipeline health (added in revision 2)
 
 The first draft left these as gaps. The maintainer set the goal as broad coverage of critical paths, and the regression history (§12) shows main-thread starvation (#1528), canvas render cost (#1693, #1694) and silent stalls. All of the following are in Phase 3.
