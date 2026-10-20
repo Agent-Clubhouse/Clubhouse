@@ -86,4 +86,24 @@ describe('LoggingSettingsView', () => {
     render(<LoggingSettingsView />);
     expect(screen.getByText('Write logs')).toBeInTheDocument();
   });
+
+  it('switches local telemetry recording and its detail level (#2278)', () => {
+    render(<LoggingSettingsView />);
+    const toggle = screen.getByRole('switch', { name: 'Record telemetry locally' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(toggle);
+    expect(mockSaveSettings).toHaveBeenCalledWith({ telemetryRecording: false });
+    const detail = screen.getByRole('radiogroup', { name: 'Telemetry detail' });
+    expect(screen.getByRole('radio', { name: 'Standard' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('radio', { name: 'Detailed' }));
+    expect(mockSaveSettings).toHaveBeenCalledWith({ telemetryLevel: 'detailed' });
+    expect(detail).toBeInTheDocument();
+  });
+
+  it('disables the telemetry controls while logging is off', () => {
+    resetStores({ settings: { enabled: false, namespaces: {}, retention: 'medium', minLogLevel: 'info' } });
+    render(<LoggingSettingsView />);
+    expect(screen.getByRole('switch', { name: 'Record telemetry locally' })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('radio', { name: 'Detailed' })).toBeDisabled();
+  });
 });

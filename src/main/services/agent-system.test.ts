@@ -3,7 +3,7 @@ import * as path from 'path';
 import type { OrchestratorConventions } from '../orchestrators';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { IPC } from '../../shared/ipc-channels';
-import { setRuntime } from '../telemetry/facade';
+import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from '../telemetry/types';
 import type { FreeAgentPermissionMode } from '../../shared/types';
 import { launchAccessFor, providerAccessLevel, resolveHelperAccess, type AgentLaunchAccess } from '../../shared/orchestration-policy';
@@ -574,7 +574,7 @@ describe('agent-system', () => {
 
     it('counts a failed pre-flight as a spawn with error.type preflight_failed', async () => {
       const count = vi.fn();
-      setRuntime({
+      setProducingRuntime({
         level: 'standard',
         flow: (_n: string, _o: unknown, fn: (s: unknown) => unknown) => fn({ set: () => {} }),
         step: (_n: string, fn: (s: unknown) => unknown) => fn({ set: () => {} }),
@@ -589,7 +589,7 @@ describe('agent-system', () => {
           ATTR.outcome('error'), ATTR.errorType('preflight_failed'),
         ]);
       } finally {
-        setRuntime(null);
+        setProducingRuntime(null);
       }
     });
 

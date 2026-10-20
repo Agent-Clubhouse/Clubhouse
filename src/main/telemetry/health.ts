@@ -118,7 +118,10 @@ function stop(): void {
 
 let installed = false;
 
-/** Start sampling whenever telemetry is on, stop when it turns off. */
+/**
+ * Sample while telemetry is active, which is local recording (spec §6.12):
+ * export on or off never starts or stops it.
+ */
 export function installHealthTelemetry(): void {
   if (installed) return;
   installed = true;

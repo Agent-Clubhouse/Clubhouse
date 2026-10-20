@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { abortPending, setRuntime } from './facade';
+import { abortPending } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import { blueprintTransfer, isSettingsKey, popoutOpened, recordToolsList, settingsChanged, SETTINGS_KEYS_EXCLUDED, themeChanged } from './feature-events';
 import * as definitions from '../../shared/settings-definitions';
 import { byteSizeBucket, classifyFetchError } from './workspace';
@@ -19,19 +20,19 @@ function runtime(): TelemetryRuntime {
 
 afterEach(() => {
   events.length = 0;
-  setRuntime(null);
+  setProducingRuntime(null);
   abortPending();
 });
 
 describe('feature events', () => {
   it('sends the settings key only', () => {
-    setRuntime(runtime());
+    setProducingRuntime(runtime());
     settingsChanged('editor');
     expect(events).toEqual([{ name: 'clubhouse.settings.changed', attrs: { 'clubhouse.settings.key': 'editor' } }]);
   });
 
   it('names built-in themes and hides plugin theme ids', () => {
-    setRuntime(runtime());
+    setProducingRuntime(runtime());
     themeChanged('dracula');
     themeChanged('acme-corp-secret-theme');
     expect(events.filter((e) => e.name === 'clubhouse.theme.changed').map((e) => e.attrs)).toEqual([
@@ -42,7 +43,7 @@ describe('feature events', () => {
   });
 
   it('records popouts and blueprint transfers', () => {
-    setRuntime(runtime());
+    setProducingRuntime(runtime());
     popoutOpened('canvas');
     blueprintTransfer('exported', true);
     blueprintTransfer('imported', false);
@@ -73,7 +74,7 @@ describe('settings key coverage', () => {
 
 describe('MCP tools list', () => {
   it('sends a count bucket and an empty flag, never tool names', () => {
-    setRuntime(runtime());
+    setProducingRuntime(runtime());
     recordToolsList(0);
     recordToolsList(23);
     expect(events).toEqual([

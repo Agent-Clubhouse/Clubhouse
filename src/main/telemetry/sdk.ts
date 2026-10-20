@@ -87,7 +87,7 @@ import type {
   SpanHandle,
   TelemetryRuntime,
 } from './types';
-import { ForwardedError, errorTypeOf } from './types';
+import { errorTypeName, errorTypeOf } from './types';
 
 export interface SdkOptions {
   /**
@@ -171,17 +171,6 @@ export function parseTraceparent(value: string): SpanContext | undefined {
 
 export function formatTraceparent(sc: SpanContext): string {
   return `00-${sc.traceId}-${sc.spanId}-${sc.traceFlags & TraceFlags.SAMPLED ? '01' : '00'}`;
-}
-
-function errorTypeName(error: unknown): string {
-  if (error instanceof ForwardedError) {
-    return /^[A-Za-z_$][\w$.]{0,63}$/.test(error.forwardedType) ? error.forwardedType : 'Error';
-  }
-  if (error instanceof Error) {
-    const name = error.constructor?.name || error.name;
-    return /^[A-Za-z_$][\w$.]{0,63}$/.test(name) ? name : 'Error';
-  }
-  return typeof error === 'object' && error !== null ? 'Object' : typeof error;
 }
 
 export function startSdk(opts: SdkOptions): TelemetryRuntime {

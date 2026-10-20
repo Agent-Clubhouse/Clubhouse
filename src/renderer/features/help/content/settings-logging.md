@@ -48,6 +48,16 @@ Oldest entries are pruned automatically when limits are reached.
 
 The full path to your log directory is shown in Settings with a direct **Open in Finder** link.
 
+## Local telemetry recording
+
+**Record telemetry locally** (on by default, and only while **Write logs** is on) writes the app's telemetry signals to `telemetry-<start time>.jsonl` files in the same log folder: how long each flow took, how it ended, error types, and per-minute metric totals. Nothing in these files is sent anywhere.
+
+The files hold the same anonymized data that telemetry export would send. They never contain prompts, terminal output, file paths, names or error messages, and ids are hashed. Each run keeps its newest 10 MB in 2 MB files: past that, the oldest file of the run is deleted and recording continues. The files share the retention tier above with the session logs, and it is applied while the app runs, not only at startup.
+
+**Telemetry detail** sets how much is recorded. **Standard** (the default) covers flows, errors and metrics. **Detailed** also records each IPC call and agent tool call.
+
+Exporting telemetry to a service is set up under **Telemetry export** on the same page. Export uploads only what this setting records, at this detail level or less, so turning export on or off doesn't change what Clubhouse measures or how much work it does. With **Write logs** or **Record telemetry locally** off, Clubhouse runs no background telemetry measurements and sends nothing, even to a destination that is set up.
+
 ## Common diagnostic scenarios
 
 | Problem | Configuration |

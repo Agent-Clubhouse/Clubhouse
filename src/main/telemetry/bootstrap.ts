@@ -19,10 +19,12 @@ import {
   beginPending,
   DEFAULT_FLUSH_TIMEOUT_MS,
   getRuntime,
-  isPending,
+  isExportActive,
+  isTelemetryActive,
   setRuntime,
   tel,
 } from './facade';
+import { restartLocalRecording, syncLocalRecording } from './local-control';
 import { createIdentity, isValidIdentity, type TelemetryIdentity } from './ids';
 import { deleteOfflineData, getOfflineDir, OFFLINE_PRUNE_INTERVAL_MS, pruneOfflineDir } from './offline';
 import { buildResourceAttributes, type ResourceInputs } from './resource';
@@ -47,7 +49,7 @@ import { getAdapter, resolveEntry } from './destinations/registry';
 import { recordingLevel } from './filters';
 import type { TelemetryLevel } from '../../shared/telemetry/attributes';
 import type { TelemetryDestinationKind } from '../../shared/telemetry/settings-types';
-import { setStartupKind } from './lifecycle';
+import { previousSessionVersion, setStartupKind } from './lifecycle';
 
 const LOG_NS = 'core:telemetry';
 
@@ -340,6 +342,9 @@ export async function migrateLegacySecretsOnReady(): Promise<void> {
 }
 
 export function initTelemetry(): void {
+  // Local recording (spec §6.12) has its own switch and starts synchronously,
+  // so startup signals are recorded even with no export destination.
+  void syncLocalRecording();
   try {
     if (getTelemetrySettings().legacyDestination) void migrateLegacySecretsOnReady();
     if (!isTelemetryConfigured()) return;
@@ -358,18 +363,24 @@ export function initTelemetry(): void {
  * facade if the SDK is still loading.
  */
 export function recordAppSession(): void {
-  if (!getRuntime() && !isPending()) return;
+  if (!isTelemetryActive()) return;
   const settings = getTelemetrySettings();
   const version = app.getVersion();
+  // The session record is written whenever signals are produced, export or
+  // not, so the startup kind is the same either way (spec §6.12 parity).
+  // lastVersion covers files from before the record carried a version.
+  const previous = previousSessionVersion() ?? settings.lastVersion;
   const kind =
     process.env.CLUBHOUSE_SAFE_MODE === '1'
       ? 'safe_mode'
-      : settings.lastVersion && settings.lastVersion !== version
+      : previous && previous !== version
         ? 'after_update'
         : 'cold';
   setStartupKind(kind);
   tel.count('clubhouse.app.sessions', 1, [ATTR.startupKind(kind)]);
-  if (settings.lastVersion !== version) {
+  // Only while exporting: local recording alone never creates
+  // telemetry-settings.json or an install id.
+  if (isExportActive() && settings.lastVersion !== version) {
     updateTelemetrySettings((s) => ({ ...s, lastVersion: version })).catch(() => {});
   }
 }
@@ -440,6 +451,8 @@ export async function disableTelemetry({ deleteLocalData = false } = {}): Promis
       delete next.hashSalt;
       return next;
     });
+    // The running local recorder still holds the deleted salt.
+    await restartLocalRecording();
   }
 }
 
@@ -465,8 +478,10 @@ export async function sendTestEvent(destinationId: string, timeoutMs = 10_000): 
   // Ids are the kinds today, so the registry's destination enum carries the id.
   const attrs = [ATTR.telemetryDestination(target.id as TelemetryDestinationKind)];
   const t0 = Date.now();
-  tel.flow('clubhouse.telemetry.test', { attrs }, (): void => undefined);
-  tel.event('clubhouse.telemetry.test', attrs);
+  // Straight to the runtime: a destination check must work under either
+  // parity policy, even with local recording off.
+  rt.flow('clubhouse.telemetry.test', { attrs }, (): void => undefined);
+  rt.event('clubhouse.telemetry.test', attrs);
   await rt.forceFlush(timeoutMs);
   const exports = rt.recentExports(t0).filter((r) => r.signal !== 'metrics' && r.destination === destinationId);
   return { ok: exports.length > 0 && exports.every((r) => r.ok), latencyMs: Date.now() - t0, exports };

@@ -1,11 +1,11 @@
 import { app } from 'electron';
 import * as path from 'path';
-import type { Dirent } from 'fs';
 import * as fsp from 'fs/promises';
 import { LogEntry, LOG_RETENTION_TIERS, LOG_LEVEL_PRIORITY } from '../../shared/types';
 import * as logSettings from './log-settings';
 import { bridgeLog, traceFieldsForLog, type LogTelemetry } from '../telemetry/log-bridge';
 import { recordBreadcrumb, recordBreadcrumbFrom } from './breadcrumbs';
+import { pruneLogDir } from '../telemetry/local-retention';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 const FLUSH_INTERVAL_MS = 1_000;
@@ -50,51 +50,8 @@ async function rotate(): Promise<void> {
 async function cleanup(): Promise<void> {
   const settings = logSettings.getSettings();
   const tier = LOG_RETENTION_TIERS[settings.retention] ?? LOG_RETENTION_TIERS.medium;
-
-  let entries: Dirent[];
-  try {
-    entries = await fsp.readdir(logDir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-
-  // Collect session log files with their stats
-  const files: { filePath: string; mtimeMs: number; size: number }[] = [];
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.startsWith('session-') || !entry.name.endsWith('.jsonl')) {
-      continue;
-    }
-    const filePath = path.join(logDir, entry.name);
-    try {
-      const stat = await fsp.stat(filePath);
-      files.push({ filePath, mtimeMs: stat.mtimeMs, size: stat.size });
-    } catch {
-      // ignore stat errors
-    }
-  }
-
-  // Phase 1: age-prune (skip if unlimited — retentionDays === 0)
-  if (tier.retentionDays > 0) {
-    const cutoff = Date.now() - tier.retentionDays * 24 * 60 * 60 * 1000;
-    for (let i = files.length - 1; i >= 0; i--) {
-      if (files[i].mtimeMs < cutoff) {
-        try { await fsp.unlink(files[i].filePath); } catch { /* ignore */ }
-        files.splice(i, 1);
-      }
-    }
-  }
-
-  // Phase 2: size-prune — delete oldest files until under cap (skip if unlimited — maxTotalBytes === 0)
-  if (tier.maxTotalBytes > 0) {
-    // Sort oldest first
-    files.sort((a, b) => a.mtimeMs - b.mtimeMs);
-    let totalSize = files.reduce((sum, f) => sum + f.size, 0);
-    while (totalSize > tier.maxTotalBytes && files.length > 0) {
-      const oldest = files.shift()!;
-      try { await fsp.unlink(oldest.filePath); } catch { /* ignore */ }
-      totalSize -= oldest.size;
-    }
-  }
+  // Shared with local telemetry recordings; the recorder also runs it while recording (#2298).
+  await pruneLogDir(logDir, tier, { protect: currentFilePath ? [currentFilePath] : [] });
 }
 
 export async function flush(): Promise<void> {
@@ -178,6 +135,11 @@ export function appLog(
     meta: opts?.meta,
     ...traceFieldsForLog(),
   }, opts?.telemetry);
+}
+
+/** The session log file being written now, if logging started. */
+export function getCurrentLogFile(): string | undefined {
+  return currentFilePath;
 }
 
 export function getLogPath(): string {

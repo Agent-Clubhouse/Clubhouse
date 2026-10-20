@@ -52,7 +52,7 @@ import { commandRegistry } from '../../shared/command-registry';
 import { registerGroupProjectTools } from './clubhouse-mcp/tools/group-project-tools';
 import { executeShoulderTap } from './group-project-shoulder-tap';
 import { ATTR } from '../../shared/telemetry/attributes';
-import { setRuntime } from '../telemetry/facade';
+import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import type { Classification, TelemetryRuntime } from '../telemetry/types';
 
 describe('executeShoulderTap', () => {
@@ -206,7 +206,7 @@ describe('executeShoulderTap', () => {
     });
     const count = vi.fn();
     const outcomes: Array<{ name: string; attrs: unknown[]; outcome: Classification }> = [];
-    setRuntime({
+    setProducingRuntime({
       level: 'standard',
       count,
       flow: (name: string, opts: { attrs?: unknown[] }, fn: (s: { set: (...a: unknown[]) => void }) => Promise<unknown>, extras?: { classify?: (r: unknown) => Classification }) => {
@@ -226,7 +226,7 @@ describe('executeShoulderTap', () => {
       }]);
       expect(count).toHaveBeenCalledWith('clubhouse.group.shoulder_tap.deliveries', 1, [ATTR.deliveryResult('not_running')]);
     } finally {
-      setRuntime(null);
+      setProducingRuntime(null);
     }
   });
 

@@ -19,7 +19,7 @@ import {
   installAgentTelemetry,
   noteSpawnKind,
 } from './agent-telemetry';
-import { setRuntime } from './facade';
+import { setProducingRuntime } from './__test-utils__/producing-runtime';
 import type { TelemetryRuntime } from './types';
 
 function fakeRuntime(): TelemetryRuntime {
@@ -36,11 +36,11 @@ const exit = (id: string, code: number) => exitListeners.forEach((fn) => fn(id, 
 beforeEach(() => {
   exitListeners.length = 0;
   rt = fakeRuntime();
-  setRuntime(rt);
+  setProducingRuntime(rt);
   installAgentTelemetry((id) => (id.startsWith('cx') ? 'codex-cli' : 'claude-code'));
 });
 afterEach(() => {
-  setRuntime(null);
+  setProducingRuntime(null);
   _resetAgentTelemetryForTests();
 });
 
@@ -129,7 +129,7 @@ describe('agent runs', () => {
 
   it('ignores exits it never saw start (e.g. chat runs) and tracks nothing while off', () => {
     exit('unknown', 0);
-    setRuntime(null);
+    setProducingRuntime(null);
     agentRunStarted('a3', 'pty');
     expect(_activeRunsForTests()).toBe(0);
     expect(rt.count).not.toHaveBeenCalled();

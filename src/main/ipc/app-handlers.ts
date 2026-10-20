@@ -36,6 +36,7 @@ import * as agentSystem from '../services/agent-system';
 import { syncPluginThemes, PluginThemeSummary } from '../services/plugin-theme-store';
 import { consumePendingProtocolAction } from '../services/protocol-service';
 import { flushBeforeExit } from '../telemetry/facade';
+import { syncLocalRecording } from '../telemetry/local-control';
 import { settingsChanged, themeChanged } from '../telemetry/feature-events';
 import { newChromeEnabled, usesTitleBarOverlay } from '../window-chrome';
 
@@ -375,6 +376,7 @@ export function registerAppHandlers(): void {
     [objectArg<LoggingSettings>()],
     async (_event, settings) => {
       await logSettings.saveSettings(settings);
+      await syncLocalRecording();
       settingsChanged('logging');
     },
   ));

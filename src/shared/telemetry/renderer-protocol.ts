@@ -61,8 +61,15 @@ export interface RendererBatch {
 
 /** What the renderer needs to know to decide whether to record anything. */
 export interface TelemetryState {
+  /** Send `tel.*` calls to main. */
   enabled: boolean;
   level: TelemetryLevel | null;
+  /**
+   * Run renderer producers (long-frame aggregation, perf observers). Follows
+   * local recording only (spec §6.12 parity), so it can be false while
+   * `enabled` is true for an exporter. Absent means the same as `enabled`.
+   */
+  producers?: boolean;
 }
 
 export const DISABLED_STATE: TelemetryState = { enabled: false, level: null };
@@ -197,5 +204,6 @@ export function parseRendererBatch(raw: unknown): RendererItem[] {
 export function parseTelemetryState(raw: unknown): TelemetryState {
   if (!isRecord(raw) || raw.enabled !== true) return DISABLED_STATE;
   const level = raw.level === 'errors' || raw.level === 'standard' || raw.level === 'detailed' ? raw.level : null;
-  return level ? { enabled: true, level } : DISABLED_STATE;
+  if (!level) return DISABLED_STATE;
+  return typeof raw.producers === 'boolean' ? { enabled: true, level, producers: raw.producers } : { enabled: true, level };
 }

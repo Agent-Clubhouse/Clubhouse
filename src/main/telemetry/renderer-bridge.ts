@@ -23,7 +23,7 @@ import {
   type TelemetryState,
 } from '../../shared/telemetry/renderer-protocol';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { getRuntime, isPending, onRuntimeChange, replaySpan, tel } from './facade';
+import { exportsWithoutLocalRecording, getLocalSink, getRuntime, isPending, onRuntimeChange, replaySpan, tel } from './facade';
 import { ForwardedError } from './types';
 
 export type WindowKind = 'main' | 'popout';
@@ -45,14 +45,19 @@ export function windowKindFor(sender: Pick<WebContents, 'id'>): WindowKind {
   return deps && sender.id === deps.getMainWebContentsId() ? 'main' : 'popout';
 }
 
+/**
+ * What renderers record (spec §6.12 parity). With local recording on,
+ * renderers produce at its level whatever the export state; each exporter
+ * filters down. With it off, producers stay off, and `tel.*` calls go to a
+ * running exporter at its level only when the policy allows it.
+ */
 export function getTelemetryState(): TelemetryState {
+  const local = getLocalSink();
+  if (local) return { enabled: true, level: local.level, producers: true };
+  if (!exportsWithoutLocalRecording()) return DISABLED_STATE;
   const rt = getRuntime();
-  if (rt) return { enabled: true, level: rt.level };
-  if (isPending()) {
-    const level = deps?.getConfiguredLevel() ?? null;
-    return level ? { enabled: true, level } : DISABLED_STATE;
-  }
-  return DISABLED_STATE;
+  const level = rt ? rt.level : isPending() ? deps?.getConfiguredLevel() ?? null : null;
+  return level ? { enabled: true, level, producers: false } : DISABLED_STATE;
 }
 
 export function broadcastTelemetryState(): void {
@@ -111,7 +116,7 @@ export function getRendererReadyAt(): number | null {
 /** Handle one `telemetry:emit` batch from a renderer. */
 export function handleRendererEmit(sender: Pick<WebContents, 'id'>, raw: unknown): void {
   // Cheap exit while disabled: renderers shouldn't send, but never trust that.
-  if (!getRuntime() && !isPending()) return;
+  if (!getTelemetryState().enabled) return;
   dispatchRendererItems(parseRendererBatch(raw), windowKindFor(sender));
 }
 

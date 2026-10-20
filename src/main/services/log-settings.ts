@@ -6,7 +6,10 @@ const store = createSettingsStore<LoggingSettings>('logging-settings.json', {
   namespaces: {},
   retention: 'medium',
   minLogLevel: 'info',
+  telemetryRecording: true,
+  telemetryLevel: 'standard',
 });
 
 export const getSettings = store.get;
 export const saveSettings = store.save;
+export const updateSettings = store.update;

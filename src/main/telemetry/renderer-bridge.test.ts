@@ -14,7 +14,8 @@ vi.mock('../util/ipc-broadcast', () => ({ broadcastToAllWindows: broadcast }));
 import { IPC } from '../../shared/ipc-channels';
 import { ATTR } from '../../shared/telemetry/attributes';
 import { RENDERER_PROTOCOL_VERSION } from '../../shared/telemetry/renderer-protocol';
-import { beginPending, setRuntime } from './facade';
+import { beginPending, setLocalSink, setRuntime } from './facade';
+import type { LocalTelemetrySink } from './types';
 import {
   _resetRendererBridgeForTests,
   dispatchRendererItems,
@@ -50,27 +51,71 @@ beforeEach(() => {
   registerTelemetryRendererHandlers({ getMainWebContentsId: () => MAIN_ID, getConfiguredLevel: () => 'standard' });
 });
 
+function fakeLocalSink(): LocalTelemetrySink {
+  return {
+    level: 'standard',
+    wrap: (_n, _o, fn) => fn,
+    count: vi.fn(),
+    event: vi.fn(),
+    exception: vi.fn(),
+    replaySpan: vi.fn(),
+    replayTree: vi.fn(),
+    activeTraceIds: () => undefined,
+    flush: vi.fn(async () => {}),
+  };
+}
+
 afterEach(() => {
+  setLocalSink(null);
   setRuntime(null);
   _resetRendererBridgeForTests();
 });
 
 describe('renderer bridge', () => {
-  it('reports disabled until a runtime exists', () => {
+  it('stays disabled for an exporter alone: export only sends what local recording produces', () => {
     expect(getTelemetryState()).toEqual({ enabled: false, level: null });
     setRuntime(fakeRuntime());
-    expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard' });
+    expect(getTelemetryState()).toEqual({ enabled: false, level: null });
   });
 
-  it('reports the configured level while the SDK is still loading', () => {
-    beginPending();
-    expect(getTelemetryState()).toEqual({ enabled: true, level: 'standard' });
-  });
-
-  it('broadcasts the new state when telemetry starts or stops', () => {
-    setRuntime(fakeRuntime());
-    expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, { enabled: true, level: 'standard' });
+  it('tells renderers to record for local recording alone (#2278)', () => {
+    setLocalSink(fakeLocalSink());
+    const local = { enabled: true, level: 'standard', producers: true };
+    expect(getTelemetryState()).toEqual(local);
+    expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, local);
+    // Parity: an exporter, even at Detailed, doesn't change what renderers produce.
+    const rt = fakeRuntime();
+    (rt as { level: string }).level = 'detailed';
+    setRuntime(rt);
+    expect(getTelemetryState()).toEqual(local);
     setRuntime(null);
+    setLocalSink(null);
+    expect(getTelemetryState()).toEqual({ enabled: false, level: null });
+  });
+
+  it('feeds renderer batches into the local recorder with no SDK runtime', () => {
+    const sink = fakeLocalSink();
+    setLocalSink(sink);
+    handlers.on.get(IPC.TELEMETRY.EMIT)!(mainSender, {
+      v: RENDERER_PROTOCOL_VERSION,
+      items: [
+        { t: 'event', name: 'clubhouse.renderer.gone', attrs: [] },
+        { t: 'span', name: 'clubhouse.agent.spawn', startMs: 1, endMs: 3, attrs: [], outcome: 'ok' },
+      ],
+    });
+    expect(sink.event).toHaveBeenCalledWith('clubhouse.renderer.gone', [ATTR.process('renderer'), ATTR.windowKind('main')], undefined);
+    expect(sink.replaySpan).toHaveBeenCalledWith(expect.objectContaining({ name: 'clubhouse.agent.spawn', attrs: [ATTR.process('renderer'), ATTR.windowKind('main')] }));
+  });
+
+  it('stays disabled while the SDK loads with local recording off', () => {
+    beginPending();
+    expect(getTelemetryState()).toEqual({ enabled: false, level: null });
+  });
+
+  it('broadcasts the new state when local recording starts or stops', () => {
+    setLocalSink(fakeLocalSink());
+    expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, { enabled: true, level: 'standard', producers: true });
+    setLocalSink(null);
     expect(broadcast).toHaveBeenLastCalledWith(IPC.TELEMETRY.STATE_CHANGED, { enabled: false, level: null });
   });
 
@@ -83,6 +128,7 @@ describe('renderer bridge', () => {
 
   it('tags items with the window kind main decides, not the renderer', () => {
     const rt = fakeRuntime();
+    setLocalSink(fakeLocalSink());
     setRuntime(rt);
     handlers.on.get(IPC.TELEMETRY.EMIT)!(popoutSender, {
       v: RENDERER_PROTOCOL_VERSION,
@@ -95,6 +141,7 @@ describe('renderer bridge', () => {
 
   it('replays renderer spans with their own times', () => {
     const rt = fakeRuntime();
+    setLocalSink(fakeLocalSink());
     setRuntime(rt);
     dispatchRendererItems([{ t: 'span', name: 'clubhouse.renderer.unresponsive', startMs: 10, endMs: 30, attrs: [], outcome: 'ok' }], 'main');
     expect(rt.replaySpan).toHaveBeenCalledWith(expect.objectContaining({ startMs: 10, endMs: 30, outcome: 'ok' }));
@@ -102,6 +149,7 @@ describe('renderer bridge', () => {
 
   it('turns renderer exceptions into ForwardedErrors with no message', () => {
     const rt = fakeRuntime();
+    setLocalSink(fakeLocalSink());
     setRuntime(rt);
     dispatchRendererItems([{ t: 'exception', errorType: 'TypeError', stack: 'TypeError\n at x', origin: 'plugin', handled: true, attrs: [ATTR.errorBoundary('plugin')] }], 'main');
     const [err, opts] = (rt.exception as ReturnType<typeof vi.fn>).mock.calls[0];

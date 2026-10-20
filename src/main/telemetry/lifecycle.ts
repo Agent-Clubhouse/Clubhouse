@@ -131,8 +131,24 @@ function sessionFile(): string {
 let sessionWritten = false;
 
 /**
+ * The version the previous session record was written by, if any. Read
+ * before checkPreviousSession() replaces the record; recordAppSession() uses
+ * it to tell an update from a cold start without telemetry-settings.json.
+ */
+export function previousSessionVersion(): string | undefined {
+  try {
+    const prev = JSON.parse(fs.readFileSync(sessionFile(), 'utf-8')) as Partial<SessionRecord>;
+    return typeof prev.version === 'string' ? prev.version : undefined;
+  } catch {
+    // telemetry-exempt: no previous record (first recorded run) or an unreadable one
+    return undefined;
+  }
+}
+
+/**
  * Compare against the previous session's record, then write this one. Only
- * runs while telemetry is on, so a disabled install never gets the file.
+ * runs while telemetry is on (export or local recording), so an install with
+ * both off never gets the file.
  * `crashLoop` comes from the safe-mode check at the same startup.
  */
 export function checkPreviousSession(crashLoop: boolean): void {
