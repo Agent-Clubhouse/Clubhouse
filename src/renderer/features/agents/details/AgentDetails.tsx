@@ -34,6 +34,8 @@ import { SettingsCard } from './SettingsCard';
 import { McpCard } from './McpCard';
 import { useAgentDetailsStore } from './detailsStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import type { LastSessionInfo } from '../states/useLastSession';
+import { describeSleep, formatAgo, formatShortDuration, formatUsd } from '../states/format';
 import { ConnectionsCard, type Connection } from '../helpers/ConnectionsCard';
 import { OrchestrationCardPair, useOrchestrationCards } from '../helpers/OrchestrationCards';
 
@@ -145,6 +147,11 @@ function tokensOf(t: { total?: number; input?: number; output?: number } | undef
   return t.total ?? ((t.input ?? 0) + (t.output ?? 0) || undefined);
 }
 
+/** "stopped by you" as a value on its own: "Stopped by you". */
+function sentence(text: string): string {
+  return text ? text[0].toUpperCase() + text.slice(1) : text;
+}
+
 export interface AgentDetailsProps {
   agent: Agent;
   /** The chat session, when the agent runs in chat. */
@@ -157,9 +164,14 @@ export interface AgentDetailsProps {
   onReviewAll?: () => void;
   /** The branch against main, when the pane already reads it (useAgentReview). */
   branch?: BranchChanges | null;
+  /**
+   * The sleeping view's last session (#2281), loaded after the view is up:
+   * null until the config is read, then filled in as the summary arrives.
+   */
+  lastSession?: LastSessionInfo | null;
 }
 
-export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, onReviewAll, branch: givenBranch }: AgentDetailsProps) {
+export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, onReviewAll, branch: givenBranch, lastSession }: AgentDetailsProps) {
   const setOpen = useAgentDetailsStore((s) => s.setOpen);
   const focus = useAgentDetailsStore((s) => s.focus);
   const [openCards, setOpenCards] = useState<Set<CardId>>(() => new Set());
@@ -199,6 +211,8 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   );
   const canvases = useAgentCanvases(agent);
   const running = agent.status === 'running';
+  // Asleep (#2281): the live-only cards go, and Session is the last one.
+  const asleep = agent.status === 'sleeping' || agent.status === 'error';
 
   // Orchestration (#2232): local durable agents only; a satellite keeps its own config.
   const orchestration = useOrchestrationCards(agent, projectPath);
@@ -230,6 +244,12 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
   const tokens = tokensOf(session?.tokens ?? chat?.usage.turnTotal ?? undefined);
   const runningFor = running && spawnedAt ? formatDuration(now - spawnedAt) : null;
   const sessionSummary = [runningFor, cost].filter(Boolean).join(' · ');
+  const ended = agent.lastSleep ? Date.parse(agent.lastSleep.at) : lastSession?.lastActiveAt ?? null;
+  const lastSummary = [
+    ended !== null && Number.isFinite(ended) ? formatAgo(ended) : null,
+    lastSession && lastSession.durationMs > 0 ? formatShortDuration(lastSession.durationMs) : null,
+    lastSession && lastSession.costUsd > 0 ? formatUsd(lastSession.costUsd) : null,
+  ].filter(Boolean).join(' · ');
   const limits = chat?.capabilities?.limits ? chat.usage.limits : [];
 
   return (
@@ -353,16 +373,30 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         </DetailsCard>
       )}
 
-      <McpCard
+      {!asleep && <McpCard
         agent={agent}
         live={chat?.mcpServers ?? null}
         spawnedAt={spawnedAt}
         refreshKey={refreshKey}
         open={open('mcp')}
         onToggle={() => toggleCard('mcp')}
-      />
+      />}
 
-      <DetailsCard id="session" title="Session" summary={sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>
+      {asleep && (
+        <DetailsCard id="session" title="Last session" summary={lastSummary} open={open('session')} onToggle={() => toggleCard('session')}>
+          <CardRow label="Runs on">{provider}</CardRow>
+          {ended !== null && Number.isFinite(ended) && <CardRow label="Ended">{formatAgo(ended)}</CardRow>}
+          {agent.lastSleep && <CardRow label="Why">{sentence(describeSleep(agent.lastSleep))}</CardRow>}
+          {lastSession?.loading && lastSession.sessionId && <CardRow label="Usage"><span className="text-ctp-overlay1" data-testid="details-last-session-loading">Loading</span></CardRow>}
+          {lastSession && lastSession.durationMs > 0 && <CardRow label="Duration">{formatShortDuration(lastSession.durationMs)}</CardRow>}
+          {lastSession && lastSession.costUsd > 0 && <CardRow label="Cost">{formatUsd(lastSession.costUsd)}</CardRow>}
+          {lastSession && !lastSession.sessionId && !agent.lastSleep && <CardNote>No earlier session recorded.</CardNote>}
+          {cwd && <CardRow label="Folder"><span className="font-mono text-[11.5px] break-all">{relativeFolder(agent.worktreePath, projectPath) ?? cwd}</span></CardRow>}
+          {(branch?.branch || agent.branch) && <CardRow label="Branch"><span className="font-mono text-[11.5px] break-all">{branch?.branch ?? agent.branch}</span></CardRow>}
+        </DetailsCard>
+      )}
+
+      {!asleep && <DetailsCard id="session" title="Session" summary={sessionSummary} open={open('session')} onToggle={() => toggleCard('session')}>
         <CardRow label="Runs on">
           {provider}
           {chat?.driver ? <span className="text-ctp-overlay1"> · {DRIVER_LABELS[chat.driver] ?? chat.driver}{chat.cliVersion ? ` ${chat.cliVersion}` : ''}</span> : !chat ? <span className="text-ctp-overlay1"> · terminal</span> : null}
@@ -388,7 +422,7 @@ export function AgentDetails({ agent, chat, onShowInStream, missedSubagentId, on
         {runningFor && <CardRow label="Running">{runningFor}</CardRow>}
         {cwd && <CardRow label="Folder"><span className="font-mono text-[11.5px] break-all">{relativeFolder(agent.worktreePath, projectPath) ?? cwd}</span></CardRow>}
         {(branch?.branch || agent.branch) && <CardRow label="Branch"><span className="font-mono text-[11.5px] break-all">{branch?.branch ?? agent.branch}</span></CardRow>}
-      </DetailsCard>
+      </DetailsCard>}
     </aside>
   );
 }

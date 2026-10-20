@@ -17,6 +17,10 @@ import { useLastSession, type LastSessionInfo } from './states/useLastSession';
 import { describeSleep, formatAgo, formatShortDuration, formatUsd, plural, relativeTo } from './states/format';
 import { HelperHeader } from './helpers/HelperHeader';
 import { SleepingOrchestration } from './helpers/OrchestrationCards';
+import { AgentDetails } from './details/AgentDetails';
+import { DetailsToggle } from './details/DetailsToggle';
+import { useAgentDetailsStore } from './details/detailsStore';
+import { useNarrow } from './pane/useNarrow';
 import {
   BranchIcon, FileRow, Kbd, ModelLabel, SectionHead, StateToolbar, ToolbarSeparator,
 } from './states/parts';
@@ -56,8 +60,16 @@ function cliName(orchestrator?: string): string {
  * A sleeping (or failed-to-launch) agent, treated as an empty chat (#2019): a
  * greeting that changes with the time of day, a composer to wake the agent
  * with a task, and the last session underneath so you remember where it left off.
+ *
+ * In the main pane it has the same Agent details toggle and column as a
+ * running agent (#2281), in the same place and sharing the open state, so the
+ * column stays put as the agent sleeps and wakes.
  */
-export function SleepingAgent({ agent }: { agent: Agent }) {
+export function SleepingAgent({ agent, details = false }: {
+  agent: Agent;
+  /** Show the Agent details toggle and column (the main pane; popouts have none). */
+  details?: boolean;
+}) {
   const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
   const sessionNamePromptFor = useAgentStore((s) => s.sessionNamePromptFor);
   const setSessionNamePrompt = useAgentStore((s) => s.setSessionNamePrompt);
@@ -72,7 +84,12 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   const failed = agent.status === 'error';
 
   const rootRef = useRef<HTMLDivElement>(null);
-  const compact = useCompact(rootRef);
+  // Compact goes by the content column, which is narrower while details shows.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const compact = useCompact(contentRef);
+  // Below 640px of pane there's no room beside the view, so details hides, as for a running agent.
+  const paneNarrow = useNarrow(rootRef);
+  const detailsOpen = useAgentDetailsStore((s) => s.open) && details && !paneNarrow;
   const [task, setTask] = useState('');
   const [waking, setWaking] = useState(false);
   const [wakeError, setWakeError] = useState<string | null>(null);
@@ -181,7 +198,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
     : last?.lastActiveAt ? `last active ${formatAgo(last.lastActiveAt)}` : undefined;
 
   return (
-    <div ref={rootRef} className="flex flex-col h-full bg-ctp-base" data-testid="sleeping-agent">
+    <div ref={rootRef} className="flex flex-col h-full bg-ctp-base" data-testid="sleeping-agent" data-agent-pane={details ? agent.id : undefined}>
       <StateToolbar
         status={failed ? 'error' : 'sleeping'}
         detail={toolbarDetail}
@@ -195,6 +212,12 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
                 <Button kind="quiet" onClick={() => setSessionPickerOpen(true)} data-testid="sessions-button">
                   Sessions
                 </Button>
+              </>
+            )}
+            {details && (
+              <>
+                <ToolbarSeparator />
+                <DetailsToggle />
               </>
             )}
             {rowActions.length > 0 && (
@@ -219,97 +242,100 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
       />
       {isDurable && <HelperHeader agent={agent} />}
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <div
-          className="mx-auto w-full max-w-[652px] px-4 pb-8 flex flex-col items-center text-center"
-          style={{ paddingTop: compact ? 24 : 'clamp(32px, 11vh, 92px)' }}
-        >
-          {hasOwnIcon ? (
-            <AgentIconTile agent={agent} iconUrl={storeIconUrl} size={compact ? 40 : 56} />
-          ) : (
-            <SleepingMascot orchestrator={agent.orchestrator} size={mascotSize} error={failed} />
-          )}
+      <div className="flex-1 min-h-0 flex">
+        <div ref={contentRef} className="flex-1 min-w-0 overflow-y-auto">
+          <div
+            className="mx-auto w-full max-w-[652px] px-4 pb-8 flex flex-col items-center text-center"
+            style={{ paddingTop: compact ? 24 : 'clamp(32px, 11vh, 92px)' }}
+          >
+            {hasOwnIcon ? (
+              <AgentIconTile agent={agent} iconUrl={storeIconUrl} size={compact ? 40 : 56} />
+            ) : (
+              <SleepingMascot orchestrator={agent.orchestrator} size={mascotSize} error={failed} />
+            )}
 
-          <h1 className="mt-2.5 text-xl font-semibold text-ctp-text" data-testid="sleeping-greeting">{headline}</h1>
-          <p className="mt-1.5 max-w-[520px] text-[12.5px] leading-normal text-ctp-overlay1">{subline}</p>
+            <h1 className="mt-2.5 text-xl font-semibold text-ctp-text" data-testid="sleeping-greeting">{headline}</h1>
+            <p className="mt-1.5 max-w-[520px] text-[12.5px] leading-normal text-ctp-overlay1">{subline}</p>
 
-          {isDurable && (
-            <div
-              className={`relative w-full ${hasOwnIcon && !compact ? 'mt-[46px]' : 'mt-[22px]'} rounded-lg border border-surface-1 bg-ctp-mantle text-left focus-within:border-surface-2`}
-              data-testid="wake-composer"
-            >
-              {hasOwnIcon && !compact && (
-                <span className="absolute right-4 -top-[41px] pointer-events-none">
-                  <SleepingMascot orchestrator={agent.orchestrator} size={48} error={failed} />
-                </span>
-              )}
-              <textarea
-                value={task}
-                onChange={(e) => setTask(e.target.value)}
-                onKeyDown={onComposerKey}
-                rows={2}
-                aria-label={`Task for ${agent.name}`}
-                placeholder={failed ? 'Retry with a task, or leave this empty to retry the last session' : `Describe a task for ${agent.name}`}
-                data-testid="wake-task-input"
-                className="block w-full min-h-[58px] max-h-48 resize-none bg-transparent px-3.5 pt-3 text-[13px] leading-normal text-ctp-text placeholder:text-ctp-overlay0 outline-none"
-              />
-              <div className="h-[42px] flex items-center gap-1.5 pl-3.5 pr-2">
-                <ModelLabel orchestrator={agent.orchestrator} model={agent.model} />
-                <span className="ml-auto flex items-center"><Kbd>{shortcut}</Kbd></span>
-                {failed && !isRemote && (
-                  <Button kind="ghost" onClick={() => openAgentSettings(agent.id)} data-testid="open-settings-button">
-                    Open settings
-                  </Button>
+            {isDurable && (
+              <div
+                className={`relative w-full ${hasOwnIcon && !compact ? 'mt-[46px]' : 'mt-[22px]'} rounded-lg border border-surface-1 bg-ctp-mantle text-left focus-within:border-surface-2`}
+                data-testid="wake-composer"
+              >
+                {hasOwnIcon && !compact && (
+                  <span className="absolute right-4 -top-[41px] pointer-events-none">
+                    <SleepingMascot orchestrator={agent.orchestrator} size={48} error={failed} />
+                  </span>
                 )}
-                <span className="inline-flex flex-shrink-0">
-                  <Button
-                    kind="primary"
-                    onClick={() => { void wake(defaultMode); }}
-                    disabled={waking || !ready}
-                    data-testid="wake-button"
-                    className="rounded-r-none"
-                  >
-                    {failed ? 'Retry' : 'Wake'}
-                  </Button>
-                  <Button
-                    kind="primary"
-                    aria-label="More ways to wake"
-                    aria-haspopup="menu"
-                    aria-expanded={wakeMenu !== null}
-                    disabled={waking}
-                    data-testid="wake-dropdown-toggle"
-                    onClick={(e) => {
-                      const r = e.currentTarget.getBoundingClientRect();
-                      setWakeMenu(wakeMenu ? null : { x: r.right - 240, y: r.bottom + 4 });
-                    }}
-                    className="rounded-l-none border-l-ctp-base"
-                    icon={(
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
-                    )}
-                  />
-                </span>
+                <textarea
+                  value={task}
+                  onChange={(e) => setTask(e.target.value)}
+                  onKeyDown={onComposerKey}
+                  rows={2}
+                  aria-label={`Task for ${agent.name}`}
+                  placeholder={failed ? 'Retry with a task, or leave this empty to retry the last session' : `Describe a task for ${agent.name}`}
+                  data-testid="wake-task-input"
+                  className="block w-full min-h-[58px] max-h-48 resize-none bg-transparent px-3.5 pt-3 text-[13px] leading-normal text-ctp-text placeholder:text-ctp-overlay0 outline-none"
+                />
+                <div className="h-[42px] flex items-center gap-1.5 pl-3.5 pr-2">
+                  <ModelLabel orchestrator={agent.orchestrator} model={agent.model} />
+                  <span className="ml-auto flex items-center"><Kbd>{shortcut}</Kbd></span>
+                  {failed && !isRemote && (
+                    <Button kind="ghost" onClick={() => openAgentSettings(agent.id)} data-testid="open-settings-button">
+                      Open settings
+                    </Button>
+                  )}
+                  <span className="inline-flex flex-shrink-0">
+                    <Button
+                      kind="primary"
+                      onClick={() => { void wake(defaultMode); }}
+                      disabled={waking || !ready}
+                      data-testid="wake-button"
+                      className="rounded-r-none"
+                    >
+                      {failed ? 'Retry' : 'Wake'}
+                    </Button>
+                    <Button
+                      kind="primary"
+                      aria-label="More ways to wake"
+                      aria-haspopup="menu"
+                      aria-expanded={wakeMenu !== null}
+                      disabled={waking}
+                      data-testid="wake-dropdown-toggle"
+                      onClick={(e) => {
+                        const r = e.currentTarget.getBoundingClientRect();
+                        setWakeMenu(wakeMenu ? null : { x: r.right - 240, y: r.bottom + 4 });
+                      }}
+                      className="rounded-l-none border-l-ctp-base"
+                      icon={(
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      )}
+                    />
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {wakeError && (
-            <p role="alert" className="w-full mt-2 text-left text-xs text-ctp-error" data-testid="wake-error">{wakeError}</p>
-          )}
+            {wakeError && (
+              <p role="alert" className="w-full mt-2 text-left text-xs text-ctp-error" data-testid="wake-error">{wakeError}</p>
+            )}
 
-          {/* No details column while asleep, so an orchestrator's cards sit here (#2232). */}
-          {!compact && isDurable && !isRemote && agentProject && <SleepingOrchestration agent={agent} projectPath={agentProject.path} />}
+            {/* An orchestrator's cards sit here while asleep (#2232), unless the details column shows them. */}
+            {!compact && !detailsOpen && isDurable && !isRemote && agentProject && <SleepingOrchestration agent={agent} projectPath={agentProject.path} />}
 
-          {!compact && last && ((last.loading && last.sessionId) || last.summary || last.filesModified.length > 0 || agent.branch) && (
-            <LastSession
-              info={last}
-              branch={agent.branch}
-              baseDir={agent.worktreePath || agentProject?.path}
-              onBrowse={agentProject ? () => setSessionPickerOpen(true) : undefined}
-            />
-          )}
+            {!compact && last && ((last.loading && last.sessionId) || last.summary || last.filesModified.length > 0 || agent.branch) && (
+              <LastSession
+                info={last}
+                branch={agent.branch}
+                baseDir={agent.worktreePath || agentProject?.path}
+                onBrowse={agentProject ? () => setSessionPickerOpen(true) : undefined}
+              />
+            )}
+          </div>
         </div>
+        {detailsOpen && <AgentDetails agent={agent} lastSession={last} />}
       </div>
 
       {wakeMenu && (

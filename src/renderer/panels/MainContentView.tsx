@@ -197,7 +197,7 @@ export function MainContentView() {
     if (activeAgent.status === 'sleeping' || activeAgent.status === 'error') {
       return (
         <div className="relative h-full">
-          <SleepingAgent agent={activeAgent} />
+          <SleepingAgent agent={activeAgent} details />
           {isSatelliteDisconnected && activeSatellite && (
             <SatelliteDisconnectedOverlay
               satelliteId={activeSatellite.fingerprint}

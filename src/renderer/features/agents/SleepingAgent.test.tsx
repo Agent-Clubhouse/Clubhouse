@@ -4,6 +4,7 @@ import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectSt
 import { SleepingAgent } from './SleepingAgent';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useAgentDetailsStore } from './details/detailsStore';
 import type { Agent } from '../../../shared/types';
 
 vi.mock('./SleepingMascots', () => ({
@@ -513,3 +514,79 @@ describe('SleepingAgent', () => {
     });
   });
 });
+
+describe('SleepingAgent details (#2281)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([{ id: 'agent-1', lastSessionId: 's1' }]);
+    window.clubhouse.agent.getSessionSummary = vi.fn().mockResolvedValue({ summary: 'Did things', filesModified: [], totalDurationMs: 600_000, totalCostUsd: 2.5 });
+    window.clubhouse.git.info = vi.fn().mockResolvedValue(undefined);
+    useAgentStore.setState({ agentIcons: {}, sessionNamePromptFor: null });
+    useAgentDetailsStore.setState({ open: false, settingsOpen: false, focus: null });
+  });
+
+  afterEach(() => { useAgentDetailsStore.setState({ open: false }); });
+
+  it('has the details toggle in the main pane, sharing the open state with running agents', async () => {
+    resetStores();
+    render(<SleepingAgent agent={baseAgent} details />);
+    expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('agent-details-toggle'));
+    expect(useAgentDetailsStore.getState().open).toBe(true);
+    expect(await screen.findByTestId('agent-details')).toBeInTheDocument();
+    expect(screen.getByTestId('details-card-settings')).toBeInTheDocument();
+  });
+
+  it('opens with the column already showing when it was open for a running agent', () => {
+    resetStores();
+    useAgentDetailsStore.setState({ open: true });
+    render(<SleepingAgent agent={baseAgent} details />);
+    expect(screen.getByTestId('agent-details')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-details-toggle')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('has no toggle or column outside the main pane (popouts)', () => {
+    resetStores();
+    useAgentDetailsStore.setState({ open: true });
+    render(<SleepingAgent agent={baseAgent} />);
+    expect(screen.queryByTestId('agent-details-toggle')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agent-details')).not.toBeInTheDocument();
+  });
+
+  it('is interactive before the last session loads, which fills the Session card later', async () => {
+    let resolveSummary!: (v: unknown) => void;
+    window.clubhouse.agent.getSessionSummary = vi.fn(() => new Promise((r) => { resolveSummary = r; })) as never;
+    resetStores();
+    useAgentDetailsStore.setState({ open: true });
+    render(<SleepingAgent agent={baseAgent} details />);
+    // The column and wake don't wait on the summary.
+    expect(screen.getByTestId('agent-details')).toBeInTheDocument();
+    await waitForReady();
+    expect(screen.getByTestId('details-card-session')).not.toHaveTextContent('$');
+    resolveSummary({ summary: 'Did things', filesModified: [], totalDurationMs: 600_000, totalCostUsd: 2.5 });
+    await waitFor(() => expect(screen.getByTestId('details-card-session-summary')).toHaveTextContent('$2.50'));
+  });
+
+  it('wakes with the settings changed in the details column', async () => {
+    const config: Record<string, unknown> = { id: 'agent-1', name: 'bold-falcon', lastSessionId: 's1' };
+    window.clubhouse.agent.listDurable = vi.fn(async () => [{ ...config }]) as never;
+    window.clubhouse.agent.getDurableConfig = vi.fn(async () => ({ ...config })) as never;
+    window.clubhouse.agent.updateDurableConfig = vi.fn(async (_p: string, _id: string, u: Record<string, unknown>) => { Object.assign(config, u); }) as never;
+    window.clubhouse.agent.getModelOptions = vi.fn(async () => [{ id: 'default', label: 'Default' }, { id: 'opus', label: 'Opus' }]) as never;
+    resetStores({ orchestrator: 'claude-code' });
+    useAgentDetailsStore.setState({ open: true, settingsOpen: true });
+    render(<SleepingAgent agent={{ ...baseAgent, orchestrator: 'claude-code' }} details />);
+    const card = within(screen.getByTestId('details-card-settings'));
+    const model = await card.findByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
+    await waitFor(() => expect(model).not.toBeDisabled());
+    fireEvent.change(model, { target: { value: 'opus' } });
+    fireEvent.click(card.getByRole('switch', { name: 'Free agent mode' }));
+    await waitFor(() => expect(config).toMatchObject({ model: 'opus', freeAgentMode: true }));
+    await waitForReady();
+    fireEvent.click(screen.getByTestId('wake-button'));
+    await waitFor(() => expect(mockSpawnDurableAgent).toHaveBeenCalled());
+    expect(mockSpawnDurableAgent.mock.calls[0][2]).toMatchObject({ model: 'opus', freeAgentMode: true });
+  });
+
+});
+
