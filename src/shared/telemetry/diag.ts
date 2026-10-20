@@ -13,6 +13,12 @@ export const DIAG_MAX_STRING_CHARS = 2000;
 /** A line's whole `meta`, as JSON, is cut to this many bytes. */
 export const DIAG_MAX_META_BYTES = 8 * 1024;
 export const DIAG_MAX_NS_CHARS = 128;
+/**
+ * Diag bytes per hourly window. Under pressure debug lines go first (past
+ * half the budget), then info (past 80 %); warn and above use the rest.
+ * Settings → Logging quotes it.
+ */
+export const DIAG_WINDOW_BYTES = 2 * 1024 * 1024;
 
 // `core:pty`, `ui:perf`, `canvas`, `plugin:<id>` (ids may carry dots, @ and /).
 const NS_RE = /^[\w@][\w.@/-]*(?::[\w.@/-]+)*$/;

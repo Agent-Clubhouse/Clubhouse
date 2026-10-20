@@ -7,6 +7,7 @@ import * as logSettings from './log-settings';
 import { bridgeLog, traceFieldsForLog, type LogTelemetry } from '../telemetry/log-bridge';
 import { recordBreadcrumb, recordBreadcrumbFrom } from './breadcrumbs';
 import { pruneLogDir } from '../telemetry/local-retention';
+import { getDiagNamespaces } from '../telemetry/diag';
 import { listLogNamespaces } from '../../shared/log-namespaces';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
@@ -169,7 +170,8 @@ export function getLogPath(): string {
 
 /** Known namespaces plus those seen this run, so Settings can list them at startup (#2312). */
 export function getNamespaces(): string[] {
-  return listLogNamespaces(seenNamespaces);
+  // Namespaces written through the diag tier (#2299) are listed too.
+  return listLogNamespaces(new Set([...seenNamespaces, ...getDiagNamespaces()]));
 }
 
 export async function init(): Promise<void> {

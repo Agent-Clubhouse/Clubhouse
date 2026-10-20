@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useLoggingStore } from '../../stores/loggingStore';
 import type { LogLevel, LogRetention } from '../../../shared/types';
 import { LOG_LEVEL_PRIORITY, LOG_RETENTION_TIERS } from '../../../shared/types';
+import { DIAG_WINDOW_BYTES } from '../../../shared/telemetry/diag';
 import { Toggle } from '../../components/Toggle';
 import { Spinner } from '../../components/Spinner';
 import { TelemetrySettingsSection } from './TelemetrySettingsSection';
@@ -130,6 +131,19 @@ export function LoggingSettingsView() {
             disabled={!settings.enabled}
           />
         </SettingsField>
+        {settings.minLogLevel === 'debug' && !settings.diagBudgetNoteDismissed && (
+          <p className={`${settingsHelp} mt-1`} data-testid="diag-budget-note">
+            Debug lines share a budget of {Math.round(DIAG_WINDOW_BYTES / (1024 * 1024))} MB an hour with the other diagnostic lines.
+            When it runs low, debug lines are dropped first, then info lines.{' '}
+            <button
+              type="button"
+              onClick={() => saveSettings({ diagBudgetNoteDismissed: true })}
+              className="text-ctp-link hover:underline cursor-pointer focus-ring"
+            >
+              Dismiss
+            </button>
+          </p>
+        )}
       </SettingsSection>
 
       {namespaces.length > 0 && (

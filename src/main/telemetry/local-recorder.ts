@@ -33,6 +33,7 @@ import {
   type TelAttr,
   type TelemetryLevel,
 } from '../../shared/telemetry/attributes';
+import { DIAG_WINDOW_BYTES } from '../../shared/telemetry/diag';
 import { DEFAULT_SESSION_CAPS, SessionCaps } from './caps';
 import type { DiagRecord, DiagSink } from './diag-sink';
 import { hashId } from './ids';
@@ -67,11 +68,8 @@ export const LOCAL_CAPS_WINDOW_MS = 60 * 60 * 1000;
 export const LOCAL_MAX_PENDING_LINES = 1_000;
 /** Diag lines queued at most, apart from the signal lines' limit, so neither starves the other. */
 export const LOCAL_MAX_PENDING_DIAG_LINES = 500;
-/**
- * Diag bytes per cap window. Under pressure debug lines go first (past half
- * the budget), then info (past 80 %); warn and above use the rest.
- */
-export const LOCAL_DIAG_WINDOW_BYTES = 2 * 1024 * 1024;
+/** Diag bytes per cap window (see DIAG_WINDOW_BYTES). */
+export const LOCAL_DIAG_WINDOW_BYTES = DIAG_WINDOW_BYTES;
 const DIAG_FLOOR: Record<DiagRecord['level'], number> = { debug: 0.5, info: 0.8, warn: 1, error: 1, fatal: 1 };
 /** Same per-instrument limit as the SDK's metric views. */
 export const LOCAL_METRIC_CARDINALITY_LIMIT = 200;
