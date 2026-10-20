@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { killStructuredChild, resolveStructuredSpawn } from './structured-spawn';
 import { writeFakeCliShims, type FakeCliReport } from './testing/fake-cli';
+import { clearBinaryCache, findBinaryInPath } from '../shared';
 
 // Real processes, Windows only: a .cmd shim runs through cmd.exe, and the CLI
 // it starts must die with it. The platform-mocked cases are in
@@ -59,4 +60,53 @@ describe.runIf(process.platform === 'win32')('killStructuredChild on a real .cmd
 
     await expect.poll(() => alive(fakePid!), { timeout: 5_000, interval: 50 }).toBe(false);
   }, 20_000);
+});
+
+describe.runIf(process.platform === 'win32')('discovery and launch of a real npm-style install', () => {
+  let tmp: string | undefined;
+  const originalPATH = process.env.PATH;
+
+  afterEach(async () => {
+    process.env.PATH = originalPATH;
+    clearBinaryCache();
+    if (tmp) await fs.promises.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  });
+
+  it.each(['copilot', 'claude', 'codex'])(
+    'finds %s.cmd beside its shell script and preserves arguments through it',
+    async (name) => {
+      tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'npm shim '));
+      const bin = path.join(tmp, 'npm global');
+      await fs.promises.mkdir(bin);
+      const echo = path.join(tmp, 'echo args.js');
+      await fs.promises.writeFile(echo, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n');
+      // The layout npm writes: a Unix shell script and its Windows batch shim.
+      await fs.promises.writeFile(path.join(bin, name), '#!/bin/sh\nexit 1\n');
+      await fs.promises.writeFile(path.join(bin, `${name}.cmd`), `@"${process.execPath}" "${echo}" %*\r\n`);
+      // Ahead of the real PATH, which cmd.exe itself is found on.
+      process.env.PATH = [bin, originalPATH].join(path.delimiter);
+      clearBinaryCache();
+
+      const found = findBinaryInPath([name], []);
+      expect(found).toBe(path.join(bin, `${name}.cmd`));
+
+      const args = ['--flag', 'value with spaces', 'a&b'];
+      const cmd = resolveStructuredSpawn(found, args);
+      const child = spawn(cmd.binary, cmd.args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+        windowsVerbatimArguments: cmd.windowsVerbatimArguments,
+      });
+      let out = '';
+      child.stdout!.on('data', (d) => { out += String(d); });
+      const code = await new Promise<number | null>((resolve, reject) => {
+        child.on('error', reject);
+        child.on('close', resolve);
+      });
+
+      expect(code).toBe(0);
+      expect(JSON.parse(out)).toEqual(args);
+    },
+    20_000,
+  );
 });

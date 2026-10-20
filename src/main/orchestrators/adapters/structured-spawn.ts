@@ -2,6 +2,7 @@ import * as childProcess from 'child_process';
 import type { ChildProcess } from 'child_process';
 import { winQuoteArg } from '../../util/shell';
 import { validateCommandPrefix } from '../../services/command-prefix-validation';
+import { WINDOWS_BATCH_RE } from '../../util/windows-launcher';
 
 export interface StructuredSpawnCommand {
   binary: string;
@@ -9,9 +10,6 @@ export interface StructuredSpawnCommand {
   /** Pass through to child_process.spawn — set when the line is pre-quoted for cmd.exe. */
   windowsVerbatimArguments?: boolean;
 }
-
-/** Batch shims (npm's `codex.cmd`, `copilot.cmd`, …) that only cmd.exe can run. */
-const WINDOWS_BATCH_RE = /\.(cmd|bat)$/i;
 
 /**
  * Resolve how a structured adapter spawns its CLI.

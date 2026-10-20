@@ -9,6 +9,7 @@ import type { LaunchWrapperConfig } from '../../shared/types';
 import type { TranscriptReadOptions } from './types';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
 import { recordBinaryLookup } from '../telemetry/agent-signals';
+import { isWindowsLauncher, windowsLauncherCandidates } from '../util/windows-launcher';
 
 /** Cached binary lookup results keyed by the first binary name */
 const binaryCache = new Map<string, { path: string; ts: number }>();
@@ -59,21 +60,31 @@ export function testBinaryOverride(providerId: string): string | undefined {
  * 1. Provider-supplied well-known paths — instant filesystem check
  * 2. Manual PATH scan (using process.env.PATH first, shell env if available)
  * 3. Shell-native lookup (`where`/`which`) — last resort, spawns a login shell
+ *
+ * On Windows every tier accepts only a launcher (see windows-launcher.ts):
+ * an npm install puts an extensionless Unix shell script next to its `.cmd`
+ * shim, and that script can't be run. A bare candidate is tried with each
+ * PATHEXT launcher extension instead. Elsewhere any existing file counts.
  */
 export function findBinaryInPath(names: string[], extraPaths: string[]): string {
   const lookupStartMs = Date.now();
   const cacheKey = names[0] || '';
+  const isWin = process.platform === 'win32';
+  // The existing files to accept for a candidate path, best first.
+  const launchable = (candidate: string): string | undefined =>
+    isWin
+      ? windowsLauncherCandidates(candidate).find((c) => fs.existsSync(c))
+      : (fs.existsSync(candidate) ? candidate : undefined);
+
   const cached = binaryCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < BINARY_CACHE_TTL_MS) {
     // Verify the cached path still exists (handles uninstalls / path changes)
-    if (fs.existsSync(cached.path)) {
+    if (fs.existsSync(cached.path) && (!isWin || isWindowsLauncher(cached.path))) {
       recordBinaryLookup('cache', lookupStartMs);
       return cached.path;
     }
     binaryCache.delete(cacheKey);
   }
-
-  const isWin = process.platform === 'win32';
 
   let tier: 'well_known' | 'path_scan' | 'login_shell' = 'well_known';
   const cacheHit = (found: string) => {
@@ -84,7 +95,8 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
 
   // ── 1. Provider-supplied well-known paths — fastest (no shell spawn) ──
   for (const p of extraPaths) {
-    if (fs.existsSync(p)) return cacheHit(p);
+    const found = launchable(p);
+    if (found) return cacheHit(found);
   }
   tier = 'path_scan';
 
@@ -106,14 +118,8 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
   }
   for (const dir of allDirs) {
     for (const name of names) {
-      const candidate = path.join(dir, name);
-      if (fs.existsSync(candidate)) return cacheHit(candidate);
-      if (isWin) {
-        for (const ext of ['.exe', '.cmd', '.ps1']) {
-          const withExt = candidate + ext;
-          if (fs.existsSync(withExt)) return cacheHit(withExt);
-        }
-      }
+      const found = launchable(path.join(dir, name));
+      if (found) return cacheHit(found);
     }
   }
 
@@ -124,13 +130,15 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
   for (const name of names) {
     try {
       if (isWin) {
+        // `where` lists every match, which can include the extensionless
+        // shell script; take the first launcher.
         const result = execSync(`where ${name}`, {
           encoding: 'utf-8',
           timeout: 5000,
           windowsHide: true,
           stdio: ['pipe', 'pipe', 'pipe'],
-        }).trim().split(/\r?\n/)[0].trim();
-        if (result && fs.existsSync(result)) return cacheHit(result);
+        }).split(/\r?\n/).map((l) => l.trim()).find((l) => l && isWindowsLauncher(l) && fs.existsSync(l));
+        if (result) return cacheHit(result);
       } else {
         const shell = process.env.SHELL || '/bin/zsh';
         const raw = execFileSync(shell, ['-ilc', `which ${name}`], {
