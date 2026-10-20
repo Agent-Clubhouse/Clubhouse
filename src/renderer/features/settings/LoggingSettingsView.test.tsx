@@ -46,7 +46,7 @@ describe('LoggingSettingsView', () => {
 
   it('shows log path and privacy banner', () => {
     render(<LoggingSettingsView />);
-    expect(screen.getByText('Logs are stored on your local disk only and are never transmitted.')).toBeInTheDocument();
+    expect(screen.getByText(/Clubhouse never sends the log folder anywhere\./)).toBeInTheDocument();
     expect(screen.getByText('/tmp/logs/clubhouse.log')).toBeInTheDocument();
   });
 
@@ -82,14 +82,15 @@ describe('LoggingSettingsView', () => {
     expect(screen.queryByText('Namespaces')).not.toBeInTheDocument();
   });
 
-  it('toggles logging on/off via saveSettings', () => {
+  it('toggles local recording on/off via saveSettings', () => {
     render(<LoggingSettingsView />);
-    expect(screen.getByText('Write logs')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: 'Record locally' }));
+    expect(mockSaveSettings).toHaveBeenCalledWith({ enabled: false });
   });
 
   it('switches local telemetry recording and its detail level (#2278)', () => {
     render(<LoggingSettingsView />);
-    const toggle = screen.getByRole('switch', { name: 'Record telemetry locally' });
+    const toggle = screen.getByRole('switch', { name: 'Record telemetry signals' });
     expect(toggle).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(toggle);
     expect(mockSaveSettings).toHaveBeenCalledWith({ telemetryRecording: false });
@@ -103,7 +104,52 @@ describe('LoggingSettingsView', () => {
   it('disables the telemetry controls while logging is off', () => {
     resetStores({ settings: { enabled: false, namespaces: {}, retention: 'medium', minLogLevel: 'info' } });
     render(<LoggingSettingsView />);
-    expect(screen.getByRole('switch', { name: 'Record telemetry locally' })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('switch', { name: 'Record telemetry signals' })).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByRole('radio', { name: 'Detailed' })).toBeDisabled();
+  });
+
+  describe('labels and privacy copy (#2312)', () => {
+    it('labels each toggle by what it records', () => {
+      render(<LoggingSettingsView />);
+      expect(screen.getByRole('switch', { name: 'Record locally' })).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'Record telemetry signals' })).toBeInTheDocument();
+      expect(screen.queryByText('Write logs')).not.toBeInTheDocument();
+      expect(screen.queryByText('Record telemetry locally')).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Diagnostic log' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Local telemetry' })).toBeInTheDocument();
+    });
+
+    it('says the diagnostic log is not anonymized and is never sent', () => {
+      render(<LoggingSettingsView />);
+      const privacy = screen.getByTestId('diagnostic-log-privacy');
+      expect(privacy).toHaveTextContent('They are not anonymized.');
+      expect(privacy).toHaveTextContent('Clubhouse never sends them.');
+    });
+
+    it('attaches no anonymized claim to the diagnostic log or local recording', () => {
+      render(<LoggingSettingsView />);
+      // Any "anonymized" outside the one disclaimer is a claim.
+      const claimsAnonymized = (text: string | null) =>
+        /anonymi[sz]ed/i.test((text ?? '').replace('They are not anonymized.', ''));
+      const sectionText = (heading: string) => screen.getByRole('heading', { name: heading }).closest('section')!.textContent;
+      expect(claimsAnonymized(sectionText('Diagnostic log'))).toBe(false);
+      expect(claimsAnonymized(sectionText('Namespaces'))).toBe(false);
+      expect(claimsAnonymized(screen.getByText(/never sends the log folder/).textContent)).toBe(false);
+      expect(claimsAnonymized(screen.getByText(/Write the diagnostic log and local telemetry/).textContent)).toBe(false);
+      expect(screen.getAllByText(/anonymized the same way as export/)).toHaveLength(1);
+    });
+
+    it('scopes the anonymized claim to the telemetry signals', () => {
+      render(<LoggingSettingsView />);
+      const telemetrySection = screen.getByRole('heading', { name: 'Local telemetry' }).closest('section')!;
+      expect(telemetrySection).toHaveTextContent('Signals are anonymized the same way as export.');
+    });
+
+    it('describes retention from the shared tiers', () => {
+      render(<LoggingSettingsView />);
+      expect(screen.getByText('7 days, up to 200 MB')).toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'Low' })).toHaveAttribute('title', '3 days, up to 50 MB');
+      expect(screen.getByRole('radio', { name: 'Unlimited' })).toHaveAttribute('title', 'No limits on age or size');
+    });
   });
 });
