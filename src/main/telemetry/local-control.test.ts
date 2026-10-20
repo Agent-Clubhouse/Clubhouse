@@ -14,6 +14,8 @@ const telemetrySettings = vi.hoisted(() => ({
   value: { consentVersion: 0, destinations: [] as Array<{ id: string; enabled: boolean; level: string }> } as Record<string, unknown>,
   experiment: false,
 }));
+const retention = vi.hoisted(() => ({ pruneLogDir: vi.fn(async () => ({ deleted: [] as string[] })), RETENTION_INTERVAL_MS: 3_600_000 }));
+vi.mock('./local-retention', () => retention);
 vi.mock('./settings', () => ({
   getTelemetrySettings: vi.fn(() => telemetrySettings.value),
   enabledDestinations: (s: { destinations: Array<{ enabled: boolean }> }) => s.destinations.filter((d) => d.enabled),
@@ -22,7 +24,8 @@ vi.mock('./settings', () => ({
 
 import * as path from 'path';
 import { forceFlushTelemetry, getLocalSink, isTelemetryActive, tel, telemetryLevel } from './facade';
-import { _resetLocalRecordingForTests, isLocalRecordingWanted, migrateLocalLevel, syncLocalRecording } from './local-control';
+import { _resetLocalRecordingForTests, isLocalRecordingWanted, migrateLocalLevel, runRetention, syncLocalRecording } from './local-control';
+import { LOG_RETENTION_TIERS } from '../../shared/types';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 
 // Migrated already, so the migration doesn't change these tests' level.
@@ -31,6 +34,7 @@ const base = { enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 
 beforeEach(() => {
   fsp.appendFile.mockClear();
   logSettings.updateSettings.mockClear();
+  retention.pruneLogDir.mockClear();
   logSettings.getSettings.mockReturnValue({ ...base });
   telemetrySettings.value = { consentVersion: 0, destinations: [] };
   telemetrySettings.experiment = false;
@@ -106,6 +110,35 @@ describe('local recording control', () => {
     await syncLocalRecording();
     expect(telemetryLevel()).toBe('detailed');
     expect(getLocalSink()).not.toBe(first);
+  });
+});
+
+describe('retention while recording (#2298)', () => {
+  it('prunes by the logging tier and never touches the chunk being written', async () => {
+    logSettings.getSettings.mockReturnValue({ ...base, retention: 'low' });
+    await syncLocalRecording();
+    tel.event('clubhouse.telemetry.test');
+    await forceFlushTelemetry();
+    await runRetention();
+    const [dir, tier, opts] = retention.pruneLogDir.mock.calls[0] as unknown as [string, unknown, { protect: string[] }];
+    expect(dir).toBe(path.join('/home/tester', '.clubhouse', 'logs'));
+    expect(tier).toEqual(LOG_RETENTION_TIERS.low);
+    expect(opts.protect).toEqual([(fsp.appendFile.mock.calls[0] as unknown as [string])[0]]);
+  });
+
+  it('runs hourly while recording and stops with it', async () => {
+    vi.useFakeTimers();
+    try {
+      await syncLocalRecording();
+      await vi.advanceTimersByTimeAsync(3_600_000);
+      expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
+      logSettings.getSettings.mockReturnValue({ ...base, enabled: false });
+      await syncLocalRecording();
+      await vi.advanceTimersByTimeAsync(3 * 3_600_000);
+      expect(retention.pruneLogDir).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

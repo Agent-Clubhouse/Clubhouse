@@ -32,6 +32,9 @@ function harness(overrides: Partial<LocalRecorderOptions> = {}): Harness {
       files.set(file, (files.get(file) ?? '') + data);
     },
     mkdir: async () => {},
+    unlink: async (file) => {
+      files.delete(file);
+    },
     ...overrides,
   });
   recorders.push(rec);
@@ -172,23 +175,69 @@ describe('local telemetry recorder', () => {
     expect(metrics.find((m) => m.name === 'clubhouse.process.eventloop.delay.p99')).toMatchObject({ kind: 'gauge', value: 0.3 });
   });
 
-  it('rotates to a new chunk at the chunk size and stops at the session cap', async () => {
-    const h = harness({ maxChunkBytes: 400, maxSessionBytes: 1_500 });
-    for (let i = 0; i < 40; i++) h.rec.event('clubhouse.telemetry.test');
+  it('rotates to a new chunk at the chunk size', async () => {
+    const onRotate = vi.fn();
+    const h = harness({ maxChunkBytes: 400, onRotate });
+    for (let i = 0; i < 20; i++) h.rec.event('clubhouse.telemetry.test');
     await h.rec.flush();
     const names = [...h.files.keys()];
     expect(names[0]).toBe(path.join('/logs', 'telemetry-run.jsonl'));
     expect(names[1]).toBe(path.join('/logs', 'telemetry-run.1.jsonl'));
-    for (const [, data] of h.files) {
-      // A chunk only passes its limit by the capped marker.
-      expect(Buffer.byteLength(data.replace(/\{"t":"capped".*\n/, ''))).toBeLessThanOrEqual(400);
+    for (const [, data] of h.files) expect(Buffer.byteLength(data)).toBeLessThanOrEqual(400);
+    expect(onRotate).toHaveBeenCalled();
+    expect(h.rec.files()).toEqual(names);
+  });
+
+  it('keeps recording past the run budget, evicting the oldest chunks (#2297)', async () => {
+    const h = harness({ maxChunkBytes: 400, maxSessionBytes: 1_500 });
+    for (let round = 0; round < 10; round++) {
+      for (let i = 0; i < 10; i++) h.rec.event('clubhouse.telemetry.test', [], { severity: round === 9 ? 'fatal' : 'info' });
+      await h.rec.flush();
     }
+    const names = [...h.files.keys()];
+    // The first chunks are gone, later ones remain, in order.
+    expect(names).not.toContain(path.join('/logs', 'telemetry-run.jsonl'));
+    expect(names).not.toContain(path.join('/logs', 'telemetry-run.1.jsonl'));
+    expect(h.rec.files()).toEqual(names);
+    // The total stays within the budget plus at most the chunk being written.
+    const total = [...h.files.values()].reduce((sum, d) => sum + Buffer.byteLength(d), 0);
+    expect(total).toBeLessThanOrEqual(1_500 + 400);
     const records = h.records();
-    expect(records[records.length - 1]).toMatchObject({ t: 'capped', maxBytes: 1_500 });
-    const before = h.raw().length;
-    h.rec.event('clubhouse.telemetry.test');
+    // The tail survived: the last round's events are all there.
+    expect(records.filter((r) => r.severity === 'fatal')).toHaveLength(10);
+    const evicted = records.filter((r) => r.t === 'evicted');
+    expect(evicted.length).toBeGreaterThan(0);
+    expect(evicted[0]).toMatchObject({ maxBytes: 1_500 });
+    expect(evicted[0].files).toBeGreaterThan(0);
+    expect(evicted[0].bytes).toBeGreaterThan(0);
+    expect(records.some((r) => r.t === 'capped')).toBe(false);
+  });
+
+  it('never evicts the chunk being written, even when it alone passes the budget', async () => {
+    const h = harness({ maxChunkBytes: 10_000, maxSessionBytes: 100 });
+    for (let i = 0; i < 5; i++) h.rec.event('clubhouse.telemetry.test');
     await h.rec.flush();
-    expect(h.raw().length).toBe(before);
+    expect([...h.files.keys()]).toEqual([path.join('/logs', 'telemetry-run.jsonl')]);
+    expect(h.records().filter((r) => r.t === 'event')).toHaveLength(5);
+  });
+
+  it('applies the item caps per window, so a long run keeps its tail', async () => {
+    let t = 0;
+    vi.useFakeTimers();
+    try {
+      const h = harness({ now: () => t, sessionCaps: { traces: 50_000, logs: 2 }, capsWindowMs: 1_000, flushIntervalMs: 500 });
+      for (let i = 0; i < 4; i++) h.rec.event('clubhouse.telemetry.test');
+      t = 1_000;
+      await vi.advanceTimersByTimeAsync(500);
+      h.rec.event('clubhouse.telemetry.test', [], { severity: 'fatal' });
+      await h.rec.flush();
+      const records = h.records();
+      expect(records.filter((r) => r.t === 'event')).toHaveLength(3);
+      expect(records.find((r) => r.severity === 'fatal')).toBeDefined();
+      expect(records.find((r) => r.t === 'dropped')).toMatchObject({ logs: 2 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('caps queued lines and per-run record counts, and reports drops on stop', async () => {

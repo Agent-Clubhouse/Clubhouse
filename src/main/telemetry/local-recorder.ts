@@ -52,7 +52,10 @@ export const LOCAL_FLUSH_INTERVAL_MS = 2_000;
 export const LOCAL_FLUSH_AT_LINES = 100;
 export const LOCAL_METRIC_INTERVAL_MS = 60_000;
 export const LOCAL_MAX_CHUNK_BYTES = 2 * 1024 * 1024;
+/** Rolling budget for one run's files: past it, the oldest chunks are deleted (#2297). */
 export const LOCAL_MAX_SESSION_BYTES = 10 * 1024 * 1024;
+/** The §6.4 item caps apply per window, so a long run keeps recording its tail. */
+export const LOCAL_CAPS_WINDOW_MS = 60 * 60 * 1000;
 export const LOCAL_MAX_PENDING_LINES = 1_000;
 /** Same per-instrument limit as the SDK's metric views. */
 export const LOCAL_METRIC_CARDINALITY_LIMIT = 200;
@@ -72,15 +75,19 @@ export interface LocalRecorderOptions {
   maxSessionBytes?: number;
   maxPendingLines?: number;
   sessionCaps?: { traces: number; logs: number };
+  capsWindowMs?: number;
+  /** Called after the recorder starts a new chunk (local-control runs retention then). */
+  onRotate?: () => void;
   /** Overrides for tests. */
   appendFile?: (file: string, data: string) => Promise<void>;
   mkdir?: (dir: string) => Promise<void>;
+  unlink?: (file: string) => Promise<void>;
 }
 
 export interface LocalRecorder extends LocalTelemetrySink {
   /** Write any aggregated metrics and a drop summary, flush, and stop the timer. */
   stop(): Promise<void>;
-  /** Files written so far, oldest first. */
+  /** This run's files still on disk, oldest first; the last is being written. */
   files(): string[];
 }
 
@@ -120,24 +127,27 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   const mkdir = opts.mkdir ?? (async (dir: string) => {
     await fsp.mkdir(dir, { recursive: true });
   });
+  const unlink = opts.unlink ?? ((file: string) => fsp.unlink(file));
 
   const als = new AsyncLocalStorage<TraceIds>();
-  const caps = new SessionCaps(opts.sessionCaps ?? DEFAULT_SESSION_CAPS);
+  let caps = new SessionCaps(opts.sessionCaps ?? DEFAULT_SESSION_CAPS);
+  const capsWindow = opts.capsWindowMs ?? LOCAL_CAPS_WINDOW_MS;
 
   let pending: string[] = [];
   let droppedLines = 0;
   let chunk = 0;
   let chunkBytes = 0;
-  let sessionBytes = 0;
-  let sizeCapped = false;
   let stopped = false;
   let dirReady: Promise<void> | null = null;
   let chain: Promise<void> = Promise.resolve();
   let flushQueued = false;
-  const written: string[] = [];
+  /** This run's chunks on disk, oldest first, with the bytes written to each. */
+  const runFiles: Array<{ file: string; bytes: number }> = [];
+  const runBytes = (): number => runFiles.reduce((sum, f) => sum + f.bytes, 0);
   const reportedDrops = { traces: 0, logs: 0, lines: 0 };
 
   let windowStart = now();
+  let capsWindowStart = windowStart;
   let metrics = new Map<MetricName, MetricWindow>();
 
   const fileFor = (n: number): string =>
@@ -149,7 +159,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
    * cut short.
    */
   function push(record: Record<string, unknown>, force = false): void {
-    if (stopped || sizeCapped) return;
+    if (stopped) return;
     if (!force && pending.length >= maxPending) {
       droppedLines++;
       return;
@@ -163,6 +173,21 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     }
     pending.push(line);
     if (pending.length >= LOCAL_FLUSH_AT_LINES && !flushQueued) void flushLines();
+  }
+
+  /** Append to the current chunk and track its size. */
+  async function append(data: string, bytes: number): Promise<boolean> {
+    const file = fileFor(chunk);
+    try {
+      await appendFile(file, data);
+    } catch {
+      return false;
+    }
+    const last = runFiles[runFiles.length - 1];
+    if (last?.file === file) last.bytes += bytes;
+    else runFiles.push({ file, bytes });
+    chunkBytes += bytes;
+    return true;
   }
 
   async function writeOut(): Promise<void> {
@@ -179,48 +204,64 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
       return;
     }
     // Lines are grouped per chunk so a chunk only passes its limit when a
-    // single line is larger than it, and the session total never passes its cap.
+    // single line is larger than it.
     let batch: string[] = [];
     let batchBytes = 0;
     const writeBatch = async (): Promise<void> => {
       if (batch.length === 0) return;
-      const file = fileFor(chunk);
       const data = batch.join('\n') + '\n';
       const n = batch.length;
+      const bytes = batchBytes;
       batch = [];
-      try {
-        await appendFile(file, data);
-        if (!written.includes(file)) written.push(file);
-        chunkBytes += batchBytes;
-        sessionBytes += batchBytes;
-      } catch {
-        droppedLines += n;
-      }
       batchBytes = 0;
+      if (!(await append(data, bytes))) droppedLines += n;
     };
+    let rotated = false;
     for (let i = 0; i < lines.length; i++) {
       const bytes = Buffer.byteLength(lines[i], 'utf-8') + 1;
-      if (sessionBytes + batchBytes + bytes > maxSessionBytes) {
-        await writeBatch();
-        sizeCapped = true;
-        droppedLines += lines.length - i;
-        const marker = JSON.stringify({ t: 'capped', ts: new Date(now()).toISOString(), maxBytes: maxSessionBytes }) + '\n';
-        try {
-          await appendFile(fileFor(chunk), marker);
-        } catch {
-          // Nothing more to do: recording is over for this run either way.
-        }
-        return;
-      }
       if (chunkBytes + batchBytes > 0 && chunkBytes + batchBytes + bytes > maxChunkBytes) {
         await writeBatch();
         chunk++;
         chunkBytes = 0;
+        rotated = true;
       }
       batch.push(lines[i]);
       batchBytes += bytes;
     }
     await writeBatch();
+    await evictOverBudget();
+    if (rotated) {
+      try {
+        opts.onRotate?.();
+      } catch {
+        // Retention is best effort.
+      }
+    }
+  }
+
+  /**
+   * Rolling eviction (#2297): past the run budget, delete this run's oldest
+   * chunks so recording keeps going and the newest data (where a hang or
+   * failure is) is kept. The chunk being written is never removed. An
+   * `evicted` line in the current chunk reports what went.
+   */
+  async function evictOverBudget(): Promise<void> {
+    let files = 0;
+    let bytes = 0;
+    while (runFiles.length > 1 && runBytes() > maxSessionBytes) {
+      const oldest = runFiles[0];
+      try {
+        await unlink(oldest.file);
+      } catch {
+        // Already gone (retention, the user) or locked: stop tracking it either way.
+      }
+      runFiles.shift();
+      files++;
+      bytes += oldest.bytes;
+    }
+    if (files === 0) return;
+    const line = JSON.stringify({ t: 'evicted', ts: iso(now()), files, bytes, maxBytes: maxSessionBytes }) + '\n';
+    await append(line, Buffer.byteLength(line, 'utf-8'));
   }
 
   function flushLines(): Promise<void> {
@@ -458,6 +499,15 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
     push({ t: 'dropped', ts: iso(now()), ...delta }, true);
   }
 
+  /** Start a new item-cap window, after reporting what the last one dropped. */
+  function rollCaps(): void {
+    writeDrops();
+    caps = new SessionCaps(opts.sessionCaps ?? DEFAULT_SESSION_CAPS);
+    reportedDrops.traces = 0;
+    reportedDrops.logs = 0;
+    capsWindowStart = now();
+  }
+
   push({
     t: 'session',
     v: LOCAL_FORMAT_VERSION,
@@ -471,6 +521,7 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
   const timer = setInterval(() => {
     try {
       if (now() - windowStart >= metricInterval) writeMetrics();
+      if (now() - capsWindowStart >= capsWindow) rollCaps();
       void flushLines();
     } catch {
       // The timer must never throw.
@@ -546,6 +597,6 @@ export function createLocalRecorder(opts: LocalRecorderOptions): LocalRecorder {
       await flushLines();
     },
 
-    files: () => [...written],
+    files: () => runFiles.map((f) => f.file),
   };
 }

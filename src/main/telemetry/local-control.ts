@@ -8,11 +8,12 @@ import * as path from 'path';
 import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import * as logSettings from '../services/log-settings';
-import type { LocalTelemetryLevel, LoggingSettings } from '../../shared/types';
+import { LOG_RETENTION_TIERS, type LocalTelemetryLevel, type LoggingSettings } from '../../shared/types';
 import { TELEMETRY_CONSENT_VERSION } from '../../shared/telemetry/settings-types';
 import { getLocalSink, setLocalSink } from './facade';
 import { isValidIdentity } from './ids';
 import { createLocalRecorder, type LocalRecorder } from './local-recorder';
+import { pruneLogDir, RETENTION_INTERVAL_MS } from './local-retention';
 import { createScrubber } from './scrubber';
 import { enabledDestinations, getTelemetrySettings, isExperimentEnabled } from './settings';
 
@@ -59,6 +60,40 @@ export function migrateLocalLevel(settings: LoggingSettings): LoggingSettings {
 
 let recorder: LocalRecorder | null = null;
 let stopping: Promise<void> | null = null;
+let retentionTimer: ReturnType<typeof setInterval> | null = null;
+let pruning: Promise<unknown> | null = null;
+
+function logDir(): string {
+  return path.join(app.getPath('home'), '.clubhouse', 'logs');
+}
+
+/**
+ * Apply the logging retention tier to the log folder (#2298), never touching
+ * the files being written. One pass at a time; never throws.
+ */
+export function runRetention(): Promise<unknown> {
+  if (pruning) return pruning;
+  const protect = [...(recorder?.files().slice(-1) ?? [])];
+  try {
+    // Lazy: log-service is heavy for this module's tests, and only its current file is needed.
+    const current = (require('../services/log-service') as typeof import('../services/log-service')).getCurrentLogFile();
+    if (current) protect.push(current);
+  } catch {
+    // Logging not started.
+  }
+  let tier = LOG_RETENTION_TIERS.medium;
+  try {
+    tier = LOG_RETENTION_TIERS[logSettings.getSettings().retention] ?? tier;
+  } catch {
+    // Unreadable settings: the default tier.
+  }
+  pruning = pruneLogDir(logDir(), tier, { protect })
+    .catch((): undefined => undefined)
+    .finally(() => {
+      pruning = null;
+    });
+  return pruning;
+}
 
 export function isLocalRecordingWanted(settings: LoggingSettings = logSettings.getSettings()): boolean {
   return settings.enabled !== false && settings.telemetryRecording !== false;
@@ -88,21 +123,27 @@ function start(level: LocalTelemetryLevel): void {
   }
   const now = new Date();
   recorder = createLocalRecorder({
-    dir: path.join(app.getPath('home'), '.clubhouse', 'logs'),
+    dir: logDir(),
     // Milliseconds kept, so a recorder restarted within a second gets its own file.
     fileBase: now.toISOString().replace(/:/g, '-').replace(/Z$/, ''),
     level,
     hashSalt: hashSalt(),
     scrub: createScrubber({ homeDir: os.homedir(), username, hostname: os.hostname() }),
     session: { appVersion: app.getVersion(), platform: process.platform, arch: process.arch },
+    onRotate: () => void runRetention(),
   });
   setLocalSink(recorder);
+  // Hourly while recording, so a run that lasts days is pruned as it goes.
+  retentionTimer = setInterval(() => void runRetention(), RETENTION_INTERVAL_MS);
+  retentionTimer.unref?.();
 }
 
 async function stop(): Promise<void> {
   const r = recorder;
   if (!r) return;
   recorder = null;
+  if (retentionTimer) clearInterval(retentionTimer);
+  retentionTimer = null;
   if (getLocalSink() === r) setLocalSink(null);
   await r.stop().catch(() => {});
 }

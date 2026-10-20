@@ -52,7 +52,7 @@ The full path to your log directory is shown in Settings with a direct **Open in
 
 **Record telemetry locally** (on by default, and only while **Write logs** is on) writes the app's telemetry signals to `telemetry-<start time>.jsonl` files in the same log folder: how long each flow took, how it ended, error types, and per-minute metric totals. Nothing in these files is sent anywhere.
 
-The files hold the same anonymized data that telemetry export would send. They never contain prompts, terminal output, file paths, names or error messages, and ids are hashed. Each run writes at most 10 MB in 2 MB files, and the files share the retention tier above with the session logs.
+The files hold the same anonymized data that telemetry export would send. They never contain prompts, terminal output, file paths, names or error messages, and ids are hashed. Each run keeps its newest 10 MB in 2 MB files: past that, the oldest file of the run is deleted and recording continues. The files share the retention tier above with the session logs, and it is applied while the app runs, not only at startup.
 
 **Telemetry detail** sets how much is recorded. **Standard** (the default) covers flows, errors and metrics. **Detailed** also records each IPC call and agent tool call.
 

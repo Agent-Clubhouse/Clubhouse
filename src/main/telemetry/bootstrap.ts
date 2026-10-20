@@ -19,6 +19,7 @@ import {
   beginPending,
   DEFAULT_FLUSH_TIMEOUT_MS,
   getRuntime,
+  isExportActive,
   isTelemetryActive,
   setRuntime,
   tel,
@@ -48,7 +49,7 @@ import { getAdapter, resolveEntry } from './destinations/registry';
 import { recordingLevel } from './filters';
 import type { TelemetryLevel } from '../../shared/telemetry/attributes';
 import type { TelemetryDestinationKind } from '../../shared/telemetry/settings-types';
-import { setStartupKind } from './lifecycle';
+import { previousSessionVersion, setStartupKind } from './lifecycle';
 
 const LOG_NS = 'core:telemetry';
 
@@ -365,17 +366,21 @@ export function recordAppSession(): void {
   if (!isTelemetryActive()) return;
   const settings = getTelemetrySettings();
   const version = app.getVersion();
+  // The session record is written whenever signals are produced, export or
+  // not, so the startup kind is the same either way (spec §6.12 parity).
+  // lastVersion covers files from before the record carried a version.
+  const previous = previousSessionVersion() ?? settings.lastVersion;
   const kind =
     process.env.CLUBHOUSE_SAFE_MODE === '1'
       ? 'safe_mode'
-      : settings.lastVersion && settings.lastVersion !== version
+      : previous && previous !== version
         ? 'after_update'
         : 'cold';
   setStartupKind(kind);
   tel.count('clubhouse.app.sessions', 1, [ATTR.startupKind(kind)]);
-  // Kept current whenever signals are produced, export or not, so the
-  // startup kind is the same either way (spec §6.12 parity).
-  if (settings.lastVersion !== version) {
+  // Only while exporting: local recording alone never creates
+  // telemetry-settings.json or an install id.
+  if (isExportActive() && settings.lastVersion !== version) {
     updateTelemetrySettings((s) => ({ ...s, lastVersion: version })).catch(() => {});
   }
 }
