@@ -285,11 +285,27 @@ describe('useTerminalFit', () => {
       expect(mockResize).not.toHaveBeenCalled();
     });
 
+    it('only the size owner of a shared session resizes the PTY', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      const ownerResize = vi.fn();
+      const otherResize = vi.fn();
+      renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, false, ownerResize));
+      renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, false, otherResize));
+      mockFit.mockClear();
+
+      for (const l of [...dprListeners]) l(1, 2);
+
+      // Both views refit (no known PTY size to follow); only the owner sends.
+      expect(mockFit).toHaveBeenCalledTimes(2);
+      expect(ownerResize).toHaveBeenCalledTimes(1);
+      expect(otherResize).not.toHaveBeenCalled();
+    });
+
     it('skips the refit while the mount is still replaying', () => {
       vi.spyOn(document, 'hasFocus').mockReturnValue(true);
       const readyRef = { current: false };
       renderHook(() =>
-        useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, false, undefined, readyRef),
+        useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, false, undefined, { readyRef }),
       );
       mockFit.mockClear();
       mockResize.mockClear();
