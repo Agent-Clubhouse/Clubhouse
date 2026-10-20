@@ -31,7 +31,6 @@ Settings lists every namespace Clubhouse writes to, plus any plugin namespaces (
 | `core:chat` | Chat sessions and their drivers |
 | `core:orchestrator` | Orchestrator CLI communication |
 | `core:plugins` | Plugin discovery and loading |
-| `ui:nav` | View switches |
 
 ## Retention
 

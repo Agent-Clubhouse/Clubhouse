@@ -33,8 +33,9 @@ export interface DiagEntry {
 }
 
 /**
- * Sees every diag call, whatever the logging settings, in memory only (the
- * feedback breadcrumb ring, #2303). It gets the redacted line, like the file
+ * Sees every diag call, whatever the logging settings, in memory only.
+ * Feedback breadcrumbs don't use it: their producers record them directly
+ * (#2303), so they don't depend on a log line. It gets the redacted line, like the file
  * does; still, a tap must take structured fields only and never forward
  * `msg` or `meta` wholesale.
  */

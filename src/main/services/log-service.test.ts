@@ -126,6 +126,8 @@ describe('log-service', () => {
     it('are not taken from log lines; producers record them directly (#2303)', () => {
       log({ ts: 't', ns: 'ui:perf', level: 'warn', msg: 'Long frames: 640ms in agent', meta: { kind: 'long_frame', maxMs: 640, count: 2 } });
       log({ ts: 't', ns: 'ui:chat:switch', level: 'info', msg: 'Runtime switch requested', meta: { breadcrumb: { kind: 'event', code: 'runtime.switch.chat' } } });
+      // appLog too, so a hang (recorded by crash-handlers, then logged) counts once.
+      appLog('ui:perf', 'warn', 'Window responsive again', { meta: { windowKind: 'main', durationMs: 2_500 } });
       expect(recentBreadcrumbs()).toEqual([]);
     });
   });
