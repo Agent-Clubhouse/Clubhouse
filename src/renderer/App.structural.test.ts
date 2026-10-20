@@ -299,6 +299,7 @@ function hasTryCatchAround(
 const appAst = parseFile(join(__dirname, 'App.tsx'));
 const eventBridgeAst = parseFile(join(__dirname, 'app-event-bridge.ts'));
 const initializerAst = parseFile(join(__dirname, 'app-initializer.ts'));
+const shortcutDispatchAst = parseFile(join(__dirname, 'shortcut-dispatch.ts'));
 
 const appFn = findNamedFunction(appAst, 'App')!;
 
@@ -670,14 +671,28 @@ describe('app-event-bridge.ts – required imports', () => {
   const requiredImports = [
     'pluginEventBus',
     'consumeCancelled',
-    'eventToBinding',
-    'getCommandActions',
-    'pluginHotkeyRegistry',
+    'handleShortcutKeydown',
   ];
 
   for (const name of requiredImports) {
     it(`should import ${name}`, () => {
       expect(bridgeImports.has(name), `Missing import: ${name}`).toBe(true);
+    });
+  }
+});
+
+describe('shortcut-dispatch.ts – required imports', () => {
+  const dispatchImports = findImportedNames(shortcutDispatchAst);
+  const requiredImports = [
+    'eventToBinding',
+    'getCommandActions',
+    'pluginHotkeyRegistry',
+    'isEditingKeyEvent',
+  ];
+
+  for (const name of requiredImports) {
+    it(`should import ${name}`, () => {
+      expect(dispatchImports.has(name), `Missing import: ${name}`).toBe(true);
     });
   }
 });

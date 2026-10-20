@@ -46,14 +46,14 @@ describe('Composer editing keys (#2314)', () => {
   afterEach(() => setPlatform(originalPlatform as KeyPlatform));
 
   it.each(KEY_PLATFORMS.flatMap((p) => [[p, false], [p, true]] as const))(
-    'leaves every editing key but Enter to the textarea on %s (running: %s)',
+    'leaves every editing key but Enter and Alt+Enter to the textarea on %s (running: %s)',
     (platform, running) => {
       setPlatform(platform);
       const onSend = vi.fn();
       const onStop = vi.fn();
       render(<Harness initial={DRAFT} running={running} onSend={onSend} onStop={onStop} />);
       caretAt(15);
-      const taken = [...EDITING_KEYS[platform]].filter((c) => c !== 'Enter' && press(c));
+      const taken = [...EDITING_KEYS[platform]].filter((c) => c !== 'Enter' && c !== 'Alt+Enter' && press(c));
       expect(taken).toEqual([]);
       expect(onSend).not.toHaveBeenCalled();
       expect(onStop).not.toHaveBeenCalled();
@@ -74,7 +74,10 @@ describe('Composer editing keys (#2314)', () => {
       const onSend = vi.fn();
       const { unmount } = render(<Harness initial="draft" running={running} onSend={onSend} />);
       expect(press('Shift+Enter')).toBe(false);
-      expect(press('Alt+Enter')).toBe(false);
+      // Alt+Enter is inserted by the composer: Chromium won't on Windows and Linux.
+      caretAt(2);
+      press('Alt+Enter');
+      expect(box()).toHaveValue('dr\naft');
       expect(onSend).not.toHaveBeenCalled();
       unmount();
     }
@@ -139,5 +142,16 @@ describe('Composer editing keys (#2314)', () => {
     expect(screen.queryByTestId('chat-slash-menu')).not.toBeInTheDocument();
     expect(press('ArrowDown')).toBe(false);
     expect(press('ArrowUp')).toBe(false);
+  });
+
+  it('modified Enter does not pick from the open slash menu', () => {
+    setPlatform('darwin');
+    const onSend = vi.fn();
+    render(<Harness onSend={onSend} />);
+    fireEvent.change(box(), { target: { value: '/co', selectionStart: 3, selectionEnd: 3 } });
+    expect(screen.getByTestId('chat-slash-menu')).toBeInTheDocument();
+    press('Alt+Enter');
+    expect(box()).toHaveValue('/co\n');
+    expect(onSend).not.toHaveBeenCalled();
   });
 });

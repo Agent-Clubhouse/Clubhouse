@@ -594,6 +594,14 @@ export function Composer(props: ComposerProps) {
     setText(next);
   };
 
+  const insertNewline = (el: HTMLTextAreaElement) => {
+    // insertText keeps the native undo stack; jsdom has no execCommand, so splice the value there.
+    if (document.execCommand?.('insertText', false, '\n')) return;
+    el.setRangeText('\n', el.selectionStart, el.selectionEnd, 'end');
+    trackCaret(el);
+    setText(el.value);
+  };
+
   const trackCaret = (el: HTMLTextAreaElement) => setCaretAt({ text: el.value, at: el.selectionStart ?? el.value.length });
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -604,7 +612,7 @@ export function Composer(props: ComposerProps) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex((i) => (i + 1) % slashMatches.length); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length); return; }
       // Enter picks only once a name is started: "yes and /" sends as typed. Tab always picks.
-      const enterPicks = e.key === 'Enter' && !e.shiftKey && !!slash?.query && slash.query !== slashMatches[cmdIndex].name;
+      const enterPicks = e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !!slash?.query && slash.query !== slashMatches[cmdIndex].name;
       if (e.key === 'Tab' || enterPicks) {
         e.preventDefault();
         pickCommand(slashMatches[cmdIndex]);
@@ -623,8 +631,14 @@ export function Composer(props: ComposerProps) {
       return;
     }
     if (e.key !== 'Enter') return;
-    // Shift+Enter and Option/Alt+Enter are soft returns: the textarea inserts the newline.
-    if (e.shiftKey || e.altKey) return;
+    // Shift+Enter and Option/Alt+Enter are soft returns. The textarea inserts Shift+Enter's newline;
+    // Chromium treats Alt+Enter as a system key on Windows and Linux, so that one is inserted here.
+    if (e.shiftKey) return;
+    if (e.altKey) {
+      e.preventDefault();
+      insertNewline(e.currentTarget);
+      return;
+    }
     // Cmd+Enter (Ctrl+Enter off macOS) sends without steering or stopping: it queues during a turn.
     // On macOS, Ctrl+Enter is left to the textarea.
     const mod = isMac() ? e.metaKey : e.ctrlKey;
