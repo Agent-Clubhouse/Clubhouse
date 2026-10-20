@@ -60,7 +60,7 @@ export function UserMessage({ item }: { item: UserMessageItem }) {
     .map((block) => ({ block, name: attachmentName(block) }))
     .filter((a): a is { block: ContentBlock; name: string } => a.name !== null);
   return (
-    <div className="self-end max-w-[82%] min-w-0 flex flex-col items-end gap-1" data-testid="chat-user-message">
+    <div className="ml-auto max-w-[82%] min-w-0 flex flex-col items-end gap-1" data-testid="chat-user-message">
       {(label || item.delivery === 'steer') && (
         <span className="text-[11px] text-ctp-overlay0">
           {[label, item.delivery === 'steer' ? 'Steered into the running turn' : null].filter(Boolean).join(' · ')}
