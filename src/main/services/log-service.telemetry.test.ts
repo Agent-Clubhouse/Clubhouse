@@ -11,6 +11,7 @@ import { abortPending } from '../telemetry/facade';
 import { setProducingRuntime } from '../telemetry/__test-utils__/producing-runtime';
 import { LOG_LEVEL_SEVERITY } from '../telemetry/log-bridge';
 import type { TelemetryRuntime } from '../telemetry/types';
+import { _resetDiagForTests, setDiagSink, type DiagRecord } from '../telemetry/diag';
 
 const events: Array<{ name: string; attrs: unknown; severity?: string }> = [];
 let traceIds: { traceId: string; spanId: string } | undefined;
@@ -25,18 +26,16 @@ function runtime(): TelemetryRuntime {
   } as unknown as TelemetryRuntime;
 }
 
-async function writtenLines(): Promise<Array<Record<string, unknown>>> {
-  await flush();
-  return vi.mocked(fsp.appendFile).mock.calls
-    .flatMap((c) => String(c[1]).split('\n').filter(Boolean))
-    .map((l) => JSON.parse(l));
-}
+const diagLines: DiagRecord[] = [];
 
 beforeEach(async () => {
   await flush();
   vi.clearAllMocks();
   events.length = 0;
   traceIds = undefined;
+  diagLines.length = 0;
+  _resetDiagForTests();
+  setDiagSink({ writeDiag: (r) => diagLines.push(r), noteDiagDropped: vi.fn(), flush: async () => {}, flushSync: vi.fn() });
   vi.mocked(logSettings.getSettings).mockReturnValue({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info' });
   // The session log is written only once init() has opened its file (#2301).
   vi.mocked(fsp.stat).mockRejectedValue(new Error('ENOENT'));
@@ -45,6 +44,7 @@ beforeEach(async () => {
   vi.mocked(fsp.appendFile).mockClear();
 });
 afterEach(() => {
+  _resetDiagForTests();
   setProducingRuntime(null);
   abortPending();
 });
@@ -75,27 +75,16 @@ describe('appLog telemetry bridge', () => {
     expect(LOG_LEVEL_SEVERITY.debug).toBeNull();
   });
 
-  it('bridges even when local logging is off, and the local filters are unchanged', async () => {
+  it('bridges even when local logging is off, and the local filters are unchanged', () => {
     setProducingRuntime(runtime());
     vi.mocked(logSettings.getSettings).mockReturnValue({ enabled: false, namespaces: {}, retention: 'medium', minLogLevel: 'info' });
     appLog('core:annex-client', 'warn', 'Heartbeat pong timeout', { telemetry: { event: 'clubhouse.annex.heartbeat_timeout' } });
     expect(events).toHaveLength(1);
-    expect(await writtenLines()).toEqual([]);
+    expect(diagLines).toEqual([]);
   });
 
-  it('adds traceId/spanId to the local JSONL line only while a span is active', async () => {
-    setProducingRuntime(runtime());
-    appLog('core:x', 'info', 'no span');
-    traceIds = { traceId: '0af7651916cd43dd8448eb211c80319c', spanId: 'b7ad6b7169203331' };
-    appLog('core:x', 'info', 'in span');
-    const lines = await writtenLines();
-    expect(lines[0]).not.toHaveProperty('traceId');
-    expect(lines[1]).toMatchObject({ msg: 'in span', traceId: '0af7651916cd43dd8448eb211c80319c', spanId: 'b7ad6b7169203331' });
-  });
-
-  it('is a no-op for telemetry while it is off', async () => {
+  it('is a no-op for telemetry while it is off', () => {
     appLog('core:x', 'error', 'm', { telemetry: { event: 'clubhouse.annex.heartbeat_timeout' } });
     expect(events).toEqual([]);
-    expect((await writtenLines())[0]).not.toHaveProperty('traceId');
   });
 });

@@ -10,78 +10,21 @@ import {
   initRendererTelemetry,
 } from '../telemetry/facade';
 
-// Uses the centralized window.clubhouse mock from test/setup-renderer.ts.
-// Override log.write with a spy for assertion.
+const emit = vi.fn();
+const diagItems = () => emit.mock.calls.flatMap((c) => c[0].items).filter((i: { t: string }) => i.t === 'diag');
+
+/** Main says: local logging on, telemetry signals off. */
+async function connectTelemetry(): Promise<void> {
+  _resetRendererTelemetryForTests();
+  emit.mockClear();
+  initRendererTelemetry({ emit, rendererReady: vi.fn(), getState: async () => ({ enabled: false, level: null, diag: true }), onStateChanged: () => () => {} });
+  await Promise.resolve();
+}
 
 describe('renderer-logger', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Replace the noop with a spy so we can assert calls
-    (window as any).clubhouse.log.write = vi.fn();
-  });
-
-  it('sends a log entry over IPC with correct fields', () => {
-    rendererLog('app:plugins', 'info', 'Plugin loaded');
-
-    const mockWrite = (window as any).clubhouse.log.write;
-    expect(mockWrite).toHaveBeenCalledTimes(1);
-    const entry = mockWrite.mock.calls[0][0];
-    expect(entry.ns).toBe('app:plugins');
-    expect(entry.level).toBe('info');
-    expect(entry.msg).toBe('Plugin loaded');
-    expect(entry.ts).toBeDefined();
-    expect(entry.projectId).toBeUndefined();
-    expect(entry.meta).toBeUndefined();
-  });
-
-  it('includes projectId and meta when provided', () => {
-    rendererLog('plugin:terminal', 'warn', 'Shell exited', {
-      projectId: 'proj-1',
-      meta: { exitCode: 137 },
-    });
-
-    const entry = (window as any).clubhouse.log.write.mock.calls[0][0];
-    expect(entry.projectId).toBe('proj-1');
-    expect(entry.meta).toEqual({ exitCode: 137 });
-  });
-
-  it('generates an ISO timestamp', () => {
-    rendererLog('app:test', 'debug', 'test');
-
-    const entry = (window as any).clubhouse.log.write.mock.calls[0][0];
-    // Should be a valid ISO string
-    expect(new Date(entry.ts).toISOString()).toBe(entry.ts);
-  });
-
-  it('supports all log levels', () => {
-    const levels = ['debug', 'info', 'warn', 'error', 'fatal'] as const;
-    for (const level of levels) {
-      vi.clearAllMocks();
-      (window as any).clubhouse.log.write = vi.fn();
-      rendererLog('app:test', level, `msg-${level}`);
-      expect((window as any).clubhouse.log.write.mock.calls[0][0].level).toBe(level);
-    }
-  });
-
-  it('is fire-and-forget (uses send, not invoke)', () => {
-    // The mock is a simple function call — no Promise returned
-    const result = rendererLog('app:test', 'info', 'test');
-    expect(result).toBeUndefined();
-  });
-});
-
-describe('renderer-logger diag tier (#2302)', () => {
-  const emit = vi.fn();
-  const diagItems = () => emit.mock.calls.flatMap((c) => c[0].items).filter((i: { t: string }) => i.t === 'diag');
-
   beforeEach(async () => {
-    _resetRendererTelemetryForTests();
     vi.useFakeTimers();
-    emit.mockClear();
-    (window as any).clubhouse.log.write = vi.fn();
-    // Main says: local logging on, telemetry signals off.
-    initRendererTelemetry({ emit, rendererReady: vi.fn(), getState: async () => ({ enabled: false, level: null, diag: true }), onStateChanged: () => () => {} });
-    await Promise.resolve();
+    await connectTelemetry();
   });
 
   afterEach(() => {
@@ -89,22 +32,60 @@ describe('renderer-logger diag tier (#2302)', () => {
     vi.useRealTimers();
   });
 
-  it('sends a diag line with namespace and level, and still writes the legacy log', () => {
+  it('sends a diag line with the right fields', () => {
+    rendererLog('app:plugins', 'info', 'Plugin loaded');
+    vi.advanceTimersByTime(FLUSH_INTERVAL_MS);
+
+    // No ts: the recorder in main stamps each line.
+    expect(diagItems()).toEqual([{ t: 'diag', ns: 'app:plugins', level: 'info', msg: 'Plugin loaded' }]);
+  });
+
+  it('includes projectId and meta when provided', () => {
+    rendererLog('plugin:terminal', 'warn', 'Shell exited', {
+      projectId: 'proj-1',
+      meta: { exitCode: 137 },
+    });
+    vi.advanceTimersByTime(FLUSH_INTERVAL_MS);
+
+    expect(diagItems()[0].meta).toEqual({ projectId: 'proj-1', exitCode: 137 });
+  });
+
+  it('supports all log levels', () => {
+    const levels = ['debug', 'info', 'warn', 'error', 'fatal'] as const;
+    for (const level of levels) rendererLog('app:test', level, `msg-${level}`);
+    vi.advanceTimersByTime(FLUSH_INTERVAL_MS);
+    expect(diagItems().map((i: { level: string }) => i.level)).toEqual([...levels]);
+  });
+
+  it('is fire-and-forget', () => {
+    const result = rendererLog('app:test', 'info', 'test');
+    expect(result).toBeUndefined();
+  });
+});
+
+describe('renderer-logger diag tier (#2302)', () => {
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    await connectTelemetry();
+  });
+
+  afterEach(() => {
+    _resetRendererTelemetryForTests();
+    vi.useRealTimers();
+  });
+
+  it('sends a diag line with namespace and level', () => {
     rendererLog('app:plugins', 'warn', 'Plugin failed', { meta: { code: 7 } });
     expect(emit).not.toHaveBeenCalled();
     vi.advanceTimersByTime(FLUSH_INTERVAL_MS);
     expect(diagItems()).toEqual([{ t: 'diag', ns: 'app:plugins', level: 'warn', msg: 'Plugin failed', meta: { code: 7 } }]);
-    expect((window as any).clubhouse.log.write).toHaveBeenCalledTimes(1);
   });
 
-  it('carries projectId in diag meta without changing the legacy entry', () => {
+  it('carries projectId in diag meta', () => {
     rendererLog('plugin:terminal', 'error', 'Shell exited', { projectId: 'proj-1', meta: { exitCode: 137 } });
     rendererLog('plugin:terminal', 'info', 'No meta', { projectId: 'proj-1' });
     vi.advanceTimersByTime(FLUSH_INTERVAL_MS);
     expect(diagItems().map((i: { meta?: unknown }) => i.meta)).toEqual([{ exitCode: 137, projectId: 'proj-1' }, { projectId: 'proj-1' }]);
-    const entry = (window as any).clubhouse.log.write.mock.calls[0][0];
-    expect(entry.meta).toEqual({ exitCode: 137 });
-    expect(entry.projectId).toBe('proj-1');
   });
 
   it('batches lines instead of one IPC each', () => {
@@ -116,12 +97,11 @@ describe('renderer-logger diag tier (#2302)', () => {
     expect(diagItems()).toHaveLength(FLUSH_AT_ITEMS + 5);
   });
 
-  it('sends no diag while local logging is off, and keeps the legacy write', () => {
+  it('sends no diag while local logging is off', () => {
     _setStateForTests({ enabled: false, level: null });
     rendererLog('app:test', 'error', 'x');
     vi.advanceTimersByTime(FLUSH_INTERVAL_MS);
     expect(emit).not.toHaveBeenCalled();
-    expect((window as any).clubhouse.log.write).toHaveBeenCalledTimes(1);
   });
 
   it('never throws, even without the preload bridge', () => {
@@ -154,13 +134,44 @@ describe('renderer-logger diag tier (#2302)', () => {
       ['plugin:my-plugin', 'fatal', 'f'],
     ]);
     expect(diagItems()[1].meta).toEqual({ n: 1, projectId: 'proj-1' });
-    // The legacy entry keeps its shape (plugin API contract).
-    const legacy = (window as any).clubhouse.log.write.mock.calls[1][0];
-    expect(legacy).toMatchObject({ ns: 'plugin:my-plugin', level: 'info', msg: 'i', projectId: 'proj-1', meta: { n: 1 } });
   });
 
   it('plugin api.logging methods still return undefined', () => {
     const api = createLoggingAPI({ pluginId: 'p', pluginPath: '/p', scope: 'app' } as PluginContext);
     expect(api.info('x')).toBeUndefined();
+  });
+});
+
+/** The deprecated log:write path to the session log. Delete with the writer (#2313). */
+describe('renderer-logger legacy log:write (until #2313)', () => {
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    await connectTelemetry();
+    (window as any).clubhouse.log.write = vi.fn();
+  });
+
+  afterEach(() => {
+    _resetRendererTelemetryForTests();
+    vi.useRealTimers();
+  });
+
+  it('writes the legacy entry with a timestamp, projectId and meta kept apart', () => {
+    rendererLog('plugin:terminal', 'warn', 'Shell exited', { projectId: 'proj-1', meta: { exitCode: 137 } });
+    const entry = (window as any).clubhouse.log.write.mock.calls[0][0];
+    expect(entry).toMatchObject({ ns: 'plugin:terminal', level: 'warn', msg: 'Shell exited', projectId: 'proj-1', meta: { exitCode: 137 } });
+    expect(new Date(entry.ts).toISOString()).toBe(entry.ts);
+  });
+
+  it('still writes the legacy log while diag is off', () => {
+    _setStateForTests({ enabled: false, level: null });
+    rendererLog('app:test', 'error', 'x');
+    expect((window as any).clubhouse.log.write).toHaveBeenCalledTimes(1);
+  });
+
+  it('plugin api.logging keeps the legacy entry shape (plugin API contract)', () => {
+    const api = createLoggingAPI({ pluginId: 'my-plugin', pluginPath: '/p', scope: 'project', projectId: 'proj-1' } as PluginContext);
+    api.info('i', { n: 1 });
+    const legacy = (window as any).clubhouse.log.write.mock.calls[0][0];
+    expect(legacy).toMatchObject({ ns: 'plugin:my-plugin', level: 'info', msg: 'i', projectId: 'proj-1', meta: { n: 1 } });
   });
 });

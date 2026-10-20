@@ -39,13 +39,28 @@ function seedSystemKey(userDataDir: string, key: string, value: unknown): void {
   fs.writeFileSync(path.join(kvDir, `${key}.json`), JSON.stringify(value), 'utf-8');
 }
 
-/** Everything main has logged so far this session (userData is the app home under E2E). */
-async function readMainLog(userDataDir: string): Promise<string> {
+/**
+ * Every diag line (#2299) recorded so far this session, as `ns level msg`
+ * text: main's appLog and the renderer's logging both land there (#2301,
+ * #2302). userData is the app home under E2E.
+ */
+async function readDiagLog(userDataDir: string): Promise<string> {
   const logDir = path.join(userDataDir, '.clubhouse', 'logs');
   if (!fs.existsSync(logDir)) return '';
-  const files = fs.readdirSync(logDir).filter((name) => name.endsWith('.jsonl'));
+  const files = fs.readdirSync(logDir).filter((name) => name.startsWith('telemetry-') && name.endsWith('.jsonl'));
   const bodies = await Promise.all(files.map((name) => fs.promises.readFile(path.join(logDir, name), 'utf-8')));
-  return bodies.join('\n');
+  const lines: string[] = [];
+  for (const raw of bodies.join('\n').split('\n')) {
+    let line: { t?: unknown; ns?: unknown; level?: unknown; msg?: unknown };
+    try {
+      line = JSON.parse(raw);
+    } catch {
+      // A blank line, or one still being written.
+      continue;
+    }
+    if (line.t === 'diag') lines.push(`${line.ns} ${line.level} ${line.msg}`);
+  }
+  return lines.join('\n');
 }
 
 test.beforeAll(async () => {
@@ -78,9 +93,9 @@ test('the plugin host claims the issuer, and a plugin with mcp.tools contributes
   expect(await marker()).toBe(`listed:plugin__e2e_mcp_tools__e2e_echo`);
 
   // Main's view: it registered the tool, and never refused the host's claim.
-  await expect.poll(() => readMainLog(profile.userDataDir), { timeout: 15_000 })
+  await expect.poll(() => readDiagLog(profile.userDataDir), { timeout: 15_000 })
     .toContain(`Plugin ${PLUGIN_ID} registered 1 MCP tools`);
-  const log = await readMainLog(profile.userDataDir);
+  const log = await readDiagLog(profile.userDataDir);
   expect(log).not.toContain('Rejected plugin MCP issuer claim');
   expect(log).not.toContain('Could not claim the plugin MCP issuer');
 });

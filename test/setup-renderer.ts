@@ -288,7 +288,7 @@ vi.stubGlobal('clubhouse', {
   },
   log: {
     write: noop,
-    getSettings: async () => ({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info' }),
+    getSettings: async () => ({ enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'info', telemetryRecording: true }),
     saveSettings: asyncNoop,
     getNamespaces: async () => [],
     getPath: async () => '',

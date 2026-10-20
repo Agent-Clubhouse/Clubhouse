@@ -38,6 +38,14 @@ describe('log folder retention', () => {
     expect(left()).toEqual(['notes.txt', 'telemetry-new.jsonl']);
   });
 
+  it('ages out after 3 days with low retention', async () => {
+    const now = Date.now();
+    file('telemetry-old.jsonl', 10, 4 * DAY, now);
+    file('telemetry-new.jsonl', 10, 2 * DAY, now);
+    await pruneLogDir(dir, LOG_RETENTION_TIERS.low, { now });
+    expect(left()).toEqual(['telemetry-new.jsonl']);
+  });
+
   it('deletes oldest first until the folder is within the total size', async () => {
     const tier = { retentionDays: 0, maxTotalBytes: 250 };
     file('telemetry-a.jsonl', 100, 3_000);
