@@ -133,17 +133,25 @@ export class ClaudeSdkTransport extends ClaudeTransportBase {
     } catch (err) {
       if (err instanceof ClaudeStartupTimeoutError) {
         this.log('warn', 'Claude SDK initialization timed out; closing query', { timeoutMs: SDK_INIT_TIMEOUT_MS });
-        try {
-          query.close();
-        } catch (closeErr) {
-          this.log('warn', 'Claude SDK query close failed', { error: closeErr instanceof Error ? closeErr.message : String(closeErr) });
-        }
-        // query.close() aborts the spawn signal, which kills the CLI; kill it directly too in case it didn't.
-        if (this.child) void killStructuredChild(this.child, { endStdin: false });
+        this.abandonStartup(query);
       }
       throw err;
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Close a start that won't complete. query.close() ends stdin and kills only
+   * after a delay (and, on Windows, not a .cmd shim's tree), so kill the CLI's
+   * tree directly first.
+   */
+  private abandonStartup(query: Query): void {
+    if (this.child) void killStructuredChild(this.child, { endStdin: false });
+    try {
+      query.close();
+    } catch (err) {
+      this.log('warn', 'Claude SDK query close failed', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
