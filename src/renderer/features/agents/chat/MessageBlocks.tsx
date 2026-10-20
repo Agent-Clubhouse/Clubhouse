@@ -60,7 +60,7 @@ export function UserMessage({ item }: { item: UserMessageItem }) {
     .map((block) => ({ block, name: attachmentName(block) }))
     .filter((a): a is { block: ContentBlock; name: string } => a.name !== null);
   return (
-    <div className="self-end max-w-[82%] flex flex-col items-end gap-1" data-testid="chat-user-message">
+    <div className="self-end max-w-[82%] min-w-0 flex flex-col items-end gap-1" data-testid="chat-user-message">
       {(label || item.delivery === 'steer') && (
         <span className="text-[11px] text-ctp-overlay0">
           {[label, item.delivery === 'steer' ? 'Steered into the running turn' : null].filter(Boolean).join(' · ')}
@@ -81,7 +81,7 @@ export function UserMessage({ item }: { item: UserMessageItem }) {
         </div>
       )}
       {item.text && (
-        <div className="bg-surface-0 text-ctp-text rounded-xl rounded-br px-3 py-2 text-[13px] whitespace-pre-wrap break-words">
+        <div className="max-w-full bg-surface-0 text-ctp-text rounded-xl rounded-br px-3 py-2 text-[13px] whitespace-pre-wrap wrap-anywhere">
           {item.text}
         </div>
       )}
@@ -120,7 +120,7 @@ export function ThoughtRow({ item }: { item: ThoughtItem }) {
         {item.text && (open ? <ChevronDown /> : <ChevronRight />)}
       </button>
       {open && item.text && (
-        <div className="ml-[7px] pl-3 border-l border-surface-1 text-[12.5px] text-ctp-subtext0 whitespace-pre-wrap py-1">
+        <div className="ml-[7px] pl-3 border-l border-surface-1 text-[12.5px] text-ctp-subtext0 whitespace-pre-wrap wrap-anywhere py-1">
           {item.text}
         </div>
       )}
@@ -158,7 +158,7 @@ export function NoticeRow({ item }: { item: NoticeItem }) {
     return (
       <div className="flex items-center gap-2 text-[12px] text-ctp-overlay1" role="status" data-testid="chat-notice" data-code={item.code} data-running="true">
         <span className="inline-block w-2.5 h-2.5 mx-px rounded-full border-[1.5px] border-surface-1 border-t-ctp-success animate-spin" aria-hidden="true" />
-        <span>{item.message}</span>
+        <span className="min-w-0 wrap-anywhere">{item.message}</span>
       </div>
     );
   }
@@ -169,7 +169,7 @@ export function NoticeRow({ item }: { item: NoticeItem }) {
       data-code={item.code}
     >
       <AlertIcon size={13} />
-      <span>{item.message}</span>
+      <span className="min-w-0 wrap-anywhere">{item.message}</span>
     </div>
   );
 }

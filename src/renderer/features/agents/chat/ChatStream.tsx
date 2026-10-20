@@ -3,6 +3,7 @@ import type { ChatCapabilities, ChatMcpServer } from '../../../../shared/chat';
 import type { ChatViewState } from '../../../stores/chatStore';
 import { buildStreamBlocks, commandOutputIds, toolErrorText, type StreamBlock } from './view-model';
 import { scrollWithin } from './scroll';
+import { rendererLog } from '../../../plugins/renderer-logger';
 import {
   AgentMessage,
   ErrorRow,
@@ -25,6 +26,24 @@ import {
 
 /** Distance from the bottom (px) within which new content keeps the view pinned. */
 const STICK_THRESHOLD = 80;
+
+/**
+ * The block that makes the stream wider than its column, for the sideways
+ * scroll log (#2292): the first whose content is wider than it is.
+ */
+function overflowingBlock(root: HTMLElement): Record<string, unknown> | null {
+  for (const block of root.querySelectorAll<HTMLElement>('[data-testid="chat-stream-block"]')) {
+    if (block.scrollWidth > block.clientWidth) {
+      return {
+        index: Number(block.dataset.blockIndex),
+        testId: block.firstElementChild?.getAttribute('data-testid') ?? null,
+        scrollWidth: block.scrollWidth,
+        clientWidth: block.clientWidth,
+      };
+    }
+  }
+  return null;
+}
 
 /** Maximum transcript rows mounted at once. */
 export const CHAT_STREAM_WINDOW_SIZE = 250;
@@ -205,6 +224,7 @@ const ChatStreamInner = memo(function ChatStreamInner({
 }: ChatStreamProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const loggedSideways = useRef(false);
   const expansionStore = useMemo(() => createTranscriptExpansionStore(), []);
   const onJumpResultRef = useRef(onJumpResult);
   onJumpResultRef.current = onJumpResult;
@@ -299,6 +319,23 @@ const ChatStreamInner = memo(function ChatStreamInner({
   const onScroll = () => {
     const el = scroller.current;
     if (!el) return;
+    if (el.scrollLeft !== 0) {
+      // The stream only scrolls vertically; anything that slides it sideways
+      // hides the start of every line (#2292). Log what overflowed, once.
+      if (!loggedSideways.current) {
+        loggedSideways.current = true;
+        rendererLog('app:chat', 'warn', 'Chat stream scrolled sideways; reset to the left edge', {
+          meta: {
+            scrollLeft: el.scrollLeft,
+            scrollWidth: el.scrollWidth,
+            clientWidth: el.clientWidth,
+            provider: state.provider,
+            block: overflowingBlock(el),
+          },
+        });
+      }
+      el.scrollLeft = 0;
+    }
     const isPinned = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD;
     pinned.current = isPinned;
     if (!isPinned && followTail) {
@@ -336,8 +373,8 @@ const ChatStreamInner = memo(function ChatStreamInner({
   return (
     <LiveTurnContext.Provider value={state.turnId}>
     <AwaitingApprovalContext.Provider value={awaiting}>
-    <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-7 pt-5 pb-2.5" data-testid="chat-stream">
-      <div className="mx-auto w-full max-w-[740px] flex flex-col gap-2.5 min-h-full justify-end">
+    <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-7 pt-5 pb-2.5" data-testid="chat-stream">
+      <div className="mx-auto w-full min-w-0 max-w-[740px] flex flex-col gap-2.5 min-h-full justify-end">
         {announce && <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="chat-live-region">{announcement}</div>}
         {start > 0 && (
           <button

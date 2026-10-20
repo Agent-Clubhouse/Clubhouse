@@ -149,6 +149,52 @@ for (const p of PROVIDERS) {
       }
     });
 
+    test('long tokens and wide tables stay inside a narrow pane (#2292)', async () => {
+      const { electronApp, window } = await openChat(p, 'multi-turn');
+      try {
+        await send(window, 'Reply with the word one.');
+        await expect(window.locator('[data-testid="chat-turn-footer"]')).toHaveCount(1, { timeout: ENDED_TIMEOUT });
+        await electronApp.evaluate(({ BrowserWindow }) => {
+          const win = BrowserWindow.getAllWindows()[0];
+          win?.setMinimumSize(320, 320);
+          win?.setSize(760, 720);
+        });
+
+        // Synthetic restored history: an unbroken token and a wide table in the
+        // reply, and an unbroken token in the user's bubble.
+        const token = `sha256-${'a1b2c3d4'.repeat(60)}`;
+        await window.evaluate((t) => {
+          const cells = (cell: string) => Array.from({ length: 14 }, () => `<td>${cell}</td>`).join('');
+          const md = document.querySelector('[data-testid="chat-agent-message"] .chat-markdown');
+          md?.insertAdjacentHTML('beforeend', `<p>${t}</p><p><code>${t}</code></p><table><tr>${cells('a fairly long cell value')}</tr></table>`);
+          const bubble = document.querySelector('[data-testid="chat-user-message"]')?.lastElementChild;
+          bubble?.append(` ${t}`);
+        }, token);
+
+        const layout = await window.locator('[data-testid="chat-stream"]').evaluate((stream) => {
+          const box = stream.getBoundingClientRect();
+          const messages = [...stream.querySelectorAll('[data-testid="chat-agent-message"], [data-testid="chat-user-message"] > :last-child')];
+          return {
+            overflow: stream.scrollWidth - stream.clientWidth,
+            clippedLeft: messages.filter((m) => m.getBoundingClientRect().left < box.left - 1).length,
+            clippedRight: messages.filter((m) => m.getBoundingClientRect().right > box.right + 1).length,
+          };
+        });
+        expect(layout).toEqual({ overflow: 0, clippedLeft: 0, clippedRight: 0 });
+
+        // Nothing can leave the stream scrolled sideways.
+        const scrollLeft = await window.locator('[data-testid="chat-stream"]').evaluate(async (stream) => {
+          stream.scrollLeft = 200;
+          stream.dispatchEvent(new Event('scroll'));
+          await new Promise((r) => requestAnimationFrame(r));
+          return stream.scrollLeft;
+        });
+        expect(scrollLeft).toBe(0);
+      } finally {
+        await electronApp.close();
+      }
+    });
+
     test('approve a permission request and the turn finishes', async () => {
       const { electronApp, window, chat } = await openChat(p, 'permission-approve-edit');
       try {
