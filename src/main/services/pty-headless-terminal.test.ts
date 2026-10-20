@@ -6,10 +6,13 @@ const mockSerializerDispose = vi.fn();
 const mockWrite = vi.fn();
 const mockResize = vi.fn();
 const mockLoadAddon = vi.fn();
+const mockTerminalCtor = vi.fn();
+const mockDetectWindowsPty = vi.fn();
 
 vi.mock('@xterm/headless', () => {
   return {
     Terminal: class MockTerminal {
+      constructor(opts: unknown) { mockTerminalCtor(opts); }
       write = mockWrite;
       resize = mockResize;
       loadAddon = mockLoadAddon;
@@ -27,6 +30,10 @@ vi.mock('@xterm/addon-serialize', () => {
   };
 });
 
+vi.mock('../util/windows-pty', () => ({
+  detectWindowsPty: () => mockDetectWindowsPty(),
+}));
+
 import { feedData, resize, serialize, dispose, disposeAll } from './pty-headless-terminal';
 
 describe('pty-headless-terminal', () => {
@@ -37,6 +44,8 @@ describe('pty-headless-terminal', () => {
     mockWrite.mockClear();
     mockResize.mockClear();
     mockLoadAddon.mockClear();
+    mockTerminalCtor.mockClear();
+    mockDetectWindowsPty.mockReset();
     // Clean up any sessions from previous tests
     disposeAll();
   });
@@ -46,6 +55,18 @@ describe('pty-headless-terminal', () => {
       feedData('agent-1', 'hello');
       expect(mockLoadAddon).toHaveBeenCalled();
       expect(mockWrite).toHaveBeenCalledWith('hello');
+    });
+
+    it('tells the mirror the Windows pty backend so it resizes like the live xterm', () => {
+      mockDetectWindowsPty.mockReturnValue({ backend: 'conpty', buildNumber: 22631 });
+      feedData('agent-1', 'hello');
+      expect(mockTerminalCtor.mock.calls[0][0]).toMatchObject({ windowsPty: { backend: 'conpty', buildNumber: 22631 } });
+    });
+
+    it('leaves windowsPty unset off Windows', () => {
+      mockDetectWindowsPty.mockReturnValue(undefined);
+      feedData('agent-1', 'hello');
+      expect(mockTerminalCtor.mock.calls[0][0]).not.toHaveProperty('windowsPty');
     });
 
     it('reuses existing terminal on subsequent feeds', () => {

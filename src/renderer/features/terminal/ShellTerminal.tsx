@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useFileDrop } from './useFileDrop';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { localWindowsPtyOptions } from './windows-pty';
 import { useThemeStore } from '../../stores/themeStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { attachClipboardHandlers } from './clipboard';
@@ -93,6 +94,7 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
       cursorStyle: 'bar',
       allowProposedApi: true,
       allowTransparency: true,
+      ...localWindowsPtyOptions(),
     });
 
     const fitAddon = new FitAddon();

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useMemo, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { localWindowsPtyOptions } from '../terminal/windows-pty';
 import { useThemeStore } from '../../stores/themeStore';
 import { getTheme } from '../../themes';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
@@ -132,6 +133,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       cursorStyle: 'bar',
       allowProposedApi: true,
       allowTransparency: true,
+      ...(isRemote ? {} : localWindowsPtyOptions()),
     });
 
     const fitAddon = new FitAddon();

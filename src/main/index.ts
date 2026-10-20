@@ -49,6 +49,7 @@ import { installChatTelemetry } from './telemetry/chat-telemetry';
 import { installIpcTelemetry } from './telemetry/ipc-telemetry';
 import { getAgentOrchestrator } from './services/agent-registry';
 import { NEW_CHROME_ARG } from '../shared/chrome-flag';
+import { windowsPtyLaunchArgs } from './util/windows-pty';
 import { newChromeEnabled, titleBarOptions } from './window-chrome';
 import { shutdownFeedback, startFeedback } from './services/framebriar';
 
@@ -193,8 +194,9 @@ const createWindow = (): void => {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
-      // The chrome layout is fixed per session; preload reads this synchronously.
-      additionalArguments: newChromeEnabled() ? [NEW_CHROME_ARG] : [],
+      // The chrome layout and pty backend are fixed per session; preload reads
+      // them synchronously.
+      additionalArguments: [...(newChromeEnabled() ? [NEW_CHROME_ARG] : []), ...windowsPtyLaunchArgs()],
     },
   });
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { localWindowsPtyOptions } from '../terminal/windows-pty';
 import { useThemeStore } from '../../stores/themeStore';
 
 interface Props {
@@ -39,6 +40,7 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
       cursorStyle: 'bar',
       allowProposedApi: true,
       allowTransparency: true,
+      ...localWindowsPtyOptions(),
     });
 
     const fitAddon = new FitAddon();
