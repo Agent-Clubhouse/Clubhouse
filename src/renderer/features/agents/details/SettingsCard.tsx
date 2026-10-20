@@ -280,7 +280,11 @@ export function SettingsCard({ agent, chat, projectPath, provider }: {
           label="Model"
           value={modelValue}
           disabled={modelsLoading || busy('model')}
-          onChange={(v) => void save('model', { model: v }, { model: v === 'default' ? undefined : v })}
+          onChange={(v) => {
+            // Only a model the provider listed: a select still loading reads back as '', which main saves as no model.
+            if (modelsLoading || !modelOptions.some((o) => o.id === v)) return;
+            void save('model', { model: v }, { model: v === 'default' ? undefined : v });
+          }}
           options={modelChoices}
         />
       ) : undefined,

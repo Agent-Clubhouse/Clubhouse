@@ -64,6 +64,19 @@ function settings() {
   return within(screen.getByTestId('details-card-settings'));
 }
 
+/**
+ * The Model select once its options have loaded. Enabled alone isn't enough: until the
+ * options arrive, a change to a model it doesn't list yet reads back as '' (#2375).
+ */
+async function loadedModelSelect(id: string) {
+  const model = await settings().findByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
+  await waitFor(() => {
+    expect(model).not.toBeDisabled();
+    expect(model.querySelector(`option[value="${id}"]`)).not.toBeNull();
+  });
+  return model;
+}
+
 describe('Agent details for a sleeping agent (#2281)', () => {
   it('shows Settings, Changes, Canvases and the last session, and leaves out live-only cards', () => {
     render(<AgentDetails agent={sleeping} lastSession={last} />);
@@ -110,8 +123,7 @@ describe('Agent details for a sleeping agent (#2281)', () => {
 
   it('saves each setting to the agent config and keeps the agent store in step', async () => {
     render(<AgentDetails agent={sleeping} />);
-    const model = await settings().findByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
-    await waitFor(() => expect(model).not.toBeDisabled());
+    const model = await loadedModelSelect('opus');
     fireEvent.change(model, { target: { value: 'opus' } });
     await waitFor(() => expect(window.clubhouse.agent.updateDurableConfig).toHaveBeenCalledWith('/work/proj', 'a1', { model: 'opus' }));
     await waitFor(() => expect(useAgentStore.getState().agents.a1.model).toBe('opus'));
@@ -143,10 +155,14 @@ describe('Agent details for a sleeping agent (#2281)', () => {
 
   it('keeps an edit across a wake: saved for the spawn, then locked and shown while it runs', async () => {
     const { rerender } = render(<AgentDetails agent={sleeping} />);
-    const model = await settings().findByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
-    await waitFor(() => expect(model).not.toBeDisabled());
+    const model = await loadedModelSelect('sonnet');
     fireEvent.change(model, { target: { value: 'sonnet' } });
-    await waitFor(() => expect(saved.model).toBe('sonnet'));
+    const save = vi.mocked(window.clubhouse.agent.updateDurableConfig);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith('/work/proj', 'a1', { model: 'sonnet' });
+    await save.mock.results[0].value;
+    expect(saved.model).toBe('sonnet');
+    await waitFor(() => expect(useAgentStore.getState().agents.a1.model).toBe('sonnet'));
     // The wake reads agents.json; then the agent runs with it.
     const awake = { ...useAgentStore.getState().agents.a1, status: 'running' as const };
     rerender(<AgentDetails agent={awake} />);
@@ -155,6 +171,35 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     expect(row).toHaveAttribute('data-locked', 'true');
     expect(within(row).queryByRole('combobox')).not.toBeInTheDocument();
     expect(settings().getByText(LOCKED_HINT)).toBeInTheDocument();
+  });
+
+  // #2375: a change before the provider lists its models used to save model: '' and drop the saved model.
+  // React still runs onChange for a disabled select here, so this checks the card's guard, not only the attribute.
+  it('saves nothing from the Model select until its options have loaded', async () => {
+    saved.model = 'opus';
+    let list!: (v: unknown) => void;
+    window.clubhouse.agent.getModelOptions = vi.fn(() => new Promise((r) => { list = r; })) as never;
+    render(<AgentDetails agent={sleeping} />);
+    const model = await settings().findByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
+    expect(model).toBeDisabled();
+    fireEvent.change(model, { target: { value: 'sonnet' } });
+    fireEvent.change(model, { target: { value: 'default' } });
+    expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    expect(saved.model).toBe('opus');
+
+    list([{ id: 'default', label: 'Default' }, { id: 'sonnet', label: 'Sonnet' }, { id: 'opus', label: 'Opus' }]);
+    await loadedModelSelect('sonnet');
+    expect(model.value).toBe('opus');
+  });
+
+  it('saves nothing for a model the provider did not list', async () => {
+    saved.model = 'opus';
+    render(<AgentDetails agent={sleeping} />);
+    const model = await loadedModelSelect('sonnet');
+    // A value with no option (here a model the list dropped) reads back as ''.
+    fireEvent.change(model, { target: { value: 'haiku' } });
+    expect(window.clubhouse.agent.updateDurableConfig).not.toHaveBeenCalled();
+    expect(saved.model).toBe('opus');
   });
 
   it('shows the terminal and no Runs in control with the Chat flag off', async () => {
@@ -204,8 +249,7 @@ describe('Agent details for a sleeping agent (#2281)', () => {
     saved.model = 'sonnet';
     window.clubhouse.agent.updateDurableConfig = vi.fn(async () => { throw new Error('disk full'); }) as never;
     render(<AgentDetails agent={sleeping} />);
-    const model = await settings().findByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
-    await waitFor(() => expect(model).not.toBeDisabled());
+    const model = await loadedModelSelect('opus');
     expect(model.value).toBe('sonnet');
     fireEvent.change(model, { target: { value: 'opus' } });
     await waitFor(() => expect(settings().getByTestId('details-setting-model-error')).toHaveTextContent('Couldn’t save'));
