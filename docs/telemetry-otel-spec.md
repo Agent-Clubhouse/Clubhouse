@@ -613,8 +613,17 @@ The first draft left these as gaps. The maintainer set the goal as broad coverag
 
 | Instrument | Source | Attributes | Level |
 |---|---|---|---|
-| `c.process.eventloop.delay.p99`, `.max` (observable gauges, s) | `perf_hooks.monitorEventLoopDelay`, read and reset every 60 s. These are gauges because App Insights histograms have no percentiles (§3.2). | — | S |
-| `c.process.eventloop.blocked` (event) | the 60 s window's max exceeds 2 s | `c.blocked.flow`: the name of the root span active when the stall was sampled, from a 100 ms watchdog timer. That points at the culprit, e.g. `c.agent.spawn` during a `which` lookup. | E |
+| `c.process.eventloop.delay.p99`, `.max` (observable gauges, s) | `perf_hooks.monitorEventLoopDelay`, read and reset every 60 s. These are gauges because App Insights histograms have no percentiles (§3.2). Both are lateness past the histogram's resolution, so an idle loop reads about 0 in either sampler mode (below). | — | S |
+| `c.process.eventloop.blocked` (event) | a stall of 2 s or more: the watchdog timer fired that late, or the histogram recorded it since the watchdog's last tick. At most one a minute. | `c.blocked.flow`: the name of the root span active when the watchdog noticed the stall. That points at the culprit, e.g. `c.agent.spawn` during a `which` lookup. | E |
+
+**Sampler modes** ([#2291](https://github.com/Agent-Clubhouse/Clubhouse/issues/2291)). The health sampler runs for every install with logging on, so it backs off when nobody is looking:
+
+| Mode | When | Histogram resolution | Watchdog (one `setTimeout`, lateness = stall) | Detects |
+|---|---|---|---|---|
+| `active` | a Clubhouse window is focused and `powerMonitor.getSystemIdleState(300)` is `active` (or `unknown`, common on Linux/Wayland, where focus alone decides) | 100 ms | 1 s | every stall of 200 ms or more in the minute's max; every stall of 2.1 s or more as an event |
+| `idle` | otherwise (app in the background, user away 5 min, screen locked) | 500 ms | 2 s | every stall of 1 s or more in the max, shorter ones only when they span a histogram tick by enough to show (measured: about 1 in 4 stalls of 200–250 ms reported at 100 ms or more); every stall of 2.5 s or more as an event |
+
+Window focus, unlock and resume switch to `active` at once; backing off waits for the next watchdog tick, so moving between two Clubhouse windows does not flap. A switch keeps the minute's p99 (the larger segment's) and max; a ramp-up first takes the pending watchdog's lateness, so a click on a hung window doesn't lose the stall. Resume and unlock start a fresh histogram, so a sleep gap is never measured as a stall. `app.getAppMetrics()` stays once a minute in both modes: it costs about 0.2 ms per call. The mode never depends on export.
 | `c.process.memory` (observable gauge, By) | `app.getAppMetrics()` every 60 s: `workingSetSize`, `privateBytes` | `c.process.type` (`browser`/`renderer`/`gpu`/`utility`), `c.window.kind` | S |
 | `c.process.cpu` (observable gauge, %) | `app.getAppMetrics()` `percentCPUUsage` | `c.process.type` | S |
 | `c.renderer.long_frames` (counter) + `c.renderer.long_frame.duration` (histogram, s) | `PerformanceObserver` for `long-animation-frame` (Chromium LoAF), aggregated in the renderer facade and sent once a minute | `c.view` (the active main view: `agent`/`terminal`/`canvas`/`files`/`git`/`settings`/`plugin`/`other`) | S |
@@ -1212,18 +1221,17 @@ The `tel.*` signals are also written to local files, so flow timings and classif
 - **Level.** Standard by default (`LOCAL_RECORDING_LEVEL`), Detailed opt-in; see Levels above.
 - **Facade.** The recorder is a second consumer next to the SDK runtime (`setLocalSink`). Flows and steps are wrapped inside the SDK's span, so the SDK sees the same callback result and its span handle still receives every attribute. The unclean-exit check keeps its `telemetry-session.json` while recording. A sink that throws is caught in the facade and never stops the SDK call after it. `currentTraceIds()` returns the SDK's ids while it runs and the local ones otherwise, so local log lines carry `traceId`/`spanId` that match the telemetry file.
 - **Renderers.** No new IPC: renderers record while main reports the state as enabled (§6.2) and keep batching (every 2 s or 50 items). Their producers run only while the state's `producers` flag is on. `telemetry:emit` batches are accepted while the state is enabled and go through the same re-validation.
-- **Idle cost** (measured on #2289, each producer alone in Node 24 with Electron stubbed, 180 s idle, 2–3 runs; baseline idle Node 3–11 ms CPU/min). These costs are the same with export on or off.
+- **Idle cost** (measured on #2289, each producer alone in Node 24 with Electron stubbed, 180 s idle, 2–3 runs; baseline idle Node 3–11 ms CPU/min; health sampler re-measured on #2291). These costs are the same with export on or off.
 
   | Producer | Wakeups/min | CPU over baseline | fs ops/min idle |
   |---|---|---|---|
   | Local recorder (2 s flush) | 30 | about 3 ms/min | 0 (an empty queue skips the write) |
   | Workspace gauges | 1 | about 3–5 ms/min with the recorder | 1 append for the metric window |
   | Session marker | 0 | about 0 | 0 (1 read and 1 write at start, 1 write at clean exit) |
-  | Health watchdog (500 ms) | 120 | about 18 ms/min | 0 |
-  | Health event-loop histogram (100 ms resolution) + 1/min sample | sampling | about 30 ms/min, plus one `app.getAppMetrics()`/min (not measured) | 0 |
-  | All together | | about 55 ms/min | 1 |
+  | Health sampler, `idle` mode (500 ms histogram, 2 s watchdog, 1/min sample) | 151 | about 5.5 ms/min in Node, about 25 ms/min in a real Electron 43 main process | 0 |
+  | Health sampler, `active` mode (100 ms histogram, 1 s watchdog, 1/min sample) | 661 | about 18.5 ms/min in Node, about 72 ms/min in Electron | 0 |
 
-  Optimizing these is a follow-up.
+  Before #2291 the sampler always ran a 100 ms histogram and a 500 ms watchdog: about 20 ms/min in Node and about 77 ms/min in Electron. Electron's main process pays more per wakeup than plain Node.
 - **Correlation.** Spans carry random `traceId` (32 hex) and `spanId` (16 hex) and, for children, `parentSpanId`. A registered root span starts a new trace; anything else joins the active span through an `AsyncLocalStorage` context. Events and exceptions carry the active span's ids. Renderer spans arrive replayed and start their own traces, as in export.
 - **Volume.** Metrics are aggregated in memory and written once a minute (and on every exit flush) as one line per attribute set, at most 200 sets per metric plus an overflow line. The §6.4 caps (50,000 spans, 10,000 events and exceptions) apply per hour rather than per run, so a long run keeps recording its tail. At most 1,000 lines wait in memory; lines are flushed every 2 s or at 100 lines. Files rotate at 2 MB.
 - **Rolling eviction** ([#2297](https://github.com/Agent-Clubhouse/Clubhouse/issues/2297)). A run keeps at most its newest 10 MB. Past that budget, recording continues and the run's oldest chunks are deleted, never the one being written, with an `evicted` line reporting what went. The tail of a long run, where hangs and failures show up, is what stays. Metric aggregates and drop summaries skip the pending limit. A `dropped` line at each exit flush and at stop reports what the caps dropped since the last one.
