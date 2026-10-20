@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { computeDataDir, computeWorkspaceRoot, createFilesAPI, resolvePath } from './plugin-api-files';
+import { rendererLog } from './renderer-logger';
 
 // Mock dependencies
 vi.mock('../stores/remoteProjectStore', () => ({
@@ -219,6 +220,15 @@ describe('plugin-api-files', () => {
       disposableB.dispose();
       expect(window.clubhouse.file.watchStop).toHaveBeenCalledTimes(1);
       expect(window.clubhouse.file.watchStop).toHaveBeenCalledWith(watchId);
+    });
+
+    it('logs a failed watch start under the plugin: namespace', async () => {
+      vi.mocked(window.clubhouse.file.watchStart).mockRejectedValueOnce(new Error('EMFILE'));
+      const api = createFilesAPI(localCtx);
+      const disposable = api.watch('src/**', vi.fn());
+      await vi.waitFor(() => expect(rendererLog).toHaveBeenCalled());
+      expect(rendererLog).toHaveBeenCalledWith(`plugin:${localCtx.pluginId}`, 'error', 'Failed to start file watch: EMFILE');
+      disposable.dispose();
     });
 
     it('tracks duplicate callback identity as separate subscriptions until each disposes', () => {

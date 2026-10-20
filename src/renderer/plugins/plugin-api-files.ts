@@ -314,7 +314,7 @@ export function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): F
 
         projectWatchRegistry.set(key, registration);
         window.clubhouse.file.watchStart(watchId, fullGlob).catch((err: Error) => {
-          rendererLog(ctx.pluginId, 'error', `Failed to start file watch: ${err.message}`);
+          rendererLog(`plugin:${ctx.pluginId}`, 'error', `Failed to start file watch: ${err.message}`);
         });
         window.clubhouse.file.onWatchEvent(handler);
       }

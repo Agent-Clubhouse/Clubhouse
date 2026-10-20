@@ -153,3 +153,27 @@ describe('LoggingSettingsView', () => {
     });
   });
 });
+
+describe('LoggingSettingsView debug budget note (#2299)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('is hidden below debug', () => {
+    resetStores();
+    render(<LoggingSettingsView />);
+    expect(screen.queryByTestId('diag-budget-note')).toBeNull();
+  });
+
+  it('shows once at debug until dismissed, and remembers the dismissal', () => {
+    resetStores({ settings: { enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'debug' } });
+    const { unmount } = render(<LoggingSettingsView />);
+    expect(screen.getByTestId('diag-budget-note')).toHaveTextContent('Debug lines share a budget of 2 MB an hour');
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(mockSaveSettings).toHaveBeenCalledWith({ diagBudgetNoteDismissed: true });
+    unmount();
+    resetStores({ settings: { enabled: true, namespaces: {}, retention: 'medium', minLogLevel: 'debug', diagBudgetNoteDismissed: true } });
+    render(<LoggingSettingsView />);
+    expect(screen.queryByTestId('diag-budget-note')).toBeNull();
+  });
+});
