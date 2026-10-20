@@ -7,21 +7,23 @@ import { create } from 'zustand';
  */
 
 const KEY = 'clubhouse.agentDetails.open';
+/** Whether the Settings card (#2280) is open, the one card that remembers it. */
+const SETTINGS_KEY = 'clubhouse.agentDetails.settingsOpen';
 
-function readOpen(): boolean {
+function readOpen(key = KEY): boolean {
   try {
-    return localStorage.getItem(KEY) === '1';
+    return localStorage.getItem(key) === '1';
   } catch {
     // telemetry-exempt: storage unavailable; details start hidden.
     return false;
   }
 }
 
-function writeOpen(open: boolean): void {
+function writeOpen(open: boolean, key = KEY): void {
   // Popouts have no details column; their ⌥⌘D mustn't change the main window's.
   if (typeof window !== 'undefined' && window.clubhouse?.window?.isPopout?.()) return;
   try {
-    localStorage.setItem(KEY, open ? '1' : '0');
+    localStorage.setItem(key, open ? '1' : '0');
   } catch {
     // telemetry-exempt: storage unavailable; the toggle still works this session.
   }
@@ -38,11 +40,14 @@ export interface DetailsFocus {
 
 interface AgentDetailsState {
   open: boolean;
+  /** The Settings card is open, for every agent; it starts collapsed. */
+  settingsOpen: boolean;
   focus: DetailsFocus | null;
   /** Agents whose pane shows the Changes review instead of Chat or Terminal. */
   review: Record<string, boolean>;
   toggle: () => void;
   setOpen: (open: boolean) => void;
+  setSettingsOpen: (open: boolean) => void;
   /** Show the column and open one card in it. */
   reveal: (focus: Omit<DetailsFocus, 'nonce'>) => void;
   setReview: (agentId: string, on: boolean) => void;
@@ -50,6 +55,7 @@ interface AgentDetailsState {
 
 export const useAgentDetailsStore = create<AgentDetailsState>((set, get) => ({
   open: readOpen(),
+  settingsOpen: readOpen(SETTINGS_KEY),
   focus: null,
   review: {},
   setReview: (agentId, on) => set((s) => {
@@ -60,6 +66,7 @@ export const useAgentDetailsStore = create<AgentDetailsState>((set, get) => ({
   }),
   toggle: () => get().setOpen(!get().open),
   setOpen: (open) => { writeOpen(open); set({ open }); },
+  setSettingsOpen: (settingsOpen) => { writeOpen(settingsOpen, SETTINGS_KEY); set({ settingsOpen }); },
   reveal: (focus) => {
     writeOpen(true);
     set((s) => ({ open: true, focus: { ...focus, nonce: (s.focus?.nonce ?? 0) + 1 } }));
