@@ -17,8 +17,8 @@ function sourceFiles(dir: string): string[] {
 function namespacesInSource(): Map<string, string> {
   const found = new Map<string, string>();
   const patterns = [
-    /\b(?:appLog|rendererLog)\(\s*'([^']+)'/g,
-    /\bconst\s+(?:[A-Z_]+_)?NS\s*=\s*'([^']+)'/g,
+    /\b(?:appLog|rendererLog)\(\s*['"`]([^'"`$]+)['"`]/g,
+    /\bconst\s+(?:[A-Z_]+_)?NS\s*=\s*['"`]([^'"`$]+)['"`]/g,
   ];
   for (const file of sourceFiles(SRC)) {
     const text = fs.readFileSync(file, 'utf-8');

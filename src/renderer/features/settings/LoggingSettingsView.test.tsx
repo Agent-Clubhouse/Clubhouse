@@ -128,11 +128,15 @@ describe('LoggingSettingsView', () => {
 
     it('attaches no anonymized claim to the diagnostic log or local recording', () => {
       render(<LoggingSettingsView />);
-      const claimsAnonymized = (text: string | null) => /anonymi[sz]ed/i.test(text ?? '') && !/not anonymi[sz]ed/i.test(text ?? '');
-      const diagSection = screen.getByRole('heading', { name: 'Diagnostic log' }).closest('section')!;
-      expect(claimsAnonymized(diagSection.textContent)).toBe(false);
+      // Any "anonymized" outside the one disclaimer is a claim.
+      const claimsAnonymized = (text: string | null) =>
+        /anonymi[sz]ed/i.test((text ?? '').replace('They are not anonymized.', ''));
+      const sectionText = (heading: string) => screen.getByRole('heading', { name: heading }).closest('section')!.textContent;
+      expect(claimsAnonymized(sectionText('Diagnostic log'))).toBe(false);
+      expect(claimsAnonymized(sectionText('Namespaces'))).toBe(false);
+      expect(claimsAnonymized(screen.getByText(/never sends the log folder/).textContent)).toBe(false);
       expect(claimsAnonymized(screen.getByText(/Write the diagnostic log and local telemetry/).textContent)).toBe(false);
-      expect(screen.queryByText(/anonymized the same way as export/)).toHaveTextContent(/^Write flow timings/);
+      expect(screen.getAllByText(/anonymized the same way as export/)).toHaveLength(1);
     });
 
     it('scopes the anonymized claim to the telemetry signals', () => {

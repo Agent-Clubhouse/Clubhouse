@@ -94,9 +94,10 @@ function tapBreadcrumb(entry: LogEntry): void {
 }
 
 /**
- * `telemetry` (opt-in, spec §6.6) is bridged before the local logging
- * filters: turning local logging off does not turn telemetry off, and the
- * reverse. Only the declared event and attributes are exported.
+ * `telemetry` (spec §6.6) is bridged before the namespace and level
+ * filters, which apply only to log lines. Whether the bridged event is
+ * recorded or exported follows the telemetry recording settings. Only the
+ * declared event and attributes are kept.
  */
 export function log(entry: LogEntry, telemetry?: LogTelemetry): void {
   if (telemetry) bridgeLog(entry.level, telemetry);

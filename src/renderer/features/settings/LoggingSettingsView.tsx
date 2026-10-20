@@ -100,7 +100,7 @@ export function LoggingSettingsView() {
 
         <SettingsField
           label="Record locally"
-          help="Write the diagnostic log and local telemetry to the log folder. While this is off nothing is recorded, and telemetry export has nothing to send."
+          help="Write the diagnostic log and local telemetry to the log folder. While this is off nothing is written, and telemetry export has nothing to send."
         >
           <Toggle aria-label="Record locally" checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
         </SettingsField>
